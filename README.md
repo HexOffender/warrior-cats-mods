@@ -13,7 +13,7 @@ Install mods (top right) builds everything and puts it in the game:
 |---|---|---|---|
 | **Mods** | turn mods on/off, priority, new mods, uninstall, save backups | `mod.json` | — |
 | **Palettes** | eye, coat, pattern and marking colours on a live cat | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
-| **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | bindings in your save (not yet seen working, see below) |
+| **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | not applied yet (see [Remapping keys](#remapping-keys)) |
 | | mouse look: sensitivity, invert | `mouselook.json` | UE4SS script |
 | **Game data** | XP, costs, rewards, speeds and ~440 tuning values, in any runtime table | `data.json` | edited tables in the mod pak |
 | **Save** | level, XP, health, stamina, fresh-kill pile, stats, inventory, settings, anything else | `save.json` | your save, on install |
@@ -23,7 +23,28 @@ steps written with the shared library (see [docs/SDK.md](docs/SDK.md)).
 
 The original game files are never modified. Everything goes into
 `<game>\Wrc\Content\Paks\~mods\zzz_WCMods_P.*` and `<game>\Wrc\Binaries\Win64\ue4ss\Mods\WCMods*`.
-Uninstall removes those. Save edits and remaps are written into your save only after a backup.
+Uninstall removes those. Save edits are written into your save only after a backup.
+
+## Remapping keys
+
+The game doesn't take remaps from mods. It keeps a copy of your bindings in the save
+(`Shared/InputKeyboard`, `Shared/InputGamepad`) but ignores edits to it. That was tested twice:
+once with the mouse in the camera slots, and once with keyboard keys only and the game's
+custom-controls switch (`SettingsData/CustomControls`) on. The game also has its own rebinding
+screen (`WBP_GuiPopupControlConfig`), but on PC it's hidden and not wired up: forcing its Settings
+button visible gives a button that does nothing.
+
+There are three ways around that:
+
+1. **Controller buttons: Steam Input.** In Steam, right-click the game, then Properties, Controller.
+2. **Keyboard keys: Microsoft PowerToys Keyboard Manager.** Open Keyboard Manager, choose
+   *Remap a key*, map your new key to the game's key (for example F to E for Interact), and set
+   the target app to `Wrc-Win64-ShippingDRM.exe` so the remap only applies in the game.
+3. **Keyboard keys: a remapper built into wcmods** that runs while the game window is focused and
+   uses the Controls page's `controls.json`. In progress.
+
+**The current method is method 2** (with method 1 for controllers). The Controls page still
+edits `controls.json`, which method 3 will use; until then, it isn't applied to the game.
 
 ## Command line
 
@@ -74,11 +95,9 @@ cat creator's eye buttons are recoloured to match. Coat, pattern and marking key
 { "keyboard": { "Player_Interact": "F" }, "gamepad": { "Player_Run": "LT" } }
 ```
 
-Camera and movement are axis bindings, so they also take a scale (direction and sensitivity),
-e.g. `{ "key": "Left", "scale": -1 }`. The keyboard entries hold the *negative* direction (← at -1).
-
-These go into the bindings the game keeps in your save, but the game hasn't been seen using an
-edited one: a test that moved Reset camera from R to T had no effect. Treat remaps as untested.
+Actions are the game's (`python wcmods.py controls` lists them with their keys); keys are Unreal
+key names, and controller buttons also take short names (A/B/X/Y, LB/RB, LT/RT, Start). The
+build checks the names but doesn't apply them yet; see [Remapping keys](#remapping-keys).
 
 ### `mouselook.json`
 ```json
@@ -105,7 +124,9 @@ Known issues:
   and tilt together. It's also aim smoothing, which mouse look shouldn't have.
 - About one frame in five, the game sets the camera's turn itself, and that frame's mouse movement
   is lost.
-- The tilt levels on R and LB even if Reset camera is remapped.
+- Mouse look stops when the engine's look input is switched off (`IsLookInputIgnored`), but the
+  game's own camera locks (`EInputRestriction::CameraRotationDisabled`) aren't visible to scripts,
+  so the mouse may still turn the camera where the arrow keys can't.
 
 ### `data.json`
 ```json
@@ -138,6 +159,8 @@ colour.
 - **Writers:** paks and IoStore containers read back identically, with correct BLAKE3 chunk hashes.
 - **CSV editor:** reproduces all 67 runtime tables byte-for-byte.
 - **Save editor:** changes only the values it's told to.
+- **UE4SS scripts:** the generated Lua has balanced blocks and brackets (a light structure check;
+  there's no Lua interpreter to fully parse it). Builds also warn if any UE4SS script fails it.
 
 Confirmed in game (2026-10-23):
 - The mod pak and container load, and eye palettes change the cats' eyes.
@@ -148,12 +171,10 @@ Confirmed in game (2026-10-23):
   checksum whose formula isn't known; the tool keeps the original value and the game accepts it.
   Save edits are applied after a backup: restore one from the Mods page (or
   `python wcmods.py restore latest`) if anything goes wrong.
+- Edited key bindings in the save are ignored, and the game's rebinding screen doesn't work on PC
+  (see [Remapping keys](#remapping-keys)).
 
 Not yet confirmed in game:
-- **Remaps.** A remapped key (Reset camera on T) had no effect, so the game may not read the
-  bindings from the save. That test also bound the mouse to the camera keys, which the game may
-  have rejected as a whole; a keyboard-only retest is pending. This game doesn't expose its live
-  key bindings to mods.
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
 
 After a game update, run `selftest` before installing again.

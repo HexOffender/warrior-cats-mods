@@ -1,4 +1,5 @@
-"""Button remapping (controls.json), written into the bindings the game keeps in its save."""
+"""Button remapping (controls.json). The game ignores edited bindings in its save, so for now this only
+checks the file; see README, "Remapping keys"."""
 from .. import controls
 from ..sdk import Section
 
@@ -18,10 +19,8 @@ class ControlsSection(Section):
                 raise ValueError(f"controls.json: '{device}' should be 'keyboard' or 'gamepad'")
             out[device] = {}
             for action, change in mapping.items():
-                if action.startswith("_"):
-                    continue
-                controls.split_change(change)   # raises ValueError for a malformed {key, scale}
-                out[device][action] = change
+                if not action.startswith("_"):
+                    out[device][action] = controls.key_of(change)   # raises ValueError for {} without "key"
         return out or None
 
     def build(self, ctx, items):
@@ -33,14 +32,10 @@ class ControlsSection(Section):
         if not merged:
             return
         for device, mapping in merged.items():
-            for action, change in mapping.items():
-                k = controls.normalise_key(device, controls.split_change(change)[0])
+            for action, key in mapping.items():
+                k = controls.normalise_key(device, key)
                 if k not in controls.KNOWN_KEYS:
                     ctx.warn(f"{device}: '{k}' for {action} is not a key name I recognise")
-        ctx.save_op({"op": "controls", "changes": merged})
-        # The game's own switch for custom bindings (GlobalConfig.bCustomControls, saved as
-        # Shared/SettingsData/CustomControls). It's off in a fresh save.
-        ctx.add_save_key("Shared/SettingsData", "CustomControls", True, source="controls")
-        ctx.warn("the game keeps these bindings in the save but hasn't been seen using edited ones yet "
-                 "(a test remap of Reset camera had no effect); check in game")
+        ctx.warn("the game ignores edited key bindings, so controls.json isn't applied yet; remap keys with "
+                 "PowerToys Keyboard Manager for now (README, \"Remapping keys\")")
         ctx.note("controls", merged)

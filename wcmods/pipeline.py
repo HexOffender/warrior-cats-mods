@@ -157,7 +157,7 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
 def apply_save_ops(cfg, ops, backups_root, log=print):
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     if not os.path.isfile(sav):
-        log("  NOTE: no save yet; launch the game once, then install again to apply save edits and controls.")
+        log("  NOTE: no save yet; launch the game once, then install again to apply save edits.")
         return []
     save = SaveGame.load(sav)
     doc = SaveDoc(save.json_text)

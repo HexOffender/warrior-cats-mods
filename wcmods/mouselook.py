@@ -50,12 +50,18 @@ def validate(raw):
     return out
 
 
-def merge(items):
-    settings = dict(DEFAULTS)
-    for data in items:
+def merge(items, sources=None):
+    """Settings from several mods, later ones winning. sources names each item for error messages."""
+    settings, setter = dict(DEFAULTS), {}
+    for i, data in enumerate(items):
         settings.update(data)
+        for key in data:
+            setter[key] = sources[i] if sources else None
     if settings["pitch_min"] >= settings["pitch_max"]:
-        raise ValueError("mouse look: 'pitch_min' must be below 'pitch_max'")
+        def said(key):
+            who = setter.get(key)
+            return f"{settings[key]:g} ({'from ' + who if who else 'default'})"
+        raise ValueError(f"mouse look: pitch_min {said('pitch_min')} must be below pitch_max {said('pitch_max')}")
     return settings
 
 
@@ -103,7 +109,6 @@ end
 
 local function valid(o) return o ~= nil and o:IsValid() end
 local function className(o) return o:GetClass():GetFName():ToString() end
-local function wrap(a) return (a + 180) % 360 - 180 end
 local function same(a, b) return valid(a) and valid(b) and a:GetAddress() == b:GetAddress() end
 
 local lib, keys
@@ -118,10 +123,11 @@ local function setup()
     lib = { widgets = widgets, statics = statics, math = kmath, sceneComponent = sceneComponent, input = input }
     local function key(name) return { KeyName = FName(name) } end
     keys = {
-        mouseX = key("MouseX"), mouseY = key("MouseY"), lmb = key("LeftMouseButton"), rmb = key("RightMouseButton"),
-        -- The game's Reset camera keys (Player_Camera_Reset) also level the tilt.
+        mouseX = key("MouseX"), mouseY = key("MouseY"),
+        -- The game's Reset camera keys also level the tilt. The game ignores remapped bindings, so these
+        -- are always its own; a key remapper outside the game sends them too.
         reset = { key("R"), key("Gamepad_LeftShoulder") },
-        tilt = FName("Player_Camera_Up"), none = FName("None"),
+        none = FName("None"),
     }
     return true
 end
@@ -181,15 +187,20 @@ local function setRotation(comp, pitch, yaw, roll)
     comp:K2_SetRelativeRotation(lib.math:MakeRotator(roll, pitch, yaw), false, {}, false)
 end
 
+-- tilt: degrees the pivot adds to the game's arm pitch, as the player set it. written: what the pivot
+-- holds now (nil before the first tilt).
+local tilt, written = 0, nil
+
 -- The pivot: an empty scene component the script adds to the camera actor, attached where the arm was,
--- with the arm moved onto it. Its rotation is the script's alone. Made once per camera actor; if that
--- fails, tilting stays off for that camera rather than trying again every frame.
-local pivot, pivotFor, pivotFailed
-local function ensurePivot(cam, arm)
-    if pivotFor ~= nil and same(pivotFor, cam) then
-        return (not pivotFailed) and valid(pivot) and pivot or nil
-    end
-    pivotFor, pivot, pivotFailed = cam, nil, true
+-- with the arm moved onto it. Its rotation is the script's alone. It's looked up through the arm rather
+-- than by remembering the camera, because a camera made after a reload can land at the old one's address.
+local pivot, retryAt = nil, 0
+local function ensurePivot(cam, arm, now)
+    if valid(pivot) and same(arm:GetAttachParent(), pivot) then return pivot end
+    if now < retryAt then return nil end
+    retryAt = now + 5   -- if building it fails, try again in a few seconds rather than every frame
+    if pivot ~= nil then tilt = 0 end   -- a new camera (another area or a reload) starts level
+    pivot, written = nil, nil
     local parent = arm:GetAttachParent()
     if not valid(parent) then error("the camera's arm isn't attached to anything") end
     local identity = { Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Translation = { X = 0, Y = 0, Z = 0 },
@@ -200,134 +211,61 @@ local function ensurePivot(cam, arm)
     arm:K2_AttachToComponent(comp, keys.none, KEEP_RELATIVE, KEEP_RELATIVE, KEEP_RELATIVE, false)
     if not same(arm:GetAttachParent(), comp) then error("couldn't move the camera's arm onto the pivot") end
     debug("pivot added between %s and the camera arm", className(parent))
-    pivot, pivotFailed = comp, false
+    pivot, retryAt = comp, 0
     return pivot
 end
 
-local tilt, written = 0, nil   -- tilt: degrees the pivot adds to the game's arm pitch
-local dumped, sawMouse, pendingYaw
-local tally = { yaw = { kept = 0, undone = 0 }, tilt = { kept = 0, undone = 0 } }
-local acc = { dx = 0, dy = 0, since = nil, ticked = 0 }
-local undoneLogged = 0
-
-local mismatches = 0
-local function setTilt(cam, arm, amount)
-    local p = ensurePivot(cam, arm)
+local function setTilt(cam, arm, amount, now)
+    local p = ensurePivot(cam, arm, now)
     if not p then return end
-    if written ~= nil then
-        local t, now = tally.tilt, p.RelativeRotation
-        if math.abs(now.Pitch - written) < 0.001 then
-            t.kept = t.kept + 1
-        else
-            t.undone = t.undone + 1
-            if mismatches < 3 then
-                mismatches = mismatches + 1
-                log("the pivot's pitch changed between frames: wrote %.2f, now %s", written, fmtRot(now))
-            end
-        end
-    end
-    if written == nil or math.abs(amount - written) > 0.0001 then
-        setRotation(p, amount, 0, 0)
-    end
+    if written == nil or math.abs(amount - written) > 0.0001 then setRotation(p, amount, 0, 0) end
     written = amount
 end
 
--- Diagnostics (debug only): the game's axis bindings, and how its own camera keys tilt the camera.
-local function dumpBindings()
-    local settings = StaticFindObject("/Script/Engine.Default__InputSettings")
-    if not valid(settings) then return end
-    local out = {}
-    settings.AxisMappings:ForEach(function(_, elem)
-        local m = elem:get()
-        out[#out + 1] = string.format("%s=%s*%.2f", m.AxisName:ToString(), m.Key.KeyName:ToString(), m.Scale)
-    end)
-    log("input settings axis mappings (%d): %s", #out, table.concat(out, " "))
-end
-local arrows = { since = nil }
-local function watchArrows(cam, arm, now)
-    local v = pc:GetInputAxisValue(keys.tilt)
-    if math.abs(v) <= 0.2 then return end
-    arrows.since = arrows.since or now
-    if now - arrows.since < 0.5 then return end
-    arrows.since = nil
-    local seen = "?"
-    pcall(function() seen = fmtRot(pc.PlayerCameraManager.CameraCachePrivate.POV.Rotation) end)
-    log("camera keys tilt %.2f: root %s, arm %s, camera %s, view %s", v, fmtRot(cam.RootComponent.RelativeRotation),
-        fmtRot(arm.RelativeRotation), fmtRot(cam.CameraComponent.RelativeRotation), seen)
-end
+local sawMouse
+local acc = { dx = 0, dy = 0, since = nil }
 
 local function steer(cam, now)
-    local root, arm, view = cam.RootComponent, cam.AdventureArmComponent, cam.CameraComponent
-    if not (valid(root) and valid(arm) and valid(view)) then return end
-    if not dumped then
-        dumped = true
-        debug("start: root %s, arm %s, arm length %.0f, camera %s", fmtRot(root.RelativeRotation),
-            fmtRot(arm.RelativeRotation), arm.TargetArmLength, fmtRot(view.RelativeRotation))
-        if SETTINGS.debug then
-            local ok, err = pcall(dumpBindings)
-            if not ok then report("bindings", err) end
-        end
-    end
-    if SETTINGS.debug then watchArrows(cam, arm, now) end
-
-    local r = root.RelativeRotation
-    if pendingYaw then
-        local t = tally.yaw
-        if math.abs(wrap(r.Yaw - pendingYaw.want)) <= math.abs(wrap(r.Yaw - pendingYaw.was)) then
-            t.kept = t.kept + 1
-        else
-            t.undone = t.undone + 1
-            if SETTINGS.debug and undoneLogged < 8 then
-                undoneLogged = undoneLogged + 1
-                log("a turn was undone: yaw was %.2f, wrote %.2f, next frame %.2f", pendingYaw.was, pendingYaw.want, r.Yaw)
-            end
-        end
-        pendingYaw = nil
-    end
+    local root, arm = cam.RootComponent, cam.AdventureArmComponent
+    if not (valid(root) and valid(arm)) then return end
 
     local dx = pc:GetInputAnalogKeyState(keys.mouseX)
     local dy = pc:GetInputAnalogKeyState(keys.mouseY)
     local k = DEGREES_PER_UNIT * SETTINGS.sensitivity
-    if dx ~= 0 or dy ~= 0 then
-        if not sawMouse then
-            sawMouse = true
-            log("mouse movement is reaching the game")
-        end
-        acc.dx, acc.dy = acc.dx + dx, acc.dy + dy
+    if (dx ~= 0 or dy ~= 0) and not sawMouse then
+        sawMouse = true
+        log("mouse movement is reaching the game")
     end
-    if dx ~= 0 then
-        local want = r.Yaw + dx * k
-        setRotation(root, r.Pitch, want, r.Roll)
-        pendingYaw = { was = r.Yaw, want = want }
-    end
+    local r = root.RelativeRotation
+    if dx ~= 0 then setRotation(root, r.Pitch, r.Yaw + dx * k, r.Roll) end
 
-    -- Keep the total pitch within the limits, whatever the game gives the arm (crouching, climbing).
+    -- The limits are for the total pitch (the game's arm pitch plus the tilt), and the allowed range always
+    -- includes level. So a camera the game puts past a limit (some areas look steeply down) is never pushed
+    -- back, and a tilt the current posture can't fit (crouching lowers the arm) is held back, not lost.
     local base = arm.RelativeRotation.Pitch
-    tilt = tilt + dy * k * (SETTINGS.invert and -1 or 1)
-    tilt = math.max(SETTINGS.pitch_min - base, math.min(SETTINGS.pitch_max - base, tilt))
+    local lo, hi = math.min(0, SETTINGS.pitch_min - base), math.max(0, SETTINGS.pitch_max - base)
+    local d = dy * k * (SETTINGS.invert and -1 or 1)
+    if d ~= 0 then tilt = math.max(math.min(lo, tilt), math.min(math.max(hi, tilt), tilt + d)) end
     for _, key in ipairs(keys.reset) do
         if pc:WasInputKeyJustPressed(key) then tilt = 0 end
     end
-    if tilt ~= 0 or written ~= nil then setTilt(cam, arm, tilt) end
+    local shown = math.max(lo, math.min(hi, tilt))
+    if shown ~= 0 or written ~= nil then setTilt(cam, arm, shown, now) end
 
-    if SETTINGS.debug and (acc.dx ~= 0 or acc.dy ~= 0) then
-        if not acc.since then acc.since, acc.ticked = now, 0 end
-        -- Game time this script saw frames for, against game time that passed: below 100% means frames
-        -- were skipped, and their mouse movement lost.
-        acc.ticked = acc.ticked + lib.statics:GetWorldDeltaSeconds(pc)
+    if SETTINGS.debug and (dx ~= 0 or dy ~= 0) then
+        acc.dx, acc.dy, acc.since = acc.dx + dx, acc.dy + dy, acc.since or now
         if now - acc.since >= 2 then
             -- "view" is what the player sees: the camera manager's last result.
             local seen = "?"
             pcall(function() seen = fmtRot(pc.PlayerCameraManager.CameraCachePrivate.POV.Rotation) end)
-            log("mouse %.1f, %.1f; tilt %.1f deg (turns kept %d undone %d; tilt kept %d undone %d; frames seen %.0f%%) root %s arm %s view %s",
-                acc.dx, acc.dy, tilt, tally.yaw.kept, tally.yaw.undone, tally.tilt.kept, tally.tilt.undone,
-                100 * acc.ticked / (now - acc.since), fmtRot(r), fmtRot(arm.RelativeRotation), seen)
+            log("mouse %.1f, %.1f; tilt %.1f (shown %.1f) root %s arm %s view %s", acc.dx, acc.dy, tilt, shown,
+                fmtRot(root.RelativeRotation), fmtRot(arm.RelativeRotation), seen)
             acc.dx, acc.dy, acc.since = 0, 0, nil
         end
     end
 end
 
-local lastTime, lastCam
+local lastTime, lookBaseline
 local function step()
     if not setup() then return end
     if not valid(pc) then
@@ -338,29 +276,23 @@ local function step()
         if not pc then return end
     end
     local want = enabled and not pc.bShowMouseCursor and exploring()
-    if want ~= captured then
-        capture(want)
-    elseif captured and (pc:WasInputKeyJustPressed(keys.lmb) or pc:WasInputKeyJustPressed(keys.rmb)) then
-        capture(true)   -- a click means the game has focus; take the mouse back if a menu let it go
-    end
+    if want ~= captured then capture(want) end
     if not enabled and tilt ~= 0 then
         tilt = 0   -- switched off: level the camera again
         if valid(pivot) then setRotation(pivot, 0, 0, 0) end
         written = 0
     end
+    if not captured then return end   -- a menu is open, or mouse look is off
+    -- The engine's look lock, for moments that disable looking around. Only a lock that comes on during
+    -- play counts: a game that never uses controller look may keep it on all the time.
+    local locked = pc:IsLookInputIgnored()
+    if lookBaseline == nil then
+        lookBaseline = locked
+        debug("look input ignored at start: %s", tostring(locked))
+    end
+    if locked and not lookBaseline then return end
     local cam = explorationCamera()
-    if not cam then
-        pendingYaw = nil
-        return
-    end
-    if not same(lastCam, cam) then
-        tilt, written = 0, nil   -- a new camera (another area or a reload) starts level
-    end
-    lastCam = cam
-    if not captured then
-        pendingYaw = nil   -- a menu is open over the camera: keep the view as it is
-        return
-    end
+    if not cam then return end   -- another camera (a cutscene, combat) is showing: leave it alone
     local now = lib.statics:GetTimeSeconds(pc)
     if now == lastTime then return end   -- once per game frame, and not while paused
     lastTime = now

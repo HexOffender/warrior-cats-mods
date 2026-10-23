@@ -3,7 +3,7 @@ import os
 import struct
 import tempfile
 
-from . import controls, eyeatlas, mouselook, palettes
+from . import controls, eyeatlas, luacheck, mouselook, palettes
 from .blake3 import blake3
 from .iostore import IoStoreReader, ModContainerWriter
 from .pak import PakReader, PakWriter
@@ -19,7 +19,11 @@ def run(cfg, oodle, log=print):
 
     check("blake3 test vector", blake3(b"").hex().startswith("af1349b9f5f9a1a6"))
     lua = mouselook.script(mouselook.merge([mouselook.validate({"sensitivity": 1.5, "invert": True})]))
-    check("mouse look script", "@SETTINGS@" not in lua and "sensitivity = 1.5" in lua and "invert = true" in lua)
+    problems = luacheck.check(lua)
+    check("mouse look script", not problems and "@SETTINGS@" not in lua and "sensitivity = 1.5" in lua
+          and "invert = true" in lua, "; ".join(problems[:3]))
+    problems = luacheck.check(palettes.ue4ss_script({}))
+    check("palette script", not problems, "; ".join(problems[:3]))
 
     base_pak = PakReader(os.path.join(cfg.paks_dir, "pakchunk0-Windows.pak"), oodle)
     csv = base_pak.read("Wrc/Content/Gameplay/DataTables/NonAsset/NPC/CatSize.csv")
@@ -127,16 +131,6 @@ def run(cfg, oodle, log=print):
         check("controls edit touches one value", controls.read_bindings(new)["keyboard"]["Player_Interact"] == want
               and sum(1 for x, y in zip(s.json_text.splitlines(), new.splitlines()) if x != y) == 1,
               f"{len(b['keyboard'])} keyboard / {len(b['gamepad'])} gamepad actions")
-        look, applied, warns = controls.apply(s.json_text, {"keyboard": {
-            "Player_Camera_Right": {"key": "MouseX", "scale": 1.5}, "Player_Camera_Up": {"key": "MouseY", "scale": -0.8}}})
-        d = controls.read_binding_details(look)["keyboard"]
-        back, _, _ = controls.apply(look, {"keyboard": {
-            "Player_Camera_Right": {"key": "Left", "scale": -1}, "Player_Camera_Up": {"key": "Down", "scale": -1}}})
-        orig = controls.read_binding_details(s.json_text)["keyboard"]
-        check("axis binding (key + scale) and back",
-              d["Player_Camera_Right"] == (1, "MouseX", 1.5) and d["Player_Camera_Up"] == (1, "MouseY", -0.8) and not warns
-              and controls.read_binding_details(back)["keyboard"]["Player_Camera_Right"] == (1, "Left", -1.0)
-              and (orig["Player_Camera_Right"] != (1, "Left", -1.0) or back == s.json_text))
     else:
         log("  [skip] no save yet")
     return all(results)

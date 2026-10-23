@@ -29,7 +29,7 @@ they are Python code. See docs/SDK.md for the full API.
 import json
 import os
 
-from . import csvdata
+from . import csvdata, luacheck
 from .gamefiles import NONASSET
 
 
@@ -114,7 +114,15 @@ class BuildContext:
         self.packages[path] = (bytes(data), self.current, source)
 
     def add_ue4ss_mod(self, name, files):
-        """files: {"Scripts/main.lua": text, ...}. Installed only when UE4SS is present."""
+        """files: {"Scripts/main.lua": text, ...}. Installed only when UE4SS is present.
+
+        Lua files get a structure check (balanced blocks and brackets); problems become build warnings.
+        """
+        for rel, data in files.items():
+            if rel.endswith(".lua"):
+                text = data if isinstance(data, str) else data.decode("utf-8", "replace")
+                for problem in luacheck.check(text)[:3]:
+                    self.warn(f"{name}/{rel}: {problem}")
         self.ue4ss_mods[name] = ({k: v.encode() if isinstance(v, str) else v for k, v in files.items()}, self.current)
 
     def edit_save(self, path, value, source=""):
