@@ -5,7 +5,7 @@ export default {
     const { el, api, clear, toast, bus, confirmButton } = wc;
     const list = el("div", { class: "card" });
     const backupsBox = el("div", { class: "card" });
-    const KIND_LABEL = { files: "replacement files", palette: "palette", controls: "controls", data: "game data",
+    const KIND_LABEL = { files: "replacement files", palette: "palette", controls: "controls", "mouse look": "mouse look", data: "game data",
       save: "save edits", code: "custom code", "studio page": "studio page" };
 
     root.append(

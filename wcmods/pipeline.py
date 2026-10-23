@@ -138,8 +138,14 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
         for name in previous - set(manifest["ue4ss_mods"]):
             ue4ss.remove_mod(mods_dir, name)
         cfg.data["installed_ue4ss"] = manifest["ue4ss_mods"]
-    elif any(manifest["notes"].get("palettes", {}).get("runtime_palette", {}).values()):
-        log("  NOTE: coat/pattern/marking/eye-button colours need UE4SS, which isn't installed; skipped those.")
+    else:
+        skipped = []
+        if any(manifest["notes"].get("palettes", {}).get("runtime_palette", {}).values()):
+            skipped.append("coat/pattern/marking/eye-button colours")
+        if "mouselook" in manifest["notes"]:
+            skipped.append("mouse look")
+        if skipped:
+            log(f"  NOTE: {' and '.join(skipped)} need UE4SS, which isn't installed; skipped.")
 
     if manifest["save_ops"]:
         apply_save_ops(cfg, manifest["save_ops"], backups_root, log)
@@ -151,7 +157,7 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
 def apply_save_ops(cfg, ops, backups_root, log=print):
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     if not os.path.isfile(sav):
-        log("  NOTE: no save yet; launch the game once, then install again to apply save edits and controls.")
+        log("  NOTE: no save yet; launch the game once, then install again to apply save edits.")
         return []
     save = SaveGame.load(sav)
     doc = SaveDoc(save.json_text)

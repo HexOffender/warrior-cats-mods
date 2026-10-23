@@ -1,4 +1,5 @@
-"""Button remapping (controls.json), written into the bindings the game keeps in its save."""
+"""Button remapping (controls.json). The game ignores edited bindings in its save, so for now this only
+checks the file; see README, "Remapping keys"."""
 from .. import controls
 from ..sdk import Section
 
@@ -16,7 +17,10 @@ class ControlsSection(Section):
                 continue
             if device not in controls.SECTIONS:
                 raise ValueError(f"controls.json: '{device}' should be 'keyboard' or 'gamepad'")
-            out[device] = {a: k for a, k in mapping.items() if not a.startswith("_")}
+            out[device] = {}
+            for action, change in mapping.items():
+                if not action.startswith("_"):
+                    out[device][action] = controls.key_of(change)   # raises ValueError for {} without "key"
         return out or None
 
     def build(self, ctx, items):
@@ -32,5 +36,6 @@ class ControlsSection(Section):
                 k = controls.normalise_key(device, key)
                 if k not in controls.KNOWN_KEYS:
                     ctx.warn(f"{device}: '{k}' for {action} is not a key name I recognise")
-        ctx.save_op({"op": "controls", "changes": merged})
+        ctx.warn("the game ignores edited key bindings, so controls.json isn't applied yet; remap keys with "
+                 "PowerToys Keyboard Manager for now (README, \"Remapping keys\")")
         ctx.note("controls", merged)

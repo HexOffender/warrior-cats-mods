@@ -7,11 +7,12 @@ from ..sdk import Section
 from .controls import ControlsSection
 from .data import DataSection
 from .files import FilesSection
+from .mouselook import MouseLookSection
 from .palettes import PaletteSection
 from .savedit import SaveSection
 
 # Order matters only where outputs layer: replacement files first, CSV edits on top of them.
-BUILTIN = (FilesSection, DataSection, PaletteSection, ControlsSection, SaveSection)
+BUILTIN = (FilesSection, DataSection, PaletteSection, ControlsSection, MouseLookSection, SaveSection)
 
 
 def load_sections(cfg, mods, log=print):

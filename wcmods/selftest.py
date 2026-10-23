@@ -3,7 +3,7 @@ import os
 import struct
 import tempfile
 
-from . import controls, eyeatlas, palettes
+from . import controls, eyeatlas, luacheck, mouselook, palettes
 from .blake3 import blake3
 from .iostore import IoStoreReader, ModContainerWriter
 from .pak import PakReader, PakWriter
@@ -18,6 +18,12 @@ def run(cfg, oodle, log=print):
         log(f"  [{'ok' if ok else 'FAIL'}] {name}{(' - ' + detail) if detail else ''}")
 
     check("blake3 test vector", blake3(b"").hex().startswith("af1349b9f5f9a1a6"))
+    lua = mouselook.script(mouselook.merge([mouselook.validate({"sensitivity": 1.5, "invert": True})]))
+    problems = luacheck.check(lua)
+    check("mouse look script", not problems and "@SETTINGS@" not in lua and "sensitivity = 1.5" in lua
+          and "invert = true" in lua, "; ".join(problems[:3]))
+    problems = luacheck.check(palettes.ue4ss_script({}))
+    check("palette script", not problems, "; ".join(problems[:3]))
 
     base_pak = PakReader(os.path.join(cfg.paks_dir, "pakchunk0-Windows.pak"), oodle)
     csv = base_pak.read("Wrc/Content/Gameplay/DataTables/NonAsset/NPC/CatSize.csv")

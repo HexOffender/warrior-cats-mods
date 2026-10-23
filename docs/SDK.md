@@ -1,7 +1,7 @@
 # wcmods SDK
 
 The mod manager is built from **sections**. Each section handles one kind of mod content.
-The built-in ones are replacement files, game data, palettes, controls and save edits. A mod
+The built-in ones are replacement files, game data, palettes, controls, mouse look and save edits. A mod
 can add its own section in two halves, both built on the shared library:
 
 | Half | File in the mod folder | Runs in | Built on |
@@ -24,7 +24,8 @@ mods/my-mod/
   files/Wrc/...       replacement game files            -> section "files"
   data.json           CSV cell edits                    -> section "data"
   palette.json        colour palettes                   -> section "palettes"
-  controls.json       key and button remaps             -> section "controls"
+  controls.json       key and button remaps             -> section "controls" (checked, not applied yet)
+  mouselook.json      mouse look settings               -> section "mouselook"
   save.json           save edits                        -> section "save"
   section.py          your own build step               (code mod)
   studio/section.js   your own studio page              (code mod)
@@ -62,7 +63,7 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.edit_csv(name, edits, source=mod.id)` | Queue cell edits; they merge with every other section's edits to the same table |
 | `ctx.add_file(path, data, source=mod.id)` | Add or replace a loose file in the mod pak |
 | `ctx.patch_package(path, data)` | Replace a cooked `.uasset` with patched bytes of the same layout (goes into the IoStore mod container) |
-| `ctx.add_ue4ss_mod(name, {"Scripts/main.lua": text})` | Ship a UE4SS Lua mod; installed and registered only when UE4SS is present |
+| `ctx.add_ue4ss_mod(name, {"Scripts/main.lua": text})` | Ship a UE4SS Lua mod; installed and registered only when UE4SS is present. `.lua` files get a structure check (balanced blocks and brackets) and problems become build warnings |
 | `ctx.edit_save(path, value)` | Set an existing save value on install, e.g. `"0/GameplayProgression/Level"` |
 | `ctx.add_save_key(object_path, key, value)` | Add a key to a save object, e.g. a new inventory item |
 | `ctx.warn(msg)` / `ctx.log(msg)` / `ctx.note(key, value)` | Report to the user / the build log / the build manifest |

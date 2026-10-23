@@ -60,6 +60,7 @@ export default {
     const table = el("div", { class: "card" });
     const out = wc.codePanel("controls.json");
     const live = el("div", { class: "card" });
+    const mouse = el("div", { class: "card" });
 
     try { saved = (await api.get("/game/bindings")).bindings; }
     catch (e) { root.append(el("div", { class: "banner" }, el("strong", { text: "No save found" }), el("span", { text: e.message }))); }
@@ -74,7 +75,9 @@ export default {
       el("div", { class: "section-head" },
         el("span", { class: "eyebrow", text: "Button remapper" }),
         el("h1", { text: "Controls" }),
-        el("p", { class: "note", text: "Click Change, then press the key, mouse button, wheel or controller button you want. Save to a mod, then Install mods with the game closed. Your save is backed up before it's changed." })),
+        el("p", { class: "note", text: "Click Change, then press the key, mouse button, wheel or controller button you want, and save to a mod." })),
+      el("div", { class: "banner" }, el("strong", { text: "Remaps don't take effect yet." }),
+        el("span", { text: " The game ignores edited bindings in its save. For now, remap keys with PowerToys Keyboard Manager and controller buttons with Steam Input (README, \"Remapping keys\"). A built-in key remapper that uses this page is in progress." })),
       target.element,
       el("div", { class: "row" },
         el("span", { class: "eyebrow", text: "Controller presets" }),
@@ -83,7 +86,7 @@ export default {
         el("button", { class: "chip", onclick: () => resetDevice("keyboard"), text: "Keyboard defaults" }),
         el("span", { style: { flex: "1" } }),
         el("label", { for: "pad-style", class: "lbl", text: "Show buttons as" }), styleSel),
-      table, live, out.element);
+      mouse, table, live, out.element);
 
     // ---------- model ----------
     function normalize(obj) {
@@ -91,7 +94,8 @@ export default {
       for (const dev of ["keyboard", "gamepad"]) {
         for (const [a, k] of Object.entries((obj && obj[dev]) || {})) {
           if (a.startsWith("_")) continue;
-          o[dev][a] = dev === "gamepad" ? (ALIASES[String(k).toLowerCase()] || k) : k;
+          const key = k && typeof k === "object" ? k.key : k;   // {key, ...} from older versions of this page
+          o[dev][a] = dev === "gamepad" ? (ALIASES[String(key).toLowerCase()] || key) : key;
         }
       }
       return o;
@@ -150,7 +154,62 @@ export default {
       if (dev === "keyboard" && action.kbNote) box.append(el("span", { class: "muted", style: { fontSize: "0.8rem" }, text: action.kbNote }));
       return box;
     }
+    // ---------- mouse look ----------
+    // Not a binding: the game never reads the mouse, so this is a UE4SS script with its own settings
+    // file in the Mouse Look mod. Changes here save straight to that mod.
+    const ML = { id: "mouse-look", file: "mouselook.json" };
+    let look = { exists: false, enabled: false, settings: { sensitivity: 1, invert: false } };
+    async function loadMouseLook() {
+      try {
+        const m = (await api.get("/mods")).find(x => x.id === ML.id);
+        look = { exists: !!m, enabled: !!m?.enabled, settings: { sensitivity: 1, invert: false } };
+        if (m) {
+          const r = await api.get(`/mods/${ML.id}/file/${ML.file}`);
+          if (r.exists) Object.assign(look.settings, JSON.parse(r.text));
+        }
+      } catch (e) { toast(`Mouse look: ${e.message}`, "bad"); }
+    }
+    async function saveMouseLook(enabled) {
+      try {
+        if (!look.exists) {
+          await api.post("/mods", { id: ML.id, name: "Mouse Look", priority: 5, enabled: false,
+            description: "Turn and tilt the camera with the mouse while exploring. Needs UE4SS." });
+          look.exists = true;
+        }
+        await api.put(`/mods/${ML.id}/file/${ML.file}`, { text: JSON.stringify(look.settings, null, 2) });
+        await api.patch(`/mods/${ML.id}`, { enabled });
+        look.enabled = enabled;
+        wc.bus.emit("mods-changed");
+        toast(`Mouse look ${enabled ? "on" : "off"}. Install mods to apply it.`);
+      } catch (e) { toast(e.message, "bad"); }
+      renderMouse();
+    }
+    function renderMouse() {
+      const s = look.settings;
+      const toggle = el("input", { type: "checkbox", id: "ml-on", checked: look.enabled });
+      toggle.addEventListener("change", () => saveMouseLook(toggle.checked));
+      const sensVal = el("strong", { text: `×${Number(s.sensitivity).toFixed(2)}` });
+      // The slider stretches to fit a value set by hand in mouselook.json (0.05-10), so it never clamps it.
+      // min and max come before value: a range input clamps its value to the range it has at the time.
+      const sens = el("input", { type: "range", id: "ml-sens", min: String(Math.min(0.2, s.sensitivity)),
+        max: String(Math.max(3, s.sensitivity)), step: "0.05", value: s.sensitivity });
+      sens.addEventListener("input", () => { s.sensitivity = Number(sens.value); sensVal.textContent = `×${s.sensitivity.toFixed(2)}`; });
+      sens.addEventListener("change", () => saveMouseLook(look.enabled));
+      const inv = el("input", { type: "checkbox", id: "ml-invert", checked: !!s.invert });
+      inv.addEventListener("change", () => { s.invert = inv.checked; saveMouseLook(look.enabled); });
+      const toggleKey = s.toggle_key ?? "F6";
+      clear(mouse).append(
+        el("h2", { text: "Mouse look" }),
+        el("label", { class: "row", for: "ml-on" }, toggle, el("strong", { text: "Turn and tilt the camera with the mouse" })),
+        el("div", { class: "row" }, el("label", { for: "ml-sens", class: "lbl" }, "Sensitivity ", sensVal), sens,
+          el("label", { class: "row", for: "ml-invert" }, inv, "Invert up/down")),
+        el("p", { class: "note", text: "While you explore, the mouse turns the camera and the cursor stays hidden. Menus get the cursor back. " +
+          (toggleKey ? `Press ${toggleKey} in game to switch it off and on. ` : "") +
+          "The arrow keys and the right stick still work. Saved in the Mouse Look mod; needs UE4SS." }));
+    }
+
     function render() {
+      renderMouse();
       clear(table).append(el("div", { class: "table-wrap", style: { maxHeight: "none" } },
         el("table", { class: "grid-table" },
           el("thead", {}, el("tr", {}, el("th", { text: "Action" }), el("th", { text: "Keyboard & mouse" }), el("th", { text: "Controller" }))),
@@ -229,17 +288,16 @@ export default {
       }
     }
 
-    // ---------- checking it in game ----------
+    // ---------- remapping today ----------
     function renderLive() {
-      clear(live).append(el("h2", { text: "Check it in game" }),
+      clear(live).append(el("h2", { text: "Remapping keys today" }),
         el("ol", { style: { margin: "0", paddingLeft: "1.3em", display: "grid", gap: "6px" } },
-          el("li", { text: "Save to a mod, then Install mods (top right) with the game closed." }),
-          el("li", { text: "Start the game, load your cat, and press a key you changed." }),
-          el("li", { text: "If the game resets or won't load your save, restore the backup from the Mods page. The install made one first." })),
-        el("p", { class: "note", text: "This game doesn't expose its live key bindings to mods, so the studio can't read them back from the running game." }));
+          el("li", { text: "Keyboard: in Microsoft PowerToys, open Keyboard Manager, choose Remap a key, and set the target app to Wrc-Win64-ShippingDRM.exe. Map your new key to the game's key shown here." }),
+          el("li", { text: "Controller: in Steam, right-click the game, then Properties, Controller, and remap buttons with Steam Input." })),
+        el("p", { class: "note", text: "The game keeps bindings in your save but ignores edited ones (tested with keyboard keys and its custom-controls switch on), and its own rebinding screen is unfinished on PC. Mouse look above doesn't depend on any of this." }));
     }
 
-    await target.refresh();
+    await Promise.all([target.refresh(), loadMouseLook()]);
     render();
     renderLive();
   },

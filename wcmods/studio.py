@@ -20,7 +20,7 @@ from .gamefiles import NONASSET
 from .savejson import SaveDoc
 from .sections.files import classify
 
-MOD_FILES = ("palette.json", "controls.json", "data.json", "save.json")
+MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "save.json")
 BUILTIN_SECTIONS = [
     {"id": "mods", "title": "Mods", "module": "/studio/sections/mods.js"},
     {"id": "palettes", "title": "Palettes", "module": "/studio/sections/palettes.js"},
