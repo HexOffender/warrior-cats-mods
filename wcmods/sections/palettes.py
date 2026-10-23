@@ -29,10 +29,7 @@ class PaletteSection(Section):
                     except KeyError:
                         ctx.warn(f"{mod.id}: '{key}' isn't an eye slot (see `wcmods eyes`); skipped it")
                         merged["eyes"].pop(key, None)
-            problems = []
-            changes = palettes.apply_eyes(atlas, merged["eyes"], problems)
-            for p in problems:
-                ctx.warn(f"{p}; skipped it")
+            changes = palettes.apply_eyes(atlas, merged["eyes"])
             for _, label, old, new in changes:
                 ctx.log(f"  eyes: {label:14s} {old} -> {new}")
             # IrisColors (the cat creator's eye buttons) follows atlas rows 1-25 in order.

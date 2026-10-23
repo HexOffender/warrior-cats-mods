@@ -33,9 +33,9 @@ def build(cfg, mods, out_dir, log=print):
         ctx.begin(sec.id)
         items, used, errors = [], [], []
         for mod in enabled:
-            if not sec.claims(mod):
-                continue
             try:
+                if not sec.claims(mod):
+                    continue
                 data = sec.collect(mod, ctx)
             except (ValueError, KeyError) as e:   # mistakes in the mod's files
                 errors.append(f"{mod.id}: {e}")
@@ -156,32 +156,43 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
     save = SaveGame.load(sav)
     doc = SaveDoc(save.json_text)
     changed = []
-    pending = []   # consecutive "set" ops, applied together with one parse of the save
+    # Consecutive "set" ops are applied together with one parse of the save. Keyed by path, so a
+    # later (higher-priority) op replaces an earlier one, and whether anything changes is decided
+    # against the save itself at flush time.
+    pending = {}
 
     def flush():
         if not pending:
             return
+        items = [(p, v) for p, v in pending.items() if doc.get(p) != v]
+        olds = {p: doc.get(p) for p, _ in items}
+        pending.clear()
+        if not items:
+            return
         try:
-            doc.set_many([(p, v) for p, v, _ in pending])
-            changed.extend(desc for _, _, desc in pending)
-        except (KeyError, ValueError):
-            for p, v, desc in pending:   # fall back to one at a time so one bad edit doesn't drop the rest
+            doc.set_many(items)
+            done = items
+        except Exception:
+            done = []
+            for p, v in items:   # fall back to one at a time so one bad edit doesn't drop the rest
                 try:
                     doc.set(p, v)
-                    changed.append(desc)
-                except (KeyError, ValueError) as e:
-                    log(f"  save edit skipped: {e}")
-        pending.clear()
+                    done.append((p, v))
+                except Exception as e:
+                    log(f"  save edit skipped ({p}): {e}")
+        changed.extend(f"{p}: {json.dumps(olds[p])} -> {json.dumps(v)}" for p, v in done)
 
     for op in ops:
-        try:
-            if op["op"] == "set":
-                old = doc.get(op["path"])
-                if old != op["value"]:
-                    pending.append((op["path"], op["value"],
-                                    f"{op['path']}: {json.dumps(old)} -> {json.dumps(op['value'])}"))
+        if op["op"] == "set":
+            try:
+                doc.get(op["path"])   # the path must exist; nothing else touches the doc until flush
+            except (KeyError, IndexError, ValueError, TypeError):
+                log(f"  save edit skipped ({op.get('section')}): your save has no value at {op['path']}")
                 continue
-            flush()
+            pending[op["path"]] = op["value"]
+            continue
+        flush()
+        try:
             if op["op"] == "controls":
                 text, applied, warnings = controls.apply(doc.text, op["changes"])
                 for w in warnings:
