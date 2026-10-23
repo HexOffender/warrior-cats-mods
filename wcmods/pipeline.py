@@ -33,12 +33,15 @@ def build(cfg, mods, out_dir, log=print):
         ctx.begin(sec.id)
         items, used, errors = [], [], []
         for mod in enabled:
-            if not sec.claims(mod):
-                continue
             try:
+                if not sec.claims(mod):
+                    continue
                 data = sec.collect(mod, ctx)
-            except (ValueError, KeyError) as e:
+            except (ValueError, KeyError) as e:   # mistakes in the mod's files
                 errors.append(f"{mod.id}: {e}")
+                continue
+            except Exception as e:                # anything else still only skips this mod
+                errors.append(f"{mod.id}: {type(e).__name__}: {e} (is the file laid out as documented?)")
                 continue
             if data is not None:
                 items.append((mod, data))
@@ -58,12 +61,14 @@ def build(cfg, mods, out_dir, log=print):
         ctx.warnings.append(f"{mod_id}: ships its own section.py (Python code); set \"allow_code_mods\": true "
                             "in wcmods.json to let it run")
 
-    csv_changes = {}
-    try:
-        csv_changes = ctx.resolve_csv_edits()
-    except Exception as e:
-        ctx.warnings.append(f"data: couldn't apply table edits: {e}")
-        report.setdefault("data", {"title": "Game data", "mods": [], "errors": []})["status"] = "failed"
+    csv_changes, csv_failures = ctx.resolve_csv_edits()
+    for path, section_ids, error in csv_failures:
+        for sid in section_ids:
+            rep = report.get(sid)
+            if rep is not None:
+                rep["errors"].append(f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})")
+                if rep["status"] == "ok":
+                    rep["status"] = "partial"
 
     manifest = {"mods": [m.id for m in enabled], "sections": report, "outputs": [], "ue4ss_mods": [],
                 "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
@@ -101,11 +106,19 @@ def build(cfg, mods, out_dir, log=print):
     return manifest
 
 
-def install(cfg, build_dir, backups_root, log=print):
+def install(cfg, build_dir, backups_root, log=print, force=False):
     with open(os.path.join(build_dir, "manifest.json"), encoding="utf-8-sig") as f:
         manifest = json.load(f)
     if game_running():
         raise RuntimeError("the game is running; close it before installing mods")
+    # Installing replaces what's installed now, so a section that failed or skipped a mod would
+    # silently remove that mod's previously installed changes.
+    problems = [f"{rep['title']}: {err}" for rep in manifest["sections"].values()
+                if rep["status"] != "ok" for err in rep["errors"]]
+    if problems and not force:
+        raise RuntimeError("not installing because some mods didn't build: " + "; ".join(problems) +
+                           ". Fix or turn off those mods, or install anyway with --force "
+                           "(anything they installed before is removed).")
     dest = cfg.mods_install_dir
     os.makedirs(dest, exist_ok=True)
     for ext in (".pak", ".utoc", ".ucas"):
@@ -143,7 +156,42 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
     save = SaveGame.load(sav)
     doc = SaveDoc(save.json_text)
     changed = []
+    # Consecutive "set" ops are applied together with one parse of the save. Keyed by path, so a
+    # later (higher-priority) op replaces an earlier one, and whether anything changes is decided
+    # against the save itself at flush time.
+    pending = {}
+
+    def flush():
+        if not pending:
+            return
+        items = [(p, v) for p, v in pending.items() if doc.get(p) != v]
+        olds = {p: doc.get(p) for p, _ in items}
+        pending.clear()
+        if not items:
+            return
+        try:
+            doc.set_many(items)
+            done = items
+        except Exception:
+            done = []
+            for p, v in items:   # fall back to one at a time so one bad edit doesn't drop the rest
+                try:
+                    doc.set(p, v)
+                    done.append((p, v))
+                except Exception as e:
+                    log(f"  save edit skipped ({p}): {e}")
+        changed.extend(f"{p}: {json.dumps(olds[p])} -> {json.dumps(v)}" for p, v in done)
+
     for op in ops:
+        if op["op"] == "set":
+            try:
+                doc.get(op["path"])   # the path must exist; nothing else touches the doc until flush
+            except (KeyError, IndexError, ValueError, TypeError):
+                log(f"  save edit skipped ({op.get('section')}): your save has no value at {op['path']}")
+                continue
+            pending[op["path"]] = op["value"]
+            continue
+        flush()
         try:
             if op["op"] == "controls":
                 text, applied, warnings = controls.apply(doc.text, op["changes"])
@@ -151,11 +199,6 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                     log(f"  controls warning: {w}")
                 doc = SaveDoc(text)
                 changed += [f"{d}: {a}: {o} -> {n}" for d, a, o, n in applied if o != n]
-            elif op["op"] == "set":
-                old = doc.get(op["path"])
-                if old != op["value"]:
-                    doc.set(op["path"], op["value"])
-                    changed.append(f"{op['path']}: {json.dumps(old)} -> {json.dumps(op['value'])}")
             elif op["op"] == "insert":
                 full = f"{op['path']}/{op['key']}"
                 old = doc.get(full) if doc.exists(full) else None
@@ -164,6 +207,7 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                     changed.append(f"{full}: {json.dumps(old)} -> {json.dumps(op['value'])}")
         except (KeyError, IndexError, ValueError, TypeError) as e:
             log(f"  save edit skipped ({op.get('section')}): {e}")
+    flush()
     if not changed:
         log("  save already matches; nothing to change")
         return []

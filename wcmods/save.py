@@ -111,7 +111,11 @@ def write_save(save_dir, save):
 def backup(save_dir, backups_root, reason="manual"):
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     dest = os.path.join(backups_root, f"{stamp}-{reason}")
-    os.makedirs(dest, exist_ok=True)
+    n = 2
+    while os.path.exists(dest):   # never merge into (and overwrite) an earlier backup
+        dest = os.path.join(backups_root, f"{stamp}-{reason}-{n}")
+        n += 1
+    os.makedirs(dest)
     copied = []
     for fn in os.listdir(save_dir):
         src = os.path.join(save_dir, fn)

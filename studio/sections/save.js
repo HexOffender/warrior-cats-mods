@@ -124,6 +124,11 @@ export default {
         });
         return d;
       }
+      if (value === null) {
+        // An empty value has no type to edit safely; typing here would store a string the game doesn't expect.
+        return el("div", { class: "row", style: { gap: "10px" } }, el("span", { class: "mono", style: { fontSize: "0.82rem", minWidth: "12rem" }, text: label }),
+          el("span", { class: "muted", text: "empty (not editable here)" }));
+      }
       const id = "sv-tree-" + path.replace(/[^A-Za-z0-9]+/g, "-");
       const cur = current(path);
       let control;

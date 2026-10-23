@@ -57,7 +57,7 @@ def merge(palettes):
 
 
 def apply_eyes(atlas, eyes):
-    """Recolour atlas rows. Returns [(row, label, old_hex, new_hex)]."""
+    """Recolour atlas rows. Returns [(row, label, old_hex, new_hex)]. Unknown slot names raise KeyError."""
     changes = []
     for key, spec in eyes.items():
         r = atlas.slot(key)

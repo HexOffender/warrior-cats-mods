@@ -21,6 +21,14 @@ class PaletteSection(Section):
             if ctx.game.oodle is None:
                 raise RuntimeError("eye palettes need the Oodle DLL to read the game's eye atlas")
             atlas = eyeatlas.EyeAtlas(ctx.read_game_file(eyeatlas.PATH))
+            # A misspelled slot in one mod skips just that entry, not every mod's palette.
+            for mod, data in items:
+                for key in data.get("eyes", {}):
+                    try:
+                        atlas.slot(key)
+                    except KeyError:
+                        ctx.warn(f"{mod.id}: '{key}' isn't an eye slot (see `wcmods eyes`); skipped it")
+                        merged["eyes"].pop(key, None)
             changes = palettes.apply_eyes(atlas, merged["eyes"])
             for _, label, old, new in changes:
                 ctx.log(f"  eyes: {label:14s} {old} -> {new}")
@@ -32,6 +40,6 @@ class PaletteSection(Section):
             ctx.patch_package(eyeatlas.PATH, atlas.bytes(), source="palettes")
             ctx.note("eyes", [{"row": r, "slot": l, "from": o, "to": n} for r, l, o, n in changes])
         runtime = {s: e for s, e in merged.items() if s in palettes.RUNTIME_SECTIONS}
-        # Always shipped: with no changes it still logs the game's colour tables and key bindings.
+        # Always shipped: with no changes it still logs the game's colour tables.
         ctx.add_ue4ss_mod(UE4SS_MOD_NAME, {"Scripts/main.lua": palettes.ue4ss_script(runtime), "enabled.txt": ""})
         ctx.note("runtime_palette", {s: sorted(e, key=int) for s, e in runtime.items()})

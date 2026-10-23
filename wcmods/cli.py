@@ -145,7 +145,7 @@ def cmd_build(ctx, args):
 def cmd_install(ctx, args):
     cmd_build(ctx, args)
     print("installing:")
-    pipeline.install(ctx.cfg, ctx.build_dir, ctx.backups)
+    pipeline.install(ctx.cfg, ctx.build_dir, ctx.backups, force=args.force)
     print("done. Start the game from Steam to try it.")
 
 
@@ -245,7 +245,9 @@ def main(root, argv=None):
     sub.add_parser("tables", help="show the game's coat/pattern/marking/eye-button colour tables (needs UE4SS)").set_defaults(fn=cmd_tables)
     sub.add_parser("selftest", help="check every file format against the installed game").set_defaults(fn=cmd_selftest)
     sub.add_parser("build", help="build enabled mods into build/").set_defaults(fn=cmd_build)
-    sub.add_parser("install", help="build and install enabled mods").set_defaults(fn=cmd_install)
+    p = sub.add_parser("install", help="build and install enabled mods")
+    p.add_argument("--force", action="store_true", help="install even if some mods failed to build")
+    p.set_defaults(fn=cmd_install)
     sub.add_parser("uninstall", help="remove installed mod files from the game").set_defaults(fn=cmd_uninstall)
     sub.add_parser("backup", help="back up your save files").set_defaults(fn=cmd_backup)
     p = sub.add_parser("restore", help="list or restore save backups")

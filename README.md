@@ -35,6 +35,10 @@ python wcmods.py install     # builds the enabled mods and installs them (game c
 python wcmods.py uninstall   # removes them again
 ```
 
+Install stops if any mod failed to build, because installing would remove that mod's earlier
+changes. Fix or turn off the mod, or use `install --force` (the studio offers "Install the rest
+anyway") to install everything else.
+
 Also: `enable/disable <mod>`, `new <name> --kind palette|controls|files|data|save`, `eyes`,
 `tables`, `controls [--json]`, `files <pattern>`, `extract <pattern>`, `build`, `backup`,
 `restore [name|latest]`.

@@ -44,6 +44,7 @@ class FilesSection(Section):
 
     def build(self, ctx, items):
         added = []
+        owner = {}   # rel -> mod id that supplied it; items run lowest priority first, so later wins
         for mod, files in items:
             for rel, full in sorted(files.items()):
                 if not rel.startswith(("Wrc/", "Engine/")):
@@ -58,8 +59,11 @@ class FilesSection(Section):
                              "(not appearance-only)")
                 elif kind == "gameplay":
                     ctx.warn(f"{mod.id}: {rel} isn't on the known appearance-only list; it may change gameplay")
+                if rel in owner:
+                    ctx.log(f"  {rel}: {mod.id} overrides {owner[rel]}")
                 with open(full, "rb") as f:
                     ctx.add_file(rel, f.read(), source=mod.id)
+                owner[rel] = mod.id
                 added.append(rel)
         if added:
             ctx.note("files", sorted(set(added)))

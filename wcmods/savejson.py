@@ -108,6 +108,28 @@ class SaveDoc:
         self.text = self.text[:start] + _dump(value) + self.text[end:]
         self.__init__(self.text)
 
+    def set_many(self, items):
+        """Replace several existing values with one parse. items: [(path, value)], later wins."""
+        latest = dict(items)
+        if not latest:
+            return
+        spans = _spans(self.text)
+        edits = []
+        for path, value in latest.items():
+            key = self._full(path)
+            if key not in spans:
+                raise KeyError(f"no value at {path}")
+            start, end, _ = spans[key]
+            edits.append((start, end, _dump(value), path))
+        edits.sort(key=lambda e: e[0], reverse=True)
+        for (s1, _, _, p1), (_, e2, _, p2) in zip(edits, edits[1:]):
+            if e2 > s1:
+                raise ValueError(f"can't set both {p2} and {p1}: one contains the other")
+        text = self.text
+        for start, end, dumped, _ in edits:   # back to front, so earlier offsets stay valid
+            text = text[:start] + dumped + text[end:]
+        self.__init__(text)
+
     def insert(self, object_path, key, value):
         """Add a key to an existing object (used for new inventory items and similar)."""
         spans = _spans(self.text)

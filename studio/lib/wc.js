@@ -164,11 +164,15 @@ export function modTarget({ file, defaultId, defaultName, onLoad, getValue }) {
     setDirty(false);
     onLoad(obj, id);
   }
+  // Saving to a mod means you want it applied: create it if it's new. A mod that exists but is off
+  // is turned on only after its file has been written, so a failed save can't enable old content.
   async function ensureMod(id) {
-    if (!mods.some(m => m.id === id)) {
+    const existing = mods.find(m => m.id === id);
+    if (!existing) {
       await api.post("/mods", { id, name: id === defaultId ? defaultName : undefined, enabled: true });
       bus.emit("mods-changed");
     }
+    return existing;
   }
   async function create(id) {
     if (!id) return;
@@ -189,11 +193,16 @@ export function modTarget({ file, defaultId, defaultName, onLoad, getValue }) {
   saveBtn.addEventListener("click", async () => {
     try {
       const value = getValue();
-      await ensureMod(current);
+      const existing = await ensureMod(current);
       await api.put(`/mods/${encodeURIComponent(current)}/file/${file}`, { text: JSON.stringify(value, null, 2) });
       setDirty(false);
+      if (existing && !existing.enabled) {
+        await api.patch(`/mods/${encodeURIComponent(current)}`, { enabled: true });
+        toast(`Saved and turned on ${existing.name}. Install mods to apply it.`);
+      } else {
+        toast(`Saved ${file} in ${current}. Install mods to apply it.`);
+      }
       bus.emit("mods-changed");
-      toast(`Saved ${file} in ${current}. Install mods to apply it.`);
       await refresh(current);
     } catch (e) { toast(e.message, "bad"); }
   });

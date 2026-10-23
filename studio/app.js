@@ -81,12 +81,13 @@ function summarize(manifest) {
   return lines;
 }
 
-async function runTask(path, title) {
+async function runTask(path, title, body = {}) {
   drawer.hidden = false;
   document.getElementById("drawerTitle").textContent = title;
   drawerLog.textContent = "Working…";
+  drawer.querySelector(".force")?.remove();
   try {
-    const r = await api.post(path);
+    const r = await api.post(path, body);
     const manifest = r.result && r.result.sections ? r.result : null;
     const lines = [...(manifest ? summarize(manifest) : []), "", ...r.log];
     drawerLog.textContent = lines.join("\n").trim() || "Done.";
@@ -95,6 +96,11 @@ async function runTask(path, title) {
   } catch (e) {
     drawerLog.textContent = e.message;
     toast(e.message, "bad");
+    if (path === "/install" && e.message.startsWith("not installing")) {
+      drawer.append(el("div", { class: "row force", style: { padding: "0 14px 14px" } },
+        wc.confirmButton("Install the rest anyway", "Click again: the failed mods' earlier changes are removed",
+          () => runTask("/install", "Install mods", { force: true }), "btn danger")));
+    }
   }
   await refreshStatus();
 }
