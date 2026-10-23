@@ -1,0 +1,7 @@
+{
+  "_help": "Applied to your save on install, after a backup. Paths start inside the save: Shared/... or 0/... for cat slot 0. Open the Save page in `python wcmods.py studio` to browse your save.",
+  "set": {
+    "Shared/SettingsData/Minimap": true
+  },
+  "add": {}
+}

@@ -1,0 +1,14 @@
+﻿# Personal and machine-specific
+backups/
+wcmods.json
+
+# Generated from the installed game (game data, not ours to redistribute)
+vanilla/
+build/
+colour_tables.json
+designer/game-data.js
+
+# Tooling
+__pycache__/
+*.pyc
+.claude/

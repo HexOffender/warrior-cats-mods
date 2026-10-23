@@ -1,0 +1,6 @@
+{
+  "name": "Richer Coats",
+  "description": "Deeper, more saturated versions of the 15 natural fur colours (needs UE4SS).",
+  "enabled": true,
+  "priority": 0
+}

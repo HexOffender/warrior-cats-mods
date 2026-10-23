@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="wc-token" content="{{WC_TOKEN}}">
+<title>Clan Mod Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700;800&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/studio/styles.css">
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <span class="eyebrow">Warrior Cats · Clans of the Forest</span>
+      <strong>Clan Mod Studio</strong>
+    </div>
+    <div class="status" id="status" aria-live="polite"></div>
+    <div class="actions">
+      <button class="btn" id="buildBtn">Check build</button>
+      <button class="btn primary" id="installBtn">Install mods</button>
+    </div>
+  </header>
+  <nav class="nav" id="nav" aria-label="Sections"></nav>
+  <main class="main" id="main"></main>
+</div>
+<section class="drawer" id="drawer" hidden aria-label="Build log">
+  <div class="drawer-head"><h2 id="drawerTitle">Build log</h2><button class="btn ghost" id="drawerClose">Close</button></div>
+  <pre id="drawerLog"></pre>
+</section>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script type="module" src="/studio/app.js"></script>
+</body>
+</html>

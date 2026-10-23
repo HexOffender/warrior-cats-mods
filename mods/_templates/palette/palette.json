@@ -1,0 +1,12 @@
+{
+  "_help": "Delete the sections you don't need. Eye names come from `python wcmods.py eyes`. fur/pattern/marking need UE4SS.",
+  "eyes": {
+    "Amber": "#FFB300",
+    "Sky": ["#001B2E", "#00E5FF"]
+  },
+  "fur": {
+    "0": "#F2E6D0"
+  },
+  "pattern": {},
+  "marking": {}
+}

@@ -1,0 +1,7 @@
+{
+  "_help": "List only the actions you want to change. Actions: Player_Movement_Up, Player_Movement_Right, Player_Camera_Up, Player_Camera_Right, Player_Pounce, Player_Drop, Player_Den_Place, Player_Interact, Player_ReturnToCamp, Player_Friend_Talk, Player_Crouch, Player_Scent_Tracking, Player_Camera_Reset, Player_Run, Player_Pause.",
+  "keyboard": {
+    "Player_Interact": "F"
+  },
+  "gamepad": {}
+}

@@ -1,0 +1,12 @@
+{
+  "_help": "Only list what you want to change. Run `python wcmods.py controls` to see every action and its current key. Gamepad accepts names like A/B/X/Y, LB/RB, LT/RT, Start, or full Unreal names.",
+  "keyboard": {
+    "Player_Interact": "F",
+    "Player_Scent_Tracking": "Tab",
+    "Player_Camera_Reset": "MiddleMouseButton"
+  },
+  "gamepad": {
+    "Player_Run": "LT",
+    "Player_Crouch": "RT"
+  }
+}

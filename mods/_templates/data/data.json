@@ -1,0 +1,9 @@
+{
+  "_help": "Table names are under Gameplay/DataTables/NonAsset. Rows are matched by their first column; \"*\" is every row. Numbers can be set outright or multiplied with \"x1.5\". Open the Game data page in `python wcmods.py studio` to browse every table.",
+  "TuningData.csv": {
+    "Gameplay.Exploration.Player.MoveAndRun.Run.Speed": 450
+  },
+  "CombatBaseExperience.csv": {
+    "*": { "BaseExperience": "x1.5" }
+  }
+}

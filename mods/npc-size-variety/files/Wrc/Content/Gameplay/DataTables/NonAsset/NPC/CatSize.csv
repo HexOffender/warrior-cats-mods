@@ -1,0 +1,12 @@
+--,Role,MinScale,MaxScale
+1,Kit,0.1,0.15
+2,Apprentice,0.38,0.52
+3,Elder,0.6,0.8
+4,Warrior,0.62,0.88
+5,MedicineCat,0.62,0.85
+6,Queen,0.64,0.86
+7,Deputy,0.66,0.88
+8,Leader,0.9,1
+9,StarClanAncestor,0.85,1
+10,RogueCat,0.6,0.9
+11,RogueCatLeader,0.9,1

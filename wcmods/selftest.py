@@ -1,0 +1,128 @@
+"""Round-trip checks against the installed game and save. Writes only to a temp folder."""
+import os
+import struct
+import tempfile
+
+from . import controls, eyeatlas, palettes
+from .blake3 import blake3
+from .iostore import IoStoreReader, ModContainerWriter
+from .pak import PakReader, PakWriter
+from .save import JSON_NAME, SAV_NAME, SaveGame
+
+
+def run(cfg, oodle, log=print):
+    results = []
+
+    def check(name, ok, detail=""):
+        results.append(ok)
+        log(f"  [{'ok' if ok else 'FAIL'}] {name}{(' - ' + detail) if detail else ''}")
+
+    check("blake3 test vector", blake3(b"").hex().startswith("af1349b9f5f9a1a6"))
+
+    base_pak = PakReader(os.path.join(cfg.paks_dir, "pakchunk0-Windows.pak"), oodle)
+    csv = base_pak.read("Wrc/Content/Gameplay/DataTables/NonAsset/NPC/CatSize.csv")
+    check("read base pak", csv.startswith(b"--,Role"), f"{len(base_pak.entries)} files")
+    if oodle:
+        tuning = base_pak.read("Wrc/Content/Gameplay/DataTables/NonAsset/TuningData.csv")
+        check("Oodle decompress (pak)", len(tuning) > 1000 and tuning[:200].isascii())
+
+    io = IoStoreReader(os.path.join(cfg.paks_dir, "pakchunk0-Windows.utoc"), oodle)
+    check("read base utoc", len(io.files) > 1000, f"{len(io.files)} files, toc v{io.version}")
+
+    if oodle:
+        header = io.container_header()
+        raw = io.read_chunk(next(i for i, c in enumerate(io.chunk_ids) if c[11] & 0x3F == 6))
+        check("container header round-trip", header.serialize() == raw, f"{len(header.package_ids)} packages")
+
+        ci = io.chunk_index(eyeatlas.PATH)
+        original = io.read_chunk(ci)
+        meta_ok = _meta_hash(io, ci) == blake3(original, 20)
+        check("chunk hash is BLAKE3-160", meta_ok)
+        atlas = eyeatlas.EyeAtlas(original)
+        check("eye atlas layout", (atlas.width, atlas.height) == (64, 26), f"{atlas.width}x{atlas.height}, rows {atlas.labels[1]}..{atlas.labels[20]}")
+        palettes.apply_eyes(atlas, {"Amber": (1.0, 0.0, 1.0)})
+        patched = atlas.bytes()
+        diff = [i for i in range(len(original)) if original[i] != patched[i]]
+        inside = all(atlas.pixel_offset <= i < atlas.pixel_offset + atlas.width * atlas.height * 8 for i in diff)
+        check("atlas patch stays inside pixel block", bool(diff) and inside and len(patched) == len(original))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pid = struct.unpack("<Q", io.chunk_ids[ci][:8])[0]
+            imports, shaders = header.entry_for(pid)
+            w = ModContainerWriter(b"WCTEST01")
+            w.add_package(eyeatlas.PATH, io.chunk_ids[ci], patched, imports, shaders)
+            w.write(os.path.join(tmp, "t.utoc"), os.path.join(tmp, "t.ucas"))
+            mod = IoStoreReader(os.path.join(tmp, "t.utoc"))
+            back = mod.read_file(eyeatlas.PATH)
+            mh = mod.container_header()
+            check("mod container round-trip", back == patched and mh.entry_for(pid) == (imports, shaders)
+                  and _meta_hash(mod, mod.chunk_index(eyeatlas.PATH)) == blake3(patched, 20))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        pw = PakWriter()
+        pw.add("Wrc/Content/Gameplay/DataTables/NonAsset/NPC/CatSize.csv", csv)
+        pw.add("Wrc/WCMods/test.txt", b"hello")
+        pw.write(os.path.join(tmp, "t_P.pak"), "t_P.pak")
+        rp = PakReader(os.path.join(tmp, "t_P.pak"))
+        check("pak writer round-trip", rp.read("Wrc/Content/Gameplay/DataTables/NonAsset/NPC/CatSize.csv") == csv
+              and rp.read("Wrc/WCMods/test.txt") == b"hello")
+
+    if oodle:
+        from . import csvdata
+        from .gamefiles import NONASSET
+        names = [p for p in base_pak.entries if p.startswith(NONASSET) and p.endswith(".csv")]
+        bad = [p for p in names if csvdata.Table(base_pak.read(p).decode("utf-8")).to_text().encode("utf-8") != base_pak.read(p)]
+        check("CSV editor round-trips every game table", not bad, f"{len(names)} tables" + (f"; differs: {bad[:3]}" if bad else ""))
+        xp = base_pak.read(NONASSET + "CombatBaseExperience.csv").decode("utf-8")
+        new, applied, problems = csvdata.apply_edits(xp, {"*": {"BaseExperience": "x2"}, "Fish": {"DifficultyOffset": 1}})
+        t0, t1 = csvdata.Table(xp), csvdata.Table(new)
+        doubled = all(int(b.fields[1]) == 2 * int(a.fields[1]) for a, b in zip(t0.rows, t1.rows))
+        check("CSV edits (multiply + single cell)", doubled and not problems and t1.rows[0].fields[2] == "1"
+              and len(new.splitlines()) == len(xp.splitlines()), f"{len(applied)} cells")
+
+    sav = os.path.join(cfg.save_dir, SAV_NAME)
+    if os.path.isfile(sav):
+        from .savejson import SaveDoc
+        doc = SaveDoc(SaveGame(open(sav, "rb").read()).json_text)
+        slot = str(doc.get("Shared/General/CurrentCatSlot"))
+        level_path = f"{slot}/GameplayProgression/Level"
+        if doc.exists(level_path):
+            before = doc.text
+            lvl = doc.get(level_path)
+            doc.set(level_path, lvl)
+            same = doc.text == before
+            doc.set(level_path, lvl + 1)
+            one_line = sum(1 for x, y in zip(before.splitlines(), doc.text.splitlines()) if x != y) == 1
+            inv = f"{slot}/GameplayProgression/State/Inventory"
+            inserted = True
+            if doc.exists(inv):
+                doc.insert(inv, "Gameplay.Inventory.Consumable.SmallHealingHerb", 3)
+                inserted = doc.get(inv + "/Gameplay.Inventory.Consumable.SmallHealingHerb") == 3
+            check("save editor changes only what it's told to", same and one_line and inserted and doc.get(level_path) == lvl + 1)
+        raw = open(sav, "rb").read()
+        s = SaveGame(raw)
+        mirror = os.path.join(cfg.save_dir, JSON_NAME)
+        if os.path.isfile(mirror):
+            check("save decodes to WrcGame.json", s.json_text == open(mirror, encoding="utf-8", newline="").read())
+        # Python's zlib packs differently from the game's, so compare everything except the zlib stream.
+        new = s.to_bytes()
+        again = SaveGame(new)
+        tail = len(raw) - s._data_end
+        same_frame = (raw[:s._size_pos] == new[:s._size_pos]
+                      and raw[s._data_start:s._data_start + 17] == new[again._data_start:again._data_start + 17]
+                      and raw[len(raw) - tail:] == new[len(new) - tail:])
+        check("save re-encode keeps structure and content", same_frame and again.json_text == s.json_text)
+        b = controls.read_bindings(s.json_text)
+        new, applied, _ = controls.apply(s.json_text, {"keyboard": {"Player_Interact": "F"}})
+        check("controls edit touches one value", controls.read_bindings(new)["keyboard"]["Player_Interact"] == "F"
+              and sum(1 for x, y in zip(s.json_text.splitlines(), new.splitlines()) if x != y) == 1,
+              f"{len(b['keyboard'])} keyboard / {len(b['gamepad'])} gamepad actions")
+    else:
+        log("  [skip] no save yet")
+    return all(results)
+
+
+def _meta_hash(io, index):
+    buf = open(io.utoc_path, "rb").read()
+    off = len(buf) - len(io.chunk_ids) * 24 + index * 24
+    return buf[off:off + 20]
