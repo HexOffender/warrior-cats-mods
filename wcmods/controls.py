@@ -1,8 +1,14 @@
 """Button remapping through the bindings the game keeps in its save.
 
 Each binding is stored as "<kind>,<Action>,<Key>,<Scale>.<flag>" under Shared.InputKeyboard
-or Shared.InputGamepad, e.g. "0,Player_Interact,E,1.000000.1". Only the key part is changed.
+or Shared.InputGamepad, e.g. "0,Player_Interact,E,1.000000.1" (kind 0 = button, 1 = axis). The
+game writes them with the format "%d,%s,%s,%f.1", so the flag is always 1.
 Key names are Unreal FKey names (SpaceBar, LeftShift, F, ThumbMouseButton, Gamepad_FaceButton_Left...).
+
+A change is either a key name, or for axis actions {"key": "Left", "scale": -1}: the scale is the
+axis direction and sensitivity. The keyboard camera and movement entries store the *negative*
+direction (Left arrow at -1). The game never reads mouse movement, so mouse look is its own
+section (mouselook.py), not a binding.
 """
 import json
 import re
@@ -53,6 +59,31 @@ def read_bindings(json_text):
     return out
 
 
+BINDING = re.compile(r"^(\d+),([^,]+),([^,]+),(-?\d+(?:\.\d+)?)\.(\d+)$")
+
+
+def parse_binding(value):
+    """'1,Player_Camera_Right,Left,-1.000000.1' -> (kind, action, key, scale, flag)."""
+    m = BINDING.match(value)
+    if not m:
+        raise ValueError(f"unexpected binding format: {value!r}")
+    kind, action, key, scale, flag = m.groups()
+    return int(kind), action, key, float(scale), flag
+
+
+def read_binding_details(json_text):
+    """{'keyboard': {action: (kind, key, scale)}, 'gamepad': {...}}."""
+    doc = json.loads(json_text)
+    shared = next(iter(doc.values()))["Shared"]
+    out = {}
+    for device, section in SECTIONS.items():
+        out[device] = {}
+        for a, v in shared.get(section, {}).items():
+            kind, _, key, scale, _ = parse_binding(v)
+            out[device][a] = (kind, key, scale)
+    return out
+
+
 def normalise_key(device, key):
     k = str(key).strip()
     if device == "gamepad":
@@ -62,9 +93,30 @@ def normalise_key(device, key):
     return k
 
 
+def split_change(change):
+    """A change is a key name or {"key": ..., "scale": ...}. Returns (key, scale or None)."""
+    if isinstance(change, dict):
+        if "key" not in change:
+            raise ValueError(f"{change!r} needs a \"key\"")
+        scale = change.get("scale")
+        if scale is not None:
+            if isinstance(scale, bool) or not isinstance(scale, (int, float)) or scale == 0 or abs(scale) > 100:
+                raise ValueError(f"scale {scale!r} should be a non-zero number between -100 and 100")
+            scale = float(scale)
+        return change["key"], scale
+    return change, None
+
+
+def describe(key, scale, kind):
+    return f"{key} ({scale:+g})" if kind == 1 else key
+
+
 def apply(json_text, changes):
-    """changes: {'keyboard': {action: key}, 'gamepad': {...}}. Returns (new_text, applied, warnings)."""
-    current = read_bindings(json_text)
+    """changes: {'keyboard': {action: key | {key, scale}}, 'gamepad': {...}}.
+
+    Returns (new_text, applied, warnings); applied holds (device, action, old, new) descriptions.
+    """
+    current = read_binding_details(json_text)
     applied, warnings = [], []
     text = json_text
     for device, mapping in changes.items():
@@ -76,16 +128,31 @@ def apply(json_text, changes):
             warnings.append(f"save has no {SECTIONS[device]} section")
             continue
         body = block.group()
-        for action, key in mapping.items():
+        for action, change in mapping.items():
             if action not in current[device]:
                 warnings.append(f"{device}: no action named {action} (known: {', '.join(current[device])})")
+                continue
+            try:
+                key, scale = split_change(change)
+            except ValueError as e:
+                warnings.append(f"{device}: {action}: {e}")
                 continue
             new_key = normalise_key(device, key)
             if new_key not in KNOWN_KEYS:
                 warnings.append(f"{device}: '{new_key}' is not a key name I recognise; using it anyway")
-            pat = re.compile(r'("%s":\s*"\d+,%s,)([^,"]+)(,[^"]*")' % (re.escape(action), re.escape(action)))
-            body, n = pat.subn(lambda m: m.group(1) + new_key + m.group(3), body)
+            kind, old_key, old_scale = current[device][action]
+            if scale is not None and kind != 1:
+                warnings.append(f"{device}: {action} is a button, so its scale is ignored")
+                scale = None
+            new_scale = old_scale if scale is None else scale
+            pat = re.compile(r'("%s":\s*")(\d+,%s,[^"]*)(")' % (re.escape(action), re.escape(action)))
+
+            def rebuild(m):
+                k, a, _, _, flag = parse_binding(m.group(2))
+                return f"{m.group(1)}{k},{a},{new_key},{new_scale:.6f}.{flag}{m.group(3)}"
+
+            body, n = pat.subn(rebuild, body)
             if n:
-                applied.append((device, action, current[device][action], new_key))
+                applied.append((device, action, describe(old_key, old_scale, kind), describe(new_key, new_scale, kind)))
         text = text[:block.start()] + body + text[block.end():]
     return text, applied, warnings

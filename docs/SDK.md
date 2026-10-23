@@ -1,7 +1,7 @@
 # wcmods SDK
 
 The mod manager is built from **sections**. Each section handles one kind of mod content.
-The built-in ones are replacement files, game data, palettes, controls and save edits. A mod
+The built-in ones are replacement files, game data, palettes, controls, mouse look and save edits. A mod
 can add its own section in two halves, both built on the shared library:
 
 | Half | File in the mod folder | Runs in | Built on |
@@ -25,6 +25,7 @@ mods/my-mod/
   data.json           CSV cell edits                    -> section "data"
   palette.json        colour palettes                   -> section "palettes"
   controls.json       key and button remaps             -> section "controls"
+  mouselook.json      mouse look settings               -> section "mouselook"
   save.json           save edits                        -> section "save"
   section.py          your own build step               (code mod)
   studio/section.js   your own studio page              (code mod)

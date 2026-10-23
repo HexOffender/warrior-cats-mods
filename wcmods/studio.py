@@ -20,7 +20,7 @@ from .gamefiles import NONASSET
 from .savejson import SaveDoc
 from .sections.files import classify
 
-MOD_FILES = ("palette.json", "controls.json", "data.json", "save.json")
+MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "save.json")
 BUILTIN_SECTIONS = [
     {"id": "mods", "title": "Mods", "module": "/studio/sections/mods.js"},
     {"id": "palettes", "title": "Palettes", "module": "/studio/sections/palettes.js"},
@@ -134,7 +134,10 @@ class Studio:
             return {"tables": None, "source": None}
         if parts == ["game", "bindings"]:
             text, mtime = self.save_text()
-            return {"bindings": controls.read_bindings(text), "save_time": mtime}
+            details = controls.read_binding_details(text)
+            return {"bindings": controls.read_bindings(text), "save_time": mtime,
+                    "scales": {d: {a: s for a, (_, _, s) in m.items()} for d, m in details.items()},
+                    "axes": sorted({a for m in details.values() for a, (kind, _, _) in m.items() if kind == 1})}
         if parts == ["game", "data"]:
             tables = self.ctx.game.data_tables()
             return {"tables": tables, "kinds": {t: classify(NONASSET + t) for t in tables}}

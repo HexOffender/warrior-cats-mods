@@ -13,7 +13,8 @@ Install mods (top right) builds everything and puts it in the game:
 |---|---|---|---|
 | **Mods** | turn mods on/off, priority, new mods, uninstall, save backups | `mod.json` | — |
 | **Palettes** | eye, coat, pattern and marking colours on a live cat | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
-| **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | bindings in your save |
+| **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | bindings in your save (not yet seen working, see below) |
+| | mouse look: sensitivity, invert | `mouselook.json` | UE4SS script |
 | **Game data** | XP, costs, rewards, speeds and ~440 tuning values, in any runtime table | `data.json` | edited tables in the mod pak |
 | **Save** | level, XP, health, stamina, fresh-kill pile, stats, inventory, settings, anything else | `save.json` | your save, on install |
 
@@ -21,7 +22,7 @@ Mods can also ship whole replacement files (`files/Wrc/...`), and their own page
 steps written with the shared library (see [docs/SDK.md](docs/SDK.md)).
 
 The original game files are never modified. Everything goes into
-`<game>\Wrc\Content\Paks\~mods\zzz_WCMods_P.*` and `<game>\Wrc\Binaries\Win64\ue4ss\Mods\WCModsPalettes`.
+`<game>\Wrc\Content\Paks\~mods\zzz_WCMods_P.*` and `<game>\Wrc\Binaries\Win64\ue4ss\Mods\WCMods*`.
 Uninstall removes those. Save edits and remaps are written into your save only after a backup.
 
 ## Command line
@@ -46,7 +47,7 @@ Also: `enable/disable <mod>`, `new <name> --kind palette|controls|files|data|sav
 ## How it's built
 
 `wcmods` is a shared library plus a set of independent **sections**. `files`, `data`,
-`palettes`, `controls` and `save` are built in, and mods can add more. Each section reads its
+`palettes`, `controls`, `mouselook` and `save` are built in, and mods can add more. Each section reads its
 own files from every enabled mod and contributes outputs through one build context: pak files,
 CSV edits (merged across mods), patched assets, UE4SS scripts and save edits. If a section fails,
 its outputs are rolled back, it's marked FAILED in the build report, and the rest still build.
@@ -72,6 +73,39 @@ cat creator's eye buttons are recoloured to match. Coat, pattern and marking key
 ```json
 { "keyboard": { "Player_Interact": "F" }, "gamepad": { "Player_Run": "LT" } }
 ```
+
+Camera and movement are axis bindings, so they also take a scale (direction and sensitivity),
+e.g. `{ "key": "Left", "scale": -1 }`. The keyboard entries hold the *negative* direction (← at -1).
+
+These go into the bindings the game keeps in your save, but the game hasn't been seen using an
+edited one: a test that moved Reset camera from R to T had no effect. Treat remaps as untested.
+
+### `mouselook.json`
+```json
+{ "sensitivity": 1.0, "invert": false, "toggle_key": "F6" }
+```
+The game switches Unreal's mouse capture off (`DefaultViewportMouseCaptureMode=NoCapture`), so
+the mouse never reaches its camera and no binding can change that. Mouse look is a UE4SS script
+instead. While you explore with the cursor hidden, it captures the mouse and moves the camera
+(`BP_AdventureCamera`) itself. It lets go whenever the game shows its cursor. The arrow keys
+and right stick still work. `toggle_key` switches it off and on in game. R (or LB) levels the
+tilt. `pitch_min`/`pitch_max` limit the tilt (default -20/23, the game's own). `"debug": true`
+logs what it does to `ue4ss\UE4SS.log`. The `mouse-look` mod and the Mouse look card on the
+Controls page both edit this file.
+
+How it moves the camera, for anyone extending it: turning rotates the camera actor's root, which
+the game only nudges. The game resets the spring arm's and the camera's pitch every frame, so
+tilting goes through a scene component the script adds between the root and the arm. Rotators
+are built with `KismetMathLibrary:MakeRotator`, because UE4SS drops the pitch of a rotator passed
+as a Lua table.
+
+Known issues:
+- **The camera rolls a little during fast moves.** The spring arm's rotation lag
+  (`CameraRotationLagSpeed` 5, the game's `Gameplay.Exploration.Camera.Lag.Rotation`) blends turn
+  and tilt together. It's also aim smoothing, which mouse look shouldn't have.
+- About one frame in five, the game sets the camera's turn itself, and that frame's mouse movement
+  is lost.
+- The tilt levels on R and LB even if Reset camera is remapped.
 
 ### `data.json`
 ```json
@@ -108,12 +142,18 @@ colour.
 Confirmed in game (2026-10-23):
 - The mod pak and container load, and eye palettes change the cats' eyes.
 - UE4SS runs, finds the colour tables on `BP_WrcGuiManager_C`, and its writes take effect.
+- Mouse look turns and tilts the camera, gives the cursor back in menus, and toggles with F6
+  (see its known issues above).
+- Edited saves load, and the game keeps the edits when it saves again. The save carries a 64-bit
+  checksum whose formula isn't known; the tool keeps the original value and the game accepts it.
+  Save edits are applied after a backup: restore one from the Mods page (or
+  `python wcmods.py restore latest`) if anything goes wrong.
 
 Not yet confirmed in game:
-- **Edited saves.** The save carries a 64-bit checksum whose formula isn't known, so the tool
-  keeps the original value. Remaps and save edits are applied after a backup. If the game rejects
-  or resets the save, restore the backup from the Mods page (or `python wcmods.py restore latest`).
-  This game doesn't expose its live key bindings to mods, so check a remap by pressing the key in game.
+- **Remaps.** A remapped key (Reset camera on T) had no effect, so the game may not read the
+  bindings from the save. That test also bound the mouse to the camera keys, which the game may
+  have rejected as a whole; a keyboard-only retest is pending. This game doesn't expose its live
+  key bindings to mods.
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
 
 After a game update, run `selftest` before installing again.

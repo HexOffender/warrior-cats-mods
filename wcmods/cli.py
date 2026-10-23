@@ -104,14 +104,14 @@ def cmd_controls(ctx, args):
     path = os.path.join(ctx.cfg.save_dir, save.SAV_NAME)
     if not os.path.isfile(path):
         sys.exit("No save found yet. Launch the game once first.")
-    b = controls.read_bindings(save.SaveGame.load(path).json_text)
+    text = save.SaveGame.load(path).json_text
     if args.json:
-        print(json.dumps(b, indent=2))
+        print(json.dumps(controls.read_bindings(text), indent=2))
         return
-    for dev in ("keyboard", "gamepad"):
+    for dev, mapping in controls.read_binding_details(text).items():
         print(f"{dev}:")
-        for action, key in b[dev].items():
-            print(f"  {action:24s} {key}")
+        for action, (kind, key, scale) in mapping.items():
+            print(f"  {action:24s} {controls.describe(key, scale, kind)}")
 
 
 def _print_build(manifest):

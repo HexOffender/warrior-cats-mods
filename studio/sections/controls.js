@@ -48,6 +48,9 @@ export default {
   async mount(root, wc) {
     const { el, api, clear, toast, input } = wc;
     let saved = { keyboard: {}, gamepad: {} };
+    let savedScales = { keyboard: {}, gamepad: {} };
+    let axes = new Set(ACTIONS.filter(a => a.axis).map(a => a.id));
+    // An override is a key name, or {key, scale} for axis actions (scale = direction and sensitivity).
     let overrides = { keyboard: {}, gamepad: {} };
     let style = "xbox";
     try { style = localStorage.getItem("wc-pad-style") || "xbox"; } catch (e) { /* storage blocked */ }
@@ -60,8 +63,14 @@ export default {
     const table = el("div", { class: "card" });
     const out = wc.codePanel("controls.json");
     const live = el("div", { class: "card" });
+    const mouse = el("div", { class: "card" });
 
-    try { saved = (await api.get("/game/bindings")).bindings; }
+    try {
+      const b = await api.get("/game/bindings");
+      saved = b.bindings;
+      savedScales = b.scales || savedScales;
+      if (b.axes) axes = new Set(b.axes);
+    }
     catch (e) { root.append(el("div", { class: "banner" }, el("strong", { text: "No save found" }), el("span", { text: e.message }))); }
 
     const styleSel = el("select", { id: "pad-style", "aria-label": "Controller button names" },
@@ -83,7 +92,7 @@ export default {
         el("button", { class: "chip", onclick: () => resetDevice("keyboard"), text: "Keyboard defaults" }),
         el("span", { style: { flex: "1" } }),
         el("label", { for: "pad-style", class: "lbl", text: "Show buttons as" }), styleSel),
-      table, live, out.element);
+      mouse, table, live, out.element);
 
     // ---------- model ----------
     function normalize(obj) {
@@ -91,18 +100,34 @@ export default {
       for (const dev of ["keyboard", "gamepad"]) {
         for (const [a, k] of Object.entries((obj && obj[dev]) || {})) {
           if (a.startsWith("_")) continue;
-          o[dev][a] = dev === "gamepad" ? (ALIASES[String(k).toLowerCase()] || k) : k;
+          const key = k && typeof k === "object" ? k.key : k;
+          const norm = dev === "gamepad" ? (ALIASES[String(key).toLowerCase()] || key) : key;
+          o[dev][a] = k && typeof k === "object" && typeof k.scale === "number" ? { key: norm, scale: k.scale } : norm;
         }
       }
       return o;
     }
-    const effective = (dev, a) => overrides[dev][a] ?? saved[dev]?.[a] ?? DEFAULTS[dev][a];
+    const keyOf = v => (v && typeof v === "object" ? v.key : v);
+    const defaultScale = (dev, a) => (axes.has(a) && dev === "keyboard" ? -1 : 1);
+    const effective = (dev, a) => keyOf(overrides[dev][a]) ?? saved[dev]?.[a] ?? DEFAULTS[dev][a];
+    const effScale = (dev, a) => {
+      const o = overrides[dev][a];
+      if (o && typeof o === "object" && typeof o.scale === "number") return o.scale;
+      return savedScales[dev]?.[a] ?? defaultScale(dev, a);
+    };
+    // Keyboard axis entries hold the negative direction (Left arrow at -1), so a key set here always
+    // goes back to -1, undoing a mouse-look scale.
+    const withScale = (dev, a, key) => (axes.has(a) && dev === "keyboard" ? { key, scale: -1 } : key);
     function setKey(dev, a, key) {
-      if (key === (saved[dev]?.[a] ?? DEFAULTS[dev][a]) && !(a in overrides[dev])) return;
-      overrides[dev][a] = key;
+      const v = withScale(dev, a, key);
+      const same = key === (saved[dev]?.[a] ?? DEFAULTS[dev][a]) && effScale(dev, a) === (typeof v === "object" ? v.scale : effScale(dev, a));
+      if (same && !(a in overrides[dev])) return;
+      overrides[dev][a] = v;
       target.markDirty();
       render();
     }
+    const isChanged = (dev, a) => a in overrides[dev] &&
+      (keyOf(overrides[dev][a]) !== saved[dev]?.[a] || effScale(dev, a) !== (savedScales[dev]?.[a] ?? defaultScale(dev, a)));
     function toJson() {
       const o = { _help: "Written by Clan Mod Studio. Keys are Unreal key names." };
       for (const dev of ["keyboard", "gamepad"]) if (Object.keys(overrides[dev]).length) o[dev] = { ...overrides[dev] };
@@ -113,7 +138,7 @@ export default {
       target.markDirty(); render();
     }
     function resetDevice(dev) {
-      for (const { id } of ACTIONS) overrides[dev][id] = DEFAULTS[dev][id];
+      for (const { id } of ACTIONS) overrides[dev][id] = withScale(dev, id, DEFAULTS[dev][id]);
       target.markDirty(); render();
     }
     function conflicts(dev) {
@@ -134,14 +159,16 @@ export default {
     const nameOf = id => ACTIONS.find(a => a.id === id)?.name || id;
     function cell(dev, action) {
       const key = effective(dev, action.id);
-      const changed = action.id in overrides[dev] && overrides[dev][action.id] !== saved[dev]?.[action.id];
+      const changed = isChanged(dev, action.id);
+      const isMouseAxis = key === "MouseX" || key === "MouseY";
       const conflict = conflicts(dev)[action.id];
       const cap = el("span", { class: "chip", style: { fontWeight: "700", fontSize: "0.95rem" }, title: key }, input.keyLabel(key, style));
       const box = el("div", { style: { display: "grid", gap: "4px" } },
         el("div", { class: "row" }, cap,
+          isMouseAxis ? el("span", { class: "chip", title: "Sensitivity (negative = inverted)", text: `×${effScale(dev, action.id)}` }) : null,
           changed ? el("span", { class: "chip warn", title: `In your save: ${saved[dev]?.[action.id]}` }, el("i"), "changed") : null,
           el("button", { class: "btn small", text: "Change", "aria-label": `Change ${dev} binding for ${action.name}`, onclick: () => capture(dev, action) }),
-          key !== DEFAULTS[dev][action.id] ? el("button", { class: "btn ghost small", text: "Default", title: `Game default: ${input.keyLabel(DEFAULTS[dev][action.id], style)}`, onclick: () => setKey(dev, action.id, DEFAULTS[dev][action.id]) }) : null,
+          key !== DEFAULTS[dev][action.id] || effScale(dev, action.id) !== defaultScale(dev, action.id) ? el("button", { class: "btn ghost small", text: "Default", title: `Game default: ${input.keyLabel(DEFAULTS[dev][action.id], style)}`, onclick: () => setKey(dev, action.id, DEFAULTS[dev][action.id]) }) : null,
           action.id in overrides[dev] ? el("button", { class: "btn ghost small", text: "Undo", onclick: () => { delete overrides[dev][action.id]; target.markDirty(); render(); } }) : null));
       if (conflict) {
         box.append(el("span", { class: conflict.byGame ? "muted" : "", style: { fontSize: "0.82rem", color: conflict.byGame ? "" : "var(--changed)" },
@@ -150,7 +177,59 @@ export default {
       if (dev === "keyboard" && action.kbNote) box.append(el("span", { class: "muted", style: { fontSize: "0.8rem" }, text: action.kbNote }));
       return box;
     }
+    // ---------- mouse look ----------
+    // Not a binding: the game never reads the mouse, so this is a UE4SS script with its own settings
+    // file in the Mouse Look mod. Changes here save straight to that mod.
+    const ML = { id: "mouse-look", file: "mouselook.json" };
+    let look = { exists: false, enabled: false, settings: { sensitivity: 1, invert: false } };
+    async function loadMouseLook() {
+      try {
+        const m = (await api.get("/mods")).find(x => x.id === ML.id);
+        look = { exists: !!m, enabled: !!m?.enabled, settings: { sensitivity: 1, invert: false } };
+        if (m) {
+          const r = await api.get(`/mods/${ML.id}/file/${ML.file}`);
+          if (r.exists) Object.assign(look.settings, JSON.parse(r.text));
+        }
+      } catch (e) { toast(`Mouse look: ${e.message}`, "bad"); }
+    }
+    async function saveMouseLook(enabled) {
+      try {
+        if (!look.exists) {
+          await api.post("/mods", { id: ML.id, name: "Mouse Look", priority: 5, enabled: false,
+            description: "Turn and tilt the camera with the mouse while exploring. Needs UE4SS." });
+          look.exists = true;
+        }
+        await api.put(`/mods/${ML.id}/file/${ML.file}`, { text: JSON.stringify(look.settings, null, 2) });
+        await api.patch(`/mods/${ML.id}`, { enabled });
+        look.enabled = enabled;
+        wc.bus.emit("mods-changed");
+        toast(`Mouse look ${enabled ? "on" : "off"}. Install mods to apply it.`);
+      } catch (e) { toast(e.message, "bad"); }
+      renderMouse();
+    }
+    function renderMouse() {
+      const s = look.settings;
+      const toggle = el("input", { type: "checkbox", id: "ml-on", checked: look.enabled });
+      toggle.addEventListener("change", () => saveMouseLook(toggle.checked));
+      const sensVal = el("strong", { text: `×${Number(s.sensitivity).toFixed(1)}` });
+      const sens = el("input", { type: "range", id: "ml-sens", min: "0.2", max: "3", step: "0.1", value: s.sensitivity });
+      sens.addEventListener("input", () => { s.sensitivity = Number(sens.value); sensVal.textContent = `×${s.sensitivity.toFixed(1)}`; });
+      sens.addEventListener("change", () => saveMouseLook(look.enabled));
+      const inv = el("input", { type: "checkbox", id: "ml-invert", checked: !!s.invert });
+      inv.addEventListener("change", () => { s.invert = inv.checked; saveMouseLook(look.enabled); });
+      const toggleKey = s.toggle_key ?? "F6";
+      clear(mouse).append(
+        el("h2", { text: "Mouse look" }),
+        el("label", { class: "row", for: "ml-on" }, toggle, el("strong", { text: "Turn and tilt the camera with the mouse" })),
+        el("div", { class: "row" }, el("label", { for: "ml-sens", class: "lbl" }, "Sensitivity ", sensVal), sens,
+          el("label", { class: "row", for: "ml-invert" }, inv, "Invert up/down")),
+        el("p", { class: "note", text: "While you explore, the mouse turns the camera and the cursor stays hidden. Menus get the cursor back. " +
+          (toggleKey ? `Press ${toggleKey} in game to switch it off and on. ` : "") +
+          "The arrow keys and the right stick still work. Saved in the Mouse Look mod; needs UE4SS." }));
+    }
+
     function render() {
+      renderMouse();
       clear(table).append(el("div", { class: "table-wrap", style: { maxHeight: "none" } },
         el("table", { class: "grid-table" },
           el("thead", {}, el("tr", {}, el("th", { text: "Action" }), el("th", { text: "Keyboard & mouse" }), el("th", { text: "Controller" }))),
@@ -236,10 +315,10 @@ export default {
           el("li", { text: "Save to a mod, then Install mods (top right) with the game closed." }),
           el("li", { text: "Start the game, load your cat, and press a key you changed." }),
           el("li", { text: "If the game resets or won't load your save, restore the backup from the Mods page. The install made one first." })),
-        el("p", { class: "note", text: "This game doesn't expose its live key bindings to mods, so the studio can't read them back from the running game." }));
+        el("p", { class: "note", text: "The game keeps these bindings in your save, but in testing it didn't use an edited one (moving Reset camera to T had no effect), so remaps may not take effect yet. Mouse look above doesn't depend on them." }));
     }
 
-    await target.refresh();
+    await Promise.all([target.refresh(), loadMouseLook()]);
     render();
     renderLive();
   },
