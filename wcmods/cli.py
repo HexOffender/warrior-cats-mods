@@ -4,9 +4,10 @@ import json
 import os
 import shutil
 import sys
+import time
 
-from . import controls, eyeatlas, mods, pipeline, save, ue4ss
-from .config import Config, game_running
+from . import controls, eyeatlas, keymap, mods, pipeline, save, ue4ss
+from .config import EXE_NAME, STEAM_APP_ID, Config, game_running
 from .gamefiles import GameFiles
 
 
@@ -114,6 +115,68 @@ def cmd_controls(ctx, args):
             print(f"  {action:24s} {key}")
 
 
+def _remap_plan(ctx):
+    from .sections.controls import ControlsSection, merge
+    sec, datas = ControlsSection(), []
+    for m in mods.discover(ctx.mods_root):   # priority order, so later mods win
+        if m.enabled and sec.claims(m):
+            data = sec.collect(m, None)
+            if data:
+                datas.append(data)
+    return keymap.plan(merge(datas))
+
+
+def _run_remapper(ctx, args, wait_for_launch):
+    send, block, warnings = _remap_plan(ctx)
+    for w in warnings:
+        print(f"  warning: {w}")
+    if not send and not block:
+        print("No keyboard or mouse remaps in the enabled mods' controls.json; nothing to do.")
+        return
+    print("remaps while you play (game in front, cursor hidden):")
+    for src, dst in sorted(send.items()):
+        print(f"  {src:18s} -> {dst}")
+    for key in sorted(block):
+        print(f"  {key:18s} -> nothing (its action moved)")
+    from .remapper import Remapper
+    state = {"seen": game_running(), "checked": time.monotonic(), "started": time.monotonic()}
+
+    def should_stop():
+        # The game is checked every few seconds: listing processes is slow.
+        if time.monotonic() - state["checked"] < 3:
+            return False
+        state["checked"] = time.monotonic()
+        running = game_running()
+        if running:
+            state["seen"] = True
+        elif state["seen"]:
+            print("the game has closed; remapper stopped")
+            return True
+        elif wait_for_launch and time.monotonic() - state["started"] > 180:
+            print("the game didn't start within 3 minutes; remapper stopped")
+            return True
+        return False
+
+    print("waiting for the game..." if not state["seen"] else "the game is running.", "Ctrl+C stops the remapper.")
+    try:
+        Remapper(send, block, (EXE_NAME,), dry_run=args.dry_run, in_menus=args.in_menus).run(should_stop)
+    except KeyboardInterrupt:
+        print("remapper stopped")
+    except OSError as e:
+        sys.exit(f"error: couldn't hook the keyboard: {e}")
+
+
+def cmd_remap(ctx, args):
+    _run_remapper(ctx, args, wait_for_launch=False)
+
+
+def cmd_play(ctx, args):
+    if not game_running():
+        print("starting the game through Steam...")
+        os.startfile(f"steam://rungameid/{STEAM_APP_ID}")
+    _run_remapper(ctx, args, wait_for_launch=True)
+
+
 def _print_build(manifest):
     for sid, rep in manifest["sections"].items():
         if rep["mods"] or rep["errors"]:
@@ -153,7 +216,7 @@ def cmd_uninstall(ctx, args):
     ctx.need_game()
     removed = pipeline.uninstall(ctx.cfg)
     print("nothing installed" if not removed else "uninstalled.")
-    print("Control remaps and save edits live in your save; use `wcmods restore` to roll it back.")
+    print("Save edits live in your save; use `wcmods restore` to roll it back.")
 
 
 def cmd_backup(ctx, args):
@@ -242,6 +305,12 @@ def main(root, argv=None):
     p = sub.add_parser("controls", help="show the key/button bindings stored in your save")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_controls)
+    for name, fn, text in (("play", cmd_play, "start the game and remap keys (controls.json) until it closes"),
+                           ("remap", cmd_remap, "remap keys (controls.json) while the game runs; start the game yourself")):
+        p = sub.add_parser(name, help=text)
+        p.add_argument("--dry-run", action="store_true", help="only report which remaps would happen")
+        p.add_argument("--in-menus", action="store_true", help="remap in menus too (off: menus and name entry keep your keys)")
+        p.set_defaults(fn=fn)
     sub.add_parser("tables", help="show the game's coat/pattern/marking/eye-button colour tables (needs UE4SS)").set_defaults(fn=cmd_tables)
     sub.add_parser("selftest", help="check every file format against the installed game").set_defaults(fn=cmd_selftest)
     sub.add_parser("build", help="build enabled mods into build/").set_defaults(fn=cmd_build)

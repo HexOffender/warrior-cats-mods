@@ -1,7 +1,10 @@
-"""Button remapping (controls.json). The game ignores edited bindings in its save, so for now this only
-checks the file; see README, "Remapping keys"."""
-from .. import controls
+"""Button remapping (controls.json). The game ignores edited bindings in its save, so keyboard and mouse
+remaps are carried out by the key remapper (`wcmods play` / `wcmods remap`) while the game runs; this
+section checks them at build time. See README, "Remapping keys"."""
+from .. import controls, keymap
 from ..sdk import Section
+
+DEVICES = ("keyboard", "gamepad", "keys")
 
 
 class ControlsSection(Section):
@@ -15,27 +18,31 @@ class ControlsSection(Section):
         for device, mapping in raw.items():
             if device.startswith("_"):
                 continue
-            if device not in controls.SECTIONS:
-                raise ValueError(f"controls.json: '{device}' should be 'keyboard' or 'gamepad'")
+            if device not in DEVICES:
+                raise ValueError(f"controls.json: '{device}' should be one of {', '.join(DEVICES)}")
+            if not isinstance(mapping, dict):
+                raise ValueError(f"controls.json: '{device}' should be an object")
             out[device] = {}
-            for action, change in mapping.items():
-                if not action.startswith("_"):
-                    out[device][action] = controls.key_of(change)   # raises ValueError for {} without "key"
+            for name, change in mapping.items():
+                if not name.startswith("_"):
+                    out[device][name] = controls.key_of(change)   # raises ValueError for {} without "key"
         return out or None
 
     def build(self, ctx, items):
-        merged = {}
-        for _, data in items:
-            for device, mapping in data.items():
-                merged.setdefault(device, {}).update(mapping)
-        merged = {d: m for d, m in merged.items() if m}
+        merged = merge(data for _, data in items)
         if not merged:
             return
-        for device, mapping in merged.items():
-            for action, key in mapping.items():
-                k = controls.normalise_key(device, key)
-                if k not in controls.KNOWN_KEYS:
-                    ctx.warn(f"{device}: '{k}' for {action} is not a key name I recognise")
-        ctx.warn("the game ignores edited key bindings, so controls.json isn't applied yet; remap keys with "
-                 "PowerToys Keyboard Manager for now (README, \"Remapping keys\")")
+        send, block, warnings = keymap.plan(merged)
+        for w in warnings:
+            ctx.warn(w)
         ctx.note("controls", merged)
+        ctx.note("remaps", {"send": send, "block": sorted(block)})
+
+
+def merge(datas):
+    """controls.json contents from several mods, later ones winning per action or key."""
+    merged = {}
+    for data in datas:
+        for device, mapping in data.items():
+            merged.setdefault(device, {}).update(mapping)
+    return {d: m for d, m in merged.items() if m}

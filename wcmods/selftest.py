@@ -3,7 +3,7 @@ import os
 import struct
 import tempfile
 
-from . import controls, eyeatlas, luacheck, mouselook, palettes
+from . import controls, eyeatlas, keymap, luacheck, mouselook, palettes
 from .blake3 import blake3
 from .iostore import IoStoreReader, ModContainerWriter
 from .pak import PakReader, PakWriter
@@ -24,6 +24,11 @@ def run(cfg, oodle, log=print):
           and "invert = true" in lua, "; ".join(problems[:3]))
     problems = luacheck.check(palettes.ue4ss_script({}))
     check("palette script", not problems, "; ".join(problems[:3]))
+    # Interact and Scent tracking move along F/E/Q, so Q goes quiet; X stays because Return to camp still
+    # uses it; forward moves to I, so W goes quiet.
+    send, block, warns = keymap.plan({"keyboard": {"Player_Interact": "F", "Player_Scent_Tracking": "E",
+                                                   "Player_Den_Place": "Z"}, "keys": {"I": "W"}})
+    check("key remap plan", send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"} and not warns)
 
     base_pak = PakReader(os.path.join(cfg.paks_dir, "pakchunk0-Windows.pak"), oodle)
     csv = base_pak.read("Wrc/Content/Gameplay/DataTables/NonAsset/NPC/CatSize.csv")
