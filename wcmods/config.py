@@ -16,6 +16,7 @@ class Config:
         self.root = root
         self.path = os.path.join(root, "wcmods.json")
         self.data = {}
+        self._oodle_searched = False
         if os.path.exists(self.path):
             with open(self.path, encoding="utf-8-sig") as f:
                 self.data = json.load(f)
@@ -58,7 +59,10 @@ class Config:
         d = self.data.get("oodle_dll")
         if d and os.path.isfile(d):
             return d
+        if self._oodle_searched:   # walking every Steam library is slow; do it once per run
+            return None
         from .oodle import find_oodle_dll
+        self._oodle_searched = True
         d = find_oodle_dll(_steam_common_dirs())
         if d:
             self.data["oodle_dll"] = d

@@ -99,6 +99,13 @@ def run(cfg, oodle, log=print):
                 doc.insert(inv, "Gameplay.Inventory.Consumable.SmallHealingHerb", 3)
                 inserted = doc.get(inv + "/Gameplay.Inventory.Consumable.SmallHealingHerb") == 3
             check("save editor changes only what it's told to", same and one_line and inserted and doc.get(level_path) == lvl + 1)
+            xp_path = f"{slot}/GameplayProgression/Experience"
+            if doc.exists(xp_path):
+                before = doc.text
+                xp = doc.get(xp_path)
+                doc.set_many([(level_path, lvl + 2), (xp_path, xp + 5)])
+                changed = sum(1 for x, y in zip(before.splitlines(), doc.text.splitlines()) if x != y)
+                check("batched save edits", changed == 2 and doc.get(level_path) == lvl + 2 and doc.get(xp_path) == xp + 5)
         raw = open(sav, "rb").read()
         s = SaveGame(raw)
         mirror = os.path.join(cfg.save_dir, JSON_NAME)
@@ -113,8 +120,9 @@ def run(cfg, oodle, log=print):
                       and raw[len(raw) - tail:] == new[len(new) - tail:])
         check("save re-encode keeps structure and content", same_frame and again.json_text == s.json_text)
         b = controls.read_bindings(s.json_text)
-        new, applied, _ = controls.apply(s.json_text, {"keyboard": {"Player_Interact": "F"}})
-        check("controls edit touches one value", controls.read_bindings(new)["keyboard"]["Player_Interact"] == "F"
+        want = "G" if b["keyboard"].get("Player_Interact") == "F" else "F"   # must differ from the current key
+        new, applied, _ = controls.apply(s.json_text, {"keyboard": {"Player_Interact": want}})
+        check("controls edit touches one value", controls.read_bindings(new)["keyboard"]["Player_Interact"] == want
               and sum(1 for x, y in zip(s.json_text.splitlines(), new.splitlines()) if x != y) == 1,
               f"{len(b['keyboard'])} keyboard / {len(b['gamepad'])} gamepad actions")
     else:

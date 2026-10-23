@@ -18,6 +18,7 @@ from .colors import hex_from_linear
 from .config import game_running
 from .gamefiles import NONASSET
 from .savejson import SaveDoc
+from .sections.files import classify
 
 MOD_FILES = ("palette.json", "controls.json", "data.json", "save.json")
 BUILTIN_SECTIONS = [
@@ -106,7 +107,7 @@ class Studio:
         if parts == ["install"] and method == "POST":
             def go(log):
                 pipeline.build(cfg, self.mods(), self.ctx.build_dir, log)
-                return pipeline.install(cfg, self.ctx.build_dir, self.ctx.backups, log)
+                return pipeline.install(cfg, self.ctx.build_dir, self.ctx.backups, log, force=bool(body.get("force")))
             return self.run(go)
         if parts == ["uninstall"] and method == "POST":
             return self.run(lambda log: {"removed": pipeline.uninstall(cfg, log)})
@@ -135,7 +136,8 @@ class Studio:
             text, mtime = self.save_text()
             return {"bindings": controls.read_bindings(text), "save_time": mtime}
         if parts == ["game", "data"]:
-            return {"tables": self.ctx.game.data_tables()}
+            tables = self.ctx.game.data_tables()
+            return {"tables": tables, "kinds": {t: classify(NONASSET + t) for t in tables}}
         if len(parts) >= 3 and parts[:2] == ["game", "data"]:
             name = "/".join(parts[2:])
             table = csvdata.Table(self.ctx.game.read_text(NONASSET + name))
@@ -188,7 +190,12 @@ def make_handler(studio, port):
                 body = {}
                 length = int(self.headers.get("Content-Length") or 0)
                 if length:
-                    body = json.loads(self.rfile.read(length) or b"{}")
+                    try:
+                        body = json.loads(self.rfile.read(length) or b"{}")
+                    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                        return self._send(400, {"error": f"request body isn't valid JSON: {e}"})
+                    if not isinstance(body, dict):
+                        return self._send(400, {"error": "request body must be a JSON object"})
                 parts = [p for p in path[5:].split("/") if p]
                 try:
                     return self._send(200, studio.api(method, parts, body))

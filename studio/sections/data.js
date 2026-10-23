@@ -6,14 +6,13 @@ const GROUPS = [
   { title: "Cats & names", match: n => n.startsWith("NPC/") || /^(PrefixNameFilters|SuffixNameFilters|TraitsFilters)\.csv$/.test(n) },
   { title: "Other", match: n => !/^(HeightMap|UniqueIds)\//.test(n) },
 ];
-const APPEARANCE = new Set(["NPC/CatSize.csv", "NPC/Scars.csv", "NPC/FurBaseColor.csv", "NPC/FurPattern1Color.csv", "NPC/FurPattern2Color.csv",
-  "NPC/Eye1Color.csv", "NPC/Eye2Color.csv", "NPC/EyeType.csv", "NPC/FurType.csv", "NPC/PatternType.csv", "NPC/MarkingType.csv",
-  "NPC/PatternBanList.csv", "NPC/WhiskerType.csv", "NPC/TailType.csv", "NPC/ForcedAppearance.csv"]);
-const TRAITS = new Set(["NPC/BodyType.csv", "NPC/EarType.csv", "NPC/FaceType.csv", "TraitsFilters.csv"]);
-const ONLINE = new Set(["OnlineGifts.csv", "VisitRewards.csv"]);
-const kindOf = n => ONLINE.has(n) ? ["online", "bad", "Online feature: the den-visit server may see or reject changes"]
-  : TRAITS.has(n) ? ["traits", "warn", "Changes which traits cats get (traits have gameplay effects)"]
-  : APPEARANCE.has(n) ? ["appearance", "good", "Appearance only"] : ["gameplay", "", "Changes gameplay"];
+// Each table's kind comes from the server (wcmods/sections/files.py classify), so the badges match build warnings.
+const KIND_INFO = {
+  online: ["bad", "Online feature: the den-visit server may see or reject changes"],
+  traits: ["warn", "Changes which traits cats get (traits have gameplay effects)"],
+  appearance: ["good", "Appearance only"],
+  gameplay: ["", "Changes gameplay"],
+};
 const NUM = /^-?\d+(\.\d+)?$/;
 
 export default {
@@ -21,7 +20,8 @@ export default {
   async mount(root, wc) {
     const { el, api, clear, toast } = wc;
     let edits = {};                  // { "Table.csv": { rowKey | "*": { column: value } } }
-    let names = [];
+    let names = [], kinds = {};
+    const kindOf = n => { const k = kinds[n] || "gameplay"; return [k, ...KIND_INFO[k]]; };
     let current = null, tableData = null, filter = "";
     const cache = {};
 
@@ -67,7 +67,13 @@ export default {
         const r = {};
         for (const [row, cols] of Object.entries(rows)) {
           const c = { ...cols };
-          if ("__first__" in c) { const h = cache[t]?.header?.[1]; if (h) { c[h] = c.__first__; } delete c.__first__; }
+          if ("__first__" in c) {
+            // A {row: value} shorthand edit: name its column if this table is loaded, otherwise keep it as-is.
+            const h = cache[t]?.header?.[1];
+            if (!h) { r[row] = c.__first__; continue; }
+            if (!(h in c)) c[h] = c.__first__;
+            delete c.__first__;
+          }
           if (Object.keys(c).length) r[row] = c;
         }
         if (Object.keys(r).length) o[t] = r;
@@ -125,14 +131,18 @@ export default {
     function setCell(rowKey, colName, raw) {
       const t = (edits[current] ||= {});
       const r = (t[rowKey] ||= {});
-      delete r.__first__;
+      if ("__first__" in r) { if (!(tableData.header[1] in r)) r[tableData.header[1]] = r.__first__; delete r.__first__; }
       const v = NUM.test(raw.trim()) ? Number(raw.trim()) : raw;
       r[colName] = v;
       target.markDirty(); out.set(toJson()); renderList();
     }
     function unsetCell(rowKey, colName) {
       const t = edits[current] || {};
-      if (t[rowKey]) { delete t[rowKey][colName]; if (!Object.keys(t[rowKey]).length) delete t[rowKey]; }
+      if (t[rowKey]) {
+        delete t[rowKey][colName];
+        if (tableData && colName === tableData.header[1]) delete t[rowKey].__first__;
+        if (!Object.keys(t[rowKey]).length) delete t[rowKey];
+      }
       target.markDirty(); out.set(toJson()); renderList();
     }
 
@@ -202,7 +212,7 @@ export default {
       fill();
     }
 
-    names = (await api.get("/game/data")).tables;
+    ({ tables: names, kinds } = await api.get("/game/data"));
     await target.refresh();
     renderList();
     openTable(names.includes("CombatBaseExperience.csv") ? "CombatBaseExperience.csv" : names[0]);

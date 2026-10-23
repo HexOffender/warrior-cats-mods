@@ -164,9 +164,15 @@ export function modTarget({ file, defaultId, defaultName, onLoad, getValue }) {
     setDirty(false);
     onLoad(obj, id);
   }
+  // Saving to a mod means you want it applied: create it, or turn it on if it's off.
   async function ensureMod(id) {
-    if (!mods.some(m => m.id === id)) {
+    const existing = mods.find(m => m.id === id);
+    if (!existing) {
       await api.post("/mods", { id, name: id === defaultId ? defaultName : undefined, enabled: true });
+      bus.emit("mods-changed");
+    } else if (!existing.enabled) {
+      await api.patch(`/mods/${encodeURIComponent(id)}`, { enabled: true });
+      toast(`Turned on ${existing.name} so this applies when you install`);
       bus.emit("mods-changed");
     }
   }

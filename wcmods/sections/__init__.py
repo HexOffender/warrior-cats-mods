@@ -39,5 +39,9 @@ def load_sections(cfg, mods, log=print):
                 sec.owner = mod.id
                 if not sec.id:
                     sec.id = mod.id
+                if any(s.id == sec.id for s in sections):
+                    # Ids key the build report and notes; never let a mod section shadow another one.
+                    log(f"  {mod.id}: section id '{sec.id}' is already used; calling it '{mod.id}/{sec.id}'")
+                    sec.id = f"{mod.id}/{sec.id}"
                 sections.append(sec)
     return sections, skipped

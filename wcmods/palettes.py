@@ -56,11 +56,20 @@ def merge(palettes):
     return {s: e for s, e in merged.items() if e}
 
 
-def apply_eyes(atlas, eyes):
-    """Recolour atlas rows. Returns [(row, label, old_hex, new_hex)]."""
+def apply_eyes(atlas, eyes, problems=None):
+    """Recolour atlas rows. Returns [(row, label, old_hex, new_hex)].
+
+    With a `problems` list, unknown slot names are reported there and skipped instead of raising.
+    """
     changes = []
     for key, spec in eyes.items():
-        r = atlas.slot(key)
+        try:
+            r = atlas.slot(key)
+        except KeyError as e:
+            if problems is None:
+                raise
+            problems.append(e.args[0])
+            continue
         old = atlas.row(r)
         w = atlas.width
         if isinstance(spec, list):

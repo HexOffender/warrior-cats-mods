@@ -145,16 +145,27 @@ class BuildContext:
 
     # ---- CSV merge ----
     def resolve_csv_edits(self):
-        """Apply queued CSV edits on top of the game's (or a section-supplied) file."""
-        results = {}
+        """Apply queued CSV edits on top of the game's (or a section-supplied) file.
+
+        Each table is resolved on its own: a table that can't be read or parsed keeps no edits,
+        and the others are unaffected. Returns (changes, failures) where failures is
+        [(path, section ids, error)].
+        """
+        results, failures = {}, []
         for path, queue in self.csv_edits.items():
-            base = self.files[path][0].decode("utf-8") if path in self.files else self.game.read_text(path)
-            text = base
-            for edits, section, source in queue:
-                text, applied, problems = csvdata.apply_edits(text, edits)
-                for p in problems:
-                    self.warnings.append(f"{section}: {path.rsplit('/', 1)[-1]}: {p}")
-                results.setdefault(path, []).extend(
-                    {"row": r, "column": c, "from": a, "to": b, "by": source or section} for r, c, a, b in applied)
+            try:
+                text = self.files[path][0].decode("utf-8") if path in self.files else self.game.read_text(path)
+                changes, warnings = [], []
+                for edits, section, source in queue:
+                    text, applied, problems = csvdata.apply_edits(text, edits)
+                    warnings += [f"{section}: {path.rsplit('/', 1)[-1]}: {p}" for p in problems]
+                    changes += [{"row": r, "column": c, "from": a, "to": b, "by": source or section}
+                                for r, c, a, b in applied]
+            except Exception as e:
+                failures.append((path, sorted({s for _, s, _ in queue}), f"{type(e).__name__}: {e}"))
+                continue
+            self.warnings += warnings
+            if changes:
+                results[path] = changes
             self.files[path] = (text.encode("utf-8"), queue[-1][1], "csv edits")
-        return results
+        return results, failures

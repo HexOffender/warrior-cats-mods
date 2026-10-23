@@ -1,6 +1,0 @@
-{
-  "name": "My Controls",
-  "description": "Example button remap. Edit controls.json, then enable and install.",
-  "enabled": false,
-  "priority": 0
-}
