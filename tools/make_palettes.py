@@ -2,6 +2,7 @@
 
     python tools/make_palettes.py            # (re)writes every preset; they start turned off
 
+Themes are priority -10, below eyes-only and coats-only palettes, so those can go on top of one.
 Each theme grades the game's natural coat, pattern and marking colours (slots 0-14), so a slot keeps
 its place from light to dark and cats still look like cats. It gives the bright extras (15-24) a set of
 the theme's own colours, and recolours the 20 standard eye slots. The game's colours come from
@@ -157,7 +158,11 @@ THEMES = {
 
 
 def game_colours():
-    with open(os.path.join(ROOT, "colour_tables.json"), encoding="utf-8-sig") as f:
+    path = os.path.join(ROOT, "colour_tables.json")
+    if not os.path.isfile(path):
+        sys.exit("colour_tables.json is missing. Start the game once with UE4SS and the mods installed, "
+                 "then run `python wcmods.py tables`, which writes it from the game's log.")
+    with open(path, encoding="utf-8-sig") as f:
         tables = json.load(f)
     from wcmods import eyeatlas
     from wcmods.colors import hex_from_linear
@@ -197,11 +202,12 @@ def main():
         folder = os.path.join(ROOT, "mods", "palette-" + mod_id)
         os.makedirs(folder, exist_ok=True)
         meta_path = os.path.join(folder, "mod.json")
-        enabled = False
-        if os.path.isfile(meta_path):   # regenerating keeps whether you had it on
+        # Full themes sit below partial palettes (Gemstone Eyes, Richer Coats are priority 0), so an
+        # eyes-only or coats-only palette ticked with a theme goes on top of it.
+        meta = {"name": theme["name"], "description": theme["description"], "enabled": False, "priority": -10}
+        if os.path.isfile(meta_path):   # regenerating keeps whether it's on, its priority and any extras
             with open(meta_path, encoding="utf-8-sig") as f:
-                enabled = bool(json.load(f).get("enabled", False))
-        meta = {"name": theme["name"], "description": theme["description"], "enabled": enabled, "priority": 10}
+                meta.update({k: v for k, v in json.load(f).items() if k not in ("name", "description")})
         with open(meta_path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(meta, f, indent=2)
             f.write("\n")

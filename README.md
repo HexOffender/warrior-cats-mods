@@ -6,6 +6,14 @@ A mod manager and shared modding library for the Steam version (Unreal Engine 5.
 python wcmods.py studio      # opens Clan Mod Studio in your browser: the all-in-one manager
 ```
 
+Or double-click, in this folder:
+- **`Clan Mod Studio.bat`** opens the studio in your browser; close its window to stop it. If a
+  studio is already running, it opens that one.
+- **`Play with key remaps.bat`** starts the game through Steam with your key remaps active (see
+  [Remapping keys](#remapping-keys)). It stops by itself when the game closes.
+
+Right-click either one and choose *Send to > Desktop (create shortcut)* to launch it from the desktop.
+
 **Clan Mod Studio** has one page per kind of mod. Each page edits a file in a mod folder.
 Install mods (top right) builds everything and puts it in the game:
 
@@ -139,17 +147,23 @@ the bright extras and the eyes get the theme's own colours.
 
 To switch quickly, tick palettes under **Quick palettes** on the Palettes page and press **Apply**,
 with the game closed. That turns the ticked palettes on, turns the other palette-only mods off, and
-installs. Mods that hold anything besides a palette are never touched. From the command line:
+installs. If the install fails, the previous choice is put back. Mods that hold anything besides a
+palette are never touched.
+
+Pick one theme at a time; two themes together show only one of them. Eyes-only and coats-only
+palettes (Gemstone Eyes, Richer Coats, StarClan Glow Eyes) go on top of a theme, because the themes
+are priority -10. From the command line:
 
 ```
-python wcmods.py palette                                  # list the palette mods and which are on
-python wcmods.py palette palette-starclan-silverpelt      # use just that one, and install
-python wcmods.py palette palette-dark-forest gemstone-eyes   # combine (higher priority wins per slot)
-python wcmods.py palette --none                           # back to the game's colours
+python wcmods.py palette                                     # list the palette mods and which are on
+python wcmods.py palette palette-starclan-silverpelt         # use just that one, and install
+python wcmods.py palette palette-dark-forest gemstone-eyes   # Dark Forest coats with gemstone eyes
+python wcmods.py palette --none                              # back to the game's colours
 ```
 
 `tools/make_palettes.py` generates them from the game's colours (`colour_tables.json` and the eye
-atlas). Edit its themes and run it again to change them; it keeps whether each one is on.
+atlas). Edit its themes and run it again to change them. It keeps whether each one is on, its
+priority, and anything else you added to its `mod.json`.
 
 ### `controls.json`
 ```json

@@ -2,5 +2,5 @@
   "name": "StarClan Silverpelt",
   "description": "Pale, frosted coats with a silver-blue sheen, starlight extras, eyes that glow from the pupil out.",
   "enabled": false,
-  "priority": 10
+  "priority": -10
 }

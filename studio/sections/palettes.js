@@ -167,32 +167,37 @@ export default {
     // Mods that hold only a palette work as presets: Apply turns the ticked ones on, the other
     // palette-only mods off, and installs. Mods with anything besides a palette aren't touched.
     let quickPick = null;   // ids ticked here; null means "start from what's on"
+    let quickData = [];     // [{mod, palette (null if its file can't be read)}]
     async function renderQuick() {
-      const mods = (await api.get("/mods")).filter(m => m.kinds.length === 1 && m.kinds[0] === "palette");
-      if (quickPick === null) quickPick = new Set(mods.filter(m => m.enabled).map(m => m.id));
-      const pals = await Promise.all(mods.map(async m => {
-        try { return JSON.parse((await api.get(`/mods/${encodeURIComponent(m.id)}/file/palette.json`)).text) || {}; }
-        catch (e) { return {}; }
+      const list = (await api.get("/mods")).filter(m => m.kinds.length === 1 && m.kinds[0] === "palette");
+      quickData = await Promise.all(list.map(async m => {
+        try { return { mod: m, palette: JSON.parse((await api.get(`/mods/${encodeURIComponent(m.id)}/file/palette.json`)).text) || {} }; }
+        catch (e) { return { mod: m, palette: null }; }
       }));
+      if (quickPick === null) quickPick = new Set(list.filter(m => m.enabled).map(m => m.id));
+      drawQuick();
+    }
+    function drawQuick() {
       const dot = (hex, round) => el("span", { title: hex, style: { display: "inline-block", width: "13px", height: "13px",
         background: hex, borderRadius: round ? "50%" : "3px", boxShadow: "inset 0 0 0 1px rgba(0,0,0,.18)" } });
       const eyeRim = (p, r) => {
         const v = p.eyes && Object.entries(p.eyes).find(([k]) => eyeRow(k) === r)?.[1];
         return color.normHex(Array.isArray(v) ? v[v.length - 1] : v) || vanillaRim(r);
       };
-      const tiles = mods.map((m, i) => {
-        const p = pals[i];
-        const box = el("input", { type: "checkbox", id: `quick-${m.id}`, checked: quickPick.has(m.id) });
+      const tiles = quickData.map(({ mod: m, palette: p }) => {
+        const broken = p === null;
+        if (broken) quickPick.delete(m.id);
+        const box = el("input", { type: "checkbox", id: `quick-${m.id}`, checked: quickPick.has(m.id), disabled: broken });
         box.addEventListener("change", () => { if (box.checked) quickPick.add(m.id); else quickPick.delete(m.id); renderQuickButtons(); });
-        const coat = [...Array(15).keys()].map(s => dot(color.normHex(p.fur?.[String(s)]) || TABLE("fur")[s] || "#888888"));
-        const eyes = STD.map(r => dot(eyeRim(p, r), true));
+        const swatches = broken ? [el("span", { class: "chip warn", text: "palette.json can't be read; fix it on the Mods page or in the file" })] : [
+          el("div", { style: { display: "flex", gap: "2px", flexWrap: "wrap" }, title: "Coats 0-14" },
+            ...[...Array(15).keys()].map(s => dot(color.normHex(p.fur?.[String(s)]) || TABLE("fur")[s] || "#888888"))),
+          el("div", { style: { display: "flex", gap: "2px", flexWrap: "wrap" }, title: "Eyes" }, ...STD.map(r => dot(eyeRim(p, r), true)))];
         return el("label", { for: `quick-${m.id}`, style: { display: "grid", gap: "6px", padding: "10px 12px", borderRadius: "10px",
-            border: "1px solid var(--line, rgba(0,0,0,.12))", cursor: "pointer" } },
+            border: "1px solid var(--line, rgba(0,0,0,.12))", cursor: broken ? "default" : "pointer" } },
           el("div", { class: "row" }, box, el("strong", { text: m.name }),
             m.enabled ? el("span", { class: "chip", text: "on" }) : null),
-          el("span", { class: "muted", style: { fontSize: "0.8rem" }, text: m.description || m.id }),
-          el("div", { style: { display: "flex", gap: "2px", flexWrap: "wrap" }, title: "Coats 0-14" }, ...coat),
-          el("div", { style: { display: "flex", gap: "2px", flexWrap: "wrap" }, title: "Eyes" }, ...eyes));
+          el("span", { class: "muted", style: { fontSize: "0.8rem" }, text: m.description || m.id }), ...swatches);
       });
       const buttons = el("div", { class: "row" });
       function renderQuickButtons() {
@@ -200,17 +205,17 @@ export default {
         clear(buttons).append(
           el("button", { class: "btn primary", text: n ? `Apply ${n} and install` : "Use the game's colours and install", onclick: () =>
             wc.bus.emit("run-task", { path: "/palettes/apply", title: "Apply palettes", body: { ids: [...quickPick], install: true } }) }),
-          el("button", { class: "btn ghost", text: "Untick all", onclick: () => { quickPick.clear(); renderQuick(); } }),
-          el("span", { class: "muted", text: "Close the game first. Where two ticked palettes set the same slot, the higher priority wins." }));
+          el("button", { class: "btn ghost", text: "Untick all", onclick: () => { quickPick.clear(); drawQuick(); } }),
+          el("span", { class: "muted", text: "Close the game first." }));
       }
       renderQuickButtons();
       clear(quick).append(el("h2", { text: "Quick palettes" }),
-        el("p", { class: "note", text: "Tick the palettes to use and apply them: it turns those on, turns the other palette mods off, and installs. To change one, pick it under Editing mod below." }),
+        el("p", { class: "note", text: "Tick the palettes to use and apply them: it turns those on, turns the other palette mods off, and installs. " +
+          "Pick one full theme; eyes-only or coats-only palettes (Gemstone Eyes, Richer Coats, StarClan Glow Eyes) go on top of it. To change one, pick it under Editing mod below." }),
         el("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: "10px" } }, ...tiles),
         buttons);
     }
-    wc.bus.on("installed", () => { quickPick = null; renderQuick(); target.refresh(); });
-
+    const offInstalled = wc.bus.on("installed", () => { quickPick = null; renderQuick(); target.refresh(); });
     async function renderPresets() {
       const mods = await api.get("/mods");
       clear(presetRow).append(el("span", { class: "eyebrow", text: "Start from" }),
@@ -373,5 +378,6 @@ export default {
     function renderAll() { renderTabs(); renderPanel(); renderPicks(); drawCat(); renderPresets(); }
 
     await Promise.all([target.refresh(), renderQuick()]);
+    return { unmount() { offInstalled(); } };
   },
 };

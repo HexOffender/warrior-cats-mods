@@ -93,13 +93,14 @@ async function runTask(path, title, body = {}) {
     drawerLog.textContent = lines.join("\n").trim() || "Done.";
     toast(`${title}: done`);
     bus.emit("installed", r.result);
+    if (path === "/palettes/apply") bus.emit("mods-changed");   // it turned mods on and off
   } catch (e) {
     drawerLog.textContent = e.message;
     toast(e.message, "bad");
-    if (path === "/install" && e.message.startsWith("not installing")) {
+    if ((path === "/install" || path === "/palettes/apply") && e.message.startsWith("not installing")) {
       drawer.append(el("div", { class: "row force", style: { padding: "0 14px 14px" } },
         wc.confirmButton("Install the rest anyway", "Click again: the failed mods' earlier changes are removed",
-          () => runTask("/install", "Install mods", { force: true }), "btn danger")));
+          () => runTask(path, title, { ...body, force: true }), "btn danger")));
     }
   }
   await refreshStatus();

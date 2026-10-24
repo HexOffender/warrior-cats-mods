@@ -2,5 +2,5 @@
   "name": "Leaf-bare Frost",
   "description": "Wintry, icy coats, snow and holly extras, ice-blue eyes.",
   "enabled": false,
-  "priority": 10
+  "priority": -10
 }

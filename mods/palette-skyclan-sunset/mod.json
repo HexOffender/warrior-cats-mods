@@ -2,5 +2,5 @@
   "name": "SkyClan Sunset",
   "description": "Glowing oranges and roses, sunset and twilight extras, fiery eyes.",
   "enabled": false,
-  "priority": 10
+  "priority": -10
 }
