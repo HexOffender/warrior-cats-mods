@@ -53,16 +53,20 @@ There are three ways around that:
    nothing while playing, and remapping switched off when another window was in front and on the
    title screen. The pause menu hasn't been checked yet.
 
-**The current method is method 2** (with method 1 for controllers). Method 3 replaces it once
-it's confirmed in game. Don't run both at once for the same keys.
+**The current method is method 3** for keyboard and mouse, with method 1 for controllers.
+Method 2 does the same job without wcmods, if you'd rather not run the remapper. Don't run both
+at once for the same keys.
 
-Method 3 commands:
+To use method 3, set your keys on the Controls page (or in `controls.json`), save them to a mod,
+and install mods once (game closed), which adds the play-state script. Then start the game with
+`python wcmods.py play` instead of from Steam:
 
 ```
 python wcmods.py play              # start the game through Steam and remap until it closes
 python wcmods.py remap             # the same, when the game is already running (or about to be)
 python wcmods.py play --dry-run    # report which remaps would happen, without changing any keys
 python wcmods.py play --in-menus   # remap in menus too
+python wcmods.py play --debug      # log the window in front, the play state, and remapped key presses
 ```
 
 It runs as a normal program using Windows' low-level keyboard hook (and a mouse hook only when a
@@ -206,6 +210,8 @@ Confirmed in game (2026-10-23):
   `python wcmods.py restore latest`) if anything goes wrong.
 - Edited key bindings in the save are ignored, and the game's rebinding screen doesn't work on PC
   (see [Remapping keys](#remapping-keys)).
+- The key remapper (`wcmods play`) moves keys while you play and leaves other windows and the title
+  screen alone. The pause menu hasn't been checked yet.
 
 Not yet confirmed in game:
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
