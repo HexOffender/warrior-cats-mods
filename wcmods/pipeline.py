@@ -220,8 +220,9 @@ def _newest(folder):
 
 def pending(cfg, mods):
     """How your mods differ from what's installed: {"installed" (ever), "on" and "off" (ids turned on or off
-    since), "changed" (on both times, with files changed since), "any"}. The studio's Apply button
-    shows it."""
+    since), "changed" (on both times, with files changed since), "redo" (why the last install has to be
+    made again: it was made before UE4SS or the Oodle DLL was there, so it left parts out), "any"}. The
+    studio's Apply button shows it."""
     # wcmods.json read afresh into a Config of its own: reloading the studio's would throw away what an
     # install running at the same time has noted but not saved yet.
     try:
@@ -231,15 +232,20 @@ def pending(cfg, mods):
     now = {m.id for m in mods if m.enabled}
     inst = data.get("installed")
     if not inst:
-        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "any": bool(now)}
+        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "redo": [], "any": bool(now)}
     was = set(inst.get("mods", []))
     try:
         built = datetime.datetime.fromisoformat(inst.get("built", "")).timestamp()
     except ValueError:
         built = 0.0
     changed = sorted(m.id for m in mods if m.enabled and m.id in was and _newest(m.folder) > built + 1)
-    out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed}
-    out["any"] = bool(out["on"] or out["off"] or out["changed"])
+    redo = []
+    if now and inst.get("ue4ss") is False and cfg.ue4ss_mods_dir:
+        redo.append("the script loader (UE4SS) is in now")
+    if now and inst.get("oodle") is False and cfg.oodle_dll:
+        redo.append("the oo2core file is set now")
+    out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed, "redo": redo}
+    out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo)
     return out
 
 
@@ -322,7 +328,10 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
 
     if manifest["save_ops"]:
         apply_save_ops(cfg, manifest["save_ops"], backups_root, log)
-    cfg.data["installed"] = {"mods": manifest["mods"], "built": manifest["built"]}
+    # What the game had then: an install made without UE4SS (or the Oodle DLL) left parts out, so
+    # pending() asks for another once it's there.
+    cfg.data["installed"] = {"mods": manifest["mods"], "built": manifest["built"], "ue4ss": bool(mods_dir),
+                             "oodle": bool(cfg.oodle_dll)}
     cfg.save()
     return manifest
 

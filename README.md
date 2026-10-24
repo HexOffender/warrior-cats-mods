@@ -2,25 +2,42 @@
 
 A mod manager and shared modding library for the Steam version (Unreal Engine 5.7, app 3960600).
 
+## Getting started
+
+1. **Download** this folder (on GitHub: the green **Code** button, then **Download ZIP**) and unzip
+   it anywhere, such as your Documents.
+2. **Double-click `Clan Mod Studio`** in it. It opens in your web browser. The first time, if your
+   computer doesn't have Python (what Clan Mod Studio runs on), it says so and offers to install it;
+   say yes, then double-click it again.
+3. **Follow "Get set up"** at the top of the page. It finds the game, makes a safety copy of your
+   save, and installs the script loader most mods need (UE4SS) with one click. If you've never played,
+   start the game once first so it makes a save.
+4. **Add a mod:** drop the mod's .zip on the page, or onto `Clan Mod Studio` itself, and press **Add
+   to my mods**.
+5. **Press Play** (top right). It puts your mods in the game and starts it. Close the game before you
+   change mods; press Play again after.
+
+To open it from your desktop, right-click `Clan Mod Studio` and choose *Send to > Desktop (create
+shortcut)*. Close its black window to stop it. If it's already open, double-clicking it again
+brings it back.
+
+## Clan Mod Studio
+
 ```
-python wcmods.py studio      # opens Clan Mod Studio in your browser: the all-in-one manager
+python wcmods.py studio      # what double-clicking Clan Mod Studio does
 ```
 
-Or double-click, in this folder:
-- **`Clan Mod Studio.bat`** opens the studio in your browser; close its window to stop it. If a
-  studio is already running, it opens that one.
-- **`Play with key remaps.bat`** starts the game through Steam with your key remaps active (see
-  [Remapping keys](#remapping-keys)). It stops by itself when the game closes.
-
-Right-click either one and choose *Send to > Desktop (create shortcut)* to launch it from the desktop.
+Also in this folder: **`Play with key remaps.bat`** starts the game with your key remaps active (see
+[Remapping keys](#remapping-keys)), which the studio's Play button does too when your mods remap
+keys. It stops by itself when the game closes.
 
 **Clan Mod Studio** puts your mods in the game. Its **Mods** page is where you start:
 - **Add a mod:** drop a downloaded mod's .zip on the page. It shows what's in it (what the mod
   changes, whether it runs code, what else it needs) before you add it.
 - **Switch mods on and off:** a mod that needs another turns that one on too, and turning off a mod
   that others need asks first.
-- **Apply to game** (top right, with the game closed): builds everything and puts it in the game.
-  A banner lists what isn't in the game yet.
+- **Play** (top right): puts what's changed in the game, then starts it. Apply to game does just the
+  first part. Both need the game closed, and a banner lists what isn't in the game yet.
 - **The rest:** each mod's More has its priority, its folder, Save as .zip (to share it) and Remove.
   A removed or replaced mod is kept in `backups/mods/`, and Backups and repair puts it back. That
   section also has your save backups and "Take all mods out of the game".
@@ -576,13 +593,21 @@ After a game update, run `selftest` before installing again.
 
 ## Requirements
 
-- Python 3.10+ (the Microsoft Store Python works).
-- An `oo2core_*_win64.dll` from another installed game, found automatically on your Steam
-  libraries (here: Planet Zoo). It's only used to read the game's compressed files.
-- UE4SS for coat, pattern, marking and eye-button colours, your cat's own colours, mouse look, the
-  mod menu (with its cheats), overlays and scripts from mods. Installed from the `experimental-latest`
-  GitHub release (`UE4SS_v3.0.1-1181-g83330635.zip`), with its cheat-manager enabler off (the mod
-  menu's Cheats page does that job, and can switch cheats off again). Its console enabler
-  (`ConsoleEnablerMod`) is on: `~` or F10 opens the game's console (`python wcmods.py console off`
-  turns it off). To remove UE4SS, delete `dwmapi.dll` and the `ue4ss` folder from
-  `<game>\Wrc\Binaries\Win64`.
+Clan Mod Studio's "Get set up" sees to these:
+
+- **Python 3.10 or newer.** The launchers offer to install it with winget (Windows' own installer)
+  or send you to python.org. The Microsoft Store's Python works too.
+- **UE4SS**, the script loader, for coat, pattern, marking and eye-button colours, your cat's own
+  colours, mouse look, the mod menu (with its cheats), overlays and scripts from mods.
+  - **Install it:** "Install it" downloads the `UE4SS_v*.zip` from its `experimental-latest` GitHub
+    release (tried with `UE4SS_v3.0.1-1181-g83330635.zip`) and puts it in the game. Or give the
+    studio that .zip yourself.
+  - **How it's set up:** its debug console windows are off. Its cheat-manager enabler is off too,
+    because the mod menu's Cheats page does that job and can switch cheats off again.
+  - **The game's console:** UE4SS's console enabler (`ConsoleEnablerMod`) is on, so `~` or F10 opens
+    it (`python wcmods.py console off` turns it off).
+  - **Removing it:** delete `dwmapi.dll` and the `ue4ss` folder from `<game>\Wrc\Binaries\Win64`.
+- **Optional:** an `oo2core_*_win64.dll` from another installed game, found automatically on your
+  Steam libraries (here: Planet Zoo), or picked in "Get set up". It's only used to read the game's
+  compressed files, which mods that change names, game data or eye colours need. Without it,
+  palettes still change coats, patterns and markings, and say that eye colours were left out.

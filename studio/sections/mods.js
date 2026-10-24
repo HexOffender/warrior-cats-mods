@@ -1,6 +1,6 @@
-// Mods: add mods you've downloaded, switch them on and off, and apply them to the game. The mod menu is
-// a mod here too (its settings are on its card); mods say in mod.json what they need ("requires") or
-// work with ("uses"). Backups, removed mods and repairs are at the bottom.
+// Mods: get set up (the first time), add mods you've downloaded, switch them on and off, and apply them
+// to the game. The mod menu is a mod here too (its settings are on its card); mods say in mod.json what
+// they need ("requires") or work with ("uses"). Backups, removed mods and repairs are at the bottom.
 export default {
   title: "Mods",
   async mount(root, wc) {
@@ -15,6 +15,7 @@ export default {
     let mods = [], filter = "all", search = "", options = null, settings = null;
     const open = new Set();   // mod cards with "More" open
 
+    const setupBox = el("div");
     const changesBox = el("div");
     const addBox = el("div", { class: "card" });
     const listBox = el("div", { class: "card" });
@@ -26,10 +27,95 @@ export default {
       el("div", { class: "section-head" },
         el("span", { class: "eyebrow", text: "Your mods" }),
         el("h1", { text: "Mods" }),
-        el("p", { class: "note", text: "Add mods you've downloaded, switch them on or off, then press Apply to game (with the game closed)." })),
-      changesBox, addBox, listBox, optionsBox, repairBox, makeBox);
+        el("p", { class: "note", text: "Add mods you've downloaded, switch them on or off, then press Play (top right)." })),
+      setupBox, changesBox, addBox, listBox, optionsBox, repairBox, makeBox);
 
     const nameOf = id => (mods.find(m => m.id === id) || {}).name || id;
+
+    // ---------- getting set up (wcmods/onboarding.py): shown until every step is done ----------
+    let loaderNote = "";
+    async function renderSetup() {
+      let s;
+      try { s = await api.get("/setup"); } catch (e) { clear(setupBox); return; }
+      if (s.save.ok && !s.backup.ok) {
+        // A safety copy of the save, the first time there's one.
+        try {
+          const b = await api.post("/setup/backup");
+          if (b.name) toast("Made a safety copy of your save.");
+          s = await api.get("/setup");
+        } catch (e) { /* the step stays undone */ }
+      }
+      if (s.inbox && !inboxShown) showInbox();
+      clear(setupBox);
+      if (s.done) return;
+      const step = (ok, title, ...body) => el("li", { class: "step" + (ok ? " done" : "") },
+        el("span", { class: "tick", "aria-hidden": "true", text: ok ? "\u2713" : "" }),
+        el("div", { class: "step-body" }, el("strong", { text: title }), ...body));
+      const steps = el("ol", { class: "steps" });
+
+      if (s.game.ok) {
+        steps.append(step(true, "Found the game", el("span", { class: "muted mono", text: s.game.dir })));
+      } else {
+        const dir = el("input", { type: "text", id: "setup-game", placeholder: "D:\\SteamLibrary\\steamapps\\common\\Warrior Cats Clans of the Forest", style: { flex: "1", minWidth: "260px" } });
+        steps.append(step(false, "Where's the game?",
+          el("span", { class: "muted", text: "Clan Mod Studio couldn't find it in your Steam games. In Steam, right-click Warrior Cats: Clans of the Forest, choose Manage, then Browse local files, and copy the address at the top of that window into here." }),
+          el("div", { class: "row" }, dir, el("button", { class: "btn primary", text: "Use this folder", onclick: async () => {
+            try { await api.post("/setup/game", { dir: dir.value }); toast("Found the game."); location.reload(); }
+            catch (e) { toast(e.message, "bad"); }
+          } }))));
+      }
+
+      if (!s.save.ok) {
+        steps.append(step(false, "Start the game once",
+          el("span", { class: "muted", text: "So it makes your save. Press Play (top right), get into the forest, quit the game, and come back here. Clan Mod Studio then makes a safety copy of the save before any mod touches it." })));
+      } else {
+        steps.append(step(s.backup.ok, s.backup.ok ? "Your save is backed up" : "Back up your save",
+          el("span", { class: "muted", text: s.backup.ok ? "If a mod ever spoils it, Backups and repair (at the bottom) puts it back." : "Couldn't make the copy; try Back up now under Backups and repair." })));
+      }
+
+      if (s.loader.ok) {
+        steps.append(step(true, "The script loader is installed", el("span", { class: "muted", text: "UE4SS: the mod menu and most mods run on it." })));
+      } else {
+        const blocked = !s.game.ok ? "Find the game first." : s.running ? "Close the game first." : "";
+        const input = el("input", { type: "file", accept: ".zip,application/zip", hidden: true });
+        const install = async file => {
+          loaderNote = file ? `Installing ${file.name}…` : "Downloading UE4SS from GitHub and installing it…";
+          renderSetup();
+          try {
+            const r = file ? await api.upload("/setup/loader", file) : await api.post("/setup/loader");
+            toast(`The script loader is installed (${r.result.from}).`);
+            loaderNote = "";
+            bus.emit("mods-changed", { from: "setup" });
+          } catch (e) { loaderNote = ""; toast(e.message, "bad"); }
+          renderSetup();
+        };
+        input.addEventListener("change", () => input.files[0] && install(input.files[0]));
+        steps.append(step(false, "Install the script loader",
+          el("span", { class: "muted", text: "Most mods need it: the mod menu, colours on your own cat, mouse look and in-game scripts. It's UE4SS, free and open source. Clan Mod Studio downloads it from its GitHub page (about 9 MB) and sets it up for you." }),
+          loaderNote ? el("span", { class: "muted", text: loaderNote })
+            : el("div", { class: "row" },
+              el("button", { class: "btn primary", text: "Install it", disabled: !!blocked, onclick: () => install(null) }),
+              el("button", { class: "btn small", text: "Use a .zip I downloaded…", disabled: !!blocked, onclick: () => input.click() }),
+              blocked ? el("span", { class: "muted", text: blocked }) : null, input),
+          el("a", { href: s.loader.page, target: "_blank", rel: "noopener", class: "muted", text: "UE4SS on GitHub" })));
+      }
+
+      if (!s.oodle.ok) {
+        const path = el("input", { type: "text", id: "setup-oodle", placeholder: "C:\\...\\oo2core_9_win64.dll", style: { flex: "1", minWidth: "260px" } });
+        steps.append(step(false, "Optional: a file from another game",
+          el("span", { class: "muted", text: "Mods that change cat names, game data or eye colours read the game's own files, and that needs a file called oo2core_…_win64.dll. Many other games come with it; Clan Mod Studio looked in your Steam games and didn't find one. Everything else works without it. If you have it, paste where it is:" }),
+          el("div", { class: "row" }, path, el("button", { class: "btn", text: "Use it", onclick: async () => {
+            try { await api.post("/setup/oodle", { path: path.value }); toast("Got it."); renderSetup(); }
+            catch (e) { toast(e.message, "bad"); }
+          } }))));
+      }
+
+      setupBox.append(el("div", { class: "card setup" },
+        el("h2", { text: "Get set up" }),
+        el("p", { class: "note", text: "A few things before your first mod; each is done once." }),
+        steps,
+        el("p", { class: "note", text: "Then add a mod below and press Play." })));
+    }
 
     // ---------- what's not in the game yet ----------
     async function renderChanges() {
@@ -44,6 +130,7 @@ export default {
         ...c.on.map(i => `${c.names[i] || i} on`),
         ...c.off.map(i => `${c.names[i] || i} off`),
         ...c.changed.map(i => `${c.names[i] || i} changed`),
+        ...(c.redo || []).map(r => `apply again: ${r}`),
       ];
       changesBox.append(el("div", { class: "banner" },
         el("div", { class: "row spread" },
@@ -56,9 +143,8 @@ export default {
     }
 
     // ---------- adding a downloaded mod ----------
-    function renderAdd(preview = null, file = null) {
+    function renderAdd() {
       clear(addBox);
-      if (preview) return renderPreview(preview, file);
       const input = el("input", { type: "file", accept: ".zip,application/zip", hidden: true, id: "mod-file" });
       input.addEventListener("change", () => input.files[0] && look(input.files[0]));
       const zone = el("div", { class: "dropzone", tabindex: "0", role: "button", "aria-label": "Choose a mod's .zip file" },
@@ -77,6 +163,7 @@ export default {
         if (f) look(f);
       });
       addBox.append(el("h2", { text: "Add a mod" }), zone,
+        el("p", { class: "note", text: "You can also drop a mod's .zip onto Clan Mod Studio, the file you double-click to open this." }),
         el("p", { class: "note" }, "Got a folder instead of a .zip? Put it in your ",
           el("button", { class: "btn link", text: "mods folder", onclick: () => openFolder({ what: "mods" }) }),
           ", then ", el("button", { class: "btn link", text: "look again", onclick: () => refresh() }), "."));
@@ -87,14 +174,32 @@ export default {
       clear(addBox).append(el("h2", { text: "Add a mod" }), el("p", { class: "muted", text: `Looking inside ${file.name}…` }));
       try {
         const r = await api.upload(`/mods/add?step=preview&name=${encodeURIComponent(file.name)}`, file);
-        renderAdd(r, file);
+        clear(addBox);
+        renderPreview(r, file.name,
+          (ids, enable) => api.upload(`/mods/add?step=add&enable=${enable ? 1 : 0}&ids=${encodeURIComponent(ids.join(","))}&name=${encodeURIComponent(file.name)}`, file),
+          () => renderAdd());
       } catch (e) { toast(e.message, "bad"); renderAdd(); }
     }
 
-    function renderPreview(r, file) {
+    // A mod dropped on the launcher (wcmods studio --add), waiting in the studio's inbox.
+    let inboxShown = false;
+    async function showInbox() {
+      let r;
+      try { r = await api.get("/mods/inbox"); } catch (e) { toast(e.message, "bad"); return; }
+      if (!r.mods.length) return;
+      inboxShown = true;
+      clear(addBox);
+      renderPreview(r, r.name,
+        (ids, enable) => api.post("/mods/inbox/add", { ids, enable }),
+        async () => { await api.post("/mods/inbox/clear").catch(() => null); inboxShown = false; renderAdd(); });
+      addBox.scrollIntoView({ block: "start" });
+    }
+
+    // What's in a .zip (or folder) before adding it; add(ids, enable) and cancel() do the rest.
+    function renderPreview(r, name, add, cancel) {
       const picks = new Map();
-      addBox.append(el("div", { class: "row spread" }, el("h2", { text: r.mods.length > 1 ? `${r.mods.length} mods in ${file.name}` : `Add ${r.mods[0].name}?` }),
-        el("span", { class: "muted mono", text: file.name })));
+      addBox.append(el("div", { class: "row spread" }, el("h2", { text: r.mods.length > 1 ? `${r.mods.length} mods in ${name}` : `Add ${r.mods[0].name}?` }),
+        el("span", { class: "muted mono", text: name })));
       for (const m of r.mods) {
         const pick = el("input", { type: "checkbox", checked: true, id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
         picks.set(m.id, pick);
@@ -122,19 +227,20 @@ export default {
           const ids = [...picks].filter(([, p]) => p.checked).map(([id]) => id);
           if (!ids.length) { toast("Pick at least one.", "bad"); return; }
           try {
-            const res = await api.upload(`/mods/add?step=add&enable=${on.checked ? 1 : 0}&ids=${encodeURIComponent(ids.join(","))}&name=${encodeURIComponent(file.name)}`, file);
+            const res = await add(ids, on.checked);
             const added = res.added.filter(a => !a.skipped), left = res.added.filter(a => a.skipped);
             const also = [...new Set(added.flatMap(a => a.also_on || []))];
             toast(`Added ${added.map(a => a.name).join(", ")}.`
               + (also.length ? ` Also on, because ${added.length > 1 ? "they need" : "it needs"} them: ${also.join(", ")}.` : "")
               + (left.length ? ` Left out ${left.map(a => a.name).join(", ")}: ${left.length > 1 ? "they come" : "it comes"} with Clan Mod Studio.` : "")
-              + (on.checked ? " Apply to game to play with it." : ""));
+              + (on.checked ? " Press Play to play with it." : ""));
+            inboxShown = false;
             renderAdd();
             await refresh();
           } catch (e) { toast(e.message, "bad"); }
         } }),
         el("label", { class: "row", for: "add-on" }, on, "Switch it on"),
-        el("button", { class: "btn ghost", text: "Cancel", onclick: () => renderAdd() })));
+        el("button", { class: "btn ghost", text: "Cancel", onclick: () => cancel() })));
     }
 
     // ---------- the list ----------
@@ -387,7 +493,7 @@ export default {
       } catch (e) { toast(e.message, "bad"); }
       renderList();
       renderOptions();
-      await Promise.all([renderChanges(), renderRepair()]);
+      await Promise.all([renderSetup(), renderChanges(), renderRepair()]);
       if (notify) bus.emit("mods-changed", { from: "mods" });
     }
 
@@ -396,6 +502,7 @@ export default {
     const off = [
       bus.on("installed", () => { renderChanges(); renderRepair(); }),
       bus.on("mods-changed", d => { if (!d || d.from !== "mods") refresh({ notify: false }); }),
+      bus.on("focus", () => renderSetup()),
     ];
     await refresh();
     return { unmount() { off.forEach(f => f()); } };

@@ -27,6 +27,8 @@ class NamesSection(Section):
         return names.validate(self.read_json(mod, "names.json")) or None
 
     def build(self, ctx, items):
+        if not items:   # the name tables are compressed: without a names mod, nothing needs the Oodle DLL
+            return
         spec = names.merge(data for _, data in items)
         source = ", ".join(mod.id for mod, _ in items)
         game = names.GameNames(lambda path: ctx.game.read_text(ctx.data_path(path)))
