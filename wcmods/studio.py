@@ -202,10 +202,10 @@ class Studio:
             found = self.mods()
             old = gamebuild.outdated(cfg, found)
             unmet = mods.unmet(found, {i: "made for an older version of the game" for i, o in old.items() if not o["allowed"]})
-            names = {m.id: m.name for m in found}
+            titles = {m.id: m.name for m in found}
             return [{**m.to_dict(), "problems": unmet.get(m.id, []),
-                     "needed_by": [names[i] for i in mods.needing(found, m.id)],
-                     "requires_names": [names.get(i, i) for i in m.requires],
+                     "needed_by": [titles[i] for i in mods.needing(found, m.id)],
+                     "requires_names": [titles.get(i, i) for i in m.requires],
                      "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id)} for m in found]
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "allow-outdated" and method == "POST":
             # Use a mod made for an older version of the game anyway, on this build only (the page warns first).
@@ -219,16 +219,16 @@ class Studio:
         if parts == ["changes"] and method == "GET":
             found = self.mods()
             p = pipeline.pending(cfg, found)
-            names = {m.id: m.name for m in found}
-            return {**p, "names": {i: names.get(i, i) for i in p["on"] + p["off"] + p["changed"]},
+            titles = {m.id: m.name for m in found}
+            return {**p, "names": {i: titles.get(i, i) for i in p["on"] + p["off"] + p["changed"]},
                     "game_running": game_running()}
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "switch" and method == "POST":
             # On: with the mods it requires. Off: refused while mods that are on need it, unless cascade.
             found = self.mods()
-            names = {m.id: m.name for m in found}
+            titles = {m.id: m.name for m in found}
             changed, blocked = mods.switch(found, parts[1], bool(body.get("on")), cascade=bool(body.get("cascade")))
-            return {"changed": [{"id": i, "name": names.get(i, i), "on": on} for i, on in changed],
-                    "blocked_by": [{"id": i, "name": names.get(i, i)} for i in blocked]}
+            return {"changed": [{"id": i, "name": titles.get(i, i), "on": on} for i, on in changed],
+                    "blocked_by": [{"id": i, "name": titles.get(i, i)} for i in blocked]}
         if parts == ["mods", "add"] and method == "POST":
             # A downloaded .zip (the request's body): ?step=preview says what's in it, ?step=add adds it.
             if not upload:
@@ -247,12 +247,12 @@ class Studio:
             with self.lock:
                 found = self.mods()
                 m = self.mod(parts[1])
-                names = {x.id: x.name for x in found}
+                titles = {x.id: x.name for x in found}
                 need = mods.needing(found, m.id)
                 if need and not body.get("cascade"):
-                    return {"blocked_by": [{"id": i, "name": names.get(i, i)} for i in need]}
+                    return {"blocked_by": [{"id": i, "name": titles.get(i, i)} for i in need]}
                 return {"moved_to": modzip.remove(m, self.ctx.backups, found, cascade=True),
-                        "turned_off": [names.get(i, i) for i in need], "blocked_by": []}
+                        "turned_off": [titles.get(i, i) for i in need], "blocked_by": []}
         if parts == ["mods", "removed"] and method == "GET":
             return modzip.removed(self.ctx.backups)
         if parts == ["mods", "restore"] and method == "POST":

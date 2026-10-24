@@ -15,11 +15,11 @@ export default {
   async mount(root, wc) {
     const { el, api, clear, toast } = wc;
     const status = el("span", { class: "chip" }, el("i"), "…");
-    const code = el("textarea", { id: "con-code", spellcheck: false, placeholder: "Game.cat():name()", style: { minHeight: "140px" } });
-    const log = el("pre", { class: "log", style: { whiteSpace: "pre-wrap" } });
+    const code = el("textarea", { id: "con-code", spellcheck: false, "aria-label": "Lua to run", placeholder: "Game.cat():name()", style: { minHeight: "140px" } });
+    const log = el("pre", { class: "log", role: "log", "aria-label": "Output", style: { whiteSpace: "pre-wrap" } });
     const runBtn = el("button", { class: "btn primary", text: "Run (Ctrl+Enter)" });
     const expr = el("input", { type: "text", id: "con-expr", value: "Game.player()", style: { width: "100%" } });
-    const filter = el("input", { type: "search", id: "con-filter", placeholder: "filter by name", style: { width: "16rem" } });
+    const filter = el("input", { type: "search", id: "con-filter", "aria-label": "Filter by name", placeholder: "filter by name", style: { width: "16rem" } });
     const view = el("div");
     let lastInfo = null;
 
@@ -31,10 +31,10 @@ export default {
       el("div", { class: "card" },
         el("div", { class: "row spread" }, el("strong", { text: "Lua" }), status),
         el("div", { class: "row", style: { flexWrap: "wrap", gap: "6px" } },
-          ...EXAMPLES.map(([label, text]) => el("button", { class: "btn", text: label, onclick: () => { code.value = text; code.focus(); } }))),
+          ...EXAMPLES.map(([label, text]) => el("button", { class: "btn", text: label, "aria-label": `Example: ${label}`, onclick: () => { code.value = text; code.focus(); } }))),
         code,
         el("div", { class: "actions" }, runBtn, el("button", { class: "btn", text: "Clear output", onclick: () => clear(log) })),
-        el("div", { class: "code" }, log)),
+        el("div", { class: "code", tabindex: "0" }, log)),
       el("div", { class: "card" },
         el("strong", { text: "Inspector" }),
         el("p", { class: "note", text: "A Lua expression for an object: Game.player(), Game.manager(\"quests\"), Game.gameState(). Click an object's property to look inside it." }),

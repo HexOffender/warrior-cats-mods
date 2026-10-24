@@ -95,11 +95,12 @@ export default {
           const [kind, cls] = kindOf(n);
           const c = countEdits(n);
           listBox.append(el("button", {
-            class: "btn ghost", style: { textAlign: "left", display: "flex", justifyContent: "space-between", gap: "6px", color: current === n ? "var(--ink)" : "", background: current === n ? "var(--accent-soft)" : "" },
+            class: "btn ghost", "aria-current": current === n ? "true" : false, "data-focus": `table:${n}`,
+            style: { textAlign: "left", display: "flex", justifyContent: "space-between", gap: "6px", color: current === n ? "var(--ink)" : "", background: current === n ? "var(--accent-soft)" : "" },
             onclick: () => openTable(n),
           }, el("span", { text: n.replace(/\.csv$/, "") }),
             el("span", { class: "row" }, c ? el("span", { class: "mono", style: { color: "var(--changed)" }, text: String(c) }) : null,
-              kind !== "gameplay" ? el("span", { class: `chip ${cls}`, style: { padding: "0 6px", fontSize: "0.7rem" }, text: kind }) : null)));
+              kind !== "gameplay" ? el("span", { class: `chip ${cls}`, style: { padding: "0 6px", fontSize: "0.75rem" }, text: kind }) : null)));
         }
       }
     }
@@ -169,7 +170,7 @@ export default {
               target.markDirty(); out.set(toJson()); renderList(); renderTable();
             } })) : null,
           Object.keys(allRow).length ? el("div", { class: "row" }, ...Object.entries(allRow).map(([c, v]) =>
-            el("span", { class: "chip warn" }, el("i"), `${c}: ${v} on every row`, el("button", { class: "btn ghost small", text: "Remove", onclick: () => { unsetCell("*", c); renderTable(); } })))) : null,
+            el("span", { class: "chip warn" }, el("i"), `${c}: ${v} on every row`, el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove ${c}: ${v} on every row`, onclick: () => { unsetCell("*", c); renderTable(); } })))) : null,
           filterBox),
         el("div", { class: "table-wrap" }, el("table", { class: "grid-table" },
           el("thead", {}, el("tr", {}, ...header.map((h, i) => el("th", { text: i === 0 ? (h.replace(/^-+$/, "") || "Row") : h })))), body)));
@@ -191,6 +192,7 @@ export default {
             };
             show();
             td.tabIndex = 0;
+            td.dataset.focus = `cell:${row[0]}:${i}`;
             const edit = () => {
               const inp = el("input", { type: "text", value: ed && ed.how === "set" ? ed.value : v, "aria-label": `${row[0]} ${header[i]}` });
               clear(td).append(inp); inp.focus(); inp.select();

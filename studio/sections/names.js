@@ -105,11 +105,11 @@ export default {
         const rename = el("input", { type: "text", value: s.rename[x.text] || "", placeholder: x.text, "aria-label": `New text for ${x.text}`, spellcheck: "false",
           onchange: e => { setRename(s.rename, x.text, e.target.value); changed(); } });
         const tr = el("tr", { "data-name": x.text.toLowerCase(), class: s.remove.includes(x.text) ? "muted" : "" },
-          el("td", {}, el("strong", { text: x.text }), el("div", { class: "muted mono", style: { fontSize: "0.72rem" }, text: x.id })),
+          el("td", {}, el("strong", { text: x.text }), el("div", { class: "muted mono", style: { fontSize: "0.75rem" }, text: x.id })),
           el("td", {}, rename),
           el("td", { class: "muted", text: usedBy(x) }),
           el("td", {}, locked ? el("span", { class: "muted", text: "needed" }) : el("label", { class: "row", style: { flexWrap: "nowrap", whiteSpace: "nowrap" } },
-            el("input", { type: "checkbox", checked: s.remove.includes(x.text), onchange: e => {
+            el("input", { type: "checkbox", checked: s.remove.includes(x.text), "aria-label": `Remove ${x.text}`, onchange: e => {
               toggle(s.remove, x.text, e.target.checked); tr.className = e.target.checked ? "muted" : ""; changed(); } }), el("span", { text: "Remove" }))));
         return tr;
       });
@@ -118,7 +118,7 @@ export default {
           el("td", {}, el("strong", { text: name }), el("span", { class: "chip good", style: { marginLeft: "6px" }, text: "new" })),
           el("td", { class: "muted", text: opts && opts.like ? `like ${opts.like}` : "default weights" }),
           el("td", { class: "muted", text: kind === "prefixes" ? "every clan, average" : "most ranks, average" }),
-          el("td", {}, el("button", { class: "btn ghost small", text: "Remove", onclick: () => { delete s.add[name]; changed(); render(); } }))));
+          el("td", {}, el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove ${name}`, onclick: () => { delete s.add[name]; changed(); render(); } }))));
       }
       body.append(...rows);
       filter.addEventListener("input", () => {
@@ -152,7 +152,7 @@ export default {
           el("td", {}, el("strong", { text: r.text })),
           el("td", {}, el("input", { type: "text", value: s.rename[r.text] || "", placeholder: r.text, "aria-label": `New name for ${r.text}`, spellcheck: "false",
             onchange: e => { setRename(s.rename, r.text, e.target.value); changed(); } })),
-          el("td", {}, el("label", { class: "row", style: { flexWrap: "nowrap", whiteSpace: "nowrap" } }, el("input", { type: "checkbox", checked: s.remove.includes(r.text),
+          el("td", {}, el("label", { class: "row", style: { flexWrap: "nowrap", whiteSpace: "nowrap" } }, el("input", { type: "checkbox", checked: s.remove.includes(r.text), "aria-label": `Remove ${r.text}`,
             onchange: e => { toggle(s.remove, r.text, e.target.checked); tr.className = e.target.checked ? "muted" : ""; changed(); } }), el("span", { text: "Remove" }))));
         return tr;
       });

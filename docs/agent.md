@@ -119,6 +119,10 @@ Level: 20   (1..20)   <number>
   `number`, `input`, `choice`, `radio`, `color`, `progress` and `section`. `[-]` is an open section
   and `[+]` a closed one. Rows inside a closed section aren't drawn, so they aren't there to read
   until you open it.
+- **Focus:** `<- focus` marks the control that has the keyboard's (and a controller's) focus, and
+  `(focus: ...)` under the rows says when it's in the top bar or on a tab instead. `key Tab`,
+  `key Down` and `key Enter` then drive the menu the way a keyboard does (`key` can't hold Shift
+  for Shift+Tab).
 - **Labels:** a control is named by its label, in any case. Where two rows share a label (Stats has a
   Stamina slider and a Stamina stat), the first is used. Name the other by its place on the page,
   `@n`, which `menu read --json` gives as `n`.

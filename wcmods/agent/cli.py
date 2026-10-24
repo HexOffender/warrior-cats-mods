@@ -158,6 +158,9 @@ def cmd_menu(ctx, args):
             return _print({"id": page.id, "title": page.title, "rows": [vars(r) for r in page.rows]}, True)
         print(f"== {page.title} ==")
         print(page.text())
+        where = m.focus()
+        if where:
+            print(f"(focus: {'the ' + where[1] + ' tab' if isinstance(where, tuple) else where})")
         return
     if what in ("press", "set", "section"):
         if not args.args or (what == "set" and len(args.args) < 2):

@@ -92,7 +92,7 @@ export default {
         });
         return el("div", { class: "row", style: { justifyContent: "space-between" } },
           el("label", { for: id, class: "mono", style: { fontSize: "0.85rem" }, text: tag.replace("Gameplay.Inventory.", "") }),
-          el("span", { class: "row" }, inp, isNew ? el("button", { class: "btn ghost small", text: "Remove", onclick: () => { delete edits.add[path][tag]; if (!Object.keys(edits.add[path]).length) delete edits.add[path]; target.markDirty(); out.set(edits); render(); } }) : null));
+          el("span", { class: "row" }, inp, isNew ? el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove ${tag.replace("Gameplay.Inventory.", "")}`, onclick: () => { delete edits.add[path][tag]; if (!Object.keys(edits.add[path]).length) delete edits.add[path]; target.markDirty(); out.set(edits); render(); } }) : null));
       });
       const pick = el("select", { id: "sv-inv-add", "aria-label": "Item to add" }, ...items.filter(t => !(t in inv) && !(t in added)).map(t => el("option", { value: t, text: t.replace("Gameplay.Inventory.", "") })));
       const qty = el("input", { type: "number", id: "sv-inv-qty", min: "1", value: "1", style: { width: "5rem" }, "aria-label": "Quantity" });

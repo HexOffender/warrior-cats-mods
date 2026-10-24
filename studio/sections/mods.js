@@ -4,7 +4,7 @@
 export default {
   title: "Mods",
   async mount(root, wc) {
-    const { el, api, clear, toast, bus, confirmButton } = wc;
+    const { el, api, clear, toast, bus, confirmButton, announce } = wc;
     const KIND = {
       files: "Replaces game files", "cooked content": "New models or textures", "mod menu": "The in-game menu",
       palette: "Colours", controls: "Controls", "mouse look": "Mouse look", data: "Game rules and numbers",
@@ -64,6 +64,8 @@ export default {
         await api.post(`/mods/${encodeURIComponent(m.id)}/allow-outdated`, { on });
         toast(on ? `${m.name} will be used on this version of the game. Press Play to put it in.` : `${m.name} is left out again.`);
         await refresh();
+        // The card's button changed ("Stop using it" for "Use it anyway"): keep the keyboard's place on it.
+        listBox.querySelector(`[data-focus="allow:${CSS.escape(m.id)}"]`)?.focus();
       } catch (e) { toast(e.message, "bad"); }
     }
 
@@ -85,13 +87,13 @@ export default {
       if (s.done) return;
       const step = (ok, title, ...body) => el("li", { class: "step" + (ok ? " done" : "") },
         el("span", { class: "tick", "aria-hidden": "true", text: ok ? "\u2713" : "" }),
-        el("div", { class: "step-body" }, el("strong", { text: title }), ...body));
+        el("div", { class: "step-body" }, el("strong", {}, el("span", { class: "sr-only", text: ok ? "Done: " : "To do: " }), title), ...body));
       const steps = el("ol", { class: "steps" });
 
       if (s.game.ok) {
         steps.append(step(true, "Found the game", el("span", { class: "muted mono", text: s.game.dir })));
       } else {
-        const dir = el("input", { type: "text", id: "setup-game", placeholder: "D:\\SteamLibrary\\steamapps\\common\\Warrior Cats Clans of the Forest", style: { flex: "1", minWidth: "260px" } });
+        const dir = el("input", { type: "text", id: "setup-game", "aria-label": "The game's folder", spellcheck: "false", placeholder: "D:\\SteamLibrary\\steamapps\\common\\Warrior Cats Clans of the Forest", style: { flex: "1", minWidth: "260px" } });
         steps.append(step(false, "Where's the game?",
           el("span", { class: "muted", text: "Clan Mod Studio couldn't find it in your Steam games. In Steam, right-click Warrior Cats: Clans of the Forest, choose Manage, then Browse local files, and copy the address at the top of that window into here." }),
           el("div", { class: "row" }, dir, el("button", { class: "btn primary", text: "Use this folder", onclick: async () => {
@@ -127,7 +129,7 @@ export default {
         input.addEventListener("change", () => input.files[0] && install(input.files[0]));
         steps.append(step(false, "Install the script loader",
           el("span", { class: "muted", text: "Most mods need it: the mod menu, colours on your own cat, mouse look and in-game scripts. It's UE4SS, free and open source. Clan Mod Studio downloads it from its GitHub page (about 9 MB) and sets it up for you." }),
-          loaderNote ? el("span", { class: "muted", text: loaderNote })
+          loaderNote ? el("span", { class: "muted", role: "status", text: loaderNote })
             : el("div", { class: "row" },
               el("button", { class: "btn primary", text: "Install it", disabled: !!blocked, onclick: () => install(null) }),
               el("button", { class: "btn small", text: "Use a .zip I downloaded…", disabled: !!blocked, onclick: () => input.click() }),
@@ -136,7 +138,7 @@ export default {
       }
 
       if (!s.oodle.ok) {
-        const path = el("input", { type: "text", id: "setup-oodle", placeholder: "C:\\...\\oo2core_9_win64.dll", style: { flex: "1", minWidth: "260px" } });
+        const path = el("input", { type: "text", id: "setup-oodle", "aria-label": "Where the oo2core file is", spellcheck: "false", placeholder: "C:\\...\\oo2core_9_win64.dll", style: { flex: "1", minWidth: "260px" } });
         steps.append(step(false, "Optional: a file from another game",
           el("span", { class: "muted", text: "Mods that change cat names, game data or eye colours read the game's own files, and that needs a file called oo2core_…_win64.dll. Many other games come with it; Clan Mod Studio looked in your Steam games and didn't find one. Everything else works without it. If you have it, paste where it is:" }),
           el("div", { class: "row" }, path, el("button", { class: "btn", text: "Use it", onclick: async () => {
@@ -182,13 +184,13 @@ export default {
       clear(addBox);
       const input = el("input", { type: "file", accept: ".zip,application/zip", hidden: true, id: "mod-file" });
       input.addEventListener("change", () => input.files[0] && look(input.files[0]));
-      const zone = el("div", { class: "dropzone", tabindex: "0", role: "button", "aria-label": "Choose a mod's .zip file" },
+      // Clicking anywhere on it chooses a file too; the keyboard uses its button.
+      const zone = el("div", { class: "dropzone" },
         el("strong", { text: "Drop a mod's .zip here" }),
         el("span", { class: "muted", text: "or" }),
-        el("button", { class: "btn", type: "button", text: "Choose a file…", onclick: e => { e.stopPropagation(); input.click(); } }),
+        el("button", { class: "btn", type: "button", id: "mod-choose", text: "Choose a file…", "aria-label": "Choose a mod's .zip file", onclick: e => { e.stopPropagation(); input.click(); } }),
         input);
       zone.addEventListener("click", () => input.click());
-      zone.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } });
       zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("over"); });
       zone.addEventListener("dragleave", () => zone.classList.remove("over"));
       zone.addEventListener("drop", e => {
@@ -206,7 +208,7 @@ export default {
 
     async function look(file) {
       if (!/\.zip$/i.test(file.name)) { toast("That isn't a .zip file. Mods come as .zip files (or folders for the mods folder).", "bad"); return; }
-      clear(addBox).append(el("h2", { text: "Add a mod" }), el("p", { class: "muted", text: `Looking inside ${file.name}…` }));
+      clear(addBox).append(el("h2", { text: "Add a mod" }), el("p", { class: "muted", role: "status", text: `Looking inside ${file.name}…` }));
       try {
         const r = await api.upload(`/mods/add?step=preview&name=${encodeURIComponent(file.name)}`, file);
         clear(addBox);
@@ -290,7 +292,7 @@ export default {
     }
 
     function modCard(m, state) {
-      const toggle = el("input", { type: "checkbox", class: "switch", id: `mod-on-${m.id}`, checked: m.enabled, "aria-label": `${m.name} on` });
+      const toggle = el("input", { type: "checkbox", role: "switch", class: "switch", id: `mod-on-${m.id}`, checked: m.enabled, "aria-label": m.name });
       toggle.addEventListener("change", () => switchMod(m, toggle.checked));
       const menuMod = mods.find(x => x.id === MENU);
       const flags = [];
@@ -314,7 +316,7 @@ export default {
       }
 
       const more = open.has(m.id);
-      const card = el("div", { class: "mod" + (m.enabled ? "" : " off") },
+      const card = el("div", { class: "mod" + (m.enabled ? "" : " off"), "data-key": `mod:${m.id}` },
         toggle,
         el("div", { class: "mod-body" },
           el("label", { for: `mod-on-${m.id}` }, el("strong", { text: m.name }),
@@ -325,13 +327,15 @@ export default {
           lines.length ? el("ul", { class: "notes" }, ...lines) : null),
         el("div", { class: "mod-actions" },
           m.id === MENU || m.kinds.includes("mod menu")
-            ? el("button", { class: "btn small", "aria-expanded": String(more), text: more ? "Close settings" : "Settings", onclick: () => { more ? open.delete(m.id) : open.add(m.id); renderList(); } })
-            : el("button", { class: "btn ghost small", "aria-expanded": String(more), text: more ? "Less" : "More", onclick: () => { more ? open.delete(m.id) : open.add(m.id); renderList(); } })));
+            ? el("button", { class: "btn small", "data-focus": `more:${m.id}`, "aria-expanded": String(more), "aria-label": `${m.name} settings`, text: more ? "Close settings" : "Settings", onclick: () => { more ? open.delete(m.id) : open.add(m.id); renderList(); } })
+            : el("button", { class: "btn ghost small", "data-focus": `more:${m.id}`, "aria-expanded": String(more), "aria-label": `More about ${m.name}`, text: more ? "Less" : "More", onclick: () => { more ? open.delete(m.id) : open.add(m.id); renderList(); } })));
       if (state && state.blocked === m.id) {
         const them = state.by.length > 1 ? "them" : "it";
-        card.append(el("div", { class: "banner mod-wide" },
-          el("span", { text: `${state.by.map(b => b.name).join(", ")} ${state.by.length > 1 ? "need" : "needs"} ${m.name}. ` +
-            (state.remove ? `Turn ${them} off and remove ${m.name}?` : `Turn ${them} off too?`) }),
+        const ask = `${state.by.map(b => b.name).join(", ")} ${state.by.length > 1 ? "need" : "needs"} ${m.name}. ` +
+          (state.remove ? `Turn ${them} off and remove ${m.name}?` : `Turn ${them} off too?`);
+        announce(ask);
+        card.append(el("div", { class: "banner mod-wide", role: "group", "aria-label": `Mods that need ${m.name}` },
+          el("span", { text: ask }),
           el("div", { class: "row" },
             state.remove
               ? el("button", { class: "btn danger", text: `Turn ${them} off and remove`, onclick: () => removeMod(m, true) })
@@ -339,19 +343,24 @@ export default {
             el("button", { class: "btn ghost", text: state.remove ? `Keep ${m.name}` : `Keep ${m.name} on`, onclick: () => renderList() }))));
       }
       if (old && m.enabled) {
+        // One focus key for the button that asks and the warning's "Leave it out" (not "Use it anyway",
+        // which a second press would confirm), so focus moves between them as the card changes.
+        const key = `allow:${m.id}`;
+        const warning = `It was made for an older version of the game (build ${old.made_for.join(", ")}). The game has changed since, so it may not work, or may behave unpredictably: a broken page, odd values, a crash. Back up your save first (Backups and repair, below). This only applies to this version of the game; after the next update it's left out again.`;
+        if (!old.allowed && state && state.allow === m.id) announce(`Use ${m.name} anyway? ${warning}`);
         card.append(old.allowed
           ? el("div", { class: "row mod-wide" },
-            el("button", { class: "btn small", text: "Stop using it", onclick: () => allowOutdated(m, false) }),
+            el("button", { class: "btn small", "data-focus": key, text: "Stop using it", "aria-label": `Stop using ${m.name} on this version`, onclick: () => allowOutdated(m, false) }),
             el("span", { class: "muted", text: "It's left out again until it's updated for this version." }))
           : state && state.allow === m.id
-            ? el("div", { class: "banner mod-wide" },
+            ? el("div", { class: "banner mod-wide", role: "group", "aria-label": `Use ${m.name} anyway?` },
               el("strong", { text: `Use ${m.name} anyway?` }),
-              el("span", { text: `It was made for an older version of the game (build ${old.made_for.join(", ")}). The game has changed since, so it may not work, or may behave unpredictably: a broken page, odd values, a crash. Back up your save first (Backups and repair, below). This only applies to this version of the game; after the next update it's left out again.` }),
+              el("span", { text: warning }),
               el("div", { class: "row" },
                 el("button", { class: "btn danger", text: "Use it anyway", onclick: () => allowOutdated(m, true) }),
-                el("button", { class: "btn ghost", text: "Leave it out", onclick: () => renderList() })))
+                el("button", { class: "btn ghost", "data-focus": key, text: "Leave it out", onclick: () => renderList() })))
             : el("div", { class: "row mod-wide" },
-              el("button", { class: "btn small", text: "Use it anyway…", onclick: () => renderList({ allow: m.id }) }),
+              el("button", { class: "btn small", "data-focus": key, text: "Use it anyway…", "aria-label": `Use ${m.name} anyway…`, onclick: () => renderList({ allow: m.id }) }),
               el("span", { class: "muted", text: "Or wait for its maker to update it." })));
       }
       if (more) card.append(m.kinds.includes("mod menu") ? menuSettings(m) : details(m));
@@ -374,7 +383,7 @@ export default {
           el("button", { class: "btn small", text: "Save as .zip", onclick: async () => {
             try { toast(`Saved ${await api.download(`/mods/${encodeURIComponent(m.id)}/zip`)}`); } catch (e) { toast(e.message, "bad"); }
           } }),
-          m.builtin ? null : confirmButton("Remove", "Click again to remove", () => removeMod(m), "btn small danger")));
+          m.builtin ? null : confirmButton("Remove", "Press again to remove", () => removeMod(m), "btn small danger")));
     }
 
     // Removing a mod that mods which are on need asks first, as switching it off does.
@@ -424,14 +433,14 @@ export default {
       // String(): a name that isn't text (a mistake in a mod.json) mustn't stop the list from showing.
       const byName = (a, b) => String(a.name).localeCompare(String(b.name));
       const rest = shown.filter(m => !m.preset).sort((a, b) => (b.builtin - a.builtin) || byName(a, b));
-      const searchBox = el("input", { type: "search", placeholder: "Find a mod", value: search, "aria-label": "Find a mod" });
+      const searchBox = el("input", { type: "search", id: "mod-search", placeholder: "Find a mod", value: search, "aria-label": "Find a mod" });
       searchBox.addEventListener("input", () => { search = searchBox.value.trim().toLowerCase(); renderList(); searchAgain(); });
-      const chips = ["all", "on", "off"].map(f => el("button", { class: "chip", "aria-pressed": String(filter === f), text: { all: "All", on: "On", off: "Off" }[f],
+      const chips = ["all", "on", "off"].map(f => el("button", { class: "chip", id: `mod-show-${f}`, "aria-pressed": String(filter === f), text: { all: "All", on: "On", off: "Off" }[f],
         onclick: () => { filter = f; renderList(); } }));
       clear(listBox).append(
         el("div", { class: "row spread" }, el("h2", { text: `Your mods` }),
           el("span", { class: "muted", text: `${mods.filter(m => m.enabled).length} of ${mods.length} on` })),
-        el("div", { class: "row" }, searchBox, ...chips));
+        el("div", { class: "row" }, searchBox, el("div", { class: "row", role: "group", "aria-label": "Show" }, ...chips)));
       if (!mods.length) listBox.append(el("p", { class: "empty", text: "No mods yet. Add one above." }));
       else if (!shown.length) listBox.append(el("p", { class: "empty", text: "No mods match." }));
       for (const m of rest) listBox.append(modCard(m, state));
@@ -469,9 +478,9 @@ export default {
           el("span", { text: "Some mods carry code: Python that runs on your computer when you apply mods, or scripts that run in the game. Code can do anything your account can, so allow it only if you trust every such mod you've added." }),
           el("div", { class: "row" },
             el("button", { class: "btn danger", text: "Allow mods that run code", onclick: () => setCode(true) }),
-            el("button", { class: "btn ghost", text: "Cancel", onclick: () => { code.checked = false; warn.hidden = true; } })));
+            el("button", { class: "btn ghost", text: "Cancel", onclick: () => { code.checked = false; warn.hidden = true; code.focus(); } })));
         code.addEventListener("change", () => {
-          if (code.checked) { warn.hidden = false; code.checked = false; } else setCode(false);
+          if (code.checked) { warn.hidden = false; code.checked = false; announce(`${warn.children[0].textContent}. ${warn.children[1].textContent}`); } else setCode(false);
         });
         optionsBox.append(el("label", { class: "row", for: "allow-code" }, code, el("strong", { text: "Allow mods that run code" }),
           el("span", { class: "muted", text: "In-game scripts, build steps and studio pages that mods bring. Off unless you turn it on." })), warn);
@@ -494,7 +503,7 @@ export default {
       if (!backups.length) saves.append(el("p", { class: "muted", text: "No backups yet." }));
       for (const n of backups.slice(0, 10)) {
         saves.append(el("div", { class: "row spread line" }, el("span", { class: "mono", text: n }),
-          confirmButton("Restore", "Click again to restore", async () => {
+          confirmButton("Restore", "Press again to restore", async () => {
             try { const r = await api.post("/restore", { name: n }); toast(`Restored ${r.restored.join(", ")}`); renderRepair(); }
             catch (e) { toast(e.message, "bad"); }
           }, "btn small")));
@@ -515,7 +524,7 @@ export default {
             el("button", { class: "btn small", text: "Check my mods", onclick: () => bus.emit("run-task", { path: "/build", title: "Check mods" }) }),
             el("span", { class: "muted", text: "Builds them without installing, to see what each one does and any problems." })),
           el("div", { class: "row" },
-            confirmButton("Take all mods out of the game", "Click again to take them out", () => bus.emit("run-task", { path: "/uninstall", title: "Take mods out" }), "btn small danger"),
+            confirmButton("Take all mods out of the game", "Press again to take them out", () => bus.emit("run-task", { path: "/uninstall", title: "Take mods out" }), "btn small danger"),
             el("span", { class: "muted", text: "Your mods stay here. Control remaps and save edits stay in your save; restore a save backup to undo those." }))));
     }
 

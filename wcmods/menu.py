@@ -33,6 +33,9 @@ LUA = r'''-- WCModsMenu: pages in the in-game mod menu (Insert). Installed by wc
 -- what the player set it to (or the value passed in, when they didn't touch it), so a page can keep
 -- the script's own settings in step with one line per setting. Every call is in docs/SDK.md.
 --
+-- The controls work from the keyboard and a controller too: Tab, the arrow keys or the d-pad move
+-- between them, Enter, Space or A presses one, and the one with focus has a ring round it.
+--
 -- The window belongs to WCModsMenuHost; pages are built straight into its content panel with the
 -- game's own UI widgets, found through UE4SS's shared variables (each mod has a Lua state of its own).
 local Menu = {}
@@ -73,9 +76,13 @@ function Menu.color(hex)
     return { R = linear(r / 255), G = linear(g / 255), B = linear(b / 255), A = a / 255 }
 end
 local C = Menu.color
+-- Text is at least 4.5:1 against what it's on. A button's colour is a tint of the engine's button
+-- image, which draws it at about half the brightness (in linear light): text on a "good" button is
+-- 4.8:1 as drawn. A chosen tab or option is light with dark text, and focus is a gold ring.
 local THEME = {
-    text = "#e8ecf2", muted = "#9aa6b5", heading = "#ffd98a", accent = "#5b8def", danger = "#d65a5a",
-    good = "#4caf6e", off = "#4a5260", line = "#ffffff26",
+    text = "#e8ecf2", muted = "#9aa6b5", heading = "#ffd98a", accent = "#5b8def",
+    danger = "#f08080", danger_fill = "#d65a5a", good = "#43a063", off = "#4a5260", line = "#ffffff26",
+    selected = "#e6eeff", selected_text = "#10141a", focus = "#ffd98a",
 }
 Menu.theme = THEME
 
@@ -173,13 +180,37 @@ local function getString(s)
     return s:ToString()
 end
 
--- A click: the button went from pressed to released with the mouse still on it.
+-- ---------- keyboard and controller ----------
+-- The game's UI moves focus between the controls (Tab, the arrow keys, the d-pad) and presses the one
+-- with focus (Enter, Space, A); the window keeps focus inside itself. A ring (Menu.ring) shows where it is.
+local CLEAR = "#00000000"
+function Menu.ring(child)
+    local r = new("Border")
+    r:SetPadding({ Left = 2, Top = 2, Right = 2, Bottom = 2 })
+    r:SetBrushColor(C(CLEAR))
+    r:SetContent(child)
+    return r
+end
+
+-- Whether a widget, or one inside it, has the keyboard's (and a controller's) focus.
+function Menu.focused(w)
+    local ok, yes = pcall(function() return w:HasKeyboardFocus() or w:HasFocusedDescendants() end)
+    return ok and yes == true
+end
+local focused = Menu.focused
+
+-- A click: the button went from pressed to released, with the mouse still on it when the mouse pressed
+-- it, or with focus when a key or a controller's button did.
 local function clicked(state, key, b)
     local pressed = b:IsPressed()
     local was = state[key]
+    if pressed and not was then state[key .. ":mouse"] = b:IsHovered() end
     state[key] = pressed
-    return was and not pressed and b:IsHovered()
+    if not was or pressed then return false end
+    if state[key .. ":mouse"] then return b:IsHovered() end
+    return focused(b)
 end
+Menu.clicked = clicked
 
 local function put(e, key, value, apply)
     if e.last[key] ~= value then
@@ -189,6 +220,15 @@ local function put(e, key, value, apply)
 end
 
 local function near(a, b) return math.abs((a or 0) - (b or 0)) < 1e-6 end
+
+-- Light a row's ring while `w` has focus; true when it does. render() asks once a frame whether
+-- focus is anywhere on the page, so the rows only ask the engine when it is.
+local pageFocus = false
+local function showFocus(e, key, ring, w)
+    local f = pageFocus and focused(w)
+    put(e, key, f, function(v) ring:SetBrushColor(C(v and THEME.focus or CLEAR)) end)
+    return f
+end
 
 -- The engine's text and number boxes are white with the menu's light text on them; make them dark.
 local FIELD, FIELD_FILL = "#14171c", "#2a3a55"
@@ -300,7 +340,7 @@ local function agentEnd(page)
 end
 -- Each row says what it shows; a control (`acts`) gets back the action meant for it: its new value as
 -- text, "" for a plain press.
-local function seen(kind, label, value, options, acts)
+local function seen(kind, label, value, options, acts, focus)
     agent.i = agent.i + 1
     if agent.scroll and not agent.rowAt then
         local want = agent.scroll:match("^row\t(.*)$")
@@ -309,7 +349,7 @@ local function seen(kind, label, value, options, acts)
     end
     if agent.rec then
         agent.rec[#agent.rec + 1] = { n = agent.i, kind = kind, label = label ~= nil and tostring(label) or nil,
-                                      value = value, options = options }
+                                      value = value, options = options, focus = focus or nil }
     end
     local a = agent.act
     if acts and a and not agent.hit and label ~= nil then
@@ -327,13 +367,15 @@ local function truthy(s, now)
     return s == "on" or s == "true" or s == "1" or s == "yes" or s == "open"
 end
 
+-- A label and its control, which has a focus ring (the third value).
 local function labelled(label, control, controlFill, extra, halign)
     local box = new("HorizontalBox")
     local l = text(label, 13)
+    local r = Menu.ring(control)
     add(box, l, 0.42, 0, 12)
-    add(box, control, controlFill or 0.58, 0, 0, nil, halign)
+    add(box, r, controlFill or 0.58, 0, 0, nil, halign)
     if extra then add(box, extra, nil, 8) end
-    return box, l
+    return box, l, r
 end
 
 local ui = {}
@@ -359,7 +401,7 @@ function ui.text(str, opts)
 end
 
 function ui.note(str)
-    ui.text(str, { size = 11.5, color = THEME.muted, note = true })
+    ui.text(str, { size = 12, color = THEME.muted, note = true })
 end
 
 function ui.separator()
@@ -402,7 +444,7 @@ function ui.columns(items)
         local cells = {}
         for i = 1, n do
             local col = new("VerticalBox")
-            local l = text("", 11, THEME.muted)
+            local l = text("", 12, THEME.muted)
             local v = text("", 14, THEME.text, true)
             col:AddChildToVerticalBox(l)
             col:AddChildToVerticalBox(v)
@@ -422,19 +464,21 @@ function ui.columns(items)
     end
 end
 
-local KIND_COLOURS = { primary = THEME.accent, danger = THEME.danger, good = THEME.good }
+local KIND_COLOURS = { primary = THEME.accent, danger = THEME.danger_fill, good = THEME.good }
 -- A button; true the frame it's clicked. opts.kind: "primary", "danger", "good" or nil.
 function ui.button(label, opts)
     opts = opts or {}
     local e = row("button", function()
         local box = new("HorizontalBox")
         local b = Menu.button(label)
-        add(box, b)
-        return { root = box, b = b }
+        local r = Menu.ring(b)
+        add(box, r)
+        return { root = box, b = b, r = r }
     end)
     put(e, "label", label, function(v) e.b:SetContent(text(v, 12.5)) end)
     put(e, "color", opts.kind or "", function(v) e.b:SetBackgroundColor(C(KIND_COLOURS[v] or "#3a4250")) end)
-    local pressed = seen("button", label, nil, nil, true) ~= nil
+    local f = showFocus(e, "focus", e.r, e.b)
+    local pressed = seen("button", label, nil, nil, true, f) ~= nil
     return clicked(e.state, "b", e.b) or pressed
 end
 
@@ -443,20 +487,22 @@ function ui.buttons(labels, opts)
     opts = opts or {}
     local e = row("buttons" .. #labels, function()
         local box = new("HorizontalBox")
-        local bs = {}
+        local bs, rs = {}, {}
         for i, l in ipairs(labels) do
             bs[i] = Menu.button(l)
-            add(box, bs[i], nil, 0, 6)
+            rs[i] = Menu.ring(bs[i])
+            add(box, rs[i], nil, 0, 4)
         end
-        return { root = box, bs = bs }
+        return { root = box, bs = bs, rs = rs }
     end)
     local hit
     for i, b in ipairs(e.bs) do
         put(e, "label" .. i, labels[i], function(v) b:SetContent(text(v, 12.5)) end)
         local kind = opts.kinds and opts.kinds[i] or ""
         put(e, "color" .. i, kind, function(v) b:SetBackgroundColor(C(KIND_COLOURS[v] or "#3a4250")) end)
+        local f = showFocus(e, "focus" .. i, e.rs[i], b)
         if clicked(e.state, i, b) then hit = i end
-        if seen("button", labels[i], nil, nil, true) ~= nil then hit = i end
+        if seen("button", labels[i], nil, nil, true, f) ~= nil then hit = i end
     end
     return hit
 end
@@ -467,15 +513,16 @@ function ui.toggle(label, value, opts)
     local e = row(opts.swatch and "toggle+swatch" or "toggle", function()
         local box = new("HorizontalBox")
         local c = new("CheckBox")
+        local r = Menu.ring(c)
         local l = text(label, 13)
-        add(box, c, nil, 0, 10)
+        add(box, r, nil, 0, 8)
         local sw
         if opts.swatch then
             sw = new("Image")
             add(box, Menu.sized(sw, 16, 16), nil, 0, 10)
         end
         add(box, l, 1)
-        return { root = box, c = c, l = l, sw = sw }
+        return { root = box, c = c, r = r, l = l, sw = sw }
     end)
     put(e, "label", label, function(v) setText(e.l, v) end)
     if e.sw then put(e, "swatch", opts.swatch, function(v) e.sw:SetColorAndOpacity(C(v)) end) end
@@ -486,7 +533,7 @@ function ui.toggle(label, value, opts)
         e.v = value and true or false               -- the script changed it
         e.c:SetIsChecked(e.v)
     end
-    local act = seen("toggle", label, e.v, nil, true)
+    local act = seen("toggle", label, e.v, nil, true, showFocus(e, "focus", e.r, e.c))
     if act ~= nil then
         e.v = truthy(act, e.v)
         e.c:SetIsChecked(e.v)
@@ -498,13 +545,13 @@ end
 function ui.switch(label, value)
     local e = row("switch", function()
         local b = Menu.button("Off")
-        local box, l = labelled(label, Menu.sized(b, 80), nil, nil, H_LEFT)
-        return { root = box, b = b, l = l }
+        local box, l, r = labelled(label, Menu.sized(b, 80), nil, nil, H_LEFT)
+        return { root = box, b = b, l = l, r = r }
     end)
     put(e, "label", label, function(v) setText(e.l, v) end)
     local on = value and true or false
     if clicked(e.state, "b", e.b) then on = not on end
-    local act = seen("switch", label, on, nil, true)
+    local act = seen("switch", label, on, nil, true, showFocus(e, "focus", e.r, e.b))
     if act ~= nil then on = truthy(act, on) end
     put(e, "on", on, function(v)
         e.b:SetContent(text(v and "On" or "Off", 12.5))
@@ -517,30 +564,36 @@ end
 function ui.radio(label, value, options)
     local e = row("radio" .. #options, function()
         local inner = new("HorizontalBox")
-        local bs = {}
+        local bs, rs = {}, {}
         for i, o in ipairs(options) do
             bs[i] = Menu.button(tostring(o), nil, 12)
-            add(inner, bs[i], nil, 0, 4)
+            rs[i] = Menu.ring(bs[i])
+            add(inner, rs[i], nil, 0, 2)
         end
         local box, l = labelled(label, inner)
-        return { root = box, bs = bs, l = l }
+        return { root = box, bs = bs, rs = rs, l = l }
     end)
     put(e, "label", label, function(v) setText(e.l, v) end)
     local chosen = value
+    local f = false
     for i, b in ipairs(e.bs) do
-        put(e, "opt" .. i, tostring(options[i]), function(v) b:SetContent(text(v, 12)) end)
         if clicked(e.state, i, b) then chosen = options[i] end
+        if showFocus(e, "focus" .. i, e.rs[i], b) then f = true end
     end
     local strs = {}
     for i, o in ipairs(options) do strs[i] = tostring(o) end
-    local act = seen("radio", label, tostring(chosen), strs, true)
+    local act = seen("radio", label, tostring(chosen), strs, true, f)
     if act ~= nil then
         for i, s in ipairs(strs) do
             if s == act or s:lower() == act:lower() then chosen = options[i] break end
         end
     end
     for i, b in ipairs(e.bs) do
-        put(e, "sel" .. i, options[i] == chosen, function(v) b:SetBackgroundColor(C(v and THEME.accent or "#3a4250")) end)
+        local sel = options[i] == chosen
+        put(e, "opt" .. i, strs[i] .. (sel and "\t*" or ""), function()
+            b:SetContent(text(strs[i], 12, sel and THEME.selected_text or THEME.text))
+            b:SetBackgroundColor(C(sel and THEME.selected or "#3a4250"))
+        end)
     end
     return chosen
 end
@@ -549,8 +602,8 @@ end
 function ui.choice(label, value, options)
     local e = row("choice", function()
         local c = new("ComboBox")
-        local box, l = labelled(label, c)
-        return { root = box, c = c, l = l }
+        local box, l, r = labelled(label, c)
+        return { root = box, c = c, l = l, r = r }
     end)
     put(e, "label", label, function(v) setText(e.l, v) end)
     local strs = {}
@@ -567,7 +620,7 @@ function ui.choice(label, value, options)
         e.v = tostring(value)
         e.c:SetSelectedOption(e.v)
     end
-    local act = seen("choice", label, e.v, strs, true)
+    local act = seen("choice", label, e.v, strs, true, showFocus(e, "focus", e.r, e.c))
     if act ~= nil then
         for _, s in ipairs(strs) do
             if s == act or s:lower() == act:lower() then
@@ -589,8 +642,8 @@ function ui.slider(label, value, lo, hi, opts)
     local e = row("slider", function()
         local s = new("Slider")
         local v = text("", 12, THEME.muted)
-        local box, l = labelled(label, s, nil, Menu.sized(v, 84))
-        return { root = box, s = s, l = l, vt = v }
+        local box, l, r = labelled(label, s, nil, Menu.sized(v, 84))
+        return { root = box, s = s, l = l, vt = v, r = r }
     end)
     put(e, "label", label, function(v) setText(e.l, v) end)
     -- The range stretches to take a value outside it, which the slider would otherwise clamp (and
@@ -610,7 +663,7 @@ function ui.slider(label, value, lo, hi, opts)
         e.v = value
         e.s:SetValue(value)
     end
-    local act = tonumber(seen("slider", label, e.v, { lo, hi }, true) or "")
+    local act = tonumber(seen("slider", label, e.v, { lo, hi }, true, showFocus(e, "focus", e.r, e.s)) or "")
     if act then
         e.v = act
         e.s:SetValue(act)
@@ -625,8 +678,8 @@ function ui.number(label, value, opts)
     local e = row("number", function()
         local s = new("SpinBox")
         styleSpinBox(s)
-        local box, l = labelled(label, s)
-        return { root = box, s = s, l = l }
+        local box, l, r = labelled(label, s)
+        return { root = box, s = s, l = l, r = r }
     end)
     put(e, "label", label, function(v) setText(e.l, v) end)
     put(e, "whole", opts.whole and true or false, function(whole)
@@ -651,7 +704,7 @@ function ui.number(label, value, opts)
         e.v = value
         e.s:SetValue(value)
     end
-    local act = tonumber(seen("number", label, e.v, { opts.min, opts.max }, true) or "")
+    local act = tonumber(seen("number", label, e.v, { opts.min, opts.max }, true, showFocus(e, "focus", e.r, e.s)) or "")
     if act then
         e.v = opts.whole and math.floor(act + 0.5) or act
         e.s:SetValue(e.v)
@@ -665,8 +718,8 @@ function ui.input(label, value, opts)
     local e = row("input", function()
         local t = new("EditableTextBox")
         styleTextBox(t)
-        local box, l = labelled(label, t)
-        return { root = box, t = t, l = l }
+        local box, l, r = labelled(label, t)
+        return { root = box, t = t, l = l, r = r }
     end)
     put(e, "label", label, function(v) setText(e.l, v) end)
     put(e, "hint", opts.hint or "", function(v) e.t:SetHintText(FText(v)) end)
@@ -677,7 +730,7 @@ function ui.input(label, value, opts)
         e.v = tostring(value or "")
         setText(e.t, e.v)
     end
-    local act = seen("input", label, e.v, nil, true)
+    local act = seen("input", label, e.v, nil, true, showFocus(e, "focus", e.r, e.t))
     if act ~= nil then
         e.v = act
         setText(e.t, act)
@@ -706,8 +759,8 @@ function ui.color(label, hex)
         end
         local v = text("", 12, THEME.muted)
         add(inner, Menu.sized(v, 84))
-        local box, l = labelled(label, inner, 0.58)
-        return { root = box, sw = sw, ss = ss, vt = v, l = l }
+        local box, l, r = labelled(label, inner, 0.58)
+        return { root = box, sw = sw, ss = ss, vt = v, l = l, r = r, inner = inner }
     end)
     put(e, "label", label, function(v) setText(e.l, v) end)
     local h = tostring(hex or "#808080"):gsub("^#", "")
@@ -729,7 +782,7 @@ function ui.color(label, hex)
         end
     end
     local out = hexOf(e.rgb[1], e.rgb[2], e.rgb[3])
-    local act = seen("color", label, out, nil, true)
+    local act = seen("color", label, out, nil, true, showFocus(e, "focus", e.r, e.inner))
     local ah = act and act:match("^#?(%x%x%x%x%x%x)$")
     if ah then
         for i, s in ipairs(e.ss) do
@@ -799,10 +852,11 @@ function ui.section(title, fn, opts)
     if open_sections[key] == nil then open_sections[key] = opts.open ~= false end
     local e = row("section", function()
         local b = Menu.button("")
-        return { root = b, b = b, top = 6 }
+        local r = Menu.ring(b)
+        return { root = r, b = b, r = r, top = 4 }
     end)
     if clicked(e.state, "b", e.b) then open_sections[key] = not open_sections[key] end
-    local act = seen("section", title, open_sections[key], nil, true)
+    local act = seen("section", title, open_sections[key], nil, true, showFocus(e, "focus", e.r, e.b))
     if act ~= nil then open_sections[key] = truthy(act, open_sections[key]) end
     local isOpen = open_sections[key]
     put(e, "title", (isOpen and "-  " or "+  ") .. title, function(v) e.b:SetContent(text(v, 14, THEME.heading)) end)
@@ -822,6 +876,7 @@ local function render(page)
         rows, gen = {}, g
     end
     cursor = 0
+    pageFocus = focused(content)
     agentBegin()
     local ok, err = pcall(page.fn, ui)
     if not ok then
@@ -984,6 +1039,8 @@ local C, THEME, new, add, text = Menu.color, Menu.theme, Menu.new, Menu.add, Men
 local VISIBLE, COLLAPSED = 0, 1   -- ESlateVisibility
 local FILL = 1
 local USER_SPECIFIED = 7          -- EStretch::UserSpecified: scale by SetUserSpecifiedScale
+local NAV_WRAP = 2                -- EUINavigationRule::Wrap, for EUINavigation Left..Previous (0-5)
+local SCROLL_INSTANT = 1          -- EScrollWhenFocusChanges::InstantScroll
 
 local pc, nextSearch = nil, 0
 local function controller()
@@ -1048,15 +1105,18 @@ local function build(c, lib)
     frame:SetContent(column)
     local header = make("HorizontalBox")
     add(header, text("Mod menu", 20, THEME.heading), 1)
-    local smaller = Menu.button("A-", nil, 12)
-    add(header, smaller, nil, 0, 4)
-    local bigger = Menu.button("A+", nil, 12)
-    add(header, bigger, nil, 0, 18)
-    local pause = make("CheckBox")
-    add(header, pause, nil, 0, 6)
-    add(header, text("Pause the game", 12, THEME.muted), nil, 0, 18)
-    local close = Menu.button("Close", nil, 13)
-    add(header, close)
+    local rings = {}
+    local function ringed(name, w, padRight)
+        local r = Menu.ring(w)
+        add(header, r, nil, 0, padRight)
+        rings[#rings + 1] = { name = name, w = w, r = r }
+        return w
+    end
+    local smaller = ringed("A-", Menu.button("A-", nil, 12), 2)
+    local bigger = ringed("A+", Menu.button("A+", nil, 12), 16)
+    local pause = ringed("Pause the game", make("CheckBox"), 4)
+    add(header, text("Pause the game", 12, THEME.muted), nil, 0, 16)
+    local close = ringed("Close", Menu.button("Close", nil, 13))
     column:AddChildToVerticalBox(header)
 
     -- Under the header: how your cat is doing (HOST.status, from the Game pages), or how to use the menu.
@@ -1078,8 +1138,12 @@ local function build(c, lib)
     add(body, pane, 1, 0, 0, 0)
 
     widget:AddToViewport(2000)
+    -- Keyboard and controller: focus moving off an edge of the window comes back in at the other side
+    -- (it would otherwise go to the game's own screens underneath), and a list scrolls to what has focus.
+    for dir = 0, 5 do pcall(function() frame:SetNavigationRuleBase(dir, NAV_WRAP) end) end
+    for _, list in ipairs({ tabs, content }) do pcall(function() list:SetScrollWhenFocusChanges(SCROLL_INSTANT) end) end
     return { widget = widget, tree = tree, tabs = tabs, content = content, close = close, pause = pause, frame = frame,
-             scaler = scaler, sizer = sizer, smaller = smaller, bigger = bigger, status = status,
+             scaler = scaler, sizer = sizer, smaller = smaller, bigger = bigger, status = status, rings = rings,
              tabButtons = {}, tabList = nil, state = {} }
 end
 
@@ -1162,6 +1226,11 @@ end
 
 local generation = 0
 local function show(id)
+    if win then
+        win.pointAt = 0   -- the new page's first control, as soon as it has one
+        -- Focus on the old page would go with it (a script opening another page): put it on the tab.
+        if Menu.focused(win.content) then win.focusTab = true end
+    end
     Menu.share("page", id)
     pcall(function() win.content:ClearChildren() end)
     generation = generation + 1
@@ -1181,14 +1250,15 @@ local function updateTabs()
         for _, p in ipairs(list) do
             if p.group ~= group then
                 group = p.group
-                local h = text((GROUP_LABEL[group] or group):upper(), 11, THEME.muted)
+                local h = text((GROUP_LABEL[group] or group):upper(), 12, THEME.muted)
                 local hslot = win.tabs:AddChild(h)
                 hslot:SetPadding({ Left = 4, Top = #win.tabButtons > 0 and 10 or 0, Right = 0, Bottom = 4 })
             end
             local b = Menu.button(p.title, nil, 13)
-            local slot = win.tabs:AddChild(b)
-            slot:SetPadding({ Left = 0, Top = 0, Right = 0, Bottom = 3 })
-            win.tabButtons[#win.tabButtons + 1] = { id = p.id, b = b }
+            local r = Menu.ring(b)
+            local slot = win.tabs:AddChild(r)
+            slot:SetPadding({ Left = 0, Top = 0, Right = 0, Bottom = 1 })
+            win.tabButtons[#win.tabButtons + 1] = { id = p.id, title = p.title, b = b, r = r, state = {} }
         end
     end
     local current = Menu.shared("page")
@@ -1201,17 +1271,81 @@ local function updateTabs()
         show(current)
     end
     for _, t in ipairs(win.tabButtons) do
-        local pressed = t.b:IsPressed()
-        if t.was and not pressed and t.b:IsHovered() and t.id ~= current then
+        if Menu.clicked(t.state, "b", t.b) and t.id ~= current then
             current = t.id
             show(current)
         end
-        t.was = pressed
+    end
+    for _, t in ipairs(win.tabButtons) do
         local sel = t.id == current
         if t.sel ~= sel then
             t.sel = sel
-            t.b:SetBackgroundColor(C(sel and THEME.accent or "#2a313c"))
+            t.b:SetContent(text(t.title, 13, sel and THEME.selected_text or THEME.text))
+            t.b:SetBackgroundColor(C(sel and THEME.selected or "#2a313c"))
         end
+    end
+    -- Opening the menu puts focus on its page's tab, so the keyboard and a controller start there.
+    if win.focusTab then
+        win.focusTab = false
+        for _, t in ipairs(win.tabButtons) do
+            if t.id == current then pcall(function() t.b:SetKeyboardFocus() end) end
+        end
+    end
+end
+
+-- Right from the side bar goes to the page's first control. The engine only looks straight across,
+-- where a page often has text, so each tab is told where to go; it's looked for again twice a second,
+-- as pages make and drop their rows.
+local CONTROLS = { Button = true, CheckBox = true, Slider = true, SpinBox = true, EditableTextBox = true,
+                   ComboBoxString = true }
+local function firstControl(w, depth)
+    if not valid(w) or depth > 12 then return nil end
+    if CONTROLS[w:GetClass():GetFName():ToString()] then return w end
+    local ok, n = pcall(function() return w:GetChildrenCount() end)
+    if ok and type(n) == "number" then
+        for i = 0, n - 1 do
+            local found = firstControl(w:GetChildAt(i), depth + 1)
+            if found then return found end
+        end
+        return nil
+    end
+    local okc, c = pcall(function() return w:GetContent() end)
+    return okc and firstControl(c, depth + 1) or nil
+end
+local NAV_RIGHT = 1
+local function pointTabs()
+    if os.clock() < (win.pointAt or 0) then return end
+    win.pointAt = os.clock() + 0.5
+    local first = firstControl(win.content, 0)
+    local key = (first and tostring(first:GetAddress()) or "") .. "|" .. tostring(win.tabList) .. "|" .. generation
+    if key == win.pointed then return end
+    win.pointed = key
+    for _, t in ipairs(win.tabButtons) do
+        if first then pcall(function() t.b:SetNavigationRuleExplicit(NAV_RIGHT, first) end)
+        else pcall(function() t.b:SetNavigationRuleBase(NAV_RIGHT, 0) end) end   -- 0: Escape, the engine's own
+    end
+end
+
+-- The rings round the window's own controls, and which of them has focus (WCModsMenu.focus, for the
+-- agent; a page's own rows say so in their reads).
+local function showFocus()
+    local where = ""
+    local function light(x, w, name)
+        local f = Menu.focused(w)
+        if f then where = name end
+        if x.lit ~= f then
+            x.lit = f
+            x.r:SetBrushColor(C(f and THEME.focus or "#00000000"))
+        end
+    end
+    for _, x in ipairs(win.rings) do light(x, x.w, x.name) end
+    local inTabs = Menu.focused(win.tabs)   -- once, rather than asking every tab
+    for _, t in ipairs(win.tabButtons) do
+        if inTabs or t.lit then light(t, t.b, "tab\t" .. t.title) end
+    end
+    if where ~= win.focusShared then
+        win.focusShared = where
+        Menu.share("focus", where)
     end
 end
 
@@ -1233,6 +1367,7 @@ local function openMenu()
     c.bShowMouseCursor = true
     pcall(function() win.widget:SetIsFocusable(true) end)
     pcall(function() lib.widgets:SetInputMode_UIOnlyEx(c, win.widget, 0, false) end)
+    win.focusTab = true
     isOpen = true
     Menu.share("open", true)
     show(Menu.shared("page") or "")
@@ -1272,6 +1407,8 @@ local function tick()
         return
     end
     updateTabs()
+    pointTabs()
+    showFocus()
     if HOST.status and os.clock() - statusAt >= 0.5 then
         statusAt = os.clock()
         local ok, line = pcall(HOST.status)
@@ -1283,17 +1420,12 @@ local function tick()
         end
     end
     for _, key in ipairs({ "smaller", "bigger" }) do
-        local b = win[key]
-        local down = b:IsPressed()
-        if win.state[key] and not down and b:IsHovered() then
+        if Menu.clicked(win.state, key, win[key]) then
             size = math.max(0.6, math.min(2.2, size * (key == "bigger" and 1.12 or 1 / 1.12)))
             fit()
         end
-        win.state[key] = down
     end
-    local pressed = win.close:IsPressed()
-    if win.state.close and not pressed and win.close:IsHovered() then closeMenu() end
-    win.state.close = pressed
+    if Menu.clicked(win.state, "close", win.close) then closeMenu() end
     if isOpen and win.pause:IsChecked() ~= paused then setPaused(win.pause:IsChecked()) end
 end
 

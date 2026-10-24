@@ -8,8 +8,19 @@ const loaded = {};   // section id -> { pane, module, handle }
 let info = null;
 let active = null;
 
-function chip(text, kind, title) {
-  return el("span", { class: `chip ${kind}`, title: title || false }, el("i"), text);
+// A status chip. What it means (tip) shows on hover and keyboard focus, and screen readers hear it.
+function chip(text, kind, tip) {
+  return el("span", { class: `chip ${kind}`, "data-tip": tip || false, tabindex: tip ? "0" : false },
+    el("i", { "aria-hidden": "true" }), text, tip ? el("span", { class: "sr-only", text: `: ${tip}` }) : null);
+}
+// The status is a live region: it's only redrawn when it says something new, so screen readers aren't
+// told the same thing every few seconds.
+let statusSaid = "";
+function setStatus(chips) {
+  const said = chips.map(c => `${c.className}|${c.textContent}`).join("\n");
+  if (said === statusSaid) return;
+  statusSaid = said;
+  clear(statusBox).append(...chips);
 }
 
 const installBtn = document.getElementById("installBtn");
@@ -21,11 +32,11 @@ async function refreshStatus() {
   try {
     [info, changes] = await Promise.all([api.get("/info"), api.get("/changes").catch(() => null)]);
   } catch (e) {
-    clear(statusBox).append(chip("Studio server not reachable", "bad", e.message));
+    setStatus([chip("Studio server not reachable", "bad", e.message)]);
     return null;
   }
   const waiting = changes ? changes.on.length + changes.off.length + changes.changed.length + (changes.redo || []).length : 0;
-  clear(statusBox).append(...[
+  setStatus([
     chip(info.game_running ? "Game running" : "Game closed", info.game_running ? "warn" : "good",
       info.game_running ? "Close the game to apply mods" : ""),
     info.game_build && info.game_build.build && !info.game_build.verified
@@ -56,28 +67,34 @@ async function refreshStatus() {
   return info;
 }
 
-// The side bar: managing mods first, then the pages for making them.
+// The side bar: managing mods first, then the pages for making them. Made once; opening a page only
+// moves aria-current, so the button you pressed keeps focus.
 const GROUPS = { play: "Your mods", make: "Make mods" };
 function renderNav() {
-  clear(nav);
-  const rank = s => Object.keys(GROUPS).indexOf(s.group || "make");
-  let last = null;
-  for (const s of [...info.sections].sort((a, b) => rank(a) - rank(b))) {
-    const g = s.group || "make";
-    if (g !== last) {
-      nav.append(el("span", { class: "nav-group", text: GROUPS[g] || g }));
-      last = g;
+  if (!nav.childElementCount) {
+    const rank = s => Object.keys(GROUPS).indexOf(s.group || "make");
+    let last = null;
+    for (const s of [...info.sections].sort((a, b) => rank(a) - rank(b))) {
+      const g = s.group || "make";
+      if (g !== last) {
+        nav.append(el("span", { class: "nav-group", "aria-hidden": "true", text: GROUPS[g] || g }));
+        last = g;
+      }
+      nav.append(el("button", { id: `nav-${s.id}`, onclick: () => open(s.id, true) },
+        s.title, s.from_mod ? el("small", { text: "mod" }, el("span", { class: "sr-only", text: " page" })) : null));
     }
-    nav.append(el("button", {
-      id: `nav-${s.id}`, "aria-current": active === s.id ? "page" : false,
-      onclick: () => open(s.id),
-    }, s.title, s.from_mod ? el("small", { text: "mod" }) : null));
+  }
+  for (const b of nav.querySelectorAll("button")) {
+    if (b.id === `nav-${active}`) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
   }
 }
 
-async function open(id) {
+// asked: the player chose the page (not the studio opening on it), so screen readers are told.
+async function open(id, asked = false) {
   const spec = info.sections.find(s => s.id === id) || info.sections[0];
   active = spec.id;
+  document.title = `${spec.title} · Clan Mod Studio`;
+  if (asked) wc.announce(`${spec.title} page`);
   try { localStorage.setItem("wc-section", active); } catch (e) { /* storage blocked */ }
   try { history.replaceState(null, "", "#" + active); } catch (e) { /* ignore */ }
   renderNav();
@@ -98,14 +115,30 @@ async function open(id) {
       el("h2", { text: `${spec.title} couldn't load` }),
       el("p", { text: e.message }),
       el("p", { class: "note", text: spec.from_mod ? `This page comes from the mod "${spec.from_mod}".` : "The other sections still work." }),
-      el("button", { class: "btn", text: "Try again", onclick: () => { pane.remove(); delete loaded[spec.id]; open(spec.id); } })));
+      el("button", { class: "btn", text: "Try again", onclick: () => { pane.remove(); delete loaded[spec.id]; open(spec.id, true); } })));
   }
 }
 
 // ---------- build / install ----------
+// The log of an install shows in a panel; opening it takes focus there (its heading, then Close and
+// the log), and closing it, with Close or Escape, puts focus back where it was.
 const drawer = document.getElementById("drawer");
 const drawerLog = document.getElementById("drawerLog");
-document.getElementById("drawerClose").addEventListener("click", () => { drawer.hidden = true; });
+const drawerTitle = document.getElementById("drawerTitle");
+let drawerBack = null;
+function showDrawer() {
+  if (drawer.hidden) drawerBack = wc.keepPlace();
+  drawer.hidden = false;
+  drawerTitle.focus();
+}
+function hideDrawer() {
+  if (drawer.hidden) return;
+  const inside = drawer.contains(document.activeElement);
+  drawer.hidden = true;
+  if (inside && drawerBack) drawerBack();
+}
+document.getElementById("drawerClose").addEventListener("click", hideDrawer);
+drawer.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); hideDrawer(); } });
 
 function summarize(manifest) {
   const lines = [];
@@ -122,8 +155,8 @@ async function runTask(path, title, body = {}) {
   if (busy) return;
   busy = true;
   installBtn.disabled = playBtn.disabled = true;
-  drawer.hidden = false;
-  document.getElementById("drawerTitle").textContent = title;
+  drawerTitle.textContent = title;
+  showDrawer();
   drawerLog.textContent = "Working…";
   drawer.querySelector(".force")?.remove();
   try {
@@ -132,7 +165,7 @@ async function runTask(path, title, body = {}) {
     const lines = [...(manifest ? summarize(manifest) : []), "", ...r.log];
     drawerLog.textContent = lines.join("\n").trim() || "Done.";
     toast(path === "/play" ? "Starting the game…" : `${title}: done`);
-    if (path === "/play") setTimeout(() => { drawer.hidden = true; }, 4000);
+    if (path === "/play") setTimeout(hideDrawer, 4000);
     bus.emit("installed", r.result);
     if (path === "/palettes/apply") bus.emit("mods-changed");   // it turned mods on and off
   } catch (e) {
@@ -140,7 +173,7 @@ async function runTask(path, title, body = {}) {
     toast(e.message, "bad");
     if ((path === "/install" || path === "/play" || path === "/palettes/apply") && e.message.startsWith("not installing")) {
       drawer.append(el("div", { class: "row force", style: { padding: "0 14px 14px" } },
-        wc.confirmButton("Apply the rest anyway", "Click again: the failed mods' earlier changes are removed",
+        wc.confirmButton("Apply the rest anyway", "Press again: the failed mods' earlier changes are removed",
           () => runTask(path, title, { ...body, force: true }), "btn danger")));
     }
   }
@@ -154,6 +187,9 @@ bus.on("run-task", ({ path, title, body }) => runTask(path, title, body));
 bus.on("mods-changed", () => refreshStatus());
 
 // ---------- boot ----------
+wc.keepFocus();
+// The skip link focuses the page without changing the address (#main isn't a section).
+document.querySelector(".skip").addEventListener("click", e => { e.preventDefault(); main.focus(); });
 (async () => {
   if (!await refreshStatus()) {
     main.append(el("div", { class: "error-card" }, el("h2", { text: "Can't reach the studio server" }),

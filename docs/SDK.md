@@ -387,6 +387,15 @@ Insert opens the menu in game, and Insert or Escape closes it. While it's open, 
 keyboard and mouse, the cursor shows, and the game's controls wait. "Pause the game" stops the game
 too, and A- and A+ resize it.
 
+The menu works without a mouse too:
+- **Moving:** Tab, the arrow keys or a controller's d-pad move between the controls. Tab goes round
+  the window: the top bar, the side bar, then the page. Opening the menu puts focus on the page's
+  tab, so Up and Down pick a page, Enter opens it and Right goes into it.
+- **Using a control:** Enter, Space or A presses a button, ticks a box or opens a list. A slider
+  takes Enter to grab it, Left and Right to move it, and Enter again to let go.
+- **Seeing where you are:** the control with focus has a gold ring. The page you're on, and a chosen
+  option, are light with dark text, so they show without relying on colour.
+
 Under the title, a status line shows your cat (name, level, rank, health, stamina, clan), the time
 and the fresh-kill pile. The side bar lists the pages in groups:
 
@@ -465,6 +474,12 @@ a page, by title or id) and `Menu.close()` closes it, e.g. from a script's own k
 and returns true, or false and why; `Menu.list(t)` marks a table as a JSON list, so an empty one is
 written `[]`. `Menu.json(value)` gives the JSON text, `Menu.color(hex)` the linear colour the game's
 UI wants, and `Menu.theme` the menu's colours.
+- **Colours:** text is at least 4.5:1 on what it's on, as drawn. `theme.danger` is for text;
+  `theme.danger_fill`, `theme.good` and `theme.accent` are for buttons. A button's colour is a tint of
+  the engine's button image, which draws it at about half the brightness.
+- **Keyboard and controller, for a script's own widgets:** `Menu.clicked(state, key, button)` is true
+  the frame a button is clicked, by the mouse or with focus. `Menu.ring(widget)` puts a focus ring
+  round a widget, and `Menu.focused(widget)` says whether it, or something in it, has focus.
 
 How it fits together: each UE4SS mod has a Lua state of its own, so the menu window belongs to a
 script wcmods installs with every build, `WCModsMenuHost`. It shares its content panel with the

@@ -143,7 +143,7 @@ export default {
     const vanillaBox = el("input", { type: "checkbox", id: "pal-vanilla" });
     vanillaBox.addEventListener("change", () => { view.vanilla = vanillaBox.checked; drawCat(); });
     const tabs = el("div", { class: "row", role: "tablist", "aria-label": "Palette sections" });
-    const panel = el("div", { style: { display: "grid", gap: "16px" } });
+    const panel = el("div", { role: "tabpanel", id: "pal-panel", style: { display: "grid", gap: "16px" } });
     const presetRow = el("div", { class: "row" });
     const quick = el("div", { class: "card" });
 
@@ -179,7 +179,7 @@ export default {
       drawQuick();
     }
     function drawQuick() {
-      const dot = (hex, round) => el("span", { title: hex, style: { display: "inline-block", width: "13px", height: "13px",
+      const dot = (hex, round) => el("span", { class: "swatch", title: hex, style: { display: "inline-block", width: "13px", height: "13px",
         background: hex, borderRadius: round ? "50%" : "3px", boxShadow: "inset 0 0 0 1px rgba(0,0,0,.18)" } });
       const eyeRim = (p, r) => {
         const v = p.eyes && Object.entries(p.eyes).find(([k]) => eyeRow(k) === r)?.[1];
@@ -278,13 +278,26 @@ export default {
     }
 
     // ---------- tabs ----------
+    // The arrow keys (and Home, End) move between the tabs; Tab goes on into the open one.
+    function pickTab(id) { view.tab = id; renderTabs(); renderPanel(); }
+    tabs.addEventListener("keydown", e => {
+      const i = SECTIONS.findIndex(s => s.id === view.tab);
+      const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: SECTIONS.length - 1 }[e.key];
+      if (to === undefined) return;
+      e.preventDefault();
+      pickTab(SECTIONS[(to + SECTIONS.length) % SECTIONS.length].id);
+      document.getElementById(`pal-tab-${view.tab}`)?.focus();
+    });
     function renderTabs() {
       clear(tabs);
       for (const s of SECTIONS) {
         const n = Object.keys(state[s.id]).length;
-        tabs.append(el("button", { class: "chip", role: "tab", "aria-selected": String(view.tab === s.id), "aria-pressed": String(view.tab === s.id),
-          onclick: () => { view.tab = s.id; renderTabs(); renderPanel(); } }, s.title, n ? el("span", { class: "mono", style: { color: "var(--changed)" }, text: ` ${n}` }) : null));
+        const on = view.tab === s.id;
+        tabs.append(el("button", { class: "chip", role: "tab", id: `pal-tab-${s.id}`, "aria-selected": String(on), "aria-controls": "pal-panel",
+          tabindex: on ? "0" : "-1", onclick: () => pickTab(s.id) },
+          s.title, n ? el("span", { class: "mono", style: { color: "var(--changed)" }, text: ` ${n}` }, el("span", { class: "sr-only", text: " changed" })) : null));
       }
+      panel.setAttribute("aria-labelledby", `pal-tab-${view.tab}`);
     }
     const grid = cards => el("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "10px" } }, ...cards);
     const group = (title, sub, cards) => el("div", { style: { display: "grid", gap: "8px" } },
@@ -336,14 +349,14 @@ export default {
       const orig = isNew ? (state[sec.id][i] || "#888888") : TABLE(sec.id)[i];
       const card = cardBox();
       const newSw = el("span", { style: { background: orig } });
-      const pair = el("button", { class: "btn", style: { padding: "0", height: "38px", display: "grid", gridTemplateColumns: "1fr 1fr", overflow: "hidden" },
+      const pair = el("button", { class: "btn swatch", style: { padding: "0", height: "38px", display: "grid", gridTemplateColumns: "1fr 1fr", overflow: "hidden" },
         "aria-label": `Show ${sec.noun.toLowerCase()} slot ${i} on the cat`, onclick: () => { view[sec.id] = i; renderPicks(); drawCat(); refreshCards(); } },
         el("span", { style: { background: orig } }), newSw);
       const name = el("strong"), hex = el("span", { class: "hex muted" });
       const inp = el("input", { type: "color", id: `pal-${sec.id}-${i}`, "aria-label": `New colour for ${sec.noun.toLowerCase()} slot ${i}` });
       inp.addEventListener("input", () => { state[sec.id][i] = color.normHex(inp.value); target.markDirty(); card._update(); drawCat(); });
       inp.addEventListener("change", () => { renderTabs(); renderPicks(); });
-      const reset = el("button", { class: "btn ghost small", text: isNew ? "Remove" : "Reset", onclick: () => {
+      const reset = el("button", { class: "btn ghost small", text: isNew ? "Remove" : "Reset", "aria-label": `${isNew ? "Remove" : "Reset"} ${sec.noun.toLowerCase()} slot ${i}`, onclick: () => {
         delete state[sec.id][i];
         target.markDirty();
         if (isNew) { if (view[sec.id] === i) view[sec.id] = 0; renderPanel(); renderTabs(); renderPicks(); drawCat(); return; }
@@ -358,6 +371,7 @@ export default {
         hex.textContent = changed && !isNew ? `${orig} → ${cur}` : cur;
         inp.value = cur.toLowerCase(); reset.disabled = !changed;
         card.style.boxShadow = view[sec.id] === i ? "0 0 0 2px var(--accent)" : "";
+        pair.setAttribute("aria-pressed", String(view[sec.id] === i));
       };
       card._update();
       return card;
@@ -365,14 +379,14 @@ export default {
     function eyeCard(row) {
       const card = cardBox();
       const newRamp = el("span", { style: { height: "18px", borderRadius: "5px", border: "1px solid var(--line)" } });
-      const pick = el("button", { class: "btn", style: { padding: "4px", display: "grid", gap: "3px" }, "aria-label": `Show ${EYE_LABEL[row]} on the cat`,
+      const pick = el("button", { class: "btn swatch", style: { padding: "4px", display: "grid", gap: "3px" }, "aria-label": `Show ${EYE_LABEL[row]} on the cat`,
         onclick: () => { if (row > 0) { view.eyeL = view.eyeR = row; renderPicks(); } drawCat(); refreshCards(); } },
         el("span", { style: { height: "18px", borderRadius: "5px", border: "1px solid var(--line)", background: rampCss(EYE_LIN[row]) } }), newRamp);
       const name = el("strong"), hex = el("span", { class: "hex muted" });
       const one = el("button", { class: "chip", text: "One colour", onclick: () => setMode("single") });
       const grad = el("button", { class: "chip", text: "Gradient", onclick: () => setMode("grad") });
       const inputs = el("div", { class: "row" });
-      const reset = el("button", { class: "btn ghost small", text: "Reset", onclick: () => { delete state.eyes[row]; rebuild(); card._update(); drawCat(); renderTabs(); renderPicks(); } });
+      const reset = el("button", { class: "btn ghost small", text: "Reset", "aria-label": `Reset ${EYE_LABEL[row]}`, onclick: () => { delete state.eyes[row]; rebuild(); card._update(); drawCat(); renderTabs(); renderPicks(); } });
       card.append(pick, el("div", { class: "row spread" }, name, hex), el("div", { class: "row" }, one, grad, reset), inputs);
       const ensure = () => (state.eyes[row] ||= { mode: "single", colors: [vanillaRim(row)] });
       function setMode(mode) {
