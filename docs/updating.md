@@ -12,10 +12,11 @@ Mods page says what that means:
 
 - **wcmods' own parts:** wcmods looks through the new game for the values it reads directly (your
   cat's health and stamina, level and stats, the clock, the fresh-kill pile, fight stats). Anything
-  that moved is followed, and anything it can't find again is switched off instead of guessed: the
-  mod menu shows those values as not available. This takes about a minute, once per update.
+  that moved is followed, and anything it can't find again, or can't vouch for, is switched off
+  instead of guessed: the mod menu shows those values as not available. This takes under a minute,
+  once per update, and the next Play or Apply puts the result in.
 - **Your mods:** a mod made for an older version of the game is left out until its maker updates
-  it. Its card says so. **Use it anyway…** puts it back in, for this version only, after a warning:
+  it, and so is a mod that needs it. Its card says so. **Use it anyway…** puts it back in, for this version only, after a warning:
   it may not work, or may behave unpredictably (a broken page, odd values, a crash). Back up your save
   first. After the next update it's left out again.
 
@@ -67,19 +68,26 @@ everything here works in RVAs). A rebuild that adds a member to a class does mov
   changes around it.
 
 `check()` on another exe finds each class again the same way, compares its size, and reads each
-member's offset out of the code its signatures match. Several sites vote on each member:
+member's offset out of the code its signatures match. The sites vote on each member:
 
 | Status | Meaning | What wcmods does |
 |---|---|---|
 | same | the signatures agree it hasn't moved | uses it |
-| moved | they agree on a new offset | uses the new offset |
-| kept | no signature matched, but the class is the same size and nothing else in it moved | uses it |
-| conflict | the signatures disagree | leaves it out |
-| lost | no signature matched and the class changed | leaves it out |
+| moved | two or more agree on a new offset, inside the class and aligned | uses the new offset |
+| kept | no signature matched, but the exe is the one the signatures were made on, or the class is the same size, another of its members was found where it was, and none moved or disagreed | uses it |
+| unsure | one site alone says it moved | leaves it out |
+| conflict | the signatures disagree, the offset can't be one, or two members land on one offset | leaves it out |
+| lost | no signature matched and it can't be kept | leaves it out |
 
-`gamebuild.layout()` runs the check once per build, keeps the result in `cache/layout-<build>-....json`,
-and the build gives WCModsGame those offsets (`game.lua(offsets)`). A member that's left out simply
-doesn't exist in the game, so reading it gives nil and the menu's pages say it's not available.
+`gamebuild.layout()` runs the check once per build. It keeps the result in `cache/layout-<key>.json`,
+where the key holds the build, the exe's size and time, and a hash of `game.HIDDEN` and
+`signatures.json`, so a new wcmods works it out again. The build then gives WCModsGame those offsets
+(`game.lua(offsets)`). A member that's left out simply doesn't exist in the game, so reading it gives
+nil and the menu's pages say it's not available.
+
+The check never stops a build. If it fails on an exe unlike any wcmods knows, or there's no exe to read,
+every member is left out, and it's tried again next time. The install records the build and the key,
+so after an update Play and Apply make the install again even when no mod changed.
 
 On build 24847281 the signatures confirm 10 values directly:
 - the resource component's Value (3 signatures), Max (1) and Scale (1);
@@ -88,10 +96,13 @@ On build 24847281 the signatures confirm 10 values directly:
 - the clock (2);
 - the combat component's Stamina (2), Clan (1) and Level (3).
 
-The rest rely on the "kept" rule: ResourceType, the level component's level and stats, and the
+The rest have no signature of their own: ResourceType, the level component's level and stats, and the
 combat component's stance, other stats and preset damage. Their classes' own code doesn't touch them
-in a way that can be told apart, and the stat getters share one shape for all six stats. If one of
-those classes changes size, those members are switched off until someone checks them.
+in a way that can be told apart, and the stat getters share one shape for all six stats.
+- **The combat component and ResourceType** are kept when their class's signed members are found where
+  they were. A same-size reorder of the class's other fields can't be seen this way.
+- **The level component** has no signed member at all, so after any update its values are switched off
+  until someone checks them.
 
 ### Commands
 
@@ -110,9 +121,10 @@ python wcmods.py game signatures make
 - **`game build`:** the installed build, what moved, and the mods made for older ones. `--refresh`
   looks again.
 - **`game signatures check`:** checks the installed exe, or `--exe <path>`, against the signatures.
-  `--json` prints all of it.
-- **`game signatures make`:** writes `wcmods/signatures.json` from the installed exe. Only do this on a
-  build whose `game.HIDDEN` offsets have been confirmed in game.
+  `--json` prints all of it as JSON (what it looked at goes to stderr).
+- **`game signatures make`:** writes `wcmods/signatures.json` from the installed exe, or `--exe <path>`
+  with `--build <number>`. Only do this on a build whose `game.HIDDEN` offsets have been confirmed in
+  game.
 - **`WCMODS_GAME_BUILD=<number>`:** makes wcmods act as if that build were installed, to try what an
   update does without one.
 
@@ -126,6 +138,6 @@ which aren't instructions.
 2. For each member reported moved, lost or in conflict, confirm the offset in game: `wcmods agent`
    runs Lua, and `tools/re/memscan.py` and `peek` find known values in memory. Update `game.HIDDEN`.
 3. Run `python wcmods.py selftest` and `python wcmods.py agent test` on the new build.
-4. Remake the signatures on the new build (`game signatures make`), add the build to
-   `gamebuild.VERIFIED`, and note it in `docs/reverse-engineering.md`.
+4. Remake the signatures on the new build (`game signatures make`), set `gamebuild.VERIFIED_BUILD` to
+   it (`game.HIDDEN` holds one layout, so it's one build), and note it in `docs/reverse-engineering.md`.
 5. Add an `ANCHORS` entry for any class that has none, so it can be found automatically next time.

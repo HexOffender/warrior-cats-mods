@@ -1109,7 +1109,12 @@ function Cat:health() return resource(self, "Health", "WCM_Value") end
 function Cat:maxHealth() return resource(self, "Health", "WCM_Max") end
 function Cat:setHealth(v) return setResource(self, "Health", "WCM_Value", v) end
 function Cat:setMaxHealth(v) return setResource(self, "Health", "WCM_Max", v) end
-function Cat:heal() return self:setHealth(self:maxHealth() or 0) end
+-- Full health; false when the game's maximum isn't known (a game update moved it where wcmods can't find it).
+function Cat:heal()
+    local max = self:maxHealth()
+    if max == nil then return false end
+    return self:setHealth(max)
+end
 function Cat:stamina() return resource(self, "Stamina", "WCM_Value") end
 function Cat:maxStamina() return resource(self, "Stamina", "WCM_Max") end
 function Cat:setStamina(v) return setResource(self, "Stamina", "WCM_Value", v) end
@@ -1565,15 +1570,14 @@ return Game
 def hidden(offsets=None):
     """HIDDEN with the offsets for the installed game: `offsets` maps "class:property" to an offset, or to
     None for one a game update moved where it couldn't be found again (left out, so reading it gives
-    nil). Without `offsets`, the ones found on build 24847281."""
+    nil); one it doesn't name is left out too. Without `offsets`, the ones found on build 24847281."""
     out = []
     for cls, fields in HIDDEN:
         kept = []
         for name, offset, kind in fields:
-            key = f"{cls}:{name}"
-            if offsets is not None and key in offsets:
-                offset = offsets[key]
-            if offset is not None:
+            if offsets is not None:
+                offset = offsets.get(f"{cls}:{name}")
+            if isinstance(offset, int) and offset > 0:
                 kept.append((name, offset, kind))
         if kept:
             out.append((cls, kept))

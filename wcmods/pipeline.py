@@ -65,7 +65,8 @@ def build(cfg, mods, out_dir, log=print):
     # player chose to use it anyway on this build; the in-game module follows what the update moved.
     build = gamebuild.current(cfg)["build"]
     old = gamebuild.outdated(cfg, mods, build)
-    left_out = {i: "made for an older version of the game" for i, o in old.items() if not o["allowed"]}
+    # Those mods, and the ones that need them: a game update alone doesn't stop installing.
+    left_out = gamebuild.held_back(cfg, mods, build)
     # A mod that needs another mod ("requires" in mod.json) which is missing or off is left out, and
     # the report says why, so installing stops until that's sorted (or --force leaves it out).
     unmet = modlib.unmet(mods, left_out)
@@ -125,8 +126,8 @@ def build(cfg, mods, out_dir, log=print):
                 "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
                 "csv_changes": csv_changes, "files": sorted(ctx.files),
                 "built": datetime.datetime.now().isoformat(timespec="seconds")}
-    names = {m.id: m.name for m in mods}
-    manifest["outdated"] = [{"id": i, "name": names[i], "made_for": o["made_for"], "used": o["allowed"]}
+    titles = {m.id: m.name for m in mods}
+    manifest["outdated"] = [{"id": i, "name": titles[i], "made_for": o["made_for"], "used": o["allowed"]}
                             for i, o in old.items()]
     for o in manifest["outdated"]:
         manifest["warnings"].append(
@@ -134,9 +135,13 @@ def build(cfg, mods, out_dir, log=print):
             "unpredictably; you chose to use it anyway" if o["used"] else
             f"{o['name']} was made for an older version of the game, so it's left out until it's updated "
             "(or you choose to use it anyway)")
+    for i, why in left_out.items():
+        if i not in old:
+            manifest["warnings"].append(f"{titles.get(i, i)} is left out: it {why}")
     # wcmods' own in-game members on this build: as found on a verified one, or where the update moved them.
     fit = gamebuild.layout(cfg, log)
-    manifest["game"] = {"build": build, "status": fit["status"], "moved": fit["moved"], "lost": fit["lost"]}
+    manifest["game"] = {"build": build, "status": fit["status"], "moved": fit["moved"], "lost": fit["lost"],
+                        "layout": gamebuild.layout_key(cfg)}
     if fit["lost"]:
         manifest["warnings"].append(
             "the game updated, and these values couldn't be found again, so what uses them is off until wcmods "
@@ -194,7 +199,8 @@ def build(cfg, mods, out_dir, log=print):
                                         f"using {menu.DEFAULT_KEY}")
         # The pages show the game's own area names and quest titles, read here from its tables.
         pages = hostpages.data(lambda path: game.read_text(path), cfg)
-        host = menu.host_script(manifest, mods, opts["key"], cheats=opts["cheats"], scale=opts["size"],
+        # The menu's list of installed mods: the ones this build has (not those left out).
+        host = menu.host_script(manifest, enabled, opts["key"], cheats=opts["cheats"], scale=opts["size"],
                                 dev=bool(cfg.data.get("allow_code_mods")), pages=pages)
         manifest["warnings"] += [f"{menu.HOST_NAME}: {p}" for p in luacheck.check(host)[:3]]
         ctx.ue4ss_mods[menu.HOST_NAME] = ({"Scripts/main.lua": host.encode(), "enabled.txt": b""}, None)
@@ -215,7 +221,7 @@ def build(cfg, mods, out_dir, log=print):
     plan = None
     try:   # the cats' names, after the enabled name mods, for WCModsWorld's labels
         plan = names.Plan(names.GameNames(lambda path: game.read_text(BuildContext.data_path(path))),
-                          names.merge(names.mod_specs(mods)))
+                          names.merge(names.mod_specs(enabled)))
     except Exception as e:   # no game data (no Oodle DLL) or a broken names.json, which the names section reports
         log(f"  (cat names for the mod menu left out: {e})")
     shared_files[world.NAMES_NAME] = world.names_lua(plan)
@@ -252,7 +258,7 @@ def pending(cfg, mods):
     except (OSError, ValueError):   # being written this moment
         data = cfg.data
     # What an install would put in: mods made for an older version of the game stay out (unless used anyway).
-    left_out = {i for i, o in gamebuild.outdated(cfg, mods).items() if not o["allowed"]}
+    left_out = set(gamebuild.held_back(cfg, mods))
     now = {m.id for m in mods if m.enabled} - left_out
     inst = data.get("installed")
     if not inst:
@@ -268,6 +274,13 @@ def pending(cfg, mods):
         redo.append("the script loader (UE4SS) is in now")
     if now and inst.get("oodle") is False and cfg.oodle_dll:
         redo.append("the oo2core file is set now")
+    # The game updated since (or its exe changed): wcmods' in-game module has to follow it. An install
+    # from before the build was recorded was made on the build every one was then.
+    build = gamebuild.steam_build(cfg)
+    if now and build is not None and build != inst.get("game_build", gamebuild.ASSUMED_BUILDS[0]):
+        redo.append(f"the game updated (build {build})")
+    elif now and inst.get("layout") and gamebuild.layout_key(cfg) not in (None, inst["layout"]):
+        redo.append("the game, or what wcmods knows of it, changed")
     out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed, "redo": redo}
     out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo)
     return out
@@ -354,8 +367,10 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
         apply_save_ops(cfg, manifest["save_ops"], backups_root, log)
     # What the game had then: an install made without UE4SS (or the Oodle DLL) left parts out, so
     # pending() asks for another once it's there.
+    game_info = manifest.get("game") or {}
     cfg.data["installed"] = {"mods": manifest["mods"], "built": manifest["built"], "ue4ss": bool(mods_dir),
-                             "oodle": bool(cfg.oodle_dll)}
+                             "oodle": bool(cfg.oodle_dll), "game_build": game_info.get("build"),
+                             "layout": game_info.get("layout")}
     cfg.save()
     return manifest
 

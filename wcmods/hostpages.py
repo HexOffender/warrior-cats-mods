@@ -222,7 +222,7 @@ end
             if s.fight then ui.text("You're in a fight. The Fight page has both sides.", { color = THEME.heading }) end
             local hit = ui.buttons({ "Heal", "Full stamina", "Morning", "Evening" }, { kinds = { "good" } })
             if hit == 1 then s.cat:heal()
-            elseif hit == 2 then s.cat:setStamina(s.maxst or 100)
+            elseif hit == 2 and s.maxst then s.cat:setStamina(s.maxst)
             elseif hit == 3 then Game.time.set(7, 0)
             elseif hit == 4 then Game.time.set(19, 0) end
             if hit then refresh() end

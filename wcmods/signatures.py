@@ -520,20 +520,31 @@ def load(path=DATA):
 
 
 # ---------- checking another build ----------
+MIN_MOVE_VOTES = 2   # a member is followed to a new offset on the word of two sites or more
+WIDTH = {"ByteProperty": 1, "IntProperty": 4, "FloatProperty": 4}
+
+
 def check(image_path, sigs=None, log=print):
     """What the signatures find in this exe: {"same", "classes": {class: {"found", "size", "size_was",
     "anchors", "fields": {name: {"was", "now", "votes", "status"}}}}, "offsets": {"class:name": offset or
     None}}. A member's status:
-    - "same" / "moved": its signatures agree on where it is now;
-    - "kept": none matched, but its class is the same size and nothing else in it moved, so it's taken
-      as where it was;
-    - "conflict": they disagree; "lost": none matched and the class changed. Both mean its offset is None.
+    - "same": its signatures agree it's where it was;
+    - "moved": two or more agree on a new offset, which fits in the class;
+    - "kept": none matched, but the exe is the one the signatures were made on, or its class is the same
+      size, another member of it was found where it was, and none moved or disagreed: taken as where it
+      was. A class with no member found gets none kept;
+    - "unsure": a single site says it moved; "conflict": they disagree, or two members land on the same
+      offset, or the offset can't be one (outside the class, misaligned); "lost": none matched and it
+      can't be kept. These mean its offset is None, so it's left out.
     """
+    from .game import HIDDEN
+    widths = {f"{c}:{n}": WIDTH.get(kind, 4) for c, fields in HIDDEN for n, _, kind in fields}
     sigs = sigs or load()
     img = pe.Image(image_path)
     finder = Finder(img)
     out = {"made_on": sigs.get("made_on"), "exe": img.fingerprint(), "classes": {}, "offsets": {}}
-    out["same_exe"] = out["exe"] == out["made_on"]
+    made_on = out["made_on"] or {}
+    out["same_exe"] = all(made_on.get(k) == v for k, v in out["exe"].items())   # made_on also holds the build
     found = {cls: finder.find_class(cls.rsplit(".", 1)[-1]) for cls in sigs["classes"]}
     finder.class_code(found.values())
     for cls, entry in sigs["classes"].items():
@@ -555,24 +566,52 @@ def check(image_path, sigs=None, log=print):
                 for k, was in site["captures"].items():
                     votes.setdefault(was, []).append(struct.unpack_from("<i", finder.tdata, at + int(k))[0])
         same_size = info is not None and info.size == entry.get("size")
-        moved_any = False
+        size = info.size if info else entry.get("size") or 0
         for name, was in entry["fields"].items():
             got = votes.get(was, [])
+            width = widths.get(f"{cls}:{name}", 4)
             if got and all(v == got[0] for v in got):
-                now, status = got[0], "same" if got[0] == was else "moved"
-                moved_any |= status == "moved"
+                now = got[0]
+                if now == was:
+                    status = "same"
+                elif not (0 < now and now + width <= size and now % width == 0):
+                    now, status = None, "conflict"   # not an offset in this class
+                elif len(got) < MIN_MOVE_VOTES:
+                    now, status = None, "unsure"
+                else:
+                    status = "moved"
             elif got:
                 now, status = None, "conflict"
             else:
                 now, status = None, "lost"
             rep["fields"][name] = {"was": was, "now": now, "votes": len(got), "status": status}
+        statuses = [f["status"] for f in rep["fields"].values()]
+        evidence = "same" in statuses
+        disturbed = any(s in ("moved", "unsure", "conflict") for s in statuses)
         for name, f in rep["fields"].items():
-            if f["status"] == "lost" and same_size and not moved_any:
+            if f["status"] == "lost" and (out["same_exe"] or (same_size and evidence and not disturbed)):
                 f["now"], f["status"] = f["was"], "kept"
-            out["offsets"][f"{cls}:{name}"] = f["now"]
         log(f"  {short}: " + ("not found" if not info else
             f"size 0x{info.size:X}" + ("" if same_size else f" (was 0x{entry.get('size') or 0:X})") + "; " +
             ", ".join(f"{n} {f['status']}" + (f" 0x{f['was']:X}->0x{f['now']:X}" if f["status"] == "moved" else "")
                       for n, f in rep["fields"].items())))
+    # A class shares its object with the monitored classes it derives from: no two members on one offset.
+    def line(cls):
+        while cls:
+            yield cls
+            parent = sigs["classes"][cls].get("parent")
+            cls = next((c for c in sigs["classes"] if c.rsplit(".", 1)[-1] == parent), None) if parent else None
+    for cls in sigs["classes"]:
+        seen = {}
+        for c in line(cls):
+            for name, f in out["classes"][c]["fields"].items():
+                if f["now"] is not None:
+                    seen.setdefault(f["now"], []).append(f)
+        for clash in (fs for fs in seen.values() if len(fs) > 1):
+            for f in clash:
+                f["now"], f["status"] = None, "conflict"
+    for cls, rep in out["classes"].items():
+        for name, f in rep["fields"].items():
+            out["offsets"][f"{cls}:{name}"] = f["now"]
     out["same"] = all(f["status"] in ("same", "kept") for c in out["classes"].values() for f in c["fields"].values())
     return out
