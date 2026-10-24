@@ -80,11 +80,10 @@ def run(cfg, oodle, log=print):
         rp = PakReader(os.path.join(tmp, "t_P.pak"))
         check("pak writer round-trip", rp.read("Wrc/Content/Gameplay/DataTables/NonAsset/NPC/CatSize.csv") == csv
               and rp.read("Wrc/WCMods/test.txt") == b"hello")
-        # Our reader accepts either way of storing file names; the engine only finds files stored like
-        # its own pak stores them, so compare the format byte for byte.
-        ours, theirs = _strict_file_names(rp.directory_index), _strict_file_names(base_pak.directory_index)
-        check("pak file names stored like the game's", ours == 2 and theirs == len(base_pak.entries),
-              f"ours {ours}, game {theirs}")
+        # The engine only finds files whose names are stored the way its own pak stores them; the reader
+        # counts any that aren't, in our pak and (as a check on the reader) in the game's.
+        check("pak file names stored like the game's", rp.legacy_file_names == 0 and base_pak.legacy_file_names == 0,
+              f"ours {rp.legacy_file_names}, game {base_pak.legacy_file_names} stored the old way")
 
     if oodle:
         from . import csvdata
@@ -147,32 +146,6 @@ def run(cfg, oodle, log=print):
     else:
         log("  [skip] no save yet")
     return all(results)
-
-
-def _strict_file_names(fdi):
-    """How many file names a pak's directory index holds, read the way version 12 stores them: folder
-    names as FStrings ending in NUL, file names as UTF-8 with no NUL. -1 if any entry doesn't fit."""
-    try:
-        (ndirs,) = struct.unpack_from("<i", fdi, 0)
-        p, files = 4, 0
-        for _ in range(ndirs):
-            (n,) = struct.unpack_from("<i", fdi, p)
-            if n <= 0 or fdi[p + 4 + n - 1] != 0:
-                return -1
-            p += 4 + n
-            (nfiles,) = struct.unpack_from("<i", fdi, p)
-            p += 4
-            for _ in range(nfiles):
-                (n,) = struct.unpack_from("<i", fdi, p)
-                name = fdi[p + 4:p + 4 + n]
-                if n <= 0 or b"\0" in name:
-                    return -1
-                name.decode("utf-8")
-                p += 4 + n + 4
-                files += 1
-        return files if p == len(fdi) else -1
-    except (struct.error, UnicodeDecodeError):
-        return -1
 
 
 def _remapper_presses():

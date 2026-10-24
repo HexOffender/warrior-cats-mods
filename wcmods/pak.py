@@ -18,11 +18,26 @@ class PakEntry:
     __slots__ = ("path", "offset", "size", "raw_size", "method", "block_size", "block_sizes", "encrypted")
 
 
+def _read_file_name(buf, p):
+    """A file name from a version 12 directory index: byte length, then UTF-8 with no terminator.
+    Returns (name, new_offset, legacy). legacy is True for a name ending in NUL or stored as a UTF-16
+    FString, the way older wcmods wrote them; the engine keeps the NUL, so it never finds those files."""
+    (n,) = struct.unpack_from("<i", buf, p)
+    if n < 0:
+        name, p = read_fstring(buf, p)
+        return name, p, True
+    raw = buf[p + 4:p + 4 + n]
+    if len(raw) != n:
+        raise ValueError("directory index is cut short")
+    return raw.rstrip(b"\0").decode("utf-8"), p + 4 + n, raw.endswith(b"\0")
+
+
 class PakReader:
     def __init__(self, path, oodle=None):
         self.path = path
         self.oodle = oodle
         self.entries = {}
+        self.legacy_file_names = 0   # names stored the way older wcmods wrote them (see _read_file_name)
         with open(path, "rb") as f:
             f.seek(0, 2)
             total = f.tell()
@@ -51,14 +66,17 @@ class PakReader:
             enc = idx[p:p + enc_size]
             f.seek(fdi_off)
             fdi = f.read(fdi_size)
-        self.directory_index = fdi
         q = 0
         (ndirs,) = struct.unpack_from("<i", fdi, q); q += 4
         for _ in range(ndirs):
             d, q = read_fstring(fdi, q)
             (nf,) = struct.unpack_from("<i", fdi, q); q += 4
             for _ in range(nf):
-                fn, q = read_fstring(fdi, q)
+                if self.version >= 12:
+                    fn, q, legacy = _read_file_name(fdi, q)
+                    self.legacy_file_names += legacy
+                else:
+                    fn, q = read_fstring(fdi, q)
                 (eoff,) = struct.unpack_from("<i", fdi, q); q += 4
                 if eoff >= 0:
                     e = _decode_entry(enc, eoff)

@@ -11,7 +11,7 @@ from .blake3 import blake3
 from .config import MOD_BASENAME, UE4SS_MOD_NAME, game_running
 from .gamefiles import GameFiles
 from .iostore import ModContainerWriter
-from .pak import PakWriter
+from .pak import PakReader, PakWriter
 from .save import SAV_NAME, SaveGame, backup, write_save
 from .savejson import SaveDoc
 from .sdk import BuildContext
@@ -248,6 +248,18 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
     for c in changed:
         log(f"  save: {c}")
     return changed
+
+
+def install_outdated(cfg):
+    """True when the installed mod pak was built by an older wcmods, whose file names the engine never
+    matches (see pak._read_file_name): the pak loads but none of its files are used. Installing fixes it."""
+    path = os.path.join(cfg.mods_install_dir, MOD_BASENAME + ".pak") if cfg.game_dir else None
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        return PakReader(path).legacy_file_names > 0
+    except (OSError, ValueError, struct.error):
+        return False
 
 
 def uninstall(cfg, log=print):

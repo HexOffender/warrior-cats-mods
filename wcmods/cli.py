@@ -46,6 +46,8 @@ def cmd_status(ctx, args):
     if cfg.game_dir:
         inst = os.listdir(cfg.mods_install_dir) if os.path.isdir(cfg.mods_install_dir) else []
         print(f"installed   : {', '.join(inst) if inst else 'nothing'}")
+        if pipeline.install_outdated(cfg):
+            print("              built by an older wcmods, so the game never finds its files; install again")
     print(f"game running: {'yes' if game_running() else 'no'}")
     print("\nmods:")
     for m in mods.discover(ctx.mods_root):

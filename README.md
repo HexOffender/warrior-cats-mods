@@ -261,12 +261,12 @@ colour.
 
 Confirmed in game (2026-10-23):
 - The mod container loads, and eye palettes change the cats' eyes.
-- The mod pak's files replace the game's: an edit to the game's English text
-  (`Strings_EN.csv`) renamed the player's Otterpaw to Mothpaw on screen. Paks built by earlier versions of wcmods loaded,
-  but the engine found none of their files, so game data, replacement files and text edits had no
-  effect; install again to rebuild them. Pak version 12 stores file names in the directory index as
-  UTF-8 with no terminator (folder names keep theirs). Names written the older way read back with a
-  trailing NUL, so the engine never matched them.
+- The mod pak's files replace the game's: an edit to the game's English text (`Strings_EN.csv`)
+  renamed the player's Otterpaw to Mothpaw on screen. Paks built by earlier versions of wcmods
+  loaded, but the engine found none of their files, so game data, replacement files and text edits
+  had no effect; install again to rebuild them (`status` and the studio say so). Pak version 12
+  stores file names in the directory index as UTF-8 with no terminator (folder names keep theirs).
+  Names written the older way read back with a trailing NUL, so the engine never matched them.
 - UE4SS runs, finds the colour tables on `BP_WrcGuiManager_C`, and its writes take effect.
 - Mouse look turns and tilts the camera, gives the cursor back in menus, and toggles with F6
   (see its known issues above).
