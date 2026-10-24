@@ -200,14 +200,21 @@ end
 local focused = Menu.focused
 
 -- A click: the button went from pressed to released, with the mouse still on it when the mouse pressed
--- it, or with focus when a key or a controller's button did.
+-- it, or with focus when a key or a controller's button did. The game's UI gives a button focus when it's
+-- clicked; after a mouse click focus goes back to the window, so the button has no ring and Enter or
+-- Space doesn't press it again.
 local function clicked(state, key, b)
     local pressed = b:IsPressed()
     local was = state[key]
     if pressed and not was then state[key .. ":mouse"] = b:IsHovered() end
     state[key] = pressed
     if not was or pressed then return false end
-    if state[key .. ":mouse"] then return b:IsHovered() end
+    if state[key .. ":mouse"] then
+        local hit = b:IsHovered()
+        local w = Menu.shared("window")
+        if hit and valid(w) then pcall(function() w:SetKeyboardFocus() end) end
+        return hit
+    end
     return focused(b)
 end
 Menu.clicked = clicked
@@ -1198,6 +1205,7 @@ local function ensureWindow()
     Menu.share("content", win.content)
     Menu.share("tree", win.tree)
     Menu.share("frame", win.frame)   -- where the window is on screen, for `wcmods agent shot --menu`
+    Menu.share("window", win.widget)   -- focus goes back to it after a mouse click (Menu.clicked)
     return true
 end
 

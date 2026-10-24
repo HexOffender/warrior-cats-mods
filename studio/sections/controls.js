@@ -281,6 +281,7 @@ export default {
     // pairs is {key you press: game key}; changes go straight into it. taken: {key: row name} for keys
     // a built-in row already uses, which win over a pair here.
     function renderPairs(box, title, note, pairs, taken) {
+      box.dataset.key = `pairs:${title}`;   // its buttons are told from the other list's with the same labels
       const changed = () => { target.markDirty(); render(); };
       const chip = k => el("span", { class: "chip", style: { fontWeight: "700" }, title: k }, input.keyLabel(k, style));
       const pick = (label, then) => capture("keyboard", { name: `${title}: ${label}` }, then);
@@ -291,7 +292,7 @@ export default {
       const rows = Object.entries(pairs).map(([pressed, gameKey]) => el("div", { style: { display: "grid", gap: "2px" } },
         el("div", { class: "row" },
           el("span", { class: "muted", text: "Pressing" }), chip(pressed),
-          el("button", { class: "btn ghost small", text: "Change", "aria-label": `Change the key you press for ${gameKey}`,
+          el("button", { class: "btn ghost small", text: "Change", "aria-label": `Change ${input.keyLabel(pressed, style)}, the key you press for ${input.keyLabel(gameKey, style)}`,
             onclick: () => pick("the key you press", k => { if (k !== pressed && free(k, pressed)) { delete pairs[pressed]; pairs[k] = gameKey; changed(); } }) }),
           el("span", { class: "muted", text: "sends the game" }), chip(gameKey),
           el("button", { class: "btn ghost small", text: "Change", "aria-label": `Change the game key ${pressed} sends`,

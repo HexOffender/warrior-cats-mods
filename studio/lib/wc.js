@@ -70,12 +70,16 @@ export const clear = node => { node.textContent = ""; return node; };
 
 // Say something to screen readers, without showing it: politely, or at once for a problem. The live
 // regions are in index.html; the text goes in a moment after they're emptied, so saying the same thing
-// twice is heard twice.
+// twice is heard twice, and what's said in that moment (a toast and the status line) goes in together.
+const saying = {};
 export function announce(message, kind = "info") {
-  const box = document.getElementById(kind === "bad" ? "shout" : "say");
+  const id = kind === "bad" ? "shout" : "say";
+  const box = document.getElementById(id);
   if (!box) return;
+  if (saying[id]) { saying[id].push(message); return; }
+  saying[id] = [message];
   box.textContent = "";
-  setTimeout(() => { box.textContent = message; }, 60);
+  setTimeout(() => { box.textContent = saying[id].join(" "); saying[id] = null; }, 60);
 }
 
 // A message that shows for a while (longer for a long one, and for a problem) and is read out. It stays
@@ -89,8 +93,8 @@ export function toast(message, kind = "info") {
   let timer = null;
   const close = () => { clearTimeout(timer); t.remove(); };
   const wait = () => { clearTimeout(timer); timer = setTimeout(close, Math.max(bad ? 8000 : 4000, message.length * 70)); };
-  // Out of the Tab order: the toasts are hidden from screen readers, which hear them instead.
-  if (bad) t.append(el("button", { class: "toast-close", type: "button", tabindex: "-1", text: "×", "aria-label": "Close this message", onclick: close }));
+  // Never focused (not by Tab, not by a click): the toasts are hidden from screen readers, which hear them instead.
+  if (bad) t.append(el("button", { class: "toast-close", type: "button", tabindex: "-1", onmousedown: e => e.preventDefault(), text: "×", "aria-label": "Close this message", onclick: close }));
   t.addEventListener("mouseenter", () => clearTimeout(timer));
   t.addEventListener("mouseleave", wait);
   box.append(t);
@@ -125,7 +129,9 @@ export function confirmButton(label, armedLabel, onConfirm, cls = "btn") {
 export function focusKey(n) {
   if (!n || !n.matches || n === document.body) return null;
   if (n.id) return { sel: `#${CSS.escape(n.id)}` };
-  if (n.dataset.focus) return { sel: `[data-focus="${CSS.escape(n.dataset.focus)}"]` };
+  // Its own data-focus, or the one of what it's in (a table cell's edit box goes back to the cell).
+  const keyed = n.closest("[data-focus]");
+  if (keyed) return { sel: `[data-focus="${CSS.escape(keyed.dataset.focus)}"]` };
   const scope = n.closest("[data-key]")?.dataset.key;
   const label = n.getAttribute("aria-label");
   const tag = n.tagName.toLowerCase();
@@ -139,10 +145,13 @@ function findKey(key) {
   const scope = document.querySelector(`[data-key="${CSS.escape(key.scope)}"]`);
   return scope ? [...scope.querySelectorAll(key.tag)].find(x => x.textContent.trim() === key.text) || null : null;
 }
-const focusable = n => n && n.isConnected && !n.disabled && n.getClientRects().length > 0;
-let lastKey = null;
+const focusable = n => n && n.isConnected && !n.disabled && n.getClientRects().length > 0 && !n.closest('[aria-hidden="true"]');
+// The element that had focus, and when it was found gone: a redraw puts its replacement in within a
+// moment (after its data comes back); after that, the key is forgotten, so it can't pull focus later.
+let lastKey = null, lostAt = 0;
+const WAIT = 3000;
 export function keepFocus() {
-  document.addEventListener("focusin", e => { lastKey = focusKey(e.target); });
+  document.addEventListener("focusin", e => { lastKey = focusKey(e.target); lostAt = 0; });
   document.addEventListener("focusout", e => {
     // Focus moved off on purpose (a click on the page): forget it. A redraw takes the element out first.
     const t = e.target, key = lastKey;
@@ -150,9 +159,21 @@ export function keepFocus() {
   });
   new MutationObserver(() => {
     if (!lastKey || (document.activeElement && document.activeElement !== document.body)) return;
+    lostAt ||= Date.now();
+    if (Date.now() - lostAt > WAIT) { lastKey = null; return; }
     const n = findKey(lastKey);
     if (focusable(n)) n.focus({ preventScroll: true });
   }).observe(document.body, { childList: true, subtree: true });
+}
+// The page itself, as a place for focus (the skip link, a panel closing with nothing to go back to). It
+// takes focus only then: a page that always could would catch every click on its text, and Tab would
+// start again from its top.
+export function focusMain() {
+  const main = document.getElementById("main");
+  if (!main) return;
+  main.tabIndex = -1;
+  main.addEventListener("blur", () => main.removeAttribute("tabindex"), { once: true });
+  main.focus({ preventScroll: true });
 }
 // For a dialog or panel that takes focus: back() puts it back where it was, on the element or the one
 // that replaced it (or on the page, when neither is there any more).
@@ -161,7 +182,7 @@ export function keepPlace(node = document.activeElement) {
   return () => {
     const n = node && node.isConnected ? node : findKey(key);
     if (focusable(n)) n.focus({ preventScroll: true });
-    else document.getElementById("main")?.focus({ preventScroll: true });
+    else focusMain();
   };
 }
 

@@ -84,7 +84,8 @@ export default {
     const setRename = (map, from, to) => { to = to.trim(); if (!to || to === from) delete map[from]; else map[from] = to; };
 
     // ---------- rendering ----------
-    function card() { return el("div", { class: "card" }); }
+    // Each card is a scope of its own, so focus finds its own Remove buttons again.
+    function card() { card.n = (card.n || 0) + 1; return el("div", { class: "card", "data-key": `names:${card.n}` }); }
     function render() {
       afterCells.clear();
       renderAffixes("prefixes", "Prefixes", "The first part of a clan cat's name. Renaming changes every name with it (Otterpaw, Otterheart...).", game.prefixes, p => clans(p.weights));
