@@ -34,18 +34,27 @@ export default {
     const nameOf = id => (mods.find(m => m.id === id) || {}).name || id;
 
     // ---------- after a game update (wcmods/gamebuild.py) ----------
-    let update = null;   // what wcmods found the update changed, once asked (it takes a minute the first time)
+    let update = null;   // what wcmods found the update changed, once asked (it takes a while the first time)
+    let asking = null;   // that question, asked once however often the page redraws
+    let drawing = 0;     // the latest redraw: an older one that finishes later draws nothing
     async function renderUpdate() {
-      clear(updateBox);
+      const mine = ++drawing;
       let info;
       try { info = await api.get("/info"); } catch (e) { return; }
+      if (mine !== drawing) return;
+      clear(updateBox);
       const b = info.game_build || {};
       if (!b.build || b.verified) return;
       const left = mods.filter(m => m.enabled && m.outdated && !m.outdated.allowed);
       const lines = [];
       if (!update) {
-        lines.push(el("span", { class: "muted", text: "Checking what the update changed in the values wcmods reads (about a minute, once)…" }));
-        api.get("/game/update").then(u => { update = u; renderUpdate(); }).catch(() => null);
+        lines.push(el("span", { class: "muted", text: "Checking what the update changed in the values wcmods reads (under a minute, once)…" }));
+        asking ||= api.get("/game/update").then(u => { update = u; }, e => { update = { status: "failed", error: e.message }; })
+          .finally(() => renderUpdate());
+      } else if (update.status === "failed") {
+        lines.push(el("span", { text: `Couldn't check what the update changed (${update.error}), so the values wcmods reads stay off until it's updated.` }));
+      } else if (update.status === "unknown") {
+        lines.push(el("span", { text: "Couldn't find the game's exe to check what the update changed, so the values wcmods reads stay off until it's updated." }));
       } else if (update.status === "adapted") {
         lines.push(el("span", { text: update.moved.length
           ? `wcmods followed the values the update moved (${update.moved.join(", ")}), so its own parts and the mod menu keep working.`

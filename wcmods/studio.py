@@ -128,7 +128,8 @@ class Studio:
                     "game_build": gamebuild.current(cfg), "sections": sections}
         if parts == ["game", "update"] and method == "GET":
             # How wcmods stands on a build it wasn't checked on (worked out once per game update, ~a minute).
-            fit = gamebuild.layout(cfg)
+            with self.lock:   # an install may be working it out too: once, not twice at the same time
+                fit = gamebuild.layout(cfg)
             return {**fit, "moved": [gamebuild.describe(k) for k in fit["moved"]],
                     "lost": [gamebuild.describe(k) for k in fit["lost"]], "offsets": None}
         if parts == ["setup"] and method == "GET":
@@ -201,8 +202,12 @@ class Studio:
         if parts == ["mods"] and method == "GET":
             found = self.mods()
             old = gamebuild.outdated(cfg, found)
-            unmet = mods.unmet(found, {i: "made for an older version of the game" for i, o in old.items() if not o["allowed"]})
+            held = gamebuild.held_back(cfg, found)
+            unmet = mods.unmet(found, held)
             titles = {m.id: m.name for m in found}
+            for i, why in held.items():   # needs a mod made for an older version: left out with it
+                if i not in old:
+                    unmet.setdefault(i, []).append(f"left out: it {why}")
             return [{**m.to_dict(), "problems": unmet.get(m.id, []),
                      "needed_by": [titles[i] for i in mods.needing(found, m.id)],
                      "requires_names": [titles.get(i, i) for i in m.requires],

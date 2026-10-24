@@ -525,8 +525,7 @@ def _game_build(ctx, args):
     elif now["verified"]:
         print(f"build {now['build']}: wcmods was checked on this one ({now['label']})")
     else:
-        print(f"build {now['build']}: newer than wcmods was checked on (" +
-              ", ".join(str(b) for b in sorted(gamebuild.VERIFIED)) + ")")
+        print(f"build {now['build']}: not the one wcmods was checked on ({gamebuild.VERIFIED_BUILD})")
     fit = gamebuild.layout(ctx.cfg, refresh=args.refresh)
     if fit["status"] == "adapted":
         print("every value wcmods reads was found again" +
@@ -551,14 +550,18 @@ def _game_signatures(ctx, args):
     if args.action == "make":
         from . import gamebuild
         result = signatures.make(exe)
-        result["made_on"]["build"] = gamebuild.steam_build(ctx.cfg)
+        # The installed game's build, unless it's another exe (whose build only --build can say).
+        installed = pe.game_exe(ctx.cfg)
+        same = installed and os.path.normcase(os.path.abspath(exe)) == os.path.normcase(os.path.abspath(installed))
+        result["made_on"]["build"] = args.build if args.build else gamebuild.steam_build(ctx.cfg) if same else None
         signatures.save(result)
         print(f"wrote {signatures.DATA}")
     elif args.action in (None, "check"):
-        res = signatures.check(exe)
-        if args.json:
-            print(json.dumps(res, indent=1))
-        print("nothing moved" if res["same"] else "something moved or couldn't be found (above)")
+        if args.json:   # the JSON alone on stdout; what it looked at goes to stderr
+            print(json.dumps(signatures.check(exe, log=lambda m: print(m, file=sys.stderr)), indent=1))
+        else:
+            res = signatures.check(exe)
+            print("nothing moved" if res["same"] else "something moved or couldn't be found (above)")
     else:
         sys.exit("game signatures make | check")
 
@@ -721,6 +724,7 @@ def main(root, argv=None):
     p.add_argument("what", nargs="?", choices=("status", "types", "build", "signatures"), default="status")
     p.add_argument("action", nargs="?", help="for signatures: make | check")
     p.add_argument("--exe", help="for signatures: an exe other than the installed game's")
+    p.add_argument("--build", type=int, help="for signatures make: the build of the exe given with --exe")
     p.add_argument("--refresh", action="store_true", help="for build: look for what moved again")
     p.add_argument("--json", action="store_true")
     p.add_argument("--timeout", type=float, default=15)
