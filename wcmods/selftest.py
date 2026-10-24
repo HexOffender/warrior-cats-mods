@@ -32,6 +32,7 @@ def run(cfg, oodle, log=print):
     check("key remapper presses", _remapper_presses())
     check("menu remaps", _menu_remaps())
     check("CSV rows added and removed in the file's own style", _csv_rows())
+    check("new colour slots and your cat's colours", _colour_slots())
     check("cat rename inside save text", _rename_struct())
     check("palette switching", _palette_switching())
 
@@ -164,6 +165,38 @@ def _csv_rows():
             return False
     _, _, problems = csvdata.apply_edits("#,Name\n1,Wood\n", {"+": [{"#": "1", "Name": "Again"}], "-": ["9"]})
     return len(problems) == 2
+
+
+def _colour_slots():
+    """Pattern and marking colours take new slots, coats can't; a palette that only adds slots isn't a
+    preset; your cat's colours and slots are checked and written as the game keeps them."""
+    from . import catlook
+    with tempfile.TemporaryDirectory() as tmp:
+        def load(data):
+            path = os.path.join(tmp, "palette.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(data)
+            try:
+                return palettes.load(path)
+            except ValueError:
+                return "error"
+        adds = load('{"pattern": {"25": "#ff00cc"}, "marking": {"30": "#00e5ff"}}')
+        mixed = load('{"pattern": {"3": "#112233", "25": "#ff00cc"}}')
+        ok = (load('{"fur": {"25": "#ff00cc"}}') == "error" and adds != "error" and palettes.adds_only(adds)
+              and not palettes.adds_only(mixed) and palettes.new_slots(adds) == {"pattern": [25], "marking": [30]})
+    lua = palettes.ue4ss_script(palettes.merge([adds]))
+    ok = ok and not luacheck.check(lua) and "PatternMaskColors = { [25]" in lua and "GROW = { PatternMaskColors" in lua
+    look = catlook.validate({"player": {"colours": {"fur": "#ff6ec7", "nose": "#202020"}, "slots": {"fur": 3, "pattern": 25}}})
+    script = catlook.script(look["player"]["colours"])
+    try:
+        catlook.validate({"player": {"slots": {"fur": 25}}})
+        fur_refused = False
+    except ValueError:
+        fur_refused = True
+    text = '(ClanType=RiverClan,FurColorIdx=11,Pattern01ColorIdx=2,CatSize=0.5)'
+    fields = catlook.set_fields(text, {"FurColorIdx": 3, "Pattern01ColorIdx": 25, "Pattern02ColorIdx": 26})
+    return (ok and fur_refused and not luacheck.check(script) and '["Fur Color"]' in script
+            and fields == '(ClanType=RiverClan,FurColorIdx=3,Pattern01ColorIdx=25,CatSize=0.5,Pattern02ColorIdx=26)')
 
 
 def _rename_struct():

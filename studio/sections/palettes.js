@@ -132,7 +132,7 @@ export default {
     // ---------- layout ----------
     const target = wc.modTarget({
       file: "palette.json", defaultId: "my-palette", defaultName: "My Palette",
-      onLoad: obj => { state = fromPalette(obj); renderAll(); },
+      onLoad: obj => { state = fromPalette(obj); renderAll(); loadOtherSlots().catch(() => {}); },
       getValue: () => toPalette(),
     });
     const stage = el("div", { style: { background: "radial-gradient(120% 90% at 50% 30%, var(--stage), var(--stage-2))", borderRadius: "12px" } });
@@ -165,11 +165,12 @@ export default {
 
     // ---------- quick palettes ----------
     // Mods that hold only a palette work as presets: Apply turns the ticked ones on, the other
-    // palette-only mods off, and installs. Mods with anything besides a palette aren't touched.
+    // palette-only mods off, and installs. Mods with anything besides a palette aren't touched, and
+    // neither are palettes that only add new colour slots (cats may be wearing them).
     let quickPick = null;   // ids ticked here; null means "start from what's on"
     let quickData = [];     // [{mod, palette (null if its file can't be read)}]
     async function renderQuick() {
-      const list = (await api.get("/mods")).filter(m => m.kinds.length === 1 && m.kinds[0] === "palette");
+      const list = (await api.get("/mods")).filter(m => m.preset);
       quickData = await Promise.all(list.map(async m => {
         try { return { mod: m, palette: JSON.parse((await api.get(`/mods/${encodeURIComponent(m.id)}/file/palette.json`)).text) || {} }; }
         catch (e) { return { mod: m, palette: null }; }
@@ -299,11 +300,40 @@ export default {
         if (!n) { panel.append(el("p", { class: "empty", text: "These colours load from the game's log once UE4SS has run." })); return; }
         panel.append(group("Natural", "slots 0-14", [...Array(Math.min(15, n)).keys()].map(i => tableCard(sec, i))));
         if (n > 15) panel.append(group("Extras", `slots 15-${n - 1}`, [...Array(n - 15).keys()].map(i => tableCard(sec, i + 15))));
+        if (sec.id === "fur") {
+          panel.append(el("p", { class: "note", text: "Coats can't take new slots: the game pairs each coat with paw, ear and nose colours of its own. To give just your cat a new coat colour, use the Your cat page." }));
+          return;
+        }
+        // New slots past the game's: only cats set to them wear them (Your cat page), so the game's colours stay.
+        const extra = Object.keys(state[sec.id]).map(Number).filter(i => i >= n).sort((a, b) => a - b);
+        const add = el("button", { class: "btn small", text: `Add a new ${sec.noun.toLowerCase()} colour`, onclick: () => {
+          const next = Math.max(n, ...extra.map(i => i + 1), ...otherSlots(sec.id).map(i => i + 1));
+          state[sec.id][next] = TABLE(sec.id)[next % n] || "#888888";
+          target.markDirty(); renderPanel(); renderTabs(); renderPicks();
+        } });
+        panel.append(el("div", { style: { display: "grid", gap: "8px" } },
+          el("h3", {}, "New colours", el("span", { class: "eyebrow", style: { marginLeft: "8px" }, text: `slot ${n} and up` })),
+          el("p", { class: "note", text: "Adds colours without changing any of the game's, so other cats keep theirs. Pick one for your cat on the Your cat page. Each new colour keeps its slot number, so your cat keeps it whatever else you turn on." }),
+          extra.length ? grid(extra.map(i => tableCard(sec, i))) : null, el("div", { class: "row" }, add)));
       }
     }
+    // Slots past the game's that other palette mods already add, so a new one here doesn't clash.
+    let slotsElsewhere = {};
+    async function loadOtherSlots() {
+      slotsElsewhere = {};
+      for (const m of await api.get("/mods")) {
+        if (m.id === target.current || !m.kinds.includes("palette")) continue;
+        try {
+          const p = JSON.parse((await api.get(`/mods/${encodeURIComponent(m.id)}/file/palette.json`)).text) || {};
+          for (const sec of ["pattern", "marking"]) for (const k of Object.keys(p[sec] || {})) (slotsElsewhere[sec] ||= []).push(Number(k));
+        } catch (e) { /* unreadable palette: nothing to avoid */ }
+      }
+    }
+    const otherSlots = sec => (slotsElsewhere[sec] || []).filter(i => i >= TABLE(sec).length);
     const cardBox = () => el("div", { class: "card", style: { padding: "10px", gap: "8px" } });
     function tableCard(sec, i) {
-      const orig = TABLE(sec.id)[i];
+      const isNew = i >= TABLE(sec.id).length;
+      const orig = isNew ? (state[sec.id][i] || "#888888") : TABLE(sec.id)[i];
       const card = cardBox();
       const newSw = el("span", { style: { background: orig } });
       const pair = el("button", { class: "btn", style: { padding: "0", height: "38px", display: "grid", gridTemplateColumns: "1fr 1fr", overflow: "hidden" },
@@ -313,14 +343,19 @@ export default {
       const inp = el("input", { type: "color", id: `pal-${sec.id}-${i}`, "aria-label": `New colour for ${sec.noun.toLowerCase()} slot ${i}` });
       inp.addEventListener("input", () => { state[sec.id][i] = color.normHex(inp.value); target.markDirty(); card._update(); drawCat(); });
       inp.addEventListener("change", () => { renderTabs(); renderPicks(); });
-      const reset = el("button", { class: "btn ghost small", text: "Reset", onclick: () => { delete state[sec.id][i]; card._update(); drawCat(); renderTabs(); renderPicks(); } });
+      const reset = el("button", { class: "btn ghost small", text: isNew ? "Remove" : "Reset", onclick: () => {
+        delete state[sec.id][i];
+        target.markDirty();
+        if (isNew) { if (view[sec.id] === i) view[sec.id] = 0; renderPanel(); renderTabs(); renderPicks(); drawCat(); return; }
+        card._update(); drawCat(); renderTabs(); renderPicks();
+      } });
       card.append(pair, el("div", { class: "row spread" }, name, hex), el("div", { class: "row" }, inp, reset));
       card._update = () => {
-        const cur = curHex(sec.id, i), changed = !!state[sec.id][i];
+        const cur = curHex(sec.id, i) || orig, changed = !!state[sec.id][i];
         newSw.style.background = cur;
-        name.textContent = `${changed ? "● " : ""}${sec.noun} ${i}`;
-        name.style.color = changed ? "var(--changed)" : "";
-        hex.textContent = changed ? `${orig} → ${cur}` : cur;
+        name.textContent = isNew ? `New ${sec.noun.toLowerCase()} ${i}` : `${changed ? "● " : ""}${sec.noun} ${i}`;
+        name.style.color = changed && !isNew ? "var(--changed)" : "";
+        hex.textContent = changed && !isNew ? `${orig} → ${cur}` : cur;
         inp.value = cur.toLowerCase(); reset.disabled = !changed;
         card.style.boxShadow = view[sec.id] === i ? "0 0 0 2px var(--accent)" : "";
       };

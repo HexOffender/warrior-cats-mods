@@ -7,6 +7,7 @@ A mod is a folder under mods/ with a mod.json and any of:
   mouselook.json      mouse look settings (sections/mouselook.py)
   data.json           gameplay data edits (sections/data.py)
   names.json          cat names: prefixes, suffixes, rogues, the ban list, cats in your save (sections/names.py)
+  cats.json           your cat's own colours and colour slots (sections/cats.py)
   save.json           save edits (sections/savedit.py)
   section.py          the mod's own section, written with wcmods.sdk (opt-in)
   studio/section.js   the mod's own studio page, written with studio/lib/wc.js (opt-in)
@@ -17,8 +18,8 @@ import os
 import re
 
 CONTENT = (("files", "files"), ("palette.json", "palette"), ("controls.json", "controls"),
-           ("mouselook.json", "mouse look"), ("data.json", "data"), ("names.json", "names"), ("save.json", "save"),
-           ("section.py", "code"), (os.path.join("studio", "section.js"), "studio page"))
+           ("mouselook.json", "mouse look"), ("data.json", "data"), ("names.json", "names"), ("cats.json", "cats"),
+           ("save.json", "save"), ("section.py", "code"), (os.path.join("studio", "section.js"), "studio page"))
 
 
 class Mod:
@@ -53,12 +54,20 @@ class Mod:
 
     def to_dict(self):
         return {"id": self.id, "name": self.name, "description": self.description, "enabled": self.enabled,
-                "priority": self.priority, "kinds": self.kinds()}
+                "priority": self.priority, "kinds": self.kinds(), "preset": palette_only(self)}
 
 
 def palette_only(mod):
-    """A mod that holds nothing but a palette.json: safe to switch on and off as a colour preset."""
-    return mod.kinds() == ["palette"]
+    """A mod that holds nothing but a palette.json recolouring the game's slots: safe to switch on and off
+    as a colour preset. One that only adds new colour slots isn't a preset (cats may be wearing those
+    slots), so quick palette switching leaves it alone."""
+    if mod.kinds() != ["palette"]:
+        return False
+    from . import palettes
+    try:
+        return not palettes.adds_only(palettes.load(os.path.join(mod.folder, "palette.json")))
+    except (OSError, ValueError):
+        return True
 
 
 def choose_palettes(mods, ids):

@@ -5,7 +5,7 @@ import os
 import shutil
 import struct
 
-from . import controls, names, ue4ss
+from . import catlook, controls, names, ue4ss
 from . import mods as modlib
 from .blake3 import blake3
 from .config import MOD_BASENAME, UE4SS_MOD_NAME, game_running
@@ -236,6 +236,19 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
             elif new != current:
                 pending[op["path"]] = new
                 labels[op["path"]] = f"name: {op.get('from')} -> {op.get('to')} ({op.get('where', op['path'])})"
+            continue
+        if op["op"] == "fields":
+            # Whole-number fields inside a cat's save text (your cat's colour slots).
+            try:
+                current = pending[op["path"]] if op["path"] in pending else doc.get(op["path"])
+            except (KeyError, IndexError, ValueError, TypeError):
+                log(f"  colour slots skipped: your save has no cat at {op['path']}")
+                continue
+            if isinstance(current, str):
+                new = catlook.set_fields(current, op["set"])
+                if new != current:
+                    pending[op["path"]] = new
+                    labels[op["path"]] = f"your cat: {op.get('label', op['set'])}"
             continue
         flush()
         try:

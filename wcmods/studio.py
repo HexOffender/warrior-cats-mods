@@ -6,6 +6,7 @@ this machine, so other websites can't drive the mod manager from your browser.
 import json
 import mimetypes
 import os
+import re
 import secrets
 import socket
 import threading
@@ -14,7 +15,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
-from . import controls, csvdata, eyeatlas, mods, names, pipeline, save, ue4ss
+from . import catlook, colors, controls, csvdata, eyeatlas, mods, names, palettes, pipeline, save, ue4ss
 from .colors import hex_from_linear
 from .config import game_running
 from .gamefiles import NONASSET
@@ -22,10 +23,11 @@ from .savejson import SaveDoc
 from .sdk import BuildContext
 from .sections.files import classify
 
-MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "names.json", "save.json")
+MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "names.json", "cats.json", "save.json")
 BUILTIN_SECTIONS = [
     {"id": "mods", "title": "Mods", "module": "/studio/sections/mods.js"},
     {"id": "palettes", "title": "Palettes", "module": "/studio/sections/palettes.js"},
+    {"id": "cat", "title": "Your cat", "module": "/studio/sections/cat.js"},
     {"id": "controls", "title": "Controls", "module": "/studio/sections/controls.js"},
     {"id": "names", "title": "Names", "module": "/studio/sections/names.js"},
     {"id": "data", "title": "Game data", "module": "/studio/sections/data.js"},
@@ -161,11 +163,42 @@ class Studio:
             text, mtime = self.save_text()
             doc = SaveDoc(text)
             return {"account": doc.account, "data": doc.data, "save_time": mtime}
+        if parts == ["cat"] and method == "GET":
+            return self.cat_info()
         if parts == ["names"] and method == "GET":
             return self.names_preview({})
         if parts == ["names", "preview"] and method == "POST":
             return self.names_preview(names.validate(body.get("spec") or {}))
         raise LookupError("unknown API route")
+
+    def cat_info(self):
+        """Your cat's colour slots in the save, and the colours each slot has with the enabled palettes
+        (the game's tables, recoloured slots, and new slots palettes add)."""
+        current = {}
+        try:
+            text, _ = self.save_text()
+            cats = names.cats_in_save(SaveDoc(text).data)
+            mine = [c for c in cats if names.PLAYER_PATH in c["paths"]]
+            if mine:
+                raw = SaveDoc(text).get(mine[0]["paths"][0])
+                for part, field in catlook.SLOTS.items():
+                    m = re.search(rf"(?<![A-Za-z0-9_]){field}=(\d+)", raw)
+                    current[part] = int(m.group(1)) if m else 0
+        except LookupError:
+            pass
+        enabled = []
+        for m in self.mods():
+            path = os.path.join(m.folder, "palette.json")
+            if m.enabled and os.path.isfile(path):
+                try:
+                    enabled.append(palettes.load(path))
+                except ValueError:
+                    continue
+        merged = palettes.merge(enabled)
+        slots = {part: {k: colors.hex_from_srgb(v) for k, v in merged.get(part, {}).items()}
+                 for part in ("fur", "pattern", "marking")}
+        return {"current": current, "palette": slots, "game_slots": palettes.GAME_SLOTS,
+                "feral_slots": list(catlook.FERAL_SLOTS), "parts": catlook.PARTS}
 
     def names_preview(self, spec):
         """The game's names, what a names.json (not yet saved) does to them, and the cats in the save."""
