@@ -103,6 +103,9 @@ def plan(merged):
     block = {k for k in moved_from if k not in in_use}
     for key in sorted(block & set(NEVER_HELD_BACK)):
         warnings.append(f"{key} still does its old job too: prompts and dialogue shown while you play may need it")
+    for key in sorted(set(send) & set(NEVER_HELD_BACK)):
+        warnings.append(f"{key} now sends {send[key]} while playing, so prompts and dialogue shown during play "
+                        f"won't get {key}")
     return send, block - set(NEVER_HELD_BACK), warnings
 
 
@@ -121,4 +124,7 @@ def menu_plan(merged):
             warnings.append(f"menus: '{s}' can only stand for a keyboard key, not '{d}'")
         elif s != d:
             send[s] = d
+            if len(s) == 1 or s in ("Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+                                    "SpaceBar"):
+                warnings.append(f"menus: typing {s} on the name screen sends {d} instead")
     return send, warnings

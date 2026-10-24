@@ -30,6 +30,7 @@ def run(cfg, oodle, log=print):
                                                    "Player_Den_Place": "Z"}, "keys": {"I": "W"}})
     check("key remap plan", send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"} and not warns)
     check("key remapper presses", _remapper_presses())
+    check("menu remaps", _menu_remaps())
     check("palette switching", _palette_switching())
 
     base_pak = PakReader(os.path.join(cfg.paks_dir, "pakchunk0-Windows.pak"), oodle)
@@ -181,6 +182,40 @@ def _remapper_presses():
     menus = steps == [True, True, True, True, False] and sent == [("P", True), ("P", False), ("BackSpace", True),
                                                                   ("BackSpace", False)]
     return held_over and remapped and blocked and clean and menus
+
+
+def _menu_remaps():
+    """controls.json's "menus" section: how it's read, planned, and used with --in-menus."""
+    import sys
+    from . import mods as modlib
+    from .sections.controls import ControlsSection
+    with tempfile.TemporaryDirectory() as tmp:
+        m = modlib.create(tmp, "menu-keys")
+
+        def collect(data):
+            with open(os.path.join(m.folder, "controls.json"), "w", encoding="utf-8") as f:
+                f.write(data)
+            try:
+                return ControlsSection().collect(m, None)
+            except ValueError:
+                return "error"
+        read = (collect('{"menus": {"keys": {"Escape": "BackSpace"}}}') == {"menus": {"Escape": "BackSpace"}}
+                and collect('{"menus": {"Escape": "BackSpace"}}') == "error"
+                and collect('{"menus": {"keys": ["Escape"]}}') == "error")
+    send, warns = keymap.menu_plan({"menus": {"Escape": "BackSpace", "M": "Enter", "Tab": "Tab"}})
+    planned = send == {"Escape": "BackSpace", "M": "Enter"} and len(warns) == 1 and "name screen" in warns[0]
+    if sys.platform != "win32":
+        return read and planned
+    # With --in-menus the play remaps apply in menus too, and a menu remap for the same key wins.
+    from .remapper import Remapper
+    sent = []
+    r = Remapper({"Escape": "P", "T": "W"}, set(), ("game.exe",), log=lambda msg: None, in_menus=True,
+                 menu_send={"Escape": "BackSpace"})
+    r._press = lambda name, down: sent.append((name, down))
+    r.context = lambda: "menu"
+    steps = [r.handle("Escape", True), r.handle("Escape", False), r.handle("T", True), r.handle("T", False)]
+    both = steps == [True] * 4 and sent == [("BackSpace", True), ("BackSpace", False), ("W", True), ("W", False)]
+    return read and planned and both
 
 
 def _palette_switching():

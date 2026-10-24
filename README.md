@@ -182,10 +182,13 @@ priority, and anything else you added to its `mod.json`.
   forward and W stop. The game key stops working on its own once something stands in for it, unless
   an action still uses it (then it's a second key for that job). Enter, Space, Escape, Backspace
   and Tab always keep working.
-- **`menus`** is a separate set of key pairs used only while a menu is open (pause menu, inventory,
-  title screen). Here `Escape` opens the pause menu while playing (it sends P) and closes menus (it
-  sends Backspace). In menus the game's own key keeps working too, so typing on the name screen is
-  never lost. A press finishes as it started: the Escape that opens the menu is released as P.
+- **`menus`** is a separate set of key pairs used only while the game shows a menu with its cursor
+  (the title screen is confirmed; check the pause menu and others with `play --debug`). Here `Escape`
+  opens the pause menu while playing (it sends P) and closes menus (it sends Backspace). In menus the
+  game's own keys keep working too. A letter, digit or Space used here also changes what you type on
+  the name screen, and the build warns about it. A press finishes as it started: the Escape that opens
+  the menu is released as P. Remapping Escape (or Enter, Space, Backspace, Tab) while playing means
+  prompts and dialogue shown during play don't get it; the build warns about that too.
 - **`gamepad`** is kept for planning. The remapper doesn't handle controllers; use Steam Input.
 
 Keys are Unreal key names. Controller buttons also take short names (A/B/X/Y, LB/RB, LT/RT,

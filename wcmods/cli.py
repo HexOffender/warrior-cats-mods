@@ -173,7 +173,8 @@ def _run_remapper(ctx, args, launching=False):
         except OSError:
             pass
     when = "whenever the game is in front" if args.in_menus or not state_file else "while you play (game in front, not in a menu)"
-    print(f"remaps {when}:")
+    if send or block:
+        print(f"remaps {when}:")
     for src, dst in sorted(send.items()):
         print(f"  {src:18s} -> {dst}")
     for key in sorted(block):
