@@ -26,8 +26,12 @@ class CatsSection(Section):
         if player["colours"]:
             if ctx.cfg.ue4ss_mods_dir:
                 key_file = os.path.join(ctx.cfg.ue4ss_mods_dir, catlook.UE4SS_MOD_NAME, "yourcat.txt")
+                # The in-game menu saves into the mod whose colours win: the one with the highest priority.
+                top = items[-1][0]
+                save = {"path": os.path.abspath(os.path.join(top.folder, "cats.json")),
+                        "file": f"mods/{top.id}/cats.json", "doc": self.read_json(top, "cats.json")}
                 script = catlook.script(player["colours"], catlook.save_key(cats), key_file,
-                                        debug=bool(ctx.cfg.data.get("debug_cat_look")))
+                                        debug=bool(ctx.cfg.data.get("debug_cat_look")), save=save)
                 ctx.add_ue4ss_mod(catlook.UE4SS_MOD_NAME, {"Scripts/main.lua": script, "enabled.txt": ""})
             else:
                 ctx.warn("your cat's colours need UE4SS, which isn't installed")

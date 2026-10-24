@@ -362,6 +362,25 @@ def cmd_selftest(ctx, args):
         sys.exit(1)
 
 
+def cmd_ingame(ctx, args, option):
+    from . import ingame
+    if args.state is not None:
+        opts = ingame.set_options(ctx.cfg, **{option: args.state == "on"})
+    else:
+        opts = ingame.options(ctx.cfg)
+    if option == "cheats":
+        from .menu import KEY_NAMES
+        key = KEY_NAMES.get(opts["menu_key"], opts["menu_key"])
+        print(f"cheats start {'on' if opts['cheats'] else 'off'} in the mod menu ({key} in game, Cheats page)")
+        if args.state is not None:
+            print("install again to apply it (python wcmods.py install)")
+    else:
+        if not opts["console_available"]:
+            print("UE4SS's console unlocker (ConsoleEnablerMod) isn't installed; this applies once UE4SS is")
+        print(f"the game's console is {'on: ~ or F10 opens it' if opts['console'] else 'off'}"
+              + (" (from the next time the game starts)" if args.state is not None else ""))
+
+
 def cmd_studio(ctx, args):
     from . import studio
     ctx.need_game()
@@ -425,6 +444,11 @@ def main(root, argv=None):
     p = sub.add_parser("restore", help="list or restore save backups")
     p.add_argument("name", nargs="?")
     p.set_defaults(fn=cmd_restore)
+    for option, text in (("cheats", "show, or set, whether cheats start on in the mod menu (needs install)"),
+                         ("console", "show, or switch on or off, the game's console (~ or F10; needs UE4SS)")):
+        p = sub.add_parser(option, help=text)
+        p.add_argument("state", nargs="?", choices=("on", "off"))
+        p.set_defaults(fn=lambda c, a, o=option: cmd_ingame(c, a, o))
     args = ap.parse_args(argv)
     try:
         args.fn(Ctx(root), args)

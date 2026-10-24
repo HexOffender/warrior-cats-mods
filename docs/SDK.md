@@ -1,19 +1,24 @@
 # wcmods SDK
 
-The mod manager is built from **sections**. Each section handles one kind of mod content.
-The built-in ones are replacement files, game data, palettes, controls, mouse look and save edits. A mod
-can add its own section in two halves, both built on the shared library:
+The mod manager is built from **sections**. Each section handles one kind of mod content: the
+built-in ones are replacement files, game data, names, palettes, your cat's colours, controls,
+mouse look and save edits. A mod can add code of its own in three places:
 
-| Half | File in the mod folder | Runs in | Built on |
+| Part | File in the mod folder | Runs in | Built on |
 |---|---|---|---|
 | Build step | `section.py` | `wcmods build` / `install` | `wcmods.sdk` (Python) |
 | Studio page | `studio/section.js` | `wcmods studio`, in your browser | `studio/lib/wc.js` |
+| In-game script | shipped by its `section.py` | the game, through UE4SS | UE4SS Lua, plus the shared modules below: `WCModsDraw`, `WCModsMenu`, `WCModsView`, `WCModsWorld` |
 
-Both halves only run when `"allow_code_mods": true` is set in `wcmods.json`, because they
-are code. Without it, the build warns and skips them. Everything else in the mod still works.
+All of them only run when `"allow_code_mods": true` is set in `wcmods.json`, because they are
+code. Without it, the build warns and skips them. Everything else in the mod still works.
 
-A complete example lives in [`examples/faster-run`](../examples/faster-run). To try it, copy it
-into `mods/` and allow code mods.
+Two complete examples:
+- [`examples/faster-run`](../examples/faster-run): a build step and a studio page.
+- [`examples/quest-markers`](../examples/quest-markers): an in-game script with a custom quest,
+  markers on screen and a mod menu page.
+
+To try one, copy it into `mods/` and allow code mods.
 
 ## Mod folder
 
@@ -22,8 +27,12 @@ mods/my-mod/
   mod.json            {"name", "description", "enabled", "priority",
                        "studio_title" (nav label), "studio_files" (["my-settings.json"])}
   files/Wrc/...       replacement game files            -> section "files"
+  paks/<name>.pak     cooked content made with Unreal   -> installed as is, with its .utoc/.ucas
+                      Engine 5.7 (see "New content")
   data.json           CSV cell edits                    -> section "data"
+  names.json          cat names                         -> section "names"
   palette.json        colour palettes                   -> section "palettes"
+  cats.json           your cat's own colours and slots  -> section "cats"
   controls.json       key and button remaps             -> section "controls" (checked at build;
                                                            applied by `wcmods play`, keyboard and mouse)
   mouselook.json      mouse look settings               -> section "mouselook"
@@ -67,8 +76,8 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.add_ue4ss_mod(name, {"Scripts/main.lua": text})` | Ship a UE4SS Lua mod; installed and registered only when UE4SS is present. `.lua` files get a structure check (balanced blocks and brackets) and problems become build warnings |
 | `ctx.edit_save(path, value)` | Set an existing save value on install, e.g. `"0/GameplayProgression/Level"` |
 | `ctx.add_save_key(object_path, key, value)` | Add a key to a save object, e.g. a new inventory item |
-| `ctx.warn(msg)` / `ctx.log(msg)` / `ctx.note(key, value)` | Report to the user / the build log / the build manifest |
-| `ctx.game`, `ctx.cfg` | The game reader (`find`, `exists`, `data_tables`) and the tool's configuration |
+| `ctx.warn(msg)` / `ctx.log(msg)` / `ctx.note(key, value)` | Report to the user / the build log / the build manifest (notes show on the mod menu's first page) |
+| `ctx.game`, `ctx.cfg`, `ctx.mods` | The game reader (`find`, `exists`, `data_tables`), the tool's configuration, and the enabled mods |
 
 CSV edits use `{row: {column: value}}`. `"*"` means every row, `"x1.5"` multiplies the game's
 number, and key/value tables like `TuningData.csv` accept `{row: value}`. Save paths use `/`,
@@ -77,7 +86,414 @@ for shared data, and `0/...` for cat slot 0.
 
 Helpers you can import: `wcmods.csvdata` (format-preserving CSV editing), `wcmods.savejson`
 (format-preserving save JSON), `wcmods.colors`, `wcmods.palettes`, `wcmods.eyeatlas`,
-`wcmods.gamefiles`.
+`wcmods.gamefiles`, `wcmods.names` (the game's name tables). `wcmods.sdk.lua_value(data)` writes
+JSON-style data (dicts, lists, strings, numbers, booleans) as a Lua literal, for handing a mod's
+settings to its in-game script.
+
+## Game files, repacking and new content
+
+### Where the game keeps its files
+
+Everything is in `<game>\Wrc\Content\Paks\`:
+
+| File | Holds |
+|---|---|
+| `pakchunk0-Windows.pak` | Loose files that aren't cooked assets: the data tables (`Gameplay/DataTables/NonAsset/*.csv`), the text tables (`Strings_EN.csv` and the other languages), configs (`.ini`), the UI's images and the movies. Pak version 12, Oodle-compressed |
+| `pakchunk0-Windows.utoc` / `.ucas` | An IoStore container with every cooked asset (`.uasset` / `.ubulk`): models, textures, materials, animations, Blueprints, sounds and levels. The `.utoc` lists 12-byte chunk IDs and where each sits in the `.ucas`, which is stored in 64 KB Oodle blocks; its container header records each package's imports and shader maps |
+| `global.utoc` / `.ucas` | The engine's script objects and global shaders |
+
+`python wcmods.py files "<pattern>"` lists what's in them (`"*NPC/*.csv"`, `"*SK_*"`), and
+`extract "<pattern>"` copies matches into `vanilla/`. Tables and text come out as plain files.
+Cooked assets come out as their raw bytes; a viewer such as FModel shows what's inside.
+
+### What wcmods builds (repacking)
+
+Each install writes fresh files into `Paks\~mods\`. The game mounts that folder after its own
+paks, and the `_P` (patch) suffix lets a file there override the game's. The game's own files are
+never changed, and uninstall deletes everything starting with `zzz_WCMods_`.
+
+| File | What wcmods puts in it |
+|---|---|
+| `zzz_WCMods_P.pak` | Every replacement loose file (`files/`) and every edited table and text file (`data.json`, `names.json`, section CSV edits, merged across mods), plus `Wrc/WCMods/BuildInfo.json` naming the mods built. Pak version 12, uncompressed, mount point `../../../`. File names in its directory index are UTF-8 with no terminator, as the game's own pak stores them; written the older way, the engine never finds them |
+| `zzz_WCMods_P.utoc` / `.ucas` | Patched copies of existing cooked packages (the eye colour atlas, and anything a section passes to `ctx.patch_package`). Each keeps the game's chunk ID and its container header entry (imports, shader maps), with BLAKE3-160 chunk hashes, so the engine loads ours instead of the game's |
+| `zzz_WCMods_<mod>_<name>_P.*` | Cooked content a mod ships itself (`paks/`, below), copied as it is |
+
+Next to these, UE4SS scripts go into `Binaries\Win64\ue4ss\Mods\WCMods*`, and the shared modules
+into `ue4ss\Mods\shared\WCMods*`.
+
+### Changing what the game already has
+
+- **Tables and text:** `data.json` and `names.json` edit cells and rows, merged with other mods'
+  edits to the same table. From a `section.py`, use `ctx.edit_csv`.
+- **Whole loose files** (a config, a movie, a table rewritten by hand): extract it, change it, and
+  put it in the mod at the same path under `files/`, e.g. `files/Wrc/Content/.../TuningData.csv`.
+- **Bytes of a cooked asset:** `ctx.patch_package(path, data)` replaces a package with patched
+  bytes of the same layout, such as new pixels in a texture. That's how eye palettes recolour the
+  eye atlas.
+- **While the game runs:** UE4SS scripts change objects in memory: colours, the camera, cheats.
+
+### New content: models, textures, sounds
+
+New assets have to be cooked by Unreal Engine itself; wcmods doesn't cook. Once cooked, a mod
+ships them in a `paks/` folder and wcmods installs them like everything else. The steps are the
+usual ones for Unreal 5 games that use IoStore. **They haven't been tried with this game yet.** The
+game doesn't insist on signed paks, though (wcmods' own unsigned container loads), which is what
+makes this possible.
+
+1. **Use the game's engine version:** Unreal Engine 5.7. Make a project named `Wrc`, so its content
+   mounts at `/Game` the same way the game's does.
+2. **Keep your assets in a folder of your own**, e.g. `/Game/Mods/MyHat/`, so nothing clashes with
+   the game's.
+3. **Set Project Settings → Packaging:**
+   - turn on *Use Io Store* and *Use Pak File*;
+   - turn off *Share Material Shader Code*, so your materials' shaders travel inside your packages
+     instead of a shader library that would clash with the game's;
+   - turn on *Generate Chunks*, and give your folder a chunk of its own with a Primary Asset Label
+     (chunk 100, say).
+4. **Package for Windows.** From the output, take `pakchunk100-Windows.pak`, `.utoc` and `.ucas`
+   and put all three in `mods/<your mod>/paks/`. Install, and they go into `~mods` as
+   `zzz_WCMods_<your mod>_pakchunk100-Windows_P.*`. A `.utoc` and `.ucas` need the `.pak` of the
+   same name beside them, or the game won't mount them.
+5. **Make the game use it**, in one of two ways:
+   - **Replace one of the game's assets:** give yours exactly the same path and name; find them with
+     `wcmods files "*SK_*"` or FModel. For a skeletal model, keep the game's skeleton (its
+     animations are tied to it) and the same material slots.
+   - **Add something new:** load it from a UE4SS script and put it in the world. For example, a hat
+     on your cat:
+
+```lua
+-- A sketch: a hat from a mod's own cooked paks, on your cat. "head" must be a socket or bone of
+-- the cat's skeleton (FModel shows their names).
+local World = require("WCModsWorld")
+local MeshComponent = StaticFindObject("/Script/Engine.StaticMeshComponent")
+local SNAP = 2   -- EAttachmentRule::SnapToTarget
+local hat, wornBy
+
+LoopInGameThreadAfterFrames(30, function()   -- about twice a second, on the game thread
+    pcall(function()
+        local cat = World.player()
+        if not cat or wornBy == cat:GetAddress() then return end
+        hat = hat or LoadAsset("/Game/Mods/MyHat/SM_Hat.SM_Hat")
+        local part = cat:AddComponentByClass(MeshComponent, true,
+            { Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Translation = { X = 0, Y = 0, Z = 0 },
+              Scale3D = { X = 1, Y = 1, Z = 1 } }, false)
+        part:SetStaticMesh(hat)
+        part:K2_AttachToComponent(cat.Mesh, FName("head"), SNAP, SNAP, SNAP, false)
+        wornBy = cat:GetAddress()   -- a new area brings a new cat, which gets a new hat
+    end)
+end)
+```
+
+The same way, a script can spawn actors from a mod's own Blueprints (load the class, then
+`GameplayStatics:BeginDeferredActorSpawnFromClass` and `FinishSpawningActor`), play its sounds, or
+show its textures with the menu's `ui.image` and `WCModsDraw`'s `texture` option.
+
+## In-game scripts
+
+A mod's `section.py` can ship a UE4SS Lua script with `ctx.add_ue4ss_mod`. wcmods installs it into
+`ue4ss/Mods/<name>/` when UE4SS is present, registers it, and removes it on uninstall or when the
+mod is turned off. Next to it, every install puts five shared modules in `ue4ss/Mods/shared/`.
+Any UE4SS script can `require` them, wcmods' or one written by hand:
+
+| Module | What it does |
+|---|---|
+| `WCModsDraw` | Text and 2D shapes on screen: panels, buttons, debug text, markers on places in the world |
+| `WCModsMenu` | Pages in the mod menu (Insert): buttons, switches, sliders, drop-downs, text boxes, colours, images |
+| `WCModsView` | What the camera sees: its matrices, and world-to-screen positions |
+| `WCModsWorld` | Finds things in the world (pickups, interactables, quest objectives, cats, creatures) and the game's managers |
+| `WCModsNames` | Cats' names: every name part's text after your name mods (written on each install; `WCModsWorld` uses it) |
+
+### Shipping a script
+
+The script is a template in the mod folder. The build step fills in the mod's settings, and the
+path the menu page saves them back to:
+
+```python
+# mods/my-overlay/section.py
+import os
+from wcmods.sdk import Section, lua_value
+
+class MyOverlay(Section):
+    id = "my-overlay"
+    title = "My overlay"
+    files = ("my-overlay.json",)
+
+    def collect(self, mod, ctx):
+        return self.read_json(mod, "my-overlay.json")
+
+    def build(self, ctx, items):
+        mod, settings = items[-1]           # the highest-priority mod's settings
+        with open(os.path.join(mod.folder, "overlay.lua"), encoding="utf-8") as f:
+            script = f.read()
+        path = os.path.abspath(os.path.join(mod.folder, "my-overlay.json"))
+        script = script.replace("@SETTINGS@", lua_value(settings)).replace("@SAVE_PATH@", lua_value(path))
+        ctx.add_ue4ss_mod("WCModsMyOverlay", {"Scripts/main.lua": script, "enabled.txt": ""})
+```
+
+```lua
+-- mods/my-overlay/overlay.lua: markers on nearby pickups, and a mod menu page to change them live.
+local Draw = require("WCModsDraw")
+local Menu = require("WCModsMenu")
+local World = require("WCModsWorld")
+local SETTINGS = @SETTINGS@     -- e.g. { on = true, range = 3000, color = "#7ee081" }
+local SAVE_PATH = @SAVE_PATH@
+
+-- What's nearby, looked up twice a second rather than every frame.
+local found, foundAt = {}, nil
+local function nearby()
+    if foundAt == nil or os.clock() - foundAt >= 0.5 then
+        foundAt, found = os.clock(), World.nearby("pickups", SETTINGS.range)
+    end
+    return found
+end
+
+Draw.onFrame(function(d)
+    if not SETTINGS.on then return end
+    for i, it in ipairs(nearby()) do
+        if i > 10 then break end
+        d.marker(it.location, it.label, { color = SETTINGS.color, edge = true })
+    end
+end)
+
+Menu.page("My overlay", function(ui)
+    ui.heading("My overlay")
+    SETTINGS.on = ui.switch("Markers", SETTINGS.on)
+    SETTINGS.range = ui.slider("Range", SETTINGS.range, 500, 10000, { step = 500, format = "%.0f cm" })
+    SETTINGS.color = ui.color("Colour", SETTINGS.color)
+    if ui.button("Save", { kind = "primary" }) then Menu.saveJson(SAVE_PATH, SETTINGS) end
+end)
+
+print("[MyOverlay] loaded\n")
+```
+
+Changes on the page apply at once, because the page and the markers share `SETTINGS`. Save writes
+them to the mod's JSON, so the next install builds the script with them. `print` goes to
+`ue4ss\UE4SS.log`; end each line with `\n`.
+
+Name the script anything. Names starting with `WCMods` are wcmods' own: an install also clears
+out any `WCMods...` script that no enabled mod ships any more, even if wcmods.json lost track of it.
+
+### Rules that keep the game running
+
+- **One thread per script.** The shared modules run on the game thread
+  (`LoopInGameThreadAfterFrames`). In a script that uses them, don't also use `LoopAsync`: it runs
+  its callback on another thread in the same Lua state, and two threads in one Lua state at once
+  crash the game. For something every so often, count time in a painter or a menu page.
+  `RegisterKeyBind` is fine; do the work inside `ExecuteInGameThread`.
+- **Objects last a level.** When the level changes, the game destroys its actors and widgets, and a
+  destroyed object's slot can be taken by another object. Such an object can still look valid while
+  being something else. Look things up again (the shared modules do this themselves), and check
+  the class of anything you keep: `o:GetClass():GetFName():ToString()`.
+- **Guard engine calls with `pcall`.** An error inside a callback that UE4SS calls itself (a hook,
+  or a `ForEach`) goes to UE4SS's log, not to the `pcall` around the code that set it up, so guard
+  the callback's own body too.
+- **Rotators:** UE4SS drops the pitch of a rotator passed as a Lua table, so build ones that need
+  a pitch with `KismetMathLibrary:MakeRotator(roll, pitch, yaw)`.
+- **Input:** leave the input mode alone while the mod menu is open
+  (`ModRef:GetSharedVariable("WCModsMenu.open")`), as mouse look does.
+
+## `WCModsDraw`
+
+```lua
+local Draw = require("WCModsDraw")
+
+Draw.onFrame(function(d)
+    local y = d.panel(20, 20, 260, 90, "Debug")        -- returns where the content starts
+    d.text(32, y, "Hello", { size = 16, color = "#ffe9a8" })
+    if d.button(32, y + 28, 120, 26, "Do it") then print("clicked\n") end
+    d.line(300, 40, 420, 90, { color = "#ff6060", thickness = 3 })
+    d.marker(someLocation, "The old oak", { sub = "Find the herbs", edge = true })
+end)
+```
+
+The painter runs every frame on the game thread. Whatever a frame doesn't draw is hidden, so a
+painter just draws what should be on screen now. Positions and sizes are pixels from the
+viewport's top left, the same as `WCModsView`. Colours are `"#rrggbb"`, `"#rrggbbaa"` or
+`{r, g, b, a}` from 0 to 1, in sRGB like an image editor's.
+
+| Call | Draws |
+|---|---|
+| `d.text(x, y, text, {size, color, align, valign, shadow})` | Text; `size` in pixels (16), `align` left/center/right and `valign` top/middle/bottom place it against x, y. Multi-line with `\n` |
+| `d.rect(x, y, w, h, {color, outline, angle, texture})` | A filled rectangle, or an outline `outline` pixels thick. `angle` turns it around its middle; `texture` is a texture object or its path |
+| `d.line(x1, y1, x2, y2, {color, thickness})` | A line |
+| `d.polyline(points, {color, thickness, closed})` | Lines through `{{x, y}, ...}` |
+| `d.circle(x, y, radius, {color, thickness, segments})` | A circle's outline |
+| `d.panel(x, y, w, h, title?, {color, border, titleColor})` | A dark panel with a title bar; returns the y where its content starts |
+| `d.button(x, y, w, h, label, {color, hoverColor, border, size})` | A button; returns true the frame it's clicked |
+| `d.marker(location, label?, {sub, color, size, textSize, edge, maxDistance, distance, from})` | A diamond on a place in the world, its label above, and its distance (and `sub`) below. With `edge`, a place off screen or behind the camera shows at the screen's edge, in its direction. Returns the screen x, y, or nil |
+| `d.measure(text, size)` | About how wide and tall text would be, in pixels |
+| `d.mouse()`, `d.hover(x, y, w, h)`, `d.clicked()` | The mouse in pixels and whether the cursor is shown; whether it's over a box; whether the left button went down this frame |
+| `d.width`, `d.height`, `d.scale`, `d.view`, `d.player` | The viewport, the game's UI scale, this frame's `WCModsView` view, and your cat's location |
+
+`Draw.remove(id)` stops a painter (`onFrame` returns its id). `Draw.setVisible(on)` and
+`Draw.isVisible()` show or hide everything a script draws, e.g. on a key. `Draw.setZOrder(z)` sets
+where the overlay sits among the game's UI (1000, above it, by default).
+
+How it works: one widget on the viewport (the game's own UI system, UMG) holds a canvas of text
+blocks and images, kept in pools. An element only gets a call into the game when something about it
+changed. The overlay never takes clicks, so the game's UI and controls work as before; buttons
+watch the player's left mouse button instead. They work while the cursor shows and the game reads
+the mouse, and a click also reaches whatever game UI is under them. For menus that take clicks
+properly, use `WCModsMenu`. Each script that requires the module gets its own overlay, made again
+by itself after a level change.
+
+## `WCModsMenu`
+
+Insert opens the mod menu in game, and Insert or Escape closes it. (`"menu_key"` in `wcmods.json`
+picks another key: `INS`, `HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN` or `F1`-`F12` but F11.)
+While it's open, the menu has the keyboard and mouse, the cursor shows, and the game's controls
+wait; "Pause the game" stops the game too, and A- and A+ resize it (`"menu_scale"`, 1 by default).
+
+Its own pages come first:
+- **Installed mods:** each mod and what each part of the build set up.
+- **Nearby:** what's around your cat (`WCModsWorld`). Show any kinds at once, each in its own
+  colour, and mark them on screen.
+- **Cheats:** the engine's cheat manager, switched on and off live (`"cheats"` says whether it
+  starts on). It has god mode, fly and ghost, cat size, game speed, teleport and a console command
+  box. Flying and size are done by the menu itself, because the game undoes the engine's own `fly`,
+  `ghost` and `changesize`.
+
+After those come pages added by scripts. wcmods' mouse look and your cat's colours have live
+settings with Save, and any script can add its own:
+
+```lua
+local Menu = require("WCModsMenu")
+local settings = { on = true, speed = 1, mode = "Calm", tint = "#ffcc00" }
+
+Menu.page("My mod", function(ui)
+    ui.heading("My mod")
+    settings.on = ui.switch("Enabled", settings.on)
+    settings.speed = ui.slider("Speed", settings.speed, 0.5, 3, { step = 0.1, format = "x%.1f" })
+    settings.mode = ui.radio("Mode", settings.mode, { "Calm", "Busy" })
+    settings.tint = ui.color("Tint", settings.tint)
+    ui.section("More", function()
+        settings.name = ui.input("Name", settings.name, { hint = "your cat's name" })
+        settings.count = ui.number("Count", settings.count or 3, { min = 0, max = 10, step = 1 })
+    end, { open = false })
+    if ui.button("Save", { kind = "primary" }) then Menu.saveJson(SAVE_PATH, settings) end
+end, { order = 40 })
+```
+
+While the menu shows a page, its function runs every frame. Each `ui` call is one row of the page,
+and returns what the player set it to, or the value it was given when they didn't touch it. So one
+line per setting keeps a script's live settings and the page in step. The rows are the game's own UI
+widgets (real buttons, check boxes, sliders, drop-downs and text boxes, which take clicks and typing
+properly), kept from frame to frame and changed only when something changes. A page whose rows
+change (more items, a section opened) rebuilds from the first row that differs. Sizes are as on a
+1080-pixel screen: the window undoes the game's UI shrink (it draws for 3840x2160 and scales down).
+
+| Call | Row |
+|---|---|
+| `ui.heading(text)`, `ui.text(text, {size, color})`, `ui.note(text)` | A heading; wrapped text; smaller grey text |
+| `ui.field(label, value, {color})` | A name and its value, for showing settings |
+| `ui.separator()`, `ui.space(h)` | A line; some room |
+| `ui.button(label, {kind})` | A button; true the frame it's clicked. `kind`: `"primary"`, `"danger"`, `"good"` |
+| `ui.buttons(labels, {kinds})` | A row of buttons; the index of the one clicked, or nil |
+| `ui.toggle(label, value, {swatch})` | A check box (with a colour swatch by the label, if given); returns true or false |
+| `ui.switch(label, value)` | An On/Off switch; returns true or false |
+| `ui.radio(label, value, options)` | One of a few options, as buttons; returns the chosen one |
+| `ui.choice(label, value, options)` | A drop-down list; returns the chosen option |
+| `ui.slider(label, value, lo, hi, {step, format, color})` | A slider with its value shown (`format` like `"%.2f"`); returns the value |
+| `ui.number(label, value, {min, max, step})` | A number box you can drag or type in; returns the number |
+| `ui.input(label, value, {hint})` | A text box; returns its text |
+| `ui.color(label, "#rrggbb")` | A swatch with red, green and blue sliders; returns `"#rrggbb"` |
+| `ui.progress(label, fraction, {color, format})` | A bar from 0 to 1 |
+| `ui.image(texture, w, h, {color})` | A picture: a texture object or its path |
+| `ui.section(title, fn, {open, id})` | A part that opens and closes with a click on its title; `fn(ui)` draws what's inside |
+
+`Menu.page(title, fn, {order, id})` adds a page; `order` sorts the tabs (lower first; the menu's own
+are 0, 5 and 8, wcmods' scripts 20-30, 50 by default). `Menu.isOpen()` says whether the menu is open.
+`Menu.saveJson(path, value)` writes a Lua value as JSON (keys sorted, notes like `"_help"` first)
+and returns true, or false and why; `Menu.list(t)` marks a table as a JSON list, so an empty one is
+written `[]`. `Menu.json(value)` gives the JSON text, `Menu.color(hex)` the linear colour the game's
+UI wants, and `Menu.theme` the menu's colours.
+
+How it fits together: each UE4SS mod has a Lua state of its own, so the menu window belongs to a
+script wcmods installs with every build, `WCModsMenuHost`. It shares its content panel with the
+others through UE4SS's shared variables (`WCModsMenu.open`, `.page`, `.content`, `.tree`,
+`.generation`, `.pages`). The script that owns the page on show builds its rows straight into
+that panel, so a page always runs next to the settings it changes.
+
+## `WCModsView`
+
+```lua
+local View = require("WCModsView")
+
+Draw.onFrame(function(d)                 -- or any game-thread loop
+    local view = d.view                  -- this frame's view; View.current() gets one anywhere
+    if not view then return end
+    local x, y, depth = View.worldToScreen(someActor:K2_GetActorLocation(), view)
+    if x then
+        -- x, y: pixels from the viewport's top left; depth: distance in front of the camera
+    end
+end)
+```
+
+| Field or function | What it is |
+|---|---|
+| `View.current()` | The camera's view now, or nil until there's a camera and a viewport |
+| `view.location`, `view.rotation` | The camera's position `{X, Y, Z}` and rotation `{Pitch, Yaw, Roll}` |
+| `view.forward`, `view.right`, `view.up` | Its directions, as `{x, y, z}` lists |
+| `view.fov` | Horizontal field of view, in degrees |
+| `view.width`, `view.height` | The viewport, in pixels |
+| `view.rect` | The part of the viewport the picture fills, `{x, y, width, height}` (the whole viewport unless the camera keeps its own aspect ratio) |
+| `view.viewMatrix`, `view.projectionMatrix`, `view.viewProjection` | Unreal's matrices, 4 rows of 4, for row vectors (`clip = {X, Y, Z, 1} * viewProjection`). The projection is reversed-Z with the near plane at 10 cm, as the renderer builds it |
+| `View.worldToScreen(location, view?)` | Screen x, y in pixels and the depth, or `nil` behind the camera. Takes `{X, Y, Z}` or an `FVector`; gets a view itself when none is passed |
+| `View.cameraSpace(location, view?)` | Where a place is from the camera in centimetres: right, up, forward (negative is behind) |
+| `View.engineWorldToScreen(location)` | The same through `GameplayStatics.ProjectWorldToScreen`. Slower, but handy to check against (checked in game: the two agree to the pixel) |
+
+The view is the camera manager's last one, which is the picture on screen now. Get one per
+update and reuse it for every point.
+
+## `WCModsWorld`
+
+```lua
+local World = require("WCModsWorld")
+
+for _, it in ipairs(World.nearby("pickups", 3000)) do     -- within 30 m of your cat, nearest first
+    print(string.format("%s, %.0f m\n", it.label, it.distance / 100))
+end
+local quests = World.manager("quests")                    -- the game's quest manager object
+```
+
+| Call | What it gives |
+|---|---|
+| `World.nearby(kind, radius?, from?)` | What's within `radius` cm of `from` (an actor or `{X, Y, Z}`; your cat by default), nearest first, as `{actor, location, distance, name, label, class}`. Your cat itself is left out |
+| `World.find(kind)` | Every actor of a kind, or of a class given by name (e.g. `"BP_Pickup_Herb_1_C"`) |
+| `World.player()` | Your cat (the player's pawn), or nil in menus |
+| `World.location(actor)`, `World.distance(a, b)` | `{X, Y, Z}`; centimetres between two actors or locations |
+| `World.label(actor, kind?)` | A readable name: from its class (`BP_Pickup_SmallHealingHerb_C` is "Small Healing Herb", `BP_Interactable_Claw_Bush_C` "Bush (claw)"); with kind `cats` or `questGivers`, the cat's own name ("Otterpaw (Deputy)"); with `creatures`, its model ("Mouse") |
+| `World.kindOrder()`, `World.kindLabel(kind)`, `World.kindColor(kind)` | The kinds in the menu's order, their names ("Quest givers") and colours (`World.kindInfo` holds them; scripts can change them) |
+| `World.describe(actor)`, `World.parents(class)` | Its name, label, class, the classes that's made from, and location |
+| `World.manager(name)` | One of the game's managers: `quests`, `npcs`, `tracer`, `gui`, `storage`, `paths`, `tutorial`, `combat`, `tuning`, or a class name |
+| `World.addKind(kind, classes)`, `World.rescan()` | Add or change a kind; look again at the next query |
+
+The kinds, and the game's classes they cover. An actor counts when its class is made from one of
+them; the list was checked in game, from the classes the game's own objects report:
+
+| Kind | Classes | What they are |
+|---|---|---|
+| `pickups` | `SwtAdventurePickupActor` | Herbs, catnip, healing herbs, pouches |
+| `interactables` | `BP_Interactable_Base_C`, `SwtAdventureInteractableSequence`, `SwtAdventureInteractByContact` | Dig, claw, sharpen, sleep and play spots; scenes like the fallen tree; flowers |
+| `objectives` | `SwtQuestObjectivePoint`, `QuestBoxTrigger`, `BP_Objective_Base_C`, `BP_ScentObjective_C`, `BP_InterativeObjective_C` | Quest places and trigger areas |
+| `cats` | `SwtAdventureWalkingNPC`, `SwtAdventureQuestActor` | Clan cats walking about, quest givers, cats idling in camp |
+| `questGivers` | `BP_Quest_Giver_Base_C`, `SwtAdventureQuestHintActor`, `SwtAdventureFreshKillActor` | Cats with a quest, gossip or a fresh-kill task |
+| `creatures` | `WrcRoamingEnemy` | Prey and other animals roaming the territory |
+| `climbing` | `SwtAdventureSplineClimbTarget`, `SwtAdventureJumpHotspotBase` | Climbable trees and walls; jump spots |
+| `dens` | `SwtAdventureHousingDoorActor` | Den entrances |
+| `freshKill` | `SwtAdventureFreshKillPileActor` | The fresh-kill pile |
+| `zones` | `WrcZoneNameTrigger` | The areas whose names the game shows |
+| `checkpoints` | `BP_Checkpoint_Base_C` | Checkpoints |
+
+The game's managers hang off its game instance (`BP_WrcGameInstance_C`): quests, NPC generation,
+the actor tracer, the GUI, storage, track paths, the tutorial, combat, tuning and its own cheats
+manager (`CheatsManager`).
+
+It reads the engine's actor list with one `FindAllOf("Actor")` at most every `World.refresh`
+seconds (2 by default), and sorts each actor into kinds by its class, worked out once per class.
+Queries in between use that list, so they're cheap, but still look things up a few times a second
+rather than every frame when there are many. Call them on the game thread (in a painter, a menu
+page, or inside `ExecuteInGameThread`).
 
 ## JavaScript: `studio/lib/wc.js`
 
@@ -111,8 +527,12 @@ affecting the others.
 
 API routes: `GET /info`, `GET|POST /mods`, `PATCH /mods/<id>`,
 `GET|PUT|DELETE /mods/<id>/file/<name>` (the built-in files plus the mod's `studio_files`),
-`POST /build`, `/install`, `/uninstall`, `GET /backups`, `POST /backup`, `/restore`,
-`GET /game/eyes`, `/game/tables`, `/game/bindings`, `/game/data`, `/game/data/<table>`, `/save`.
+`POST /build`, `/install`, `/uninstall`, `/palettes/apply`, `GET /backups`, `POST /backup`,
+`/restore`, `GET|PATCH /ingame` (the game console, cheats at start, the mod menu's key and size),
+`GET /names`, `POST /names/preview`, `GET /cat`, `GET /game/eyes`, `/game/tables`,
+`/game/bindings`, `/game/data`, `/game/data/<table>`, `/save`.
 
 The server listens on 127.0.0.1 only, and every API call needs the per-run token that the page
-gets when it loads. Other websites therefore can't drive it.
+gets when it loads. Other websites therefore can't drive it. The studio runs the wcmods code it
+started with: if wcmods is updated while it's open, it refuses to build or install (and says
+"Restart the studio") until it's opened again.

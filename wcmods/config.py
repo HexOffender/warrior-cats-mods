@@ -17,6 +17,12 @@ class Config:
         self.path = os.path.join(root, "wcmods.json")
         self.data = {}
         self._oodle_searched = False
+        self.reload()
+
+    def reload(self):
+        """Read wcmods.json again. The studio keeps one Config for its whole run, so anything that
+        reads a value, changes it and saves (install, uninstall) reloads first; otherwise it would
+        write back what it read at startup over what the command line wrote since."""
         if os.path.exists(self.path):
             with open(self.path, encoding="utf-8-sig") as f:
                 self.data = json.load(f)

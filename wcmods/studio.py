@@ -15,7 +15,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
-from . import catlook, colors, controls, csvdata, eyeatlas, mods, names, palettes, pipeline, save, ue4ss
+from . import catlook, colors, controls, csvdata, eyeatlas, ingame, mods, names, palettes, pipeline, save, ue4ss
 from .colors import hex_from_linear
 from .config import game_running
 from .gamefiles import NONASSET
@@ -35,9 +35,22 @@ BUILTIN_SECTIONS = [
 ]
 
 
+def code_stamp():
+    """The newest change to wcmods' own Python code. The studio runs the code it started with, so once
+    this moves on (wcmods was updated while it ran), building with it would install stale scripts."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    newest = 0.0
+    for folder, _, names in os.walk(here):
+        for n in names:
+            if n.endswith(".py"):
+                newest = max(newest, os.path.getmtime(os.path.join(folder, n)))
+    return newest
+
+
 class Studio:
     def __init__(self, ctx):
         self.ctx = ctx
+        self.code_stamp = code_stamp()
         self.root = ctx.root
         self.static = os.path.join(ctx.root, "studio")
         self.token = secrets.token_urlsafe(24)
@@ -61,9 +74,19 @@ class Studio:
             raise LookupError("no save yet; start the game once")
         return save.SaveGame.load(path).json_text, os.path.getmtime(path)
 
+    def code_changed(self):
+        return code_stamp() > self.code_stamp
+
+    def need_current_code(self):
+        if self.code_changed():
+            raise RuntimeError("wcmods was updated while Clan Mod Studio was open, and the studio still runs the old "
+                               "code. Close the studio's window and open it again, then install.")
+
     # ---------- API ----------
     def api(self, method, parts, body):
         cfg = self.ctx.cfg
+        if method == "POST" and parts in (["build"], ["install"], ["uninstall"], ["palettes", "apply"]):
+            self.need_current_code()
         if parts == ["info"]:
             sections = list(BUILTIN_SECTIONS)
             if cfg.data.get("allow_code_mods"):
@@ -74,8 +97,15 @@ class Studio:
             return {"game_dir": cfg.game_dir, "save_found": os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)),
                     "oodle": bool(cfg.oodle_dll), "ue4ss": bool(cfg.ue4ss_mods_dir), "game_running": game_running(),
                     "installed": cfg.data.get("installed"), "install_outdated": pipeline.install_outdated(cfg),
+                    "code_changed": self.code_changed(),
                     "allow_code_mods": bool(cfg.data.get("allow_code_mods")),
                     "sections": sections}
+        if parts == ["ingame"]:
+            # The game's console, cheats at start and the mod menu's key (wcmods/ingame.py).
+            if method == "PATCH":
+                return ingame.set_options(cfg, cheats=body.get("cheats"), console=body.get("console"),
+                                          menu_key=body.get("menu_key"), menu_scale=body.get("menu_scale"))
+            return ingame.options(cfg)
         if parts == ["mods"] and method == "GET":
             return [m.to_dict() for m in self.mods()]
         if parts == ["mods"] and method == "POST":

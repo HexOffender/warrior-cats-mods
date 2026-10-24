@@ -1,0 +1,10 @@
+{
+  "_help": "A custom quest for the Quest Markers example. steps: places to go, in order, each { \"text\", \"at\": [x, y, z], \"radius\" (cm, default 400) }. In game, F9 (waypoint_key) adds one where your cat stands and logs the line to paste here (in UE4SS.log, as [QuestMarkers]). pickups: markers on pickups within pickup_range cm. debug_panel: your position, the camera and counts. toggle_key shows and hides it all.",
+  "title": "A walk around camp",
+  "steps": [],
+  "pickups": true,
+  "pickup_range": 4000,
+  "debug_panel": true,
+  "toggle_key": "F7",
+  "waypoint_key": "F9"
+}

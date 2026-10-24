@@ -33,6 +33,34 @@ from . import csvdata, luacheck
 from .gamefiles import NONASSET
 
 
+def lua_value(value):
+    """JSON-style data (dicts, lists, strings, numbers, booleans, None) as a Lua literal, for putting
+    a mod's settings into a UE4SS script: f"local QUEST = {lua_value(data)}"."""
+    if value is None:
+        return "nil"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, str):
+        out = []
+        for ch in value:
+            if ch in '"\\':
+                out.append("\\" + ch)
+            elif ch == "\n":
+                out.append("\\n")
+            elif ord(ch) < 32 or ord(ch) == 127:
+                out.append(f"\\{ord(ch):03d}")
+            else:
+                out.append(ch)   # the rest, UTF-8 included, is fine as it is in a Lua string
+        return '"' + "".join(out) + '"'
+    if isinstance(value, (list, tuple)):
+        return "{ " + ", ".join(lua_value(v) for v in value) + " }"
+    if isinstance(value, dict):
+        return "{ " + ", ".join(f"[{lua_value(str(k))}] = {lua_value(v)}" for k, v in value.items()) + " }"
+    raise TypeError(f"can't write {type(value).__name__} as Lua")
+
+
 class Section:
     id = ""
     title = ""

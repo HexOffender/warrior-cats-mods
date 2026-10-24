@@ -2,6 +2,7 @@
 
 A mod is a folder under mods/ with a mod.json and any of:
   files/<game path>   loose files that replace the game's (CSV data, configs, movies)
+  paks/<name>.pak     cooked content made with Unreal Engine 5.7 (with its .utoc/.ucas), installed as is
   palette.json        colour palette (sections/palettes.py)
   controls.json       button remaps (sections/controls.py)
   mouselook.json      mouse look settings (sections/mouselook.py)
@@ -17,7 +18,7 @@ import json
 import os
 import re
 
-CONTENT = (("files", "files"), ("palette.json", "palette"), ("controls.json", "controls"),
+CONTENT = (("files", "files"), ("paks", "cooked content"), ("palette.json", "palette"), ("controls.json", "controls"),
            ("mouselook.json", "mouse look"), ("data.json", "data"), ("names.json", "names"), ("cats.json", "cats"),
            ("save.json", "save"), ("section.py", "code"), (os.path.join("studio", "section.js"), "studio page"))
 

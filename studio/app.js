@@ -19,14 +19,18 @@ async function refreshStatus() {
     clear(statusBox).append(chip("Studio server not reachable", "bad", e.message));
     return null;
   }
-  clear(statusBox).append(
+  clear(statusBox).append(...[
     chip(info.game_running ? "Game running" : "Game closed", info.game_running ? "warn" : "good",
       info.game_running ? "Close the game before installing" : ""),
     chip(info.ue4ss ? "UE4SS installed" : "No UE4SS", info.ue4ss ? "good" : "warn"),
     chip(info.save_found ? "Save found" : "No save yet", info.save_found ? "good" : "warn"),
+    info.code_changed
+      ? chip("Restart the studio", "bad", "wcmods was updated while the studio was open. Close this window and open Clan Mod Studio again before installing.")
+      : null,
     info.install_outdated
       ? chip("Install again", "warn", "The installed mods were built by an older wcmods, and the game can't find their files. Install to rebuild them.")
-      : chip(info.installed ? `Installed: ${info.installed.mods.length} mods` : "Nothing installed", info.installed ? "good" : ""));
+      : chip(info.installed ? `Installed: ${info.installed.mods.length} mods` : "Nothing installed", info.installed ? "good" : ""),
+  ].filter(Boolean));
   return info;
 }
 
