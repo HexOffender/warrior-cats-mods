@@ -2,7 +2,7 @@
 in your save. See catlook.py."""
 import os
 
-from .. import catlook, names
+from .. import catlook, names, palettes
 from ..save import SAV_NAME, SaveGame
 from ..savejson import SaveDoc
 from ..sdk import Section
@@ -25,7 +25,9 @@ class CatsSection(Section):
         cats = names.cats_in_save(SaveDoc(SaveGame.load(sav).json_text).data) if os.path.isfile(sav) else []
         if player["colours"]:
             if ctx.cfg.ue4ss_mods_dir:
-                script = catlook.script(player["colours"], catlook.save_key(cats), debug=bool(ctx.cfg.data.get("debug_cat_look")))
+                key_file = os.path.join(ctx.cfg.ue4ss_mods_dir, catlook.UE4SS_MOD_NAME, "yourcat.txt")
+                script = catlook.script(player["colours"], catlook.save_key(cats), key_file,
+                                        debug=bool(ctx.cfg.data.get("debug_cat_look")))
                 ctx.add_ue4ss_mod(catlook.UE4SS_MOD_NAME, {"Scripts/main.lua": script, "enabled.txt": ""})
             else:
                 ctx.warn("your cat's colours need UE4SS, which isn't installed")
@@ -34,6 +36,11 @@ class CatsSection(Section):
         slots = player["slots"]
         if slots.get("fur") in catlook.FERAL_SLOTS:
             ctx.warn(f"coat slot {slots['fur']} is one of the Feral Edition's; without it the game gives your cat another")
+        added = _new_slots(ctx.mods)
+        for part in ("pattern", "marking"):
+            slot = slots.get(part)
+            if slot is not None and slot >= palettes.GAME_SLOTS and slot not in added.get(part, set()):
+                ctx.warn(f"your cat's {part} slot {slot} isn't added by any enabled palette, so it shows no colour")
         if slots:
             if not os.path.isfile(sav):
                 ctx.warn("your cat's colour slots: no save yet; start the game once, then install again")
@@ -47,3 +54,17 @@ class CatsSection(Section):
                 if not mine:
                     ctx.warn("your cat's colour slots: your save has no player cat yet")
         ctx.note("cat", {"colours": sorted(player["colours"]), "slots": slots})
+
+
+def _new_slots(mods):
+    """{part: {slot, ...}} for the new colour slots the enabled palettes add."""
+    out = {}
+    for mod in mods:
+        path = os.path.join(mod.folder, "palette.json")
+        if os.path.isfile(path):
+            try:
+                for part, found in palettes.new_slots(palettes.load(path)).items():
+                    out.setdefault(part, set()).update(found)
+            except ValueError:
+                continue   # the palette section reports a broken palette.json
+    return out

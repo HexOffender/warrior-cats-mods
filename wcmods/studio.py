@@ -177,10 +177,10 @@ class Studio:
         current = {}
         try:
             text, _ = self.save_text()
-            cats = names.cats_in_save(SaveDoc(text).data)
-            mine = [c for c in cats if names.PLAYER_PATH in c["paths"]]
+            doc = SaveDoc(text)
+            mine = [c for c in names.cats_in_save(doc.data) if names.PLAYER_PATH in c["paths"]]
             if mine:
-                raw = SaveDoc(text).get(mine[0]["paths"][0])
+                raw = doc.get(mine[0]["paths"][0])
                 for part, field in catlook.SLOTS.items():
                     m = re.search(rf"(?<![A-Za-z0-9_]){field}=(\d+)", raw)
                     current[part] = int(m.group(1)) if m else 0

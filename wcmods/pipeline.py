@@ -28,6 +28,7 @@ def build(cfg, mods, out_dir, log=print):
     game = GameFiles(cfg)
     sections, skipped = load_sections(cfg, mods, log)
     ctx = BuildContext(cfg, game, out_dir, log)
+    ctx.mods = enabled   # the enabled mods, for sections that check another kind of file (cats.json and palettes)
     report = {}
 
     for sec in sections:

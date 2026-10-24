@@ -58,7 +58,9 @@ export default {
     function render() { renderColours(); renderSlots(); out.set(toJson()); }
 
     function renderColours() {
-      const rows = PARTS.map(p => {
+      // The parts the build knows (catlook.PARTS), labelled here; a part with no label shows its id.
+      const parts = Object.keys(info.parts || {}).map(id => PARTS.find(p => p.id === id) || { id, name: id });
+      const rows = parts.map(p => {
         const on = p.id in look.colours;
         const inp = el("input", { type: "color", value: (look.colours[p.id] || "#a0a0a0").toLowerCase(), "aria-label": `${p.name} colour`, disabled: !on });
         const box = el("input", { type: "checkbox", checked: on, "aria-label": `Use my own ${p.name.toLowerCase()} colour` });
