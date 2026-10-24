@@ -425,6 +425,11 @@ export default {
       const NAMES = { INS: "Insert", HOME: "Home", END: "End", DEL: "Delete", PAGE_UP: "Page Up", PAGE_DOWN: "Page Down" };
       const key = el("select", { id: "ig-key" }, ...o.menu_keys.map(k => el("option", { value: k, text: NAMES[k] || k, selected: k === o.menu_key })));
       key.addEventListener("change", () => save({ menu_key: key.value }));
+      // Any Unreal key name works in menu.json: one the list hasn't got shows as it is.
+      const PADS = [...(o.menu_pads || [])];
+      if (!PADS.some(([v]) => v === o.menu_pad)) PADS.push([o.menu_pad, o.menu_pad]);
+      const pad = el("select", { id: "ig-pad" }, ...PADS.map(([v, label]) => el("option", { value: v, text: label, selected: v === o.menu_pad })));
+      pad.addEventListener("change", () => save({ menu_pad: pad.value }));
       const SIZES = [[0.8, "Small"], [1, "Normal"], [1.25, "Large"], [1.5, "Larger"], [1.8, "Largest"]];
       if (!SIZES.some(([v]) => v === o.menu_scale)) SIZES.push([o.menu_scale, `x${o.menu_scale}`]);
       const size = el("select", { id: "ig-size" }, ...SIZES.map(([v, label]) => el("option", { value: String(v), text: label, selected: v === o.menu_scale })));
@@ -433,10 +438,11 @@ export default {
       cheats.addEventListener("change", () => save({ cheats: cheats.checked }));
       box.append(
         el("div", { class: "row" }, el("label", { for: "ig-key", class: "lbl", text: "Opens with" }), key,
+          el("label", { for: "ig-pad", class: "lbl", text: "or on a controller" }), pad,
           el("label", { for: "ig-size", class: "lbl", text: "Size" }), size),
         el("label", { class: "row", for: "ig-cheats" }, cheats, el("strong", { text: "Cheats on when the game starts" }),
           el("span", { class: "muted", text: "Its Cheats page switches them on and off while you play." })),
-        el("p", { class: "note", text: "In game, A- and A+ in the menu's top bar change its size until the game closes. Other mods add their pages to it; with the menu off they just don't show." }));
+        el("p", { class: "note", text: "In game, A- and A+ in the menu's top bar change its size until the game closes. Opened from a controller, the game pauses while it's open, and the same button or B closes it. Other mods add their pages to it; with the menu off they just don't show." }));
       return box;
     }
 

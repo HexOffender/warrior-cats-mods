@@ -2,6 +2,8 @@
 
 The mod menu is a mod of its own (mods/mod-menu, mods.MENU_ID), and its settings are in its menu.json:
 - "key": the key that opens it (menu.KEYS). Applies on the next install.
+- "pad": the controller button that opens it too, an Unreal key name ("" for none; the studio offers
+  menu.PADS). Applies on the next install.
 - "size": its size, 1 for the usual (MENU_SCALES). Applies on the next install; A- and A+ in the menu
   change it for the session.
 - "cheats": the menu's Cheats page starts with cheats on (it can switch them on and off live).
@@ -14,6 +16,7 @@ The game's console is UE4SS's console unlocker (ConsoleEnablerMod): ~ or F10 ope
 """
 import json
 import os
+import re
 
 from . import menu, mods as modlib, ue4ss
 
@@ -21,8 +24,10 @@ CONSOLE_MOD = "ConsoleEnablerMod"
 MENU_FILE = "menu.json"
 MENU_SCALES = (0.6, 2.2)   # the mod menu's size, 1 for the usual; A-/A+ in game stay within these too
 LEGACY = {"key": "menu_key", "size": "menu_scale", "cheats": "cheats"}   # menu.json key -> old wcmods.json key
-MENU_HELP = ("The in-game mod menu. key: INS, HOME, END, DEL, PAGE_UP, PAGE_DOWN or F1-F12 (not F11). size: 0.6 to "
-             "2.2, 1 is the usual. cheats: whether its Cheats page starts with cheats on. Install again after a change.")
+MENU_HELP = ("The in-game mod menu. key: INS, HOME, END, DEL, PAGE_UP, PAGE_DOWN or F1-F12 (not F11). pad: the "
+             "controller button that opens it too (an Unreal key name such as Gamepad_Special_Left, the View button; "
+             "\"\" for none). size: 0.6 to 2.2, 1 is the usual. cheats: whether its Cheats page starts with cheats on. "
+             "Install again after a change.")
 
 
 def console_on(cfg):
@@ -66,12 +71,17 @@ def _scale(v):
 
 
 def menu_settings(cfg, mod=None, found=None):
-    """The mod menu's key, size and cheats (from its menu.json, or wcmods.json while it still has them)."""
+    """The mod menu's key, controller button, size and cheats (from its menu.json, or wcmods.json while it
+    still has them)."""
     mod = mod or menu_mod(cfg, found)
     own = _read(mod)
     pick = lambda k, default: cfg.data[LEGACY[k]] if LEGACY[k] in cfg.data else own.get(k, default)
     key = pick("key", menu.DEFAULT_KEY)
+    # Any Unreal key name works in menu.json; the studio offers the controller buttons the game leaves free.
+    pad = own.get("pad", menu.DEFAULT_PAD)
+    pad_ok = isinstance(pad, str) and (pad == "" or re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", pad) is not None)
     return {"key": key if key in menu.KEYS else menu.DEFAULT_KEY, "key_ok": key in menu.KEYS, "key_given": key,
+            "pad": pad if pad_ok else menu.DEFAULT_PAD, "pad_ok": pad_ok, "pad_given": pad,
             "size": _scale(pick("size", 1.0)), "cheats": bool(pick("cheats", False))}
 
 
@@ -81,6 +91,7 @@ def options(cfg):
     return {"cheats": s["cheats"], "console": console_on(cfg),
             "console_available": bool(cfg.ue4ss_mods_dir and os.path.isdir(os.path.join(cfg.ue4ss_mods_dir, CONSOLE_MOD))),
             "menu_key": s["key"], "menu_keys": list(menu.KEYS), "menu_scale": s["size"],
+            "menu_pad": s["pad"], "menu_pads": [[p, n] for p, n in menu.PAD_NAMES.items()],
             "menu_mod": m.id if m else None, "menu_on": bool(m and m.enabled)}
 
 
@@ -91,7 +102,7 @@ def apply_console(cfg):
         ue4ss.set_registered(mods_dir, CONSOLE_MOD, bool(cfg.data["console"]))
 
 
-def set_options(cfg, cheats=None, console=None, menu_key=None, menu_scale=None):
+def set_options(cfg, cheats=None, console=None, menu_key=None, menu_scale=None, menu_pad=None):
     """Change some options (None leaves one as it is) and return them all. The menu's go in its menu.json
     (taking any still in wcmods.json along), the console's in wcmods.json."""
     cfg.reload()   # the studio keeps one Config for its whole run
@@ -100,7 +111,9 @@ def set_options(cfg, cheats=None, console=None, menu_key=None, menu_scale=None):
         raise ValueError(f"menu_scale should be a number from {MENU_SCALES[0]} to {MENU_SCALES[1]} (1 is the usual size)")
     if menu_key is not None and menu_key not in menu.KEYS:
         raise ValueError(f"menu_key should be one of {', '.join(menu.KEYS)}")
-    if any(v is not None for v in (cheats, menu_key, menu_scale)):
+    if menu_pad is not None and menu_pad not in menu.PADS:
+        raise ValueError(f"menu_pad should be one of {', '.join(repr(p) for p in menu.PADS)}")
+    if any(v is not None for v in (cheats, menu_key, menu_scale, menu_pad)):
         m = menu_mod(cfg)
         if not m:
             raise LookupError("there's no mod menu in your mods (mods/mod-menu with its menu.json)")
@@ -111,6 +124,8 @@ def set_options(cfg, cheats=None, console=None, menu_key=None, menu_scale=None):
             data["key"] = menu_key
         if menu_scale is not None:
             data["size"] = float(menu_scale)
+        if menu_pad is not None:
+            data["pad"] = menu_pad
         if cheats is not None:
             data["cheats"] = bool(cheats)
         with open(os.path.join(m.folder, MENU_FILE), "w", encoding="utf-8", newline="\n") as f:

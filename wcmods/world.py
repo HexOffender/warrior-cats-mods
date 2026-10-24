@@ -148,7 +148,7 @@ end
 -- "Bush (claw)"); cats by their own names (WCModsNames, written by wcmods from the game's name tables and
 -- your name mods); creatures by their model ("Mouse").
 local okNames, NAMES = pcall(require, "WCModsNames")
-if not okNames or type(NAMES) ~= "table" then NAMES = { prefixes = {}, suffixes = {}, whole = {} } end
+if not okNames or type(NAMES) ~= "table" or not NAMES.name then NAMES = { name = function() return nil end } end
 
 local NAMED = {
     BP_Quest_Filler_C = "Clan cat", BP_Quest_Giver_Gossip_C = "Gossip", BP_Quest_Giver_FreshKill_C = "Fresh-kill task",
@@ -220,11 +220,7 @@ local function catName(actor)
         local comp = actor:GetComponentByClass(meshClass)
         if not valid(comp) then return nil end
         local d = comp.CustomData
-        local p, s = str(d.PrefixNameId), str(d.SuffixNameId)
-        if NAMES.whole[p] then return NAMES.whole[p] end
-        local pt, st = NAMES.prefixes[p], NAMES.suffixes[s]
-        if pt then return pt .. (st or "") end
-        return nil
+        return NAMES.name(str(d.PrefixNameId), str(d.SuffixNameId))
     end)
     if ok then return name end
     return nil
@@ -400,11 +396,51 @@ def lua():
 
 
 NAMES_NAME = "WCModsNames"
+NAME_FN = r'''
+-- The game's own text for a name: its string table holds whole names under the prefix's id and the
+-- suffix's ("STR_CAT_NAME1" .. "_PAW" is "Woodpaw"). Used for a name the tables above haven't got, as
+-- when wcmods had no Oodle DLL to read the game's tables at install, so they're empty.
+local strings, tableIds, found = nil, nil, {}
+local function gameText(key)
+    if key == "" then return nil end
+    if found[key] then return found[key] end   -- asked again and again (the status line, labels); it doesn't change
+    if strings == nil then
+        strings = StaticFindObject("/Script/Engine.Default__KismetStringTableLibrary") or false
+        tableIds = {}
+        if strings and strings:IsValid() then
+            local ok, ids = pcall(function() return strings:GetRegisteredStringTables() end)
+            for _, id in ipairs(ok and type(ids) == "table" and ids or {}) do tableIds[#tableIds + 1] = id:get() end
+        end
+    end
+    for _, id in ipairs(tableIds) do
+        local ok, s = pcall(function()
+            if strings:IsRegisteredTableEntry(id, key) then return strings:GetTableEntrySourceString(id, key):ToString() end
+        end)
+        if ok and type(s) == "string" and s ~= "" then
+            found[key] = s
+            return s
+        end
+    end
+    return nil
+end
+
+-- A cat's name from its name ids (its customization's PrefixNameId and SuffixNameId), or nil.
+function N.name(prefix, suffix)
+    prefix, suffix = prefix or "", suffix or ""
+    if N.whole[prefix] then return N.whole[prefix] end
+    local p = N.prefixes[prefix]
+    if p then return p .. (N.suffixes[suffix] or "") end
+    return gameText(prefix .. suffix) or gameText(prefix)
+end
+
+return N
+'''
 
 
 def names_lua(plan=None):
     """WCModsNames: the English text of every name part and whole name, after the enabled name mods
-    (names.Plan), so WCModsWorld can name the cats it finds. Empty without a plan (no game data)."""
+    (names.Plan), and N.name, which WCModsGame and WCModsWorld name cats with. Without a plan (no game data)
+    the tables are empty and N.name reads the game's own text."""
     from .sdk import lua_value
     data = {"prefixes": {}, "suffixes": {}, "whole": {}}
     if plan is not None:
@@ -416,5 +452,6 @@ def names_lua(plan=None):
                 whole[key] = text
         data["whole"] = whole
     return ("-- WCModsNames: the English names of cats' name parts and whole names (rogues, cameo cats, names\n"
-            "-- given by mods), after your name mods. Written by wcmods on every install; WCModsWorld uses it.\n"
-            "return " + lua_value(data) + "\n")
+            "-- given by mods), after your name mods. Written by wcmods on every install; WCModsGame and\n"
+            "-- WCModsWorld use it: NAMES.name(prefix id, suffix id).\n"
+            "local N = " + lua_value(data) + "\n" + NAME_FN)

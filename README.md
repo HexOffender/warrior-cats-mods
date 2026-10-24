@@ -103,8 +103,11 @@ and Save writes the change back to the mod, so the next install keeps it.
   have no page.
 - **Mods that can't do without it:** they say so in their `mod.json` (`"requires"`), and turning
   one on turns the menu on too.
-- **Its settings:** its card's Settings (its `menu.json`) set the key that opens it, its size and
-  whether cheats start on. A- and A+ in the menu's top bar resize it while you play.
+- **Its settings:** its card's Settings (its `menu.json`) set the key that opens it, the controller
+  button that does too (View, to begin with), its size and whether cheats start on. A- and A+ in the
+  menu's top bar resize it while you play.
+- **With a controller:** View opens it, the d-pad moves between its controls and A presses them, and
+  View or B closes it. Opened from a controller, the game pauses while it's open.
 - **The game's console:** it's under Options on the Mods page.
 - **Your own page:** docs/SDK.md, "`WCModsMenu`", shows how a script adds one.
 

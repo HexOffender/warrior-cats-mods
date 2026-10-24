@@ -131,7 +131,7 @@ end
 
     HOST.status = function()
         local s = now()
-        if not s.cat then return "Not in the world yet.   " .. SETTINGS.key_name .. " opens and closes this menu." end
+        if not s.cat then return "Not in the world yet.   " .. SETTINGS.opens .. " opens and closes this menu." end
         local parts = { string.format("%s, level %s %s", s.name or "Your cat", tostring(s.level or "?"), s.rank or "") }
         if s.hp then parts[#parts + 1] = string.format("health %.0f/%.0f", s.hp, s.maxhp or s.hp) end
         if s.st then parts[#parts + 1] = string.format("stamina %.0f", s.st) end
@@ -230,6 +230,7 @@ end
         ui.section("Keys", function()
             ui.field(SETTINGS.key_name, "Open and close this menu")
             ui.field("Escape", "Close this menu")
+            if SETTINGS.pad ~= "" then ui.field(SETTINGS.pad_name .. " on a controller", "Open and close this menu; B closes it too") end
             for line in (Menu.shared("keys") or ""):gmatch("[^\n]+") do
                 local k, what = line:match("^([^\t]*)\t(.*)$")
                 if k then ui.field(k, what) end
@@ -690,7 +691,8 @@ end
     Menu.page("Menu", function(ui)
         ui.heading("This menu")
         ui.field("Opens with", SETTINGS.key_name .. ", and Escape closes it")
-        ui.note("To change the key, use Clan Mod Studio (Mods page, In game), then install again.")
+        if SETTINGS.pad ~= "" then ui.field("On a controller", SETTINGS.pad_name .. ", and B closes it; the game pauses") end
+        ui.note("To change the key or the button, use Clan Mod Studio (Mods page, In game), then install again.")
         local sz = ui.slider("Size", size, 0.6, 2.2, { step = 0.05, format = "x%.2f" })
         if math.abs(sz - size) > 1e-3 then
             size = sz

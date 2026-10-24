@@ -226,7 +226,7 @@ UE4SS script can `require` them, wcmods' or one written by hand:
 | `WCModsMenu` | Pages in the mod menu (Insert): buttons, switches, sliders, drop-downs, text boxes, colours, images |
 | `WCModsView` | What the camera sees: its matrices, and world-to-screen positions |
 | `WCModsWorld` | Finds things in the world (pickups, interactables, quest objectives, cats, creatures) and the game's managers |
-| `WCModsNames` | Cats' names: every name part's text after your name mods (written on each install; `WCModsWorld` uses it) |
+| `WCModsNames` | Cats' names: every name part's text after your name mods, and `name(prefix id, suffix id)`, which falls back on the game's own text (written on each install; `WCModsGame` and `WCModsWorld` use it) |
 
 ### Shipping a script
 
@@ -381,14 +381,15 @@ if okMenu then Menu.page("My mod", function(ui) ... end) end
   the mod menu". Mouse look and script mods with a `settings.json` show it without saying so.
 
 The menu's settings are in its `menu.json`, set on its card in Clan Mod Studio: `"key"` (`INS`,
-`HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN` or `F1`-`F12` but F11), `"size"` (0.6 to 2.2, 1 by
-default) and `"cheats"` (whether the Cheats page starts with cheats on). Older setups kept these in
-`wcmods.json` as `"menu_key"`, `"menu_scale"` and `"cheats"`. Those still count, and the first change
-in the studio moves them into `menu.json`.
+`HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN` or `F1`-`F12` but F11), `"pad"` (the controller button
+that opens it too, as an Unreal key name: View, `Gamepad_Special_Left`, by default and `""` for none),
+`"size"` (0.6 to 2.2, 1 by default) and `"cheats"` (whether the Cheats page starts with cheats on).
+Older setups kept these in `wcmods.json` as `"menu_key"`, `"menu_scale"` and `"cheats"`. Those still
+count, and the first change in the studio moves them into `menu.json`.
 
-Insert opens the menu in game, and Insert or Escape closes it. While it's open, the menu has the
-keyboard and mouse, the cursor shows, and the game's controls wait. "Pause the game" stops the game
-too, and A- and A+ resize it.
+Insert (or a controller's View button) opens the menu in game, and Insert or Escape closes it (View or
+B too, when the controller opened it). While it's open, the menu has the keyboard and mouse, the cursor
+shows, and the game's controls wait. "Pause the game" stops the game too, and A- and A+ resize it.
 
 The menu works without a mouse too:
 - **Moving:** Tab, the arrow keys or a controller's d-pad move between the controls. Tab goes round
@@ -396,6 +397,10 @@ The menu works without a mouse too:
   tab, so Up and Down pick a page, Enter opens it and Right goes into it.
 - **Using a control:** Enter, Space or A presses a button, ticks a box or opens a list. A slider
   takes Enter to grab it, Left and Right to move it, and Enter again to let go.
+- **From a controller:** View (`"pad"` in `menu.json`; the menu's card in the studio picks another
+  button, or none) opens it, and View or B closes it. The game can only hear a controller while it has
+  input, so a menu opened this way leaves the game its input and pauses it instead. It doesn't open
+  while something else has the game paused, such as the game's own pause menu.
 - **Seeing where you are:** the control with focus has a gold ring. The page you're on, and a chosen
   option, are light with dark text, so they show without relying on colour.
 
