@@ -25,6 +25,13 @@ def write_fstring(text):
     return struct.pack("<i", -(len(raw) // 2)) + raw
 
 
+def write_utf8_string(text):
+    """Serialize a UTF-8 string: byte length, then the bytes, with no terminator. Pak version 12
+    (Utf8PakDirectory) stores file names in its directory index this way; folder names stay FStrings."""
+    raw = text.encode("utf-8")
+    return struct.pack("<i", len(raw)) + raw
+
+
 def fnv64(data, offset=0):
     """FNV-1a 64 as used by FPakFile::HashPath (basis + seed)."""
     h = (0xCBF29CE484222325 + offset) & 0xFFFFFFFFFFFFFFFF

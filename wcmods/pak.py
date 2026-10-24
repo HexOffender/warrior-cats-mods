@@ -7,7 +7,7 @@ import hashlib
 import struct
 import zlib
 
-from .binio import fnv64, read_fstring, write_fstring
+from .binio import fnv64, read_fstring, write_fstring, write_utf8_string
 
 PAK_MAGIC = 0x5A6F12E1
 PAK_VERSION = 12
@@ -51,6 +51,7 @@ class PakReader:
             enc = idx[p:p + enc_size]
             f.seek(fdi_off)
             fdi = f.read(fdi_size)
+        self.directory_index = fdi
         q = 0
         (ndirs,) = struct.unpack_from("<i", fdi, q); q += 4
         for _ in range(ndirs):
@@ -165,11 +166,13 @@ class PakWriter:
             for k in range(1, len(parts) + 1):
                 dirs.setdefault("/".join(parts[:k]) + "/", {})
             dirs[(parent + "/") if parent else "/"][name] = loc
+        # Folder names are FStrings; file names are UTF-8 without a terminator (version 12). A file
+        # name written as an FString reads back with a trailing NUL, so the engine never finds it.
         fdi = bytearray(struct.pack("<i", len(dirs)))
         for d in sorted(dirs):
             fdi += write_fstring(d) + struct.pack("<i", len(dirs[d]))
             for name in sorted(dirs[d]):
-                fdi += write_fstring(name) + struct.pack("<i", dirs[d][name])
+                fdi += write_utf8_string(name) + struct.pack("<i", dirs[d][name])
 
         phi = bytearray(struct.pack("<i", len(locations)))
         for path, loc in sorted(locations.items()):
