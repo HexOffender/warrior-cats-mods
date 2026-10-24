@@ -1,9 +1,10 @@
 """Round-trip checks against the installed game and save. Writes only to a temp folder."""
 import os
+import re
 import struct
 import tempfile
 
-from . import controls, eyeatlas, keymap, luacheck, mouselook, palettes
+from . import catlook, controls, draw, eyeatlas, keymap, luacheck, menu, mouselook, palettes, view, world
 from .blake3 import blake3
 from .iostore import IoStoreReader, ModContainerWriter
 from .pak import PakReader, PakWriter
@@ -18,10 +19,26 @@ def run(cfg, oodle, log=print):
         log(f"  [{'ok' if ok else 'FAIL'}] {name}{(' - ' + detail) if detail else ''}")
 
     check("blake3 test vector", blake3(b"").hex().startswith("af1349b9f5f9a1a6"))
-    lua = mouselook.script(mouselook.merge([mouselook.validate({"sensitivity": 1.5, "invert": True})]))
+    lua = mouselook.script(mouselook.merge([mouselook.validate({"sensitivity": 1.5, "invert": True, "smoothing": 50})]))
     problems = luacheck.check(lua)
     check("mouse look script", not problems and "@SETTINGS@" not in lua and "sensitivity = 1.5" in lua
-          and "invert = true" in lua, "; ".join(problems[:3]))
+          and "invert = true" in lua and "smoothing = 50.0" in lua, "; ".join(problems[:3]))
+    for module in (view, draw, world, menu):
+        lua = module.lua()
+        problems = luacheck.check(lua)
+        left = re.findall(r"@[A-Z_]+@", lua)   # placeholders that weren't filled in
+        check(f"shared module {module.SHARED_NAME}", not problems and not left, "; ".join(problems[:3] + left[:3]))
+    lua = mouselook.script(mouselook.merge([{}]), {"path": r"C:\mods\m\mouselook.json", "file": "mods/m/mouselook.json",
+                                                  "keep": {"_help": 'say "hi"'}})
+    problems = luacheck.check(lua)
+    check("mouse look script with its menu page", not problems and "@SAVE@" not in lua
+          and r'"C:\\mods\\m\\mouselook.json"' in lua, "; ".join(problems[:3]))
+    lua = catlook.script({"fur": (1.0, 0.5, 0.0)}, save={"path": "x", "file": "y", "doc": {"player": {"colours": {}}}})
+    problems = luacheck.check(lua) + re.findall(r"@[A-Z_]+@", lua)
+    check("your cat's colours script with its menu page", not problems and '"#ff8000"' in lua, "; ".join(problems[:3]))
+    lua = menu.host_script({"sections": {}, "notes": {}, "warnings": ["w"], "built": "2026-10-24T01:00:00"}, [])
+    problems = luacheck.check(lua) + re.findall(r"@[A-Z_]+@", lua)
+    check("mod menu window script", not problems, "; ".join(problems[:3]))
     problems = luacheck.check(palettes.ue4ss_script({}))
     check("palette script", not problems, "; ".join(problems[:3]))
     # Interact and Scent tracking move along F/E/Q, so Q goes quiet; X stays because Return to camp still

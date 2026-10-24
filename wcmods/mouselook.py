@@ -16,6 +16,9 @@ DEFAULTS = {
     # Tilt limits, from Gameplay.Exploration.Camera.Pitch.Min/Max in TuningData.csv.
     "pitch_min": -20.0,
     "pitch_max": 23.0,
+    # How long the camera takes to catch up with the mouse, in milliseconds; 0 for not at all. The game
+    # eases the camera after the arrow keys and stick over about 200 ms (Lag.Rotation 5 in TuningData.csv).
+    "smoothing": 0.0,
     "debug": False,         # log what the script sees to ue4ss/UE4SS.log as [MouseLook]
 }
 TOGGLE_KEYS = tuple(f"F{n}" for n in range(1, 13) if n != 11)   # F11 is the game's fullscreen key
@@ -43,6 +46,8 @@ def validate(raw):
                 raise ValueError("mouselook.json: 'sensitivity' should be between 0.05 and 10")
             if key.startswith("pitch_") and not -89 <= value <= 89:
                 raise ValueError(f"mouselook.json: '{key}' should be between -89 and 89 degrees")
+            if key == "smoothing" and not 0 <= value <= 1000:
+                raise ValueError("mouselook.json: 'smoothing' should be between 0 and 1000 milliseconds")
         elif key == "toggle_key":
             if value not in TOGGLE_KEYS + ("",):
                 raise ValueError(f"mouselook.json: 'toggle_key' should be one of {', '.join(TOGGLE_KEYS)} or \"\"")
@@ -73,9 +78,12 @@ def _lua(value):
     return json.dumps(value)   # ASCII-only strings here; JSON escapes are valid Lua
 
 
-def script(settings):
+def script(settings, save=None):
+    """save: where the in-game menu's Save writes the settings: {"path": the mod's mouselook.json,
+    "file": how to name it to the player, "keep": the file's own notes such as "_help"}."""
+    from .sdk import lua_value
     table = "{ " + ", ".join(f"{k} = {_lua(settings[k])}" for k in DEFAULTS) + " }"
-    return LUA_TEMPLATE.replace("@SETTINGS@", table)
+    return LUA_TEMPLATE.replace("@SETTINGS@", table).replace("@SAVE@", lua_value(save))
 
 
 LUA_TEMPLATE = r'''-- Mouse look for Warrior Cats: Clans of the Forest. Written by wcmods from mouselook.json: change that
@@ -90,6 +98,14 @@ LUA_TEMPLATE = r'''-- Mouse look for Warrior Cats: Clans of the Forest. Written 
 -- can't use the spring arm or the camera: the game sets their rotation every frame. So the script slips
 -- a component of its own (a pivot) in between the root and the spring arm and tilts that. The arm keeps
 -- doing everything else, including its collision test, so the camera orbits up and down around the cat.
+--
+-- How the game turns its camera (SwtAdventureCameraActor, read from its code): each frame it adds that
+-- frame's arrow-key and stick turn to the root's current rotation, so a turn the script made earlier in
+-- the frame stays. On a camera spline, while it looks at something, and for 0.8 s after joining or
+-- leaving a spline, it sets the rotation itself and ignores the arrow keys too; the mouse can't turn it
+-- then either. The spring arm then eases after the root (rotation lag, about 200 ms). That suits a stick
+-- but makes the mouse feel floaty, so while the mouse is captured the arm uses `smoothing` instead, and
+-- gets the game's own back when the mouse is released.
 local SETTINGS = @SETTINGS@
 
 -- The game's mouse axes give 0.07 per count (AxisConfig in DefaultInput.ini); Unreal turns 2.5 degrees per unit.
@@ -141,6 +157,10 @@ local function findController()
 end
 
 local enabled, captured = true, false
+local function menuOpen()
+    local ok, open = pcall(function() return ModRef:GetSharedVariable("WCModsMenu.open") end)
+    return ok and open == true
+end
 local function capture(on)
     captured = on
     if on then
@@ -222,12 +242,39 @@ local function setTilt(cam, arm, amount, now)
     written = amount
 end
 
+-- The arm's rotation lag is its CameraRotationLagSpeed, which the game sets once when the camera starts
+-- (Lag.Rotation in TuningData.csv: 5). The time it takes to catch up is about 1/speed; 0 means at once.
+local function mouseLag() return SETTINGS.smoothing > 0 and 1000 / SETTINGS.smoothing or 0 end
+local lagged   -- { arm = the arm the script changed, speed = the game's own value }
+
+local function restoreLag()
+    if not lagged then return end
+    if valid(lagged.arm) then lagged.arm.CameraRotationLagSpeed = lagged.speed end
+    debug("camera smoothing back to the game's (lag speed %.2f)", lagged.speed)
+    lagged = nil
+end
+
+local function useMouseLag(arm)
+    if lagged and not same(lagged.arm, arm) then restoreLag() end   -- a new camera keeps its own value
+    local speed, want = arm.CameraRotationLagSpeed, mouseLag()
+    if not lagged then
+        lagged = { arm = arm, speed = speed }
+        debug("camera lag speed %.2f while the mouse is captured (the game's %.2f)", want, speed)
+    end
+    if math.abs(speed - want) > 0.0001 then arm.CameraRotationLagSpeed = want end
+end
+
 local sawMouse
 local acc = { dx = 0, dy = 0, since = nil }
+-- Debug only: whether each turn was still there the next frame, and how even the frames were.
+local stats = { frames = 0, slowest = 0, kept = 0, undone = 0 }
+local pendingYaw   -- { was, want }: the turn written last frame
+local function wrap(a) return (a + 180) % 360 - 180 end
 
-local function steer(cam, now)
+local function steer(cam, now, dt)
     local root, arm = cam.RootComponent, cam.AdventureArmComponent
     if not (valid(root) and valid(arm)) then return end
+    useMouseLag(arm)
 
     local dx = pc:GetInputAnalogKeyState(keys.mouseX)
     local dy = pc:GetInputAnalogKeyState(keys.mouseY)
@@ -237,7 +284,16 @@ local function steer(cam, now)
         log("mouse movement is reaching the game")
     end
     local r = root.RelativeRotation
-    if dx ~= 0 then setRotation(root, r.Pitch, r.Yaw + dx * k, r.Roll) end
+    if pendingYaw then
+        local t = math.abs(wrap(r.Yaw - pendingYaw.want)) <= math.abs(wrap(r.Yaw - pendingYaw.was)) and "kept" or "undone"
+        stats[t] = stats[t] + 1
+        pendingYaw = nil
+    end
+    if dx ~= 0 then
+        local was = r.Yaw
+        setRotation(root, r.Pitch, was + dx * k, r.Roll)
+        if SETTINGS.debug then pendingYaw = { was = was, want = was + dx * k } end
+    end
 
     -- The limits are for the total pitch (the game's arm pitch plus the tilt), and the allowed range always
     -- includes level. So a camera the game puts past a limit (some areas look steeply down) is never pushed
@@ -252,15 +308,21 @@ local function steer(cam, now)
     local shown = math.max(lo, math.min(hi, tilt))
     if shown ~= 0 or written ~= nil then setTilt(cam, arm, shown, now) end
 
-    if SETTINGS.debug and (dx ~= 0 or dy ~= 0) then
-        acc.dx, acc.dy, acc.since = acc.dx + dx, acc.dy + dy, acc.since or now
-        if now - acc.since >= 2 then
-            -- "view" is what the player sees: the camera manager's last result.
-            local seen = "?"
-            pcall(function() seen = fmtRot(pc.PlayerCameraManager.CameraCachePrivate.POV.Rotation) end)
-            log("mouse %.1f, %.1f; tilt %.1f (shown %.1f) root %s arm %s view %s", acc.dx, acc.dy, tilt, shown,
-                fmtRot(root.RelativeRotation), fmtRot(arm.RelativeRotation), seen)
-            acc.dx, acc.dy, acc.since = 0, 0, nil
+    if SETTINGS.debug then
+        if dx ~= 0 or dy ~= 0 then acc.dx, acc.dy, acc.since = acc.dx + dx, acc.dy + dy, acc.since or now end
+        if acc.since then
+            stats.frames, stats.slowest = stats.frames + 1, math.max(stats.slowest, dt)
+            if now - acc.since >= 2 then
+                -- "view" is what the player sees: the camera manager's last result.
+                local seen = "?"
+                pcall(function() seen = fmtRot(pc.PlayerCameraManager.CameraCachePrivate.POV.Rotation) end)
+                log("mouse %.1f, %.1f; tilt %.1f (shown %.1f); turns kept %d, undone %d; %d frames, slowest %.0f ms; " ..
+                    "lag speed %.2f; root %s arm %s view %s", acc.dx, acc.dy, tilt, shown, stats.kept, stats.undone,
+                    stats.frames, stats.slowest * 1000, arm.CameraRotationLagSpeed, fmtRot(root.RelativeRotation),
+                    fmtRot(arm.RelativeRotation), seen)
+                acc.dx, acc.dy, acc.since = 0, 0, nil
+                stats.frames, stats.slowest, stats.kept, stats.undone = 0, 0, 0, 0
+            end
         end
     end
 end
@@ -275,6 +337,14 @@ local function step()
         pc = findController()
         if not pc then return end
     end
+    -- The mod menu (Insert) has the keyboard and mouse while it's open, and gives them back when it
+    -- closes; changing the input mode under it would hand the game its controls again.
+    if menuOpen() then
+        captured = false
+        restoreLag()
+        lastTime = nil
+        return
+    end
     local want = enabled and not pc.bShowMouseCursor and exploring()
     if want ~= captured then capture(want) end
     if not enabled and tilt ~= 0 then
@@ -282,7 +352,11 @@ local function step()
         if valid(pivot) then setRotation(pivot, 0, 0, 0) end
         written = 0
     end
-    if not captured then return end   -- a menu is open, or mouse look is off
+    if not captured then   -- a menu is open, or mouse look is off
+        restoreLag()
+        lastTime = nil
+        return
+    end
     -- The engine's look lock, for moments that disable looking around. Only a lock that comes on during
     -- play counts: a game that never uses controller look may keep it on all the time.
     local locked = pc:IsLookInputIgnored()
@@ -295,8 +369,9 @@ local function step()
     if not cam then return end   -- another camera (a cutscene, combat) is showing: leave it alone
     local now = lib.statics:GetTimeSeconds(pc)
     if now == lastTime then return end   -- once per game frame, and not while paused
+    local dt = lastTime and now - lastTime or 0
     lastTime = now
-    steer(cam, now)
+    steer(cam, now, dt)
 end
 
 local function frame()
@@ -319,4 +394,43 @@ if LoopInGameThreadAfterFrames == nil or not pcall(LoopInGameThreadAfterFrames, 
 end
 log("loaded (sensitivity %.2f, invert %s, toggle key %s)", SETTINGS.sensitivity, tostring(SETTINGS.invert),
     SETTINGS.toggle_key ~= "" and SETTINGS.toggle_key or "none")
+
+-- A page in the mod menu (Insert) to change the settings while you play. Save writes them to the mod's
+-- mouselook.json, so installing again keeps them.
+local SAVE = @SAVE@
+-- The page is extra: if the menu can't load or add it, the script works as before.
+local okMenu, Menu = pcall(require, "WCModsMenu")
+if okMenu then pcall(function()
+    local installed, status = {}, nil
+    for k, v in pairs(SETTINGS) do installed[k] = v end
+    Menu.page("Mouse look", function(ui)
+        ui.heading("Mouse look")
+        ui.note("Changes apply as you make them." .. (SAVE and (" Save writes them to " .. SAVE.file ..
+                ", so installing again keeps them.") or ""))
+        enabled = ui.switch("Mouse look", enabled)
+        SETTINGS.sensitivity = ui.slider("Sensitivity", SETTINGS.sensitivity, 0.05, 3, { step = 0.05, format = "x%.2f" })
+        SETTINGS.invert = ui.toggle("Invert up/down", SETTINGS.invert)
+        SETTINGS.smoothing = ui.slider("Smoothing", SETTINGS.smoothing, 0, 500, { step = 10, format = "%.0f ms" })
+        ui.note("How long the camera takes to catch up with the mouse; the game eases the arrow keys over about 200 ms.")
+        -- Both stay within -89..89 with the lowest at least a degree under the highest, as mouselook.json needs.
+        SETTINGS.pitch_min = ui.slider("Lowest tilt", SETTINGS.pitch_min, -89, 88, { step = 1, format = "%.0f deg" })
+        SETTINGS.pitch_max = ui.slider("Highest tilt", SETTINGS.pitch_max, -88, 89, { step = 1, format = "%.0f deg" })
+        if SETTINGS.pitch_min > SETTINGS.pitch_max - 1 then SETTINGS.pitch_min = math.max(-89, SETTINGS.pitch_max - 1) end
+        SETTINGS.debug = ui.toggle("Log what it does to UE4SS.log", SETTINGS.debug)
+        ui.field("Switches on and off with", SETTINGS.toggle_key ~= "" and SETTINGS.toggle_key or "no key")
+        ui.space(6)
+        local hit = ui.buttons(SAVE and { "Save", "Back to installed" } or { "Back to installed" }, { kinds = { "primary" } })
+        if hit and SAVE and hit == 1 then
+            local out = {}
+            for k, v in pairs(SAVE.keep or {}) do out[k] = v end
+            for k, v in pairs(SETTINGS) do out[k] = v end
+            local ok, err = Menu.saveJson(SAVE.path, out)
+            status = ok and ("Saved to " .. SAVE.file .. ".") or ("Couldn't save: " .. tostring(err))
+        elseif hit then
+            for k, v in pairs(installed) do SETTINGS[k] = v end
+            status = "Back to the installed settings."
+        end
+        if status then ui.note(status) end
+    end, { order = 20 })
+end) end
 '''

@@ -5,8 +5,10 @@ export default {
     const { el, api, clear, toast, bus, confirmButton } = wc;
     const list = el("div", { class: "card" });
     const backupsBox = el("div", { class: "card" });
+    const ingameBox = el("div", { class: "card" });
     const KIND_LABEL = { files: "replacement files", palette: "palette", controls: "controls", "mouse look": "mouse look", data: "game data",
-      save: "save edits", code: "custom code", "studio page": "studio page" };
+      save: "save edits", code: "custom code", "studio page": "studio page", names: "names", cats: "your cat's colours",
+      "cooked content": "cooked content (paks)" };
 
     root.append(
       el("div", { class: "section-head" },
@@ -14,6 +16,7 @@ export default {
         el("h1", { text: "Mods" }),
         el("p", { class: "note", text: "Each mod is a folder in mods/. Turn mods on or off here, then use Install mods (top right) with the game closed. When two mods change the same thing, the higher priority wins." })),
       list,
+      ingameBox,
       newModCard(),
       el("div", { class: "card" },
         el("h2", { text: "Remove everything" }),
@@ -88,8 +91,43 @@ export default {
       }
     }
 
+    // In game: the game's console, cheats at start and the mod menu's key (wcmods.json; wcmods/ingame.py).
+    async function renderIngame() {
+      let o;
+      try { o = await api.get("/ingame"); } catch (e) { clear(ingameBox).append(el("p", { class: "note", text: e.message })); return; }
+      const save = async change => {
+        try { o = await api.patch("/ingame", change); toast("Saved."); } catch (e) { toast(e.message, "bad"); }
+        renderIngame();
+      };
+      const cheats = el("input", { type: "checkbox", id: "ig-cheats", checked: o.cheats });
+      cheats.addEventListener("change", () => save({ cheats: cheats.checked }));
+      const consoleBox = el("input", { type: "checkbox", id: "ig-console", checked: o.console, disabled: !o.console_available });
+      consoleBox.addEventListener("change", () => save({ console: consoleBox.checked }));
+      const NAMES = { INS: "Insert", HOME: "Home", END: "End", DEL: "Delete", PAGE_UP: "Page Up", PAGE_DOWN: "Page Down" };
+      const key = el("select", { id: "ig-key", "aria-label": "Mod menu key" },
+        ...o.menu_keys.map(k => el("option", { value: k, text: NAMES[k] || k, selected: k === o.menu_key })));
+      key.addEventListener("change", () => save({ menu_key: key.value }));
+      const SIZES = [[0.8, "Small"], [1, "Normal"], [1.25, "Large"], [1.5, "Larger"], [1.8, "Largest"]];
+      if (!SIZES.some(([v]) => v === o.menu_scale)) SIZES.push([o.menu_scale, `x${o.menu_scale}`]);
+      const sizeSel = el("select", { id: "ig-size", "aria-label": "Mod menu size" },
+        ...SIZES.map(([v, label]) => el("option", { value: String(v), text: label, selected: v === o.menu_scale })));
+      sizeSel.addEventListener("change", () => save({ menu_scale: Number(sizeSel.value) }));
+      clear(ingameBox).append(
+        el("h2", { text: "In game" }),
+        el("p", { class: "note", text: `${NAMES[o.menu_key] || o.menu_key} opens the mod menu in game (with UE4SS): your mods, what's nearby, live settings, and cheats.` }),
+        el("div", { class: "row" }, el("label", { for: "ig-key", class: "lbl", text: "Mod menu key" }), key,
+          el("label", { for: "ig-size", class: "lbl", text: "Menu size" }), sizeSel),
+        el("label", { class: "row", for: "ig-cheats" }, cheats,
+          el("strong", { text: "Cheats on when the game starts" }),
+          el("span", { class: "muted", text: "The menu's Cheats page switches them on and off while you play: god mode, fly, ghost, cat size, game speed, console cheat commands." })),
+        el("label", { class: "row", for: "ig-console" }, consoleBox,
+          el("strong", { text: "Game console" }),
+          el("span", { class: "muted", text: o.console_available ? "~ or F10 opens it, from the next time the game starts." : "Needs UE4SS." })),
+        el("p", { class: "note", text: "The menu key, size and cheats setting apply when you next install mods. In game, A- and A+ in the menu's top bar change its size for the session." }));
+    }
+
     const off = [bus.on("mods-changed", renderList), bus.on("installed", renderBackups)];
-    await Promise.all([renderList(), renderBackups()]);
+    await Promise.all([renderList(), renderBackups(), renderIngame()]);
     return { unmount() { off.forEach(f => f()); } };
   },
 };

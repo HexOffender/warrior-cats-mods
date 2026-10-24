@@ -233,12 +233,22 @@ export default {
       sens.addEventListener("change", () => saveMouseLook(look.enabled));
       const inv = el("input", { type: "checkbox", id: "ml-invert", checked: !!s.invert });
       inv.addEventListener("change", () => { s.invert = inv.checked; saveMouseLook(look.enabled); });
+      // How long the camera takes to catch up with the mouse (0-1000 ms; the game eases its own over ~200).
+      const smoothText = v => v > 0 ? `${Math.round(v)} ms` : "off";
+      const smoothing = Number(s.smoothing ?? 0);
+      const smoothVal = el("strong", { text: smoothText(smoothing) });
+      const smooth = el("input", { type: "range", id: "ml-smooth", min: "0", max: String(Math.max(300, smoothing)),
+        step: "10", value: smoothing });
+      smooth.addEventListener("input", () => { s.smoothing = Number(smooth.value); smoothVal.textContent = smoothText(s.smoothing); });
+      smooth.addEventListener("change", () => saveMouseLook(look.enabled));
       const toggleKey = s.toggle_key ?? "F6";
       clear(mouse).append(
         el("h2", { text: "Mouse look" }),
         el("label", { class: "row", for: "ml-on" }, toggle, el("strong", { text: "Turn and tilt the camera with the mouse" })),
         el("div", { class: "row" }, el("label", { for: "ml-sens", class: "lbl" }, "Sensitivity ", sensVal), sens,
           el("label", { class: "row", for: "ml-invert" }, inv, "Invert up/down")),
+        el("div", { class: "row" }, el("label", { for: "ml-smooth", class: "lbl" }, "Smoothing ", smoothVal), smooth,
+          el("span", { class: "muted", text: "How long the camera takes to catch up with the mouse. Off is the most direct; the game eases the arrow keys over about 200 ms." })),
         el("p", { class: "note", text: "While you explore, the mouse turns the camera and the cursor stays hidden. Menus get the cursor back. " +
           (toggleKey ? `Press ${toggleKey} in game to switch it off and on. ` : "") +
           "The arrow keys and the right stick still work. Saved in the Mouse Look mod; needs UE4SS." }));

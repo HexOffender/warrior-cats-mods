@@ -2,10 +2,11 @@
 import datetime
 import json
 import os
+import re
 import shutil
 import struct
 
-from . import catlook, controls, names, ue4ss
+from . import catlook, controls, draw, ingame, luacheck, menu, names, ue4ss, view, world
 from . import mods as modlib
 from .blake3 import blake3
 from .config import MOD_BASENAME, UE4SS_MOD_NAME, game_running
@@ -18,6 +19,41 @@ from .sdk import BuildContext
 from .sections import load_sections
 
 MARKER = "Wrc/WCMods/BuildInfo.json"
+PAK_PREFIX = "zzz_WCMods_"                  # every pak file wcmods installs starts with this
+PAK_EXTS = (".pak", ".utoc", ".ucas", ".sig")
+
+
+def user_paks(mod):
+    """Cooked content a mod ships itself: {stem: {ext: path}} for mods/<id>/paks/<stem>.pak and the
+    .utoc/.ucas/.sig beside it (made with Unreal Engine 5.7, see docs/SDK.md, "New content")."""
+    folder = os.path.join(mod.folder, "paks")
+    out = {}
+    if os.path.isdir(folder):
+        for name in sorted(os.listdir(folder)):
+            stem, ext = os.path.splitext(name)
+            if ext.lower() in PAK_EXTS:
+                out.setdefault(stem, {})[ext.lower()] = os.path.join(folder, name)
+    return out
+
+
+def user_pak_name(mod_id, stem):
+    """What a mod's own pak is installed as: wcmods' prefix (so it's found and removed with the rest),
+    the mod and the file's name, and the _P (patch) suffix that lets it override the game's files."""
+    safe = lambda t: re.sub(r"[^A-Za-z0-9-]+", "-", t).strip("-") or "pak"
+    return f"{PAK_PREFIX}{safe(mod_id)}_{safe(re.sub(r'_P$', '', stem))}_P"
+
+
+def remove_paks(folder):
+    """Remove every pak file wcmods installed (its own and the ones mods ship); returns their paths."""
+    gone = []
+    if os.path.isdir(folder):
+        for name in os.listdir(folder):
+            if name.startswith(PAK_PREFIX) and os.path.splitext(name)[1].lower() in PAK_EXTS:
+                os.remove(os.path.join(folder, name))
+                gone.append(os.path.join(folder, name))
+    return gone
+# Shared Lua modules installed with any build, for UE4SS scripts to require (docs/SDK.md, "Overlays").
+SHARED_LUA = (view, draw, world, menu)
 
 
 def build(cfg, mods, out_dir, log=print):
@@ -73,7 +109,7 @@ def build(cfg, mods, out_dir, log=print):
                     rep["status"] = "partial"
 
     manifest = {"mods": [m.id for m in enabled], "sections": report, "outputs": [], "ue4ss_mods": [],
-                "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
+                "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
                 "csv_changes": csv_changes, "files": sorted(ctx.files),
                 "built": datetime.datetime.now().isoformat(timespec="seconds")}
 
@@ -95,6 +131,33 @@ def build(cfg, mods, out_dir, log=print):
             container.add_package(path, cid, data, imports, shaders)
         container.write(os.path.join(out_dir, MOD_BASENAME + ".utoc"), os.path.join(out_dir, MOD_BASENAME + ".ucas"))
         manifest["outputs"] += [MOD_BASENAME + ".utoc", MOD_BASENAME + ".ucas"]
+    # Cooked content mods ship themselves (paks/): copied as they are, under names that load after the
+    # game's and come off again on uninstall.
+    manifest["paks"] = []
+    for m in enabled:
+        for stem, files in user_paks(m).items():
+            if ".pak" not in files:
+                ctx.warnings.append(f"{m.id}: paks/{stem} has no .pak; the game only mounts a .utoc/.ucas next to "
+                                    "a .pak of the same name, so it's left out")
+                continue
+            if (".utoc" in files) != (".ucas" in files):
+                ctx.warnings.append(f"{m.id}: paks/{stem} needs both a .utoc and a .ucas (or neither); left out")
+                continue
+            name = user_pak_name(m.id, stem)
+            for ext, src in files.items():
+                shutil.copy2(src, os.path.join(out_dir, name + ext))
+                manifest["outputs"].append(name + ext)
+            manifest["paks"].append({"mod": m.id, "file": f"paks/{stem}", "installed_as": name})
+            log(f"  {m.id}: paks/{stem} goes in as {name}")
+    # The in-game mod menu's window, with this build's overview on its first page.
+    key = cfg.data.get("menu_key", menu.DEFAULT_KEY)
+    if key not in menu.KEYS:
+        manifest["warnings"].append(f"menu_key {key!r} isn't one of {', '.join(menu.KEYS)}; using {menu.DEFAULT_KEY}")
+        key = menu.DEFAULT_KEY
+    host = menu.host_script(manifest, mods, key, cheats=bool(cfg.data.get("cheats", False)),
+                            scale=ingame.menu_scale(cfg))
+    manifest["warnings"] += [f"{menu.HOST_NAME}: {p}" for p in luacheck.check(host)[:3]]
+    ctx.ue4ss_mods[menu.HOST_NAME] = ({"Scripts/main.lua": host.encode(), "enabled.txt": b""}, None)
     for name, (files, _) in ctx.ue4ss_mods.items():
         for rel, data in files.items():
             dst = os.path.join(out_dir, "ue4ss", name, rel.replace("/", os.sep))
@@ -102,6 +165,21 @@ def build(cfg, mods, out_dir, log=print):
             with open(dst, "wb") as f:
                 f.write(data)
         manifest["ue4ss_mods"].append(name)
+    # Shared Lua modules go in whatever mods are on, for any UE4SS script to require.
+    shared_files = {m.SHARED_NAME: m.lua() for m in SHARED_LUA}
+    plan = None
+    try:   # the cats' names, after the enabled name mods, for WCModsWorld's labels
+        plan = names.Plan(names.GameNames(lambda path: game.read_text(BuildContext.data_path(path))),
+                          names.merge(names.mod_specs(mods)))
+    except Exception as e:   # no game data (no Oodle DLL) or a broken names.json, which the names section reports
+        log(f"  (cat names for the mod menu left out: {e})")
+    shared_files[world.NAMES_NAME] = world.names_lua(plan)
+    for name, text in shared_files.items():
+        shared = os.path.join(out_dir, "ue4ss_shared", name)
+        os.makedirs(shared)
+        with open(os.path.join(shared, name + ".lua"), "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        manifest["ue4ss_shared"].append(name)
 
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
@@ -136,6 +214,7 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
         manifest = json.load(f)
     if game_running():
         raise RuntimeError("the game is running; close it before installing mods")
+    cfg.reload()
     # Installing replaces what's installed now, so a section that failed or skipped a mod would
     # silently remove that mod's previously installed changes.
     problems = [f"{rep['title']}: {err}" for rep in manifest["sections"].values()
@@ -146,10 +225,7 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
                            "(anything they installed before is removed).")
     dest = cfg.mods_install_dir
     os.makedirs(dest, exist_ok=True)
-    for ext in (".pak", ".utoc", ".ucas"):
-        stale = os.path.join(dest, MOD_BASENAME + ext)
-        if os.path.exists(stale):
-            os.remove(stale)
+    remove_paks(dest)   # wcmods' own and any a mod shipped, including ones no longer on
     for name in manifest["outputs"]:
         shutil.copy2(os.path.join(build_dir, name), os.path.join(dest, name))
         log(f"  installed {name}")
@@ -157,12 +233,20 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
     mods_dir = cfg.ue4ss_mods_dir
     previous = set(cfg.data.get("installed_ue4ss", [])) | {UE4SS_MOD_NAME}
     if mods_dir:
+        previous |= ue4ss.ours(mods_dir)   # also any the list lost track of
         for name in manifest["ue4ss_mods"]:
             ue4ss.install_mod(mods_dir, name, os.path.join(build_dir, "ue4ss", name))
             log(f"  installed UE4SS mod {name}")
         for name in previous - set(manifest["ue4ss_mods"]):
             ue4ss.remove_mod(mods_dir, name)
         cfg.data["installed_ue4ss"] = manifest["ue4ss_mods"]
+        shared = manifest.get("ue4ss_shared", [])
+        for name in shared:
+            ue4ss.install_shared(mods_dir, name, os.path.join(build_dir, "ue4ss_shared", name))
+        for name in set(cfg.data.get("installed_ue4ss_shared", [])) - set(shared):
+            ue4ss.remove_shared(mods_dir, name)
+        cfg.data["installed_ue4ss_shared"] = shared
+        ingame.apply_console(cfg)
     else:
         skipped = []
         if any(manifest["notes"].get("palettes", {}).get("runtime_palette", {}).values()):
@@ -295,19 +379,20 @@ def install_outdated(cfg):
 def uninstall(cfg, log=print):
     if game_running():
         raise RuntimeError("the game is running; close it before uninstalling mods")
-    removed = []
-    for ext in (".pak", ".utoc", ".ucas"):
-        p = os.path.join(cfg.mods_install_dir, MOD_BASENAME + ext)
-        if os.path.exists(p):
-            os.remove(p)
-            removed.append(p)
+    cfg.reload()
+    removed = remove_paks(cfg.mods_install_dir)
     mods_dir = cfg.ue4ss_mods_dir
     if mods_dir:
-        for name in set(cfg.data.get("installed_ue4ss", [])) | {UE4SS_MOD_NAME}:
+        for name in set(cfg.data.get("installed_ue4ss", [])) | {UE4SS_MOD_NAME} | ue4ss.ours(mods_dir):
             if os.path.isdir(os.path.join(mods_dir, name)):
                 ue4ss.remove_mod(mods_dir, name)
                 removed.append(os.path.join(mods_dir, name))
         cfg.data["installed_ue4ss"] = []
+        for name in set(cfg.data.get("installed_ue4ss_shared", [])) | {m.SHARED_NAME for m in SHARED_LUA} | {world.NAMES_NAME}:
+            gone = ue4ss.remove_shared(mods_dir, name)
+            if gone:
+                removed.append(gone)
+        cfg.data["installed_ue4ss_shared"] = []
     cfg.data.pop("installed", None)
     cfg.save()
     for p in removed:

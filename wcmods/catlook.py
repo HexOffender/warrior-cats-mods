@@ -99,20 +99,30 @@ def set_fields(text, fields):
     return text
 
 
-def script(colours, save_key="", key_file="", debug=False):
+LABELS = {"fur": "Coat", "paws": "Paw pads", "ears": "Inner ears", "nose": "Nose", "whiskers": "Whiskers"}
+
+
+def script(colours, save_key="", key_file="", debug=False, save=None):
     """The UE4SS script for colours: {part: (r, g, b) sRGB 0-1}. save_key is your cat's name IDs in the
     save ("STR_CAT_NAME53|_PAW"), how it finds your cat before you're in the world (the main menu);
-    key_file is where it remembers the IDs your character last had, which win once known."""
+    key_file is where it remembers the IDs your character last had, which win once known. save is where
+    the in-game menu's Save writes: {"path": the mod's cats.json, "file": its name for the player,
+    "doc": that file's contents, whose player colours Save replaces}."""
+    from .sdk import lua_value
     lines = []
     for part, rgb in sorted(colours.items()):
         lin = [colors.srgb_to_linear(c) for c in rgb]
         lines.append(f'    ["{PARTS[part]}"] = {{ {lin[0]:.5f}, {lin[1]:.5f}, {lin[2]:.5f} }},')
+    parts = [{"id": p, "param": PARTS[p], "label": LABELS[p],
+              "hex": "#%02x%02x%02x" % tuple(round(c * 255) for c in colours[p]) if p in colours else None}
+             for p in PARTS]
 
     def lua_str(s):
         return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
     return (LUA_TEMPLATE.replace("@COLOURS@", "\n".join(lines))
             .replace("@SAVE_KEY@", lua_str(save_key)).replace("@KEY_FILE@", lua_str(key_file))
-            .replace("@DEBUG@", "true" if debug else "false"))
+            .replace("@DEBUG@", "true" if debug else "false")
+            .replace("@PARTS@", lua_value(parts)).replace("@SAVE@", lua_value(save)))
 
 
 def save_key(cats):
@@ -294,4 +304,65 @@ LoopAsync(500, function()
     return false
 end)
 log("loaded")
+
+-- A page in the mod menu (Insert): change your cat's colours while you play. A part you switch off
+-- keeps the colour it has until the game sets your cat up again (a new area, the main menu).
+local PARTS = @PARTS@
+local SAVE = @SAVE@
+-- The page is extra: if the menu can't load or add it, the script works as before.
+local okMenu, Menu = pcall(require, "WCModsMenu")
+if okMenu then pcall(function()
+    local installed, status = {}, nil
+    for _, p in ipairs(PARTS) do installed[p.id] = p.hex end
+    local function apply(p)
+        if p.hex then
+            local c = Menu.color(p.hex)
+            COLOURS[p.param] = { c.R, c.G, c.B }
+        else
+            COLOURS[p.param] = nil
+        end
+    end
+    Menu.page("Your cat", function(ui)
+        ui.heading("Your cat's colours")
+        ui.note("Only your cat wears these. Changes show within half a second." ..
+                (SAVE and (" Save writes them to " .. SAVE.file .. ", so installing again keeps them.") or ""))
+        for _, p in ipairs(PARTS) do
+            local on = ui.switch(p.label, p.hex ~= nil)
+            if on and not p.hex then
+                p.hex = p.last or "#a0a0a0"
+                apply(p)
+            elseif not on and p.hex then
+                p.last, p.hex = p.hex, nil
+                apply(p)
+            end
+            if p.hex then
+                local hex = ui.color("   colour", p.hex)
+                if hex ~= p.hex then
+                    p.hex = hex
+                    apply(p)
+                end
+            end
+        end
+        ui.space(6)
+        local hit = ui.buttons(SAVE and { "Save", "Back to installed" } or { "Back to installed" }, { kinds = { "primary" } })
+        if hit and SAVE and hit == 1 then
+            local doc = SAVE.doc or {}
+            doc.player = doc.player or {}
+            local out = {}
+            for _, p in ipairs(PARTS) do
+                if p.hex then out[p.id] = p.hex end
+            end
+            doc.player.colours = out
+            local ok, err = Menu.saveJson(SAVE.path, doc)
+            status = ok and ("Saved to " .. SAVE.file .. ".") or ("Couldn't save: " .. tostring(err))
+        elseif hit then
+            for _, p in ipairs(PARTS) do
+                p.hex = installed[p.id]
+                apply(p)
+            end
+            status = "Back to the installed colours."
+        end
+        if status then ui.note(status) end
+    end, { order = 21 })
+end) end
 '''

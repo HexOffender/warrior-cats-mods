@@ -23,17 +23,37 @@ Install mods (top right) builds everything and puts it in the game:
 | **Palettes** | eye, coat, pattern and marking colours on a live cat; new pattern and marking colours | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
 | **Your cat** | colours only your cat wears (coat, paws, ears, nose, whiskers); which colour slots it wears | `cats.json` | UE4SS script (colours); your save, on install (slots) |
 | **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | the key remapper while you play (`wcmods play`); see [Remapping keys](#remapping-keys) |
-| | mouse look: sensitivity, invert | `mouselook.json` | UE4SS script |
+| | mouse look: sensitivity, invert, smoothing | `mouselook.json` | UE4SS script |
 | **Names** | rename, add and remove name prefixes, suffixes and rogue names; the ban list; cameo cats and any shown name; the cats in your save | `names.json` | edited tables and text in the mod pak; cat renames in your save, on install |
 | **Game data** | XP, costs, rewards, speeds and ~440 tuning values, in any runtime table | `data.json` | edited tables in the mod pak |
 | **Save** | level, XP, health, stamina, fresh-kill pile, stats, inventory, settings, anything else | `save.json` | your save, on install |
 
 Mods can also ship whole replacement files (`files/Wrc/...`), and their own pages and build
-steps written with the shared library (see [docs/SDK.md](docs/SDK.md)).
+steps written with the shared library (see [docs/SDK.md](docs/SDK.md)). UE4SS scripts can draw
+on screen (menus, debug text, markers on places in the world) and find nearby pickups, cats and
+quest objectives with the shared Lua modules wcmods installs (docs/SDK.md, "Overlays"; example:
+[`examples/quest-markers`](examples/quest-markers), a custom quest with on-screen markers).
+
+**In game, Insert opens the mod menu** (with UE4SS): the installed mods and what they set up,
+what's nearby, cheats, and pages for mods with live settings. Mouse look and your cat's colours
+change as you move their sliders, and Save writes the change back to the mod, so the next install
+keeps it. The Mods page's **In game** card (or `wcmods.json`) sets the menu's key and size, whether
+cheats start on, and the game's console (A- and A+ in the menu's top bar resize it while you play); docs/SDK.md, "Mod menu", shows how a script adds its own page.
+
+**Cheats** are the engine's cheat manager, which the release build leaves off. The menu's Cheats
+page switches them on and off while you play, and has god mode, fly and ghost (W A S D or the left
+stick move the way the camera faces; Space and Left Ctrl, or the triggers, go up and down; ghost goes
+through walls), cat size, game speed, teleport to where the
+camera looks, and a box for any console command. With cheats on, the console's cheat commands work
+too (`god`, `slomo 0.5`, `teleport`). The console's own `fly`, `ghost` and `changesize` don't stick:
+the game puts its cat back to its own movement each frame and resets its mesh's scale, so the page
+does those itself (it scales the whole cat, and moves it while flying). `python wcmods.py cheats on` makes them start on (install
+again to apply), and `python wcmods.py console on|off` switches the game's console (`~` or F10).
+Some cheats can break a quest or a save, so back up first if you're unsure (Mods page).
 
 The original game files are never modified. Everything goes into
-`<game>\Wrc\Content\Paks\~mods\zzz_WCMods_P.*` and `<game>\Wrc\Binaries\Win64\ue4ss\Mods\WCMods*`.
-Uninstall removes those. Save edits are written into your save only after a backup.
+`<game>\Wrc\Content\Paks\~mods\zzz_WCMods_*`, `<game>\Wrc\Binaries\Win64\ue4ss\Mods\WCMods*` and
+`ue4ss\Mods\shared\WCMods*`. Uninstall removes those. Save edits are written into your save only after a backup.
 
 ## Remapping keys
 
@@ -113,22 +133,42 @@ anyway") to install everything else.
 
 Also: `enable/disable <mod>`, `new <name> --kind palette|controls|files|data|names|save`, `eyes`,
 `tables`, `names [--cats] [--json]`, `controls [--json]`, `files <pattern>`, `extract <pattern>`,
-`build`, `backup`, `restore [name|latest]`.
+`build`, `backup`, `restore [name|latest]`, `cheats [on|off]` (whether the mod menu's cheats start
+on), `console [on|off]` (the game's `~` console).
 
 ## How it's built
 
-`wcmods` is a shared library plus a set of independent **sections**. `files`, `data`,
-`palettes`, `controls`, `mouselook` and `save` are built in, and mods can add more. Each section reads its
-own files from every enabled mod and contributes outputs through one build context: pak files,
-CSV edits (merged across mods), patched assets, UE4SS scripts and save edits. If a section fails,
-its outputs are rolled back, it's marked FAILED in the build report, and the rest still build.
-The studio works the same way: each page is a separate module, loaded when opened, built on
-`studio/lib/wc.js`.
+`wcmods` is a shared library plus a set of independent **sections**. `files`, `data`, `names`,
+`palettes`, `cats`, `controls`, `mouselook` and `save` are built in, and mods can add more. Each
+section reads its own files from every enabled mod and contributes outputs through one build
+context: pak files, CSV edits (merged across mods), patched assets, UE4SS scripts and save edits.
+If a section fails, its outputs are rolled back, it's marked FAILED in the build report, and the
+rest still build. The studio works the same way: each page is a separate module, loaded when
+opened, built on `studio/lib/wc.js`.
+
+An install writes, into the game:
+- **`Paks\~mods\zzz_WCMods_P.pak`:** every replacement file and edited table.
+- **`zzz_WCMods_P.utoc` / `.ucas`:** patched cooked assets (the eye atlas).
+- **Mods' own cooked paks:** as `zzz_WCMods_<mod>_<name>_P.*`.
+- **UE4SS scripts:** in `ue4ss\Mods\WCMods*`, among them the mod menu's window (`WCModsMenuHost`).
+- **The shared Lua modules** in `ue4ss\Mods\shared\`: `WCModsDraw`, `WCModsMenu`, `WCModsView`,
+  `WCModsWorld`, and `WCModsNames`, which is written from your name mods.
+
+[docs/SDK.md](docs/SDK.md), "Game files, repacking and new content", explains how the game's
+files are packed, how wcmods repacks them, and how to add new models and other cooked content.
 
 Mods are applied in `priority` order, then by folder name. When two mods set the same thing,
 the higher priority wins.
 
 ## File formats
+
+Besides the JSON files below, a mod can hold:
+- **`files/Wrc/...`:** whole replacement files at their game path. `extract` copies one out to
+  start from.
+- **`paks/`:** cooked content made with Unreal Engine 5.7, as a `.pak` with its `.utoc` and
+  `.ucas`, for new models, textures and sounds. It's installed as it is, under a `zzz_WCMods_`
+  name, so it loads after the game's files and comes off on uninstall. See docs/SDK.md, "New
+  content", for making it and getting the game to use it. Not yet tried with this game.
 
 ### `palette.json`
 ```json
@@ -228,29 +268,42 @@ Start). The build checks the names, and `python wcmods.py play` applies keyboard
 
 ### `mouselook.json`
 ```json
-{ "sensitivity": 1.0, "invert": false, "toggle_key": "F6" }
+{ "sensitivity": 1.0, "invert": false, "smoothing": 0, "toggle_key": "F6" }
 ```
 The game switches Unreal's mouse capture off (`DefaultViewportMouseCaptureMode=NoCapture`), so
 the mouse never reaches its camera and no binding can change that. Mouse look is a UE4SS script
 instead. While you explore with the cursor hidden, it captures the mouse and moves the camera
 (`BP_AdventureCamera`) itself. It lets go whenever the game shows its cursor. The arrow keys
 and right stick still work. `toggle_key` switches it off and on in game. R (or LB) levels the
-tilt. `pitch_min`/`pitch_max` limit the tilt (default -20/23, the game's own). `"debug": true`
-logs what it does to `ue4ss\UE4SS.log`. The `mouse-look` mod and the Mouse look card on the
-Controls page both edit this file.
+tilt. `pitch_min`/`pitch_max` limit the tilt (default -20/23, the game's own). `smoothing` is how
+long the camera takes to catch up with the mouse, in milliseconds: 0 (the default) follows it at
+once, and the game eases the arrow keys and stick over about 200. `"debug": true` logs what it
+does to `ue4ss\UE4SS.log`, including whether each turn stayed and how even the frames were. The
+`mouse-look` mod and the Mouse look card on the Controls page both edit this file.
 
-How it moves the camera, for anyone extending it: turning rotates the camera actor's root, which
-the game only nudges. The game resets the spring arm's and the camera's pitch every frame, so
-tilting goes through a scene component the script adds between the root and the arm. Rotators
-are built with `KismetMathLibrary:MakeRotator`, because UE4SS drops the pitch of a rotator passed
-as a Lua table.
+How it moves the camera, for anyone extending it: turning rotates the camera actor's root. The
+game resets the spring arm's and the camera's pitch every frame, so tilting goes through a scene
+component the script adds between the root and the arm. Rotators are built with
+`KismetMathLibrary:MakeRotator`, because UE4SS drops the pitch of a rotator passed as a Lua table.
+
+How the game's camera works (read from its code, `SwtAdventureCameraActor`):
+- It's an actor of its own that follows the cat: a root that turns, the game's spring arm on it,
+  and the camera on the end. Its numbers are `Gameplay.Exploration.Camera.*` in `TuningData.csv`,
+  read once when the camera starts.
+- Each frame it adds that frame's arrow-key and stick turn to the root's current rotation, so a
+  turn the mouse made earlier in the frame stays.
+- On a camera spline (`SplineActor`), while it looks at something, and for 0.8 s after joining or
+  leaving a spline, it sets the rotation itself and ignores the arrow keys. The mouse can't turn
+  it then either.
+- The spring arm eases after the root (`CameraRotationLagSpeed`, from `Lag.Rotation` 5). Mouse look
+  sets that from `smoothing` while it has the mouse and gives the game's back when it lets go.
+- While the cat moves, the camera itself leans up to 15° toward where it's heading
+  (`Ahead.Rotation`). Set that to 0 with `data.json` for a camera that only turns when you turn it:
+  `{ "TuningData.csv": { "Gameplay.Exploration.Camera.Ahead.Rotation": 0 } }`.
 
 Known issues:
-- **The camera rolls a little during fast moves.** The spring arm's rotation lag
-  (`CameraRotationLagSpeed` 5, the game's `Gameplay.Exploration.Camera.Lag.Rotation`) blends turn
-  and tilt together. It's also aim smoothing, which mouse look shouldn't have.
-- About one frame in five, the game sets the camera's turn itself, and that frame's mouse movement
-  is lost.
+- With `smoothing` above 0, fast diagonal moves roll the camera slightly, because the spring arm
+  eases turn and tilt together.
 - Mouse look stops when the engine's look input is switched off (`IsLookInputIgnored`), but the
   game's own camera locks (`EInputRestriction::CameraRotationDisabled`) aren't visible to scripts,
   so the mouse may still turn the camera where the arrow keys can't.
@@ -360,6 +413,21 @@ Confirmed in game (2026-10-23):
 - The key remapper (`wcmods play`) moves keys while you play and leaves other windows and the title
   screen alone. The pause menu hasn't been checked yet.
 
+Confirmed in game (2026-10-24):
+- Mouse look's smoothing: with the mouse captured, the camera's lag is 0 and the picture follows
+  the mouse exactly (`root y=-23.2`, `view y=-23.2` in the debug log), with even 17 ms frames. The
+  game's own lag comes back in menus.
+- `WCModsView` projects your cat's position to the same pixel as the engine's
+  `ProjectWorldToScreen`.
+- The mod menu opens with Insert and is readable at 1920x1080. The game draws its UI for
+  3840x2160 and halves it, and the menu undoes that. Its live settings work.
+- `WCModsWorld`'s kinds, from a survey of the classes around your cat. The Nearby page lists them,
+  any kinds at once, and marks them on screen in their colours.
+- The Cheats page: cheats switch on, and fly, ghost and cat size work. These are done by the menu
+  itself, because the game undoes the engine's own.
+- The studio refuses to install once wcmods has been updated under it. An old studio had put old
+  scripts back.
+
 Not yet confirmed in game:
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
 - **Game data tables in play.** They load from the same pak as the text, but no gameplay change has
@@ -367,6 +435,10 @@ Not yet confirmed in game:
 - **New pattern and marking slots on a cat.** The lists grow in game (slot 25 read back with its new
   colour), and the game's code checks those indexes against the real list size, but no cat has been
   seen wearing a new slot yet.
+- **Parts of the mod menu.** Not yet checked: Save on the Mouse look and Your cat pages, cats'
+  own names in Nearby labels, and god mode, game speed and teleport on the Cheats page.
+- **Mods' own cooked paks (`paks/`).** They're installed as the game's own patch paks are named,
+  but no cooked content has been tried in game yet.
 - **Names beyond the text.** Renamed and added names reach the game's text table (Mothpaw,
   Sparrowheart, Mothwhisper and the rogue Moss were read back in game). Still unchecked: new cats
   getting added parts, removed parts and ban list changes; the name screen's suggestions; and cat
@@ -379,6 +451,10 @@ After a game update, run `selftest` before installing again.
 - Python 3.10+ (the Microsoft Store Python works).
 - An `oo2core_*_win64.dll` from another installed game, found automatically on your Steam
   libraries (here: Planet Zoo). It's only used to read the game's compressed files.
-- UE4SS for coat, pattern, marking and eye-button colours. Installed from the `experimental-latest`
-  GitHub release (`UE4SS_v3.0.1-1181-g83330635.zip`), with its cheat-manager and dev-console
-  enablers off. To remove it, delete `dwmapi.dll` and the `ue4ss` folder from `<game>\Wrc\Binaries\Win64`.
+- UE4SS for coat, pattern, marking and eye-button colours, your cat's own colours, mouse look, the
+  mod menu (with its cheats), overlays and scripts from mods. Installed from the `experimental-latest`
+  GitHub release (`UE4SS_v3.0.1-1181-g83330635.zip`), with its cheat-manager enabler off (the mod
+  menu's Cheats page does that job, and can switch cheats off again). Its console enabler
+  (`ConsoleEnablerMod`) is on: `~` or F10 opens the game's console (`python wcmods.py console off`
+  turns it off). To remove UE4SS, delete `dwmapi.dll` and the `ue4ss` folder from
+  `<game>\Wrc\Binaries\Win64`.
