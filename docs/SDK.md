@@ -24,7 +24,8 @@ mods/my-mod/
   files/Wrc/...       replacement game files            -> section "files"
   data.json           CSV cell edits                    -> section "data"
   palette.json        colour palettes                   -> section "palettes"
-  controls.json       key and button remaps             -> section "controls" (checked, not applied yet)
+  controls.json       key and button remaps             -> section "controls" (checked at build;
+                                                           applied by `wcmods play`, keyboard and mouse)
   mouselook.json      mouse look settings               -> section "mouselook"
   save.json           save edits                        -> section "save"
   section.py          your own build step               (code mod)

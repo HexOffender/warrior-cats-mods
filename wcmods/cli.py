@@ -4,9 +4,10 @@ import json
 import os
 import shutil
 import sys
+import time
 
-from . import controls, eyeatlas, mods, pipeline, save, ue4ss
-from .config import Config, game_running
+from . import controls, eyeatlas, keymap, mods, pipeline, playstate, save, ue4ss
+from .config import EXE_NAME, STEAM_APP_ID, Config, game_running
 from .gamefiles import GameFiles
 
 
@@ -114,6 +115,83 @@ def cmd_controls(ctx, args):
             print(f"  {action:24s} {key}")
 
 
+def _remap_plan(ctx):
+    from .sections.controls import ControlsSection, merge
+    sec, datas = ControlsSection(), []
+    for m in mods.discover(ctx.mods_root):   # priority order, so later mods win
+        if m.enabled and sec.claims(m):
+            data = sec.collect(m, None)
+            if data:
+                datas.append(data)
+    return keymap.plan(merge(datas))
+
+
+def _run_remapper(ctx, args, launching=False):
+    """launching: `play` has just asked Steam to start the game, so any play state on disk is old."""
+    send, block, warnings = _remap_plan(ctx)
+    for w in warnings:
+        print(f"  warning: {w}")
+    if not send and not block:
+        print("No keyboard or mouse remaps in the enabled mods' controls.json; nothing to do.")
+        return
+    state_file = playstate.state_path(ctx.cfg) if ctx.cfg.game_dir else None
+    script = os.path.join(os.path.dirname(state_file), "Scripts", "main.lua") if state_file else None
+    if not (script and os.path.isfile(script)):
+        state_file = None
+        print("  note: the play-state script isn't installed yet, so remaps apply whenever the game is in front,\n"
+              "        menus and the name screen too. Install mods once (game closed) to fix that.")
+    elif launching and os.path.isfile(state_file):
+        try:
+            os.remove(state_file)   # last session's state; the script writes a fresh one as the game starts
+        except OSError:
+            pass
+    when = "whenever the game is in front" if args.in_menus or not state_file else "while you play (game in front, not in a menu)"
+    print(f"remaps {when}:")
+    for src, dst in sorted(send.items()):
+        print(f"  {src:18s} -> {dst}")
+    for key in sorted(block):
+        print(f"  {key:18s} -> nothing (its action moved)")
+    from .remapper import Remapper
+    state = {"seen": game_running(), "checked": time.monotonic(), "started": time.monotonic(), "nagged": False}
+
+    def should_stop():
+        # The game is checked every few seconds: listing processes is slow.
+        if time.monotonic() - state["checked"] < 3:
+            return False
+        state["checked"] = time.monotonic()
+        running = game_running()
+        if running:
+            state["seen"] = True
+        elif state["seen"]:
+            print("the game has closed; remapper stopped")
+            return True
+        elif not state["nagged"] and time.monotonic() - state["started"] > 180:
+            state["nagged"] = True   # Steam may be updating; keep waiting
+            print("still waiting for the game (3 minutes so far); Ctrl+C stops the remapper")
+        return False
+
+    print("waiting for the game..." if not state["seen"] else "the game is running.", "Ctrl+C stops the remapper.")
+    try:
+        Remapper(send, block, (EXE_NAME,), dry_run=args.dry_run, in_menus=args.in_menus,
+                 debug=args.debug, state_file=state_file).run(should_stop)
+    except KeyboardInterrupt:
+        print("remapper stopped")
+    except OSError as e:
+        sys.exit(f"error: couldn't hook the keyboard: {e}")
+
+
+def cmd_remap(ctx, args):
+    _run_remapper(ctx, args)
+
+
+def cmd_play(ctx, args):
+    launching = not game_running()
+    if launching:
+        print("starting the game through Steam...")
+        os.startfile(f"steam://rungameid/{STEAM_APP_ID}")
+    _run_remapper(ctx, args, launching=launching)
+
+
 def _print_build(manifest):
     for sid, rep in manifest["sections"].items():
         if rep["mods"] or rep["errors"]:
@@ -153,7 +231,7 @@ def cmd_uninstall(ctx, args):
     ctx.need_game()
     removed = pipeline.uninstall(ctx.cfg)
     print("nothing installed" if not removed else "uninstalled.")
-    print("Control remaps and save edits live in your save; use `wcmods restore` to roll it back.")
+    print("Save edits live in your save; use `wcmods restore` to roll it back.")
 
 
 def cmd_backup(ctx, args):
@@ -242,6 +320,14 @@ def main(root, argv=None):
     p = sub.add_parser("controls", help="show the key/button bindings stored in your save")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_controls)
+    for name, fn, text in (("play", cmd_play, "start the game and remap keys (controls.json) until it closes"),
+                           ("remap", cmd_remap, "remap keys (controls.json) while the game runs; start the game yourself")):
+        p = sub.add_parser(name, help=text)
+        p.add_argument("--dry-run", action="store_true", help="only report which remaps would happen")
+        p.add_argument("--in-menus", action="store_true", help="remap in menus too (off: menus and name entry keep your keys)")
+        p.add_argument("--debug", action="store_true",
+                       help="log the window in front, the game's play state, and presses of the remapped keys")
+        p.set_defaults(fn=fn)
     sub.add_parser("tables", help="show the game's coat/pattern/marking/eye-button colour tables (needs UE4SS)").set_defaults(fn=cmd_tables)
     sub.add_parser("selftest", help="check every file format against the installed game").set_defaults(fn=cmd_selftest)
     sub.add_parser("build", help="build enabled mods into build/").set_defaults(fn=cmd_build)

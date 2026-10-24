@@ -1,9 +1,13 @@
 // Controls: rebind keyboard, mouse and controller actions. Writes controls.json in a mod.
 const ACTIONS = [
-  { id: "Player_Movement_Up", name: "Move forward / back", axis: true, kbNote: "Sets the back key. The forward key isn't stored in the save, so the game keeps its own." },
-  { id: "Player_Movement_Right", name: "Move left / right", axis: true, kbNote: "Sets the left key. The right key isn't stored in the save, so the game keeps its own." },
-  { id: "Player_Camera_Up", name: "Camera up / down", axis: true, kbNote: "Sets the camera-down key. Its opposite isn't stored in the save." },
-  { id: "Player_Camera_Right", name: "Camera left / right", axis: true, kbNote: "Sets the camera-left key. Its opposite isn't stored in the save." },
+  { id: "Player_Movement_Up", name: "Move back", axis: true },
+  { id: "key:W", name: "Move forward", raw: "W" },
+  { id: "Player_Movement_Right", name: "Move left", axis: true },
+  { id: "key:D", name: "Move right", raw: "D" },
+  { id: "Player_Camera_Up", name: "Camera down", axis: true },
+  { id: "key:Up", name: "Camera up", raw: "Up" },
+  { id: "Player_Camera_Right", name: "Camera left", axis: true },
+  { id: "key:Right", name: "Camera right", raw: "Right" },
   { id: "Player_Pounce", name: "Pounce" },
   { id: "Player_Interact", name: "Interact" },
   { id: "Player_Run", name: "Run" },
@@ -16,9 +20,11 @@ const ACTIONS = [
   { id: "Player_Camera_Reset", name: "Reset camera" },
   { id: "Player_Pause", name: "Pause menu" },
 ];
-// The game's own bindings, from a fresh save.
+// The game's own bindings, from a fresh save. Its axis actions list one direction; the other keys
+// (rows with `raw`) are built in, so their remaps go in controls.json's "keys" section.
 const DEFAULTS = {
   keyboard: { Player_Movement_Up: "S", Player_Movement_Right: "A", Player_Camera_Up: "Down", Player_Camera_Right: "Left",
+    "key:W": "W", "key:D": "D", "key:Up": "Up", "key:Right": "Right",
     Player_Pounce: "SpaceBar", Player_Drop: "C", Player_Den_Place: "X", Player_Interact: "E", Player_ReturnToCamp: "X",
     Player_Friend_Talk: "C", Player_Crouch: "LeftControl", Player_Scent_Tracking: "Q", Player_Camera_Reset: "R",
     Player_Run: "LeftShift", Player_Pause: "Enter" },
@@ -49,6 +55,7 @@ export default {
     const { el, api, clear, toast, input } = wc;
     let saved = { keyboard: {}, gamepad: {} };
     let overrides = { keyboard: {}, gamepad: {} };
+    let otherKeys = {};   // "keys" entries that aren't one of the built-in rows; kept as they are
     let style = "xbox";
     try { style = localStorage.getItem("wc-pad-style") || "xbox"; } catch (e) { /* storage blocked */ }
 
@@ -76,8 +83,8 @@ export default {
         el("span", { class: "eyebrow", text: "Button remapper" }),
         el("h1", { text: "Controls" }),
         el("p", { class: "note", text: "Click Change, then press the key, mouse button, wheel or controller button you want, and save to a mod." })),
-      el("div", { class: "banner" }, el("strong", { text: "Remaps don't take effect yet." }),
-        el("span", { text: " The game ignores edited bindings in its save. For now, remap keys with PowerToys Keyboard Manager and controller buttons with Steam Input (README, \"Remapping keys\"). A built-in key remapper that uses this page is in progress." })),
+      el("div", { class: "banner" }, el("strong", { text: "Keyboard and mouse remaps run through the wcmods key remapper." }),
+        el("span", { text: " The game ignores edited bindings, so start it with python wcmods.py play: while you play, your keys stand in for the game's. Controller buttons: use Steam Input. If you'd rather not run the remapper, PowerToys Keyboard Manager does the same job (README, \"Remapping keys\")." })),
       target.element,
       el("div", { class: "row" },
         el("span", { class: "eyebrow", text: "Controller presets" }),
@@ -89,6 +96,8 @@ export default {
       mouse, table, live, out.element);
 
     // ---------- model ----------
+    const RAW = Object.fromEntries(ACTIONS.filter(a => a.raw).map(a => [a.raw, a.id]));
+    const padActions = ACTIONS.filter(a => !a.raw);
     function normalize(obj) {
       const o = { keyboard: {}, gamepad: {} };
       for (const dev of ["keyboard", "gamepad"]) {
@@ -97,6 +106,14 @@ export default {
           const key = k && typeof k === "object" ? k.key : k;   // {key, ...} from older versions of this page
           o[dev][a] = dev === "gamepad" ? (ALIASES[String(key).toLowerCase()] || key) : key;
         }
+      }
+      // "keys" maps a key you press to the game key it stands for.
+      otherKeys = {};
+      for (const [pressed, gameKey] of Object.entries((obj && obj.keys) || {})) {
+        if (pressed.startsWith("_")) continue;
+        // A built-in key's row holds one key; a second key for the same job is kept as it is.
+        if (RAW[gameKey] && !(RAW[gameKey] in o.keyboard)) o.keyboard[RAW[gameKey]] = pressed;
+        else otherKeys[pressed] = gameKey;
       }
       return o;
     }
@@ -108,23 +125,32 @@ export default {
       render();
     }
     function toJson() {
-      const o = { _help: "Written by Clan Mod Studio. Keys are Unreal key names." };
-      for (const dev of ["keyboard", "gamepad"]) if (Object.keys(overrides[dev]).length) o[dev] = { ...overrides[dev] };
+      const o = { _help: "Written by Clan Mod Studio. Keys are Unreal key names. \"keys\" maps a key you press to the game key it stands for." };
+      const keyboard = {}, keys = { ...otherKeys };
+      for (const [a, k] of Object.entries(overrides.keyboard)) {
+        const raw = ACTIONS.find(x => x.id === a)?.raw;
+        if (!raw) keyboard[a] = k;
+        else if (k !== raw) keys[k] = raw;
+      }
+      if (Object.keys(keyboard).length) o.keyboard = keyboard;
+      if (Object.keys(overrides.gamepad).length) o.gamepad = { ...overrides.gamepad };
+      if (Object.keys(keys).length) o.keys = keys;
       return o;
     }
     function swap(map) {
-      for (const { id } of ACTIONS) { const k = effective("gamepad", id); if (map[k]) overrides.gamepad[id] = map[k]; }
+      for (const { id } of padActions) { const k = effective("gamepad", id); if (map[k]) overrides.gamepad[id] = map[k]; }
       target.markDirty(); render();
     }
     function resetDevice(dev) {
-      for (const { id } of ACTIONS) overrides[dev][id] = DEFAULTS[dev][id];
+      for (const { id } of dev === "gamepad" ? padActions : ACTIONS) overrides[dev][id] = DEFAULTS[dev][id];
       target.markDirty(); render();
     }
     function conflicts(dev) {
+      const rows = dev === "gamepad" ? padActions : ACTIONS;
       const byKey = {};
-      for (const { id } of ACTIONS) (byKey[effective(dev, id)] ||= []).push(id);
+      for (const { id } of rows) (byKey[effective(dev, id)] ||= []).push(id);
       const designed = {};
-      for (const { id } of ACTIONS) (designed[DEFAULTS[dev][id]] ||= []).push(id);
+      for (const { id } of rows) (designed[DEFAULTS[dev][id]] ||= []).push(id);
       const out = {};
       for (const [k, ids] of Object.entries(byKey)) {
         if (ids.length < 2) continue;
@@ -137,13 +163,15 @@ export default {
     // ---------- view ----------
     const nameOf = id => ACTIONS.find(a => a.id === id)?.name || id;
     function cell(dev, action) {
+      if (dev === "gamepad" && action.raw) return el("span", { class: "muted", text: "same stick as the row above" });
       const key = effective(dev, action.id);
-      const changed = action.id in overrides[dev] && overrides[dev][action.id] !== saved[dev]?.[action.id];
+      const gameKey = saved[dev]?.[action.id] ?? DEFAULTS[dev][action.id];
+      const changed = action.id in overrides[dev] && overrides[dev][action.id] !== gameKey;
       const conflict = conflicts(dev)[action.id];
       const cap = el("span", { class: "chip", style: { fontWeight: "700", fontSize: "0.95rem" }, title: key }, input.keyLabel(key, style));
       const box = el("div", { style: { display: "grid", gap: "4px" } },
         el("div", { class: "row" }, cap,
-          changed ? el("span", { class: "chip warn", title: `In your save: ${saved[dev]?.[action.id]}` }, el("i"), "changed") : null,
+          changed ? el("span", { class: "chip warn", title: `The game's key: ${input.keyLabel(gameKey, style)}` }, el("i"), "changed") : null,
           el("button", { class: "btn small", text: "Change", "aria-label": `Change ${dev} binding for ${action.name}`, onclick: () => capture(dev, action) }),
           key !== DEFAULTS[dev][action.id] ? el("button", { class: "btn ghost small", text: "Default", title: `Game default: ${input.keyLabel(DEFAULTS[dev][action.id], style)}`, onclick: () => setKey(dev, action.id, DEFAULTS[dev][action.id]) }) : null,
           action.id in overrides[dev] ? el("button", { class: "btn ghost small", text: "Undo", onclick: () => { delete overrides[dev][action.id]; target.markDirty(); render(); } }) : null));
@@ -214,7 +242,7 @@ export default {
         el("table", { class: "grid-table" },
           el("thead", {}, el("tr", {}, el("th", { text: "Action" }), el("th", { text: "Keyboard & mouse" }), el("th", { text: "Controller" }))),
           el("tbody", {}, ...ACTIONS.map(a => el("tr", {},
-            el("td", {}, el("strong", { text: a.name }), el("div", { class: "muted mono", style: { fontSize: "0.72rem" }, text: a.id })),
+            el("td", {}, el("strong", { text: a.name }), el("div", { class: "muted mono", style: { fontSize: "0.72rem" }, text: a.raw ? `built-in key ${a.raw}` : a.id })),
             el("td", {}, cell("keyboard", a)), el("td", {}, cell("gamepad", a))))))));
       out.set(toJson());
     }
@@ -288,13 +316,16 @@ export default {
       }
     }
 
-    // ---------- remapping today ----------
+    // ---------- using the remaps ----------
     function renderLive() {
-      clear(live).append(el("h2", { text: "Remapping keys today" }),
+      clear(live).append(el("h2", { text: "Using your remaps" }),
         el("ol", { style: { margin: "0", paddingLeft: "1.3em", display: "grid", gap: "6px" } },
-          el("li", { text: "Keyboard: in Microsoft PowerToys, open Keyboard Manager, choose Remap a key, and set the target app to Wrc-Win64-ShippingDRM.exe. Map your new key to the game's key shown here." }),
-          el("li", { text: "Controller: in Steam, right-click the game, then Properties, Controller, and remap buttons with Steam Input." })),
-        el("p", { class: "note", text: "The game keeps bindings in your save but ignores edited ones (tested with keyboard keys and its custom-controls switch on), and its own rebinding screen is unfinished on PC. Mouse look above doesn't depend on any of this." }));
+          el("li", { text: "Save to a mod (top of this page)." }),
+          el("li", { text: "Install mods once (top right, game closed). That adds the small script that tells the remapper when you're playing; after that, key changes need no install." }),
+          el("li", { text: "Start the game with python wcmods.py play. It stops by itself when the game closes. If the game is already open, use python wcmods.py remap." }),
+          el("li", { text: "Your keys work while you play: the game in front and its cursor hidden. Menus, the name screen and other programs keep your normal keys. A key whose action moved stops doing it." }),
+          el("li", { text: "Controller buttons: in Steam, right-click the game, then Properties, Controller, and remap them with Steam Input." })),
+        el("p", { class: "note", text: "Add --dry-run to see what would be remapped without changing anything. The game ignores edited bindings in its save and its rebinding screen is unfinished on PC, which is why the remapper works from outside the game. Mouse look above doesn't depend on any of this." }));
     }
 
     await Promise.all([target.refresh(), loadMouseLook()]);

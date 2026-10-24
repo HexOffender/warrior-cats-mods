@@ -13,7 +13,7 @@ Install mods (top right) builds everything and puts it in the game:
 |---|---|---|---|
 | **Mods** | turn mods on/off, priority, new mods, uninstall, save backups | `mod.json` | — |
 | **Palettes** | eye, coat, pattern and marking colours on a live cat | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
-| **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | not applied yet (see [Remapping keys](#remapping-keys)) |
+| **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | the key remapper while you play (`wcmods play`); see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert | `mouselook.json` | UE4SS script |
 | **Game data** | XP, costs, rewards, speeds and ~440 tuning values, in any runtime table | `data.json` | edited tables in the mod pak |
 | **Save** | level, XP, health, stamina, fresh-kill pile, stats, inventory, settings, anything else | `save.json` | your save, on install |
@@ -40,11 +40,49 @@ There are three ways around that:
 2. **Keyboard keys: Microsoft PowerToys Keyboard Manager.** Open Keyboard Manager, choose
    *Remap a key*, map your new key to the game's key (for example F to E for Interact), and set
    the target app to `Wrc-Win64-ShippingDRM.exe` so the remap only applies in the game.
-3. **Keyboard keys: a remapper built into wcmods** that runs while the game window is focused and
-   uses the Controls page's `controls.json`. In progress.
+3. **Keyboard keys: the wcmods key remapper.** `python wcmods.py play` starts the game, and while
+   you play, the keys in your mods' `controls.json` (the Controls page) stand in for the game's.
+   "Play" means the game window is in front and you're exploring, not in a menu. A small UE4SS
+   script (`WCModsPlayState`, installed with your mods when you have remaps) tells the remapper
+   which it is. Windows can't, because the game draws its own cursor. Without that script, remaps
+   apply whenever the game is in front. The remapper holds back the key you press and sends the
+   game's key in its place, and it stops when the game closes.
+   Menus, the name screen and other programs keep your normal keys. A key whose action moved stops
+   doing it, unless another action still uses it. Mouse buttons and the wheel can stand in for keys.
+   Tested in game (2026-10-23) with movement on T/F/G/H. The new keys moved the cat, WASD did
+   nothing while playing, and remapping switched off when another window was in front and on the
+   title screen. The pause menu hasn't been checked yet.
 
-**The current method is method 2** (with method 1 for controllers). The Controls page still
-edits `controls.json`, which method 3 will use; until then, it isn't applied to the game.
+**The current method is method 3** for keyboard and mouse, with method 1 for controllers.
+Method 2 does the same job without wcmods, if you'd rather not run the remapper. Don't run both
+at once for the same keys.
+
+To use method 3, set your keys on the Controls page (or in `controls.json`), save them to a mod,
+and install mods once (game closed), which adds the play-state script. Then start the game with
+`python wcmods.py play` instead of from Steam:
+
+```
+python wcmods.py play              # start the game through Steam and remap until it closes
+python wcmods.py remap             # the same, when the game is already running (or about to be)
+python wcmods.py play --dry-run    # report which remaps would happen, without changing any keys
+python wcmods.py play --in-menus   # remap in menus too
+python wcmods.py play --debug      # log the window in front, the play state, and remapped key presses
+```
+
+It runs as a normal program using Windows' low-level keyboard hook. Ctrl+C stops it, and anything
+it was holding down is let go. Details:
+
+- **A press finishes as it started.** A key you were already holding when you went from a menu into
+  play keeps going to the game unchanged until you let go, so nothing gets stuck. A remapped key
+  stops repeating when a menu opens.
+- **Some keys keep their old job.** Enter, Space, Escape, Backspace and Tab are never held back when
+  their action moves, because prompts and dialogue shown while you play may need them; the build
+  and `play` say so.
+- **Other programs' keys pass through.** Keys sent by other programs (Steam Input's keyboard buttons,
+  macro tools) aren't remapped or held back. A controller button that Steam Input turns into W still
+  walks forward.
+- **Mouse remaps cost a little.** Remapping a mouse button or the wheel adds a mouse hook, which
+  Windows calls for every mouse movement. Remap keyboard keys only if you notice any lag.
 
 ## Command line
 
@@ -54,6 +92,7 @@ Everything the studio does is also available as a command:
 python wcmods.py status      # game, save, Oodle, UE4SS, and your mods
 python wcmods.py selftest    # checks every file format against your install (writes nothing)
 python wcmods.py install     # builds the enabled mods and installs them (game closed)
+python wcmods.py play        # starts the game with your key remaps (see Remapping keys)
 python wcmods.py uninstall   # removes them again
 ```
 
@@ -92,12 +131,22 @@ cat creator's eye buttons are recoloured to match. Coat, pattern and marking key
 
 ### `controls.json`
 ```json
-{ "keyboard": { "Player_Interact": "F" }, "gamepad": { "Player_Run": "LT" } }
+{ "keyboard": { "Player_Interact": "F", "Player_Movement_Up": "K" },
+  "keys": { "I": "W" },
+  "gamepad": { "Player_Run": "LT" } }
 ```
 
-Actions are the game's (`python wcmods.py controls` lists them with their keys); keys are Unreal
-key names, and controller buttons also take short names (A/B/X/Y, LB/RB, LT/RT, Start). The
-build checks the names but doesn't apply them yet; see [Remapping keys](#remapping-keys).
+- **`keyboard`** moves an action to a new key: here Interact goes from E to F. Actions are the game's;
+  `python wcmods.py controls` lists them with their keys. The game's axis actions list only one
+  direction, so `Player_Movement_Up` is the back key (S) and `Player_Camera_Right` is the left key.
+- **`keys`** maps a key you press straight to a game key. Use it for the keys no action lists: W, D,
+  Up and Right. Those move like actions, so `"T": "W"` makes T go forward and W stop. Mapped to any
+  other game key, it adds a second key for that job.
+- **`gamepad`** is kept for planning. The remapper doesn't handle controllers; use Steam Input.
+
+Keys are Unreal key names. Controller buttons also take short names (A/B/X/Y, LB/RB, LT/RT,
+Start). The build checks the names, and `python wcmods.py play` applies keyboard and mouse remaps
+(see [Remapping keys](#remapping-keys)).
 
 ### `mouselook.json`
 ```json
@@ -173,6 +222,8 @@ Confirmed in game (2026-10-23):
   `python wcmods.py restore latest`) if anything goes wrong.
 - Edited key bindings in the save are ignored, and the game's rebinding screen doesn't work on PC
   (see [Remapping keys](#remapping-keys)).
+- The key remapper (`wcmods play`) moves keys while you play and leaves other windows and the title
+  screen alone. The pause menu hasn't been checked yet.
 
 Not yet confirmed in game:
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.

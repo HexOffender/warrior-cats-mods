@@ -3,7 +3,7 @@ import os
 import struct
 import tempfile
 
-from . import controls, eyeatlas, luacheck, mouselook, palettes
+from . import controls, eyeatlas, keymap, luacheck, mouselook, palettes
 from .blake3 import blake3
 from .iostore import IoStoreReader, ModContainerWriter
 from .pak import PakReader, PakWriter
@@ -24,6 +24,12 @@ def run(cfg, oodle, log=print):
           and "invert = true" in lua, "; ".join(problems[:3]))
     problems = luacheck.check(palettes.ue4ss_script({}))
     check("palette script", not problems, "; ".join(problems[:3]))
+    # Interact and Scent tracking move along F/E/Q, so Q goes quiet; X stays because Return to camp still
+    # uses it; forward moves to I, so W goes quiet.
+    send, block, warns = keymap.plan({"keyboard": {"Player_Interact": "F", "Player_Scent_Tracking": "E",
+                                                   "Player_Den_Place": "Z"}, "keys": {"I": "W"}})
+    check("key remap plan", send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"} and not warns)
+    check("key remapper presses", _remapper_presses())
 
     base_pak = PakReader(os.path.join(cfg.paks_dir, "pakchunk0-Windows.pak"), oodle)
     csv = base_pak.read("Wrc/Content/Gameplay/DataTables/NonAsset/NPC/CatSize.csv")
@@ -134,6 +140,32 @@ def run(cfg, oodle, log=print):
     else:
         log("  [skip] no save yet")
     return all(results)
+
+
+def _remapper_presses():
+    """The remapper's key handling, with its key sending and play check replaced (no hooks involved)."""
+    import sys
+    if sys.platform != "win32":
+        return True
+    from .remapper import Remapper
+    sent, on = [], [False]
+    r = Remapper({"T": "W"}, {"W"}, ("game.exe",), log=lambda m: None)
+    r._press = lambda name, down: sent.append((name, down))
+    r.active = lambda: on[0]
+
+    def press(name, down, now=None):
+        if now is not None:
+            on[0] = now
+        return r.handle(name, down)
+
+    # A W held from a menu into play goes through to its release, so the game never keeps it down.
+    held_over = [press("W", True, False), press("W", True, True), press("W", False)] == [False, False, False]
+    # T stands for W while playing; its repeats stop in a menu, and its release always lets go of W.
+    remapped = [press("T", True, True), press("T", True, False), press("T", False)] == [True, True, True]
+    remapped = remapped and sent == [("W", True), ("W", False)]
+    # A blocked W is held back, release included.
+    blocked = [press("W", True, True), press("W", False)] == [True, True]
+    return held_over and remapped and blocked and not r.held and not r.swallowed and not r.passed
 
 
 def _meta_hash(io, index):
