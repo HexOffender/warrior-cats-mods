@@ -57,6 +57,12 @@ def run(cfg, oodle, log=print):
     check("palettes without the Oodle DLL: eye colours left out with a warning, the rest built", _palettes_without_oodle(cfg))
     check("getting set up, the rough edges: an install from before UE4SS is redone, a folder adds only the "
           "ticked mods, no drive letters in UE4SS's .zip, a studio without the game answers", _onboarding_edges())
+    ok, detail = _signatures(cfg)
+    check("game update signatures: the decoder, and every class and value found where wcmods expects", ok, detail)
+    check("mods made for an older version of the game: left out unless used anyway on that build", _outdated_mods(cfg))
+    ok, detail = _update_safety(cfg)
+    check("after a game update: nothing kept without evidence, no move on one site's word, a failed check or "
+          "broken cache leaves values off, an install from the old build is redone", ok, detail)
     problems = luacheck.check(palettes.ue4ss_script({}))
     check("palette script", not problems, "; ".join(problems[:3]))
     # Interact and Scent tracking move along F/E/Q, so Q goes quiet; X stays because Return to camp still
@@ -497,6 +503,144 @@ def _palettes_without_oodle(cfg):
         cfg._oodle_found, cfg._oodle_searched = found, searched
         if data:
             cfg.data["oodle_dll"] = data
+
+
+def _signatures(cfg):
+    """On the installed exe: the decoder cuts .pdata's functions at their ends, and (on a build wcmods was
+    checked on) signatures.check finds every class and every member where game.HIDDEN says."""
+    from . import gamebuild, pe, signatures, x64
+    exe = pe.game_exe(cfg)
+    if not exe:
+        return False, "no game exe"
+    img = pe.Image(exe)
+    total, exact = x64.check_functions(img, limit=3000)
+    if exact < total * 0.99:
+        return False, f"the decoder ends only {exact} of {total} functions where .pdata does"
+    if not gamebuild.current(cfg)["verified"]:
+        return True, f"decoder fine; build {gamebuild.current(cfg)['build']} isn't one wcmods was checked on, so the layout isn't compared"
+    res = signatures.check(exe, log=lambda m: None)
+    bad = [f"{gamebuild.describe(c + ':' + n)} {f['status']}" for c, rep in res["classes"].items()
+           for n, f in rep["fields"].items() if f["status"] not in ("same", "kept")]
+    missing = [c.rsplit(".", 1)[-1] for c, rep in res["classes"].items() if not rep["found"]]
+    signed = sum(1 for rep in res["classes"].values() for f in rep["fields"].values() if f["status"] == "same")
+    detail = f"{len(res['classes'])} classes, {signed} values confirmed by signatures"
+    return not bad and not missing, detail + (f"; {', '.join(missing + bad)}" if bad or missing else "")
+
+
+def _update_safety(cfg):
+    """PR #12's review: on an exe that isn't the one the signatures were made on, a class none of whose
+    members is found keeps nothing, and one site alone can't move a member; members the layout doesn't
+    name are left out; a check that fails or a cache cut short leaves every value off instead of stopping
+    the build; an install made on another build asks to be made again; and the cats' names are built."""
+    import copy
+    import json
+    from . import game, gamebuild, mods, pe, pipeline, signatures
+    from .config import Config
+    exe = pe.game_exe(cfg)
+    if not exe:
+        return True, "no game exe; skipped"
+    problems = []
+    sigs = copy.deepcopy(signatures.load())
+    sigs["made_on"] = dict(sigs["made_on"], text_sha1="not this exe")
+    res_cls = "/Script/SwtQuest.SwtQuestResourceComponent"
+    for cls, entry in sigs["classes"].items():
+        if cls.endswith(("TurnBasedCombatComponent", "GameplayGameState")):
+            entry["sites"] = []   # as if none of their code matched any more
+    max_was = sigs["classes"][res_cls]["fields"]["WCM_Max"]
+    for site in sigs["classes"][res_cls]["sites"]:   # Max's one site now "says" it moved
+        for k, was in site["captures"].items():
+            if was == max_was:
+                site["captures"][k] = 0x200
+    sigs["classes"][res_cls]["fields"]["WCM_Max"] = 0x200
+    res = signatures.check(exe, sigs, log=lambda m: None)
+    fields = {f"{c.rsplit('.', 1)[-1]}.{n}": f for c, rep in res["classes"].items() for n, f in rep["fields"].items()}
+    if fields["SwtQuestResourceComponent.WCM_Max"]["status"] != "unsure":
+        problems.append("one site moved Max")
+    if fields["SwtQuestResourceComponent.WCM_Value"]["status"] != "same":
+        problems.append("Value not found")
+    if fields["SwtQuestResourceComponent.WCM_ResourceType"]["now"] is not None:
+        problems.append("ResourceType kept beside a member that may have moved")
+    kept = [k for k, f in fields.items() if k.startswith(("TurnBasedCombat", "SwtAdventureGameplayGameState",
+                                                          "SwtAdventureLevelComponent")) and f["now"] is not None]
+    if kept:
+        problems.append("kept with no evidence: " + ", ".join(kept))
+    if res["same"]:
+        problems.append("reported the same")
+    if game.hidden({}) or game.hidden({k: -16 for k in gamebuild._members()}):
+        problems.append("members the layout doesn't name (or can't be offsets) still go in")
+
+    kept_env, kept_cache, kept_check = os.environ.get("WCMODS_GAME_BUILD"), gamebuild.CACHE_DIR, signatures.check
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["WCMODS_GAME_BUILD"] = "99999998"
+            gamebuild.CACHE_DIR = os.path.join(tmp, "cache")
+            os.makedirs(gamebuild.CACHE_DIR)
+            with open(gamebuild._cache_path(cfg, gamebuild.layout_key(cfg)), "w") as f:
+                f.write('{"build": 99999998, "offs')   # cut short
+            def broken(*a, **k):
+                raise ValueError("an exe unlike any wcmods knows")
+            signatures.check = broken
+            fit = gamebuild.layout(cfg, log=lambda m: None)
+            if fit["status"] != "partial" or any(v is not None for v in fit["offsets"].values()):
+                problems.append("a failed check didn't leave everything off")
+            # An install recorded on 24847281, with mods on: the game is now 99999998.
+            root = _mods_folder(tmp, {"m": ({"name": "M", "enabled": True, "game_builds": [99999998]}, {})})
+            conf = os.path.join(tmp, "conf")
+            os.makedirs(conf)
+            with open(os.path.join(conf, "wcmods.json"), "w") as f:
+                json.dump({"game_dir": cfg.game_dir, "installed": {"mods": ["m"], "built": "2999-01-01T00:00:00",
+                                                                     "game_build": 24847281}}, f)
+            p = pipeline.pending(Config(conf), mods.discover(root))
+            if not any("game updated" in r for r in p["redo"]):
+                problems.append("an install from the old build isn't redone")
+            if cfg.oodle_dll:   # the cats' names for the mod menu, built from the game's tables (layout still off)
+                pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
+                with open(os.path.join(tmp, "out", "ue4ss_shared", "WCModsNames", "WCModsNames.lua"), encoding="utf-8") as f:
+                    if len(f.read()) < 1000:
+                        problems.append("WCModsNames is empty")
+    finally:
+        signatures.check = kept_check
+        gamebuild.CACHE_DIR = kept_cache
+        if kept_env is None:
+            os.environ.pop("WCMODS_GAME_BUILD", None)
+        else:
+            os.environ["WCMODS_GAME_BUILD"] = kept_env
+    return not problems, "; ".join(problems)
+
+
+def _outdated_mods(cfg):
+    from . import gamebuild, mods, pipeline
+    kept_env, kept_cache = os.environ.get("WCMODS_GAME_BUILD"), gamebuild.CACHE_DIR
+    kept_allow = cfg.data.get("allow_outdated")
+    os.environ["WCMODS_GAME_BUILD"] = "99999999"   # as if Steam had installed a newer build
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            gamebuild.CACHE_DIR = os.path.join(tmp, "cache")   # what it works out for that build stays in tmp
+            root = _mods_folder(tmp, {
+                "old": ({"name": "Old", "enabled": True}, {"palette.json": '{"fur": {"0": "#ff8000"}}'}),
+                "new": ({"name": "New", "enabled": True, "game_builds": [24847281, 99999999]}, {}),
+                "needs-old": ({"name": "Needs old", "enabled": True, "game_builds": [99999999], "requires": ["old"]}, {})})
+            found = mods.discover(root)
+            old = gamebuild.outdated(cfg, found)
+            cfg.data["allow_outdated"] = {}
+            first = pipeline.build(cfg, found, os.path.join(tmp, "a"), log=lambda m: None)
+            cfg.data["allow_outdated"] = {"old": [99999999]}
+            second = pipeline.build(cfg, found, os.path.join(tmp, "b"), log=lambda m: None)
+        return (set(old) == {"old"} and old["old"]["made_for"] == list(gamebuild.ASSUMED_BUILDS)
+                and "old" not in first["mods"] and "new" in first["mods"] and "needs-old" not in first["mods"]
+                and first["outdated"][0]["used"] is False
+                and "old" in second["mods"] and "needs-old" in second["mods"] and second["outdated"][0]["used"] is True
+                and any("may behave unpredictably" in w for w in second["warnings"]))
+    finally:
+        gamebuild.CACHE_DIR = kept_cache
+        if kept_env is None:
+            os.environ.pop("WCMODS_GAME_BUILD", None)
+        else:
+            os.environ["WCMODS_GAME_BUILD"] = kept_env
+        if kept_allow is None:
+            cfg.data.pop("allow_outdated", None)
+        else:
+            cfg.data["allow_outdated"] = kept_allow
 
 
 def _csv_rows():

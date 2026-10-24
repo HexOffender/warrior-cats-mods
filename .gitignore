@@ -13,3 +13,4 @@ designer/game-data.js
 __pycache__/
 *.pyc
 .claude/
+cache/

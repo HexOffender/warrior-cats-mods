@@ -17,8 +17,8 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (bridge, catlook, colors, controls, csvdata, eyeatlas, ingame, mods, modzip, names, onboarding,
-               palettes, pipeline, save, ue4ss)
+from . import (bridge, catlook, colors, controls, csvdata, eyeatlas, gamebuild, ingame, mods, modzip, names,
+               onboarding, palettes, pipeline, save, ue4ss)
 from .bridge import Bridge, BridgeError
 from .colors import hex_from_linear
 from .config import game_running
@@ -125,7 +125,13 @@ class Studio:
                     "installed": cfg.data.get("installed"), "install_outdated": pipeline.install_outdated(cfg),
                     "code_changed": self.code_changed(),
                     "allow_code_mods": bool(cfg.data.get("allow_code_mods")),
-                    "sections": sections}
+                    "game_build": gamebuild.current(cfg), "sections": sections}
+        if parts == ["game", "update"] and method == "GET":
+            # How wcmods stands on a build it wasn't checked on (worked out once per game update, ~a minute).
+            with self.lock:   # an install may be working it out too: once, not twice at the same time
+                fit = gamebuild.layout(cfg)
+            return {**fit, "moved": [gamebuild.describe(k) for k in fit["moved"]],
+                    "lost": [gamebuild.describe(k) for k in fit["lost"]], "offsets": None}
         if parts == ["setup"] and method == "GET":
             # "Get set up" on the Mods page (wcmods/onboarding.py), and a mod dropped on the launcher.
             waiting = onboarding.inbox()
@@ -195,11 +201,26 @@ class Studio:
                 raise RuntimeError(str(e)) from None
         if parts == ["mods"] and method == "GET":
             found = self.mods()
-            unmet = mods.unmet(found)
+            old = gamebuild.outdated(cfg, found)
+            held = gamebuild.held_back(cfg, found)
+            unmet = mods.unmet(found, held)
             names = {m.id: m.name for m in found}
+            for i, why in held.items():   # needs a mod made for an older version: left out with it
+                if i not in old:
+                    unmet.setdefault(i, []).append(f"left out: it {why}")
             return [{**m.to_dict(), "problems": unmet.get(m.id, []),
                      "needed_by": [names[i] for i in mods.needing(found, m.id)],
-                     "requires_names": [names.get(i, i) for i in m.requires]} for m in found]
+                     "requires_names": [names.get(i, i) for i in m.requires],
+                     "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id)} for m in found]
+        if len(parts) == 3 and parts[0] == "mods" and parts[2] == "allow-outdated" and method == "POST":
+            # Use a mod made for an older version of the game anyway, on this build only (the page warns first).
+            build = gamebuild.current(cfg)["build"]
+            if build is None:
+                raise RuntimeError("couldn't tell which build of the game is installed")
+            self.mod(parts[1])
+            with self.lock:
+                gamebuild.allow(cfg, parts[1], build, on=bool(body.get("on", True)))
+            return {"build": build, "allowed": bool(body.get("on", True))}
         if parts == ["changes"] and method == "GET":
             found = self.mods()
             p = pipeline.pending(cfg, found)

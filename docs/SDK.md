@@ -36,6 +36,7 @@ To try one, copy it into `mods/` and allow code mods.
 mods/my-mod/
   mod.json            {"name", "description", "enabled", "priority", "version", "author",
                        "requires" (mods it can't work without), "uses" (mods it works with),
+                       "game_builds" (the game's builds it was made for; docs/updating.md),
                        "studio_title" (nav label), "studio_files" (["my-settings.json"])}
   menu.json           the in-game mod menu itself       -> only mods/mod-menu (see "WCModsMenu")
   files/Wrc/...       replacement game files            -> section "files"
