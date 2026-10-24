@@ -13,6 +13,7 @@ function chip(text, kind, title) {
 }
 
 const installBtn = document.getElementById("installBtn");
+const playBtn = document.getElementById("playBtn");
 
 async function refreshStatus() {
   let changes = null;
@@ -26,7 +27,7 @@ async function refreshStatus() {
   clear(statusBox).append(...[
     chip(info.game_running ? "Game running" : "Game closed", info.game_running ? "warn" : "good",
       info.game_running ? "Close the game to apply mods" : ""),
-    info.ue4ss ? null : chip("No UE4SS", "warn", "The mod menu, mouse look, colours on your own cat and in-game scripts need UE4SS"),
+    info.ue4ss ? null : chip("No script loader", "warn", "Most mods need the script loader (UE4SS): Get set up, on the Mods page, installs it"),
     info.save_found ? null : chip("No save yet", "warn", "Start the game once, so there's a save"),
     info.code_changed
       ? chip("Restart the studio", "bad", "wcmods was updated while the studio was open. Close this window and open Clan Mod Studio again before applying.")
@@ -42,6 +43,10 @@ async function refreshStatus() {
   ].filter(Boolean));
   installBtn.disabled = info.game_running;
   installBtn.title = info.game_running ? "Close the game first" : "Build your mods and put them in the game";
+  // Play applies what's waiting first, then starts the game (with key remaps, when mods have any).
+  playBtn.disabled = info.game_running;
+  playBtn.textContent = info.game_running ? "Playing" : changes && changes.any ? "Apply and play" : "Play";
+  playBtn.title = info.game_running ? "The game is running" : "Start the game" + (changes && changes.any ? ", after putting your changes in" : "");
   return info;
 }
 
@@ -117,13 +122,14 @@ async function runTask(path, title, body = {}) {
     const manifest = r.result && r.result.sections ? r.result : null;
     const lines = [...(manifest ? summarize(manifest) : []), "", ...r.log];
     drawerLog.textContent = lines.join("\n").trim() || "Done.";
-    toast(`${title}: done`);
+    toast(path === "/play" ? "Starting the game…" : `${title}: done`);
+    if (path === "/play") setTimeout(() => { drawer.hidden = true; }, 4000);
     bus.emit("installed", r.result);
     if (path === "/palettes/apply") bus.emit("mods-changed");   // it turned mods on and off
   } catch (e) {
     drawerLog.textContent = e.message;
     toast(e.message, "bad");
-    if ((path === "/install" || path === "/palettes/apply") && e.message.startsWith("not installing")) {
+    if ((path === "/install" || path === "/play" || path === "/palettes/apply") && e.message.startsWith("not installing")) {
       drawer.append(el("div", { class: "row force", style: { padding: "0 14px 14px" } },
         wc.confirmButton("Apply the rest anyway", "Click again: the failed mods' earlier changes are removed",
           () => runTask(path, title, { ...body, force: true }), "btn danger")));
@@ -132,6 +138,7 @@ async function runTask(path, title, body = {}) {
   await refreshStatus();
 }
 installBtn.addEventListener("click", () => runTask("/install", "Apply to game"));
+playBtn.addEventListener("click", () => runTask("/play", "Play"));
 bus.on("apply", () => runTask("/install", "Apply to game"));
 bus.on("run-task", ({ path, title, body }) => runTask(path, title, body));
 bus.on("mods-changed", () => refreshStatus());
@@ -153,4 +160,6 @@ bus.on("mods-changed", () => refreshStatus());
     if (id !== active && info.sections.some(s => s.id === id)) open(id);
   });
   setInterval(refreshStatus, 15000);
+  // Coming back to the studio (after the game, or after dropping a mod on its launcher): look again.
+  window.addEventListener("focus", () => { refreshStatus(); bus.emit("focus"); });
 })();

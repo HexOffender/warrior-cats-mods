@@ -555,8 +555,10 @@ def cmd_find(ctx, args):
 
 def cmd_studio(ctx, args):
     from . import studio
-    ctx.need_game()
-    studio.serve(ctx, port=args.port, open_browser=not args.no_browser)
+    # No ctx.need_game(): without the game, the studio opens on its "Get set up" steps, which ask where it is.
+    if args.add and not os.path.exists(args.add):
+        sys.exit(f"there's no {args.add}")
+    studio.serve(ctx, port=args.port, open_browser=not args.no_browser, add=args.add)
 
 
 def main(root, argv=None):
@@ -566,6 +568,7 @@ def main(root, argv=None):
     p = sub.add_parser("studio", help="open the mod manager in your browser")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--no-browser", action="store_true")
+    p.add_argument("--add", metavar="ZIP_OR_FOLDER", help="open with this mod ready to add (what dropping it on Clan Mod Studio does)")
     p.set_defaults(fn=cmd_studio)
     for name, value in (("enable", True), ("disable", False)):
         p = sub.add_parser(name, help=f"{name} mods by folder name" + (" (and the mods they require)" if value else ""))

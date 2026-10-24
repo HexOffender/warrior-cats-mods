@@ -1,7 +1,119 @@
-"""Install and register UE4SS Lua mods (mods.txt and mods.json both list enabled mods)."""
+"""UE4SS, the script loader: install it in the game, and install and register Lua mods in it (mods.txt and
+mods.json both list enabled mods)."""
 import json
 import os
+import re
 import shutil
+import tempfile
+import zipfile
+
+# Where UE4SS comes from: its project's GitHub releases. wcmods is tried with the experimental build
+# (UE4SS_v3.0.1-1181-g83330635.zip, the release's UE4SS_v*.zip; the zDEV one is for UE4SS's own
+# developers).
+RELEASE_API = "https://api.github.com/repos/UE4SS-RE/RE-UE4SS/releases/tags/experimental-latest"
+RELEASE_PAGE = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest"
+ASSET = re.compile(r"^UE4SS_v[0-9][^/\\]*\.zip$")
+MAX_ZIP = 200 * 1024 * 1024
+# Its settings for players: no debug console windows over the game.
+SETTINGS = {"ConsoleEnabled": "0", "GuiConsoleEnabled": "0", "GuiConsoleVisible": "0"}
+
+
+def loader_installed(win64_dir):
+    """Whether UE4SS is in the game (its dwmapi.dll, which the game loads, and its ue4ss folder)."""
+    return bool(win64_dir) and os.path.isfile(os.path.join(win64_dir, "dwmapi.dll")) \
+        and os.path.isfile(os.path.join(win64_dir, "ue4ss", "UE4SS.dll"))
+
+
+def find_release(timeout=20):
+    """The UE4SS download wcmods uses: {"name", "url", "size", "page"} from GitHub."""
+    import urllib.request
+    req = urllib.request.Request(RELEASE_API, headers={"User-Agent": "wcmods", "Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = json.load(r)
+    for a in data.get("assets", []):
+        if ASSET.match(a.get("name", "")):
+            return {"name": a["name"], "url": a["browser_download_url"], "size": a.get("size"), "page": RELEASE_PAGE}
+    raise RuntimeError(f"UE4SS's release page has no UE4SS_v*.zip any more; download it from {RELEASE_PAGE} "
+                       "and give the .zip to Clan Mod Studio")
+
+
+def download(asset, folder, timeout=60):
+    """Download a release asset into folder; returns the file's path."""
+    import urllib.request
+    path = os.path.join(folder, os.path.basename(asset["name"]))
+    req = urllib.request.Request(asset["url"], headers={"User-Agent": "wcmods"})
+    got = 0
+    with urllib.request.urlopen(req, timeout=timeout) as r, open(path, "wb") as f:
+        while True:
+            chunk = r.read(1024 * 1024)
+            if not chunk:
+                break
+            got += len(chunk)
+            if got > MAX_ZIP:
+                raise RuntimeError("the UE4SS download is far bigger than it should be; stopped")
+            f.write(chunk)
+    if asset.get("size") and got != asset["size"]:
+        raise RuntimeError(f"the UE4SS download stopped early ({got} of {asset['size']} bytes); try again")
+    return path
+
+
+def install_loader(zip_path, win64_dir, console=True, log=print):
+    """Put UE4SS in the game from its release .zip (dwmapi.dll and the ue4ss folder at its top), set up
+    for players (configure_loader). The game must be closed. Returns the files written."""
+    with zipfile.ZipFile(zip_path) as z:
+        members = []
+        for info in z.infolist():
+            name = info.filename.replace("\\", "/")
+            parts = [p for p in name.split("/") if p not in ("", ".")]
+            if name.startswith("/") or re.match(r"^[A-Za-z]:", name) or ".." in parts:
+                raise ValueError(f"{info.filename}: not a safe path; this isn't UE4SS's .zip")
+            if info.is_dir() or not parts or (parts[0] != "dwmapi.dll" and parts[0] != "ue4ss"):
+                continue
+            members.append((parts, info))
+        names = {"/".join(p) for p, _ in members}
+        if "dwmapi.dll" not in names or "ue4ss/UE4SS.dll" not in names:
+            raise ValueError("this isn't UE4SS's .zip (it has no dwmapi.dll and ue4ss/UE4SS.dll at its top); "
+                             f"get UE4SS_v*.zip from {RELEASE_PAGE}")
+        if sum(i.file_size for _, i in members) > MAX_ZIP:
+            raise ValueError("this .zip unpacks to far more than UE4SS does")
+        written = []
+        for parts, info in members:
+            dest = os.path.join(win64_dir, *parts)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with z.open(info) as src, open(dest, "wb") as out:
+                shutil.copyfileobj(src, out, 1024 * 1024)
+            written.append(dest)
+    log(f"  UE4SS: {len(written)} files in {win64_dir}")
+    configure_loader(win64_dir, console=console)
+    return written
+
+
+def configure_loader(win64_dir, console=True):
+    """UE4SS set up for players: its debug console windows off, its cheat-manager enabler off (the mod
+    menu's Cheats page does that, and can switch cheats off again), and its console enabler (~ or F10
+    opens the game's console) on or off."""
+    ini = os.path.join(win64_dir, "ue4ss", "UE4SS-settings.ini")
+    if os.path.isfile(ini):
+        with open(ini, encoding="utf-8-sig") as f:
+            text = f.read()
+        for key, value in SETTINGS.items():
+            text = re.sub(rf"(?m)^({key}\s*=\s*).*$", lambda m: m.group(1) + value, text)
+        with open(ini, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+    mods_dir = os.path.join(win64_dir, "ue4ss", "Mods")
+    if os.path.isdir(mods_dir):
+        set_registered(mods_dir, "CheatManagerEnablerMod", False)
+        if os.path.isdir(os.path.join(mods_dir, "ConsoleEnablerMod")):
+            set_registered(mods_dir, "ConsoleEnablerMod", console)
+
+
+def download_and_install(win64_dir, console=True, log=print):
+    """find_release, download and install_loader in one go; returns the release it installed."""
+    asset = find_release()
+    log(f"downloading {asset['name']} ({(asset['size'] or 0) / 1024 / 1024:.1f} MB) from GitHub...")
+    with tempfile.TemporaryDirectory() as tmp:
+        install_loader(download(asset, tmp), win64_dir, console=console, log=log)
+    return asset
 
 
 def _register(mods_dir, name, enabled):

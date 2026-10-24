@@ -16,7 +16,7 @@ class Config:
         self.root = root
         self.path = os.path.join(root, "wcmods.json")
         self.data = {}
-        self._oodle_searched = False
+        self._oodle_searched, self._oodle_found = False, None
         self.reload()
 
     def reload(self):
@@ -65,18 +65,20 @@ class Config:
         d = self.data.get("oodle_dll")
         if d and os.path.isfile(d):
             return d
-        if self._oodle_searched:   # walking every Steam library is slow; do it once per run
-            return None
-        from .oodle import find_oodle_dll
-        self._oodle_searched = True
-        d = find_oodle_dll(_steam_common_dirs())
-        if d:
-            self.data["oodle_dll"] = d
-        return d
+        if not self._oodle_searched:   # walking every Steam library is slow; do it once per run
+            from .oodle import find_oodle_dll
+            self._oodle_searched = True
+            self._oodle_found = find_oodle_dll(_steam_common_dirs())
+        # Kept apart from data, so a reload() before wcmods.json is saved doesn't lose what was found.
+        if self._oodle_found:
+            self.data["oodle_dll"] = self._oodle_found
+        return self._oodle_found
 
     @property
     def ue4ss_mods_dir(self):
         """UE4SS 3.x keeps mods in Win64/ue4ss/Mods; older builds use Win64/Mods."""
+        if not self.game_dir:   # the studio still opens, to ask where the game is
+            return None
         for sub in (("ue4ss", "Mods"), ("Mods",)):
             d = os.path.join(self.win64_dir, *sub)
             if os.path.isdir(d):

@@ -53,6 +53,8 @@ def run(cfg, oodle, log=print):
           _mod_zip_guards())
     check("mods that need other mods: switched on together, left out of a build without them", _requirements(cfg))
     check("the mod menu is a mod: its window and module only with it on", _menu_mod(cfg))
+    check("getting set up: the game found from any of its folders, a first backup, the script loader", _onboarding())
+    check("palettes without the Oodle DLL: eye colours left out with a warning, the rest built", _palettes_without_oodle(cfg))
     problems = luacheck.check(palettes.ue4ss_script({}))
     check("palette script", not problems, "; ".join(problems[:3]))
     # Interact and Scent tracking move along F/E/Q, so Q goes quiet; X stays because Return to camp still
@@ -348,6 +350,70 @@ def _menu_builds(cfg):
             results.append((out["menu"], menu.HOST_NAME in out["ue4ss_mods"], menu.SHARED_NAME in out["ue4ss_shared"],
                             '"F2"' in text or "F2" in text))
     return results == [("mod-menu", True, True, True), (None, False, False, False)]
+
+
+def _onboarding():
+    """In a made-up game folder and save: the game is found from its exe's folder, the first backup is
+    made once there's a save, UE4SS goes in from its .zip set up for players, and a dropped .zip waits
+    in the inbox until it's taken."""
+    import json
+    from . import onboarding, ue4ss
+    from .config import EXE_NAME, Config
+    with tempfile.TemporaryDirectory() as tmp:
+        win64 = os.path.join(tmp, "Game", "Wrc", "Binaries", "Win64")
+        os.makedirs(win64)
+        open(os.path.join(win64, EXE_NAME), "w").close()
+        os.makedirs(os.path.join(tmp, "Saves"))
+        root = os.path.join(tmp, "wcmods")
+        os.makedirs(root)
+        with open(os.path.join(root, "wcmods.json"), "w") as f:
+            json.dump({"save_dir": os.path.join(tmp, "Saves")}, f)
+        cfg = Config(root)
+        found = onboarding.set_game_dir(cfg, win64)
+        backups = os.path.join(tmp, "backups")
+        none_yet = onboarding.first_backup(cfg, backups)
+        open(os.path.join(tmp, "Saves", "WrcGame.sav"), "w").close()
+        first = onboarding.first_backup(cfg, backups)
+        again = onboarding.first_backup(cfg, backups)
+        z = _zip(os.path.join(tmp, "UE4SS_v3.0.1-test.zip"), {
+            "dwmapi.dll": "MZ", "ue4ss/UE4SS.dll": "MZ", "ue4ss/UE4SS-settings.ini": "GuiConsoleEnabled = 1\n",
+            "ue4ss/Mods/mods.txt": "CheatManagerEnablerMod : 1\n; Built-in keybinds, do not move up!\nKeybinds : 1\n"})
+        ue4ss.install_loader(z, win64, log=lambda m: None)
+        ini = open(os.path.join(win64, "ue4ss", "UE4SS-settings.ini")).read()
+        txt = open(os.path.join(win64, "ue4ss", "Mods", "mods.txt")).read()
+        st = onboarding.status(cfg, backups)
+        kept = onboarding.INBOX
+        onboarding.INBOX = os.path.join(tmp, "inbox.json")
+        try:
+            onboarding.put_inbox(z)
+            waiting = onboarding.inbox()
+            onboarding.clear_inbox()
+            gone = onboarding.inbox()
+        finally:
+            onboarding.INBOX = kept
+        return (os.path.normcase(found) == os.path.normcase(os.path.join(tmp, "Game")) and none_yet is None
+                and first and first.endswith("first-run") and again is None
+                and "GuiConsoleEnabled = 0" in ini and "CheatManagerEnablerMod : 0" in txt
+                and st["game"]["ok"] and st["loader"]["ok"] and st["backup"]["ok"] and st["done"]
+                and os.path.normcase(waiting) == os.path.normcase(z) and gone is None)
+
+
+def _palettes_without_oodle(cfg):
+    from . import mods, pipeline
+    found, searched, data = cfg._oodle_found, cfg._oodle_searched, cfg.data.pop("oodle_dll", None)
+    cfg._oodle_found, cfg._oodle_searched = None, True
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _mods_folder(tmp, {"colours": ({"name": "Colours", "enabled": True},
+                                                  {"palette.json": '{"eyes": {"Green": "#00ff00"}, "fur": {"0": "#ff8000"}}'})})
+            out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
+            rep = out["sections"].get("palettes", {})
+            return (rep.get("status") == "ok" and "colours" in rep.get("mods", [])
+                    and any("eye colours left out" in w for w in out["warnings"]))
+    finally:
+        cfg._oodle_found, cfg._oodle_searched = found, searched
+        if data:
+            cfg.data["oodle_dll"] = data
 
 
 def _csv_rows():

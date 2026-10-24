@@ -322,14 +322,41 @@ def add_zip(path, mods_root, backups_root, ids=None, enable=True, name=None):
     return done + [{"id": f["id"], "name": f["name"], "skipped": BUILTIN_SKIP} for f in skipped]
 
 
+def _mod_folders(path):
+    path = os.path.abspath(path)
+    if os.path.isfile(os.path.join(path, "mod.json")):
+        return [path]
+    return sorted(os.path.join(path, d) for d in os.listdir(path)
+                  if not d.startswith("_") and os.path.isfile(os.path.join(path, d, "mod.json")))
+
+
+def inspect_folder(path, mods_root):
+    """As inspect(), for a folder that is a mod or holds mod folders."""
+    out = []
+    for folder in _mod_folders(path):
+        try:
+            with open(os.path.join(folder, "mod.json"), encoding="utf-8-sig") as f:
+                meta = json.load(f)
+        except ValueError as e:
+            raise ValueError(f"{os.path.basename(folder)}: mod.json isn't valid JSON ({e})") from None
+        names, size = [], 0
+        for d, dirs, files in os.walk(folder):
+            dirs[:] = [x for x in dirs if x not in IGNORED]
+            for fn in files:
+                full = os.path.join(d, fn)
+                names.append(os.path.relpath(full, folder).replace(os.sep, "/"))
+                size += os.path.getsize(full)
+        out.append(_found(mods_root, safe_id(os.path.basename(folder)), meta if isinstance(meta, dict) else {},
+                          names, size, ""))
+    if not out:
+        raise ValueError(f"{path} has no mod in it (a mod is a folder with a mod.json)")
+    return out
+
+
 def add_folder(path, mods_root, backups_root, enable=True):
     """Add a mod from a folder (one with a mod.json, or holding mod folders). Returns as add_zip."""
     path = os.path.abspath(path)
-    if os.path.isfile(os.path.join(path, "mod.json")):
-        folders = [path]
-    else:
-        folders = sorted(os.path.join(path, d) for d in os.listdir(path)
-                         if not d.startswith("_") and os.path.isfile(os.path.join(path, d, "mod.json")))
+    folders = _mod_folders(path)
     if not folders:
         raise ValueError(f"{path} has no mod in it (a mod is a folder with a mod.json)")
     try:

@@ -1,9 +1,11 @@
 @echo off
 rem Double-click to start Warrior Cats with your key remaps (the Controls page) active.
 rem The remapper stops by itself when the game closes; close this window to stop it sooner.
+rem Clan Mod Studio's Play button does the same.
 title Warrior Cats - key remapper
 cd /d "%~dp0"
-where python >nul 2>nul && (set "PY=python") || (set "PY=py -3")
+call "%~dp0wcmods\findpython.bat"
+if not defined PY exit /b 1
 %PY% wcmods.py play
 if errorlevel 1 (
   echo.

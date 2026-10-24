@@ -17,9 +17,13 @@ class PaletteSection(Section):
 
     def build(self, ctx, items):
         merged = palettes.merge([data for _, data in items])
+        if "eyes" in merged and ctx.game.oodle is None:
+            # The eye atlas is compressed in the game's files; coat, pattern and marking colours go in
+            # at runtime and still work.
+            ctx.warn("eye colours left out: they need the Oodle DLL (oo2core_*_win64.dll, from another game) to "
+                     "read the game's eye atlas; the rest of the palettes go in")
+            merged.pop("eyes")
         if "eyes" in merged:
-            if ctx.game.oodle is None:
-                raise RuntimeError("eye palettes need the Oodle DLL to read the game's eye atlas")
             atlas = eyeatlas.EyeAtlas(ctx.read_game_file(eyeatlas.PATH))
             # A misspelled slot in one mod skips just that entry, not every mod's palette.
             for mod, data in items:
