@@ -1,6 +1,0 @@
-{
-  "name": "NPC Size Variety",
-  "description": "Wider size range for generated Clan cats (visual only; affects newly generated cats).",
-  "enabled": true,
-  "priority": 0
-}

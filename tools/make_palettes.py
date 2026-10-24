@@ -1,6 +1,7 @@
-"""Generate the themed palette examples in examples/palette-*/ from the game's own colours.
+"""Generate the themed palette examples (palette-*/ in the wcmods-examples repository) from the game's
+own colours.
 
-    python tools/make_palettes.py            # (re)writes every preset; they start turned off
+    python tools/make_palettes.py --out ../wcmods-examples   # (re)writes every one; they start turned off
 
 Themes are priority -10, below eyes-only and coats-only palettes, so those can go on top of one.
 Each theme grades the game's natural coat, pattern and marking colours (slots 0-14), so a slot keeps
@@ -197,9 +198,16 @@ def build(theme, tables, rims):
 
 
 def main():
+    import argparse
+    p = argparse.ArgumentParser(description="Generate the themed palette examples from the game's colours.")
+    p.add_argument("--out", default=os.path.join(os.path.dirname(ROOT), "wcmods-examples"),
+                   help="the wcmods-examples checkout to write palette-*/ into (default: beside wcmods)")
+    out = os.path.abspath(p.parse_args().out)
+    if not os.path.isdir(out):
+        sys.exit(f"{out} doesn't exist: clone wcmods-examples there, or pass --out")
     tables, rims = game_colours()
     for mod_id, theme in THEMES.items():
-        folder = os.path.join(ROOT, "examples", "palette-" + mod_id)
+        folder = os.path.join(out, "palette-" + mod_id)
         os.makedirs(folder, exist_ok=True)
         meta_path = os.path.join(folder, "mod.json")
         # Full themes sit below partial palettes (Gemstone Eyes, Richer Coats are priority 0), so an
@@ -214,7 +222,7 @@ def main():
         with open(os.path.join(folder, "palette.json"), "w", encoding="utf-8", newline="\n") as f:
             json.dump(build(theme, tables, rims), f, indent=2)
             f.write("\n")
-        print(f"wrote examples/palette-{mod_id}")
+        print(f"wrote {folder}")
 
 
 if __name__ == "__main__":

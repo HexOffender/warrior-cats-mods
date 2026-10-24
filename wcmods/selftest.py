@@ -53,7 +53,6 @@ def run(cfg, oodle, log=print):
           _mod_zip_guards())
     check("mods that need other mods: switched on together, left out of a build without them", _requirements(cfg))
     check("the mod menu is a mod: its window and module only with it on", _menu_mod(cfg))
-    check("example mods: each one in examples/ reads, and the studio can list and add them", _examples())
     check("getting set up: the game found from any of its folders, a first backup, the script loader", _onboarding())
     check("palettes without the Oodle DLL: eye colours left out with a warning, the rest built", _palettes_without_oodle(cfg))
     check("getting set up, the rough edges: an install from before UE4SS is redone, a folder adds only the "
@@ -359,25 +358,6 @@ def _menu_builds(cfg):
             results.append((out["menu"], menu.HOST_NAME in out["ue4ss_mods"], menu.SHARED_NAME in out["ue4ss_shared"],
                             '"F2"' in text or "F2" in text))
     return results == [("mod-menu", True, True, True), (None, False, False, False)]
-
-
-def _examples():
-    """wcmods ships only the mod menu in mods/; examples/ holds the rest, each a mod the studio lists
-    and adds as a copy."""
-    from . import mods, modzip
-    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    folder = os.path.join(here, "examples")
-    found = mods.discover(folder)
-    listed = modzip.inspect_folder(folder, os.path.join(here, "mods"))
-    with tempfile.TemporaryDirectory() as tmp:
-        mine = os.path.join(tmp, "mods")
-        os.makedirs(mine)
-        added = modzip.add_folder(folder, mine, os.path.join(tmp, "backups"), ids=["palette-dark-forest"], enable=True)
-        copied = mods.discover(mine)
-    return (len(found) >= 10 and len(listed) == len(found) and all(m.name for m in found)
-            and not any(m.builtin for m in found)
-            and [a["id"] for a in added] == ["palette-dark-forest"] and [m.id for m in copied] == ["palette-dark-forest"]
-            and copied[0].enabled)
 
 
 def _onboarding():

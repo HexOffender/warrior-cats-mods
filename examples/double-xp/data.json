@@ -1,6 +1,0 @@
-{
-  "_help": "Row \"*\" means every row; \"x2\" multiplies the game's own value.",
-  "CombatBaseExperience.csv": {
-    "*": { "BaseExperience": "x2" }
-  }
-}

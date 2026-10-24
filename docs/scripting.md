@@ -52,9 +52,10 @@ the Mod menu mod is on; say `"uses": ["mod-menu"]` in `mod.json` so Clan Mod Stu
 mod has one. A script that can't work without the menu says `"requires": ["mod-menu"]` instead.
 
 `python wcmods.py new my-script --kind script` makes a new one to start from.
-[`examples/game-tweaks`](../examples/game-tweaks) is a complete one: it keeps stamina full, holds the
-time of day, keeps the fresh-kill pile up and heals on a key, with its settings on a page. Add it in
-the studio (or `wcmods add examples/game-tweaks`), allow code mods, and apply.
+[game-tweaks](https://github.com/HexOffender/wcmods-examples/tree/main/game-tweaks), in wcmods-examples, is a complete one: it
+keeps stamina full, holds the time of day, keeps the fresh-kill pile up and heals on a key, with its
+settings on a page. Add it in the studio (or `wcmods add ../wcmods-examples/game-tweaks`), allow code
+mods, and apply.
 
 ```lua
 -- mods/my-mod/scripts/main.lua

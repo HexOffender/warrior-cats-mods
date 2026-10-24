@@ -1,8 +1,0 @@
-{
-  "_help": "Game Tweaks' settings. Change them on its page in the mod menu (Insert) and press Save, or edit them here and install again.",
-  "keep_stamina_full": false,
-  "hold_time": false,
-  "time_of_day": 12.0,
-  "min_fresh_kill": 0,
-  "heal_key": "F6"
-}

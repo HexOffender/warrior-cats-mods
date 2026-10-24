@@ -1,8 +1,0 @@
-{
-  "name": "Faster Movement",
-  "description": "Example mod that ships its own section (section.py) and studio page (studio/section.js).",
-  "enabled": true,
-  "priority": 0,
-  "studio_title": "Faster movement",
-  "studio_files": ["faster-run.json"]
-}

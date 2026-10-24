@@ -1,6 +1,0 @@
-{
-  "name": "Example Controls",
-  "description": "Example remaps (Interact on F, Scent tracking on Tab...). Use the Controls page or copy this into your own mod.",
-  "enabled": false,
-  "priority": 0
-}
