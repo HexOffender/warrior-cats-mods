@@ -24,7 +24,9 @@ async function refreshStatus() {
       info.game_running ? "Close the game before installing" : ""),
     chip(info.ue4ss ? "UE4SS installed" : "No UE4SS", info.ue4ss ? "good" : "warn"),
     chip(info.save_found ? "Save found" : "No save yet", info.save_found ? "good" : "warn"),
-    chip(info.installed ? `Installed: ${info.installed.mods.length} mods` : "Nothing installed", info.installed ? "good" : ""));
+    info.install_outdated
+      ? chip("Install again", "warn", "The installed mods were built by an older wcmods, and the game can't find their files. Install to rebuild them.")
+      : chip(info.installed ? `Installed: ${info.installed.mods.length} mods` : "Nothing installed", info.installed ? "good" : ""));
   return info;
 }
 

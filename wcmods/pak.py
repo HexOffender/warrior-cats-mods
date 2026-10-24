@@ -7,7 +7,7 @@ import hashlib
 import struct
 import zlib
 
-from .binio import fnv64, read_fstring, write_fstring
+from .binio import fnv64, read_fstring, write_fstring, write_utf8_string
 
 PAK_MAGIC = 0x5A6F12E1
 PAK_VERSION = 12
@@ -18,11 +18,26 @@ class PakEntry:
     __slots__ = ("path", "offset", "size", "raw_size", "method", "block_size", "block_sizes", "encrypted")
 
 
+def _read_file_name(buf, p):
+    """A file name from a version 12 directory index: byte length, then UTF-8 with no terminator.
+    Returns (name, new_offset, legacy). legacy is True for a name ending in NUL or stored as a UTF-16
+    FString, the way older wcmods wrote them; the engine keeps the NUL, so it never finds those files."""
+    (n,) = struct.unpack_from("<i", buf, p)
+    if n < 0:
+        name, p = read_fstring(buf, p)
+        return name, p, True
+    raw = buf[p + 4:p + 4 + n]
+    if len(raw) != n:
+        raise ValueError("directory index is cut short")
+    return raw.rstrip(b"\0").decode("utf-8"), p + 4 + n, raw.endswith(b"\0")
+
+
 class PakReader:
     def __init__(self, path, oodle=None):
         self.path = path
         self.oodle = oodle
         self.entries = {}
+        self.legacy_file_names = 0   # names stored the way older wcmods wrote them (see _read_file_name)
         with open(path, "rb") as f:
             f.seek(0, 2)
             total = f.tell()
@@ -57,7 +72,11 @@ class PakReader:
             d, q = read_fstring(fdi, q)
             (nf,) = struct.unpack_from("<i", fdi, q); q += 4
             for _ in range(nf):
-                fn, q = read_fstring(fdi, q)
+                if self.version >= 12:
+                    fn, q, legacy = _read_file_name(fdi, q)
+                    self.legacy_file_names += legacy
+                else:
+                    fn, q = read_fstring(fdi, q)
                 (eoff,) = struct.unpack_from("<i", fdi, q); q += 4
                 if eoff >= 0:
                     e = _decode_entry(enc, eoff)
@@ -165,11 +184,13 @@ class PakWriter:
             for k in range(1, len(parts) + 1):
                 dirs.setdefault("/".join(parts[:k]) + "/", {})
             dirs[(parent + "/") if parent else "/"][name] = loc
+        # Folder names are FStrings; file names are UTF-8 without a terminator (version 12). A file
+        # name written as an FString reads back with a trailing NUL, so the engine never finds it.
         fdi = bytearray(struct.pack("<i", len(dirs)))
         for d in sorted(dirs):
             fdi += write_fstring(d) + struct.pack("<i", len(dirs[d]))
             for name in sorted(dirs[d]):
-                fdi += write_fstring(name) + struct.pack("<i", dirs[d][name])
+                fdi += write_utf8_string(name) + struct.pack("<i", dirs[d][name])
 
         phi = bytearray(struct.pack("<i", len(locations)))
         for path, loc in sorted(locations.items()):

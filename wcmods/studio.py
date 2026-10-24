@@ -68,7 +68,8 @@ class Studio:
                                          "module": f"/mods/{m.id}/studio/section.js", "from_mod": m.id})
             return {"game_dir": cfg.game_dir, "save_found": os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)),
                     "oodle": bool(cfg.oodle_dll), "ue4ss": bool(cfg.ue4ss_mods_dir), "game_running": game_running(),
-                    "installed": cfg.data.get("installed"), "allow_code_mods": bool(cfg.data.get("allow_code_mods")),
+                    "installed": cfg.data.get("installed"), "install_outdated": pipeline.install_outdated(cfg),
+                    "allow_code_mods": bool(cfg.data.get("allow_code_mods")),
                     "sections": sections}
         if parts == ["mods"] and method == "GET":
             return [m.to_dict() for m in self.mods()]

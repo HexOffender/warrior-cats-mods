@@ -253,13 +253,20 @@ colour.
 `selftest` checks, against your install:
 - **Game files:** reading the paks, container and save; Oodle decompression; the eye atlas layout.
 - **Writers:** paks and IoStore containers read back identically, with correct BLAKE3 chunk hashes.
+  The pak's directory index stores file names the way the game's own pak does (see below).
 - **CSV editor:** reproduces all 67 runtime tables byte-for-byte.
 - **Save editor:** changes only the values it's told to.
 - **UE4SS scripts:** the generated Lua has balanced blocks and brackets (a light structure check;
   there's no Lua interpreter to fully parse it). Builds also warn if any UE4SS script fails it.
 
 Confirmed in game (2026-10-23):
-- The mod pak and container load, and eye palettes change the cats' eyes.
+- The mod container loads, and eye palettes change the cats' eyes.
+- The mod pak's files replace the game's: an edit to the game's English text (`Strings_EN.csv`)
+  renamed the player's Otterpaw to Mothpaw on screen. Paks built by earlier versions of wcmods
+  loaded, but the engine found none of their files, so game data, replacement files and text edits
+  had no effect; install again to rebuild them (`status` and the studio say so). Pak version 12
+  stores file names in the directory index as UTF-8 with no terminator (folder names keep theirs).
+  Names written the older way read back with a trailing NUL, so the engine never matched them.
 - UE4SS runs, finds the colour tables on `BP_WrcGuiManager_C`, and its writes take effect.
 - Mouse look turns and tilts the camera, gives the cursor back in menus, and toggles with F6
   (see its known issues above).
@@ -275,6 +282,8 @@ Confirmed in game (2026-10-23):
 
 Not yet confirmed in game:
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
+- **Game data tables in play.** They load from the same pak as the text, but no gameplay change has
+  been checked on screen yet.
 
 After a game update, run `selftest` before installing again.
 

@@ -80,6 +80,10 @@ def run(cfg, oodle, log=print):
         rp = PakReader(os.path.join(tmp, "t_P.pak"))
         check("pak writer round-trip", rp.read("Wrc/Content/Gameplay/DataTables/NonAsset/NPC/CatSize.csv") == csv
               and rp.read("Wrc/WCMods/test.txt") == b"hello")
+        # The engine only finds files whose names are stored the way its own pak stores them; the reader
+        # counts any that aren't, in our pak and (as a check on the reader) in the game's.
+        check("pak file names stored like the game's", rp.legacy_file_names == 0 and base_pak.legacy_file_names == 0,
+              f"ours {rp.legacy_file_names}, game {base_pak.legacy_file_names} stored the old way")
 
     if oodle:
         from . import csvdata
