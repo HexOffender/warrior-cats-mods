@@ -9,6 +9,7 @@ Edits are made to the JSON text in place so the game's own formatting is preserv
 """
 import datetime
 import os
+import re
 import shutil
 import struct
 import zlib
@@ -126,9 +127,12 @@ def backup(save_dir, backups_root, reason="manual"):
 
 
 def list_backups(backups_root):
+    """The save backups, oldest first: the folders named <date>-<time>-<reason> (backups/mods holds mods
+    that were removed or replaced, which aren't saves)."""
     if not os.path.isdir(backups_root):
         return []
-    return sorted(d for d in os.listdir(backups_root) if os.path.isdir(os.path.join(backups_root, d)))
+    return sorted(d for d in os.listdir(backups_root)
+                  if re.match(r"^\d{8}-\d{6}-", d) and os.path.isdir(os.path.join(backups_root, d)))
 
 
 def restore(backups_root, name, save_dir):

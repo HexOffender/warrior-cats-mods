@@ -14,12 +14,21 @@ Or double-click, in this folder:
 
 Right-click either one and choose *Send to > Desktop (create shortcut)* to launch it from the desktop.
 
-**Clan Mod Studio** has one page per kind of mod. Each page edits a file in a mod folder.
-Install mods (top right) builds everything and puts it in the game:
+**Clan Mod Studio** puts your mods in the game. Its **Mods** page is where you start:
+- **Add a mod:** drop a downloaded mod's .zip on the page. It shows what's in it (what the mod
+  changes, whether it runs code, what else it needs) before you add it.
+- **Switch mods on and off:** a mod that needs another turns that one on too, and turning off a mod
+  that others need asks first.
+- **Apply to game** (top right, with the game closed): builds everything and puts it in the game.
+  A banner lists what isn't in the game yet.
+- **The rest:** each mod's More has its priority, its folder, Save as .zip (to share it) and Remove.
+  A removed or replaced mod is kept in `backups/mods/`, and Backups and repair puts it back. That
+  section also has your save backups and "Take all mods out of the game".
+
+The pages under **Make mods** are for making your own; each edits a file in a mod folder:
 
 | Page | What you change | Stored as | Reaches the game through |
 |---|---|---|---|
-| **Mods** | turn mods on/off, priority, new mods, uninstall, save backups | `mod.json` | — |
 | **Palettes** | eye, coat, pattern and marking colours on a live cat; new pattern and marking colours | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
 | **Your cat** | colours only your cat wears (coat, paws, ears, nose, whiskers); which colour slots it wears | `cats.json` | UE4SS script (colours); your save, on install (slots) |
 | **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | the key remapper while you play (`wcmods play`); see [Remapping keys](#remapping-keys) |
@@ -28,17 +37,49 @@ Install mods (top right) builds everything and puts it in the game:
 | **Game data** | XP, costs, rewards, speeds and ~440 tuning values, in any runtime table | `data.json` | edited tables in the mod pak |
 | **Save** | level, XP, health, stamina, fresh-kill pile, stats, inventory, settings, anything else | `save.json` | your save, on install |
 
+**Scripting the game:** a mod's `scripts/main.lua` runs in the game with no Python, and its
+`settings.json` gets a page in the mod menu. The shared `WCModsGame` module covers a lot of the game:
+- your cat's health, stamina, level, stats, traits, looks, size and position;
+- items, the fresh-kill pile, the time of day, quests and fights;
+- the save, the game's managers and its developer switches;
+- timers, keys, events and hooks;
+- an inspector for any of the game's objects.
+
+With code mods allowed, `python wcmods.py lua "Game.cat():name()"`, the studio's **Console** page and
+the mod menu's Console run Lua in the game while it's open. See [docs/scripting.md](docs/scripting.md);
+the example is [`examples/game-tweaks`](examples/game-tweaks).
+
 Mods can also ship whole replacement files (`files/Wrc/...`), and their own pages and build
 steps written with the shared library (see [docs/SDK.md](docs/SDK.md)). UE4SS scripts can draw
 on screen (menus, debug text, markers on places in the world) and find nearby pickups, cats and
 quest objectives with the shared Lua modules wcmods installs (docs/SDK.md, "Overlays"; example:
 [`examples/quest-markers`](examples/quest-markers), a custom quest with on-screen markers).
 
-**In game, Insert opens the mod menu** (with UE4SS): the installed mods and what they set up,
-what's nearby, cheats, and pages for mods with live settings. Mouse look and your cat's colours
-change as you move their sliders, and Save writes the change back to the mod, so the next install
-keeps it. The Mods page's **In game** card (or `wcmods.json`) sets the menu's key and size, whether
-cheats start on, and the game's console (A- and A+ in the menu's top bar resize it while you play); docs/SDK.md, "Mod menu", shows how a script adds its own page.
+**In game, Insert opens the mod menu** (with UE4SS). A status line under its title shows how your
+cat is doing, and the side bar groups the pages:
+- **Home:** an Overview of your cat and the world with quick buttons and the keys mods use, and
+  the installed mods.
+- **Your cat:** stats, colours and mouse look.
+- **World:** the clock and the fresh-kill pile, Travel (saved spots, checkpoints, areas, Back),
+  what's nearby, and your items.
+- **Story:** quests and their objectives.
+- **Fight:** both sides of a fight.
+- **Cheats:** the engine's cheats and the game's developer switches.
+- **Mods:** pages for mods with live settings.
+- **Tools:** the log, the menu's own settings, and with code mods allowed the Inspector and Console.
+
+Everything there changes live. Mouse look and your cat's colours change as you move their sliders,
+and Save writes the change back to the mod, so the next install keeps it.
+
+**The mod menu is a mod of its own**, **Mod menu** (`mods/mod-menu`), on to begin with:
+- **Turning it off:** the game has no menu, and mods that add a page to it still work; they just
+  have no page.
+- **Mods that can't do without it:** they say so in their `mod.json` (`"requires"`), and turning
+  one on turns the menu on too.
+- **Its settings:** its card's Settings (its `menu.json`) set the key that opens it, its size and
+  whether cheats start on. A- and A+ in the menu's top bar resize it while you play.
+- **The game's console:** it's under Options on the Mods page.
+- **Your own page:** docs/SDK.md, "`WCModsMenu`", shows how a script adds one.
 
 **Cheats** are the engine's cheat manager, which the release build leaves off. The menu's Cheats
 page switches them on and off while you play, and has god mode, fly and ghost (W A S D or the left
@@ -131,10 +172,35 @@ Install stops if any mod failed to build, because installing would remove that m
 changes. Fix or turn off the mod, or use `install --force` (the studio offers "Install the rest
 anyway") to install everything else.
 
-Also: `enable/disable <mod>`, `new <name> --kind palette|controls|files|data|names|save`, `eyes`,
+Adding and sharing mods:
+
+```
+python wcmods.py add "Cool Mod v1.2.zip"   # add a downloaded mod (a .zip of one or more mods, or a folder)
+python wcmods.py remove cool-mod           # take it out of mods/ (kept in backups/mods)
+python wcmods.py pack my-mod               # my-mod-1.0.zip, to share
+```
+
+`enable <mod>` also turns on the mods it requires, and `disable <mod>` refuses while mods that are
+on need it (`--with-dependents` turns those off too).
+
+Also: `new <name> --kind palette|controls|files|data|names|save|script`, `eyes`,
 `tables`, `names [--cats] [--json]`, `controls [--json]`, `files <pattern>`, `extract <pattern>`,
 `build`, `backup`, `restore [name|latest]`, `cheats [on|off]` (whether the mod menu's cheats start
-on), `console [on|off]` (the game's `~` console).
+on), `console [on|off]` (the game's `~` console). With code mods allowed and the game running:
+`lua <code>` or `lua -f file.lua` (run Lua in the game), `inspect <expr>` (an object's properties and
+functions), `find <class>`, `game` (is the bridge up?) and `game types` (Lua type files for your
+editor).
+
+`agent ...` drives the game for testing, by hand or by an AI agent:
+
+- **Game:** `agent launch --world` starts it and plays into the forest, and `agent quit` closes it.
+- **Mod menu:** `agent menu read Stats` and `agent menu set Health 150` read and use its pages.
+- **Input:** `agent key W --hold 2` walks.
+- **Pictures:** `agent shot --menu` saves a picture.
+- **Tests:** `agent test` runs the in-game tests in `tests/game` and writes a report with pictures.
+
+`agent install` puts in a test build with the bridge, leaving `wcmods.json` alone. See
+[docs/agent.md](docs/agent.md).
 
 ## How it's built
 
@@ -150,9 +216,11 @@ An install writes, into the game:
 - **`Paks\~mods\zzz_WCMods_P.pak`:** every replacement file and edited table.
 - **`zzz_WCMods_P.utoc` / `.ucas`:** patched cooked assets (the eye atlas).
 - **Mods' own cooked paks:** as `zzz_WCMods_<mod>_<name>_P.*`.
-- **UE4SS scripts:** in `ue4ss\Mods\WCMods*`, among them the mod menu's window (`WCModsMenuHost`).
-- **The shared Lua modules** in `ue4ss\Mods\shared\`: `WCModsDraw`, `WCModsMenu`, `WCModsView`,
-  `WCModsWorld`, and `WCModsNames`, which is written from your name mods.
+- **UE4SS scripts:** in `ue4ss\Mods\WCMods*`, among them the mod menu's window (`WCModsMenuHost`)
+  while the Mod menu mod is on.
+- **The shared Lua modules** in `ue4ss\Mods\shared\`: `WCModsDraw`, `WCModsView`, `WCModsWorld`,
+  `WCModsGame`, `WCModsMenu` (with the mod menu), and `WCModsNames`, which is written from your name
+  mods.
 
 [docs/SDK.md](docs/SDK.md), "Game files, repacking and new content", explains how the game's
 files are packed, how wcmods repacks them, and how to add new models and other cooked content.
@@ -166,6 +234,38 @@ Mods are applied in `priority` order, then by folder name. When two mods set the
 the higher priority wins.
 
 ## File formats
+
+### `mod.json`
+
+Every mod has one. Only `name` is needed; Clan Mod Studio shows the rest:
+
+```json
+{
+  "name": "Cool Tweaks",
+  "description": "What it changes, in a line.",
+  "version": "1.2",
+  "author": "Ash",
+  "enabled": true,
+  "priority": 0,
+  "requires": ["mod-menu"],
+  "uses": []
+}
+```
+
+- **`requires`:** the mods it can't work without, by folder name. Turning it on turns them on.
+  While one is missing or off, building leaves this mod out and says why (installing stops, as for
+  any mod that didn't build, unless `--force`).
+- **`uses`:** mods it works with when they're on, such as `mod-menu` for a page in the mod menu.
+  Nothing is turned on for them; the studio just shows it.
+- **`priority`:** mods are applied in priority order, then by folder name, and the higher one wins
+  when two set the same thing.
+
+**Sharing a mod:** Save as .zip (a mod's More, in the studio) or `wcmods pack <mod>` writes a .zip
+with the mod's folder in it, and that's what the studio's Add a mod takes. A .zip can hold several
+mod folders, or one mod's files at the top (it's then named after the .zip). Adding a mod never
+runs anything in it. Mods with code (a `section.py`, `scripts/`, a `studio/` page) stay out of the
+game until "Allow mods that run code" is on (the studio's Options, or `"allow_code_mods": true` in
+`wcmods.json`), which is only for mods from people you trust.
 
 Besides the JSON files below, a mod can hold:
 - **`files/Wrc/...`:** whole replacement files at their game path. `extract` copies one out to
@@ -433,7 +533,28 @@ Confirmed in game (2026-10-24):
 - The studio refuses to install once wcmods has been updated under it. An old studio had put old
   scripts back.
 
+Confirmed in game, scripting (2026-10-24):
+- **The bridge and the commands:** they run Lua in the game; `lua`, `inspect`, `find`, `game` and
+  `game types` all work. A script mod loads with its settings, and its events fire.
+- **`WCModsGame`:**
+  - It reads your cat's name, clan, traits, looks, health, stamina, level, experience and stats, all
+    matching the save.
+  - It changes health, stamina, stats, the fresh-kill pile and the clock, and the game's own clock
+    function reads the new time back.
+  - It reads the quest list, quest statuses and the chapter.
+  - In a fight, it reads both sides' stats, levels, health and turn order, and it changed an enemy's
+    stats and health.
+  - Timers, hooks (including changing a call's parameters) and the level event work.
+- **The new mod menu pages** (Game, Game switches, Inspector, Console) run against the live game
+  without errors. They were checked with a recording stand-in for the menu, not opened on screen.
+
 Not yet confirmed in game:
+- **Scripting:**
+  - the mod menu's new pages on screen;
+  - the studio's Console page;
+  - items dropped with `Game.items.drop` being picked up;
+  - the damage, quest-status and status events;
+  - whether the game obeys each of its developer switches.
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
 - **Game data tables in play.** They load from the same pak as the text, but no gameplay change has
   been checked on screen yet.

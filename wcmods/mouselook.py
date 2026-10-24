@@ -401,6 +401,7 @@ local SAVE = @SAVE@
 -- The page is extra: if the menu can't load or add it, the script works as before.
 local okMenu, Menu = pcall(require, "WCModsMenu")
 if okMenu then pcall(function()
+    if SETTINGS.toggle_key ~= "" then Menu.key(SETTINGS.toggle_key, "Mouse look on and off") end
     local installed, status = {}, nil
     for k, v in pairs(SETTINGS) do installed[k] = v end
     Menu.page("Mouse look", function(ui)
@@ -431,6 +432,6 @@ if okMenu then pcall(function()
             status = "Back to the installed settings."
         end
         if status then ui.note(status) end
-    end, { order = 20 })
+    end, { order = 12, group = "cat" })
 end) end
 '''

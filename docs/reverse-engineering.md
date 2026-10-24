@@ -49,6 +49,13 @@ question from *Open questions* when it's answered.
 - **Live game:** UE4SS Lua probes (see *UE4SS in this game*). For reading memory from outside,
   `tools/re/memscan.py` uses ReadProcessMemory. Never stop a debugger attached to the game
   without detaching (`qd`): exiting kills the game.
+- **The game bridge:** with code mods allowed, `python wcmods.py lua "<code>"`, `inspect` and `find`
+  run Lua in the running game and print what comes back ([scripting.md](scripting.md#the-game-bridge)).
+  It's the quickest way to try a property, a function or an offset.
+- **The class dump:** UE4SS's `GenerateSDK()` and `GenerateUHTCompatibleHeaders()` (run through the
+  bridge, or its keybinds) write every loaded class with its properties, offsets and functions. Run in
+  the world, the gameplay Blueprints are in it too. Ours is kept in `vanilla/sdk/` (not committed), with
+  an index of the game's own modules.
 - **Game files:** `python wcmods.py files "<pattern>"` and `extract`. In cooked packages the name
   map is readable, but imports are hashes, so a Blueprint's parent class isn't stored by name. A
   survey in game gets parents instead (*Game objects*).
@@ -137,6 +144,68 @@ SwtGameInstance < GameInstance`. Its managers are reflected properties:
 These managers are also found by class: the quest manager (`BP_WrcQuestManager_C < WrcQuestManager < QuestManager`),
 NPC generation (`BP_WrcNPCGenerationManager_C < WrcNPCGenerationManager < SwtAdventureNPCGenerationManager`),
 track paths, tutorial, combat and tuning (`BP_WrcTuningManager_C`).
+
+### The game's live state
+
+Most of the game's own C++ classes reflect nothing: the health, stamina, level, inventory and resource
+components have no properties or functions Lua can see. Their values were found by reading the
+components' memory in game (2026-10-24) and comparing with the save. `WCModsGame` maps them with
+`RegisterCustomProperty` ([scripting.md](scripting.md#mapped-values)).
+
+**Resource components** (`SwtQuestResourceComponent` and its children) all share this layout:
+
+| Offset | What | Seen |
+|---|---|---|
+| +0x108 | The resource type (`EQuestResourceType`: Health 0, Level 1, Stamina 2, StaminaCombat 3, Currency 4, FreshKill 5) | 0–5 |
+| +0x10C | The value now | 233 health, 100 stamina, 91 fresh-kill |
+| +0x110 | Its maximum | 233, 100, 100 |
+| +0x114 | A multiplier, 1 in every one seen | 1.0 |
+
+Where each one is:
+
+| Component | On | Its own fields |
+|---|---|---|
+| `SwtQuestHealthComponent` | your cat | |
+| `SwtQuestStaminaComponent` | your cat | +0x11C: stamina back per second (20) |
+| `SwtCombatStaminaComponent` | your cat | fight stamina: 0.4 × Prowess + Stamina (193.2 for Prowess 233) |
+| `SwtAdventureLevelComponent` | the player state | value is XP; +0x120 and +0x124: the level (20, 20); +0x138: the stats struct, so `Prowess` +0x154, `Strength` +0x158, `Resilience` +0x15C, `Instinct` +0x160, `Agility` +0x164, `Stamina` +0x168 (all equal to the save's) |
+| `SwtAdventureFreshKillPileComponent` | the game state (`FreshKillPileComponent`) | +0x130: seconds since it last dropped (counts up in real seconds); +0x134: 90, `Decay.Time` |
+
+Writing them works: the values changed in memory, and the game's own code read them back. The HUD
+isn't told, so a bar may show the old value until something else updates it.
+
+**The clock:** the game state's +0x438 is a float, the seconds into the day. Setting it to 21600 made
+the game's own `GetDayClockTime` say 6:00.
+
+**The inventory** is `WrcInventoryComponent` on the player state, a native `TMap` of item tag to
+count: its elements at +0x150, with the count at +0x158 (12 for 12 kinds of item). Nothing reflected
+reads or changes it:
+- Calling a pickup's `OnInteracted` from Lua plays its effect and removes it, but gives nothing.
+- The HUD's `OnItemPickedUp(tag, quantity, total, popup)` is told each new total.
+- The game writes `WrcGame.json` (the save as plain JSON) every time it saves.
+
+**The fight:** a fight's director is the game state's `Director` (`BP_CombatDirector_C`). Its
+reflected `PlayerParty`, `EnemyParty`, `TurnOrder` and `CurrentTurnAttackCharacter` hold the
+fighters. Each fighter's combat component (+0x848) is filled when the fight starts.
+
+Read in a fight with a level 20 cat against a weak bird:
+- The bird was level 20.
+- Its stats were exactly base + growth × 0.95, e.g. Prowess 203 and Strength 150.
+- Its health was 203, and its fight stamina 141.2 (0.4 × 203 + 60).
+- Calling the combat manager's `EndCombat` ended the fight but left the controller with no pawn and the
+  fight menu on screen. Don't use it.
+
+**The quests:** the quest manager's `Quests` is an array of `{Quest, Line, Node}`. Every quest object
+is named `SwtAdventureMultiObjectiveQuest_0`, and its outer, a `QuestDynamicGraph` such as
+`QuestGraph_Tutorial` or `QuestGraphProcedural_Deliver`, says which quest it is. There are 40 in
+`/Game/Quests/QuestLines/QuestLine_Main`.
+
+**Driving the menus:**
+- **Front-end screens:** calling a screen's `OnKeyPressed`/`OnKeyReleased` (Enter) and
+  `OnListenCommand(Button_A or Button_Confirm, pressed/released, controller)`, and
+  `OnUIPress`/`OnUIRelease(button)`, takes the game from the splash screen through the main menu
+  (`mcGuiButtonProphecy`) and the cat choice (`mcGuiButtonCat1`) into the world.
+- **The fight menu:** it didn't respond to the same calls.
 
 ### What's in the world
 
@@ -443,6 +512,26 @@ from `EPopupCheatsIds`:
   `online_skirmish_party`, `online_test_users`, `popup_cheats_online`, `analytics_reset_stats`,
   `analytics_send_stats`.
 
+**What the maps hold** (read in game, 2026-10-24):
+- **`KeyCheatsMap`:**
+  - Three: `Cheats.Gameplay.DevJumpPoint.Up`
+  - Four: `.DevJumpPoint.Down`
+  - Five: `.ConsumeItem`
+  - Seven: `.BondingDialogue`
+  - Eight: `.Effects.Apply.Own`
+  - Nine: `Cheats.UXD.ChangeLanguage`
+  - Zero: `.ChangeConsoleUI`
+- **`KonamiCodesMap`:** `Cheats.Profiler.ToggleShowStats`, `.DebugRenderMenu`, `.ToggleShowConsole`,
+  `Cheats.Marketing.FreeCamera`, `Cheats.UXD.HideAllUI`, and `Cheats.Gameplay.ForceCombatWin` /
+  `ForceCombatLose`.
+- **Other values:** `EnabledMode` is 7, `GodMode` 0, and `AlwaysHasFullResource` has all six
+  resources set to false.
+- **More switches:** `SwtQuestCheatsManager` and `SwtAdventureCheatsManager` add about 40 more:
+  `ForcedLevel`, `ForcedRank`, `bAllCheckpointsUnlocked`, `bAlwaysSucceedAttack`, `ForcedDilemma`,
+  `ForcedDifficulty`, `bFastHousingCrafting`, `bAllowCatSizeOverride` / `CatSizeOverride`,
+  `bShowFloatingPercent` and more. Whether the release build obeys each isn't known; the mod menu's
+  Game switches page sets them.
+
 **Cheat gameplay tags** (likely what `KeyCheatsMap` maps keys to): `Cheats.Gameplay.ForceCombatWin` /
 `ForceCombatLose`, `ConsumeItem`, `BondingDialogue`, `TestGiveGifts`, `TeleportTest`,
 `DevJumpPoint.Down`, `Effects.Apply.Own` / `Them`, `Cheats.Marketing.FreeCamera`,
@@ -485,6 +574,29 @@ from `EPopupCheatsIds`:
   its callback called `FProperty:GetClass()` and errored. An error inside such a callback goes to
   UE4SS's log, not to an outer `pcall`, and ends the listing.
 - **`os.clock()` advances in real time here** (it's used for throttling in the shared modules).
+- **This UE4SS build has a bigger API than its version suggests.** Among the globals are
+  `RegisterBeginPlayPostHook`, `RegisterEndPlayPreHook`, `RegisterLoadMapPostHook`,
+  `ExecuteInGameThreadWithDelay`, `LoopInGameThreadWithDelay`, the delayed-action functions,
+  `RestartCurrentMod`, `GenerateSDK`, `GenerateLuaTypes` and `RegisterCustomProperty`.
+  `PropertyTypes` includes Map, Set and Struct.
+- **Calling a function on an object that isn't there crashes the game inside UE4SS**, and `pcall`
+  can't catch it. In one case a creature far away had no mesh loaded, and `mesh:GetSkeletalMeshAsset()`
+  was called on it (2026-10-24, a null read in `UObject::HasAnyInternalFlags` under
+  `process_lua_function`). Check `IsValid()` first.
+- **A property an object doesn't have reads as a `TrivialObject`**, not nil.
+- **TMaps work from Lua:** `map:ForEach(function(k, v) ... k:get() ... end)`, `map:Add(k, v)` and
+  `map:Empty()`. Gameplay tag keys read as structs with `TagName`.
+- **Array elements come back wrapped:** items of an array a function returns sometimes need `:get()`.
+- **Out parameters come back as a table keyed by the parameter's name:**
+  `gs:GetDayClockTime(t, t, t)` fills `t.Hours`, `t.Minutes` and `t.Seconds`.
+- **Reflection works:** `ForEachProperty` (with each property's class) and `ForEachFunction` work.
+  A function's parameters list with `ForEachProperty`, and `HasAnyPropertyFlags(0x100)` (out) and
+  `0x400` (return) tell them apart.
+- **Custom properties work:** `RegisterCustomProperty` reads and writes native fields of a class. It
+  takes fixed-size types only, not maps or structs. Custom properties don't show in `ForEachProperty`.
+- **Hooks:** they fire for calls made through Unreal (Lua's own calls included). A pre-hook can change
+  a parameter with `param:set()`, and the called function saw the new value. In a post-hook the
+  parameters read empty. Two hooks on one function, both removed, left the game fine.
 
 ## Game mechanics
 
@@ -512,9 +624,15 @@ The rules of play are in [mechanics/](mechanics/README.md):
 - **Traits:** how the game breaks a tie between two equal scores, and whether options 1–10 are
   left to right in the creator. Also, why each `…Value` is its `…Offset` + 3 in the one save
   looked at (groups of options?).
-- **Cheats:** where the cheats access level (`ESwtCheatsEnableType`) is set, and whether raising
-  it opens the cheats popup and the key cheats. Also what `KeyCheatsMap` and `KonamiCodesMap`
-  hold (list them in game).
+- **Cheats:** where the cheats access level (`ESwtCheatsEnableType`) is set (`EnabledMode` is 7),
+  whether raising it opens the cheats popup and the key cheats, and which of the cheats manager's
+  switches the release build obeys.
+- **Scripting:**
+  - **Items:** how to put items in the inventory from a script (the inventory is native).
+  - **Fights:** how to end one cleanly (`EndCombat` doesn't), and whether the combat director's
+    `OnRegisterDamage` hook sees every hit.
+  - **Save stores:** what the save manager's `Get/SetGameProgressionData` keys are (`"Level"` read
+    0).
 - **Mouse look:** whether the game ever overrides the root's yaw in free mode. An old build's
   log suggested one turn in five was lost, but the code says no, and the current build's log
   shows none lost after the first seconds.

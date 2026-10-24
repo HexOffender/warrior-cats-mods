@@ -4,7 +4,8 @@ import re
 import struct
 import tempfile
 
-from . import catlook, controls, draw, eyeatlas, keymap, luacheck, menu, mouselook, palettes, view, world
+from . import bridge, catlook, controls, draw, eyeatlas, keymap, luacheck, menu, mouselook, palettes, view, world
+from . import game as game_lua
 from .blake3 import blake3
 from .iostore import IoStoreReader, ModContainerWriter
 from .pak import PakReader, PakWriter
@@ -23,7 +24,7 @@ def run(cfg, oodle, log=print):
     problems = luacheck.check(lua)
     check("mouse look script", not problems and "@SETTINGS@" not in lua and "sensitivity = 1.5" in lua
           and "invert = true" in lua and "smoothing = 50.0" in lua, "; ".join(problems[:3]))
-    for module in (view, draw, world, menu):
+    for module in (view, draw, world, menu, game_lua):
         lua = module.lua()
         problems = luacheck.check(lua)
         left = re.findall(r"@[A-Z_]+@", lua)   # placeholders that weren't filled in
@@ -36,9 +37,20 @@ def run(cfg, oodle, log=print):
     lua = catlook.script({"fur": (1.0, 0.5, 0.0)}, save={"path": "x", "file": "y", "doc": {"player": {"colours": {}}}})
     problems = luacheck.check(lua) + re.findall(r"@[A-Z_]+@", lua)
     check("your cat's colours script with its menu page", not problems and '"#ff8000"' in lua, "; ".join(problems[:3]))
-    lua = menu.host_script({"sections": {}, "notes": {}, "warnings": ["w"], "built": "2026-10-24T01:00:00"}, [])
+    lua = menu.host_script({"sections": {}, "notes": {}, "warnings": ["w"], "built": "2026-10-24T01:00:00"}, [], dev=True)
     problems = luacheck.check(lua) + re.findall(r"@[A-Z_]+@", lua)
-    check("mod menu window script", not problems, "; ".join(problems[:3]))
+    check("mod menu window script (with the Game, Inspector and Console pages)", not problems
+          and 'Menu.page("Inspector"' in lua and '"Materials.Moss"' in lua, "; ".join(problems[:3]))
+    lua = bridge.script(cfg)
+    problems = luacheck.check(lua) + re.findall(r"@[A-Z_]+@", lua)
+    check("game bridge script", not problems and bridge.folder(cfg).replace("\\", "/") in lua, "; ".join(problems[:3]))
+    check("in-game script mod", _script_mod(cfg))
+    check("mod menu answers the agent controller", all(s in menu.lua() for s in ('"agent.read"', '"agent.act"', '"agent.scroll"'))
+          and 'Menu.share("frame"' in menu.host_script({"sections": {}, "notes": {}, "warnings": [], "built": ""}, []))
+    check("agent controller: pictures, menu rows, test files", _agent_parts())
+    check("adding a downloaded mod from a .zip (and refusing unsafe ones)", _mod_zips())
+    check("mods that need other mods: switched on together, left out of a build without them", _requirements(cfg))
+    check("the mod menu is a mod: its window and module only with it on", _menu_mod(cfg))
     problems = luacheck.check(palettes.ue4ss_script({}))
     check("palette script", not problems, "; ".join(problems[:3]))
     # Interact and Scent tracking move along F/E/Q, so Q goes quiet; X stays because Return to camp still
@@ -169,6 +181,142 @@ def run(cfg, oodle, log=print):
     else:
         log("  [skip] no save yet")
     return all(results)
+
+
+def _script_mod(cfg):
+    """A script mod's scripts/ and settings.json become a UE4SS mod whose main.lua sets MOD and runs them."""
+    import json
+    import tempfile
+    from .mods import Mod
+    from .sdk import BuildContext
+    from .sections.scripts import ScriptsSection
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = os.path.join(tmp, "my-script")
+        os.makedirs(os.path.join(folder, "scripts"))
+        with open(os.path.join(folder, "mod.json"), "w") as f:
+            json.dump({"name": "My Script", "enabled": True}, f)
+        with open(os.path.join(folder, "settings.json"), "w") as f:
+            json.dump({"_help": "notes", "on": True, "speed": 1.5, "tint": "#ffcc00"}, f)
+        with open(os.path.join(folder, "scripts", "main.lua"), "w") as f:
+            f.write('MOD.log("hi %s", tostring(MOD.settings.on))\n')
+        with open(os.path.join(folder, "scripts", "helper.lua"), "w") as f:
+            f.write("return {}\n")
+        mod, sec = Mod(folder), ScriptsSection()
+        ctx = BuildContext(cfg, None, tmp, log=lambda m: None)
+        ctx.cfg = type("Cfg", (), {"data": {"allow_code_mods": True}, "ue4ss_mods_dir": tmp})()
+        ctx.begin(sec.id)
+        sec.build(ctx, [(mod, sec.collect(mod, ctx))])
+        files, _ = ctx.ue4ss_mods.get("WCModsScript_my_script", ({}, None))
+        main = files.get("Scripts/main.lua", b"").decode()
+        return (not luacheck.check(main) and not re.findall(r"@[A-Z_]+@", main) and '["speed"] = 1.5' in main
+                and "Scripts/mod/helper.lua" in files and "Scripts/mod/main.lua" in files and not ctx.warnings)
+
+
+def _agent_parts():
+    """The agent's PNGs round-trip, a menu answer reads as rows, and tests/game's files load (no game needed)."""
+    from .agent import image, menu as agent_menu, runner
+    pic = image.Image(4, 3, bytes(range(36)))
+    with tempfile.TemporaryDirectory() as tmp:
+        path = pic.save(os.path.join(tmp, "p.png"))
+        back = image.Image.load(path)
+    small = image.Image.from_bgra(bytes([10, 20, 30, 255]) * 16, 4, 4).scaled(0.5)
+    page = agent_menu.Page({"page": "Stats", "title": "Stats", "rows": [
+        {"n": 1, "kind": "field", "label": "Name", "value": "Callie"},
+        {"n": 2, "kind": "slider", "label": "Health", "value": 200, "options": [0, 233]}]})
+    tests = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests", "game")
+    found = runner.discover([tests]) if os.path.isdir(tests) else []
+    return (back.rgb == pic.rgb and (small.width, small.height, small.pixel(0, 0)) == (2, 2, (30, 20, 10))
+            and page.get("name") == "Callie" and page.find("Health").options == [0, 233]
+            and "Health: 200   (0..233)   <slider>" in page.text() and (not os.path.isdir(tests) or len(found) > 10))
+
+
+def _zip(path, files):
+    import zipfile
+    with zipfile.ZipFile(path, "w") as z:
+        for name, data in files.items():
+            z.writestr(name, data)
+    return path
+
+
+def _mod_zips():
+    """A mod's folder a level down in a .zip is added as mods/<its name>; a second copy replaces it and
+    keeps the first in backups/mods; paths that climb out are refused before anything is written."""
+    import json
+    from . import modzip
+    from .mods import Mod
+    with tempfile.TemporaryDirectory() as tmp:
+        root, backups = os.path.join(tmp, "mods"), os.path.join(tmp, "backups")
+        os.makedirs(root)
+        meta = json.dumps({"name": "Cool Tweaks", "version": "1.2", "uses": ["mod-menu"]})
+        z = _zip(os.path.join(tmp, "a.zip"), {"Cool Tweaks/mod.json": meta, "Cool Tweaks/scripts/main.lua": "",
+                                              "Cool Tweaks/settings.json": "{}", "__MACOSX/x": ""})
+        found = modzip.inspect(z, root)
+        added = modzip.add_zip(z, root, backups)
+        again = modzip.add_zip(z, root, backups)
+        m = Mod(os.path.join(root, "cool-tweaks"))
+        refused = 0
+        for bad in ("../evil/mod.json", "/abs/mod.json", "C:/x/mod.json"):
+            try:
+                modzip.add_zip(_zip(os.path.join(tmp, "bad.zip"), {bad: "{}"}), root, backups)
+            except ValueError:
+                refused += 1
+        return (len(found) == 1 and found[0]["code"] and found[0]["kinds"] == ["in-game script"]
+                and added[0]["id"] == "cool-tweaks" and again[0]["replaced"] and m.version == "1.2" and m.menu_page()
+                and refused == 3 and sorted(os.listdir(root)) == ["cool-tweaks"]
+                and modzip.removed(backups)[0]["why"] == "replaced")
+
+
+def _mods_folder(tmp, mods):
+    import json
+    root = os.path.join(tmp, "mods")
+    for mod_id, (meta, files) in mods.items():
+        os.makedirs(os.path.join(root, mod_id))
+        with open(os.path.join(root, mod_id, "mod.json"), "w") as f:
+            json.dump(meta, f)
+        for name, text in files.items():
+            with open(os.path.join(root, mod_id, name), "w") as f:
+                f.write(text)
+    return root
+
+
+def _requirements(cfg):
+    from . import mods, pipeline
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _mods_folder(tmp, {"needy": ({"name": "Needy", "requires": ["helper"], "enabled": False}, {}),
+                                  "helper": ({"name": "Helper", "enabled": False}, {}),
+                                  "lost": ({"name": "Lost", "requires": ["ghost"], "enabled": True}, {})})
+        on, _ = mods.switch(mods.discover(root), "needy", True)
+        _, blocked = mods.switch(mods.discover(root), "helper", False)
+        out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
+        rep = out["sections"].get("requirements", {})
+        return (sorted(on) == [("helper", True), ("needy", True)] and blocked == ["needy"]
+                and "lost" not in out["mods"] and "needy" in out["mods"] and rep.get("status") == "failed"
+                and any("ghost" in e for e in rep.get("errors", [])))
+
+
+def _menu_mod(cfg):
+    from . import ingame
+    # Menu settings still in wcmods.json would win over the test's menu.json; they're put back after.
+    kept = {k: cfg.data.pop(k) for k in ingame.LEGACY.values() if k in cfg.data}
+    try:
+        return _menu_builds(cfg)
+    finally:
+        cfg.data.update(kept)
+
+
+def _menu_builds(cfg):
+    from . import menu, mods, pipeline
+    results = []
+    for on in (True, False):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = _mods_folder(tmp, {"mod-menu": ({"name": "Mod menu", "enabled": on, "builtin": True},
+                                                   {"menu.json": '{"key": "F2", "size": 1.25, "cheats": true}'})})
+            out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
+            host = os.path.join(tmp, "out", "ue4ss", menu.HOST_NAME, "Scripts", "main.lua")
+            text = open(host, encoding="utf-8").read() if os.path.isfile(host) else ""
+            results.append((out["menu"], menu.HOST_NAME in out["ue4ss_mods"], menu.SHARED_NAME in out["ue4ss_shared"],
+                            '"F2"' in text or "F2" in text))
+    return results == [("mod-menu", True, True, True), (None, False, False, False)]
 
 
 def _csv_rows():

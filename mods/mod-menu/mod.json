@@ -1,0 +1,9 @@
+{
+  "name": "Mod menu",
+  "description": "The in-game menu (Insert): your cat, the world, travel, quests, fights, cheats, and the pages other mods add. Needs UE4SS.",
+  "enabled": true,
+  "priority": -100,
+  "version": "1.0",
+  "author": "wcmods",
+  "builtin": true
+}

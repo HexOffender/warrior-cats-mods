@@ -25,7 +25,8 @@ All of it is for Steam build 24847281.
 - **Resilience may not reduce damage:** the code takes the defender's stat from the stance
   table's `Attack` column, and its `Defense` column isn't read. Needs a test in game.
 - **Accuracy is a plain chance to hit:** −0.2 when Blinded, and no stat changes it.
-- **Prowess is (very likely) health,** and combat stamina is 0.4 × Prowess + Stamina.
+- **Prowess is health,** and combat stamina is 0.4 × Prowess + Stamina. Both were confirmed in a fight
+  in game.
 - **Stats grow** as base + growth × (level − 1) / 20. Social traits add to the growth: Brave gets
   +20 Strength and +10 Instinct growth (+19 and +9.5 at level 20), and so on. Checked against a
   level 20 save.

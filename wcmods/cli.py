@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 import time
+import zipfile
 
 from . import controls, eyeatlas, keymap, mods, names, pipeline, playstate, save, ue4ss
 from .config import EXE_NAME, STEAM_APP_ID, Config, game_running
@@ -57,12 +58,59 @@ def cmd_status(ctx, args):
 
 
 def cmd_enable(ctx, args, value=True):
-    found = {m.id: m for m in mods.discover(ctx.mods_root)}
     for mod_id in args.mods:
-        if mod_id not in found:
+        found = mods.discover(ctx.mods_root)
+        if not any(m.id == mod_id for m in found):
             sys.exit(f"no mod named {mod_id}")
-        found[mod_id].set_enabled(value)
-        print(f"{'enabled' if value else 'disabled'} {mod_id}")
+        # On: with what it requires. Off: with what needs it only when asked (--with-dependents).
+        changed, blocked = mods.switch(found, mod_id, value, cascade=getattr(args, "with_dependents", False))
+        if blocked:
+            sys.exit(f"{', '.join(blocked)} need{'s' if len(blocked) == 1 else ''} {mod_id}; turn "
+                     f"{'it' if len(blocked) == 1 else 'them'} off too with --with-dependents")
+        for i, on in changed:
+            print(f"{'enabled' if on else 'disabled'} {i}" + ("" if i == mod_id else
+                  f" ({mod_id} needs it)" if on else f" (it needs {mod_id})"))
+        if not changed:
+            print(f"{mod_id} was already {'on' if value else 'off'}")
+
+
+def cmd_add(ctx, args):
+    from . import modzip
+    if os.path.isdir(args.path):
+        done = modzip.add_folder(args.path, ctx.mods_root, ctx.backups, enable=not args.off)
+    else:
+        for m in modzip.inspect(args.path, ctx.mods_root):
+            if m["code"] and not ctx.cfg.data.get("allow_code_mods"):
+                print(f"note: {m['name']} runs code, so it stays out of the game until \"allow_code_mods\": true "
+                      "(only for mods from people you trust)")
+        done = modzip.add_zip(args.path, ctx.mods_root, ctx.backups, enable=not args.off)
+    for d in done:
+        print(f"added {d['id']} ({d['name']})" + (f"; the old copy is in backups/mods/{d['replaced']}" if d["replaced"] else ""))
+    found = mods.discover(ctx.mods_root)
+    for d in done:
+        for why in mods.unmet(found).get(d["id"], []):
+            print(f"  {d['id']} {why}")
+    print("run `wcmods install` (game closed) to put it in the game")
+
+
+def cmd_remove(ctx, args):
+    from . import modzip
+    found = {m.id: m for m in mods.discover(ctx.mods_root)}
+    if args.mod not in found:
+        sys.exit(f"no mod named {args.mod}")
+    print(f"moved {args.mod} to backups/mods/{modzip.remove(found[args.mod], ctx.backups)}; install again to take it out of the game")
+
+
+def cmd_pack(ctx, args):
+    from . import modzip
+    found = {m.id: m for m in mods.discover(ctx.mods_root)}
+    if args.mod not in found:
+        sys.exit(f"no mod named {args.mod}")
+    m = found[args.mod]
+    out = args.out or f"{m.id}{('-' + m.version) if m.version else ''}.zip"
+    with open(out, "wb") as f:
+        f.write(modzip.pack(m))
+    print(f"wrote {out}: give it to someone, and they add it with Clan Mod Studio or `wcmods add {os.path.basename(out)}`")
 
 
 def cmd_new(ctx, args):
@@ -381,6 +429,117 @@ def cmd_ingame(ctx, args, option):
               + (" (from the next time the game starts)" if args.state is not None else ""))
 
 
+def _bridge(ctx):
+    from .bridge import Bridge
+    return Bridge(ctx.cfg)
+
+
+def _run_lua(ctx, code, timeout):
+    from .bridge import BridgeError
+    try:
+        return _bridge(ctx).run(code, timeout=timeout)
+    except BridgeError as e:
+        sys.exit(f"error: {e}")
+
+
+def _print_reply(reply, as_json):
+    if as_json:
+        print(json.dumps(reply, indent=2, ensure_ascii=False))
+        return
+    if reply.get("output"):
+        print(reply["output"])
+    if reply.get("ok"):
+        result = reply.get("result") or []
+        if result:
+            print(json.dumps(result if len(result) > 1 else result[0], indent=2, ensure_ascii=False))
+    else:
+        sys.exit(f"error: {reply.get('error')}")
+
+
+def cmd_lua(ctx, args):
+    if args.file:
+        with open(args.file, encoding="utf-8-sig") as f:
+            code = f.read()
+    elif args.code in (None, "-"):
+        code = sys.stdin.read()
+    else:
+        code = args.code
+    _print_reply(_run_lua(ctx, code, args.timeout), args.json)
+
+
+def cmd_game(ctx, args):
+    if args.what == "types":
+        # UE4SS writes Lua type annotations for every class it knows into Mods/shared/types.
+        reply = _run_lua(ctx, "GenerateLuaTypes() return true", max(args.timeout, 120))
+        _print_reply(reply, False)
+        mods_dir = ctx.cfg.ue4ss_mods_dir
+        print(f"written to {os.path.join(mods_dir, 'shared', 'types') if mods_dir else 'ue4ss/Mods/shared/types'}; "
+              "point your editor's Lua language server at that folder")
+        return
+    st = _bridge(ctx).status()
+    if not st:
+        print("the bridge has never run: install with \"allow_code_mods\": true, then start the game")
+        return
+    if not st["alive"]:
+        print(f"the game isn't running (the bridge last reported {st['age']:.0f} s ago)")
+        return
+    print(f"the game is running: {st.get('world') or 'loading'}, "
+          + ("your cat is in the world" if st.get("player") else "no cat yet (menus or loading)"))
+
+
+
+
+def cmd_inspect(ctx, args):
+    from .bridge import inspect_code
+    reply = _run_lua(ctx, inspect_code(args.expr, args.all), args.timeout)
+    if not reply.get("ok"):
+        sys.exit(f"error: {reply.get('error')}")
+    info = (reply.get("result") or [{}])[0]
+    if args.json:
+        print(json.dumps(info, indent=2, ensure_ascii=False))
+        return
+    if info.get("error"):
+        sys.exit(f"error: {info['error']}")
+    print(info["name"])
+    print("  is a " + " < ".join(info["parents"]))
+    print("properties:")
+    for p in info["props"]:
+        print(f"  {p['owner']}.{p['name']} ({p['type'].replace('Property', '')}) = {p['value'][:100]}")
+    print("functions:")
+    for f in info["funcs"]:
+        ret = f" -> {f['returns'].replace('Property', '')}" if f.get("returns") else ""
+        print(f"  {f['owner']}.{f['name']}({', '.join(f['params'])}){ret}")
+
+
+FIND_LUA = """
+local out = {}
+for i, o in ipairs(Game.findAll(%s)) do
+    if i > %d then break end
+    local loc = nil
+    if Game.isA(o, "Actor") then
+        local ok, l = pcall(function() return o:K2_GetActorLocation() end)
+        if ok then loc = string.format("%%.0f, %%.0f, %%.0f", l.X, l.Y, l.Z) end
+    end
+    out[#out + 1] = { name = Game.fullName(o), at = loc }
+end
+return out
+"""
+
+
+def cmd_find(ctx, args):
+    from .sdk import lua_value
+    reply = _run_lua(ctx, FIND_LUA % (lua_value(args.cls), args.limit), args.timeout)
+    if not reply.get("ok"):
+        sys.exit(f"error: {reply.get('error')}")
+    found = (reply.get("result") or [[]])[0] or []
+    if args.json:
+        print(json.dumps(found, indent=2, ensure_ascii=False))
+        return
+    for o in found:
+        print(o["name"] + (f"   at {o['at']}" if o.get("at") else ""))
+    print(f"{len(found)} found" + (" (the first ones)" if len(found) >= args.limit else ""))
+
+
 def cmd_studio(ctx, args):
     from . import studio
     ctx.need_game()
@@ -396,12 +555,25 @@ def main(root, argv=None):
     p.add_argument("--no-browser", action="store_true")
     p.set_defaults(fn=cmd_studio)
     for name, value in (("enable", True), ("disable", False)):
-        p = sub.add_parser(name, help=f"{name} mods by folder name")
+        p = sub.add_parser(name, help=f"{name} mods by folder name" + (" (and the mods they require)" if value else ""))
         p.add_argument("mods", nargs="+")
+        if not value:
+            p.add_argument("--with-dependents", action="store_true", help="also turn off the mods that need it")
         p.set_defaults(fn=lambda c, a, v=value: cmd_enable(c, a, v))
+    p = sub.add_parser("add", help="add a downloaded mod: a .zip (one or several mods) or a mod's folder")
+    p.add_argument("path")
+    p.add_argument("--off", action="store_true", help="add it switched off")
+    p.set_defaults(fn=cmd_add)
+    p = sub.add_parser("remove", help="take a mod out of mods/ (kept in backups/mods)")
+    p.add_argument("mod")
+    p.set_defaults(fn=cmd_remove)
+    p = sub.add_parser("pack", help="pack a mod as a .zip to share")
+    p.add_argument("mod")
+    p.add_argument("out", nargs="?")
+    p.set_defaults(fn=cmd_pack)
     p = sub.add_parser("new", help="create a mod from a template")
     p.add_argument("id")
-    p.add_argument("--kind", choices=("palette", "controls", "files", "data", "save", "names"), default="palette")
+    p.add_argument("--kind", choices=("palette", "controls", "files", "data", "save", "names", "script"), default="palette")
     p.set_defaults(fn=cmd_new)
     p = sub.add_parser("files", help="list game files matching a pattern, e.g. '*NPC/*.csv'")
     p.add_argument("pattern")
@@ -444,6 +616,30 @@ def main(root, argv=None):
     p = sub.add_parser("restore", help="list or restore save backups")
     p.add_argument("name", nargs="?")
     p.set_defaults(fn=cmd_restore)
+    p = sub.add_parser("lua", help="run Lua in the running game (needs allow_code_mods and an install)")
+    p.add_argument("code", nargs="?", help="Lua to run; an expression shows its value. '-' or nothing reads stdin")
+    p.add_argument("-f", "--file", help="run a .lua file instead")
+    p.add_argument("--timeout", type=float, default=15)
+    p.add_argument("--json", action="store_true", help="print the bridge's whole reply")
+    p.set_defaults(fn=cmd_lua)
+    p = sub.add_parser("game", help="whether the game is running with the bridge; 'game types' writes Lua type files")
+    p.add_argument("what", nargs="?", choices=("status", "types"), default="status")
+    p.add_argument("--timeout", type=float, default=15)
+    p.set_defaults(fn=cmd_game)
+    p = sub.add_parser("inspect", help="show an object's properties and functions, e.g. inspect \"Game.player()\"")
+    p.add_argument("expr", help="a Lua expression for the object")
+    p.add_argument("--all", action="store_true", help="include the engine's Actor/Object members too")
+    p.add_argument("--timeout", type=float, default=15)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_inspect)
+    p = sub.add_parser("find", help="list the game's objects of a class, e.g. find WrcRoamingEnemy")
+    p.add_argument("cls")
+    p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--timeout", type=float, default=15)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_find)
+    from .agent import cli as agent_cli
+    agent_cli.register(sub)
     for option, text in (("cheats", "show, or set, whether cheats start on in the mod menu (needs install)"),
                          ("console", "show, or switch on or off, the game's console (~ or F10; needs UE4SS)")):
         p = sub.add_parser(option, help=text)
@@ -452,5 +648,5 @@ def main(root, argv=None):
     args = ap.parse_args(argv)
     try:
         args.fn(Ctx(root), args)
-    except (RuntimeError, ValueError, KeyError, FileNotFoundError) as e:
+    except (RuntimeError, ValueError, LookupError, FileNotFoundError, zipfile.BadZipFile) as e:
         sys.exit(f"error: {e}")

@@ -12,31 +12,48 @@ function chip(text, kind, title) {
   return el("span", { class: `chip ${kind}`, title: title || false }, el("i"), text);
 }
 
+const installBtn = document.getElementById("installBtn");
+
 async function refreshStatus() {
+  let changes = null;
   try {
-    info = await api.get("/info");
+    [info, changes] = await Promise.all([api.get("/info"), api.get("/changes").catch(() => null)]);
   } catch (e) {
     clear(statusBox).append(chip("Studio server not reachable", "bad", e.message));
     return null;
   }
+  const waiting = changes ? changes.on.length + changes.off.length + changes.changed.length : 0;
   clear(statusBox).append(...[
     chip(info.game_running ? "Game running" : "Game closed", info.game_running ? "warn" : "good",
-      info.game_running ? "Close the game before installing" : ""),
-    chip(info.ue4ss ? "UE4SS installed" : "No UE4SS", info.ue4ss ? "good" : "warn"),
-    chip(info.save_found ? "Save found" : "No save yet", info.save_found ? "good" : "warn"),
+      info.game_running ? "Close the game to apply mods" : ""),
+    info.ue4ss ? null : chip("No UE4SS", "warn", "The mod menu, mouse look, colours on your own cat and in-game scripts need UE4SS"),
+    info.save_found ? null : chip("No save yet", "warn", "Start the game once, so there's a save"),
     info.code_changed
-      ? chip("Restart the studio", "bad", "wcmods was updated while the studio was open. Close this window and open Clan Mod Studio again before installing.")
+      ? chip("Restart the studio", "bad", "wcmods was updated while the studio was open. Close this window and open Clan Mod Studio again before applying.")
       : null,
     info.install_outdated
-      ? chip("Install again", "warn", "The installed mods were built by an older wcmods, and the game can't find their files. Install to rebuild them.")
-      : chip(info.installed ? `Installed: ${info.installed.mods.length} mods` : "Nothing installed", info.installed ? "good" : ""),
+      ? chip("Apply again", "warn", "The installed mods were built by an older wcmods, and the game can't find their files. Apply to rebuild them.")
+      : changes && changes.any
+        ? chip(changes.installed ? `${waiting} change${waiting === 1 ? "" : "s"} to apply` : "Not applied yet", "warn", "Apply to game puts them in")
+        : chip(info.installed ? "Game up to date" : "Nothing installed", info.installed ? "good" : ""),
   ].filter(Boolean));
+  installBtn.disabled = info.game_running;
+  installBtn.title = info.game_running ? "Close the game first" : "Build your mods and put them in the game";
   return info;
 }
 
+// The side bar: managing mods first, then the pages for making them.
+const GROUPS = { play: "Your mods", make: "Make mods" };
 function renderNav() {
   clear(nav);
-  for (const s of info.sections) {
+  const rank = s => Object.keys(GROUPS).indexOf(s.group || "make");
+  let last = null;
+  for (const s of [...info.sections].sort((a, b) => rank(a) - rank(b))) {
+    const g = s.group || "make";
+    if (g !== last) {
+      nav.append(el("span", { class: "nav-group", text: GROUPS[g] || g }));
+      last = g;
+    }
     nav.append(el("button", {
       id: `nav-${s.id}`, "aria-current": active === s.id ? "page" : false,
       onclick: () => open(s.id),
@@ -105,14 +122,14 @@ async function runTask(path, title, body = {}) {
     toast(e.message, "bad");
     if ((path === "/install" || path === "/palettes/apply") && e.message.startsWith("not installing")) {
       drawer.append(el("div", { class: "row force", style: { padding: "0 14px 14px" } },
-        wc.confirmButton("Install the rest anyway", "Click again: the failed mods' earlier changes are removed",
+        wc.confirmButton("Apply the rest anyway", "Click again: the failed mods' earlier changes are removed",
           () => runTask(path, title, { ...body, force: true }), "btn danger")));
     }
   }
   await refreshStatus();
 }
-document.getElementById("buildBtn").addEventListener("click", () => runTask("/build", "Check build"));
-document.getElementById("installBtn").addEventListener("click", () => runTask("/install", "Install mods"));
+installBtn.addEventListener("click", () => runTask("/install", "Apply to game"));
+bus.on("apply", () => runTask("/install", "Apply to game"));
 bus.on("run-task", ({ path, title, body }) => runTask(path, title, body));
 bus.on("mods-changed", () => refreshStatus());
 

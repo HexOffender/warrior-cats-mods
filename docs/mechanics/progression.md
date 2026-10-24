@@ -82,7 +82,9 @@ extra growth, scaled the same way (× (level − 1) × 0.05):
 | Ambitious | 0 | +10 | +20 |
 | Wise | +10 | +20 | 0 |
 
-**Checked against a save:** a RiverClan cat, Brave + Energetic, level 20, has Prowess 233,
+**Checked against a save, and live:** the same numbers sit in the player state's level component
+while you play (`Game.cat():stats()`, [scripting.md](../scripting.md)), and an enemy scaled to level 20
+had stats grown by the same formula. A RiverClan cat, Brave + Energetic, level 20, has Prowess 233,
 Strength 199, Resilience 189, Instinct 199, Agility 180 and Stamina 100.
 - Without the trait, the formula gives 233, 180, 189, 189, 180, 100.
 - Brave adds 20 × 0.95 = 19 Strength and 10 × 0.95 = 9.5 Instinct.

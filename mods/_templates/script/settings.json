@@ -1,0 +1,5 @@
+{
+  "_help": "This script's settings: MOD.settings in scripts/main.lua. The mod menu (Insert) has a page to change them live; Save writes them back here.",
+  "enabled": true,
+  "message": "Hello from my script"
+}

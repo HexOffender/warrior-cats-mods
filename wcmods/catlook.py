@@ -322,7 +322,7 @@ if okMenu then pcall(function()
             COLOURS[p.param] = nil
         end
     end
-    Menu.page("Your cat", function(ui)
+    Menu.page("Colours", function(ui)
         ui.heading("Your cat's colours")
         ui.note("Only your cat wears these. Changes show within half a second." ..
                 (SAVE and (" Save writes them to " .. SAVE.file .. ", so installing again keeps them.") or ""))
@@ -363,6 +363,6 @@ if okMenu then pcall(function()
             status = "Back to the installed colours."
         end
         if status then ui.note(status) end
-    end, { order = 21 })
+    end, { order = 11, group = "cat" })
 end) end
 '''

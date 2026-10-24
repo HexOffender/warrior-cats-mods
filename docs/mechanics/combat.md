@@ -39,8 +39,8 @@ Six stats, read from the code:
 
 | Stat | What it does |
 |---|---|
-| **Prowess** | Health, very likely. Setting up a fighter passes round(Prowess) to two setters on the component at +0x650, most likely max and current health (`0x1417D6F8D` on). It also adds to stamina. |
-| **Stamina** | Combat stamina. The maximum is **0.4 × Prowess + Stamina** (`0x1417D6F0A`). Moves cost stamina. |
+| **Prowess** | Health. Setting up a fighter passes round(Prowess) to the health component (`0x1417D6F8D` on). Confirmed: the save stores `Health: 233` for Prowess 233, and in a fight the health of both sides was their Prowess. It also adds to stamina. |
+| **Stamina** | Combat stamina. The maximum is **0.4 × Prowess + Stamina** (`0x1417D6F0A`). Confirmed in a fight: 193.2 for your cat (Prowess 233, Stamina 100) and 141.2 for a bird (203, 60). Moves cost stamina. |
 | **Strength, Instinct, Agility** | Attack and defence, picked by stance (see the damage formula). |
 | **Resilience** | Named as the defence stat for three stances in `CombatStance.csv`, but the damage code doesn't read that column (below). |
 | **Agility** | Also gives speed (below). |
@@ -389,7 +389,8 @@ secret fox, dog, snake and badger.
 | Perfect | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 0 | 1 | 1 | 1 | 1 |
 
 **Dynamic difficulty** (`Gameplay.Combat.Dynamic.*`): the enemy's tier is picked from a range set by
-your level, and its level is yours −1 to +1.
+your level, and its level is yours −1 to +1. Seen in game: a weak bird fought a level 20 cat at level
+20, with its stats grown by the same formula as yours (base + growth × 0.95 at level 20).
 
 | Your level | Enemy tiers |
 |---|---|
