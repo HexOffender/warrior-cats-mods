@@ -202,9 +202,16 @@ def main():
     p = argparse.ArgumentParser(description="Generate the themed palette examples from the game's colours.")
     p.add_argument("--out", default=os.path.join(os.path.dirname(ROOT), "wcmods-examples"),
                    help="the wcmods-examples checkout to write palette-*/ into (default: beside wcmods)")
-    out = os.path.abspath(p.parse_args().out)
+    p.add_argument("--force", action="store_true", help="write into --out even if it isn't a wcmods-examples checkout")
+    args = p.parse_args()
+    out = os.path.abspath(args.out)
     if not os.path.isdir(out):
         sys.exit(f"{out} doesn't exist: clone wcmods-examples there, or pass --out")
+    readme = os.path.join(out, "README.md")
+    looks = os.path.isfile(readme) and open(readme, encoding="utf-8", errors="replace").readline().strip() == "# wcmods examples"
+    if not (looks or args.force):
+        sys.exit(f"{out} isn't a wcmods-examples checkout (its README.md starts \"# wcmods examples\"); "
+                 "pass --force to write there anyway")
     tables, rims = game_colours()
     for mod_id, theme in THEMES.items():
         folder = os.path.join(out, "palette-" + mod_id)

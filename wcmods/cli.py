@@ -86,10 +86,17 @@ def cmd_enable(ctx, args, value=True):
 
 def cmd_add(ctx, args):
     from . import modzip
-    if os.path.isdir(args.path):
-        done = modzip.add_folder(args.path, ctx.mods_root, ctx.backups, enable=not args.off)
+    folder = os.path.isdir(args.path)
+    ids = [i.strip() for i in args.only.split(",") if i.strip()] if args.only else None
+    # Several mods at once (a collection such as wcmods-examples) go in switched off, unless asked: turning
+    # on every palette, remap and script in it at once is never what's wanted.
+    found = modzip.inspect_folder(args.path, ctx.mods_root) if folder else modzip.inspect(args.path, ctx.mods_root)
+    many = len(ids if ids is not None else found) > 1
+    enable = not args.off and (args.on or not many)
+    if folder:
+        done = modzip.add_folder(args.path, ctx.mods_root, ctx.backups, ids=ids, enable=enable)
     else:
-        done = modzip.add_zip(args.path, ctx.mods_root, ctx.backups, enable=not args.off)
+        done = modzip.add_zip(args.path, ctx.mods_root, ctx.backups, ids=ids, enable=enable)
     for d in done:
         if d.get("skipped"):
             print(f"skipped {d['id']} ({d['name']}): it {d['skipped']}")
@@ -105,6 +112,8 @@ def cmd_add(ctx, args):
     for d in done:
         for why in mods.unmet(found).get(d["id"], []):
             print(f"  {d['id']} {why}")
+    if many and not enable:
+        print("added switched off (several mods at once): `wcmods enable <mod>` turns on the ones you want")
     print("run `wcmods install` (game closed) to put it in the game")
 
 
@@ -659,6 +668,8 @@ def main(root, argv=None):
     p = sub.add_parser("add", help="add a downloaded mod: a .zip (one or several mods) or a mod's folder")
     p.add_argument("path")
     p.add_argument("--off", action="store_true", help="add it switched off")
+    p.add_argument("--only", metavar="MOD,MOD", help="of several mods in it, add just these (folder names)")
+    p.add_argument("--on", action="store_true", help="of several mods, switch them all on (they go in off otherwise)")
     p.set_defaults(fn=cmd_add)
     p = sub.add_parser("remove", help="take a mod out of mods/ (kept in backups/mods)")
     p.add_argument("mod")

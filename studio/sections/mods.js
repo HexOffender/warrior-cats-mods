@@ -248,9 +248,11 @@ export default {
     function renderPreview(r, name, add, cancel) {
       const picks = new Map();
       addBox.append(el("div", { class: "row spread" }, el("h2", { text: r.mods.length > 1 ? `${r.mods.length} mods in ${name}` : `Add ${r.mods[0].name}?` }),
-        el("span", { class: "muted mono", text: name })));
+        el("span", { class: "muted mono", text: name })),
+        r.mods.length > 1 ? el("p", { class: "note", text: "Tick the ones you want. With palettes, pick one theme at a time." }) : null);
       for (const m of r.mods) {
-        const pick = el("input", { type: "checkbox", checked: true, id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
+        // One mod is simply added; out of several (a collection like wcmods-examples) the player picks.
+        const pick = el("input", { type: "checkbox", checked: r.mods.length === 1, id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
         picks.set(m.id, pick);
         const notes = [];
         if (m.existing && m.existing.builtin) notes.push(el("li", { class: "warn", text: `Left out: ${m.existing.name} comes with Clan Mod Studio, so this copy doesn't replace it.` }));

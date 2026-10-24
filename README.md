@@ -22,6 +22,12 @@ To open it from your desktop, right-click `Clan Mod Studio` and choose *Send to 
 shortcut)*. Close its black window to stop it. If it's already open, double-clicking it again
 brings it back.
 
+**Updating:** unzip a new download over the old folder; your mods and settings stay. With git, note
+that wcmods used to come with palettes, mouse look and other mods in `mods/`. They're now in
+[wcmods-examples](https://github.com/HexOffender/wcmods-examples), so pulling takes them out of
+`mods/` (copy any you changed somewhere first); add back the ones you use. Everything else in `mods/`
+is yours and git leaves it alone, except the mod menu's own folder.
+
 ## Clan Mod Studio
 
 ```

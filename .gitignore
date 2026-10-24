@@ -1,7 +1,7 @@
 ﻿# Personal and machine-specific
 backups/
 wcmods.json
-# Your mods: wcmods ships only the mod menu (the rest are in examples/)
+# Your mods: wcmods ships only the mod menu (example mods are in the wcmods-examples repository)
 mods/*
 !mods/mod-menu/
 
