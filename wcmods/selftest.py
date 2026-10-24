@@ -55,6 +55,8 @@ def run(cfg, oodle, log=print):
     check("the mod menu is a mod: its window and module only with it on", _menu_mod(cfg))
     check("getting set up: the game found from any of its folders, a first backup, the script loader", _onboarding())
     check("palettes without the Oodle DLL: eye colours left out with a warning, the rest built", _palettes_without_oodle(cfg))
+    check("getting set up, the rough edges: an install from before UE4SS is redone, a folder adds only the "
+          "ticked mods, no drive letters in UE4SS's .zip, a studio without the game answers", _onboarding_edges())
     problems = luacheck.check(palettes.ue4ss_script({}))
     check("palette script", not problems, "; ".join(problems[:3]))
     # Interact and Scent tracking move along F/E/Q, so Q goes quiet; X stays because Return to camp still
@@ -398,6 +400,86 @@ def _onboarding():
                 and os.path.normcase(waiting) == os.path.normcase(z) and gone is None)
 
 
+def _onboarding_edges():
+    """PR #11's review: an install made before UE4SS was in is made again once it is; a dropped folder of
+    mods adds only the ticked ones; a UE4SS .zip naming a drive deeper in a path is refused; and a studio
+    that hasn't found the game answers its pages with a message instead of dying."""
+    import datetime
+    import json
+    import threading
+    import urllib.error
+    import urllib.request
+    from . import modzip, pipeline, studio as studio_mod, ue4ss
+    from .cli import Ctx
+    from .config import EXE_NAME, Config
+    from .mods import discover
+    ok = []
+    with tempfile.TemporaryDirectory() as tmp:
+        # An install with the loader missing, then the loader in.
+        win64 = os.path.join(tmp, "Game", "Wrc", "Binaries", "Win64")
+        os.makedirs(win64)
+        open(os.path.join(win64, EXE_NAME), "w").close()
+        root = _mods_folder(os.path.join(tmp, "a"), {"m": ({"name": "M", "enabled": True}, {})})
+        conf = os.path.join(tmp, "conf")
+        os.makedirs(conf)
+        built = (datetime.datetime.now() + datetime.timedelta(minutes=1)).isoformat(timespec="seconds")
+        with open(os.path.join(conf, "wcmods.json"), "w") as f:
+            json.dump({"game_dir": os.path.join(tmp, "Game"), "oodle_dll": os.path.join(tmp, "none.dll"),
+                       "installed": {"mods": ["m"], "built": built, "ue4ss": False, "oodle": True}}, f)
+        cfg = Config(conf)
+        before = pipeline.pending(cfg, discover(root))
+        os.makedirs(os.path.join(win64, "ue4ss", "Mods"))
+        after = pipeline.pending(cfg, discover(root))
+        ok.append(not before["any"] and after["any"] and after["redo"])
+
+        # A folder holding two mods, one of them ticked.
+        drop = _mods_folder(os.path.join(tmp, "drop"), {"one": ({"name": "One"}, {}), "two": ({"name": "Two"}, {})})
+        mods_root = os.path.join(tmp, "mine")
+        os.makedirs(mods_root)
+        added = modzip.add_folder(drop, mods_root, os.path.join(tmp, "backups"), ids=["two"])
+        ok.append([a["id"] for a in added] == ["two"] and sorted(os.listdir(mods_root)) == ["two"])
+
+        # "ue4ss/Q:/..." would land on drive Q.
+        z = _zip(os.path.join(tmp, "bad.zip"), {"dwmapi.dll": "MZ", "ue4ss/UE4SS.dll": "MZ", "ue4ss/Q:/x.bat": "x"})
+        try:
+            ue4ss.install_loader(z, win64, log=lambda m: None)
+            ok.append(False)
+        except ValueError:
+            ok.append(True)
+
+        # The studio's server with no game: a page asking for the game's files gets a message back.
+        bare = os.path.join(tmp, "bare")
+        os.makedirs(bare)
+        with open(os.path.join(bare, "wcmods.json"), "w") as f:
+            json.dump({}, f)
+        from . import config as config_mod
+        kept = config_mod._find_game_dir
+        config_mod._find_game_dir = lambda: None   # as on a computer without the game in Steam
+        ctx = Ctx(bare)
+        st = studio_mod.Studio(ctx)
+        server = studio_mod._Server(("127.0.0.1", 0), None)
+        port = server.server_address[1]
+        server.RequestHandlerClass = studio_mod.make_handler(st, port)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            def ask(path, method="GET"):
+                req = urllib.request.Request(f"http://127.0.0.1:{port}/api/{path}", method=method,
+                                             headers={"X-WC-Token": st.token, "Content-Type": "application/json"},
+                                             data=b"{}" if method == "POST" else None)
+                try:
+                    with urllib.request.urlopen(req, timeout=10) as r:
+                        return r.status, json.load(r)
+                except urllib.error.HTTPError as e:
+                    return e.code, json.load(e)
+            answers = [ask("game/data"), ask("install", "POST"), ask("play", "POST")]
+        finally:
+            server.shutdown()
+            server.server_close()
+            config_mod._find_game_dir = kept
+        ok.append(all(code == 400 and "hasn't found the game" in a.get("error", "") for code, a in answers))
+    return all(ok)
+
+
 def _palettes_without_oodle(cfg):
     from . import mods, pipeline
     found, searched, data = cfg._oodle_found, cfg._oodle_searched, cfg.data.pop("oodle_dll", None)
@@ -409,7 +491,8 @@ def _palettes_without_oodle(cfg):
             out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
             rep = out["sections"].get("palettes", {})
             return (rep.get("status") == "ok" and "colours" in rep.get("mods", [])
-                    and any("eye colours left out" in w for w in out["warnings"]))
+                    and any("eye colours left out" in w for w in out["warnings"])
+                    and not [k for k, r in out["sections"].items() if r["status"] == "failed"])
     finally:
         cfg._oodle_found, cfg._oodle_searched = found, searched
         if data:

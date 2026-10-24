@@ -27,6 +27,8 @@ from .savejson import SaveDoc
 from .sdk import BuildContext
 from .sections.files import classify
 
+NO_GAME = "Clan Mod Studio hasn't found the game yet: Get set up, on the Mods page, asks where it is"
+
 MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "names.json", "cats.json", "save.json",
              "settings.json", "menu.json")
 MAX_UPLOAD = modzip.MAX_BYTES   # a downloaded mod's .zip
@@ -105,7 +107,9 @@ class Studio:
         """One API call: `parts` is the path after /api/, `body` the JSON sent, `query` the URL's
         parameters, `upload` the path of a file sent as the body (mods/add)."""
         cfg = self.ctx.cfg
-        if method == "POST" and parts in (["build"], ["install"], ["uninstall"], ["palettes", "apply"]):
+        if method == "POST" and parts in (["build"], ["install"], ["uninstall"], ["palettes", "apply"], ["play"]):
+            if not cfg.game_dir:
+                raise ValueError(NO_GAME)
             self.need_current_code()
         if parts == ["info"]:
             sections = list(BUILTIN_SECTIONS)
@@ -129,9 +133,12 @@ class Studio:
         if parts == ["setup", "game"] and method == "POST":
             return {"dir": onboarding.set_game_dir(cfg, body.get("dir"))}
         if parts == ["setup", "oodle"] and method == "POST":
-            return {"path": onboarding.set_oodle(cfg, body.get("path"))}
+            path = onboarding.set_oodle(cfg, body.get("path"))
+            self.ctx._game = None   # its readers were made without the DLL: the pages read the game afresh
+            return {"path": path}
         if parts == ["setup", "backup"] and method == "POST":
-            return {"name": onboarding.first_backup(cfg, self.ctx.backups)}
+            with self.lock:   # two pages asking at once make one copy
+                return {"name": onboarding.first_backup(cfg, self.ctx.backups)}
         if parts == ["setup", "loader"] and method == "POST":
             # UE4SS: downloaded from GitHub, or from a .zip sent as the body.
             return self.run(lambda log: onboarding.install_loader(cfg, upload, log))
@@ -142,8 +149,12 @@ class Studio:
             waiting = onboarding.inbox()
             if not waiting:
                 return {"mods": [], "name": None}
-            found = modzip.inspect_folder(waiting, self.ctx.mods_root) if os.path.isdir(waiting) \
-                else modzip.inspect(waiting, self.ctx.mods_root)
+            try:
+                found = modzip.inspect_folder(waiting, self.ctx.mods_root) if os.path.isdir(waiting) \
+                    else modzip.inspect(waiting, self.ctx.mods_root)
+            except (ValueError, OSError, zipfile.BadZipFile):
+                onboarding.clear_inbox()   # said once: it isn't offered again
+                raise
             return {"mods": found, "name": os.path.basename(waiting), "code_allowed": bool(cfg.data.get("allow_code_mods"))}
         if parts == ["mods", "inbox", "add"] and method == "POST":
             waiting = onboarding.inbox()
@@ -152,7 +163,8 @@ class Studio:
             enable = bool(body.get("enable", True))
             with self.lock:
                 if os.path.isdir(waiting):
-                    added = modzip.add_folder(waiting, self.ctx.mods_root, self.ctx.backups, enable=enable)
+                    added = modzip.add_folder(waiting, self.ctx.mods_root, self.ctx.backups, ids=body.get("ids") or None,
+                                              enable=enable)
                 else:
                     added = modzip.add_zip(waiting, self.ctx.mods_root, self.ctx.backups, ids=body.get("ids") or None,
                                            enable=enable, name=os.path.basename(waiting))
@@ -470,6 +482,8 @@ def make_handler(studio, port):
                     return self._send(200, result)
                 except zipfile.BadZipFile:
                     return self._send(400, {"error": "that isn't a .zip file (or it's damaged)"})
+                except SystemExit as e:   # Ctx.need_game and the like, which end the command line
+                    return self._send(400, {"error": NO_GAME if not studio.ctx.cfg.game_dir else str(e)})
                 except LookupError as e:
                     return self._send(404, {"error": str(e)})
                 except PermissionError as e:

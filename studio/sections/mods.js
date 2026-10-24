@@ -130,6 +130,7 @@ export default {
         ...c.on.map(i => `${c.names[i] || i} on`),
         ...c.off.map(i => `${c.names[i] || i} off`),
         ...c.changed.map(i => `${c.names[i] || i} changed`),
+        ...(c.redo || []).map(r => `apply again: ${r}`),
       ];
       changesBox.append(el("div", { class: "banner" },
         el("div", { class: "row spread" },

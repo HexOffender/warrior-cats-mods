@@ -65,7 +65,7 @@ def install_loader(zip_path, win64_dir, console=True, log=print):
         for info in z.infolist():
             name = info.filename.replace("\\", "/")
             parts = [p for p in name.split("/") if p not in ("", ".")]
-            if name.startswith("/") or re.match(r"^[A-Za-z]:", name) or ".." in parts:
+            if name.startswith("/") or ".." in parts or any(":" in p for p in parts):
                 raise ValueError(f"{info.filename}: not a safe path; this isn't UE4SS's .zip")
             if info.is_dir() or not parts or (parts[0] != "dwmapi.dll" and parts[0] != "ue4ss"):
                 continue
@@ -77,8 +77,11 @@ def install_loader(zip_path, win64_dir, console=True, log=print):
         if sum(i.file_size for _, i in members) > MAX_ZIP:
             raise ValueError("this .zip unpacks to far more than UE4SS does")
         written = []
+        top = os.path.realpath(win64_dir) + os.sep
         for parts, info in members:
             dest = os.path.join(win64_dir, *parts)
+            if not os.path.realpath(dest).startswith(top):
+                raise ValueError(f"{info.filename}: not a safe path; this isn't UE4SS's .zip")
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             with z.open(info) as src, open(dest, "wb") as out:
                 shutil.copyfileobj(src, out, 1024 * 1024)

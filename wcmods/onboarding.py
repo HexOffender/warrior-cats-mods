@@ -10,8 +10,6 @@ The steps, in the order the studio shows them:
 """
 import json
 import os
-import subprocess
-import sys
 import tempfile
 import time
 
@@ -125,9 +123,9 @@ def play(ctx, log=print, force=False):
         applied = True
     with_remaps = remaps(ctx)
     if with_remaps:
-        # `wcmods play` starts the game and runs the remapper until it closes, in its own console window.
-        flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-        subprocess.Popen([sys.executable, os.path.join(ctx.root, "wcmods.py"), "play"], cwd=ctx.root, creationflags=flags)
+        # The launcher runs `wcmods play` (the game, then the remapper until it closes) in a window of its own,
+        # and keeps that window open on an error so it can be read.
+        os.startfile(os.path.join(ctx.root, "Play with key remaps.bat"))
         log("starting the game with your key remaps (their window closes when the game does)")
     else:
         os.startfile(f"steam://rungameid/{STEAM_APP_ID}")

@@ -16,12 +16,19 @@ choice /c YN /m " Install it now, with Windows' own installer"
 if errorlevel 2 goto :manual
 echo.
 winget install -e --id Python.Python.3.13 --scope user
+set "WINGET=%errorlevel%"
 call :find
 if defined PY (
   echo.
   echo  Python is installed.
   echo.
   exit /b 0
+)
+if not "%WINGET%"=="0" (
+  echo.
+  echo  The installer couldn't install Python ^(the message above says why^).
+  echo.
+  goto :manual
 )
 echo.
 echo  Python is installed, but this window can't see it yet.

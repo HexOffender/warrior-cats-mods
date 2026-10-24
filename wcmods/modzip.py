@@ -353,8 +353,9 @@ def inspect_folder(path, mods_root):
     return out
 
 
-def add_folder(path, mods_root, backups_root, enable=True):
-    """Add a mod from a folder (one with a mod.json, or holding mod folders). Returns as add_zip."""
+def add_folder(path, mods_root, backups_root, ids=None, enable=True):
+    """Add the mods in a folder (one with a mod.json, or holding mod folders): all of them, or those in
+    `ids`. Returns as add_zip."""
     path = os.path.abspath(path)
     folders = _mod_folders(path)
     if not folders:
@@ -367,7 +368,7 @@ def add_folder(path, mods_root, backups_root, enable=True):
         raise ValueError("that's already in your mods folder")
     # Every mod.json is checked, and each mod named as add_zip names it (its "id", else its folder),
     # before anything is copied.
-    plan, ids, skipped = [], set(), []
+    plan, taken, skipped = [], set(), []
     for folder in folders:
         try:
             with open(os.path.join(folder, "mod.json"), encoding="utf-8-sig") as f:
@@ -378,13 +379,17 @@ def add_folder(path, mods_root, backups_root, enable=True):
             raise ValueError(f"{folder}: mod.json should hold an object")
         _check_meta(meta, folder)
         mod_id = safe_id(meta.get("id") or os.path.basename(folder))
-        while mod_id in ids:
+        while mod_id in taken:
             mod_id = safe_id(mod_id + "-2")
-        ids.add(mod_id)
+        taken.add(mod_id)
+        if ids is not None and mod_id not in ids:
+            continue
         if _builtin(os.path.join(mods_root, mod_id)):
             skipped.append({"id": mod_id, "name": str(meta.get("name") or mod_id), "skipped": BUILTIN_SKIP})
         else:
             plan.append((folder, mod_id))
+    if not plan and not skipped:
+        raise ValueError("none of the mods picked are in it")
     if not plan:
         raise ValueError("that would replace a mod that comes with wcmods (" + ", ".join(s["id"] for s in skipped) +
                          "); update wcmods instead")
