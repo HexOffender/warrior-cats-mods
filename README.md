@@ -238,8 +238,9 @@ Confirmed in game (2026-10-23):
 - UE4SS runs, finds the colour tables on `BP_WrcGuiManager_C`, and its writes take effect.
 - Mouse look turns and tilts the camera, gives the cursor back in menus, and toggles with F6
   (see its known issues above).
-- Edited saves load, and the game keeps the edits when it saves again. The save carries a 64-bit
-  checksum whose formula isn't known; the tool keeps the original value and the game accepts it.
+- Edited saves load, and the game keeps the edits when it saves again; a Level change made with the
+  save editor was accepted. The save carries a 64-bit checksum whose formula isn't known; the tool
+  keeps the original value and the game accepts it.
   Save edits are applied after a backup: restore one from the Mods page (or
   `python wcmods.py restore latest`) if anything goes wrong.
 - Edited key bindings in the save are ignored, and the game's rebinding screen doesn't work on PC
