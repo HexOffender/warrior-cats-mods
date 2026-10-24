@@ -1,5 +1,7 @@
-"""The key remapper: while the game is in front and its cursor is hidden (normal play), keys you press
-stand in for the game's own keys. Menus, the cat-naming screen and every other program are left alone.
+"""The key remapper: while the game is in front and you're playing (exploring, not in a menu), keys you
+press stand in for the game's own keys. Menus, the cat-naming screen and every other program are left alone.
+The game says which it is through a small UE4SS script (playstate.py) that writes "play" or "menu" to a
+file; without it, the remapper remaps whenever the game is in front.
 
 Windows only. It uses a low-level keyboard hook (and a mouse hook when a mouse button or the wheel
 stands in for a key): a remapped key is held back and the game's key is sent in its place with
@@ -26,7 +28,6 @@ MOUSE_BUTTONS = {0x201: ("LeftMouseButton", True), 0x202: ("LeftMouseButton", Fa
 LLKHF_INJECTED, LLMHF_INJECTED = 0x10, 0x01
 INPUT_KEYBOARD, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP = 1, 0x1, 0x2
 MAGIC = 0x57434D52   # "WCMR" in dwExtraInfo marks the remapper's own key presses
-CURSOR_SHOWING = 0x1
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 LRESULT = ctypes.c_ssize_t
@@ -61,11 +62,6 @@ class INPUT(ctypes.Structure):
     _fields_ = [("type", wintypes.DWORD), ("u", _INPUTUNION)]
 
 
-class CURSORINFO(ctypes.Structure):
-    _fields_ = [("cbSize", wintypes.DWORD), ("flags", wintypes.DWORD), ("hCursor", wintypes.HANDLE),
-                ("ptScreenPos", wintypes.POINT)]
-
-
 HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
 user32.SetWindowsHookExW.argtypes = (ctypes.c_int, HOOKPROC, wintypes.HINSTANCE, wintypes.DWORD)
 user32.SetWindowsHookExW.restype = wintypes.HHOOK
@@ -78,7 +74,7 @@ user32.SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int)
 user32.MapVirtualKeyW.argtypes = (wintypes.UINT, wintypes.UINT)
 user32.GetForegroundWindow.restype = wintypes.HWND
 user32.GetWindowThreadProcessId.argtypes = (wintypes.HWND, ctypes.POINTER(wintypes.DWORD))
-user32.GetCursorInfo.argtypes = (ctypes.POINTER(CURSORINFO),)
+user32.GetClassNameW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
 kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
 kernel32.OpenProcess.restype = wintypes.HANDLE
 kernel32.QueryFullProcessImageNameW.argtypes = (wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR,
@@ -103,13 +99,23 @@ def _exe_name(pid):
         kernel32.CloseHandle(handle)
 
 
+def _window_class(hwnd):
+    buf = ctypes.create_unicode_buffer(256)
+    user32.GetClassNameW(hwnd, buf, len(buf))
+    return buf.value
+
+
 class Remapper:
     """send: {key you press: game key}; block: game keys to hold back. Key names are Unreal names."""
 
-    def __init__(self, send, block, exe_names, log=print, dry_run=False, in_menus=False):
+    def __init__(self, send, block, exe_names, log=print, dry_run=False, in_menus=False, debug=False,
+                 state_file=None):
         self.send, self.block = dict(send), set(block)
         self.exe = {n.lower() for n in exe_names}
-        self.log, self.dry_run, self.in_menus = log, dry_run, in_menus
+        self.log, self.dry_run, self.in_menus, self.debug = log, dry_run, in_menus, debug
+        self.state_file = state_file
+        self.playing = None     # from the play-state file: True, False, or None when there's no file
+        self._last_state, self._debug_keys = None, 0
         self.held = {}          # key you're holding -> game key the remapper is holding for it
         self.swallowed = set()  # blocked keys held down, so their release is held back too
         self.used = set()       # remaps already reported once
@@ -118,26 +124,47 @@ class Remapper:
         self._failed = False
 
     # ---- when to remap ----
-    def _game_in_front(self):
+    def _front_window(self):
+        """(hwnd, exe name, window class, is the game) for the window in front; cached per window."""
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
-            return False
+            return (None, "", "", False)
         if hwnd != self._front[0]:
             pid = wintypes.DWORD()
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            self._front = (hwnd, _exe_name(pid.value) in self.exe)
-        return self._front[1]
+            exe, cls = _exe_name(pid.value), _window_class(hwnd)
+            # Unreal's game window class, in case the game's process can't be opened to read its name.
+            self._front = (hwnd, exe, cls, exe in self.exe or (not exe and cls == "UnrealWindow"))
+        return self._front
+
+    def read_state(self):
+        """Read the play-state file (main loop). A half-written file keeps the last state."""
+        if not self.state_file:
+            return
+        try:
+            with open(self.state_file, encoding="ascii", errors="replace") as f:
+                text = f.read().strip()
+        except OSError:
+            self.playing = False   # the script is installed but hasn't written yet (the game is starting)
+            return
+        if text in ("play", "menu"):
+            self.playing = text == "play"
 
     def active(self):
-        """The game is in front, and (unless in_menus) its cursor is hidden: normal play, not a menu."""
-        if not self._game_in_front():
+        """The game is in front and, unless in_menus, you're playing rather than in a menu."""
+        if not self._front_window()[3]:
             return False
-        if self.in_menus:
-            return True
-        info = CURSORINFO(cbSize=ctypes.sizeof(CURSORINFO))
-        if not user32.GetCursorInfo(ctypes.byref(info)):
-            return True
-        return not (info.flags & CURSOR_SHOWING) or not info.hCursor
+        return self.in_menus or self.playing is not False
+
+    def report_state(self):
+        """Debug: log the window in front and the play state whenever they change. Called from the main loop."""
+        _, exe, cls, is_game = self._front_window()
+        state = (exe, cls, is_game, self.playing)
+        if state != self._last_state:
+            self._last_state = state
+            said = {True: "play", False: "menu", None: "no play-state file"}[self.playing]
+            self.log(f"  [debug] front: {exe or '?'} ({cls}) game={is_game}; game says: {said}; "
+                     f"remapping {'ON' if self.active() else 'off'}")
 
     # ---- sending ----
     def _press(self, name, down):
@@ -169,7 +196,11 @@ class Remapper:
             return True
         if name in self.swallowed:
             return True
-        if not self.active():
+        on = self.active()
+        if self.debug and self._debug_keys < 40 and (name in self.send or name in self.block):
+            self._debug_keys += 1   # only the remapped keys are ever logged
+            self.log(f"  [debug] {name} pressed; remapping {'ON' if on else 'off'}")
+        if not on:
             return False
         target = self.send.get(name)
         if target is not None:
@@ -257,7 +288,7 @@ class Remapper:
         self._hooks.clear()
         self._procs.clear()
 
-    def run(self, should_stop, poll=0.25):
+    def run(self, should_stop, poll=0.1):
         """Remap until should_stop() returns True (checked every `poll` seconds) or Ctrl+C."""
         ready, errors = threading.Event(), []
 
@@ -282,6 +313,9 @@ class Remapper:
             raise errors[0]
         try:
             while not should_stop():
+                self.read_state()
+                if self.debug:
+                    self.report_state()
                 time.sleep(poll)
         finally:
             if self._thread_id:

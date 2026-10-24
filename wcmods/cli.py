@@ -6,7 +6,7 @@ import shutil
 import sys
 import time
 
-from . import controls, eyeatlas, keymap, mods, pipeline, save, ue4ss
+from . import controls, eyeatlas, keymap, mods, pipeline, playstate, save, ue4ss
 from .config import EXE_NAME, STEAM_APP_ID, Config, game_running
 from .gamefiles import GameFiles
 
@@ -133,7 +133,15 @@ def _run_remapper(ctx, args, wait_for_launch):
     if not send and not block:
         print("No keyboard or mouse remaps in the enabled mods' controls.json; nothing to do.")
         return
-    print("remaps while you play (game in front, cursor hidden):")
+    state_file = playstate.state_path(ctx.cfg) if ctx.cfg.game_dir else None
+    script = os.path.join(os.path.dirname(state_file), "Scripts", "main.lua") if state_file else None
+    if not (script and os.path.isfile(script)):
+        state_file = None
+        print("  note: the play-state script isn't installed yet, so remaps apply whenever the game is in front,\n"
+              "        menus and the name screen too. Install mods once (game closed) to fix that.")
+    elif not game_running() and os.path.isfile(state_file):
+        os.remove(state_file)   # last session's state; the script writes a fresh one as the game starts
+    print("remaps while you play (game in front, not in a menu):")
     for src, dst in sorted(send.items()):
         print(f"  {src:18s} -> {dst}")
     for key in sorted(block):
@@ -159,7 +167,8 @@ def _run_remapper(ctx, args, wait_for_launch):
 
     print("waiting for the game..." if not state["seen"] else "the game is running.", "Ctrl+C stops the remapper.")
     try:
-        Remapper(send, block, (EXE_NAME,), dry_run=args.dry_run, in_menus=args.in_menus).run(should_stop)
+        Remapper(send, block, (EXE_NAME,), dry_run=args.dry_run, in_menus=args.in_menus,
+                 debug=args.debug, state_file=state_file).run(should_stop)
     except KeyboardInterrupt:
         print("remapper stopped")
     except OSError as e:
@@ -310,6 +319,8 @@ def main(root, argv=None):
         p = sub.add_parser(name, help=text)
         p.add_argument("--dry-run", action="store_true", help="only report which remaps would happen")
         p.add_argument("--in-menus", action="store_true", help="remap in menus too (off: menus and name entry keep your keys)")
+        p.add_argument("--debug", action="store_true",
+                       help="log the window in front, the game's play state, and presses of the remapped keys")
         p.set_defaults(fn=fn)
     sub.add_parser("tables", help="show the game's coat/pattern/marking/eye-button colour tables (needs UE4SS)").set_defaults(fn=cmd_tables)
     sub.add_parser("selftest", help="check every file format against the installed game").set_defaults(fn=cmd_selftest)

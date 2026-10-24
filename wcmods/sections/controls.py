@@ -1,7 +1,8 @@
 """Button remapping (controls.json). The game ignores edited bindings in its save, so keyboard and mouse
-remaps are carried out by the key remapper (`wcmods play` / `wcmods remap`) while the game runs; this
-section checks them at build time. See README, "Remapping keys"."""
-from .. import controls, keymap
+remaps are carried out by the key remapper (`wcmods play` / `wcmods remap`) while the game runs. This
+section checks them at build time and installs the small UE4SS script that tells the remapper when
+you're playing (playstate.py). See README, "Remapping keys"."""
+from .. import controls, keymap, playstate
 from ..sdk import Section
 
 DEVICES = ("keyboard", "gamepad", "keys")
@@ -35,6 +36,14 @@ class ControlsSection(Section):
         send, block, warnings = keymap.plan(merged)
         for w in warnings:
             ctx.warn(w)
+        if send or block:
+            # Lets the remapper tell play from menus (see playstate.py).
+            path = playstate.state_path(ctx.cfg)
+            if path:
+                ctx.add_ue4ss_mod(playstate.UE4SS_MOD_NAME, {"Scripts/main.lua": playstate.script(path), "enabled.txt": ""})
+            else:
+                ctx.warn("without UE4SS the key remapper can't tell menus from play, so it remaps whenever "
+                         "the game is in front")
         ctx.note("controls", merged)
         ctx.note("remaps", {"send": send, "block": sorted(block)})
 

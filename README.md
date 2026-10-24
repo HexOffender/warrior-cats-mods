@@ -42,11 +42,16 @@ There are three ways around that:
    the target app to `Wrc-Win64-ShippingDRM.exe` so the remap only applies in the game.
 3. **Keyboard keys: the wcmods key remapper.** `python wcmods.py play` starts the game, and while
    you play, the keys in your mods' `controls.json` (the Controls page) stand in for the game's.
-   "Play" means the game window is in front and the game has hidden the cursor. The remapper holds
-   back the key you press and sends the game's key in its place, and it stops when the game closes.
+   "Play" means the game window is in front and you're exploring, not in a menu. A small UE4SS
+   script (`WCModsPlayState`, installed with your mods when you have remaps) tells the remapper
+   which it is. Windows can't, because the game draws its own cursor. Without that script, remaps
+   apply whenever the game is in front. The remapper holds back the key you press and sends the
+   game's key in its place, and it stops when the game closes.
    Menus, the name screen and other programs keep your normal keys. A key whose action moved stops
    doing it, unless another action still uses it. Mouse buttons and the wheel can stand in for keys.
-   It's built but not yet tested in game.
+   Tested in game (2026-10-23) with movement on T/F/G/H. The new keys moved the cat, WASD did
+   nothing while playing, and remapping switched off when another window was in front and on the
+   title screen. The pause menu hasn't been checked yet.
 
 **The current method is method 2** (with method 1 for controllers). Method 3 replaces it once
 it's confirmed in game. Don't run both at once for the same keys.
