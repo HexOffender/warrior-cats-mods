@@ -6,7 +6,7 @@ import re
 import shutil
 import struct
 
-from . import bridge, catlook, controls, draw, hostpages, ingame, luacheck, menu, names, ue4ss, view, world
+from . import bridge, catlook, controls, draw, gamebuild, hostpages, ingame, luacheck, menu, names, ue4ss, view, world
 from . import game as game_lua   # WCModsGame (the name `game` is the game's files in build())
 from . import mods as modlib
 from .blake3 import blake3
@@ -61,12 +61,17 @@ def build(cfg, mods, out_dir, log=print):
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
     os.makedirs(out_dir)
+    # The installed game's build (gamebuild.py). A mod made for an older version stays out unless the
+    # player chose to use it anyway on this build; the in-game module follows what the update moved.
+    build = gamebuild.current(cfg)["build"]
+    old = gamebuild.outdated(cfg, mods, build)
+    left_out = {i: "made for an older version of the game" for i, o in old.items() if not o["allowed"]}
     # A mod that needs another mod ("requires" in mod.json) which is missing or off is left out, and
     # the report says why, so installing stops until that's sorted (or --force leaves it out).
-    unmet = modlib.unmet(mods)
-    enabled = [m for m in mods if m.enabled and m.id not in unmet]
+    unmet = modlib.unmet(mods, left_out)
+    enabled = [m for m in mods if m.enabled and m.id not in unmet and m.id not in left_out]
     game = GameFiles(cfg)
-    sections, skipped = load_sections(cfg, [m for m in mods if m.id not in unmet], log)
+    sections, skipped = load_sections(cfg, [m for m in mods if m.id not in unmet and m.id not in left_out], log)
     ctx = BuildContext(cfg, game, out_dir, log)
     ctx.mods = enabled   # the enabled mods, for sections that check another kind of file (cats.json and palettes)
     report = {}
@@ -120,6 +125,22 @@ def build(cfg, mods, out_dir, log=print):
                 "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
                 "csv_changes": csv_changes, "files": sorted(ctx.files),
                 "built": datetime.datetime.now().isoformat(timespec="seconds")}
+    names = {m.id: m.name for m in mods}
+    manifest["outdated"] = [{"id": i, "name": names[i], "made_for": o["made_for"], "used": o["allowed"]}
+                            for i, o in old.items()]
+    for o in manifest["outdated"]:
+        manifest["warnings"].append(
+            f"{o['name']} was made for an older version of the game, so it may not work or may behave "
+            "unpredictably; you chose to use it anyway" if o["used"] else
+            f"{o['name']} was made for an older version of the game, so it's left out until it's updated "
+            "(or you choose to use it anyway)")
+    # wcmods' own in-game members on this build: as found on a verified one, or where the update moved them.
+    fit = gamebuild.layout(cfg, log)
+    manifest["game"] = {"build": build, "status": fit["status"], "moved": fit["moved"], "lost": fit["lost"]}
+    if fit["lost"]:
+        manifest["warnings"].append(
+            "the game updated, and these values couldn't be found again, so what uses them is off until wcmods "
+            "is updated: " + ", ".join(gamebuild.describe(k) for k in fit["lost"]))
 
     if ctx.files or ctx.packages:
         pak = PakWriter()
@@ -189,7 +210,8 @@ def build(cfg, mods, out_dir, log=print):
         manifest["ue4ss_mods"].append(name)
     # Shared Lua modules go in whatever mods are on, for any UE4SS script to require (the menu's with
     # the mod menu).
-    shared_files = {m.SHARED_NAME: m.lua() for m in SHARED_LUA if m is not menu or menu_mod}
+    shared_files = {m.SHARED_NAME: m.lua(fit["offsets"]) if m is game_lua else m.lua()
+                    for m in SHARED_LUA if m is not menu or menu_mod}
     plan = None
     try:   # the cats' names, after the enabled name mods, for WCModsWorld's labels
         plan = names.Plan(names.GameNames(lambda path: game.read_text(BuildContext.data_path(path))),
@@ -229,7 +251,9 @@ def pending(cfg, mods):
         data = Config(cfg.root).data
     except (OSError, ValueError):   # being written this moment
         data = cfg.data
-    now = {m.id for m in mods if m.enabled}
+    # What an install would put in: mods made for an older version of the game stay out (unless used anyway).
+    left_out = {i for i, o in gamebuild.outdated(cfg, mods).items() if not o["allowed"]}
+    now = {m.id for m in mods if m.enabled} - left_out
     inst = data.get("installed")
     if not inst:
         return {"installed": False, "on": sorted(now), "off": [], "changed": [], "redo": [], "any": bool(now)}

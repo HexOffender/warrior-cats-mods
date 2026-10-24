@@ -118,12 +118,14 @@ def needing(mods, mod_id):
     return [m.id for m in mods if m.enabled and m.id != mod_id and mod_id in needed(mods, m.id)]
 
 
-def unmet(mods):
-    """{mod id: [why]} for the mods that are on but need a mod that's missing or off."""
+def unmet(mods, left_out=None):
+    """{mod id: [why]} for the mods that are on but need a mod that's missing, off, or in `left_out`
+    ({id: why}, e.g. made for an older version of the game)."""
     by_id = {m.id: m for m in mods}
+    left_out = left_out or {}
     out = {}
     for m in mods:
-        if not m.enabled:
+        if not m.enabled or m.id in left_out:
             continue
         why = []
         for i in needed(mods, m.id):
@@ -131,6 +133,8 @@ def unmet(mods):
                 why.append(f"needs {i}, which isn't in your mods")
             elif not by_id[i].enabled:
                 why.append(f"needs {by_id[i].name} ({i}), which is off")
+            elif i in left_out:
+                why.append(f"needs {by_id[i].name} ({i}), which is left out: {left_out[i]}")
         if why:
             out[m.id] = why
     return out

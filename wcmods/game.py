@@ -15,6 +15,36 @@ managers, the combat director, the quest and save managers.
 
 SHARED_NAME = "WCModsGame"
 
+# Members the game doesn't reflect, found by reverse-engineering build 24847281 (docs/mechanics/,
+# docs/reverse-engineering.md): class, then (property name, offset in the object, type). Rendered into
+# the Lua as Game.hidden. They're offsets inside objects, so ASLR doesn't move them, but a game update
+# that changes a class's layout does: signatures.py finds them again in a new build, and lua() takes the
+# offsets it found.
+HIDDEN = [
+    # Every resource component (health, stamina, combat stamina, level, fresh-kill pile).
+    ("/Script/SwtQuest.SwtQuestResourceComponent", [
+        ("WCM_ResourceType", 0x108, "IntProperty"), ("WCM_Value", 0x10C, "FloatProperty"),
+        ("WCM_Max", 0x110, "FloatProperty"), ("WCM_Scale", 0x114, "FloatProperty")]),
+    ("/Script/SwtQuest.SwtQuestStaminaComponent", [("WCM_Regen", 0x11C, "FloatProperty")]),
+    # The player state's level component: level, and the cat's stats out of combat.
+    ("/Script/SwtAdventure.SwtAdventureLevelComponent", [
+        ("WCM_Level", 0x120, "IntProperty"), ("WCM_LevelShown", 0x124, "IntProperty"),
+        ("WCM_Prowess", 0x154, "FloatProperty"), ("WCM_Strength", 0x158, "FloatProperty"),
+        ("WCM_Resilience", 0x15C, "FloatProperty"), ("WCM_Instinct", 0x160, "FloatProperty"),
+        ("WCM_Agility", 0x164, "FloatProperty"), ("WCM_Stamina", 0x168, "FloatProperty")]),
+    ("/Script/SwtAdventure.SwtAdventureFreshKillPileComponent", [
+        ("WCM_DecayTimer", 0x130, "FloatProperty"), ("WCM_DecayTime", 0x134, "FloatProperty")]),
+    ("/Script/SwtAdventure.SwtAdventureGameplayGameState", [("WCM_DayTime", 0x438, "FloatProperty")]),
+    # A fighter's combat component (set up when a fight starts).
+    ("/Script/SwtAdventure.TurnBasedCombatComponent", [
+        ("WCM_Stance", 0x1A0, "ByteProperty"),
+        ("WCM_Prowess", 0x1C4, "FloatProperty"), ("WCM_Strength", 0x1C8, "FloatProperty"),
+        ("WCM_Resilience", 0x1CC, "FloatProperty"), ("WCM_Instinct", 0x1D0, "FloatProperty"),
+        ("WCM_Agility", 0x1D4, "FloatProperty"), ("WCM_Stamina", 0x1D8, "FloatProperty"),
+        ("WCM_Clan", 0x3D8, "ByteProperty"), ("WCM_Level", 0x3DC, "IntProperty"),
+        ("WCM_PresetDamage", 0x3E4, "IntProperty")]),
+]
+
 LUA = r'''-- WCModsGame: script the game. Installed by wcmods; any UE4SS script can use it:
 --
 --   local Game = require("WCModsGame")
@@ -937,34 +967,7 @@ end
 -- ===================================================================================== hidden values
 -- Members the game doesn't reflect, mapped from the reverse-engineering notes (docs/mechanics/) with
 -- UE4SS's RegisterCustomProperty. Each becomes a property named WCM_<name> on its class.
-Game.hidden = {
-    -- Every resource component (health, stamina, combat stamina, level, fresh-kill pile).
-    ["/Script/SwtQuest.SwtQuestResourceComponent"] = {
-        { "WCM_ResourceType", 0x108, "IntProperty" }, { "WCM_Value", 0x10C, "FloatProperty" },
-        { "WCM_Max", 0x110, "FloatProperty" }, { "WCM_Scale", 0x114, "FloatProperty" },
-    },
-    ["/Script/SwtQuest.SwtQuestStaminaComponent"] = { { "WCM_Regen", 0x11C, "FloatProperty" } },
-    -- The player state's level component: level, and the cat's stats out of combat.
-    ["/Script/SwtAdventure.SwtAdventureLevelComponent"] = {
-        { "WCM_Level", 0x120, "IntProperty" }, { "WCM_LevelShown", 0x124, "IntProperty" },
-        { "WCM_Prowess", 0x154, "FloatProperty" }, { "WCM_Strength", 0x158, "FloatProperty" },
-        { "WCM_Resilience", 0x15C, "FloatProperty" }, { "WCM_Instinct", 0x160, "FloatProperty" },
-        { "WCM_Agility", 0x164, "FloatProperty" }, { "WCM_Stamina", 0x168, "FloatProperty" },
-    },
-    ["/Script/SwtAdventure.SwtAdventureFreshKillPileComponent"] = {
-        { "WCM_DecayTimer", 0x130, "FloatProperty" }, { "WCM_DecayTime", 0x134, "FloatProperty" },
-    },
-    ["/Script/SwtAdventure.SwtAdventureGameplayGameState"] = { { "WCM_DayTime", 0x438, "FloatProperty" } },
-    -- A fighter's combat component (set up when a fight starts).
-    ["/Script/SwtAdventure.TurnBasedCombatComponent"] = {
-        { "WCM_Stance", 0x1A0, "ByteProperty" },
-        { "WCM_Prowess", 0x1C4, "FloatProperty" }, { "WCM_Strength", 0x1C8, "FloatProperty" },
-        { "WCM_Resilience", 0x1CC, "FloatProperty" }, { "WCM_Instinct", 0x1D0, "FloatProperty" },
-        { "WCM_Agility", 0x1D4, "FloatProperty" }, { "WCM_Stamina", 0x1D8, "FloatProperty" },
-        { "WCM_Clan", 0x3D8, "ByteProperty" }, { "WCM_Level", 0x3DC, "IntProperty" },
-        { "WCM_PresetDamage", 0x3E4, "IntProperty" },
-    },
-}
+Game.hidden = @HIDDEN@
 
 -- The same, by short class name ("SwtQuestResourceComponent"), for listing them.
 Game.hiddenByClass = {}
@@ -1559,5 +1562,28 @@ return Game
 '''
 
 
-def lua():
-    return LUA
+def hidden(offsets=None):
+    """HIDDEN with the offsets for the installed game: `offsets` maps "class:property" to an offset, or to
+    None for one a game update moved where it couldn't be found again (left out, so reading it gives
+    nil). Without `offsets`, the ones found on build 24847281."""
+    out = []
+    for cls, fields in HIDDEN:
+        kept = []
+        for name, offset, kind in fields:
+            key = f"{cls}:{name}"
+            if offsets is not None and key in offsets:
+                offset = offsets[key]
+            if offset is not None:
+                kept.append((name, offset, kind))
+        if kept:
+            out.append((cls, kept))
+    return out
+
+
+def lua(offsets=None):
+    """The module's Lua; `offsets` as for hidden()."""
+    rows = []
+    for cls, fields in hidden(offsets):
+        items = ", ".join(f'{{ "{n}", 0x{o:X}, "{k}" }}' for n, o, k in fields)
+        rows.append(f'    ["{cls}"] = {{ {items} }},')
+    return LUA.replace("@HIDDEN@", "{\n" + "\n".join(rows) + "\n}")

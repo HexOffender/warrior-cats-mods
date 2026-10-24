@@ -1,0 +1,281 @@
+{
+ "made_on": {
+  "size": 183670344,
+  "timestamp": 141614920,
+  "size_of_image": 187576320,
+  "text_sha1": "e91704ebc2e08ebb317d43f3629381c8ad568b66",
+  "build": 24847281
+ },
+ "classes": {
+  "/Script/SwtQuest.SwtQuestResourceComponent": {
+   "fields": {
+    "WCM_ResourceType": 264,
+    "WCM_Value": 268,
+    "WCM_Max": 272,
+    "WCM_Scale": 276
+   },
+   "found": true,
+   "anchors": [],
+   "sites": [
+    {
+     "from": "0x165B460",
+     "pattern": "0F 28 F1 E8 ?? ?? ?? ?? F3 0F 10 8B ?? ?? ?? ?? 0F 57 FF 0F 2F CF",
+     "captures": {
+      "12": 268
+     }
+    },
+    {
+     "from": "0x165B460",
+     "pattern": "0F 2F 0C 18 73 ?? F3 0F 59 B3 ?? ?? ?? ?? 48 8B CB 48 8B 03",
+     "captures": {
+      "10": 276
+     }
+    },
+    {
+     "from": "0x165B460",
+     "pattern": "48 8B 03 F3 0F 58 B3 ?? ?? ?? ?? F3 0F 58 B3 ?? ?? ?? ?? 0F 28 CE FF 90 ?? ?? ?? ??",
+     "captures": {
+      "15": 268
+     }
+    },
+    {
+     "from": "0x165B460",
+     "pattern": "EB ?? 40 84 FF 75 ?? 0F 2F BB ?? ?? ?? ?? 72 ?? 48 8B 03 48 8B CB",
+     "captures": {
+      "10": 268
+     }
+    },
+    {
+     "from": "0x165B580",
+     "pattern": "48 8D B9 ?? ?? ?? ?? 48 8B C7 48 8D B1 ?? ?? ?? ?? 0F 28 C1 48 8B D9",
+     "captures": {
+      "13": 272
+     }
+    }
+   ],
+   "size": 288,
+   "align": 8,
+   "vtable": 162330320,
+   "overrides": 13,
+   "natives": 0,
+   "parent": null
+  },
+  "/Script/SwtQuest.SwtQuestStaminaComponent": {
+   "fields": {
+    "WCM_Regen": 284
+   },
+   "found": true,
+   "anchors": [],
+   "sites": [
+    {
+     "from": "0x165B3D0",
+     "pattern": "0F 28 F1 E8 ?? ?? ?? ?? F3 0F 59 B3 ?? ?? ?? ?? 48 8B CB 48 8B 03",
+     "captures": {
+      "12": 284
+     }
+    }
+   ],
+   "size": 288,
+   "align": 8,
+   "vtable": 162313560,
+   "overrides": 4,
+   "natives": 0,
+   "parent": "SwtQuestResourceComponent"
+  },
+  "/Script/SwtAdventure.SwtAdventureLevelComponent": {
+   "fields": {
+    "WCM_Level": 288,
+    "WCM_LevelShown": 292,
+    "WCM_Prowess": 340,
+    "WCM_Strength": 344,
+    "WCM_Resilience": 348,
+    "WCM_Instinct": 352,
+    "WCM_Agility": 356,
+    "WCM_Stamina": 360
+   },
+   "found": true,
+   "anchors": [
+    {
+     "note": "builds a fighter's stats from its level",
+     "was": "0x17D8010",
+     "pattern": "48 8B C4 48 89 58 ?? 48 89 70 ?? 48 89 78 ?? 4C 89 70 ?? 55 48 8D 68 ?? 48 81 EC C0 00 00 00 0F 29 70 ??"
+    },
+    {
+     "note": "setting up a fighter: health and fight stamina from its stats",
+     "was": "0x17D6E60",
+     "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 60 48 8B 99 ?? ?? ?? ?? 8B FA 89 91 ?? ?? ?? ??"
+    }
+   ],
+   "sites": [],
+   "size": 368,
+   "align": 8,
+   "vtable": 162899648,
+   "overrides": 4,
+   "natives": 0,
+   "parent": null
+  },
+  "/Script/SwtAdventure.SwtAdventureFreshKillPileComponent": {
+   "fields": {
+    "WCM_DecayTimer": 304,
+    "WCM_DecayTime": 308
+   },
+   "found": true,
+   "anchors": [],
+   "sites": [
+    {
+     "from": "0x17C11E0",
+     "pattern": "48 8B F9 E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8D 97 ?? ?? ?? ?? 45 33 C9 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 4D ?? 48 85 C9",
+     "captures": {
+      "27": 308
+     }
+    },
+    {
+     "from": "0x17C11E0",
+     "pattern": "48 8D 45 ?? 48 89 45 ?? F3 0F 11 87 ?? ?? ?? ?? 0F 1F 80 ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ??",
+     "captures": {
+      "12": 304
+     }
+    },
+    {
+     "from": "0x17C1430",
+     "pattern": "80 BF ?? ?? ?? ?? 00 75 ?? F3 0F 58 B3 ?? ?? ?? ?? F3 0F 10 83 ?? ?? ?? ?? 0F 2F F0",
+     "captures": {
+      "13": 304,
+      "21": 308
+     }
+    },
+    {
+     "from": "0x17C1430",
+     "pattern": "75 ?? F3 0F 58 B3 ?? ?? ?? ?? F3 0F 10 83 ?? ?? ?? ?? 0F 2F F0 F3 0F 11 B3 ?? ?? ?? ??",
+     "captures": {
+      "6": 304,
+      "14": 308,
+      "25": 304
+     }
+    }
+   ],
+   "size": 408,
+   "align": 8,
+   "vtable": 162769376,
+   "overrides": 4,
+   "natives": 0,
+   "parent": "SwtQuestResourceComponent"
+  },
+  "/Script/SwtAdventure.SwtAdventureGameplayGameState": {
+   "fields": {
+    "WCM_DayTime": 1080
+   },
+   "found": true,
+   "anchors": [],
+   "sites": [
+    {
+     "from": "0x1721B10",
+     "pattern": "B8 C5 B3 A2 91 48 89 7B ?? F3 0F 2C 8D ?? ?? ?? ?? F7 E9 03 D1",
+     "captures": {
+      "13": 1080
+     }
+    },
+    {
+     "from": "0x17EB890",
+     "pattern": "74 ?? E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8D 97 ?? ?? ?? ?? 45 33 C9 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 4D ?? 48 85 C9",
+     "captures": {
+      "26": 1080
+     }
+    }
+   ],
+   "size": 1312,
+   "align": 8,
+   "vtable": 162869696,
+   "overrides": 21,
+   "natives": 4,
+   "parent": null
+  },
+  "/Script/SwtAdventure.TurnBasedCombatComponent": {
+   "fields": {
+    "WCM_Stance": 416,
+    "WCM_Prowess": 452,
+    "WCM_Strength": 456,
+    "WCM_Resilience": 460,
+    "WCM_Instinct": 464,
+    "WCM_Agility": 468,
+    "WCM_Stamina": 472,
+    "WCM_Clan": 984,
+    "WCM_Level": 988,
+    "WCM_PresetDamage": 996
+   },
+   "found": true,
+   "anchors": [
+    {
+     "note": "builds a fighter's stats from its level",
+     "was": "0x17D8010",
+     "pattern": "48 8B C4 48 89 58 ?? 48 89 70 ?? 48 89 78 ?? 4C 89 70 ?? 55 48 8D 68 ?? 48 81 EC C0 00 00 00 0F 29 70 ??"
+    },
+    {
+     "note": "a fighter's Prowess with its buffs",
+     "was": "0x17D87A0",
+     "pattern": null
+    },
+    {
+     "note": "a fighter's speed, from Agility and stamina",
+     "was": "0x17D9800",
+     "pattern": "40 53 48 83 EC 50 0F 29 74 24 ?? 48 8B D9 0F 29 7C 24 ?? 44 0F 29 44 24 ?? E8 ?? ?? ?? ?? 48 85 C0"
+    },
+    {
+     "note": "setting up a fighter: health and fight stamina from its stats",
+     "was": "0x17D6E60",
+     "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 60 48 8B 99 ?? ?? ?? ?? 8B FA 89 91 ?? ?? ?? ??"
+    }
+   ],
+   "sites": [
+    {
+     "from": "0x17D6E60",
+     "pattern": "48 8B 99 ?? ?? ?? ?? 8B FA 89 91 ?? ?? ?? ?? 48 8B F1 48 85 DB",
+     "captures": {
+      "11": 988
+     }
+    },
+    {
+     "from": "0x17D6E60",
+     "pattern": "E8 ?? ?? ?? ?? F3 0F 59 05 ?? ?? ?? ?? 48 8B CF F3 0F 58 86 ?? ?? ?? ?? 0F 28 C8 FF D3 48 8B CE",
+     "captures": {
+      "20": 472
+     }
+    },
+    {
+     "from": "0x17D6E60",
+     "pattern": "E8 ?? ?? ?? ?? F3 0F 59 05 ?? ?? ?? ?? 48 8B CF F3 0F 58 86 ?? ?? ?? ?? 0F 28 C8 FF D3 48 8B BE ?? ?? ?? ??",
+     "captures": {
+      "20": 472
+     }
+    },
+    {
+     "from": "0x17D8010",
+     "pattern": "40 B7 01 48 8B 05 ?? ?? ?? ?? 44 0F B6 B6 ?? ?? ?? ?? 48 85 C0 75 ??",
+     "captures": {
+      "14": 984
+     }
+    },
+    {
+     "from": "0x17D8010",
+     "pattern": "48 85 C9 74 ?? E8 ?? ?? ?? ?? 8B 86 ?? ?? ?? ?? 0F 57 C9 F3 0F 10 1D ?? ?? ?? ?? FF C8",
+     "captures": {
+      "12": 988
+     }
+    },
+    {
+     "from": "0x17D8010",
+     "pattern": "F3 0F 2A C0 F3 0F 11 43 ?? 0F 57 C0 8B 86 ?? ?? ?? ?? FF C8 F3 0F 2A C8 F3 41 0F 59 C9",
+     "captures": {
+      "14": 988
+     }
+    }
+   ],
+   "size": 1024,
+   "align": 8,
+   "vtable": 163117800,
+   "overrides": 4,
+   "natives": 12,
+   "parent": null
+  }
+ }
+}

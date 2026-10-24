@@ -51,9 +51,19 @@ def cmd_status(ctx, args):
         if pipeline.install_outdated(cfg):
             print("              built by an older wcmods, so the game never finds its files; install again")
     print(f"game running: {'yes' if game_running() else 'no'}")
+    from . import gamebuild
+    now = gamebuild.current(cfg)
+    if now["build"]:
+        print(f"game build  : {now['build']}" + (" (wcmods was checked on it)" if now["verified"] else
+              " (newer than wcmods was checked on; `wcmods game build` says what that means)"))
+    found = mods.discover(ctx.mods_root)
+    old = gamebuild.outdated(cfg, found, now["build"])
     print("\nmods:")
-    for m in mods.discover(ctx.mods_root):
-        print(f"  [{'x' if m.enabled else ' '}] {m.id:28s} {', '.join(m.kinds()) or '(empty)':24s} {m.description}")
+    for m in found:
+        note = ""
+        if m.id in old:
+            note = "  [made for an older version: " + ("used anyway]" if old[m.id]["allowed"] else "left out]")
+        print(f"  [{'x' if m.enabled else ' '}] {m.id:28s} {', '.join(m.kinds()) or '(empty)':24s} {m.description}{note}")
     cfg.save()
 
 
@@ -481,6 +491,10 @@ def cmd_lua(ctx, args):
 
 
 def cmd_game(ctx, args):
+    if args.what == "build":
+        return _game_build(ctx, args)
+    if args.what == "signatures":
+        return _game_signatures(ctx, args)
     if args.what == "types":
         # UE4SS writes Lua type annotations for every class it knows into Mods/shared/types.
         reply = _run_lua(ctx, "GenerateLuaTypes() return true", max(args.timeout, 120))
@@ -500,6 +514,69 @@ def cmd_game(ctx, args):
           + ("your cat is in the world" if st.get("player") else "no cat yet (menus or loading)"))
 
 
+
+
+def _game_build(ctx, args):
+    """Which build is installed, what wcmods found moved on it, and the mods made for older ones."""
+    from . import gamebuild
+    now = gamebuild.current(ctx.cfg)
+    if not now["build"]:
+        print("couldn't tell which build of the game is installed (no Steam manifest)")
+    elif now["verified"]:
+        print(f"build {now['build']}: wcmods was checked on this one ({now['label']})")
+    else:
+        print(f"build {now['build']}: newer than wcmods was checked on (" +
+              ", ".join(str(b) for b in sorted(gamebuild.VERIFIED)) + ")")
+    fit = gamebuild.layout(ctx.cfg, refresh=args.refresh)
+    if fit["status"] == "adapted":
+        print("every value wcmods reads was found again" +
+              (": moved " + ", ".join(gamebuild.describe(k) for k in fit["moved"]) if fit["moved"] else ", none moved"))
+    elif fit["status"] == "partial":
+        print("couldn't find these again, so what uses them stays off until wcmods is updated: " +
+              ", ".join(gamebuild.describe(k) for k in fit["lost"]))
+        if fit["moved"]:
+            print("moved, and followed: " + ", ".join(gamebuild.describe(k) for k in fit["moved"]))
+    found = mods.discover(ctx.mods_root)
+    for mod_id, o in gamebuild.outdated(ctx.cfg, found, now["build"]).items():
+        print(f"  {mod_id}: made for build {', '.join(map(str, o['made_for']))}; " +
+              ("used anyway" if o["allowed"] else "left out (`wcmods allow-outdated " + mod_id + "` uses it anyway)"))
+
+
+def _game_signatures(ctx, args):
+    """For maintainers: make wcmods/signatures.json on a verified build, or check another exe against it."""
+    from . import pe, signatures
+    exe = args.exe or pe.game_exe(ctx.cfg)
+    if not exe:
+        sys.exit("no game exe found; pass --exe")
+    if args.action == "make":
+        from . import gamebuild
+        result = signatures.make(exe)
+        result["made_on"]["build"] = gamebuild.steam_build(ctx.cfg)
+        signatures.save(result)
+        print(f"wrote {signatures.DATA}")
+    elif args.action in (None, "check"):
+        res = signatures.check(exe)
+        if args.json:
+            print(json.dumps(res, indent=1))
+        print("nothing moved" if res["same"] else "something moved or couldn't be found (above)")
+    else:
+        sys.exit("game signatures make | check")
+
+
+def cmd_allow_outdated(ctx, args):
+    from . import gamebuild
+    build = gamebuild.current(ctx.cfg)["build"]
+    if build is None:
+        sys.exit("couldn't tell which build of the game is installed")
+    found = {m.id: m for m in mods.discover(ctx.mods_root)}
+    if args.mod not in found:
+        sys.exit(f"no mod named {args.mod}")
+    gamebuild.allow(ctx.cfg, args.mod, build, on=not args.off)
+    if args.off:
+        print(f"{args.mod} is left out again on build {build} until it's updated")
+    else:
+        print(f"{args.mod} will be used on build {build} even though it was made for an older version of the game.")
+        print("It may not work, or may behave unpredictably. Install again to apply.")
 
 
 def cmd_inspect(ctx, args):
@@ -639,10 +716,19 @@ def main(root, argv=None):
     p.add_argument("--timeout", type=float, default=15)
     p.add_argument("--json", action="store_true", help="print the bridge's whole reply")
     p.set_defaults(fn=cmd_lua)
-    p = sub.add_parser("game", help="whether the game is running with the bridge; 'game types' writes Lua type files")
-    p.add_argument("what", nargs="?", choices=("status", "types"), default="status")
+    p = sub.add_parser("game", help="whether the game is running with the bridge; 'game build' says which build is "
+                                    "installed and what changed; 'game types' writes Lua type files")
+    p.add_argument("what", nargs="?", choices=("status", "types", "build", "signatures"), default="status")
+    p.add_argument("action", nargs="?", help="for signatures: make | check")
+    p.add_argument("--exe", help="for signatures: an exe other than the installed game's")
+    p.add_argument("--refresh", action="store_true", help="for build: look for what moved again")
+    p.add_argument("--json", action="store_true")
     p.add_argument("--timeout", type=float, default=15)
     p.set_defaults(fn=cmd_game)
+    p = sub.add_parser("allow-outdated", help="use a mod made for an older version of the game anyway, on this build")
+    p.add_argument("mod")
+    p.add_argument("--off", action="store_true", help="leave it out again")
+    p.set_defaults(fn=cmd_allow_outdated)
     p = sub.add_parser("inspect", help="show an object's properties and functions, e.g. inspect \"Game.player()\"")
     p.add_argument("expr", help="a Lua expression for the object")
     p.add_argument("--all", action="store_true", help="include the engine's Actor/Object members too")

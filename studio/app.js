@@ -28,6 +28,9 @@ async function refreshStatus() {
   clear(statusBox).append(...[
     chip(info.game_running ? "Game running" : "Game closed", info.game_running ? "warn" : "good",
       info.game_running ? "Close the game to apply mods" : ""),
+    info.game_build && info.game_build.build && !info.game_build.verified
+      ? chip("Game updated", "warn", `Build ${info.game_build.build}. Mods made for the older version are left out until they're updated; the Mods page says more.`)
+      : null,
     info.ue4ss ? null : chip("No script loader", "warn", "Most mods need the script loader (UE4SS): Get set up, on the Mods page, installs it"),
     info.save_found ? null : chip("No save yet", "warn", "Start the game once, so there's a save"),
     info.code_changed

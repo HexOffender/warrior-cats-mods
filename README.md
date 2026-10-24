@@ -200,6 +200,10 @@ python wcmods.py pack my-mod               # my-mod-1.0.zip, to share
 `enable <mod>` (and `add`, unless `--off`) also turns on the mods it requires, and `disable <mod>`
 and `remove <mod>` refuse while mods that are on need it (`--with-dependents` turns those off too).
 
+After a game update, `game build` says which build is installed, what wcmods followed and what it
+couldn't, and which mods were made for an older version. `allow-outdated <mod>` uses one anyway on
+this build. See [docs/updating.md](docs/updating.md).
+
 Also: `new <name> --kind palette|controls|files|data|names|save|script`, `eyes`,
 `tables`, `names [--cats] [--json]`, `controls [--json]`, `files <pattern>`, `extract <pattern>`,
 `build`, `backup`, `restore [name|latest]`, `cheats [on|off]` (whether the mod menu's cheats start
@@ -276,6 +280,9 @@ Every mod has one. Only `name` is needed; Clan Mod Studio shows the rest:
   any mod that didn't build, unless `--force`).
 - **`uses`:** mods it works with when they're on, such as `mod-menu` for a page in the mod menu.
   Nothing is turned on for them; the studio just shows it.
+- **`game_builds`:** the builds of the game it was made for (a mod without it was made for
+  24847281). After a game update, a mod that doesn't list the new build is left out until it's
+  updated, or you choose "Use it anyway" for that build. See [docs/updating.md](docs/updating.md).
 - **`priority`:** mods are applied in priority order, then by folder name, and the higher one wins
   when two set the same thing.
 

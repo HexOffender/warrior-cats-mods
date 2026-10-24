@@ -57,6 +57,9 @@ def run(cfg, oodle, log=print):
     check("palettes without the Oodle DLL: eye colours left out with a warning, the rest built", _palettes_without_oodle(cfg))
     check("getting set up, the rough edges: an install from before UE4SS is redone, a folder adds only the "
           "ticked mods, no drive letters in UE4SS's .zip, a studio without the game answers", _onboarding_edges())
+    ok, detail = _signatures(cfg)
+    check("game update signatures: the decoder, and every class and value found where wcmods expects", ok, detail)
+    check("mods made for an older version of the game: left out unless used anyway on that build", _outdated_mods(cfg))
     problems = luacheck.check(palettes.ue4ss_script({}))
     check("palette script", not problems, "; ".join(problems[:3]))
     # Interact and Scent tracking move along F/E/Q, so Q goes quiet; X stays because Return to camp still
@@ -497,6 +500,63 @@ def _palettes_without_oodle(cfg):
         cfg._oodle_found, cfg._oodle_searched = found, searched
         if data:
             cfg.data["oodle_dll"] = data
+
+
+def _signatures(cfg):
+    """On the installed exe: the decoder cuts .pdata's functions at their ends, and (on a build wcmods was
+    checked on) signatures.check finds every class and every member where game.HIDDEN says."""
+    from . import gamebuild, pe, signatures, x64
+    exe = pe.game_exe(cfg)
+    if not exe:
+        return False, "no game exe"
+    img = pe.Image(exe)
+    total, exact = x64.check_functions(img, limit=3000)
+    if exact < total * 0.99:
+        return False, f"the decoder ends only {exact} of {total} functions where .pdata does"
+    if not gamebuild.current(cfg)["verified"]:
+        return True, f"decoder fine; build {gamebuild.current(cfg)['build']} isn't one wcmods was checked on, so the layout isn't compared"
+    res = signatures.check(exe, log=lambda m: None)
+    bad = [f"{gamebuild.describe(c + ':' + n)} {f['status']}" for c, rep in res["classes"].items()
+           for n, f in rep["fields"].items() if f["status"] not in ("same", "kept")]
+    missing = [c.rsplit(".", 1)[-1] for c, rep in res["classes"].items() if not rep["found"]]
+    signed = sum(1 for rep in res["classes"].values() for f in rep["fields"].values() if f["status"] == "same")
+    detail = f"{len(res['classes'])} classes, {signed} values confirmed by signatures"
+    return not bad and not missing, detail + (f"; {', '.join(missing + bad)}" if bad or missing else "")
+
+
+def _outdated_mods(cfg):
+    from . import gamebuild, mods, pipeline
+    kept_env, kept_cache = os.environ.get("WCMODS_GAME_BUILD"), gamebuild.CACHE_DIR
+    kept_allow = cfg.data.get("allow_outdated")
+    os.environ["WCMODS_GAME_BUILD"] = "99999999"   # as if Steam had installed a newer build
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            gamebuild.CACHE_DIR = os.path.join(tmp, "cache")   # what it works out for that build stays in tmp
+            root = _mods_folder(tmp, {
+                "old": ({"name": "Old", "enabled": True}, {"palette.json": '{"fur": {"0": "#ff8000"}}'}),
+                "new": ({"name": "New", "enabled": True, "game_builds": [24847281, 99999999]}, {}),
+                "needs-old": ({"name": "Needs old", "enabled": True, "game_builds": [99999999], "requires": ["old"]}, {})})
+            found = mods.discover(root)
+            old = gamebuild.outdated(cfg, found)
+            cfg.data["allow_outdated"] = {}
+            first = pipeline.build(cfg, found, os.path.join(tmp, "a"), log=lambda m: None)
+            cfg.data["allow_outdated"] = {"old": [99999999]}
+            second = pipeline.build(cfg, found, os.path.join(tmp, "b"), log=lambda m: None)
+        return (set(old) == {"old"} and old["old"]["made_for"] == list(gamebuild.ASSUMED_BUILDS)
+                and "old" not in first["mods"] and "new" in first["mods"] and "needs-old" not in first["mods"]
+                and first["outdated"][0]["used"] is False
+                and "old" in second["mods"] and "needs-old" in second["mods"] and second["outdated"][0]["used"] is True
+                and any("may behave unpredictably" in w for w in second["warnings"]))
+    finally:
+        gamebuild.CACHE_DIR = kept_cache
+        if kept_env is None:
+            os.environ.pop("WCMODS_GAME_BUILD", None)
+        else:
+            os.environ["WCMODS_GAME_BUILD"] = kept_env
+        if kept_allow is None:
+            cfg.data.pop("allow_outdated", None)
+        else:
+            cfg.data["allow_outdated"] = kept_allow
 
 
 def _csv_rows():
