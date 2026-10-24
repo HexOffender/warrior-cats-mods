@@ -13,6 +13,11 @@ mouse look and save edits. A mod can add code of its own in three places:
 All of them only run when `"allow_code_mods": true` is set in `wcmods.json`, because they are
 code. Without it, the build warns and skips them. Everything else in the mod still works.
 
+What we know about the game's insides (classes, offsets, how traits, colours and the camera work)
+is in [reverse-engineering.md](reverse-engineering.md). How the game's rules work (combat,
+progression, items, quests and more), and which table rows to change, is in
+[mechanics/](mechanics/README.md).
+
 Two complete examples:
 - [`examples/faster-run`](../examples/faster-run): a build step and a studio page.
 - [`examples/quest-markers`](../examples/quest-markers): an in-game script with a custom quest,

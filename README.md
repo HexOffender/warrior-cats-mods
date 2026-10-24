@@ -156,6 +156,11 @@ An install writes, into the game:
 
 [docs/SDK.md](docs/SDK.md), "Game files, repacking and new content", explains how the game's
 files are packed, how wcmods repacks them, and how to add new models and other cooked content.
+[docs/reverse-engineering.md](docs/reverse-engineering.md) collects what we've worked out about the
+game's insides (the camera, traits, colours, names, the save, cheats, its classes and managers), with
+the tools in `tools/re/`. [docs/mechanics/](docs/mechanics/README.md) explains the game's rules,
+with the numbers to change for each: the combat damage formula, every move, stat growth, traits,
+stamina and stealth, fresh-kill, dens, items, bonding and how NPCs are made.
 
 Mods are applied in `priority` order, then by folder name. When two mods set the same thing,
 the higher priority wins.
