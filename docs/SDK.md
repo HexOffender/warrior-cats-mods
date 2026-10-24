@@ -382,7 +382,7 @@ if okMenu then Menu.page("My mod", function(ui) ... end) end
 
 The menu's settings are in its `menu.json`, set on its card in Clan Mod Studio: `"key"` (`INS`,
 `HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN` or `F1`-`F12` but F11), `"pad"` (the controller button
-that opens it too, an Unreal key name: `Gamepad_Special_Left`, View, by default, `""` for none),
+that opens it too, as an Unreal key name: View, `Gamepad_Special_Left`, by default and `""` for none),
 `"size"` (0.6 to 2.2, 1 by default) and `"cheats"` (whether the Cheats page starts with cheats on).
 Older setups kept these in `wcmods.json` as `"menu_key"`, `"menu_scale"` and `"cheats"`. Those still
 count, and the first change in the studio moves them into `menu.json`.

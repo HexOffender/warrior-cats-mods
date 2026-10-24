@@ -403,7 +403,7 @@ NAME_FN = r'''
 local strings, tableIds, found = nil, nil, {}
 local function gameText(key)
     if key == "" then return nil end
-    if found[key] then return found[key] end   -- the menu asks twice a second, and the text doesn't change
+    if found[key] then return found[key] end   -- asked again and again (the status line, labels); it doesn't change
     if strings == nil then
         strings = StaticFindObject("/Script/Engine.Default__KismetStringTableLibrary") or false
         tableIds = {}
