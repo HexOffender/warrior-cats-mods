@@ -124,8 +124,11 @@ class Studio:
         if parts == ["ingame"]:
             # The game's console, cheats at start and the mod menu's key (wcmods/ingame.py).
             if method == "PATCH":
-                return ingame.set_options(cfg, cheats=body.get("cheats"), console=body.get("console"),
-                                          menu_key=body.get("menu_key"), menu_scale=body.get("menu_scale"))
+                # set_options reloads and saves wcmods.json: not in the middle of an install, which would
+                # lose what the install has noted but not saved yet.
+                with self.lock:
+                    return ingame.set_options(cfg, cheats=body.get("cheats"), console=body.get("console"),
+                                              menu_key=body.get("menu_key"), menu_scale=body.get("menu_scale"))
             return ingame.options(cfg)
         if parts == ["game", "bridge"] and method == "GET":
             # Whether the game runs with the bridge (wcmods/bridge.py), for the console's status line.
@@ -171,8 +174,17 @@ class Studio:
                 return {"added": modzip.add_zip(upload, self.ctx.mods_root, self.ctx.backups, ids=ids,
                                                 enable=query.get("enable", "1") == "1", name=name)}
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "remove" and method == "POST":
+            # As with switching it off: while mods that are on need it, nothing changes and they're
+            # returned, unless cascade, which turns them off too.
             with self.lock:
-                return {"moved_to": modzip.remove(self.mod(parts[1]), self.ctx.backups)}
+                found = self.mods()
+                m = self.mod(parts[1])
+                names = {x.id: x.name for x in found}
+                need = mods.needing(found, m.id)
+                if need and not body.get("cascade"):
+                    return {"blocked_by": [{"id": i, "name": names.get(i, i)} for i in need]}
+                return {"moved_to": modzip.remove(m, self.ctx.backups, found, cascade=True),
+                        "turned_off": [names.get(i, i) for i in need], "blocked_by": []}
         if parts == ["mods", "removed"] and method == "GET":
             return modzip.removed(self.ctx.backups)
         if parts == ["mods", "restore"] and method == "POST":
@@ -180,7 +192,7 @@ class Studio:
                 return {"restored": modzip.restore(self.ctx.backups, body["name"], self.ctx.mods_root)}
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "zip" and method == "GET":
             m = self.mod(parts[1])
-            return Download(modzip.pack(m), f"{m.id}{('-' + m.version) if m.version else ''}.zip")
+            return Download(modzip.pack(m), modzip.zip_name(m))
         if parts == ["open"] and method == "POST":
             # Show a folder in Explorer: the mods folder, or one mod's.
             folder = self.ctx.mods_root if body.get("what") == "mods" else self.mod(body.get("id", "")).folder
@@ -192,9 +204,10 @@ class Studio:
         if parts == ["settings"]:
             # "Allow mods that run code" (wcmods.json "allow_code_mods"); the studio asks twice first.
             if method == "PATCH" and "allow_code_mods" in body:
-                cfg.reload()
-                cfg.data["allow_code_mods"] = bool(body["allow_code_mods"])
-                cfg.save()
+                with self.lock:   # not in the middle of an install (see "ingame")
+                    cfg.reload()
+                    cfg.data["allow_code_mods"] = bool(body["allow_code_mods"])
+                    cfg.save()
             return {"allow_code_mods": bool(cfg.data.get("allow_code_mods"))}
         if parts == ["mods"] and method == "POST":
             m = mods.create(self.ctx.mods_root, body["id"], body.get("name"), body.get("description", ""),
@@ -389,14 +402,18 @@ def make_handler(studio, port):
                     if length > MAX_UPLOAD:
                         return self._send(413, {"error": f"that file is over {MAX_UPLOAD // 1024 ** 3} GB"})
                     fd, upload = tempfile.mkstemp(suffix=".zip", prefix="wcmods-upload-")
-                    with os.fdopen(fd, "wb") as f:
-                        left = length
-                        while left > 0:
-                            chunk = self.rfile.read(min(left, 1024 * 1024))
-                            if not chunk:
-                                break
-                            f.write(chunk)
-                            left -= len(chunk)
+                    try:
+                        with os.fdopen(fd, "wb") as f:
+                            left = length
+                            while left > 0:
+                                chunk = self.rfile.read(min(left, 1024 * 1024))
+                                if not chunk:
+                                    break
+                                f.write(chunk)
+                                left -= len(chunk)
+                    except BaseException:   # the page went away mid-upload: don't leave the part in %TEMP%
+                        os.remove(upload)
+                        raise
                 elif length:
                     try:
                         body = json.loads(self.rfile.read(length) or b"{}")

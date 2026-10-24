@@ -99,7 +99,8 @@ export default {
         const pick = el("input", { type: "checkbox", checked: true, id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
         picks.set(m.id, pick);
         const notes = [];
-        if (m.existing) notes.push(el("li", { text: `Replaces the ${m.existing.name}${m.existing.version ? " " + m.existing.version : ""} you have${m.version ? " with " + m.version : ""}. The old copy is kept in backups.` }));
+        if (m.existing && m.existing.builtin) notes.push(el("li", { class: "warn", text: `Left out: ${m.existing.name} comes with Clan Mod Studio, so this copy doesn't replace it.` }));
+        else if (m.existing) notes.push(el("li", { text: `Replaces the ${m.existing.name}${m.existing.version ? " " + m.existing.version : ""} you have${m.version ? " with " + m.version : ""}. The old copy is kept in backups.` }));
         if (m.code) notes.push(el("li", { class: r.code_allowed ? "" : "warn", text: r.code_allowed
           ? "Runs code on your computer and in the game. Only add mods like this from people you trust."
           : "Runs code, so it stays off until you allow mods that run code (Options, below). Only do that for mods from people you trust." }));
@@ -122,7 +123,12 @@ export default {
           if (!ids.length) { toast("Pick at least one.", "bad"); return; }
           try {
             const res = await api.upload(`/mods/add?step=add&enable=${on.checked ? 1 : 0}&ids=${encodeURIComponent(ids.join(","))}&name=${encodeURIComponent(file.name)}`, file);
-            toast(`Added ${res.added.map(a => a.name).join(", ")}${on.checked ? ". Apply to game to play with it." : "."}`);
+            const added = res.added.filter(a => !a.skipped), left = res.added.filter(a => a.skipped);
+            const also = [...new Set(added.flatMap(a => a.also_on || []))];
+            toast(`Added ${added.map(a => a.name).join(", ")}.`
+              + (also.length ? ` Also on, because ${added.length > 1 ? "they need" : "it needs"} them: ${also.join(", ")}.` : "")
+              + (left.length ? ` Left out ${left.map(a => a.name).join(", ")}: ${left.length > 1 ? "they come" : "it comes"} with Clan Mod Studio.` : "")
+              + (on.checked ? " Apply to game to play with it." : ""));
             renderAdd();
             await refresh();
           } catch (e) { toast(e.message, "bad"); }
@@ -174,11 +180,15 @@ export default {
             ? el("button", { class: "btn small", "aria-expanded": String(more), text: more ? "Close settings" : "Settings", onclick: () => { more ? open.delete(m.id) : open.add(m.id); renderList(); } })
             : el("button", { class: "btn ghost small", "aria-expanded": String(more), text: more ? "Less" : "More", onclick: () => { more ? open.delete(m.id) : open.add(m.id); renderList(); } })));
       if (state && state.blocked === m.id) {
+        const them = state.by.length > 1 ? "them" : "it";
         card.append(el("div", { class: "banner mod-wide" },
-          el("span", { text: `${state.by.map(b => b.name).join(", ")} ${state.by.length > 1 ? "need" : "needs"} ${m.name}. Turn ${state.by.length > 1 ? "them" : "it"} off too?` }),
+          el("span", { text: `${state.by.map(b => b.name).join(", ")} ${state.by.length > 1 ? "need" : "needs"} ${m.name}. ` +
+            (state.remove ? `Turn ${them} off and remove ${m.name}?` : `Turn ${them} off too?`) }),
           el("div", { class: "row" },
-            el("button", { class: "btn", text: `Turn ${state.by.length > 1 ? "all" : "both"} off`, onclick: () => switchMod(m, false, true) }),
-            el("button", { class: "btn ghost", text: `Keep ${m.name} on`, onclick: () => renderList() }))));
+            state.remove
+              ? el("button", { class: "btn danger", text: `Turn ${them} off and remove`, onclick: () => removeMod(m, true) })
+              : el("button", { class: "btn", text: `Turn ${state.by.length > 1 ? "all" : "both"} off`, onclick: () => switchMod(m, false, true) }),
+            el("button", { class: "btn ghost", text: state.remove ? `Keep ${m.name}` : `Keep ${m.name} on`, onclick: () => renderList() }))));
       }
       if (more) card.append(m.kinds.includes("mod menu") ? menuSettings(m) : details(m));
       return card;
@@ -200,14 +210,20 @@ export default {
           el("button", { class: "btn small", text: "Save as .zip", onclick: async () => {
             try { toast(`Saved ${await api.download(`/mods/${encodeURIComponent(m.id)}/zip`)}`); } catch (e) { toast(e.message, "bad"); }
           } }),
-          m.builtin ? null : confirmButton("Remove", "Click again to remove", async () => {
-            try {
-              await api.post(`/mods/${encodeURIComponent(m.id)}/remove`);
-              toast(`Removed ${m.name}. It's kept in backups; Put it back under Backups and repair.`);
-              open.delete(m.id);
-              await refresh();
-            } catch (e) { toast(e.message, "bad"); }
-          }, "btn small danger")));
+          m.builtin ? null : confirmButton("Remove", "Click again to remove", () => removeMod(m), "btn small danger")));
+    }
+
+    // Removing a mod that mods which are on need asks first, as switching it off does.
+    async function removeMod(m, cascade = false) {
+      try {
+        const r = await api.post(`/mods/${encodeURIComponent(m.id)}/remove`, { cascade });
+        if (r.blocked_by.length) { renderList({ blocked: m.id, by: r.blocked_by, remove: true }); return; }
+        const off = (r.turned_off || []).join(", ");
+        toast(`Removed ${m.name}.` + (off ? ` Also off, because they need it: ${off}.` : "") +
+          " It's kept in backups; Put it back under Backups and repair.");
+        open.delete(m.id);
+        await refresh();
+      } catch (e) { toast(e.message, "bad"); }
     }
 
     // The mod menu's own settings (its menu.json, through /ingame).
@@ -241,7 +257,9 @@ export default {
       const shown = mods.filter(m => (filter === "all" || (filter === "on") === m.enabled)
         && (!search || `${m.name} ${m.id} ${m.description} ${m.author}`.toLowerCase().includes(search)));
       const presets = shown.filter(m => m.preset);
-      const rest = shown.filter(m => !m.preset).sort((a, b) => (b.builtin - a.builtin) || a.name.localeCompare(b.name));
+      // String(): a name that isn't text (a mistake in a mod.json) mustn't stop the list from showing.
+      const byName = (a, b) => String(a.name).localeCompare(String(b.name));
+      const rest = shown.filter(m => !m.preset).sort((a, b) => (b.builtin - a.builtin) || byName(a, b));
       const searchBox = el("input", { type: "search", placeholder: "Find a mod", value: search, "aria-label": "Find a mod" });
       searchBox.addEventListener("input", () => { search = searchBox.value.trim().toLowerCase(); renderList(); searchAgain(); });
       const chips = ["all", "on", "off"].map(f => el("button", { class: "chip", "aria-pressed": String(filter === f), text: { all: "All", on: "On", off: "Off" }[f],
@@ -256,7 +274,7 @@ export default {
       if (presets.length) {
         listBox.append(el("h3", { class: "group", text: `Colour palettes (${presets.length})` }),
           el("p", { class: "note", text: "Each recolours your cats' coats. The Palettes page shows them side by side and switches between them in one go." }));
-        for (const m of presets.sort((a, b) => a.name.localeCompare(b.name))) listBox.append(modCard(m, state));
+        for (const m of presets.sort(byName)) listBox.append(modCard(m, state));
       }
       function searchAgain() {   // keep typing in the box after it's redrawn
         const box = listBox.querySelector('input[type="search"]');

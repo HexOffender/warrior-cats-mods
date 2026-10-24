@@ -10,7 +10,7 @@ from . import bridge, catlook, controls, draw, hostpages, ingame, luacheck, menu
 from . import game as game_lua   # WCModsGame (the name `game` is the game's files in build())
 from . import mods as modlib
 from .blake3 import blake3
-from .config import MOD_BASENAME, UE4SS_MOD_NAME, game_running
+from .config import MOD_BASENAME, UE4SS_MOD_NAME, Config, game_running
 from .gamefiles import GameFiles
 from .iostore import ModContainerWriter
 from .pak import PakReader, PakWriter
@@ -222,9 +222,14 @@ def pending(cfg, mods):
     """How your mods differ from what's installed: {"installed" (ever), "on" and "off" (ids turned on or off
     since), "changed" (on both times, with files changed since), "any"}. The studio's Apply button
     shows it."""
-    cfg.reload()
+    # wcmods.json read afresh into a Config of its own: reloading the studio's would throw away what an
+    # install running at the same time has noted but not saved yet.
+    try:
+        data = Config(cfg.root).data
+    except (OSError, ValueError):   # being written this moment
+        data = cfg.data
     now = {m.id for m in mods if m.enabled}
-    inst = cfg.data.get("installed")
+    inst = data.get("installed")
     if not inst:
         return {"installed": False, "on": sorted(now), "off": [], "changed": [], "any": bool(now)}
     was = set(inst.get("mods", []))

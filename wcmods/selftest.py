@@ -49,6 +49,8 @@ def run(cfg, oodle, log=print):
           and 'Menu.share("frame"' in menu.host_script({"sections": {}, "notes": {}, "warnings": [], "built": ""}, []))
     check("agent controller: pictures, menu rows, test files", _agent_parts())
     check("adding a downloaded mod from a .zip (and refusing unsafe ones)", _mod_zips())
+    check("a .zip can't hide code in a name's case, carry a bad mod.json or claim to come with wcmods",
+          _mod_zip_guards())
     check("mods that need other mods: switched on together, left out of a build without them", _requirements(cfg))
     check("the mod menu is a mod: its window and module only with it on", _menu_mod(cfg))
     problems = luacheck.check(palettes.ue4ss_script({}))
@@ -264,6 +266,35 @@ def _mod_zips():
                 and added[0]["id"] == "cool-tweaks" and again[0]["replaced"] and m.version == "1.2" and m.menu_page()
                 and refused == 3 and sorted(os.listdir(root)) == ["cool-tweaks"]
                 and modzip.removed(backups)[0]["why"] == "replaced")
+
+
+def _mod_zip_guards():
+    """Names are checked as Windows sees them (Section.py is code; MOD.JSON beside mod.json is refused);
+    a mod.json value Mod can't use is refused; "builtin" from a download is dropped; a mod added on
+    turns on what it requires; a removed mod whose id ends in a number comes back under that id."""
+    import json
+    from . import modzip
+    from .mods import Mod
+    with tempfile.TemporaryDirectory() as tmp:
+        root, backups = os.path.join(tmp, "mods"), os.path.join(tmp, "backups")
+        os.makedirs(os.path.join(root, "helper"))
+        with open(os.path.join(root, "helper", "mod.json"), "w") as f:
+            json.dump({"name": "Helper", "enabled": False}, f)
+        hidden = modzip.inspect(_zip(os.path.join(tmp, "a.zip"), {"q/mod.json": "{}", "q/Section.py": ""}), root)
+        refused = 0
+        for files in ({"q/mod.json": "{}", "q/MOD.JSON": "{}"}, {"q/mod.json": '{"priority": "high"}'}):
+            try:
+                modzip.inspect(_zip(os.path.join(tmp, "b.zip"), files), root)
+            except ValueError:
+                refused += 1
+        added = modzip.add_zip(_zip(os.path.join(tmp, "c.zip"), {"pack-2/mod.json": json.dumps(
+            {"name": "Pack", "builtin": True, "requires": ["helper"]})}), root, backups)
+        claimed = Mod(os.path.join(root, "pack-2")).builtin
+        helper_on = Mod(os.path.join(root, "helper")).enabled
+        gone = modzip.remove(Mod(os.path.join(root, "pack-2")), backups)
+        back = modzip.restore(backups, gone, root)
+        return (hidden[0]["code"] and refused == 2 and not claimed and helper_on
+                and added[0]["also_on"] == ["Helper"] and back == "pack-2")
 
 
 def _mods_folder(tmp, mods):

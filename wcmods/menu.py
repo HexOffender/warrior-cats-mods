@@ -847,7 +847,9 @@ end
 local function register(p)
     local list = Menu.shared("pages") or ""
     local line = p.id .. "\t" .. p.title .. "\t" .. tostring(p.order) .. "\t" .. p.group .. "\n"
-    if not list:find(p.id .. "\t", 1, true) then Menu.share("pages", list .. line) end
+    -- Only a line whose id is this one counts: a plain find would match "Travel" inside another page's
+    -- title ("Fast Travel"), and that page would never get a tab.
+    if not ("\n" .. list):find("\n" .. p.id .. "\t", 1, true) then Menu.share("pages", list .. line) end
 end
 
 -- The groups the menu's side bar shows, in order. A page names one of these ids (or a group of its own,
@@ -910,7 +912,11 @@ local function encode(v, indent)
     if t == "number" then
         if v ~= v or v == math.huge or v == -math.huge then return "null" end
         if math.type(v) == "integer" then return tostring(v) end
-        return string.format("%.6g", v)
+        -- %g writes 12.0 as "12", which comes back as a whole number (and a setting then only takes whole
+        -- numbers); keep it a float.
+        local s = string.format("%.6g", v)
+        if not s:find("[%.eE]") then s = s .. ".0" end
+        return s
     end
     if t == "string" then
         return '"' .. v:gsub('[%c"\\]', function(c)

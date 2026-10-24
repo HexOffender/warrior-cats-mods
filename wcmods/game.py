@@ -344,7 +344,11 @@ local function encodeJson(v, depth, seen)
     if t == "number" then
         if v ~= v or v == math.huge or v == -math.huge then return "null" end
         if math.type(v) == "integer" then return tostring(v) end
-        return string.format("%.17g", v)
+        -- %g writes 12.0 as "12", which comes back as a whole number (and a setting then only takes whole
+        -- numbers); keep it a float.
+        local s = string.format("%.17g", v)
+        if not s:find("[%.eE]") then s = s .. ".0" end
+        return s
     end
     if t == "string" then
         return '"' .. v:gsub('[%c"\\]', function(c)
@@ -570,7 +574,8 @@ function Game.hook(path, fn, opts)
         for i = 1, params.n do
             local p = params[i]
             local ok, v = pcall(function() return p:get() end)
-            values[i] = ok and v or p
+            -- Not `ok and v or p`: a parameter that's false would come through as p, which is truthy.
+            if ok then values[i] = v else values[i] = p end
         end
         local okSelf, self = pcall(function() return ctx:get() end)
         local ok, err = pcall(fn, okSelf and self or ctx, table.unpack(values, 1, values.n))
@@ -851,14 +856,16 @@ function Game.properties(o, all)
                 local name = p:GetFName():ToString()
                 local okT, t = pcall(function() return p:GetClass():GetFName():ToString() end)
                 local okV, v = pcall(function() return o[name] end)
-                out[#out + 1] = { name = name, type = okT and t or "?", owner = cname, value = okV and v or nil }
+                if not okV then v = nil end   -- (not `okV and v or nil`, which turns false into nil)
+                out[#out + 1] = { name = name, type = okT and t or "?", owner = cname, value = v }
             end)
         end)
         -- The members mapped from the reverse-engineering notes (Game.hidden) don't show up in the class's
         -- own list, so they're added here.
         for _, d in ipairs(Game.hiddenByClass and Game.hiddenByClass[cname] or {}) do
             local okV, v = pcall(function() return o[d[1]] end)
-            out[#out + 1] = { name = d[1], type = d[3], owner = cname .. " (mapped)", value = okV and v or nil, mapped = true }
+            if not okV then v = nil end
+            out[#out + 1] = { name = d[1], type = d[3], owner = cname .. " (mapped)", value = v, mapped = true }
         end
         if cname == "Object" then break end
         cls = cls:GetSuperStruct()

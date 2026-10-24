@@ -86,8 +86,13 @@ export default {
     expr.addEventListener("keydown", e => { if (e.key === "Enter") inspect(); });
     filter.addEventListener("input", () => lastInfo && render());
 
+    // The bridge writes an empty Lua table as {} (Lua can't tell it from an empty list), so a list that
+    // has nothing in it, like a function's parameters, may come back as an object.
+    const list = v => Array.isArray(v) ? v : [];
+
     function render() {
-      const info = lastInfo, f = filter.value.toLowerCase();
+      const f = filter.value.toLowerCase();
+      const info = { ...lastInfo, props: list(lastInfo.props), funcs: list(lastInfo.funcs), parents: list(lastInfo.parents) };
       const want = name => !f || name.toLowerCase().includes(f);
       const props = el("table", { class: "grid-table" },
         el("tr", {}, el("th", { text: "Property" }), el("th", { text: "Type" }), el("th", { text: "Value" })),
@@ -102,7 +107,7 @@ export default {
       const funcs = el("table", { class: "grid-table" },
         el("tr", {}, el("th", { text: "Function" }), el("th", { text: "From" })),
         ...info.funcs.filter(x => want(x.name)).map(x => el("tr", {},
-          el("td", { text: `${x.name}(${x.params.join(", ")})${x.returns ? " -> " + x.returns.replace(/Property$/, "") : ""}` }),
+          el("td", { text: `${x.name}(${list(x.params).join(", ")})${x.returns ? " -> " + x.returns.replace(/Property$/, "") : ""}` }),
           el("td", { class: "muted", text: x.owner }))));
       clear(view).append(
         el("p", {}, el("strong", { text: info.name })),

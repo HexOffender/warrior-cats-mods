@@ -60,8 +60,9 @@ def cmd_install(ctx, args):
         print("installed as wcmods.json says (like `wcmods install`)")
     else:
         manifest = a.install(extra=args.extra or (), code_mods=not args.no_code_mods, force=args.force)
-        print("installed a test build" + (" with code mods and the bridge" if not args.no_code_mods else "")
-              + "; wcmods.json is unchanged")
+        print("installed a test build" + (" with code mods (every mod that's on runs its code) and the bridge"
+                                          if not args.no_code_mods else "")
+              + "; your settings in wcmods.json are as they were (only its record of what's installed changed)")
     print("  UE4SS mods: " + ", ".join(manifest["ue4ss_mods"]))
     for w in manifest["warnings"]:
         print(f"  warning: {w}")

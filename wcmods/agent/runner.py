@@ -94,12 +94,13 @@ def run(root, paths, pattern=None, launch=False, stop_on_fail=False, out_dir=Non
         report["save_backup"] = agent.backup_save("before-agent-tests")
         log(f"backed up the save as {report['save_backup']} (python wcmods.py restore {report['save_backup']})")
     stopped = None
+    unready = None   # why the game couldn't be got ready: the tests that need it after that aren't run
     for t in tests:
         r = {"name": t.name, "doc": t.doc, "status": "passed", "seconds": 0.0, "message": "", "where": "",
              "shots": [], "log_errors": []}
         report["tests"].append(r)
-        if stopped:
-            r.update(status="not run", message=stopped)
+        if stopped or (unready and t.needs != "nothing"):
+            r.update(status="not run", message=stopped or unready)
             continue
         t0, first_shot = time.time(), len(agent.shots)
         try:
@@ -107,6 +108,12 @@ def run(root, paths, pattern=None, launch=False, stop_on_fail=False, out_dir=Non
         except Skip as e:
             r.update(status="skipped", message=str(e))
             log(f"  skip  {t.name}: {e}")
+            continue
+        except Exception as e:   # noqa: BLE001 - starting the game failed: say so in the report, don't lose it
+            r.update(status="error", message=f"the game couldn't be got ready: {type(e).__name__}: {e}", where=_where(e),
+                     seconds=round(time.time() - t0, 2))
+            log(f"  error   {t.name}: {r['message']}")
+            unready = f"not run: the game couldn't be got ready for {t.name}"
             continue
         mark = agent.log_mark()
         try:

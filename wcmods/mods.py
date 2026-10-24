@@ -39,10 +39,16 @@ class Mod:
         with open(os.path.join(folder, "mod.json"), encoding="utf-8-sig") as f:
             meta = json.load(f)
         self.meta = meta
-        self.name = meta.get("name", self.id)
-        self.description = meta.get("description", "")
+        # A mistake in one mod's mod.json (a name that isn't text, a priority that isn't a number) falls
+        # back to the default here, so it can't stop every other mod from being listed and built.
+        name, description = meta.get("name", self.id), meta.get("description", "")
+        self.name = name if isinstance(name, str) else self.id
+        self.description = description if isinstance(description, str) else ""
         self.enabled = bool(meta.get("enabled", True))
-        self.priority = int(meta.get("priority", 0))
+        try:
+            self.priority = int(meta.get("priority", 0))
+        except (TypeError, ValueError, OverflowError):
+            self.priority = 0
         self.version = str(meta.get("version") or "")
         self.author = str(meta.get("author") or "")
         self.requires = _ids(meta.get("requires"))

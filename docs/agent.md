@@ -19,9 +19,15 @@ Everything on this page was tried in game on build 24847281 unless it says other
 
 - **The game:** Windows, the game from Steam, and UE4SS (as for any code mod).
 - **A test install:** `agent install` builds your enabled mods with code mods allowed for that one
-  build, so the bridge (docs/scripting.md, "The game bridge") goes in. `wcmods.json` isn't changed.
-  `--with <mod folder>` adds a mod that isn't in `mods/`, switched on for the build, e.g.
-  `--with examples/game-tweaks`.
+  build, so the bridge (docs/scripting.md, "The game bridge") goes in.
+  - **Code runs:** that means the code of every mod that's on runs too (its `section.py` as it
+    builds, its scripts in the game), mods you've downloaded included, even with "allow_code_mods"
+    off in `wcmods.json`. Turn off any mod you don't trust first, or use `--no-code-mods` (no bridge).
+  - **`wcmods.json`:** your settings in it stay as they are ("allow_code_mods" included). Like any
+    install, it updates the record of what's installed (`installed`, `installed_ue4ss`,
+    `installed_ue4ss_shared`), which the studio's Apply button compares against.
+  - **More mods:** `--with <mod folder>` adds a mod that isn't in `mods/`, switched on for the build,
+    e.g. `--with examples/game-tweaks`.
 - **Afterwards:** `agent install --normal` installs as `wcmods.json` says, like `wcmods install`.
   If tests changed your save, `wcmods restore <backup>` puts it back; the test runner backs it up
   first and prints the name.
@@ -276,7 +282,9 @@ The suite here has 26 tests:
 
 - **What it changes:** the game as it runs (and so, at the game's next save, your save). Back up
   first: the runner does, and `wcmods backup` does by hand.
-- **What it leaves alone:** `wcmods.json` and your mods' files. It never sends crash reports.
+- **What it leaves alone:** your settings in `wcmods.json` (an install only updates its record of
+  what's installed) and your mods' files, unless a test presses a page's Save. It never sends crash
+  reports.
 - **Closing the game:** it ends the game only with `quit --force`, after the normal quit didn't work.
 - **Keys:** `hotkey`, the one command that presses real keys, does nothing unless the game is in
   front (or `--focus` puts it there).

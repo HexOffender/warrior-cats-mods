@@ -79,13 +79,18 @@ def cmd_add(ctx, args):
     if os.path.isdir(args.path):
         done = modzip.add_folder(args.path, ctx.mods_root, ctx.backups, enable=not args.off)
     else:
-        for m in modzip.inspect(args.path, ctx.mods_root):
-            if m["code"] and not ctx.cfg.data.get("allow_code_mods"):
-                print(f"note: {m['name']} runs code, so it stays out of the game until \"allow_code_mods\": true "
-                      "(only for mods from people you trust)")
         done = modzip.add_zip(args.path, ctx.mods_root, ctx.backups, enable=not args.off)
     for d in done:
+        if d.get("skipped"):
+            print(f"skipped {d['id']} ({d['name']}): it {d['skipped']}")
+            continue
         print(f"added {d['id']} ({d['name']})" + (f"; the old copy is in backups/mods/{d['replaced']}" if d["replaced"] else ""))
+        for name in d["also_on"]:
+            print(f"  also turned on {name} ({d['id']} needs it)")
+        # The same check as the studio's preview (names as Windows sees them), so case can't hide code.
+        if d["code"] and not ctx.cfg.data.get("allow_code_mods"):
+            print(f"  note: {d['name']} runs code, so it stays out of the game until \"allow_code_mods\": true "
+                  "(only for mods from people you trust)")
     found = mods.discover(ctx.mods_root)
     for d in done:
         for why in mods.unmet(found).get(d["id"], []):
@@ -95,10 +100,18 @@ def cmd_add(ctx, args):
 
 def cmd_remove(ctx, args):
     from . import modzip
-    found = {m.id: m for m in mods.discover(ctx.mods_root)}
-    if args.mod not in found:
+    found = mods.discover(ctx.mods_root)
+    m = next((x for x in found if x.id == args.mod), None)
+    if not m:
         sys.exit(f"no mod named {args.mod}")
-    print(f"moved {args.mod} to backups/mods/{modzip.remove(found[args.mod], ctx.backups)}; install again to take it out of the game")
+    need = mods.needing(found, m.id)
+    try:
+        moved = modzip.remove(m, ctx.backups, found, cascade=args.with_dependents)
+    except modzip.Needed as e:
+        sys.exit(f"{e} (or remove it with --with-dependents, which turns them off too)")
+    for i in need:
+        print(f"disabled {i} (it needs {m.id})")
+    print(f"moved {args.mod} to backups/mods/{moved}; install again to take it out of the game")
 
 
 def cmd_pack(ctx, args):
@@ -107,7 +120,7 @@ def cmd_pack(ctx, args):
     if args.mod not in found:
         sys.exit(f"no mod named {args.mod}")
     m = found[args.mod]
-    out = args.out or f"{m.id}{('-' + m.version) if m.version else ''}.zip"
+    out = args.out or modzip.zip_name(m)
     with open(out, "wb") as f:
         f.write(modzip.pack(m))
     print(f"wrote {out}: give it to someone, and they add it with Clan Mod Studio or `wcmods add {os.path.basename(out)}`")
@@ -566,6 +579,7 @@ def main(root, argv=None):
     p.set_defaults(fn=cmd_add)
     p = sub.add_parser("remove", help="take a mod out of mods/ (kept in backups/mods)")
     p.add_argument("mod")
+    p.add_argument("--with-dependents", action="store_true", help="also turn off the mods that need it")
     p.set_defaults(fn=cmd_remove)
     p = sub.add_parser("pack", help="pack a mod as a .zip to share")
     p.add_argument("mod")

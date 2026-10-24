@@ -36,16 +36,20 @@ class Row:
             return f"[{'-' if self.value else '+'}] {self.label}"
         if self.kind == "button":
             return f"[ {self.label} ]"
-        shown = self.value
+        # The menu writes floats as floats (233.0); a whole one reads better as 233.
+        whole = lambda v: int(v) if isinstance(v, float) and v.is_integer() else v
+        shown = whole(self.value)
         if isinstance(shown, bool):
             shown = "on" if shown else "off"
         extra = ""
-        if self.kind in ("radio", "choice") and self.options:
-            extra = "   (" + " | ".join(self.options) + ")"
-        elif self.kind in ("slider", "number") and self.options:
-            lo, hi = (self.options + [None, None])[:2]
+        # A Lua table with holes ({nil, 10}) can come as an object rather than a list.
+        options = self.options if isinstance(self.options, list) else []
+        if self.kind in ("radio", "choice") and options:
+            extra = "   (" + " | ".join(map(str, options)) + ")"
+        elif self.kind in ("slider", "number") and options:
+            lo, hi = (options + [None, None])[:2]
             if lo is not None or hi is not None:
-                extra = f"   ({lo if lo is not None else ''}..{hi if hi is not None else ''})"
+                extra = f"   ({whole(lo) if lo is not None else ''}..{whole(hi) if hi is not None else ''})"
         return f"{self.label}: {shown}{extra}" + ("" if self.kind == "field" else f"   <{self.kind}>")
 
 

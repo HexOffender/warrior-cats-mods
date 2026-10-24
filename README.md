@@ -180,8 +180,8 @@ python wcmods.py remove cool-mod           # take it out of mods/ (kept in backu
 python wcmods.py pack my-mod               # my-mod-1.0.zip, to share
 ```
 
-`enable <mod>` also turns on the mods it requires, and `disable <mod>` refuses while mods that are
-on need it (`--with-dependents` turns those off too).
+`enable <mod>` (and `add`, unless `--off`) also turns on the mods it requires, and `disable <mod>`
+and `remove <mod>` refuse while mods that are on need it (`--with-dependents` turns those off too).
 
 Also: `new <name> --kind palette|controls|files|data|names|save|script`, `eyes`,
 `tables`, `names [--cats] [--json]`, `controls [--json]`, `files <pattern>`, `extract <pattern>`,
@@ -199,8 +199,10 @@ editor).
 - **Pictures:** `agent shot --menu` saves a picture.
 - **Tests:** `agent test` runs the in-game tests in `tests/game` and writes a report with pictures.
 
-`agent install` puts in a test build with the bridge, leaving `wcmods.json` alone. See
-[docs/agent.md](docs/agent.md).
+`agent install` puts in a test build with the bridge. It allows code mods for that build, so the
+code of every mod that's on runs, downloaded ones included; turn off any you don't trust first. Your
+settings in `wcmods.json` stay as they are; like any install, it updates the record there of what's
+installed. See [docs/agent.md](docs/agent.md).
 
 ## How it's built
 

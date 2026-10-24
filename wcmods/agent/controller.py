@@ -2,7 +2,7 @@
 
     from wcmods.agent import Agent
     agent = Agent(root)
-    agent.install()                    # a test build: your mods plus the bridge (wcmods.json unchanged)
+    agent.install()                    # a test build: your mods plus the bridge (code mods on for it)
     agent.launch(world=True)           # start it through Steam and play into the forest
     agent.lua("return Game.cat():name()")
     page = agent.menu.open("Stats")    # the mod menu, read as rows
@@ -273,9 +273,10 @@ class Agent:
 
     # ---------- installing ----------
     def install(self, extra=(), code_mods=True, force=False):
-        """Build and install your enabled mods for a test: code mods allowed (so the bridge goes in) without
-        changing wcmods.json, plus the mod folders in `extra` (e.g. examples/game-tweaks), on for this
-        build. The game must be closed. Returns the build's manifest."""
+        """Build and install your enabled mods for a test: code mods allowed for this build (so the bridge
+        goes in, and every enabled mod's code runs, downloaded ones too), plus the mod folders in `extra`
+        (e.g. examples/game-tweaks), on for this build. wcmods.json keeps its settings; the install updates
+        its record of what's installed. The game must be closed. Returns the build's manifest."""
         if window.game_pid():
             raise AgentError("the game is running; agent.quit() first (installing replaces files it has open)")
         cfg = Config(self.root)

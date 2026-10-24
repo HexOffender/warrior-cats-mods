@@ -35,7 +35,10 @@ async function refreshStatus() {
       ? chip("Apply again", "warn", "The installed mods were built by an older wcmods, and the game can't find their files. Apply to rebuild them.")
       : changes && changes.any
         ? chip(changes.installed ? `${waiting} change${waiting === 1 ? "" : "s"} to apply` : "Not applied yet", "warn", "Apply to game puts them in")
-        : chip(info.installed ? "Game up to date" : "Nothing installed", info.installed ? "good" : ""),
+        // /changes reads wcmods.json afresh (an install from the command line shows at once); /info may not.
+        : (changes ? changes.installed : info.installed)
+          ? chip("Game up to date", "good")
+          : chip("Nothing installed", ""),
   ].filter(Boolean));
   installBtn.disabled = info.game_running;
   installBtn.title = info.game_running ? "Close the game first" : "Build your mods and put them in the game";
