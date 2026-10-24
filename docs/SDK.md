@@ -21,14 +21,17 @@ is in [reverse-engineering.md](reverse-engineering.md). How the game's rules wor
 progression, items, quests and more), and which table rows to change, is in
 [mechanics/](mechanics/README.md).
 
-Three complete examples:
-- [`examples/game-tweaks`](../examples/game-tweaks): an in-game script with its settings and a mod menu
-  page, and no Python.
-- [`examples/faster-run`](../examples/faster-run): a build step and a studio page.
-- [`examples/quest-markers`](../examples/quest-markers): an in-game script with a custom quest,
+The example mods are in their own repository, [wcmods-examples](https://github.com/HexOffender/wcmods-examples). Three complete
+ones:
+- [game-tweaks](https://github.com/HexOffender/wcmods-examples/tree/main/game-tweaks): an in-game script with its settings and a
+  mod menu page, and no Python.
+- [faster-run](https://github.com/HexOffender/wcmods-examples/tree/main/faster-run): a build step and a studio page.
+- [quest-markers](https://github.com/HexOffender/wcmods-examples/tree/main/quest-markers): an in-game script with a custom quest,
   markers on screen and a mod menu page.
 
-To try one, copy it into `mods/` and allow code mods.
+It also has palettes, eye and coat colours, mouse look, controls and game data mods to start from. To
+try one, drop the repository's .zip on the studio's Mods page and tick it (or `python wcmods.py add
+../wcmods-examples/<name>`), and allow code mods for the three above.
 
 ## Mod folder
 
@@ -361,7 +364,7 @@ by itself after a level change.
 
 ## `WCModsMenu`
 
-The mod menu is a mod of its own: **Mod menu**, `mods/mod-menu`, which comes with wcmods and starts
+The mod menu is a mod of its own: **Mod menu**, `mods/mod-menu`, the one mod that comes with wcmods. It starts
 on.
 - **While it's on:** a build puts in its window (`WCModsMenuHost`) and this module.
 - **While it's off:** there's neither, and `pcall(require, "WCModsMenu")` fails, so a script that

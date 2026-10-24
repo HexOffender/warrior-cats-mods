@@ -27,7 +27,7 @@ Everything on this page was tried in game on build 24847281 unless it says other
     install, it updates the record of what's installed (`installed`, `installed_ue4ss`,
     `installed_ue4ss_shared`), which the studio's Apply button compares against.
   - **More mods:** `--with <mod folder>` adds a mod that isn't in `mods/`, switched on for the build,
-    e.g. `--with examples/game-tweaks`.
+    e.g. `--with ../wcmods-examples/game-tweaks` (from a checkout of wcmods-examples beside wcmods).
 - **Afterwards:** `agent install --normal` installs as `wcmods.json` says, like `wcmods install`.
   If tests changed your save, `wcmods restore <backup>` puts it back; the test runner backs it up
   first and prints the name.
@@ -35,7 +35,7 @@ Everything on this page was tried in game on build 24847281 unless it says other
 ## A session
 
 ```bash
-python wcmods.py agent install --with examples/game-tweaks
+python wcmods.py agent install --with ../wcmods-examples/game-tweaks
 ```
 
 ```bash

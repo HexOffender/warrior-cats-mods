@@ -275,7 +275,7 @@ class Agent:
     def install(self, extra=(), code_mods=True, force=False):
         """Build and install your enabled mods for a test: code mods allowed for this build (so the bridge
         goes in, and every enabled mod's code runs, downloaded ones too), plus the mod folders in `extra`
-        (e.g. examples/game-tweaks), on for this build. wcmods.json keeps its settings; the install updates
+        (e.g. ../wcmods-examples/game-tweaks), on for this build. wcmods.json keeps its settings; the install updates
         its record of what's installed. The game must be closed. Returns the build's manifest."""
         if window.game_pid():
             raise AgentError("the game is running; agent.quit() first (installing replaces files it has open)")

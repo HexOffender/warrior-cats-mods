@@ -2,8 +2,8 @@
 
 A downloaded mod is a .zip with the mod's folder in it (its mod.json and the rest), or with mod.json
 and the rest at the top; one .zip can hold several mods, and the mod folders can be deeper (a whole
-download of wcmods' repository works: the mods that come with wcmods, like the mod menu, are skipped
-rather than replaced). Adding a mod copies files into mods/ and nothing in it runs; mods that run code
+download of the wcmods-examples repository works; a mod that comes with wcmods, the mod menu, is
+skipped rather than replaced). Adding a mod copies files into mods/ and nothing in it runs; mods that run code
 still need "allow_code_mods" (mods.Mod.has_code). A mod added switched on turns on the mods it
 requires too, as switching it on does.
 
@@ -182,7 +182,7 @@ def _inspect(z, mods_root, name):
     members = _members(z)
     # Folders and files are matched as Windows sees their names (_fold), so "MOD.JSON" or "Section.py"
     # counts for what it is on disk.
-    roots = sorted({_fold(p[:-1]) for p, _ in members if _key(p[-1]) == "mod.json"}, key=len)
+    roots = sorted({_fold(p[:-1]) for p, _ in members if _key(p[-1]) == "mod.json"}, key=lambda r: (len(r), r))
     # A mod folder inside another mod's (a template, say) belongs to that mod; folders starting with
     # "_" are templates, as in mods/.
     keep = []

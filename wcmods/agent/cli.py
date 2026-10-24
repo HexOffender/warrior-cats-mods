@@ -240,7 +240,7 @@ def register(sub):
     q.add_argument("--force", action="store_true", help="end it if it doesn't close")
     q = cmd("install", cmd_install, "install a test build: your mods, code mods allowed, the bridge")
     q.add_argument("--with", dest="extra", action="append", metavar="MOD_FOLDER",
-                   help="also put in this mod folder, on (e.g. examples/game-tweaks); repeatable")
+                   help="also put in this mod folder, on (e.g. ../wcmods-examples/game-tweaks); repeatable")
     q.add_argument("--no-code-mods", action="store_true", help="as wcmods.json says about code mods")
     q.add_argument("--normal", action="store_true", help="install exactly as `wcmods install` does (to finish testing)")
     q.add_argument("--force", action="store_true", help="install even if a section failed to build")

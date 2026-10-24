@@ -148,10 +148,10 @@ def test_inspector_opens_your_cat(agent):
 
 
 def test_script_settings_page(agent):
-    """A script mod's automatic settings page (examples/game-tweaks, when it's installed)."""
+    """A script mod's automatic settings page (wcmods-examples' game-tweaks, when it's installed)."""
     ids = [p["id"] for p in agent.menu.pages()]
     if "script:game-tweaks" not in ids:
-        skip("Game Tweaks isn't installed (agent install --with examples/game-tweaks)")
+        skip("Game Tweaks isn't installed (agent install --with ../wcmods-examples/game-tweaks)")
     page = agent.menu.open("script:game-tweaks")
     assert page.find("Heal key", "input"), page.text()
     assert page.find("Save", "button")

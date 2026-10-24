@@ -1,6 +1,0 @@
-﻿{
-  "name": "Mouse Look",
-  "description": "Turn and tilt the camera with the mouse while exploring. Menus get the cursor back; F6 switches it off and on. Needs UE4SS.",
-  "enabled": true,
-  "priority": 5
-}

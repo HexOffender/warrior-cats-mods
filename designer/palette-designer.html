@@ -393,7 +393,7 @@ textarea { width: 100%; min-height: 110px; font: 400 0.84rem/1.5 var(--mono); re
   }
   function merge(...ps) { const out = {}; for (const p of ps) for (const [k, v] of Object.entries(p)) out[k] = Object.assign({}, out[k] || {}, v); return out; }
   const PRESETS = [
-    { id: "current", name: "Current install", desc: "Gemstone Eyes + Richer Coats", data: merge(GAME.presets["gemstone-eyes"], GAME.presets["richer-coats"]) },
+    { id: "current", name: "Gemstone + Richer", desc: "Gemstone Eyes with Richer Coats", data: merge(GAME.presets["gemstone-eyes"], GAME.presets["richer-coats"]) },
     { id: "vanilla", name: "Game colours", desc: "Start from scratch", data: {} },
     { id: "gemstone", name: "Gemstone Eyes", desc: "Jewel-tone irises", data: GAME.presets["gemstone-eyes"] },
     { id: "starclan", name: "StarClan Glow", desc: "Pale two-tone eyes", data: GAME.presets["starclan-glow-eyes"] },
@@ -691,7 +691,7 @@ textarea { width: 100%; min-height: 110px; font: 400 0.84rem/1.5 var(--mono); re
     const step = (text, cmd) => steps.append(el("li", {}, text, cmd ? el("code", { class: "cmd", text: cmd }) : null));
     step("In the warrior-cats-mods folder, create the mod:", `python wcmods.py new ${name}`);
     step(`Replace the contents of mods\\${name}\\palette.json with the copied palette.`);
-    step("Turn off the example palettes so they don't mix with yours (skip this if you want them underneath):", "python wcmods.py disable gemstone-eyes richer-coats");
+    step("If you added palettes from wcmods-examples, turn them off so they don't mix with yours (skip this to keep them underneath), e.g.:", "python wcmods.py disable gemstone-eyes richer-coats");
     step("Turn yours on:", `python wcmods.py enable ${name}`);
     step("Close the game, then install:", "python wcmods.py install");
   }

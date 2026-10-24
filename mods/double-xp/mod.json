@@ -1,6 +1,0 @@
-{
-  "name": "Double XP",
-  "description": "Doubles the experience every combat gives (gameplay change).",
-  "enabled": false,
-  "priority": 0
-}

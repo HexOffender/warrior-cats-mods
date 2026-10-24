@@ -19,7 +19,7 @@ and any of:
   scripts/main.lua    an in-game Lua script, with settings.json for its settings (sections/scripts.py, opt-in)
   section.py          the mod's own section, written with wcmods.sdk (opt-in)
   studio/section.js   the mod's own studio page, written with studio/lib/wc.js (opt-in)
-Folders starting with '_' are templates and are ignored.
+Folders starting with '_' are ignored (half-added mods; `wcmods new` copies wcmods/templates).
 """
 import json
 import os

@@ -1,7 +1,0 @@
-{
-  "_help": "Mouse look settings. sensitivity: 1.0 is Unreal's usual speed. invert: true makes moving the mouse up tilt the camera down. toggle_key: switches mouse look off and on in game (F1-F12 except F11, or \"\" for none). debug: logs what the script sees to UE4SS.log.",
-  "sensitivity": 1.0,
-  "invert": false,
-  "toggle_key": "F6",
-  "debug": false
-}

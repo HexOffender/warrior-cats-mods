@@ -213,6 +213,7 @@ export default {
       clear(quick).append(el("h2", { text: "Quick palettes" }),
         el("p", { class: "note", text: "Tick the palettes to use and apply them: it turns those on, turns the other palette mods off, and installs. " +
           "Pick one full theme; eyes-only or coats-only palettes (Gemstone Eyes, Richer Coats, StarClan Glow Eyes) go on top of it. To change one, pick it under Editing mod below." }),
+        tiles.length ? null : el("p", { class: "empty", text: "No palette mods yet. Ten themed palettes, and palettes for eyes and coats, are in wcmods-examples (Add a mod, on the Mods page, says where)." }),
         el("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: "10px" } }, ...tiles),
         buttons);
     }

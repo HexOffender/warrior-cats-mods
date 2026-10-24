@@ -13,13 +13,20 @@ A mod manager and shared modding library for the Steam version (Unreal Engine 5.
    save, and installs the script loader most mods need (UE4SS) with one click. If you've never played,
    start the game once first so it makes a save.
 4. **Add a mod:** drop the mod's .zip on the page, or onto `Clan Mod Studio` itself, and press **Add
-   to my mods**.
+   to my mods**. To try some, [wcmods-examples](https://github.com/HexOffender/wcmods-examples) has palettes, mouse look and more:
+   download it (**Code**, then **Download ZIP**) and drop that .zip on the page.
 5. **Press Play** (top right). It puts your mods in the game and starts it. Close the game before you
    change mods; press Play again after.
 
 To open it from your desktop, right-click `Clan Mod Studio` and choose *Send to > Desktop (create
 shortcut)*. Close its black window to stop it. If it's already open, double-clicking it again
 brings it back.
+
+**Updating:** unzip a new download over the old folder; your mods and settings stay. With git, note
+that wcmods used to come with palettes, mouse look and other mods in `mods/`. They're now in
+[wcmods-examples](https://github.com/HexOffender/wcmods-examples), so pulling takes them out of
+`mods/` (copy any you changed somewhere first); add back the ones you use. Everything else in `mods/`
+is yours and git leaves it alone, except the mod menu's own folder.
 
 ## Clan Mod Studio
 
@@ -34,6 +41,9 @@ keys. It stops by itself when the game closes.
 **Clan Mod Studio** puts your mods in the game. Its **Mods** page is where you start:
 - **Add a mod:** drop a downloaded mod's .zip on the page. It shows what's in it (what the mod
   changes, whether it runs code, what else it needs) before you add it.
+- **Example mods:** wcmods comes with one mod, the mod menu. Example mods are in their own
+  repository, [wcmods-examples](https://github.com/HexOffender/wcmods-examples): themed palettes, eye and coat colours, mouse look,
+  controls, game tweaks and more. Drop its .zip on the page and tick the ones you want.
 - **Switch mods on and off:** a mod that needs another turns that one on too, and turning off a mod
   that others need asks first.
 - **Play** (top right): puts what's changed in the game, then starts it. Apply to game does just the
@@ -64,13 +74,13 @@ The pages under **Make mods** are for making your own; each edits a file in a mo
 
 With code mods allowed, `python wcmods.py lua "Game.cat():name()"`, the studio's **Console** page and
 the mod menu's Console run Lua in the game while it's open. See [docs/scripting.md](docs/scripting.md);
-the example is [`examples/game-tweaks`](examples/game-tweaks).
+the example is [game-tweaks](https://github.com/HexOffender/wcmods-examples/tree/main/game-tweaks) in wcmods-examples.
 
 Mods can also ship whole replacement files (`files/Wrc/...`), and their own pages and build
 steps written with the shared library (see [docs/SDK.md](docs/SDK.md)). UE4SS scripts can draw
 on screen (menus, debug text, markers on places in the world) and find nearby pickups, cats and
 quest objectives with the shared Lua modules wcmods installs (docs/SDK.md, "Overlays"; example:
-[`examples/quest-markers`](examples/quest-markers), a custom quest with on-screen markers).
+[quest-markers](https://github.com/HexOffender/wcmods-examples/tree/main/quest-markers) in wcmods-examples, a custom quest with on-screen markers).
 
 **In game, Insert opens the mod menu** (with UE4SS). A status line under its title shows how your
 cat is doing, and the side bar groups the pages:
@@ -328,9 +338,11 @@ just your cat a coat colour of its own, use `cats.json`'s `colours`.
 
 #### Ready-made palettes
 
-Ten themed palettes come as mods, all off to start: ThunderClan Forest, RiverClan Waters, ShadowClan
-Night, WindClan Moor, SkyClan Sunset, StarClan Silverpelt, Dark Forest, Leaf-bare Frost, Pastel Kits
-and Vivid Clans (`mods/palette-*`). Each one recolours coats, patterns, markings and eyes. The
+Ten themed palettes are in [wcmods-examples](https://github.com/HexOffender/wcmods-examples): ThunderClan Forest, RiverClan
+Waters, ShadowClan Night, WindClan Moor, SkyClan Sunset, StarClan Silverpelt, Dark Forest, Leaf-bare
+Frost, Pastel Kits and Vivid Clans (`palette-*`). Add the ones you want from its .zip on the Mods page,
+or with `python wcmods.py add ../wcmods-examples/palette-dark-forest`. Each one recolours coats,
+patterns, markings and eyes. The
 natural coats are a colour grade of the game's own, so every slot keeps its place from light to dark;
 the bright extras and the eyes get the theme's own colours.
 
@@ -350,9 +362,10 @@ python wcmods.py palette palette-dark-forest gemstone-eyes   # Dark Forest coats
 python wcmods.py palette --none                              # back to the game's colours
 ```
 
-`tools/make_palettes.py` generates them from the game's colours (`colour_tables.json` and the eye
-atlas). Edit its themes and run it again to change them. It keeps whether each one is on, its
-priority, and anything else you added to its `mod.json`.
+`tools/make_palettes.py --out ../wcmods-examples` generates them from the game's colours
+(`colour_tables.json` and the eye atlas), into a checkout of wcmods-examples. Edit its themes and run it
+again to change them. It keeps each one's priority and anything else you added to its `mod.json`. A
+palette you've added is your own copy, so add it again to get the new one.
 
 ### `cats.json`
 ```json
