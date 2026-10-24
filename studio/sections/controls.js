@@ -176,13 +176,17 @@ export default {
       const gameKey = saved[dev]?.[action.id] ?? DEFAULTS[dev][action.id];
       const changed = action.id in overrides[dev] && overrides[dev][action.id] !== gameKey;
       const conflict = conflicts(dev)[action.id];
-      const cap = el("span", { class: "chip", style: { fontWeight: "700", fontSize: "0.95rem" }, title: key }, input.keyLabel(key, style));
+      const cap = el("span", { class: "chip", style: { fontWeight: "700", fontSize: "0.95rem" }, title: key },
+        el("span", { class: "sr-only", text: `${action.name}, ${dev === "gamepad" ? "controller" : "keyboard"}: ` }), input.keyLabel(key, style));
       const box = el("div", { style: { display: "grid", gap: "4px" } },
         el("div", { class: "row" }, cap,
-          changed ? el("span", { class: "chip warn", title: `The game's key: ${input.keyLabel(gameKey, style)}` }, el("i"), "changed") : null,
+          changed ? el("span", { class: "chip warn", title: `The game's key: ${input.keyLabel(gameKey, style)}` }, el("i", { "aria-hidden": "true" }), "changed",
+            el("span", { class: "sr-only", text: ` from ${input.keyLabel(gameKey, style)}` })) : null,
           el("button", { class: "btn small", text: "Change", "aria-label": `Change ${dev} binding for ${action.name}`, onclick: () => capture(dev, action) }),
-          key !== DEFAULTS[dev][action.id] ? el("button", { class: "btn ghost small", text: "Default", title: `Game default: ${input.keyLabel(DEFAULTS[dev][action.id], style)}`, onclick: () => setKey(dev, action.id, DEFAULTS[dev][action.id]) }) : null,
-          action.id in overrides[dev] ? el("button", { class: "btn ghost small", text: "Undo", onclick: () => { delete overrides[dev][action.id]; target.markDirty(); render(); } }) : null));
+          key !== DEFAULTS[dev][action.id] ? el("button", { class: "btn ghost small", text: "Default", title: `Game default: ${input.keyLabel(DEFAULTS[dev][action.id], style)}`,
+            "aria-label": `${action.name}: back to the game's default, ${input.keyLabel(DEFAULTS[dev][action.id], style)}`, onclick: () => setKey(dev, action.id, DEFAULTS[dev][action.id]) }) : null,
+          action.id in overrides[dev] ? el("button", { class: "btn ghost small", text: "Undo", "aria-label": `Undo the ${dev === "gamepad" ? "controller" : "keyboard"} change to ${action.name}`,
+            onclick: () => { delete overrides[dev][action.id]; target.markDirty(); render(); } }) : null));
       if (conflict) {
         box.append(el("span", { class: conflict.byGame ? "muted" : "", style: { fontSize: "0.82rem", color: conflict.byGame ? "" : "var(--changed)" },
           text: conflict.byGame ? `Shared with ${conflict.others.map(nameOf).join(", ")} by the game (used in different places)` : `Also bound to ${conflict.others.map(nameOf).join(", ")}` }));
@@ -258,9 +262,9 @@ export default {
       renderMouse();
       clear(table).append(el("div", { class: "table-wrap", style: { maxHeight: "none" } },
         el("table", { class: "grid-table" },
-          el("thead", {}, el("tr", {}, el("th", { text: "Action" }), el("th", { text: "Keyboard & mouse" }), el("th", { text: "Controller" }))),
+          el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Action" }), el("th", { scope: "col", text: "Keyboard & mouse" }), el("th", { scope: "col", text: "Controller" }))),
           el("tbody", {}, ...ACTIONS.map(a => el("tr", {},
-            el("td", {}, el("strong", { text: a.name }), el("div", { class: "muted mono", style: { fontSize: "0.72rem" }, text: a.raw ? `built-in key ${a.raw}` : a.id })),
+            el("th", { scope: "row" }, el("strong", { text: a.name }), el("div", { class: "muted mono", style: { fontSize: "0.75rem" }, text: a.raw ? `built-in key ${a.raw}` : a.id })),
             el("td", {}, cell("keyboard", a)), el("td", {}, cell("gamepad", a))))))));
       // A built-in row's key (Move forward on T, say) wins over an extra pair for the same key.
       const rowKeys = Object.fromEntries(ACTIONS.filter(a => a.raw && overrides.keyboard[a.id] && overrides.keyboard[a.id] !== a.raw)
@@ -277,6 +281,7 @@ export default {
     // pairs is {key you press: game key}; changes go straight into it. taken: {key: row name} for keys
     // a built-in row already uses, which win over a pair here.
     function renderPairs(box, title, note, pairs, taken) {
+      box.dataset.key = `pairs:${title}`;   // its buttons are told from the other list's with the same labels
       const changed = () => { target.markDirty(); render(); };
       const chip = k => el("span", { class: "chip", style: { fontWeight: "700" }, title: k }, input.keyLabel(k, style));
       const pick = (label, then) => capture("keyboard", { name: `${title}: ${label}` }, then);
@@ -287,12 +292,12 @@ export default {
       const rows = Object.entries(pairs).map(([pressed, gameKey]) => el("div", { style: { display: "grid", gap: "2px" } },
         el("div", { class: "row" },
           el("span", { class: "muted", text: "Pressing" }), chip(pressed),
-          el("button", { class: "btn ghost small", text: "Change", "aria-label": `Change the key you press for ${gameKey}`,
+          el("button", { class: "btn ghost small", text: "Change", "aria-label": `Change ${input.keyLabel(pressed, style)}, the key you press for ${input.keyLabel(gameKey, style)}`,
             onclick: () => pick("the key you press", k => { if (k !== pressed && free(k, pressed)) { delete pairs[pressed]; pairs[k] = gameKey; changed(); } }) }),
           el("span", { class: "muted", text: "sends the game" }), chip(gameKey),
           el("button", { class: "btn ghost small", text: "Change", "aria-label": `Change the game key ${pressed} sends`,
             onclick: () => pick("the game's key", k => { pairs[pressed] = k; changed(); }) }),
-          el("button", { class: "btn ghost small", text: "Remove", onclick: () => { delete pairs[pressed]; changed(); } })),
+          el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove ${input.keyLabel(pressed, style)} for ${input.keyLabel(gameKey, style)}`, onclick: () => { delete pairs[pressed]; changed(); } })),
         taken[pressed] ? el("span", { style: { fontSize: "0.82rem", color: "var(--changed)" },
           text: `${input.keyLabel(pressed, style)} is also ${taken[pressed]}'s key above, which wins; pick another key` }) : null));
       clear(box).append(el("h2", { text: title }), el("p", { class: "note", text: note }), ...rows,
@@ -306,12 +311,13 @@ export default {
     function capture(dev, action, onPick) {
       const pad = dev === "gamepad";
       const choices = pad ? (action.axis ? input.PAD_AXES : input.PAD_BUTTONS) : [];
-      const msg = el("p", { text: pad
+      const back = wc.keepPlace();
+      const msg = el("p", { id: "capture-msg", "aria-live": "polite", text: pad
         ? (action.axis ? "Move a stick on your controller, or pick one below." : "Press a button on your controller, or pick one below.")
         : "Press a key, click a mouse button here, or scroll. Escape cancels; to use Escape itself, click the Escape button." });
       const padNote = el("p", { class: "muted", style: { fontSize: "0.9rem" } });
       const overlay = el("div", {
-        role: "dialog", "aria-modal": "true", "aria-label": `Rebind ${action.name}`,
+        role: "dialog", "aria-modal": "true", "aria-label": `Rebind ${action.name}`, "aria-describedby": "capture-msg",
         style: { position: "fixed", inset: "0", background: "rgba(10,16,13,.55)", display: "grid", placeItems: "center", zIndex: "40", padding: "16px" },
       }, el("div", { class: "card", style: { width: "min(560px, 100%)" } },
         el("h2", { text: `${action.name} · ${pad ? "controller" : "keyboard & mouse"}` }), msg, padNote,
@@ -322,7 +328,17 @@ export default {
       document.body.append(overlay);
       let raf = 0, done = false;
       const onKey = e => {
-        if (pad) { if (e.key === "Escape") finish(null); return; }
+        if (pad) {
+          if (e.key === "Escape") finish(null);
+          // Tab stays in the dialog.
+          if (e.key === "Tab") {
+            const bs = [...overlay.querySelectorAll("button")];
+            const at = bs.indexOf(document.activeElement);
+            e.preventDefault();
+            bs[(at + (e.shiftKey ? -1 : 1) + bs.length) % bs.length].focus();
+          }
+          return;
+        }
         e.preventDefault(); e.stopPropagation();
         if (e.code === "Escape") return finish(null);
         const k = input.keyFromEvent(e);
@@ -371,6 +387,7 @@ export default {
         overlay.remove();
         if (key && onPick) onPick(key);
         else if (key) { setKey(dev, action.id, key); toast(`${action.name}: ${input.keyLabel(key, style)}`); }
+        back();
       }
     }
 

@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="wc-token" content="{{WC_TOKEN}}">
+<meta name="color-scheme" content="light dark">
 <title>Clan Mod Studio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,13 +12,14 @@
 <link rel="stylesheet" href="/studio/styles.css">
 </head>
 <body>
+<a class="skip" href="#main">Skip to the page</a>
 <div class="shell">
   <header class="topbar">
     <div class="brand">
       <span class="eyebrow">Warrior Cats · Clans of the Forest</span>
       <strong>Clan Mod Studio</strong>
     </div>
-    <div class="status" id="status" aria-live="polite"></div>
+    <div class="status" id="status" role="group" aria-label="Status"></div>
     <div class="actions">
       <button class="btn" id="installBtn">Apply to game</button>
       <button class="btn primary" id="playBtn">Play</button>
@@ -26,11 +28,14 @@
   <nav class="nav" id="nav" aria-label="Sections"></nav>
   <main class="main" id="main"></main>
 </div>
-<section class="drawer" id="drawer" hidden aria-label="Build log">
-  <div class="drawer-head"><h2 id="drawerTitle">Build log</h2><button class="btn ghost" id="drawerClose">Close</button></div>
-  <pre id="drawerLog"></pre>
+<section class="drawer" id="drawer" hidden aria-labelledby="drawerTitle">
+  <div class="drawer-head"><h2 id="drawerTitle" tabindex="-1">Build log</h2><button class="btn ghost" id="drawerClose">Close</button></div>
+  <pre id="drawerLog" tabindex="0" aria-label="What happened"></pre>
 </section>
-<div class="toasts" id="toasts" aria-live="polite"></div>
+<!-- Toasts show; screen readers hear them through the live regions (wc.announce). -->
+<div class="toasts" id="toasts" aria-hidden="true"></div>
+<div class="sr-only" id="say" aria-live="polite"></div>
+<div class="sr-only" id="shout" aria-live="assertive"></div>
 <script type="module" src="/studio/app.js"></script>
 </body>
 </html>

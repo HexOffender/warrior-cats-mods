@@ -22,12 +22,16 @@ class Row:
     def __init__(self, d):
         self.n, self.kind = d.get("n"), d.get("kind")
         self.label, self.value, self.options = d.get("label"), d.get("value"), d.get("options")
+        self.focus = bool(d.get("focus"))   # its control has the keyboard's (and a controller's) focus
 
     def __repr__(self):
         return f"<Row {self.n} {self.kind} {self.label!r}={self.value!r}>"
 
     def line(self):
-        """How `wcmods agent menu read` prints it."""
+        """How `wcmods agent menu read` prints it; "  <- focus" marks the control with focus."""
+        return self._line() + ("   <- focus" if self.focus else "")
+
+    def _line(self):
         if self.kind == "heading":
             return f"# {self.value}"
         if self.kind in ("text", "note"):
@@ -86,6 +90,10 @@ class Page:
     def controls(self):
         return [r for r in self.rows if r.kind in CONTROLS]
 
+    def focused(self):
+        """The row whose control has focus, or None."""
+        return next((r for r in self.rows if r.focus), None)
+
     def text(self):
         return "\n".join(r.line() for r in self.rows)
 
@@ -107,6 +115,14 @@ class MenuDriver:
     def current(self):
         """The id of the page the menu shows (or last showed)."""
         return self._shared("page") or None
+
+    def focus(self):
+        """Which of the window's own controls has focus: "A-", "A+", "Pause the game", "Close", or
+        ("tab", title) for a page's tab; None when it's on the page (its row says so) or nowhere."""
+        where = str(self._shared("focus") or "")
+        if where.startswith("tab\t"):
+            return ("tab", where.split("\t", 1)[1])
+        return where or None
 
     def pages(self):
         """Every page: [{"id", "title", "order", "group"}], in the side bar's groups."""

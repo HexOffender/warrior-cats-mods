@@ -87,14 +87,19 @@ export default {
           const hex = slotHex(s.id, i) || "#888888";
           const feral = s.id === "fur" && info.feral_slots.includes(i);
           const picked = chosen === i, now = cur === i && chosen === undefined;
-          return el("button", { class: "btn", type: "button",
+          // Picked shows as a ring and a tick, yours now as a thinner ring; screen readers hear both. The
+          // number is black on a light colour and white on a dark one.
+          const ink = color.luminance(color.hexToLinear(hex)) > 0.18 ? ["#000", "#fff"] : ["#fff", "#000"];
+          const mark = { position: "absolute", fontWeight: "700", color: ink[0], textShadow: `0 0 2px ${ink[1]}` };
+          return el("button", { class: "btn swatch", type: "button", "data-focus": `slot:${s.id}:${i}`,
             title: `${s.name} slot ${i}${i >= base ? " (new)" : ""}${feral ? " (Feral Edition)" : ""}${cur === i ? ", yours now" : ""}`,
-            "aria-pressed": String(picked), "aria-label": `${s.name} slot ${i}`,
+            "aria-pressed": String(picked), "aria-label": `${s.name} slot ${i}${i >= base ? ", new" : ""}${cur === i ? ", yours now" : ""}`,
             style: { width: "38px", height: "38px", padding: "0", background: hex, position: "relative",
               boxShadow: picked ? "0 0 0 3px var(--accent)" : now ? "0 0 0 2px var(--ink)" : "",
-              outline: i >= base ? "2px dashed var(--line)" : "" },
+              border: i >= base ? "2px dashed var(--field)" : "" },
             onclick: () => { if (look.slots[s.id] === i) delete look.slots[s.id]; else look.slots[s.id] = i; changed(); renderSlots(); } },
-            el("span", { style: { position: "absolute", bottom: "1px", right: "3px", fontSize: "0.62rem", color: "#000", textShadow: "0 0 2px #fff" }, text: String(i) }));
+            picked ? el("span", { "aria-hidden": "true", style: { ...mark, top: "1px", left: "4px", fontSize: "0.85rem" }, text: "✓" }) : null,
+            el("span", { "aria-hidden": "true", style: { ...mark, bottom: "1px", right: "3px", fontSize: "0.75rem" }, text: String(i) }));
         };
         const state = chosen === undefined ? `yours now: slot ${cur ?? "?"} (kept)` : `slot ${chosen}${cur !== undefined ? ` (now ${cur})` : ""}`;
         return el("div", { style: { display: "grid", gap: "6px" } },
