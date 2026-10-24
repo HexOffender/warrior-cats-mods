@@ -126,7 +126,8 @@ def _remap_plan(ctx):
     return keymap.plan(merge(datas))
 
 
-def _run_remapper(ctx, args, wait_for_launch):
+def _run_remapper(ctx, args, launching=False):
+    """launching: `play` has just asked Steam to start the game, so any play state on disk is old."""
     send, block, warnings = _remap_plan(ctx)
     for w in warnings:
         print(f"  warning: {w}")
@@ -139,15 +140,19 @@ def _run_remapper(ctx, args, wait_for_launch):
         state_file = None
         print("  note: the play-state script isn't installed yet, so remaps apply whenever the game is in front,\n"
               "        menus and the name screen too. Install mods once (game closed) to fix that.")
-    elif not game_running() and os.path.isfile(state_file):
-        os.remove(state_file)   # last session's state; the script writes a fresh one as the game starts
-    print("remaps while you play (game in front, not in a menu):")
+    elif launching and os.path.isfile(state_file):
+        try:
+            os.remove(state_file)   # last session's state; the script writes a fresh one as the game starts
+        except OSError:
+            pass
+    when = "whenever the game is in front" if args.in_menus or not state_file else "while you play (game in front, not in a menu)"
+    print(f"remaps {when}:")
     for src, dst in sorted(send.items()):
         print(f"  {src:18s} -> {dst}")
     for key in sorted(block):
         print(f"  {key:18s} -> nothing (its action moved)")
     from .remapper import Remapper
-    state = {"seen": game_running(), "checked": time.monotonic(), "started": time.monotonic()}
+    state = {"seen": game_running(), "checked": time.monotonic(), "started": time.monotonic(), "nagged": False}
 
     def should_stop():
         # The game is checked every few seconds: listing processes is slow.
@@ -160,9 +165,9 @@ def _run_remapper(ctx, args, wait_for_launch):
         elif state["seen"]:
             print("the game has closed; remapper stopped")
             return True
-        elif wait_for_launch and time.monotonic() - state["started"] > 180:
-            print("the game didn't start within 3 minutes; remapper stopped")
-            return True
+        elif not state["nagged"] and time.monotonic() - state["started"] > 180:
+            state["nagged"] = True   # Steam may be updating; keep waiting
+            print("still waiting for the game (3 minutes so far); Ctrl+C stops the remapper")
         return False
 
     print("waiting for the game..." if not state["seen"] else "the game is running.", "Ctrl+C stops the remapper.")
@@ -176,14 +181,15 @@ def _run_remapper(ctx, args, wait_for_launch):
 
 
 def cmd_remap(ctx, args):
-    _run_remapper(ctx, args, wait_for_launch=False)
+    _run_remapper(ctx, args)
 
 
 def cmd_play(ctx, args):
-    if not game_running():
+    launching = not game_running()
+    if launching:
         print("starting the game through Steam...")
         os.startfile(f"steam://rungameid/{STEAM_APP_ID}")
-    _run_remapper(ctx, args, wait_for_launch=True)
+    _run_remapper(ctx, args, launching=launching)
 
 
 def _print_build(manifest):

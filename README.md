@@ -69,8 +69,20 @@ python wcmods.py play --in-menus   # remap in menus too
 python wcmods.py play --debug      # log the window in front, the play state, and remapped key presses
 ```
 
-It runs as a normal program using Windows' low-level keyboard hook (and a mouse hook only when a
-mouse button or the wheel is remapped). Ctrl+C stops it, and anything it was holding down is let go.
+It runs as a normal program using Windows' low-level keyboard hook. Ctrl+C stops it, and anything
+it was holding down is let go. Details:
+
+- **A press finishes as it started.** A key you were already holding when you went from a menu into
+  play keeps going to the game unchanged until you let go, so nothing gets stuck. A remapped key
+  stops repeating when a menu opens.
+- **Some keys keep their old job.** Enter, Space, Escape, Backspace and Tab are never held back when
+  their action moves, because prompts and dialogue shown while you play may need them; the build
+  and `play` say so.
+- **Other programs' keys pass through.** Keys sent by other programs (Steam Input's keyboard buttons,
+  macro tools) aren't remapped or held back. A controller button that Steam Input turns into W still
+  walks forward.
+- **Mouse remaps cost a little.** Remapping a mouse button or the wheel adds a mouse hook, which
+  Windows calls for every mouse movement. Remap keyboard keys only if you notice any lag.
 
 ## Command line
 

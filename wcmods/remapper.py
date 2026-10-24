@@ -5,9 +5,14 @@ file; without it, the remapper remaps whenever the game is in front.
 
 Windows only. It uses a low-level keyboard hook (and a mouse hook when a mouse button or the wheel
 stands in for a key): a remapped key is held back and the game's key is sent in its place with
-SendInput. Keys that other programs inject (and the remapper's own) pass straight through. Nothing in
-the game changes; it receives its usual keys. Run by `wcmods remap` and `wcmods play`.
+SendInput. Keys that other programs inject (Steam Input's keyboard buttons, macro tools, and the
+remapper's own) pass straight through, neither remapped nor held back. Nothing in the game changes;
+it receives its usual keys. Run by `wcmods remap` and `wcmods play`.
+
+The hook callbacks must stay fast: Windows silently drops a low-level hook whose callback is too
+slow, so they never print; messages are queued and printed by the main loop.
 """
+import collections
 import ctypes
 import os
 import threading
@@ -21,7 +26,7 @@ kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
 WH_KEYBOARD_LL, WH_MOUSE_LL, HC_ACTION = 13, 14, 0
 WM_QUIT, WM_KEYDOWN, WM_SYSKEYDOWN = 0x12, 0x100, 0x104
-WM_XBUTTONDOWN, WM_XBUTTONUP, WM_MOUSEWHEEL = 0x20B, 0x20C, 0x20A
+WM_MOUSEMOVE, WM_XBUTTONDOWN, WM_XBUTTONUP, WM_MOUSEWHEEL = 0x200, 0x20B, 0x20C, 0x20A
 MOUSE_BUTTONS = {0x201: ("LeftMouseButton", True), 0x202: ("LeftMouseButton", False),
                  0x204: ("RightMouseButton", True), 0x205: ("RightMouseButton", False),
                  0x207: ("MiddleMouseButton", True), 0x208: ("MiddleMouseButton", False)}
@@ -115,26 +120,38 @@ class Remapper:
         self.log, self.dry_run, self.in_menus, self.debug = log, dry_run, in_menus, debug
         self.state_file = state_file
         self.playing = None     # from the play-state file: True, False, or None when there's no file
-        self._last_state, self._debug_keys = None, 0
         self.held = {}          # key you're holding -> game key the remapper is holding for it
         self.swallowed = set()  # blocked keys held down, so their release is held back too
+        self.passed = set()     # remapped or blocked keys whose press reached the game unchanged
         self.used = set()       # remaps already reported once
-        self._front = (None, False)
+        self.messages = collections.deque()   # printed by the main loop, never from a hook
+        self._last_state, self._debug_keys = None, 0
+        self._front = (None, None, "", "", False)
         self._hooks, self._procs, self._thread_id = [], [], None
         self._failed = False
 
+    def _say(self, msg):
+        self.messages.append(msg)
+
+    def flush_messages(self):
+        while self.messages:
+            self.log(self.messages.popleft())
+
     # ---- when to remap ----
     def _front_window(self):
-        """(hwnd, exe name, window class, is the game) for the window in front; cached per window."""
+        """(hwnd, pid, exe name, window class, is the game) for the window in front.
+
+        Cached per window and process, so a window handle reused by another program is looked up again.
+        """
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
-            return (None, "", "", False)
-        if hwnd != self._front[0]:
-            pid = wintypes.DWORD()
-            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            return (None, None, "", "", False)
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if (hwnd, pid.value) != self._front[:2]:
             exe, cls = _exe_name(pid.value), _window_class(hwnd)
             # Unreal's game window class, in case the game's process can't be opened to read its name.
-            self._front = (hwnd, exe, cls, exe in self.exe or (not exe and cls == "UnrealWindow"))
+            self._front = (hwnd, pid.value, exe, cls, exe in self.exe or (not exe and cls == "UnrealWindow"))
         return self._front
 
     def read_state(self):
@@ -152,13 +169,13 @@ class Remapper:
 
     def active(self):
         """The game is in front and, unless in_menus, you're playing rather than in a menu."""
-        if not self._front_window()[3]:
+        if not self._front_window()[4]:
             return False
         return self.in_menus or self.playing is not False
 
     def report_state(self):
         """Debug: log the window in front and the play state whenever they change. Called from the main loop."""
-        _, exe, cls, is_game = self._front_window()
+        _, _, exe, cls, is_game = self._front_window()
         state = (exe, cls, is_game, self.playing)
         if state != self._last_state:
             self._last_state = state
@@ -178,10 +195,14 @@ class Remapper:
     def _report(self, source, target):
         if source not in self.used:
             self.used.add(source)
-            self.log(f"  {source} -> {target}" + (" (dry run: not sent)" if self.dry_run else ""))
+            self._say(f"  {source} -> {target}" + (" (dry run: not sent)" if self.dry_run else ""))
 
     def handle(self, name, down):
-        """One key or button event; returns True to hold it back from the game."""
+        """One key or button event; returns True to hold it back from the game.
+
+        A press finishes the way it started: one that began while remapping was off goes through
+        unchanged until it's released, and one the remapper took keeps going to the game key.
+        """
         if not down:
             target = self.held.pop(name, None)
             if target is not None:
@@ -190,33 +211,37 @@ class Remapper:
             if name in self.swallowed:
                 self.swallowed.discard(name)
                 return True
+            self.passed.discard(name)
             return False
         if name in self.held:                # the key repeating while held
-            self._press(self.held[name], True)
+            if self.active():                # no repeats into a menu or another program
+                self._press(self.held[name], True)
             return True
         if name in self.swallowed:
             return True
+        if name in self.passed:
+            return False
+        relevant = name in self.send or name in self.block
+        if not relevant:
+            return False
         on = self.active()
-        if self.debug and self._debug_keys < 40 and (name in self.send or name in self.block):
+        if self.debug and self._debug_keys < 40:
             self._debug_keys += 1   # only the remapped keys are ever logged
-            self.log(f"  [debug] {name} pressed; remapping {'ON' if on else 'off'}")
-        if not on:
+            self._say(f"  [debug] {name} pressed; remapping {'ON' if on else 'off'}")
+        if not on or self.dry_run:
+            if self.dry_run and on:
+                self._report(name, self.send.get(name, "nothing"))
+            self.passed.add(name)
             return False
         target = self.send.get(name)
         if target is not None:
             self._report(name, target)
-            if self.dry_run:
-                return False
             self.held[name] = target
             self._press(target, True)
             return True
-        if name in self.block:
-            self._report(name, "nothing")
-            if self.dry_run:
-                return False
-            self.swallowed.add(name)
-            return True
-        return False
+        self._report(name, "nothing")
+        self.swallowed.add(name)
+        return True
 
     def tap(self, name):
         """A wheel notch: press and release the game key it stands for."""
@@ -235,6 +260,7 @@ class Remapper:
             self._press(target, False)
         self.held.clear()
         self.swallowed.clear()
+        self.passed.clear()
 
     # ---- hooks ----
     def _guard(self, fn, n_code, w_param, l_param):
@@ -242,9 +268,13 @@ class Remapper:
             try:
                 if fn(w_param, l_param):
                     return 1
-            except Exception as e:   # never let an error eat keys: report once and stop remapping
+            except Exception as e:   # never let an error eat keys: stop remapping and let go of everything
                 self._failed = True
-                self.log(f"  remapper error, remapping stopped: {type(e).__name__}: {e}")
+                self._say(f"  remapper error, remapping stopped: {type(e).__name__}: {e}")
+                try:
+                    self.release_all()
+                except Exception:
+                    pass
         return user32.CallNextHookEx(None, n_code, w_param, l_param)
 
     def _on_key(self, w_param, l_param):
@@ -255,6 +285,8 @@ class Remapper:
         return name is not None and self.handle(name, w_param in (WM_KEYDOWN, WM_SYSKEYDOWN))
 
     def _on_mouse(self, w_param, l_param):
+        if w_param == WM_MOUSEMOVE:   # by far the most common event; leave it at once
+            return False
         m = ctypes.cast(l_param, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
         if m.flags & LLMHF_INJECTED:
             return False
@@ -278,7 +310,9 @@ class Remapper:
             proc = HOOKPROC(lambda n, w, l, fn=fn: self._guard(fn, n, w, l))
             hook = user32.SetWindowsHookExW(kind, proc, hmod, 0)
             if not hook:
-                raise ctypes.WinError(ctypes.get_last_error())
+                error = ctypes.WinError(ctypes.get_last_error())
+                self._uninstall()   # don't leave the keyboard hook behind on a thread that's about to stop
+                raise error
             self._procs.append(proc)   # the callback must outlive the hook
             self._hooks.append(hook)
 
@@ -314,6 +348,7 @@ class Remapper:
         try:
             while not should_stop():
                 self.read_state()
+                self.flush_messages()
                 if self.debug:
                     self.report_state()
                 time.sleep(poll)
@@ -322,3 +357,4 @@ class Remapper:
                 user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
             thread.join(5)
             self.release_all()
+            self.flush_messages()

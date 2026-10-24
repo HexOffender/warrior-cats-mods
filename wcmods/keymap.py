@@ -39,6 +39,9 @@ NAME_OF_VK = {vk: name for name, vk in VK.items()}
 # Keys Windows sends with the "extended" flag; injected copies need it too or the game sees the wrong key.
 EXTENDED = {VK[k] for k in ("Delete", "Insert", "Home", "End", "PageUp", "PageDown", "Up", "Down", "Left",
                             "Right", "RightControl", "RightAlt", "Divide")}
+# Keys that are never held back when their action moves: the "play" state also covers prompts and
+# dialogue shown while you explore, which may confirm or skip with them.
+NEVER_HELD_BACK = ("Enter", "SpaceBar", "Escape", "BackSpace", "Tab")
 # Mouse buttons and the wheel can stand in for a key, but the game's keys are all keyboard keys.
 MOUSE = ("LeftMouseButton", "RightMouseButton", "MiddleMouseButton", "ThumbMouseButton", "ThumbMouseButton2",
          "MouseScrollUp", "MouseScrollDown")
@@ -96,4 +99,7 @@ def plan(merged):
         if key in send and send[key] != game_key[job]:
             warnings.append(f"{job} is on {key}, but {key} now stands for {send[key]}; move {job} too")
     in_use = set(pressed.values()) | set(send)
-    return send, {k for k in moved_from if k not in in_use}, warnings
+    block = {k for k in moved_from if k not in in_use}
+    for key in sorted(block & set(NEVER_HELD_BACK)):
+        warnings.append(f"{key} still does its old job too: prompts and dialogue shown while you play may need it")
+    return send, block - set(NEVER_HELD_BACK), warnings

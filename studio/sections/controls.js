@@ -111,7 +111,8 @@ export default {
       otherKeys = {};
       for (const [pressed, gameKey] of Object.entries((obj && obj.keys) || {})) {
         if (pressed.startsWith("_")) continue;
-        if (RAW[gameKey]) o.keyboard[RAW[gameKey]] = pressed;
+        // A built-in key's row holds one key; a second key for the same job is kept as it is.
+        if (RAW[gameKey] && !(RAW[gameKey] in o.keyboard)) o.keyboard[RAW[gameKey]] = pressed;
         else otherKeys[pressed] = gameKey;
       }
       return o;
