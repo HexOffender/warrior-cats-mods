@@ -1,4 +1,4 @@
-"""Generate the themed palette presets in mods/palette-*/ from the game's own colours.
+"""Generate the themed palette examples in examples/palette-*/ from the game's own colours.
 
     python tools/make_palettes.py            # (re)writes every preset; they start turned off
 
@@ -199,7 +199,7 @@ def build(theme, tables, rims):
 def main():
     tables, rims = game_colours()
     for mod_id, theme in THEMES.items():
-        folder = os.path.join(ROOT, "mods", "palette-" + mod_id)
+        folder = os.path.join(ROOT, "examples", "palette-" + mod_id)
         os.makedirs(folder, exist_ok=True)
         meta_path = os.path.join(folder, "mod.json")
         # Full themes sit below partial palettes (Gemstone Eyes, Richer Coats are priority 0), so an
@@ -214,7 +214,7 @@ def main():
         with open(os.path.join(folder, "palette.json"), "w", encoding="utf-8", newline="\n") as f:
             json.dump(build(theme, tables, rims), f, indent=2)
             f.write("\n")
-        print(f"wrote mods/palette-{mod_id}")
+        print(f"wrote examples/palette-{mod_id}")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,9 @@
 ﻿# Personal and machine-specific
 backups/
 wcmods.json
+# Your mods: wcmods ships only the mod menu (the rest are in examples/)
+mods/*
+!mods/mod-menu/
 
 # Generated from the installed game (game data, not ours to redistribute)
 vanilla/

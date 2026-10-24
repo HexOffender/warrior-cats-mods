@@ -13,7 +13,8 @@ A mod manager and shared modding library for the Steam version (Unreal Engine 5.
    save, and installs the script loader most mods need (UE4SS) with one click. If you've never played,
    start the game once first so it makes a save.
 4. **Add a mod:** drop the mod's .zip on the page, or onto `Clan Mod Studio` itself, and press **Add
-   to my mods**.
+   to my mods**. Or try one of the examples (palettes, mouse look and more): **Example mods**, under
+   Add a mod.
 5. **Press Play** (top right). It puts your mods in the game and starts it. Close the game before you
    change mods; press Play again after.
 
@@ -34,6 +35,9 @@ keys. It stops by itself when the game closes.
 **Clan Mod Studio** puts your mods in the game. Its **Mods** page is where you start:
 - **Add a mod:** drop a downloaded mod's .zip on the page. It shows what's in it (what the mod
   changes, whether it runs code, what else it needs) before you add it.
+- **Example mods:** wcmods comes with one mod, the mod menu. The others it has are examples, in
+  `examples/`: themed palettes, eye and coat colours, mouse look, controls, game tweaks and more.
+  **Example mods**, under Add a mod, adds any of them to your mods (a copy, which you can change).
 - **Switch mods on and off:** a mod that needs another turns that one on too, and turning off a mod
   that others need asks first.
 - **Play** (top right): puts what's changed in the game, then starts it. Apply to game does just the
@@ -328,9 +332,10 @@ just your cat a coat colour of its own, use `cats.json`'s `colours`.
 
 #### Ready-made palettes
 
-Ten themed palettes come as mods, all off to start: ThunderClan Forest, RiverClan Waters, ShadowClan
-Night, WindClan Moor, SkyClan Sunset, StarClan Silverpelt, Dark Forest, Leaf-bare Frost, Pastel Kits
-and Vivid Clans (`mods/palette-*`). Each one recolours coats, patterns, markings and eyes. The
+Ten themed palettes come as examples: ThunderClan Forest, RiverClan Waters, ShadowClan Night, WindClan
+Moor, SkyClan Sunset, StarClan Silverpelt, Dark Forest, Leaf-bare Frost, Pastel Kits and Vivid Clans
+(`examples/palette-*`). Add the ones you want from **Example mods** on the Mods page, or with
+`python wcmods.py add examples/palette-dark-forest`. Each one recolours coats, patterns, markings and eyes. The
 natural coats are a colour grade of the game's own, so every slot keeps its place from light to dark;
 the bright extras and the eyes get the theme's own colours.
 
@@ -350,9 +355,10 @@ python wcmods.py palette palette-dark-forest gemstone-eyes   # Dark Forest coats
 python wcmods.py palette --none                              # back to the game's colours
 ```
 
-`tools/make_palettes.py` generates them from the game's colours (`colour_tables.json` and the eye
-atlas). Edit its themes and run it again to change them. It keeps whether each one is on, its
-priority, and anything else you added to its `mod.json`.
+`tools/make_palettes.py` generates the examples from the game's colours (`colour_tables.json` and the
+eye atlas). Edit its themes and run it again to change them. It keeps each one's priority and anything
+else you added to its `mod.json`. A palette you've added is your own copy, so add it again to get the
+new one.
 
 ### `cats.json`
 ```json

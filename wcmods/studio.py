@@ -151,6 +151,17 @@ class Studio:
         if parts == ["play"] and method == "POST":
             self.need_current_code()
             return self.run(lambda log: onboarding.play(self.ctx, log, force=bool(body.get("force"))))
+        if parts and parts[0] == "examples":
+            # wcmods' example mods (examples/): it ships only the mod menu, and these are added like any
+            # other mod, as copies in mods/.
+            folder = os.path.join(self.root, "examples")
+            if parts == ["examples"] and method == "GET":
+                found = modzip.inspect_folder(folder, self.ctx.mods_root) if os.path.isdir(folder) else []
+                return {"mods": found, "code_allowed": bool(cfg.data.get("allow_code_mods"))}
+            if parts == ["examples", "add"] and method == "POST":
+                with self.lock:
+                    return {"added": modzip.add_folder(folder, self.ctx.mods_root, self.ctx.backups,
+                                                       ids=body.get("ids") or None, enable=bool(body.get("enable", True)))}
         if parts == ["mods", "inbox"] and method == "GET":
             waiting = onboarding.inbox()
             if not waiting:

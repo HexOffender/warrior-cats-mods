@@ -126,6 +126,8 @@ table.grid-table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
 /* the Mods page */
 .dropzone { border: 2px dashed var(--line); border-radius: 12px; padding: 26px 16px; display: grid; justify-items: center; gap: 6px; text-align: center; cursor: pointer; background: var(--raised); }
 .dropzone:hover, .dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
+.examples > summary { cursor: pointer; padding: 4px 0; }
+.examples[open] > summary { margin-bottom: 6px; }
 .mod { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 12px; align-items: start; border-top: 1px solid var(--line); padding-top: 12px; }
 .mod.preview { grid-template-columns: auto minmax(0, 1fr); }
 .mod.off .mod-body > label strong { color: var(--muted); }

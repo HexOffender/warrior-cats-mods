@@ -44,7 +44,7 @@ These are the generated cats. The story cast (`NarrativeRole.csv`) comes on top 
 | Leader, StarClan ancestor, rogue leader | 0.90–1.00 |
 
 The player's size goes by rank instead: 0.45, 0.7, 0.8 and 1.0 (see
-[progression.md](progression.md#ranks)). The npc-size-variety mod widens these ranges.
+[progression.md](progression.md#ranks)). The npc-size-variety example (`examples/npc-size-variety`) widens these ranges.
 
 ## Scars
 

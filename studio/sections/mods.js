@@ -212,7 +212,52 @@ export default {
         el("p", { class: "note", text: "You can also drop a mod's .zip onto Clan Mod Studio, the file you double-click to open this." }),
         el("p", { class: "note" }, "Got a folder instead of a .zip? Put it in your ",
           el("button", { class: "btn link", text: "mods folder", onclick: () => openFolder({ what: "mods" }) }),
-          ", then ", el("button", { class: "btn link", text: "look again", onclick: () => refresh() }), "."));
+          ", then ", el("button", { class: "btn link", text: "look again", onclick: () => refresh() }), "."),
+        examplesBox());
+    }
+
+    // wcmods comes with only the mod menu. Its example mods (examples/: palettes, mouse look, game
+    // tweaks...) are added from here like any other mod, as a copy in your mods folder.
+    let examplesOpen = false;
+    function examplesBox() {
+      const list = el("div", { class: "stack" });
+      const box = el("details", { class: "examples" },
+        el("summary", {}, el("strong", { text: "Example mods" }),
+          el("span", { class: "muted", text: " palettes, mouse look, game tweaks and more, to add in one go" })), list);
+      let loaded = false;
+      async function load() {
+        loaded = true;
+        clear(list).append(el("p", { class: "muted", role: "status", text: "Looking…" }));
+        let r;
+        try { r = await api.get("/examples"); } catch (e) { clear(list).append(el("p", { class: "muted", text: e.message })); return; }
+        clear(list);
+        if (!r.mods.length) list.append(el("p", { class: "muted", text: "There are no examples in this copy of wcmods." }));
+        for (const m of [...r.mods].sort((a, b) => String(a.name).localeCompare(String(b.name)))) {
+          const notes = [];
+          if (m.code) notes.push(r.code_allowed ? "Runs code: in-game scripts or a build step." : "Runs code, so it stays off until you allow mods that run code (Options, below).");
+          if (m.requires.length) notes.push(`Needs ${m.requires.map(nameOf).join(", ")}.`);
+          list.append(el("div", { class: "row spread line" },
+            el("div", { style: { display: "grid", gap: "2px", minWidth: "0", flex: "1" } },
+              el("strong", { text: m.name }),
+              m.description ? el("span", { class: "muted", text: m.description }) : null,
+              notes.length ? el("span", { class: "muted", text: notes.join(" ") }) : null),
+            m.existing
+              ? el("span", { class: "muted", text: "In your mods" })
+              : el("button", { class: "btn small", "data-focus": `example:${m.id}`, text: "Add", "aria-label": `Add ${m.name}`, onclick: async () => {
+                try {
+                  const res = await api.post("/examples/add", { ids: [m.id], enable: true });
+                  const also = [...new Set(res.added.flatMap(a => a.also_on || []))];
+                  toast(`Added ${m.name}.` + (also.length ? ` Also on, because it needs them: ${also.join(", ")}.` : "") + " Press Play to play with it.");
+                  await refresh();
+                  await load();   // it's in your mods now
+                  if (document.activeElement === document.body) box.querySelector("summary").focus();
+                } catch (e) { toast(e.message, "bad"); }
+              } })));
+        }
+      }
+      box.addEventListener("toggle", () => { examplesOpen = box.open; if (box.open && !loaded) load(); });
+      if (examplesOpen) { box.open = true; load(); }
+      return box;
     }
 
     async function look(file) {

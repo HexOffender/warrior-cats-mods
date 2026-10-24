@@ -28,7 +28,9 @@ Three complete examples:
 - [`examples/quest-markers`](../examples/quest-markers): an in-game script with a custom quest,
   markers on screen and a mod menu page.
 
-To try one, copy it into `mods/` and allow code mods.
+`examples/` also has palettes, eye and coat colours, mouse look, controls, game data and names mods to
+start from. To try one, add it from **Example mods** on the studio's Mods page (or `python wcmods.py
+add examples/<name>`), and allow code mods for the three above.
 
 ## Mod folder
 
@@ -361,7 +363,7 @@ by itself after a level change.
 
 ## `WCModsMenu`
 
-The mod menu is a mod of its own: **Mod menu**, `mods/mod-menu`, which comes with wcmods and starts
+The mod menu is a mod of its own: **Mod menu**, `mods/mod-menu`, the one mod that comes with wcmods. It starts
 on.
 - **While it's on:** a build puts in its window (`WCModsMenuHost`) and this module.
 - **While it's off:** there's neither, and `pcall(require, "WCModsMenu")` fails, so a script that

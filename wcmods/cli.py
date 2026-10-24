@@ -138,7 +138,7 @@ def cmd_pack(ctx, args):
 
 def cmd_new(ctx, args):
     mod = mods.create(ctx.mods_root, args.id)
-    template = os.path.join(ctx.mods_root, "_templates", args.kind)
+    template = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", args.kind)
     if os.path.isdir(template):
         shutil.copytree(template, mod.folder, dirs_exist_ok=True)
     print(f"created {mod.folder} (disabled; run `wcmods enable {args.id}` when ready)")
