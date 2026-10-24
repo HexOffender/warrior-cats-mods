@@ -30,14 +30,14 @@ def test_every_page_draws(agent):
 def test_status_line_and_overview(agent):
     page = agent.menu.open("Overview")
     cat = agent.cat()
-    assert page.has(cat["name"]), page.text()
+    assert page.has(cat.get("name") or "?"), page.text()   # the Overview shows "?" for a cat with no name
     assert page.find("Heal", "button") and page.find("Morning", "button"), page.text()
 
 
 def test_stats_page_matches_the_cat(agent):
     cat = agent.cat()
     page = agent.menu.open("Stats")
-    assert page.get("Name") == cat["name"], page.get("Name")
+    assert page.get("Name") == (cat.get("name") or "?"), page.get("Name")
     assert page.get("Level") == cat["level"], page.get("Level")
     assert page.find("Health").value == cat["health"]
 

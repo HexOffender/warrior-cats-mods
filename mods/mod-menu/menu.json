@@ -1,6 +1,7 @@
 {
-  "_help": "The in-game mod menu. key: INS, HOME, END, DEL, PAGE_UP, PAGE_DOWN or F1-F12 (not F11). size: 0.6 to 2.2, 1 is the usual. cheats: whether its Cheats page starts with cheats on. Install again after a change.",
+  "_help": "The in-game mod menu. key: INS, HOME, END, DEL, PAGE_UP, PAGE_DOWN or F1-F12 (not F11). pad: the controller button that opens it too (an Unreal key name such as Gamepad_Special_Left, the View button; \"\" for none). size: 0.6 to 2.2, 1 is the usual. cheats: whether its Cheats page starts with cheats on. Install again after a change.",
   "key": "INS",
+  "pad": "Gamepad_Special_Left",
   "size": 1.0,
   "cheats": false
 }

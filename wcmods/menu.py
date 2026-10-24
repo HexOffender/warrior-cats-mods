@@ -1027,10 +1027,11 @@ return Menu
 HOST_LUA = r'''-- The in-game mod menu: the window, its tabs, and the first pages. Written by wcmods on every install;
 -- change wcmods.json ("menu_key") and install again rather than editing this.
 --
--- @KEY@ opens and closes it, and Escape closes it. While it's open the game's controls are paused (the
--- UI takes the keyboard and mouse) and the cursor shows; closing gives them back. Pages come from any
--- UE4SS script through WCModsMenu.page (docs/SDK.md, "Mod menu"); the window shares its content panel
--- with them and they build their rows into it.
+-- @KEY@ opens and closes it, and Escape closes it; so does a controller's button (SETTINGS.pad), with B
+-- closing it too. While it's open the game's controls are paused (the UI takes the keyboard and mouse,
+-- or the game itself pauses when the controller opened it) and the cursor shows; closing gives them
+-- back. Pages come from any UE4SS script through WCModsMenu.page (docs/SDK.md, "Mod menu"); the window
+-- shares its content panel with them and they build their rows into it.
 local Menu = require("WCModsMenu")
 local SETTINGS = @SETTINGS@
 
@@ -1127,7 +1128,7 @@ local function build(c, lib)
     column:AddChildToVerticalBox(header)
 
     -- Under the header: how your cat is doing (HOST.status, from the Game pages), or how to use the menu.
-    local status = text(SETTINGS.key_name .. " opens and closes this menu. Changes apply at once; a page's Save keeps them.",
+    local status = text(SETTINGS.opens .. " opens and closes this menu. Changes apply at once; a page's Save keeps them.",
                         12, THEME.muted, true)
     local hs = column:AddChildToVerticalBox(status)
     hs:SetPadding({ Left = 0, Top = 6, Right = 0, Bottom = 12 })
@@ -1366,15 +1367,26 @@ local function setPaused(on)
     paused = on
 end
 
-local function openMenu()
+-- byPad: opened with the controller's button (SETTINGS.pad). The game only hears a controller while it
+-- has input, and a menu that takes all input (as with the keyboard) couldn't be closed from one. So this
+-- menu leaves the game its input, with the game paused, so the stick doesn't walk your cat, and the
+-- button or B closes it.
+local byPad = false
+local function openMenu(fromPad)
     if isOpen or not ensureWindow() then return end
     local c, lib = controller(), Menu.classes()
-    before = { cursor = c.bShowMouseCursor }
+    before = { cursor = c.bShowMouseCursor, pause = win.pause:IsChecked() }
     win.widget:SetVisibility(VISIBLE)
     fit()
     c.bShowMouseCursor = true
     pcall(function() win.widget:SetIsFocusable(true) end)
-    pcall(function() lib.widgets:SetInputMode_UIOnlyEx(c, win.widget, 0, false) end)
+    byPad = fromPad and true or false
+    if byPad then
+        pcall(function() win.pause:SetIsChecked(true) end)
+        pcall(function() lib.widgets:SetInputMode_GameAndUIEx(c, win.widget, 0, false, true) end)
+    else
+        pcall(function() lib.widgets:SetInputMode_UIOnlyEx(c, win.widget, 0, false) end)
+    end
     win.focusTab = true
     isOpen = true
     Menu.share("open", true)
@@ -1387,9 +1399,13 @@ local function closeMenu()
     isOpen = false
     Menu.share("open", false)
     if paused then setPaused(false) end
+    local wasPad = byPad
+    byPad = false
     if windowOk() then
         win.widget:SetVisibility(COLLAPSED)
         pcall(function() win.content:ClearChildren() end)
+        -- Opened from the controller, it ticked "Pause the game": put that back as it was.
+        if wasPad and before then pcall(function() win.pause:SetIsChecked(before.pause) end) end
     end
     local c, lib = controller(), Menu.classes()
     if c and lib then
@@ -1410,7 +1426,7 @@ local function tick()
     if not isOpen then return end
     if not windowOk() then
         -- The level changed under the open menu: the game cleared the viewport.
-        isOpen = false
+        isOpen, byPad = false, false
         Menu.share("open", false)
         return
     end
@@ -1420,7 +1436,7 @@ local function tick()
     if HOST.status and os.clock() - statusAt >= 0.5 then
         statusAt = os.clock()
         local ok, line = pcall(HOST.status)
-        line = (HOST.statusOn and ok and line) or (SETTINGS.key_name .. " opens and closes this menu. Changes apply at once; " ..
+        line = (HOST.statusOn and ok and line) or (SETTINGS.opens .. " opens and closes this menu. Changes apply at once; " ..
                                                    "a page's Save keeps them.")
         if line ~= statusShown then
             statusShown = line
@@ -1463,9 +1479,37 @@ local function requests()
     end
 end
 
+-- The controller's button (and, while the menu is open from it, B): read from the game's own input.
+local PAD = SETTINGS.pad ~= "" and { KeyName = FName(SETTINGS.pad) } or nil
+local PAD_BACK = { KeyName = FName("Gamepad_FaceButton_Right") }
+local function pressed(k)
+    local c = controller()
+    if not c then return false end
+    local ok, yes = pcall(function() return c:WasInputKeyJustPressed(k) end)
+    return ok and yes == true
+end
+local function gamePaused()
+    local c = controller()
+    local ok, yes = pcall(function() return Menu.classes().statics:IsGamePaused(c) end)
+    return ok and yes == true
+end
+local function padButton()
+    if not isOpen then
+        -- Not while something else has paused the game (its own pause menu, on Start): the menu would
+        -- unpause it on closing, under that menu.
+        if pressed(PAD) and not gamePaused() then openMenu(true) end
+    elseif byPad and (pressed(PAD) or pressed(PAD_BACK)) then
+        closeMenu()
+    end
+end
+
 local function frame()
     local ok, err = pcall(tick)
     if not ok then log("error: %s", tostring(err)) end
+    if PAD then
+        local okP, errP = pcall(padButton)
+        if not okP then log("error: %s", tostring(errP)) end
+    end
     local okR, errR = pcall(requests)
     if not okR then log("error: %s", tostring(errR)) end
     local now = os.clock()
@@ -1896,18 +1940,29 @@ log("ready: %s opens the mod menu", SETTINGS.key_name)
 
 KEY_NAMES = {"INS": "Insert", "HOME": "Home", "END": "End", "DEL": "Delete", "PAGE_UP": "Page Up",
              "PAGE_DOWN": "Page Down"}
+# Controller buttons the game leaves free while you play (its own: the face buttons, bumpers, the left
+# trigger, moving the sticks and Start; the right trigger is fly and ghost's up, on the Cheats page), as
+# Unreal key names; "" for none. View is Back on older Xbox pads, Create or Share on PlayStation and -
+# on Switch.
+DEFAULT_PAD = "Gamepad_Special_Left"
+PAD_NAMES = {"Gamepad_Special_Left": "View", "Gamepad_LeftThumbstick": "Left stick click",
+             "Gamepad_RightThumbstick": "Right stick click", "Gamepad_DPad_Up": "D-pad up",
+             "Gamepad_DPad_Down": "D-pad down", "Gamepad_DPad_Left": "D-pad left", "Gamepad_DPad_Right": "D-pad right",
+             "": "None"}
+PADS = tuple(PAD_NAMES)
 
 
 def lua():
     return LUA
 
 
-def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0, dev=False, pages=None):
+def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0, dev=False, pages=None, pad=DEFAULT_PAD):
     """The host's script, with the overview of this build: the enabled mods and what each section set.
     cheats: whether the Cheats page starts with cheats on (wcmods.json "cheats"); scale: the menu's size,
     1 for the usual (wcmods.json "menu_scale"); dev: whether the Inspector and Console pages are in
     (they're for code mods, so wcmods.json "allow_code_mods"); pages: hostpages.data(), the area names and
-    quest titles the pages show."""
+    quest titles the pages show; pad: the controller button that opens it too (an Unreal key name, "" for
+    none)."""
     if key not in KEYS:
         raise ValueError(f"menu_key should be one of {', '.join(KEYS)}")
     enabled = [m for m in mods if m.enabled]
@@ -1917,8 +1972,10 @@ def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0, dev=Fa
             continue
         sections.append({"id": sid, "title": rep["title"], "status": rep["status"], "errors": rep.get("errors", []),
                          "mods": rep["mods"], "notes": manifest["notes"].get(sid)})
+    key_name, pad_name = KEY_NAMES.get(key, key), PAD_NAMES.get(pad, pad) if pad else ""
     settings = {
-        "key": key, "key_name": KEY_NAMES.get(key, key), "built": manifest["built"].replace("T", " "),
+        "key": key, "key_name": key_name, "built": manifest["built"].replace("T", " "),
+        "pad": pad or "", "pad_name": pad_name, "opens": key_name + (f" (or {pad_name} on a controller)" if pad else ""),
         "cheats": bool(cheats), "scale": float(scale), "dev": bool(dev),
         "mods": [{"id": m.id, "name": m.name, "description": m.description, "kinds": m.kinds(),
                   "priority": m.priority} for m in enabled],

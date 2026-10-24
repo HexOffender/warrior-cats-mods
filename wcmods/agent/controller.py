@@ -87,8 +87,10 @@ CAT_LUA = """
 local c = Game.cat()
 if not c then return nil end
 local l = c:location() or {}
-return { name = c:name(), level = c:level(), clan = c:clan(), health = c:health(), maxHealth = c:maxHealth(),
-         stamina = c:stamina(), maxStamina = c:maxStamina(), xp = c:xp(), at = { l.X, l.Y, l.Z } }
+local look = c:customization() or {}
+return { name = c:name(), nameId = (look.PrefixNameId or "") .. (look.SuffixNameId or ""), level = c:level(),
+         clan = c:clan(), health = c:health(), maxHealth = c:maxHealth(), stamina = c:stamina(),
+         maxStamina = c:maxStamina(), xp = c:xp(), at = { l.X, l.Y, l.Z } }
 """
 
 MOVE_LUA = """
@@ -338,7 +340,8 @@ class Agent:
 
     # ---------- your cat and the world ----------
     def cat(self):
-        """Your cat: name, level, clan, health, stamina, xp, at [x, y, z]; None outside the world."""
+        """Your cat: name (and nameId, the string key it comes from), level, clan, health, stamina, xp, at
+        [x, y, z]; None outside the world."""
         return self.lua(CAT_LUA)
 
     def location(self):

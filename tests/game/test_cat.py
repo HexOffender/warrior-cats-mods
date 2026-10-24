@@ -5,10 +5,16 @@ def _distance(a, b):
     return sum((p - q) ** 2 for p, q in zip(a, b)) ** 0.5
 
 
+def named(cat):
+    """Whether a cat's name can be read: one that a names mod gave it ("STR_CAT_NAME_WCM...") has no text in
+    a test install without that mod, in the game either."""
+    return bool(cat.get("name")) or str(cat.get("nameId", "")).startswith("STR_CAT_NAME_WCM")
+
+
 def test_cat_reads(agent):
     c = agent.cat()
     assert c, "no cat"
-    assert c["name"] and c["clan"], c
+    assert named(c) and c["clan"], c
     assert 1 <= c["level"] <= 20, c
     assert 0 < c["health"] <= c["maxHealth"], c
     assert 0 <= c["stamina"] <= c["maxStamina"], c

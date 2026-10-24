@@ -197,10 +197,13 @@ def build(cfg, mods, out_dir, log=print):
         if not opts["key_ok"]:
             manifest["warnings"].append(f"{menu_mod.id}: key {opts['key_given']!r} isn't one of {', '.join(menu.KEYS)}; "
                                         f"using {menu.DEFAULT_KEY}")
+        if not opts["pad_ok"]:
+            manifest["warnings"].append(f"{menu_mod.id}: controller button {opts['pad_given']!r} isn't an Unreal key "
+                                        f"name; using {menu.DEFAULT_PAD}")
         # The pages show the game's own area names and quest titles, read here from its tables.
         pages = hostpages.data(lambda path: game.read_text(path), cfg)
         # The menu's list of installed mods: the ones this build has (not those left out).
-        host = menu.host_script(manifest, enabled, opts["key"], cheats=opts["cheats"], scale=opts["size"],
+        host = menu.host_script(manifest, enabled, opts["key"], cheats=opts["cheats"], scale=opts["size"], pad=opts["pad"],
                                 dev=bool(cfg.data.get("allow_code_mods")), pages=pages)
         manifest["warnings"] += [f"{menu.HOST_NAME}: {p}" for p in luacheck.check(host)[:3]]
         ctx.ue4ss_mods[menu.HOST_NAME] = ({"Scripts/main.lua": host.encode(), "enabled.txt": b""}, None)

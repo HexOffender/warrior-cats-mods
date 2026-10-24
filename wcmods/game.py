@@ -1170,16 +1170,13 @@ function Cat:clan()
 end
 
 local okNames, NAMES = pcall(require, "WCModsNames")
-if not okNames or type(NAMES) ~= "table" then NAMES = { prefixes = {}, suffixes = {}, whole = {} } end
--- The cat's name as the game shows it ("Otterpaw"), from its name IDs and your name mods.
+if not okNames or type(NAMES) ~= "table" or not NAMES.name then NAMES = { name = function() return nil end } end
+-- The cat's name as the game shows it ("Otterpaw"), from its name IDs and your name mods, or the game's
+-- own text when wcmods couldn't read its name tables at install (WCModsNames).
 function Cat:name()
     local look = self:customization()
     if not look then return nil end
-    local p, s = look.PrefixNameId or "", look.SuffixNameId or ""
-    if NAMES.whole[p] then return NAMES.whole[p] end
-    local pt = NAMES.prefixes[p]
-    if pt then return pt .. (NAMES.suffixes[s] or "") end
-    return nil
+    return NAMES.name(look.PrefixNameId or "", look.SuffixNameId or "")
 end
 
 -- Your cat's personality traits from the last save: { "Brave", "Energetic" }.

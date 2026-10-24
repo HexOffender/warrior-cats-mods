@@ -186,7 +186,8 @@ class Studio:
                 # lose what the install has noted but not saved yet.
                 with self.lock:
                     return ingame.set_options(cfg, cheats=body.get("cheats"), console=body.get("console"),
-                                              menu_key=body.get("menu_key"), menu_scale=body.get("menu_scale"))
+                                              menu_key=body.get("menu_key"), menu_scale=body.get("menu_scale"),
+                                              menu_pad=body.get("menu_pad"))
             return ingame.options(cfg)
         if parts == ["game", "bridge"] and method == "GET":
             # Whether the game runs with the bridge (wcmods/bridge.py), for the console's status line.

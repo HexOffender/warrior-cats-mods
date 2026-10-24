@@ -29,6 +29,10 @@ def run(cfg, oodle, log=print):
         problems = luacheck.check(lua)
         left = re.findall(r"@[A-Z_]+@", lua)   # placeholders that weren't filled in
         check(f"shared module {module.SHARED_NAME}", not problems and not left, "; ".join(problems[:3] + left[:3]))
+    lua = world.names_lua()
+    problems = luacheck.check(lua)
+    check(f"shared module {world.NAMES_NAME}, with the game's own text for names it hasn't got",
+          not problems and "function N.name(" in lua and lua.rstrip().endswith("return N"), "; ".join(problems[:3]))
     lua = mouselook.script(mouselook.merge([{}]), {"path": r"C:\mods\m\mouselook.json", "file": "mods/m/mouselook.json",
                                                   "keep": {"_help": 'say "hi"'}})
     problems = luacheck.check(lua)
@@ -41,6 +45,9 @@ def run(cfg, oodle, log=print):
     problems = luacheck.check(lua) + re.findall(r"@[A-Z_]+@", lua)
     check("mod menu window script (with the Game, Inspector and Console pages)", not problems
           and 'Menu.page("Inspector"' in lua and '"Materials.Moss"' in lua, "; ".join(problems[:3]))
+    check("the mod menu opens from a controller too: its button in the window script, none when it's off",
+          '"Gamepad_Special_Left"' in lua and "(or View on a controller)" in lua
+          and '["pad"] = ""' in menu.host_script({"sections": {}, "notes": {}, "warnings": [], "built": ""}, [], pad=""))
     lua = bridge.script(cfg)
     problems = luacheck.check(lua) + re.findall(r"@[A-Z_]+@", lua)
     check("game bridge script", not problems and bridge.folder(cfg).replace("\\", "/") in lua, "; ".join(problems[:3]))
