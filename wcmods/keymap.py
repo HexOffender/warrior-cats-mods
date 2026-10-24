@@ -3,7 +3,8 @@
 The game ignores edited bindings (see README, "Remapping keys"), so it always listens for its own
 keys. A remap is therefore "when I press F, send the game E": the remapper holds back F and sends
 E in its place. Actions in controls.json are turned into such key pairs using the game's bindings
-below; the "keys" section maps keys directly (e.g. W, which no action lists).
+below; the "keys" section maps keys directly (e.g. W, which no action lists). Both apply while you
+play. The "menus" section is a separate set of key pairs used only while a menu is open.
 """
 from .controls import normalise_key
 
@@ -103,3 +104,21 @@ def plan(merged):
     for key in sorted(block & set(NEVER_HELD_BACK)):
         warnings.append(f"{key} still does its old job too: prompts and dialogue shown while you play may need it")
     return send, block - set(NEVER_HELD_BACK), warnings
+
+
+def menu_plan(merged):
+    """The "menus" section, {key you press: game key}, used only while a menu is open.
+
+    Returns (send, warnings). Nothing is held back in menus: the game's own key keeps working too, so
+    typing on the name screen and the game's own menu keys are never lost.
+    """
+    send, warnings = {}, []
+    for src, dst in merged.get("menus", {}).items():
+        s, d = _key(src), _key(dst)
+        if s not in VK and s not in MOUSE:
+            warnings.append(f"menus: the remapper can't use '{s}'")
+        elif d not in VK:
+            warnings.append(f"menus: '{s}' can only stand for a keyboard key, not '{d}'")
+        elif s != d:
+            send[s] = d
+    return send, warnings

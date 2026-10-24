@@ -152,7 +152,7 @@ def _remapper_presses():
     sent, on = [], [False]
     r = Remapper({"T": "W"}, {"W"}, ("game.exe",), log=lambda m: None)
     r._press = lambda name, down: sent.append((name, down))
-    r.active = lambda: on[0]
+    r.context = lambda: "play" if on[0] else "menu"
 
     def press(name, down, now=None):
         if now is not None:
@@ -166,7 +166,21 @@ def _remapper_presses():
     remapped = remapped and sent == [("W", True), ("W", False)]
     # A blocked W is held back, release included.
     blocked = [press("W", True, True), press("W", False)] == [True, True]
-    return held_over and remapped and blocked and not r.held and not r.swallowed and not r.passed
+    clean = not r.held and not r.swallowed and not r.passed
+
+    # Escape opens the pause menu (P) while playing and closes menus (BackSpace) in them. The press that
+    # opens the menu releases as P, even though the menu is open by the time it's let go.
+    sent.clear()
+    m = Remapper({"Escape": "P"}, set(), ("game.exe",), log=lambda msg: None, menu_send={"Escape": "BackSpace"})
+    m._press = lambda name, down: sent.append((name, down))
+    m.context = lambda: "play" if on[0] else "menu"
+    on[0] = True
+    steps = [m.handle("Escape", True)]
+    on[0] = False
+    steps += [m.handle("Escape", False), m.handle("Escape", True), m.handle("Escape", False), m.handle("T", True)]
+    menus = steps == [True, True, True, True, False] and sent == [("P", True), ("P", False), ("BackSpace", True),
+                                                                  ("BackSpace", False)]
+    return held_over and remapped and blocked and clean and menus
 
 
 def _palette_switching():

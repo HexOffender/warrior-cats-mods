@@ -55,7 +55,8 @@ export default {
     const { el, api, clear, toast, input } = wc;
     let saved = { keyboard: {}, gamepad: {} };
     let overrides = { keyboard: {}, gamepad: {} };
-    let otherKeys = {};   // "keys" entries that aren't one of the built-in rows; kept as they are
+    let otherKeys = {};   // "keys" entries that aren't one of the built-in rows: extra keys while playing
+    let menuKeys = {};    // "menus": {"keys": {...}}, used only while a menu is open
     let style = "xbox";
     try { style = localStorage.getItem("wc-pad-style") || "xbox"; } catch (e) { /* storage blocked */ }
 
@@ -67,6 +68,8 @@ export default {
     const table = el("div", { class: "card" });
     const out = wc.codePanel("controls.json");
     const live = el("div", { class: "card" });
+    const extraCard = el("div", { class: "card" });
+    const menuCard = el("div", { class: "card" });
     const mouse = el("div", { class: "card" });
 
     try { saved = (await api.get("/game/bindings")).bindings; }
@@ -93,7 +96,7 @@ export default {
         el("button", { class: "chip", onclick: () => resetDevice("keyboard"), text: "Keyboard defaults" }),
         el("span", { style: { flex: "1" } }),
         el("label", { for: "pad-style", class: "lbl", text: "Show buttons as" }), styleSel),
-      mouse, table, live, out.element);
+      mouse, table, extraCard, menuCard, live, out.element);
 
     // ---------- model ----------
     const RAW = Object.fromEntries(ACTIONS.filter(a => a.raw).map(a => [a.raw, a.id]));
@@ -115,6 +118,10 @@ export default {
         if (RAW[gameKey] && !(RAW[gameKey] in o.keyboard)) o.keyboard[RAW[gameKey]] = pressed;
         else otherKeys[pressed] = gameKey;
       }
+      menuKeys = {};
+      for (const [pressed, gameKey] of Object.entries((obj && obj.menus && obj.menus.keys) || {})) {
+        if (!pressed.startsWith("_")) menuKeys[pressed] = gameKey;
+      }
       return o;
     }
     const effective = (dev, a) => overrides[dev][a] ?? saved[dev]?.[a] ?? DEFAULTS[dev][a];
@@ -135,6 +142,7 @@ export default {
       if (Object.keys(keyboard).length) o.keyboard = keyboard;
       if (Object.keys(overrides.gamepad).length) o.gamepad = { ...overrides.gamepad };
       if (Object.keys(keys).length) o.keys = keys;
+      if (Object.keys(menuKeys).length) o.menus = { keys: { ...menuKeys } };
       return o;
     }
     function swap(map) {
@@ -244,16 +252,41 @@ export default {
           el("tbody", {}, ...ACTIONS.map(a => el("tr", {},
             el("td", {}, el("strong", { text: a.name }), el("div", { class: "muted mono", style: { fontSize: "0.72rem" }, text: a.raw ? `built-in key ${a.raw}` : a.id })),
             el("td", {}, cell("keyboard", a)), el("td", {}, cell("gamepad", a))))))));
+      renderPairs(extraCard, "Extra keys while playing", "Any key can stand for any game key while you play, " +
+        "e.g. Escape for the key that opens the pause menu. The game key then stops working on its own, unless an action above still uses it.", otherKeys);
+      renderPairs(menuCard, "In menus", "Used only while a menu is open (pause menu, inventory, the title screen), e.g. Escape for " +
+        "the key that closes a menu. The game's own key keeps working too, so typing on the name screen is never lost.", menuKeys);
       out.set(toJson());
     }
 
+    // ---------- key pairs: extra keys while playing, keys in menus ----------
+    // pairs is {key you press: game key}; changes go straight into it.
+    function renderPairs(box, title, note, pairs) {
+      const changed = () => { target.markDirty(); render(); };
+      const chip = k => el("span", { class: "chip", style: { fontWeight: "700" }, title: k }, input.keyLabel(k, style));
+      const pick = (label, then) => capture("keyboard", { name: `${title}: ${label}` }, then);
+      const rows = Object.entries(pairs).map(([pressed, gameKey]) => el("div", { class: "row" },
+        el("span", { class: "muted", text: "Pressing" }), chip(pressed),
+        el("button", { class: "btn ghost small", text: "Change", "aria-label": `Change the key you press for ${gameKey}`,
+          onclick: () => pick("the key you press", k => { if (k !== pressed) { delete pairs[pressed]; pairs[k] = gameKey; changed(); } }) }),
+        el("span", { class: "muted", text: "sends the game" }), chip(gameKey),
+        el("button", { class: "btn ghost small", text: "Change", "aria-label": `Change the game key ${pressed} sends`,
+          onclick: () => pick("the game's key", k => { pairs[pressed] = k; changed(); }) }),
+        el("button", { class: "btn ghost small", text: "Remove", onclick: () => { delete pairs[pressed]; changed(); } })));
+      clear(box).append(el("h2", { text: title }), el("p", { class: "note", text: note }), ...rows,
+        el("div", { class: "row" }, el("button", { class: "btn small", text: "Add a key", onclick: () =>
+          pick("press the key you want to use", k => setTimeout(() =>
+            pick(`press the game's key for ${input.keyLabel(k, style)}`, g => { pairs[k] = g; changed(); }), 0)) })));
+    }
+
     // ---------- capture ----------
-    function capture(dev, action) {
+    // onPick(key) receives the key instead of it being set on an action row (the key-pair lists).
+    function capture(dev, action, onPick) {
       const pad = dev === "gamepad";
       const choices = pad ? (action.axis ? input.PAD_AXES : input.PAD_BUTTONS) : [];
       const msg = el("p", { text: pad
         ? (action.axis ? "Move a stick on your controller, or pick one below." : "Press a button on your controller, or pick one below.")
-        : "Press a key, click a mouse button here, or scroll. Esc cancels." });
+        : "Press a key (Escape too), click a mouse button here, or scroll. Click Cancel to stop." });
       const padNote = el("p", { class: "muted", style: { fontSize: "0.9rem" } });
       const overlay = el("div", {
         role: "dialog", "aria-modal": "true", "aria-label": `Rebind ${action.name}`,
@@ -267,7 +300,6 @@ export default {
       const onKey = e => {
         if (pad) { if (e.key === "Escape") finish(null); return; }
         e.preventDefault(); e.stopPropagation();
-        if (e.code === "Escape") return finish(null);
         const k = input.keyFromEvent(e);
         if (k) finish(k); else msg.textContent = `That key (${e.code}) isn't one the game understands. Try another.`;
       };
@@ -312,7 +344,8 @@ export default {
         cancelAnimationFrame(raf);
         window.removeEventListener("keydown", onKey, true);
         overlay.remove();
-        if (key) { setKey(dev, action.id, key); toast(`${action.name}: ${input.keyLabel(key, style)}`); }
+        if (key && onPick) onPick(key);
+        else if (key) { setKey(dev, action.id, key); toast(`${action.name}: ${input.keyLabel(key, style)}`); }
       }
     }
 
