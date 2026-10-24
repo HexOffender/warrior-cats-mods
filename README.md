@@ -6,6 +6,14 @@ A mod manager and shared modding library for the Steam version (Unreal Engine 5.
 python wcmods.py studio      # opens Clan Mod Studio in your browser: the all-in-one manager
 ```
 
+Or double-click, in this folder:
+- **`Clan Mod Studio.bat`** opens the studio in your browser; close its window to stop it. If a
+  studio is already running, it opens that one.
+- **`Play with key remaps.bat`** starts the game through Steam with your key remaps active (see
+  [Remapping keys](#remapping-keys)). It stops by itself when the game closes.
+
+Right-click either one and choose *Send to > Desktop (create shortcut)* to launch it from the desktop.
+
 **Clan Mod Studio** has one page per kind of mod. Each page edits a file in a mod folder.
 Install mods (top right) builds everything and puts it in the game:
 
@@ -129,6 +137,34 @@ Eye keys are the game's slot names (`python wcmods.py eyes`). Some names don't m
 cat creator's eye buttons are recoloured to match. Coat, pattern and marking keys are slots 0–24
 (0–14 natural, 15–24 bright extras); `python wcmods.py tables` lists the game's originals.
 
+#### Ready-made palettes
+
+Ten themed palettes come as mods, all off to start: ThunderClan Forest, RiverClan Waters, ShadowClan
+Night, WindClan Moor, SkyClan Sunset, StarClan Silverpelt, Dark Forest, Leaf-bare Frost, Pastel Kits
+and Vivid Clans (`mods/palette-*`). Each one recolours coats, patterns, markings and eyes. The
+natural coats are a colour grade of the game's own, so every slot keeps its place from light to dark;
+the bright extras and the eyes get the theme's own colours.
+
+To switch quickly, tick palettes under **Quick palettes** on the Palettes page and press **Apply**,
+with the game closed. That turns the ticked palettes on, turns the other palette-only mods off, and
+installs. If the install fails, the previous choice is put back. Mods that hold anything besides a
+palette are never touched.
+
+Pick one theme at a time; two themes together show only one of them. Eyes-only and coats-only
+palettes (Gemstone Eyes, Richer Coats, StarClan Glow Eyes) go on top of a theme, because the themes
+are priority -10. From the command line:
+
+```
+python wcmods.py palette                                     # list the palette mods and which are on
+python wcmods.py palette palette-starclan-silverpelt         # use just that one, and install
+python wcmods.py palette palette-dark-forest gemstone-eyes   # Dark Forest coats with gemstone eyes
+python wcmods.py palette --none                              # back to the game's colours
+```
+
+`tools/make_palettes.py` generates them from the game's colours (`colour_tables.json` and the eye
+atlas). Edit its themes and run it again to change them. It keeps whether each one is on, its
+priority, and anything else you added to its `mod.json`.
+
 ### `controls.json`
 ```json
 { "keyboard": { "Player_Interact": "F", "Player_Movement_Up": "K" },
@@ -216,8 +252,9 @@ Confirmed in game (2026-10-23):
 - UE4SS runs, finds the colour tables on `BP_WrcGuiManager_C`, and its writes take effect.
 - Mouse look turns and tilts the camera, gives the cursor back in menus, and toggles with F6
   (see its known issues above).
-- Edited saves load, and the game keeps the edits when it saves again. The save carries a 64-bit
-  checksum whose formula isn't known; the tool keeps the original value and the game accepts it.
+- Edited saves load, and the game keeps the edits when it saves again; a Level change made with the
+  save editor was accepted. The save carries a 64-bit checksum whose formula isn't known; the tool
+  keeps the original value and the game accepts it.
   Save edits are applied after a backup: restore one from the Mods page (or
   `python wcmods.py restore latest`) if anything goes wrong.
 - Edited key bindings in the save are ignored, and the game's rebinding screen doesn't work on PC

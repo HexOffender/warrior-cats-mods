@@ -6,6 +6,7 @@ import shutil
 import struct
 
 from . import controls, ue4ss
+from . import mods as modlib
 from .blake3 import blake3
 from .config import MOD_BASENAME, UE4SS_MOD_NAME, game_running
 from .gamefiles import GameFiles
@@ -104,6 +105,29 @@ def build(cfg, mods, out_dir, log=print):
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
     return manifest
+
+
+def apply_palettes(cfg, mods_root, ids, build_dir, backups_root, log=print, force=False):
+    """Switch the palette-only mods to ids, then build and install. All or nothing: if the build or
+    install fails, the previous choice is put back, so nothing is left switched but not installed.
+
+    Returns (on, manifest).
+    """
+    if game_running():
+        raise RuntimeError("the game is running; close it before applying palettes")
+    found = modlib.discover(mods_root)
+    before = {m.id: m.enabled for m in found if modlib.palette_only(m)}
+    on, _ = modlib.choose_palettes(found, ids)
+    log(f"palettes on: {', '.join(on) or 'none (the game colours)'}")
+    try:
+        build(cfg, modlib.discover(mods_root), build_dir, log)
+        return on, install(cfg, build_dir, backups_root, log, force=force)
+    except Exception:
+        for m in modlib.discover(mods_root):
+            if m.id in before and m.enabled != before[m.id]:
+                m.set_enabled(before[m.id])
+        log("palette choice put back as it was")
+        raise
 
 
 def install(cfg, build_dir, backups_root, log=print, force=False):

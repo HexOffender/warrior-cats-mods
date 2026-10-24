@@ -7,6 +7,7 @@ import json
 import mimetypes
 import os
 import secrets
+import socket
 import threading
 import traceback
 import webbrowser
@@ -102,6 +103,16 @@ class Studio:
                 if os.path.isfile(path):
                     os.remove(path)
                 return {"deleted": name}
+        if parts == ["palettes", "apply"] and method == "POST":
+            ids = body.get("ids") or []
+            if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+                raise ValueError("ids should be a list of palette mod names")
+            # Switching happens inside the lock too, so a second Apply can't change mods mid-build.
+            if not body.get("install"):
+                return self.run(lambda log: dict(zip(("on", "off"), mods.choose_palettes(self.mods(), ids))))
+            return self.run(lambda log: pipeline.apply_palettes(
+                cfg, self.ctx.mods_root, ids, self.ctx.build_dir, self.ctx.backups, log,
+                force=bool(body.get("force")))[1])
         if parts == ["build"] and method == "POST":
             return self.run(lambda log: pipeline.build(cfg, self.mods(), self.ctx.build_dir, log))
         if parts == ["install"] and method == "POST":
@@ -250,10 +261,29 @@ def make_handler(studio, port):
     return Handler
 
 
+class _Server(ThreadingHTTPServer):
+    """One studio per port. HTTPServer turns on SO_REUSEADDR, which on Windows lets a second server
+    bind a port that's already in use, so two studios would silently share it."""
+    allow_reuse_address = False
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def serve(ctx, port=8765, open_browser=True):
     studio = Studio(ctx)
-    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(studio, port))
     url = f"http://127.0.0.1:{port}/"
+    try:
+        server = _Server(("127.0.0.1", port), make_handler(studio, port))
+    except OSError:
+        # Most likely a studio started earlier (a second double-click): open that one instead.
+        print(f"Port {port} is already in use. If Clan Mod Studio is already running, it's at {url}")
+        print("(to get a fresh one after an update, close the other studio window first)")
+        if open_browser:
+            webbrowser.open(url)
+        return
     print(f"Clan Mod Studio running at {url}  (Ctrl+C to stop)")
     if open_browser:
         webbrowser.open(url)

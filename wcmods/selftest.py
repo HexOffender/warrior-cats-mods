@@ -30,6 +30,7 @@ def run(cfg, oodle, log=print):
                                                    "Player_Den_Place": "Z"}, "keys": {"I": "W"}})
     check("key remap plan", send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"} and not warns)
     check("key remapper presses", _remapper_presses())
+    check("palette switching", _palette_switching())
 
     base_pak = PakReader(os.path.join(cfg.paks_dir, "pakchunk0-Windows.pak"), oodle)
     csv = base_pak.read("Wrc/Content/Gameplay/DataTables/NonAsset/NPC/CatSize.csv")
@@ -166,6 +167,26 @@ def _remapper_presses():
     # A blocked W is held back, release included.
     blocked = [press("W", True, True), press("W", False)] == [True, True]
     return held_over and remapped and blocked and not r.held and not r.swallowed and not r.passed
+
+
+def _palette_switching():
+    """choose_palettes switches only mods that hold nothing but a palette, in a throwaway mods folder."""
+    from . import mods as modlib
+    with tempfile.TemporaryDirectory() as tmp:
+        for mod_id, files, enabled in (("theme-a", ["palette.json"], True), ("theme-b", ["palette.json"], False),
+                                       ("mixed", ["palette.json", "data.json"], True)):
+            m = modlib.create(tmp, mod_id, enabled=enabled)
+            for name in files:
+                with open(os.path.join(m.folder, name), "w", encoding="utf-8") as f:
+                    f.write("{}")
+        on, off = modlib.choose_palettes(modlib.discover(tmp), ["theme-b"])
+        now = {m.id: m.enabled for m in modlib.discover(tmp)}
+        try:
+            modlib.choose_palettes(modlib.discover(tmp), ["mixed"])
+            refused = False
+        except ValueError:
+            refused = True
+    return on == ["theme-b"] and off == ["theme-a"] and refused and now == {"theme-a": False, "theme-b": True, "mixed": True}
 
 
 def _meta_hash(io, index):

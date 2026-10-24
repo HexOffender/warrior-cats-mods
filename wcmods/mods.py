@@ -55,6 +55,29 @@ class Mod:
                 "priority": self.priority, "kinds": self.kinds()}
 
 
+def palette_only(mod):
+    """A mod that holds nothing but a palette.json: safe to switch on and off as a colour preset."""
+    return mod.kinds() == ["palette"]
+
+
+def choose_palettes(mods, ids):
+    """Turn on the palette-only mods in ids and turn the other palette-only mods off.
+
+    Mods with anything besides a palette are left alone. Returns (on, off): the ids now on and off.
+    """
+    found = {m.id: m for m in mods if palette_only(m)}
+    unknown = [i for i in ids if i not in found]
+    if unknown:
+        raise ValueError(f"not a palette mod: {', '.join(unknown)} (palette mods: {', '.join(sorted(found))})")
+    on, off = [], []
+    for mod_id, m in sorted(found.items()):
+        want = mod_id in ids
+        if m.enabled != want:
+            m.set_enabled(want)
+        (on if want else off).append(mod_id)
+    return on, off
+
+
 def discover(mods_root):
     mods = []
     if os.path.isdir(mods_root):
