@@ -1,8 +1,14 @@
-"""Mod discovery.
+"""Mod discovery, and what mods need from each other.
 
-A mod is a folder under mods/ with a mod.json and any of:
+A mod is a folder under mods/ with a mod.json:
+  {"name": "Game Tweaks", "description": "...", "enabled": true, "priority": 0,
+   "version": "1.2", "author": "...",          what the studio shows about it
+   "requires": ["mod-menu"],                    mods it can't work without: turned on with it
+   "uses": ["mod-menu"]}                        mods it works with when they're on (the mod menu, for a page)
+and any of:
   files/<game path>   loose files that replace the game's (CSV data, configs, movies)
   paks/<name>.pak     cooked content made with Unreal Engine 5.7 (with its .utoc/.ucas), installed as is
+  menu.json           the in-game mod menu itself and its settings (mods/mod-menu; pipeline.py)
   palette.json        colour palette (sections/palettes.py)
   controls.json       button remaps (sections/controls.py)
   mouselook.json      mouse look settings (sections/mouselook.py)
@@ -10,6 +16,7 @@ A mod is a folder under mods/ with a mod.json and any of:
   names.json          cat names: prefixes, suffixes, rogues, the ban list, cats in your save (sections/names.py)
   cats.json           your cat's own colours and colour slots (sections/cats.py)
   save.json           save edits (sections/savedit.py)
+  scripts/main.lua    an in-game Lua script, with settings.json for its settings (sections/scripts.py, opt-in)
   section.py          the mod's own section, written with wcmods.sdk (opt-in)
   studio/section.js   the mod's own studio page, written with studio/lib/wc.js (opt-in)
 Folders starting with '_' are templates and are ignored.
@@ -18,9 +25,11 @@ import json
 import os
 import re
 
-CONTENT = (("files", "files"), ("paks", "cooked content"), ("palette.json", "palette"), ("controls.json", "controls"),
+MENU_ID = "mod-menu"   # the mod menu's own mod: other mods name it in "requires" or "uses"
+CONTENT = (("files", "files"), ("paks", "cooked content"), ("menu.json", "mod menu"), ("palette.json", "palette"), ("controls.json", "controls"),
            ("mouselook.json", "mouse look"), ("data.json", "data"), ("names.json", "names"), ("cats.json", "cats"),
-           ("save.json", "save"), ("section.py", "code"), (os.path.join("studio", "section.js"), "studio page"))
+           ("save.json", "save"), ("scripts", "in-game script"), ("section.py", "code"),
+           (os.path.join("studio", "section.js"), "studio page"))
 
 
 class Mod:
@@ -30,13 +39,36 @@ class Mod:
         with open(os.path.join(folder, "mod.json"), encoding="utf-8-sig") as f:
             meta = json.load(f)
         self.meta = meta
-        self.name = meta.get("name", self.id)
-        self.description = meta.get("description", "")
+        # A mistake in one mod's mod.json (a name that isn't text, a priority that isn't a number) falls
+        # back to the default here, so it can't stop every other mod from being listed and built.
+        name, description = meta.get("name", self.id), meta.get("description", "")
+        self.name = name if isinstance(name, str) else self.id
+        self.description = description if isinstance(description, str) else ""
         self.enabled = bool(meta.get("enabled", True))
-        self.priority = int(meta.get("priority", 0))
+        try:
+            self.priority = int(meta.get("priority", 0))
+        except (TypeError, ValueError, OverflowError):
+            self.priority = 0
+        self.version = str(meta.get("version") or "")
+        self.author = str(meta.get("author") or "")
+        self.requires = _ids(meta.get("requires"))
+        self.uses = [i for i in _ids(meta.get("uses")) if i not in self.requires]
+        self.builtin = bool(meta.get("builtin", False))   # comes with wcmods: it can be turned off, not removed
 
     def kinds(self):
         return [kind for name, kind in CONTENT if os.path.exists(os.path.join(self.folder, name))]
+
+    def has_code(self):
+        """Whether it runs code (Python at build time, Lua in game, a studio page): only with code mods allowed."""
+        return any(k in ("code", "in-game script", "studio page") for k in self.kinds())
+
+    def menu_page(self):
+        """Whether it adds a page to the mod menu: it says it uses the menu, or it's something wcmods gives
+        one (mouse look, a script with settings)."""
+        if MENU_ID in self.requires or MENU_ID in self.uses:
+            return True
+        kinds = self.kinds()
+        return "mouse look" in kinds or ("in-game script" in kinds and os.path.isfile(os.path.join(self.folder, "settings.json")))
 
     def update(self, **fields):
         path = os.path.join(self.folder, "mod.json")
@@ -55,7 +87,81 @@ class Mod:
 
     def to_dict(self):
         return {"id": self.id, "name": self.name, "description": self.description, "enabled": self.enabled,
-                "priority": self.priority, "kinds": self.kinds(), "preset": palette_only(self)}
+                "priority": self.priority, "kinds": self.kinds(), "preset": palette_only(self),
+                "version": self.version, "author": self.author, "requires": self.requires, "uses": self.uses,
+                "builtin": self.builtin, "code": self.has_code(), "menu_page": self.menu_page()}
+
+
+def _ids(value):
+    """A list of mod ids from mod.json ("requires", "uses"); anything else in it is ignored."""
+    if isinstance(value, str):
+        value = [value]
+    return [v.strip() for v in value if isinstance(v, str) and v.strip()] if isinstance(value, list) else []
+
+
+def needed(mods, mod_id):
+    """The mods `mod_id` requires, and what they require in turn (ids, nearest first); missing ones too."""
+    by_id = {m.id: m for m in mods}
+    out, todo = [], list(by_id[mod_id].requires) if mod_id in by_id else []
+    while todo:
+        i = todo.pop(0)
+        if i in out or i == mod_id:
+            continue
+        out.append(i)
+        if i in by_id:
+            todo += by_id[i].requires
+    return out
+
+
+def needing(mods, mod_id):
+    """The mods that are on and require `mod_id`, directly or through another mod."""
+    return [m.id for m in mods if m.enabled and m.id != mod_id and mod_id in needed(mods, m.id)]
+
+
+def unmet(mods):
+    """{mod id: [why]} for the mods that are on but need a mod that's missing or off."""
+    by_id = {m.id: m for m in mods}
+    out = {}
+    for m in mods:
+        if not m.enabled:
+            continue
+        why = []
+        for i in needed(mods, m.id):
+            if i not in by_id:
+                why.append(f"needs {i}, which isn't in your mods")
+            elif not by_id[i].enabled:
+                why.append(f"needs {by_id[i].name} ({i}), which is off")
+        if why:
+            out[m.id] = why
+    return out
+
+
+def switch(mods, mod_id, on, cascade=False):
+    """Turn a mod on (and the mods it requires) or off. Turning off a mod that others on need only
+    happens with cascade=True, which turns them off too; otherwise nothing changes and they're returned.
+
+    Returns (changed, blocked): [(id, now on)] and the ids of mods that need it."""
+    by_id = {m.id: m for m in mods}
+    if mod_id not in by_id:
+        raise LookupError(f"no mod named {mod_id}")
+    changed = []
+    if on:
+        missing = [i for i in needed(mods, mod_id) if i not in by_id]
+        if missing:
+            raise ValueError(f"{by_id[mod_id].name} needs {', '.join(missing)}, which isn't in your mods; add it first")
+        for i in [mod_id] + needed(mods, mod_id):
+            if not by_id[i].enabled:
+                by_id[i].set_enabled(True)
+                changed.append((i, True))
+        return changed, []
+    blocked = needing(mods, mod_id)
+    if blocked and not cascade:
+        return [], blocked
+    for i in [mod_id] + blocked:
+        if by_id[i].enabled:
+            by_id[i].set_enabled(False)
+            changed.append((i, False))
+    return changed, []
 
 
 def palette_only(mod):

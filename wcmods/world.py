@@ -232,10 +232,14 @@ end
 
 -- A creature's model name: SK_Mouse is "Mouse".
 local function meshLabel(actor)
+    -- Calling a function on an object that isn't there crashes the game inside UE4SS (pcall can't catch
+    -- that), and animals far away can have no mesh loaded, so every step is checked first.
     local ok, name = pcall(function()
         local m = actor.Mesh
+        if not valid(m) then return nil end
         local asset
         if not pcall(function() asset = m:GetSkeletalMeshAsset() end) or not valid(asset) then asset = m.SkeletalMesh end
+        if not valid(asset) then return nil end
         return asset:GetFName():ToString()
     end)
     if not ok or type(name) ~= "string" or name == "" then return nil end

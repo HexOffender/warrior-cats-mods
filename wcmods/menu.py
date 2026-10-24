@@ -190,6 +190,38 @@ end
 
 local function near(a, b) return math.abs((a or 0) - (b or 0)) < 1e-6 end
 
+-- The engine's text and number boxes are white with the menu's light text on them; make them dark.
+local FIELD, FIELD_FILL = "#14171c", "#2a3a55"
+local function tint(brush, hex)
+    local c, want = brush.TintColor.SpecifiedColor, C(hex)
+    c.R, c.G, c.B, c.A = want.R, want.G, want.B, want.A
+end
+local function setForeground(slateColor, hex)
+    local want = C(hex)
+    slateColor.ColorUseRule = 0
+    local c = slateColor.SpecifiedColor
+    c.R, c.G, c.B, c.A = want.R, want.G, want.B, want.A
+end
+local function styleTextBox(t)
+    pcall(function()
+        local ws = t.WidgetStyle
+        for _, k in ipairs({ "BackgroundImageNormal", "BackgroundImageHovered", "BackgroundImageFocused", "BackgroundImageReadOnly" }) do
+            tint(ws[k], FIELD)
+        end
+        setForeground(ws.ForegroundColor, THEME.text)
+        ws.TextStyle.Font.Size = 12.5
+    end)
+end
+local function styleSpinBox(s)
+    pcall(function()
+        local ws = s.WidgetStyle
+        for _, k in ipairs({ "BackgroundBrush", "HoveredBackgroundBrush", "ActiveBackgroundBrush" }) do tint(ws[k], FIELD) end
+        for _, k in ipairs({ "ActiveFillBrush", "HoveredFillBrush", "InactiveFillBrush" }) do tint(ws[k], FIELD_FILL) end
+        setForeground(s.ForegroundColor, THEME.text)
+        s.Font.Size = 12
+    end)
+end
+
 -- ---------- pages ----------
 local pages, started = {}, false
 local open_sections = {}
@@ -222,6 +254,79 @@ local function row(kind, make)
     return e
 end
 
+-- ---------- being driven from outside (wcmods agent menu ...; docs/agent.md) ----------
+-- A tool reads the page that's showing, and uses its controls, through shared variables: "agent.read"
+-- set to a token asks for the page's rows, answered in "agent.page" (JSON); "agent.act" set to
+-- "token\tlabel\tvalue" uses one control (by its label, or "@n" for the n-th row), answered in
+-- "agent.done" ("token\tok\tkind\tlabel" or "token\tmissing"). The mod whose page is showing draws it,
+-- so that one answers, and clears the request so no other page acts on it.
+-- "agent.scroll" scrolls the page: "top", "end", a number, or "row\t<label>" to bring that row into view.
+local agent = { i = 0 }
+local function agentBegin()
+    agent.i, agent.rec, agent.act, agent.hit, agent.scroll, agent.rowAt = 0, nil, nil, nil, nil, nil
+    local token = Menu.shared("agent.read")
+    if token and token ~= "" then agent.rec, agent.token = {}, token end
+    local a = Menu.shared("agent.act")
+    if a and a ~= "" then
+        local t, label, value = tostring(a):match("^([^\t]*)\t([^\t]*)\t?(.*)$")
+        if t then agent.act = { token = t, label = label, value = value } end
+    end
+    local s = Menu.shared("agent.scroll")
+    if s and s ~= "" then agent.scroll = tostring(s) end
+end
+local function agentScroll()
+    local s = agent.scroll
+    Menu.share("agent.scroll", "")
+    local want = s:match("^row\t(.*)$")
+    if want then
+        local e = agent.rowAt and rows[agent.rowAt]
+        if e and valid(e.root) then content:ScrollWidgetIntoView(e.root, false, 1, 0) end   -- 1: to the top
+    elseif s == "top" then content:ScrollToStart()
+    elseif s == "end" then content:ScrollToEnd()
+    elseif tonumber(s) then content:SetScrollOffset(tonumber(s)) end
+end
+local function agentEnd(page)
+    if agent.scroll then pcall(agentScroll) end
+    if agent.rec then
+        Menu.share("agent.read", "")
+        Menu.share("agent.page", Menu.json({ token = agent.token, page = page.id, title = page.title,
+                                             rows = Menu.list(agent.rec) }))
+    end
+    if agent.act then
+        Menu.share("agent.act", "")
+        local h = agent.hit
+        Menu.share("agent.done", agent.act.token .. "\t" .. (h and ("ok\t" .. h.kind .. "\t" .. h.label) or "missing"))
+    end
+end
+-- Each row says what it shows; a control (`acts`) gets back the action meant for it: its new value as
+-- text, "" for a plain press.
+local function seen(kind, label, value, options, acts)
+    agent.i = agent.i + 1
+    if agent.scroll and not agent.rowAt then
+        local want = agent.scroll:match("^row\t(.*)$")
+        local shown = tostring(label or value or "")
+        if want and (shown == want or shown:lower() == want:lower() or "@" .. agent.i == want) then agent.rowAt = cursor end
+    end
+    if agent.rec then
+        agent.rec[#agent.rec + 1] = { n = agent.i, kind = kind, label = label ~= nil and tostring(label) or nil,
+                                      value = value, options = options }
+    end
+    local a = agent.act
+    if acts and a and not agent.hit and label ~= nil then
+        local l = tostring(label)
+        if a.label == l or a.label == "@" .. agent.i or a.label:lower() == l:lower() then
+            agent.hit = { kind = kind, label = l }
+            return a.value
+        end
+    end
+    return nil
+end
+local function truthy(s, now)
+    s = tostring(s):lower()
+    if s == "" or s == "toggle" then return not now end
+    return s == "on" or s == "true" or s == "1" or s == "yes" or s == "open"
+end
+
 local function labelled(label, control, controlFill, extra, halign)
     local box = new("HorizontalBox")
     local l = text(label, 13)
@@ -239,6 +344,7 @@ function ui.heading(str)
         return { root = t, t = t, top = 8, bottom = 4 }
     end)
     put(e, "text", str, function(v) setText(e.t, v) end)
+    seen("heading", nil, tostring(str))
 end
 
 function ui.text(str, opts)
@@ -249,10 +355,11 @@ function ui.text(str, opts)
     end)
     put(e, "text", tostring(str), function(v) setText(e.t, v) end)
     put(e, "color", opts.color or THEME.text, function(v) e.t:SetColorAndOpacity({ SpecifiedColor = C(v), ColorUseRule = 0 }) end)
+    seen(opts.note and "note" or "text", nil, tostring(str))
 end
 
 function ui.note(str)
-    ui.text(str, { size = 11.5, color = THEME.muted })
+    ui.text(str, { size = 11.5, color = THEME.muted, note = true })
 end
 
 function ui.separator()
@@ -283,6 +390,36 @@ function ui.field(label, value, opts)
     put(e, "label", label, function(s) setText(e.l, s) end)
     put(e, "value", tostring(value), function(s) setText(e.v, s) end)
     put(e, "vcolor", opts.color or THEME.text, function(c) e.v:SetColorAndOpacity({ SpecifiedColor = C(c), ColorUseRule = 0 }) end)
+    seen("field", label, tostring(value))
+end
+
+-- Several values side by side: ui.columns({ {"Level", 20}, {"Health", "233 / 233", "#ff8080"}, ... }). Each item is
+-- { label, value, colour }; the label sits small above its value.
+function ui.columns(items)
+    local n = #items
+    local e = row("columns" .. n, function()
+        local box = new("HorizontalBox")
+        local cells = {}
+        for i = 1, n do
+            local col = new("VerticalBox")
+            local l = text("", 11, THEME.muted)
+            local v = text("", 14, THEME.text, true)
+            col:AddChildToVerticalBox(l)
+            col:AddChildToVerticalBox(v)
+            add(box, col, 1, 0, 12, 0)
+            cells[i] = { l = l, v = v }
+        end
+        return { root = box, cells = cells, top = 6, bottom = 6 }
+    end)
+    for i, it in ipairs(items) do
+        local c = e.cells[i]
+        if c then
+            put(e, "l" .. i, tostring(it[1]), function(v) setText(c.l, v) end)
+            put(e, "v" .. i, tostring(it[2] == nil and "-" or it[2]), function(v) setText(c.v, v) end)
+            put(e, "c" .. i, it[3] or THEME.text, function(v) c.v:SetColorAndOpacity({ SpecifiedColor = C(v), ColorUseRule = 0 }) end)
+        end
+        seen("field", it[1], tostring(it[2] == nil and "-" or it[2]))
+    end
 end
 
 local KIND_COLOURS = { primary = THEME.accent, danger = THEME.danger, good = THEME.good }
@@ -297,7 +434,8 @@ function ui.button(label, opts)
     end)
     put(e, "label", label, function(v) e.b:SetContent(text(v, 12.5)) end)
     put(e, "color", opts.kind or "", function(v) e.b:SetBackgroundColor(C(KIND_COLOURS[v] or "#3a4250")) end)
-    return clicked(e.state, "b", e.b)
+    local pressed = seen("button", label, nil, nil, true) ~= nil
+    return clicked(e.state, "b", e.b) or pressed
 end
 
 -- A row of buttons; the index of the one clicked this frame, or nil.
@@ -318,6 +456,7 @@ function ui.buttons(labels, opts)
         local kind = opts.kinds and opts.kinds[i] or ""
         put(e, "color" .. i, kind, function(v) b:SetBackgroundColor(C(KIND_COLOURS[v] or "#3a4250")) end)
         if clicked(e.state, i, b) then hit = i end
+        if seen("button", labels[i], nil, nil, true) ~= nil then hit = i end
     end
     return hit
 end
@@ -347,6 +486,11 @@ function ui.toggle(label, value, opts)
         e.v = value and true or false               -- the script changed it
         e.c:SetIsChecked(e.v)
     end
+    local act = seen("toggle", label, e.v, nil, true)
+    if act ~= nil then
+        e.v = truthy(act, e.v)
+        e.c:SetIsChecked(e.v)
+    end
     return e.v
 end
 
@@ -360,6 +504,8 @@ function ui.switch(label, value)
     put(e, "label", label, function(v) setText(e.l, v) end)
     local on = value and true or false
     if clicked(e.state, "b", e.b) then on = not on end
+    local act = seen("switch", label, on, nil, true)
+    if act ~= nil then on = truthy(act, on) end
     put(e, "on", on, function(v)
         e.b:SetContent(text(v and "On" or "Off", 12.5))
         e.b:SetBackgroundColor(C(v and THEME.good or THEME.off))
@@ -384,6 +530,14 @@ function ui.radio(label, value, options)
     for i, b in ipairs(e.bs) do
         put(e, "opt" .. i, tostring(options[i]), function(v) b:SetContent(text(v, 12)) end)
         if clicked(e.state, i, b) then chosen = options[i] end
+    end
+    local strs = {}
+    for i, o in ipairs(options) do strs[i] = tostring(o) end
+    local act = seen("radio", label, tostring(chosen), strs, true)
+    if act ~= nil then
+        for i, s in ipairs(strs) do
+            if s == act or s:lower() == act:lower() then chosen = options[i] break end
+        end
     end
     for i, b in ipairs(e.bs) do
         put(e, "sel" .. i, options[i] == chosen, function(v) b:SetBackgroundColor(C(v and THEME.accent or "#3a4250")) end)
@@ -412,6 +566,16 @@ function ui.choice(label, value, options)
     elseif e.v ~= tostring(value) then
         e.v = tostring(value)
         e.c:SetSelectedOption(e.v)
+    end
+    local act = seen("choice", label, e.v, strs, true)
+    if act ~= nil then
+        for _, s in ipairs(strs) do
+            if s == act or s:lower() == act:lower() then
+                e.v = s
+                e.c:SetSelectedOption(s)
+                break
+            end
+        end
     end
     for i, s in ipairs(strs) do
         if s == e.v then return options[i] end
@@ -446,19 +610,33 @@ function ui.slider(label, value, lo, hi, opts)
         e.v = value
         e.s:SetValue(value)
     end
+    local act = tonumber(seen("slider", label, e.v, { lo, hi }, true) or "")
+    if act then
+        e.v = act
+        e.s:SetValue(act)
+    end
     put(e, "shown", string.format(opts.format or "%.2f", e.v), function(s) setText(e.vt, s) end)
     return e.v
 end
 
--- A number box (drag it or type); returns its value. opts: min, max, step.
+-- A number box (drag it or type); returns its value. opts: min, max, step, whole (whole numbers only).
 function ui.number(label, value, opts)
     opts = opts or {}
     local e = row("number", function()
         local s = new("SpinBox")
+        styleSpinBox(s)
         local box, l = labelled(label, s)
         return { root = box, s = s, l = l }
     end)
     put(e, "label", label, function(v) setText(e.l, v) end)
+    put(e, "whole", opts.whole and true or false, function(whole)
+        pcall(function()
+            e.s:SetMinFractionalDigits(whole and 0 or 1)
+            e.s:SetMaxFractionalDigits(whole and 0 or 3)
+            e.s:SetAlwaysUsesDeltaSnap(whole)
+        end)
+        e.v = nil
+    end)
     put(e, "range", tostring(opts.min) .. "," .. tostring(opts.max) .. "," .. tostring(opts.step), function()
         if opts.min then e.s:SetMinValue(opts.min) e.s:SetMinSliderValue(opts.min) end
         if opts.max then e.s:SetMaxValue(opts.max) e.s:SetMaxSliderValue(opts.max) end
@@ -466,11 +644,17 @@ function ui.number(label, value, opts)
         e.v = nil
     end)
     local now = e.s:GetValue()
+    if opts.whole then now = math.floor(now + 0.5) end
     if e.v ~= nil and not near(now, e.v) then
         e.v = now
     elseif e.v == nil or not near(e.v, value) then
         e.v = value
         e.s:SetValue(value)
+    end
+    local act = tonumber(seen("number", label, e.v, { opts.min, opts.max }, true) or "")
+    if act then
+        e.v = opts.whole and math.floor(act + 0.5) or act
+        e.s:SetValue(e.v)
     end
     return e.v
 end
@@ -480,6 +664,7 @@ function ui.input(label, value, opts)
     opts = opts or {}
     local e = row("input", function()
         local t = new("EditableTextBox")
+        styleTextBox(t)
         local box, l = labelled(label, t)
         return { root = box, t = t, l = l }
     end)
@@ -491,6 +676,11 @@ function ui.input(label, value, opts)
     elseif e.v ~= tostring(value or "") then
         e.v = tostring(value or "")
         setText(e.t, e.v)
+    end
+    local act = seen("input", label, e.v, nil, true)
+    if act ~= nil then
+        e.v = act
+        setText(e.t, act)
     end
     return e.v
 end
@@ -539,6 +729,15 @@ function ui.color(label, hex)
         end
     end
     local out = hexOf(e.rgb[1], e.rgb[2], e.rgb[3])
+    local act = seen("color", label, out, nil, true)
+    local ah = act and act:match("^#?(%x%x%x%x%x%x)$")
+    if ah then
+        for i, s in ipairs(e.ss) do
+            e.rgb[i] = tonumber(ah:sub(i * 2 - 1, i * 2), 16)
+            s:SetValue(e.rgb[i])
+        end
+        out = hexOf(e.rgb[1], e.rgb[2], e.rgb[3])
+    end
     put(e, "hex", out, function(v)
         e.sw:SetColorAndOpacity(C(v))
         setText(e.vt, v)
@@ -560,6 +759,7 @@ function ui.progress(label, fraction, opts)
     put(e, "f", math.floor(f * 1000), function() e.p:SetPercent(f) end)
     put(e, "color", opts.color or THEME.accent, function(v) e.p:SetFillColorAndOpacity(C(v)) end)
     put(e, "shown", string.format(opts.format or "%d%%", math.floor(f * 100 + 0.5)), function(s) setText(e.vt, s) end)
+    seen("progress", label, string.format(opts.format or "%d%%", math.floor(f * 100 + 0.5)))
 end
 
 local textures = {}
@@ -602,6 +802,8 @@ function ui.section(title, fn, opts)
         return { root = b, b = b, top = 6 }
     end)
     if clicked(e.state, "b", e.b) then open_sections[key] = not open_sections[key] end
+    local act = seen("section", title, open_sections[key], nil, true)
+    if act ~= nil then open_sections[key] = truthy(act, open_sections[key]) end
     local isOpen = open_sections[key]
     put(e, "title", (isOpen and "-  " or "+  ") .. title, function(v) e.b:SetContent(text(v, 14, THEME.heading)) end)
     put(e, "bg", isOpen, function() e.b:SetBackgroundColor(C("#2c3440")) end)
@@ -620,11 +822,13 @@ local function render(page)
         rows, gen = {}, g
     end
     cursor = 0
+    agentBegin()
     local ok, err = pcall(page.fn, ui)
     if not ok then
         report("page " .. page.title, err)
         ui.text("This page hit an error: " .. tostring(err), { color = THEME.danger })
     end
+    agentEnd(page)
     trim(cursor + 1)
 end
 
@@ -642,15 +846,27 @@ end
 
 local function register(p)
     local list = Menu.shared("pages") or ""
-    local line = p.id .. "\t" .. p.title .. "\t" .. tostring(p.order) .. "\n"
-    if not list:find(p.id .. "\t", 1, true) then Menu.share("pages", list .. line) end
+    local line = p.id .. "\t" .. p.title .. "\t" .. tostring(p.order) .. "\t" .. p.group .. "\n"
+    -- Only a line whose id is this one counts: a plain find would match "Travel" inside another page's
+    -- title ("Fast Travel"), and that page would never get a tab.
+    if not ("\n" .. list):find("\n" .. p.id .. "\t", 1, true) then Menu.share("pages", list .. line) end
 end
 
--- Add a page to the mod menu. fn(ui) runs every frame while it shows. opts.order sorts the tabs
--- (lower first; the host's own pages are 0-9), opts.id tells pages with the same title apart.
+-- The groups the menu's side bar shows, in order. A page names one of these ids (or a group of its own,
+-- which comes after "mods").
+Menu.groups = {
+    { id = "home", label = "Home" }, { id = "cat", label = "Your cat" }, { id = "world", label = "World" },
+    { id = "story", label = "Story" }, { id = "fight", label = "Fight" }, { id = "cheats", label = "Cheats" },
+    { id = "mods", label = "Mods" }, { id = "tools", label = "Tools" },
+}
+
+-- Add a page to the mod menu. fn(ui) runs every frame while it shows. opts.group puts it in a group of
+-- the side bar ("mods" by default; Menu.groups lists them), opts.order sorts it within the group (lower
+-- first), and opts.id tells pages with the same title apart.
 function Menu.page(title, fn, opts)
     opts = opts or {}
-    local p = { id = opts.id or title, title = title, fn = fn, order = opts.order or 50 }
+    local p = { id = opts.id or title, title = title, fn = fn, order = opts.order or 50,
+                group = (tostring(opts.group or "mods"):gsub("[\t\n]", " ")) }
     pages[#pages + 1] = p
     ExecuteInGameThread(function() register(p) end)
     if not started then
@@ -667,6 +883,21 @@ end
 
 function Menu.isOpen() return Menu.shared("open") and true or false end
 
+-- Open the menu (on a page, by its id or title), or close it; e.g. from a script's own key. The host does
+-- it on its next frame.
+function Menu.open(page) Menu.share("request", "open\t" .. tostring(page or "")) end
+function Menu.close() Menu.share("request", "close\t") end
+
+-- Tell the menu about a key a script uses, so its Overview page lists it: Menu.key("F6", "Mouse look on and off").
+function Menu.key(key, what)
+    if not key or key == "" then return end
+    local line = tostring(key) .. "\t" .. (tostring(what or ""):gsub("[\t\n]", " ")) .. "\n"
+    ExecuteInGameThread(function()
+        local list = Menu.shared("keys") or ""
+        if not list:find(line, 1, true) then Menu.share("keys", list .. line) end
+    end)
+end
+
 -- ---------- saving settings ----------
 local LIST = {}
 -- Mark a table as a JSON list, so it's written [] even when empty (Lua can't tell {} from []).
@@ -681,7 +912,11 @@ local function encode(v, indent)
     if t == "number" then
         if v ~= v or v == math.huge or v == -math.huge then return "null" end
         if math.type(v) == "integer" then return tostring(v) end
-        return string.format("%.6g", v)
+        -- %g writes 12.0 as "12", which comes back as a whole number (and a setting then only takes whole
+        -- numbers); keep it a float.
+        local s = string.format("%.6g", v)
+        if not s:find("[%.eE]") then s = s .. ".0" end
+        return s
     end
     if t == "string" then
         return '"' .. v:gsub('[%c"\\]', function(c)
@@ -737,7 +972,12 @@ HOST_LUA = r'''-- The in-game mod menu: the window, its tabs, and the first page
 local Menu = require("WCModsMenu")
 local SETTINGS = @SETTINGS@
 
-local function valid(o) return o ~= nil and o:IsValid() end
+-- Only an engine object has IsValid (the pages also hand this strings, numbers and tables).
+local function valid(o)
+    if type(o) ~= "userdata" then return false end
+    local ok, yes = pcall(function() return o:IsValid() end)
+    return ok and yes == true
+end
 local function log(fmt, ...) print(string.format("[WCModsMenu] " .. fmt .. "\n", ...)) end
 local C, THEME, new, add, text = Menu.color, Menu.theme, Menu.new, Menu.add, Menu.text
 
@@ -807,7 +1047,7 @@ local function build(c, lib)
     local column = make("VerticalBox")
     frame:SetContent(column)
     local header = make("HorizontalBox")
-    add(header, text("Mods", 20, THEME.heading), 1)
+    add(header, text("Mod menu", 20, THEME.heading), 1)
     local smaller = Menu.button("A-", nil, 12)
     add(header, smaller, nil, 0, 4)
     local bigger = Menu.button("A+", nil, 12)
@@ -819,9 +1059,10 @@ local function build(c, lib)
     add(header, close)
     column:AddChildToVerticalBox(header)
 
-    local hint = text(SETTINGS.key_name .. " opens and closes this menu. Changes apply at once; a page's Save keeps them. " ..
-                      "A- and A+ change the menu's size.", 11.5, THEME.muted, true)
-    local hs = column:AddChildToVerticalBox(hint)
+    -- Under the header: how your cat is doing (HOST.status, from the Game pages), or how to use the menu.
+    local status = text(SETTINGS.key_name .. " opens and closes this menu. Changes apply at once; a page's Save keeps them.",
+                        12, THEME.muted, true)
+    local hs = column:AddChildToVerticalBox(status)
     hs:SetPadding({ Left = 0, Top = 6, Right = 0, Bottom = 12 })
 
     local body = make("HorizontalBox")
@@ -837,8 +1078,8 @@ local function build(c, lib)
     add(body, pane, 1, 0, 0, 0)
 
     widget:AddToViewport(2000)
-    return { widget = widget, tree = tree, tabs = tabs, content = content, close = close, pause = pause,
-             scaler = scaler, sizer = sizer, smaller = smaller, bigger = bigger,
+    return { widget = widget, tree = tree, tabs = tabs, content = content, close = close, pause = pause, frame = frame,
+             scaler = scaler, sizer = sizer, smaller = smaller, bigger = bigger, status = status,
              tabButtons = {}, tabList = nil, state = {} }
 end
 
@@ -892,17 +1133,27 @@ local function ensureWindow()
     win.owner, win.cls = c:GetAddress(), win.widget:GetClass():GetFName():ToString()
     Menu.share("content", win.content)
     Menu.share("tree", win.tree)
+    Menu.share("frame", win.frame)   -- where the window is on screen, for `wcmods agent shot --menu`
     return true
 end
 
 -- ---------- tabs ----------
+-- The side bar lists the pages under their groups (Menu.groups), in order; a group of a script's own
+-- comes after Mods, and a page without a group is under Mods.
+local GROUP_RANK, GROUP_LABEL = {}, {}
+for i, g in ipairs(Menu.groups) do GROUP_RANK[g.id], GROUP_LABEL[g.id] = i, g.label end
+local function groupRank(g) return GROUP_RANK[g] or (GROUP_RANK.mods + 0.5) end
+
 local function pageList()
     local out = {}
     for line in (Menu.shared("pages") or ""):gmatch("([^\n]+)") do
-        local id, title, order = line:match("^(.-)\t(.-)\t(.-)$")
-        if id then out[#out + 1] = { id = id, title = title, order = tonumber(order) or 50 } end
+        local id, title, order, group = line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t?([^\t]*)$")
+        if id then out[#out + 1] = { id = id, title = title, order = tonumber(order) or 50, group = group ~= "" and group or "mods" } end
     end
     table.sort(out, function(a, b)
+        local ra, rb = groupRank(a.group), groupRank(b.group)
+        if ra ~= rb then return ra < rb end
+        if a.group ~= b.group then return a.group < b.group end
         if a.order ~= b.order then return a.order < b.order end
         return a.title < b.title
     end)
@@ -926,10 +1177,17 @@ local function updateTabs()
         win.tabList = key
         win.tabs:ClearChildren()
         win.tabButtons = {}
+        local group
         for _, p in ipairs(list) do
+            if p.group ~= group then
+                group = p.group
+                local h = text((GROUP_LABEL[group] or group):upper(), 11, THEME.muted)
+                local hslot = win.tabs:AddChild(h)
+                hslot:SetPadding({ Left = 4, Top = #win.tabButtons > 0 and 10 or 0, Right = 0, Bottom = 4 })
+            end
             local b = Menu.button(p.title, nil, 13)
             local slot = win.tabs:AddChild(b)
-            slot:SetPadding({ Left = 0, Top = 0, Right = 0, Bottom = 4 })
+            slot:SetPadding({ Left = 0, Top = 0, Right = 0, Bottom = 3 })
             win.tabButtons[#win.tabButtons + 1] = { id = p.id, b = b }
         end
     end
@@ -1001,6 +1259,10 @@ local function closeMenu()
     end
 end
 
+-- What the status line under the header says: the Game pages fill this in (HOST.status).
+local HOST = { status = nil, statusOn = true }
+local statusAt, statusShown = -1, nil
+
 local function tick()
     if not isOpen then return end
     if not windowOk() then
@@ -1010,6 +1272,16 @@ local function tick()
         return
     end
     updateTabs()
+    if HOST.status and os.clock() - statusAt >= 0.5 then
+        statusAt = os.clock()
+        local ok, line = pcall(HOST.status)
+        line = (HOST.statusOn and ok and line) or (SETTINGS.key_name .. " opens and closes this menu. Changes apply at once; " ..
+                                                   "a page's Save keeps them.")
+        if line ~= statusShown then
+            statusShown = line
+            pcall(function() win.status:SetText(FText(line)) end)
+        end
+    end
     for _, key in ipairs({ "smaller", "bigger" }) do
         local b = win[key]
         local down = b:IsPressed()
@@ -1030,9 +1302,32 @@ end
 -- threads in one Lua state at once crash the game.
 local everySecond, nextSecond = {}, 0
 
+-- A script asked for the menu (Menu.open / Menu.close).
+local function requests()
+    local req = Menu.shared("request")
+    if not req or req == "" then return end
+    Menu.share("request", "")
+    local what, page = tostring(req):match("^(%a+)\t(.*)$")
+    if what == "close" then
+        closeMenu()
+    elseif what == "open" then
+        if page ~= "" then
+            for _, p in ipairs(pageList()) do
+                if p.id == page or p.title == page then
+                    Menu.share("page", p.id)
+                    break
+                end
+            end
+        end
+        if isOpen then show(Menu.shared("page") or "") else openMenu() end
+    end
+end
+
 local function frame()
     local ok, err = pcall(tick)
     if not ok then log("error: %s", tostring(err)) end
+    local okR, errR = pcall(requests)
+    if not okR then log("error: %s", tostring(errR)) end
     local now = os.clock()
     if now >= nextSecond then
         nextSecond = now + 1
@@ -1121,7 +1416,7 @@ Menu.page("Installed mods", function(ui)
             for _, w in ipairs(SETTINGS.warnings) do ui.note(w) end
         end, { open = false })
     end
-end, { order = 0 })
+end, { order = 1, group = "home" })
 
 -- Nearby things, through WCModsWorld: any kinds at once, each in its own colour, in the list and (with
 -- "Mark them on screen") as markers drawn with WCModsDraw.
@@ -1179,7 +1474,7 @@ if okWorld then
             ui.field(string.format("%.0f m", it.distance / 100), it.label .. "   (" .. World.kindLabel(it.kind) .. ")",
                      { color = colorOf(it.kind) })
         end
-    end, { order = 5 })
+    end, { order = 22, group = "world" })
     if okDraw then
         Draw.onFrame(function(d)
             if not look.mark then return end
@@ -1452,10 +1747,10 @@ Menu.page("Cheats", function(ui)
     elseif hit == 3 then console(c, "stat unit") end
 
     ui.separator()
-    ui.note("The game also has its own developer cheats (rank up, currency, complete the current quest, " ..
-            "teleport to camp ...) in its cheats manager; they aren't wired up here yet.")
-end, { order = 8 })
-
+    ui.note("The game's own developer switches (always full health or stamina, attacks that always land, " ..
+            "fast den building ...) are on the Game switches page.")
+end, { order = 50, group = "cheats" })
+@PAGES@
 log("ready: %s opens the mod menu", SETTINGS.key_name)
 '''
 
@@ -1467,10 +1762,12 @@ def lua():
     return LUA
 
 
-def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0):
+def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0, dev=False, pages=None):
     """The host's script, with the overview of this build: the enabled mods and what each section set.
     cheats: whether the Cheats page starts with cheats on (wcmods.json "cheats"); scale: the menu's size,
-    1 for the usual (wcmods.json "menu_scale")."""
+    1 for the usual (wcmods.json "menu_scale"); dev: whether the Inspector and Console pages are in
+    (they're for code mods, so wcmods.json "allow_code_mods"); pages: hostpages.data(), the area names and
+    quest titles the pages show."""
     if key not in KEYS:
         raise ValueError(f"menu_key should be one of {', '.join(KEYS)}")
     enabled = [m for m in mods if m.enabled]
@@ -1482,9 +1779,11 @@ def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0):
                          "mods": rep["mods"], "notes": manifest["notes"].get(sid)})
     settings = {
         "key": key, "key_name": KEY_NAMES.get(key, key), "built": manifest["built"].replace("T", " "),
-        "cheats": bool(cheats), "scale": float(scale),
+        "cheats": bool(cheats), "scale": float(scale), "dev": bool(dev),
         "mods": [{"id": m.id, "name": m.name, "description": m.description, "kinds": m.kinds(),
                   "priority": m.priority} for m in enabled],
         "sections": sections, "warnings": manifest["warnings"],
     }
-    return HOST_LUA.replace("@SETTINGS@", lua_value(settings)).replace("@KEY@", KEY_NAMES.get(key, key))
+    from . import hostpages
+    return (HOST_LUA.replace("@SETTINGS@", lua_value(settings)).replace("@KEY@", KEY_NAMES.get(key, key))
+            .replace("@PAGES@", hostpages.lua(pages)))

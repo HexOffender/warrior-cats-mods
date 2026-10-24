@@ -102,6 +102,8 @@ class BuildContext:
         self.notes = {}
         self.current = None
         self.mods = []          # the enabled mods in priority order (set by the build)
+        self._tuning = None     # TuningData.csv as numbers, read once (ctx.tuning)
+        self._texts = {}        # language -> {key: text} (ctx.text)
 
     # ---- logging ----
     def log(self, msg):
@@ -125,6 +127,55 @@ class BuildContext:
     @staticmethod
     def data_path(name):
         return name if name.startswith("Wrc/") else NONASSET + name
+
+    def table(self, name):
+        """A game table's rows (as the game ships them, before any mod's edits), each a dict of column ->
+        text, with the row's key (its first column) also under "key": ctx.table("AttackMove.csv").
+        docs/mechanics/ says what the tables hold."""
+        t = csvdata.Table(self.read_data_table(name))
+        rows = []
+        for r in t.rows:
+            row = {h: (r.fields[i] if i < len(r.fields) else "") for i, h in enumerate(t.header)}
+            row["key"] = r.fields[0] if r.fields else ""
+            rows.append(row)
+        return rows
+
+    def tuning(self, key=None):
+        """TuningData.csv as {key: number} (text where a value isn't a number), or one value with a key:
+        ctx.tuning("Gameplay.Exploration.Player.MoveAndRun.Run.Speed") -> 390.0."""
+        if self._tuning is None:
+            t = csvdata.Table(self.read_data_table("TuningData.csv"))
+            values = {}
+            for r in t.rows:
+                if not r.fields:
+                    continue
+                raw = r.fields[1] if len(r.fields) > 1 else ""
+                try:
+                    values[r.fields[0]] = float(raw)
+                except ValueError:
+                    values[r.fields[0]] = raw
+            self._tuning = values
+        if key is None:
+            return dict(self._tuning)
+        if key not in self._tuning:
+            raise KeyError(f"no tuning value {key} (docs/mechanics/ lists them by system)")
+        return self._tuning[key]
+
+    def tune(self, values, source=""):
+        """Change TuningData values: ctx.tune({"Gameplay.Combat.Rest.Stamina": 0.6}, source=mod.id). Numbers
+        and "x1.5" (times the game's value) both work, merged with every other mod's edits."""
+        unknown = [k for k in values if k not in self.tuning()]
+        if unknown:
+            self.warn(f"TuningData has no {', '.join(sorted(unknown))}; the game won't read new keys it doesn't ask for")
+        self.edit_csv("TuningData.csv", dict(values), source=source)
+
+    def text(self, key, language="EN"):
+        """A line of the game's own text by its key: ctx.text("STR_ATTACK_QUICK_CLAW") -> "Quick Claw".
+        Unknown keys come back as they are."""
+        if language not in self._texts:
+            table = csvdata.Table(self.game.read_text(f"Wrc/Content/Gameplay/Strings/NonAsset/Strings_{language}.csv"))
+            self._texts[language] = {r.fields[0]: r.fields[1] for r in table.rows if len(r.fields) > 1}
+        return self._texts[language].get(key, key)
 
     # ---- outputs ----
     def add_file(self, path, data, source=""):

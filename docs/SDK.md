@@ -8,12 +8,22 @@ mouse look and save edits. A mod can add code of its own in three places:
 |---|---|---|---|
 | Build step | `section.py` | `wcmods build` / `install` | `wcmods.sdk` (Python) |
 | Studio page | `studio/section.js` | `wcmods studio`, in your browser | `studio/lib/wc.js` |
-| In-game script | shipped by its `section.py` | the game, through UE4SS | UE4SS Lua, plus the shared modules below: `WCModsDraw`, `WCModsMenu`, `WCModsView`, `WCModsWorld` |
+| In-game script | `scripts/main.lua` (no Python), or written by its `section.py` | the game, through UE4SS | UE4SS Lua, plus the shared modules below: `WCModsGame`, `WCModsDraw`, `WCModsMenu`, `WCModsView`, `WCModsWorld` |
 
 All of them only run when `"allow_code_mods": true` is set in `wcmods.json`, because they are
 code. Without it, the build warns and skips them. Everything else in the mod still works.
 
-Two complete examples:
+**Scripting the game itself** (your cat, items, the fresh-kill pile, time of day, quests, fights,
+events, hooks, the inspector and the live console) is in [scripting.md](scripting.md).
+
+What we know about the game's insides (classes, offsets, how traits, colours and the camera work)
+is in [reverse-engineering.md](reverse-engineering.md). How the game's rules work (combat,
+progression, items, quests and more), and which table rows to change, is in
+[mechanics/](mechanics/README.md).
+
+Three complete examples:
+- [`examples/game-tweaks`](../examples/game-tweaks): an in-game script with its settings and a mod menu
+  page, and no Python.
 - [`examples/faster-run`](../examples/faster-run): a build step and a studio page.
 - [`examples/quest-markers`](../examples/quest-markers): an in-game script with a custom quest,
   markers on screen and a mod menu page.
@@ -24,8 +34,10 @@ To try one, copy it into `mods/` and allow code mods.
 
 ```
 mods/my-mod/
-  mod.json            {"name", "description", "enabled", "priority",
+  mod.json            {"name", "description", "enabled", "priority", "version", "author",
+                       "requires" (mods it can't work without), "uses" (mods it works with),
                        "studio_title" (nav label), "studio_files" (["my-settings.json"])}
+  menu.json           the in-game mod menu itself       -> only mods/mod-menu (see "WCModsMenu")
   files/Wrc/...       replacement game files            -> section "files"
   paks/<name>.pak     cooked content made with Unreal   -> installed as is, with its .utoc/.ucas
                       Engine 5.7 (see "New content")
@@ -37,6 +49,8 @@ mods/my-mod/
                                                            applied by `wcmods play`, keyboard and mouse)
   mouselook.json      mouse look settings               -> section "mouselook"
   save.json           save edits                        -> section "save"
+  scripts/main.lua    an in-game Lua script (code mod)  -> section "scripts" (docs/scripting.md)
+  settings.json       that script's settings            (MOD.settings; a mod menu page edits them)
   section.py          your own build step               (code mod)
   studio/section.js   your own studio page              (code mod)
 ```
@@ -70,6 +84,10 @@ the build report marks it FAILED, and the other sections carry on.
 |---|---|
 | `ctx.read_game_file(path)` | Bytes of any game file (pak or IoStore, Oodle handled), e.g. `"Wrc/Config/DefaultGame.ini"` |
 | `ctx.read_data_table("TuningData.csv")` | Text of a runtime CSV under `Gameplay/DataTables/NonAsset/` |
+| `ctx.table("AttackMove.csv")` | That table's rows as dicts (column -> text, plus `"key"`), as the game ships them |
+| `ctx.tuning(key)` / `ctx.tuning()` | A `TuningData.csv` value as a number, or all of them |
+| `ctx.tune({key: value}, source=mod.id)` | Change `TuningData` values (numbers or `"x1.5"`), merged with other mods' edits; warns about keys the table doesn't have |
+| `ctx.text("STR_ATTACK_QUICK_CLAW")` | A line of the game's English text (or `language="FR"`, …) |
 | `ctx.edit_csv(name, edits, source=mod.id)` | Queue cell edits (and row removals `"-"` / additions `"+"`, see `csvdata.py`); they merge with every other section's edits to the same table |
 | `ctx.add_file(path, data, source=mod.id)` | Add or replace a loose file in the mod pak |
 | `ctx.patch_package(path, data)` | Replace a cooked `.uasset` with patched bytes of the same layout (goes into the IoStore mod container) |
@@ -190,13 +208,16 @@ show its textures with the menu's `ui.image` and `WCModsDraw`'s `texture` option
 
 ## In-game scripts
 
-A mod's `section.py` can ship a UE4SS Lua script with `ctx.add_ue4ss_mod`. wcmods installs it into
-`ue4ss/Mods/<name>/` when UE4SS is present, registers it, and removes it on uninstall or when the
-mod is turned off. Next to it, every install puts five shared modules in `ue4ss/Mods/shared/`.
-Any UE4SS script can `require` them, wcmods' or one written by hand:
+The simplest in-game script is a mod's `scripts/main.lua`, with no Python at all
+([scripting.md](scripting.md#script-mods)). A mod's `section.py` can also ship a UE4SS Lua script with
+`ctx.add_ue4ss_mod`, for scripts written from the mod's settings at build time. wcmods installs either
+into `ue4ss/Mods/<name>/` when UE4SS is present, registers it, and removes it on uninstall or when the
+mod is turned off. Next to it, every install puts six shared modules in `ue4ss/Mods/shared/`. Any
+UE4SS script can `require` them, wcmods' or one written by hand:
 
 | Module | What it does |
 |---|---|
+| `WCModsGame` | The game itself: your cat's health, stamina, level and stats, items, the fresh-kill pile, time of day, quests, fights, the save, the game's managers and developer switches; timers, keys, events and hooks. See [scripting.md](scripting.md) |
 | `WCModsDraw` | Text and 2D shapes on screen: panels, buttons, debug text, markers on places in the world |
 | `WCModsMenu` | Pages in the mod menu (Insert): buttons, switches, sliders, drop-downs, text boxes, colours, images |
 | `WCModsView` | What the camera sees: its matrices, and world-to-screen positions |
@@ -339,22 +360,52 @@ by itself after a level change.
 
 ## `WCModsMenu`
 
-Insert opens the mod menu in game, and Insert or Escape closes it. (`"menu_key"` in `wcmods.json`
-picks another key: `INS`, `HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN` or `F1`-`F12` but F11.)
-While it's open, the menu has the keyboard and mouse, the cursor shows, and the game's controls
-wait; "Pause the game" stops the game too, and A- and A+ resize it (`"menu_scale"`, 1 by default).
+The mod menu is a mod of its own: **Mod menu**, `mods/mod-menu`, which comes with wcmods and starts
+on.
+- **While it's on:** a build puts in its window (`WCModsMenuHost`) and this module.
+- **While it's off:** there's neither, and `pcall(require, "WCModsMenu")` fails, so a script that
+  adds a page checks first:
 
-Its own pages come first:
-- **Installed mods:** each mod and what each part of the build set up.
-- **Nearby:** what's around your cat (`WCModsWorld`). Show any kinds at once, each in its own
-  colour, and mark them on screen.
-- **Cheats:** the engine's cheat manager, switched on and off live (`"cheats"` says whether it
-  starts on). It has god mode, fly and ghost, cat size, game speed, teleport and a console command
-  box. Flying and size are done by the menu itself, because the game undoes the engine's own `fly`,
-  `ghost` and `changesize`.
+```lua
+local okMenu, Menu = pcall(require, "WCModsMenu")
+if okMenu then Menu.page("My mod", function(ui) ... end) end
+```
 
-After those come pages added by scripts. wcmods' mouse look and your cat's colours have live
-settings with Save, and any script can add its own:
+- **A mod that only works with the menu** says so in its `mod.json`: `"requires": ["mod-menu"]`.
+  Turning it on then turns the menu on too, and a build leaves it out while the menu is off.
+- **A mod that only adds a page** says `"uses": ["mod-menu"]`, which the studio shows as "Page in
+  the mod menu". Mouse look and script mods with a `settings.json` show it without saying so.
+
+The menu's settings are in its `menu.json`, set on its card in Clan Mod Studio: `"key"` (`INS`,
+`HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN` or `F1`-`F12` but F11), `"size"` (0.6 to 2.2, 1 by
+default) and `"cheats"` (whether the Cheats page starts with cheats on). Older setups kept these in
+`wcmods.json` as `"menu_key"`, `"menu_scale"` and `"cheats"`. Those still count, and the first change
+in the studio moves them into `menu.json`.
+
+Insert opens the menu in game, and Insert or Escape closes it. While it's open, the menu has the
+keyboard and mouse, the cursor shows, and the game's controls wait. "Pause the game" stops the game
+too, and A- and A+ resize it.
+
+Under the title, a status line shows your cat (name, level, rank, health, stamina, clan), the time
+and the fresh-kill pile. The side bar lists the pages in groups:
+
+| Group | Pages |
+|---|---|
+| Home | **Overview** (your cat and the world at a glance, quick buttons, the keys scripts use), **Installed mods** (each mod and what each part of the build set up) |
+| Your cat | **Stats** (health, stamina, size, level, stats), **Colours**, **Mouse look** |
+| World | **World** (the clock, which can be held, and the fresh-kill pile), **Travel** (saved spots, checkpoints and areas, and Back), **Nearby** (what's around your cat, `WCModsWorld`), **Items** (what you carry, and an item to drop) |
+| Story | **Quests** (the one you follow and its objectives, with "Go to objective"; the rest by state) |
+| Fight | **Fight** (both sides during a fight) |
+| Cheats | **Cheats** (the engine's cheat manager), **Game switches** (the developers' own) |
+| Mods | Pages scripts add, and a script mod's settings page |
+| Tools | **Log** (UE4SS's log, newest first), **Menu** (its size, pausing, the status line), and with code mods allowed **Inspector** and **Console** |
+
+Cheats is the engine's cheat manager, switched on and off live (`"cheats"` says whether it starts
+on). It has god mode, fly and ghost, cat size, game speed, teleport and a console command box. Flying
+and size are done by the menu itself, because the game undoes the engine's own `fly`, `ghost` and
+`changesize`. The pages built on `WCModsGame` are in docs/scripting.md, "In the mod menu".
+
+wcmods' mouse look and your cat's colours have live settings with Save, and any script can add a page:
 
 ```lua
 local Menu = require("WCModsMenu")
@@ -371,7 +422,7 @@ Menu.page("My mod", function(ui)
         settings.count = ui.number("Count", settings.count or 3, { min = 0, max = 10, step = 1 })
     end, { open = false })
     if ui.button("Save", { kind = "primary" }) then Menu.saveJson(SAVE_PATH, settings) end
-end, { order = 40 })
+end, { group = "mods", order = 40 })
 ```
 
 While the menu shows a page, its function runs every frame. Each `ui` call is one row of the page,
@@ -386,6 +437,7 @@ change (more items, a section opened) rebuilds from the first row that differs. 
 |---|---|
 | `ui.heading(text)`, `ui.text(text, {size, color})`, `ui.note(text)` | A heading; wrapped text; smaller grey text |
 | `ui.field(label, value, {color})` | A name and its value, for showing settings |
+| `ui.columns({ {label, value, color}, ... })` | Several values side by side, each label small above its value |
 | `ui.separator()`, `ui.space(h)` | A line; some room |
 | `ui.button(label, {kind})` | A button; true the frame it's clicked. `kind`: `"primary"`, `"danger"`, `"good"` |
 | `ui.buttons(labels, {kinds})` | A row of buttons; the index of the one clicked, or nil |
@@ -394,15 +446,20 @@ change (more items, a section opened) rebuilds from the first row that differs. 
 | `ui.radio(label, value, options)` | One of a few options, as buttons; returns the chosen one |
 | `ui.choice(label, value, options)` | A drop-down list; returns the chosen option |
 | `ui.slider(label, value, lo, hi, {step, format, color})` | A slider with its value shown (`format` like `"%.2f"`); returns the value |
-| `ui.number(label, value, {min, max, step})` | A number box you can drag or type in; returns the number |
+| `ui.number(label, value, {min, max, step, whole})` | A number box you can drag or type in; returns the number (`whole`: whole numbers only, shown without decimals) |
 | `ui.input(label, value, {hint})` | A text box; returns its text |
 | `ui.color(label, "#rrggbb")` | A swatch with red, green and blue sliders; returns `"#rrggbb"` |
 | `ui.progress(label, fraction, {color, format})` | A bar from 0 to 1 |
 | `ui.image(texture, w, h, {color})` | A picture: a texture object or its path |
 | `ui.section(title, fn, {open, id})` | A part that opens and closes with a click on its title; `fn(ui)` draws what's inside |
 
-`Menu.page(title, fn, {order, id})` adds a page; `order` sorts the tabs (lower first; the menu's own
-are 0, 5 and 8, wcmods' scripts 20-30, 50 by default). `Menu.isOpen()` says whether the menu is open.
+`Menu.page(title, fn, {group, order, id})` adds a page. `group` puts it under one of the side bar's
+groups (`Menu.groups`: `home`, `cat`, `world`, `story`, `fight`, `cheats`, `mods`, `tools`; `mods` by
+default, and a group of its own comes after `mods`). `order` sorts it within the group (lower
+first, 50 by default). `Menu.isOpen()` says whether the menu is open, `Menu.open(page)` opens it (on
+a page, by title or id) and `Menu.close()` closes it, e.g. from a script's own key.
+`Menu.key("F6", "Mouse look on and off")` lists a key a script uses on the Overview page
+(`Game.onKey`'s fourth argument does the same).
 `Menu.saveJson(path, value)` writes a Lua value as JSON (keys sorted, notes like `"_help"` first)
 and returns true, or false and why; `Menu.list(t)` marks a table as a JSON list, so an empty one is
 written `[]`. `Menu.json(value)` gives the JSON text, `Menu.color(hex)` the linear colour the game's
@@ -411,8 +468,10 @@ UI wants, and `Menu.theme` the menu's colours.
 How it fits together: each UE4SS mod has a Lua state of its own, so the menu window belongs to a
 script wcmods installs with every build, `WCModsMenuHost`. It shares its content panel with the
 others through UE4SS's shared variables (`WCModsMenu.open`, `.page`, `.content`, `.tree`,
-`.generation`, `.pages`). The script that owns the page on show builds its rows straight into
-that panel, so a page always runs next to the settings it changes.
+`.generation`, `.pages`, `.keys`, `.request`). The script that owns the page on show builds its rows
+straight into that panel, so a page always runs next to the settings it changes. The same rows
+answer the agent controller (`wcmods agent menu ...`), which reads a page and uses its controls by
+label through `WCModsMenu.agent.*` (docs/agent.md, "The mod menu").
 
 ## `WCModsView`
 
@@ -529,6 +588,8 @@ API routes: `GET /info`, `GET|POST /mods`, `PATCH /mods/<id>`,
 `GET|PUT|DELETE /mods/<id>/file/<name>` (the built-in files plus the mod's `studio_files`),
 `POST /build`, `/install`, `/uninstall`, `/palettes/apply`, `GET /backups`, `POST /backup`,
 `/restore`, `GET|PATCH /ingame` (the game console, cheats at start, the mod menu's key and size),
+`GET /game/bridge` (whether the game runs with the bridge), `POST /game/lua` `{code}` and
+`/game/inspect` `{expr}` (run Lua in the game, or describe an object; code mods only),
 `GET /names`, `POST /names/preview`, `GET /cat`, `GET /game/eyes`, `/game/tables`,
 `/game/bindings`, `/game/data`, `/game/data/<table>`, `/save`.
 

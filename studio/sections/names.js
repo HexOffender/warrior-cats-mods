@@ -28,7 +28,7 @@ export default {
       el("div", { class: "section-head" },
         el("span", { class: "eyebrow", text: "Cat names" }),
         el("h1", { text: "Names" }),
-        el("p", { class: "note", text: "A clan cat's name is a prefix and a suffix (Otter + paw). Rename, add or remove either part, edit rogue names and the ban list, rename any name the game shows, or rename the cats in your save. Save to a mod, then install." })),
+        el("p", { class: "note", text: "A clan cat's name is a prefix and a suffix (Otter + paw). Rename, add or remove either part, edit rogue names and the ban list, rename any name the game shows, or rename the cats in your save. Save to a mod, then Apply to game." })),
       el("div", { class: "banner info" }, el("strong", { text: "What changes where" }),
         el("span", { text: "Renames change the English text. Added names show in every language, with their English text. Removing a name only stops the game handing it out: cats that already have it keep it. Cat renames go into your save on install, after a backup." })),
       target.element, notes, box.cats, box.prefixes, box.suffixes, box.rogues, box.names, box.banned, out.element);

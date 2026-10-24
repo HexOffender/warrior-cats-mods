@@ -24,6 +24,31 @@ export const api = {
   put: (p, b) => call("PUT", p, b),
   patch: (p, b) => call("PATCH", p, b),
   del: p => call("DELETE", p),
+  // Send a file as the request's body (a downloaded mod's .zip); the answer is JSON.
+  async upload(p, file) {
+    const res = await fetch("/api" + p, { method: "POST", headers: { "X-WC-Token": TOKEN, "Content-Type": "application/zip" }, body: file });
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* empty body */ }
+    if (!res.ok) throw new Error((data && data.error) || `${res.status} ${res.statusText}`);
+    return data;
+  },
+  // Fetch a file the API makes (a mod as a .zip) and hand it to the browser to save.
+  async download(p) {
+    const res = await fetch("/api" + p, { headers: { "X-WC-Token": TOKEN } });
+    if (!res.ok) {
+      let data = null;
+      try { data = await res.json(); } catch (e) { /* not JSON */ }
+      throw new Error((data && data.error) || `${res.status} ${res.statusText}`);
+    }
+    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "download";
+    const url = URL.createObjectURL(await res.blob());
+    const a = el("a", { href: url, download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return name;
+  },
 };
 
 // ---------- DOM ----------
@@ -198,9 +223,9 @@ export function modTarget({ file, defaultId, defaultName, onLoad, getValue }) {
       setDirty(false);
       if (existing && !existing.enabled) {
         await api.patch(`/mods/${encodeURIComponent(current)}`, { enabled: true });
-        toast(`Saved and turned on ${existing.name}. Install mods to apply it.`);
+        toast(`Saved and turned on ${existing.name}. Apply to game to use it.`);
       } else {
-        toast(`Saved ${file} in ${current}. Install mods to apply it.`);
+        toast(`Saved ${file} in ${current}. Apply to game to use it.`);
       }
       bus.emit("mods-changed");
       await refresh(current);

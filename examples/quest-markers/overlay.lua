@@ -84,6 +84,8 @@ end
 local SAVE = @SAVE@
 local okMenu, Menu = pcall(require, "WCModsMenu")
 if okMenu then
+    if SETTINGS.toggle_key ~= "" then Menu.key(SETTINGS.toggle_key, "Quest markers: show and hide") end
+    if SETTINGS.waypoint_key ~= "" then Menu.key(SETTINGS.waypoint_key, "Quest markers: add a step where your cat stands") end
     local status
     Menu.page("Quest markers", function(ui)
         ui.heading(SETTINGS.title)
@@ -110,7 +112,7 @@ if okMenu then
             status = ok and ("Saved to " .. SAVE.file .. "; install again to ship it.") or ("Couldn't save: " .. tostring(err))
         end
         if status then ui.note(status) end
-    end, { order = 30 })
+    end, { order = 30, group = "story" })
 end
 
 log("loaded: %s, %d step(s)", SETTINGS.title, #steps)

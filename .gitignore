@@ -5,6 +5,7 @@ wcmods.json
 # Generated from the installed game (game data, not ours to redistribute)
 vanilla/
 build/
+agent-output/
 colour_tables.json
 designer/game-data.js
 

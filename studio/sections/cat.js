@@ -30,7 +30,7 @@ export default {
       el("div", { class: "section-head" },
         el("span", { class: "eyebrow", text: "Your cat" }),
         el("h1", { text: "Your cat" }),
-        el("p", { class: "note", text: "Colours only your cat wears: other cats keep theirs. Save to a mod, then install." })),
+        el("p", { class: "note", text: "Colours only your cat wears: other cats keep theirs. Save to a mod, then Apply to game." })),
       el("div", { class: "banner info" }, el("strong", { text: "Two ways to colour your cat" }),
         el("span", { text: "Colours go onto your cat while you play (needs UE4SS), so any colour works, even for paws, ears and nose. Colour slots pick from the game's colours, plus new pattern and marking colours your palettes add; they go into your save on install, after a backup." })),
       target.element, coloursCard, slotsCard, out.element);
@@ -73,7 +73,7 @@ export default {
           inp, el("span", { class: "muted", text: p.note || "" }));
       });
       clear(coloursCard).append(el("h2", { text: "Colours" }),
-        el("p", { class: "note", text: "Tick a part to give your cat its own colour; unticked parts keep the game's. They show while you play, in menus and portraits, and go away if you uninstall." }),
+        el("p", { class: "note", text: "Tick a part to give your cat its own colour; unticked parts keep the game's. They show while you play, in menus and portraits, and go away if you turn the mod off." }),
         ...rows);
     }
 

@@ -216,7 +216,7 @@ export default {
         await api.patch(`/mods/${ML.id}`, { enabled });
         look.enabled = enabled;
         wc.bus.emit("mods-changed");
-        toast(`Mouse look ${enabled ? "on" : "off"}. Install mods to apply it.`);
+        toast(`Mouse look ${enabled ? "on" : "off"}. Apply to game to use it.`);
       } catch (e) { toast(e.message, "bad"); }
       renderMouse();
     }
@@ -379,7 +379,7 @@ export default {
       clear(live).append(el("h2", { text: "Using your remaps" }),
         el("ol", { style: { margin: "0", paddingLeft: "1.3em", display: "grid", gap: "6px" } },
           el("li", { text: "Save to a mod (top of this page)." }),
-          el("li", { text: "Install mods once (top right, game closed). That adds the small script that tells the remapper when you're playing; after that, key changes need no install." }),
+          el("li", { text: "Apply to game once (top right, game closed). That adds the small script that tells the remapper when you're playing; after that, key changes need no install." }),
           el("li", { text: "Start the game with python wcmods.py play. It stops by itself when the game closes. If the game is already open, use python wcmods.py remap." }),
           el("li", { text: "Your keys work while you play: the game in front and its cursor hidden. Menus and the name screen use only the \"In menus\" list, and other programs keep your normal keys. A key whose action moved stops doing it." }),
           el("li", { text: "Controller buttons: in Steam, right-click the game, then Properties, Controller, and remap them with Steam Input." })),

@@ -6,10 +6,11 @@ import re
 import shutil
 import struct
 
-from . import catlook, controls, draw, ingame, luacheck, menu, names, ue4ss, view, world
+from . import bridge, catlook, controls, draw, hostpages, ingame, luacheck, menu, names, ue4ss, view, world
+from . import game as game_lua   # WCModsGame (the name `game` is the game's files in build())
 from . import mods as modlib
 from .blake3 import blake3
-from .config import MOD_BASENAME, UE4SS_MOD_NAME, game_running
+from .config import MOD_BASENAME, UE4SS_MOD_NAME, Config, game_running
 from .gamefiles import GameFiles
 from .iostore import ModContainerWriter
 from .pak import PakReader, PakWriter
@@ -53,19 +54,26 @@ def remove_paks(folder):
                 gone.append(os.path.join(folder, name))
     return gone
 # Shared Lua modules installed with any build, for UE4SS scripts to require (docs/SDK.md, "Overlays").
-SHARED_LUA = (view, draw, world, menu)
+SHARED_LUA = (view, draw, world, menu, game_lua)
 
 
 def build(cfg, mods, out_dir, log=print):
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
     os.makedirs(out_dir)
-    enabled = [m for m in mods if m.enabled]
+    # A mod that needs another mod ("requires" in mod.json) which is missing or off is left out, and
+    # the report says why, so installing stops until that's sorted (or --force leaves it out).
+    unmet = modlib.unmet(mods)
+    enabled = [m for m in mods if m.enabled and m.id not in unmet]
     game = GameFiles(cfg)
-    sections, skipped = load_sections(cfg, mods, log)
+    sections, skipped = load_sections(cfg, [m for m in mods if m.id not in unmet], log)
     ctx = BuildContext(cfg, game, out_dir, log)
     ctx.mods = enabled   # the enabled mods, for sections that check another kind of file (cats.json and palettes)
     report = {}
+    if unmet:
+        report["requirements"] = {"title": "Mods that need other mods", "status": "failed", "mods": [],
+                                  "errors": [f"{i}: {why}" for i, whys in unmet.items() for why in whys],
+                                  "from_mod": None}
 
     for sec in sections:
         ctx.begin(sec.id)
@@ -149,15 +157,29 @@ def build(cfg, mods, out_dir, log=print):
                 manifest["outputs"].append(name + ext)
             manifest["paks"].append({"mod": m.id, "file": f"paks/{stem}", "installed_as": name})
             log(f"  {m.id}: paks/{stem} goes in as {name}")
-    # The in-game mod menu's window, with this build's overview on its first page.
-    key = cfg.data.get("menu_key", menu.DEFAULT_KEY)
-    if key not in menu.KEYS:
-        manifest["warnings"].append(f"menu_key {key!r} isn't one of {', '.join(menu.KEYS)}; using {menu.DEFAULT_KEY}")
-        key = menu.DEFAULT_KEY
-    host = menu.host_script(manifest, mods, key, cheats=bool(cfg.data.get("cheats", False)),
-                            scale=ingame.menu_scale(cfg))
-    manifest["warnings"] += [f"{menu.HOST_NAME}: {p}" for p in luacheck.check(host)[:3]]
-    ctx.ue4ss_mods[menu.HOST_NAME] = ({"Scripts/main.lua": host.encode(), "enabled.txt": b""}, None)
+    # The in-game mod menu is a mod of its own (mods/mod-menu, with its menu.json): its window and the
+    # WCModsMenu module go in only while it's on. Mods that add pages look for the module first, so
+    # without the menu they simply have none.
+    menus = [m for m in enabled if os.path.isfile(os.path.join(m.folder, ingame.MENU_FILE))]
+    menu_mod = menus[0] if menus else None
+    if len(menus) > 1:
+        manifest["warnings"].append(f"only one mod menu can be on; using {menu_mod.id} (also on: "
+                                    + ", ".join(m.id for m in menus[1:]) + ")")
+    manifest["menu"] = menu_mod.id if menu_mod else None
+    if menu_mod:
+        opts = ingame.menu_settings(cfg, menu_mod)
+        if not opts["key_ok"]:
+            manifest["warnings"].append(f"{menu_mod.id}: key {opts['key_given']!r} isn't one of {', '.join(menu.KEYS)}; "
+                                        f"using {menu.DEFAULT_KEY}")
+        # The pages show the game's own area names and quest titles, read here from its tables.
+        pages = hostpages.data(lambda path: game.read_text(path), cfg)
+        host = menu.host_script(manifest, mods, opts["key"], cheats=opts["cheats"], scale=opts["size"],
+                                dev=bool(cfg.data.get("allow_code_mods")), pages=pages)
+        manifest["warnings"] += [f"{menu.HOST_NAME}: {p}" for p in luacheck.check(host)[:3]]
+        ctx.ue4ss_mods[menu.HOST_NAME] = ({"Scripts/main.lua": host.encode(), "enabled.txt": b""}, None)
+    # The game bridge runs Lua that wcmods sends it, so it's code: only with code mods allowed.
+    if cfg.data.get("allow_code_mods"):
+        ctx.ue4ss_mods[bridge.NAME] = ({"Scripts/main.lua": bridge.script(cfg).encode(), "enabled.txt": b""}, None)
     for name, (files, _) in ctx.ue4ss_mods.items():
         for rel, data in files.items():
             dst = os.path.join(out_dir, "ue4ss", name, rel.replace("/", os.sep))
@@ -165,8 +187,9 @@ def build(cfg, mods, out_dir, log=print):
             with open(dst, "wb") as f:
                 f.write(data)
         manifest["ue4ss_mods"].append(name)
-    # Shared Lua modules go in whatever mods are on, for any UE4SS script to require.
-    shared_files = {m.SHARED_NAME: m.lua() for m in SHARED_LUA}
+    # Shared Lua modules go in whatever mods are on, for any UE4SS script to require (the menu's with
+    # the mod menu).
+    shared_files = {m.SHARED_NAME: m.lua() for m in SHARED_LUA if m is not menu or menu_mod}
     plan = None
     try:   # the cats' names, after the enabled name mods, for WCModsWorld's labels
         plan = names.Plan(names.GameNames(lambda path: game.read_text(BuildContext.data_path(path))),
@@ -184,6 +207,40 @@ def build(cfg, mods, out_dir, log=print):
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
     return manifest
+
+
+def _newest(folder):
+    newest = 0.0
+    for d, dirs, files in os.walk(folder):
+        dirs[:] = [x for x in dirs if x != "__pycache__"]
+        for f in files:
+            newest = max(newest, os.path.getmtime(os.path.join(d, f)))
+    return newest
+
+
+def pending(cfg, mods):
+    """How your mods differ from what's installed: {"installed" (ever), "on" and "off" (ids turned on or off
+    since), "changed" (on both times, with files changed since), "any"}. The studio's Apply button
+    shows it."""
+    # wcmods.json read afresh into a Config of its own: reloading the studio's would throw away what an
+    # install running at the same time has noted but not saved yet.
+    try:
+        data = Config(cfg.root).data
+    except (OSError, ValueError):   # being written this moment
+        data = cfg.data
+    now = {m.id for m in mods if m.enabled}
+    inst = data.get("installed")
+    if not inst:
+        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "any": bool(now)}
+    was = set(inst.get("mods", []))
+    try:
+        built = datetime.datetime.fromisoformat(inst.get("built", "")).timestamp()
+    except ValueError:
+        built = 0.0
+    changed = sorted(m.id for m in mods if m.enabled and m.id in was and _newest(m.folder) > built + 1)
+    out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed}
+    out["any"] = bool(out["on"] or out["off"] or out["changed"])
+    return out
 
 
 def apply_palettes(cfg, mods_root, ids, build_dir, backups_root, log=print, force=False):
@@ -246,6 +303,11 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
         for name in set(cfg.data.get("installed_ue4ss_shared", [])) - set(shared):
             ue4ss.remove_shared(mods_dir, name)
         cfg.data["installed_ue4ss_shared"] = shared
+        # Lua can't make folders, so the ones the scripts write to are made here: WCMods in the game's Saved
+        # folder (the menu's saved travel spots) and the bridge's inside it.
+        os.makedirs(os.path.dirname(hostpages.data(cfg=cfg)["places"]), exist_ok=True)
+        if bridge.NAME in manifest["ue4ss_mods"]:
+            os.makedirs(bridge.folder(cfg), exist_ok=True)
         ingame.apply_console(cfg)
     else:
         skipped = []
@@ -253,6 +315,8 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
             skipped.append("coat/pattern/marking/eye-button colours")
         if "mouselook" in manifest["notes"]:
             skipped.append("mouse look")
+        if manifest.get("menu"):
+            skipped.append("the mod menu")
         if skipped:
             log(f"  NOTE: {' and '.join(skipped)} need UE4SS, which isn't installed; skipped.")
 

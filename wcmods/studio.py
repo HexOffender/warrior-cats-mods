@@ -9,13 +9,16 @@ import os
 import re
 import secrets
 import socket
+import tempfile
 import threading
 import traceback
 import webbrowser
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
-from . import catlook, colors, controls, csvdata, eyeatlas, ingame, mods, names, palettes, pipeline, save, ue4ss
+from . import bridge, catlook, colors, controls, csvdata, eyeatlas, ingame, mods, modzip, names, palettes, pipeline, save, ue4ss
+from .bridge import Bridge, BridgeError
 from .colors import hex_from_linear
 from .config import game_running
 from .gamefiles import NONASSET
@@ -23,16 +26,30 @@ from .savejson import SaveDoc
 from .sdk import BuildContext
 from .sections.files import classify
 
-MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "names.json", "cats.json", "save.json")
+MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "names.json", "cats.json", "save.json",
+             "settings.json", "menu.json")
+MAX_UPLOAD = modzip.MAX_BYTES   # a downloaded mod's .zip
+# The side bar: "play" is installing and managing mods, "make" the pages for making your own.
 BUILTIN_SECTIONS = [
-    {"id": "mods", "title": "Mods", "module": "/studio/sections/mods.js"},
-    {"id": "palettes", "title": "Palettes", "module": "/studio/sections/palettes.js"},
-    {"id": "cat", "title": "Your cat", "module": "/studio/sections/cat.js"},
-    {"id": "controls", "title": "Controls", "module": "/studio/sections/controls.js"},
-    {"id": "names", "title": "Names", "module": "/studio/sections/names.js"},
-    {"id": "data", "title": "Game data", "module": "/studio/sections/data.js"},
-    {"id": "save", "title": "Save", "module": "/studio/sections/save.js"},
+    {"id": "mods", "title": "Mods", "module": "/studio/sections/mods.js", "group": "play"},
+    {"id": "palettes", "title": "Palettes", "module": "/studio/sections/palettes.js", "group": "make"},
+    {"id": "cat", "title": "Your cat", "module": "/studio/sections/cat.js", "group": "make"},
+    {"id": "controls", "title": "Controls", "module": "/studio/sections/controls.js", "group": "make"},
+    {"id": "names", "title": "Names", "module": "/studio/sections/names.js", "group": "make"},
+    {"id": "data", "title": "Game data", "module": "/studio/sections/data.js", "group": "make"},
+    {"id": "save", "title": "Save", "module": "/studio/sections/save.js", "group": "make"},
 ]
+# Pages for code mods: only with "allow_code_mods" (the console runs Lua in the game).
+CODE_SECTIONS = [
+    {"id": "console", "title": "Console", "module": "/studio/sections/console.js", "group": "make"},
+]
+
+
+class Download:
+    """An API answer that's a file to save (a mod as a .zip), not JSON."""
+
+    def __init__(self, data, filename, ctype="application/zip"):
+        self.data, self.filename, self.ctype = data, filename, ctype
 
 
 def code_stamp():
@@ -83,17 +100,21 @@ class Studio:
                                "code. Close the studio's window and open it again, then install.")
 
     # ---------- API ----------
-    def api(self, method, parts, body):
+    def api(self, method, parts, body, query=None, upload=None):
+        """One API call: `parts` is the path after /api/, `body` the JSON sent, `query` the URL's
+        parameters, `upload` the path of a file sent as the body (mods/add)."""
         cfg = self.ctx.cfg
         if method == "POST" and parts in (["build"], ["install"], ["uninstall"], ["palettes", "apply"]):
             self.need_current_code()
         if parts == ["info"]:
             sections = list(BUILTIN_SECTIONS)
             if cfg.data.get("allow_code_mods"):
+                sections += CODE_SECTIONS
                 for m in self.mods():
                     if m.enabled and os.path.isfile(os.path.join(m.folder, "studio", "section.js")):
                         sections.append({"id": f"mod-{m.id}", "title": m.meta.get("studio_title", m.name),
-                                         "module": f"/mods/{m.id}/studio/section.js", "from_mod": m.id})
+                                         "module": f"/mods/{m.id}/studio/section.js", "from_mod": m.id,
+                                         "group": "play"})
             return {"game_dir": cfg.game_dir, "save_found": os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)),
                     "oodle": bool(cfg.oodle_dll), "ue4ss": bool(cfg.ue4ss_mods_dir), "game_running": game_running(),
                     "installed": cfg.data.get("installed"), "install_outdated": pipeline.install_outdated(cfg),
@@ -103,11 +124,91 @@ class Studio:
         if parts == ["ingame"]:
             # The game's console, cheats at start and the mod menu's key (wcmods/ingame.py).
             if method == "PATCH":
-                return ingame.set_options(cfg, cheats=body.get("cheats"), console=body.get("console"),
-                                          menu_key=body.get("menu_key"), menu_scale=body.get("menu_scale"))
+                # set_options reloads and saves wcmods.json: not in the middle of an install, which would
+                # lose what the install has noted but not saved yet.
+                with self.lock:
+                    return ingame.set_options(cfg, cheats=body.get("cheats"), console=body.get("console"),
+                                              menu_key=body.get("menu_key"), menu_scale=body.get("menu_scale"))
             return ingame.options(cfg)
+        if parts == ["game", "bridge"] and method == "GET":
+            # Whether the game runs with the bridge (wcmods/bridge.py), for the console's status line.
+            return Bridge(cfg).status() or {"alive": False, "never": True}
+        if parts in (["game", "lua"], ["game", "inspect"]) and method == "POST":
+            if not cfg.data.get("allow_code_mods"):
+                raise PermissionError("the console runs code in the game; set \"allow_code_mods\": true in wcmods.json")
+            code = body.get("code", "") if parts[1] == "lua" else bridge.inspect_code(body.get("expr", ""), bool(body.get("all")))
+            try:
+                return Bridge(cfg).run(code, timeout=float(body.get("timeout", 15)))
+            except BridgeError as e:
+                raise RuntimeError(str(e)) from None
         if parts == ["mods"] and method == "GET":
-            return [m.to_dict() for m in self.mods()]
+            found = self.mods()
+            unmet = mods.unmet(found)
+            names = {m.id: m.name for m in found}
+            return [{**m.to_dict(), "problems": unmet.get(m.id, []),
+                     "needed_by": [names[i] for i in mods.needing(found, m.id)],
+                     "requires_names": [names.get(i, i) for i in m.requires]} for m in found]
+        if parts == ["changes"] and method == "GET":
+            found = self.mods()
+            p = pipeline.pending(cfg, found)
+            names = {m.id: m.name for m in found}
+            return {**p, "names": {i: names.get(i, i) for i in p["on"] + p["off"] + p["changed"]},
+                    "game_running": game_running()}
+        if len(parts) == 3 and parts[0] == "mods" and parts[2] == "switch" and method == "POST":
+            # On: with the mods it requires. Off: refused while mods that are on need it, unless cascade.
+            found = self.mods()
+            names = {m.id: m.name for m in found}
+            changed, blocked = mods.switch(found, parts[1], bool(body.get("on")), cascade=bool(body.get("cascade")))
+            return {"changed": [{"id": i, "name": names.get(i, i), "on": on} for i, on in changed],
+                    "blocked_by": [{"id": i, "name": names.get(i, i)} for i in blocked]}
+        if parts == ["mods", "add"] and method == "POST":
+            # A downloaded .zip (the request's body): ?step=preview says what's in it, ?step=add adds it.
+            if not upload:
+                raise ValueError("send the .zip as the request's body")
+            name = (query or {}).get("name") or "mod.zip"
+            if (query or {}).get("step") != "add":
+                return {"mods": modzip.inspect(upload, self.ctx.mods_root, name),
+                        "code_allowed": bool(cfg.data.get("allow_code_mods"))}
+            ids = [i for i in (query.get("ids") or "").split(",") if i] or None
+            with self.lock:
+                return {"added": modzip.add_zip(upload, self.ctx.mods_root, self.ctx.backups, ids=ids,
+                                                enable=query.get("enable", "1") == "1", name=name)}
+        if len(parts) == 3 and parts[0] == "mods" and parts[2] == "remove" and method == "POST":
+            # As with switching it off: while mods that are on need it, nothing changes and they're
+            # returned, unless cascade, which turns them off too.
+            with self.lock:
+                found = self.mods()
+                m = self.mod(parts[1])
+                names = {x.id: x.name for x in found}
+                need = mods.needing(found, m.id)
+                if need and not body.get("cascade"):
+                    return {"blocked_by": [{"id": i, "name": names.get(i, i)} for i in need]}
+                return {"moved_to": modzip.remove(m, self.ctx.backups, found, cascade=True),
+                        "turned_off": [names.get(i, i) for i in need], "blocked_by": []}
+        if parts == ["mods", "removed"] and method == "GET":
+            return modzip.removed(self.ctx.backups)
+        if parts == ["mods", "restore"] and method == "POST":
+            with self.lock:
+                return {"restored": modzip.restore(self.ctx.backups, body["name"], self.ctx.mods_root)}
+        if len(parts) == 3 and parts[0] == "mods" and parts[2] == "zip" and method == "GET":
+            m = self.mod(parts[1])
+            return Download(modzip.pack(m), modzip.zip_name(m))
+        if parts == ["open"] and method == "POST":
+            # Show a folder in Explorer: the mods folder, or one mod's.
+            folder = self.ctx.mods_root if body.get("what") == "mods" else self.mod(body.get("id", "")).folder
+            if not hasattr(os, "startfile"):
+                raise RuntimeError(f"open {folder} yourself (this only works on Windows)")
+            os.makedirs(folder, exist_ok=True)
+            os.startfile(folder)
+            return {"opened": folder}
+        if parts == ["settings"]:
+            # "Allow mods that run code" (wcmods.json "allow_code_mods"); the studio asks twice first.
+            if method == "PATCH" and "allow_code_mods" in body:
+                with self.lock:   # not in the middle of an install (see "ingame")
+                    cfg.reload()
+                    cfg.data["allow_code_mods"] = bool(body["allow_code_mods"])
+                    cfg.save()
+            return {"allow_code_mods": bool(cfg.data.get("allow_code_mods"))}
         if parts == ["mods"] and method == "POST":
             m = mods.create(self.ctx.mods_root, body["id"], body.get("name"), body.get("description", ""),
                             enabled=bool(body.get("enabled", False)), priority=int(body.get("priority", 0)))
@@ -273,11 +374,13 @@ def make_handler(studio, port):
         def log_message(self, fmt, *args):  # keep the console quiet
             pass
 
-        def _send(self, code, body, ctype="application/json; charset=utf-8"):
+        def _send(self, code, body, ctype="application/json; charset=utf-8", filename=None):
             data = body if isinstance(body, bytes) else json.dumps(body).encode()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
+            if filename:
+                self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
@@ -291,9 +394,27 @@ def make_handler(studio, port):
             if path.startswith("/api/"):
                 if self.headers.get("X-WC-Token") != studio.token:
                     return self._send(403, {"error": "missing or wrong studio token; reload the page"})
-                body = {}
+                body, upload = {}, None
                 length = int(self.headers.get("Content-Length") or 0)
-                if length:
+                ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+                if length and ctype in ("application/zip", "application/x-zip-compressed", "application/octet-stream"):
+                    # A file (a downloaded mod): saved to a temp file as it arrives, never held whole.
+                    if length > MAX_UPLOAD:
+                        return self._send(413, {"error": f"that file is over {MAX_UPLOAD // 1024 ** 3} GB"})
+                    fd, upload = tempfile.mkstemp(suffix=".zip", prefix="wcmods-upload-")
+                    try:
+                        with os.fdopen(fd, "wb") as f:
+                            left = length
+                            while left > 0:
+                                chunk = self.rfile.read(min(left, 1024 * 1024))
+                                if not chunk:
+                                    break
+                                f.write(chunk)
+                                left -= len(chunk)
+                    except BaseException:   # the page went away mid-upload: don't leave the part in %TEMP%
+                        os.remove(upload)
+                        raise
+                elif length:
                     try:
                         body = json.loads(self.rfile.read(length) or b"{}")
                     except (json.JSONDecodeError, UnicodeDecodeError) as e:
@@ -301,8 +422,14 @@ def make_handler(studio, port):
                     if not isinstance(body, dict):
                         return self._send(400, {"error": "request body must be a JSON object"})
                 parts = [p for p in path[5:].split("/") if p]
+                query = {k: v[-1] for k, v in parse_qs(url.query).items()}
                 try:
-                    return self._send(200, studio.api(method, parts, body))
+                    result = studio.api(method, parts, body, query, upload)
+                    if isinstance(result, Download):
+                        return self._send(200, result.data, result.ctype, filename=result.filename)
+                    return self._send(200, result)
+                except zipfile.BadZipFile:
+                    return self._send(400, {"error": "that isn't a .zip file (or it's damaged)"})
                 except LookupError as e:
                     return self._send(404, {"error": str(e)})
                 except PermissionError as e:
@@ -312,6 +439,9 @@ def make_handler(studio, port):
                 except Exception as e:
                     traceback.print_exc()
                     return self._send(500, {"error": f"{type(e).__name__}: {e}"})
+                finally:
+                    if upload:
+                        os.remove(upload)
             if method != "GET":
                 return self._send(405, {"error": "method not allowed"})
             if path in ("/", "/index.html"):
