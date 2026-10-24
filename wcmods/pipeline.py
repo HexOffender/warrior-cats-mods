@@ -5,7 +5,7 @@ import os
 import shutil
 import struct
 
-from . import controls, ue4ss
+from . import controls, names, ue4ss
 from . import mods as modlib
 from .blake3 import blake3
 from .config import MOD_BASENAME, UE4SS_MOD_NAME, game_running
@@ -190,6 +190,7 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
     # later (higher-priority) op replaces an earlier one, and whether anything changes is decided
     # against the save itself at flush time.
     pending = {}
+    labels = {}   # path -> how a name change reads in the log ("Otterpaw -> Mothpaw")
 
     def flush():
         if not pending:
@@ -210,7 +211,7 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                     done.append((p, v))
                 except Exception as e:
                     log(f"  save edit skipped ({p}): {e}")
-        changed.extend(f"{p}: {json.dumps(olds[p])} -> {json.dumps(v)}" for p, v in done)
+        changed.extend(labels.get(p) or f"{p}: {json.dumps(olds[p])} -> {json.dumps(v)}" for p, v in done)
 
     for op in ops:
         if op["op"] == "set":
@@ -220,6 +221,21 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                 log(f"  save edit skipped ({op.get('section')}): your save has no value at {op['path']}")
                 continue
             pending[op["path"]] = op["value"]
+            continue
+        if op["op"] == "name":
+            # A cat's name lives inside its save text: change just the name IDs, and only if the cat
+            # still has the name it had when the mods were built.
+            try:
+                current = pending[op["path"]] if op["path"] in pending else doc.get(op["path"])
+            except (KeyError, IndexError, ValueError, TypeError):
+                log(f"  name skipped ({op.get('from')}): your save has no cat at {op['path']}")
+                continue
+            new = names.rename_struct(current, op["set"], op["expect"]) if isinstance(current, str) else None
+            if new is None:
+                log(f"  name skipped ({op.get('from')}): that cat's name changed since the build; install again")
+            elif new != current:
+                pending[op["path"]] = new
+                labels[op["path"]] = f"name: {op.get('from')} -> {op.get('to')} ({op.get('where', op['path'])})"
             continue
         flush()
         try:

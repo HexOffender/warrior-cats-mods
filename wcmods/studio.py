@@ -14,18 +14,20 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
-from . import controls, csvdata, eyeatlas, mods, pipeline, save, ue4ss
+from . import controls, csvdata, eyeatlas, mods, names, pipeline, save, ue4ss
 from .colors import hex_from_linear
 from .config import game_running
 from .gamefiles import NONASSET
 from .savejson import SaveDoc
+from .sdk import BuildContext
 from .sections.files import classify
 
-MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "save.json")
+MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "names.json", "save.json")
 BUILTIN_SECTIONS = [
     {"id": "mods", "title": "Mods", "module": "/studio/sections/mods.js"},
     {"id": "palettes", "title": "Palettes", "module": "/studio/sections/palettes.js"},
     {"id": "controls", "title": "Controls", "module": "/studio/sections/controls.js"},
+    {"id": "names", "title": "Names", "module": "/studio/sections/names.js"},
     {"id": "data", "title": "Game data", "module": "/studio/sections/data.js"},
     {"id": "save", "title": "Save", "module": "/studio/sections/save.js"},
 ]
@@ -39,6 +41,7 @@ class Studio:
         self.token = secrets.token_urlsafe(24)
         self.lock = threading.Lock()
         self._eyes = None
+        self._names = None   # the game's name tables, read once
 
     # ---------- helpers ----------
     def mods(self):
@@ -158,7 +161,28 @@ class Studio:
             text, mtime = self.save_text()
             doc = SaveDoc(text)
             return {"account": doc.account, "data": doc.data, "save_time": mtime}
+        if parts == ["names"] and method == "GET":
+            return self.names_preview({})
+        if parts == ["names", "preview"] and method == "POST":
+            return self.names_preview(names.validate(body.get("spec") or {}))
         raise LookupError("unknown API route")
+
+    def names_preview(self, spec):
+        """The game's names, what a names.json (not yet saved) does to them, and the cats in the save."""
+        if self._names is None:
+            self._names = names.GameNames(lambda path: self.ctx.game.read_text(BuildContext.data_path(path)))
+        plan = names.Plan(self._names, names.merge([spec]))
+        try:
+            text, _ = self.save_text()
+            cats = names.cats_in_save(SaveDoc(text).data)
+        except LookupError:
+            cats = []
+        ops = plan.plan_cats(cats)
+        return {**self._names.summary(), "final": {"prefixes": [p["final"] for p in plan.prefixes],
+                                                   "suffixes": [s["final"] for s in plan.suffixes],
+                                                   "rogues": [r["final"] for r in plan.rogues]},
+                "cats": names.cat_list(plan, cats, ops), "renames": [{"from": a, "to": b} for a, b in plan.cat_renames],
+                "warnings": plan.warnings, "changed_texts": _changed_texts(plan.edits.get(names.strings_path("EN"), {}))}
 
     def eyes(self):
         if self._eyes is None:
@@ -172,6 +196,11 @@ class Studio:
         with self.lock:
             result = fn(lines.append)
         return {"log": lines, "result": result}
+
+
+def _changed_texts(edits):
+    """How many English texts a set of csvdata edits changes or adds (row operations aren't keys)."""
+    return sum(1 for k in edits if k not in ("+", "-")) + len(edits.get("+", []))
 
 
 def make_handler(studio, port):

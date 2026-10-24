@@ -23,6 +23,7 @@ Install mods (top right) builds everything and puts it in the game:
 | **Palettes** | eye, coat, pattern and marking colours on a live cat | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
 | **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | the key remapper while you play (`wcmods play`); see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert | `mouselook.json` | UE4SS script |
+| **Names** | rename, add and remove name prefixes, suffixes and rogue names; the ban list; cameo cats and any shown name; the cats in your save | `names.json` | edited tables and text in the mod pak; cat renames in your save, on install |
 | **Game data** | XP, costs, rewards, speeds and ~440 tuning values, in any runtime table | `data.json` | edited tables in the mod pak |
 | **Save** | level, XP, health, stamina, fresh-kill pile, stats, inventory, settings, anything else | `save.json` | your save, on install |
 
@@ -109,9 +110,9 @@ Install stops if any mod failed to build, because installing would remove that m
 changes. Fix or turn off the mod, or use `install --force` (the studio offers "Install the rest
 anyway") to install everything else.
 
-Also: `enable/disable <mod>`, `new <name> --kind palette|controls|files|data|save`, `eyes`,
-`tables`, `controls [--json]`, `files <pattern>`, `extract <pattern>`, `build`, `backup`,
-`restore [name|latest]`.
+Also: `enable/disable <mod>`, `new <name> --kind palette|controls|files|data|names|save`, `eyes`,
+`tables`, `names [--cats] [--json]`, `controls [--json]`, `files <pattern>`, `extract <pattern>`,
+`build`, `backup`, `restore [name|latest]`.
 
 ## How it's built
 
@@ -229,6 +230,53 @@ Known issues:
 { "CombatBaseExperience.csv": { "*": { "BaseExperience": "x2" } },
   "TuningData.csv": { "Gameplay.Exploration.Player.MoveAndRun.Run.Speed": 450 } }
 ```
+Rows are matched by their first column. `"-": ["53"]` removes rows and `"+": [{ "#": "91", ... }]`
+adds them (missing columns stay empty).
+
+### `names.json`
+```json
+{ "prefixes": { "rename": { "Otter": "Moth" }, "add": { "Sparrow": { "like": "Wren" } }, "remove": ["Pigeon"] },
+  "suffixes": { "rename": { "pelt": "coat" }, "add": { "whisper": {} }, "remove": ["face"] },
+  "rogues":   { "rename": { "Chesnut": "Chestnut" }, "add": ["Moss"], "remove": ["Fury"] },
+  "banned":   { "add": ["Lionheart"], "remove": ["Tigerstar"] },
+  "names":    { "Brightheart": "Brightfur" },
+  "cats":     { "player": "Mothheart", "Blaze": { "fixed": "Sparkle" }, "Cedarkit": { "prefix": "Glimmer" } } }
+```
+A clan cat's name is a prefix and a suffix (Otter + paw). The suffix changes with rank: kits are
+-kit, apprentices -paw, leaders -star. `python wcmods.py names` lists every part with your mods'
+changes, and `names --cats` lists the cats in your save. The **Names** page in the studio edits all
+of this. Names are matched by their English text (any case) or ID.
+
+- **`prefixes` / `suffixes`:**
+  - `rename` changes every name with that part: Otterpaw, Otterheart and the rest become Mothpaw,
+    Mothheart.
+  - `add` makes a new part that every combination exists for. `like` copies how often another part
+    is used (each clan for prefixes, each rank for suffixes) and how it's suggested on the name
+    screen. Without it, the new part gets the average.
+  - `remove` stops the game handing a part out; cats that already have it keep their names. The
+    kit, paw and star suffixes are kept, because kits, apprentices and leaders need them.
+  - `weights` sets how often one is used, e.g. `{ "Fern": { "ThunderClan": 0.07 } }`.
+- **`rogues`:** the whole names cats outside the clans get.
+- **`banned`:** names the game never hands out (mostly canon characters). `add` takes any prefix +
+  suffix the game can make, and `"clear": true` empties the list.
+- **`names`:** changes every text that's exactly this name, including the nine canon cameo cats.
+  Some cameo names are also clan names (Brightheart is Bright + heart), so both change. `text`
+  sets any of the game's text by key: `{ "STR_BOT_NAME_1": "..." }`.
+- **`cats`:** renames cats in your save on install, after a backup. Each key picks a cat: `player`,
+  its current name, or its place from `names --cats` (`RiverClan/Warrior/3`).
+  - A plain name must be a prefix + suffix the game can make, new ones included. Otherwise it's
+    used as a fixed name.
+  - `{ "prefix": "Glimmer" }` gives the cat its own prefix that grows with rank: Glimmerkit, then
+    Glimmerpaw.
+  - `{ "fixed": "Sparkle" }` never changes.
+
+  Story roles (`{THE AGING LEADER}` in dialogue) show the cat cast in them, so renaming that cat
+  renames the role. A cat is skipped if its name changed between building and installing.
+
+Renames change the English text only. The other languages translate names, and those translations
+stay. Added names and parts appear in every language with their English text. Added parts get IDs
+made from their name (`STR_CAT_NAME_WCM_SPARROW`), so saved cats keep their names whatever else
+your mods add.
 
 ### `save.json`
 ```json
@@ -284,6 +332,10 @@ Not yet confirmed in game:
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
 - **Game data tables in play.** They load from the same pak as the text, but no gameplay change has
   been checked on screen yet.
+- **Names beyond the text.** Renamed and added names reach the game's text table (Mothpaw,
+  Sparrowheart, Mothwhisper and the rogue Moss were read back in game). Still unchecked: new cats
+  getting added parts, removed parts and ban list changes; the name screen's suggestions; and cat
+  renames in a save (they're applied after a backup, so `restore latest` undoes them).
 
 After a game update, run `selftest` before installing again.
 

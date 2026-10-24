@@ -61,7 +61,7 @@ the build report marks it FAILED, and the other sections carry on.
 |---|---|
 | `ctx.read_game_file(path)` | Bytes of any game file (pak or IoStore, Oodle handled), e.g. `"Wrc/Config/DefaultGame.ini"` |
 | `ctx.read_data_table("TuningData.csv")` | Text of a runtime CSV under `Gameplay/DataTables/NonAsset/` |
-| `ctx.edit_csv(name, edits, source=mod.id)` | Queue cell edits; they merge with every other section's edits to the same table |
+| `ctx.edit_csv(name, edits, source=mod.id)` | Queue cell edits (and row removals `"-"` / additions `"+"`, see `csvdata.py`); they merge with every other section's edits to the same table |
 | `ctx.add_file(path, data, source=mod.id)` | Add or replace a loose file in the mod pak |
 | `ctx.patch_package(path, data)` | Replace a cooked `.uasset` with patched bytes of the same layout (goes into the IoStore mod container) |
 | `ctx.add_ue4ss_mod(name, {"Scripts/main.lua": text})` | Ship a UE4SS Lua mod; installed and registered only when UE4SS is present. `.lua` files get a structure check (balanced blocks and brackets) and problems become build warnings |

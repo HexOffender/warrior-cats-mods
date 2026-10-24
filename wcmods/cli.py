@@ -6,9 +6,10 @@ import shutil
 import sys
 import time
 
-from . import controls, eyeatlas, keymap, mods, pipeline, playstate, save, ue4ss
+from . import controls, eyeatlas, keymap, mods, names, pipeline, playstate, save, ue4ss
 from .config import EXE_NAME, STEAM_APP_ID, Config, game_running
 from .gamefiles import GameFiles
+from .savejson import SaveDoc
 
 
 class Ctx:
@@ -90,6 +91,47 @@ def cmd_extract(ctx, args):
         with open(dst, "wb") as f:
             f.write(ctx.game.read(p))
     print(f"extracted {len(hits)} file(s) into {out}")
+
+
+def cmd_names(ctx, args):
+    from .sdk import BuildContext
+    ctx.need_oodle()
+    game = names.GameNames(lambda path: ctx.game.read_text(BuildContext.data_path(path)))
+    plan = names.Plan(game, names.merge(names.mod_specs(mods.discover(ctx.mods_root))))
+    sav = os.path.join(ctx.cfg.save_dir, save.SAV_NAME)
+    cats = names.cats_in_save(SaveDoc(save.SaveGame.load(sav).json_text).data) if os.path.isfile(sav) else []
+    ops = plan.plan_cats(cats)
+    if args.json:
+        print(json.dumps({**game.summary(), "cats": names.cat_list(plan, cats, ops)}, indent=2))
+        return
+    if args.cats:
+        if not cats:
+            print("no save yet; start the game once")
+        for c in names.cat_list(plan, cats, ops):
+            now = c["name"] + (f" -> {c['with_mods']}" if c["with_mods"] != c["name"] else "")
+            roles = f"  (story role: {', '.join(c['roles'])})" if c["roles"] else ""
+            print(f"  {now:30s} {c['role']:16s} {c['target']}{roles}")
+        print('\nIn names.json, "cats" takes a cat by the name shown here, "player", or the last column.')
+        return
+
+    def show(title, items):
+        print(f"{title} ({len(items)}):")
+        line = " "
+        for word in items:
+            if len(line) + len(word) > 98:
+                print(line)
+                line = " "
+            line += " " + word
+        print(line)
+
+    show("prefixes", [p["final"] if p["final"] == p["text"] else f"{p['text']}->{p['final']}" for p in plan.prefixes])
+    show("suffixes", [s["final"] if s["final"] == s["text"] else f"{s['text']}->{s['final']}" for s in plan.suffixes])
+    show("rogue names", [r["final"] for r in plan.rogues])
+    show("cameo cats", [plan.final.get(k, v) for k, v in game.iconic.items()])
+    show("banned", [plan.final.get(b["prefix"] + b["suffix"]) or b["name"] for b in game.banned])
+    for w in plan.warnings:
+        print(f"warning: {w}")
+    print("\nnames --cats lists the cats in your save; names.json in a mod changes any of these (README, \"names.json\").")
 
 
 def cmd_eyes(ctx, args):
@@ -340,7 +382,7 @@ def main(root, argv=None):
         p.set_defaults(fn=lambda c, a, v=value: cmd_enable(c, a, v))
     p = sub.add_parser("new", help="create a mod from a template")
     p.add_argument("id")
-    p.add_argument("--kind", choices=("palette", "controls", "files", "data", "save"), default="palette")
+    p.add_argument("--kind", choices=("palette", "controls", "files", "data", "save", "names"), default="palette")
     p.set_defaults(fn=cmd_new)
     p = sub.add_parser("files", help="list game files matching a pattern, e.g. '*NPC/*.csv'")
     p.add_argument("pattern")
@@ -351,6 +393,10 @@ def main(root, argv=None):
     p.add_argument("--out", default="vanilla")
     p.set_defaults(fn=cmd_extract)
     sub.add_parser("eyes", help="list eye palette slots and their current colours").set_defaults(fn=cmd_eyes)
+    p = sub.add_parser("names", help="list the game's name parts, rogue names and ban list (with your mods' changes)")
+    p.add_argument("--cats", action="store_true", help="list the cats in your save and their names instead")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_names)
     p = sub.add_parser("palette", help="list the palette mods, or switch to some of them and install")
     p.add_argument("ids", nargs="*", help="palette mods to use; the other palette-only mods are turned off")
     p.add_argument("--none", action="store_true", help="turn every palette-only mod off (the game's colours)")

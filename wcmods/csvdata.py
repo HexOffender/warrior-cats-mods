@@ -7,6 +7,9 @@ Edits use the row key (first column) and the column name:
     {"Mice": {"BaseExperience": 50}}          set one cell
     {"Gameplay.X.Y": 2}                       key/value tables: sets the first value column
     {"*": {"BaseExperience": "x2"}}           every row; "x2" multiplies the original number
+    {"-": ["53"]}                             remove rows by key
+    {"+": [{"#": "91", "Preffix": "Moth"}]}   add rows at the end (missing columns stay empty)
+Removals run first, then cell edits, then additions.
 """
 import re
 
@@ -52,6 +55,22 @@ class Table:
             rec.quoted.append(False)
         rec.fields[col] = value
         rec.dirty = True
+
+    def append(self, fields):
+        """Add a row at the end in the file's own line ending (and keep a missing final newline missing)."""
+        fields = list(fields) + [""] * (len(self.header) - len(fields))
+        last = self.records[-1]
+        rec = Record(fields, [False] * len(fields), "", last.sep)
+        rec.dirty = True
+        last.sep = self.records[0].sep or "\n"
+        self.records.append(rec)
+        return rec
+
+    def remove(self, rec):
+        i = self.records.index(rec)
+        if i == len(self.records) - 1:
+            self.records[i - 1].sep = rec.sep   # the new last row ends the way the old one did
+        del self.records[i]
 
     def to_text(self):
         out = [self.prefix]
@@ -148,8 +167,15 @@ def apply_edits(text, edits):
     """Apply {row: value | {column: value}} edits. Returns (new_text, applied, problems)."""
     table = Table(text)
     applied, problems = [], []
+    for key in edits.get("-", []):
+        rows = table.find_rows(str(key)) if key != "*" else []
+        if not rows:
+            problems.append(f"no row '{key}' to remove")
+        for r in rows:
+            table.remove(r)
+            applied.append((str(key), "(row)", "present", "removed"))
     for key, spec in edits.items():
-        if str(key).startswith("_"):
+        if str(key).startswith("_") or key in ("+", "-"):
             continue
         rows = table.find_rows(str(key))
         if not rows:
@@ -175,4 +201,18 @@ def apply_edits(text, edits):
                 if new != old:
                     table.set(r, col, new)
                     applied.append((r.fields[0], table.header[col], old, new))
+    for row in edits.get("+", []):
+        key = str(row.get(table.header[0], ""))
+        if not key or table.find_rows(key):
+            problems.append(f"can't add row '{key}': " + ("it needs a key" if not key else "it already exists"))
+            continue
+        fields = [""] * len(table.header)
+        try:
+            for col_name, value in row.items():
+                fields[table.column(col_name)] = format_value("", value)
+        except (KeyError, ValueError) as e:
+            problems.append(f"can't add row '{key}': {e}")
+            continue
+        table.append(fields)
+        applied.append((key, "(row)", "", "added"))
     return table.to_text(), applied, problems

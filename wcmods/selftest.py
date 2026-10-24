@@ -31,6 +31,8 @@ def run(cfg, oodle, log=print):
     check("key remap plan", send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"} and not warns)
     check("key remapper presses", _remapper_presses())
     check("menu remaps", _menu_remaps())
+    check("CSV rows added and removed in the file's own style", _csv_rows())
+    check("cat rename inside save text", _rename_struct())
     check("palette switching", _palette_switching())
 
     base_pak = PakReader(os.path.join(cfg.paks_dir, "pakchunk0-Windows.pak"), oodle)
@@ -97,6 +99,9 @@ def run(cfg, oodle, log=print):
         doubled = all(int(b.fields[1]) == 2 * int(a.fields[1]) for a, b in zip(t0.rows, t1.rows))
         check("CSV edits (multiply + single cell)", doubled and not problems and t1.rows[0].fields[2] == "1"
               and len(new.splitlines()) == len(xp.splitlines()), f"{len(applied)} cells")
+        from .sdk import BuildContext
+        ok, detail = _names_plan(lambda p: base_pak.read(BuildContext.data_path(p)).decode("utf-8"))
+        check("names plan against the game's name tables", ok, detail)
 
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     if os.path.isfile(sav):
@@ -146,6 +151,76 @@ def run(cfg, oodle, log=print):
     else:
         log("  [skip] no save yet")
     return all(results)
+
+
+def _csv_rows():
+    """Row removal and addition keep every other byte, the line endings and a missing final newline."""
+    from . import csvdata
+    for text in ("#,Name,ID\r\n1,Wood,A\r\n2,Ember,B\r\n3,Berry,C", "#,Name,ID\r\n1,Wood,A\r\n2,Ember,B\r\n3,Berry,C\r\n"):
+        out, applied, problems = csvdata.apply_edits(text, {"-": ["2"], "+": [{"#": "4", "Name": "Moth, Sr", "ID": "D"}]})
+        end = "\r\n" if text.endswith("\r\n") else ""
+        want = '#,Name,ID\r\n1,Wood,A\r\n3,Berry,C\r\n4,"Moth, Sr",D' + end
+        if out != want or problems or len(applied) != 2:
+            return False
+    _, _, problems = csvdata.apply_edits("#,Name\n1,Wood\n", {"+": [{"#": "1", "Name": "Again"}], "-": ["9"]})
+    return len(problems) == 2
+
+
+def _rename_struct():
+    from . import names
+    text = '(ClanType=RiverClan,Role=Apprentice,PrefixNameId="STR_CAT_NAME65",CatSize=0.5)'
+    new = names.rename_struct(text, {"PrefixNameId": "STR_CAT_NAME53", "SuffixNameId": "_HEART"},
+                              {"PrefixNameId": "STR_CAT_NAME65"})
+    moved_on = names.rename_struct(text, {"PrefixNameId": "STR_CAT_NAME53"}, {"PrefixNameId": "STR_CAT_NAME1"})
+    return (new == '(ClanType=RiverClan,Role=Apprentice,PrefixNameId="STR_CAT_NAME53",SuffixNameId="_HEART",CatSize=0.5)'
+            and moved_on is None)
+
+
+def _names_plan(read_text):
+    """A names.json against the game's own tables: renames reach every name with that part, additions
+    get a text in every language, needed suffixes stay, and the ban list follows."""
+    from . import names
+    game = names.GameNames(read_text)
+    plan = names.Plan(game, names.merge([names.validate({
+        "prefixes": {"rename": {"Otter": "Moth"}, "add": {"Sparrow": {"like": "Wren"}}, "remove": ["Pigeon"]},
+        "suffixes": {"add": {"whisper": {}}, "remove": ["kit"]},
+        "rogues": {"add": ["Moss"]}, "banned": {"remove": ["Tigerstar"], "add": ["Mothheart"]}})]))
+    en = plan.edits[names.strings_path("EN")]
+    added = {r["Key"]: r["SourceString"] for r in en.get("+", [])}
+    de_added = {r["Key"] for r in plan.edits[names.strings_path("DE")].get("+", [])}
+    ok = (en.get("STR_CAT_NAME53_PAW", {}).get("SourceString") == "Mothpaw"
+          and added.get("STR_CAT_NAME_WCM_SPARROW_PAW") == "Sparrowpaw"
+          and added.get("STR_CAT_NAME53_WCM_WHISPER") == "Mothwhisper"
+          and added.get("STR_ROGUE_CAT_NAME_WCM_MOSS") == "Moss"
+          and set(added) <= de_added
+          and "STR_CAT_NAME27_FACE" not in added
+          and plan.edits[names.PREFIXES].get("-") == [p["row"] for p in game.prefixes if p["text"] == "Pigeon"]
+          and "-" not in plan.edits.get(names.SUFFIXES, {})
+          and any("only suffix for Kit" in w for w in plan.warnings)
+          and plan.edits[names.BANNED]["+"][0]["PrefixID"] == "STR_CAT_NAME53")
+
+    # Cats: a story role is a copy of a clan cat (renamed in both places); a place with "was" only
+    # counts while that cat still has that name; a cat that isn't there still gets its texts; and a
+    # rename already in the save needs nothing and warns about nothing.
+    cat = '(ClanType=RiverClan,Role=Warrior,PrefixNameId="{}",SuffixNameId="_HEART")'
+    data = {"0": {"GameplayProgression": {"Gameplay.Combat.Character.Cat.Player": {"Customization": cat.format("STR_CAT_NAME53")}},
+                  "NPCData": {"RiverClan": {"Warrior": [cat.format("STR_CAT_NAME1"), cat.format("STR_CAT_NAME2"),
+                                                        cat.format("STR_CAT_NAME_WCM_FIXED_GLOW")]},
+                              "NarrativeRoles": {"TheAgingLeader": cat.format("STR_CAT_NAME1")}}}}
+    cats = names.cats_in_save(data)
+    plan = names.Plan(game, names.merge([names.validate({"cats": {
+        "Woodheart": {"fixed": "Sparkle"}, "RiverClan/Warrior/1": {"name": "Mothheart", "was": "Someone"},
+        "Nobody": {"prefix": "Glimmer"}, "Was-glow": {"fixed": "Glow"}}})]))
+    ops = plan.plan_cats(cats)
+    texts = {**plan.added_keys}
+    ok_cats = (len(cats) == 4 and [len(c["paths"]) for c in cats if c["ids"]["PrefixNameId"] == "STR_CAT_NAME1"] == [2]
+               and sorted(o["where"] for o in ops) == ["NarrativeRoles/TheAgingLeader", "RiverClan/Warrior/0"]
+               and all(o["set"] == {"PrefixNameId": "STR_CAT_NAME_WCM_FIXED_SPARKLE"} for o in ops)
+               and texts.get("STR_CAT_NAME_WCM_FIXED_SPARKLE_PAW") == "Sparkle"
+               and texts.get("STR_CAT_NAME_WCM_GLIMMER_PAW") == "Glimmerpaw"
+               and [w for w in plan.warnings if w.startswith("cats:")] == [
+                   "cats: no cat in your save is called 'RiverClan/Warrior/1'", "cats: no cat in your save is called 'Nobody'"])
+    return ok and ok_cats, f"{len(game.prefixes)} prefixes, {len(game.suffixes)} suffixes, {len(added)} new texts"
 
 
 def _remapper_presses():
