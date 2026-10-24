@@ -4,6 +4,7 @@ import inspect
 import os
 
 from ..sdk import Section
+from .cats import CatsSection
 from .controls import ControlsSection
 from .data import DataSection
 from .files import FilesSection
@@ -13,7 +14,8 @@ from .palettes import PaletteSection
 from .savedit import SaveSection
 
 # Order matters only where outputs layer: replacement files first, CSV edits on top of them.
-BUILTIN = (FilesSection, DataSection, NamesSection, PaletteSection, ControlsSection, MouseLookSection, SaveSection)
+BUILTIN = (FilesSection, DataSection, NamesSection, PaletteSection, CatsSection, ControlsSection, MouseLookSection,
+           SaveSection)
 
 
 def load_sections(cfg, mods, log=print):

@@ -20,7 +20,8 @@ Install mods (top right) builds everything and puts it in the game:
 | Page | What you change | Stored as | Reaches the game through |
 |---|---|---|---|
 | **Mods** | turn mods on/off, priority, new mods, uninstall, save backups | `mod.json` | — |
-| **Palettes** | eye, coat, pattern and marking colours on a live cat | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
+| **Palettes** | eye, coat, pattern and marking colours on a live cat; new pattern and marking colours | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
+| **Your cat** | colours only your cat wears (coat, paws, ears, nose, whiskers); which colour slots it wears | `cats.json` | UE4SS script (colours); your save, on install (slots) |
 | **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | the key remapper while you play (`wcmods play`); see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert | `mouselook.json` | UE4SS script |
 | **Names** | rename, add and remove name prefixes, suffixes and rogue names; the ban list; cameo cats and any shown name; the cats in your save | `names.json` | edited tables and text in the mod pak; cat renames in your save, on install |
@@ -139,6 +140,21 @@ Eye keys are the game's slot names (`python wcmods.py eyes`). Some names don't m
 cat creator's eye buttons are recoloured to match. Coat, pattern and marking keys are slots 0–24
 (0–14 natural, 15–24 bright extras); `python wcmods.py tables` lists the game's originals.
 
+A recoloured slot changes every cat with that slot. To add colours instead, give **pattern** and
+**marking** colours slot numbers from 25 up:
+```json
+{ "pattern": { "25": "#ff00cc" }, "marking": { "25": "#00e5ff", "26": "#7cfc00" } }
+```
+The game's colours stay as they are, and only cats set to a new slot wear it (the Your cat page or
+`cats.json` picks it for your cat). Slot numbers are fixed, so several palettes can each add colours,
+and your cat keeps its colour whatever else you turn on. Quick palettes leave alone a palette that
+only adds slots. The game checks these indexes against the colour list's real size, so a new slot
+nobody adds just shows no colour, never a crash.
+
+Coat colours can't take new slots. The game pairs each of its coat colours with paw, ear, nose and
+whisker colours it keeps in its code, and a coat slot past 24 has none, which crashes it. To give
+just your cat a coat colour of its own, use `cats.json`'s `colours`.
+
 #### Ready-made palettes
 
 Ten themed palettes come as mods, all off to start: ThunderClan Forest, RiverClan Waters, ShadowClan
@@ -166,6 +182,20 @@ python wcmods.py palette --none                              # back to the game'
 `tools/make_palettes.py` generates them from the game's colours (`colour_tables.json` and the eye
 atlas). Edit its themes and run it again to change them. It keeps whether each one is on, its
 priority, and anything else you added to its `mod.json`.
+
+### `cats.json`
+```json
+{ "player": { "colours": { "fur": "#9fb6e0", "paws": "#ffb6c1", "ears": "#ff9aa6", "nose": "#ff7b9a", "whiskers": "#ffffff" },
+              "slots": { "fur": 11, "pattern": 25, "marking": 26 } } }
+```
+- **`colours`** go onto your cat's own materials while you play. That covers menus and portraits,
+  and every part is optional. No other cat changes, and any colour works, including paws, ears,
+  nose and whiskers, which have no slots at all. The game sets your cat's colours again whenever it
+  sets your cat up, so the UE4SS script (`WCModsCatLook`) puts yours back twice a second.
+  Uninstalling brings your saved colours back.
+- **`slots`** picks which colour slot your cat wears, written into your save on install, after a
+  backup: `fur` 0–24 (20–24 are the Feral Edition's, which the game swaps without it), `pattern`
+  and `marking` any slot, including new ones a palette adds. Leave a part out to keep your save's.
 
 ### `controls.json`
 ```json
@@ -316,6 +346,8 @@ Confirmed in game (2026-10-23):
   stores file names in the directory index as UTF-8 with no terminator (folder names keep theirs).
   Names written the older way read back with a trailing NUL, so the engine never matched them.
 - UE4SS runs, finds the colour tables on `BP_WrcGuiManager_C`, and its writes take effect.
+- Your cat's own colours (`cats.json`) show on your cat in the world, on the main menu, and in
+  thumbnails, which are taken again once your colours are on. Other cats keep theirs.
 - Mouse look turns and tilts the camera, gives the cursor back in menus, and toggles with F6
   (see its known issues above).
 - Edited saves load, and the game keeps the edits when it saves again; a Level change made with the
@@ -332,6 +364,9 @@ Not yet confirmed in game:
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
 - **Game data tables in play.** They load from the same pak as the text, but no gameplay change has
   been checked on screen yet.
+- **New pattern and marking slots on a cat.** The lists grow in game (slot 25 read back with its new
+  colour), and the game's code checks those indexes against the real list size, but no cat has been
+  seen wearing a new slot yet.
 - **Names beyond the text.** Renamed and added names reach the game's text table (Mothpaw,
   Sparrowheart, Mothwhisper and the rogue Moss were read back in game). Still unchecked: new cats
   getting added parts, removed parts and ban list changes; the name screen's suggestions; and cat

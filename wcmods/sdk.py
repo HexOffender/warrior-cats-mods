@@ -73,6 +73,7 @@ class BuildContext:
         self.warnings = []
         self.notes = {}
         self.current = None
+        self.mods = []          # the enabled mods in priority order (set by the build)
 
     # ---- logging ----
     def log(self, msg):
