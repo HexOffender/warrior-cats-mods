@@ -36,7 +36,8 @@ RANKS = ("Kit", "Apprentice", "Warrior", "Deputy", "Leader", "MedicineCat", "Que
          "RogueCatLeader", "StarClanAncestor")
 PLAYER_PATH = "0/GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization"
 SECTIONS = ("prefixes", "suffixes", "rogues", "banned", "names", "text", "cats")
-_FIELD = re.compile(r'(PrefixNameId|SuffixNameId)="([^"]*)"')
+# A whole field name: not the tail of a longer one (say, MotherPrefixNameId).
+_FIELD = re.compile(r'(?<![A-Za-z0-9_])(PrefixNameId|SuffixNameId)="([^"]*)"')
 
 
 def strings_path(lang):
@@ -149,9 +150,21 @@ def merge(specs):
     """names.json contents from several mods in priority order; later ones win name by name."""
     out = {"prefixes": {}, "suffixes": {}, "rogues": {}, "banned": {"add": [], "remove": [], "clear": False},
            "names": {}, "text": {}, "cats": {}}
+    def drop(items, names):
+        low = {str(n).lower() for n in names}
+        if isinstance(items, dict):
+            for k in [k for k in items if k.lower() in low]:
+                del items[k]
+        else:
+            items[:] = [x for x in items if str(x).lower() not in low]
+
     for spec in specs:
         for kind in ("prefixes", "suffixes", "rogues"):
-            for op, v in spec.get(kind, {}).items():
+            part = spec.get(kind, {})
+            # A later mod's add undoes an earlier removal of the same name, and its remove an earlier add.
+            drop(out[kind].get("remove", []), part.get("add", []))
+            drop(out[kind].get("add", {} if kind != "rogues" else []), part.get("remove", []))
+            for op, v in part.items():
                 cur = out[kind].setdefault(op, [] if isinstance(v, list) else {})
                 if isinstance(v, list):
                     cur += [x for x in v if x not in cur]
@@ -161,7 +174,11 @@ def merge(specs):
                 else:
                     cur.update(v)
         b = spec.get("banned", {})
+        if b.get("clear"):
+            out["banned"]["add"] = []
         out["banned"]["clear"] |= bool(b.get("clear"))
+        drop(out["banned"]["remove"], b.get("add", []))
+        drop(out["banned"]["add"], b.get("remove", []))
         for op in ("add", "remove"):
             out["banned"][op] += [x for x in b.get(op, []) if x not in out["banned"][op]]
         for kind in ("names", "text", "cats"):
@@ -226,6 +243,11 @@ class Plan:
         self._plan_combinations()
         self._plan_rogues(sp.get("rogues", {}))
         self._plan_banned(sp.get("banned", {}))
+        # Cats' own names need their texts in every build, whether or not the cat is in the save now
+        # (once renamed it no longer has its old name, and there may be no save at all).
+        self.renames = [(target, _norm(how)) for target, how in sp.get("cats", {}).items()]
+        for target, how in self.renames:
+            self._custom_texts(how, target)
         for old, new in sp.get("names", {}).items():
             keys = [k for k, v in self.final.items() if v == old]
             if not keys:
@@ -236,7 +258,6 @@ class Plan:
             if key not in self.final:
                 self.warnings.append(f"text: the game has no text '{key}'; added it")
             self._set_text(key, str(text))
-        self.renames = list(sp.get("cats", {}).items())
         self._finish_strings()
 
     def _plan_affixes(self, kind, items, table, looks, text_col, looks_col, weight_cols, weight_key, id_base, spec):
@@ -278,6 +299,10 @@ class Plan:
                 weights.update(Kit=0.0, Apprentice=0.0, Leader=0.0)   # those ranks have their own suffixes
             weights.update({c: float(v) for c, v in opts.get(weight_key, {}).items() if c in weight_cols})
             new_id = id_base + slug(name)
+            clash = [x for x in items if x["id"] == new_id]
+            if clash:
+                self.warnings.append(f"{kind}.add: '{name}' would share an ID with '{clash[0]['text']}'; skipped")
+                continue
             row = self._next_row(table)
             self._edit(table, add={"#": row, text_col: name, **weights,
                                    ("Preffix_ID" if kind == "prefixes" else "Suffix_ID"): new_id})
@@ -350,6 +375,10 @@ class Plan:
                 self.warnings.append(f"rogues.add: '{name}' is already a rogue name; skipped")
                 continue
             rid = "STR_ROGUE_CAT_NAME_WCM_" + slug(str(name))
+            clash = [r for r in rogues if r["id"] == rid]
+            if clash:
+                self.warnings.append(f"rogues.add: '{name}' would share an ID with '{clash[0]['final']}'; skipped")
+                continue
             self._edit(ROGUES, add={"#": self._next_row(ROGUES), "Name": str(name), "PrefixID": rid})
             self._set_text(rid, str(name))
             rogues.append({"row": None, "label": name, "id": rid, "text": name, "final": name})
@@ -374,6 +403,11 @@ class Plan:
             drop |= {b["row"] for b in hits}
         for row in sorted(drop, key=lambda r: (len(r), r)):
             self._edit(BANNED, remove=row)
+        for b in rows:   # the Name column is a label: keep it in step with parts this plan renames
+            key = b["prefix"] + b["suffix"]
+            shown = self.final.get(key)
+            if b["row"] not in drop and shown and shown != self.game.text.get(key):
+                self._edit(BANNED, b["row"], {"Name": shown})
         kept = {(b["prefix"], b["suffix"]) for b in rows if b["row"] not in drop}
         for name in spec.get("add", []):
             pairs = self.split(name)
@@ -398,18 +432,22 @@ class Plan:
 
     # ---- cats in the save ----
     def plan_cats(self, cats):
-        """cats: cats_in_save(). Returns save ops (one per copy of each renamed cat) and adds any strings
-        the new names need (call before reading self.edits). self.cat_renames lists (from, to) per cat."""
+        """cats: cats_in_save(). Returns save ops (one per copy of each renamed cat); self.cat_renames
+        lists (from, to) per cat. A cat that already has its new name needs nothing."""
         ops, self.cat_renames = [], []
         for target, how in self.renames:
-            hits = self._targets(target, cats)
+            hits = self._targets(target, how, cats)
             if not hits:
-                self.warnings.append(f"cats: no cat in your save is called '{target}'")
+                if not any(self._has(c, how) for c in cats):
+                    self.warnings.append(f"cats: no cat in your save is called '{target}'")
                 continue
+            if len(hits) > 1 and "/" not in target:
+                self.warnings.append(f"cats: {len(hits)} cats are called '{target}', and all of them are renamed; "
+                                     "use a cat's place from `names --cats` to pick one")
             for cat in hits:
                 ids = cat["ids"]
                 fields = self._new_ids(how, ids, target)
-                if not fields:
+                if not fields or self._has(cat, how):
                     continue
                 expect = {k: v for k, v in ids.items() if k in ("PrefixNameId", "SuffixNameId")}
                 before, after = self.display(ids, final=False), self._shown(fields, ids)
@@ -417,8 +455,11 @@ class Plan:
                 for path in cat["paths"]:
                     ops.append({"op": "name", "path": path, "set": fields, "expect": expect,
                                 "from": before, "to": after, "where": _where(path)})
-        self._finish_strings()
         return ops
+
+    def _has(self, cat, how):
+        fields = self._new_ids(how, cat["ids"], None)
+        return bool(fields) and all(cat["ids"].get(k, "") == v for k, v in fields.items())
 
     def display(self, ids, final=True):
         """The name a cat shows. A kit or apprentice whose save text leaves out the suffix shows its rank's."""
@@ -427,50 +468,89 @@ class Plan:
         text = self.final if final else self.game.text
         return text.get(key) or text.get(ids.get("PrefixNameId", ""), "")
 
-    def _targets(self, target, cats):
+    def _targets(self, target, how, cats):
+        """Cats a cats entry means. A place (RiverClan/Warrior/3) can shift as the game adds and removes
+        cats, so a place with "was" only counts while the cat there still has that name."""
         if target.lower() == "player":
             return [c for c in cats if PLAYER_PATH in c["paths"]]
         if "/" in target:
-            return [c for c in cats if any(p == target or p.endswith("/" + target) for p in c["paths"])]
-        low = target.lower()
-        return [c for c in cats if low in (self.display(c["ids"]).lower(), self.display(c["ids"], final=False).lower())]
+            hits = [c for c in cats if any(p == target or p.endswith("/" + target) for p in c["paths"])]
+            if how.get("was"):
+                hits = [c for c in hits if self._called(c, how["was"])]
+            return hits
+        return [c for c in cats if self._called(c, target)]
+
+    def _called(self, cat, name):
+        return name.lower() in (self.display(cat["ids"]).lower(), self.display(cat["ids"], final=False).lower())
 
     def _shown(self, fields, ids):
         return self.display({**ids, **fields})
 
     def _new_ids(self, how, ids, target):
-        if isinstance(how, str):
-            rogue = [r for r in self.rogues if r["final"].lower() == how.lower()]
+        """The name IDs a cats entry gives this cat. The texts they need come from _custom_texts."""
+        if how.get("name"):
+            name = str(how["name"])
+            rogue = [r for r in self.rogues if r["final"].lower() == name.lower()]
             if rogue and ids.get("PrefixNameId", "").startswith("STR_ROGUE_CAT_NAME"):
                 return {"PrefixNameId": rogue[0]["id"]}
-            pairs = self.split(how)
+            pairs = self.split(name)
             if pairs:
                 p, s = pairs[0]
                 return {"PrefixNameId": p["id"], "SuffixNameId": s["id"]}
-            how = {"fixed": how}
-        if not isinstance(how, dict) or not (how.get("prefix") or how.get("fixed")):
-            self.warnings.append(f"cats.{target}: give a name, {{\"prefix\": ...}} or {{\"fixed\": ...}}")
-            return None
+            return {"PrefixNameId": _fixed_id(name)}
         if how.get("prefix"):
+            known = [p for p in self.prefixes if p["final"].lower() == str(how["prefix"]).lower()]
+            return {"PrefixNameId": known[0]["id"] if known else _own_prefix_id(how["prefix"])}
+        if how.get("fixed"):
+            return {"PrefixNameId": _fixed_id(how["fixed"])}
+        if target is not None:
+            self.warnings.append(f"cats.{target}: give a name, {{\"prefix\": ...}} or {{\"fixed\": ...}}")
+        return None
+
+    def _custom_texts(self, how, target):
+        """Texts for names no table has: a cat's own prefix (it grows with rank), or a fixed name (also
+        what a whole name that isn't a prefix + suffix becomes)."""
+        fixed = how.get("fixed")
+        if how.get("name"):
+            name = str(how["name"])
+            if self.split(name) or any(r["final"].lower() == name.lower() for r in self.rogues):
+                return
+            fixed = name
+        elif how.get("prefix"):
             name = str(how["prefix"])
-            known = [p for p in self.prefixes if p["final"].lower() == name.lower()]
-            if known:
-                return {"PrefixNameId": known[0]["id"]}
-            pid = "STR_CAT_NAME_WCM_" + slug(name)   # a prefix only this cat has: not in the tables
-            self._set_text(pid, name)                # a rogue or loner shows it with no suffix
+            if any(p["final"].lower() == name.lower() for p in self.prefixes):
+                return
+            pid = _own_prefix_id(name)
+            self._set_text(pid, name)          # a rogue or loner shows it with no suffix
             for s in self.suffixes:
                 self._set_text(pid + s["id"], name + s["final"])
-            return {"PrefixNameId": pid}
-        name = str(how["fixed"])
-        pid = "STR_CAT_NAME_WCM_FIXED_" + slug(name)   # the same text whatever the suffix
-        self._set_text(pid, name)
-        for s in self.suffixes:
-            self._set_text(pid + s["id"], name)
-        return {"PrefixNameId": pid}
+            return
+        if fixed:
+            pid = _fixed_id(fixed)
+            self._set_text(pid, str(fixed))
+            for s in self.suffixes:
+                self._set_text(pid + s["id"], str(fixed))
+        elif not how.get("name") and not how.get("prefix"):
+            self.warnings.append(f"cats.{target}: give a name, {{\"prefix\": ...}} or {{\"fixed\": ...}}")
 
 
 _RANK_SUFFIX = {"Kit": "_KIT", "Apprentice": "_PAW"}
 _ROLE = re.compile(r"[(,]Role=(\w+)")
+
+
+def _norm(how):
+    """A cats entry as a dict: a plain string is a whole name."""
+    if isinstance(how, str):
+        return {"name": how}
+    return how if isinstance(how, dict) else {}
+
+
+def _own_prefix_id(name):
+    return "STR_CAT_NAME_WCM_" + slug(str(name))   # a prefix only that cat has: not in the tables
+
+
+def _fixed_id(name):
+    return "STR_CAT_NAME_WCM_FIXED_" + slug(str(name))   # the same text whatever the suffix
 
 
 def _average(items, col):
@@ -522,8 +602,10 @@ def rename_struct(text, fields, expect):
     if any(have.get(k, "") != v for k, v in expect.items()):
         return None
     for key, value in fields.items():
-        if f'{key}="' in text:
-            text = re.sub(rf'{key}="[^"]*"', lambda m: f'{key}="{value}"', text, count=1)
+        field = re.compile(rf'(?<![A-Za-z0-9_]){key}="[^"]*"')
+        if field.search(text):
+            text = field.sub(lambda m: f'{key}="{value}"', text, count=1)
         elif key == "SuffixNameId":
-            text = re.sub(r'(PrefixNameId="[^"]*")', lambda m: f'{m.group(1)},SuffixNameId="{value}"', text, count=1)
+            text = re.sub(r'((?<![A-Za-z0-9_])PrefixNameId="[^"]*")', lambda m: f'{m.group(1)},SuffixNameId="{value}"',
+                          text, count=1)
     return text

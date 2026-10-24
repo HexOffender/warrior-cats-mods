@@ -182,8 +182,7 @@ class Studio:
                                                    "suffixes": [s["final"] for s in plan.suffixes],
                                                    "rogues": [r["final"] for r in plan.rogues]},
                 "cats": names.cat_list(plan, cats, ops), "renames": [{"from": a, "to": b} for a, b in plan.cat_renames],
-                "warnings": plan.warnings, "changed_texts": sum(len([k for k in e if k not in "+-"]) + len(e.get("+", []))
-                                                              for t, e in plan.edits.items() if "Strings_EN" in t)}
+                "warnings": plan.warnings, "changed_texts": _changed_texts(plan.edits.get(names.strings_path("EN"), {}))}
 
     def eyes(self):
         if self._eyes is None:
@@ -197,6 +196,11 @@ class Studio:
         with self.lock:
             result = fn(lines.append)
         return {"log": lines, "result": result}
+
+
+def _changed_texts(edits):
+    """How many English texts a set of csvdata edits changes or adds (row operations aren't keys)."""
+    return sum(1 for k in edits if k not in ("+", "-")) + len(edits.get("+", []))
 
 
 def make_handler(studio, port):

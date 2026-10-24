@@ -198,7 +198,29 @@ def _names_plan(read_text):
           and "-" not in plan.edits.get(names.SUFFIXES, {})
           and any("only suffix for Kit" in w for w in plan.warnings)
           and plan.edits[names.BANNED]["+"][0]["PrefixID"] == "STR_CAT_NAME53")
-    return ok, f"{len(game.prefixes)} prefixes, {len(game.suffixes)} suffixes, {len(added)} new texts"
+
+    # Cats: a story role is a copy of a clan cat (renamed in both places); a place with "was" only
+    # counts while that cat still has that name; a cat that isn't there still gets its texts; and a
+    # rename already in the save needs nothing and warns about nothing.
+    cat = '(ClanType=RiverClan,Role=Warrior,PrefixNameId="{}",SuffixNameId="_HEART")'
+    data = {"0": {"GameplayProgression": {"Gameplay.Combat.Character.Cat.Player": {"Customization": cat.format("STR_CAT_NAME53")}},
+                  "NPCData": {"RiverClan": {"Warrior": [cat.format("STR_CAT_NAME1"), cat.format("STR_CAT_NAME2"),
+                                                        cat.format("STR_CAT_NAME_WCM_FIXED_GLOW")]},
+                              "NarrativeRoles": {"TheAgingLeader": cat.format("STR_CAT_NAME1")}}}}
+    cats = names.cats_in_save(data)
+    plan = names.Plan(game, names.merge([names.validate({"cats": {
+        "Woodheart": {"fixed": "Sparkle"}, "RiverClan/Warrior/1": {"name": "Mothheart", "was": "Someone"},
+        "Nobody": {"prefix": "Glimmer"}, "Was-glow": {"fixed": "Glow"}}})]))
+    ops = plan.plan_cats(cats)
+    texts = {**plan.added_keys}
+    ok_cats = (len(cats) == 4 and [len(c["paths"]) for c in cats if c["ids"]["PrefixNameId"] == "STR_CAT_NAME1"] == [2]
+               and sorted(o["where"] for o in ops) == ["NarrativeRoles/TheAgingLeader", "RiverClan/Warrior/0"]
+               and all(o["set"] == {"PrefixNameId": "STR_CAT_NAME_WCM_FIXED_SPARKLE"} for o in ops)
+               and texts.get("STR_CAT_NAME_WCM_FIXED_SPARKLE_PAW") == "Sparkle"
+               and texts.get("STR_CAT_NAME_WCM_GLIMMER_PAW") == "Glimmerpaw"
+               and [w for w in plan.warnings if w.startswith("cats:")] == [
+                   "cats: no cat in your save is called 'RiverClan/Warrior/1'", "cats: no cat in your save is called 'Nobody'"])
+    return ok and ok_cats, f"{len(game.prefixes)} prefixes, {len(game.suffixes)} suffixes, {len(added)} new texts"
 
 
 def _remapper_presses():

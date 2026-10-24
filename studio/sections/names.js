@@ -157,7 +157,7 @@ export default {
         return tr;
       });
       const added = s.add.map(n => el("span", { class: "chip good" }, el("span", { text: n }),
-        el("button", { class: "btn ghost small", text: "Ã—", "aria-label": `Remove ${n}`, onclick: () => { toggle(s.add, n, false); changed(); render(); } })));
+        el("button", { class: "btn ghost small", text: "×", "aria-label": `Remove ${n}`, onclick: () => { toggle(s.add, n, false); changed(); render(); } })));
       const name = el("input", { type: "text", placeholder: "Moss", "aria-label": "New rogue name", spellcheck: "false" });
       clear(box.rogues).append(el("h2", { text: "Rogue and loner names" }),
         el("p", { class: "note", text: "Cats outside the clans get one whole name from this list." }),
@@ -205,7 +205,7 @@ export default {
           onclick: () => { toggle(s.remove, b.name, !off); changed(); render(); } });
       });
       const added = s.add.map(n => el("span", { class: "chip warn" }, el("span", { text: n }),
-        el("button", { class: "btn ghost small", text: "Ã—", "aria-label": `Unban ${n}`, onclick: () => { toggle(s.add, n, false); changed(); render(); } })));
+        el("button", { class: "btn ghost small", text: "×", "aria-label": `Unban ${n}`, onclick: () => { toggle(s.add, n, false); changed(); render(); } })));
       const name = el("input", { type: "text", placeholder: "Lionheart", "aria-label": "Name to ban", spellcheck: "false" });
       clear(box.banned).append(el("h2", { text: "Ban list" }),
         el("p", { class: "note", text: "Names the game never hands out (mostly canon characters). Click one to allow it again. You can ban any prefix + suffix the game can make." }),
@@ -217,17 +217,23 @@ export default {
           } }), ...added));
     }
 
-    function catKey(c) { return c.target; }   // how names.json's "cats" names this cat: "player" or its place in the save
+    // How names.json's "cats" names this cat: "player", its name when no other cat has it, else its place
+    // in the save. A place can shift as cats come and go, so entries keyed by place also say "was".
+    function catKey(c) {
+      if (c.target === "player") return "player";
+      return game.cats.filter(o => o.name === c.name).length > 1 ? c.target : c.name;
+    }
     function renderCats() {
       if (!game.cats.length) {
         clear(box.cats).append(el("h2", { text: "Cats in your save" }), el("p", { class: "note", text: "No save yet; start the game once." }));
         return;
       }
+      const keys = new Set(game.cats.map(catKey));
       const rows = game.cats.map(c => {
         const key = catKey(c);
         const cur = spec.cats[key];
-        const mode = cur && typeof cur === "object" ? (cur.fixed ? "fixed" : "prefix") : "name";
-        const value = cur && typeof cur === "object" ? (cur.fixed || cur.prefix || "") : (cur || "");
+        const mode = cur && typeof cur === "object" ? (cur.fixed ? "fixed" : cur.prefix ? "prefix" : "name") : "name";
+        const value = cur && typeof cur === "object" ? (cur.fixed || cur.prefix || cur.name || "") : (cur || "");
         const text = el("input", { type: "text", value, placeholder: c.name, "aria-label": `New name for ${c.name}`, spellcheck: "false" });
         const kind = el("select", { "aria-label": `How ${c.name}'s new name works` },
           el("option", { value: "name", text: "whole name" }), el("option", { value: "prefix", text: "prefix (grows with rank)" }),
@@ -236,6 +242,7 @@ export default {
         const update = () => {
           const v = text.value.trim();
           if (!v) delete spec.cats[key];
+          else if (key.includes("/")) spec.cats[key] = { [kind.value]: v, was: c.name };
           else spec.cats[key] = kind.value === "name" ? v : { [kind.value]: v };
           changed();
         };
@@ -244,21 +251,32 @@ export default {
         afterCells.set(key, after);
         return el("tr", {},
           el("td", {}, el("strong", { text: c.name }), el("div", { class: "muted", style: { fontSize: "0.78rem" },
-            text: [c.where.replace(/\//g, " Â· "), c.roles.length ? `story role: ${c.roles.join(", ")}` : ""].filter(Boolean).join(" â€” ") })),
+            text: [c.where.replace(/\//g, " · "), c.roles.length ? `story role: ${c.roles.join(", ")}` : ""].filter(Boolean).join(" — ") })),
           el("td", { class: "muted", text: c.role.replace(/([a-z])([A-Z])/g, "$1 $2") }),
           el("td", {}, el("div", { class: "row" }, text, kind)), after);
+      });
+      // Entries for cats not listed under that key: renames already in the save (the cat has its new
+      // name now), or cats this save doesn't have. They stay in names.json until removed here.
+      const earlier = Object.keys(spec.cats).filter(k => !keys.has(k)).map(k => {
+        const v = spec.cats[k];
+        const to = typeof v === "object" ? (v.name || v.prefix || v.fixed) : v;
+        return el("span", { class: "chip" }, el("span", { text: `${k} → ${to}` }),
+          el("button", { class: "btn ghost small", text: "×", "aria-label": `Forget the rename of ${k}`,
+            onclick: () => { delete spec.cats[k]; changed(); render(); } }));
       });
       clear(box.cats).append(el("h2", { text: "Cats in your save" }),
         el("p", { class: "note", text: "Give any cat a new name. A whole name like Mothheart must be a prefix + suffix (new ones count); a prefix grows with rank (Sparkle: Sparklepaw, then Sparkleheart); a fixed name stays the same. Story roles show the cat cast in them." }),
         el("div", { class: "table-wrap" }, el("table", { class: "grid-table" },
           el("thead", {}, el("tr", {}, el("th", { text: "Cat" }), el("th", { text: "Rank" }), el("th", { text: "New name" }), el("th", { text: "After install" }))),
-          el("tbody", {}, ...rows))));
+          el("tbody", {}, ...rows))),
+        earlier.length ? el("div", { class: "row", style: { flexWrap: "wrap" } },
+          el("span", { class: "lbl", title: "Already in your save, or cats this save doesn't have. Keep them so their names keep working.", text: "Earlier renames" }), ...earlier) : null);
     }
 
     function renderNotes() {
       const w = view?.warnings || [], r = view?.renames || [];
       clear(notes).append(el("h2", { text: "What this does" }),
-        el("p", { class: "note", text: `${view?.changed_texts || 0} English names change or are added${r.length ? `; ${r.length} cat${r.length > 1 ? "s" : ""} renamed in your save: ${r.map(x => `${x.from} â†’ ${x.to}`).join(", ")}` : ""}.` }),
+        el("p", { class: "note", text: `${view?.changed_texts || 0} English names change or are added${r.length ? `; ${r.length} cat${r.length > 1 ? "s" : ""} renamed in your save: ${r.map(x => `${x.from} → ${x.to}`).join(", ")}` : ""}.` }),
         ...w.map(t => el("div", { class: "row" }, el("span", { class: "chip warn", text: "Check" }), el("span", { text: t }))));
     }
 

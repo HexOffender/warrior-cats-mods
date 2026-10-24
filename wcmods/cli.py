@@ -128,7 +128,7 @@ def cmd_names(ctx, args):
     show("suffixes", [s["final"] if s["final"] == s["text"] else f"{s['text']}->{s['final']}" for s in plan.suffixes])
     show("rogue names", [r["final"] for r in plan.rogues])
     show("cameo cats", [plan.final.get(k, v) for k, v in game.iconic.items()])
-    show("banned", [b["name"] for b in game.banned])
+    show("banned", [plan.final.get(b["prefix"] + b["suffix"]) or b["name"] for b in game.banned])
     for w in plan.warnings:
         print(f"warning: {w}")
     print("\nnames --cats lists the cats in your save; names.json in a mod changes any of these (README, \"names.json\").")

@@ -1,15 +1,15 @@
 {
   "_help": "Cat names. Names are matched by their English text (any case) or ID; `python wcmods.py names` lists them and `names --cats` lists the cats in your save. Removing a prefix or suffix only stops the game handing it out; cats that have it keep their names. See README, \"names.json\", for every option.",
-  "prefixes": {
-    "rename": { "Otter": "Moth" },
-    "add": { "Sparrow": { "like": "Wren" } },
-    "remove": []
+  "_example": {
+    "prefixes": { "rename": { "Otter": "Moth" }, "add": { "Sparrow": { "like": "Wren" } }, "remove": ["Pigeon"] },
+    "suffixes": { "rename": { "pelt": "coat" }, "add": { "whisper": {} } },
+    "rogues": { "rename": { "Chesnut": "Chestnut" }, "add": ["Moss"] },
+    "banned": { "remove": ["Tigerstar"] },
+    "names": { "Brightheart": "Brightfur" },
+    "cats": { "player": "Mothheart", "Blaze": { "fixed": "Sparkle" } }
   },
-  "suffixes": {
-    "rename": {},
-    "add": {},
-    "remove": []
-  },
+  "prefixes": { "rename": {}, "add": {}, "remove": [] },
+  "suffixes": { "rename": {}, "add": {}, "remove": [] },
   "rogues": { "rename": {}, "add": [], "remove": [] },
   "banned": { "add": [], "remove": [] },
   "names": {},
