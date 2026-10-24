@@ -6,6 +6,7 @@ A mod is a folder under mods/ with a mod.json and any of:
   controls.json       button remaps (sections/controls.py)
   mouselook.json      mouse look settings (sections/mouselook.py)
   data.json           gameplay data edits (sections/data.py)
+  names.json          cat names: prefixes, suffixes, rogues, the ban list, cats in your save (sections/names.py)
   save.json           save edits (sections/savedit.py)
   section.py          the mod's own section, written with wcmods.sdk (opt-in)
   studio/section.js   the mod's own studio page, written with studio/lib/wc.js (opt-in)
@@ -16,8 +17,8 @@ import os
 import re
 
 CONTENT = (("files", "files"), ("palette.json", "palette"), ("controls.json", "controls"),
-           ("mouselook.json", "mouse look"), ("data.json", "data"), ("save.json", "save"), ("section.py", "code"),
-           (os.path.join("studio", "section.js"), "studio page"))
+           ("mouselook.json", "mouse look"), ("data.json", "data"), ("names.json", "names"), ("save.json", "save"),
+           ("section.py", "code"), (os.path.join("studio", "section.js"), "studio page"))
 
 
 class Mod:
