@@ -111,16 +111,17 @@ def _window_class(hwnd):
 
 
 class Remapper:
-    """send: {key you press: game key}; block: game keys to hold back. Key names are Unreal names."""
+    """send: {key you press: game key} and block: game keys to hold back, both while you play;
+    menu_send: {key you press: game key} while a menu is open. Key names are Unreal names."""
 
     def __init__(self, send, block, exe_names, log=print, dry_run=False, in_menus=False, debug=False,
-                 state_file=None):
-        self.send, self.block = dict(send), set(block)
+                 state_file=None, menu_send=None):
+        self.send, self.block, self.menu_send = dict(send), set(block), dict(menu_send or {})
         self.exe = {n.lower() for n in exe_names}
         self.log, self.dry_run, self.in_menus, self.debug = log, dry_run, in_menus, debug
         self.state_file = state_file
         self.playing = None     # from the play-state file: True, False, or None when there's no file
-        self.held = {}          # key you're holding -> game key the remapper is holding for it
+        self.held = {}          # key you're holding -> (game key the remapper is holding, "play" or "menu")
         self.swallowed = set()  # blocked keys held down, so their release is held back too
         self.passed = set()     # remapped or blocked keys whose press reached the game unchanged
         self.used = set()       # remaps already reported once
@@ -167,11 +168,29 @@ class Remapper:
         if text in ("play", "menu"):
             self.playing = text == "play"
 
-    def active(self):
-        """The game is in front and, unless in_menus, you're playing rather than in a menu."""
+    def context(self):
+        """"play", "menu", or None when the game isn't in front. Without a play-state file the game
+        can't say, so it counts as play: the play remaps apply whenever the game is in front."""
         if not self._front_window()[4]:
-            return False
-        return self.in_menus or self.playing is not False
+            return None
+        return "menu" if self.playing is False else "play"
+
+    def _lookup(self, name):
+        """What a press of name does now: (game key to send or None, hold it back, context), or None
+        to let it through. In menus only the menu remaps apply, unless in_menus adds the play ones."""
+        where = self.context()
+        if where is None:
+            return None
+        if where == "menu":
+            if name in self.menu_send:
+                return self.menu_send[name], True, where
+            if not self.in_menus:
+                return None
+        if name in self.send:
+            return self.send[name], True, where
+        if name in self.block:
+            return None, True, where
+        return None
 
     def report_state(self):
         """Debug: log the window in front and the play state whenever they change. Called from the main loop."""
@@ -180,8 +199,11 @@ class Remapper:
         if state != self._last_state:
             self._last_state = state
             said = {True: "play", False: "menu", None: "no play-state file"}[self.playing]
-            self.log(f"  [debug] front: {exe or '?'} ({cls}) game={is_game}; game says: {said}; "
-                     f"remapping {'ON' if self.active() else 'off'}")
+            where = self.context()
+            using = {None: "off", "play": "play remaps", "menu": "menu remaps"}[where]
+            if where == "menu" and self.in_menus:
+                using = "menu and play remaps"
+            self.log(f"  [debug] front: {exe or '?'} ({cls}) game={is_game}; game says: {said}; using {using}")
 
     # ---- sending ----
     def _press(self, name, down):
@@ -192,21 +214,23 @@ class Remapper:
                                 dwExtraInfo=MAGIC)
         user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(INPUT))
 
-    def _report(self, source, target):
-        if source not in self.used:
-            self.used.add(source)
-            self._say(f"  {source} -> {target}" + (" (dry run: not sent)" if self.dry_run else ""))
+    def _report(self, source, target, where):
+        if (source, where) not in self.used:
+            self.used.add((source, where))
+            self._say(f"  {source} -> {target} ({'in menus' if where == 'menu' else 'playing'})"
+                      + (" (dry run: not sent)" if self.dry_run else ""))
 
     def handle(self, name, down):
         """One key or button event; returns True to hold it back from the game.
 
         A press finishes the way it started: one that began while remapping was off goes through
-        unchanged until it's released, and one the remapper took keeps going to the game key.
+        unchanged until it's released, and one the remapper took keeps going to the same game key,
+        even if a menu opens or closes meanwhile (Escape opening the pause menu releases as itself).
         """
         if not down:
-            target = self.held.pop(name, None)
-            if target is not None:
-                self._press(target, False)   # always, even if the game lost focus meanwhile
+            held = self.held.pop(name, None)
+            if held is not None:
+                self._press(held[0], False)   # always, even if the game lost focus meanwhile
                 return True
             if name in self.swallowed:
                 self.swallowed.discard(name)
@@ -214,49 +238,50 @@ class Remapper:
             self.passed.discard(name)
             return False
         if name in self.held:                # the key repeating while held
-            if self.active():                # no repeats into a menu or another program
-                self._press(self.held[name], True)
+            target, where = self.held[name]
+            if self.context() == where:      # no repeats into a menu, out of one, or into another program
+                self._press(target, True)
             return True
         if name in self.swallowed:
             return True
         if name in self.passed:
             return False
-        relevant = name in self.send or name in self.block
-        if not relevant:
+        if not (name in self.send or name in self.block or name in self.menu_send):
             return False
-        on = self.active()
+        found = self._lookup(name)
         if self.debug and self._debug_keys < 40:
             self._debug_keys += 1   # only the remapped keys are ever logged
-            self._say(f"  [debug] {name} pressed; remapping {'ON' if on else 'off'}")
-        if not on or self.dry_run:
-            if self.dry_run and on:
-                self._report(name, self.send.get(name, "nothing"))
+            self._say(f"  [debug] {name} pressed in {self.context() or 'another program'}; "
+                      f"{'remapped' if found else 'left alone'}")
+        if found is None or self.dry_run:
+            if found is not None:
+                self._report(name, found[0] or "nothing", found[2])
             self.passed.add(name)
             return False
-        target = self.send.get(name)
+        target, _, where = found
         if target is not None:
-            self._report(name, target)
-            self.held[name] = target
+            self._report(name, target, where)
+            self.held[name] = (target, where)
             self._press(target, True)
             return True
-        self._report(name, "nothing")
+        self._report(name, "nothing", where)
         self.swallowed.add(name)
         return True
 
     def tap(self, name):
         """A wheel notch: press and release the game key it stands for."""
-        target = self.send.get(name)
-        if target is None or not self.active():
+        found = self._lookup(name)
+        if found is None or found[0] is None:
             return False
-        self._report(name, target)
+        self._report(name, found[0], found[2])
         if self.dry_run:
             return False
-        self._press(target, True)
-        self._press(target, False)
+        self._press(found[0], True)
+        self._press(found[0], False)
         return True
 
     def release_all(self):
-        for target in self.held.values():
+        for target, _ in self.held.values():
             self._press(target, False)
         self.held.clear()
         self.swallowed.clear()
@@ -304,7 +329,7 @@ class Remapper:
     def _install(self):
         hmod = kernel32.GetModuleHandleW(None)
         wanted = [(WH_KEYBOARD_LL, self._on_key)]
-        if any(s in keymap.MOUSE for s in self.send):   # a mouse hook sees every movement; only when needed
+        if any(s in keymap.MOUSE for s in [*self.send, *self.menu_send]):   # a mouse hook sees every movement; only when needed
             wanted.append((WH_MOUSE_LL, self._on_mouse))
         for kind, fn in wanted:
             proc = HOOKPROC(lambda n, w, l, fn=fn: self._guard(fn, n, w, l))

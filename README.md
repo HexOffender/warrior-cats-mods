@@ -55,8 +55,9 @@ There are three ways around that:
    which it is. Windows can't, because the game draws its own cursor. Without that script, remaps
    apply whenever the game is in front. The remapper holds back the key you press and sends the
    game's key in its place, and it stops when the game closes.
-   Menus, the name screen and other programs keep your normal keys. A key whose action moved stops
-   doing it, unless another action still uses it. Mouse buttons and the wheel can stand in for keys.
+   Menus, the name screen and other programs keep your normal keys, except for the menu remaps you
+   set (the Controls page's "In menus" list). A key whose action moved stops doing it, unless another
+   action still uses it. Mouse buttons and the wheel can stand in for keys.
    Tested in game (2026-10-23) with movement on T/F/G/H. The new keys moved the cat, WASD did
    nothing while playing, and remapping switched off when another window was in front and on the
    title screen. The pause menu hasn't been checked yet.
@@ -168,16 +169,26 @@ priority, and anything else you added to its `mod.json`.
 ### `controls.json`
 ```json
 { "keyboard": { "Player_Interact": "F", "Player_Movement_Up": "K" },
-  "keys": { "I": "W" },
+  "keys": { "I": "W", "Escape": "P" },
+  "menus": { "keys": { "Escape": "BackSpace" } },
   "gamepad": { "Player_Run": "LT" } }
 ```
 
 - **`keyboard`** moves an action to a new key: here Interact goes from E to F. Actions are the game's;
   `python wcmods.py controls` lists them with their keys. The game's axis actions list only one
   direction, so `Player_Movement_Up` is the back key (S) and `Player_Camera_Right` is the left key.
-- **`keys`** maps a key you press straight to a game key. Use it for the keys no action lists: W, D,
-  Up and Right. Those move like actions, so `"T": "W"` makes T go forward and W stop. Mapped to any
-  other game key, it adds a second key for that job.
+- **`keys`** maps a key you press straight to a game key while you play. Use it for keys no action
+  lists: the built-in W, D, Up and Right, or any other key the game uses. `"T": "W"` makes T go
+  forward and W stop. The game key stops working on its own once something stands in for it, unless
+  an action still uses it (then it's a second key for that job). Enter, Space, Escape, Backspace
+  and Tab always keep working.
+- **`menus`** is a separate set of key pairs used only while the game shows a menu with its cursor
+  (the title screen is confirmed; check the pause menu and others with `play --debug`). Here `Escape`
+  opens the pause menu while playing (it sends P) and closes menus (it sends Backspace). In menus the
+  game's own keys keep working too. A letter, digit or Space used here also changes what you type on
+  the name screen, and the build warns about it. A press finishes as it started: the Escape that opens
+  the menu is released as P. Remapping Escape (or Enter, Space, Backspace, Tab) while playing means
+  prompts and dialogue shown during play don't get it; the build warns about that too.
 - **`gamepad`** is kept for planning. The remapper doesn't handle controllers; use Steam Input.
 
 Keys are Unreal key names. Controller buttons also take short names (A/B/X/Y, LB/RB, LT/RT,

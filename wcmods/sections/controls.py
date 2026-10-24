@@ -5,7 +5,7 @@ you're playing (playstate.py). See README, "Remapping keys"."""
 from .. import controls, keymap, playstate
 from ..sdk import Section
 
-DEVICES = ("keyboard", "gamepad", "keys")
+DEVICES = ("keyboard", "gamepad", "keys", "menus")
 
 
 class ControlsSection(Section):
@@ -23,6 +23,12 @@ class ControlsSection(Section):
                 raise ValueError(f"controls.json: '{device}' should be one of {', '.join(DEVICES)}")
             if not isinstance(mapping, dict):
                 raise ValueError(f"controls.json: '{device}' should be an object")
+            if device == "menus":
+                # {"keys": {key you press: game key}}; kept flat here so mods merge key by key.
+                extra = [k for k in mapping if k != "keys" and not k.startswith("_")]
+                if extra or not isinstance(mapping.get("keys", {}), dict):
+                    raise ValueError('controls.json: "menus" should look like {"keys": {"Escape": "BackSpace"}}')
+                mapping = mapping.get("keys", {})
             out[device] = {}
             for name, change in mapping.items():
                 if not name.startswith("_"):
@@ -34,9 +40,10 @@ class ControlsSection(Section):
         if not merged:
             return
         send, block, warnings = keymap.plan(merged)
-        for w in warnings:
+        menu_send, menu_warnings = keymap.menu_plan(merged)
+        for w in warnings + menu_warnings:
             ctx.warn(w)
-        if send or block:
+        if send or block or menu_send:
             # Lets the remapper tell play from menus (see playstate.py).
             path = playstate.state_path(ctx.cfg)
             if path:
@@ -45,7 +52,7 @@ class ControlsSection(Section):
                 ctx.warn("without UE4SS the key remapper can't tell menus from play, so it remaps whenever "
                          "the game is in front")
         ctx.note("controls", merged)
-        ctx.note("remaps", {"send": send, "block": sorted(block)})
+        ctx.note("remaps", {"send": send, "block": sorted(block), "menus": menu_send})
 
 
 def merge(datas):

@@ -147,15 +147,18 @@ def _remap_plan(ctx):
             data = sec.collect(m, None)
             if data:
                 datas.append(data)
-    return keymap.plan(merge(datas))
+    merged = merge(datas)
+    send, block, warnings = keymap.plan(merged)
+    menu_send, menu_warnings = keymap.menu_plan(merged)
+    return send, block, menu_send, warnings + menu_warnings
 
 
 def _run_remapper(ctx, args, launching=False):
     """launching: `play` has just asked Steam to start the game, so any play state on disk is old."""
-    send, block, warnings = _remap_plan(ctx)
+    send, block, menu_send, warnings = _remap_plan(ctx)
     for w in warnings:
         print(f"  warning: {w}")
-    if not send and not block:
+    if not send and not block and not menu_send:
         print("No keyboard or mouse remaps in the enabled mods' controls.json; nothing to do.")
         return
     state_file = playstate.state_path(ctx.cfg) if ctx.cfg.game_dir else None
@@ -163,18 +166,23 @@ def _run_remapper(ctx, args, launching=False):
     if not (script and os.path.isfile(script)):
         state_file = None
         print("  note: the play-state script isn't installed yet, so remaps apply whenever the game is in front,\n"
-              "        menus and the name screen too. Install mods once (game closed) to fix that.")
+              "        menus and the name screen too, and menu remaps can't apply. Install mods once (game closed).")
     elif launching and os.path.isfile(state_file):
         try:
             os.remove(state_file)   # last session's state; the script writes a fresh one as the game starts
         except OSError:
             pass
     when = "whenever the game is in front" if args.in_menus or not state_file else "while you play (game in front, not in a menu)"
-    print(f"remaps {when}:")
+    if send or block:
+        print(f"remaps {when}:")
     for src, dst in sorted(send.items()):
         print(f"  {src:18s} -> {dst}")
     for key in sorted(block):
         print(f"  {key:18s} -> nothing (its action moved)")
+    if menu_send:
+        print("in menus:")
+        for src, dst in sorted(menu_send.items()):
+            print(f"  {src:18s} -> {dst}")
     from .remapper import Remapper
     state = {"seen": game_running(), "checked": time.monotonic(), "started": time.monotonic(), "nagged": False}
 
@@ -197,7 +205,7 @@ def _run_remapper(ctx, args, launching=False):
     print("waiting for the game..." if not state["seen"] else "the game is running.", "Ctrl+C stops the remapper.")
     try:
         Remapper(send, block, (EXE_NAME,), dry_run=args.dry_run, in_menus=args.in_menus,
-                 debug=args.debug, state_file=state_file).run(should_stop)
+                 debug=args.debug, state_file=state_file, menu_send=menu_send).run(should_stop)
     except KeyboardInterrupt:
         print("remapper stopped")
     except OSError as e:
