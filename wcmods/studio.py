@@ -102,6 +102,19 @@ class Studio:
                 if os.path.isfile(path):
                     os.remove(path)
                 return {"deleted": name}
+        if parts == ["palettes", "apply"] and method == "POST":
+            ids = body.get("ids") or []
+            if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+                raise ValueError("ids should be a list of palette mod names")
+            on, off = mods.choose_palettes(self.mods(), ids)
+            if not body.get("install"):
+                return {"on": on, "off": off}
+
+            def go(log):
+                log(f"palettes on: {', '.join(on) or 'none (the game colours)'}")
+                pipeline.build(cfg, self.mods(), self.ctx.build_dir, log)
+                return pipeline.install(cfg, self.ctx.build_dir, self.ctx.backups, log)
+            return self.run(go)
         if parts == ["build"] and method == "POST":
             return self.run(lambda log: pipeline.build(cfg, self.mods(), self.ctx.build_dir, log))
         if parts == ["install"] and method == "POST":

@@ -115,6 +115,26 @@ def cmd_controls(ctx, args):
             print(f"  {action:24s} {key}")
 
 
+def cmd_palette(ctx, args):
+    found = mods.discover(ctx.mods_root)
+    presets = [m for m in found if mods.palette_only(m)]
+    if not args.ids and not args.none:
+        print("palette mods ([x] = on; several can be on, and the higher priority wins where they overlap):")
+        for m in presets:
+            print(f"  [{'x' if m.enabled else ' '}] {m.id:30s} {m.description}")
+        print("\nrun `wcmods palette <name> [<name>...]` to use those, or `wcmods palette --none` for the game's colours")
+        return
+    on, _ = mods.choose_palettes(found, [] if args.none else args.ids)
+    print(f"palettes on: {', '.join(on) or 'none (the game colours)'}")
+    if args.no_install:
+        print("not installed yet: run `wcmods install` with the game closed")
+        return
+    if game_running():
+        print("the game is running: close it, then run `wcmods install` to apply")
+        return
+    cmd_install(ctx, argparse.Namespace(force=False))
+
+
 def _remap_plan(ctx):
     from .sections.controls import ControlsSection, merge
     sec, datas = ControlsSection(), []
@@ -317,6 +337,11 @@ def main(root, argv=None):
     p.add_argument("--out", default="vanilla")
     p.set_defaults(fn=cmd_extract)
     sub.add_parser("eyes", help="list eye palette slots and their current colours").set_defaults(fn=cmd_eyes)
+    p = sub.add_parser("palette", help="list the palette mods, or switch to some of them and install")
+    p.add_argument("ids", nargs="*", help="palette mods to use; the other palette-only mods are turned off")
+    p.add_argument("--none", action="store_true", help="turn every palette-only mod off (the game's colours)")
+    p.add_argument("--no-install", action="store_true", help="only switch the mods; install later")
+    p.set_defaults(fn=cmd_palette)
     p = sub.add_parser("controls", help="show the key/button bindings stored in your save")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_controls)

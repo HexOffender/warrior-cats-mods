@@ -129,6 +129,28 @@ Eye keys are the game's slot names (`python wcmods.py eyes`). Some names don't m
 cat creator's eye buttons are recoloured to match. Coat, pattern and marking keys are slots 0–24
 (0–14 natural, 15–24 bright extras); `python wcmods.py tables` lists the game's originals.
 
+#### Ready-made palettes
+
+Ten themed palettes come as mods, all off to start: ThunderClan Forest, RiverClan Waters, ShadowClan
+Night, WindClan Moor, SkyClan Sunset, StarClan Silverpelt, Dark Forest, Leaf-bare Frost, Pastel Kits
+and Vivid Clans (`mods/palette-*`). Each one recolours coats, patterns, markings and eyes. The
+natural coats are a colour grade of the game's own, so every slot keeps its place from light to dark;
+the bright extras and the eyes get the theme's own colours.
+
+To switch quickly, tick palettes under **Quick palettes** on the Palettes page and press **Apply**,
+with the game closed. That turns the ticked palettes on, turns the other palette-only mods off, and
+installs. Mods that hold anything besides a palette are never touched. From the command line:
+
+```
+python wcmods.py palette                                  # list the palette mods and which are on
+python wcmods.py palette palette-starclan-silverpelt      # use just that one, and install
+python wcmods.py palette palette-dark-forest gemstone-eyes   # combine (higher priority wins per slot)
+python wcmods.py palette --none                           # back to the game's colours
+```
+
+`tools/make_palettes.py` generates them from the game's colours (`colour_tables.json` and the eye
+atlas). Edit its themes and run it again to change them; it keeps whether each one is on.
+
 ### `controls.json`
 ```json
 { "keyboard": { "Player_Interact": "F", "Player_Movement_Up": "K" },

@@ -106,7 +106,7 @@ async function runTask(path, title, body = {}) {
 }
 document.getElementById("buildBtn").addEventListener("click", () => runTask("/build", "Check build"));
 document.getElementById("installBtn").addEventListener("click", () => runTask("/install", "Install mods"));
-bus.on("run-task", ({ path, title }) => runTask(path, title));
+bus.on("run-task", ({ path, title, body }) => runTask(path, title, body));
 bus.on("mods-changed", () => refreshStatus());
 
 // ---------- boot ----------
