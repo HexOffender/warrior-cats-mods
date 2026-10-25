@@ -692,7 +692,7 @@ def cmd_cpp(ctx, args):
             print("ready: `python wcmods.py cpp build` builds your mods' cpp/ folders")
         return
     if args.action == "build":
-        built = cppmods.build(root, ctx.cfg, cppmods.cpp_mods(mods.discover(ctx.mods_root), args.mods))
+        built = cppmods.build(root, ctx.cfg, cppmods.cpp_mods(mods.discover(ctx.mods_root), args.mods, root=root))
         print(f"built {len(built)} C++ mod(s); install (or press Play in Clan Mod Studio) to put them in the game")
         return
     st = cppmods.status(root, ctx.cfg)

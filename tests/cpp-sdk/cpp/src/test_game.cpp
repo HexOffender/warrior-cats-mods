@@ -246,6 +246,10 @@ namespace t
             value("writes.fresh_kill.before", *fk.value);
             *fk.value = *fk.max > 10 ? *fk.max - 10 : *fk.max;
             expect("writes.fresh_kill_pointer", *fresh_kill().value == *fk.value);
+            // The decay timer back to the start of its period, so the pile can't drop before Lua reads it.
+            FreshKillDecay decay = fresh_kill_decay();
+            if (decay) *decay.elapsed = 0;
+            expect("writes.fresh_kill_decay_pointer", decay && *fresh_kill_decay().elapsed < 1);
             value("writes.fresh_kill.after", *fk.value);
         }
 

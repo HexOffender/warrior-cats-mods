@@ -68,9 +68,9 @@ namespace t
                 expect("json.parse.others", j["a"][4].boolean() && j["a"][5].is_null() && j["b"]["c"].is_object()
                                                && j["b"]["c"].size() == 0 && j["d"].is_array() && j["d"].size() == 0);
                 expect("json.parse.escapes", j["a"][6].string() == "s\"q\\\n\xC3\xA9\xF0\x9F\x90\xB1", j["a"][6].string());
-                expect("json.dump.one_line", j.dump(0) == R"({"a":[1,2.5,-3,1000,true,null,"s\"q\\\né🐱"],"b":{"c":{}},"d":[]})"
-                                                 || j.dump(0) == R"({"a":[1,2.5,-3,1000,true,null,"s\"q\\\n)" "\xC3\xA9\xF0\x9F\x90\xB1" R"("],"b":{"c":{}},"d":[]})",
-                      j.dump(0));
+                // dump() escapes quotes, backslashes and control characters, and writes the rest as UTF-8.
+                expect("json.dump.one_line", j.dump(0) == R"({"a":[1,2.5,-3,1000,true,null,"s\"q\\\n)" "\xC3\xA9\xF0\x9F\x90\xB1" R"("],"b":{"c":{}},"d":[]})",
+                       j.dump(0));
                 auto again = Json::parse(j.dump(2));
                 expect("json.round_trip", again && again->dump(0) == j.dump(0));
                 expect("json.dump.indented", j.dump(2).starts_with("{\n  \"a\": [\n    1,"), j.dump(2).substr(0, 20));

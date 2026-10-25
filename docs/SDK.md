@@ -862,11 +862,13 @@ good for the frame you got it in: look it up again next time rather than keeping
 | `wcmods::on_level(fn)` | `fn(level name)` once a level has loaded |
 | `wcmods::on_function(STR("/Script/Wrc.GuiHudWrc:OnItemPickedUp"), fn)`, `after_function(...)`, `unhook(id)` | `fn(call)` just before, or just after, the game runs one of its functions, by its full path. `call.self()` is the object, `call.params<Params>()` its parameters as a struct laid out like them (changed before the call, they change what the game does), `call.set_return(v)` its result. 0 and a line in the log when there's no such function |
 
-Hooks see a function only when the game runs it through the engine's own event path: Blueprint
-functions and events, and native functions marked as events or RPCs (`ClientRestart`,
-`OnItemPickedUp`). Native code calling native code directly is never seen, and a hook on a plain native
-function that Blueprints call, such as `K2_GetActorLocation`, closed the game as the forest loaded when
-it was tried. Stay with events.
+Hooks see a function only when it's called through the engine: by a Blueprint, as an event or RPC
+(`ClientRestart`, `OnItemPickedUp`), or by `wcmods::call`. Native code calling native code directly is
+never seen. What's been tried: hooks on events, and on a native function only the mod itself calls
+(`KismetSystemLibrary:GetConsoleVariableFloatValue`, with `set_return`), work; a hook on
+`Actor:K2_GetActorLocation`, a native function Blueprints call many times a frame, whose callback
+also unhooked itself, closed the game as the forest loaded. Until that's understood, hook events and
+functions the game's Blueprints don't hammer, and unhook from outside the callback.
 
 The same rules as for scripts keep the game running:
 

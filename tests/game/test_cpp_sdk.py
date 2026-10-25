@@ -8,17 +8,16 @@ the mod to make changes that Lua then confirms. It has to be built and installed
     python wcmods.py agent install --with tests/cpp-sdk
     python wcmods.py agent test tests/game/test_cpp_sdk.py --launch
 
-The mod writes "FAIL ..." lines on purpose and tries a hook on a function that isn't there, so script
-errors in the log don't fail these tests; the mod's own checks do.
 """
+import filecmp
 import json
 import os
 import time
 
 from wcmods.agent import AgentError, skip
+from wcmods.sections.cpp import source_time
 
 NEEDS = "world"
-LOG_ERRORS_OK = True
 MOD_DIR = os.path.join("tests", "cpp-sdk")
 UE4SS_NAME = "WCModsCpp_cpp_sdk"
 DEV_SWITCH = "bAllowAlwaysEquipItem"
@@ -74,14 +73,20 @@ def _failed(results, phase):
             for c in results["checks"] if c["phase"] == phase and not c["ok"]]
 
 
-def _installed(agent):
-    return os.path.isfile(os.path.join(agent.cfg.ue4ss_mods_dir, UE4SS_NAME, "dlls", "main.dll"))
-
-
 def setup(agent):
-    if not _installed(agent):
-        skip("the C++ SDK test mod isn't in the game: python wcmods.py cpp build tests/cpp-sdk, then "
-             "python wcmods.py agent install --with tests/cpp-sdk (with the game closed)")
+    """The mod in the game must be the one built from the source here, or the results mean nothing."""
+    built = os.path.join(_folder(agent), "dlls", "main.dll")
+    installed = os.path.join(agent.cfg.ue4ss_mods_dir, UE4SS_NAME, "dlls", "main.dll")
+    if not os.path.isfile(built):
+        skip("the C++ SDK test mod isn't built: python wcmods.py cpp build tests/cpp-sdk")
+    if source_time(os.path.join(_folder(agent), "cpp")) > os.path.getmtime(built):
+        skip("tests/cpp-sdk's source changed after its main.dll was built: python wcmods.py cpp build tests/cpp-sdk")
+    if not os.path.isfile(installed):
+        skip("the C++ SDK test mod isn't in the game: python wcmods.py agent install --with tests/cpp-sdk "
+             "(with the game closed)")
+    if not filecmp.cmp(built, installed, shallow=False):
+        skip("the C++ SDK test mod in the game isn't the one built here: python wcmods.py agent install --with "
+             "tests/cpp-sdk (with the game closed)")
 
 
 def test_mod_loads(agent):
@@ -115,7 +120,9 @@ def test_events(agent):
     assert v["frames"] > 60 and v["frames.dt_positive"] and v["frames.on_game_thread"], v
     assert v["on_game_thread.ran"] == 1 and v["on_game_thread.other_thread"], v
     assert v["every.ran"] >= 3 and v["after.ran"] == 1, v
-    assert v["cancel.inside"] == 3 and v["cancel.before"] == 0 and 4 <= v["cancel.outside"] <= 9, v
+    # The 0.2 s timer ran until the 1.5 s one cancelled it: up to 7 times, fewer when the first frames after
+    # init were long (loading), never more.
+    assert v["cancel.inside"] == 3 and v["cancel.before"] == 0 and 1 <= v["cancel.outside"] <= 9, v
     assert not _failed(r, "init"), _failed(r, "init")   # on_key, on_function and unhook checks
     assert "L_WorldMap_01_P" in v["levels"] and v["levels"][-1] == agent.lua("return Game.levelName()"), v["levels"]
     players = v["players"]
