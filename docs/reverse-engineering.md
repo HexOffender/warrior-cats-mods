@@ -162,9 +162,13 @@ one of its own. Nothing else checks it: no asset registry entry was needed.
 `%LOCALAPPDATA%\Wrc\Saved\SaveGames\WrcGame.sav`:
 - **The container:** a GVAS file whose `SwtSaveGame` holds `Hash`, `GamerId`, `Version`,
   `saveSlots` and `CompressedData`.
-- **`CompressedData`:** an Unreal compressed archive (zlib, 128 KiB blocks). It wraps
-  `[u32 len+8][u32 len][JSON bytes, each minus 1][u32 len]`. `WrcGame.json` beside it is the
-  same JSON in plain text.
+- **`CompressedData`:** what Unreal's `FArchiveSaveCompressedProxy` writes: one compressed archive
+  per 128 KiB of payload, back to back. Each is an 8-byte tag (`C1 83 2A 9E 22 22 22 22`), the block
+  size (128 KiB, int64), a compressor byte (3: zlib), a summary (compressed and uncompressed sizes,
+  two int64s), one entry per block (the same pair), then the zlib data. A new save is one archive
+  (about 80 KiB of JSON); a long-played one is several, and a reader that stops after the first
+  gets a payload cut short. The payload is `[u32 len+8][u32 len][JSON bytes, each minus 1][u32 len]`.
+  `WrcGame.json` beside it is the same JSON in plain text.
 - **The checksum:** the save carries a 64-bit checksum whose formula isn't known. Keeping the
   original value works: the game accepts edited saves and keeps the edits.
 - **Your cat:** under

@@ -1,9 +1,13 @@
 """WrcGame.sav codec and save backups.
 
 WrcGame.sav is a GVAS file whose SwtSaveGame object holds Hash, GamerId, Version, saveSlots
-and CompressedData. CompressedData is an Unreal compressed archive (zlib, 128 KiB blocks)
-wrapping [u32 len+8][u32 len][JSON bytes, each minus 1][u32 len]. WrcGame.json next to it is
-the same JSON in plain text.
+and CompressedData. CompressedData is what Unreal's FArchiveSaveCompressedProxy writes: one
+compressed archive after another, each holding the next 128 KiB of the payload (the proxy
+compresses its buffer as an archive of its own each time it fills, so a new save is one archive
+and a long-played one is several). An archive is an 8-byte tag, the block size (128 KiB), a
+compressor byte (3: zlib), a summary (compressed and uncompressed sizes), one entry per block (the
+same two sizes), then the zlib blocks. The payload is [u32 len+8][u32 len][JSON bytes, each minus
+1][u32 len]. WrcGame.json next to it is the same JSON in plain text.
 
 Edits are made to the JSON text in place so the game's own formatting is preserved.
 """
@@ -15,6 +19,8 @@ import struct
 import zlib
 
 ARCHIVE_TAG = b"\xc1\x83\x2a\x9e\x22\x22\x22\x22"
+BLOCK = 0x20000   # LOADING_COMPRESSION_CHUNK_SIZE: the proxy's buffer, so the most one archive holds
+ZLIB = 3          # the compressor byte for zlib
 SAV_NAME, JSON_NAME = "WrcGame.sav", "WrcGame.json"
 
 
@@ -25,7 +31,9 @@ class SaveGame:
         if not self.raw.startswith(b"GVAS") or name < 0:
             raise ValueError("not a Warrior Cats save (no CompressedData property)")
         tag = self.raw.find(ARCHIVE_TAG, name)
-        # property tag: ... size(int32) flags(u8) | array count(int32) | archive
+        if tag < 0:
+            raise ValueError("not a Warrior Cats save (CompressedData holds no compressed archive)")
+        # property tag: ... size(int32) flags(u8) | array count(int32) | archives
         self._size_pos = tag - 9
         self._count_pos = tag - 4
         (count,) = struct.unpack_from("<i", self.raw, self._count_pos)
@@ -34,7 +42,10 @@ class SaveGame:
             raise ValueError("unexpected CompressedData layout")
         self._data_start = tag
         self._data_end = tag + count
-        self.json_text = _decode_archive(self.raw[tag:tag + count])
+        try:
+            self.json_text = _decode_archive(self.raw[tag:tag + count])
+        except (struct.error, IndexError, zlib.error) as e:   # cut short, or not laid out as expected
+            raise ValueError(f"the save's compressed data isn't laid out the way wcmods expects ({e})") from None
 
     @classmethod
     def load(cls, path):
@@ -52,23 +63,30 @@ class SaveGame:
 
 
 def _decode_archive(a):
-    block_size, = struct.unpack_from("<q", a, 8)
-    fmt = a[16]
-    csize, usize = struct.unpack_from("<qq", a, 17)
-    if fmt != 3:
-        raise ValueError(f"unexpected save compression format {fmt}")
-    p = 33
-    chunks = []
-    total = 0
-    while total < usize:
-        c, u = struct.unpack_from("<qq", a, p)
-        chunks.append((c, u))
-        total += u
-        p += 16
+    """The payload from CompressedData: every archive in it, in order (see the module's docstring). A
+    save over 128 KiB is several archives; reading only the first left the payload cut short."""
     raw = bytearray()
-    for c, u in chunks:
-        raw += zlib.decompress(a[p:p + c])
-        p += c
+    p = 0
+    while p < len(a):
+        if a[p:p + 8] != ARCHIVE_TAG:
+            raise ValueError(f"unexpected save compression layout (no archive tag at byte {p} of {len(a)})")
+        (block_size,) = struct.unpack_from("<q", a, p + 8)
+        fmt = a[p + 16]
+        csize, usize = struct.unpack_from("<qq", a, p + 17)
+        if fmt != ZLIB:
+            raise ValueError(f"unexpected save compression format {fmt}")
+        if block_size <= 0 or usize < 0 or csize < 0:
+            raise ValueError("unexpected save compression layout (bad sizes)")
+        p += 33
+        # One entry per block, as the engine counts them from the summary and the block size.
+        blocks = [struct.unpack_from("<qq", a, p + 16 * i) for i in range((usize + block_size - 1) // block_size)]
+        p += 16 * len(blocks)
+        for c, u in blocks:
+            part = zlib.decompress(a[p:p + c])
+            if len(part) != u:
+                raise ValueError(f"a save block unpacks to {len(part)} bytes, not the {u} its entry says")
+            raw += part
+            p += c
     outer, length = struct.unpack_from("<II", raw, 0)
     (trailer,) = struct.unpack_from("<I", raw, 8 + length)
     if outer != length + 8 or trailer != length:
@@ -77,21 +95,18 @@ def _decode_archive(a):
 
 
 def _encode_archive(text):
+    """The payload as CompressedData, laid out as the game's proxy writes it: an archive of its own for
+    each 128 KiB, each with one block. The game reads an archive into a 128 KiB buffer, so one holding
+    more than that (the whole payload in several blocks, say) is one it can't load."""
     body = text.encode("utf-8")
-    payload = struct.pack("<II", len(body) + 8, len(body)) + bytes((b - 1) & 0xFF for b in body) \
-        + struct.pack("<I", len(body))
-    block = 0x20000
-    pieces = []
-    for k in range(0, len(payload), block):
-        part = payload[k:k + block]
-        pieces.append((zlib.compress(part, 9), len(part)))
-    out = bytearray(ARCHIVE_TAG)
-    out += struct.pack("<q", block) + b"\x03"
-    out += struct.pack("<qq", sum(len(c) for c, _ in pieces), len(payload))
-    for c, u in pieces:
-        out += struct.pack("<qq", len(c), u)
-    for c, _ in pieces:
-        out += c
+    payload = (struct.pack("<II", len(body) + 8, len(body)) + bytes((b - 1) & 0xFF for b in body)
+               + struct.pack("<I", len(body)))
+    out = bytearray()
+    for k in range(0, len(payload), BLOCK):
+        part = payload[k:k + BLOCK]
+        packed = zlib.compress(part, 9)
+        sizes = struct.pack("<qq", len(packed), len(part))   # the summary, and the one block's entry
+        out += ARCHIVE_TAG + struct.pack("<q", BLOCK) + bytes([ZLIB]) + sizes + sizes + packed
     return bytes(out)
 
 
