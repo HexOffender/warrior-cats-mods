@@ -54,10 +54,12 @@ class CatsSection(Section):
             else:
                 mine = [c for c in cats if names.PLAYER_PATH in c["paths"]]
                 fields = {catlook.SLOTS[part]: slot for part, slot in slots.items()}
-                fields.update({catlook.SCARS[part]: 0 for part in scars})
+                fields.update({catlook.SCARS[part]: n for part, n in scars.items()})
                 label = [f"{p} slot {s}" for p, s in sorted(slots.items())]
-                label += ["no scars" if len(scars) == len(catlook.SCARS) else
-                          "no " + ", ".join(sorted(scars)) + " scar" + ("s" if len(scars) > 1 else "")] if scars else []
+                if scars and not any(scars.values()) and len(scars) == len(catlook.SCARS):
+                    label.append("no scars")
+                else:
+                    label += [f"{p} scar {n or 'none'}" for p, n in sorted(scars.items())]
                 for cat in mine:
                     for path in cat["paths"]:   # every copy of your cat in the save
                         ctx.save_op({"op": "fields", "path": path, "set": fields, "source": source,

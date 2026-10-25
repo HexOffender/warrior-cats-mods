@@ -785,6 +785,31 @@ Worked out on 2026-10-24 for `Game.npcs`, and checked in game with two cats.
   (`WasInputKeyJustPressed`). That also works with keys the agent posts to the window, which UE4SS
   key binds don't see.
 
+## Scars
+
+Worked out on 2026-10-25 on your cat in game, for `cats.json`'s `"scars"`.
+
+**Where they're kept:** a cat's look (`FCatCustomData`, the text in the save) has `ScarEyeId`,
+`ScarEarId`, `ScarBodyId` and `ScarChestId`, 0 (or left out) for none. Clan cats get them by role
+(`Scars.csv`); your cat gets them from boss fights.
+
+**How they're drawn:** the look component (`USwtAdventureCustomizableMeshComponent`) turns the
+numbers into the body materials' parameters. `RefreshShape()` doesn't redraw scars, but
+`OnInjurySystemChanged(true)` does. The game's Injury system setting (`Shared/SettingsData/InjurySystem`,
+on the Gameplay settings panel) is `EnableScars`, which shows or hides them all.
+
+| Place | Numbers | What the game does |
+|---|---|---|
+| Ear | 1–6 | Swaps the ear model: 1 torn right, 2 torn left, 3 both torn, 4 notched right, 5 notched left, 6 both notched (seen on the Mid Upright ear: `SK_Mid_Upright_torn_right` and so on). 7 and up show as 6 |
+| Eye | 1–6 | `Enable Eyes_Scars`, with `Eyes_Scars_VariationID` 0 (1–2), 2 (3–4) or 1 (5–6) |
+| Back (`ScarBodyId`) | 1–6 | `Enable Back_Scars`, with `Back_Scars_VariationID` 0 (1–2), 1 (3–4) or 2 (5–6). 7 shows as 1 |
+| Chest | 1–2 | `Enable Chest_Scars`, with `Chest_Scars_VariationID` 0 or 1. 3 shows as 1 |
+
+For eye and back scars, odd numbers use the `Scars Zones` texture `T_Cat_Scars_Zones_01` and even
+ones `T_Cat_Scars_Zones_02`: the side. Which side is which wasn't clear at screenshot size. The
+chest always uses `_01`. The clan cats in a save use eye 1–2, ear 1–6 and back 2–4, and none had a
+chest scar.
+
 ## The game's own UI
 
 Worked out on 2026-10-25 for `Game.dialogue`, and checked in game with both example cats.

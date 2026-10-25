@@ -1181,11 +1181,12 @@ def _colour_slots():
         fur_refused = True
     text = '(ClanType=RiverClan,FurColorIdx=11,Pattern01ColorIdx=2,CatSize=0.5)'
     fields = catlook.set_fields(text, {"FurColorIdx": 3, "Pattern01ColorIdx": 25, "Pattern02ColorIdx": 26})
-    # Scars: "none" takes them all away, or some; giving one is refused (which scar each number is isn't known).
+    # Scars: "none" takes them all away; each place takes a number the game draws, or an ear's name.
     scars = catlook.validate({"player": {"scars": "none"}})["player"]["scars"]
-    some = catlook.validate({"player": {"scars": {"eye": "none"}}})["player"]["scars"]
+    some = catlook.validate({"player": {"scars": {"eye": 3, "ear": "notch-left", "body": "none"}}})["player"]["scars"]
     refused = 0
-    for bad in ({"scars": {"eye": 2}}, {"scars": {"tail": "none"}}, {"scars": "some"}):
+    for bad in ({"scars": {"eye": 7}}, {"scars": {"chest": 3}}, {"scars": {"ear": "chewed"}},
+                {"scars": {"tail": "none"}}, {"scars": "some"}):
         try:
             catlook.validate({"player": bad})
         except ValueError:
@@ -1194,7 +1195,8 @@ def _colour_slots():
                                  {catlook.SCARS[p]: 0 for p in scars})
     return (ok and fur_refused and not luacheck.check(script) and '["Fur Color"]' in script
             and fields == '(ClanType=RiverClan,FurColorIdx=3,Pattern01ColorIdx=25,CatSize=0.5,Pattern02ColorIdx=26)'
-            and set(scars) == set(catlook.SCARS) and some == {"eye": 0} and refused == 3
+            and set(scars) == set(catlook.SCARS) and not any(scars.values())
+            and some == {"eye": 3, "ear": 5, "back": 0} and refused == 5
             and "ScarEarId=0" in scarred and "ScarBodyId=0" in scarred and "ScarEyeId=0" in scarred)
 
 
