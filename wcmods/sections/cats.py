@@ -46,6 +46,10 @@ class CatsSection(Section):
             if slot is not None and slot >= palettes.GAME_SLOTS and slot not in added.get(part, set()):
                 ctx.warn(f"your cat's {part} slot {slot} isn't added by any enabled palette, so it shows no colour")
         scars = player["scars"]
+        for part, n in sorted(scars.items()):
+            if n > len(catlook.SCAR_TYPES[part]):
+                ctx.warn(f"your cat's {part} scar {n} seems to show nothing (the game has no scar for it); "
+                         f"its scars are {', '.join(catlook.SCAR_NAMES[part])}")
         if slots or scars:
             what = "your cat's colour slots" if not scars else "your cat's scars" if not slots else \
                 "your cat's colour slots and scars"
@@ -59,7 +63,8 @@ class CatsSection(Section):
                 if scars and not any(scars.values()) and len(scars) == len(catlook.SCARS):
                     label.append("no scars")
                 else:
-                    label += [f"{p} scar {catlook.SCAR_TYPES[p][n - 1][0] if n else 'none'}"
+                    label += [f"{p} scar " + ("none" if not n else catlook.SCAR_TYPES[p][n - 1][0]
+                                              if n <= len(catlook.SCAR_TYPES[p]) else str(n))
                               for p, n in sorted(scars.items())]
                 for cat in mine:
                     for path in cat["paths"]:   # every copy of your cat in the save

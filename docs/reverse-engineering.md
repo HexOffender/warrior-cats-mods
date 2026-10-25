@@ -809,9 +809,12 @@ on the Gameplay settings panel) is `EnableScars`, which shows or hides them all.
 - **The shapes:** `T_Cat_Scars_Gradient` holds them, a 2 × 2 grid in each channel. A scar's
   variation is its cell.
   - Red, the eye: 0 a scarred ring, 1 claw marks, 2 a single slash.
-  - Green, the back: 0 a star-shaped bite, 1 claw marks, and nothing in 2. So back 5 and 6 show no
-    scar, which fits the game's own cats only using 2–4.
+  - Green, the back: 0 a star-shaped bite, 1 claw marks, and nothing in 2. So back 5 and 6 seem to
+    show no scar, which fits the game's own cats only using 2–4.
   - Blue, the chest: 0 a bite, 1 claw marks, 2 a long slash. No chest number reaches the slash.
+  - Which cell each variation shows is read off the texture, in order (0 top left, 1 top right, 2
+    bottom left). In game only eye 1–2 (the ring) and 5–6 (marks) were seen; the slash (eye 3–4), the
+    back's and the chest's shapes, and back 5–6 showing nothing aren't checked yet.
 - **The places:** `T_Cat_Scars_Zones_01` and `_02` are masks of where scars go, in the same channels.
   - The eye's masks are the cat's right eye (01) and left eye (02). Checked in game with the cat
     facing the camera: eye 1 and 5 shut its right eye, and 2 and 6 its left.

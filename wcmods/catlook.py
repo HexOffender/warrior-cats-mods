@@ -40,9 +40,11 @@ FERAL_SLOTS = range(20, 25)   # the game swaps these coat slots for others unles
 TARGETS = ("player",)
 SCARS = {"eye": "ScarEyeId", "ear": "ScarEarId", "back": "ScarBodyId", "chest": "ScarChestId"}
 # Every scar each place can have: (name, what it looks like), scar n being the n-th. Ears are the game's torn
-# and notched ear models; an eye scar shuts the eye, odd numbers the cat's right eye and even its left; the
-# back has a bite and claw marks in two spots (which spot is where isn't known yet); the chest a bite or
-# claw marks. The back's 5 and 6 show nothing (the scar texture has no third back scar), so they're left out.
+# and notched ear models (seen in game); an eye scar shuts the eye, odd numbers the cat's right eye and even its
+# left (seen in game); the back has a bite and claw marks in two spots (which spot is where isn't known yet);
+# the chest a bite or claw marks. The shapes are read off the scar texture's cells in order, and only the
+# first eye scar and the claw marks were seen in game. The back's 5 and 6 seem to show nothing (the texture has
+# no third back scar), so they aren't offered; the game's numbers are still taken (SCAR_GAME_MAX).
 SCAR_TYPES = {
     "ear": [("torn-right", "Torn, right"), ("torn-left", "Torn, left"), ("torn-both", "Torn, both"),
             ("notch-right", "Notched, right"), ("notch-left", "Notched, left"), ("notch-both", "Notched, both")],
@@ -54,6 +56,7 @@ SCAR_TYPES = {
     "chest": [("bite", "Bite"), ("claws", "Claw marks")],
 }
 SCAR_NAMES = {part: {name: i + 1 for i, (name, _) in enumerate(types)} for part, types in SCAR_TYPES.items()}
+SCAR_GAME_MAX = {"ear": 6, "eye": 6, "back": 6, "chest": 2}   # the numbers the game takes; past SCAR_TYPES, a warning
 
 
 def validate(raw, where="cats.json"):
@@ -118,13 +121,14 @@ def _scars(value, where):
             part = "back"
         if part not in SCARS:
             raise ValueError(f"{where}.{part} should be one of {', '.join(SCARS)}")
-        top = len(SCAR_TYPES[part])
+        top = SCAR_GAME_MAX[part]
         if v == "none":
             v = 0
         elif isinstance(v, str) and v in SCAR_NAMES[part]:
             v = SCAR_NAMES[part][v]
         if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= top:
-            raise ValueError(f'{where}.{part} should be "none", {", ".join(SCAR_NAMES[part])}, or 1 to {top}')
+            raise ValueError(f'{where}.{part} should be "none", {", ".join(SCAR_NAMES[part])}, or 1 to '
+                             f'{len(SCAR_TYPES[part])}')
         out[part] = v
     return out
 
