@@ -285,6 +285,14 @@ local function styleComboBox(c)
         setForeground(s.SelectedTextColor, "#ffffff")
         setForeground(c.ForegroundColor, THEME.text)
     end)
+    pcall(function()   -- the box itself, showing the choice: the engine's is white, under the menu's light text
+        local b = c.WidgetStyle.ComboButtonStyle
+        for _, k in ipairs({ "Normal", "Hovered", "Pressed", "Disabled" }) do tint(b.ButtonStyle[k], FIELD) end
+        setForeground(b.ButtonStyle.NormalForeground, THEME.text)
+        setForeground(b.ButtonStyle.HoveredForeground, THEME.text)
+        setForeground(b.ButtonStyle.PressedForeground, THEME.text)
+        tint(b.MenuBorderBrush, FIELD)
+    end)
 end
 
 -- ---------- pages ----------
