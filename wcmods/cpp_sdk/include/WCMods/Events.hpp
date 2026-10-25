@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -68,6 +69,7 @@ namespace wcmods
             double since_player_check{};
             std::optional<RC::Unreal::Hook::GlobalCallbackId> hook;
             std::atomic<DWORD> game_thread_id{};   // known from the first frame on
+            bool stopped{};                        // the mod was taken out: nothing may be hooked again
         };
         inline auto ticks() -> Ticks&
         {
@@ -140,7 +142,7 @@ namespace wcmods
         {
             auto& t = ticks();
             std::lock_guard lock(t.lock);   // no frame runs on_tick before the hook is in, so this can't wait on one
-            if (t.hook) return;
+            if (t.hook || t.stopped) return;
             RC::Unreal::Hook::FCallbackOptions options{};
             options.OwnerModName = mod().name;
             options.HookName = STR("wcmods ticks");
@@ -155,6 +157,7 @@ namespace wcmods
         auto& t = detail::ticks();
         {
             std::lock_guard lock(t.lock);
+            if (t.stopped) return;   // a worker finishing after the mod was taken out
             t.once.push_back(std::move(fn));
         }
         detail::hook_ticks();
@@ -167,6 +170,7 @@ namespace wcmods
         auto& t = detail::ticks();
         {
             std::lock_guard lock(t.lock);
+            if (t.stopped) return;
             t.every_frame.push_back(std::make_shared<std::function<void(float)>>(std::move(fn)));
         }
         detail::hook_ticks();
@@ -181,6 +185,7 @@ namespace wcmods
             TimerId id;
             {
                 std::lock_guard lock(t.lock);
+                if (t.stopped) return 0;
                 id = t.next_timer++;
                 t.timers.push_back({id, seconds, seconds, repeat, std::make_shared<std::function<void()>>(std::move(fn))});
             }
@@ -229,6 +234,12 @@ namespace wcmods
     inline auto assert_game_thread(const wchar_t* what = L"this") -> bool
     {
         if (on_game_thread_now()) return true;
+        static std::mutex lock;
+        static std::set<std::wstring> said;   // once a name: a check in a loop would fill the log otherwise
+        {
+            std::lock_guard guard(lock);
+            if (!said.insert(what).second) return false;
+        }
         detail::log_line(mod().name, std::format(L"{} ran off the game thread; the game's objects aren't safe there", what));
         return false;
     }
@@ -541,6 +552,7 @@ namespace wcmods
             std::optional<RC::Unreal::Hook::GlobalCallbackId> hook;
             {
                 std::lock_guard lock(t.lock);
+                t.stopped = true;
                 hook.swap(t.hook);
                 t.once.clear();
                 t.every_frame.clear();

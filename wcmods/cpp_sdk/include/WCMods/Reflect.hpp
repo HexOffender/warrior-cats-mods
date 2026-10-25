@@ -9,6 +9,7 @@
 //   for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards")) ...
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -71,7 +72,14 @@ namespace wcmods
         auto shown() const -> std::wstring;
 
         static auto of(bool v) -> Value { Value r; r.kind = Kind::Bool; r.b = v; return r; }
-        static auto of(double v) -> Value { Value r; r.kind = Kind::Float; r.f = v; r.i = static_cast<int64_t>(v); return r; }
+        static auto of(double v) -> Value
+        {
+            Value r;
+            r.kind = Kind::Float;
+            r.f = v;
+            r.i = std::isfinite(v) && v > -9.2e18 && v < 9.2e18 ? static_cast<int64_t>(v) : 0;   // the cast is undefined outside
+            return r;
+        }
         static auto of(int v) -> Value { Value r; r.kind = Kind::Int; r.i = v; r.f = v; return r; }
         static auto of(int64_t v) -> Value { Value r; r.kind = Kind::Int; r.i = v; r.f = static_cast<double>(v); return r; }
         static auto of(std::wstring_view v) -> Value { Value r; r.kind = Kind::Text; r.text = v; return r; }
@@ -229,11 +237,10 @@ namespace wcmods
             return {};
         }
 
-        // Walk "A.B[2].C" from an object.
-        inline auto walk(UObject* object, std::wstring_view path) -> Value
+        // Walk "A.B[2].C" from an object, a struct or an array (a Value a get gave).
+        inline auto walk(Value here, std::wstring_view path) -> Value
         {
-            if (!object) return {};
-            Value here = Value::of(object);
+            if (!here) return {};
             size_t pos = 0;
             while (pos < path.size())
             {
@@ -353,21 +360,14 @@ namespace wcmods
     //   wcmods::get(cat, L"Tags[0]").string()                an array's element
     //   wcmods::get(cat, L"MeshCustomizationComponent.CustomData.ClanType").text   an enum's name
     // A Value whose kind is None when there's no such property, or an object on the way is unset.
-    inline auto get(UObject* object, std::wstring_view path) -> Value { return detail::walk(object, path); }
-
-    // The same from a Value that is a struct, an object or an array (one get's result, then further).
-    inline auto get(const Value& from, std::wstring_view path) -> Value
+    inline auto get(UObject* object, std::wstring_view path) -> Value
     {
-        if (from.kind == Value::Kind::Object) return detail::walk(from.object, path);
-        if (from.kind != Value::Kind::Struct) return {};
-        // A struct's own property, then the rest of the path from it.
-        size_t end = path.find_first_of(L".[");
-        Value here = detail::step(detail::place_of(from), path.substr(0, end));
-        if (!here || end == std::wstring_view::npos) return here;
-        if (here.kind == Value::Kind::Object && path[end] == L'.') return detail::walk(here.object, path.substr(end + 1));
-        if (here.kind == Value::Kind::Struct && path[end] == L'.') return get(here, path.substr(end + 1));
-        return {};
+        return object ? detail::walk(Value::of(object), path) : Value{};
     }
+
+    // The same from a Value that is a struct, an object or an array (one get's result, then further:
+    // get(custom, L"ClanType"), get(tags, L"[0]")).
+    inline auto get(const Value& from, std::wstring_view path) -> Value { return detail::walk(from, path); }
 
     // Write a property: a bool, a number (to an int, float or enum), text (to an FString or FName, or an
     // enum's name), or an object. False when there's no such property, or it isn't that kind.

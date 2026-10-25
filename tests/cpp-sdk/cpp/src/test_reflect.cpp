@@ -38,6 +38,9 @@ namespace t
         Value custom = get(actor, L"MeshCustomizationComponent.CustomData");
         expect("get.struct", custom.kind == Value::Kind::Struct && !custom.type.empty(), text(custom.type));
         expect("get.from_struct", get(custom, L"ClanType").i == clan.i && get(custom, L"ClanType").text == clan.text && !get(custom, L"Nope"));
+        expect("get.from_array", elements(tags).empty() ? !get(tags, L"[0]") : get(tags, L"[0]").kind == Value::Kind::Text);
+        expect("get.from_object_value", get(state, L"PlayerNamePrivate").kind == Value::Kind::Text && !get(Value{}, L"X"));
+        expect("value.of_huge", Value::of(1e20).i == 0 && Value::of(1e20).number() == 1e20);
         Value x = get(actor, L"RootComponent.RelativeLocation.X");
         expect("get.struct_member", x.kind == Value::Kind::Float, text(x.shown()));
         value("reflect.x", x.number());
