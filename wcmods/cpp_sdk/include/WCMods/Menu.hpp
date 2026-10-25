@@ -354,7 +354,7 @@ namespace wcmods
                 std::vector<std::string> keys = s.keys();
                 for (const std::string& key : keys)
                 {
-                const Json v = s[key];
+                const Json& v = s[key];   // set() below writes into the same slot, after v has been read
                 std::wstring label = label_of(key);
                 if (!key.empty() && key[0] == '_')
                 {
@@ -429,8 +429,13 @@ namespace wcmods
                 for (auto& p : b.pages)
                     if (p.id == id) fn = p.fn;
             }
-            if (!fn || !*fn) return 0;
             Ui ui(L, 2);
+            if (!fn || !*fn)
+            {
+                // The menu keeps a page it picked up; one the mod took away since (settings_page(false)) says so.
+                ui.note(L"This page is gone.");
+                return 0;
+            }
             guarded(L"a menu page", [&] { (*fn)(ui); });
             return 0;
         }
@@ -468,10 +473,9 @@ namespace wcmods
             return 1;
         }
 
-        // UE4SS calls this (through ModBase) as each Lua mod's state starts, before its scripts run: the state
-        // gets WCModsCpp (shared by every C++ mod) with this mod's table under WCModsCpp.mods.
-        inline auto lua_started(RC::CppUserModBase*, RC::CStringView, RC::LuaMadeSimple::Lua& lua, RC::LuaMadeSimple::Lua&,
-                                RC::LuaMadeSimple::Lua&, RC::LuaMadeSimple::Lua*) -> void
+        // ModBase calls this as each Lua mod's state starts, before its scripts run: the state gets WCModsCpp
+        // (shared by every C++ mod) with this mod's table under WCModsCpp.mods.
+        inline auto lua_started(RC::LuaMadeSimple::Lua& lua) -> void
         {
             lua_State* L = lua.get_lua_state();
             int top = lua_gettop(L);
@@ -536,7 +540,8 @@ namespace wcmods
 
     // A page in the mod menu: `fn(ui)` draws its rows every frame while it shows, on the game thread. Gives
     // back the page's id (what the menu opens it by). The menu picks new pages up when it opens, so a page can
-    // be added at any time; one with the id of an earlier page replaces it.
+    // be added at any time; one with the id of an earlier page takes over its drawing (the side bar keeps
+    // the title the menu first saw).
     inline auto menu_page(std::wstring title, std::function<void(Ui&)> fn, PageOptions options = {}) -> std::string
     {
         std::string id = options.id.empty() ? utf8(title) : options.id;

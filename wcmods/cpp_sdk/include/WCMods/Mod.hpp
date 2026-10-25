@@ -27,8 +27,6 @@ namespace wcmods
             ModVersion = m.version;
             ModAuthors = m.author;
             ModDescription = m.description;
-            // Each Lua mod's state gets WCModsCpp as it starts, for the mod menu and shared values (Menu.hpp).
-            register_on_lua_start(&detail::lua_started);
             // wcmods::on_key binds keys through this mod, so UE4SS ties them to it.
             detail::key_binder() = [this](Key key, const std::vector<Modifier>& modifiers, std::function<void()> fn) {
                 if (modifiers.empty())
@@ -43,6 +41,16 @@ namespace wcmods
         }
 
         ~ModBase() override { detail::key_binder() = nullptr; }
+
+        // Each Lua mod's state gets WCModsCpp as it starts, for the mod menu and shared values (Menu.hpp). A
+        // mod that overrides this calls ModBase::on_lua_start from its own, or loses those. (UE4SS's
+        // register_on_lua_start is left to the mod: it keeps one function a mod, and this doesn't take it.)
+        auto on_lua_start(RC::StringViewType mod_name, RC::LuaMadeSimple::Lua& lua, RC::LuaMadeSimple::Lua& main_lua,
+                          RC::LuaMadeSimple::Lua& async_lua, RC::LuaMadeSimple::Lua* hook_lua) -> void override
+        {
+            RC::CppUserModBase::on_lua_start(mod_name, lua, main_lua, async_lua, hook_lua);
+            detail::lua_started(lua);
+        }
     };
 } // namespace wcmods
 

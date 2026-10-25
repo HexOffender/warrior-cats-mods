@@ -889,8 +889,8 @@ wcmods::menu_page(L"My mod", [](wcmods::Ui& ui) {
 
 | Call | Does |
 |---|---|
-| `wcmods::menu_page(title, fn, {order, group, id})` | A page: `fn(ui)` draws its rows every frame while it shows, on the game thread; gives back the page's id. `group` and `order` place it in the side bar as `Menu.page` does for scripts. The menu picks pages up when it opens, so one can be added at any time |
-| `wcmods::settings_page(false)` | No page of the settings |
+| `wcmods::menu_page(title, fn, {order, group, id})` | A page: `fn(ui)` draws its rows every frame while it shows, on the game thread; gives back the page's id. `group` and `order` place it in the side bar as `Menu.page` does for scripts. The menu picks pages up when it opens, so one can be added at any time; one with an earlier page's id takes over its drawing, under the title the menu first saw |
+| `wcmods::settings_page(false)` | No page of the settings. A page the menu has already picked up stays in its side bar until the game restarts, saying it's gone |
 | `Ui::heading`, `text`, `note`, `separator`, `space(h)`, `field(label, value)`, `progress(label, fraction)` | Rows that show something |
 | `Ui::button(label, kind)` | True the frame it's clicked; `kind` L"primary", L"danger", L"good" or nothing |
 | `Ui::on_off(label, value)`, `toggle(label, value)` | An On/Off switch and a check box; each gives back true or false |
@@ -901,9 +901,10 @@ wcmods::menu_page(L"My mod", [](wcmods::Ui& ui) {
 | `wcmods::menu_open()`, `menu_page_shown()` | Whether the menu is open, and the id of the page it shows |
 | `wcmods::shared(name)`, `share(name, value)` | Values passed between Lua and C++ mods: `WCModsCpp.share(name, value)` in any Lua script reaches every C++ mod's `shared(name)`, and a C++ mod's `share(name, value)` is read in Lua as `WCModsCpp.mods["<mod id>"].get(name)`. A bool, number or string (null when there's none) |
 
-How it works: UE4SS hands a C++ mod every Lua mod's state as it starts, and `ModBase` puts a
-`WCModsCpp.mods["<mod id>"]` table into each, with `pages()`, `draw(id, ui)`, `keys()`, `set(name,
-value)` and `get(name)`. The mod menu's own script draws a C++ mod's pages through `draw` (every `Ui`
+How it works: UE4SS hands a C++ mod every Lua mod's state as it starts (`on_lua_start`), and `ModBase`
+puts a `WCModsCpp.mods["<mod id>"]` table into each, with `pages()`, `draw(id, ui)`, `keys()`,
+`set(name, value)` and `get(name)`. A mod that overrides `on_lua_start` itself calls
+`ModBase::on_lua_start` from it, or loses all of this. The mod menu's own script draws a C++ mod's pages through `draw` (every `Ui`
 call is one of its `ui.*` rows), lists its keys, and tells it when the menu opens and which page
 shows. The Lua stays where the menu is; the C++ page's function only ever runs on the game thread.
 

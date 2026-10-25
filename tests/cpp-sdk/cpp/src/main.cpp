@@ -76,6 +76,14 @@ namespace t
 class CppSdkTest : public wcmods::ModBase
 {
   public:
+    // A mod that overrides on_lua_start calls ModBase's from it, or loses the mod menu and shared values.
+    auto on_lua_start(RC::StringViewType mod_name, RC::LuaMadeSimple::Lua& lua, RC::LuaMadeSimple::Lua& main_lua,
+                      RC::LuaMadeSimple::Lua& async_lua, RC::LuaMadeSimple::Lua* hook_lua) -> void override
+    {
+        wcmods::ModBase::on_lua_start(mod_name, lua, main_lua, async_lua, hook_lua);
+        t::value("lua_mods_started", ++m_lua_mods);
+    }
+
     auto on_unreal_init() -> void override
     {
         // A fresh results.json each run, so a stale one can't pass for this one.
@@ -87,6 +95,9 @@ class CppSdkTest : public wcmods::ModBase
         t::setup_menu();
         t::done("init");
     }
+
+  private:
+    int m_lua_mods{};
 };
 
 WCMODS_MOD(CppSdkTest)

@@ -274,9 +274,18 @@ def test_settings_page(agent):
         assert saved["number"] == 2.25 and saved["whole"] == 9 and saved["flag"] is False and saved["text"] == "changed", saved
         assert saved["list"] == [1, "two", False] and saved["nested"] == {"k": "v"} and saved["_help"].startswith("The C++"), saved
     finally:
-        agent.menu.close()
-        with open(settings_path, "w", encoding="utf-8", newline="") as f:
-            f.write(settings_before)
+        # The rows back as they were and saved, so the mod's settings in memory match the file put back.
+        try:
+            agent.menu.set("Number", 1.5)
+            agent.menu.set("Whole", 7)
+            agent.menu.set("Flag", True)
+            agent.menu.set("Text", "hi there")
+            agent.menu.press("Save")
+            time.sleep(0.3)
+        finally:
+            agent.menu.close()
+            with open(settings_path, "w", encoding="utf-8", newline="") as f:
+                f.write(settings_before)
 
 
 def test_keys_listed(agent):
@@ -294,6 +303,8 @@ def test_keys_listed(agent):
 def test_shared_values(agent):
     """Values shared both ways: a Lua mod reads what the C++ mod shares, and WCModsCpp.share reaches it."""
     mod = 'WCModsCpp.mods["cpp-sdk"]'
+    r = _request(agent, "events")
+    assert r["values"]["lua_mods_started"] >= 3, r["values"].get("lua_mods_started")   # the host, the bridge, and more
     assert agent.lua(f"return {mod}.get('hello')") == 42
     assert agent.lua(f"return {mod}.get('name'), {mod}.get('flag'), {mod}.get('nope')") == ["cpp", True, None]
     agent.lua("WCModsCpp.share('ping', 7)")

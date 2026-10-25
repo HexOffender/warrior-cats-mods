@@ -31,6 +31,7 @@ namespace t
     // The after-hook that forges GetConsoleVariableFloatValue's result (test_events.cpp sets it up, run_writes
     // checks it and takes it out).
     inline HookId set_return_hook{};
+    auto forge_cvar_hook() -> HookId;   // puts it in when it isn't (test_game.cpp)
 
     inline auto text(std::wstring_view w) -> std::string { return utf8(w); }
     inline auto text(const std::wstring& w) -> std::string { return utf8(w); }
