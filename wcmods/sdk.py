@@ -79,6 +79,19 @@ class Section:
 
     # helpers
     @staticmethod
+    def read_tree(folder, skip=()):
+        """Every file under a folder as {"sub/path": bytes} ("/" separated), leaving out the paths in `skip`."""
+        files = {}
+        for root, _, names in os.walk(folder):
+            for name in sorted(names):
+                path = os.path.join(root, name)
+                rel = os.path.relpath(path, folder).replace(os.sep, "/")
+                if rel not in skip:
+                    with open(path, "rb") as f:
+                        files[rel] = f.read()
+        return files
+
+    @staticmethod
     def read_json(mod, name):
         path = os.path.join(mod.folder, name)
         try:

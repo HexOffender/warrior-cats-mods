@@ -24,6 +24,9 @@ def loader_installed(win64_dir):
         and os.path.isfile(os.path.join(win64_dir, "ue4ss", "UE4SS.dll"))
 
 
+_DLL_HASHES = {}   # (path, size, mtime) -> SHA-1, for loader_identity
+
+
 def loader_identity(win64_dir):
     """Which UE4SS the game has, for C++ mods (built against one UE4SS): {"commit": its git commit from the
     first lines of UE4SS.log ("Git SHA #83330635"; None when the game hasn't run since this UE4SS.dll was
@@ -32,8 +35,12 @@ def loader_identity(win64_dir):
     if not loader_installed(win64_dir):
         return None
     dll = os.path.join(win64_dir, "ue4ss", "UE4SS.dll")
-    with open(dll, "rb") as f:
-        digest = hashlib.sha1(f.read()).hexdigest()
+    st = os.stat(dll)
+    key = (os.path.abspath(dll), st.st_size, st.st_mtime_ns)
+    if key not in _DLL_HASHES:   # 20 MB, read once per UE4SS.dll rather than on every build
+        with open(dll, "rb") as f:
+            _DLL_HASHES[key] = hashlib.sha1(f.read()).hexdigest()
+    digest = _DLL_HASHES[key]
     commit, path = None, log_path(win64_dir)
     if path and os.path.getmtime(path) >= os.path.getmtime(dll):
         with open(path, encoding="utf-8", errors="replace") as f:

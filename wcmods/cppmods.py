@@ -93,10 +93,13 @@ def problems(tools):
     return out
 
 
-def _git(args, cwd=None, log=print, check=True):
-    p = subprocess.run(["git", *args], cwd=cwd, env=_git_env(), capture_output=True, text=True)
+def _git(args, cwd=None, check=True, shown=False):
+    """Run git. `shown` leaves its output on the terminal rather than capturing it: for what goes to GitHub,
+    so a login prompt is seen instead of waiting unseen."""
+    p = subprocess.run(["git", *args], cwd=cwd, env=_git_env(), capture_output=not shown, text=True)
     if check and p.returncode:
-        raise RuntimeError(f"git {' '.join(args)} failed: {(p.stderr or p.stdout).strip()[-1500:]}")
+        said = "" if shown else ": " + (p.stderr or p.stdout).strip()[-1500:]
+        raise RuntimeError(f"git {' '.join(args)} failed{said}")
     return p
 
 
@@ -138,19 +141,18 @@ def setup(root, cfg, commit=None, log=print):
     if not os.path.isdir(os.path.join(src, ".git")):
         os.makedirs(os.path.dirname(src), exist_ok=True)
         log(f"getting UE4SS's source from {REPO} ...")
-        _git(["clone", "--filter=blob:none", "--no-checkout", REPO, src], log=log)
+        _git(["clone", "--filter=blob:none", "--no-checkout", REPO, src], shown=True)
     if _git(["cat-file", "-e", commit + "^{commit}"], cwd=src, check=False).returncode:
         log("fetching UE4SS's newer commits ...")
-        _git(["fetch", "origin"], cwd=src, log=log)
+        _git(["fetch", "origin"], cwd=src, shown=True)
     log(f"checking out UE4SS {commit[:8]} ...")
-    _git(["checkout", "-q", "--force", commit], cwd=src, log=log)
+    _git(["checkout", "-q", "--force", commit], cwd=src)
     log("getting its submodules (UEPseudo, the Unreal headers, needs your GitHub login) ...")
-    p = _git(["submodule", "update", "--init", "--recursive", "--force"], cwd=src, log=log, check=False)
+    p = _git(["submodule", "update", "--init", "--recursive", "--force"], cwd=src, check=False, shown=True)
+    if not os.path.isfile(os.path.join(src, "deps", "first", "Unreal", "CMakeLists.txt")):
+        raise RuntimeError(EPIC + " (git's messages above say what happened)")
     if p.returncode:
-        text = (p.stderr or p.stdout).strip()
-        if "UEPseudo" in text or "deps/first/Unreal" in text:
-            raise RuntimeError(EPIC + f"\n(git said: {text[-600:]})")
-        raise RuntimeError(f"getting UE4SS's submodules failed: {text[-1500:]}")
+        raise RuntimeError("getting UE4SS's submodules failed; git's messages above say why")
     return source_commit(root)
 
 
@@ -250,10 +252,23 @@ def build(root, cfg, mods, log=print):
     if game and game.get("commit") and not source.startswith(game["commit"]):
         raise RuntimeError(f"UE4SS's source is at {source[:8]} but the game has UE4SS {game['commit'][:8]}; a mod "
                            "built against the wrong one can crash the game. Run `python wcmods.py cpp setup`")
+    # build.json vouches for the game's UE4SS.dll only when its log confirms the source is that UE4SS's;
+    # otherwise it names just the source's commit, and install checks that against the log later.
+    dll_sha = game["dll"] if game and game.get("commit") else None
+    if game and not dll_sha:
+        log("(can't tell which UE4SS the game has until it runs with it, so this build names only the commit it "
+            "was built against)")
+    targets = {}
+    for m in mods:
+        if target_name(m.id) in targets:
+            raise ValueError(f"{m.id} and {targets[target_name(m.id)]} can't be built together: their names differ "
+                             "only in punctuation; rename one")
+        targets[target_name(m.id)] = m.id
     out = build_dir(root)
     os.makedirs(out, exist_ok=True)
     _write_if_changed(os.path.join(out, "CMakeLists.txt"), project(root, mods))
-    configure = [] if os.path.isfile(os.path.join(out, "out", "CMakeCache.txt")) else \
+    # Configured once; a configure that stopped partway leaves a cache but no build.ninja, so that's the test.
+    configure = [] if os.path.isfile(os.path.join(out, "out", "build.ninja")) else \
         [f'cmake -S . -B out -G Ninja -DCMAKE_BUILD_TYPE={CONFIG} || exit /b 1']
     targets = " ".join(target_name(m.id) for m in mods)
     log(f"building {', '.join(m.id for m in mods)} with UE4SS {source[:8]}"
@@ -263,7 +278,6 @@ def build(root, cfg, mods, log=print):
     if code:
         raise RuntimeError(f"the build failed (exit code {code}); the messages above say why, and "
                            f"{os.path.join(out, 'build.log')} has all of it")
-    dll_sha = game["dll"] if game else None
     built = []
     for m in mods:
         made = os.path.join(out, "out", "wcmods", target_name(m.id), "main.dll")

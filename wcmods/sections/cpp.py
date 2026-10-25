@@ -24,7 +24,7 @@ DLLS, SOURCE = "dlls", "cpp"
 PREFIX = "WCModsCpp_"
 EXPORTS = ("start_mod", "uninstall_mod")    # what UE4SS calls in a C++ mod's main.dll
 BUILD_INFO = "build.json"
-SKIP_DIRS = {"out", "build", ".vs", ".idea"}  # build output in cpp/, not source
+SKIP_DIRS = {"out", "build", "bin", "obj"}     # build output in cpp/ (and cmake-build-*, IDEs'), not source
 
 
 def ue4ss_name(mod_id):
@@ -36,7 +36,7 @@ def source_time(folder):
     """When the newest file in a mod's cpp/ changed, or 0 without one."""
     newest = 0
     for root, dirs, names in os.walk(folder):
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith((".", "cmake-build"))]
         for name in names:
             newest = max(newest, os.path.getmtime(os.path.join(root, name)))
     return newest
@@ -84,14 +84,7 @@ class CppSection(Section):
                 raise ValueError(f"its C++ (cpp/) isn't built yet: run `python wcmods.py cpp build {mod.id}`")
             raise ValueError("dlls/ needs a main.dll (a UE4SS C++ mod)")
         check_dll(main)
-        files = {}
-        for root, _, names in os.walk(folder):
-            for name in sorted(names):
-                path = os.path.join(root, name)
-                rel = os.path.relpath(path, folder).replace(os.sep, "/")
-                if rel != BUILD_INFO:
-                    with open(path, "rb") as f:
-                        files[rel] = f.read()
+        files = self.read_tree(folder, skip=(BUILD_INFO,))
         built_for = None
         if os.path.isfile(os.path.join(folder, BUILD_INFO)):
             built_for = self.read_json(mod, os.path.join(DLLS, BUILD_INFO))
@@ -134,6 +127,10 @@ class CppSection(Section):
                 ctx.warn(f"{mod.id}: cpp/ changed after dlls/main.dll was built; `python wcmods.py cpp build "
                          f"{mod.id}` builds it again")
             name = ue4ss_name(mod.id)
+            if name in ctx.ue4ss_mods:
+                ctx.warn(f"{mod.id}: left out: another mod's C++ goes in as {name} too (their names differ only in "
+                         "punctuation); rename one")
+                continue
             info = {"id": mod.id, "name": mod.name, "version": mod.version, "author": mod.author,
                     "description": mod.description, "folder": os.path.abspath(mod.folder),
                     "settings_file": data["settings_file"], "settings": data["settings"]}

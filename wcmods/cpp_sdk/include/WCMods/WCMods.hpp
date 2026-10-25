@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -34,6 +35,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include <DynamicOutput/DynamicOutput.hpp>
@@ -79,9 +81,10 @@ namespace wcmods
         Json() = default;
         Json(std::nullptr_t) {}
         Json(bool v) : m_type(Type::Bool), m_bool(v) {}
-        Json(double v) : m_type(Type::Number), m_number(v) {}
-        Json(int v) : m_type(Type::Number), m_number(v) {}
-        Json(float v) : m_type(Type::Number), m_number(v) {}
+        // Any number: int, size_t, float, double...
+        template <typename T>
+            requires(std::is_arithmetic_v<T> && !std::is_same_v<T, bool>)
+        Json(T v) : m_type(Type::Number), m_number(static_cast<double>(v)) {}
         Json(std::string v) : m_type(Type::String), m_string(std::move(v)) {}
         Json(const char* v) : m_type(Type::String), m_string(v) {}
         Json(std::wstring_view v) : m_type(Type::String), m_string(utf8(v)) {}
@@ -333,7 +336,9 @@ namespace wcmods
             case Type::Null: out += "null"; break;
             case Type::Bool: out += m_bool ? "true" : "false"; break;
             case Type::Number:
-                if (m_number == static_cast<double>(static_cast<long long>(m_number)) && m_number > -1e15 && m_number < 1e15)
+                if (!std::isfinite(m_number))
+                    out += "null";   // JSON has no NaN or infinity
+                else if (m_number == static_cast<double>(static_cast<long long>(m_number)) && m_number > -1e15 && m_number < 1e15)
                     out += std::to_string(static_cast<long long>(m_number));
                 else
                     out += std::format("{}", m_number);
@@ -677,6 +682,7 @@ namespace wcmods
         inline auto hook_ticks() -> void
         {
             auto& t = ticks();
+            std::lock_guard lock(t.lock);   // no frame runs on_tick before the hook is in, so this can't wait on one
             if (t.hook) return;
             RC::Unreal::Hook::FCallbackOptions options{};
             options.OwnerModName = mod().name;
@@ -689,11 +695,15 @@ namespace wcmods
         inline auto stop() -> void
         {
             auto& t = ticks();
-            std::lock_guard lock(t.lock);
-            if (t.hook) RC::Unreal::Hook::UnregisterCallback(*t.hook);
-            t.hook.reset();
-            t.once.clear();
-            t.every.clear();
+            std::optional<RC::Unreal::Hook::GlobalCallbackId> hook;
+            {
+                std::lock_guard lock(t.lock);
+                hook.swap(t.hook);
+                t.once.clear();
+                t.every.clear();
+            }
+            // Outside the lock: a frame running now takes it in on_tick, and unregistering may wait for that frame.
+            if (hook) RC::Unreal::Hook::UnregisterCallback(*hook);
         }
     } // namespace detail
 
