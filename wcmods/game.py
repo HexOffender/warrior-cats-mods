@@ -574,20 +574,25 @@ function Game.after(seconds, fn) return add({ fn = fn, at = os.clock() + seconds
 -- Stop a timer, frame function or event listener.
 function Game.cancel(id) tasks[id] = nil end
 
+-- A key and what it does, for the mod menu's Overview (its list of the keys scripts use).
+local function listKey(name, help)
+    local line = name .. "\t" .. (tostring(help):gsub("[\t\n]", " ")) .. "\n"
+    ExecuteInGameThread(function()
+        local ok, list = pcall(function() return ModRef:GetSharedVariable("WCModsMenu.keys") end)
+        list = ok and list or ""
+        if not tostring(list):find(line, 1, true) then
+            pcall(function() ModRef:SetSharedVariable("WCModsMenu.keys", tostring(list) .. line) end)
+        end
+    end)
+end
+
 -- fn() on the game thread when a key is pressed: Game.onKey("F6", fn) or Game.onKey("F6", fn, {"CONTROL"}).
 -- With `help` ("Heal your cat"), the mod menu's Overview lists the key.
 function Game.onKey(key, fn, modifiers, help)
     if help then
         local name = tostring(key)
         if modifiers and #modifiers > 0 then name = table.concat(modifiers, "+") .. "+" .. name end
-        local line = name .. "\t" .. (tostring(help):gsub("[\t\n]", " ")) .. "\n"
-        ExecuteInGameThread(function()
-            local ok, list = pcall(function() return ModRef:GetSharedVariable("WCModsMenu.keys") end)
-            list = ok and list or ""
-            if not tostring(list):find(line, 1, true) then
-                pcall(function() ModRef:SetSharedVariable("WCModsMenu.keys", tostring(list) .. line) end)
-            end
-        end)
+        listKey(name, help)
     end
     local k = Key[key] or key
     local wrapped = function()
@@ -609,15 +614,25 @@ end
 -- Game.pressed("Gamepad_FaceButton_Top") (Unreal's key names). Unlike Game.onKey, it only sees keys
 -- while the game has the focus, and it sees controller buttons too.
 local pressKeys = {}
-function Game.pressed(key)
-    local c = Game.controller()
-    if not c then return false end
+local function inputKey(key)
     local k = pressKeys[key]
     if not k then
         k = { KeyName = FName(key) }
         pressKeys[key] = k
     end
-    local ok, yes = pcall(function() return c:WasInputKeyJustPressed(k) end)
+    return k
+end
+function Game.pressed(key)
+    local c = Game.controller()
+    if not c then return false end
+    local ok, yes = pcall(function() return c:WasInputKeyJustPressed(inputKey(key)) end)
+    return ok and yes == true
+end
+-- Whether a key or button is held down now, in the game's own input.
+function Game.keyDown(key)
+    local c = Game.controller()
+    if not c then return false end
+    local ok, yes = pcall(function() return c:IsInputKeyDown(inputKey(key)) end)
     return ok and yes == true
 end
 
@@ -626,19 +641,16 @@ end
 -- for Game.cancel.
 function Game.onPress(keys, fn, help)
     if type(keys) ~= "table" then keys = { keys } end
-    if help then
-        local line = table.concat(keys, " or ") .. "\t" .. (tostring(help):gsub("[\t\n]", " ")) .. "\n"
-        ExecuteInGameThread(function()
-            local ok, list = pcall(function() return ModRef:GetSharedVariable("WCModsMenu.keys") end)
-            list = ok and list or ""
-            if not tostring(list):find(line, 1, true) then
-                pcall(function() ModRef:SetSharedVariable("WCModsMenu.keys", tostring(list) .. line) end)
-            end
-        end)
-    end
+    if help then listKey(table.concat(keys, " or "), help) end
+    -- Once per press: the frame function can run twice in one game frame, while the key still reads
+    -- as just pressed, so a key fires again only after it's been let go.
+    local held = {}
     return Game.onFrame(function()
         for _, key in ipairs(keys) do
-            if Game.pressed(key) then
+            if held[key] then
+                if not Game.keyDown(key) then held[key] = nil end
+            elseif Game.pressed(key) then
+                held[key] = true
                 fn(key)
                 return
             end
@@ -1450,6 +1462,8 @@ end
 
 local function spawnNpc(n)
     if n.level and Game.levelName() ~= n.level then return false end
+    if not Game.player() then return false end
+    n.level = n.level or Game.levelName()      -- the level it first appears in, unless it was given one
     local cls = npcClass()
     local world = Game.player() or Game.world()
     if not cls or not world then return false end
@@ -1483,16 +1497,16 @@ end
 -- A new cat of the mod's own at `at` ({x, y, z} or {X =, Y =, Z =}), facing `yaw` degrees. Options:
 -- colours = {fur, pattern, markings, nose, paws, whiskers, ears} as "#rrggbb"; eyes = an iris colour
 -- slot (0-24, as in palette.json); size (the game's cats are about 0.4-1.1); prefix and suffix = name
--- IDs ("STR_CAT_NAME1", "_PAW") for the game's own name for it; level = the level it stands in (the
--- one you're in when it's spawned; "L_WorldMap_01_P" is the forest). Returns the npc, which appears
--- whenever you're in its level.
+-- IDs ("STR_CAT_NAME1", "_PAW") for the game's own name for it; level = the level it stands in
+-- ("L_WorldMap_01_P" is the forest; by default the one it first appears in). Returns the npc, which
+-- appears whenever you're in its level.
 function Game.npcs.spawn(opts)
     opts = opts or {}
     local at = opts.at or {}
     local n = setmetatable({
         at = { X = at.X or at[1] or 0, Y = at.Y or at[2] or 0, Z = at.Z or at[3] or 0 },
         yaw = opts.yaw or 0, size = opts.size, prefix = opts.prefix, suffix = opts.suffix,
-        level = opts.level or Game.levelName(), paint = {}, spawns = 0, removed = false,
+        level = opts.level, paint = {}, spawns = 0, removed = false,
     }, Npc)
     for part, hex in pairs(opts.colours or {}) do
         local param, c = NPC_PARAMS[part], linearColour(hex)

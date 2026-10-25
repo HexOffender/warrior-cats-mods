@@ -213,9 +213,11 @@ def run(cfg, oodle, log=print):
 
 def _name_hashes():
     from .cityhash import name_hash
-    # Stored hashes from the game's DT_QuestObjectsInfo name map: one name for each of CityHash64's
-    # length branches (up to 16, 32 and 64 bytes, and longer).
-    vectors = [("NewRow", 0x8C07177607C72E43), ("Gameplay.Combat.Character.Badger", 0xC06922E4C7EC49BA),
+    # Stored hashes from the game's name maps: names for each of CityHash64's length branches (1-3, 4-7,
+    # 8-16, 17-32, 33-64 bytes, and longer).
+    vectors = [("1", 0x811F023A122D0BE1), ("10", 0xFE9BEBCA6BBFE5AE), ("Ear", 0xF5BC7B7C8B0DF45C),
+               ("NewRow", 0x8C07177607C72E43), ("BlueprintType", 0x136AFC1B797CDD04),
+               ("Gameplay.Combat.Character.Badger", 0xC06922E4C7EC49BA),
                ("Gameplay.Combat.Attack.Ancestor.1", 0x2539218B357C41AC),
                ("/Game/Art/UXD/Textures/gui_icons/gui_icons_accesories/T_UI_Accessory_AutumnWreath_D",
                 0x2382F8DFD9CE00C9)]
@@ -246,11 +248,16 @@ def _cooked_table(io):
     dt.add("WCMods_SelfTest", {"itemTag": tag, "Name": cooked.base_text("Test Herb", tag + ".Name"),
                                "Description": cooked.base_text("Héals a little", tag + ".Description"),
                                "Icon": herb["Icon"], "ItemGroupIcon": 1})
+    try:                                    # a value it can't write is refused, and the table is as it was
+        dt.add("WCMods_Bad", {"itemTag": tag + "Bad", "Name": "not a text value"})
+        refused = False
+    except ValueError:
+        refused = len(dt.rows) == count + 1
     back = cooked.DataTable(dt.bytes(), schema)
     name, row = back.rows[-1]
     added = (name == "WCMods_SelfTest" and row["itemTag"] == tag and row["Description"]["text"] == "Héals a little"
              and "ItemRarity" not in row and row["ItemGroupIcon"] == 1 and back.check_encoder() and back.pkg.check_hashes(len(back.pkg.names))
-             and back.rows[:-1] == dt.rows[:-1])
+             and back.rows[:-1] == dt.rows[:-1] and refused)
     return ok and added, f"{count} rows" + ("" if same else "; rebuilt package differs")
 
 
@@ -260,7 +267,9 @@ def _items_section(cfg):
     good = {"items": [
         {"id": "WCModsTestHerb", "like": "MediumHealingHerb", "name": "Test Herb", "description": "Heals.",
          "recipe": {"Dandelion": 2, "WCModsTestStone": 1}, "rarity": "Rare", "give": 2},
-        {"id": "WCModsTestStone", "kind": "material", "name": "Test Stone", "description": "A stone.", "icon": "Rock"}],
+        {"id": "WCModsTestStone", "kind": "material", "name": "Test Stone", "description": "A stone.", "icon": "Rock"},
+        {"id": "WCModsTestHerb", "kind": "material", "name": "Test Herb Seed", "description": "Same id, a material.",
+         "icon": "Rock"}],
         "recipes": {"Cosmetic.Head.MossPatch.1": {"Moss": 3, "WCModsTestStone": 1}}}
     bad = {"items": [
         {"id": "SmallCatnip", "kind": "consumable", "name": "Again", "description": "x", "like": "SmallCatnip"},
@@ -269,8 +278,10 @@ def _items_section(cfg):
         {"id": "WCModsWhat", "like": "SmallHealingHerb", "name": "x", "description": "x", "effect": "Gameplay.Effect.Fly"}],
         "recipes": {"Cosmetic.Head.NoSuchHat.1": {"Moss": 1}}}
     with tempfile.TemporaryDirectory() as tmp:
+        typo = {"items": [{"id": "WCModsTypo", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": 5}]}
         root = _mods_folder(tmp, {"good": ({"name": "Good", "enabled": True}, {"items.json": json.dumps(good)}),
-                                  "bad": ({"name": "Bad", "enabled": True}, {"items.json": json.dumps(bad)})})
+                                  "bad": ({"name": "Bad", "enabled": True}, {"items.json": json.dumps(bad)}),
+                                  "typo": ({"name": "Typo", "enabled": True}, {"items.json": json.dumps(typo)})})
         out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
         rows = out.get("table_rows", {}).get("DT_QuestObjectsInfo", [])
         csv = out.get("csv_changes", {})
@@ -281,8 +292,10 @@ def _items_section(cfg):
         given = [o for o in out["save_ops"] if o.get("key") == "Gameplay.Inventory.Consumable.WCModsTestHerb"]
         has_save = os.path.isfile(os.path.join(cfg.save_dir, SAV_NAME))
         gave = (len(given) == 1 and given[0]["value"] == 2 and given[0].get("only_new")) if has_save else             any("no save yet" in w for w in out["warnings"])
-        ok = gave and (out["sections"]["items"]["status"] == "ok" and sorted(r["row"] for r in rows)
-              == ["WCMods_WCModsTestHerb", "WCMods_WCModsTestStone"] and len(use) == 1
+        rep = out["sections"]["items"]
+        ok = gave and (rep["status"] == "partial" and any("typo" in e and "should be text" in e for e in rep["errors"])
+              and sorted(r["row"] for r in rows) == ["WCMods_Consumable_WCModsTestHerb", "WCMods_Materials_WCModsTestHerb",
+                                                     "WCMods_Materials_WCModsTestStone"] and len(use) == 1
               and sorted(c["row"] for c in recipe) == ["Gameplay.Inventory.Consumable.WCModsTestHerb",
                                                        "Gameplay.Inventory.Cosmetic.Head.MossPatch.1"]
               and "Wrc/Config/Tags/WCModsItems.ini" in out["files"] and len(warned) == 5

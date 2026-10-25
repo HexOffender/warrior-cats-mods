@@ -44,6 +44,8 @@ TABLE = "DT_QuestObjectsInfo"
 ID = re.compile(r"[A-Za-z][A-Za-z0-9]{0,47}$")
 KEYS = {"id", "kind", "like", "name", "description", "icon", "effect", "type", "target", "combat", "exploring",
         "fight_only", "group", "rarity", "color", "recipe", "give"}
+TEXT_KEYS = ("kind", "like", "icon", "effect", "type", "target", "group", "rarity", "color")
+FLAG_KEYS = ("combat", "exploring", "fight_only")
 
 
 class ItemsSection(Section):
@@ -72,6 +74,14 @@ class ItemsSection(Section):
             for key in ("name", "description"):
                 if not isinstance(item.get(key), str) or not item[key].strip():
                     raise ValueError(f"{what} ({item['id']}): \"{key}\" is missing")
+            for key in TEXT_KEYS:
+                if item.get(key) is not None and not isinstance(item[key], str):
+                    raise ValueError(f"{what} ({item['id']}): \"{key}\" should be text")
+            for key in FLAG_KEYS:
+                if item.get(key) is not None and not isinstance(item[key], bool):
+                    raise ValueError(f"{what} ({item['id']}): \"{key}\" should be true or false")
+            if item.get("recipe") is not None and not isinstance(item["recipe"], dict):
+                raise ValueError(f"{what} ({item['id']}): \"recipe\" should map materials to how many")
         return {"items": items, "recipes": recipes} if items or recipes else None
 
     def build(self, ctx, items):
@@ -84,8 +94,9 @@ class ItemsSection(Section):
         game = Game(ctx)
         slot = _current_slot(ctx)
         made = {}                      # tag -> mod id
-        # Materials first, so a mod's herb can be made from a material it adds.
-        ordered = sorted(((mod, item) for mod, data in items for item in data["items"]),
+        # Materials first, so a mod's herb can be made from a material it adds; and the highest priority
+        # mod first, so where two add the same item, the later one wins as everywhere else.
+        ordered = sorted(((mod, item) for mod, data in reversed(items) for item in data["items"]),
                          key=lambda mi: game.kind(mi[1]) != "material")
         for mod, item in ordered:
             try:
@@ -95,7 +106,9 @@ class ItemsSection(Section):
                 continue
             made[tag] = mod.id
             text = f"{TAG_ROOT}{mod.id}.{item['id']}"
-            ctx.add_table_row(TABLE, f"WCMods_{item['id']}", dict(rows["info"], **{
+            # The row's name, from the tag: a herb and a material may share an id.
+            row = "WCMods_" + tag[len(TAG_ROOT):].replace(".", "_")
+            ctx.add_table_row(TABLE, row, dict(rows["info"], **{
                 "Name": cooked.base_text(item["name"], text + ".Name"),
                 "Description": cooked.base_text(item["description"], text + ".Description")}), source=mod.id)
             if "use" in rows:
@@ -174,7 +187,7 @@ class Game:
         if tag in self.info or tag in self.use:
             raise ValueError(f"the game already has {tag}; change it with data.json instead")
         if tag in made:
-            raise ValueError(f"{made[tag]} adds {tag} too")
+            raise ValueError(f"{made[tag]} adds {tag} too, and comes later, so its item is used")
         base = self.info.get(like, {})
         info = {"itemTag": tag,
                 "Icon": self.icon(item.get("icon"), base),
@@ -246,7 +259,8 @@ class Game:
             tag = self.full(name, ("Materials",))
             if tag is None and f"{TAG_ROOT}Materials.{name}" in made:
                 tag = f"{TAG_ROOT}Materials.{name}"
-            if tag is None or not (tag in self.materials or tag in made):
+            # Only materials: the game's recipes never ask for a herb.
+            if tag is None or not (tag in self.materials or (tag in made and tag.startswith(TAG_ROOT + "Materials."))):
                 raise ValueError(f"\"recipe\": there's no material {name} (the game's are "
                                  f"{', '.join(sorted(t.rsplit('.', 1)[-1] for t in self.materials))})")
             if not isinstance(n, int) or isinstance(n, bool) or not 0 < n <= 99:

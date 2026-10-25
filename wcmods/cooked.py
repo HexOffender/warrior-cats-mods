@@ -26,6 +26,7 @@ SHIFTED = range(6, 15)          # summary fields that are offsets past the name 
 EXPORT_ENTRY = 72
 PACKAGE_FILE_TAG = b"\xc1\x83\x2a\x9e"
 EMPTY_Z = "\0"                  # an empty FString written as a lone terminator (length 1), kept as it was
+NAME_HASH_VERSION = 0xC1640000  # FNameHash's algorithm id, written in a name batch's header
 
 # Row structs, as (field, type) in the struct's property order. Types: "tag" (FGameplayTag), "text"
 # (FText), "soft" (FSoftObjectPath), "name", "u8" (a byte enum), "i32", "f32".
@@ -76,8 +77,12 @@ class ZenPackage:
         if self.summary[0]:
             raise FormatError("packages with versioning info aren't supported")
         p = SUMMARY.size
-        count, string_bytes, self.hash_version = struct.unpack_from("<IIQ", data, p)
-        p += 16
+        (count,) = struct.unpack_from("<I", data, p)
+        string_bytes, self.hash_version = 0, NAME_HASH_VERSION
+        if count:                          # an empty batch is just its count
+            string_bytes, self.hash_version = struct.unpack_from("<IQ", data, p + 4)
+            p += 12
+        p += 4
         self.hashes = list(struct.unpack_from(f"<{count}Q", data, p))
         p += 8 * count
         lengths = struct.unpack_from(f">{count}H", data, p)
@@ -126,10 +131,13 @@ class ZenPackage:
     def rebuild(self, export_data, sizes):
         """The package with the current name map and new export data; sizes[i] is export i's size."""
         strings = b"".join(n.encode("ascii") for n in self.names)
-        head = struct.pack("<IIQ", len(self.names), len(strings), self.hash_version)
-        head += struct.pack(f"<{len(self.hashes)}Q", *self.hashes)
-        head += struct.pack(f">{len(self.names)}H", *(len(n) for n in self.names))
-        head += strings
+        if self.names:
+            head = struct.pack("<IIQ", len(self.names), len(strings), self.hash_version)
+            head += struct.pack(f"<{len(self.hashes)}Q", *self.hashes)
+            head += struct.pack(f">{len(self.names)}H", *(len(n) for n in self.names))
+            head += strings
+        else:
+            head = struct.pack("<I", 0)
         pad = (-(SUMMARY.size + len(head))) % 8
         head += struct.pack("<q", pad) + b"\0" * pad
         shift = SUMMARY.size + len(head) - self._after_names
@@ -344,7 +352,9 @@ class _Values:
 
 
 class DataTable:
-    """A cooked DataTable's rows: [(row name, {field: value})], in the table's order."""
+    """A cooked DataTable's rows: [(row name, {field: value})], in the table's order. The game's rows
+    are written back byte for byte as they were read (changing their values here changes nothing);
+    add() adds new ones."""
 
     def __init__(self, data, schema):
         self.pkg = ZenPackage(data)
@@ -353,6 +363,8 @@ class DataTable:
         self.schema = SCHEMAS[schema] if isinstance(schema, str) else schema
         self._values = _Values(self.pkg)
         off, size = self.pkg.export(0)
+        if off != 0:
+            raise FormatError("the table's export doesn't start the export data")
         blob = self.pkg.export_data[off:off + size]
         self._trailer = self.pkg.export_data[off + size:]
         if self._trailer[-4:] != PACKAGE_FILE_TAG:
@@ -381,10 +393,17 @@ class DataTable:
         return next(((n, v) for n, v in self.rows if v.get(field) == value), None)
 
     def add(self, name, values):
-        """Add a row (values for the fields it sets; the rest are left at zero)."""
+        """Add a row (values for the fields it sets; the rest get the struct's default). It's encoded
+        now, so a value wcmods can't write is refused here, with ValueError, not when the table is
+        written."""
         if any(n == name for n, _ in self.rows):
             raise ValueError(f"the table already has a row {name}")
+        try:
+            raw = self.encode_row(name, values)
+        except (ValueError, TypeError, AttributeError, KeyError, struct.error) as e:
+            raise ValueError(f"row {name}: {type(e).__name__}: {e}") from None
         self.rows.append((name, dict(values)))
+        self._raw.append(raw)
 
     def encode_row(self, name, values):
         return self._values.write_name(name) + self._values.write_struct(values, self.schema)
@@ -394,11 +413,11 @@ class DataTable:
         return all(self.encode_row(n, v) == raw for (n, v), raw in zip(self.rows, self._raw))
 
     def bytes(self):
-        """The package with every row, the game's as they were and the added ones encoded."""
+        """The package with every row: the game's as they were, then the added ones."""
         out = bytearray(self._prefix)
         out += struct.pack("<i", len(self.rows))
-        for k, (name, values) in enumerate(self.rows):
-            out += self._raw[k] if k < len(self._raw) else self.encode_row(name, values)
+        for raw in self._raw:
+            out += raw
         return self.pkg.rebuild(bytes(out) + self._trailer, [len(out)])
 
 

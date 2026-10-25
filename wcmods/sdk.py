@@ -105,7 +105,7 @@ class BuildContext:
         self.mods = []          # the enabled mods in priority order (set by the build)
         self._tuning = None     # TuningData.csv as numbers, read once (ctx.tuning)
         self._texts = {}        # language -> {key: text} (ctx.text)
-        self._cooked = {}       # cooked table name -> its rows as the game ships them (ctx.cooked_table)
+        self._cooked = {}       # cooked table name -> (the game's asset, its rows) (ctx.cooked_table)
 
     # ---- logging ----
     def log(self, msg):
@@ -147,9 +147,13 @@ class BuildContext:
         [(row name, {field: value})]: ctx.cooked_table("DT_QuestObjectsInfo"). Needs the Oodle DLL."""
         if name not in cooked.TABLES:
             raise ValueError(f"wcmods can't read the cooked table {name} (it knows {', '.join(sorted(cooked.TABLES))})")
+        return self._cooked_table(name)[1]
+
+    def _cooked_table(self, name):
         if name not in self._cooked:
             path, schema = cooked.TABLES[name]
-            self._cooked[name] = cooked.DataTable(self.game.read(path), schema).rows
+            data = self.game.read(path)
+            self._cooked[name] = (data, cooked.DataTable(data, schema).rows)
         return self._cooked[name]
 
     def tuning(self, key=None):
@@ -303,7 +307,7 @@ class BuildContext:
             try:
                 if path in self.packages:
                     raise ValueError(f"{self.packages[path][1]} also replaces {path.rsplit('/', 1)[-1]}")
-                dt = cooked.DataTable(self.game.read(path), schema)
+                dt = cooked.DataTable(self._cooked_table(name)[0], schema)
                 added = []
                 for row, values, section, source in queue:
                     try:

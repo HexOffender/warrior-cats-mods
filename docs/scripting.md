@@ -154,7 +154,7 @@ Also `util`, `vfx`, `achievements`, `analytics`, `online`, `cloud`, `services`, 
 | `Game.every(seconds, fn)`, `Game.after(seconds, fn)` | Every so often; once later. These return an id for `Game.cancel(id)` |
 | `Game.onKey("F6", fn, {"CONTROL"}, help)` | `fn` on the game thread when the key (with modifiers) is pressed; with `help` ("Heal your cat") the mod menu's Overview lists it |
 | `Game.onPress({"T", "Gamepad_DPad_Up"}, fn, help)` | `fn(key)` when any of the keys or controller buttons is pressed in the game's own input (Unreal's key names). Unlike `onKey`, it only hears them while the game has the focus, it hears the controller, and `agent key` can press them. Returns an id for `Game.cancel` |
-| `Game.pressed(key)` | Whether a key or button went down this frame, in the game's own input, for a frame function |
+| `Game.pressed(key)`, `Game.keyDown(key)` | Whether a key or button went down this frame, and whether it's held, in the game's own input, for a frame function |
 | `Game.on(event, fn)`, `Game.off(handle)` | Listen to an event |
 | `Game.emit(event, ...)` | Send one of your own (it reaches listeners in the same script) |
 
@@ -234,7 +234,7 @@ end)
 
 | Option or method | |
 |---|---|
-| `at`, `yaw`, `level` | Where it stands, which way it faces (degrees), and the level it's in (the one you're in when it's spawned) |
+| `at`, `yaw`, `level` | Where it stands, which way it faces (degrees), and the level it's in (by default the one it first appears in) |
 | `colours` | `fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears` as `"#rrggbb"`; the rest stay the game's |
 | `eyes`, `size` | An iris colour slot, as in `palette.json`, and the cat's size (the game's are about 0.4–1.1) |
 | `prefix`, `suffix` | Name IDs (`"STR_CAT_NAME1"`, `"_PAW"`), for the name the game itself knows it by |
