@@ -94,6 +94,31 @@ Movement areas change these: `BP_MovementModifier_Invisible` and `_Loud`
 
 `Detection.LostCharacter.Delay` is named in the exe too.
 
+**Where they live:** each animal's detection component (`SwtAdventureDetectionComponent`, its
+`ExplorationDetectionComponent`) copies its size class's values in when it's made (`0x1417B8B50`,
+from `Gameplay.Exploration.Detection.<class>.*`), so a change there is that animal's alone:
+
+| Offset | Key | Offset | Key |
+|---|---|---|---|
+| +0x57C | `Cone.Angle` | +0x598 | `Target.Distance` |
+| +0x580 | `Cone.Distance` | +0x59C | `WalkSpeed.Roaming` |
+| +0x588 | `Pounce.Distance` | +0x5A0 | `WalkSpeed.Chasing` |
+| +0x58C | `Sound.Radius` | +0x5A4 | `PlayerZone.EntryDistance` |
+| +0x590 | `Sound.Speed` | +0x5A8 | `PlayerZone.ExitDistance` |
+| +0x594 | `Proximity.Distance` | +0x5AC | `Time.ReactToChase` |
+
+Read in game from a mouse (Small): 75, 450, 400, 450, 1, 200, 1200, 70, 400, 1600, 2000 and 0.5.
+`WCModsGame` maps them as a cat's `senses()`; the C++ SDK as `wcmods::senses(actor)`.
+
+**What the AI knows** is on its controller's blackboard (`BB_Enemy`): `Detected`, `Target`,
+`StartLocation`, `RoamingLocation`, `DetectionRange`, `ChaseReactionTime`, `Hunted`, `HunterPawn`,
+`PointOfInterest`, `bShouldAllowMovement`, `ArrivedAtTarget`, `SplineReference`, `CurrentIndexSpline`.
+Noticing a cat (`OnCharacterDetected`, `0x14189F530`) sets `Detected`, `Target`, `StartLocation`,
+`ChaseReactionTime` and `DetectionRange` from the detection component and starts a timer; losing it
+(`0x14189F760`) clears `Detected` and `Target`. A fighter's AI (`BB_CombatEnemy`) keeps
+`AffectedByCondition`, `IsExhausted`, `IsAlive`, `AllyWithStatus`, `AllyWithLowHealth`, `WeakestEnemy`,
+`SlowestEnemy`, `SelectedAttack` and `itemTag`.
+
 **Size classes for metrics:** the player cat is 15 tall, 10 wide and 31 long. NPC cats are 25 tall.
 Small and medium enemies are 25 tall, and large ones 65.
 

@@ -18,12 +18,21 @@ move it's using:
 |---|---|
 | +0x128 | The current move: a copy of its `AttackMove` row (so its `Stance` is at +0x15B, `Damage` +0x160, `Accuracy` +0x164, `StaminaCost` +0x168) |
 | +0x1A0 | Its current stance (`ESwtAdventureCombatStance`) |
+| +0x1A1 | Its team (`ESwtAdventureCombatTeam`: 1 the player's side, 2 the enemy's; seen in game) |
 | +0x1A8 | Its stats struct (`Prowess` +0x1C4, `Strength` +0x1C8, `Resilience` +0x1CC, `Instinct` +0x1D0, `Agility` +0x1D4, `Stamina` +0x1D8) |
+| +0x1E0 | Its moves: a `TArray` of `AttackMove` rows (0x68 bytes each; the count at +0x1E8), filled when the fight is set up (`0x1417D67D0`); 3 for your cat and for a weak mouse |
 | +0x378–0x3A0 | Combat tuning, loaded at `0x1417D7940` (agility penalty, stance modifiers, damage formula, rest) |
 | +0x3D8 | Its clan |
 | +0x3DC | Its level |
+| +0x3F8 | The AI's tier for this fight (`EAICombatProfile`: Tier1–Tier6 1–6, Terrible 7, Perfect 8), picked by the dynamic difficulty code (`0x1417D67D0`); 0 for your cat. Seen: a weak mouse at level 1 got tier 1 |
 
 A character actor points to its combat component at +0x848.
+
+Seen in game (your level 20 cat against a weak mouse, read through the C++ SDK's `Fighter::moves()`
+and `WCModsGame`'s fighter): your cat had team 1, no tier and three moves (`Universal.2` 30/1/20
+Offensive, `Universal.6` 30/1/20 Defensive, `Universal.9` 15/1/20 Trick); the mouse team 2, tier 1,
+level 1 and `WeakMice.1`–`3` (20/1/10 Offensive, 30/1/20 Defensive, 15/1/20 Trick), each move's
+`Damage`, `Accuracy`, `StaminaCost` and `Stance` as its `AttackMove` row has them.
 
 **Enums** (from the exe's enum tables):
 - `ESwtAdventureCombatStance`: None 0, Neutral 1, Offensive 2, Defensive 3, Trick 4, Sneaky 5,
@@ -134,8 +143,8 @@ Read from the code around `0x1417DB2C2`:
    (`Gameplay.Combat.StatusCondition.Blinded.Attacks.Accuracy`).
 3. **The roll:** rand() / 32767, a number from 0 to 1. It's a hit if the roll is at or below the
    chance. So accuracy 1 always hits, unless the attacker is Blinded.
-4. **A forced miss:** before the roll, a flag looked up by the defender's byte at +0x1A1 can make
-   it a miss. This may be a dodge or a "Substitute" decoy (not traced).
+4. **A forced miss:** before the roll, a flag looked up by the defender's team (+0x1A1) in a map on
+   the director (+0x7D8) can make it a miss. This may be a dodge or a "Substitute" decoy (not traced).
 
 Prowess, Instinct and Agility don't change the chance to hit.
 
@@ -174,8 +183,16 @@ What the game's own help text says, with the numbers from `TuningData`:
 | Poisoned | "You lose 10% health at the end of every round" | `StatusCondition.Poison.Damage` 0.1 |
 | Stressed | "You use double stamina for every attack" | |
 
-A fighter has a 20% chance to shake off its status, probably each round
-(`StatusCondition.SelfCure.Chance`).
+The status component (`SwtAdventureStatusComponent`, the character's `StatusConditionComponent`) keeps
+the condition at +0xE0 and how many rounds it has lasted at +0x144 (1 when applied), with the tuning
+at +0x148 (`SelfCure.Chance` 0.2) and +0x14C (`Poison.Damage` 0.1). At the end of each round
+(`ProcessEndOfRound`, `0x1417CDEF0`) it rolls rand / 32767 against rounds × 0.2: at or below clears
+the condition, above counts another round. So the chance of shaking it off grows: 20% after the
+first round, 40% after the second, 60%, 80%, and it never lasts past the fifth. A poisoned fighter
+is then queued for poison damage on the director (+0x4D0). Seen in game: Blinded applied → rounds 1,
+one round's end → rounds 2, the next → cleared; `ApplyStatusType` on a fighter that already has the
+condition does nothing. (`ProcessEndOfRound` outside a fight, with Poisoned, reads the director that
+isn't there and closes the game.)
 Antidote pouches cure them: Eyewort (Blinded), Chamomile (Furious), Antidote Herb (Poisoned) and
 Valerian Root (Stressed).
 
@@ -388,8 +405,9 @@ secret fox, dog, snake and badger.
 | Tier 6 | 0.9 | 0.9 | 0.9 | 0.6 | 0.5 | 0.5 | 0.5 | 0.8 | 0.1 | 0.9 | 0.5 | 0.9 | 0.9 |
 | Perfect | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 1 | 0 | 1 | 1 | 1 | 1 |
 
-**Dynamic difficulty** (`Gameplay.Combat.Dynamic.*`): the enemy's tier is picked from a range set by
-your level, and its level is yours −1 to +1. Seen in game: a weak bird fought a level 20 cat at level
+**Dynamic difficulty** (`Gameplay.Combat.Dynamic.*`, `0x1417D67D0`): the enemy's tier is picked from a
+range set by your level and stored in its combat component at +0x3F8, and its level (+0x3DC) is yours
+−1 to +1; its moves (+0x1E0) come from its clan and level (`0x14181C320`). Seen in game: a weak bird fought a level 20 cat at level
 20, with its stats grown by the same formula as yours (base + growth × 0.95 at level 20).
 
 | Your level | Enemy tiers |

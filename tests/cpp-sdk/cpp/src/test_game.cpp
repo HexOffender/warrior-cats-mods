@@ -140,6 +140,21 @@ namespace t
             Vec3 back = to_vec3(f);
             expect("vec3.round_trip", back.x == 1.5 && back.y == -2 && back.z == 3);
             expect("teleport.null", !teleport(nullptr, {0, 0, 0}) && !location(nullptr));
+
+            // ----- the status condition: the game's own members on the status component
+            expect("cat.status_component", c.status_component() != nullptr && class_name(c.status_component()) == L"SwtAdventureStatusComponent");
+            auto status = c.status();
+            auto rounds = c.status_rounds();
+            expect("cat.status", status && rounds && *status <= 4 && *rounds >= 0);
+            value("cat.status", status ? Json(*status) : Json());
+            value("cat.status_rounds", rounds ? Json(*rounds) : Json());
+            auto cure = c.self_cure_chance();
+            auto poison = c.poison_damage();
+            expect("cat.status_tuning", cure && poison && *cure > 0 && *cure < 1 && *poison > 0 && *poison < 1);
+            value("cat.self_cure_chance", cure ? Json(*cure) : Json());
+            value("cat.poison_damage", poison ? Json(*poison) : Json());
+            expect("cat.none.status", !none.status_component() && !none.status() && !none.status_rounds() && !none.apply_status(1)
+                                          && !none.remove_status(1) && !none.clear_status());
         }
 
         auto game_world_state() -> void
@@ -190,6 +205,18 @@ namespace t
     {
         Cat c = cat();
         if (!expect("writes.cat", static_cast<bool>(c))) return;
+
+        // A condition given through the game's function shows in the member with its rounds at 1, goes when
+        // taken off, and clears; the member is the game's own, so Lua sees the same (test_status_seen_by_cpp).
+        if (uint8_t* status = c.status(); status && c.status_rounds())
+        {
+            bool applied = c.apply_status(1) && *status == 1 && *c.status_rounds() == 1;
+            bool removed = c.remove_status(1) && *status == 0;
+            bool cleared = c.apply_status(3) && *status == 3 && c.clear_status() && *status == 0;
+            expect("status.round_trip", applied && removed && cleared,
+                   std::to_string(applied) + std::to_string(removed) + std::to_string(cleared));
+        }
+        else expect("status.round_trip", false, "no status members");
 
         Resource hp = c.health();
         if (hp)
@@ -299,5 +326,14 @@ namespace t
         expect("save_settings", save_settings());
         value("writes.runs", runs + 1);
         log(L"writes done");
+    }
+
+    auto snapshot_status() -> void
+    {
+        Cat c = cat();
+        auto status = c.status();
+        auto rounds = c.status_rounds();
+        value("status.now", status ? Json(*status) : Json());
+        value("status.rounds.now", rounds ? Json(*rounds) : Json());
     }
 } // namespace t

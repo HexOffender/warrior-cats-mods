@@ -56,6 +56,7 @@ namespace wcmods
         std::wstring type;
         void* at{};            // where the value sits (Struct, Array, Map, and the rest)
         FProperty* property{}; // what describes it
+        RC::Unreal::UStruct* layout{};   // a struct's type when no property says: one in the game's own arrays (struct_at)
 
         explicit operator bool() const { return kind != Kind::None; }
         auto boolean(bool fallback = false) const -> bool { return kind == Kind::Bool ? b : fallback; }
@@ -233,7 +234,8 @@ namespace wcmods
         inline auto place_of(const Value& v) -> Place
         {
             if (v.kind == Value::Kind::Object) return {v.object, v.object ? v.object->GetClassPrivate() : nullptr, true};
-            if (v.kind == Value::Kind::Struct) return {v.at, static_cast<FStructProperty*>(v.property)->GetStruct(), false};
+            if (v.kind == Value::Kind::Struct)
+                return {v.at, v.property ? static_cast<UStruct*>(static_cast<FStructProperty*>(v.property)->GetStruct()) : v.layout, false};
             return {};
         }
 
@@ -437,6 +439,27 @@ namespace wcmods
             out.push_back({p->GetName(), v.type, v});
         }
         return out;
+    }
+
+    // A struct Value over bytes you point at, by the struct's type or its path
+    // ("/Script/SwtAdventure.SwtAdventureAttackMoveStruct"): for a struct in one of the game's own arrays, which
+    // no property describes (Fighter::moves()). get(), describe() and set() work on it as on any struct Value;
+    // the bytes stay the game's, so use it while they last. None without the type or the bytes.
+    inline auto struct_at(RC::Unreal::UStruct* type, void* at) -> Value
+    {
+        if (!type || !at) return {};
+        Value v;
+        v.kind = Value::Kind::Struct;
+        v.at = at;
+        v.layout = type;
+        v.type = type->GetName();
+        return v;
+    }
+    inline auto struct_at(const TCHAR* struct_path, void* at) -> Value
+    {
+        UObject* o = object(struct_path);
+        if (!o || !o->IsA(RC::Unreal::UStruct::StaticClass())) return {};   // a path to something that isn't a struct
+        return struct_at(static_cast<RC::Unreal::UStruct*>(o), at);
     }
 
     // Write into a struct or object a get() gave: set(custom, L"ClanType", L"RiverClan").

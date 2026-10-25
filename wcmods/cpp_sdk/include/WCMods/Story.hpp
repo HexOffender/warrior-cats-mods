@@ -213,6 +213,31 @@ namespace wcmods
                 if (v.object) out.push_back(v.object);
             return out;
         }
+        // Its team (ESwtAdventureCombatTeam: 1 the player's side, 2 the enemy's), the AI's tier for this fight
+        // (EAICombatProfile: 1–6, 7 Terrible, 8 Perfect; 0 for your cat), and the moves it has to pick from,
+        // each an AttackMove row as a struct Value (AttackMoveTag, Damage, Accuracy, StaminaCost, Stance...):
+        // the component's own members, filled when the fight is set up (0 and none outside one). The pointers
+        // are nullptr when wcmods hasn't got the members on this build.
+        auto team() -> uint8_t* { return member<uint8_t>(component, L"/Script/SwtAdventure.TurnBasedCombatComponent", L"WCM_Team"); }
+        auto ai_tier() -> int32_t* { return member<int32_t>(component, L"/Script/SwtAdventure.TurnBasedCombatComponent", L"WCM_AITier"); }
+        auto move_count() -> int32_t* { return member<int32_t>(component, L"/Script/SwtAdventure.TurnBasedCombatComponent", L"WCM_MoveCount"); }
+        auto moves() -> std::vector<Value>
+        {
+            std::vector<Value> out;
+            int32_t* count = move_count();
+            if (!count) return out;
+            // The count is a TArray's (pointer, count, capacity): the data pointer is the 8 bytes before it and
+            // the capacity the 4 after. A count that doesn't fit its capacity isn't an array's (a game update
+            // that moved the member somewhere else): nothing is read then.
+            const int32_t capacity = *(count + 1);
+            if (*count <= 0 || *count > 32 || capacity < *count) return out;
+            uint8_t* data = *reinterpret_cast<uint8_t**>(reinterpret_cast<uint8_t*>(count) - 8);
+            auto* type = static_cast<RC::Unreal::UStruct*>(object(STR("/Script/SwtAdventure.SwtAdventureAttackMoveStruct")));
+            if (!data || !type) return out;
+            const int32_t size = type->GetStructureSize();
+            for (int32_t i = 0; i < *count; ++i) out.push_back(struct_at(type, data + i * size));
+            return out;
+        }
     };
     // A fighter from a cat's actor or its combat component.
     inline auto fighter(UObject* actor_or_component) -> Fighter

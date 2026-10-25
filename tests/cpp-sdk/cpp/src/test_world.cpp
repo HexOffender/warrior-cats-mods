@@ -149,6 +149,57 @@ namespace t
         expect("fighter.members", me.level() != nullptr && me.stance() != nullptr && me.stat(Stat::Strength) != nullptr);
         expect("fighter.move", me.move().kind == Value::Kind::Struct || me.move().kind == Value::Kind::None);
         value("fighter.targets", static_cast<double>(me.targets().size()));
+        // The members a fight sets up, outside one: the team and tier 0, no moves (snapshot_fight reads them in one).
+        expect("fighter.hidden", me.team() != nullptr && me.ai_tier() != nullptr && me.move_count() != nullptr
+                                     && !fighter(nullptr).team() && !fighter(nullptr).ai_tier() && fighter(nullptr).moves().empty());
+        value("fighter.team", me.team() ? Json(*me.team()) : Json());
+        value("fighter.ai_tier", me.ai_tier() ? Json(*me.ai_tier()) : Json());
+        value("fighter.move_count", me.move_count() ? Json(*me.move_count()) : Json());
+        expect("fighter.moves", me.moves().size() == static_cast<size_t>(me.move_count() ? *me.move_count() : 0));
+        // A struct Value over bytes of your own, as moves() makes them: the AttackMove row's fields read through it.
+        {
+            auto* type = static_cast<RC::Unreal::UStruct*>(object(STR("/Script/SwtAdventure.SwtAdventureAttackMoveStruct")));
+            std::vector<uint8_t> bytes(type ? type->GetStructureSize() : 0);
+            Value row = struct_at(STR("/Script/SwtAdventure.SwtAdventureAttackMoveStruct"), bytes.data());
+            bool ok = type && row.kind == Value::Kind::Struct && row.type == L"SwtAdventureAttackMoveStruct" && !describe(row).empty()
+                      && get(row, L"Damage").kind == Value::Kind::Float && set(row, L"Damage", 42.0) && get(row, L"Damage").number() == 42
+                      && !struct_at(STR("/Script/NoSuch.Struct"), bytes.data()) && !struct_at(type, nullptr);
+            expect("struct_at", ok, type ? std::to_string(bytes.size()) : "no type");
+        }
+
+        // ----- an animal's senses and AI: the nearest roaming animal
+        auto creatures = nearby(Kind::Creatures, 100000);
+        value("senses.actor", creatures.empty() ? Json() : Json(text(creatures[0].name)));
+        if (!creatures.empty())
+        {
+            UObject* animal = creatures[0].actor;
+            Senses s = senses(animal);
+            expect("senses", s && detection_component(animal) != nullptr && *s.cone_angle > 0 && *s.cone_distance > 0
+                                 && *s.walk_speed_chasing > *s.walk_speed_roaming && *s.zone_exit_distance >= *s.zone_entry_distance
+                                 && *s.react_to_chase >= 0 && *s.sound_radius > 0 && *s.sound_speed > 0 && *s.pounce_distance > 0
+                                 && *s.proximity_distance > 0 && *s.target_distance > 0);
+            auto f = [](float* p) { return p ? Json(*p) : Json(); };
+            value("senses.cone_angle", f(s.cone_angle));
+            value("senses.cone_distance", f(s.cone_distance));
+            value("senses.sound_radius", f(s.sound_radius));
+            value("senses.sound_speed", f(s.sound_speed));
+            value("senses.pounce_distance", f(s.pounce_distance));
+            value("senses.proximity_distance", f(s.proximity_distance));
+            value("senses.target_distance", f(s.target_distance));
+            value("senses.walk_speed_roaming", f(s.walk_speed_roaming));
+            value("senses.walk_speed_chasing", f(s.walk_speed_chasing));
+            value("senses.zone_entry_distance", f(s.zone_entry_distance));
+            value("senses.zone_exit_distance", f(s.zone_exit_distance));
+            value("senses.react_to_chase", f(s.react_to_chase));
+            expect("blackboard", blackboard(animal) != nullptr && blackboard_bool(animal, L"Detected").has_value()
+                                     && blackboard_float(animal, L"ChaseReactionTime").has_value()
+                                     && !blackboard_bool(animal, L"NoSuchKeyAnywhere").value_or(false)
+                                     && blackboard_object(animal, L"Target") == npc_target(animal) && blackboard_object(animal, L"SelfActor") == animal);
+            value("ai.detected", npc_detected(animal));
+            value("ai.target", npc_target(animal) ? Json(text(name(npc_target(animal)))) : Json());
+        }
+        expect("senses.cat", !senses(actor) && blackboard(actor) == nullptr && !npc_detected(actor) && npc_target(actor) == nullptr
+                                 && !senses(nullptr) && !blackboard_bool(nullptr, L"Detected") && !blackboard_float(actor, L"X"));
     }
 
     auto setup_story() -> void
@@ -182,5 +233,37 @@ namespace t
         value("events.phase", phase_events.load());
         value("events.first_phase", first_phase);
         value("events.combat", combat_events.load());
+    }
+
+    auto snapshot_fight() -> void
+    {
+        // Every fighter in the fight going on (none outside one), with the members the fight set up and its moves.
+        Json list = Json::array();
+        auto add = [&](Fighter f, const char* side) {
+            Json row = Json::object();
+            row.set("side", std::string(side));
+            row.set("actor", text(name(f.actor())));
+            row.set("team", f.team() ? Json(*f.team()) : Json());
+            row.set("ai_tier", f.ai_tier() ? Json(*f.ai_tier()) : Json());
+            row.set("level", f.level() ? Json(*f.level()) : Json());
+            row.set("move_count", f.move_count() ? Json(*f.move_count()) : Json());
+            Json moves = Json::array();
+            for (Value& m : f.moves())
+            {
+                Json mv = Json::object();
+                mv.set("tag", text(get(m, L"AttackMoveTag.TagName").text));
+                mv.set("damage", get(m, L"Damage").number());
+                mv.set("accuracy", get(m, L"Accuracy").number());
+                mv.set("stamina", get(m, L"StaminaCost").number());
+                mv.set("stance", get(m, L"Stance").shown().empty() ? Json() : Json(text(get(m, L"Stance").shown())));
+                moves.push(mv);
+            }
+            row.set("moves", moves);
+            list.push(row);
+        };
+        for (Fighter f : fight_players()) add(f, "players");
+        for (Fighter f : fight_enemies()) add(f, "enemies");
+        value("fight.active", combat_active());
+        value("fight.fighters", list);
     }
 } // namespace t

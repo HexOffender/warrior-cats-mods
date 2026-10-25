@@ -193,15 +193,18 @@
   "/Script/SwtAdventure.TurnBasedCombatComponent": {
    "fields": {
     "WCM_Stance": 416,
+    "WCM_Team": 417,
     "WCM_Prowess": 452,
     "WCM_Strength": 456,
     "WCM_Resilience": 460,
     "WCM_Instinct": 464,
     "WCM_Agility": 468,
     "WCM_Stamina": 472,
+    "WCM_MoveCount": 488,
     "WCM_Clan": 984,
     "WCM_Level": 988,
-    "WCM_PresetDamage": 996
+    "WCM_PresetDamage": 996,
+    "WCM_AITier": 1016
    },
    "found": true,
    "anchors": [
@@ -224,14 +227,69 @@
      "note": "setting up a fighter: health and fight stamina from its stats",
      "was": "0x17D6E60",
      "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 60 48 8B 99 ?? ?? ?? ?? 8B FA 89 91 ?? ?? ?? ??"
+    },
+    {
+     "note": "dynamic difficulty: an enemy's level, its AI tier and its moves",
+     "was": "0x17D67D0",
+     "pattern": "48 89 54 24 ?? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC 18 01 00 00 4C 8B F9"
+    },
+    {
+     "note": "hitting and missing: the defender's slot looked up for a forced miss",
+     "was": "0x17DB37E",
+     "pattern": "0F 29 BC 24 ?? ?? ?? ?? F3 0F 10 3D ?? ?? ?? ?? 0F 29 B4 24 ?? ?? ?? ?? 66 66 0F 1F 84 00 ?? ?? ?? ?? 49 8B 3C 24"
     }
    ],
    "sites": [
     {
-     "from": "0x17D6E60",
-     "pattern": "48 8B 99 ?? ?? ?? ?? 8B FA 89 91 ?? ?? ?? ?? 48 8B F1 48 85 DB",
+     "from": "0x173E740",
+     "pattern": "E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 93 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ??",
+     "captures": {
+      "19": 488
+     }
+    },
+    {
+     "from": "0x17D67D0",
+     "pattern": "0F 4F C1 48 8D 4C 24 ?? 41 89 87 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 4C 24 ??",
      "captures": {
       "11": 988
+     }
+    },
+    {
+     "from": "0x17D67D0",
+     "pattern": "89 1C 01 48 8D 4C 24 ?? 45 8B 8F ?? ?? ?? ?? 45 0F B6 87 ?? ?? ?? ?? E8 ?? ?? ?? ??",
+     "captures": {
+      "11": 988,
+      "19": 984
+     }
+    },
+    {
+     "from": "0x17D67D0",
+     "pattern": "48 8D 4C 24 ?? 45 8B 8F ?? ?? ?? ?? 45 0F B6 87 ?? ?? ?? ?? E8 ?? ?? ?? ?? 33 DB",
+     "captures": {
+      "8": 988,
+      "16": 984
+     }
+    },
+    {
+     "from": "0x17D67D0",
+     "pattern": "45 8B 8F ?? ?? ?? ?? 48 8D 4C 24 ?? 45 0F B6 87 ?? ?? ?? ?? 48 8B D6 E8 ?? ?? ?? ??",
+     "captures": {
+      "3": 988,
+      "16": 984
+     }
+    },
+    {
+     "from": "0x17D67D0",
+     "pattern": "8B F3 66 90 41 83 BF ?? ?? ?? ?? 04 7D ?? 48 39 1D ?? ?? ?? ??",
+     "captures": {
+      "7": 488
+     }
+    },
+    {
+     "from": "0x17D67D0",
+     "pattern": "4C 8B E0 4D 8D 87 ?? ?? ?? ?? 41 8B 87 ?? ?? ?? ?? 41 3B 00 75 ??",
+     "captures": {
+      "13": 488
      }
     },
     {
@@ -249,24 +307,10 @@
      }
     },
     {
-     "from": "0x17D8010",
-     "pattern": "40 B7 01 48 8B 05 ?? ?? ?? ?? 44 0F B6 B6 ?? ?? ?? ?? 48 85 C0 75 ??",
+     "from": "0x17DB37E",
+     "pattern": "48 8B 87 ?? ?? ?? ?? 49 8B CE 44 0F B6 B8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C 8B C0",
      "captures": {
-      "14": 984
-     }
-    },
-    {
-     "from": "0x17D8010",
-     "pattern": "48 85 C9 74 ?? E8 ?? ?? ?? ?? 8B 86 ?? ?? ?? ?? 0F 57 C9 F3 0F 10 1D ?? ?? ?? ?? FF C8",
-     "captures": {
-      "12": 988
-     }
-    },
-    {
-     "from": "0x17D8010",
-     "pattern": "F3 0F 2A C0 F3 0F 11 43 ?? 0F 57 C0 8B 86 ?? ?? ?? ?? FF C8 F3 0F 2A C8 F3 41 0F 59 C9",
-     "captures": {
-      "14": 988
+      "14": 417
      }
     }
    ],
@@ -275,6 +319,177 @@
    "vtable": 163117800,
    "overrides": 4,
    "natives": 12,
+   "parent": null
+  },
+  "/Script/SwtAdventure.SwtAdventureStatusComponent": {
+   "fields": {
+    "WCM_Status": 224,
+    "WCM_StatusRounds": 324,
+    "WCM_SelfCureChance": 328,
+    "WCM_PoisonDamage": 332
+   },
+   "found": true,
+   "anchors": [
+    {
+     "note": "the end of a round: the self-cure roll, and poison queued on the director",
+     "was": "0x17CDEF0",
+     "pattern": "48 89 5C 24 ?? 57 48 83 EC 20 0F B6 99 ?? ?? ?? ?? 48 8B F9 84 DB 0F 84 ?? ?? ?? ?? FF 15 ?? ?? ?? ??"
+    },
+    {
+     "note": "loads the status tuning",
+     "was": "0x17CDA26",
+     "pattern": "48 8D 15 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 4D ?? F3 0F 11 87 ?? ?? ?? ?? 48 85 C9"
+    }
+   ],
+   "sites": [
+    {
+     "from": "0x1736CD0",
+     "pattern": "8B 44 8A ?? 83 F8 FF 75 ?? 38 9F ?? ?? ?? ?? 0F 84 ?? ?? ?? ?? 48 8B CF E8 ?? ?? ?? ??",
+     "captures": {
+      "11": 224
+     }
+    },
+    {
+     "from": "0x1736F50",
+     "pattern": "0F B6 44 24 ?? 48 89 4B ?? 38 87 ?? ?? ?? ?? 75 ?? 48 8B CF",
+     "captures": {
+      "11": 224
+     }
+    },
+    {
+     "from": "0x17CDA26",
+     "pattern": "E8 ?? ?? ?? ?? 48 8B 4D ?? F3 0F 11 87 ?? ?? ?? ?? 48 85 C9 74 ??",
+     "captures": {
+      "13": 332
+     }
+    },
+    {
+     "from": "0x17CDA26",
+     "pattern": "E8 ?? ?? ?? ?? 48 8B 4D ?? F3 0F 11 87 ?? ?? ?? ?? 48 8B 7C 24 ?? 48 85 C9",
+     "captures": {
+      "13": 328
+     }
+    },
+    {
+     "from": "0x17CDCC0",
+     "pattern": "40 53 48 83 EC 50 80 B9 ?? ?? ?? ?? 00 48 8B D9 0F 84 ?? ?? ?? ??",
+     "captures": {
+      "8": 224
+     }
+    },
+    {
+     "from": "0x17CDEF0",
+     "pattern": "25 FF 7F 00 00 66 0F 6E C8 8B 87 ?? ?? ?? ?? 0F 5B C9 66 0F 6E C0",
+     "captures": {
+      "11": 324
+     }
+    },
+    {
+     "from": "0x17CDEF0",
+     "pattern": "F3 0F 59 0D ?? ?? ?? ?? 0F 5B C0 F3 0F 59 87 ?? ?? ?? ?? 0F 2F C8 77 ??",
+     "captures": {
+      "15": 328
+     }
+    },
+    {
+     "from": "0x17CDEF0",
+     "pattern": "E8 ?? ?? ?? ?? EB ?? FF C0 89 87 ?? ?? ?? ?? 0F B6 87 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? 48 8D 54 24 ??",
+     "captures": {
+      "11": 324,
+      "18": 224
+     }
+    }
+   ],
+   "size": 336,
+   "align": 8,
+   "vtable": 163059808,
+   "overrides": 2,
+   "natives": 4,
+   "parent": null
+  },
+  "/Script/SwtAdventure.SwtAdventureDetectionComponent": {
+   "fields": {
+    "WCM_ConeAngle": 1404,
+    "WCM_ConeDistance": 1408,
+    "WCM_PounceDistance": 1416,
+    "WCM_SoundRadius": 1420,
+    "WCM_SoundSpeed": 1424,
+    "WCM_ProximityDistance": 1428,
+    "WCM_TargetDistance": 1432,
+    "WCM_WalkSpeedRoaming": 1436,
+    "WCM_WalkSpeedChasing": 1440,
+    "WCM_ZoneEntryDistance": 1444,
+    "WCM_ZoneExitDistance": 1448,
+    "WCM_ReactToChase": 1452
+   },
+   "found": true,
+   "anchors": [
+    {
+     "note": "loads the senses from the tuning for the size class",
+     "was": "0x17B8B50",
+     "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 55 48 8B EC 48 83 EC 40 48 8B 05 ?? ?? ?? ??"
+    },
+    {
+     "note": "reads the senses",
+     "was": "0x17B7E60",
+     "pattern": "40 53 48 83 EC 20 48 8B D9 E8 ?? ?? ?? ?? 48 8B 03 33 D2 48 8B CB FF 90 ?? ?? ?? ?? 48 8B 03"
+    }
+   ],
+   "sites": [
+    {
+     "from": "0x17B7E60",
+     "pattern": "48 8B CB E8 ?? ?? ?? ?? F3 0F 10 8B ?? ?? ?? ?? 41 B0 01 F3 0F 5F 8B ?? ?? ?? ??",
+     "captures": {
+      "12": 1420,
+      "23": 1408
+     }
+    },
+    {
+     "from": "0x17B7E60",
+     "pattern": "F3 0F 10 8B ?? ?? ?? ?? 41 B0 01 F3 0F 5F 8B ?? ?? ?? ?? 48 8B CB F3 0F 5F 8B ?? ?? ?? ??",
+     "captures": {
+      "4": 1420,
+      "15": 1408,
+      "26": 1428
+     }
+    },
+    {
+     "from": "0x17B7E60",
+     "pattern": "F3 0F 5F 8B ?? ?? ?? ?? 48 8B CB F3 0F 5F 8B ?? ?? ?? ?? F3 0F 5F 8B ?? ?? ?? ?? 48 83 C4 20",
+     "captures": {
+      "4": 1408,
+      "15": 1428,
+      "23": 1444
+     }
+    },
+    {
+     "from": "0x17B7E60",
+     "pattern": "F3 0F 5F 8B ?? ?? ?? ?? F3 0F 5F 8B ?? ?? ?? ?? 48 83 C4 20",
+     "captures": {
+      "4": 1428,
+      "12": 1444
+     }
+    },
+    {
+     "from": "0x17B8B50",
+     "pattern": "4C 0F 45 45 ?? E8 ?? ?? ?? ?? 48 8D B3 ?? ?? ?? ?? 45 33 C9 48 8B D6",
+     "captures": {
+      "13": 1436
+     }
+    },
+    {
+     "from": "0x17B8B50",
+     "pattern": "4C 8B C7 E8 ?? ?? ?? ?? 48 8D 93 ?? ?? ?? ?? 45 33 C9 48 8D 4D ??",
+     "captures": {
+      "11": 1452
+     }
+    }
+   ],
+   "size": 1568,
+   "align": 16,
+   "vtable": 162809888,
+   "overrides": 7,
+   "natives": 0,
    "parent": null
   }
  }

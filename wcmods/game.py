@@ -35,14 +35,33 @@ HIDDEN = [
     ("/Script/SwtAdventure.SwtAdventureFreshKillPileComponent", [
         ("WCM_DecayTimer", 0x130, "FloatProperty"), ("WCM_DecayTime", 0x134, "FloatProperty")]),
     ("/Script/SwtAdventure.SwtAdventureGameplayGameState", [("WCM_DayTime", 0x438, "FloatProperty")]),
-    # A fighter's combat component (set up when a fight starts).
+    # A fighter's combat component (set up when a fight starts). Its team (ESwtAdventureCombatTeam: 1 the
+    # player's side, 2 the enemy's), how many moves it has to pick from (the array's data pointer sits at +0x1E0; its elements
+    # are AttackMove rows, 0x68 bytes each, which the C++ SDK reads), and the AI's tier for this fight
+    # (EAICombatProfile: 1–6, 7 Terrible, 8 Perfect; picked from the range your level sets).
     ("/Script/SwtAdventure.TurnBasedCombatComponent", [
-        ("WCM_Stance", 0x1A0, "ByteProperty"),
+        ("WCM_Stance", 0x1A0, "ByteProperty"), ("WCM_Team", 0x1A1, "ByteProperty"),
         ("WCM_Prowess", 0x1C4, "FloatProperty"), ("WCM_Strength", 0x1C8, "FloatProperty"),
         ("WCM_Resilience", 0x1CC, "FloatProperty"), ("WCM_Instinct", 0x1D0, "FloatProperty"),
         ("WCM_Agility", 0x1D4, "FloatProperty"), ("WCM_Stamina", 0x1D8, "FloatProperty"),
+        ("WCM_MoveCount", 0x1E8, "IntProperty"),
         ("WCM_Clan", 0x3D8, "ByteProperty"), ("WCM_Level", 0x3DC, "IntProperty"),
-        ("WCM_PresetDamage", 0x3E4, "IntProperty")]),
+        ("WCM_PresetDamage", 0x3E4, "IntProperty"), ("WCM_AITier", 0x3F8, "IntProperty")]),
+    # A cat's or animal's status condition component: the condition it has now (ESwtAdventureStatusType:
+    # 0 none, 1 Blinded, 2 Furious, 3 Poisoned, 4 Stressed), how many rounds it has had it (1 when applied;
+    # a round's end rolls rounds × SelfCureChance to shake it off), and the tuning the component keeps.
+    ("/Script/SwtAdventure.SwtAdventureStatusComponent", [
+        ("WCM_Status", 0xE0, "ByteProperty"), ("WCM_StatusRounds", 0x144, "IntProperty"),
+        ("WCM_SelfCureChance", 0x148, "FloatProperty"), ("WCM_PoisonDamage", 0x14C, "FloatProperty")]),
+    # A roaming animal's senses (its detection component): the TuningData's
+    # Gameplay.Exploration.Detection.<size class>.* values, copied in when the animal is made.
+    ("/Script/SwtAdventure.SwtAdventureDetectionComponent", [
+        ("WCM_ConeAngle", 0x57C, "FloatProperty"), ("WCM_ConeDistance", 0x580, "FloatProperty"),
+        ("WCM_PounceDistance", 0x588, "FloatProperty"), ("WCM_SoundRadius", 0x58C, "FloatProperty"),
+        ("WCM_SoundSpeed", 0x590, "FloatProperty"), ("WCM_ProximityDistance", 0x594, "FloatProperty"),
+        ("WCM_TargetDistance", 0x598, "FloatProperty"), ("WCM_WalkSpeedRoaming", 0x59C, "FloatProperty"),
+        ("WCM_WalkSpeedChasing", 0x5A0, "FloatProperty"), ("WCM_ZoneEntryDistance", 0x5A4, "FloatProperty"),
+        ("WCM_ZoneExitDistance", 0x5A8, "FloatProperty"), ("WCM_ReactToChase", 0x5AC, "FloatProperty")]),
 ]
 
 LUA = r'''-- WCModsGame: script the game. Installed by wcmods; any UE4SS script can use it:
@@ -1087,6 +1106,9 @@ Game.enums = {
     trait = enum({ "None", "Brave", "Ambitious", "Wise", "Energetic", "Curious", "Patient" }),
     stance = enum({ "None", "Neutral", "Offensive", "Defensive", "Trick", "Sneaky", "Reckless" }),
     status = enum({ "None", "Blinded", "Furious", "Poisoned", "Stressed" }),
+    aiProfile = enum({ "None", "Tier1", "Tier2", "Tier3", "Tier4", "Tier5", "Tier6", "Terrible", "Perfect" }),
+    team = enum({ "None", "Player", "Enemy" }),
+    detectionRange = enum({ "Tiny", "Small", "Medium", "Large" }),
     stat = enum({ "None", "Prowess", "Strength", "Resilience", "Instinct", "Agility" }),
     resource = enum({ "Health", "Level", "Stamina", "StaminaCombat", "Currency", "FreshKill" }),
     questStatus = enum({ "None", "QuestAvailable", "OngoingQuest", "QuestComplete", "QuestTurnedIn", "DialogueProgress" }),
@@ -1310,6 +1332,55 @@ function Cat:statusComponent() return Game.get(self.actor, "StatusConditionCompo
 function Cat:applyStatus(s) return Game.call(self:statusComponent(), "ApplyStatusType", enumValue(Game.enums.status, s)) end
 function Cat:removeStatus(s) return Game.call(self:statusComponent(), "RemoveStatusType", enumValue(Game.enums.status, s)) end
 function Cat:clearStatus() return Game.call(self:statusComponent(), "ClearStatusType") end
+-- The condition the cat has now ("Poisoned"; "None" without one) and how many rounds it has had it, from
+-- the component's own members: 1 when applied, and each round's end rolls rounds × 20% to shake it off
+-- (StatusCondition.SelfCure.Chance), so a condition never lasts past the fifth round. (The component's
+-- ProcessEndOfRound needs a fight going on: with Poisoned it queues the damage on the fight's director.)
+function Cat:status() return Game.enums.status[Game.get(self:statusComponent(), "WCM_Status")] end
+function Cat:statusRounds() return Game.get(self:statusComponent(), "WCM_StatusRounds") end
+
+-- An animal's senses: its detection component's copy of the tuning for its size class (Tiny, Small, Medium,
+-- Large), so a change is this animal's alone. {ConeAngle, ConeDistance, SoundRadius, SoundSpeed, PounceDistance,
+-- ProximityDistance, TargetDistance, WalkSpeedRoaming, WalkSpeedChasing, ZoneEntryDistance, ZoneExitDistance,
+-- ReactToChase, Range}; nil for a cat (no such component).
+local SENSES = { "ConeAngle", "ConeDistance", "SoundRadius", "SoundSpeed", "PounceDistance", "ProximityDistance", "TargetDistance",
+                 "WalkSpeedRoaming", "WalkSpeedChasing", "ZoneEntryDistance", "ZoneExitDistance", "ReactToChase" }
+function Cat:detectionComponent()
+    local c = Game.get(self.actor, "ExplorationDetectionComponent")
+    return valid(c) and c or nil
+end
+function Cat:senses()
+    local c = self:detectionComponent()
+    if not c then return nil end
+    local out = {}
+    for _, s in ipairs(SENSES) do out[s] = Game.get(c, "WCM_" .. s) end
+    out.Range = Game.enums.detectionRange[Game.get(c, "Range")]
+    return out
+end
+function Cat:setSense(name, v)
+    local c = self:detectionComponent()
+    if not c then return false, "no detection component" end
+    return Game.set(c, "WCM_" .. name, v)
+end
+-- What an animal's AI knows, from its controller's blackboard: whether it has noticed a cat and which
+-- (`detected`, `target`), whether it's being hunted, and the rest by key through `blackboard`
+-- (`bb:GetValueAsBool(FName("Detected"))`; the keys are Detected, Target, StartLocation, RoamingLocation,
+-- DetectionRange, ChaseReactionTime, Hunted, HunterPawn, PointOfInterest, bShouldAllowMovement,
+-- ArrivedAtTarget, and in a fight AffectedByCondition, IsExhausted, IsAlive, WeakestEnemy, SlowestEnemy,
+-- SelectedAttack). nil without an AI controller (your cat).
+function Cat:ai()
+    local bb = Game.get(self.actor, "Controller.Blackboard")
+    if not valid(bb) then return nil end
+    local function key(fn, name)
+        local ok, v = pcall(function() return bb[fn](bb, FName(name)) end)
+        if ok then return v end
+        return nil
+    end
+    local target = key("GetValueAsObject", "Target")
+    return { detected = key("GetValueAsBool", "Detected") == true, target = valid(target) and Game.cat(target) or nil,
+             hunted = key("GetValueAsBool", "Hunted") == true, reactionTime = key("GetValueAsFloat", "ChaseReactionTime"),
+             blackboard = bb }
+end
 
 -- What the cat is: "Cat", "Mice", "BossFox", ... (ESwtQuestCharacterType).
 function Cat:kind() return Game.enums.characterType[Game.get(self.actor, "CharacterType")] end
@@ -2011,6 +2082,17 @@ function Fighter:targets()
     for _, a in ipairs(Game.list(Game.get(self.component, "CurrentTarget"))) do out[#out + 1] = Game.cat(a) end
     return out
 end
+-- The AI's tier for this fight ("Tier4"; "None" for your cat; see docs/mechanics/combat.md), the fighter's
+-- team ("Player", "Enemy"), and how many moves it has to pick from: the component's own members, filled
+-- when the fight is set up (0 and "None" outside one).
+function Fighter:aiTier() return Game.enums.aiProfile[Game.get(self.component, "WCM_AITier")] end
+function Fighter:setAITier(tier)
+    local n = enumValue(Game.enums.aiProfile, tier)
+    if n == nil then return false, "no such tier: " .. tostring(tier) end
+    return Game.set(self.component, "WCM_AITier", n)
+end
+function Fighter:team() return Game.enums.team[Game.get(self.component, "WCM_Team")] end
+function Fighter:moveCount() return Game.get(self.component, "WCM_MoveCount") end
 
 -- ===================================================================================== the game's developer switches
 -- The cheats manager's own settings: god mode, always-full resources, attacks that always land, fast
