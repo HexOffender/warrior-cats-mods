@@ -58,6 +58,9 @@ def run(cfg, oodle, log=print):
     ok, detail = _cpp_mod()
     check("C++ mod: dlls/main.dll goes in with wcmods.json; a DLL for another UE4SS, without UE4SS's exports, or "
           "not built yet is refused", ok, detail)
+    ok, detail = _cpp_sdk()
+    check("C++ SDK: WCMods.hpp's headers are there, every call in them is in SDK.md, and the template uses them",
+          ok, detail)
     check("mod menu answers the agent controller", all(s in menu.lua() for s in ('"agent.read"', '"agent.act"', '"agent.scroll"'))
           and 'Menu.share("frame"' in menu.host_script({"sections": {}, "notes": {}, "warnings": [], "built": ""}, []))
     check("agent controller: pictures, menu rows, test files", _agent_parts())
@@ -642,6 +645,58 @@ def _cpp_mod():
     if offsets.get("/Script/SwtQuest.SwtQuestResourceComponent:WCM_Value", {}).get("offset") != 0x10C:
         problems.append("offsets.json is wrong")
     return not problems, "; ".join(problems[:3])
+
+
+def _cpp_sdk():
+    """The C++ SDK can't be compiled here (that needs Visual Studio and UE4SS's source), so this checks what it
+    can: the headers WCMods.hpp includes exist, every call they declare (outside `detail`) is in docs/SDK.md's
+    "C++ mods" section, and the cpp template includes the SDK and ends with WCMODS_MOD."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    sdk = os.path.join(here, "cpp_sdk", "include")
+    umbrella = os.path.join(sdk, "WCMods", "WCMods.hpp")
+    problems = []
+    with open(umbrella, encoding="utf-8") as f:
+        headers = re.findall(r"#include <(WCMods/\w+\.hpp)>", f.read())
+    if len(headers) < 4:
+        problems.append(f"WCMods.hpp includes only {headers}")
+    docs_path = os.path.join(os.path.dirname(here), "docs", "SDK.md")
+    with open(docs_path, encoding="utf-8") as f:
+        docs = f.read()
+    cpp_docs = docs[docs.index("## C++ mods"):docs.index("## JavaScript")] if "## C++ mods" in docs else ""
+    names = set()
+    for rel in headers:
+        path = os.path.join(sdk, rel.replace("/", os.sep))
+        if not os.path.isfile(path):
+            problems.append(f"{rel} is missing")
+            continue
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().split("\n")
+        depth, in_detail = 0, False
+        for line in lines:
+            if re.match(r"\s*namespace detail\b", line):
+                in_detail, depth = True, 0
+            if in_detail:
+                depth += line.count("{") - line.count("}")
+                if depth <= 0 and "}" in line:
+                    in_detail = False
+                continue
+            m = re.match(r"\s{4,8}(?:inline )?auto (\w+)\(", line)
+            if m and not m.group(1).startswith("operator"):
+                names.add(m.group(1))
+    private = {"resource", "to_vec3", "to_fvector", "level_component", "fresh_kill_component", "settings_lock", "values",
+               "self", "params", "set_return", "size", "type", "write"}
+    undocumented = sorted(n for n in names - private
+                          if f"{n}(" not in cpp_docs and f"{n}<" not in cpp_docs and f"`{n}`" not in cpp_docs)
+    if undocumented:
+        problems.append(f"not in SDK.md: {', '.join(undocumented[:8])}")
+    if len(names) < 40:
+        problems.append(f"only {len(names)} calls found in the headers")
+    template = os.path.join(here, "templates", "cpp", "cpp", "src", "main.cpp")
+    with open(template, encoding="utf-8") as f:
+        text = f.read()
+    if "#include <WCMods/WCMods.hpp>" not in text or not text.rstrip().endswith(")") or "WCMODS_MOD(" not in text:
+        problems.append("the cpp template doesn't include WCMods.hpp and end with WCMODS_MOD")
+    return not problems, "; ".join(problems[:3]) or f"{len(names)} calls"
 
 
 def _agent_parts():

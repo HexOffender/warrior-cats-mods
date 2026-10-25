@@ -718,7 +718,7 @@ mods/my-mod/
 ```
 
 `python wcmods.py new my-mod --kind cpp` makes one: a mod that keeps your cat's stamina full while its
-setting is on. Like scripts, C++ mods only run with `"allow_code_mods": true`, and building one runs its
+setting is on, and heals it on F7. Like scripts, C++ mods only run with `"allow_code_mods": true`, and building one runs its
 CMake files, so `cpp build` needs that too.
 
 ### Building
@@ -764,8 +764,17 @@ UE4SS it was built for; the install says when theirs is another. Other DLLs in `
 
 ### `WCMods.hpp`
 
-wcmods' C++ SDK, a header on top of UE4SS's own API (`RC::CppUserModBase`, `RC::Unreal::...`; UE4SS's
-[C++ guides](https://docs.ue4ss.com) cover that). The mod from `new --kind cpp`:
+wcmods' C++ SDK, four headers on top of UE4SS's own API (`RC::CppUserModBase`, `RC::Unreal::...`;
+UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` includes together:
+
+| Header | Holds |
+|---|---|
+| `WCMods/Core.hpp` | text, JSON, files, the mod's info and settings, the log, the game's hidden members |
+| `WCMods/Game.hpp` | the game's objects, the world and its managers, your cat, the clock, the fresh-kill pile, the developer switches |
+| `WCMods/Events.hpp` | every frame, timers, keys, hooks on the game's functions, level and player events |
+| `WCMods/Mod.hpp` | `wcmods::ModBase` and `WCMODS_MOD` |
+
+The mod from `new --kind cpp`:
 
 ```cpp
 #include <WCMods/WCMods.hpp>
@@ -777,12 +786,18 @@ class MyCppMod : public wcmods::ModBase
     {
         wcmods::log(L"loaded (full stamina: {})", wcmods::settings()["full_stamina"].boolean(true));
 
-        // Looking up your cat goes through the game's objects, so it's done four times a second.
-        wcmods::every_frame([waited = 0.0f](float dt) mutable {
-            waited += dt;
-            if (waited < 0.25f) return;
-            waited = 0.0f;
-            if (auto stamina = wcmods::stamina(wcmods::player())) *stamina.value = *stamina.max;
+        // Four times a second (looking up your cat goes through the game's objects, so not every frame).
+        wcmods::every(0.25, [] {
+            if (!wcmods::settings()["full_stamina"].boolean(true)) return;
+            if (auto stamina = wcmods::cat().stamina()) *stamina.value = *stamina.max;
+        });
+
+        wcmods::on_key(wcmods::Key::F7, [] {
+            if (wcmods::cat().heal()) wcmods::log(L"healed");
+        });
+
+        wcmods::on_player([](wcmods::UObject* cat) {
+            if (auto level = wcmods::Cat{cat}.level()) wcmods::log(L"your cat is here, level {}", *level);
         });
     }
 };
@@ -790,36 +805,79 @@ class MyCppMod : public wcmods::ModBase
 WCMODS_MOD(MyCppMod)
 ```
 
+Everything that reaches into the game gives `nullptr`, `nullopt`, `false` or an empty `Resource` when
+what it asks for isn't there (no cat in a menu, a component the game hasn't made yet, a member wcmods
+hasn't got on this game build), so a check is one `if`. A pointer into one of the game's objects is
+good for the frame you got it in: look it up again next time rather than keeping it.
+
+**The mod (`Mod.hpp`, `Core.hpp`)**
+
 | Call | Does |
 |---|---|
 | `wcmods::ModBase` | A `RC::CppUserModBase` named, versioned and described from the mod's `mod.json`. Override UE4SS's `on_unreal_init`, `on_update` and the rest as you need |
 | `WCMODS_MOD(Class)` | The two functions UE4SS calls in `main.dll` (`start_mod`, `uninstall_mod`); end the file with it |
 | `wcmods::mod()` | The mod: `id`, `name`, `version`, `author`, `description`, `folder` (in `mods/`), `settings_file`, `installed` (its folder in `ue4ss/Mods`) |
 | `wcmods::log(L"{} cats", n)` | A line in `UE4SS.log` starting with the mod's name (`std::format`) |
-| `wcmods::settings()` | `settings.json` as a `wcmods::Json`, read as the game starts: `settings()["speed"].number(1.0)`. A key that isn't there is null, so the fallback is used |
+| `wcmods::settings()` | `settings.json` as a `wcmods::Json`, read as the game starts: `settings()["speed"].number(1.0)`. A key that isn't there is null, so the fallback is used. `settings_lock()` is its mutex, for a mod that changes it off the game thread |
 | `wcmods::save_settings()` | Write `settings()` back to `settings.json`, so the next install starts with it |
-| `wcmods::Json` | A JSON value: `boolean`, `number`, `string`, `wstring` (each with a fallback), `[key]`, `[index]`, `has`, `keys`, `set`, `push`, `Json::parse(text)`, `dump()` |
-| `wcmods::every_frame(fn)` | `fn(seconds since the last frame)` on the game thread at the end of every frame. Call it from `on_unreal_init` or later |
-| `wcmods::on_game_thread(fn)` | `fn()` once on the game thread, at the end of the next frame |
-| `wcmods::player()`, `controller()` | Your cat's actor and the player's controller while you play, else `nullptr` |
-| `wcmods::health(cat)`, `stamina(cat)` | A `Resource` with `value` and `max` pointers you read and write; false when there's no cat or wcmods hasn't got the members on this game build |
-| `wcmods::component(actor, STR("SwtQuestHealthComponent"))` | An actor's component of a class, by short name |
-| `wcmods::find_all(STR("WrcRoamingEnemy"))`, `find_class(STR("/Script/..."))` | Every object of a class (subclasses too), and a class by its path |
-| `wcmods::property<T>(object, STR("Pawn"))` | A pointer to a reflected property's value, its own or a parent class's |
-| `wcmods::offset(cls, member)`, `member<T>(object, cls, member)` | The game's members that aren't reflected (health, stamina, level, stats, the clock; `wcmods/game.py`'s `HIDDEN`), where they are on the installed game build: wcmods writes them on every install to `ue4ss/Mods/shared/WCModsGame/offsets.json`, the same ones `WCModsGame` uses. `nullopt` / `nullptr` for one a game update moved where wcmods can't find it |
+| `wcmods::Json` | A JSON value: `boolean`, `number`, `string`, `wstring` (each with a fallback), `is_null`, `is_bool`, `is_number`, `is_string`, `is_array`, `is_object`, `[key]`, `[index]`, `has`, `keys`, `values`, `set`, `push`, `size`, `Json::parse(text)`, `dump()`; made from any number, text or bool, `Json::object()`, `Json::array()` |
+| `wcmods::read_file(path)`, `write_file(path, text)` | A file's text (nullopt when it isn't there); written whole, through a temporary file |
 | `wcmods::wide(utf8)`, `utf8(wide)` | Convert text: the game's is wide, wcmods' files are UTF-8 |
+| `wcmods::offset(cls, member)`, `member<T>(object, cls, member)` | The game's members that aren't reflected (health, stamina, level, stats, the clock; `wcmods/game.py`'s `HIDDEN`), where they are on the installed game build: wcmods writes them on every install to `ue4ss/Mods/shared/WCModsGame/offsets.json`, the same ones `WCModsGame` uses. `nullopt` / `nullptr` for one a game update moved where wcmods can't find it |
+
+**The game (`Game.hpp`)**, game thread only:
+
+| Call | Does |
+|---|---|
+| `wcmods::name(o)`, `full_name(o)`, `class_name(o)` | An object's name, its full path, and its class's name |
+| `wcmods::property<T>(object, STR("Pawn"))` | A pointer to a reflected property's value, its own or a parent class's |
+| `wcmods::find_class(STR("/Script/..."))`, `object(STR("/Script/Engine.Default__GameplayStatics"))` | A class, or any object, by its full path |
+| `wcmods::find_all(STR("WrcRoamingEnemy"))`, `find_first(...)` | Every object of a class (subclasses too), or the first. They go through all the game's objects: a few times a second, not every frame |
+| `wcmods::is_a(o, STR("/Script/Engine.Pawn"))` | Whether an object is of a class, or a subclass |
+| `wcmods::call(object, STR("GetDayClockTime"), params)` | Call one of an object's reflected functions, with a struct laid out like its parameters (inputs, outputs, return value, in order); `call(object, name)` for one without. `python wcmods.py inspect "Game.gameState()"` lists an object's functions and their parameters |
+| `wcmods::controller()`, `player()` | The player's controller and your cat's actor while you play, else `nullptr` |
+| `wcmods::world()`, `level_name()` | The world, and the level's name (`L_WorldMap_01_P` in the forest) |
+| `wcmods::game_instance()`, `game_state()`, `game_mode()` | The game's own objects |
+| `wcmods::manager(STR("quests"))` | One of the game's managers, by a short name (`quests`, `save`, `cheats`, `combat`, `npcs`, `tuning`, `gui`...) or by the property that holds it (`QuestManager`) |
+| `wcmods::component(actor, STR("SwtQuestHealthComponent"))` | An actor's component of a class, by short name |
+| `wcmods::console(STR("stat fps"))` | A console command as the player, the way the mod menu's console box runs one; cheat commands need the mod menu's Cheats page to have turned cheats on |
+| `wcmods::location(actor)`, `teleport(actor, {x, y, z})` | Where an actor is (`Vec3`, or nullopt), and moving it there. `to_vec3` and `to_fvector` convert to and from the engine's `FVector` |
+| `wcmods::cat()` | Your cat as a `Cat` (false in menus); `Cat{actor}` for any cat |
+| `Cat::health()`, `stamina()`, `combat_stamina()` | A `Resource`: `value` and `max` pointers you read and write; false when it isn't there. `heal()` fills health; `stamina_regen()` is stamina back per second |
+| `Cat::level()`, `xp()`, `xp_needed()`, `stat(wcmods::Stat::Strength)` | Pointers on the level component (`level_component()`, on the player state): the level, experience and what the next level needs, and the six stats |
+| `Cat::location()`, `teleport({x, y, z})`, `scale()`, `set_scale(1.5)`, `time_dilation()` | Where it is, moving it, its size, and how fast time runs for it |
+| `wcmods::time_of_day()`, `day_seconds()`, `set_time(6, 30)` | The clock (`hours`, `minutes`, `seconds`), the seconds into the day to read and write, and setting it |
+| `wcmods::fresh_kill()`, `fresh_kill_decay()`, `fresh_kill_component()` | The fresh-kill pile: how full (a `Resource`), its decay (`elapsed` seconds since it last dropped, `period` between drops), and the component |
+| `wcmods::dev_switch(STR("bAllowAlwaysEquipItem"))` | One of the game's developer switches on its cheats manager, a bool to read and write; the mod menu's Cheats page lists them |
+
+**When code runs (`Events.hpp`)**, everything calling back on the game thread:
+
+| Call | Does |
+|---|---|
+| `wcmods::every_frame(fn)` | `fn(seconds since the last frame)` at the end of every frame. Keep it quick: the game waits for it |
+| `wcmods::on_game_thread(fn)` | `fn()` once, at the end of the next frame: from `on_update` or another thread, to get to the game |
+| `wcmods::every(5, fn)`, `after(2, fn)`, `cancel(id)` | `fn()` every so many seconds, or once that many seconds from now; both give a `TimerId` |
+| `wcmods::on_key(wcmods::Key::F6, fn)`, `on_key(key, {wcmods::Modifier::CONTROL}, fn)` | `fn()` when a key is pressed, in the game or out of it (UE4SS sees the keyboard only, not a controller, and the game gets the key too) |
+| `wcmods::on_player(fn)` | `fn(cat)` when your cat appears (the forest loads), changes (a new area) or goes (menus; `nullptr`), looked for four times a second, and once right away |
+| `wcmods::on_level(fn)` | `fn(level name)` once a level has loaded |
+| `wcmods::on_function(STR("/Script/Wrc.GuiHudWrc:OnItemPickedUp"), fn)`, `after_function(...)`, `unhook(id)` | `fn(call)` just before, or just after, the game runs one of its functions, by its full path. `call.self()` is the object, `call.params<Params>()` its parameters as a struct laid out like them (changed before the call, they change what the game does), `call.set_return(v)` its result. 0 and a line in the log when there's no such function |
+
+Hooks see a function only when the game runs it through the engine's own event path: Blueprint
+functions and events, and native functions marked as events or RPCs (`ClientRestart`,
+`OnItemPickedUp`). Native code calling native code directly is never seen, and a hook on a plain native
+function that Blueprints call, such as `K2_GetActorLocation`, closed the game as the forest loaded when
+it was tried. Stay with events.
 
 The same rules as for scripts keep the game running:
 
-- **The game thread.** Touch the game's objects only on the game thread: in `every_frame`,
-  `on_game_thread`, or a UE4SS hook. UE4SS calls `on_update` from a thread of its own.
+- **The game thread.** Touch the game's objects only on the game thread: in `every_frame`, a timer, a
+  key, a hook, `on_player`, `on_level`, or a UE4SS hook. UE4SS calls `on_update` from a thread of its own.
 - **Look things up again.** The game destroys its actors when the level changes, so get your cat with
-  `player()` when you need it rather than keeping the pointer.
+  `cat()` when you need it rather than keeping the pointer.
 - **Keep frames quick.** `find_all` goes through the game's objects; do it a few times a second, not
   every frame, as the example does.
-- **Exceptions** thrown in `every_frame` and `on_game_thread` callbacks are caught and logged; one that
-  reaches the game closes it. A crash (a bad pointer) closes it too, and there's nothing to catch: check
-  for `nullptr`.
+- **Exceptions** thrown in callbacks are caught and logged; one that reaches the game closes it. A
+  crash (a bad pointer) closes it too, and there's nothing to catch: check for `nullptr`.
 
 ## JavaScript: `studio/lib/wc.js`
 
