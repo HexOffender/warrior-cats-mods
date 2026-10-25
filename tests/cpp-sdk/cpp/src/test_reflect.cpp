@@ -76,6 +76,15 @@ namespace t
         expect("set.refused", !set(actor, L"CustomTimeDilation", L"text") && !set(actor, L"bHidden", 1.5) && !set(actor, L"Nope", true)
                                   && !set(nullptr, L"bHidden", true) && !set(actor, L"Tags", true));
         expect("set.object", set(actor, L"Controller.PlayerState", state.object));
+        // Text into an FString and an FName: the same text back in, then read again.
+        Value player_name = get(actor, L"Controller.PlayerState.PlayerNamePrivate");
+        expect("get.fstring", player_name.kind == Value::Kind::Text && player_name.type == L"StrProperty", text(player_name.type));
+        expect("set.fstring", set(actor, L"Controller.PlayerState.PlayerNamePrivate", std::wstring_view(player_name.text))
+                                  && get(actor, L"Controller.PlayerState.PlayerNamePrivate").string() == player_name.text);
+        Value socket = get(actor, L"RootComponent.AttachSocketName");
+        expect("get.fname", socket.kind == Value::Kind::Text && socket.type == L"NameProperty", text(socket.type));
+        expect("set.fname", set(actor, L"RootComponent.AttachSocketName", std::wstring_view(socket.text))
+                                && get(actor, L"RootComponent.AttachSocketName").string() == socket.text);
         expect("value.of", Value::of(true).boolean() && Value::of(2.5).number() == 2.5 && Value::of(3).number() == 3
                                && Value::of(L"x").string() == L"x" && Value::of(actor).object == actor && Value::of(int64_t{7}).i == 7);
 

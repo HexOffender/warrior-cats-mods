@@ -338,6 +338,7 @@ namespace wcmods
         case Kind::Struct: return L"{" + type + L"}";
         case Kind::Array:
         {
+            if (!property || !at) return L"[]";
             RC::Unreal::FScriptArrayHelper helper(static_cast<RC::Unreal::FArrayProperty*>(property), at);
             return L"[" + std::to_wstring(helper.Num()) + L"]";
         }

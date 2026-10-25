@@ -243,8 +243,11 @@ namespace wcmods
             using Result = decltype(work());
             if constexpr (std::is_void_v<Result>)
             {
-                bool ok = true;
-                detail::guarded(L"run_in_background", [&] { work(); });
+                bool ok = false;   // `then` only after work that finished; one that threw is in the log
+                detail::guarded(L"run_in_background", [&] {
+                    work();
+                    ok = true;
+                });
                 if (ok) on_game_thread([then = std::move(then)]() mutable { then(); });
             }
             else
