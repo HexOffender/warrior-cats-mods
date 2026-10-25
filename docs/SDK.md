@@ -2,13 +2,14 @@
 
 The mod manager is built from **sections**. Each section handles one kind of mod content: the
 built-in ones are replacement files, game data, names, palettes, your cat's colours, controls,
-mouse look and save edits. A mod can add code of its own in three places:
+mouse look and save edits. A mod can add code of its own in four places:
 
 | Part | File in the mod folder | Runs in | Built on |
 |---|---|---|---|
 | Build step | `section.py` | `wcmods build` / `install` | `wcmods.sdk` (Python) |
 | Studio page | `studio/section.js` | `wcmods studio`, in your browser | `studio/lib/wc.js` |
 | In-game script | `scripts/main.lua` (no Python), or written by its `section.py` | the game, through UE4SS | UE4SS Lua, plus the shared modules below: `WCModsGame`, `WCModsDraw`, `WCModsMenu`, `WCModsView`, `WCModsWorld` |
+| C++ mod | `cpp/` (source), built into `dlls/main.dll` | the game, through UE4SS | UE4SS's C++ API, plus `WCMods.hpp` (see [C++ mods](#c-mods)) |
 
 All of them only run when `"allow_code_mods": true` is set in `wcmods.json`, because they are
 code. Without it, the build warns and skips them. Everything else in the mod still works.
@@ -55,7 +56,10 @@ mods/my-mod/
   mouselook.json      mouse look settings               -> section "mouselook"
   save.json           save edits                        -> section "save"
   scripts/main.lua    an in-game Lua script (code mod)  -> section "scripts" (docs/scripting.md)
-  settings.json       that script's settings            (MOD.settings; a mod menu page edits them)
+  settings.json       that script's settings            (MOD.settings; a mod menu page edits them),
+                      or the C++ mod's (wcmods::settings())
+  cpp/                a C++ mod's source (code mod)     -> built by `wcmods cpp build` (see "C++ mods")
+  dlls/main.dll       the C++ mod it builds             -> section "cpp"
   section.py          your own build step               (code mod)
   studio/section.js   your own studio page              (code mod)
 ```
@@ -696,6 +700,126 @@ seconds (2 by default), and sorts each actor into kinds by its class, worked out
 Queries in between use that list, so they're cheap, but still look things up a few times a second
 rather than every frame when there are many. Call them on the game thread (in a painter, a menu
 page, or inside `ExecuteInGameThread`).
+
+## C++ mods
+
+A mod can run C++ in the game as a UE4SS C++ mod: what Lua can't do quickly, or at all (code every
+frame over many objects, hooks on engine functions, native libraries). It's built from the mod's
+`cpp/` into its `dlls/main.dll`, and an install puts that in the game as `ue4ss/Mods/WCModsCpp_<id>/`.
+
+```
+mods/my-mod/
+  mod.json
+  cpp/CMakeLists.txt     wcmods_mod(${WCMODS_TARGET} src/main.cpp)
+  cpp/src/main.cpp       the mod (WCMods.hpp, below)
+  settings.json          optional: its settings, as wcmods::settings()
+  dlls/main.dll          made by `wcmods cpp build`
+  dlls/build.json        which UE4SS it was built against (also made by `cpp build`)
+```
+
+`python wcmods.py new my-mod --kind cpp` makes one: a mod that keeps your cat's stamina full while its
+setting is on. Like scripts, C++ mods only run with `"allow_code_mods": true`, and building one runs its
+CMake files, so `cpp build` needs that too.
+
+### Building
+
+A UE4SS C++ mod links against UE4SS itself, so it's built together with UE4SS's source, at the commit of
+the UE4SS.dll in the game. A DLL built for one UE4SS can crash the game with another: an install leaves
+out a mod whose `dlls/build.json` names another UE4SS, and warns about one without a `build.json`. Building
+needs, once:
+
+- **Visual Studio 2022 or later** with "Desktop development with C++" (MSVC 14.43 or later; Community is
+  free). It brings CMake and Ninja; wcmods finds them there.
+- **Rust** ([rustup.rs](https://rustup.rs), or `winget install Rustlang.Rustup`): UE4SS's pattern scanner
+  is written in it.
+- **git**, and a **GitHub account linked to an Epic Games account**. UE4SS's Unreal headers (UEPseudo)
+  are only open to members of the EpicGames organisation on GitHub: link the accounts on epicgames.com
+  (Account, Apps and Accounts) and accept the invitation GitHub emails you.
+
+```bash
+python wcmods.py cpp setup
+```
+
+```bash
+python wcmods.py cpp build my-mod
+```
+
+`cpp setup` gets UE4SS's source at the game's UE4SS (the commit in `UE4SS.log`, so start the game once
+with UE4SS first, or pass `--commit 83330635`) into `cache/ue4ss-src`, submodules included. Run it again
+after updating UE4SS. `cpp build` builds the named mods (or every enabled mod with a `cpp/`) in
+`cache/cpp`, then copies each `main.dll` and writes its `build.json`. The first build compiles UE4SS too
+(several minutes); later ones only the mods. It prints the steps and any errors; `cache/cpp/build.log`
+has everything. `python wcmods.py cpp` says what's ready. Install afterwards (or press Play in the
+studio) to put the DLL in the game.
+
+A mod's `cpp/CMakeLists.txt` is plain CMake. `wcmods_mod(target sources...)` (from
+`wcmods/cpp_sdk/WCMods.cmake`) makes the DLL, linked against UE4SS, with `WCMods.hpp` and the mod's own
+`src/` on the include path; add sources to it, and anything else (`FetchContent`,
+`target_link_libraries`) after it. The DLL uses Microsoft's C++ runtime (`MSVCP140.dll`), which players
+have from the Visual C++ Redistributable; one built with a newer Visual Studio than theirs may need its
+latest version.
+
+A mod can also ship `dlls/main.dll` built (with its `build.json`) and no `cpp/`. Players then need the
+UE4SS it was built for; the install says when theirs is another. Other DLLs in `dlls/` go in beside it.
+
+### `WCMods.hpp`
+
+wcmods' C++ SDK, a header on top of UE4SS's own API (`RC::CppUserModBase`, `RC::Unreal::...`; UE4SS's
+[C++ guides](https://docs.ue4ss.com) cover that). The mod from `new --kind cpp`:
+
+```cpp
+#include <WCMods/WCMods.hpp>
+
+class MyCppMod : public wcmods::ModBase
+{
+  public:
+    auto on_unreal_init() -> void override
+    {
+        wcmods::log(L"loaded (full stamina: {})", wcmods::settings()["full_stamina"].boolean(true));
+
+        // Looking up your cat goes through the game's objects, so it's done four times a second.
+        wcmods::every_frame([waited = 0.0f](float dt) mutable {
+            waited += dt;
+            if (waited < 0.25f) return;
+            waited = 0.0f;
+            if (auto stamina = wcmods::stamina(wcmods::player())) *stamina.value = *stamina.max;
+        });
+    }
+};
+
+WCMODS_MOD(MyCppMod)
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::ModBase` | A `RC::CppUserModBase` named, versioned and described from the mod's `mod.json`. Override UE4SS's `on_unreal_init`, `on_update` and the rest as you need |
+| `WCMODS_MOD(Class)` | The two functions UE4SS calls in `main.dll` (`start_mod`, `uninstall_mod`); end the file with it |
+| `wcmods::mod()` | The mod: `id`, `name`, `version`, `author`, `description`, `folder` (in `mods/`), `settings_file`, `installed` (its folder in `ue4ss/Mods`) |
+| `wcmods::log(L"{} cats", n)` | A line in `UE4SS.log` starting with the mod's name (`std::format`) |
+| `wcmods::settings()` | `settings.json` as a `wcmods::Json`, read as the game starts: `settings()["speed"].number(1.0)`. A key that isn't there is null, so the fallback is used |
+| `wcmods::save_settings()` | Write `settings()` back to `settings.json`, so the next install starts with it |
+| `wcmods::Json` | A JSON value: `boolean`, `number`, `string`, `wstring` (each with a fallback), `[key]`, `[index]`, `has`, `keys`, `set`, `push`, `Json::parse(text)`, `dump()` |
+| `wcmods::every_frame(fn)` | `fn(seconds since the last frame)` on the game thread at the end of every frame. Call it from `on_unreal_init` or later |
+| `wcmods::on_game_thread(fn)` | `fn()` once on the game thread, at the end of the next frame |
+| `wcmods::player()`, `controller()` | Your cat's actor and the player's controller while you play, else `nullptr` |
+| `wcmods::health(cat)`, `stamina(cat)` | A `Resource` with `value` and `max` pointers you read and write; false when there's no cat or wcmods hasn't got the members on this game build |
+| `wcmods::component(actor, STR("SwtQuestHealthComponent"))` | An actor's component of a class, by short name |
+| `wcmods::find_all(STR("WrcRoamingEnemy"))`, `find_class(STR("/Script/..."))` | Every object of a class (subclasses too), and a class by its path |
+| `wcmods::property<T>(object, STR("Pawn"))` | A pointer to a reflected property's value, its own or a parent class's |
+| `wcmods::offset(cls, member)`, `member<T>(object, cls, member)` | The game's members that aren't reflected (health, stamina, level, stats, the clock; `wcmods/game.py`'s `HIDDEN`), where they are on the installed game build: wcmods writes them on every install to `ue4ss/Mods/shared/WCModsGame/offsets.json`, the same ones `WCModsGame` uses. `nullopt` / `nullptr` for one a game update moved where wcmods can't find it |
+| `wcmods::wide(utf8)`, `utf8(wide)` | Convert text: the game's is wide, wcmods' files are UTF-8 |
+
+The same rules as for scripts keep the game running:
+
+- **The game thread.** Touch the game's objects only on the game thread: in `every_frame`,
+  `on_game_thread`, or a UE4SS hook. UE4SS calls `on_update` from a thread of its own.
+- **Look things up again.** The game destroys its actors when the level changes, so get your cat with
+  `player()` when you need it rather than keeping the pointer.
+- **Keep frames quick.** `find_all` goes through the game's objects; do it a few times a second, not
+  every frame, as the example does.
+- **Exceptions** thrown in `every_frame` and `on_game_thread` callbacks are caught and logged; one that
+  reaches the game closes it. A crash (a bad pointer) closes it too, and there's nothing to catch: check
+  for `nullptr`.
 
 ## JavaScript: `studio/lib/wc.js`
 

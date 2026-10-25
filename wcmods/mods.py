@@ -18,6 +18,7 @@ and any of:
   cats.json           your cat's own colours and colour slots (sections/cats.py)
   save.json           save edits (sections/savedit.py)
   scripts/main.lua    an in-game Lua script, with settings.json for its settings (sections/scripts.py, opt-in)
+  dlls/main.dll       a UE4SS C++ mod, built from cpp/ by `wcmods cpp build` (sections/cpp.py, opt-in)
   section.py          the mod's own section, written with wcmods.sdk (opt-in)
   studio/section.js   the mod's own studio page, written with studio/lib/wc.js (opt-in)
 Folders starting with '_' are ignored (half-added mods; `wcmods new` copies wcmods/templates).
@@ -29,7 +30,8 @@ import re
 MENU_ID = "mod-menu"   # the mod menu's own mod: other mods name it in "requires" or "uses"
 CONTENT = (("files", "files"), ("paks", "cooked content"), ("menu.json", "mod menu"), ("palette.json", "palette"), ("controls.json", "controls"),
            ("mouselook.json", "mouse look"), ("data.json", "data"), ("items.json", "items"), ("names.json", "names"), ("cats.json", "cats"),
-           ("save.json", "save"), ("scripts", "in-game script"), ("section.py", "code"),
+           ("save.json", "save"), ("scripts", "in-game script"), ("dlls", "C++ mod"), ("cpp", "C++ source"),
+           ("section.py", "code"),
            (os.path.join("studio", "section.js"), "studio page"))
 
 
@@ -60,8 +62,8 @@ class Mod:
         return [kind for name, kind in CONTENT if os.path.exists(os.path.join(self.folder, name))]
 
     def has_code(self):
-        """Whether it runs code (Python at build time, Lua in game, a studio page): only with code mods allowed."""
-        return any(k in ("code", "in-game script", "studio page") for k in self.kinds())
+        """Whether it runs code (Python at build time, Lua or C++ in game, a studio page): only with code mods allowed."""
+        return any(k in ("code", "in-game script", "C++ mod", "C++ source", "studio page") for k in self.kinds())
 
     def menu_page(self):
         """Whether it adds a page to the mod menu: it says it uses the menu, or it's something wcmods gives

@@ -9,7 +9,7 @@ export default {
       files: "Replaces game files", "cooked content": "New models or textures", "mod menu": "The in-game menu",
       palette: "Colours", controls: "Controls", "mouse look": "Mouse look", data: "Game rules and numbers",
       names: "Cat names", cats: "Your cat's colours", save: "Changes your save", "in-game script": "In-game script",
-      code: "Build step (code)", "studio page": "Studio page",
+      "C++ mod": "C++ mod", "C++ source": "C++ source", code: "Build step (code)", "studio page": "Studio page",
     };
     const MENU = "mod-menu";
     let mods = [], filter = "all", search = "", options = null, settings = null;

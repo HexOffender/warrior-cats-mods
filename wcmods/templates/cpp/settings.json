@@ -1,0 +1,4 @@
+{
+  "_help": "This C++ mod's settings: wcmods::settings() in cpp/src/main.cpp. wcmods::save_settings() writes them back here.",
+  "full_stamina": true
+}

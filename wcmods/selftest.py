@@ -55,6 +55,9 @@ def run(cfg, oodle, log=print):
     problems = luacheck.check(lua) + re.findall(r"@[A-Z_]+@", lua)
     check("game bridge script", not problems and bridge.folder(cfg).replace("\\", "/") in lua, "; ".join(problems[:3]))
     check("in-game script mod", _script_mod(cfg))
+    ok, detail = _cpp_mod()
+    check("C++ mod: dlls/main.dll goes in with wcmods.json; a DLL for another UE4SS, without UE4SS's exports, or "
+          "not built yet is refused", ok, detail)
     check("mod menu answers the agent controller", all(s in menu.lua() for s in ('"agent.read"', '"agent.act"', '"agent.scroll"'))
           and 'Menu.share("frame"' in menu.host_script({"sections": {}, "notes": {}, "warnings": [], "built": ""}, []))
     check("agent controller: pictures, menu rows, test files", _agent_parts())
@@ -521,6 +524,124 @@ def _script_mod(cfg):
         main = files.get("Scripts/main.lua", b"").decode()
         return (not luacheck.check(main) and not re.findall(r"@[A-Z_]+@", main) and '["speed"] = 1.5' in main
                 and "Scripts/mod/helper.lua" in files and "Scripts/mod/main.lua" in files and not ctx.warnings)
+
+
+def _tiny_dll(exports, dll=True):
+    """The smallest 64-bit PE wcmods reads: one section holding an export table with `exports`."""
+    names = b"".join(n.encode() + b"\0" for n in exports)
+    rva, raw = 0x1000, 0x200
+    table = rva + 40                          # AddressOfNames, right after the export directory
+    first = table + 4 * len(exports)          # the names themselves
+    offsets, at = [], first
+    for n in exports:
+        offsets.append(at)
+        at += len(n) + 1
+    edata = struct.pack("<IIHHIIIIIII", 0, 0, 0, 0, 0, 1, len(exports), len(exports), 0, table, 0)
+    edata += struct.pack(f"<{len(exports)}I", *offsets) + names
+    head = bytearray(raw)
+    head[:2], head[0x3C:0x40] = b"MZ", struct.pack("<I", 0x40)
+    head[0x40:0x44] = b"PE\0\0"
+    struct.pack_into("<HHIIIHH", head, 0x44, 0x8664, 1, 0, 0, 0, 0xF0, 0x2022 if dll else 0x0022)
+    opt = 0x58
+    struct.pack_into("<H", head, opt, 0x20B)
+    struct.pack_into("<Q", head, opt + 24, 0x180000000)
+    struct.pack_into("<I", head, opt + 56, rva + 0x1000)
+    struct.pack_into("<I", head, opt + 108, 16)
+    struct.pack_into("<II", head, opt + 112, rva, len(edata))
+    struct.pack_into("<8sIIIIIIHHI", head, opt + 0xF0, b".rdata", 0x1000, rva, len(edata), raw, 0, 0, 0, 0, 0x40000040)
+    return bytes(head) + edata
+
+
+def _cpp_mod():
+    """A C++ mod's dlls/main.dll becomes a UE4SS mod with a wcmods.json naming the mod and its settings, as long
+    as its build.json fits the game's UE4SS."""
+    import json
+    from . import cppmods, pe
+    from .mods import Mod
+    from .sdk import BuildContext
+    from .sections import cpp
+    problems = []
+    with tempfile.TemporaryDirectory() as tmp:
+        win64 = os.path.join(tmp, "Win64")
+        os.makedirs(os.path.join(win64, "ue4ss"))
+        for rel, text in (("dwmapi.dll", "MZ"), ("ue4ss/UE4SS.dll", "MZ ue4ss"),
+                          ("ue4ss/UE4SS.log", "[x] UE4SS - v3.0.1 Beta #0 - Git SHA #83330635\n")):
+            with open(os.path.join(win64, rel), "w") as f:
+                f.write(text)
+        game = cpp.ue4ss.loader_identity(win64)
+        if not game or game["commit"] != "83330635":
+            problems.append(f"the game's UE4SS read as {game}")
+
+        def make(mod_id, exports=cpp.EXPORTS, built_for=None, source=False, dll=True):
+            folder = os.path.join(tmp, "mods", mod_id)
+            os.makedirs(os.path.join(folder, "dlls"))
+            with open(os.path.join(folder, "mod.json"), "w") as f:
+                json.dump({"name": mod_id.title(), "enabled": True, "version": "1.2"}, f)
+            if exports is not None:
+                with open(os.path.join(folder, "dlls", "main.dll"), "wb") as f:
+                    f.write(_tiny_dll(exports, dll))
+            if built_for is not None:
+                with open(os.path.join(folder, "dlls", "build.json"), "w") as f:
+                    json.dump(built_for, f)
+            if source:
+                os.makedirs(os.path.join(folder, "cpp"))
+                with open(os.path.join(folder, "cpp", "CMakeLists.txt"), "w") as f:
+                    f.write("wcmods_mod(${WCMODS_TARGET} src/main.cpp)\n")
+            return Mod(folder)
+
+        good = make("good", built_for={"ue4ss": "8333063595fa3c49ad307f3b0f732accbb760d25"})
+        with open(os.path.join(good.folder, "settings.json"), "w") as f:
+            json.dump({"speed": 2}, f)
+        with open(os.path.join(good.folder, "dlls", "helper.dll"), "wb") as f:
+            f.write(b"MZ")
+        other = make("other", built_for={"ue4ss": "aaaa1111", "ue4ss_dll": "0" * 40})
+        unknown = make("unknown")
+        sec = cpp.CppSection()
+        ctx = BuildContext(None, None, tmp, log=lambda m: None)
+        ctx.cfg = type("Cfg", (), {"data": {"allow_code_mods": True}, "win64_dir": win64})()
+        ctx.begin(sec.id)
+        sec.build(ctx, [(m, sec.collect(m, ctx)) for m in (good, other, unknown)])
+        files = ctx.ue4ss_mods.get("WCModsCpp_good", ({}, None))[0]
+        info = json.loads(files.get("wcmods.json", b"{}"))
+        if sorted(files) != ["dlls/helper.dll", "dlls/main.dll", "enabled.txt", "wcmods.json"]:
+            problems.append(f"good installs {sorted(files)}")
+        if info.get("settings") != {"speed": 2} or info.get("version") != "1.2" or not info.get("settings_file"):
+            problems.append(f"wcmods.json is {info}")
+        if "WCModsCpp_other" in ctx.ue4ss_mods or not any("other:" in w and "left out" in w for w in ctx.warnings):
+            problems.append("a DLL built for another UE4SS isn't left out")
+        if "WCModsCpp_unknown" not in ctx.ue4ss_mods or not any("unknown:" in w and "can't tell" in w for w in ctx.warnings):
+            problems.append("a DLL without build.json isn't installed with a warning")
+
+        for mod, want in ((make("bare", exports=["DllMain"]), "doesn't export start_mod"),
+                          (make("exe", dll=False), "isn't a 64-bit Windows DLL"),
+                          (make("unbuilt", exports=None, source=True), "cpp build unbuilt")):
+            try:
+                sec.collect(mod, ctx)
+                problems.append(f"{mod.id} wasn't refused")
+            except ValueError as e:
+                if want not in str(e):
+                    problems.append(f"{mod.id}: {e}")
+
+        ctx = BuildContext(None, None, tmp, log=lambda m: None)
+        ctx.cfg = type("Cfg", (), {"data": {}, "win64_dir": win64})()
+        ctx.begin(sec.id)
+        sec.build(ctx, [(good, sec.collect(good, ctx))])
+        if ctx.ue4ss_mods or "allow_code_mods" not in " ".join(ctx.warnings):
+            problems.append("installed without allow_code_mods")
+
+        if pe.Image(os.path.join(good.folder, "dlls", "main.dll")).exports() != set(cpp.EXPORTS):
+            problems.append("exports misread")
+        if (cpp.matches({"ue4ss": "83330635abc"}, {"commit": "83330635", "dll": "x"}) is not True
+                or cpp.matches({"ue4ss_dll": "x"}, {"commit": None, "dll": "x"}) is not True
+                or cpp.matches({"ue4ss": "1234567"}, {"commit": None, "dll": "x"}) is not None):
+            problems.append("matches() is wrong")
+        project = cppmods.project(tmp, [good])
+        if 'add_subdirectory("' not in project or "set(WCMODS_TARGET wcmods_good)" not in project:
+            problems.append("cpp build's project is wrong")
+    offsets = game_lua.offsets_json(None, 1)["members"]
+    if offsets.get("/Script/SwtQuest.SwtQuestResourceComponent:WCM_Value", {}).get("offset") != 0x10C:
+        problems.append("offsets.json is wrong")
+    return not problems, "; ".join(problems[:3])
 
 
 def _agent_parts():

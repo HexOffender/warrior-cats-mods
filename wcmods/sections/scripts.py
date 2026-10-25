@@ -150,13 +150,7 @@ class ScriptsSection(Section):
         folder = os.path.join(mod.folder, FOLDER)
         if not os.path.isfile(os.path.join(folder, "main.lua")):
             raise ValueError("scripts/ needs a main.lua (it runs when the game starts)")
-        files = {}
-        for root, _, names in os.walk(folder):
-            for name in sorted(names):
-                path = os.path.join(root, name)
-                rel = os.path.relpath(path, folder).replace(os.sep, "/")
-                with open(path, "rb") as f:
-                    files[rel] = f.read()
+        files = self.read_tree(folder)
         settings, settings_file = {}, None
         if os.path.isfile(os.path.join(mod.folder, "settings.json")):
             settings = self.read_json(mod, "settings.json")
