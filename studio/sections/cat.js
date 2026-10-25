@@ -21,8 +21,9 @@ export default {
   title: "Your cat",
   async mount(root, wc) {
     const { el, api, clear, toast, color } = wc;
-    // extra: the file's other keys; playerExtra: the player's other keys ("scars"), kept as they are.
-    let look = { colours: {}, slots: {}, scars: {} }, extra = {}, playerExtra = {};
+    // extra: the file's other keys; playerExtra: the player's other keys; scarsRaw: scar entries the card
+    // can't show (a mistake for the build to report), all kept as they are.
+    let look = { colours: {}, slots: {}, scars: {} }, extra = {}, playerExtra = {}, scarsRaw = {};
     const [info, tablesRes] = await Promise.all([api.get("/cat"), api.get("/game/tables")]);
     const TABLES = tablesRes.tables || {};
 
@@ -46,7 +47,7 @@ export default {
       target.element, coloursCard, slotsCard, scarsCard, out.element);
 
     function load(obj) {
-      look = { colours: {}, slots: {}, scars: {} }; extra = {}; playerExtra = {};
+      look = { colours: {}, slots: {}, scars: {} }; extra = {}; playerExtra = {}; scarsRaw = {};
       const p = obj && obj.player;
       if (p && typeof p === "object") {
         for (const [k, v] of Object.entries(p.colours || {})) { const c = color.normHex(v); if (c) look.colours[k] = c; }
@@ -54,11 +55,13 @@ export default {
         // Scars as numbers: "none" is 0, an ear's name its number ("body" is the save's name for the back).
         if (p.scars === "none") for (const s of SCAR_PARTS) look.scars[s.id] = 0;
         else if (p.scars && typeof p.scars === "object") {
-          for (let [k, v] of Object.entries(p.scars)) {
-            if (k === "body") k = "back";
-            if (v === "none") v = 0;
-            else if (k === "ear" && typeof v === "string") v = SCARS.ear_names[v];
-            if (Number.isInteger(v)) look.scars[k] = v;
+          for (const [key, raw] of Object.entries(p.scars)) {
+            if (key.startsWith("_")) continue;
+            const k = key === "body" ? "back" : key;
+            let v = raw === "none" ? 0 : raw;
+            if (k === "ear" && typeof v === "string") v = SCARS.ear_names[v];
+            if (Number.isInteger(v) && v >= 0 && v <= (SCARS.top[k] ?? -1)) look.scars[k] = v;
+            else scarsRaw[key] = raw;
           }
         }
         for (const [k, v] of Object.entries(p)) if (!["colours", "slots", "scars"].includes(k)) playerExtra[k] = v;
@@ -69,10 +72,10 @@ export default {
       const player = { ...playerExtra };
       if (Object.keys(look.colours).length) player.colours = { ...look.colours };
       if (Object.keys(look.slots).length) player.slots = { ...look.slots };
-      const scars = Object.entries(look.scars);
-      if (scars.length === SCAR_PARTS.length && scars.every(([, n]) => n === 0)) player.scars = "none";
-      else if (scars.length) {
-        player.scars = {};
+      const scars = Object.entries(look.scars), raw = Object.entries(scarsRaw);
+      if (!raw.length && scars.length === SCAR_PARTS.length && scars.every(([, n]) => n === 0)) player.scars = "none";
+      else if (scars.length || raw.length) {
+        player.scars = Object.fromEntries(raw);
         for (const s of SCAR_PARTS) {
           if (!(s.id in look.scars)) continue;
           const n = look.scars[s.id];
@@ -152,22 +155,28 @@ export default {
     }
 
     function renderScars() {
+      // An entry the card can't show (written by hand), for this place: kept until another choice is made.
+      const rawFor = id => Object.keys(scarsRaw).find(k => (k === "body" ? "back" : k) === id);
       const rows = SCAR_PARTS.map(s => {
-        const now = SCARS.current[s.id] ?? 0, top = SCARS.top[s.id] || 0;
+        const top = SCARS.top[s.id] || 0, rawKey = rawFor(s.id);
+        const now = s.id in SCARS.current ? scarLabel(s.id, SCARS.current[s.id]).toLowerCase() : "no save yet";
         const sel = el("select", { "aria-label": `${s.name} scar` },
-          el("option", { value: "", text: `Keep my save's (${scarLabel(s.id, now).toLowerCase()})` }),
-          ...[...Array(top + 1).keys()].map(n => el("option", { value: String(n), text: scarLabel(s.id, n) })));
-        sel.value = s.id in look.scars ? String(look.scars[s.id]) : "";
+          el("option", { value: "", text: `Keep my save's (${now})` }),
+          ...[...Array(top + 1).keys()].map(n => el("option", { value: String(n), text: scarLabel(s.id, n) })),
+          rawKey !== undefined ? el("option", { value: "raw", text: `As written: ${JSON.stringify(scarsRaw[rawKey])} (not a scar the game has)` }) : null);
+        sel.value = s.id in look.scars ? String(look.scars[s.id]) : rawKey !== undefined ? "raw" : "";
         sel.addEventListener("change", () => {
+          if (sel.value === "raw") return;
+          if (rawKey !== undefined) delete scarsRaw[rawKey];
           if (sel.value === "") delete look.scars[s.id]; else look.scars[s.id] = Number(sel.value);
           changed();
         });
         return el("div", { class: "row" }, el("strong", { text: s.name, style: { minWidth: "150px" } }), sel);
       });
       const none = el("button", { class: "btn", type: "button", text: "No scars at all",
-        onclick: () => { for (const s of SCAR_PARTS) look.scars[s.id] = 0; changed(); renderScars(); } });
+        onclick: () => { for (const s of SCAR_PARTS) look.scars[s.id] = 0; scarsRaw = {}; changed(); renderScars(); } });
       const keep = el("button", { class: "btn", type: "button", text: "Keep my save's scars",
-        onclick: () => { look.scars = {}; changed(); renderScars(); } });
+        onclick: () => { look.scars = {}; scarsRaw = {}; changed(); renderScars(); } });
       clear(scarsCard).append(el("h2", { text: "Scars" }),
         el("p", { class: "note", text: "Choose your cat's scars, or none. They go into your save on install, after a backup, and show with the game's Injury system setting on (its Gameplay settings). A boss fight can still give new ones." }),
         ...rows, el("div", { class: "row" }, none, keep));
