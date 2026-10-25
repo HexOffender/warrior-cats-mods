@@ -327,7 +327,21 @@ local function steer(cam, now, dt)
     end
 end
 
-local lastTime, lookBaseline
+-- Why the mouse isn't turning the camera now (nil while it is), for the debug log and for taking the
+-- mouse back afterwards.
+local paused
+local function pause(why)
+    if why ~= paused then
+        if why then debug("paused: %s", why) elseif paused then debug("resumed after: %s", paused) end
+    end
+    paused = why
+end
+
+-- How long the engine's look lock may stay on while everything else says you're exploring. Some
+-- interactions (camera splines, cutscenes) turn it on and don't always turn it off again.
+local STUCK_LOCK = 3
+
+local lastTime, lookBaseline, lockedAt, lockIgnored
 local function step()
     if not setup() then return end
     if not valid(pc) then
@@ -343,6 +357,7 @@ local function step()
         captured = false
         restoreLag()
         lastTime = nil
+        pause("the mod menu is open")
         return
     end
     local want = enabled and not pc.bShowMouseCursor and exploring()
@@ -355,6 +370,8 @@ local function step()
     if not captured then   -- a menu is open, or mouse look is off
         restoreLag()
         lastTime = nil
+        pause(not enabled and "mouse look is off" or pc.bShowMouseCursor and "the game shows its cursor"
+              or "not exploring")
         return
     end
     -- The engine's look lock, for moments that disable looking around. Only a lock that comes on during
@@ -364,10 +381,34 @@ local function step()
         lookBaseline = locked
         debug("look input ignored at start: %s", tostring(locked))
     end
-    if locked and not lookBaseline then return end
     local cam = explorationCamera()
-    if not cam then return end   -- another camera (a cutscene, combat) is showing: leave it alone
+    if not cam then   -- another camera (a cutscene, combat) is showing: leave it alone
+        lockedAt = nil
+        pause("another camera is showing (" .. tostring(lastView) .. ")")
+        return
+    end
     local now = lib.statics:GetTimeSeconds(pc)
+    if locked and not lookBaseline then
+        -- A lock that outlasts what turned it on: once you've been exploring with the game's own camera for
+        -- a few seconds, it no longer counts, until it goes off and comes on again.
+        lockedAt = lockedAt or now
+        if not lockIgnored and now - lockedAt < STUCK_LOCK then
+            pause("the game locked looking around")
+            return
+        end
+        if not lockIgnored then
+            lockIgnored = true
+            log("the game's look lock stayed on after %.0f s of exploring; turning with the mouse anyway", STUCK_LOCK)
+        end
+    else
+        lockedAt, lockIgnored = nil, false
+    end
+    if paused then
+        -- Whatever paused it (a cutscene, a camera spline) may have changed the input mode without showing
+        -- the cursor, which leaves the mouse uncaptured: take it again.
+        capture(true)
+        pause(nil)
+    end
     if now == lastTime then return end   -- once per game frame, and not while paused
     local dt = lastTime and now - lastTime or 0
     lastTime = now

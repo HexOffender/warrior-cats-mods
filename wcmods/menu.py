@@ -1013,7 +1013,7 @@ function Menu.json(value) return encode(value, 0) end
 -- Write a Lua value to a JSON file; true, or false and why not.
 function Menu.saveJson(path, value)
     local ok, err = pcall(function()
-        local f = assert(io.open(path, "w"))
+        local f = assert(io.open(path, "wb"))   -- binary, so the file keeps \n line ends on Windows
         f:write(encode(value, 0), "\n")
         f:close()
     end)

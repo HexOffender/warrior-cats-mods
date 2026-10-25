@@ -82,8 +82,13 @@ end
     local function asType(v, t) return INTEGER[t] and math.floor(v + 0.5) or v end
     local function changed(a, b) return a ~= nil and b ~= nil and math.abs(a - b) > 1e-4 end
     local function words(s) return (tostring(s):gsub("_", " "):gsub("(%l)(%u)", "%1 %2"):gsub("(%u)(%u%l)", "%1 %2")) end
-    -- "Gameplay.Inventory.Consumable.SmallHealingHerb" -> "Small Healing Herb"
-    local function itemName(tag) return words(tostring(tag):match("([^%.]+)$") or tag) end
+    -- "Gameplay.Inventory.Consumable.MediumHealingHerb" -> "Marigold" (the game's name, from WCModsNames), or
+    -- "Medium Healing Herb" from its tag
+    local okNames, NAMES = pcall(require, "WCModsNames")
+    local function itemName(tag)
+        local name = okNames and type(NAMES) == "table" and NAMES.item and NAMES.item(tostring(tag))
+        return name or words(tostring(tag):match("([^%.]+)$") or tag)
+    end
     local function rankOf(level)
         if not level then return nil end
         if level <= 6 then return "Apprentice" elseif level <= 11 then return "Warrior" elseif level <= 15 then return "Deputy" end
@@ -155,22 +160,12 @@ end
 
     -- Travel: jump to a place (onto the ground below it), and back again.
     local travel = { back = nil, note = nil }
-    local function ground(x, y, z)
-        local ks, hit = Game.library("KismetSystemLibrary"), {}
-        local none = { R = 0, G = 0, B = 0, A = 0 }
-        local ok, found = pcall(function()
-            return ks:LineTraceSingle(Game.player(), { X = x, Y = y, Z = z + 200 }, { X = x, Y = y, Z = z - 20000 }, 0, false, {}, 0,
-                                      hit, true, none, none, 0)
-        end)
-        if ok and found and hit.ImpactPoint then return hit.ImpactPoint.Z end
-        return nil
-    end
     local function jump(to, label, onGround)
         local cat = Game.cat()
         if not (cat and to) then return false end
         travel.back = cat:location()
         local z = to.Z
-        if not onGround then z = ground(to.X, to.Y, to.Z) or to.Z end
+        if not onGround then z = Game.ground(to.X, to.Y, to.Z) or to.Z end
         local ok = cat:teleport(to.X, to.Y, z + 60)
         travel.note = (ok and "Went to " or "Couldn't go to ") .. label
         refresh()
@@ -557,6 +552,35 @@ end
     end, { order = 30, group = "story" })
 
     -- ---------- Fight ----------
+    -- Extra drops. What a beaten animal gives comes from the game's character table, not from the
+    -- fighter's own list (changing that list changes nothing), so the extra is handed out after the fight
+    -- instead: a pickup by your cat holding as much again, once the fight is won.
+    local extra = { items = {}, enemies = {}, note = nil }   -- enemies: actor address -> its health, last seen
+    Game.every(0.5, function()
+        local f = Game.fight()
+        if f then
+            for _, x in ipairs(f:enemies()) do
+                local cat = x:cat()
+                if cat then extra.enemies[tostring(cat.actor:GetAddress())] = cat:health() end
+            end
+            return
+        end
+        if next(extra.items) == nil then
+            extra.enemies = {}
+            return
+        end
+        if not (Game.cat() and Game.cat():location()) then return end   -- not back in the forest yet
+        local won = next(extra.enemies) ~= nil
+        for _, hp in pairs(extra.enemies) do won = won and hp ~= nil and hp <= 0 end
+        if won then
+            for tag, n in pairs(extra.items) do Game.items.drop(tag, n) end
+            extra.note = "The extra drops are on the ground by your cat."
+        else
+            extra.note = "The fight wasn't won, so there are no extra drops."
+        end
+        extra.items, extra.enemies = {}, {}
+    end)
+
     local function fighterRows(ui, x, enemy)
         local cat = x:cat()
         if not cat then return end
@@ -574,7 +598,7 @@ end
         ui.columns({ { "Level", x:level() }, { "Stance", x:stance() or "?" }, { "Prowess", st.Prowess }, { "Strength", st.Strength },
                      { "Resilience", st.Resilience }, { "Instinct", st.Instinct }, { "Agility", st.Agility } })
         local move = x:moveTag()
-        if move and move ~= "None" and move ~= "" then ui.field("Move", move:gsub("^Gameplay%.Combat%.Attack%.", "")) end
+        if move and move ~= "None" and move ~= "" then ui.field("Move", (move:gsub("^Gameplay%.Combat%.Attack%.", ""))) end
         local hit = ui.buttons({ "Heal", "Weaken", "Cure status" }, { kinds = { "good", "danger" } })
         if hit == 1 then cat:heal()
         elseif hit == 2 then cat:setHealth(1)
@@ -586,8 +610,7 @@ end
             if #parts > 0 then
                 ui.field("Drops", table.concat(parts, ", "))
                 if ui.button("Double what it drops") then
-                    for tag, n in pairs(drops) do drops[tag] = n * 2 end
-                    cat:setRewards(drops)
+                    for tag, n in pairs(drops) do extra.items[tag] = (extra.items[tag] or 0) + n end
                 end
             end
         end
@@ -597,11 +620,15 @@ end
         ui.heading("Fight")
         local f = Game.fight()
         if not f then
+            if extra.note then ui.note(extra.note) end
             ui.text("No fight now. During one, this page shows both sides (health, stamina, stats, stance and moves) and " ..
                     "lets you heal or weaken them.")
             ui.note("The game's own switches for fights (attacks that always land, a forced difficulty) are on Game switches.")
             return
         end
+        local more = {}
+        for tag, n in pairs(extra.items) do more[#more + 1] = string.format("%d %s", n, itemName(tag)) end
+        if #more > 0 then ui.note("Extra drops if you win (by your cat after the fight): " .. table.concat(more, ", ")) end
         local order = {}
         for _, c in ipairs(f:turnOrder()) do order[#order + 1] = c:name() or words(c:kind() or "?") end
         local cur = f:current()

@@ -29,7 +29,7 @@ MOD = {
     id = @ID_LUA@,
     name = @NAME_LUA@,
     folder = @FOLDER_LUA@,           -- the mod's folder in mods/
-    settings = @SETTINGS@,           -- settings.json (an empty table without one)
+    settings = @SETTINGS@,           -- settings.json (an empty table without one; read again below)
     settingsFile = @SETTINGS_FILE@,  -- where MOD.save() writes them, or nil
 }
 
@@ -46,7 +46,7 @@ function MOD.save()
     -- Without the mod menu (its own mod, which may be off), WCModsGame writes it.
     local okG, G = pcall(require, "WCModsGame")
     if not okG then return false, "neither WCModsMenu nor WCModsGame is installed" end
-    local f, err = io.open(MOD.settingsFile, "w")
+    local f, err = io.open(MOD.settingsFile, "wb")
     if not f then return false, tostring(err) end
     f:write(G.json.encode(MOD.settings), "\n")
     f:close()
@@ -69,6 +69,23 @@ end
 
 local okGame, game = pcall(require, "WCModsGame")
 if okGame then Game = game else MOD.log("WCModsGame didn't load: %s", tostring(game)) end
+
+-- settings.json as it is now rather than as it was at install, so what MOD.save() wrote last time (a
+-- quest's progress, where a cat stands) is still there after the game restarts. The copy from the
+-- install is kept when the file can't be read.
+if okGame and MOD.settingsFile then
+    local f = io.open(MOD.settingsFile, "rb")
+    if f then
+        local text = f:read("a")
+        f:close()
+        local ok, data = pcall(Game.json.decode, text)
+        if ok and type(data) == "table" then
+            MOD.settings = data
+        else
+            MOD.log("couldn't read settings.json (%s); using the settings from the install", tostring(data))
+        end
+    end
+end
 
 local main, loadErr = loadfile(here .. "mod/main.lua")
 if not main then

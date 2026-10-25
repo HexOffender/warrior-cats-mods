@@ -39,9 +39,9 @@ sets up two globals, then runs yours:
 | `MOD.` | What it is |
 |---|---|
 | `id`, `name`, `folder` | The mod's folder name, its name, and its folder on disk |
-| `settings` | `settings.json` as a table (empty without one). Change it and the script sees the change at once |
+| `settings` | `settings.json` as a table (empty without one), read from the file each time the game starts, so what `save()` wrote is back after a restart. Change it and the script sees the change at once |
 | `settingsFile` | Where `MOD.save()` writes, or nil |
-| `save()` | Write `MOD.settings` back to `settings.json`, so the next install starts with them. Returns true, or false and why |
+| `save()` | Write `MOD.settings` back to `settings.json`, for the next time the game starts and the next install. Returns true, or false and why |
 | `log(fmt, ...)` | Print `[Mod name] text` to `ue4ss\UE4SS.log` |
 | `page(fn, {title, order, group})` | A page in the mod menu (`fn(ui)`, as in [SDK.md](SDK.md#wcmodsmenu)). The menu is a mod of its own; while it's off this does nothing and returns false |
 
@@ -205,7 +205,7 @@ Some limits:
 | `scale()`, `setScale(f)` | Size (the same call as the menu's size cheat) | read |
 | `setTimeDilation(f)` | This cat's own time: 2 is twice as fast | no |
 | `kind()` | `"Cat"`, `"WeakMice"`, `"BossFox"`, … | yes |
-| `rewards()`, `setRewards({tag = n})` | What an animal drops when beaten | read |
+| `rewards()`, `setRewards({tag = n})` | What an animal drops when beaten | read; a change isn't what it drops, which comes from the game's character table (`DT_Characters`) |
 | `applyStatus("Poisoned")`, `removeStatus(s)`, `clearStatus()` | Status conditions | applied without an error; the effect wasn't watched |
 | `component(kind)` | The raw component: `"Health"`, `"Stamina"`, `"StaminaCombat"`, `"Level"` | yes |
 
@@ -234,13 +234,22 @@ end)
 
 | Option or method | |
 |---|---|
-| `at`, `yaw`, `level` | Where it stands, which way it faces (degrees), and the level it's in (by default the one it first appears in) |
+| `at`, `yaw`, `level` | Where it stands (on the ground below `at`), which way it faces (degrees), and the level it's in (by default the one it first appears in) |
+| `ground` | `false` puts it exactly at `at`, not on the ground below |
 | `colours` | `fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears` as `"#rrggbb"`; the rest stay the game's |
 | `eyes`, `size` | An iris colour slot, as in `palette.json`, and the cat's size (the game's are about 0.4–1.1) |
 | `prefix`, `suffix` | Name IDs (`"STR_CAT_NAME1"`, `"_PAW"`), for the name the game itself knows it by |
 | `npc:valid()`, `npc:actorOrNil()` | Whether it's in the world now, and its actor |
 | `npc:location()`, `npc:distance()`, `npc:near(cm)` | Where it is; how far your cat is; whether your cat is within `cm` (300) |
-| `npc:face(target)`, `npc:moveTo(x, y, z)`, `npc:remove()` | Turn to a place or actor (your cat with none); move it; take it away for good |
+| `npc:face(target)`, `npc:moveTo(x, y, z)`, `npc:remove()` | Turn to a place or actor (your cat with none); move it, onto the ground there; take it away for good |
+| `Game.npcs.spot(cm, side)` | A place beside your cat with room for a cat (220 cm away, to its front left by default), and a yaw facing your cat: `local at, yaw = Game.npcs.spot()` |
+
+Move a cat with `npc:moveTo` rather than removing it and spawning it again: the game chooses a new
+cat's patterns itself (wcmods puts back only the colours), so a new one can look different. That also
+happens when the game unloads the cat and wcmods spawns it again.
+
+`Game.trace(from, to)` gives where a straight line first hits something, and `Game.ground(x, y, z)`
+the height of the ground below a place.
 
 The game gives these cats no Talk prompt or name of their own on screen; a script draws them with
 `WCModsDraw`. [custom-npc](https://github.com/HexOffender/wcmods-examples/tree/main/custom-npc) in
@@ -411,7 +420,8 @@ The mod menu (Insert) builds these pages on `WCModsGame`, in the side bar's grou
 - **Quests:** the quest you follow and its objectives (with "Go to objective" when an objective has
   a place), and every quest by state, with Follow. The titles are the game's own, for your rank.
 - **Fight:** during a fight, both sides with health and stamina, stats, stance and moves; Heal,
-  Weaken, Cure status, and "Double what it drops".
+  Weaken, Cure status, and "Double what it drops" (the extra is a pickup by your cat once the fight
+  is won).
 - **Game switches:** the game's developer switches: "always full" for each resource, and every on/off
   and number setting.
 - **Log:** the end of UE4SS.log, newest first: the mods' lines, the errors, or everything.

@@ -243,7 +243,12 @@ def build(cfg, mods, out_dir, log=print):
                           names.merge(names.mod_specs(enabled)))
     except Exception as e:   # no game data (no Oodle DLL) or a broken names.json, which the names section reports
         log(f"  (cat names for the mod menu left out: {e})")
-    shared_files[world.NAMES_NAME] = world.names_lua(plan)
+    item_labels = {}
+    try:   # items' own names, for the Nearby page's labels
+        item_labels = world.item_names(ctx)
+    except Exception as e:   # no game data (no Oodle DLL)
+        log(f"  (item names for the mod menu left out: {e})")
+    shared_files[world.NAMES_NAME] = world.names_lua(plan, item_labels)
     for name, text in shared_files.items():
         shared = os.path.join(out_dir, "ue4ss_shared", name)
         os.makedirs(shared)
