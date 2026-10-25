@@ -22,6 +22,8 @@ def run(cfg, oodle, log=print):
     check("blake3 test vector", blake3(b"").hex().startswith("af1349b9f5f9a1a6"))
     check("name hashes as in the game's name maps (CityHash64, every length)", _name_hashes())
     check("unversioned property headers write back as they read", _unversioned_headers())
+    ok, detail = _long_save()
+    check("saves over 128 KiB: the game's archive per 128 KiB, read and written", ok, detail)
     check("pictures: PNGs of every kind read, written back, DXT blocks and recolours", _pictures())
     lua = mouselook.script(mouselook.merge([mouselook.validate({"sensitivity": 1.5, "invert": True, "smoothing": 50})]))
     problems = luacheck.check(lua)
@@ -252,6 +254,48 @@ def _unversioned_headers():
             return False
     return (split_name("NewRow_45") == ("NewRow", 46) and split_name("Foo_0") == ("Foo", 1)
             and split_name("Foo_01") == ("Foo_01", 0) and split_name("Gameplay.Item") == ("Gameplay.Item", 0))
+
+
+def _long_save():
+    """A save whose JSON runs past 128 KiB. The game writes CompressedData as one compressed archive per
+    128 KiB of payload; reading only the first one cut a long-played save short ("unpack_from requires a
+    buffer of at least ... bytes"). Laid out here by hand, the way the game does it, not by save.py."""
+    import zlib
+    from . import save as savelib
+    text = '{"Shared": {"General": {"CurrentCatSlot": 0}}, "Pad": "' + "x" * 500000 + '"}'
+    body = text.encode("utf-8")
+    payload = (struct.pack("<II", len(body) + 8, len(body)) + bytes((b - 1) & 0xFF for b in body)
+               + struct.pack("<I", len(body)))
+    block = 0x20000
+    pieces = [payload[k:k + block] for k in range(0, len(payload), block)]
+    packed = [zlib.compress(piece) for piece in pieces]
+    head = savelib.ARCHIVE_TAG + struct.pack("<q", block) + bytes([3])
+    archives = b"".join(head + struct.pack("<qq", len(c), len(u)) * 2 + c for c, u in zip(packed, pieces))
+
+    def gvas(data):   # the property's tail: size (int32), flags (u8), count (int32), the archives
+        return (b"GVAS" + bytes(20) + b"CompressedData" + bytes(1) + b"ArrayProperty" + bytes(1)
+                + struct.pack("<i", len(data) + 4) + bytes(1) + struct.pack("<i", len(data)) + data + bytes(4))
+
+    want = [len(piece) for piece in pieces]
+    if len(want) < 4 or SaveGame(gvas(archives)).json_text != text:
+        return False, "a save of several archives doesn't read back"
+    # What wcmods writes for it has the same shape: an archive per 128 KiB, none over the game's buffer.
+    new = SaveGame(gvas(archives)).to_bytes()
+    again = SaveGame(new)
+    sizes, p = [], again._data_start
+    while p < again._data_end:
+        (block_size,) = struct.unpack_from("<q", new, p + 8)
+        csize, usize = struct.unpack_from("<qq", new, p + 17)
+        sizes.append(usize)
+        p += 33 + 16 * ((usize + block_size - 1) // block_size) + csize
+    if sizes != want or again.json_text != text:
+        return False, f"written as archives of {sizes}, not {want}"
+    # One archive of several blocks (the engine's general layout) reads too.
+    one = (head + struct.pack("<qq", sum(map(len, packed)), len(payload))
+           + b"".join(struct.pack("<qq", len(c), len(u)) for c, u in zip(packed, pieces)) + b"".join(packed))
+    if SaveGame(gvas(one)).json_text != text:
+        return False, "an archive of several blocks doesn't read back"
+    return True, f"{len(want)} archives for {len(payload)} bytes"
 
 
 def _cooked_table(io):
