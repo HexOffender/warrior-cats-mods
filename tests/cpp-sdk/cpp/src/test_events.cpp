@@ -69,6 +69,7 @@ namespace t
         for (auto& l : levels) names.push(l);
         value("levels", names);
         value("players", players);
+        snapshot_menu();
     }
 
     auto setup_events() -> void

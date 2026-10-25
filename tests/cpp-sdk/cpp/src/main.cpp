@@ -84,6 +84,7 @@ class CppSdkTest : public wcmods::ModBase
         t::phase("init");
         t::run_core();
         t::setup_events();
+        t::setup_menu();
         t::done("init");
     }
 };

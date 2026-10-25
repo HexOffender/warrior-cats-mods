@@ -74,8 +74,11 @@ namespace wcmods
             requires(is_character<T>)
         Json(T) = delete;
         Json(std::string v) : m_type(Type::String), m_string(std::move(v)) {}
+        Json(std::string_view v) : m_type(Type::String), m_string(v) {}
         Json(const char* v) : m_type(Type::String), m_string(v) {}
         Json(std::wstring_view v) : m_type(Type::String), m_string(utf8(v)) {}
+        Json(const std::wstring& v) : m_type(Type::String), m_string(utf8(v)) {}
+        Json(const wchar_t* v) : m_type(Type::String), m_string(utf8(v)) {}
 
         static auto array() -> Json { Json j; j.m_type = Type::Array; return j; }
         static auto object() -> Json { Json j; j.m_type = Type::Object; return j; }

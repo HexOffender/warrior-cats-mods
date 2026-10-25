@@ -10,6 +10,7 @@
 
 #include <WCMods/Core.hpp>
 #include <WCMods/Events.hpp>
+#include <WCMods/Menu.hpp>
 
 namespace wcmods
 {
@@ -26,6 +27,8 @@ namespace wcmods
             ModVersion = m.version;
             ModAuthors = m.author;
             ModDescription = m.description;
+            // Each Lua mod's state gets WCModsCpp as it starts, for the mod menu and shared values (Menu.hpp).
+            register_on_lua_start(&detail::lua_started);
             // wcmods::on_key binds keys through this mod, so UE4SS ties them to it.
             detail::key_binder() = [this](Key key, const std::vector<Modifier>& modifiers, std::function<void()> fn) {
                 if (modifiers.empty())
@@ -52,5 +55,6 @@ namespace wcmods
     extern "C" __declspec(dllexport) void uninstall_mod(RC::CppUserModBase* mod)                               \
     {                                                                                                          \
         ::wcmods::detail::stop();                                                                              \
+        ::wcmods::detail::stop_menu();                                                                         \
         delete mod;                                                                                            \
     }

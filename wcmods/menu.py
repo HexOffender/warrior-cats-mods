@@ -1260,6 +1260,32 @@ local function pageList()
     return out
 end
 
+-- ---------- C++ mods ----------
+-- WCMods.hpp puts WCModsCpp.mods[<id>] into this state as it starts: each C++ mod's pages (its settings page
+-- among them), its keys for the Overview, and the values it shares. Pages are picked up when the menu opens,
+-- since a C++ mod may add one after this script started.
+local cppPages = {}
+local function cppShare(name, value)
+    if type(WCModsCpp) == "table" and WCModsCpp.share then pcall(WCModsCpp.share, name, value) end
+end
+local function syncCpp()
+    if type(WCModsCpp) ~= "table" or type(WCModsCpp.mods) ~= "table" then return end
+    for _, m in pairs(WCModsCpp.mods) do
+        local ok, list = pcall(m.pages)
+        for _, p in ipairs(ok and type(list) == "table" and list or {}) do
+            if p.id and not cppPages[p.id] then
+                cppPages[p.id] = true
+                Menu.page(p.title or p.id, function(ui) m.draw(p.id, ui) end, { id = p.id, order = p.order, group = p.group })
+            end
+        end
+        local okK, keys = pcall(m.keys)
+        for line in (okK and tostring(keys or "") or ""):gmatch("([^\n]+)") do
+            local key, what = line:match("^([^\t]*)\t(.*)$")
+            if key then Menu.key(key, what) end
+        end
+    end
+end
+
 local generation = 0
 local function show(id)
     if win then
@@ -1268,6 +1294,7 @@ local function show(id)
         if Menu.focused(win.content) then win.focusTab = true end
     end
     Menu.share("page", id)
+    cppShare("menu.page", id)
     pcall(function() win.content:ClearChildren() end)
     generation = generation + 1
     Menu.share("generation", generation)
@@ -1417,6 +1444,8 @@ local function openMenu(fromPad)
     win.focusTab = true
     isOpen = true
     Menu.share("open", true)
+    cppShare("menu.open", true)
+    syncCpp()
     show(Menu.shared("page") or "")
     if win.pause:IsChecked() then setPaused(true) end
 end
@@ -1425,6 +1454,7 @@ local function closeMenu()
     if not isOpen then return end
     isOpen = false
     Menu.share("open", false)
+    cppShare("menu.open", false)
     if paused then setPaused(false) end
     local wasPad = byPad
     byPad = false
@@ -1963,6 +1993,8 @@ Menu.page("Cheats", function(ui)
 end, { order = 50, group = "cheats" })
 @PAGES@
 log("ready: %s opens the mod menu", SETTINGS.key_name)
+syncCpp()
+
 '''
 
 KEY_NAMES = {"INS": "Insert", "HOME": "Home", "END": "End", "DEL": "Delete", "PAGE_UP": "Page Up",
