@@ -39,9 +39,9 @@ sets up two globals, then runs yours:
 | `MOD.` | What it is |
 |---|---|
 | `id`, `name`, `folder` | The mod's folder name, its name, and its folder on disk |
-| `settings` | `settings.json` as a table (empty without one). Change it and the script sees the change at once |
+| `settings` | `settings.json` as a table (empty without one), read from the file each time the game starts, so what `save()` wrote is back after a restart. Change it and the script sees the change at once |
 | `settingsFile` | Where `MOD.save()` writes, or nil |
-| `save()` | Write `MOD.settings` back to `settings.json`, so the next install starts with them. Returns true, or false and why |
+| `save()` | Write `MOD.settings` back to `settings.json`, for the next time the game starts and the next install. Returns true, or false and why |
 | `log(fmt, ...)` | Print `[Mod name] text` to `ue4ss\UE4SS.log` |
 | `page(fn, {title, order, group})` | A page in the mod menu (`fn(ui)`, as in [SDK.md](SDK.md#wcmodsmenu)). The menu is a mod of its own; while it's off this does nothing and returns false |
 
