@@ -29,8 +29,8 @@ from .sections.files import classify
 
 NO_GAME = "Clan Mod Studio hasn't found the game yet: Get set up, on the Mods page, asks where it is"
 
-MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "names.json", "cats.json", "save.json",
-             "settings.json", "menu.json")
+MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "items.json", "names.json", "cats.json",
+             "save.json", "settings.json", "menu.json")
 MAX_UPLOAD = modzip.MAX_BYTES   # a downloaded mod's .zip
 # The side bar: "play" is installing and managing mods, "make" the pages for making your own.
 BUILTIN_SECTIONS = [

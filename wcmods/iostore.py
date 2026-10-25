@@ -207,14 +207,19 @@ EMPTY_TAIL_FIELDS = struct.pack("<iiiii", 0, 0, 0, 0, 0)
 
 
 class ModContainerWriter:
-    """Writes an uncompressed IoStore container holding replacement packages."""
+    """Writes an uncompressed IoStore container holding replacement and new packages."""
 
     def __init__(self, container_id):
         self.container_id = container_id
         self.packages = []   # (path, chunk_id, data, imports, shaders)
+        self.chunks = []     # (path, chunk_id, data): a package's other chunks, such as its .ubulk
 
     def add_package(self, path, chunk_id, data, imports, shaders):
         self.packages.append((path, chunk_id, bytes(data), imports, shaders))
+
+    def add_chunk(self, path, chunk_id, data):
+        """A chunk that isn't a package (no container header entry), e.g. a texture's bulk data."""
+        self.chunks.append((path, chunk_id, bytes(data)))
 
     def write(self, utoc_path, ucas_path):
         header = ContainerHeader(
@@ -223,7 +228,7 @@ class ModContainerWriter:
             [(imp, sh) for _, _, _, imp, sh in self.packages],
             EMPTY_TAIL_FIELDS, b"\0\0\0\0").serialize()
         header_id = self.container_id + b"\0\0\0" + bytes([CHUNK_CONTAINER_HEADER])
-        chunks = [(path, cid, data) for path, cid, data, _, _ in self.packages]
+        chunks = [(path, cid, data) for path, cid, data, _, _ in self.packages] + list(self.chunks)
         chunks.append((None, header_id, header))
 
         ucas = bytearray()

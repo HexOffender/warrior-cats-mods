@@ -13,6 +13,7 @@ and any of:
   controls.json       button remaps (sections/controls.py)
   mouselook.json      mouse look settings (sections/mouselook.py)
   data.json           gameplay data edits (sections/data.py)
+  items.json          new herbs and materials (sections/items.py)
   names.json          cat names: prefixes, suffixes, rogues, the ban list, cats in your save (sections/names.py)
   cats.json           your cat's own colours and colour slots (sections/cats.py)
   save.json           save edits (sections/savedit.py)
@@ -27,7 +28,7 @@ import re
 
 MENU_ID = "mod-menu"   # the mod menu's own mod: other mods name it in "requires" or "uses"
 CONTENT = (("files", "files"), ("paks", "cooked content"), ("menu.json", "mod menu"), ("palette.json", "palette"), ("controls.json", "controls"),
-           ("mouselook.json", "mouse look"), ("data.json", "data"), ("names.json", "names"), ("cats.json", "cats"),
+           ("mouselook.json", "mouse look"), ("data.json", "data"), ("items.json", "items"), ("names.json", "names"), ("cats.json", "cats"),
            ("save.json", "save"), ("scripts", "in-game script"), ("section.py", "code"),
            (os.path.join("studio", "section.js"), "studio page"))
 

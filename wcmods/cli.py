@@ -173,6 +173,43 @@ def cmd_extract(ctx, args):
     print(f"extracted {len(hits)} file(s) into {out}")
 
 
+def cmd_texture(ctx, args):
+    """One of the game's textures as a PNG to paint over: an accessory's look, an item's icon, or a
+    texture by its asset path."""
+    from . import accessories, cooked, png, texture
+    ctx.need_oodle()
+    what = args.what
+    if what.split(".", 1)[0] in ("Head", "Neck", "Body", "Legs"):
+        what = "Cosmetic." + what
+    if what.startswith("/Game/"):
+        asset = what
+    elif what.startswith(("Cosmetic.", "Gameplay.Inventory.Cosmetic.")):
+        parts = what.split("Cosmetic.", 1)[1].split(".")
+        looks = accessories.read_variations(ctx.game.read(accessories.GUI_MANAGER))
+        if len(parts) != 3 or parts[1] not in looks or not parts[2].isdigit() or not 0 < int(parts[2]) <= len(looks[parts[1]]):
+            sys.exit(f"{what}: give an accessory and its look, e.g. Neck.DogCollar.1")
+        asset = looks[parts[1]][int(parts[2]) - 1]
+    else:
+        rows = {v.get("itemTag"): v for _, v in cooked.DataTable(ctx.game.read(cooked.TABLES["DT_QuestObjectsInfo"][0]),
+                                                                 "QuestObjectsInfoDataStruct").rows}
+        tag = next((t for t in (what, f"Gameplay.Inventory.Consumable.{what}", f"Gameplay.Inventory.Materials.{what}")
+                    if t in rows), None)
+        if tag is None:
+            sys.exit(f"{what}: not a texture (/Game/...), an accessory (Neck.DogCollar.1) or an item")
+        asset = f"{rows[tag]['Icon']['package']}.{rows[tag]['Icon']['asset']}"
+    try:
+        tex = texture.load(ctx.game, asset)
+    except ValueError as e:
+        sys.exit(str(e) if asset in str(e) else f"{asset}: {e}")
+    w, h, rgba = tex.image(0)
+    out = args.out or os.path.join(ctx.root, "vanilla", "textures", asset.split(".", 1)[0].rsplit("/", 1)[-1] + ".png")
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    with open(out, "wb") as f:
+        f.write(png.write(w, h, rgba))
+    print(f"{asset}: {w} x {h} {tex.format} -> {out}")
+    print("paint over it and keep the size; a mod's items.json uses it as an item's \"icon\" or an accessory's \"texture\"")
+
+
 def cmd_names(ctx, args):
     from .sdk import BuildContext
     ctx.need_oodle()
@@ -681,12 +718,17 @@ def main(root, argv=None):
     p.set_defaults(fn=cmd_pack)
     p = sub.add_parser("new", help="create a mod from a template")
     p.add_argument("id")
-    p.add_argument("--kind", choices=("palette", "controls", "files", "data", "save", "names", "script"), default="palette")
+    p.add_argument("--kind", choices=("palette", "controls", "files", "data", "items", "save", "names", "script"), default="palette")
     p.set_defaults(fn=cmd_new)
     p = sub.add_parser("files", help="list game files matching a pattern, e.g. '*NPC/*.csv'")
     p.add_argument("pattern")
     p.add_argument("--limit", type=int, default=200)
     p.set_defaults(fn=cmd_files)
+    p = sub.add_parser("texture", help="save one of the game's textures as a PNG to paint over: an accessory's look "
+                                       "(Neck.DogCollar.1), an item's icon (SmallHealingHerb) or /Game/...")
+    p.add_argument("what")
+    p.add_argument("--out", help="where to write the PNG (default vanilla/textures/<name>.png)")
+    p.set_defaults(fn=cmd_texture)
     p = sub.add_parser("extract", help="copy game files matching a pattern into vanilla/ to start a files mod")
     p.add_argument("pattern")
     p.add_argument("--out", default="vanilla")

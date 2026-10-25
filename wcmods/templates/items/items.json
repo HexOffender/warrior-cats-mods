@@ -1,0 +1,13 @@
+{
+  "_help": "New herbs and materials. An item's tag is Gameplay.Inventory.Consumable.<id> (or Materials.<id>), so pick an id the game doesn't have. 'like' borrows what a game item does, its icon and its badge; 'recipe' is what the medicine cat wants for one; 'give' is how many you start with (once). docs/SDK.md, 'New items', lists every key.",
+  "items": [
+    {
+      "id": "MyHerb",
+      "like": "MediumHealingHerb",
+      "name": "My Herb",
+      "description": "Health Recovery (medium).",
+      "recipe": { "Dandelion": 2, "Cotton": 1 },
+      "give": 1
+    }
+  ]
+}

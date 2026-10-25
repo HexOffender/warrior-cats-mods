@@ -8,6 +8,7 @@ from .cats import CatsSection
 from .controls import ControlsSection
 from .data import DataSection
 from .files import FilesSection
+from .items import ItemsSection
 from .mouselook import MouseLookSection
 from .names import NamesSection
 from .palettes import PaletteSection
@@ -15,7 +16,7 @@ from .savedit import SaveSection
 from .scripts import ScriptsSection
 
 # Order matters only where outputs layer: replacement files first, CSV edits on top of them.
-BUILTIN = (FilesSection, DataSection, NamesSection, PaletteSection, CatsSection, ControlsSection, MouseLookSection,
+BUILTIN = (FilesSection, DataSection, ItemsSection, NamesSection, PaletteSection, CatsSection, ControlsSection, MouseLookSection,
            SaveSection, ScriptsSection)
 
 

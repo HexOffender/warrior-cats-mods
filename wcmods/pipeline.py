@@ -6,7 +6,8 @@ import re
 import shutil
 import struct
 
-from . import bridge, catlook, controls, draw, gamebuild, hostpages, ingame, luacheck, menu, names, ue4ss, view, world
+from . import bridge, catlook, controls, draw, gamebuild, hostpages, ingame, luacheck, menu, names, texture
+from . import ue4ss, view, world
 from . import game as game_lua   # WCModsGame (the name `game` is the game's files in build())
 from . import mods as modlib
 from .blake3 import blake3
@@ -122,9 +123,18 @@ def build(cfg, mods, out_dir, log=print):
                 if rep["status"] == "ok":
                     rep["status"] = "partial"
 
+    table_changes, table_failures = ctx.resolve_table_rows()
+    for name, section_ids, error in table_failures:
+        for sid in section_ids:
+            rep = report.get(sid)
+            if rep is not None:
+                rep["errors"].append(f"{name}: rows not added ({error})")
+                if rep["status"] == "ok":
+                    rep["status"] = "partial"
+
     manifest = {"mods": [m.id for m in enabled], "sections": report, "outputs": [], "ue4ss_mods": [],
                 "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
-                "csv_changes": csv_changes, "files": sorted(ctx.files),
+                "csv_changes": csv_changes, "table_rows": table_changes, "files": sorted(ctx.files),
                 "built": datetime.datetime.now().isoformat(timespec="seconds")}
     titles = {m.id: m.name for m in mods}
     manifest["outdated"] = [{"id": i, "name": titles[i], "made_for": o["made_for"], "used": o["allowed"]}
@@ -159,6 +169,12 @@ def build(cfg, mods, out_dir, log=print):
         header = io.container_header()
         container = ModContainerWriter(blake3(MOD_BASENAME.lower().encode(), 8))
         for path, (data, _, _) in ctx.packages.items():
+            if path in ctx.new_packages:
+                cid, imports, shaders, bulk = ctx.new_packages[path]
+                container.add_package(path, cid, data, imports, shaders)
+                if bulk is not None:
+                    container.add_chunk(path[:-len(".uasset")] + ".ubulk", cid[:11] + bytes([texture.CHUNK_BULK]), bulk)
+                continue
             ci = io.chunk_index(path)
             cid = io.chunk_ids[ci]
             imports, shaders = header.entry_for(struct.unpack("<Q", cid[:8])[0])
@@ -461,6 +477,8 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
             elif op["op"] == "insert":
                 full = f"{op['path']}/{op['key']}"
                 old = doc.get(full) if doc.exists(full) else None
+                if old is not None and op.get("only_new"):
+                    continue
                 if old != op["value"]:
                     doc.insert(op["path"], op["key"], op["value"])
                     changed.append(f"{full}: {json.dumps(old)} -> {json.dumps(op['value'])}")

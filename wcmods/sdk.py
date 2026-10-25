@@ -29,7 +29,7 @@ they are Python code. See docs/SDK.md for the full API.
 import json
 import os
 
-from . import csvdata, luacheck
+from . import cooked, csvdata, luacheck
 from .gamefiles import NONASSET
 
 
@@ -95,7 +95,9 @@ class BuildContext:
         self.cfg, self.game, self.out_dir, self._log = cfg, game, out_dir, log
         self.files = {}         # pak path -> (bytes, section, source)
         self.packages = {}      # asset path -> (bytes, section, source)
+        self.new_packages = {}  # asset path of a package the game hasn't got -> (chunk id, imports, shaders, bulk)
         self.csv_edits = {}     # csv path -> [(edits, section, source)]
+        self.table_rows = {}    # cooked table name -> [(row name, values, section, source)]
         self.ue4ss_mods = {}    # name -> ({relpath: bytes}, section)
         self.save_ops = []      # [{"op": ..., "section": ..., ...}]
         self.warnings = []
@@ -104,6 +106,13 @@ class BuildContext:
         self.mods = []          # the enabled mods in priority order (set by the build)
         self._tuning = None     # TuningData.csv as numbers, read once (ctx.tuning)
         self._texts = {}        # language -> {key: text} (ctx.text)
+        self._cooked = {}       # cooked table name -> (the game's asset, its rows) (ctx.cooked_table)
+
+    @property
+    def cache_dir(self):
+        """Where a build keeps work it can reuse (encoded textures): cache/ beside the build's output
+        folder, so a normal build's is wcmods' cache/ and the selftest's stays in its temp folder."""
+        return os.path.join(os.path.dirname(os.path.abspath(self.out_dir)), "cache")
 
     # ---- logging ----
     def log(self, msg):
@@ -139,6 +148,20 @@ class BuildContext:
             row["key"] = r.fields[0] if r.fields else ""
             rows.append(row)
         return rows
+
+    def cooked_table(self, name):
+        """The rows of one of the game's cooked tables (cooked.TABLES) as the game ships them, as
+        [(row name, {field: value})]: ctx.cooked_table("DT_QuestObjectsInfo"). Needs the Oodle DLL."""
+        if name not in cooked.TABLES:
+            raise ValueError(f"wcmods can't read the cooked table {name} (it knows {', '.join(sorted(cooked.TABLES))})")
+        return self._cooked_table(name)[1]
+
+    def _cooked_table(self, name):
+        if name not in self._cooked:
+            path, schema = cooked.TABLES[name]
+            data = self.game.read(path)
+            self._cooked[name] = (data, cooked.DataTable(data, schema).rows)
+        return self._cooked[name]
 
     def tuning(self, key=None):
         """TuningData.csv as {key: number} (text where a value isn't a number), or one value with a key:
@@ -189,9 +212,48 @@ class BuildContext:
         """Queue cell edits on a game CSV (see csvdata.apply_edits). Edits from all sections merge."""
         self.csv_edits.setdefault(self.data_path(name), []).append((edits, self.current, source))
 
+    def add_table_row(self, table, row, values, source=""):
+        """Add a row to one of the game's cooked tables (cooked.TABLES), merged with every other
+        section's rows at the end of the build and written into a copy of the game's asset:
+        ctx.add_table_row("DT_QuestObjectsInfo", "MyMod_MoonHerb", {"itemTag": ..., "Name": ...}).
+        `values` uses cooked.SCHEMAS' fields; ones left out get the row struct's default."""
+        if table not in cooked.TABLES:
+            raise ValueError(f"wcmods can't add rows to {table} (it knows {', '.join(sorted(cooked.TABLES))})")
+        fields = {f for f, _ in cooked.SCHEMAS[cooked.TABLES[table][1]]}
+        unknown = sorted(set(values) - fields)
+        if unknown:
+            raise ValueError(f"{table} has no field {', '.join(unknown)} (it has {', '.join(sorted(fields))})")
+        self.table_rows.setdefault(table, []).append((row, dict(values), self.current, source))
+
     def patch_package(self, path, data, source=""):
-        """Replace a cooked asset (.uasset) with patched bytes of the same layout."""
+        """Replace a cooked asset (.uasset) with patched bytes (they may be longer or shorter)."""
         self.packages[path] = (bytes(data), self.current, source)
+
+    def add_package(self, path, data, chunk_id, imports, shaders=(), bulk=None, source=""):
+        """Add a cooked asset the game hasn't got ("Wrc/Content/WCMods/.../T_X.uasset"), with its
+        12-byte chunk ID, the package IDs it imports and its shader maps (as in the container header),
+        and its .ubulk bytes if it has one. texture.py makes these; add_texture is the easy way."""
+        if self.game.exists(path):
+            raise ValueError(f"{path} is one of the game's own files; patch_package replaces those")
+        self.packages[path] = (bytes(data), self.current, source)
+        self.new_packages[path] = (bytes(chunk_id), list(imports), list(shaders),
+                                   bytes(bulk) if bulk is not None else None)
+
+    def add_texture(self, name, image, like, source="", key=None):
+        """A new texture, /Game/WCMods/<name> ("my_mod/T_MoonHerb"), made from an image (width, height,
+        RGBA bytes, as png.read gives) as a copy of `like`, one of the game's textures (its asset path,
+        "/Game/Art/UXD/Textures/.../T_UI_Icon_Inventory_Horsetail_D"): the same size, format and mips.
+        `image` may be a function that makes the image, and `key` text that changes whenever the image
+        would (a hash of the PNG file, say): with both, a texture made before comes from the cache
+        without making the image again. Returns the new texture's asset path, for an icon or an
+        accessory's look. Needs the Oodle DLL."""
+        from . import texture
+        package = texture.new_package_name(name)
+        path = texture.content_path(package)
+        built = texture.build(self, package, image, like, key)
+        self.add_package(path, built["data"], built["chunk_id"], built["imports"], built["shaders"],
+                         bulk=built["bulk"], source=source)
+        return package + "." + package.rsplit("/", 1)[-1]
 
     def add_ue4ss_mod(self, name, files):
         """files: {"Scripts/main.lua": text, ...}. Installed only when UE4SS is present.
@@ -209,10 +271,14 @@ class BuildContext:
         """Set an existing save value at install time (path like 'Shared/SettingsData/Minimap')."""
         self.save_ops.append({"op": "set", "path": path, "value": value, "section": self.current, "source": source})
 
-    def add_save_key(self, object_path, key, value, source=""):
-        """Add (or set) a key inside a save object, e.g. a new inventory item."""
-        self.save_ops.append({"op": "insert", "path": object_path, "key": key, "value": value,
-                              "section": self.current, "source": source})
+    def add_save_key(self, object_path, key, value, source="", only_new=False):
+        """Add (or set) a key inside a save object, e.g. a new inventory item. With only_new, a key the
+        save already has is left as it is (a mod's starting items, given once)."""
+        op = {"op": "insert", "path": object_path, "key": key, "value": value, "section": self.current,
+              "source": source}
+        if only_new:
+            op["only_new"] = True
+        self.save_ops.append(op)
 
     def save_op(self, op):
         op = dict(op, section=self.current)
@@ -221,11 +287,14 @@ class BuildContext:
     # ---- section isolation ----
     def begin(self, section_id):
         self.current = section_id
-        self._snapshot = (dict(self.files), dict(self.packages), {k: list(v) for k, v in self.csv_edits.items()},
-                          dict(self.ue4ss_mods), list(self.save_ops), list(self.warnings))
+        self._snapshot = (dict(self.files), dict(self.packages), dict(self.new_packages),
+                          {k: list(v) for k, v in self.csv_edits.items()},
+                          {k: list(v) for k, v in self.table_rows.items()}, dict(self.ue4ss_mods),
+                          list(self.save_ops), list(self.warnings))
 
     def rollback(self):
-        (self.files, self.packages, self.csv_edits, self.ue4ss_mods, self.save_ops, self.warnings) = self._snapshot
+        (self.files, self.packages, self.new_packages, self.csv_edits, self.table_rows, self.ue4ss_mods,
+         self.save_ops, self.warnings) = self._snapshot
         self.notes.pop(self.current, None)
 
     def end(self):
@@ -256,4 +325,33 @@ class BuildContext:
             if changes:
                 results[path] = changes
             self.files[path] = (text.encode("utf-8"), queue[-1][1], "csv edits")
+        return results, failures
+
+    # ---- cooked table rows ----
+    def resolve_table_rows(self):
+        """Write each cooked table that sections added rows to into the mod container.
+
+        Each table is resolved on its own, like resolve_csv_edits. Returns (changes, failures):
+        changes is {table: [{"row", "by"}]}, failures [(table, section ids, error)].
+        """
+        results, failures = {}, []
+        for name, queue in self.table_rows.items():
+            path, schema = cooked.TABLES[name]
+            sections = sorted({section for _, _, section, _ in queue})
+            try:
+                if path in self.packages:
+                    raise ValueError(f"{self.packages[path][1]} also replaces {path.rsplit('/', 1)[-1]}")
+                dt = cooked.DataTable(self._cooked_table(name)[0], schema)
+                added = []
+                for row, values, section, source in queue:
+                    try:
+                        dt.add(row, values)
+                        added.append({"row": row, "by": source or section})
+                    except ValueError as e:
+                        self.warnings.append(f"{section}: {name}: {e}")
+                if added:
+                    self.packages[path] = (dt.bytes(), queue[-1][2], "table rows")
+                    results[name] = added
+            except Exception as e:
+                failures.append((name, sections, f"{type(e).__name__}: {e}"))
         return results, failures
