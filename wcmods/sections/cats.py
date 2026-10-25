@@ -45,7 +45,7 @@ class CatsSection(Section):
             slot = slots.get(part)
             if slot is not None and slot >= palettes.GAME_SLOTS and slot not in added.get(part, set()):
                 ctx.warn(f"your cat's {part} slot {slot} isn't added by any enabled palette, so it shows no colour")
-        scars = player.get("scars", {})
+        scars = player["scars"]
         if slots or scars:
             what = "your cat's colour slots" if not scars else "your cat's scars" if not slots else \
                 "your cat's colour slots and scars"

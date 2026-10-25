@@ -15,7 +15,8 @@ export default {
   title: "Your cat",
   async mount(root, wc) {
     const { el, api, clear, toast, color } = wc;
-    let look = { colours: {}, slots: {} }, extra = {};
+    // extra: the file's other keys; playerExtra: the player's other keys ("scars"), kept as they are.
+    let look = { colours: {}, slots: {} }, extra = {}, playerExtra = {};
     const [info, tablesRes] = await Promise.all([api.get("/cat"), api.get("/game/tables")]);
     const TABLES = tablesRes.tables || {};
 
@@ -36,16 +37,17 @@ export default {
       target.element, coloursCard, slotsCard, out.element);
 
     function load(obj) {
-      look = { colours: {}, slots: {} }; extra = {};
+      look = { colours: {}, slots: {} }; extra = {}; playerExtra = {};
       const p = obj && obj.player;
       if (p && typeof p === "object") {
         for (const [k, v] of Object.entries(p.colours || {})) { const c = color.normHex(v); if (c) look.colours[k] = c; }
         for (const [k, v] of Object.entries(p.slots || {})) if (Number.isInteger(v)) look.slots[k] = v;
+        for (const [k, v] of Object.entries(p)) if (k !== "colours" && k !== "slots") playerExtra[k] = v;
       }
       for (const [k, v] of Object.entries(obj || {})) if (k !== "player" && !k.startsWith("_")) extra[k] = v;
     }
     function toJson() {
-      const player = {};
+      const player = { ...playerExtra };
       if (Object.keys(look.colours).length) player.colours = { ...look.colours };
       if (Object.keys(look.slots).length) player.slots = { ...look.slots };
       return { _help: "Written by Clan Mod Studio. See README, \"cats.json\".", ...(Object.keys(player).length ? { player } : {}), ...extra };

@@ -97,6 +97,8 @@ def _scars(value, where):
         return {part: 0 for part in SCARS}
     if not isinstance(value, dict):
         raise ValueError(f'{where} should be "none", or e.g. {{"ear": "notch-left", "eye": 3, "back": "none"}}')
+    if "body" in value and "back" in value:
+        raise ValueError(f'{where}: "body" and "back" are the same place (the save calls the back "body"); give one')
     out = {}
     for part, v in value.items():
         if part.startswith("_"):
@@ -108,7 +110,7 @@ def _scars(value, where):
         top = SCAR_CHOICES[part]
         if v == "none":
             v = 0
-        elif part == "ear" and v in EAR_SCARS:
+        elif part == "ear" and isinstance(v, str) and v in EAR_SCARS:
             v = EAR_SCARS[v]
         if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= top:
             names = f', or {", ".join(EAR_SCARS)}' if part == "ear" else ""
@@ -125,7 +127,7 @@ def merge(items):
             cur = out.setdefault(target, {"colours": {}, "slots": {}, "scars": {}})
             cur["colours"].update(look["colours"])
             cur["slots"].update(look["slots"])
-            cur["scars"].update(look.get("scars", {}))
+            cur["scars"].update(look["scars"])
     return out
 
 
