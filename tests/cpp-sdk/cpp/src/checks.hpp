@@ -32,6 +32,8 @@ namespace t
     auto setup_story() -> void;          // Story.hpp: the events, and a quest report
     auto snapshot_story() -> void;       // the events' counts, into values
     auto snapshot_menu() -> void;        // what the pages' rows hold, and the menu's state, into values
+    auto snapshot_status() -> void;      // your cat's status condition members now, into values (test_game.cpp)
+    auto snapshot_fight() -> void;       // the fight's fighters with their hidden members, into values (test_world.cpp)
 
     // The after-hook that forges GetConsoleVariableFloatValue's result (test_events.cpp sets it up, run_writes
     // checks it and takes it out).

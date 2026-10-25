@@ -485,6 +485,68 @@ def test_story_matches_lua(agent):
     assert not any(q["id"] == "cpp-sdk-test" for q in (reported or [])), reported
 
 
+STATUS_NAMES = ["None", "Blinded", "Furious", "Poisoned", "Stressed"]
+SENSES = (("cone_angle", "ConeAngle"), ("cone_distance", "ConeDistance"), ("sound_radius", "SoundRadius"), ("sound_speed", "SoundSpeed"),
+          ("pounce_distance", "PounceDistance"), ("proximity_distance", "ProximityDistance"), ("target_distance", "TargetDistance"),
+          ("walk_speed_roaming", "WalkSpeedRoaming"), ("walk_speed_chasing", "WalkSpeedChasing"), ("zone_entry_distance", "ZoneEntryDistance"),
+          ("zone_exit_distance", "ZoneExitDistance"), ("react_to_chase", "ReactToChase"))
+
+
+def test_hidden_members_match_lua(agent):
+    """The game's own members wcmods maps (Game.hpp's status condition, Story.hpp's fighter extras, World.hpp's
+    senses and AI blackboard) against Lua's view of the same objects."""
+    r = _ready(agent, "world")
+    assert not _failed(r, "world"), _failed(r, "world")
+    v = r["values"]
+    lua = agent.lua("""
+        local c = Game.cat()
+        local sc = c:statusComponent()
+        local out = { status = c:status(), rounds = c:statusRounds(), cure = Game.get(sc, "WCM_SelfCureChance"),
+                      poison = Game.get(sc, "WCM_PoisonDamage") }
+        local f = Game.fighter(c.actor)
+        out.team, out.tier, out.moves = f:team(), f:aiTier(), f:moveCount()
+        local name = %s
+        if name then
+            for _, a in ipairs(FindAllOf("WrcRoamingEnemy") or {}) do
+                if Game.valid(a) and Game.name(a) == name then
+                    local animal = Game.cat(a)
+                    out.senses = animal:senses()
+                    local ai = animal:ai()
+                    out.detected = ai and ai.detected
+                    out.target = ai and ai.target and Game.name(ai.target.actor) or nil
+                end
+            end
+        end
+        return out""" % json.dumps(v.get("senses.actor")))
+    assert STATUS_NAMES[v["cat.status"]] == lua["status"] and v["cat.status_rounds"] == lua["rounds"], (v["cat.status"], v["cat.status_rounds"], lua)
+    assert abs(v["cat.self_cure_chance"] - lua["cure"]) < 1e-6 and abs(v["cat.poison_damage"] - lua["poison"]) < 1e-6, lua
+    assert ["None", "Player", "Enemy"][v["fighter.team"]] == lua["team"], (v["fighter.team"], lua["team"])
+    assert v["fighter.ai_tier"] == 0 and lua["tier"] == "None" and v["fighter.move_count"] == lua["moves"] == 0, (v["fighter.ai_tier"], lua)   # no fight on
+    if v.get("senses.actor"):
+        s = lua["senses"]
+        for key, name in SENSES:
+            assert abs(v["senses." + key] - s[name]) < 1e-3, (key, v["senses." + key], s[name])
+        assert s["Range"] in ("Tiny", "Small", "Medium", "Large"), s
+        assert v["ai.detected"] == bool(lua.get("detected")) and v.get("ai.target") == lua.get("target"), (v["ai.detected"], v.get("ai.target"), lua)
+
+
+def test_status_seen_by_cpp(agent):
+    """A condition given through Lua shows in the C++ members at once, with its rounds at 1, and goes with
+    Lua's clearStatus (C++'s own apply/remove round trip is a check of the writes phase)."""
+    assert agent.lua("return Game.cat():applyStatus('Blinded')") is True
+    try:
+        v = _request(agent, "status")["values"]
+        assert v["status.now"] == 1 and v["status.rounds.now"] == 1, (v["status.now"], v["status.rounds.now"])
+    finally:
+        agent.lua("Game.cat():clearStatus()")
+    v = _request(agent, "status")["values"]
+    assert v["status.now"] == 0, v["status.now"]
+    assert agent.lua("return Game.cat():status()") == "None"
+    # No fight on: the fight snapshot is empty.
+    f = _request(agent, "fight")["values"]
+    assert f["fight.active"] is False and f["fight.fighters"] == [], f
+
+
 def test_keys_pressed(agent):
     """F9 and Ctrl+F9 reach the mod's on_key callbacks. UE4SS reads the real keyboard, so the game has to be
     in front; when Windows won't allow that from here, this is skipped (the registration is checked above)."""

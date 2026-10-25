@@ -43,6 +43,16 @@ ANCHORS = {
         (0x17D87A0, "a fighter's Prowess with its buffs"),
         (0x17D9800, "a fighter's speed, from Agility and stamina"),
         (0x17D6F0A, "setting up a fighter: health and fight stamina from its stats"),
+        (0x17D67D0, "dynamic difficulty: an enemy's level, its AI tier and its moves"),
+        (0x17DB37E, "hitting and missing: the defender's slot looked up for a forced miss"),
+    ],
+    "/Script/SwtAdventure.SwtAdventureStatusComponent": [
+        (0x17CDEF0, "the end of a round: the self-cure roll, and poison queued on the director"),
+        (0x17CDA26, "loads the status tuning"),
+    ],
+    "/Script/SwtAdventure.SwtAdventureDetectionComponent": [
+        (0x17B8B50, "loads the senses from the tuning for the size class"),
+        (0x17B7E60, "reads the senses"),
     ],
     "/Script/SwtAdventure.SwtAdventureLevelComponent": [
         (0x17D8010, "builds a fighter's stats from its level"),

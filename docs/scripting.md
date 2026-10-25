@@ -206,7 +206,10 @@ Some limits:
 | `setTimeDilation(f)` | This cat's own time: 2 is twice as fast | no |
 | `kind()` | `"Cat"`, `"WeakMice"`, `"BossFox"`, … | yes |
 | `rewards()`, `setRewards({tag = n})` | What an animal drops when beaten | read; a change isn't what it drops, which comes from the game's character table (`DT_Characters`) |
-| `applyStatus("Poisoned")`, `removeStatus(s)`, `clearStatus()` | Status conditions | applied without an error; the effect wasn't watched |
+| `applyStatus("Poisoned")`, `removeStatus(s)`, `clearStatus()` | Status conditions, through the game's own functions | yes: the member below changed with each |
+| `status()`, `statusRounds()` | The condition it has now (`"Poisoned"`, `"None"`) and how many rounds it has had it, from the component's own members; each round's end rolls rounds × 20% to shake it off (don't call the component's `ProcessEndOfRound` outside a fight: with Poisoned it needs the fight's director) | yes: applied, counted over rounds, cured and cleared |
+| `senses()`, `setSense(name, v)` | An animal's senses, its own copy of its size class's tuning: `ConeAngle`, `ConeDistance`, `SoundRadius`, `SoundSpeed`, `PounceDistance`, `ProximityDistance`, `TargetDistance`, `WalkSpeedRoaming`, `WalkSpeedChasing`, `ZoneEntryDistance`, `ZoneExitDistance`, `ReactToChase` and `Range` (the size class); nil for a cat | read: a mouse's matched the tuning's Small values |
+| `ai()` | What an animal's AI knows: `detected`, `target` (a Cat), `hunted`, `reactionTime`, and `blackboard` for the rest by key (`bb:GetValueAsBool(FName("Hunted"))`) | read |
 | `component(kind)` | The raw component: `"Health"`, `"Stamina"`, `"StaminaCombat"`, `"Level"` | yes |
 
 **When changes stick:** a value set here is the game's own value, so it lasts until the game sets it
@@ -317,6 +320,7 @@ A fighter (`Game.fighter(cat or actor)`) is a cat's combat component, set up whe
 | `level()`, `setLevel(n)`, `stance()` | Its level, and its stance now |
 | `move()`, `moveTag()`, `setMove({Damage = 80, Accuracy = 1})` | The move it picked (its AttackMove row), and changing it before it lands (not tried: no move was picked in testing) |
 | `targets()`, `cat()` | Who it's attacking; the cat itself (health, status…) |
+| `team()`, `aiTier()`, `setAITier(t)`, `moveCount()` | Its team (`"Player"`, `"Enemy"`), the AI's tier for this fight (`"Tier1"`…`"Tier6"`; `"None"` for your cat) and how many moves it has to pick from: the game's own members, filled when the fight is set up (seen: a weak mouse at level 1, `"Tier1"`, 3 moves; your cat 3 moves and no tier) |
 
 **Seen in game** (a level 20 cat against a weak bird):
 - The fighter stats matched the stat formula.

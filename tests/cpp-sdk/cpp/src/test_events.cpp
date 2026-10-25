@@ -57,6 +57,16 @@ namespace t
                 native_hook = 0;
                 done("unhook_native");
             }
+            else if (what == "status")
+            {
+                snapshot_status();
+                done("status");
+            }
+            else if (what == "fight")
+            {
+                snapshot_fight();
+                done("fight");
+            }
         }
     } // namespace
 

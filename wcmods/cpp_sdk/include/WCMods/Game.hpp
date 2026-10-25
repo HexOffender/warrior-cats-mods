@@ -357,6 +357,36 @@ namespace wcmods
         }
         // How fast time runs for the cat alone (1 as it ships).
         auto time_dilation() -> float* { return property<float>(actor, STR("CustomTimeDilation")); }
+
+        // The cat's status condition component, and on it: the condition it has now (ESwtAdventureStatusType:
+        // 0 none, 1 Blinded, 2 Furious, 3 Poisoned, 4 Stressed), how many rounds it has had it, and the
+        // component's tuning: the chance of shaking a condition off at a round's end (× the rounds so far;
+        // 0.2 as it ships) and poison's damage (a share of health; 0.1). The game's own members, to read and
+        // write; nullptr when the cat isn't there or wcmods hasn't got them on this build.
+        auto status_component() -> UObject*
+        {
+            auto c = property<UObject*>(actor, STR("StatusConditionComponent"));
+            return c ? *c : nullptr;
+        }
+        auto status() -> uint8_t* { return member<uint8_t>(status_component(), L"/Script/SwtAdventure.SwtAdventureStatusComponent", L"WCM_Status"); }
+        auto status_rounds() -> int32_t* { return member<int32_t>(status_component(), L"/Script/SwtAdventure.SwtAdventureStatusComponent", L"WCM_StatusRounds"); }
+        auto self_cure_chance() -> float* { return member<float>(status_component(), L"/Script/SwtAdventure.SwtAdventureStatusComponent", L"WCM_SelfCureChance"); }
+        auto poison_damage() -> float* { return member<float>(status_component(), L"/Script/SwtAdventure.SwtAdventureStatusComponent", L"WCM_PoisonDamage"); }
+        // Give, take off or clear a condition through the game's own functions, which tell its UI and the AI
+        // too (giving the condition it has does nothing; the rounds start at 1). False without the component.
+        // Don't call the component's ProcessEndOfRound outside a fight: with Poisoned it queues the damage
+        // on the fight's director, which isn't there then.
+        auto apply_status(uint8_t type) -> bool
+        {
+            struct Params { uint8_t statusType; } p{type};
+            return call(status_component(), STR("ApplyStatusType"), p);
+        }
+        auto remove_status(uint8_t type) -> bool
+        {
+            struct Params { uint8_t statusType; } p{type};
+            return call(status_component(), STR("RemoveStatusType"), p);
+        }
+        auto clear_status() -> bool { return call(status_component(), STR("ClearStatusType")); }
     };
 
     // Your cat while you play; empty (false) in menus and while loading.

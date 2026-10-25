@@ -247,6 +247,9 @@ Where each one is:
 | `SwtCombatStaminaComponent` | your cat | fight stamina: 0.4 × Prowess + Stamina (193.2 for Prowess 233) |
 | `SwtAdventureLevelComponent` | the player state | value is XP; +0x120 and +0x124: the level (20, 20); +0x138: the stats struct, so `Prowess` +0x154, `Strength` +0x158, `Resilience` +0x15C, `Instinct` +0x160, `Agility` +0x164, `Stamina` +0x168 (all equal to the save's) |
 | `SwtAdventureFreshKillPileComponent` | the game state (`FreshKillPileComponent`) | +0x130: seconds since it last dropped (counts up in real seconds); +0x134: 90, `Decay.Time` |
+| `SwtAdventureStatusComponent` | every cat and animal (`StatusConditionComponent`) | +0xE0: the status condition (`ESwtAdventureStatusType`); +0x144: rounds it has lasted; +0x148: `SelfCure.Chance` 0.2; +0x14C: `Poison.Damage` 0.1 (read from `ApplyStatusType`, `0x141736CD0`, and the end-of-round code; watched in game) |
+| `TurnBasedCombatComponent` | every cat and animal (+0x848) | +0x1A1: its team; +0x1E0: its moves (a `TArray` of `AttackMove` rows, count at +0x1E8); +0x3F8: the AI's tier ([combat.md](mechanics/combat.md#the-combatant)) |
+| `SwtAdventureDetectionComponent` | roaming animals (`ExplorationDetectionComponent`) | +0x57C–0x5AC: its senses, the tuning for its size class ([exploration.md](mechanics/exploration.md#stealth-and-being-noticed)) |
 
 Writing them works: the values changed in memory, and the game's own code read them back. The HUD
 isn't told, so a bar may show the old value until something else updates it.

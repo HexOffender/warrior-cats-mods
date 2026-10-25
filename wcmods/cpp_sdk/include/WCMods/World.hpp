@@ -369,4 +369,75 @@ namespace wcmods
         }
         return out;
     }
+
+    // ============================================================================================ an animal's senses and AI
+    // A roaming animal's senses: its detection component's own copy of the tuning for its size class (the
+    // TuningData's Gameplay.Exploration.Detection.<Tiny|Small|Medium|Large>.* values), so a change is this
+    // animal's alone. Pointers to read and write; empty (false) for a cat (no such component) or when wcmods
+    // hasn't got the members on this build.
+    struct Senses
+    {
+        float* cone_angle{};           // how wide its vision cone is, in degrees (75)
+        float* cone_distance{};        // and how deep (450)
+        float* sound_radius{};         // how far it hears (450)
+        float* sound_speed{};          // (1)
+        float* pounce_distance{};      // how far away you can pounce on it from (400)
+        float* proximity_distance{};   // close range (100; 200 for Small)
+        float* target_distance{};      // how far away you can target it from (1200)
+        float* walk_speed_roaming{};   // how fast it walks about (70)
+        float* walk_speed_chasing{};   // and chases (400)
+        float* zone_entry_distance{};  // it wakes up when you're within this (1600)
+        float* zone_exit_distance{};   // and sleeps again past this (2000)
+        float* react_to_chase{};       // seconds before it gives chase (0.5)
+        explicit operator bool() const { return cone_angle != nullptr; }
+    };
+    inline auto detection_component(UObject* actor) -> UObject* { return get(actor, L"ExplorationDetectionComponent").object; }
+    inline auto senses(UObject* actor) -> Senses
+    {
+        UObject* c = detection_component(actor);
+        constexpr auto cls = L"/Script/SwtAdventure.SwtAdventureDetectionComponent";
+        return {member<float>(c, cls, L"WCM_ConeAngle"),         member<float>(c, cls, L"WCM_ConeDistance"),
+                member<float>(c, cls, L"WCM_SoundRadius"),       member<float>(c, cls, L"WCM_SoundSpeed"),
+                member<float>(c, cls, L"WCM_PounceDistance"),    member<float>(c, cls, L"WCM_ProximityDistance"),
+                member<float>(c, cls, L"WCM_TargetDistance"),    member<float>(c, cls, L"WCM_WalkSpeedRoaming"),
+                member<float>(c, cls, L"WCM_WalkSpeedChasing"),  member<float>(c, cls, L"WCM_ZoneEntryDistance"),
+                member<float>(c, cls, L"WCM_ZoneExitDistance"),  member<float>(c, cls, L"WCM_ReactToChase")};
+    }
+
+    // What an animal's AI knows: its controller's blackboard, and its keys by name. A roaming animal's AI
+    // keeps Detected, Target, StartLocation, RoamingLocation, DetectionRange, ChaseReactionTime, Hunted,
+    // HunterPawn, PointOfInterest, bShouldAllowMovement and ArrivedAtTarget; a fighter's, AffectedByCondition,
+    // IsExhausted, IsAlive, AllyWithStatus, AllyWithLowHealth, WeakestEnemy, SlowestEnemy and SelectedAttack.
+    // nullptr / nullopt without an AI controller (your cat); a key the board hasn't got reads as false, 0
+    // or nullptr, as the engine answers.
+    inline auto blackboard(UObject* actor) -> UObject* { return get(actor, L"Controller.Blackboard").object; }
+    namespace detail
+    {
+        inline auto blackboard_value(UObject* actor, const TCHAR* function, std::wstring_view key) -> std::optional<Value>
+        {
+            auto r = call_reflected(blackboard(actor), function, [&](Params& p) { p.set_nth(0, Value::of(key)); });
+            if (!r) return std::nullopt;
+            return r->get(L"ReturnValue");
+        }
+    } // namespace detail
+    inline auto blackboard_bool(UObject* actor, std::wstring_view key) -> std::optional<bool>
+    {
+        auto v = detail::blackboard_value(actor, STR("GetValueAsBool"), key);
+        if (!v) return std::nullopt;
+        return v->boolean();
+    }
+    inline auto blackboard_float(UObject* actor, std::wstring_view key) -> std::optional<double>
+    {
+        auto v = detail::blackboard_value(actor, STR("GetValueAsFloat"), key);
+        if (!v) return std::nullopt;
+        return v->number();
+    }
+    inline auto blackboard_object(UObject* actor, std::wstring_view key) -> UObject*
+    {
+        auto v = detail::blackboard_value(actor, STR("GetValueAsObject"), key);
+        return v ? v->object : nullptr;
+    }
+    // Whether an animal has noticed a cat, and the cat it's after (nullptr when none).
+    inline auto npc_detected(UObject* actor) -> bool { return blackboard_bool(actor, L"Detected").value_or(false); }
+    inline auto npc_target(UObject* actor) -> UObject* { return blackboard_object(actor, L"Target"); }
 } // namespace wcmods
