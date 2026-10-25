@@ -269,6 +269,24 @@ local function styleSpinBox(s)
     end)
 end
 
+-- A drop-down's list: the engine draws the chosen and hovered rows with dark text, which the game's
+-- dark highlight made black on black. Light text on the menu's field colour, and its accent for the
+-- row under the cursor or chosen.
+local function styleComboBox(c)
+    pcall(function()
+        local s = c.ItemStyle
+        for _, k in ipairs({ "InactiveBrush", "EvenRowBackgroundBrush", "OddRowBackgroundBrush" }) do tint(s[k], FIELD) end
+        for _, k in ipairs({ "ActiveBrush", "ActiveHoveredBrush", "InactiveHoveredBrush", "EvenRowBackgroundHoveredBrush",
+                             "OddRowBackgroundHoveredBrush", "ActiveHighlightedBrush", "InactiveHighlightedBrush",
+                             "SelectorFocusedBrush" }) do
+            tint(s[k], THEME.accent)
+        end
+        setForeground(s.TextColor, THEME.text)
+        setForeground(s.SelectedTextColor, "#ffffff")
+        setForeground(c.ForegroundColor, THEME.text)
+    end)
+end
+
 -- ---------- pages ----------
 local pages, started = {}, false
 local open_sections = {}
@@ -609,6 +627,7 @@ end
 function ui.choice(label, value, options)
     local e = row("choice", function()
         local c = new("ComboBox")
+        styleComboBox(c)
         local box, l, r = labelled(label, c)
         return { root = box, c = c, l = l, r = r }
     end)
