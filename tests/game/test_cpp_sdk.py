@@ -214,6 +214,106 @@ def test_writes_seen_by_lua(agent):
             f.write(settings_before)
 
 
+def test_menu_page(agent):
+    """A page drawn from C++ (Menu.hpp): every kind of row, read and used through the menu, with what the
+    player set seen by the mod, and the menu's open state and page shared with it."""
+    agent.menu.open()                   # the menu picks a C++ mod's pages up as it opens
+    agent.menu.open("C++ SDK page")
+    page = agent.menu.read()
+    for label in ("Switch", "Tick", "Speed", "Count", "Name", "Tint", "Mode", "Pick", "Poke", "More"):
+        assert page.find(label), f"no row {label!r} on the page: {page.text()}"
+    assert page.has("Rows drawn from C++.") and page.has("A note.") and page.has("Inside the section."), page.text()
+    try:
+        agent.menu.set("Switch", False)
+        agent.menu.set("Tick", True)
+        agent.menu.set("Speed", 2.5)
+        agent.menu.set("Count", 7)
+        agent.menu.set("Name", "Otterpaw")
+        agent.menu.set("Tint", "#102030")
+        agent.menu.set("Mode", "Busy")
+        agent.menu.set("Pick", "Three")
+        agent.menu.set("Inner", True)
+        agent.menu.press("Poke")
+        v = _request(agent, "events")["values"]
+        assert v["ui.on_off"] is False and v["ui.toggle"] is True and v["ui.inner"] is True, v
+        assert abs(v["ui.slider"] - 2.5) < 0.01 and v["ui.number"] == 7, v
+        assert v["ui.input"] == "Otterpaw" and v["ui.color"] == "#102030", v
+        assert v["ui.radio"] == "Busy" and v["ui.choice"] == "Three", v
+        assert v["ui.pokes"] >= 1 and v["ui.draws"] > 0, v
+        assert v["menu.open"] is True and v["menu.page"] == "cpp-sdk-page", v
+        agent.menu.open("Second page")
+        assert agent.menu.read().has("Nothing here.")
+    finally:
+        agent.menu.close()
+    v = _request(agent, "events")["values"]
+    assert v["menu.open"] is False, v
+
+
+def test_settings_page(agent):
+    """The page a C++ mod with a settings.json gets without asking: a row for each setting by its kind, and
+    Save writing the file."""
+    settings_path = os.path.join(_folder(agent), "settings.json")
+    with open(settings_path, encoding="utf-8") as f:
+        settings_before = f.read()
+    try:
+        agent.menu.open()
+        agent.menu.open("C++ SDK test")
+        page = agent.menu.read()
+        assert page.has("The C++ SDK test mod's settings"), page.text()   # the _help note
+        for label in ("Number", "Whole", "Text", "Flag", "Runs", "Save"):
+            assert page.find(label), f"no row {label!r}: {page.text()}"
+        assert page.has("List") and page.has('[1,"two",false]'), page.text()   # a list shows as JSON
+        agent.menu.set("Number", 2.25)
+        agent.menu.set("Whole", 9)
+        agent.menu.set("Flag", False)
+        agent.menu.set("Text", "changed")
+        agent.menu.press("Save")
+        time.sleep(0.3)
+        with open(settings_path, encoding="utf-8") as f:
+            saved = json.load(f)
+        assert saved["number"] == 2.25 and saved["whole"] == 9 and saved["flag"] is False and saved["text"] == "changed", saved
+        assert saved["list"] == [1, "two", False] and saved["nested"] == {"k": "v"} and saved["_help"].startswith("The C++"), saved
+    finally:
+        # The rows back as they were and saved, so the mod's settings in memory match the file put back.
+        try:
+            agent.menu.set("Number", 1.5)
+            agent.menu.set("Whole", 7)
+            agent.menu.set("Flag", True)
+            agent.menu.set("Text", "hi there")
+            agent.menu.press("Save")
+            time.sleep(0.3)
+        finally:
+            agent.menu.close()
+            with open(settings_path, "w", encoding="utf-8", newline="") as f:
+                f.write(settings_before)
+
+
+def test_keys_listed(agent):
+    """Keys bound with what they do are listed on the mod menu's Overview page."""
+    agent.menu.open()
+    try:
+        agent.menu.open("Overview")
+        page = agent.menu.read()
+        assert page.has("F10") and page.has("Poke the test page"), page.text()
+        assert page.has("Shift+F10") and page.has("Shift poke"), page.text()
+    finally:
+        agent.menu.close()
+
+
+def test_shared_values(agent):
+    """Values shared both ways: a Lua mod reads what the C++ mod shares, and WCModsCpp.share reaches it."""
+    mod = 'WCModsCpp.mods["cpp-sdk"]'
+    r = _request(agent, "events")
+    assert r["values"]["lua_mods_started"] >= 3, r["values"].get("lua_mods_started")   # the host, the bridge, and more
+    assert agent.lua(f"return {mod}.get('hello')") == 42
+    assert agent.lua(f"return {mod}.get('name'), {mod}.get('flag'), {mod}.get('nope')") == ["cpp", True, None]
+    agent.lua("WCModsCpp.share('ping', 7)")
+    v = _request(agent, "events")["values"]
+    assert v["shared.ping"] == 7, v
+    agent.lua("WCModsCpp.share('ping', 'pong')")
+    assert _request(agent, "events")["values"]["shared.ping"] == "pong"
+
+
 def test_keys_pressed(agent):
     """F9 and Ctrl+F9 reach the mod's on_key callbacks. UE4SS reads the real keyboard, so the game has to be
     in front; when Windows won't allow that from here, this is skipped (the registration is checked above)."""

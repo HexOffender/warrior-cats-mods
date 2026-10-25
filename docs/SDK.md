@@ -546,7 +546,8 @@ on). It has god mode, fly and ghost, cat size, game speed, teleport and a consol
 and size are done by the menu itself, because the game undoes the engine's own `fly`, `ghost` and
 `changesize`. The pages built on `WCModsGame` are in docs/scripting.md, "In the mod menu".
 
-wcmods' mouse look and your cat's colours have live settings with Save, and any script can add a page:
+wcmods' mouse look and your cat's colours have live settings with Save, and any script can add a page
+(a C++ mod too: `wcmods::menu_page` in [C++ mods](#c-mods) draws the same rows from C++):
 
 ```lua
 local Menu = require("WCModsMenu")
@@ -772,6 +773,7 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Core.hpp` | text, JSON, files, the mod's info and settings, the log, the game's hidden members |
 | `WCMods/Game.hpp` | the game's objects, the world and its managers, your cat, the clock, the fresh-kill pile, the developer switches |
 | `WCMods/Events.hpp` | every frame, timers, keys, hooks on the game's functions, level and player events |
+| `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Mod.hpp` | `wcmods::ModBase` and `WCMODS_MOD` |
 
 The mod from `new --kind cpp`:
@@ -869,6 +871,42 @@ never seen. What's been tried: hooks on events, and on a native function only th
 `Actor:K2_GetActorLocation`, a native function Blueprints call many times a frame, whose callback
 also unhooked itself, closed the game as the forest loaded. Until that's understood, hook events and
 functions the game's Blueprints don't hammer, and unhook from outside the callback.
+
+**The mod menu, and Lua (`Menu.hpp`)**
+
+A C++ mod with a `settings.json` gets a page of its settings in the mod menu without asking, as script
+mods do: a row for each setting by its kind (a switch, a number box, a colour, a text box; notes for
+`"_help"`), and Save, which writes the file. A mod can add pages of its own:
+
+```cpp
+wcmods::menu_page(L"My mod", [](wcmods::Ui& ui) {
+    ui.heading(L"My mod");
+    on = ui.on_off(L"Enabled", on);
+    speed = ui.slider(L"Speed", speed, 0.5, 3, {.step = 0.1, .format = L"x%.1f"});
+    if (ui.button(L"Save", L"primary")) wcmods::save_settings();
+});
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::menu_page(title, fn, {order, group, id})` | A page: `fn(ui)` draws its rows every frame while it shows, on the game thread; gives back the page's id. `group` and `order` place it in the side bar as `Menu.page` does for scripts. The menu picks pages up when it opens, so one can be added at any time; one with an earlier page's id takes over its drawing, under the title the menu first saw |
+| `wcmods::settings_page(false)` | No page of the settings. A page the menu has already picked up stays in its side bar until the game restarts, saying it's gone |
+| `Ui::heading`, `text`, `note`, `separator`, `space(h)`, `field(label, value)`, `progress(label, fraction)` | Rows that show something |
+| `Ui::button(label, kind)` | True the frame it's clicked; `kind` L"primary", L"danger", L"good" or nothing |
+| `Ui::on_off(label, value)`, `toggle(label, value)` | An On/Off switch and a check box; each gives back true or false |
+| `Ui::radio(label, value, {options})`, `choice(label, value, {options})` | One of a few options as buttons, and as a drop-down; each gives back the chosen one |
+| `Ui::slider(label, value, lo, hi, {step, format})`, `number(label, value, {min, max, step, whole})`, `input(label, text, hint)`, `color(label, L"#rrggbb")` | A slider, a number box, a text box and a colour; each gives back what it holds |
+| `Ui::section(title, fn, open)` | A part that opens and closes with a click on its title; `fn(ui)` draws what's inside |
+| `wcmods::on_key(key, L"what it does", fn)`, `on_key(key, {modifiers}, help, fn)` | `on_key`, with the key listed on the Overview page with what it does; `key_name(key)` is the name it's listed by |
+| `wcmods::menu_open()`, `menu_page_shown()` | Whether the menu is open, and the id of the page it shows |
+| `wcmods::shared(name)`, `share(name, value)` | Values passed between Lua and C++ mods: `WCModsCpp.share(name, value)` in any Lua script reaches every C++ mod's `shared(name)`, and a C++ mod's `share(name, value)` is read in Lua as `WCModsCpp.mods["<mod id>"].get(name)`. A bool, number or string (null when there's none) |
+
+How it works: UE4SS hands a C++ mod every Lua mod's state as it starts (`on_lua_start`), and `ModBase`
+puts a `WCModsCpp.mods["<mod id>"]` table into each, with `pages()`, `draw(id, ui)`, `keys()`,
+`set(name, value)` and `get(name)`. A mod that overrides `on_lua_start` itself calls
+`ModBase::on_lua_start` from it, or loses all of this. The mod menu's own script draws a C++ mod's pages through `draw` (every `Ui`
+call is one of its `ui.*` rows), lists its keys, and tells it when the menu opens and which page
+shows. The Lua stays where the menu is; the C++ page's function only ever runs on the game thread.
 
 The same rules as for scripts keep the game running:
 

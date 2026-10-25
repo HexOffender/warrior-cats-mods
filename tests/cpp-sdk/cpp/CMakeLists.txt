@@ -4,4 +4,5 @@ wcmods_mod(${WCMODS_TARGET}
     src/test_core.cpp
     src/test_game.cpp
     src/test_events.cpp
+    src/test_menu.cpp
 )

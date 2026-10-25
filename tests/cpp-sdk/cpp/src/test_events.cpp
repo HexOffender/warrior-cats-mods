@@ -69,6 +69,7 @@ namespace t
         for (auto& l : levels) names.push(l);
         value("levels", names);
         value("players", players);
+        snapshot_menu();
     }
 
     auto setup_events() -> void
@@ -126,10 +127,7 @@ namespace t
         unhook(0);
         // set_return, on a function only this mod calls (run_writes reads a console variable's float value
         // through it and expects 4242 back), unhooked there afterwards.
-        set_return_hook = after_function(STR("/Script/Engine.KismetSystemLibrary:GetConsoleVariableFloatValue"), [](Call& call) {
-            call.set_return<float>(4242.f);
-        });
-        expect("after_function.set_return.id", set_return_hook != 0);
+        expect("after_function.set_return.id", forge_cvar_hook() != 0);
         expect("on_function.missing", on_function(STR("/Script/Nope.Nope:Nope"), [](Call&) {}) == 0);
         expect("after_function.missing", after_function(STR("/Script/Engine.PlayerController:NoSuchFunction"), [](Call&) {}) == 0);
 

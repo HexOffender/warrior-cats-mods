@@ -167,6 +167,16 @@ namespace t
         }
     } // namespace
 
+    auto forge_cvar_hook() -> HookId
+    {
+        if (!set_return_hook)
+        {
+            set_return_hook = after_function(STR("/Script/Engine.KismetSystemLibrary:GetConsoleVariableFloatValue"),
+                                             [](Call& call) { call.set_return<float>(4242.f); });
+        }
+        return set_return_hook;
+    }
+
     auto run_world(UObject* actor) -> void
     {
         game_objects(actor);
@@ -253,7 +263,9 @@ namespace t
             value("writes.fresh_kill.after", *fk.value);
         }
 
-        // The after-hook set up in test_events.cpp forges this function's result; after unhook it's real again.
+        // The after-hook forges this function's result; after unhook it's real again. Put in here as well as at
+        // init, so a second writes phase in one session has it too.
+        forge_cvar_hook();
         struct FloatParams
         {
             RC::Unreal::FString VariableName;
@@ -263,6 +275,7 @@ namespace t
         bool called = call(kismet, STR("GetConsoleVariableFloatValue"), fp);
         expect("set_return", called && fp.ReturnValue == 4242.f, std::to_string(fp.ReturnValue));
         unhook(set_return_hook);
+        set_return_hook = 0;
         FloatParams real{RC::Unreal::FString(CVAR), 0.f};
         call(kismet, STR("GetConsoleVariableFloatValue"), real);
         expect("set_return.unhooked", real.ReturnValue != 4242.f, std::to_string(real.ReturnValue));

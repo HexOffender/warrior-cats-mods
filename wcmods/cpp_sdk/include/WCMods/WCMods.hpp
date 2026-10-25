@@ -16,10 +16,12 @@
 //   };
 //   WCMODS_MOD(MyMod)
 //
-// It's four headers, which this one includes:
+// It's five headers, which this one includes:
 //   WCMods/Core.hpp     text, JSON, files, the mod's info and settings, the log, the game's hidden members
 //   WCMods/Game.hpp     the game's objects, the world and its managers, your cat, the clock, the fresh-kill pile
 //   WCMods/Events.hpp   every frame, timers, keys, hooks on the game's functions, level and player events
+//   WCMods/Menu.hpp     pages in the mod menu (a settings page comes free), keys on its Overview, values
+//                       shared with Lua mods
 //   WCMods/Mod.hpp      wcmods::ModBase and WCMODS_MOD
 //
 // Anything that touches the game's objects runs on the game thread: inside every_frame, a timer, a key, a
@@ -30,4 +32,5 @@
 #include <WCMods/Core.hpp>
 #include <WCMods/Events.hpp>
 #include <WCMods/Game.hpp>
+#include <WCMods/Menu.hpp>
 #include <WCMods/Mod.hpp>

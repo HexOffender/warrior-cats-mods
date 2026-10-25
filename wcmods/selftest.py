@@ -671,7 +671,7 @@ def _cpp_sdk():
             continue
         with open(path, encoding="utf-8") as f:
             lines = f.read().split("\n")
-        in_detail = False
+        in_detail, access = False, "public"
         for line in lines:
             # Each `namespace detail` block ends with its "} // namespace detail" line (a brace count would
             # be thrown by the braces in format strings).
@@ -681,10 +681,17 @@ def _cpp_sdk():
                 if re.match(r"\s*} // namespace detail", line):
                     in_detail = False
                 continue
+            # A class's private members aren't calls: track the access specifier in force.
+            if m := re.match(r"\s{4}(class|struct)\s+\w+", line):
+                access = "private" if m.group(1) == "class" else "public"
+            elif re.match(r"\s{4}};", line):
+                access = "public"
+            elif m := re.match(r"\s*(public|private|protected):", line):
+                access = m.group(1)
             m = re.match(r"\s{4,8}(?:inline )?auto (\w+)\(", line)
-            if m and not m.group(1).startswith("operator"):
+            if m and not m.group(1).startswith("operator") and access == "public":
                 names.add(m.group(1))
-    private = {"write"}   # Json's own writer
+    private = set()   # names declared public that still aren't calls of the SDK's (none now)
     undocumented = sorted(n for n in names - private
                           if f"{n}(" not in cpp_docs and f"{n}<" not in cpp_docs and f"`{n}`" not in cpp_docs)
     if undocumented:
