@@ -1654,6 +1654,103 @@ function Npc:remove()
 end
 
 
+-- ===================================================================================== dialogue
+-- The game's own dialogue box (WBP_QuestGiver_Dialogue, the screen its cats talk in), for a mod's cats:
+--   Game.dialogue.say("Brindlemoon", "Ah, a young cat with keen eyes.")   -- shows it, or changes the line
+--   Game.dialogue.hide()                                                   -- fades it out
+-- The speaker's name and the line in the game's style, with its fade in and out. It's only the picture:
+-- it takes no input, and the script moves the talk on (its own key, or Enter, the key the box shows).
+-- say returns false (and why) when the box can't be made, for the script to draw its own instead.
+Game.dialogue = {}
+local DIALOGUE = "/Game/Art/UXD/Blueprints/QuestDialogs/WBP_QuestGiver_Dialogue"
+local HIDDEN_HIT, SELF_HIT, COLLAPSED = 3, 4, 1   -- ESlateVisibility
+local talk = { widget = nil, name = nil, text = nil, closing = 0 }
+-- One talk at a time across mods (each has its own Lua state, and its own box): the one talking holds a
+-- claim in a shared variable, renewed while its box is up.
+local TALK_OWNER, TALK_AT = "WCModsDialogue.owner", "WCModsDialogue.at"
+local talkId = (tostring({}):gsub("^table: ", ""))   -- this Lua state's own id
+local function talkShared(k) local ok, v = pcall(function() return ModRef:GetSharedVariable(k) end) return ok and v or nil end
+local function talkShare(k, v) pcall(function() ModRef:SetSharedVariable(k, v) end) end
+
+local function dialogueWidget()
+    if valid(talk.widget) then return talk.widget end
+    talk.widget, talk.name, talk.text = nil, nil, nil
+    local cls = Game.object(DIALOGUE .. ".WBP_QuestGiver_Dialogue_C")
+    if not cls then
+        pcall(LoadAsset, DIALOGUE)
+        cls = Game.object(DIALOGUE .. ".WBP_QuestGiver_Dialogue_C")
+    end
+    local pc = Game.controller()
+    local lib = Game.object("/Script/UMG.Default__WidgetBlueprintLibrary")
+    if not (cls and pc and lib) then return nil, "the game's dialogue box isn't loaded" end
+    local ok, w = pcall(function() return lib:Create(pc, cls, pc) end)
+    if not ok or not valid(w) then return nil, "couldn't make the dialogue box: " .. tostring(w) end
+    talk.widget = w
+    return w
+end
+
+-- Made outside a quest, the box hides its parts when it's put on screen (the game shows them as a
+-- dialogue goes), so they're shown after that; the answer buttons stay hidden, and as it's only a
+-- picture, the mouse goes through it.
+local function layOut(w)
+    w.CanvasPanelDialog:SetVisibility(SELF_HIT)
+    w.mcGuiTextParagraph:SetVisibility(HIDDEN_HIT)
+    w.mcGuiTextParagraph:SetJustification(1)   -- centred, as the game's lines are
+    w.mcGuiNext:SetVisibility(HIDDEN_HIT)
+    for i = 1, 4 do w["mcButton" .. i]:SetVisibility(COLLAPSED) end
+    w:SetVisibility(HIDDEN_HIT)
+end
+
+-- Whether another mod's cat is talking now; a script checks before starting a talk of its own.
+function Game.dialogue.busy()
+    local owner = talkShared(TALK_OWNER)
+    return owner ~= nil and owner ~= "" and owner ~= talkId and os.clock() - (tonumber(talkShared(TALK_AT)) or 0) < 0.5
+end
+-- Take the box for this script's talk (say does it too); false if another mod's cat is talking.
+function Game.dialogue.claim()
+    if Game.dialogue.busy() then return false end
+    talkShare(TALK_OWNER, talkId)
+    talkShare(TALK_AT, os.clock())
+    return true
+end
+
+function Game.dialogue.say(name, text)
+    name, text = tostring(name or ""), tostring(text or "")
+    if not Game.dialogue.claim() then return false, "another mod's cat is talking" end
+    local w, why = dialogueWidget()
+    if not w then return false, why end
+    local ok, err = pcall(function()
+        talk.closing = talk.closing + 1   -- a fade-out under way no longer takes it away
+        if name ~= talk.name then w.mcGuiDialogueTalker.mcGuiTextName:SetText(FText(name)) end
+        if text ~= talk.text then w.mcGuiTextParagraph:SetText(FText(text)) end
+        if not w:IsInViewport() then
+            w:AddToViewport(1500)
+            layOut(w)
+            w:PlayAnimation(w.AniScreenIn, 0, 1, 0, 1, false)
+        end
+    end)
+    if not ok then return false, tostring(err) end
+    talk.name, talk.text = name, text
+    return true
+end
+
+function Game.dialogue.hide()
+    local w = talk.widget
+    if not (valid(w) and w:IsInViewport()) or talk.text == nil then return end
+    talk.name, talk.text = nil, nil
+    if talkShared(TALK_OWNER) == talkId then talkShare(TALK_OWNER, "") end
+    talk.closing = talk.closing + 1
+    local mine = talk.closing
+    pcall(function() w:PlayAnimation(w.AniScreenOut, 0, 1, 0, 1, false) end)
+    Game.after(0.3, function()
+        if talk.closing == mine and valid(w) then pcall(function() w:RemoveFromParent() end) end
+    end)
+end
+
+-- Whether the box is up (with a line).
+function Game.dialogue.showing() return valid(talk.widget) and talk.text ~= nil end
+
+
 -- ===================================================================================== the fresh-kill pile
 Game.freshKill = {}
 function Game.freshKill.component() return Game.get(Game.gameState(), "FreshKillPileComponent") end

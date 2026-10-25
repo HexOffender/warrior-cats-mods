@@ -252,7 +252,16 @@ happens when the game unloads the cat and wcmods spawns it again.
 the height of the ground below a place.
 
 The game gives these cats no Talk prompt or name of their own on screen; a script draws them with
-`WCModsDraw`. [custom-npc](https://github.com/HexOffender/wcmods-examples/tree/main/custom-npc) in
+`WCModsDraw`. What they say can go in the game's own dialogue box:
+
+| Call | |
+|---|---|
+| `Game.dialogue.say(name, text)` | Show the game's dialogue box (`WBP_QuestGiver_Dialogue`) with a speaker's name and a line, with its own fade-in; again with another line to change it. Returns false and why if the box can't be made |
+| `Game.dialogue.hide()`, `Game.dialogue.showing()` | Fade it out; whether it's up |
+| `Game.dialogue.busy()`, `Game.dialogue.claim()` | Whether another mod's cat is talking (each mod has its own box, so two could overlap); take the box for this script's talk, false if it's taken. Check `busy()` before starting a talk |
+
+The box is only the picture: it takes no input, so the script moves the talk on with its own key (the
+box shows Enter, the game's own key for it, so take that too). The answer buttons stay hidden. [custom-npc](https://github.com/HexOffender/wcmods-examples/tree/main/custom-npc) in
 wcmods-examples does: a name over the cat's head, and lines to say on a key.
 [moonlit-path](https://github.com/HexOffender/wcmods-examples/tree/main/moonlit-path) builds a
 questline on one.

@@ -785,6 +785,57 @@ Worked out on 2026-10-24 for `Game.npcs`, and checked in game with two cats.
   (`WasInputKeyJustPressed`). That also works with keys the agent posts to the window, which UE4SS
   key binds don't see.
 
+## The game's own UI
+
+Worked out on 2026-10-25 for `Game.dialogue`, and checked in game with both example cats.
+
+**How the game builds its UI:**
+- It's UMG, the same as the mod menu. Each screen is a widget Blueprint (`WBP_…`) on a native class:
+  `USwtScreen` for screens, and `UGuiWidget` / `UUserWidget` for their parts.
+- Screens have the animations `AniScreenIn` and `AniScreenOut` (from `USwtScreen`, 0.25 s each).
+- A script can make the game's own widgets and put them on screen, and they look exactly like the
+  game's. What it can't do is ask the game to open one of its screens: the GUI manager's
+  screen-opening code isn't reflected.
+
+**The dialogue box** (`/Game/Art/UXD/Blueprints/QuestDialogs/WBP_QuestGiver_Dialogue`):
+- **Its class:** `UQuestGiverWidget`, from `UQuestBaseWidget`. `…_Dialogue2` and `…_Dialogue3` are
+  other versions of it.
+- **Its parts:**
+  - `mcGuiDialogueTalker`, a `WBP_GuiDialogueTalker` (`UGuiDialogueHead`), holds the speaker's name
+    (`mcGuiTextName`) and a clan badge (`mcGuiClanIcon`);
+  - `mcGuiTextParagraph` is the line, a `TextBlock` that wraps long lines itself (there's also an
+    unused `mcGuiTextParagraphRich`);
+  - `mcButton1` … `mcButton4` are the answers (`WBP_GuiButtonDialogueOption`);
+  - `mcGuiNext` is the "next" prompt (`WBP_GuiDialogueNext`, showing Enter on a keyboard);
+  - `CanvasPanelDialog` holds them all.
+- **Making one outside a quest** works without a crash, with no quest, NPC or player set:
+  1. `WidgetBlueprintLibrary:Create(controller, class, controller)`, then `AddToViewport(1500)`.
+  2. Putting it on screen hides `CanvasPanelDialog` and the line (visibility Hidden), as the game
+     shows them while a dialogue goes on. So they're made visible after `AddToViewport`, not before.
+  3. The line is centred with `SetJustification(1)`, as the game's lines are. The answer buttons
+     are collapsed.
+  4. `PlayAnimation(AniScreenIn)` fades it in. `AniScreenOut`, then `RemoveFromParent` 0.3 s later,
+     fades it out.
+- **What it is then:** only a picture. Made Hit-test invisible, it takes no input, so the script
+  moves the talk on with its own key, and Enter (the key the box shows).
+- **The clan badge** shows the widget's default. Setting it hasn't been tried.
+
+**One talk at a time.** Each UE4SS mod has its own Lua state, so each gets its own box. Two mods'
+cats in reach of the same key talked at once, in two boxes drawn over each other. `Game.dialogue`
+keeps a claim in UE4SS shared variables (`WCModsDialogue.owner` and `.at`), renewed while a box is
+up, and `busy()` is true for the other mods. When two cats are in reach, the first script to hear
+the key talks.
+
+**Not tried yet:**
+- The HUD's `OnItemPickedUp(tag, quantity, total, bCanShowPopup)` is reflected. Calling it may give
+  the game's "… OBTAINED" toast for anything.
+- Answers in the dialogue box's own buttons.
+- The rewards and bonding level-up parts (`UGuiDialogueRewards`, `UGuiDialogueLevelUp`), which the
+  game shows in the same box.
+- The game's quest log (`UGuiHudQuest`) works from native quest objects (`UQuestBase`), so a mod's
+  quests can't go in it without real quest data. They go on the mod menu's Quests page instead
+  (`Game.quests.report`).
+
 ## Game mechanics
 
 The rules of play are in [mechanics/](mechanics/README.md):
