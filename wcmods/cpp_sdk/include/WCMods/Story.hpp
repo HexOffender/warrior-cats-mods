@@ -225,8 +225,12 @@ namespace wcmods
         {
             std::vector<Value> out;
             int32_t* count = move_count();
-            if (!count || *count <= 0 || *count > 32) return out;
-            // The count is a TArray's: the array's data pointer is the 8 bytes before it (pointer, count, capacity).
+            if (!count) return out;
+            // The count is a TArray's (pointer, count, capacity): the data pointer is the 8 bytes before it and
+            // the capacity the 4 after. A count that doesn't fit its capacity isn't an array's (a game update
+            // that moved the member somewhere else): nothing is read then.
+            const int32_t capacity = *(count + 1);
+            if (*count <= 0 || *count > 32 || capacity < *count) return out;
             uint8_t* data = *reinterpret_cast<uint8_t**>(reinterpret_cast<uint8_t*>(count) - 8);
             auto* type = static_cast<RC::Unreal::UStruct*>(object(STR("/Script/SwtAdventure.SwtAdventureAttackMoveStruct")));
             if (!data || !type) return out;

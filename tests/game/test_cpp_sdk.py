@@ -517,7 +517,8 @@ def test_hidden_members_match_lua(agent):
                 end
             end
         end
-        return out""" % json.dumps(v.get("senses.actor")))
+        return out""" % ("nil" if v.get("senses.actor") is None else json.dumps(v["senses.actor"])))
+    assert v["cat.status"] is not None and v["cat.status_rounds"] is not None, (v["cat.status"], v["cat.status_rounds"])
     assert STATUS_NAMES[v["cat.status"]] == lua["status"] and v["cat.status_rounds"] == lua["rounds"], (v["cat.status"], v["cat.status_rounds"], lua)
     assert abs(v["cat.self_cure_chance"] - lua["cure"]) < 1e-6 and abs(v["cat.poison_damage"] - lua["poison"]) < 1e-6, lua
     assert ["None", "Player", "Enemy"][v["fighter.team"]] == lua["team"], (v["fighter.team"], lua["team"])

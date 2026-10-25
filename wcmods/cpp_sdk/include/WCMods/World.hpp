@@ -389,7 +389,12 @@ namespace wcmods
         float* zone_entry_distance{};  // it wakes up when you're within this (1600)
         float* zone_exit_distance{};   // and sleeps again past this (2000)
         float* react_to_chase{};       // seconds before it gives chase (0.5)
-        explicit operator bool() const { return cone_angle != nullptr; }
+        // True when any of them is there (a game update can lose some and keep the rest): check the one you use.
+        explicit operator bool() const
+        {
+            return cone_angle || cone_distance || sound_radius || sound_speed || pounce_distance || proximity_distance || target_distance
+                   || walk_speed_roaming || walk_speed_chasing || zone_entry_distance || zone_exit_distance || react_to_chase;
+        }
     };
     inline auto detection_component(UObject* actor) -> UObject* { return get(actor, L"ExplorationDetectionComponent").object; }
     inline auto senses(UObject* actor) -> Senses
@@ -409,7 +414,8 @@ namespace wcmods
     // HunterPawn, PointOfInterest, bShouldAllowMovement and ArrivedAtTarget; a fighter's, AffectedByCondition,
     // IsExhausted, IsAlive, AllyWithStatus, AllyWithLowHealth, WeakestEnemy, SlowestEnemy and SelectedAttack.
     // nullptr / nullopt without an AI controller (your cat); a key the board hasn't got reads as false, 0
-    // or nullptr, as the engine answers.
+    // or nullptr, as the engine answers. Each call walks to the board and calls into it by reflection: a few
+    // times a second for the animals you watch, not every frame for every animal.
     inline auto blackboard(UObject* actor) -> UObject* { return get(actor, L"Controller.Blackboard").object; }
     namespace detail
     {

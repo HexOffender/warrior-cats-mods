@@ -44,7 +44,7 @@ ANCHORS = {
         (0x17D9800, "a fighter's speed, from Agility and stamina"),
         (0x17D6F0A, "setting up a fighter: health and fight stamina from its stats"),
         (0x17D67D0, "dynamic difficulty: an enemy's level, its AI tier and its moves"),
-        (0x17DB37E, "hitting and missing: the defender's slot looked up for a forced miss"),
+        (0x17DB37E, "hitting and missing: the defender's team looked up for a forced miss"),
     ],
     "/Script/SwtAdventure.SwtAdventureStatusComponent": [
         (0x17CDEF0, "the end of a round: the self-cure roll, and poison queued on the director"),

@@ -1334,7 +1334,7 @@ function Cat:removeStatus(s) return Game.call(self:statusComponent(), "RemoveSta
 function Cat:clearStatus() return Game.call(self:statusComponent(), "ClearStatusType") end
 -- The condition the cat has now ("Poisoned"; "None" without one) and how many rounds it has had it, from
 -- the component's own members: 1 when applied, and each round's end rolls rounds × 20% to shake it off
--- (StatusCondition.SelfCure.Chance), so a condition rarely lasts past the fourth round. (The component's
+-- (StatusCondition.SelfCure.Chance), so a condition never lasts past the fifth round. (The component's
 -- ProcessEndOfRound needs a fight going on: with Poisoned it queues the damage on the fight's director.)
 function Cat:status() return Game.enums.status[Game.get(self:statusComponent(), "WCM_Status")] end
 function Cat:statusRounds() return Game.get(self:statusComponent(), "WCM_StatusRounds") end
@@ -2086,7 +2086,11 @@ end
 -- team ("Player", "Enemy"), and how many moves it has to pick from: the component's own members, filled
 -- when the fight is set up (0 and "None" outside one).
 function Fighter:aiTier() return Game.enums.aiProfile[Game.get(self.component, "WCM_AITier")] end
-function Fighter:setAITier(tier) return Game.set(self.component, "WCM_AITier", enumValue(Game.enums.aiProfile, tier)) end
+function Fighter:setAITier(tier)
+    local n = enumValue(Game.enums.aiProfile, tier)
+    if n == nil then return false, "no such tier: " .. tostring(tier) end
+    return Game.set(self.component, "WCM_AITier", n)
+end
 function Fighter:team() return Game.enums.team[Game.get(self.component, "WCM_Team")] end
 function Fighter:moveCount() return Game.get(self.component, "WCM_MoveCount") end
 

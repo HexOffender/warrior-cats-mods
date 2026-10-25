@@ -457,7 +457,9 @@ namespace wcmods
     }
     inline auto struct_at(const TCHAR* struct_path, void* at) -> Value
     {
-        return struct_at(static_cast<RC::Unreal::UStruct*>(object(struct_path)), at);
+        UObject* o = object(struct_path);
+        if (!o || !o->IsA(RC::Unreal::UStruct::StaticClass())) return {};   // a path to something that isn't a struct
+        return struct_at(static_cast<RC::Unreal::UStruct*>(o), at);
     }
 
     // Write into a struct or object a get() gave: set(custom, L"ClanType", L"RiverClan").
