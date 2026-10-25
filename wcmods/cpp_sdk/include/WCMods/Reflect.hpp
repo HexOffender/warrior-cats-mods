@@ -439,6 +439,104 @@ namespace wcmods
         return out;
     }
 
+    // Write into a struct or object a get() gave: set(custom, L"ClanType", L"RiverClan").
+    inline auto set(const Value& from, std::wstring_view path, const Value& value) -> bool { return detail::write(get(from, path), value); }
+    inline auto set(const Value& from, std::wstring_view path, bool value) -> bool { return set(from, path, Value::of(value)); }
+    inline auto set(const Value& from, std::wstring_view path, double value) -> bool { return set(from, path, Value::of(value)); }
+    inline auto set(const Value& from, std::wstring_view path, int value) -> bool { return set(from, path, Value::of(value)); }
+    inline auto set(const Value& from, std::wstring_view path, std::wstring_view value) -> bool { return set(from, path, Value::of(value)); }
+    inline auto set(const Value& from, std::wstring_view path, const wchar_t* value) -> bool { return set(from, path, Value::of(value)); }
+    inline auto set(const Value& from, std::wstring_view path, UObject* value) -> bool { return set(from, path, Value::of(value)); }
+
+    // ============================================================================================ calling by reflection
+    // A reflected function's parameters, laid out as it wants them (the game's own property descriptions
+    // say where each is): set the inputs by name, call, then read the outputs and the return value. For a
+    // function `call` with a struct is awkward for: outputs that are structs (a hit result), inputs that
+    // are arrays or strings, returns that are enums (read with their names) or texts.
+    class Params
+    {
+      public:
+        explicit Params(UFunction* function) : m_function(function), m_bytes(function ? function->GetParmsSize() : 0, 0) {}
+
+        auto function() const -> UFunction* { return m_function; }
+        auto bytes() -> void* { return m_bytes.data(); }
+        // A parameter's value, as get() gives it (`L"ReturnValue"` for what the function gave back).
+        auto get(std::wstring_view name) -> Value
+        {
+            FProperty* p = find(name);
+            return p ? detail::read(p, p->ContainerPtrToValuePtr<void>(m_bytes.data())) : Value{};
+        }
+        // Set a parameter: a bool, number, text (an FString, FName or enum's name) or object.
+        auto set(std::wstring_view name, const Value& value) -> bool { return detail::write(get(name), value); }
+        auto set(std::wstring_view name, bool value) -> bool { return set(name, Value::of(value)); }
+        auto set(std::wstring_view name, double value) -> bool { return set(name, Value::of(value)); }
+        auto set(std::wstring_view name, int value) -> bool { return set(name, Value::of(value)); }
+        auto set(std::wstring_view name, std::wstring_view value) -> bool { return set(name, Value::of(value)); }
+        auto set(std::wstring_view name, const wchar_t* value) -> bool { return set(name, Value::of(value)); }
+        auto set(std::wstring_view name, UObject* value) -> bool { return set(name, Value::of(value)); }
+        // Where a parameter's bytes are, for a struct (an FVector in: `*static_cast<FVector*>(p.raw(L"Start")) = ...`).
+        auto raw(std::wstring_view name) -> void*
+        {
+            FProperty* p = find(name);
+            return p ? p->ContainerPtrToValuePtr<void>(m_bytes.data()) : nullptr;
+        }
+        auto has(std::wstring_view name) -> bool { return find(name) != nullptr; }
+        // The parameters by position (the return value last), for functions whose names you'd rather not
+        // depend on: nth(0) is the first.
+        auto nth(int index) -> Value
+        {
+            FProperty* p = find(index);
+            return p ? detail::read(p, p->ContainerPtrToValuePtr<void>(m_bytes.data())) : Value{};
+        }
+        auto set_nth(int index, const Value& value) -> bool { return detail::write(nth(index), value); }
+        auto count() -> int
+        {
+            int n = 0;
+            if (m_function)
+                for ([[maybe_unused]] FProperty* p : m_function->ForEachProperty()) ++n;
+            return n;
+        }
+
+      private:
+        UFunction* m_function;
+        std::vector<uint8_t> m_bytes;
+
+        auto find(int index) -> FProperty*
+        {
+            if (!m_function || index < 0) return nullptr;
+            for (FProperty* p : m_function->ForEachProperty())
+                if (index-- == 0) return p;
+            return nullptr;
+        }
+
+        auto find(std::wstring_view name) -> FProperty*
+        {
+            if (!m_function) return nullptr;
+            for (FProperty* p : m_function->ForEachProperty())
+                if (p->GetName() == name) return p;
+            return nullptr;
+        }
+    };
+
+    // Call one of an object's reflected functions through its parameters by name: `fill(params)` sets the
+    // inputs, and what comes back holds the outputs and `ReturnValue`. nullopt when the object or the
+    // function isn't there:
+    //   auto r = wcmods::call_reflected(manager, STR("GetQuestStatus"), [&](wcmods::Params& p) {
+    //       wcmods::set(p.get(L"QuestTag"), L"TagName", tag);
+    //   });
+    //   if (r) status = r->get(L"ReturnValue").text;   // an enum, by name
+    inline auto call_reflected(UObject* object, const TCHAR* function, const std::function<void(Params&)>& fill = {})
+            -> std::optional<Params>
+    {
+        if (!object) return std::nullopt;
+        UFunction* fn = object->GetFunctionByNameInChain(function);
+        if (!fn) return std::nullopt;
+        Params params(fn);
+        if (fill) fill(params);
+        object->ProcessEvent(fn, params.bytes());
+        return params;
+    }
+
     // Spawn an actor of a class (by its path) at a place; nullptr when the class isn't there or the world
     // isn't up. The game's own cats need more than this (see the Lua module's Game.npcs); it's for plain actors.
     inline auto spawn(const TCHAR* class_path, Vec3 at) -> UObject*

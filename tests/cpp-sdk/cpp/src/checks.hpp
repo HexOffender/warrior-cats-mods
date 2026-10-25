@@ -28,6 +28,9 @@ namespace t
     auto setup_menu() -> void;           // Menu.hpp: pages, keys with help, shared values
     auto run_reflect(UObject* cat) -> void;   // Reflect.hpp, once your cat is there
     auto setup_background() -> void;     // Events.hpp: other threads, settings that change
+    auto run_world_more(UObject* cat) -> void;   // World.hpp and Story.hpp reads, once your cat is there
+    auto setup_story() -> void;          // Story.hpp: the events, and a quest report
+    auto snapshot_story() -> void;       // the events' counts, into values
     auto snapshot_menu() -> void;        // what the pages' rows hold, and the menu's state, into values
 
     // The after-hook that forges GetConsoleVariableFloatValue's result (test_events.cpp sets it up, run_writes

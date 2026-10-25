@@ -94,6 +94,7 @@ class CppSdkTest : public wcmods::ModBase
         t::setup_events();
         t::setup_menu();
         t::setup_background();
+        t::setup_story();
         t::done("init");
     }
 

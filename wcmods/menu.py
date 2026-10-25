@@ -1286,6 +1286,29 @@ local function syncCpp()
     end
 end
 
+-- Quests of C++ mods' own, on the Quests page (WCModsCpp.mods[id].quests(): "id\ttitle\tstatus\tobjective\tprogress"
+-- lines; an empty title takes one off), passed on through WCModsGame's Game.quests.report once a second.
+local cppQuests = {}
+local okCppGame, CppGame = pcall(require, "WCModsGame")
+local function syncCppQuests()
+    if type(WCModsCpp) ~= "table" or type(WCModsCpp.mods) ~= "table" or not okCppGame then return end
+    for _, m in pairs(WCModsCpp.mods) do
+        local ok, lines = pcall(m.quests)
+        for line in (ok and tostring(lines or "") or ""):gmatch("([^\n]+)") do
+            local id, title, status, objective, progress = line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t([^\t]*)\t(.*)$")
+            if id and id ~= "" and cppQuests[id] ~= line then
+                cppQuests[id] = line
+                if title == "" then
+                    CppGame.quests.report(id, nil)
+                else
+                    CppGame.quests.report(id, { title = title, status = status, objective = objective, progress = progress, by = "C++" })
+                end
+            end
+        end
+    end
+end
+if okCppGame and CppGame.every then CppGame.every(1, syncCppQuests) end
+
 local generation = 0
 local function show(id)
     if win then

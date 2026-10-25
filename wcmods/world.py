@@ -473,12 +473,10 @@ def item_names(ctx):
     return out
 
 
-def names_lua(plan=None, items=None):
-    """WCModsNames: the English text of every name part and whole name, after the enabled name mods
-    (names.Plan), and N.name, which WCModsGame and WCModsWorld name cats with; and items' names
-    (item_names), for N.item. Without a plan (no game data) the tables are empty and N.name reads the
-    game's own text."""
-    from .sdk import lua_value
+def names_data(plan=None, items=None):
+    """The name tables WCModsNames and the C++ SDK's cat_name share: {"prefixes", "suffixes", "whole",
+    "items"}, each {id or tag: English text}, after the enabled name mods (names.Plan). Without a plan (no
+    game data) the tables are empty, and names come from the game's own text."""
     data = {"prefixes": {}, "suffixes": {}, "whole": {}, "items": dict(items or {})}
     if plan is not None:
         data["prefixes"] = {p["id"]: p["final"] for p in plan.prefixes}
@@ -488,6 +486,16 @@ def names_lua(plan=None, items=None):
             if key.startswith("STR_CAT_NAME_ICONIC_") or key.startswith("STR_CAT_NAME_WCM"):
                 whole[key] = text
         data["whole"] = whole
+    return data
+
+
+def names_lua(plan=None, items=None):
+    """WCModsNames: the English text of every name part and whole name, after the enabled name mods
+    (names.Plan), and N.name, which WCModsGame and WCModsWorld name cats with; and items' names
+    (item_names), for N.item. Without a plan (no game data) the tables are empty and N.name reads the
+    game's own text."""
+    from .sdk import lua_value
+    data = names_data(plan, items)
     return ("-- WCModsNames: the English names of cats' name parts and whole names (rogues, cameo cats, names\n"
             "-- given by mods), after your name mods, and of items. Written by wcmods on every install;\n"
             "-- WCModsGame and WCModsWorld use it: NAMES.name(prefix id, suffix id), NAMES.item(tag).\n"
