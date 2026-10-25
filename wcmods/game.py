@@ -1742,6 +1742,41 @@ function Game.quests.objectives(q)
     return out
 end
 
+-- Quests of a mod's own, for the mod menu's Quests page. Each UE4SS mod has a Lua state of its own, so
+-- they go through UE4SS's shared variables: one per quest, and a list of their ids.
+--   Game.quests.report("moonlit-path", { title = "The Moonlit Path", status = "active",
+--                                        objective = "Gather moss", progress = "1 / 2" })
+-- status: "available", "active" or "done". Report again whenever it changes; nil takes it off the page.
+local QUEST_PREFIX = "WCModsQuests."
+local function shared(name) local ok, v = pcall(function() return ModRef:GetSharedVariable(name) end) return ok and v or nil end
+local function share(name, v) pcall(function() ModRef:SetSharedVariable(name, v) end) end
+local function clean(s) return (tostring(s or ""):gsub("[\t\n]", " ")) end
+function Game.quests.report(id, q)
+    id = clean(id)
+    local ids, have = {}, false
+    for line in tostring(shared(QUEST_PREFIX .. "ids") or ""):gmatch("[^\n]+") do
+        if line == id then have = true end
+        if line ~= id or q then ids[#ids + 1] = line end
+    end
+    if q and not have then ids[#ids + 1] = id end
+    share(QUEST_PREFIX .. "ids", table.concat(ids, "\n"))
+    share(QUEST_PREFIX .. id, q and table.concat({ clean(q.title or id), clean(q.status or "active"), clean(q.objective),
+                                                   clean(q.progress), clean(q.by) }, "\t") or "")
+end
+-- The quests mods have reported: { {id, title, status, objective, progress, by}, ... }.
+function Game.quests.reported()
+    local out = {}
+    for id in tostring(shared(QUEST_PREFIX .. "ids") or ""):gmatch("[^\n]+") do
+        local line = tostring(shared(QUEST_PREFIX .. id) or "")
+        local f = {}
+        for part in (line .. "\t"):gmatch("([^\t]*)\t") do f[#f + 1] = part end
+        if f[1] and f[1] ~= "" then
+            out[#out + 1] = { id = id, title = f[1], status = f[2], objective = f[3], progress = f[4], by = f[5] }
+        end
+    end
+    return out
+end
+
 function Game.quests.tracked()
     local qm = Game.quests.manager()
     local ok, q = pcall(function() return qm:GetCurrentTrackedQuest() end)

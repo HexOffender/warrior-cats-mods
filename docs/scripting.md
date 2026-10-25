@@ -285,6 +285,7 @@ the cat picks it up.
 |---|---|
 | `Game.quests.all()` | Every quest: `{quest, id, graph, type, status, result, tracked, xp, rewards}`. `id` comes from its quest graph: `"Tutorial"`, `"Deliver"`, `"RiverClan_Unique1"` |
 | `Game.quests.tracked()` | The quest being followed, or nil |
+| `Game.quests.report(id, {title, status, objective, progress})` | List a quest of the mod's own on the mod menu's Quests page: `status` is `"available"`, `"active"` or `"done"`. Report again when it changes; `nil` takes it off. `Game.quests.reported()` reads them back |
 | `Game.quests.status(tag)`, `.result(tag)`, `.successes(tag)` | By quest tag: `"QuestAvailable"`, `"OngoingQuest"`, … |
 | `Game.quests.start(tag)`, `.give(tag)`, `.track(quest, on)` | The quest manager's own StartQuestOfTag, GiveQuestOfTag and SetTracked. Not tried yet; they can move the story on |
 | `Game.quests.chapter()` | `"Chapter00"` |

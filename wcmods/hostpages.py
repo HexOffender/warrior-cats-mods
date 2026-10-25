@@ -547,8 +547,21 @@ end
                 end
             end
         end
+        -- Mods' own quests (Game.quests.report), filtered the same way.
+        local MOD_FILTER = { Active = { active = true }, Available = { available = true }, Done = { done = true } }
+        local MOD_STATUS = { active = "in progress", available = "available", done = "done" }
+        local own = Game.quests.reported()
+        for _, q in ipairs(own) do
+            if questView.filter == "All" or (MOD_FILTER[questView.filter] or {})[q.status] then
+                n = n + 1
+                local now = q.status == "active" and q.objective ~= "" and
+                    (q.objective .. (q.progress ~= "" and ("   " .. q.progress) or "")) or (MOD_STATUS[q.status] or q.status)
+                ui.field(q.title, now)
+            end
+        end
         if n == 0 then ui.note("None.") end
-        ui.note(string.format("%d quests in all. Their titles are the game's own, for your cat's rank.", #list))
+        ui.note(string.format("%d quests in all. Their titles are the game's own, for your cat's rank.", #list) ..
+                (#own > 0 and string.format(" %d more from mods.", #own) or ""))
     end, { order = 30, group = "story" })
 
     -- ---------- Fight ----------
