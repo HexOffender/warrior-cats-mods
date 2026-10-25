@@ -449,7 +449,7 @@ class Studio:
                  for part in ("fur", "pattern", "marking")}
         return {"current": current, "palette": slots, "game_slots": palettes.GAME_SLOTS,
                 "feral_slots": list(catlook.FERAL_SLOTS), "parts": catlook.PARTS,
-                "scars": {"current": scars, "top": catlook.SCAR_CHOICES, "ear_names": catlook.EAR_SCARS}}
+                "scars": {"current": scars, "types": catlook.SCAR_TYPES}}
 
     def names_preview(self, spec):
         """The game's names, what a names.json (not yet saved) does to them, and the cats in the save."""

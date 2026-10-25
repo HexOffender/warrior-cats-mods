@@ -378,7 +378,7 @@ palette you've added is your own copy, so add it again to get the new one.
 ```json
 { "player": { "colours": { "fur": "#9fb6e0", "paws": "#ffb6c1", "ears": "#ff9aa6", "nose": "#ff7b9a", "whiskers": "#ffffff" },
               "slots": { "fur": 11, "pattern": 25, "marking": 26 },
-              "scars": { "ear": "notch-left", "eye": 3, "back": "none" } } }
+              "scars": { "ear": "notch-left", "eye": "claws-right", "back": "none" } } }
 ```
 - **`colours`** go onto your cat's own materials while you play. That covers menus and portraits,
   and every part is optional. No other cat changes, and any colour works, including paws, ears,
@@ -390,11 +390,12 @@ palette you've added is your own copy, so add it again to get the new one.
   and `marking` any slot, including new ones a palette adds. Leave a part out to keep your save's.
 - **`scars`** chooses your cat's scars, written into your save on install after a backup: `"none"`
   for none at all, or each place on its own (leave one out to keep your save's):
-  - `ear`: `torn-right`, `torn-left`, `torn-both`, `notch-right`, `notch-left`, `notch-both` (or
-    1–6);
-  - `eye` and `back`: 1–6, three scars, odd numbers on one side and even on the other;
-  - `chest`: 1 or 2;
-  - `"none"` for no scar there.
+  - `ear`: `torn-right`, `torn-left`, `torn-both`, `notch-right`, `notch-left`, `notch-both`;
+  - `eye` (it shuts the eye): `ring-right`, `ring-left`, `slash-right`, `slash-left`,
+    `claws-right`, `claws-left`, the cat's own right and left;
+  - `back`: `bite-1`, `bite-2`, `claws-1`, `claws-2`, a bite or claw marks in one of two spots;
+  - `chest`: `bite` or `claws`;
+  - `"none"` for no scar there. Numbers work too: a place's scars in this order, from 1.
 
   Scars show with the game's own Injury system switch on (its Gameplay settings). A boss fight can
   still give new ones. The studio's **Your cat** page has a Scars card for them.
