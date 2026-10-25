@@ -123,6 +123,40 @@ selftest check decodes all 412 rows, re-encodes them and rebuilds the package by
 - **An empty FString** is written either as length 0 or as a length-1 lone terminator. Keep which,
   to get the same bytes back.
 
+### New packages and textures
+
+Worked out on 2026-10-24 for icons and accessory looks (`wcmods/texture.py`), and verified in game:
+an item's icon and a worn collar, both from packages the game hasn't got.
+
+**IDs come from names** (checked against the game's own container by the selftest):
+- **Package ID:** CityHash64 of the package name in lower case, as UTF-16LE
+  (`/game/art/.../t_ui_icon_inventory_horsetail_d`).
+- **Chunk ID:** the package ID (u64), a u16 index (0), a pad byte, then the chunk type: 1 for the
+  package itself, 2 for its `.ubulk`.
+- **An export's public hash** (export map entry +56): CityHash64 of the object's name in lower case,
+  as UTF-16LE.
+
+**A texture package** (`Texture2D`, one export):
+- **Pixel format:** an FString such as `PF_DXT5` in the export, with the width and height as two i32
+  16 bytes before it.
+- **Mips:** one bulk data map entry each (offset, duplicate offset, size, flags). With flag `1 << 8`
+  the mip is in the `.ubulk`, at that offset; otherwise it's inline in the export data.
+- **The game's:**
+  - Inventory icons are `PF_DXT5` 512 x 512, one mip, inline; accessories' icons are `PF_DXT5`
+    256 x 256.
+  - Accessory looks (`T_A<slot>_<name>_<n>_BC`) are `PF_DXT1` 2048 x 2048 with 12 mips, the big ones
+    in the `.ubulk`.
+  - 13 head accessories' looks are packages with more than one export.
+
+**Making a new one:** copy one of the game's textures of the same size and format, then:
+- put new DXT blocks at each mip's place;
+- rename the package and the object in the name map (with their name hashes), and fix the export's
+  public hash;
+- add it to the mod container under its new ID, with the copied texture's container header entry
+  (imports, shader maps) and its `.ubulk` as a type-2 chunk.
+The game loads it from a soft path (an item's `Icon`) or a soft reference (an accessory's look) like
+one of its own. Nothing else checks it: no asset registry entry was needed.
+
 ### The save
 
 `%LOCALAPPDATA%\Wrc\Saved\SaveGames\WrcGame.sav`:
@@ -692,16 +726,35 @@ Worked out on 2026-10-24 and verified in game with a new herb and a new material
 
 **Accessories:**
 - **Tags:** `Gameplay.Inventory.Cosmetic.<Head|Neck|Body|Legs>.<name>.<variation>`, e.g.
-  `Head.BigLeaf.1`.
+  `Neck.DogCollar.2`.
 - **The game's list:** `<name>` is a value of the native enum `EAccesoryIds` (HeatherCoronet 1 …
   BeadsBand 44).
 - **Models and textures:** the GUI manager (`BP_WrcGuiManager_C`, from `SwtAdventureGuiManager`)
   maps each id to:
   - a skeletal mesh (`AccesoryMeshes`, 44 entries);
   - its variations (`AccesoryVariations`: a `MeshVariationsData` with a `Textures` array; most
-    accessories have 1, a few 2 or 4).
-- **What's worn:** a cat's `CatCustomData` stores it as `AccesoryHeadId` (a string) and
-  `AccesoryHeadVar`.
+    accessories have 1, a few 2 or 4). Variation n is `Textures[n - 1]`, put on the accessory's
+    material (`MI_A<slot>_<name>`) as its `LYR1 Albedo` texture.
+- **What's worn:** a cat's `CatCustomData` stores the head and body accessories as strings
+  (`AccesoryHeadId` at +0xB8, `AccesoryBodyId` at +0xC8), and each slot's variation as an i32 (neck
+  +0xD8, paws +0xDC, head +0xE0, body +0xE4).
+- **The defaults' bytes** (the Blueprint's `Default__` export):
+  - an `AccesoryVariations` entry is the key (the FName `EAccesoryIds::<name>`), the struct's header
+    (`0x0300`, its one field), the array's count and 20-byte soft references (package FName, asset
+    FName, empty sub-path);
+  - `AccesoriesTestTags` is an array of 51 accessory tags (header `0x0300` and an FName each). The
+    cheat that gives every accessory uses it; a shorter list beside it is the DLC's.
+- **New looks** (`wcmods/accessories.py`):
+  - A texture added to the end of an accessory's list in the defaults, at install, is the next
+    variation. Its tag (registered from an ini like any item's) is worn with that look: DogCollar's
+    look 3 in a mod's blue, verified.
+  - Changing the list at runtime doesn't work: the lists are read when the game starts, and from
+    UE4SS `map:Add` with a Lua table emptied the entry.
+  - **Head accessories always show look 1**, the list and `AccesoriesTestTags` patched or not: a new
+    look 2 for BigLeaf was worn as look 1. None of the game's head accessories has a second look.
+    Neck, body and paw accessories show theirs.
+- **Bartering** shows an accessory you already have as an empty slot: the Cedar Cuff's went blank
+  once one was picked up, and a mod's new look does the same.
 - **Take care:** picking up an item with an invalid accessory tag (`Cosmetic.Head.1`) got it into
   the save, and the game crashed on quitting.
 

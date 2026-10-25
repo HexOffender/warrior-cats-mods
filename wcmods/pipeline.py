@@ -6,7 +6,8 @@ import re
 import shutil
 import struct
 
-from . import bridge, catlook, controls, draw, gamebuild, hostpages, ingame, luacheck, menu, names, ue4ss, view, world
+from . import bridge, catlook, controls, draw, gamebuild, hostpages, ingame, luacheck, menu, names, texture
+from . import ue4ss, view, world
 from . import game as game_lua   # WCModsGame (the name `game` is the game's files in build())
 from . import mods as modlib
 from .blake3 import blake3
@@ -168,6 +169,12 @@ def build(cfg, mods, out_dir, log=print):
         header = io.container_header()
         container = ModContainerWriter(blake3(MOD_BASENAME.lower().encode(), 8))
         for path, (data, _, _) in ctx.packages.items():
+            if path in ctx.new_packages:
+                cid, imports, shaders, bulk = ctx.new_packages[path]
+                container.add_package(path, cid, data, imports, shaders)
+                if bulk is not None:
+                    container.add_chunk(path[:-len(".uasset")] + ".ubulk", cid[:11] + bytes([texture.CHUNK_BULK]), bulk)
+                continue
             ci = io.chunk_index(path)
             cid = io.chunk_ids[ci]
             imports, shaders = header.entry_for(struct.unpack("<Q", cid[:8])[0])

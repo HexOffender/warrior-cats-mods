@@ -46,7 +46,7 @@ mods/my-mod/
   paks/<name>.pak     cooked content made with Unreal   -> installed as is, with its .utoc/.ucas
                       Engine 5.7 (see "New content")
   data.json           CSV cell edits                    -> section "data"
-  items.json          new herbs and materials           -> section "items" (see "New items")
+  items.json          new herbs, materials and looks    -> section "items" (see "New items")
   names.json          cat names                         -> section "names"
   palette.json        colour palettes                   -> section "palettes"
   cats.json           your cat's own colours and slots  -> section "cats"
@@ -98,6 +98,9 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.patch_package(path, data)` | Replace a cooked `.uasset` with patched bytes (goes into the IoStore mod container) |
 | `ctx.cooked_table("DT_QuestObjectsInfo")` | The rows of a cooked table wcmods can read (`cooked.TABLES`), as `[(row name, {field: value})]`, as the game ships them |
 | `ctx.add_table_row(table, row, values, source=mod.id)` | Add a row to one of those tables; rows from every section are merged and written into a copy of the game's asset (fields in `cooked.SCHEMAS`; text as `cooked.base_text("Moon Herb", key)`) |
+| `ctx.add_texture(name, image, like, source=mod.id, key=None)` | A new texture `/Game/WCMods/<name>`, a copy of the game's texture `like` (same size, format and mips) with the pixels of `image`: `(width, height, RGBA bytes)` as `png.read` gives, or a function that makes them. With `key` (text that changes when the picture does), an install reuses the texture it made last time. Returns the new asset path, for an icon or a look |
+| `ctx.add_package(path, data, chunk_id, imports, shaders, bulk=None)` | Add a cooked package the game hasn't got, with its chunk ID, container header entry and `.ubulk`; `add_texture` is the easy way |
+| `ctx.cache_dir` | A folder for work an install can reuse (wcmods' `cache/`; the selftest's stays in its temp folder) |
 | `ctx.add_ue4ss_mod(name, {"Scripts/main.lua": text})` | Ship a UE4SS Lua mod; installed and registered only when UE4SS is present. `.lua` files get a structure check (balanced blocks and brackets) and problems become build warnings |
 | `ctx.edit_save(path, value)` | Set an existing save value on install, e.g. `"0/GameplayProgression/Level"` |
 | `ctx.add_save_key(object_path, key, value, only_new=False)` | Add a key to a save object, e.g. a new inventory item. With `only_new`, a key the save already has keeps its value |
@@ -110,8 +113,10 @@ because the game's keys contain dots. They start inside the save's account objec
 for shared data, and `0/...` for cat slot 0.
 
 Helpers you can import: `wcmods.csvdata` (format-preserving CSV editing), `wcmods.savejson`
-(format-preserving save JSON), `wcmods.cooked` (cooked DataTables), `wcmods.colors`, `wcmods.palettes`, `wcmods.eyeatlas`,
-`wcmods.gamefiles`, `wcmods.names` (the game's name tables). `wcmods.sdk.lua_value(data)` writes
+(format-preserving save JSON), `wcmods.cooked` (cooked DataTables), `wcmods.texture` (the game's
+textures, read and copied), `wcmods.png`, `wcmods.bcn` (DXT1/DXT5), `wcmods.recolor`,
+`wcmods.accessories` (the game's lists of accessory looks), `wcmods.colors`, `wcmods.palettes`,
+`wcmods.eyeatlas`, `wcmods.gamefiles`, `wcmods.names` (the game's name tables). `wcmods.sdk.lua_value(data)` writes
 JSON-style data (dicts, lists, strings, numbers, booleans) as a Lua literal, for handing a mod's
 settings to its in-game script.
 
@@ -140,7 +145,7 @@ never changed, and uninstall deletes everything starting with `zzz_WCMods_`.
 | File | What wcmods puts in it |
 |---|---|
 | `zzz_WCMods_P.pak` | Every replacement loose file (`files/`) and every edited table and text file (`data.json`, `names.json`, section CSV edits, merged across mods), plus `Wrc/WCMods/BuildInfo.json` naming the mods built. Pak version 12, uncompressed, mount point `../../../`. File names in its directory index are UTF-8 with no terminator, as the game's own pak stores them; written the older way, the engine never finds them |
-| `zzz_WCMods_P.utoc` / `.ucas` | Patched copies of existing cooked packages (the eye colour atlas, and anything a section passes to `ctx.patch_package`). Each keeps the game's chunk ID and its container header entry (imports, shader maps), with BLAKE3-160 chunk hashes, so the engine loads ours instead of the game's |
+| `zzz_WCMods_P.utoc` / `.ucas` | Patched copies of existing cooked packages (the eye colour atlas, the item table, and anything a section passes to `ctx.patch_package`). Each keeps the game's chunk ID and its container header entry (imports, shader maps), with BLAKE3-160 chunk hashes, so the engine loads ours instead of the game's. New packages (`ctx.add_texture`) go in beside them under `/Game/WCMods/`, with chunk IDs worked out from their names the way the engine does |
 | `zzz_WCMods_<mod>_<name>_P.*` | Cooked content a mod ships itself (`paks/`, below), copied as it is |
 
 Next to these, UE4SS scripts go into `Binaries\Win64\ue4ss\Mods\WCMods*`, and the shared modules
@@ -161,13 +166,15 @@ into `ue4ss\Mods\shared\WCMods*`.
 
 ### New items (`items.json`)
 
-A mod can add herbs and materials of its own, and change the recipes of the game's herbs and
-accessories. wcmods writes everything the game needs for a new item:
+A mod can add herbs, materials and new looks for the game's accessories, with icons of its own,
+and change the recipes of the game's herbs and accessories. wcmods writes everything the game needs
+for a new item:
 - the item's gameplay tag;
 - its row in the cooked item table, `DT_QuestObjectsInfo`: name, description and icon (the inventory
   leaves out an item without one);
-- for a herb, what using it does (`Consumables.csv`) and a recipe at the medicine cat's bartering
-  (`BarteringCost.csv`);
+- for a herb, what using it does (`Consumables.csv`), and for a herb or an accessory, a recipe at
+  the medicine cat's bartering (`BarteringCost.csv`);
+- a new icon or look as a texture of its own;
 - and some in your save to start with.
 
 ```json
@@ -187,8 +194,17 @@ accessories. wcmods writes everything the game needs for a new item:
       "kind": "material",
       "name": "Moonstone",
       "description": "A pale stone that glows at night.",
-      "icon": "Rock",
+      "icon": { "from": "Rock", "tint": "#c4d4ff" },
       "give": 2
+    },
+    {
+      "id": "MoonlitCollar",
+      "like": "Neck.DogCollar.1",
+      "name": "Moonlit Collar",
+      "description": "A collar the colour of moonlight on water.",
+      "texture": { "tint": "#a8c4ff" },
+      "icon": { "tint": "#a8c4ff" },
+      "recipe": { "Bone": 1, "Moonstone": 2 }
     }
   ],
   "recipes": {
@@ -199,16 +215,17 @@ accessories. wcmods writes everything the game needs for a new item:
 
 | Key | |
 |---|---|
-| `id` | Letters and digits. The item's tag is `Gameplay.Inventory.Consumable.<id>` for a herb or `Gameplay.Inventory.Materials.<id>`. It can't be one the game or another mod already has; the build says if it is |
+| `id` | Letters and digits. The item's tag is `Gameplay.Inventory.Consumable.<id>` for a herb or `Gameplay.Inventory.Materials.<id>`, and an accessory's is its accessory's next look (below). It can't be one the game or another mod already has; the build says if it is |
 | `name`, `description` | What the inventory and bartering show, the same in every language |
-| `like` | A game item to start from, by its short name (`"MediumHealingHerb"`) or whole tag: its kind, effect, when it can be used, icon, icon group, rarity and colour. The item's other keys override those |
-| `kind` | `"consumable"` (a herb or pouch) or `"material"`, when there's no `like` |
-| `icon` | An item to borrow the icon of (`"Rock"`), or a texture of the game's, e.g. `"/Game/Art/UXD/Textures/gui_icons/gui_icons_inventory/T_UI_Icon_Flower_Marigold_D"` (`wcmods files "*gui_icons_inventory*"` lists them) |
+| `like` | A game item to start from, by its short name (`"MediumHealingHerb"`) or whole tag: its kind, effect, when it can be used, icon, icon group, rarity and colour. An accessory's is the look it's a copy of, `"Neck.DogCollar.1"`. The item's other keys override those |
+| `kind` | `"consumable"` (a herb or pouch), `"material"` or `"accessory"`, when there's no `like` |
+| `icon` | An item to borrow the icon of (`"Rock"`), a texture of the game's, e.g. `"/Game/Art/UXD/Textures/gui_icons/gui_icons_inventory/T_UI_Icon_Flower_Marigold_D"` (`wcmods files "*gui_icons_inventory*"` lists them), a PNG in the mod's folder (`"icons/moon-herb.png"`), or a recolour (below) |
+| `texture` | Accessories: the new look, a recolour of the one it's `like` (`{"tint": "#a8c4ff"}`) or a PNG in the mod's folder |
 | `effect` | Herbs: what using one does, one of the game's herb effects, such as `Gameplay.Effect.Consumable.Health.2` (+50 health). [items.md](mechanics/items.md) lists them |
 | `type`, `target` | Herbs: the effect's kind (`Health`, `Stamina`, `BuffStrength`, …), and who it's for: `Owner`, or `OwnerTeam` for your whole team |
 | `combat`, `exploring`, `fight_only` | Herbs: `true` or `false` for usable in fights, usable while exploring, and whether its effect ends with the fight |
 | `group`, `rarity`, `color` | The badge by its icon (`Health`, `Stamina`, `Stats`, `Status`, `Damage`, `Experience`, `Free`, or `None`), the rarity (`Common`, `Uncommon`, `Rare`, `Mythic`, `None`) and the category colour (`Consumable`, `Quest`, `Den`, `None`) |
-| `recipe` | Herbs: what the medicine cat wants for one, e.g. `{"Dandelion": 2, "Moonstone": 1}`. Any material, the game's or one a mod adds |
+| `recipe` | Herbs and accessories: what the medicine cat wants for one, e.g. `{"Dandelion": 2, "Moonstone": 1}`. Any material, the game's or one a mod adds |
 | `give` | How many you start with: given once, in the save slot you play, if you have none yet |
 
 `"recipes"` changes what the medicine cat wants for one of the game's herbs or accessories, by its
@@ -217,18 +234,48 @@ tag with or without `Gameplay.Inventory.`. Accessories are
 extract "*BarteringCost.csv"` shows them all). The ingredients are as for an item's `recipe`, new
 materials included.
 
+**Pictures.** An icon or a look can be the mod's own picture or one of the game's in other colours.
+Either way wcmods makes it into a texture at install: a copy of one of the game's (the same size,
+format and mips) under `/Game/WCMods/<mod>/`, with new pixels. A recolour is made from your own game
+files, so a mod ships no picture of the game's:
+
+| Recolour key | |
+|---|---|
+| `from` | Icons: which picture to recolour, an item (`"Rock"`) or a texture (`"/Game/..."`). Left out, it's the icon of the item it's `like`. An accessory's `texture` always recolours its own look |
+| `tint` | `"#a8c4ff"`: the picture's light and shade in that colour |
+| `strength` | With `tint`, from 0 to 1: how far toward it (1 is all the way) |
+| `hue` | Degrees to turn its colours round the colour wheel, e.g. `180` |
+| `saturation`, `brightness` | Multipliers: `0.5` is half as colourful, `1.2` a fifth lighter |
+
+For a picture of your own, `python wcmods.py texture <what>` saves one of the game's as a PNG to
+paint over: an item's icon (`SmallHealingHerb`), an accessory's look (`Neck.DogCollar.1`) or any
+texture (`/Game/...`). Keep the size, or wcmods scales it; inventory icons are 512 x 512 with a
+transparent background, accessories' icons 256 x 256 and their looks 2048 x 2048. Making a big look
+takes about 15 seconds the first time; installs after that reuse it from `cache/`.
+
+**Accessories.** An accessory is one of the game's models with a list of looks (textures): the Red
+Dog Collar is DogCollar's look 2. A new accessory is a new look for one of them, so its tag is the
+next one, `Gameplay.Inventory.Cosmetic.Neck.DogCollar.3`, and wcmods adds its texture to the game's
+list. Neck, body and paw accessories can take new looks; the game always shows a head accessory's
+first look, so those can't. The number depends on the other enabled mods that add looks to the same
+accessory, so switching one of those on or off can change which look an accessory you already have
+is. Bartering shows accessories you already have as an empty slot, the game's and a mod's alike.
+
 What it can't do (yet):
 - **New effects:** each herb effect is one of the game's Blueprints, so a new herb does what one of
   the game's does (heal 25, 50 or 100, stamina, a stat buff, a cure, experience).
-- **New accessories:** what a cat wears is a model and its textures, listed in the game's own code
-  (`EAccesoryIds`), so a new one needs new art. `"recipes"` can change what an existing one costs.
-- **Growing in the world:** new materials aren't found in the forest; they come from `give` or a
-  script.
-- New items need the Oodle DLL, because the item table is compressed in the game's files.
+- **New accessory models:** a new shape to wear needs a model cooked with Unreal (see "New
+  content"), and new looks for head accessories don't show. `"recipes"` can change what an existing
+  one costs.
+- **Growing in the world:** new materials aren't found in the forest; they come from `give`, a
+  recipe or a script.
+- New items need the Oodle DLL, because the item table and the textures are compressed in the
+  game's files.
 
 ### New content: models, textures, sounds
 
-New assets have to be cooked by Unreal Engine itself; wcmods doesn't cook. Once cooked, a mod
+New models, sounds and Blueprints have to be cooked by Unreal Engine itself; wcmods only makes
+textures, as copies of the game's (`items.json` and `ctx.add_texture`, above). Once cooked, a mod
 ships them in a `paks/` folder and wcmods installs them like everything else. The steps are the
 usual ones for Unreal 5 games that use IoStore. **They haven't been tried with this game yet.** The
 game doesn't insist on signed paks, though (wcmods' own unsigned container loads), which is what

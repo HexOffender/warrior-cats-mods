@@ -1,6 +1,6 @@
-"""New items (items.json): herbs and materials of a mod's own, with a name, a description, an icon, what
-they do, a recipe at the medicine cat's bartering, and some to start with; and new recipes for the
-game's own herbs and accessories.
+"""New items (items.json): herbs, materials and accessories of a mod's own, with a name, a description,
+an icon (the game's, or a picture of the mod's own), what they do, a recipe at the medicine cat's
+bartering, and some to start with; and new recipes for the game's own herbs and accessories.
 
     {
       "items": [
@@ -17,34 +17,44 @@ game's own herbs and accessories.
     }
 
 An item needs four things in the game, and this section writes them all:
-  * its gameplay tag (Gameplay.Inventory.Consumable.<id> or ...Materials.<id>), in an ini under
-    Wrc/Config/Tags, which the game registers at startup;
+  * its gameplay tag (Gameplay.Inventory.Consumable.<id> or ...Materials.<id>; an accessory's is the
+    next variation of the accessory it's "like", Gameplay.Inventory.Cosmetic.Neck.DogCollar.3), in an
+    ini under Wrc/Config/Tags, which the game registers at startup;
   * for a herb, a Consumables.csv row: what using it does, and when;
   * a row in the cooked DT_QuestObjectsInfo table: its name, description and icon (the inventory leaves
     out items without one);
   * for "recipe", a BarteringCost.csv row, and for "give", the item in your save (once).
+A picture of the mod's own ("icon" or an accessory's "texture", a PNG), or one of the game's in other
+colours ({"from": ..., "tint": "#a8c4ff"}, made from the player's own game files), becomes a new
+texture, a copy of one of the game's (texture.py, recolor.py). An accessory's new look goes into the
+game's list of its looks, in the GUI manager Blueprint (accessories.py).
 
 "like" names a game item to start from (its effect, when it can be used, icon and icon group); the
 item's own keys override those. "recipes" changes what the medicine cat wants for one of the game's
 items, by its tag (with or without "Gameplay.Inventory."). See docs/SDK.md for every key.
 """
+import hashlib
+import json
 import os
 import re
 
-from .. import cooked, csvdata
+from .. import accessories, cooked, csvdata, png, recolor, texture
 from ..save import SAV_NAME, SaveGame
 from ..savejson import SaveDoc
 from ..sdk import Section
 
 TAG_ROOT = "Gameplay.Inventory."
-KINDS = {"consumable": "Consumable", "material": "Materials"}
+KINDS = {"consumable": "Consumable", "material": "Materials", "accessory": "Cosmetic"}
 TAGS_INI = "Wrc/Config/Tags/WCModsItems.ini"
 INVENTORY = "GameplayProgression/State/Inventory"     # in the save slot being played
 TABLE = "DT_QuestObjectsInfo"
 ID = re.compile(r"[A-Za-z][A-Za-z0-9]{0,47}$")
 KEYS = {"id", "kind", "like", "name", "description", "icon", "effect", "type", "target", "combat", "exploring",
-        "fight_only", "group", "rarity", "color", "recipe", "give"}
-TEXT_KEYS = ("kind", "like", "icon", "effect", "type", "target", "group", "rarity", "color")
+        "fight_only", "group", "rarity", "color", "recipe", "give", "texture"}
+# The game's inventory icon a new icon is a copy of (512 x 512, DXT5).
+ICON_LIKE = "/Game/Art/UXD/Textures/gui_icons/gui_icons_inventory/T_UI_Icon_Inventory_Horsetail_D"
+TEXT_KEYS = ("kind", "like", "effect", "type", "target", "group", "rarity", "color")
+PICTURE_KEYS = ("icon", "texture")         # text, or a recolour: {"from": ..., "tint": "#rrggbb", ...}
 FLAG_KEYS = ("combat", "exploring", "fight_only")
 
 
@@ -77,6 +87,14 @@ class ItemsSection(Section):
             for key in TEXT_KEYS:
                 if item.get(key) is not None and not isinstance(item[key], str):
                     raise ValueError(f"{what} ({item['id']}): \"{key}\" should be text")
+            for key in PICTURE_KEYS:
+                v = item.get(key)
+                if isinstance(v, dict):
+                    recolor.check(v, f"{what} ({item['id']}): \"{key}\"")
+                    if v.get("from") is not None and not isinstance(v["from"], str):
+                        raise ValueError(f"{what} ({item['id']}): \"{key}\".from should be text")
+                elif v is not None and not isinstance(v, str):
+                    raise ValueError(f"{what} ({item['id']}): \"{key}\" should be text or a recolour")
             for key in FLAG_KEYS:
                 if item.get(key) is not None and not isinstance(item[key], bool):
                     raise ValueError(f"{what} ({item['id']}): \"{key}\" should be true or false")
@@ -94,6 +112,7 @@ class ItemsSection(Section):
         game = Game(ctx)
         slot = _current_slot(ctx)
         made = {}                      # tag -> mod id
+        looks = []                     # new accessory looks, for the GUI manager's lists
         # Materials first, so a mod's herb can be made from a material it adds; and the highest priority
         # mod first, so where two add the same item, the later one wins as everywhere else.
         ordered = sorted(((mod, item) for mod, data in reversed(items) for item in data["items"]),
@@ -101,6 +120,19 @@ class ItemsSection(Section):
         for mod, item in ordered:
             try:
                 tag, rows = game.item(item, made)
+                look = rows.get("look")
+                icon = rows["info"]["Icon"]
+                if isinstance(icon, (Picture, Recolour)):        # a new texture for the icon
+                    like_icon = icon.source if isinstance(icon, Recolour) else rows.get("icon_like", ICON_LIKE)
+                    asset = ctx.add_texture(f"{mod.id}/T_{item['id']}_Icon", lambda: icon.read(mod, ctx),
+                                            like_icon, source=mod.id, key=icon.key(mod, ctx))
+                    rows["info"]["Icon"] = cooked.soft_path(asset)
+                if look:                             # the accessory's new look: a copy of its texture
+                    picture = look["picture"]
+                    asset = ctx.add_texture(f"{mod.id}/T_{item['id']}_BC", lambda: picture.read(mod, ctx),
+                                            look["like"], source=mod.id, key=picture.key(mod, ctx))
+                    looks.append({"name": look["name"], "var": look["var"], "path": asset, "tag": tag})
+                    game.added[look["name"]] = game.added.get(look["name"], 0) + 1
             except ValueError as e:
                 ctx.warn(f"{mod.id}: {item['id']}: {e}")
                 continue
@@ -133,6 +165,10 @@ class ItemsSection(Section):
                     ctx.warn(f"{mod.id}: recipes: {name}: {e}")
                     continue
                 ctx.edit_csv("BarteringCost.csv", {tag: {"Cost": cost}}, source=mod.id)
+        if looks:
+            data = accessories.add_looks(ctx.read_game_file(accessories.GUI_MANAGER), looks)
+            ctx.patch_package(accessories.GUI_MANAGER, data, source="items")
+            ctx.note("looks", [f"{e['name']} {e['var']}" for e in looks])
         if made:
             lines = ["[/Script/GameplayTags.GameplayTagsList]"]
             lines += [f'GameplayTagList=(Tag="{tag}",DevComment="wcmods: {by}")' for tag, by in sorted(made.items())]
@@ -152,11 +188,21 @@ class Game:
         self.types = sorted({r["Type"] for r in self.use.values()})
         self.targets = sorted({r["Target"] for r in self.use.values()})
         self.materials = {t for t in self.info if t.startswith(TAG_ROOT + "Materials.")}
+        self.added = {}                # accessory name -> new looks given out so far
+        self._looks = None
 
-    def full(self, name, kinds=("Consumable", "Materials")):
-        """An item tag from a short name ("Dandelion") or the whole tag."""
+    def looks(self):
+        """The game's looks for each accessory: {name: [texture asset paths]} (variation n is [n - 1])."""
+        if self._looks is None:
+            self._looks = accessories.read_variations(self.ctx.read_game_file(accessories.GUI_MANAGER))
+        return self._looks
+
+    def full(self, name, kinds=("Consumable", "Materials", "Cosmetic")):
+        """An item tag from a short name ("Dandelion", "Neck.DogCollar.1") or the whole tag."""
         if name.startswith(TAG_ROOT):
             return name
+        if name.startswith("Cosmetic."):
+            return TAG_ROOT + name
         for k in kinds:
             if TAG_ROOT + k + "." + name in self.info:
                 return TAG_ROOT + k + "." + name
@@ -166,7 +212,8 @@ class Game:
         """The item's kind: its "kind", or the kind of the item it's "like"."""
         like = self.full(item["like"]) if item.get("like") else None
         return item.get("kind") or ("consumable" if like and ".Consumable." in like else
-                                    "material" if like and ".Materials." in like else None)
+                                    "material" if like and ".Materials." in like else
+                                    "accessory" if like and ".Cosmetic." in like else None)
 
     def item(self, item, made):
         """(tag, {"info": row values, "use": Consumables row, "recipe": BarteringCost row}) for an item."""
@@ -177,13 +224,17 @@ class Game:
                 raise ValueError(f"\"like\": the game has no item {item['like']}")
         kind = self.kind(item)
         if kind not in KINDS:
-            raise ValueError('"kind" should be "consumable" or "material" (or give "like")'
-                             if kind is None or kind != "accessory" else
-                             "new accessories need art of their own (a texture for the cat to wear), which "
-                             "wcmods can't make yet; see docs/SDK.md")
-        if like and KINDS[kind] not in like:
+            raise ValueError('"kind" should be "consumable", "material" or "accessory" (or give "like")')
+        if like and f".{KINDS[kind]}." not in like:
             raise ValueError(f"\"like\" {like} isn't a {kind}")
-        tag = f"{TAG_ROOT}{KINDS[kind]}.{item['id']}"
+        look = None
+        if kind == "accessory":
+            look = self.look(item, like)
+            tag = f"{TAG_ROOT}Cosmetic.{look['slot']}.{look['name']}.{look['var']}"
+        else:
+            if item.get("texture") is not None:
+                raise ValueError('only accessories take a "texture" (their look); an item\'s picture is its "icon"')
+            tag = f"{TAG_ROOT}{KINDS[kind]}.{item['id']}"
         if tag in self.info or tag in self.use:
             raise ValueError(f"the game already has {tag}; change it with data.json instead")
         if tag in made:
@@ -196,12 +247,16 @@ class Game:
                 "ItemCategoryColor": _enum("color", item.get("color"), cooked.ITEM_CATEGORY_COLOR,
                                            base.get("ItemCategoryColor", 0))}
         rows = {"info": info}
+        if look:
+            rows["look"] = look
+            if isinstance(info["Icon"], Picture):    # a copy of the accessory's own icon, for its format
+                rows["icon_like"] = f"{base['Icon']['package']}.{base['Icon']['asset']}"
         if kind == "consumable":
             rows["use"] = self.consumable(tag, item, self.use.get(like, {}))
         elif any(item.get(k) is not None for k in ("effect", "type", "target", "combat", "exploring", "fight_only")):
-            raise ValueError("materials can't be used, so they take no effect, type, target or when to use them")
+            raise ValueError(f"{kind}s can't be used, so they take no effect, type, target or when to use them")
         if item.get("recipe"):
-            if kind != "consumable":
+            if kind == "material":
                 raise ValueError("the medicine cat's bartering only makes herbs and accessories, not materials")
             rows["recipe"] = {"---": tag, "Cost": self.cost(item["recipe"], made), "bIsHidden": "FALSE"}
         give = item.get("give")
@@ -209,12 +264,60 @@ class Game:
             raise ValueError('"give" should be a whole number from 1 to 999')
         return tag, rows
 
+    def look(self, item, like):
+        """An accessory's new look: {"slot", "name", "var", "like" (the texture to copy), "picture"}."""
+        if not like:
+            raise ValueError('an accessory needs "like": the game accessory it is a new look of, e.g. "Neck.DogCollar.1"')
+        parts = like[len(TAG_ROOT):].split(".")
+        if len(parts) != 4 or not parts[3].isdigit():
+            raise ValueError(f"\"like\" {like} isn't an accessory with a look (Cosmetic.<slot>.<name>.<n>)")
+        _, slot, name, var = parts
+        if slot == "Head":
+            raise ValueError("the game always shows a head accessory's first look, so new looks can be neck, body "
+                             "or paw accessories")
+        lists = self.looks()
+        if name not in lists:
+            raise ValueError(f"the game has no list of looks for {name}, so it can't take a new one")
+        if not 0 < int(var) <= len(lists[name]):
+            raise ValueError(f"{name} has {len(lists[name])} look(s), not {var}")
+        base = lists[name][int(var) - 1]
+        spec = item.get("texture")
+        if isinstance(spec, dict):
+            if spec.get("from") is not None:
+                raise ValueError('an accessory\'s "texture" recolours its own look, so it takes no "from"')
+            picture = Recolour(spec, base)
+        elif isinstance(spec, str) and spec.lower().endswith(".png"):
+            picture = Picture(spec)
+        else:
+            raise ValueError('an accessory needs "texture": its new look, a recolour of its own ({"tint": "#a8c4ff"}) '
+                             "or a PNG in the mod's folder (paint over the game's: python wcmods.py texture "
+                             f"{like[len(TAG_ROOT):]})")
+        return {"slot": slot, "name": name, "var": len(lists[name]) + self.added.get(name, 0) + 1,
+                "like": base, "picture": picture}
+
     def icon(self, icon, base):
+        if isinstance(icon, dict):                # the game's icon (or another texture) recoloured
+            src = icon.get("from")
+            if src is None:
+                if not base:
+                    raise ValueError('"icon": say which icon to recolour ("from": an item, or a texture "/Game/...")')
+                return Recolour(icon, f"{base['Icon']['package']}.{base['Icon']['asset']}")
+            if src.startswith("/Game/"):
+                if not self.ctx.game.exists(cooked.game_file(src)):
+                    raise ValueError(f"\"icon\": the game has no texture {src}")
+                return Recolour(icon, src)
+            other = self.full(src)
+            if other is None or other not in self.info:
+                raise ValueError(f"\"icon\": the game has no item {src} to recolour the icon of")
+            soft = self.info[other]["Icon"]
+            return Recolour(icon, f"{soft['package']}.{soft['asset']}")
         if not icon:
             if not base:
-                raise ValueError('"icon" is missing: give an item to borrow the icon of, or a texture '
-                                 '("/Game/Art/UXD/Textures/...")')
+                raise ValueError('"icon" is missing: give a picture of your own ("icons/moon-herb.png"), an item '
+                                 'to borrow the icon of, or a texture of the game\'s ("/Game/Art/UXD/Textures/...")')
             return base["Icon"]
+        if icon.lower().endswith(".png"):
+            return Picture(icon)
         if icon.startswith("/Game/"):
             if not self.ctx.game.exists(cooked.game_file(icon)):
                 raise ValueError(f"\"icon\": the game has no texture {icon}")
@@ -269,6 +372,53 @@ class Game:
         if not parts:
             raise ValueError('"recipe" is empty')
         return ";".join(parts)
+
+
+class Picture:
+    """A PNG in the mod's folder, made into a texture once the item is known to be good."""
+
+    def __init__(self, rel):
+        self.rel = rel
+
+    def _bytes(self, mod):
+        folder = os.path.realpath(mod.folder)
+        path = os.path.realpath(os.path.join(folder, self.rel))
+        if os.path.commonpath([folder, path]) != folder:
+            raise ValueError(f"{self.rel}: pictures must be in the mod's own folder")
+        if not os.path.isfile(path):
+            raise ValueError(f"there's no picture {self.rel} in the mod's folder")
+        with open(path, "rb") as f:
+            return f.read()
+
+    def key(self, mod, ctx):
+        """Text that changes when the picture does, for the texture cache."""
+        return "png|" + hashlib.sha1(self._bytes(mod)).hexdigest()
+
+    def read(self, mod, ctx):
+        """(width, height, RGBA) of the picture."""
+        try:
+            return png.read(self._bytes(mod))
+        except (ValueError, OSError) as e:
+            raise ValueError(f"{self.rel}: {e}") from None
+        except Exception as e:                  # a broken file: zlib.error, struct.error, ...
+            raise ValueError(f"{self.rel} isn't a PNG wcmods can read ({type(e).__name__}: {e})") from None
+
+
+class Recolour:
+    """One of the game's textures in other colours (recolor.py), made from the player's game files."""
+
+    def __init__(self, spec, source):
+        self.spec, self.source = spec, source       # source: the texture's asset path
+
+    def key(self, mod, ctx):
+        """Text that changes when the recolour or the game's texture does, for the texture cache."""
+        path = texture.content_path(self.source.split(".", 1)[0])
+        data = ctx.game.read(path) if ctx.game.exists(path) else b""
+        return f"recolour|{self.source}|{hashlib.sha1(data).hexdigest()}|{json.dumps(self.spec, sort_keys=True)}"
+
+    def read(self, mod, ctx):
+        w, h, rgba = texture.load(ctx.game, self.source).image(0)
+        return w, h, recolor.apply(rgba, self.spec)
 
 
 def _current_slot(ctx):

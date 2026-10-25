@@ -95,6 +95,7 @@ class BuildContext:
         self.cfg, self.game, self.out_dir, self._log = cfg, game, out_dir, log
         self.files = {}         # pak path -> (bytes, section, source)
         self.packages = {}      # asset path -> (bytes, section, source)
+        self.new_packages = {}  # asset path of a package the game hasn't got -> (chunk id, imports, shaders, bulk)
         self.csv_edits = {}     # csv path -> [(edits, section, source)]
         self.table_rows = {}    # cooked table name -> [(row name, values, section, source)]
         self.ue4ss_mods = {}    # name -> ({relpath: bytes}, section)
@@ -106,6 +107,12 @@ class BuildContext:
         self._tuning = None     # TuningData.csv as numbers, read once (ctx.tuning)
         self._texts = {}        # language -> {key: text} (ctx.text)
         self._cooked = {}       # cooked table name -> (the game's asset, its rows) (ctx.cooked_table)
+
+    @property
+    def cache_dir(self):
+        """Where a build keeps work it can reuse (encoded textures): cache/ beside the build's output
+        folder, so a normal build's is wcmods' cache/ and the selftest's stays in its temp folder."""
+        return os.path.join(os.path.dirname(os.path.abspath(self.out_dir)), "cache")
 
     # ---- logging ----
     def log(self, msg):
@@ -222,6 +229,32 @@ class BuildContext:
         """Replace a cooked asset (.uasset) with patched bytes (they may be longer or shorter)."""
         self.packages[path] = (bytes(data), self.current, source)
 
+    def add_package(self, path, data, chunk_id, imports, shaders=(), bulk=None, source=""):
+        """Add a cooked asset the game hasn't got ("Wrc/Content/WCMods/.../T_X.uasset"), with its
+        12-byte chunk ID, the package IDs it imports and its shader maps (as in the container header),
+        and its .ubulk bytes if it has one. texture.py makes these; add_texture is the easy way."""
+        if self.game.exists(path):
+            raise ValueError(f"{path} is one of the game's own files; patch_package replaces those")
+        self.packages[path] = (bytes(data), self.current, source)
+        self.new_packages[path] = (bytes(chunk_id), list(imports), list(shaders),
+                                   bytes(bulk) if bulk is not None else None)
+
+    def add_texture(self, name, image, like, source="", key=None):
+        """A new texture, /Game/WCMods/<name> ("my_mod/T_MoonHerb"), made from an image (width, height,
+        RGBA bytes, as png.read gives) as a copy of `like`, one of the game's textures (its asset path,
+        "/Game/Art/UXD/Textures/.../T_UI_Icon_Inventory_Horsetail_D"): the same size, format and mips.
+        `image` may be a function that makes the image, and `key` text that changes whenever the image
+        would (a hash of the PNG file, say): with both, a texture made before comes from the cache
+        without making the image again. Returns the new texture's asset path, for an icon or an
+        accessory's look. Needs the Oodle DLL."""
+        from . import texture
+        package = texture.new_package_name(name)
+        path = texture.content_path(package)
+        built = texture.build(self, package, image, like, key)
+        self.add_package(path, built["data"], built["chunk_id"], built["imports"], built["shaders"],
+                         bulk=built["bulk"], source=source)
+        return package + "." + package.rsplit("/", 1)[-1]
+
     def add_ue4ss_mod(self, name, files):
         """files: {"Scripts/main.lua": text, ...}. Installed only when UE4SS is present.
 
@@ -254,13 +287,14 @@ class BuildContext:
     # ---- section isolation ----
     def begin(self, section_id):
         self.current = section_id
-        self._snapshot = (dict(self.files), dict(self.packages), {k: list(v) for k, v in self.csv_edits.items()},
+        self._snapshot = (dict(self.files), dict(self.packages), dict(self.new_packages),
+                          {k: list(v) for k, v in self.csv_edits.items()},
                           {k: list(v) for k, v in self.table_rows.items()}, dict(self.ue4ss_mods),
                           list(self.save_ops), list(self.warnings))
 
     def rollback(self):
-        (self.files, self.packages, self.csv_edits, self.table_rows, self.ue4ss_mods, self.save_ops,
-         self.warnings) = self._snapshot
+        (self.files, self.packages, self.new_packages, self.csv_edits, self.table_rows, self.ue4ss_mods,
+         self.save_ops, self.warnings) = self._snapshot
         self.notes.pop(self.current, None)
 
     def end(self):

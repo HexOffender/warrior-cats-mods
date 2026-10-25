@@ -22,6 +22,7 @@ def run(cfg, oodle, log=print):
     check("blake3 test vector", blake3(b"").hex().startswith("af1349b9f5f9a1a6"))
     check("name hashes as in the game's name maps (CityHash64, every length)", _name_hashes())
     check("unversioned property headers write back as they read", _unversioned_headers())
+    check("pictures: PNGs of every kind read, written back, DXT blocks and recolours", _pictures())
     lua = mouselook.script(mouselook.merge([mouselook.validate({"sensitivity": 1.5, "invert": True, "smoothing": 50})]))
     problems = luacheck.check(lua)
     check("mouse look script", not problems and "@SETTINGS@" not in lua and "sensitivity = 1.5" in lua
@@ -138,12 +139,21 @@ def run(cfg, oodle, log=print):
         check("pak file names stored like the game's", rp.legacy_file_names == 0 and base_pak.legacy_file_names == 0,
               f"ours {rp.legacy_file_names}, game {base_pak.legacy_file_names} stored the old way")
 
+    if oodle:
         ok, detail = _cooked_table(io)
         check("cooked item table: every row read and written back the same, and a new row added", ok, detail)
+        ok, detail = _textures(io)
+        check("new textures: a copy of the game's with the IDs the game would give it, new pixels in every mip",
+              ok, detail)
+        ok, detail = _accessory_looks(io)
+        check("accessory looks: the game's lists read, new looks and their tags added, the rest as it was",
+              ok, detail)
         ok, detail = _items_section(cfg)
         check("new items (items.json): tag, herb row, item table row, recipe, starting count, a game item's "
-              "recipe; mistakes refused",
+              "recipe, icons and an accessory's look of a mod's own; mistakes refused",
               ok, detail)
+    else:
+        log("  [skip] the game's item table, textures and accessories need the Oodle DLL")
 
     if oodle:
         from . import csvdata
@@ -261,27 +271,185 @@ def _cooked_table(io):
     return ok and added, f"{count} rows" + ("" if same else "; rebuilt package differs")
 
 
+def _png_file(width, height, ctype, depth, rows, palette=None, trns=None):
+    """A PNG as paint programs save them: each row with another of the five filters."""
+    import zlib
+    from .png import SIGNATURE
+    bpp = max(1, {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[ctype] * depth // 8)
+    raw, prev = bytearray(), bytes(len(rows[0]))
+    for y, line in enumerate(rows):
+        f = y % 5
+        raw.append(f)
+        for i, v in enumerate(line):
+            a = line[i - bpp] if i >= bpp else 0
+            b, c = prev[i], prev[i - bpp] if i >= bpp else 0
+            pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+            paeth = a if pa <= pb and pa <= pc else b if pb <= pc else c
+            raw.append((v - (0, a, b, (a + b) >> 1, paeth)[f]) & 0xFF)
+        prev = line
+
+    def chunk(kind, body):
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+    out = SIGNATURE + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, depth, ctype, 0, 0, 0))
+    if palette:
+        out += chunk(b"PLTE", palette)
+    if trns:
+        out += chunk(b"tRNS", trns)
+    return out + chunk(b"IDAT", zlib.compress(bytes(raw))) + chunk(b"IEND", b"")
+
+
+def _pictures():
+    from . import bcn, png, recolor
+    w, h = 9, 6
+    rgba = bytes(v for y in range(h) for x in range(w) for v in (x * 28, y * 50, x * y * 5, 255 - x * 20))
+    ok = png.read(png.write(w, h, rgba)) == (w, h, rgba)
+    # 8-bit RGB; 2-bit palette with a transparent colour; 16-bit grey + alpha.
+    rgb = [bytes(v for x in range(5) for v in (x * 60, y * 80, 200 - x * 40)) for y in range(4)]
+    ok = ok and png.read(_png_file(5, 4, 2, 8, rgb)) == (5, 4, b"".join(
+        bytes(r[i:i + 3]) + b"\xff" for r in rgb for i in range(0, 15, 3)))
+    pal = bytes((10, 20, 30, 200, 100, 0, 0, 255, 0, 250, 250, 250))
+    idx = [[(x + y) % 4 for x in range(6)] for y in range(3)]
+    packed = [bytes((r[0] << 6 | r[1] << 4 | r[2] << 2 | r[3], r[4] << 6 | r[5] << 4)) for r in idx]
+    want = b"".join(pal[3 * i:3 * i + 3] + (b"\x00" if i == 1 else b"\xff") for r in idx for i in r)
+    ok = ok and png.read(_png_file(6, 3, 3, 2, packed, pal, b"\xff\x00")) == (6, 3, want)
+    ga = [b"".join(struct.pack(">HH", (x * 30000 + y) & 0xFFFF, 65535 - x * 1000) for x in range(3)) for y in range(3)]
+    want = b"".join(bytes((r[4 * x], r[4 * x], r[4 * x], r[4 * x + 2])) for r in ga for x in range(3))
+    ok = ok and png.read(_png_file(3, 3, 4, 16, ga)) == (3, 3, want)
+    # Colours DXT can hold exactly come back exactly; a gradient comes back close.
+    two = bytes(v for y in range(8) for x in range(8) for v in ((255, 0, 0, 255) if x < 4 else (0, 0, 255, 0)))
+    opaque = bytes(255 if i % 4 == 3 else v for i, v in enumerate(two))      # DXT1 has no alpha
+    ok = (ok and bcn.decode("PF_DXT5", 8, 8, bcn.encode("PF_DXT5", 8, 8, two)) == two
+          and bcn.decode("PF_DXT1", 8, 8, bcn.encode("PF_DXT1", 8, 8, two)) == opaque)
+    grad = bytes(v for y in range(16) for x in range(16) for v in (x * 16, 255 - x * 12, 128 + y, 255))
+    back = bcn.decode("PF_DXT5", 16, 16, bcn.encode("PF_DXT5", 16, 16, grad))
+    ok = ok and sum(abs(a - b) for a, b in zip(grad, back)) / len(grad) < 2
+    ok = ok and bcn.size("PF_DXT1", 2048, 2048) == 2048 * 2048 // 2 and bcn.size("PF_DXT5", 1, 1) == 16
+    # Recolours: grey in the tint's colour, red turned to cyan, alpha kept; and mistakes refused.
+    tinted = recolor.apply(bytes((128, 128, 128, 77, 255, 0, 0, 255)), {"tint": "#a8c4ff"})
+    turned = recolor.apply(bytes((255, 0, 0, 9)), {"hue": 180})
+    ok = ok and all(abs(a - b) <= 2 for a, b in zip(tinted[:3], (168, 196, 255))) and tinted[3] == 77
+    ok = ok and turned == bytes((0, 255, 255, 9))
+    for bad in ({"tint": "blue"}, {"hue": 400}, {"strength": 0.5}, {"tint": "#ffffff", "glow": 1}):
+        try:
+            recolor.check(bad, "x")
+            return False
+        except ValueError:
+            pass
+    return ok
+
+
+def _textures(io):
+    from . import accessories, texture
+    from .sections.items import ICON_LIKE
+    header = io.container_header()
+    # The game's own IDs, worked out from names: the package's, its chunk's and its export's.
+    path = texture.content_path(ICON_LIKE)
+    pid = texture.package_id(ICON_LIKE)
+    data = io.read_file(path)
+    tex = texture.Texture(data)
+    pkg = tex.pkg
+    name = pkg.names[struct.unpack_from("<I", pkg.data, pkg._export_map + 16)[0]]
+    ids = (pid in header.package_ids and io.chunk_ids[io.chunk_index(path)] == texture.chunk_id(pid, 1)
+           and struct.unpack_from("<Q", pkg.data, pkg._export_map + 56)[0] == texture.export_hash(name))
+    same = tex.files() == (data, None)
+    # A copy under a new name with new pixels, read back.
+    colour = (40, 200, 90, 255)
+    tex.set_image(tex.width, tex.height, bytes(colour) * (tex.width * tex.height))
+    tex.rename("/Game/WCMods/selftest/T_SelfTest", "T_SelfTest")
+    new, _ = tex.files()
+    back = texture.Texture(new)
+    bp = back.pkg
+    pixels = all(all(abs(a - b) <= 4 for a, b in zip(back.image(m)[2][:4], colour)) for m in range(len(back.mips)))
+    renamed = ("/Game/WCMods/selftest/T_SelfTest" in bp.names and "T_SelfTest" in bp.names and name not in bp.names
+               and bp.check_hashes(len(bp.names))
+               and struct.unpack_from("<Q", bp.data, bp._export_map + 56)[0] == texture.export_hash("T_SelfTest"))
+    # A texture with big mips in its .ubulk (an accessory's look) is copied whole.
+    look = accessories.read_variations(io.read_file(accessories.GUI_MANAGER))["DogCollar"][0]
+    big = texture.content_path(look.split(".", 1)[0])
+    bulk_path = big[:-len(".uasset")] + ".ubulk"
+    big_data, bulk = io.read_file(big), io.read_file(bulk_path)
+    look_pid = texture.package_id(look.split(".", 1)[0])
+    copy = texture.Texture(big_data, bulk)
+    in_bulk = (copy.files() == (big_data, bulk) and any(m[2] for m in copy.mips)
+               and io.chunk_ids[io.chunk_index(bulk_path)] == texture.chunk_id(look_pid, texture.CHUNK_BULK))
+    ok = ids and same and pixels and renamed and in_bulk
+    return ok, f"{tex.width} x {tex.height} {tex.format}, {copy.width} x {copy.height} {copy.format} in {len(copy.mips)} mips" + (
+        "" if ok else f"; ids {ids}, same {same}, pixels {pixels}, renamed {renamed}, bulk {in_bulk}")
+
+
+def _accessory_looks(io):
+    from . import accessories
+    from .cooked import ZenPackage
+    data = io.read_file(accessories.GUI_MANAGER)
+    looks = accessories.read_variations(data)
+    n, m = len(looks["DogCollar"]), len(looks["RopeNecklace"])
+    new = [{"name": "DogCollar", "var": n + 1, "path": "/Game/WCMods/t/T_A.T_A",
+            "tag": f"Gameplay.Inventory.Cosmetic.Neck.DogCollar.{n + 1}"},
+           {"name": "DogCollar", "var": n + 2, "path": "/Game/WCMods/t/T_B.T_B",
+            "tag": f"Gameplay.Inventory.Cosmetic.Neck.DogCollar.{n + 2}"},
+           {"name": "RopeNecklace", "var": m + 1, "path": "/Game/WCMods/t/T_C.T_C",
+            "tag": f"Gameplay.Inventory.Cosmetic.Neck.RopeNecklace.{m + 1}"}]
+    def tag_list(package):
+        pkg = ZenPackage(package)
+        off, size = pkg.export(accessories._defaults(pkg))
+        return pkg, accessories._tag_list(pkg, pkg.export_data[off:off + size])[1]
+
+    out = accessories.add_looks(data, new)
+    after = accessories.read_variations(out)
+    pkg, tags = tag_list(out)
+    before_tags = tag_list(data)[1]
+    ok = (after["DogCollar"] == looks["DogCollar"] + ["/Game/WCMods/t/T_A.T_A", "/Game/WCMods/t/T_B.T_B"]
+          and after["RopeNecklace"] == looks["RopeNecklace"] + ["/Game/WCMods/t/T_C.T_C"]
+          and all(after[k] == v for k, v in looks.items() if k not in ("DogCollar", "RopeNecklace"))
+          and tags == before_tags + [e["tag"] for e in new] and pkg.check_hashes(len(pkg.names)) and len(looks) > 40)
+    for bad in ([dict(new[0], var=n + 2)], [dict(new[0], tag=before_tags[0])], [dict(new[0], name="NoSuchThing")]):
+        try:
+            accessories.add_looks(data, bad)
+            ok = False
+        except ValueError:
+            pass
+    return ok, f"{len(looks)} accessories, {len(before_tags)} tags"
+
+
 def _items_section(cfg):
     import json
-    from . import mods, pipeline
+    from . import accessories, mods, pipeline, png, texture
+    from .gamefiles import GameFiles
+    looks = accessories.read_variations(GameFiles(cfg).read(accessories.GUI_MANAGER))
+    collar = f"Gameplay.Inventory.Cosmetic.Neck.DogCollar.{len(looks['DogCollar']) + 1}"
     good = {"items": [
         {"id": "WCModsTestHerb", "like": "MediumHealingHerb", "name": "Test Herb", "description": "Heals.",
          "recipe": {"Dandelion": 2, "WCModsTestStone": 1}, "rarity": "Rare", "give": 2},
-        {"id": "WCModsTestStone", "kind": "material", "name": "Test Stone", "description": "A stone.", "icon": "Rock"},
+        {"id": "WCModsTestStone", "kind": "material", "name": "Test Stone", "description": "A stone.",
+         "icon": {"from": "Rock", "brightness": 1.2}},
         {"id": "WCModsTestHerb", "kind": "material", "name": "Test Herb Seed", "description": "Same id, a material.",
-         "icon": "Rock"}],
+         "icon": "Rock"},
+        {"id": "WCModsTestPicture", "like": "SmallHealingHerb", "name": "Test Picture", "description": "Its own icon.",
+         "icon": "icons/test.png"},
+        {"id": "WCModsTestCollar", "like": "Neck.DogCollar.1", "name": "Test Collar", "description": "Blue.",
+         "texture": {"tint": "#a8c4ff"}, "recipe": {"Bone": 1}}],
         "recipes": {"Cosmetic.Head.MossPatch.1": {"Moss": 3, "WCModsTestStone": 1}}}
     bad = {"items": [
         {"id": "SmallCatnip", "kind": "consumable", "name": "Again", "description": "x", "like": "SmallCatnip"},
         {"id": "WCModsCrown", "kind": "accessory", "name": "Crown", "description": "x"},
         {"id": "WCModsNoStone", "like": "SmallHealingHerb", "name": "x", "description": "x", "recipe": {"Moonrock": 1}},
-        {"id": "WCModsWhat", "like": "SmallHealingHerb", "name": "x", "description": "x", "effect": "Gameplay.Effect.Fly"}],
+        {"id": "WCModsWhat", "like": "SmallHealingHerb", "name": "x", "description": "x", "effect": "Gameplay.Effect.Fly"},
+        {"id": "WCModsHat", "like": "Head.BigLeaf.1", "name": "x", "description": "x", "texture": {"tint": "#ffffff"}},
+        {"id": "WCModsShiny", "like": "SmallHealingHerb", "name": "x", "description": "x", "texture": {"tint": "#ffffff"}},
+        {"id": "WCModsLost", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": "missing.png"},
+        {"id": "WCModsOut", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": "../good/icons/test.png"}],
         "recipes": {"Cosmetic.Head.NoSuchHat.1": {"Moss": 1}}}
+    colour = (200, 60, 160, 255)
+    picture = png.write(32, 32, bytes(colour) * 1024)
     with tempfile.TemporaryDirectory() as tmp:
         typo = {"items": [{"id": "WCModsTypo", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": 5}]}
-        root = _mods_folder(tmp, {"good": ({"name": "Good", "enabled": True}, {"items.json": json.dumps(good)}),
+        tint = {"items": [{"id": "WCModsBlue", "like": "SmallHealingHerb", "name": "x", "description": "x",
+                           "icon": {"tint": "blue"}}]}
+        root = _mods_folder(tmp, {"good": ({"name": "Good", "enabled": True},
+                                           {"items.json": json.dumps(good), "icons/test.png": picture}),
                                   "bad": ({"name": "Bad", "enabled": True}, {"items.json": json.dumps(bad)}),
-                                  "typo": ({"name": "Typo", "enabled": True}, {"items.json": json.dumps(typo)})})
+                                  "typo": ({"name": "Typo", "enabled": True}, {"items.json": json.dumps(typo)}),
+                                  "tint": ({"name": "Tint", "enabled": True}, {"items.json": json.dumps(tint)})})
         out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
         rows = out.get("table_rows", {}).get("DT_QuestObjectsInfo", [])
         csv = out.get("csv_changes", {})
@@ -291,16 +459,39 @@ def _items_section(cfg):
         warned = [w for w in out["warnings"] if w.startswith("items: bad:")]
         given = [o for o in out["save_ops"] if o.get("key") == "Gameplay.Inventory.Consumable.WCModsTestHerb"]
         has_save = os.path.isfile(os.path.join(cfg.save_dir, SAV_NAME))
-        gave = (len(given) == 1 and given[0]["value"] == 2 and given[0].get("only_new")) if has_save else             any("no save yet" in w for w in out["warnings"])
+        gave = ((len(given) == 1 and given[0]["value"] == 2 and given[0].get("only_new")) if has_save else
+                any("no save yet" in w for w in out["warnings"]))
         rep = out["sections"]["items"]
         ok = gave and (rep["status"] == "partial" and any("typo" in e and "should be text" in e for e in rep["errors"])
-              and sorted(r["row"] for r in rows) == ["WCMods_Consumable_WCModsTestHerb", "WCMods_Materials_WCModsTestHerb",
-                                                     "WCMods_Materials_WCModsTestStone"] and len(use) == 1
-              and sorted(c["row"] for c in recipe) == ["Gameplay.Inventory.Consumable.WCModsTestHerb",
-                                                       "Gameplay.Inventory.Cosmetic.Head.MossPatch.1"]
-              and "Wrc/Config/Tags/WCModsItems.ini" in out["files"] and len(warned) == 5
-              and any("art" in w for w in warned) and "zzz_WCMods_P.utoc" in out["outputs"])
-        return ok, f"{len(rows)} rows, {len(warned)} refused" + ("" if ok else f"; {out['warnings']}")
+              and any("tint" in e and "colour like" in e for e in rep["errors"])
+              and sorted(r["row"] for r in rows) == sorted([
+                  "WCMods_Consumable_WCModsTestHerb", "WCMods_Materials_WCModsTestHerb",
+                  "WCMods_Materials_WCModsTestStone", "WCMods_Consumable_WCModsTestPicture",
+                  "WCMods_" + collar[len("Gameplay.Inventory."):].replace(".", "_")]) and len(use) == 2
+              and sorted(c["row"] for c in recipe) == sorted(["Gameplay.Inventory.Consumable.WCModsTestHerb", collar,
+                                                              "Gameplay.Inventory.Cosmetic.Head.MossPatch.1"])
+              and "Wrc/Config/Tags/WCModsItems.ini" in out["files"] and len(warned) == 9
+              and all(any(s in w for w in warned) for s in ('needs "like"', "first look", "only accessories",
+                                                             "no picture", "own folder"))
+              and "zzz_WCMods_P.utoc" in out["outputs"])
+        # What went into wcmods' container: the new textures (the look with its .ubulk), the look in the
+        # game's list, and the icons in the item table.
+        made = IoStoreReader(os.path.join(tmp, "out", "zzz_WCMods_P.utoc"))
+        look = "/Game/WCMods/good/T_WCModsTestCollar_BC"
+        icon = "/Game/WCMods/good/T_WCModsTestPicture_Icon"
+        stone = "/Game/WCMods/good/T_WCModsTestStone_Icon"
+        packed = (ok and all(texture.content_path(p) in made.files for p in (look, icon, stone))
+                  and texture.content_path(look)[:-len(".uasset")] + ".ubulk" in made.files)
+        if packed:
+            from . import cooked
+            worn = accessories.read_variations(made.read_file(accessories.GUI_MANAGER))
+            path, schema = cooked.TABLES["DT_QuestObjectsInfo"]
+            table = {v["itemTag"]: v for _, v in cooked.DataTable(made.read_file(path), schema).rows}
+            pixels = texture.Texture(made.read_file(texture.content_path(icon))).image(0)[2]
+            packed = (worn["DogCollar"] == looks["DogCollar"] + [look + ".T_WCModsTestCollar_BC"]
+                      and table["Gameplay.Inventory.Consumable.WCModsTestPicture"]["Icon"]["package"] == icon
+                      and all(abs(a - b) <= 4 for a, b in zip(pixels[:4], colour)))
+        return ok and packed, f"{len(rows)} rows, {len(warned)} refused" + ("" if ok else f"; {out['warnings']}")
 
 
 def _script_mod(cfg):
@@ -422,9 +613,11 @@ def _mods_folder(tmp, mods):
         os.makedirs(os.path.join(root, mod_id))
         with open(os.path.join(root, mod_id, "mod.json"), "w") as f:
             json.dump(meta, f)
-        for name, text in files.items():
-            with open(os.path.join(root, mod_id, name), "w") as f:
-                f.write(text)
+        for name, content in files.items():
+            path = os.path.join(root, mod_id, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb" if isinstance(content, bytes) else "w") as f:
+                f.write(content)
     return root
 
 

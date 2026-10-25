@@ -219,6 +219,7 @@ this build. See [docs/updating.md](docs/updating.md).
 
 Also: `new <name> --kind palette|controls|files|data|items|names|save|script`, `eyes`,
 `tables`, `names [--cats] [--json]`, `controls [--json]`, `files <pattern>`, `extract <pattern>`,
+`texture <item|accessory|/Game/...>` (one of the game's textures as a PNG),
 `build`, `backup`, `restore [name|latest]`, `cheats [on|off]` (whether the mod menu's cheats start
 on), `console [on|off]` (the game's `~` console). With code mods allowed and the game running:
 `lua <code>` or `lua -f file.lua` (run Lua in the game), `inspect <expr>` (an object's properties and
@@ -469,11 +470,14 @@ adds them (missing columns stay empty).
                "description": "Health Recovery (medium). Picked under a full moon.",
                "recipe": { "Dandelion": 2, "Cotton": 1 }, "give": 3 } ] }
 ```
-New herbs and materials: a name, a description and an icon in the inventory, what the herb does
-(one of the game's herb effects), a recipe at the medicine cat's bartering, and some to start with.
-`like` borrows the rest from a game item, and `"recipes"` changes what the game's own herbs and
-accessories cost. Every key is in [SDK.md](docs/SDK.md) ("New items"). New
-items need the Oodle DLL.
+New herbs, materials and accessory looks: a name, a description and an icon in the inventory, what
+the herb does (one of the game's herb effects), a recipe at the medicine cat's bartering, and some
+to start with. `like` borrows the rest from a game item, and `"recipes"` changes what the game's own
+herbs and accessories cost. An icon or a look can be a PNG of the mod's own or one of the game's
+recoloured (`{"tint": "#a8c4ff"}`, made from your game files at install); `python wcmods.py texture
+<item or accessory>` saves the game's as a PNG to paint over. New looks work for neck, body and paw
+accessories, not head ones. Every key is in [SDK.md](docs/SDK.md) ("New items"). New items need the
+Oodle DLL.
 
 ### `names.json`
 ```json
@@ -545,6 +549,8 @@ colour.
 - **Writers:** paks and IoStore containers read back identically, with correct BLAKE3 chunk hashes.
   The pak's directory index stores file names the way the game's own pak does (see below).
 - **CSV editor:** reproduces all 67 runtime tables byte-for-byte.
+- **Cooked assets:** the item table's 412 rows read and write back byte-for-byte; texture copies get
+  the IDs the game's own packages have; the accessory look lists read back with new looks added.
 - **Save editor:** changes only the values it's told to.
 - **UE4SS scripts:** the generated Lua has balanced blocks and brackets (a light structure check;
   there's no Lua interpreter to fully parse it). Builds also warn if any UE4SS script fails it.
@@ -586,6 +592,13 @@ Confirmed in game (2026-10-24):
   itself, because the game undoes the engine's own.
 - The studio refuses to install once wcmods has been updated under it. An old studio had put old
   scripts back.
+
+Confirmed in game, items (2026-10-24):
+- New herbs and materials show in the inventory with their names, descriptions and icons. Their
+  recipes show at the medicine cat's bartering, and trading works.
+- New textures load: icons from a PNG and recoloured ones, and a new collar look, worn in its new
+  colour and made at bartering. Accessories you already have show as an empty slot there, the
+  game's own too.
 
 Confirmed in game, scripting (2026-10-24):
 - **The bridge and the commands:** they run Lua in the game; `lua`, `inspect`, `find`, `game` and
