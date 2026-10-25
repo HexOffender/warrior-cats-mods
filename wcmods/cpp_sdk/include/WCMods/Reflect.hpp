@@ -457,6 +457,27 @@ namespace wcmods
     {
       public:
         explicit Params(UFunction* function) : m_function(function), m_bytes(function ? function->GetParmsSize() : 0, 0) {}
+        // What the engine put in the buffer (a string or array it gave back) is its to free: each parameter
+        // is destroyed as its property says. One Params owns its bytes; moving passes them on.
+        ~Params()
+        {
+            if (!m_function || m_bytes.empty()) return;
+            for (FProperty* p : m_function->ForEachProperty()) p->DestroyValue_InContainer(m_bytes.data());
+        }
+        Params(Params&& other) noexcept : m_function(other.m_function), m_bytes(std::move(other.m_bytes)) { other.m_function = nullptr; }
+        auto operator=(Params&& other) noexcept -> Params&
+        {
+            if (this != &other)
+            {
+                this->~Params();
+                m_function = other.m_function;
+                m_bytes = std::move(other.m_bytes);
+                other.m_function = nullptr;
+            }
+            return *this;
+        }
+        Params(const Params&) = delete;
+        auto operator=(const Params&) -> Params& = delete;
 
         auto function() const -> UFunction* { return m_function; }
         auto bytes() -> void* { return m_bytes.data(); }

@@ -889,7 +889,7 @@ for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards"))
 | `wcmods::pressed(L"T")`, `key_down(L"Gamepad_FaceButton_Top")` | A key or controller button that went down this frame, or is held, in the game's own input (Unreal's key names); only while the game has the focus |
 | `wcmods::trace(from, to)`, `ground(x, y, z)` | Where a line first hits the world, and the ground's height below a place |
 | `wcmods::save_manager()` | The game's save manager, which the save calls below go through |
-| `wcmods::save_state(L"Inventory")`, `set_save_state(key, json)` | A part of the current slot's live state as Json, through the save manager, and replacing one |
+| `wcmods::save_state(L"Inventory")`, `save_state_text(key)`, `set_save_state(key, json)` | A part of the current slot's live state as Json (and as the text the manager gives), through the save manager, and replacing one |
 | `wcmods::save_progression(primary, sub)`, `save_setting(primary, sub)` | Whole-number progression and settings values |
 | `wcmods::save_slot()`, `save_path()`, `save_file()`, `slot_data()` | The slot in use; the save as plain JSON (`WrcGame.json`, written at every save), whole and this cat's slot of it |
 | `wcmods::items()`, `item_count(tag)`, `item_type(tag)`, `item_name(tag)` | Your items as `{tag: count}` from the last save with the pickups since (call `items()` once early so they're counted), one's count, its kind, and its name after the mods that add items |

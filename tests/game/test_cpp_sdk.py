@@ -396,6 +396,7 @@ def test_world_matches_lua(agent):
         for _ in pairs(items) do n = n + 1 end
         return { pickups = #World.nearby("pickups", 5000), screens = Game.screens(), ground = Game.ground(at.X, at.Y, at.Z),
                  slot = Game.save.slot(), inventory = Game.save.state("Inventory"), items = n,
+                 inventory_text = Game.save.stateText("Inventory"),
                  progression = Game.save.progression("GameplayProgression", "Level"),
                  setting = Game.save.setting("SettingsData", "Minimap"),
                  name = c:name(), clan = c:clan(), traits = c:traits(),
@@ -405,8 +406,9 @@ def test_world_matches_lua(agent):
     assert v["screens"] == (lua["screens"] or []), (v["screens"], lua["screens"])
     assert lua["ground"] is None or abs(v["ground"] - lua["ground"]) < 5, (v["ground"], lua["ground"])
     assert v["save.slot"] == lua["slot"], (v["save.slot"], lua["slot"])
-    inv = lua["inventory"] or {}
+    inv = lua.get("inventory") or {}
     assert v["save.inventory_keys"] == (len(inv) if isinstance(inv, dict) else -1), (v["save.inventory_keys"], inv)
+    assert v["save.inventory_text"] == lua["inventory_text"] and lua["inventory_text"], (v["save.inventory_text"], lua["inventory_text"])
     assert v["items.count"] == lua["items"], (v["items.count"], lua["items"])
     assert v["save.progression"] == lua["progression"] and v["save.setting"] == lua["setting"], (v["save.progression"], lua["progression"], v["save.setting"], lua["setting"])
     assert v["cat.name"] == lua["name"], (v["cat.name"], lua["name"])

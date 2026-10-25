@@ -54,6 +54,7 @@ namespace t
         value("save.slot", save_slot());
         Json inventory = save_state(L"Inventory");
         value("save.inventory_keys", static_cast<double>(inventory.is_object() ? inventory.size() : -1));
+        value("save.inventory_text", text(save_state_text(L"Inventory")));   // the manager's own answer, for Lua's
         Json missing = save_state(L"NoSuchState");
         expect("save_state.missing", missing.is_null() || missing.size() == 0, missing.dump(0));
         expect("set_save_state", inventory.is_object() ? set_save_state(L"Inventory", inventory) : true);

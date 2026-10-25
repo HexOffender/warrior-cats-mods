@@ -100,7 +100,8 @@ namespace wcmods
     {
         inline auto input_key(const TCHAR* function, std::wstring_view key) -> bool
         {
-            auto r = call_reflected(controller(), function, [&](Params& p) { set(p.get(L"Key"), L"KeyName", key); });
+            // The key is the first parameter (an FKey struct), whatever the game names it.
+            auto r = call_reflected(controller(), function, [&](Params& p) { set(p.nth(0), L"KeyName", key); });
             return r && r->get(L"ReturnValue").boolean();
         }
     } // namespace detail
@@ -143,11 +144,16 @@ namespace wcmods
     inline auto save_manager() -> UObject* { return manager(STR("save")); }
 
     // A part of the current slot's state ("Inventory", "Traits"...), as Json; null when there's none.
+    // (The save manager's parameters are set by position, whatever the game names them.)
+    // The JSON text the save manager gives for a part of the state, as it is ("null" for a key it hasn't got).
+    inline auto save_state_text(std::wstring_view key) -> std::wstring
+    {
+        auto r = call_reflected(save_manager(), STR("GetStateJsonDataAsString"), [&](Params& p) { p.set_nth(0, Value::of(key)); });
+        return r ? r->get(L"ReturnValue").string() : std::wstring{};
+    }
     inline auto save_state(std::wstring_view key) -> Json
     {
-        auto r = call_reflected(save_manager(), STR("GetStateJsonDataAsString"), [&](Params& p) { p.set(L"key", key) || p.set(L"Key", key); });
-        if (!r) return Json();
-        std::string text = utf8(r->get(L"ReturnValue").string());
+        std::string text = utf8(save_state_text(key));
         if (text.empty()) return Json();
         auto parsed = Json::parse(text);
         return parsed ? *parsed : Json();
@@ -157,16 +163,16 @@ namespace wcmods
     {
         std::wstring text = wide(value.dump(0));
         return call_reflected(save_manager(), STR("SetStateJsonDataFromString"), [&](Params& p) {
-            p.set(L"key", key) || p.set(L"Key", key);
-            p.set(L"jsonData", std::wstring_view(text)) || p.set(L"JsonData", std::wstring_view(text)) || p.set(L"json", std::wstring_view(text));
+            p.set_nth(0, Value::of(key));
+            p.set_nth(1, Value::of(std::wstring_view(text)));
         }).has_value();
     }
     // Whole-number progression values (the save's GameplayProgression), and settings values.
     inline auto save_progression(std::wstring_view primary, std::wstring_view sub = {}) -> std::optional<double>
     {
         auto r = call_reflected(save_manager(), STR("GetGameProgressionData"), [&](Params& p) {
-            p.set(L"primaryKey", primary) || p.set(L"PrimaryKey", primary);
-            p.set(L"secondaryKey", sub) || p.set(L"SecondaryKey", sub);
+            p.set_nth(0, Value::of(primary));
+            p.set_nth(1, Value::of(sub));
         });
         if (!r) return std::nullopt;
         Value v = r->get(L"ReturnValue");
@@ -175,8 +181,8 @@ namespace wcmods
     inline auto save_setting(std::wstring_view primary, std::wstring_view sub = {}) -> std::optional<double>
     {
         auto r = call_reflected(save_manager(), STR("GetSettingsData"), [&](Params& p) {
-            p.set(L"primaryKey", primary) || p.set(L"PrimaryKey", primary);
-            p.set(L"secondaryKey", sub) || p.set(L"SecondaryKey", sub);
+            p.set_nth(0, Value::of(primary));
+            p.set_nth(1, Value::of(sub));
         });
         if (!r) return std::nullopt;
         Value v = r->get(L"ReturnValue");
@@ -228,10 +234,10 @@ namespace wcmods
                 if (p.watching) return;
                 p.watching = true;
             }
+            // The HUD's message: the tag, how many were picked up, and the total now (by position, as the Lua does).
             on_function(STR("/Script/Wrc.GuiHudWrc:OnItemPickedUp"), [](Call& call) {
-                std::string tag = utf8(get(call.param(L"Tag"), L"TagName").text);
-                if (tag.empty()) tag = utf8(get(call.param(L"ItemTag"), L"TagName").text);
-                double total = call.param(L"Total").number(call.param(L"total").number());
+                std::string tag = utf8(get(call.param(0), L"TagName").text);
+                double total = call.param(2).number();
                 if (tag.empty()) return;
                 Pickups& p = pickups();
                 std::lock_guard lock(p.lock);
@@ -259,9 +265,7 @@ namespace wcmods
     // What kind of item a tag is ("Consumable", "Equipment", "Quest", "Collectible"), or empty.
     inline auto item_type(std::wstring_view tag) -> std::wstring
     {
-        auto r = call_reflected(manager(STR("quests")), STR("GetItemType"), [&](Params& p) {
-            set(p.get(L"itemTag"), L"TagName", tag) || set(p.get(L"ItemTag"), L"TagName", tag) || set(p.get(L"tag"), L"TagName", tag);
-        });
+        auto r = call_reflected(manager(STR("quests")), STR("GetItemType"), [&](Params& p) { set(p.nth(0), L"TagName", tag); });
         return r ? r->get(L"ReturnValue").string() : std::wstring{};
     }
 
@@ -278,17 +282,14 @@ namespace wcmods
         inline auto names() -> Names&
         {
             static Names n;
-            if (!n.loaded)
-            {
+            static std::once_flag loaded;   // from any thread: item_name may be asked off the game thread
+            std::call_once(loaded, [] {
+                auto text = read_file(mod().installed.parent_path() / L"shared" / L"WCModsNames" / L"names.json");
+                auto parsed = text ? Json::parse(*text) : std::nullopt;
                 std::lock_guard lock(n.lock);
-                if (!n.loaded)
-                {
-                    n.loaded = true;
-                    auto text = read_file(mod().installed.parent_path() / L"shared" / L"WCModsNames" / L"names.json");
-                    auto parsed = text ? Json::parse(*text) : std::nullopt;
-                    n.data = parsed ? *parsed : Json::object();
-                }
-            }
+                n.data = parsed ? *parsed : Json::object();
+                n.loaded = true;
+            });
             return n;
         }
         // The game's own text for a name key, from its string tables (for names wcmods' tables haven't got).
