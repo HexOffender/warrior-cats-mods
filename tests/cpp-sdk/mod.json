@@ -1,0 +1,7 @@
+{
+  "name": "C++ SDK test",
+  "description": "Calls everything in wcmods' C++ SDK and records what it got, for tests/game/test_cpp_sdk.py.",
+  "version": "1.0",
+  "author": "wcmods",
+  "enabled": true
+}

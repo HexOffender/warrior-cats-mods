@@ -59,8 +59,8 @@ def run(cfg, oodle, log=print):
     check("C++ mod: dlls/main.dll goes in with wcmods.json; a DLL for another UE4SS, without UE4SS's exports, or "
           "not built yet is refused", ok, detail)
     ok, detail = _cpp_sdk()
-    check("C++ SDK: WCMods.hpp's headers are there, every call in them is in SDK.md, and the template uses them",
-          ok, detail)
+    check("C++ SDK: WCMods.hpp's headers are there, every call in them is in SDK.md and called by its test mod, and "
+          "the template uses them", ok, detail)
     check("mod menu answers the agent controller", all(s in menu.lua() for s in ('"agent.read"', '"agent.act"', '"agent.scroll"'))
           and 'Menu.share("frame"' in menu.host_script({"sections": {}, "notes": {}, "warnings": [], "built": ""}, []))
     check("agent controller: pictures, menu rows, test files", _agent_parts())
@@ -696,7 +696,20 @@ def _cpp_sdk():
         text = f.read()
     if "#include <WCMods/WCMods.hpp>" not in text or not text.rstrip().endswith(")") or "WCMODS_MOD(" not in text:
         problems.append("the cpp template doesn't include WCMods.hpp and end with WCMODS_MOD")
-    return not problems, "; ".join(problems[:3]) or f"{len(names)} calls"
+    # The test mod (tests/cpp-sdk) calls every one of them, so what's documented is what's checked in the game.
+    test_src = os.path.join(os.path.dirname(here), "tests", "cpp-sdk", "cpp", "src")
+    tested = ""
+    for name in sorted(os.listdir(test_src)) if os.path.isdir(test_src) else []:
+        with open(os.path.join(test_src, name), encoding="utf-8") as f:
+            tested += f.read()
+    # A call as the SDK's: not `Json::object(` for the SDK's object(path), and not part of a longer name.
+    untested = sorted(n for n in names - private if not re.search(rf"(?<![:\w]){n}\s*[(<]", tested))
+    if untested:
+        problems.append(f"not called by tests/cpp-sdk: {', '.join(untested[:8])}")
+    test_py = os.path.join(os.path.dirname(here), "tests", "game", "test_cpp_sdk.py")
+    if not os.path.isfile(test_py):
+        problems.append("tests/game/test_cpp_sdk.py is missing")
+    return not problems, "; ".join(problems[:3]) or f"{len(names)} calls, all in SDK.md and tests/cpp-sdk"
 
 
 def _agent_parts():

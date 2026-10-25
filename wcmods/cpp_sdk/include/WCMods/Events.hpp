@@ -275,10 +275,16 @@ namespace wcmods
 
     namespace detail
     {
+        struct FunctionHook
+        {
+            std::wstring path;
+            UFunction* function{};
+            std::pair<int, int> ids;   // UE4SS's ids for the pre and post callbacks
+        };
         struct FunctionHooks
         {
             std::mutex lock;
-            std::map<HookId, std::pair<std::wstring, std::pair<int, int>>> hooks;
+            std::map<HookId, FunctionHook> hooks;
             HookId next{1};
         };
         inline auto function_hooks() -> FunctionHooks&
@@ -298,10 +304,17 @@ namespace wcmods
                     guarded(when, [&] { (*shared)(call); });
                 };
             };
+            // Looked up here: UE4SS's own lookup hands a function it can't find on as a null pointer.
+            UFunction* function = RC::Unreal::UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, path);
+            if (!function)
+            {
+                log_line(mod().name, std::format(L"can't hook {}: no such function", path));
+                return 0;
+            }
             std::pair<int, int> ids;
             try
             {
-                ids = RC::Unreal::UObjectGlobals::RegisterHook(std::wstring(path), wrap(std::move(before), L"on_function"),
+                ids = RC::Unreal::UObjectGlobals::RegisterHook(function, wrap(std::move(before), L"on_function"),
                                                               wrap(std::move(after), L"after_function"), nullptr);
             }
             catch (const std::exception& e)
@@ -312,7 +325,7 @@ namespace wcmods
             auto& h = function_hooks();
             std::lock_guard lock(h.lock);
             HookId id = h.next++;
-            h.hooks[id] = {std::wstring(path), ids};
+            h.hooks[id] = {std::wstring(path), function, ids};
             return id;
         }
     } // namespace detail
@@ -340,7 +353,7 @@ namespace wcmods
     inline auto unhook(HookId id) -> void
     {
         auto& h = detail::function_hooks();
-        std::pair<std::wstring, std::pair<int, int>> found;
+        detail::FunctionHook found;
         {
             std::lock_guard lock(h.lock);
             auto it = h.hooks.find(id);
@@ -350,15 +363,15 @@ namespace wcmods
         }
         try
         {
-            RC::Unreal::UObjectGlobals::UnregisterHook(found.first, found.second);
+            RC::Unreal::UObjectGlobals::UnregisterHook(found.function, found.ids);
         }
         catch (const std::exception& e)
         {
-            detail::log_line(mod().name, std::format(L"can't unhook {}: {}", found.first, wide(e.what())));
+            detail::log_line(mod().name, std::format(L"can't unhook {}: {}", found.path, wide(e.what())));
         }
         catch (...)
         {
-            detail::log_line(mod().name, std::format(L"can't unhook {}", found.first));
+            detail::log_line(mod().name, std::format(L"can't unhook {}", found.path));
         }
     }
 

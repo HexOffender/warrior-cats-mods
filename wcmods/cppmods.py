@@ -166,18 +166,28 @@ def status(root, cfg):
     return {"tools": tools, "problems": problems(tools), "source": source, "game": game, "matches": same}
 
 
-def cpp_mods(mods, ids=None):
-    """The mods with C++ source (cpp/CMakeLists.txt): the ones named, or the enabled ones."""
+def cpp_mods(mods, ids=None, root=None):
+    """The mods with C++ source (cpp/CMakeLists.txt): the ones named (a mod's id in mods/, or the path of a
+    mod folder anywhere, like tests/cpp-sdk, as given or under wcmods' `root`), or the enabled ones."""
+    from .mods import Mod
     have = [m for m in mods if os.path.isfile(os.path.join(m.folder, SOURCE, "CMakeLists.txt"))]
     if not ids:
         return [m for m in have if m.enabled]
     by_id = {m.id: m for m in mods}
+    out = []
     for i in ids:
-        if i not in by_id:
-            raise ValueError(f"no mod named {i}")
-        if by_id[i] not in have:
+        folders = [i] + ([os.path.join(root, i)] if root and not os.path.isabs(i) else [])
+        folder = next((f for f in folders if os.path.isfile(os.path.join(f, "mod.json"))), None)
+        if i in by_id:
+            m = by_id[i]
+        elif folder:
+            m = Mod(os.path.abspath(folder))
+        else:
+            raise ValueError(f"no mod named {i} (nor a mod folder at that path)")
+        if not os.path.isfile(os.path.join(m.folder, SOURCE, "CMakeLists.txt")):
             raise ValueError(f"{i} has no C++ source (cpp/CMakeLists.txt)")
-    return [by_id[i] for i in ids]
+        out.append(m)
+    return out
 
 
 def target_name(mod_id):

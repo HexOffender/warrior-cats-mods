@@ -271,11 +271,15 @@ def test_noon(agent):
 - **Clean up:** tests should put back what they change, as the ones here do: health, the clock,
   where your cat stands, a saved travel spot.
 
-The suite here has 26 tests:
+The suite here has 33 tests:
 
 - **The bridge, Lua and pictures:** `test_bridge.py`.
 - **Your cat and moving it:** `test_cat.py`.
 - **The clock and the fresh-kill pile:** `test_world.py`.
+- **The C++ SDK:** `test_cpp_sdk.py`. A C++ mod (`tests/cpp-sdk`) calls everything docs/SDK.md
+  documents and records what it got; the tests compare that with Lua and have it make changes Lua
+  confirms. It needs the mod built and installed first (`cpp build tests/cpp-sdk`, then `agent install
+  --with tests/cpp-sdk`); the tests say so and skip otherwise.
 - **The mod menu:** `test_menu.py`. Every page draws without an error (with a picture of each), the
   Stats page matches your cat, the Health slider and Heal work, "Hold this time" holds the clock,
   and a Travel spot can be saved and forgotten. It also checks a jump and Back, the Items, Quests,

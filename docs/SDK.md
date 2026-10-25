@@ -834,7 +834,7 @@ good for the frame you got it in: look it up again next time rather than keeping
 | `wcmods::find_class(STR("/Script/..."))`, `object(STR("/Script/Engine.Default__GameplayStatics"))` | A class, or any object, by its full path |
 | `wcmods::find_all(STR("WrcRoamingEnemy"))`, `find_first(...)` | Every object of a class (subclasses too), or the first. They go through all the game's objects: a few times a second, not every frame |
 | `wcmods::is_a(o, STR("/Script/Engine.Pawn"))` | Whether an object is of a class, or a subclass |
-| `wcmods::call(object, STR("GetDayClockTime"), params)` | Call one of an object's reflected functions, with a struct laid out like its parameters (inputs, outputs, return value, in order); `call(object, name)` for one that takes and gives nothing, `call<bool>(object, name)` for one that takes nothing and gives a value back (an optional). `python wcmods.py inspect "Game.gameState()"` lists an object's functions and their parameters |
+| `wcmods::call(object, STR("GetDayClockTime"), params)` | Call one of an object's reflected functions, with a struct laid out like its parameters (inputs, outputs, return value, in order); `call(object, name)` for one that takes and gives nothing, `call<float>(object, STR("GetActorTimeDilation"))` for one that takes nothing and gives a value back (an optional). `python wcmods.py inspect "Game.gameState()"` lists an object's functions and their parameters |
 | `wcmods::controller()`, `player()` | The player's controller and your cat's actor while you play, else `nullptr` |
 | `wcmods::world()`, `level_name()` | The world, and the level's name (`L_WorldMap_01_P` in the forest) |
 | `wcmods::game_instance()`, `game_state()`, `game_mode()` | The game's own objects |
@@ -862,11 +862,13 @@ good for the frame you got it in: look it up again next time rather than keeping
 | `wcmods::on_level(fn)` | `fn(level name)` once a level has loaded |
 | `wcmods::on_function(STR("/Script/Wrc.GuiHudWrc:OnItemPickedUp"), fn)`, `after_function(...)`, `unhook(id)` | `fn(call)` just before, or just after, the game runs one of its functions, by its full path. `call.self()` is the object, `call.params<Params>()` its parameters as a struct laid out like them (changed before the call, they change what the game does), `call.set_return(v)` its result. 0 and a line in the log when there's no such function |
 
-Hooks see a function only when the game runs it through the engine's own event path: Blueprint
-functions and events, and native functions marked as events or RPCs (`ClientRestart`,
-`OnItemPickedUp`). Native code calling native code directly is never seen, and a hook on a plain native
-function that Blueprints call, such as `K2_GetActorLocation`, closed the game as the forest loaded when
-it was tried. Stay with events.
+Hooks see a function only when it's called through the engine: by a Blueprint, as an event or RPC
+(`ClientRestart`, `OnItemPickedUp`), or by `wcmods::call`. Native code calling native code directly is
+never seen. What's been tried: hooks on events, and on a native function only the mod itself calls
+(`KismetSystemLibrary:GetConsoleVariableFloatValue`, with `set_return`), work; a hook on
+`Actor:K2_GetActorLocation`, a native function Blueprints call many times a frame, whose callback
+also unhooked itself, closed the game as the forest loaded. Until that's understood, hook events and
+functions the game's Blueprints don't hammer, and unhook from outside the callback.
 
 The same rules as for scripts keep the game running:
 
@@ -878,6 +880,31 @@ The same rules as for scripts keep the game running:
   every frame, as the example does.
 - **Exceptions** thrown in callbacks are caught and logged; one that reaches the game closes it. A
   crash (a bad pointer) closes it too, and there's nothing to catch: check for `nullptr`.
+
+### Testing the SDK
+
+Every call above is checked in the game. `tests/cpp-sdk` is a C++ mod that calls all of them (one file
+a header, `test_core.cpp`, `test_game.cpp`, `test_events.cpp`) and records what it got in its
+`results.json`; `tests/game/test_cpp_sdk.py` reads that, compares it with what Lua sees of the same
+things, and asks the mod to make changes (heal, the clock, a teleport, the cat's size, a switch, a
+console command, its settings) that Lua then confirms, before putting them back. With the game closed:
+
+```bash
+python wcmods.py cpp build tests/cpp-sdk
+```
+
+```bash
+python wcmods.py agent install --with tests/cpp-sdk
+```
+
+```bash
+python wcmods.py agent test tests/game/test_cpp_sdk.py --launch
+```
+
+`python wcmods.py selftest` checks, without the game, that every call the headers declare is both in
+this document and called by the test mod, so a new call can't go undocumented or untested. Keys are the
+one part that needs you: UE4SS reads the real keyboard, so the key test presses F9 only when the game
+can be put in front, and says so when it can't.
 
 ## JavaScript: `studio/lib/wc.js`
 

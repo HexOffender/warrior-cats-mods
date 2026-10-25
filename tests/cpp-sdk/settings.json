@@ -1,0 +1,10 @@
+{
+  "_help": "The C++ SDK test mod's settings: one of each kind, read by test_core.cpp.",
+  "number": 1.5,
+  "whole": 7,
+  "text": "hi there",
+  "flag": true,
+  "list": [1, "two", false],
+  "nested": {"k": "v"},
+  "runs": 0
+}

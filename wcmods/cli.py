@@ -692,7 +692,7 @@ def cmd_cpp(ctx, args):
             print("ready: `python wcmods.py cpp build` builds your mods' cpp/ folders")
         return
     if args.action == "build":
-        built = cppmods.build(root, ctx.cfg, cppmods.cpp_mods(mods.discover(ctx.mods_root), args.mods))
+        built = cppmods.build(root, ctx.cfg, cppmods.cpp_mods(mods.discover(ctx.mods_root), args.mods, root=root))
         print(f"built {len(built)} C++ mod(s); install (or press Play in Clan Mod Studio) to put them in the game")
         return
     st = cppmods.status(root, ctx.cfg)
@@ -830,7 +830,8 @@ def main(root, argv=None):
     p = sub.add_parser("cpp", help="C++ mods: 'cpp setup' gets UE4SS's source at the game's UE4SS, 'cpp build' builds "
                                    "mods' cpp/ into dlls/main.dll, 'cpp' alone says what's ready")
     p.add_argument("action", nargs="?", choices=("status", "setup", "build"), default="status")
-    p.add_argument("mods", nargs="*", help="for build: the mods to build (all enabled mods with cpp/ without)")
+    p.add_argument("mods", nargs="*", help="for build: the mods to build, by id or by a mod folder's path "
+                                           "(all enabled mods with cpp/ without)")
     p.add_argument("--commit", help="for setup: UE4SS's commit, when the game hasn't run with UE4SS yet")
     p.set_defaults(fn=cmd_cpp)
     from .agent import cli as agent_cli
