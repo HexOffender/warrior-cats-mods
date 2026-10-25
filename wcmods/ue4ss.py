@@ -24,6 +24,27 @@ def loader_installed(win64_dir):
         and os.path.isfile(os.path.join(win64_dir, "ue4ss", "UE4SS.dll"))
 
 
+def loader_identity(win64_dir):
+    """Which UE4SS the game has, for C++ mods (built against one UE4SS): {"commit": its git commit from the
+    first lines of UE4SS.log ("Git SHA #83330635"; None when the game hasn't run since this UE4SS.dll was
+    put in), "dll": UE4SS.dll's SHA-1}, or None without UE4SS."""
+    import hashlib
+    if not loader_installed(win64_dir):
+        return None
+    dll = os.path.join(win64_dir, "ue4ss", "UE4SS.dll")
+    with open(dll, "rb") as f:
+        digest = hashlib.sha1(f.read()).hexdigest()
+    commit, path = None, log_path(win64_dir)
+    if path and os.path.getmtime(path) >= os.path.getmtime(dll):
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for _, line in zip(range(20), f):
+                m = re.search(r"Git SHA #([0-9a-fA-F]{7,40})", line)
+                if m:
+                    commit = m.group(1).lower()
+                    break
+    return {"commit": commit, "dll": digest}
+
+
 def find_release(timeout=20):
     """The UE4SS download wcmods uses: {"name", "url", "size", "page"} from GitHub."""
     import urllib.request

@@ -679,6 +679,35 @@ def cmd_find(ctx, args):
     print(f"{len(found)} found" + (" (the first ones)" if len(found) >= args.limit else ""))
 
 
+def cmd_cpp(ctx, args):
+    from . import cppmods
+    root = ctx.cfg.root
+    if args.action == "setup":
+        commit = cppmods.setup(root, ctx.cfg, commit=args.commit)
+        print(f"UE4SS's source is at {commit[:8]} in {cppmods.source_dir(root)}")
+        missing = cppmods.problems(cppmods.toolchain())
+        if missing:
+            print("to build C++ mods you also need:\n- " + "\n- ".join(missing))
+        else:
+            print("ready: `python wcmods.py cpp build` builds your mods' cpp/ folders")
+        return
+    if args.action == "build":
+        built = cppmods.build(root, ctx.cfg, cppmods.cpp_mods(mods.discover(ctx.mods_root), args.mods))
+        print(f"built {len(built)} C++ mod(s); install (or press Play in Clan Mod Studio) to put them in the game")
+        return
+    st = cppmods.status(root, ctx.cfg)
+    game = st["game"]
+    print(f"game's UE4SS: {(game['commit'] or 'unknown until the game runs with it') if game else 'not installed'}")
+    print(f"UE4SS source: {st['source'][:8] if st['source'] else 'not here (python wcmods.py cpp setup)'}"
+          + ("" if st["matches"] is not False else "  <- not the game's; run `python wcmods.py cpp setup`"))
+    for tool in ("vs", "cmake", "ninja", "cargo", "git"):
+        print(f"  {tool:6} {st['tools'][tool] or 'missing'}")
+    for p in st["problems"]:
+        print(f"needs: {p}")
+    have = [m.id for m in cppmods.cpp_mods(mods.discover(ctx.mods_root))]
+    print(f"enabled mods with C++ source: {', '.join(have) or 'none'}")
+
+
 def cmd_studio(ctx, args):
     from . import studio
     # No ctx.need_game(): without the game, the studio opens on its "Get set up" steps, which ask where it is.
@@ -718,7 +747,7 @@ def main(root, argv=None):
     p.set_defaults(fn=cmd_pack)
     p = sub.add_parser("new", help="create a mod from a template")
     p.add_argument("id")
-    p.add_argument("--kind", choices=("palette", "controls", "files", "data", "items", "save", "names", "script"), default="palette")
+    p.add_argument("--kind", choices=("palette", "controls", "files", "data", "items", "save", "names", "script", "cpp"), default="palette")
     p.set_defaults(fn=cmd_new)
     p = sub.add_parser("files", help="list game files matching a pattern, e.g. '*NPC/*.csv'")
     p.add_argument("pattern")
@@ -798,6 +827,12 @@ def main(root, argv=None):
     p.add_argument("--timeout", type=float, default=15)
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_find)
+    p = sub.add_parser("cpp", help="C++ mods: 'cpp setup' gets UE4SS's source at the game's UE4SS, 'cpp build' builds "
+                                   "mods' cpp/ into dlls/main.dll, 'cpp' alone says what's ready")
+    p.add_argument("action", nargs="?", choices=("status", "setup", "build"), default="status")
+    p.add_argument("mods", nargs="*", help="for build: the mods to build (all enabled mods with cpp/ without)")
+    p.add_argument("--commit", help="for setup: UE4SS's commit, when the game hasn't run with UE4SS yet")
+    p.set_defaults(fn=cmd_cpp)
     from .agent import cli as agent_cli
     agent_cli.register(sub)
     for option, text in (("cheats", "show, or set, whether cheats start on in the mod menu (needs install)"),

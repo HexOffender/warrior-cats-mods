@@ -81,6 +81,9 @@ steps written with the shared library (see [docs/SDK.md](docs/SDK.md)). UE4SS sc
 on screen (menus, debug text, markers on places in the world) and find nearby pickups, cats and
 quest objectives with the shared Lua modules wcmods installs (docs/SDK.md, "Overlays"; example:
 [quest-markers](https://github.com/HexOffender/wcmods-examples/tree/main/quest-markers) in wcmods-examples, a custom quest with on-screen markers).
+Mods can run C++ in the game too, as UE4SS C++ mods: `python wcmods.py new my-mod --kind cpp`, then
+`python wcmods.py cpp setup` and `cpp build my-mod` build its `cpp/` against the game's UE4SS (docs/SDK.md,
+"C++ mods", lists what that needs).
 
 **In game, Insert opens the mod menu** (with UE4SS). A status line under its title shows how your
 cat is doing, and the side bar groups the pages:

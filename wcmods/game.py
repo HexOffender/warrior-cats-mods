@@ -2061,6 +2061,14 @@ def hidden(offsets=None):
     return out
 
 
+def offsets_json(offsets=None, build=None):
+    """The same members for C++ mods, written beside the module as offsets.json:
+    {"game_build", "members": {"class:property": {"offset", "type"}}}; `offsets` as for hidden()."""
+    members = {f"{cls}:{name}": {"offset": offset, "type": kind}
+               for cls, fields in hidden(offsets) for name, offset, kind in fields}
+    return {"game_build": build, "members": members}
+
+
 def lua(offsets=None):
     """The module's Lua; `offsets` as for hidden()."""
     rows = []

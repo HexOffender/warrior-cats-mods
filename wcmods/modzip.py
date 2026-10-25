@@ -31,7 +31,7 @@ MAX_FILES = 20000
 MAX_BYTES = 4 * 1024 ** 3        # cooked content can be big, but not this big
 MAX_META = 1024 * 1024           # a mod.json bigger than this isn't one
 IGNORED = ("__MACOSX", ".git", "__pycache__", ".DS_Store", "Thumbs.db")
-CODE = ("section.py", "scripts", "studio/section.js")
+CODE = ("section.py", "scripts", "dlls", "cpp", "studio/section.js")
 BUILTIN_SKIP = "comes with wcmods, so it's left as it is; update wcmods instead"
 # A backup's folder in backups/mods: <time>[-n]-<why>-<id>. The number (for a second backup in the same
 # second) goes after the time, so the id is everything after "<why>-", even one ending in "-2".

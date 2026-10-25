@@ -255,6 +255,9 @@ def build(cfg, mods, out_dir, log=print):
         with open(os.path.join(shared, name + ".lua"), "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
         manifest["ue4ss_shared"].append(name)
+    # The same members for C++ mods (wcmods::member in WCMods.hpp), as found on this build.
+    with open(os.path.join(out_dir, "ue4ss_shared", game_lua.SHARED_NAME, "offsets.json"), "w", encoding="utf-8") as f:
+        json.dump(game_lua.offsets_json(fit["offsets"], build), f, indent=2)
 
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)

@@ -35,7 +35,7 @@ class Image:
         if d[pe:pe + 4] != b"PE\0\0":
             raise ValueError(f"{path} isn't a PE file")
         self.machine, nsec, self.timestamp = struct.unpack_from("<HHI", d, pe + 4)
-        optsize = struct.unpack_from("<H", d, pe + 20)[0]
+        optsize, self.characteristics = struct.unpack_from("<HH", d, pe + 20)
         opt = pe + 24
         if struct.unpack_from("<H", d, opt)[0] != 0x20B:
             raise ValueError(f"{path} isn't a 64-bit exe")
@@ -68,6 +68,34 @@ class Image:
             raise ValueError(f"RVA 0x{rva:X} is outside the image's sections")
         off = rva - s.rva
         return bytes(s.data[off:off + n])
+
+    @property
+    def is_dll(self):
+        return bool(self.characteristics & 0x2000)
+
+    def _string(self, rva, limit=512):
+        data = self.read(rva, limit)
+        return data.split(b"\0", 1)[0].decode("ascii", "replace")
+
+    def exports(self):
+        """The names of the functions it exports (a DLL's), as a set."""
+        rva, size = self.dirs[0] if self.dirs else (0, 0)
+        if not size:
+            return set()
+        count = struct.unpack_from("<I", self.read(rva + 24, 4))[0]    # NumberOfNames
+        table = struct.unpack_from("<I", self.read(rva + 32, 4))[0]    # AddressOfNames
+        return {self._string(r) for r in struct.unpack_from(f"<{count}I", self.read(table, 4 * count))} if count else set()
+
+    def imports(self):
+        """The names of the DLLs it imports from, as written ("UE4SS.dll")."""
+        rva, size = self.dirs[1] if len(self.dirs) > 1 else (0, 0)
+        out = []
+        for i in range(size // 20):
+            name = struct.unpack_from("<I", self.read(rva + 20 * i + 12, 4))[0]
+            if not name:
+                break
+            out.append(self._string(name))
+        return out
 
     @property
     def aslr(self):
