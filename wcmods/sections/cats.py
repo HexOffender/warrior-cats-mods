@@ -20,7 +20,7 @@ class CatsSection(Section):
     def build(self, ctx, items):
         merged = catlook.merge(data for _, data in items)
         source = ", ".join(mod.id for mod, _ in items)
-        player = merged.get("player", {"colours": {}, "slots": {}})
+        player = merged.get("player", {"colours": {}, "slots": {}, "scars": {}})
         sav = os.path.join(ctx.cfg.save_dir, SAV_NAME)
         cats = names.cats_in_save(SaveDoc(SaveGame.load(sav).json_text).data) if os.path.isfile(sav) else []
         if player["colours"]:
@@ -45,19 +45,28 @@ class CatsSection(Section):
             slot = slots.get(part)
             if slot is not None and slot >= palettes.GAME_SLOTS and slot not in added.get(part, set()):
                 ctx.warn(f"your cat's {part} slot {slot} isn't added by any enabled palette, so it shows no colour")
-        if slots:
+        scars = player["scars"]
+        if slots or scars:
+            what = "your cat's colour slots" if not scars else "your cat's scars" if not slots else \
+                "your cat's colour slots and scars"
             if not os.path.isfile(sav):
-                ctx.warn("your cat's colour slots: no save yet; start the game once, then install again")
+                ctx.warn(f"{what}: no save yet; start the game once, then install again")
             else:
                 mine = [c for c in cats if names.PLAYER_PATH in c["paths"]]
                 fields = {catlook.SLOTS[part]: slot for part, slot in slots.items()}
+                fields.update({catlook.SCARS[part]: n for part, n in scars.items()})
+                label = [f"{p} slot {s}" for p, s in sorted(slots.items())]
+                if scars and not any(scars.values()) and len(scars) == len(catlook.SCARS):
+                    label.append("no scars")
+                else:
+                    label += [f"{p} scar {n or 'none'}" for p, n in sorted(scars.items())]
                 for cat in mine:
                     for path in cat["paths"]:   # every copy of your cat in the save
                         ctx.save_op({"op": "fields", "path": path, "set": fields, "source": source,
-                                     "label": ", ".join(f"{p} slot {s}" for p, s in sorted(slots.items()))})
+                                     "label": ", ".join(label)})
                 if not mine:
-                    ctx.warn("your cat's colour slots: your save has no player cat yet")
-        ctx.note("cat", {"colours": sorted(player["colours"]), "slots": slots})
+                    ctx.warn(f"{what}: your save has no player cat yet")
+        ctx.note("cat", {"colours": sorted(player["colours"]), "slots": slots, "scars": sorted(scars)})
 
 
 def _new_slots(mods):
