@@ -268,6 +268,24 @@ local LIBRARIES = {
 }
 Game.libraries = LIBRARIES
 local libs = {}
+-- The first thing a straight line from `from` to `to` ({X, Y, Z}) runs into: where it hit ({X, Y, Z}),
+-- or nil if nothing is in the way.
+function Game.trace(from, to)
+    local hit, none = {}, { R = 0, G = 0, B = 0, A = 0 }
+    local ok, found = pcall(function()
+        return Game.library("KismetSystemLibrary"):LineTraceSingle(Game.player(), from, to, 0, false, {}, 0, hit, true,
+                                                                   none, none, 0)
+    end)
+    if ok and found and hit.ImpactPoint then return { X = hit.ImpactPoint.X, Y = hit.ImpactPoint.Y, Z = hit.ImpactPoint.Z } end
+    return nil
+end
+
+-- The height of the ground below a place (from 2 m above it), or nil.
+function Game.ground(x, y, z)
+    local hit = Game.trace({ X = x, Y = y, Z = z + 200 }, { X = x, Y = y, Z = z - 20000 })
+    return hit and hit.Z or nil
+end
+
 function Game.library(name)
     local o = libs[name]
     if valid(o) then return o end
@@ -1460,10 +1478,24 @@ local function paintNpc(n)
     return changed
 end
 
+-- Put a cat's feet (its body's origin) on the ground at height g: the game's cats don't fall, so one
+-- placed at another cat's middle, or above a slope, would float.
+local function standOn(a, g)
+    if not g then return end
+    local mesh = a.SkeletalMeshComponent
+    if not valid(mesh) then return end
+    local feet = mesh:K2_GetComponentLocation().Z
+    if math.abs(g - feet) < 1 or math.abs(g - feet) > 500 then return end   -- there already, or a trace gone wrong
+    local l = a:K2_GetActorLocation()
+    a:K2_SetActorLocation({ X = l.X, Y = l.Y, Z = l.Z + g - feet }, false, {}, true)
+end
+
 local function spawnNpc(n)
     if n.level and Game.levelName() ~= n.level then return false end
     if not Game.player() then return false end
     n.level = n.level or Game.levelName()      -- the level it first appears in, unless it was given one
+    -- The ground, found before the cat is there to be found instead.
+    local g = n.ground ~= false and Game.ground(n.at.X, n.at.Y, n.at.Z) or nil
     local cls = npcClass()
     local world = Game.player() or Game.world()
     if not cls or not world then return false end
@@ -1488,6 +1520,7 @@ local function spawnNpc(n)
         if n.suffix then d.SuffixNameId = n.suffix end
     end)
     pcall(function() gs:FinishSpawningActor(a, xf, 0) end)
+    pcall(standOn, a, g)
     n.actor = a
     n.spawns = n.spawns + 1
     paintNpc(n)
@@ -1506,7 +1539,7 @@ function Game.npcs.spawn(opts)
     local n = setmetatable({
         at = { X = at.X or at[1] or 0, Y = at.Y or at[2] or 0, Z = at.Z or at[3] or 0 },
         yaw = opts.yaw or 0, size = opts.size, prefix = opts.prefix, suffix = opts.suffix,
-        level = opts.level, paint = {}, spawns = 0, removed = false,
+        level = opts.level, ground = opts.ground, paint = {}, spawns = 0, removed = false,
     }, Npc)
     for part, hex in pairs(opts.colours or {}) do
         local param, c = NPC_PARAMS[part], linearColour(hex)
@@ -1574,11 +1607,43 @@ function Npc:face(target)
     return pcall(function() a:K2_SetActorRotation(Game.rotator(0, self.yaw, 0), false) end)
 end
 -- Move it, and where it comes back to.
+-- Move it, and where it comes back to; it stands on the ground there. The same cat moves, so it keeps its
+-- look (spawning it again lets the game choose its patterns again).
 function Npc:moveTo(x, y, z)
     if type(x) == "table" then x, y, z = x.X or x[1], x.Y or x[2], x.Z or x[3] end
     self.at = { X = x, Y = y, Z = z }
     local a = self:actorOrNil()
-    if a then pcall(function() a:K2_SetActorLocation(self.at, false, {}, true) end) end
+    if not a then return end
+    local g = self.ground ~= false and Game.ground(x, y, z) or nil
+    pcall(function() a:K2_SetActorLocation(self.at, false, {}, true) end)
+    pcall(standOn, a, g)
+end
+
+-- A place for a cat beside yours: `distance` cm away (220 by default), `side` degrees round from where
+-- your cat faces (-60, to its front left; the other side and behind if that's blocked), stopped short of
+-- anything in the way. Returns the place ({X, Y, Z}) and a yaw that faces your cat, or nil.
+function Game.npcs.spot(distance, side)
+    local me = Game.cat()
+    if not me then return nil end
+    local l = me:location()
+    if not l then return nil end
+    local facing = 0
+    pcall(function() facing = me.actor:K2_GetActorRotation().Yaw end)
+    distance, side = distance or 220, side or -60
+    local best, bestRoom
+    for _, turn in ipairs({ side, -side, 180 }) do
+        local r = math.rad(facing + turn)
+        local dx, dy = math.cos(r), math.sin(r)
+        local from = { X = l.X + dx * 40, Y = l.Y + dy * 40, Z = l.Z + 20 }   -- from outside your cat
+        local hit = Game.trace(from, { X = l.X + dx * distance, Y = l.Y + dy * distance, Z = l.Z + 20 })
+        -- Room for the cat: 60 cm short of what's in the way.
+        local room = hit and math.sqrt((hit.X - l.X) ^ 2 + (hit.Y - l.Y) ^ 2) - 60 or distance
+        if not bestRoom or room > bestRoom then best, bestRoom = { dx, dy }, room end
+        if room >= distance * 0.6 then break end
+    end
+    local d = math.max(80, math.min(distance, bestRoom))
+    local at = { X = l.X + best[1] * d, Y = l.Y + best[2] * d, Z = l.Z }
+    return at, math.deg(math.atan(l.Y - at.Y, l.X - at.X))
 end
 -- Take it out of the world for good.
 function Npc:remove()

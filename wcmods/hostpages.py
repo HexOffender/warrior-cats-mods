@@ -82,8 +82,13 @@ end
     local function asType(v, t) return INTEGER[t] and math.floor(v + 0.5) or v end
     local function changed(a, b) return a ~= nil and b ~= nil and math.abs(a - b) > 1e-4 end
     local function words(s) return (tostring(s):gsub("_", " "):gsub("(%l)(%u)", "%1 %2"):gsub("(%u)(%u%l)", "%1 %2")) end
-    -- "Gameplay.Inventory.Consumable.SmallHealingHerb" -> "Small Healing Herb"
-    local function itemName(tag) return words(tostring(tag):match("([^%.]+)$") or tag) end
+    -- "Gameplay.Inventory.Consumable.MediumHealingHerb" -> "Marigold" (the game's name, from WCModsNames), or
+    -- "Medium Healing Herb" from its tag
+    local okNames, NAMES = pcall(require, "WCModsNames")
+    local function itemName(tag)
+        local name = okNames and type(NAMES) == "table" and NAMES.item and NAMES.item(tostring(tag))
+        return name or words(tostring(tag):match("([^%.]+)$") or tag)
+    end
     local function rankOf(level)
         if not level then return nil end
         if level <= 6 then return "Apprentice" elseif level <= 11 then return "Warrior" elseif level <= 15 then return "Deputy" end
@@ -155,22 +160,12 @@ end
 
     -- Travel: jump to a place (onto the ground below it), and back again.
     local travel = { back = nil, note = nil }
-    local function ground(x, y, z)
-        local ks, hit = Game.library("KismetSystemLibrary"), {}
-        local none = { R = 0, G = 0, B = 0, A = 0 }
-        local ok, found = pcall(function()
-            return ks:LineTraceSingle(Game.player(), { X = x, Y = y, Z = z + 200 }, { X = x, Y = y, Z = z - 20000 }, 0, false, {}, 0,
-                                      hit, true, none, none, 0)
-        end)
-        if ok and found and hit.ImpactPoint then return hit.ImpactPoint.Z end
-        return nil
-    end
     local function jump(to, label, onGround)
         local cat = Game.cat()
         if not (cat and to) then return false end
         travel.back = cat:location()
         local z = to.Z
-        if not onGround then z = ground(to.X, to.Y, to.Z) or to.Z end
+        if not onGround then z = Game.ground(to.X, to.Y, to.Z) or to.Z end
         local ok = cat:teleport(to.X, to.Y, z + 60)
         travel.note = (ok and "Went to " or "Couldn't go to ") .. label
         refresh()
@@ -574,7 +569,7 @@ end
         ui.columns({ { "Level", x:level() }, { "Stance", x:stance() or "?" }, { "Prowess", st.Prowess }, { "Strength", st.Strength },
                      { "Resilience", st.Resilience }, { "Instinct", st.Instinct }, { "Agility", st.Agility } })
         local move = x:moveTag()
-        if move and move ~= "None" and move ~= "" then ui.field("Move", move:gsub("^Gameplay%.Combat%.Attack%.", "")) end
+        if move and move ~= "None" and move ~= "" then ui.field("Move", (move:gsub("^Gameplay%.Combat%.Attack%.", ""))) end
         local hit = ui.buttons({ "Heal", "Weaken", "Cure status" }, { kinds = { "good", "danger" } })
         if hit == 1 then cat:heal()
         elseif hit == 2 then cat:setHealth(1)

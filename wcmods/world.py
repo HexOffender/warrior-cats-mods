@@ -149,6 +149,7 @@ end
 -- your name mods); creatures by their model ("Mouse").
 local okNames, NAMES = pcall(require, "WCModsNames")
 if not okNames or type(NAMES) ~= "table" or not NAMES.name then NAMES = { name = function() return nil end } end
+if not NAMES.item then NAMES.item = function() return nil end end   -- a WCModsNames from before items had names
 
 local NAMED = {
     BP_Quest_Filler_C = "Clan cat", BP_Quest_Giver_Gossip_C = "Gossip", BP_Quest_Giver_FreshKill_C = "Fresh-kill task",
@@ -243,17 +244,35 @@ local function meshLabel(actor)
     return words(name)
 end
 
+-- What a pickup holds, by the items' own names ("Marigold"; its class may say "Medium Healing Herb", as
+-- the game uses a few pickup classes for many items), or nil.
+local function pickupLabel(actor)
+    local names = {}
+    pcall(function()
+        actor.Reward:ForEach(function(k, _)
+            local name = NAMES.item(str(k:get().TagName))
+            if name then names[#names + 1] = name end
+        end)
+    end)
+    if #names == 0 then return nil end
+    table.sort(names)
+    return table.concat(names, ", ")
+end
+
 local actorLabels = {}   -- "address|class" -> label, for labels that belong to one actor
 -- A readable name for an actor (kind, when known, helps: cats get their names, creatures their model).
 function World.label(actor, kind)
     local n = actor:GetClass():GetFName():ToString()
     local base = classLabel(n)
-    local personal = kind == "cats" or kind == "questGivers" or kind == "creatures"
+    local pickup = kind == "pickups" or (kind == nil and n:find("Pickup") ~= nil)
+    local personal = pickup or kind == "cats" or kind == "questGivers" or kind == "creatures"
     if not personal then return base end
     local key = tostring(actor:GetAddress()) .. "|" .. n
     local hit = actorLabels[key]
     if hit then return hit end
-    if kind == "creatures" then
+    if pickup then
+        hit = pickupLabel(actor) or base
+    elseif kind == "creatures" then
         hit = meshLabel(actor) or base
     else
         local name = catName(actor)
@@ -433,16 +452,34 @@ function N.name(prefix, suffix)
     return gameText(prefix .. suffix) or gameText(prefix)
 end
 
+-- An item's name from its tag ("Gameplay.Inventory.Consumable.MediumHealingHerb" is "Marigold"), or nil.
+function N.item(tag) return N.items[tag] end
+
 return N
 '''
 
 
-def names_lua(plan=None):
+def item_names(ctx):
+    """{item tag: its English name} from the game's item table and the rows mods add to it ("Marigold",
+    not the "Medium Healing Herb" of its pickup's class)."""
+    rows = [v for _, v in ctx.cooked_table("DT_QuestObjectsInfo")]
+    rows += [v for _, v, _, _ in ctx.table_rows.get("DT_QuestObjectsInfo", [])]   # later rows win
+    out = {}
+    for v in rows:
+        name, tag = v.get("Name") or {}, v.get("itemTag")
+        text = name.get("text") if "text" in name else ctx.text(name["key"]) if "key" in name else None
+        if tag and text and text != name.get("key"):
+            out[tag] = text
+    return out
+
+
+def names_lua(plan=None, items=None):
     """WCModsNames: the English text of every name part and whole name, after the enabled name mods
-    (names.Plan), and N.name, which WCModsGame and WCModsWorld name cats with. Without a plan (no game data)
-    the tables are empty and N.name reads the game's own text."""
+    (names.Plan), and N.name, which WCModsGame and WCModsWorld name cats with; and items' names
+    (item_names), for N.item. Without a plan (no game data) the tables are empty and N.name reads the
+    game's own text."""
     from .sdk import lua_value
-    data = {"prefixes": {}, "suffixes": {}, "whole": {}}
+    data = {"prefixes": {}, "suffixes": {}, "whole": {}, "items": dict(items or {})}
     if plan is not None:
         data["prefixes"] = {p["id"]: p["final"] for p in plan.prefixes}
         data["suffixes"] = {s["id"]: s["final"] for s in plan.suffixes}
@@ -452,6 +489,6 @@ def names_lua(plan=None):
                 whole[key] = text
         data["whole"] = whole
     return ("-- WCModsNames: the English names of cats' name parts and whole names (rogues, cameo cats, names\n"
-            "-- given by mods), after your name mods. Written by wcmods on every install; WCModsGame and\n"
-            "-- WCModsWorld use it: NAMES.name(prefix id, suffix id).\n"
+            "-- given by mods), after your name mods, and of items. Written by wcmods on every install;\n"
+            "-- WCModsGame and WCModsWorld use it: NAMES.name(prefix id, suffix id), NAMES.item(tag).\n"
             "local N = " + lua_value(data) + "\n" + NAME_FN)
