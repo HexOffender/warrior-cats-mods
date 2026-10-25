@@ -89,7 +89,7 @@ def run(cfg, oodle, log=print):
     check("key remapper presses", _remapper_presses())
     check("menu remaps", _menu_remaps())
     check("CSV rows added and removed in the file's own style", _csv_rows())
-    check("new colour slots and your cat's colours", _colour_slots())
+    check("new colour slots and your cat's colours, slots and scars", _colour_slots())
     check("cat rename inside save text", _rename_struct())
     check("palette switching", _palette_switching())
 
@@ -1181,8 +1181,21 @@ def _colour_slots():
         fur_refused = True
     text = '(ClanType=RiverClan,FurColorIdx=11,Pattern01ColorIdx=2,CatSize=0.5)'
     fields = catlook.set_fields(text, {"FurColorIdx": 3, "Pattern01ColorIdx": 25, "Pattern02ColorIdx": 26})
+    # Scars: "none" takes them all away, or some; giving one is refused (which scar each number is isn't known).
+    scars = catlook.validate({"player": {"scars": "none"}})["player"]["scars"]
+    some = catlook.validate({"player": {"scars": {"eye": "none"}}})["player"]["scars"]
+    refused = 0
+    for bad in ({"scars": {"eye": 2}}, {"scars": {"tail": "none"}}, {"scars": "some"}):
+        try:
+            catlook.validate({"player": bad})
+        except ValueError:
+            refused += 1
+    scarred = catlook.set_fields('(ClanType=RiverClan,CatSize=0.5,ScarEarId=4,ScarBodyId=2)',
+                                 {catlook.SCARS[p]: 0 for p in scars})
     return (ok and fur_refused and not luacheck.check(script) and '["Fur Color"]' in script
-            and fields == '(ClanType=RiverClan,FurColorIdx=3,Pattern01ColorIdx=25,CatSize=0.5,Pattern02ColorIdx=26)')
+            and fields == '(ClanType=RiverClan,FurColorIdx=3,Pattern01ColorIdx=25,CatSize=0.5,Pattern02ColorIdx=26)'
+            and set(scars) == set(catlook.SCARS) and some == {"eye": 0} and refused == 3
+            and "ScarEarId=0" in scarred and "ScarBodyId=0" in scarred and "ScarEyeId=0" in scarred)
 
 
 def _rename_struct():

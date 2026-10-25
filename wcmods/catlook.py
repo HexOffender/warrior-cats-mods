@@ -1,8 +1,9 @@
-"""Your cat's own look (cats.json): colours just your cat wears, and which colour slots it uses.
+"""Your cat's own look (cats.json): colours just your cat wears, which colour slots it uses, and its scars.
 
     { "player": { "colours": { "fur": "#9fb6e0", "paws": "#ffb6c1", "ears": "#ff9aa6", "nose": "#ff7b9a",
                                "whiskers": "#ffffff" },
-                  "slots": { "fur": 11, "pattern": 25, "marking": 26 } } }
+                  "slots": { "fur": 11, "pattern": 25, "marking": 26 },
+                  "scars": "none" } }
 
 - "colours" go straight onto your cat's materials while you play, by a UE4SS script, so no other cat
   changes and any colour works. Each part is a vector parameter of the cat's body materials (below).
@@ -13,6 +14,9 @@
   (after a backup): fur 0-24, pattern and marking any slot, new ones a palette adds (25 and up) too.
   The save keeps them in the cat's text: FurColorIdx, Pattern01ColorIdx (pattern colour) and
   Pattern02ColorIdx (marking colour).
+- "scars": "none" takes away your cat's scars (the ones boss fights give), written into your save on
+  install the same way; or only some: { "eye": "none", "ear": "none" }. The save keeps them as
+  ScarEyeId, ScarEarId, ScarBodyId and ScarChestId, 0 for none.
 
 Your cat is your character in the world, plus the copies menus and portraits show (never another
 cat in the world, even one with your name). In the world those copies must have your character's name
@@ -33,10 +37,12 @@ PARTS = {"fur": "Fur Color", "paws": "Paws Color", "ears": "Ears Color", "nose":
 SLOTS = {"fur": "FurColorIdx", "pattern": "Pattern01ColorIdx", "marking": "Pattern02ColorIdx"}
 FERAL_SLOTS = range(20, 25)   # the game swaps these coat slots for others unless you own the Feral Edition
 TARGETS = ("player",)
+SCARS = {"eye": "ScarEyeId", "ear": "ScarEarId", "body": "ScarBodyId", "chest": "ScarChestId"}
 
 
 def validate(raw, where="cats.json"):
-    """Check a cats.json; returns {"player": {"colours": {part: (r, g, b)}, "slots": {part: int}}}."""
+    """Check a cats.json; returns {"player": {"colours": {part: (r, g, b)}, "slots": {part: int},
+    "scars": {part: 0}}}."""
     if not isinstance(raw, dict):
         raise ValueError(f"{where} should be an object")
     out = {}
@@ -46,13 +52,16 @@ def validate(raw, where="cats.json"):
         if target not in TARGETS:
             raise ValueError(f"{where}: '{target}' isn't a cat it can change yet (use \"player\")")
         if not isinstance(look, dict):
-            raise ValueError(f"{where}: {target} should be an object with \"colours\" and/or \"slots\"")
-        one = {"colours": {}, "slots": {}}
+            raise ValueError(f"{where}: {target} should be an object with \"colours\", \"slots\" and/or \"scars\"")
+        one = {"colours": {}, "slots": {}, "scars": {}}
         for key, value in look.items():
             if key.startswith("_"):
                 continue
+            if key == "scars":
+                one["scars"] = _scars(value, f"{where}: {target}.scars")
+                continue
             if key not in ("colours", "slots") or not isinstance(value, dict):
-                raise ValueError(f"{where}: {target}.{key} should be \"colours\" or \"slots\", each an object")
+                raise ValueError(f"{where}: {target}.{key} should be \"colours\", \"slots\" or \"scars\"")
             for part, v in value.items():
                 if part.startswith("_"):
                     continue
@@ -76,14 +85,34 @@ def validate(raw, where="cats.json"):
     return out
 
 
+def _scars(value, where):
+    """{part: 0} for "none" (every scar) or {"eye": "none", ...}. Only taking scars away for now: which
+    scar each number is hasn't been worked out, and a number the game hasn't got could break the look."""
+    if value == "none":
+        return {part: 0 for part in SCARS}
+    if not isinstance(value, dict):
+        raise ValueError(f'{where} should be "none", or e.g. {{"eye": "none", "ear": "none"}}')
+    out = {}
+    for part, v in value.items():
+        if part.startswith("_"):
+            continue
+        if part not in SCARS:
+            raise ValueError(f"{where}.{part} should be one of {', '.join(SCARS)}")
+        if v not in ("none", 0) or isinstance(v, bool):
+            raise ValueError(f'{where}.{part} should be "none": scars can be taken away, not given yet')
+        out[part] = 0
+    return out
+
+
 def merge(items):
     """cats.json contents from several mods in priority order; later ones win part by part."""
     out = {}
     for data in items:
         for target, look in data.items():
-            cur = out.setdefault(target, {"colours": {}, "slots": {}})
+            cur = out.setdefault(target, {"colours": {}, "slots": {}, "scars": {}})
             cur["colours"].update(look["colours"])
             cur["slots"].update(look["slots"])
+            cur["scars"].update(look.get("scars", {}))
     return out
 
 

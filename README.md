@@ -57,7 +57,7 @@ The pages under **Make mods** are for making your own; each edits a file in a mo
 | Page | What you change | Stored as | Reaches the game through |
 |---|---|---|---|
 | **Palettes** | eye, coat, pattern and marking colours on a live cat; new pattern and marking colours | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
-| **Your cat** | colours only your cat wears (coat, paws, ears, nose, whiskers); which colour slots it wears | `cats.json` | UE4SS script (colours); your save, on install (slots) |
+| **Your cat** | colours only your cat wears (coat, paws, ears, nose, whiskers); which colour slots it wears; taking its scars away | `cats.json` | UE4SS script (colours); your save, on install (slots, scars) |
 | **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | the key remapper while you play (`wcmods play`); see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert, smoothing | `mouselook.json` | UE4SS script |
 | **Names** | rename, add and remove name prefixes, suffixes and rogue names; the ban list; cameo cats and any shown name; the cats in your save | `names.json` | edited tables and text in the mod pak; cat renames in your save, on install |
@@ -377,7 +377,8 @@ palette you've added is your own copy, so add it again to get the new one.
 ### `cats.json`
 ```json
 { "player": { "colours": { "fur": "#9fb6e0", "paws": "#ffb6c1", "ears": "#ff9aa6", "nose": "#ff7b9a", "whiskers": "#ffffff" },
-              "slots": { "fur": 11, "pattern": 25, "marking": 26 } } }
+              "slots": { "fur": 11, "pattern": 25, "marking": 26 },
+              "scars": "none" } }
 ```
 - **`colours`** go onto your cat's own materials while you play. That covers menus and portraits,
   and every part is optional. No other cat changes, and any colour works, including paws, ears,
@@ -387,6 +388,10 @@ palette you've added is your own copy, so add it again to get the new one.
 - **`slots`** picks which colour slot your cat wears, written into your save on install, after a
   backup: `fur` 0–24 (20–24 are the Feral Edition's, which the game swaps without it), `pattern`
   and `marking` any slot, including new ones a palette adds. Leave a part out to keep your save's.
+- **`scars`** takes your cat's scars away (the ones boss fights give), written into your save on
+  install after a backup: `"none"` for all of them, or some, e.g. `{ "eye": "none", "ear": "none" }`
+  (`eye`, `ear`, `body`, `chest`). Scars can only be taken away for now. A boss fight can still give
+  new ones; the game's own Gameplay settings have an Injury system switch.
 
 ### `controls.json`
 ```json
