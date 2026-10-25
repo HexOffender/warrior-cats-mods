@@ -773,6 +773,7 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Core.hpp` | text, JSON, files, the mod's info and settings, the log, the game's hidden members |
 | `WCMods/Game.hpp` | the game's objects, the world and its managers, your cat, the clock, the fresh-kill pile, the developer switches |
 | `WCMods/Events.hpp` | every frame, timers, keys, hooks on the game's functions, level and player events |
+| `WCMods/Reflect.hpp` | any property by its path, as the kind it is; arrays, maps and structs; what an object has; spawning actors |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Mod.hpp` | `wcmods::ModBase` and `WCMODS_MOD` |
 
@@ -826,6 +827,7 @@ good for the frame you got it in: look it up again next time rather than keeping
 | `wcmods::read_file(path)`, `write_file(path, text)` | A file's text (nullopt when it isn't there); written whole, through a temporary file |
 | `wcmods::wide(utf8)`, `utf8(wide)` | Convert text: the game's is wide, wcmods' files are UTF-8 |
 | `wcmods::offset(cls, member)`, `member<T>(object, cls, member)` | The game's members that aren't reflected (health, stamina, level, stats, the clock; `wcmods/game.py`'s `HIDDEN`), where they are on the installed game build: wcmods writes them on every install to `ue4ss/Mods/shared/WCModsGame/offsets.json`, the same ones `WCModsGame` uses. `nullopt` / `nullptr` for one a game update moved where wcmods can't find it |
+| `wcmods::reload_settings()` | Read `settings.json` again, when something else wrote it; false, with the settings as they were, when it can't be read |
 
 **The game (`Game.hpp`)**, game thread only:
 
@@ -852,6 +854,29 @@ good for the frame you got it in: look it up again next time rather than keeping
 | `wcmods::fresh_kill()`, `fresh_kill_decay()`, `fresh_kill_component()` | The fresh-kill pile: how full (a `Resource`), its decay (`elapsed` seconds since it last dropped, `period` between drops), and the component |
 | `wcmods::dev_switch(STR("bAllowAlwaysEquipItem"))` | One of the game's developer switches on its cheats manager, a bool to read and write; the mod menu's Cheats page lists them |
 
+**Any property (`Reflect.hpp`)**, game thread only:
+
+`property<T>` trusts you about the type. These check: a property is read as the kind it is, and
+written only with a value of that kind.
+
+```cpp
+auto clan = wcmods::get(cat, L"MeshCustomizationComponent.CustomData.ClanType");   // an enum: clan.text
+auto speed = wcmods::get(cat, L"CustomTimeDilation").number();
+wcmods::set(cat, L"CustomTimeDilation", 0.5);
+for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards"))
+    wcmods::log(L"{}: {}", wcmods::get(tag, L"TagName").text, count.i);
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::get(object, L"Controller.PlayerState")` | A property's value by its path (names joined with dots, an element as `[2]`), as a `Value`: `kind` says what it is (`Bool`, `Int`, `Float`, `Text`, `Object`, `Enum`, `Struct`, `Array`, `Map`, `None` when there's no such property), with `boolean()`, `number()`, `string()`, `object`, an enum's name in `text`, the property's class in `type`, and `shown()` as text. `get(value, path)` goes on from a struct or object it gave |
+| `wcmods::set(object, path, value)` | Write a bool, a number (to an int, float or enum), text (to an FString or FName, or an enum's name) or an object; false when there's no such property or it isn't that kind |
+| `wcmods::elements(object, path)`, `elements(value)` | An array's elements, each a `Value` |
+| `wcmods::map_entries(object, path)`, `map_entries(value)` | A map's pairs, each key and value a `Value` (the game's tag-count maps: a tag struct, whose `TagName` is the tag, and a count) |
+| `wcmods::describe(object)`, `describe(value)` | Every property of an object or struct, with its name, type and value now: `python wcmods.py inspect` in C++ |
+| `Value::of(x)` | A `Value` from a bool, number, text or object, for `set` |
+| `wcmods::spawn(STR("/Script/Engine.Actor"), {x, y, z})`, `destroy(actor)` | An actor of a class at a place (plain actors; the game's own cats need more, see the Lua module's `Game.npcs`), and taking one out |
+
 **When code runs (`Events.hpp`)**, everything calling back on the game thread:
 
 | Call | Does |
@@ -863,6 +888,9 @@ good for the frame you got it in: look it up again next time rather than keeping
 | `wcmods::on_player(fn)` | `fn(cat)` when your cat appears (the forest loads), changes (a new area) or goes (menus; `nullptr`), looked for four times a second, and once right away |
 | `wcmods::on_level(fn)` | `fn(level name)` once a level has loaded |
 | `wcmods::on_function(STR("/Script/Wrc.GuiHudWrc:OnItemPickedUp"), fn)`, `after_function(...)`, `unhook(id)` | `fn(call)` just before, or just after, the game runs one of its functions, by its full path. `call.self()` is the object, `call.params<Params>()` its parameters as a struct laid out like them (changed before the call, they change what the game does), `call.set_return(v)` its result. 0 and a line in the log when there's no such function |
+| `wcmods::run_in_background(work, then)` | `work()` on a thread of its own (a file, the network, a long computation; never the game's objects), then `then(result)` on the game thread with what it gave back; `run_in_background(work)` for work that needs nothing after |
+| `wcmods::on_game_thread_now()`, `assert_game_thread(L"what")` | Whether this is the game thread (known once a frame has run); the second says so in the log when it isn't |
+| `wcmods::on_settings_changed(fn)` | `fn()` on the game thread when `settings.json` changed on disk (the studio, a text editor), after `settings()` has been read again; looked for once a second |
 
 Hooks see a function only when it's called through the engine: by a Blueprint, as an event or RPC
 (`ClientRestart`, `OnItemPickedUp`), or by `wcmods::call`. Native code calling native code directly is

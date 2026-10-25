@@ -19,7 +19,9 @@
 // It's five headers, which this one includes:
 //   WCMods/Core.hpp     text, JSON, files, the mod's info and settings, the log, the game's hidden members
 //   WCMods/Game.hpp     the game's objects, the world and its managers, your cat, the clock, the fresh-kill pile
-//   WCMods/Events.hpp   every frame, timers, keys, hooks on the game's functions, level and player events
+//   WCMods/Reflect.hpp  any property by its path, as the kind it is; arrays, maps, structs; spawning actors
+//   WCMods/Events.hpp   every frame, timers, keys, hooks on the game's functions, level and player events,
+//                       other threads, settings that change on disk
 //   WCMods/Menu.hpp     pages in the mod menu (a settings page comes free), keys on its Overview, values
 //                       shared with Lua mods
 //   WCMods/Mod.hpp      wcmods::ModBase and WCMODS_MOD
@@ -34,3 +36,4 @@
 #include <WCMods/Game.hpp>
 #include <WCMods/Menu.hpp>
 #include <WCMods/Mod.hpp>
+#include <WCMods/Reflect.hpp>

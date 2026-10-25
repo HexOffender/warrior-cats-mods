@@ -4,7 +4,9 @@
 // documents every call.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <initializer_list>
 #include <map>
@@ -12,6 +14,8 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -63,6 +67,7 @@ namespace wcmods
             UObject* last_player{};
             double since_player_check{};
             std::optional<RC::Unreal::Hook::GlobalCallbackId> hook;
+            std::atomic<DWORD> game_thread_id{};   // known from the first frame on
         };
         inline auto ticks() -> Ticks&
         {
@@ -73,6 +78,7 @@ namespace wcmods
         inline auto on_tick(float dt) -> void
         {
             auto& t = ticks();
+            t.game_thread_id = GetCurrentThreadId();
             std::vector<std::function<void()>> once;
             std::vector<std::shared_ptr<std::function<void(float)>>> every;
             std::vector<std::shared_ptr<std::function<void()>>> due;
@@ -210,6 +216,110 @@ namespace wcmods
             t.since_player_check = 1;   // look on the next frame
         }
         detail::hook_ticks();
+    }
+
+    // ============================================================================================ other threads
+    // Whether this is the game thread (known once a frame has run; false before). assert_game_thread says
+    // so in the log when it isn't: for a mod's own checks on code that must only run there.
+    inline auto on_game_thread_now() -> bool
+    {
+        DWORD game = detail::ticks().game_thread_id;
+        return game != 0 && GetCurrentThreadId() == game;
+    }
+    inline auto assert_game_thread(const wchar_t* what = L"this") -> bool
+    {
+        if (on_game_thread_now()) return true;
+        detail::log_line(mod().name, std::format(L"{} ran off the game thread; the game's objects aren't safe there", what));
+        return false;
+    }
+
+    // Heavy work (a file, the network, a long computation) on a thread of its own, then `then(result)` on the
+    // game thread with what it gave back. `work` must not touch the game's objects; `then` may:
+    //   wcmods::run_in_background([] { return read_big_file(); }, [](std::string data) { use(data); });
+    template <typename Work, typename Then>
+    auto run_in_background(Work work, Then then) -> void
+    {
+        std::thread([work = std::move(work), then = std::move(then)]() mutable {
+            using Result = decltype(work());
+            if constexpr (std::is_void_v<Result>)
+            {
+                bool ok = true;
+                detail::guarded(L"run_in_background", [&] { work(); });
+                if (ok) on_game_thread([then = std::move(then)]() mutable { then(); });
+            }
+            else
+            {
+                std::optional<Result> result;
+                detail::guarded(L"run_in_background", [&] { result = work(); });
+                if (result) on_game_thread([then = std::move(then), r = std::move(*result)]() mutable { then(std::move(r)); });
+            }
+        }).detach();
+    }
+    // The same for work that gives nothing back and needs nothing after.
+    inline auto run_in_background(std::function<void()> work) -> void
+    {
+        std::thread([work = std::move(work)] { detail::guarded(L"run_in_background", work); }).detach();
+    }
+
+    // ============================================================================================ settings that change
+    namespace detail
+    {
+        struct SettingsWatch
+        {
+            std::mutex lock;
+            std::vector<std::shared_ptr<std::function<void()>>> fns;
+            bool started{};
+            std::filesystem::file_time_type seen{};
+            uintmax_t size{};
+        };
+        inline auto settings_watch() -> SettingsWatch&
+        {
+            static SettingsWatch w;
+            return w;
+        }
+        inline auto settings_stamp(std::filesystem::file_time_type& when, uintmax_t& size) -> bool
+        {
+            std::error_code ec;
+            const auto& path = mod().settings_file;
+            if (path.empty() || !std::filesystem::is_regular_file(path, ec)) return false;
+            when = std::filesystem::last_write_time(path, ec);
+            size = std::filesystem::file_size(path, ec);
+            return !ec;
+        }
+    } // namespace detail
+
+    // `fn()` on the game thread when settings.json changed on disk (the studio, a text editor, Save on its
+    // page from another install), after settings() has been read again. Looked for once a second.
+    inline auto on_settings_changed(std::function<void()> fn) -> void
+    {
+        auto& w = detail::settings_watch();
+        bool start = false;
+        {
+            std::lock_guard lock(w.lock);
+            w.fns.push_back(std::make_shared<std::function<void()>>(std::move(fn)));
+            if (!w.started)
+            {
+                w.started = start = true;
+                detail::settings_stamp(w.seen, w.size);
+            }
+        }
+        if (!start) return;
+        every(1.0, [] {
+            auto& w = detail::settings_watch();
+            std::filesystem::file_time_type when{};
+            uintmax_t size{};
+            if (!detail::settings_stamp(when, size)) return;
+            std::vector<std::shared_ptr<std::function<void()>>> fns;
+            {
+                std::lock_guard lock(w.lock);
+                if (when == w.seen && size == w.size) return;
+                w.seen = when;
+                w.size = size;
+                fns = w.fns;
+            }
+            if (!reload_settings()) return;
+            for (auto& f : fns) detail::guarded(L"on_settings_changed", [&] { (*f)(); });
+        });
     }
 
     // ============================================================================================ keys

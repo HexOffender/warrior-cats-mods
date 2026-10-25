@@ -532,6 +532,26 @@ namespace wcmods
         return write_file(s.info.settings_file, text);
     }
 
+    // Read settings.json again (something else wrote it: the studio, a text editor, the mod menu's page of
+    // another install). False, with the settings as they were, when it can't be read or isn't JSON.
+    inline auto reload_settings() -> bool
+    {
+        auto& s = detail::state();
+        if (s.info.settings_file.empty()) return false;
+        auto text = read_file(s.info.settings_file);
+        if (!text) return false;
+        std::string why;
+        auto parsed = Json::parse(*text, &why);
+        if (!parsed || !parsed->is_object())
+        {
+            detail::log_line(s.info.name, std::format(L"settings.json isn't readable ({}); keeping the settings as they were", wide(why)));
+            return false;
+        }
+        std::lock_guard lock(s.settings_lock);
+        s.settings = std::move(*parsed);
+        return true;
+    }
+
     // ============================================================================================ the game's hidden members
     // Much of the game's own state isn't reflected, so UE4SS can't see it by name: your cat's health and
     // stamina, level and stats, the clock. wcmods knows where those members sit in their objects for the
