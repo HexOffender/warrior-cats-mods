@@ -137,6 +137,16 @@ def test_hooks(agent):
     assert v["hook.self"] == agent.lua("return Game.name(Game.controller())"), v["hook.self"]
     assert v["hook.pawn"] == v["hook.pawn_after"] == agent.lua("return Game.name(Game.player())"), v
     assert v["hook.unhooked_ran"] == 0, v
+    # A hook on a native function Blueprints call every frame: calls through the engine bring parameters
+    # (Lua's K2_GetActorLocation here does), bytecode's don't, and the game is still up.
+    agent.lua("return Game.player():K2_GetActorLocation()")
+    v = _request(agent, "events")["values"]
+    assert v["hook.native.with"] >= 1 and v["hook.native.read"] >= 1, (v["hook.native.with"], v["hook.native.read"])
+    assert v["hook.native.without"] >= 0, v
+    _request(agent, "unhook_native")
+    before = _request(agent, "events")["values"]["hook.native.with"]
+    agent.lua("return Game.player():K2_GetActorLocation()")
+    assert _request(agent, "events")["values"]["hook.native.with"] == before, "the native hook still fired after unhook"
 
 
 def test_world_reads_match_lua(agent):
@@ -411,7 +421,8 @@ def test_world_matches_lua(agent):
     assert v["save.inventory_text"] == lua["inventory_text"] and lua["inventory_text"], (v["save.inventory_text"], lua["inventory_text"])
     assert v["items.count"] == lua["items"], (v["items.count"], lua["items"])
     assert v["save.progression"] == lua["progression"] and v["save.setting"] == lua["setting"], (v["save.progression"], lua["progression"], v["save.setting"], lua["setting"])
-    assert v["cat.name"] == lua["name"], (v["cat.name"], lua["name"])
+    # A name the tables don't know (an install without the game's name tables) is nil in Lua and "" in C++.
+    assert v["cat.name"] == (lua.get("name") or ""), (v["cat.name"], lua.get("name"))
     assert v["cat.clan"].lower() == str(lua["clan"]).lower(), (v["cat.clan"], lua["clan"])
     assert v["cat.traits"] == (lua["traits"] or []), (v["cat.traits"], lua["traits"])
     assert v["item_name.marigold"] == (lua["marigold"] or ""), (v["item_name.marigold"], lua["marigold"])

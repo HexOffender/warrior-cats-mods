@@ -753,6 +753,23 @@ after updating UE4SS. `cpp build` builds the named mods (or every enabled mod wi
 has everything. `python wcmods.py cpp` says what's ready. Install afterwards (or press Play in the
 studio) to put the DLL in the game.
 
+More ways to build and look:
+
+- **`python wcmods.py cpp build my-mod --watch`** builds again whenever a file in `cpp/` changes
+  (Ctrl+C stops), for working on a mod: install or Play after each.
+- **`python wcmods.py cpp ide my-mod --open`** makes a Visual Studio solution in `cache/cpp/ide`, with
+  UE4SS as the mods link it, to edit, build (in the `Game__Shipping__Win64` configuration, the one the
+  game's UE4SS is) and debug: attach the debugger to `Wrc-Win64-ShippingDRM.exe`.
+- **Clan Mod Studio** shows a mod with `cpp/` a **Build C++** button under its More (with code mods
+  allowed); the studio builds in the background and says how it went.
+- **`python wcmods.py cpp crash`** reads the game's last crash (Unreal writes each to
+  `%LOCALAPPDATA%\Wrc\Saved\Crashes`) and says whether a C++ mod was on the stack, which, and where in
+  its source (a DLL built here has its symbols), so a game that closed with no word isn't a mystery.
+  `agent crash` says it too.
+- **A mod for several UE4SS versions:** `cpp build my-mod --keep` also copies the DLL and its
+  `build.json` into `dlls/<UE4SS commit>/`. A mod can carry such a folder for each UE4SS it was built
+  with, and an install uses the one for the game's UE4SS, else `dlls/main.dll`.
+
 A mod's `cpp/CMakeLists.txt` is plain CMake. `wcmods_mod(target sources...)` (from
 `wcmods/cpp_sdk/WCMods.cmake`) makes the DLL, linked against UE4SS, with `WCMods.hpp` and the mod's own
 `src/` on the include path; add sources to it, and anything else (`FetchContent`,
@@ -928,13 +945,14 @@ The events of fights (`CombatStart`, `CombatEnd`, `Damage`, `TurnEnded`, `Status
 | `wcmods::on_game_thread_now()`, `assert_game_thread(L"what")` | Whether this is the game thread (known once a frame has run); the second says so in the log when it isn't |
 | `wcmods::on_settings_changed(fn)` | `fn()` on the game thread when `settings.json` changed on disk (the studio, a text editor), after `settings()` has been read again; looked for once a second |
 
-Hooks see a function only when it's called through the engine: by a Blueprint, as an event or RPC
-(`ClientRestart`, `OnItemPickedUp`), or by `wcmods::call`. Native code calling native code directly is
-never seen. What's been tried: hooks on events, and on a native function only the mod itself calls
-(`KismetSystemLibrary:GetConsoleVariableFloatValue`, with `set_return`), work; a hook on
-`Actor:K2_GetActorLocation`, a native function Blueprints call many times a frame, whose callback
-also unhooked itself, closed the game as the forest loaded. Until that's understood, hook events and
-functions the game's Blueprints don't hammer, and unhook from outside the callback.
+Hooks see every call that goes through the engine: an event or RPC (`ClientRestart`,
+`OnItemPickedUp`), a Blueprint's call, or `wcmods::call`'s; native code calling native code directly is
+never seen. A native function that a Blueprint's bytecode calls (`Actor:K2_GetActorLocation`, many
+times a frame) fires the hook too, but with no parameter frame: `call.has_params()` is false then, and
+`param()` gives None, while `params<T>()` reads address 0 and closes the game. That was the crash the
+first version of these docs couldn't explain; the game's own crash record (`cpp crash`) named the line.
+The test mod hooks `K2_GetActorLocation` through a whole run, sees both kinds of call, and takes the
+hook off from outside the callback.
 
 **The mod menu, and Lua (`Menu.hpp`)**
 

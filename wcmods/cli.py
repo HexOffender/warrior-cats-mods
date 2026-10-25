@@ -692,8 +692,28 @@ def cmd_cpp(ctx, args):
             print("ready: `python wcmods.py cpp build` builds your mods' cpp/ folders")
         return
     if args.action == "build":
-        built = cppmods.build(root, ctx.cfg, cppmods.cpp_mods(mods.discover(ctx.mods_root), args.mods, root=root))
+        which = cppmods.cpp_mods(mods.discover(ctx.mods_root), args.mods, root=root)
+        if args.watch:
+            cppmods.watch(root, ctx.cfg, which)
+            return
+        built = cppmods.build(root, ctx.cfg, which)
+        if args.keep:
+            for m in which:
+                cppmods.keep(m)
         print(f"built {len(built)} C++ mod(s); install (or press Play in Clan Mod Studio) to put them in the game")
+        return
+    if args.action == "ide":
+        cppmods.ide(root, ctx.cfg, cppmods.cpp_mods(mods.discover(ctx.mods_root), args.mods, root=root), open_it=args.open)
+        return
+    if args.action == "crash":
+        from . import crashes
+        path = crashes.latest()
+        if not path:
+            print("the game hasn't left a crash (nothing under " + crashes.crashes_dir() + ")")
+            return
+        found = mods.discover(ctx.mods_root) + [mods.Mod(os.path.abspath(os.path.join(root, m))) for m in args.mods
+                                                 if os.path.isfile(os.path.join(root, m, "mod.json"))]
+        print(crashes.readout(path, found, cppmods.SDK_DIR))
         return
     st = cppmods.status(root, ctx.cfg)
     game = st["game"]
@@ -828,11 +848,16 @@ def main(root, argv=None):
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_find)
     p = sub.add_parser("cpp", help="C++ mods: 'cpp setup' gets UE4SS's source at the game's UE4SS, 'cpp build' builds "
-                                   "mods' cpp/ into dlls/main.dll, 'cpp' alone says what's ready")
-    p.add_argument("action", nargs="?", choices=("status", "setup", "build"), default="status")
-    p.add_argument("mods", nargs="*", help="for build: the mods to build, by id or by a mod folder's path "
+                                   "mods' cpp/ into dlls/main.dll, 'cpp ide' makes a Visual Studio solution, 'cpp crash' "
+                                   "says which mod the game's last crash was in, 'cpp' alone says what's ready")
+    p.add_argument("action", nargs="?", choices=("status", "setup", "build", "ide", "crash"), default="status")
+    p.add_argument("mods", nargs="*", help="for build, ide and crash: the mods, by id or by a mod folder's path "
                                            "(all enabled mods with cpp/ without)")
     p.add_argument("--commit", help="for setup: UE4SS's commit, when the game hasn't run with UE4SS yet")
+    p.add_argument("--watch", action="store_true", help="for build: build again whenever a file in cpp/ changes")
+    p.add_argument("--keep", action="store_true", help="for build: also keep the DLL as dlls/<UE4SS commit>/, for a "
+                                                        "mod that carries builds for several UE4SS versions")
+    p.add_argument("--open", action="store_true", help="for ide: open the solution in Visual Studio")
     p.set_defaults(fn=cmd_cpp)
     from .agent import cli as agent_cli
     agent_cli.register(sub)

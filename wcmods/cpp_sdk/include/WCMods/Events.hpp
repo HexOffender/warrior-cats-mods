@@ -384,18 +384,23 @@ namespace wcmods
 
         // The object the function was called on.
         auto self() -> UObject* { return context.Context; }
-        // A parameter by its name or its position, as get() gives it (Reflect.hpp): no struct to lay out.
-        // A struct's bytes are the call's own: use them inside the callback.
+        // Whether the call's parameters are there to read. They are when the function was called through the
+        // engine's event path (an event, an RPC, a Blueprint's call, Lua's or C++'s call); a native function
+        // that a Blueprint's bytecode calls directly comes with no parameter frame, and reading one then is
+        // what closed the game when it was tried (a read of address 0). params<T>() doesn't check: check this.
+        auto has_params() -> bool { return context.TheStack.Locals() != nullptr; }
+        // A parameter by its name or its position, as get() gives it (Reflect.hpp): no struct to lay out, and
+        // None when the parameters aren't there. A struct's bytes are the call's own: use them inside the callback.
         auto param(std::wstring_view name) -> Value
         {
-            if (!function) return {};
+            if (!function || !has_params()) return {};
             for (FProperty* p : function->ForEachProperty())
                 if (p->GetName() == name) return detail::read(p, p->ContainerPtrToValuePtr<void>(context.TheStack.Locals()));
             return {};
         }
         auto param(int index) -> Value
         {
-            if (!function || index < 0) return {};
+            if (!function || !has_params() || index < 0) return {};
             for (FProperty* p : function->ForEachProperty())
                 if (index-- == 0) return detail::read(p, p->ContainerPtrToValuePtr<void>(context.TheStack.Locals()));
             return {};
@@ -478,9 +483,10 @@ namespace wcmods
     //       struct Params { RC::Unreal::FName Tag; int32_t Quantity; int32_t Total; };   // a gameplay tag is an FName
     //       wcmods::log(L"picked up {}: {} now", c.params<Params>().Tag.ToString(), c.params<Params>().Total);
     //   });
-    // 0 (and a line in the log) when there's no such function. The function must be one the game calls
-    // through the engine (a Blueprint one, or a native one marked as an event); native code calling native
-    // code directly is never seen.
+    // 0 (and a line in the log) when there's no such function. The hook sees every call that goes through
+    // the engine: an event, an RPC, a Blueprint's call, Lua's or C++'s; native code calling native code
+    // directly is never seen. A native function a Blueprint's bytecode calls comes with no parameters to
+    // read (call.has_params() says), and unhook from outside the callback.
     inline auto on_function(const TCHAR* path, std::function<void(Call&)> fn) -> HookId
     {
         return detail::hook_function(path, std::move(fn), {});

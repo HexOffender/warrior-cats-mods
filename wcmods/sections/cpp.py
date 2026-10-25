@@ -25,6 +25,7 @@ PREFIX = "WCModsCpp_"
 EXPORTS = ("start_mod", "uninstall_mod")    # what UE4SS calls in a C++ mod's main.dll
 BUILD_INFO = "build.json"
 SKIP_DIRS = {"out", "build", "bin", "obj"}     # build output in cpp/ (and cmake-build-*, IDEs'), not source
+VARIANT = re.compile(r"^[0-9a-fA-F]{7,40}$")   # dlls/<UE4SS commit>/: a build for that UE4SS
 
 
 def ue4ss_name(mod_id):
@@ -77,6 +78,20 @@ class CppSection(Section):
 
     def collect(self, mod, ctx):
         folder = os.path.join(mod.folder, DLLS)
+        # A mod can carry builds for several UE4SS versions as dlls/<commit>/ (`cpp build --keep`): the one for
+        # the game's UE4SS is used when there is one, else dlls/main.dll.
+        variant = None
+        try:
+            installed = ue4ss.loader_identity(ctx.cfg.win64_dir)
+        except Exception:   # no game found
+            installed = None
+        if installed and installed.get("commit"):
+            for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+                if VARIANT.match(name) and installed["commit"].startswith(name.lower()) \
+                        and os.path.isfile(os.path.join(folder, name, "main.dll")):
+                    variant = name
+        if variant:
+            folder = os.path.join(folder, variant)
         main = os.path.join(folder, "main.dll")
         has_source = os.path.isfile(os.path.join(mod.folder, SOURCE, "CMakeLists.txt"))
         if not os.path.isfile(main):
@@ -84,10 +99,11 @@ class CppSection(Section):
                 raise ValueError(f"its C++ (cpp/) isn't built yet: run `python wcmods.py cpp build {mod.id}`")
             raise ValueError("dlls/ needs a main.dll (a UE4SS C++ mod)")
         check_dll(main)
-        files = self.read_tree(folder, skip=(BUILD_INFO,))
+        files = {rel: data for rel, data in self.read_tree(folder, skip=(BUILD_INFO,)).items()
+                 if "/" not in rel or not VARIANT.match(rel.split("/")[0])}   # other versions' folders stay out
         built_for = None
         if os.path.isfile(os.path.join(folder, BUILD_INFO)):
-            built_for = self.read_json(mod, os.path.join(DLLS, BUILD_INFO))
+            built_for = self.read_json(mod, os.path.relpath(os.path.join(folder, BUILD_INFO), mod.folder))
             if not isinstance(built_for, dict):
                 raise ValueError(f"dlls/{BUILD_INFO} should hold an object: {{\"ue4ss\": commit, ...}}")
         settings, settings_file = {}, None
@@ -98,7 +114,7 @@ class CppSection(Section):
             settings_file = os.path.abspath(os.path.join(mod.folder, "settings.json"))
         stale = has_source and source_time(os.path.join(mod.folder, SOURCE)) > os.path.getmtime(main)
         return {"files": files, "built_for": built_for, "settings": settings, "settings_file": settings_file,
-                "stale": stale}
+                "stale": stale, "variant": variant}
 
     def build(self, ctx, items):
         if not ctx.cfg.data.get("allow_code_mods"):
@@ -139,5 +155,5 @@ class CppSection(Section):
             files["enabled.txt"] = ""
             ctx.add_ue4ss_mod(name, files)
             ctx.note(mod.id, {"installed as": name, "dlls": sorted(data["files"]),
-                              "built for UE4SS": (built_for or {}).get("ue4ss")})
-            ctx.log(f"  {mod.id}: dlls/main.dll goes in as {name}")
+                              "built for UE4SS": (built_for or {}).get("ue4ss"), "variant": data["variant"]})
+            ctx.log(f"  {mod.id}: dlls/{data['variant'] + '/' if data['variant'] else ''}main.dll goes in as {name}")

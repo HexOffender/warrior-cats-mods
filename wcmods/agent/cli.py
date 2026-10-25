@@ -193,6 +193,11 @@ def cmd_crash(ctx, args):
         print(f"closed {a.close_crash_reporter()} crash reporter(s); nothing was sent")
     else:
         print("a crash reporter is open" if a.crashed() else "no crash reporter is open")
+        # What the game wrote about its last crash, and which C++ mod it was in, when it was one.
+        from .. import cppmods, crashes, mods as modlib
+        path = crashes.latest()
+        if path:
+            print(crashes.readout(path, modlib.discover(ctx.mods_root), cppmods.SDK_DIR))
 
 
 def cmd_test(ctx, args):

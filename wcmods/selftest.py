@@ -61,6 +61,8 @@ def run(cfg, oodle, log=print):
     ok, detail = _cpp_sdk()
     check("C++ SDK: WCMods.hpp's headers are there, every call in them is in SDK.md and called by its test mod, and "
           "the template uses them", ok, detail)
+    ok, detail = _cpp_tooling()
+    check("C++ tooling: a crash readout names the mod and line, and cpp ide picks the newest Visual Studio", ok, detail)
     check("mod menu answers the agent controller", all(s in menu.lua() for s in ('"agent.read"', '"agent.act"', '"agent.scroll"'))
           and 'Menu.share("frame"' in menu.host_script({"sections": {}, "notes": {}, "warnings": [], "built": ""}, []))
     check("agent controller: pictures, menu rows, test files", _agent_parts())
@@ -599,11 +601,25 @@ def _cpp_mod():
             f.write(b"MZ")
         other = make("other", built_for={"ue4ss": "aaaa1111", "ue4ss_dll": "0" * 40})
         unknown = make("unknown")
+        # A mod carrying builds for several UE4SS versions (`cpp build --keep`): dlls/main.dll is for another
+        # UE4SS, dlls/83330635/ for the game's, and the install takes the latter and leaves the folders out.
+        kept = make("kept", built_for={"ue4ss": "aaaa1111"})
+        for commit, built in (("83330635", "8333063595fa3c49ad307f3b0f732accbb760d25"), ("bbbb2222", "bbbb2222")):
+            os.makedirs(os.path.join(kept.folder, "dlls", commit))
+            with open(os.path.join(kept.folder, "dlls", commit, "main.dll"), "wb") as f:
+                f.write(_tiny_dll(cpp.EXPORTS))
+            with open(os.path.join(kept.folder, "dlls", commit, "build.json"), "w") as f:
+                json.dump({"ue4ss": built}, f)
         sec = cpp.CppSection()
         ctx = BuildContext(None, None, tmp, log=lambda m: None)
         ctx.cfg = type("Cfg", (), {"data": {"allow_code_mods": True}, "win64_dir": win64})()
         ctx.begin(sec.id)
-        sec.build(ctx, [(m, sec.collect(m, ctx)) for m in (good, other, unknown)])
+        sec.build(ctx, [(m, sec.collect(m, ctx)) for m in (good, other, unknown, kept)])
+        kept_files = ctx.ue4ss_mods.get("WCModsCpp_kept", ({}, None))[0]
+        kept_data = sec.collect(kept, ctx)
+        if kept_data["variant"] != "83330635" or sorted(kept_files) != ["dlls/main.dll", "enabled.txt", "wcmods.json"] \
+                or kept_data["built_for"] != {"ue4ss": "8333063595fa3c49ad307f3b0f732accbb760d25"}:
+            problems.append(f"kept installs {kept_data['variant']} with {sorted(kept_files)}")
         files = ctx.ue4ss_mods.get("WCModsCpp_good", ({}, None))[0]
         info = json.loads(files.get("wcmods.json", b"{}"))
         if sorted(files) != ["dlls/helper.dll", "dlls/main.dll", "enabled.txt", "wcmods.json"]:
@@ -717,6 +733,65 @@ def _cpp_sdk():
     if not os.path.isfile(test_py):
         problems.append("tests/game/test_cpp_sdk.py is missing")
     return not problems, "; ".join(problems[:3]) or f"{len(names)} calls, all in SDK.md and tests/cpp-sdk"
+
+
+def _cpp_tooling():
+    """The crash readout names the mod a crash was in from Unreal's crash context, and `cpp ide` picks the
+    newest Visual Studio CMake knows."""
+    from . import cppmods, crashes
+    from .mods import Mod
+    problems = []
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = os.path.join(tmp, "mods", "boom")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "mod.json"), "w") as f:
+            f.write('{"name": "Boom"}')
+        src = os.path.join(folder, "cpp", "src", "main.cpp")
+        sdk = os.path.join(tmp, "sdk", "WCMods", "Events.hpp")
+        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<FGenericCrashContext>
+<RuntimeProperties>
+<CrashType>Crash</CrashType>
+<ErrorMessage>Unhandled Exception: EXCEPTION_ACCESS_VIOLATION reading address 0x0000000000000000</ErrorMessage>
+<CallStack>
+Wrc-Win64-ShippingDRM!UObject::ProcessEvent()
+main!std::function&lt;void (wcmods::Call&amp;)&gt;::operator()() [{sdk}:120]
+main!`SdkCheck::on_unreal_init'::`2'::&lt;lambda_5&gt;::operator()() [{src}:54]
+UE4SS!RC::Unreal::Hook::Process()
+KERNEL32!BaseThreadInitThunk()
+</CallStack>
+</RuntimeProperties>
+</FGenericCrashContext>
+"""
+        crash = crashes.parse(xml)
+        frames = crash["frames"]
+        if crash["type"] != "Crash" or "ACCESS_VIOLATION" not in crash["error"] or len(frames) != 5 \
+                or frames[2]["module"] != "main" or frames[2]["file"] != src or frames[2]["line"] != 54 \
+                or frames[0]["file"] is not None or frames[0]["module"] != "Wrc-Win64-ShippingDRM":
+            problems.append(f"crash context misread: {crash['type']!r}, {len(frames)} frames, {frames[2] if len(frames) > 2 else None}")
+        who = crashes.blame(crash, [Mod(folder)], os.path.join(tmp, "sdk"))
+        if not who or who["mod"] != "boom" or who["file"] != "cpp/src/main.cpp" or who["line"] != 54 or who["sdk"]:
+            problems.append(f"blame is {who}")
+        # With no mod of this folder's on the stack, the SDK's frame says a C++ mod was in it.
+        who = crashes.blame(crash, [], os.path.join(tmp, "sdk"))
+        if not who or who["mod"] or not who["sdk"] or who["file"] != "WCMods/Events.hpp":
+            problems.append(f"blame without the mod is {who}")
+        if crashes.blame(crash, [], os.path.join(tmp, "elsewhere")) is not None:
+            problems.append("blames a C++ mod with none on the stack")
+        path = os.path.join(tmp, "CrashContext.runtime-xml")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(xml)
+        text = crashes.readout(path, [Mod(folder)], os.path.join(tmp, "sdk"))
+        if "in the C++ mod boom: cpp/src/main.cpp:54" not in text or "ACCESS_VIOLATION" not in text:
+            problems.append(f"readout says: {text.splitlines()[:2]}")
+    help_text = "Generators\n  Visual Studio 17 2022        = Generates Visual Studio 2022 project files.\n" \
+                "  Visual Studio 18 2026        = Generates Visual Studio 2026 project files.\n  Ninja\n"
+    if cppmods.vs_generator(help_text) != "Visual Studio 18 2026" or cppmods.vs_generator("Ninja") is not None:
+        problems.append(f"vs_generator picks {cppmods.vs_generator(help_text)}")
+    from .sections.cpp import VARIANT
+    if not VARIANT.match("83330635") or VARIANT.match("main.dll") or VARIANT.match("abc"):
+        problems.append("VARIANT matches the wrong folder names")
+    return not problems, "; ".join(problems[:3])
 
 
 def _agent_parts():

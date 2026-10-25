@@ -381,6 +381,25 @@ export default {
       return card;
     }
 
+    // Build a mod's C++ (python wcmods.py cpp build <id>) from its card: the studio builds in the background
+    // and this polls until it's done, then says how it went.
+    async function buildCpp(m) {
+      try {
+        await api.post(`/cpp/build/${encodeURIComponent(m.id)}`, {});
+      } catch (e) { toast(e.message, "bad"); return; }
+      toast(`Building ${m.name}... (the first build compiles UE4SS too: a few minutes)`);
+      for (;;) {
+        await new Promise(r => setTimeout(r, 1500));
+        let st;
+        try { st = await api.get("/cpp"); } catch (e) { toast(e.message, "bad"); return; }
+        if (!st.building) {
+          if (st.result) toast(st.result.message, st.result.ok ? undefined : "bad");
+          await refresh();
+          return;
+        }
+      }
+    }
+
     function details(m) {
       const prio = el("input", { type: "number", id: `mod-prio-${m.id}`, value: m.priority, style: { width: "5.5rem" } });
       prio.addEventListener("change", async () => {
@@ -397,6 +416,7 @@ export default {
           el("button", { class: "btn small", text: "Save as .zip", onclick: async () => {
             try { toast(`Saved ${await api.download(`/mods/${encodeURIComponent(m.id)}/zip`)}`); } catch (e) { toast(e.message, "bad"); }
           } }),
+          m.kinds.includes("C++ source") ? el("button", { class: "btn small", text: "Build C++", onclick: () => buildCpp(m) }) : null,
           m.builtin ? null : confirmButton("Remove", "Press again to remove", () => removeMod(m), "btn small danger")));
     }
 
