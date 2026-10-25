@@ -43,6 +43,16 @@ def source_time(folder):
     return newest
 
 
+def same_commit(a, b):
+    """Whether two git commit names (a short one and a long one, say) name the same commit: the shorter is the
+    longer's start. None when either is missing."""
+    a, b = str(a or "").lower(), str(b or "").lower()
+    if not a or not b:
+        return None
+    n = min(len(a), len(b))
+    return a[:n] == b[:n]
+
+
 def matches(built_for, installed):
     """Whether a DLL built against `built_for` (its build.json) suits the game's UE4SS (`installed`, from
     ue4ss.loader_identity): True, False, or None when it can't be told."""
@@ -50,11 +60,7 @@ def matches(built_for, installed):
         return None
     if built_for.get("ue4ss_dll") and built_for["ue4ss_dll"] == installed["dll"]:
         return True
-    a, b = str(built_for.get("ue4ss") or "").lower(), installed.get("commit") or ""
-    if a and b:
-        n = min(len(a), len(b))
-        return a[:n] == b[:n]
-    return None
+    return same_commit(built_for.get("ue4ss"), installed.get("commit"))
 
 
 def check_dll(path):
@@ -78,21 +84,26 @@ class CppSection(Section):
 
     def collect(self, mod, ctx):
         folder = os.path.join(mod.folder, DLLS)
-        # A mod can carry builds for several UE4SS versions as dlls/<commit>/ (`cpp build --keep`): the one for
-        # the game's UE4SS is used when there is one, else dlls/main.dll.
+        # A mod can carry builds for several UE4SS versions as dlls/<commit>/ (`cpp build --keep`): when
+        # dlls/main.dll isn't for the game's UE4SS (its build.json says), the main.dll and build.json kept for
+        # it are used instead. A fresh dlls/main.dll for the game's UE4SS wins over a kept one, so a build
+        # without --keep is what's installed. The rest of dlls/ (a helper DLL, say) goes in either way; the
+        # versions' folders don't.
         variant = None
         try:
             installed = ue4ss.loader_identity(ctx.cfg.win64_dir)
         except Exception:   # no game found
             installed = None
-        if installed and installed.get("commit"):
+        own = None
+        if os.path.isfile(os.path.join(folder, BUILD_INFO)):
+            own = self.read_json(mod, os.path.join(DLLS, BUILD_INFO))
+        if installed and installed.get("commit") and matches(own if isinstance(own, dict) else None, installed) is not True:
             for name in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
-                if VARIANT.match(name) and installed["commit"].startswith(name.lower()) \
+                if VARIANT.match(name) and same_commit(name, installed["commit"]) \
                         and os.path.isfile(os.path.join(folder, name, "main.dll")):
                     variant = name
-        if variant:
-            folder = os.path.join(folder, variant)
-        main = os.path.join(folder, "main.dll")
+        main_dir = os.path.join(folder, variant) if variant else folder
+        main = os.path.join(main_dir, "main.dll")
         has_source = os.path.isfile(os.path.join(mod.folder, SOURCE, "CMakeLists.txt"))
         if not os.path.isfile(main):
             if has_source:
@@ -100,10 +111,13 @@ class CppSection(Section):
             raise ValueError("dlls/ needs a main.dll (a UE4SS C++ mod)")
         check_dll(main)
         files = {rel: data for rel, data in self.read_tree(folder, skip=(BUILD_INFO,)).items()
-                 if "/" not in rel or not VARIANT.match(rel.split("/")[0])}   # other versions' folders stay out
+                 if "/" not in rel or not VARIANT.match(rel.split("/")[0])}
+        if variant:
+            with open(main, "rb") as f:
+                files["main.dll"] = f.read()
         built_for = None
-        if os.path.isfile(os.path.join(folder, BUILD_INFO)):
-            built_for = self.read_json(mod, os.path.relpath(os.path.join(folder, BUILD_INFO), mod.folder))
+        if os.path.isfile(os.path.join(main_dir, BUILD_INFO)):
+            built_for = self.read_json(mod, os.path.relpath(os.path.join(main_dir, BUILD_INFO), mod.folder))
             if not isinstance(built_for, dict):
                 raise ValueError(f"dlls/{BUILD_INFO} should hold an object: {{\"ue4ss\": commit, ...}}")
         settings, settings_file = {}, None

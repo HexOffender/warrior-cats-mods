@@ -76,6 +76,7 @@ class Studio:
         self.token = secrets.token_urlsafe(24)
         self.lock = threading.Lock()
         self.cpp_building, self.cpp_log, self.cpp_result = None, [], None   # a C++ mod being built from its card
+        self.cpp_tools = None   # cppmods.status() as it was when that build started, for the page's polls
         self._eyes = None
         self._names = None   # the game's name tables, read once
 
@@ -107,9 +108,13 @@ class Studio:
     # ---- C++ mods: what's ready, and building one from its card (a thread; the page polls /api/cpp) ----
     def cpp_status(self):
         from . import cppmods
-        st = cppmods.status(self.ctx.root, self.ctx.cfg)
         with self.lock:
-            building, log, result = self.cpp_building, list(self.cpp_log[-40:]), self.cpp_result
+            building, log, result, st = self.cpp_building, list(self.cpp_log[-40:]), self.cpp_result, self.cpp_tools
+        if not building or not st:
+            # Finding the tools runs vswhere and git: not on every poll of a build that's under way.
+            st = cppmods.status(self.ctx.root, self.ctx.cfg)
+            with self.lock:
+                self.cpp_tools = st
         return {"tools": {k: bool(v) for k, v in st["tools"].items()}, "problems": st["problems"], "source": st["source"],
                 "game": st["game"], "matches": st["matches"], "building": building, "log": log, "result": result}
 

@@ -137,12 +137,18 @@ def test_hooks(agent):
     assert v["hook.self"] == agent.lua("return Game.name(Game.controller())"), v["hook.self"]
     assert v["hook.pawn"] == v["hook.pawn_after"] == agent.lua("return Game.name(Game.player())"), v
     assert v["hook.unhooked_ran"] == 0, v
-    # A hook on a native function Blueprints call every frame: calls through the engine bring parameters
-    # (Lua's K2_GetActorLocation here does), bytecode's don't, and the game is still up.
-    agent.lua("return Game.player():K2_GetActorLocation()")
+    # A hook on a native function Blueprints call every frame: a call through ProcessEvent (Lua's here)
+    # brings parameters, and the hook reads the very location Lua got back (the last read of the player's own;
+    # Lua and the mod call it on other actors too); Blueprint bytecode's calls, many a frame, come without;
+    # and the game is still up.
+    before = _request(agent, "events")["values"]["hook.native.with"]
+    loc = agent.lua("local l = Game.player():K2_GetActorLocation(); return {l.X, l.Y, l.Z}")
     v = _request(agent, "events")["values"]
-    assert v["hook.native.with"] >= 1 and v["hook.native.read"] >= 1, (v["hook.native.with"], v["hook.native.read"])
-    assert v["hook.native.without"] >= 0, v
+    assert v["hook.native.with"] >= before + 1 and v["hook.native.read"] >= 1, (before, v["hook.native.with"], v["hook.native.read"])
+    assert all(abs(a - b) < 0.01 for a, b in zip(v["hook.native.last"], loc)) and len(loc) == 3, (v["hook.native.last"], loc)
+    assert v["hook.native.without"] >= 1, v["hook.native.without"]
+    # A bytecode call's return value is readable all the same (the cat stands still: the same location).
+    assert all(abs(a - b) < 0.01 for a, b in zip(v["hook.native.last_bytecode"], loc)), (v["hook.native.last_bytecode"], loc)
     _request(agent, "unhook_native")
     before = _request(agent, "events")["values"]["hook.native.with"]
     agent.lua("return Game.player():K2_GetActorLocation()")

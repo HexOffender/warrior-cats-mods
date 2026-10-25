@@ -384,29 +384,54 @@ namespace wcmods
 
         // The object the function was called on.
         auto self() -> UObject* { return context.Context; }
-        // Whether the call's parameters are there to read. They are when the function was called through the
-        // engine's event path (an event, an RPC, a Blueprint's call, Lua's or C++'s call); a native function
-        // that a Blueprint's bytecode calls directly comes with no parameter frame, and reading one then is
-        // what closed the game when it was tried (a read of address 0). params<T>() doesn't check: check this.
-        auto has_params() -> bool { return context.TheStack.Locals() != nullptr; }
+        // Whether the call's input parameters are there to read. They are when the function was called
+        // through ProcessEvent (an event, an RPC, Lua's or C++'s call): the frame is the function's own, its
+        // Locals hold the inputs, and it has no bytecode. When a Blueprint's bytecode calls a native function,
+        // the frame is the caller's: the inputs are expressions the native evaluates from the bytecode as it
+        // runs, and Locals are the caller's own variables (null when it has none: the read of address 0 that
+        // closed the game), so there's nothing to read as inputs. The engine tells the two apart by the
+        // bytecode pointer, and so does this. The return value is readable either way (param(L"ReturnValue")
+        // in after_function). params<T>() doesn't check: check this.
+        auto has_params() -> bool { return context.TheStack.Code() == nullptr && context.TheStack.Locals() != nullptr; }
         // A parameter by its name or its position, as get() gives it (Reflect.hpp): no struct to lay out, and
-        // None when the parameters aren't there. A struct's bytes are the call's own: use them inside the callback.
+        // None when it isn't there to read. A struct's bytes are the call's own: use them inside the callback.
         auto param(std::wstring_view name) -> Value
         {
-            if (!function || !has_params()) return {};
+            if (!function) return {};
             for (FProperty* p : function->ForEachProperty())
-                if (p->GetName() == name) return detail::read(p, p->ContainerPtrToValuePtr<void>(context.TheStack.Locals()));
+                if (p->GetName() == name) return read_param(p);
             return {};
         }
         auto param(int index) -> Value
         {
-            if (!function || !has_params() || index < 0) return {};
+            if (!function || index < 0) return {};
             for (FProperty* p : function->ForEachProperty())
-                if (index-- == 0) return detail::read(p, p->ContainerPtrToValuePtr<void>(context.TheStack.Locals()));
+                if (index-- == 0) return read_param(p);
             return {};
         }
-        // Its parameters, as a struct laid out like them (see wcmods::call). Changing them before the call
-        // (on_function) changes what the game does.
+    private:
+        // Where a parameter's value sits in this call. The return value is where the engine has the function
+        // write it (RESULT_DECL: the caller's buffer, whichever way it was called; the frame's own slot for it
+        // stays as the stack left it). An out parameter of a ProcessEvent call is where the frame's OutParms
+        // say (the caller's buffer too). An input is in the frame's Locals, when it's the function's frame.
+        auto param_address(FProperty* p) -> void*
+        {
+            if (p->HasAnyPropertyFlags(RC::Unreal::CPF_ReturnParm)) return context.RESULT_DECL;
+            if (!has_params()) return nullptr;
+            if (p->HasAnyPropertyFlags(RC::Unreal::CPF_OutParm))
+                for (auto* rec = context.TheStack.OutParms(); rec; rec = rec->NextOutParm)
+                    if (rec->Property == p) return rec->PropAddr;
+            return p->ContainerPtrToValuePtr<void>(context.TheStack.Locals());
+        }
+        auto read_param(FProperty* p) -> Value
+        {
+            void* at = param_address(p);
+            return at ? detail::read(p, at) : Value{};
+        }
+    public:
+        // Its input parameters, as a struct laid out like them (see wcmods::call), when has_params(). Changing
+        // them before the call (on_function) changes what the game does. The return value isn't in here:
+        // param(L"ReturnValue") has it, and set_return() sets it.
         template <typename Params>
         auto params() -> Params&
         {
@@ -485,8 +510,9 @@ namespace wcmods
     //   });
     // 0 (and a line in the log) when there's no such function. The hook sees every call that goes through
     // the engine: an event, an RPC, a Blueprint's call, Lua's or C++'s; native code calling native code
-    // directly is never seen. A native function a Blueprint's bytecode calls comes with no parameters to
-    // read (call.has_params() says), and unhook from outside the callback.
+    // directly is never seen. A native function a Blueprint's bytecode calls comes with no inputs to read
+    // (call.has_params() says; param() gives None for them, and still the return value), and unhook from
+    // outside the callback.
     inline auto on_function(const TCHAR* path, std::function<void(Call&)> fn) -> HookId
     {
         return detail::hook_function(path, std::move(fn), {});

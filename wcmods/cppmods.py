@@ -255,6 +255,10 @@ def vs_generator(help_text):
 def ide(root, cfg, mods, log=print, open_it=False):
     """A Visual Studio solution for the mods' C++ (and UE4SS, which they link), in cache/cpp/ide, to edit, build
     and debug in (attach to the game). Returns the .sln's path."""
+    # Configuring runs the mods' CMake files, as building does: the same permission.
+    if not cfg.data.get("allow_code_mods"):
+        raise RuntimeError("a mod's C++ project runs its build files: set \"allow_code_mods\": true in wcmods.json "
+                           "(or allow mods that run code in Clan Mod Studio) first")
     if not mods:
         raise ValueError("no enabled mod has C++ source (cpp/CMakeLists.txt); name the mods")
     tools = toolchain()
@@ -264,17 +268,24 @@ def ide(root, cfg, mods, log=print, open_it=False):
     if not source_commit(root):
         raise RuntimeError("UE4SS's source isn't here yet: run `python wcmods.py cpp setup`")
     out = build_dir(root)
-    os.makedirs(out, exist_ok=True)
+    ide_dir = os.path.join(out, "ide")
+    os.makedirs(ide_dir, exist_ok=True)
     _write_if_changed(os.path.join(out, "CMakeLists.txt"), project(root, mods))
     help_text = subprocess.run([tools["cmake"], "--help"], capture_output=True, text=True).stdout
     generator = vs_generator(help_text)
     if not generator:
         raise RuntimeError("this CMake knows no Visual Studio generator")
-    log(f"making a {generator} solution in {os.path.join(out, 'ide')} (it configures UE4SS too: a few minutes) ...")
-    code = _run(os.path.join(out, "ide.bat"), [f'cd /d "{out}"', f'cmake -S . -B ide -G "{generator}" -A x64 || exit /b 1'], tools, log)
+    log(f"making a {generator} solution in {ide_dir} (it configures UE4SS too: a few minutes) ...")
+    # The batch file and its build.log live in ide/, so the last build's build.log stays as it was.
+    code = _run(os.path.join(ide_dir, "ide.bat"), [f'cd /d "{out}"', f'cmake -S . -B ide -G "{generator}" -A x64 || exit /b 1'],
+                tools, log)
     if code:
-        raise RuntimeError(f"making the solution failed (exit code {code}); {os.path.join(out, 'build.log')} has the messages")
-    sln = os.path.join(out, "ide", "WCModsCpp.sln")
+        raise RuntimeError(f"making the solution failed (exit code {code}); {os.path.join(ide_dir, 'build.log')} has the messages")
+    # Visual Studio 2026's CMake writes the newer WCModsCpp.slnx; older ones a .sln.
+    sln = next((os.path.join(ide_dir, n) for n in ("WCModsCpp.slnx", "WCModsCpp.sln")
+                if os.path.isfile(os.path.join(ide_dir, n))), None)
+    if not sln:
+        raise RuntimeError(f"CMake wrote no solution in {ide_dir}; {os.path.join(ide_dir, 'build.log')} has its messages")
     log(f"solution: {sln}\n  build the mod's project in the Game__Shipping__Win64 configuration (the one the game's UE4SS is), "
         f"then install; to debug, attach to Wrc-Win64-ShippingDRM.exe")
     if open_it:
@@ -286,6 +297,8 @@ def watch(root, cfg, mods, log=print, every=2.0):
     """Build the mods, then again whenever a file in their cpp/ changes, until Ctrl+C."""
     from .sections.cpp import SOURCE, source_time
     import time
+    if not mods:
+        raise ValueError("no enabled mod has C++ source (cpp/CMakeLists.txt); name the mods to build")
 
     def stamp():
         return max(source_time(os.path.join(m.folder, SOURCE)) for m in mods)

@@ -602,12 +602,16 @@ def _cpp_mod():
         other = make("other", built_for={"ue4ss": "aaaa1111", "ue4ss_dll": "0" * 40})
         unknown = make("unknown")
         # A mod carrying builds for several UE4SS versions (`cpp build --keep`): dlls/main.dll is for another
-        # UE4SS, dlls/83330635/ for the game's, and the install takes the latter and leaves the folders out.
+        # UE4SS, dlls/8333063/ (a 7-character name, as a log can give) for the game's, and the install takes
+        # the latter's main.dll and build.json with the helper DLL beside dlls/main.dll, and leaves the
+        # versions' folders out.
         kept = make("kept", built_for={"ue4ss": "aaaa1111"})
-        for commit, built in (("83330635", "8333063595fa3c49ad307f3b0f732accbb760d25"), ("bbbb2222", "bbbb2222")):
+        with open(os.path.join(kept.folder, "dlls", "helper.dll"), "wb") as f:
+            f.write(b"MZ")
+        for commit, built in (("8333063", "8333063595fa3c49ad307f3b0f732accbb760d25"), ("bbbb2222", "bbbb2222")):
             os.makedirs(os.path.join(kept.folder, "dlls", commit))
             with open(os.path.join(kept.folder, "dlls", commit, "main.dll"), "wb") as f:
-                f.write(_tiny_dll(cpp.EXPORTS))
+                f.write(_tiny_dll(cpp.EXPORTS + ("kept_" + commit,)))
             with open(os.path.join(kept.folder, "dlls", commit, "build.json"), "w") as f:
                 json.dump({"ue4ss": built}, f)
         sec = cpp.CppSection()
@@ -617,9 +621,17 @@ def _cpp_mod():
         sec.build(ctx, [(m, sec.collect(m, ctx)) for m in (good, other, unknown, kept)])
         kept_files = ctx.ue4ss_mods.get("WCModsCpp_kept", ({}, None))[0]
         kept_data = sec.collect(kept, ctx)
-        if kept_data["variant"] != "83330635" or sorted(kept_files) != ["dlls/main.dll", "enabled.txt", "wcmods.json"] \
-                or kept_data["built_for"] != {"ue4ss": "8333063595fa3c49ad307f3b0f732accbb760d25"}:
+        if kept_data["variant"] != "8333063" \
+                or sorted(kept_files) != ["dlls/helper.dll", "dlls/main.dll", "enabled.txt", "wcmods.json"] \
+                or kept_data["built_for"] != {"ue4ss": "8333063595fa3c49ad307f3b0f732accbb760d25"} \
+                or b"kept_8333063" not in kept_files["dlls/main.dll"]:
             problems.append(f"kept installs {kept_data['variant']} with {sorted(kept_files)}")
+        # A fresh dlls/main.dll for the game's UE4SS (a build without --keep) wins over the kept one.
+        with open(os.path.join(kept.folder, "dlls", "build.json"), "w") as f:
+            json.dump({"ue4ss": "83330635"}, f)
+        fresh = sec.collect(kept, ctx)
+        if fresh["variant"] is not None or b"kept_8333063" in fresh["files"]["main.dll"]:
+            problems.append(f"a fresh main.dll for the game's UE4SS loses to the kept one ({fresh['variant']})")
         files = ctx.ue4ss_mods.get("WCModsCpp_good", ({}, None))[0]
         info = json.loads(files.get("wcmods.json", b"{}"))
         if sorted(files) != ["dlls/helper.dll", "dlls/main.dll", "enabled.txt", "wcmods.json"]:
@@ -652,7 +664,8 @@ def _cpp_mod():
             problems.append("exports misread")
         if (cpp.matches({"ue4ss": "83330635abc"}, {"commit": "83330635", "dll": "x"}) is not True
                 or cpp.matches({"ue4ss_dll": "x"}, {"commit": None, "dll": "x"}) is not True
-                or cpp.matches({"ue4ss": "1234567"}, {"commit": None, "dll": "x"}) is not None):
+                or cpp.matches({"ue4ss": "1234567"}, {"commit": None, "dll": "x"}) is not None
+                or cpp.same_commit("8333063", "83330635AB") is not True or cpp.same_commit("8333063", "8333064") is True):
             problems.append("matches() is wrong")
         project = cppmods.project(tmp, [good])
         if 'add_subdirectory("' not in project or "set(WCMODS_TARGET wcmods_good)" not in project:
