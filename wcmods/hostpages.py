@@ -552,6 +552,35 @@ end
     end, { order = 30, group = "story" })
 
     -- ---------- Fight ----------
+    -- Extra drops. What a beaten animal gives comes from the game's character table, not from the
+    -- fighter's own list (changing that list changes nothing), so the extra is handed out after the fight
+    -- instead: a pickup by your cat holding as much again, once the fight is won.
+    local extra = { items = {}, enemies = {}, note = nil }   -- enemies: actor address -> its health, last seen
+    Game.every(0.5, function()
+        local f = Game.fight()
+        if f then
+            for _, x in ipairs(f:enemies()) do
+                local cat = x:cat()
+                if cat then extra.enemies[tostring(cat.actor:GetAddress())] = cat:health() end
+            end
+            return
+        end
+        if next(extra.items) == nil then
+            extra.enemies = {}
+            return
+        end
+        if not (Game.cat() and Game.cat():location()) then return end   -- not back in the forest yet
+        local won = next(extra.enemies) ~= nil
+        for _, hp in pairs(extra.enemies) do won = won and hp ~= nil and hp <= 0 end
+        if won then
+            for tag, n in pairs(extra.items) do Game.items.drop(tag, n) end
+            extra.note = "The extra drops are on the ground by your cat."
+        else
+            extra.note = "The fight wasn't won, so there are no extra drops."
+        end
+        extra.items, extra.enemies = {}, {}
+    end)
+
     local function fighterRows(ui, x, enemy)
         local cat = x:cat()
         if not cat then return end
@@ -581,8 +610,7 @@ end
             if #parts > 0 then
                 ui.field("Drops", table.concat(parts, ", "))
                 if ui.button("Double what it drops") then
-                    for tag, n in pairs(drops) do drops[tag] = n * 2 end
-                    cat:setRewards(drops)
+                    for tag, n in pairs(drops) do extra.items[tag] = (extra.items[tag] or 0) + n end
                 end
             end
         end
@@ -592,11 +620,15 @@ end
         ui.heading("Fight")
         local f = Game.fight()
         if not f then
+            if extra.note then ui.note(extra.note) end
             ui.text("No fight now. During one, this page shows both sides (health, stamina, stats, stance and moves) and " ..
                     "lets you heal or weaken them.")
             ui.note("The game's own switches for fights (attacks that always land, a forced difficulty) are on Game switches.")
             return
         end
+        local more = {}
+        for tag, n in pairs(extra.items) do more[#more + 1] = string.format("%d %s", n, itemName(tag)) end
+        if #more > 0 then ui.note("Extra drops if you win (by your cat after the fight): " .. table.concat(more, ", ")) end
         local order = {}
         for _, c in ipairs(f:turnOrder()) do order[#order + 1] = c:name() or words(c:kind() or "?") end
         local cur = f:current()

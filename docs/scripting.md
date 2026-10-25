@@ -205,7 +205,7 @@ Some limits:
 | `scale()`, `setScale(f)` | Size (the same call as the menu's size cheat) | read |
 | `setTimeDilation(f)` | This cat's own time: 2 is twice as fast | no |
 | `kind()` | `"Cat"`, `"WeakMice"`, `"BossFox"`, … | yes |
-| `rewards()`, `setRewards({tag = n})` | What an animal drops when beaten | read |
+| `rewards()`, `setRewards({tag = n})` | What an animal drops when beaten | read; a change isn't what it drops, which comes from the game's character table (`DT_Characters`) |
 | `applyStatus("Poisoned")`, `removeStatus(s)`, `clearStatus()` | Status conditions | applied without an error; the effect wasn't watched |
 | `component(kind)` | The raw component: `"Health"`, `"Stamina"`, `"StaminaCombat"`, `"Level"` | yes |
 
@@ -420,7 +420,8 @@ The mod menu (Insert) builds these pages on `WCModsGame`, in the side bar's grou
 - **Quests:** the quest you follow and its objectives (with "Go to objective" when an objective has
   a place), and every quest by state, with Follow. The titles are the game's own, for your rank.
 - **Fight:** during a fight, both sides with health and stamina, stats, stance and moves; Heal,
-  Weaken, Cure status, and "Double what it drops".
+  Weaken, Cure status, and "Double what it drops" (the extra is a pickup by your cat once the fight
+  is won).
 - **Game switches:** the game's developer switches: "always full" for each resource, and every on/off
   and number setting.
 - **Log:** the end of UE4SS.log, newest first: the mods' lines, the errors, or everything.
