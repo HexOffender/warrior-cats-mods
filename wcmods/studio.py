@@ -377,9 +377,10 @@ class Studio:
         raise LookupError("unknown API route")
 
     def cat_info(self):
-        """Your cat's colour slots in the save, and the colours each slot has with the enabled palettes
-        (the game's tables, recoloured slots, and new slots palettes add)."""
-        current = {}
+        """Your cat's colour slots and scars in the save, the colours each slot has with the enabled
+        palettes (the game's tables, recoloured slots, and new slots palettes add), and what each scar
+        place can be."""
+        current, scars = {}, {}
         try:
             text, _ = self.save_text()
             doc = SaveDoc(text)
@@ -389,6 +390,9 @@ class Studio:
                 for part, field in catlook.SLOTS.items():
                     m = re.search(rf"(?<![A-Za-z0-9_]){field}=(\d+)", raw)
                     current[part] = int(m.group(1)) if m else 0
+                for part, field in catlook.SCARS.items():
+                    m = re.search(rf"(?<![A-Za-z0-9_]){field}=(\d+)", raw)
+                    scars[part] = int(m.group(1)) if m else 0
         except LookupError:
             pass
         enabled = []
@@ -403,7 +407,8 @@ class Studio:
         slots = {part: {k: colors.hex_from_srgb(v) for k, v in merged.get(part, {}).items()}
                  for part in ("fur", "pattern", "marking")}
         return {"current": current, "palette": slots, "game_slots": palettes.GAME_SLOTS,
-                "feral_slots": list(catlook.FERAL_SLOTS), "parts": catlook.PARTS}
+                "feral_slots": list(catlook.FERAL_SLOTS), "parts": catlook.PARTS,
+                "scars": {"current": scars, "top": catlook.SCAR_CHOICES, "ear_names": catlook.EAR_SCARS}}
 
     def names_preview(self, spec):
         """The game's names, what a names.json (not yet saved) does to them, and the cats in the save."""

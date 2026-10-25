@@ -397,7 +397,7 @@ palette you've added is your own copy, so add it again to get the new one.
   - `"none"` for no scar there.
 
   Scars show with the game's own Injury system switch on (its Gameplay settings). A boss fight can
-  still give new ones.
+  still give new ones. The studio's **Your cat** page has a Scars card for them.
 
 ### `controls.json`
 ```json
