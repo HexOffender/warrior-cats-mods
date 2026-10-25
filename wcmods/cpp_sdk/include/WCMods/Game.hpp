@@ -5,9 +5,11 @@
 #pragma once
 
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -50,10 +52,24 @@ namespace wcmods
         return object->GetValuePtrByPropertyNameInChain<T>(name);
     }
 
-    // A class by its path ("/Script/SwtAdventure.SwtAdventureCharacter"), or nullptr.
+    // A class by its path ("/Script/SwtAdventure.SwtAdventureCharacter"), or nullptr. Classes last the whole
+    // run, so one found is kept.
     inline auto find_class(const TCHAR* path) -> UClass*
     {
-        return RC::Unreal::UObjectGlobals::StaticFindObject<UClass*>(nullptr, nullptr, path);
+        static std::mutex lock;
+        static std::unordered_map<std::wstring, UClass*> found;
+        std::wstring key(path);
+        {
+            std::lock_guard guard(lock);
+            if (auto it = found.find(key); it != found.end()) return it->second;
+        }
+        UClass* cls = RC::Unreal::UObjectGlobals::StaticFindObject<UClass*>(nullptr, nullptr, path);
+        if (cls)
+        {
+            std::lock_guard guard(lock);
+            found[key] = cls;
+        }
+        return cls;
     }
 
     // Any object by its full path ("/Script/Engine.Default__GameplayStatics"), or nullptr.
@@ -101,7 +117,7 @@ namespace wcmods
         return true;
     }
 
-    // The same for a function with no parameters.
+    // The same for a function that takes nothing and gives nothing back.
     inline auto call(UObject* object, const TCHAR* function) -> bool
     {
         if (!object) return false;
@@ -109,6 +125,20 @@ namespace wcmods
         if (!fn || fn->GetParmsSize() != 0) return false;
         object->ProcessEvent(fn, nullptr);
         return true;
+    }
+
+    // The same for a function that takes nothing and gives one value back, which this returns (nullopt when
+    // the function isn't there, or its result isn't that size):
+    //   auto sprinting = wcmods::call<bool>(cat, STR("IsSprinting"));
+    template <typename R>
+    auto call(UObject* object, const TCHAR* function) -> std::optional<R>
+    {
+        if (!object) return std::nullopt;
+        UFunction* fn = object->GetFunctionByNameInChain(function);
+        if (!fn || fn->GetParmsSize() != sizeof(R)) return std::nullopt;
+        R result{};
+        object->ProcessEvent(fn, &result);
+        return result;
     }
 
     // ============================================================================================ the world
@@ -135,10 +165,7 @@ namespace wcmods
     inline auto world() -> UObject*
     {
         if (UObject* c = controller())
-        {
-            if (auto w = property<UObject*>(c, STR("World")); w && *w) return *w;
             if (UWorld* w = static_cast<AActor*>(c)->GetWorld()) return w;
-        }
         auto viewport = property<UObject*>(find_first(STR("GameEngine")), STR("GameViewport"));
         auto w = viewport && *viewport ? property<UObject*>(*viewport, STR("World")) : nullptr;
         return w ? *w : nullptr;
@@ -255,6 +282,7 @@ namespace wcmods
         explicit operator bool() const { return value && max; }
     };
 
+    // A resource component of an actor's, by the component's class: how the Cat calls below find theirs.
     inline auto resource(UObject* owner, const TCHAR* component_class) -> Resource
     {
         UObject* c = component(owner, component_class);

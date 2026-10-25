@@ -820,7 +820,7 @@ good for the frame you got it in: look it up again next time rather than keeping
 | `wcmods::log(L"{} cats", n)` | A line in `UE4SS.log` starting with the mod's name (`std::format`) |
 | `wcmods::settings()` | `settings.json` as a `wcmods::Json`, read as the game starts: `settings()["speed"].number(1.0)`. A key that isn't there is null, so the fallback is used. `settings_lock()` is its mutex, for a mod that changes it off the game thread |
 | `wcmods::save_settings()` | Write `settings()` back to `settings.json`, so the next install starts with it |
-| `wcmods::Json` | A JSON value: `boolean`, `number`, `string`, `wstring` (each with a fallback), `is_null`, `is_bool`, `is_number`, `is_string`, `is_array`, `is_object`, `[key]`, `[index]`, `has`, `keys`, `values`, `set`, `push`, `size`, `Json::parse(text)`, `dump()`; made from any number, text or bool, `Json::object()`, `Json::array()` |
+| `wcmods::Json` | A JSON value: `boolean`, `number`, `string`, `wstring` (each with a fallback), `type()`, `is_null`, `is_bool`, `is_number`, `is_string`, `is_array`, `is_object`, `[key]`, `[index]`, `has`, `keys`, `values`, `set`, `push`, `size`, `Json::parse(text)`, `dump()`; made from any number, text or bool, `Json::object()`, `Json::array()` |
 | `wcmods::read_file(path)`, `write_file(path, text)` | A file's text (nullopt when it isn't there); written whole, through a temporary file |
 | `wcmods::wide(utf8)`, `utf8(wide)` | Convert text: the game's is wide, wcmods' files are UTF-8 |
 | `wcmods::offset(cls, member)`, `member<T>(object, cls, member)` | The game's members that aren't reflected (health, stamina, level, stats, the clock; `wcmods/game.py`'s `HIDDEN`), where they are on the installed game build: wcmods writes them on every install to `ue4ss/Mods/shared/WCModsGame/offsets.json`, the same ones `WCModsGame` uses. `nullopt` / `nullptr` for one a game update moved where wcmods can't find it |
@@ -834,7 +834,7 @@ good for the frame you got it in: look it up again next time rather than keeping
 | `wcmods::find_class(STR("/Script/..."))`, `object(STR("/Script/Engine.Default__GameplayStatics"))` | A class, or any object, by its full path |
 | `wcmods::find_all(STR("WrcRoamingEnemy"))`, `find_first(...)` | Every object of a class (subclasses too), or the first. They go through all the game's objects: a few times a second, not every frame |
 | `wcmods::is_a(o, STR("/Script/Engine.Pawn"))` | Whether an object is of a class, or a subclass |
-| `wcmods::call(object, STR("GetDayClockTime"), params)` | Call one of an object's reflected functions, with a struct laid out like its parameters (inputs, outputs, return value, in order); `call(object, name)` for one without. `python wcmods.py inspect "Game.gameState()"` lists an object's functions and their parameters |
+| `wcmods::call(object, STR("GetDayClockTime"), params)` | Call one of an object's reflected functions, with a struct laid out like its parameters (inputs, outputs, return value, in order); `call(object, name)` for one that takes and gives nothing, `call<bool>(object, name)` for one that takes nothing and gives a value back (an optional). `python wcmods.py inspect "Game.gameState()"` lists an object's functions and their parameters |
 | `wcmods::controller()`, `player()` | The player's controller and your cat's actor while you play, else `nullptr` |
 | `wcmods::world()`, `level_name()` | The world, and the level's name (`L_WorldMap_01_P` in the forest) |
 | `wcmods::game_instance()`, `game_state()`, `game_mode()` | The game's own objects |
@@ -843,7 +843,7 @@ good for the frame you got it in: look it up again next time rather than keeping
 | `wcmods::console(STR("stat fps"))` | A console command as the player, the way the mod menu's console box runs one; cheat commands need the mod menu's Cheats page to have turned cheats on |
 | `wcmods::location(actor)`, `teleport(actor, {x, y, z})` | Where an actor is (`Vec3`, or nullopt), and moving it there. `to_vec3` and `to_fvector` convert to and from the engine's `FVector` |
 | `wcmods::cat()` | Your cat as a `Cat` (false in menus); `Cat{actor}` for any cat |
-| `Cat::health()`, `stamina()`, `combat_stamina()` | A `Resource`: `value` and `max` pointers you read and write; false when it isn't there. `heal()` fills health; `stamina_regen()` is stamina back per second |
+| `Cat::health()`, `stamina()`, `combat_stamina()` | A `Resource`: `value` and `max` pointers you read and write; false when it isn't there. `heal()` fills health; `stamina_regen()` is stamina back per second. `wcmods::resource(actor, STR("SwtQuestHealthComponent"))` is the same for any actor's resource component |
 | `Cat::level()`, `xp()`, `xp_needed()`, `stat(wcmods::Stat::Strength)` | Pointers on the level component (`level_component()`, on the player state): the level, experience and what the next level needs, and the six stats |
 | `Cat::location()`, `teleport({x, y, z})`, `scale()`, `set_scale(1.5)`, `time_dilation()` | Where it is, moving it, its size, and how fast time runs for it |
 | `wcmods::time_of_day()`, `day_seconds()`, `set_time(6, 30)` | The clock (`hours`, `minutes`, `seconds`), the seconds into the day to read and write, and setting it |

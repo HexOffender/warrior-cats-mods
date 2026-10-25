@@ -671,20 +671,20 @@ def _cpp_sdk():
             continue
         with open(path, encoding="utf-8") as f:
             lines = f.read().split("\n")
-        depth, in_detail = 0, False
+        in_detail = False
         for line in lines:
+            # Each `namespace detail` block ends with its "} // namespace detail" line (a brace count would
+            # be thrown by the braces in format strings).
             if re.match(r"\s*namespace detail\b", line):
-                in_detail, depth = True, 0
+                in_detail = True
             if in_detail:
-                depth += line.count("{") - line.count("}")
-                if depth <= 0 and "}" in line:
+                if re.match(r"\s*} // namespace detail", line):
                     in_detail = False
                 continue
             m = re.match(r"\s{4,8}(?:inline )?auto (\w+)\(", line)
             if m and not m.group(1).startswith("operator"):
                 names.add(m.group(1))
-    private = {"resource", "to_vec3", "to_fvector", "level_component", "fresh_kill_component", "settings_lock", "values",
-               "self", "params", "set_return", "size", "type", "write"}
+    private = {"write"}   # Json's own writer
     undocumented = sorted(n for n in names - private
                           if f"{n}(" not in cpp_docs and f"{n}<" not in cpp_docs and f"`{n}`" not in cpp_docs)
     if undocumented:

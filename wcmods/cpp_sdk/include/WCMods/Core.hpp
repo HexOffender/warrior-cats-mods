@@ -60,9 +60,11 @@ namespace wcmods
         Json() = default;
         Json(std::nullptr_t) {}
         Json(bool v) : m_type(Type::Bool), m_bool(v) {}
-        // Any number: int, size_t, float, double...
+        // Any number: int, size_t, float, double... (not a character, which is text)
         template <typename T>
-            requires(std::is_arithmetic_v<T> && !std::is_same_v<T, bool>)
+            requires(std::is_arithmetic_v<T> && !std::is_same_v<T, bool> && !std::is_same_v<T, char> &&
+                     !std::is_same_v<T, wchar_t> && !std::is_same_v<T, char8_t> && !std::is_same_v<T, char16_t> &&
+                     !std::is_same_v<T, char32_t>)
         Json(T v) : m_type(Type::Number), m_number(static_cast<double>(v)) {}
         Json(std::string v) : m_type(Type::String), m_string(std::move(v)) {}
         Json(const char* v) : m_type(Type::String), m_string(v) {}

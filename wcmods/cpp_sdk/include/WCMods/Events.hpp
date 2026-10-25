@@ -231,6 +231,10 @@ namespace wcmods
                 return false;
             }
             auto shared = std::make_shared<std::function<void()>>(std::move(fn));
+            // The key's callback comes on UE4SS's input thread and hands the work to the game thread; the hook
+            // that carries it goes in now, from the mod's own thread, rather than from the input thread at the
+            // first press.
+            hook_ticks();
             key_binder()(key, modifiers, [shared] { on_game_thread([shared] { (*shared)(); }); });
             return true;
         }
@@ -348,8 +352,13 @@ namespace wcmods
         {
             RC::Unreal::UObjectGlobals::UnregisterHook(found.first, found.second);
         }
+        catch (const std::exception& e)
+        {
+            detail::log_line(mod().name, std::format(L"can't unhook {}: {}", found.first, wide(e.what())));
+        }
         catch (...)
         {
+            detail::log_line(mod().name, std::format(L"can't unhook {}", found.first));
         }
     }
 
