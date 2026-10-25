@@ -243,6 +243,108 @@ def _run(bat, commands, tools, log):
     return p.wait()
 
 
+def vs_generator(help_text):
+    """CMake's generator for the newest Visual Studio it knows, from `cmake --help` ("Visual Studio 18 2026")."""
+    found = re.findall(r"Visual Studio (\d+) (\d{4})", help_text)
+    if not found:
+        return None
+    major, year = max(found, key=lambda f: int(f[1]))
+    return f"Visual Studio {major} {year}"
+
+
+def ide(root, cfg, mods, log=print, open_it=False):
+    """A Visual Studio solution for the mods' C++ (and UE4SS, which they link), in cache/cpp/ide, to edit, build
+    and debug in (attach to the game). Returns the .sln's path."""
+    # Configuring runs the mods' CMake files, as building does: the same permission.
+    if not cfg.data.get("allow_code_mods"):
+        raise RuntimeError("a mod's C++ project runs its build files: set \"allow_code_mods\": true in wcmods.json "
+                           "(or allow mods that run code in Clan Mod Studio) first")
+    if not mods:
+        raise ValueError("no enabled mod has C++ source (cpp/CMakeLists.txt); name the mods")
+    tools = toolchain()
+    missing = problems(tools)
+    if missing:
+        raise RuntimeError("a Visual Studio solution needs:\n- " + "\n- ".join(missing))
+    if not source_commit(root):
+        raise RuntimeError("UE4SS's source isn't here yet: run `python wcmods.py cpp setup`")
+    out = build_dir(root)
+    ide_dir = os.path.join(out, "ide")
+    os.makedirs(ide_dir, exist_ok=True)
+    _write_if_changed(os.path.join(out, "CMakeLists.txt"), project(root, mods))
+    help_text = subprocess.run([tools["cmake"], "--help"], capture_output=True, text=True).stdout
+    generator = vs_generator(help_text)
+    if not generator:
+        raise RuntimeError("this CMake knows no Visual Studio generator")
+    log(f"making a {generator} solution in {ide_dir} (it configures UE4SS too: a few minutes) ...")
+    # The batch file and its build.log live in ide/, so the last build's build.log stays as it was.
+    code = _run(os.path.join(ide_dir, "ide.bat"), [f'cd /d "{out}"', f'cmake -S . -B ide -G "{generator}" -A x64 || exit /b 1'],
+                tools, log)
+    if code:
+        raise RuntimeError(f"making the solution failed (exit code {code}); {os.path.join(ide_dir, 'build.log')} has the messages")
+    # Visual Studio 2026's CMake writes the newer WCModsCpp.slnx; older ones a .sln.
+    sln = next((os.path.join(ide_dir, n) for n in ("WCModsCpp.slnx", "WCModsCpp.sln")
+                if os.path.isfile(os.path.join(ide_dir, n))), None)
+    if not sln:
+        raise RuntimeError(f"CMake wrote no solution in {ide_dir}; {os.path.join(ide_dir, 'build.log')} has its messages")
+    log(f"solution: {sln}\n  build the mod's project in the Game__Shipping__Win64 configuration (the one the game's UE4SS is), "
+        f"then install; to debug, attach to Wrc-Win64-ShippingDRM.exe")
+    if open_it:
+        os.startfile(sln)
+    return sln
+
+
+def watch(root, cfg, mods, log=print, every=2.0):
+    """Build the mods, then again whenever a file in their cpp/ changes, until Ctrl+C."""
+    from .sections.cpp import SOURCE, source_time
+    import time
+    if not mods:
+        raise ValueError("no enabled mod has C++ source (cpp/CMakeLists.txt); name the mods to build")
+
+    def stamp():
+        return max(source_time(os.path.join(m.folder, SOURCE)) for m in mods)
+
+    seen = stamp()
+    try:
+        build(root, cfg, mods, log)
+    except (RuntimeError, ValueError) as e:
+        log(f"error: {e}")
+    log("watching cpp/ for changes (Ctrl+C stops)")
+    try:
+        while True:
+            time.sleep(every)
+            now = stamp()
+            if now == seen:
+                continue
+            seen = now
+            log("changed; building ...")
+            try:
+                build(root, cfg, mods, log)
+            except (RuntimeError, ValueError) as e:
+                log(f"error: {e}")
+    except KeyboardInterrupt:
+        log("stopped")
+
+
+def keep(mod, log=print):
+    """Copy a mod's dlls/main.dll and build.json into dlls/<UE4SS commit>/, so the mod can carry builds for
+    several UE4SS versions: an install uses the one for the game's. Returns the folder."""
+    from .sections.cpp import BUILD_INFO, DLLS
+    dlls = os.path.join(mod.folder, DLLS)
+    info_path = os.path.join(dlls, BUILD_INFO)
+    if not os.path.isfile(os.path.join(dlls, "main.dll")) or not os.path.isfile(info_path):
+        raise ValueError(f"{mod.id}: build it first (dlls/main.dll and {BUILD_INFO})")
+    with open(info_path, encoding="utf-8") as f:
+        commit = str(json.load(f).get("ue4ss") or "")[:8]
+    if not commit:
+        raise ValueError(f"{mod.id}: dlls/{BUILD_INFO} doesn't say which UE4SS it was built for")
+    dest = os.path.join(dlls, commit)
+    os.makedirs(dest, exist_ok=True)
+    for name in ("main.dll", BUILD_INFO):
+        shutil.copyfile(os.path.join(dlls, name), os.path.join(dest, name))
+    log(f"  {mod.id}: kept as dlls/{commit}/ (for UE4SS {commit})")
+    return dest
+
+
 def build(root, cfg, mods, log=print):
     """Build the mods' cpp/ into their dlls/main.dll, with a dlls/build.json naming the UE4SS it was built
     against. Returns [(mod id, path of its main.dll)]."""

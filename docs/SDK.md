@@ -753,6 +753,24 @@ after updating UE4SS. `cpp build` builds the named mods (or every enabled mod wi
 has everything. `python wcmods.py cpp` says what's ready. Install afterwards (or press Play in the
 studio) to put the DLL in the game.
 
+More ways to build and look:
+
+- **`python wcmods.py cpp build my-mod --watch`** builds again whenever a file in `cpp/` changes
+  (Ctrl+C stops), for working on a mod: install or Play after each.
+- **`python wcmods.py cpp ide my-mod --open`** makes a Visual Studio solution (`WCModsCpp.slnx`, or `.sln` from an older Visual Studio) in `cache/cpp/ide`, with
+  UE4SS as the mods link it, to edit, build (in the `Game__Shipping__Win64` configuration, the one the
+  game's UE4SS is) and debug: attach the debugger to `Wrc-Win64-ShippingDRM.exe`.
+- **Clan Mod Studio** shows a mod with `cpp/` a **Build C++** button under its More (with code mods
+  allowed); the studio builds in the background and says how it went.
+- **`python wcmods.py cpp crash`** reads the game's last crash (Unreal writes each to
+  `%LOCALAPPDATA%\Wrc\Saved\Crashes`) and says whether a C++ mod was on the stack, which, and where in
+  its source (a DLL built here has its symbols), so a game that closed with no word isn't a mystery.
+  `agent crash` says it too.
+- **A mod for several UE4SS versions:** `cpp build my-mod --keep` also copies the DLL and its
+  `build.json` into `dlls/<UE4SS commit>/`. A mod can carry such a folder for each UE4SS it was built
+  with; an install uses `dlls/main.dll` when it's for the game's UE4SS, else the folder for it. The
+  rest of `dlls/` (a helper DLL) goes in with either.
+
 A mod's `cpp/CMakeLists.txt` is plain CMake. `wcmods_mod(target sources...)` (from
 `wcmods/cpp_sdk/WCMods.cmake`) makes the DLL, linked against UE4SS, with `WCMods.hpp` and the mod's own
 `src/` on the include path; add sources to it, and anything else (`FetchContent`,
@@ -922,19 +940,26 @@ The events of fights (`CombatStart`, `CombatEnd`, `Damage`, `TurnEnded`, `Status
 | `wcmods::on_key(wcmods::Key::F6, fn)`, `on_key(key, {wcmods::Modifier::CONTROL}, fn)` | `fn()` when a key is pressed, in the game or out of it (UE4SS sees the keyboard only, not a controller, and the game gets the key too) |
 | `wcmods::on_player(fn)` | `fn(cat)` when your cat appears (the forest loads), changes (a new area) or goes (menus; `nullptr`), looked for four times a second, and once right away |
 | `wcmods::on_level(fn)` | `fn(level name)` once a level has loaded |
-| `wcmods::on_function(STR("/Script/Wrc.GuiHudWrc:OnItemPickedUp"), fn)`, `after_function(...)`, `unhook(id)` | `fn(call)` just before, or just after, the game runs one of its functions, by its full path. `call.self()` is the object, `call.params<Params>()` its parameters as a struct laid out like them (changed before the call, they change what the game does), `call.set_return(v)` its result. 0 and a line in the log when there's no such function |
-| `call.param(L"Tag")`, `call.param(0)` | In a hook, a parameter by its name or position as `get()` gives it, with no struct to lay out; a struct's bytes are the call's own |
+| `wcmods::on_function(STR("/Script/Wrc.GuiHudWrc:OnItemPickedUp"), fn)`, `after_function(...)`, `unhook(id)` | `fn(call)` just before, or just after, the game runs one of its functions, by its full path. `call.self()` is the object, `call.params<Params>()` its input parameters as a struct laid out like them (changed before the call, they change what the game does; the return value isn't in it), `call.set_return(v)` its result. 0 and a line in the log when there's no such function |
+| `call.param(L"Tag")`, `call.param(0)`, `call.param(L"ReturnValue")`, `call.has_params()` | In a hook, a parameter by its name or position as `get()` gives it, with no struct to lay out: an input (when `has_params()`), an out parameter, or in `after_function` the return value, read from where the engine put each; a struct's bytes are the call's own |
 | `wcmods::run_in_background(work, then)` | `work()` on a thread of its own (a file, the network, a long computation; never the game's objects), then `then(result)` on the game thread with what it gave back; `run_in_background(work)` for work that needs nothing after |
 | `wcmods::on_game_thread_now()`, `assert_game_thread(L"what")` | Whether this is the game thread (known once a frame has run); the second says so in the log when it isn't |
 | `wcmods::on_settings_changed(fn)` | `fn()` on the game thread when `settings.json` changed on disk (the studio, a text editor), after `settings()` has been read again; looked for once a second |
 
-Hooks see a function only when it's called through the engine: by a Blueprint, as an event or RPC
-(`ClientRestart`, `OnItemPickedUp`), or by `wcmods::call`. Native code calling native code directly is
-never seen. What's been tried: hooks on events, and on a native function only the mod itself calls
-(`KismetSystemLibrary:GetConsoleVariableFloatValue`, with `set_return`), work; a hook on
-`Actor:K2_GetActorLocation`, a native function Blueprints call many times a frame, whose callback
-also unhooked itself, closed the game as the forest loaded. Until that's understood, hook events and
-functions the game's Blueprints don't hammer, and unhook from outside the callback.
+Hooks see every call that goes through the engine: an event or RPC (`ClientRestart`,
+`OnItemPickedUp`), a Blueprint's call, or `wcmods::call`'s; native code calling native code directly is
+never seen. A native function that a Blueprint's bytecode calls (`Actor:K2_GetActorLocation`, many
+times a frame) fires the hook too, but its inputs aren't there to read: the frame is the caller's,
+whose variables are what `params<T>()` would read as the parameters (nonsense, or a read of address 0
+that closes the game when the caller has none). `call.has_params()` tells the two kinds of call apart
+the way the engine does, by whether the frame has bytecode: it's true for a call through ProcessEvent
+(an event, an RPC, Lua's or `wcmods::call`'s), and when it's false `param()` gives None for an input.
+The return value is the exception: the engine has the function write it where the caller wants it, so
+`call.param(L"ReturnValue")` reads it in `after_function` whichever way the function was called (not
+`params<T>()`, whose slot for it stays as the stack left it). The crash was the first version of these
+docs' unexplained one; the game's own crash record (`cpp crash`) named the line. The test mod hooks
+`K2_GetActorLocation` through a whole run, reads back the location Lua's call got from the frame with
+inputs and from a Blueprint's call without, and takes the hook off from outside the callback.
 
 **The mod menu, and Lua (`Menu.hpp`)**
 

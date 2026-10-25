@@ -14,7 +14,11 @@ namespace t
     {
         DWORD init_thread{}, game_thread{};
         std::atomic<int> frames{}, once_ran{}, every_ran{}, after_ran{}, cancelled_inside_ran{}, cancelled_before_ran{},
-                cancelled_outside_ran{}, f9{}, ctrl_f9{}, pre_restart{}, post_restart{}, unhooked_ran{};
+                cancelled_outside_ran{}, f9{}, ctrl_f9{}, pre_restart{}, post_restart{}, unhooked_ran{}, native_with{},
+                native_without{}, native_read{};
+        std::atomic<double> native_x{}, native_y{}, native_z{};   // the last ReturnValue read in the native hook, with inputs
+        std::atomic<double> bytecode_x{}, bytecode_y{}, bytecode_z{};   // ... and from a bytecode call of the player's
+        HookId native_hook{};
         std::atomic<bool> frames_on_game_thread{true}, dt_positive{true};
         TimerId cancelled_inside{}, cancelled_outside{};
         std::vector<std::string> levels;
@@ -47,6 +51,12 @@ namespace t
                 report_quest("cpp-sdk-test");
                 done("unreport");
             }
+            else if (what == "unhook_native")
+            {
+                unhook(native_hook);
+                native_hook = 0;
+                done("unhook_native");
+            }
         }
     } // namespace
 
@@ -70,6 +80,19 @@ namespace t
         value("hook.pawn", restart_pawn);
         value("hook.pawn_after", restart_pawn_after);
         value("hook.unhooked_ran", unhooked_ran.load());
+        value("hook.native.with", native_with.load());
+        value("hook.native.without", native_without.load());
+        value("hook.native.read", native_read.load());
+        Json last = Json::array();
+        last.push(native_x.load());
+        last.push(native_y.load());
+        last.push(native_z.load());
+        value("hook.native.last", last);
+        Json from_bytecode = Json::array();
+        from_bytecode.push(bytecode_x.load());
+        from_bytecode.push(bytecode_y.load());
+        from_bytecode.push(bytecode_z.load());
+        value("hook.native.last_bytecode", from_bytecode);
         Json names = Json::array();
         for (auto& l : levels) names.push(l);
         value("levels", names);
@@ -130,6 +153,36 @@ namespace t
             restart_pawn_after = text(name(call.param(L"NewPawn").object));
         });
         expect("on_function.id", pre != 0 && post != 0 && pre != post);
+        // A hook on a native function Blueprints call every frame, K2_GetActorLocation: it fires for calls
+        // through ProcessEvent (with parameters) and from Blueprint bytecode (without), and the game goes on.
+        // Lua and this mod call it on many actors through ProcessEvent (nearby(), the menu's HUD), so the
+        // location kept to compare with the Python side's Lua call is the last one read of the player's own:
+        // the player's Blueprints call it from bytecode every frame too, and a frame of theirs taken for
+        // parameters would give nonsense here. The Python side takes the hook off again, from outside the callback.
+        native_hook = after_function(STR("/Script/Engine.Actor:K2_GetActorLocation"), [](Call& call) {
+            if (!call.has_params())
+            {
+                native_without++;
+                // The return value is readable even so: the engine has it written where the caller wants it.
+                if (call.self() == player())
+                {
+                    Value at = call.param(L"ReturnValue");
+                    bytecode_x = get(at, L"X").number();
+                    bytecode_y = get(at, L"Y").number();
+                    bytecode_z = get(at, L"Z").number();
+                }
+                return;
+            }
+            native_with++;
+            if (call.self() != player()) return;
+            Value at = call.param(L"ReturnValue");
+            if (at.kind != Value::Kind::Struct || call.param(0).kind != Value::Kind::Struct) return;
+            native_read++;
+            native_x = get(at, L"X").number();
+            native_y = get(at, L"Y").number();
+            native_z = get(at, L"Z").number();
+        });
+        expect("after_function.native", native_hook != 0);
         HookId gone = on_function(STR("/Script/Engine.PlayerController:ClientRestart"), [](Call&) { unhooked_ran++; });
         expect("unhook.id", gone != 0);
         unhook(gone);

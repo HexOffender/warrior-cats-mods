@@ -75,6 +75,8 @@ class Studio:
         self.static = os.path.join(ctx.root, "studio")
         self.token = secrets.token_urlsafe(24)
         self.lock = threading.Lock()
+        self.cpp_building, self.cpp_log, self.cpp_result = None, [], None   # a C++ mod being built from its card
+        self.cpp_tools = None   # cppmods.status() as it was when that build started, for the page's polls
         self._eyes = None
         self._names = None   # the game's name tables, read once
 
@@ -103,6 +105,41 @@ class Studio:
                                "code. Close the studio's window and open it again, then install.")
 
     # ---------- API ----------
+    # ---- C++ mods: what's ready, and building one from its card (a thread; the page polls /api/cpp) ----
+    def cpp_status(self):
+        from . import cppmods
+        with self.lock:
+            building, log, result, st = self.cpp_building, list(self.cpp_log[-40:]), self.cpp_result, self.cpp_tools
+        if not building or not st:
+            # Finding the tools runs vswhere and git: not on every poll of a build that's under way.
+            st = cppmods.status(self.ctx.root, self.ctx.cfg)
+            with self.lock:
+                self.cpp_tools = st
+        return {"tools": {k: bool(v) for k, v in st["tools"].items()}, "problems": st["problems"], "source": st["source"],
+                "game": st["game"], "matches": st["matches"], "building": building, "log": log, "result": result}
+
+    def cpp_build(self, mod_id):
+        from . import cppmods
+        if not self.ctx.cfg.data.get("allow_code_mods"):
+            raise PermissionError("building C++ mods runs their build files; allow mods that run code first (Options)")
+        which = cppmods.cpp_mods(mods.discover(self.ctx.mods_root), [mod_id], root=self.ctx.root)
+        with self.lock:
+            if self.cpp_building:
+                raise RuntimeError(f"already building {self.cpp_building}")
+            self.cpp_building, self.cpp_log, self.cpp_result = mod_id, [], None
+
+        def run():
+            try:
+                cppmods.build(self.ctx.root, self.ctx.cfg, which, log=lambda m: self.cpp_log.append(m))
+                outcome = {"ok": True, "message": f"built {mod_id}; Play or Apply to game puts it in"}
+            except Exception as e:   # noqa: BLE001 - the card shows whatever went wrong
+                outcome = {"ok": False, "message": str(e)}
+            with self.lock:
+                self.cpp_building, self.cpp_result = None, outcome
+
+        threading.Thread(target=run, daemon=True).start()
+        return {"started": mod_id}
+
     def api(self, method, parts, body, query=None, upload=None):
         """One API call: `parts` is the path after /api/, `body` the JSON sent, `query` the URL's
         parameters, `upload` the path of a file sent as the body (mods/add)."""
@@ -192,6 +229,10 @@ class Studio:
         if parts == ["game", "bridge"] and method == "GET":
             # Whether the game runs with the bridge (wcmods/bridge.py), for the console's status line.
             return Bridge(cfg).status() or {"alive": False, "never": True}
+        if parts == ["cpp"] and method == "GET":
+            return self.cpp_status()
+        if len(parts) == 3 and parts[:2] == ["cpp", "build"] and method == "POST":
+            return self.cpp_build(parts[2])
         if parts in (["game", "lua"], ["game", "inspect"]) and method == "POST":
             if not cfg.data.get("allow_code_mods"):
                 raise PermissionError("the console runs code in the game; set \"allow_code_mods\": true in wcmods.json")
