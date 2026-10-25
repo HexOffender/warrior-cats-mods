@@ -217,7 +217,7 @@ After a game update, `game build` says which build is installed, what wcmods fol
 couldn't, and which mods were made for an older version. `allow-outdated <mod>` uses one anyway on
 this build. See [docs/updating.md](docs/updating.md).
 
-Also: `new <name> --kind palette|controls|files|data|names|save|script`, `eyes`,
+Also: `new <name> --kind palette|controls|files|data|items|names|save|script`, `eyes`,
 `tables`, `names [--cats] [--json]`, `controls [--json]`, `files <pattern>`, `extract <pattern>`,
 `build`, `backup`, `restore [name|latest]`, `cheats [on|off]` (whether the mod menu's cheats start
 on), `console [on|off]` (the game's `~` console). With code mods allowed and the game running:
@@ -462,6 +462,18 @@ Known issues:
 ```
 Rows are matched by their first column. `"-": ["53"]` removes rows and `"+": [{ "#": "91", ... }]`
 adds them (missing columns stay empty).
+
+### `items.json`
+```json
+{ "items": [ { "id": "MoonHerb", "like": "MediumHealingHerb", "name": "Moon Herb",
+               "description": "Health Recovery (medium). Picked under a full moon.",
+               "recipe": { "Dandelion": 2, "Cotton": 1 }, "give": 3 } ] }
+```
+New herbs and materials: a name, a description and an icon in the inventory, what the herb does
+(one of the game's herb effects), a recipe at the medicine cat's bartering, and some to start with.
+`like` borrows the rest from a game item, and `"recipes"` changes what the game's own herbs and
+accessories cost. Every key is in [SDK.md](docs/SDK.md) ("New items"). New
+items need the Oodle DLL.
 
 ### `names.json`
 ```json

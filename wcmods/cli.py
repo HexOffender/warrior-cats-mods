@@ -681,7 +681,7 @@ def main(root, argv=None):
     p.set_defaults(fn=cmd_pack)
     p = sub.add_parser("new", help="create a mod from a template")
     p.add_argument("id")
-    p.add_argument("--kind", choices=("palette", "controls", "files", "data", "save", "names", "script"), default="palette")
+    p.add_argument("--kind", choices=("palette", "controls", "files", "data", "items", "save", "names", "script"), default="palette")
     p.set_defaults(fn=cmd_new)
     p = sub.add_parser("files", help="list game files matching a pattern, e.g. '*NPC/*.csv'")
     p.add_argument("pattern")

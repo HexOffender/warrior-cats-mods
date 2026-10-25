@@ -127,6 +127,7 @@ local Game = require("WCModsGame")   -- a script mod has it as Game already
 |---|---|
 | `Game.player()` | Your cat's actor (nil in menus and while loading) |
 | `Game.controller()`, `Game.world()`, `Game.levelName()` | The player controller, the world, and its level: `"L_WorldMap_01_P"` for the forest |
+| `Game.screens()` | The game's own screens and popups showing now (the inventory, the map, the pause menu, …) by class; empty while you're just playing. An overlay can hide while one is open |
 | `Game.gameInstance()`, `Game.gameState()`, `Game.gameMode()` | The game's top objects |
 | `Game.manager(name)` | One of the game's managers (below) |
 
@@ -152,6 +153,8 @@ Also `util`, `vfx`, `achievements`, `analytics`, `online`, `cloud`, `services`, 
 | `Game.onFrame(fn)` | `fn(dt)` every frame |
 | `Game.every(seconds, fn)`, `Game.after(seconds, fn)` | Every so often; once later. These return an id for `Game.cancel(id)` |
 | `Game.onKey("F6", fn, {"CONTROL"}, help)` | `fn` on the game thread when the key (with modifiers) is pressed; with `help` ("Heal your cat") the mod menu's Overview lists it |
+| `Game.onPress({"T", "Gamepad_DPad_Up"}, fn, help)` | `fn(key)` when any of the keys or controller buttons is pressed in the game's own input (Unreal's key names). Unlike `onKey`, it only hears them while the game has the focus, it hears the controller, and `agent key` can press them. Returns an id for `Game.cancel` |
+| `Game.pressed(key)` | Whether a key or button went down this frame, in the game's own input, for a frame function |
 | `Game.on(event, fn)`, `Game.off(handle)` | Listen to an event |
 | `Game.emit(event, ...)` | Send one of your own (it reaches listeners in the same script) |
 
@@ -161,7 +164,7 @@ Also `util`, `vfx`, `achievements`, `analytics`, `online`, `cloud`, `services`, 
 | `player` | your cat's actor or nil | polled | yes |
 | `phase` | new, old (`Game.enums.phase`) | polled | yes |
 | `combatStart` / `combatEnd` | a fight (below) | polled | yes |
-| `itemPickedUp` | tag, how many, new total | hook on the HUD's `OnItemPickedUp` | hooked; needs a pickup to fire |
+| `itemPickedUp` | tag, how many, new total | hook on the HUD's `OnItemPickedUp` | yes |
 | `questStatus` | quest, status, exact | hook on `SwtQuestGameplayGameState:OnQuestStatusChanged` | hooked; not yet seen firing |
 | `genericEvent` | name | hook on `SwtGameUtil:BroadcastGenericEvent` | hooked; not yet seen firing |
 | `damage` | `{target, damage, missed, stance, status}` | hook on the combat director's `OnRegisterDamage` | hooked; not yet seen firing (no hit was made in testing) |
@@ -210,12 +213,47 @@ Some limits:
 again. Examples are a level-up working out the stats, a fight setting up a fighter, or loading a save.
 The game saves whatever it holds at its next save.
 
+### Cats of a mod's own (`Game.npcs`)
+
+`Game.npcs.spawn(opts)` puts a cat of the mod's own in the world: one of the game's clan cats (its
+"filler" class, `BP_Quest_Filler_C`) with the colours, eyes and size you give it. wcmods keeps it
+there: the cat is spawned again when the game unloads it (a level change, an area far off), and its
+colours go back on whenever the game sets it up again. It isn't one of the save's cats, so it's gone
+when the script stops, and it never ends up in your save.
+
+```lua
+local npc = Game.npcs.spawn({
+    at = { -60040, -200, 813 }, yaw = 180,     -- where it stands (World.location of your cat, say) and faces
+    size = 0.9, eyes = 15,                      -- the game's cat size; an iris colour slot (0-24)
+    colours = { fur = "#8c919e", pattern = "#3a3d47", markings = "#f2f2f7", nose = "#c98a92", paws = "#d9a0a8" },
+})
+Game.every(0.5, function()
+    if npc:near(300) then npc:face() end       -- turns to your cat when it's within 3 m
+end)
+```
+
+| Option or method | |
+|---|---|
+| `at`, `yaw`, `level` | Where it stands, which way it faces (degrees), and the level it's in (the one you're in when it's spawned) |
+| `colours` | `fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears` as `"#rrggbb"`; the rest stay the game's |
+| `eyes`, `size` | An iris colour slot, as in `palette.json`, and the cat's size (the game's are about 0.4–1.1) |
+| `prefix`, `suffix` | Name IDs (`"STR_CAT_NAME1"`, `"_PAW"`), for the name the game itself knows it by |
+| `npc:valid()`, `npc:actorOrNil()` | Whether it's in the world now, and its actor |
+| `npc:location()`, `npc:distance()`, `npc:near(cm)` | Where it is; how far your cat is; whether your cat is within `cm` (300) |
+| `npc:face(target)`, `npc:moveTo(x, y, z)`, `npc:remove()` | Turn to a place or actor (your cat with none); move it; take it away for good |
+
+The game gives these cats no Talk prompt or name of their own on screen; a script draws them with
+`WCModsDraw`. [custom-npc](https://github.com/HexOffender/wcmods-examples/tree/main/custom-npc) in
+wcmods-examples does: a name over the cat's head, and lines to say on a key.
+[moonlit-path](https://github.com/HexOffender/wcmods-examples/tree/main/moonlit-path) builds a
+questline on one.
+
 ### Items
 
 | Call | Gives or does |
 |---|---|
 | `Game.items.list()`, `Game.items.count(tag)` | Your items, `{["Gameplay.Inventory.Materials.Dandelion"] = 6, …}`: as of the game's last save (it writes `WrcGame.json` each time), with pickups since then from the HUD's pickup messages |
-| `Game.items.drop(tag, count, where)` | A pickup holding the items on the ground by your cat (or at `where`), for the cat to pick up as usual. It returns the actor. Spawning was seen in game; picking it up hasn't been tried yet |
+| `Game.items.drop(tag, count, where)` | A pickup holding the items on the ground by your cat (or at `where`), for the cat to pick up as usual. It returns the actor. Seen in game: the cat collects it with Interact, and `itemPickedUp` fires |
 | `Game.items.info(tag)`, `Game.items.type(tag)` | What the quest manager knows of an item (often nothing) |
 
 **Why items can't be put in the inventory directly:** the inventory is native, with no reflected way to

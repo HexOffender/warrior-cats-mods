@@ -13,6 +13,10 @@ What the items do and what they cost. Part of the [mechanics notes](README.md).
 
 `EItemRarity`: Common, Uncommon, Rare, Mythic.
 
+A mod can add herbs and materials of its own with `items.json` (docs/SDK.md, "New items"). What
+makes an item, and how accessories are listed, is in
+[reverse-engineering.md](../reverse-engineering.md#items).
+
 ## What consumables do
 
 Each consumable runs an effect, `Gameplay.Effect.Consumable.<X>`. Its numbers are in the
@@ -66,6 +70,8 @@ Comfrey, Cotton, Dandelion, Dirt Mound, Fur, Goldenrod, Heather, Ivy, Juniper, L
 Gall, Pine, Poppy, Rock, Rope, Sharpening Tree Bark, Thyme and Willow.
 
 ## Bartering
+
+The medicine cat barters, through the "Bartering" answer in their dialogue.
 
 `BarteringCost.csv` gives the materials each item costs: 24 consumables (all but the Sage Pouch)
 and 31 accessories (8 head, 4 neck, 11 body, 8 leg). No row is hidden (`bIsHidden`).

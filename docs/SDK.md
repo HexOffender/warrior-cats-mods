@@ -46,6 +46,7 @@ mods/my-mod/
   paks/<name>.pak     cooked content made with Unreal   -> installed as is, with its .utoc/.ucas
                       Engine 5.7 (see "New content")
   data.json           CSV cell edits                    -> section "data"
+  items.json          new herbs and materials           -> section "items" (see "New items")
   names.json          cat names                         -> section "names"
   palette.json        colour palettes                   -> section "palettes"
   cats.json           your cat's own colours and slots  -> section "cats"
@@ -94,10 +95,12 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.text("STR_ATTACK_QUICK_CLAW")` | A line of the game's English text (or `language="FR"`, …) |
 | `ctx.edit_csv(name, edits, source=mod.id)` | Queue cell edits (and row removals `"-"` / additions `"+"`, see `csvdata.py`); they merge with every other section's edits to the same table |
 | `ctx.add_file(path, data, source=mod.id)` | Add or replace a loose file in the mod pak |
-| `ctx.patch_package(path, data)` | Replace a cooked `.uasset` with patched bytes of the same layout (goes into the IoStore mod container) |
+| `ctx.patch_package(path, data)` | Replace a cooked `.uasset` with patched bytes (goes into the IoStore mod container) |
+| `ctx.cooked_table("DT_QuestObjectsInfo")` | The rows of a cooked table wcmods can read (`cooked.TABLES`), as `[(row name, {field: value})]`, as the game ships them |
+| `ctx.add_table_row(table, row, values, source=mod.id)` | Add a row to one of those tables; rows from every section are merged and written into a copy of the game's asset (fields in `cooked.SCHEMAS`; text as `cooked.base_text("Moon Herb", key)`) |
 | `ctx.add_ue4ss_mod(name, {"Scripts/main.lua": text})` | Ship a UE4SS Lua mod; installed and registered only when UE4SS is present. `.lua` files get a structure check (balanced blocks and brackets) and problems become build warnings |
 | `ctx.edit_save(path, value)` | Set an existing save value on install, e.g. `"0/GameplayProgression/Level"` |
-| `ctx.add_save_key(object_path, key, value)` | Add a key to a save object, e.g. a new inventory item |
+| `ctx.add_save_key(object_path, key, value, only_new=False)` | Add a key to a save object, e.g. a new inventory item. With `only_new`, a key the save already has keeps its value |
 | `ctx.warn(msg)` / `ctx.log(msg)` / `ctx.note(key, value)` | Report to the user / the build log / the build manifest (notes show on the mod menu's first page) |
 | `ctx.game`, `ctx.cfg`, `ctx.mods` | The game reader (`find`, `exists`, `data_tables`), the tool's configuration, and the enabled mods |
 
@@ -107,7 +110,7 @@ because the game's keys contain dots. They start inside the save's account objec
 for shared data, and `0/...` for cat slot 0.
 
 Helpers you can import: `wcmods.csvdata` (format-preserving CSV editing), `wcmods.savejson`
-(format-preserving save JSON), `wcmods.colors`, `wcmods.palettes`, `wcmods.eyeatlas`,
+(format-preserving save JSON), `wcmods.cooked` (cooked DataTables), `wcmods.colors`, `wcmods.palettes`, `wcmods.eyeatlas`,
 `wcmods.gamefiles`, `wcmods.names` (the game's name tables). `wcmods.sdk.lua_value(data)` writes
 JSON-style data (dicts, lists, strings, numbers, booleans) as a Lua literal, for handing a mod's
 settings to its in-game script.
@@ -150,9 +153,78 @@ into `ue4ss\Mods\shared\WCMods*`.
 - **Whole loose files** (a config, a movie, a table rewritten by hand): extract it, change it, and
   put it in the mod at the same path under `files/`, e.g. `files/Wrc/Content/.../TuningData.csv`.
 - **Bytes of a cooked asset:** `ctx.patch_package(path, data)` replaces a package with patched
-  bytes of the same layout, such as new pixels in a texture. That's how eye palettes recolour the
-  eye atlas.
+  bytes, such as new pixels in a texture. That's how eye palettes recolour the eye atlas.
+- **Rows of a cooked table:** some tables are cooked assets rather than CSVs, such as
+  `DT_QuestObjectsInfo` (every item's name, description and icon). `ctx.add_table_row` adds rows to
+  them, written into a copy of the game's own asset at install. `items.json` (below) uses it.
 - **While the game runs:** UE4SS scripts change objects in memory: colours, the camera, cheats.
+
+### New items (`items.json`)
+
+A mod can add herbs and materials of its own, and change the recipes of the game's herbs and
+accessories. wcmods writes everything the game needs for a new item:
+- the item's gameplay tag;
+- its row in the cooked item table, `DT_QuestObjectsInfo`: name, description and icon (the inventory
+  leaves out an item without one);
+- for a herb, what using it does (`Consumables.csv`) and a recipe at the medicine cat's bartering
+  (`BarteringCost.csv`);
+- and some in your save to start with.
+
+```json
+{
+  "items": [
+    {
+      "id": "MoonHerb",
+      "like": "MediumHealingHerb",
+      "name": "Moon Herb",
+      "description": "Health Recovery (medium). Picked under a full moon.",
+      "rarity": "Uncommon",
+      "recipe": { "Dandelion": 2, "Moonstone": 1 },
+      "give": 3
+    },
+    {
+      "id": "Moonstone",
+      "kind": "material",
+      "name": "Moonstone",
+      "description": "A pale stone that glows at night.",
+      "icon": "Rock",
+      "give": 2
+    }
+  ],
+  "recipes": {
+    "Cosmetic.Head.MossPatch.1": { "Moss": 3, "Ivy": 1, "Moonstone": 1 }
+  }
+}
+```
+
+| Key | |
+|---|---|
+| `id` | Letters and digits. The item's tag is `Gameplay.Inventory.Consumable.<id>` for a herb or `Gameplay.Inventory.Materials.<id>`. It can't be one the game or another mod already has; the build says if it is |
+| `name`, `description` | What the inventory and bartering show, the same in every language |
+| `like` | A game item to start from, by its short name (`"MediumHealingHerb"`) or whole tag: its kind, effect, when it can be used, icon, icon group, rarity and colour. The item's other keys override those |
+| `kind` | `"consumable"` (a herb or pouch) or `"material"`, when there's no `like` |
+| `icon` | An item to borrow the icon of (`"Rock"`), or a texture of the game's, e.g. `"/Game/Art/UXD/Textures/gui_icons/gui_icons_inventory/T_UI_Icon_Flower_Marigold_D"` (`wcmods files "*gui_icons_inventory*"` lists them) |
+| `effect` | Herbs: what using one does, one of the game's herb effects, such as `Gameplay.Effect.Consumable.Health.2` (+50 health). [items.md](mechanics/items.md) lists them |
+| `type`, `target` | Herbs: the effect's kind (`Health`, `Stamina`, `BuffStrength`, …), and who it's for: `Owner`, or `OwnerTeam` for your whole team |
+| `combat`, `exploring`, `fight_only` | Herbs: `true` or `false` for usable in fights, usable while exploring, and whether its effect ends with the fight |
+| `group`, `rarity`, `color` | The badge by its icon (`Health`, `Stamina`, `Stats`, `Status`, `Damage`, `Experience`, `Free`, or `None`), the rarity (`Common`, `Uncommon`, `Rare`, `Mythic`, `None`) and the category colour (`Consumable`, `Quest`, `Den`, `None`) |
+| `recipe` | Herbs: what the medicine cat wants for one, e.g. `{"Dandelion": 2, "Moonstone": 1}`. Any material, the game's or one a mod adds |
+| `give` | How many you start with: given once, in the save slot you play, if you have none yet |
+
+`"recipes"` changes what the medicine cat wants for one of the game's herbs or accessories, by its
+tag with or without `Gameplay.Inventory.`. Accessories are
+`Cosmetic.<Head|Neck|Body|Legs>.<name>.<variation>`, e.g. `Cosmetic.Neck.DogCollar.2` (`wcmods
+extract "*BarteringCost.csv"` shows them all). The ingredients are as for an item's `recipe`, new
+materials included.
+
+What it can't do (yet):
+- **New effects:** each herb effect is one of the game's Blueprints, so a new herb does what one of
+  the game's does (heal 25, 50 or 100, stamina, a stat buff, a cure, experience).
+- **New accessories:** what a cat wears is a model and its textures, listed in the game's own code
+  (`EAccesoryIds`), so a new one needs new art. `"recipes"` can change what an existing one costs.
+- **Growing in the world:** new materials aren't found in the forest; they come from `give` or a
+  script.
+- New items need the Oodle DLL, because the item table is compressed in the game's files.
 
 ### New content: models, textures, sounds
 

@@ -80,6 +80,49 @@ Detailed in SDK.md, "Game files, repacking and new content". The key facts:
   containers are accepted**, so wcmods' own load.
 - Oodle comes from another game's `oo2core_8_win64.dll` (here Planet Zoo's), through `OodleLZ_Decompress`.
 
+### Cooked packages and DataTables
+
+Worked out on 2026-10-24 on `DT_QuestObjectsInfo`. `wcmods/cooked.py` reads and writes them; its
+selftest check decodes all 412 rows, re-encodes them and rebuilds the package byte for byte.
+
+**A zen package (UE 5.7):**
+- **Summary:** 60 bytes: `bHasVersioningInfo`, `HeaderSize`, the package name (index, number),
+  `PackageFlags`, `CookedHeaderSize`, then the offsets of the imported public export hashes, import
+  map, export map, export bundle entries, dependency bundle headers and entries, imported package
+  names, and (new in 5.6/5.7) the cell import and export maps.
+- **Name map:** an FNameBatch:
+  - the count, the string bytes and the hash version (`0xC1640000`);
+  - a u64 hash per name: CityHash64 v1.1 of the name in lower case (`wcmods/cityhash.py`; the
+    constant k1 is `0xb492b66fbe98f273`);
+  - big-endian u16 lengths (bit 15 marks UTF-16), then the strings.
+- **Then:** an i64 pad size and that many bytes, so the next field is 8-aligned (true of all 881
+  packages checked), then an i64 bulk data map size and its 32-byte entries, then the sections
+  above.
+- **Export map:** 72-byte entries. `CookedSerialOffset` counts from `HeaderSize`, where the export
+  data starts.
+- **Growing a package works:**
+  - Add names (with their hashes), shift every offset after the name map, and fix the export's size.
+  - The container's store entry has no sizes, so the game's chunk ID and header entry still fit.
+- **Unversioned properties:**
+  - **Header:** u16 fragments: skip count in bits 0–6, "has zeroes" in bit 7, last fragment in
+    bit 8, value count in bits 9–15. Then a zero mask (8, 16 or 32×n bits) when any fragment has
+    zeroes.
+  - **Values:** the values that aren't zero, in the struct's property order. A field left out of
+    the header gets the struct's default.
+  - **How fields are stored:**
+    - A gameplay tag is a nested struct: header `0x0300` and an FName.
+    - FText is i32 flags and an i8 history type. 11 is a string table entry (table FName plus key
+      FString); 0 is base text (namespace, key and source string, as FStrings).
+    - A soft object path is the package FName, the asset FName and a sub-path FString.
+    - Byte enums are one byte, left out when zero.
+- **A DataTable export:**
+  - the object's own properties: an unversioned header and `RowStruct` (an i32 import index);
+  - a u32 `HasGuid` = 0, then an i32 row count;
+  - each row: its FName and then the row struct.
+  - The package file tag follows the export.
+- **An empty FString** is written either as length 0 or as a length-1 lone terminator. Keep which,
+  to get the same bytes back.
+
 ### The save
 
 `%LOCALAPPDATA%\Wrc\Saved\SaveGames\WrcGame.sav`:
@@ -598,6 +641,97 @@ from `EPopupCheatsIds`:
   a parameter with `param:set()`, and the called function saw the new value. In a post-hook the
   parameters read empty. Two hooks on one function, both removed, left the game fine.
 
+## Items
+
+Worked out on 2026-10-24 and verified in game with a new herb and a new material (`items.json`).
+
+**What an item is made of:**
+- **Its tag:** `Gameplay.Inventory.<Consumable|Materials>.<name>`. The game registers new tags from
+  ini files under `Wrc/Config/Tags/` in a pak (`[/Script/GameplayTags.GameplayTagsList]`,
+  `GameplayTagList=(Tag="…")`) at startup.
+  - `BlueprintGameplayTagLibrary:MatchesTag(tag, "Gameplay.Inventory.Consumable", false)` is true
+    for a registered child tag and false for an unregistered one.
+- **What it does:** a `Consumables.csv` row:
+  - `EffectOnUse`, `bCombat`, `bExploration`, `Target` (`Owner` or `OwnerTeam`), `bRemoveAfterCombat`
+    and `Type`;
+  - this is what gives the inventory's USE button.
+  - Each effect tag runs a Blueprint container (`BP_Heal_Container_2` and the like, mapped in
+    `BP_WrcEffectManager`). The numbers come from the `GenericEffect.csv` row of the same name:
+    `Effect.Consumable.Health.2` reads `Params.Health.2.Health` = 50. So a new effect strength
+    needs a new container, not just data.
+- **Name, description and icon:** a row in the cooked `DT_QuestObjectsInfo`:
+  - row struct `/Script/SwtQuest.QuestObjectsInfoDataStruct`: `itemTag`, `Name`, `Description`,
+    `Icon` (a soft texture), `ItemRarity`, `ItemGroupIcon` and `ItemCategoryColor`;
+  - the enums `EItemRarity` (None, Common, Uncommon, Rare, Mythic), `EItemGroupIconType` (None,
+    Health, Stamina, Stats, Status, Damage, Experience, Free) and `EItemCategoryColorType` (None,
+    Consumable, Quest, Den).
+  - **The inventory leaves out an item that has no row.** The UI looks rows up by `itemTag`, live,
+    each time a screen opens. The row names are meaningless (`NewRow_45`).
+- **A recipe:** a `BarteringCost.csv` row (`Cost` = `tag,n;tag,n`).
+  - Bartering is at the medicine cat, a `BP_Quest_Giver_Bartering_C` (`SwtAdventureBarteringActor`),
+    through its "Bartering" dialogue answer. In the save tested, that's Tigerstorm.
+  - New rows show at the end of the Consumable tab. Trading takes the materials, a mod's new ones
+    included.
+- **In the save:** `<slot>/GameplayProgression/State/Inventory/<tag>` = count, where `<slot>` is
+  `Shared/General/CurrentCatSlot`.
+
+**The quest system's tables** hang off the CDO of `/Script/SwtQuest.SwtQuestConfig`:
+- `QuestGraphDB`, `QuestObjectsInfoDB`, `QuestNodeGraphDB` and `QuestObjectivePickupDB`;
+- `CharactersDB` (`DT_Characters`) and `CombatGeneratorDB`;
+- each with a `…Path` soft path beside it.
+- `QuestManager.ItemsStatsDB` (`ItemStatsDataTableStruct`) is empty, so `GetItemType` and
+  `GetItemStatsDataFromTag` know no item.
+
+**Adding rows at runtime doesn't work:**
+- UE4SS's `dt:AddRow` fails with "Virtual UScriptStruct::ICppStructOps::Copy is unavailable" on
+  this engine version.
+- The shipping `DataTableFunctionLibrary` has no Add or Fill functions.
+- Existing rows can be changed in place from Lua (`row.Name = FText(…)`, `row.Icon = other.Icon`),
+  and the inventory shows the change.
+- So wcmods writes new rows into a copy of the cooked table at install.
+
+**Accessories:**
+- **Tags:** `Gameplay.Inventory.Cosmetic.<Head|Neck|Body|Legs>.<name>.<variation>`, e.g.
+  `Head.BigLeaf.1`.
+- **The game's list:** `<name>` is a value of the native enum `EAccesoryIds` (HeatherCoronet 1 …
+  BeadsBand 44).
+- **Models and textures:** the GUI manager (`BP_WrcGuiManager_C`, from `SwtAdventureGuiManager`)
+  maps each id to:
+  - a skeletal mesh (`AccesoryMeshes`, 44 entries);
+  - its variations (`AccesoryVariations`: a `MeshVariationsData` with a `Textures` array; most
+    accessories have 1, a few 2 or 4).
+- **What's worn:** a cat's `CatCustomData` stores it as `AccesoryHeadId` (a string) and
+  `AccesoryHeadVar`.
+- **Take care:** picking up an item with an invalid accessory tag (`Cosmetic.Head.1`) got it into
+  the save, and the game crashed on quitting.
+
+## Cats of a mod's own
+
+Worked out on 2026-10-24 for `Game.npcs`, and checked in game with two cats.
+
+- **The class:** the game's clan cats in the world are `BP_Quest_Filler_C`
+  (`/Game/Gameplay/Blueprints/Quest/Givers/BP_Quest_Filler`, a `SwtAdventureFillerActor`). There
+  were 41 in the forest, and `Game.cat(actor)` reads their looks and name.
+- **Spawning:** `BeginDeferredActorSpawnFromClass` and then `FinishSpawningActor` give a working cat
+  with the body, fur, tail and ears.
+  - The `DefaultCustomData` set in between keeps its `CatSize` and name IDs.
+  - Its colour and pattern indexes are replaced by others when the cat is set up.
+  - `RefreshShape` on its `MeshCustomizationComponent` doesn't change the colours.
+- **Colours** are vector parameters on each part's dynamic material:
+  - "Fur Color", "Pattern Mask Color", "Markings Mask Color", "Nose Color", "Paws Color" and
+    "Whiskers Color", plus "Ears Color" on the ears.
+  - The eyes are scalars, `IndexIrisColorCurveLeft/Right`: a row of the eye atlas, the iris slot + 1.
+  - Setting them recolours the cat at once.
+- **The save:** the cat's `SwtAdventureIUIDComponent` has `bWasDynamicallySpawned` and no ID (-1).
+  wcmods switches it off before the spawn finishes. After a session with two spawned cats, the
+  save's `NPCData` was the same size as before.
+- **No Talk prompt:** the game shows none for a spawned filler, so the examples draw the name and the
+  talk themselves.
+- **Keys:** the game's Interact (E) would also use whatever else is in reach (a travel tunnel opened
+  the map). The examples talk on T and the controller's d-pad up, read from the game's own input
+  (`WasInputKeyJustPressed`). That also works with keys the agent posts to the window, which UE4SS
+  key binds don't see.
+
 ## Game mechanics
 
 The rules of play are in [mechanics/](mechanics/README.md):
@@ -628,7 +762,10 @@ The rules of play are in [mechanics/](mechanics/README.md):
   whether raising it opens the cheats popup and the key cheats, and which of the cheats manager's
   switches the release build obeys.
 - **Scripting:**
-  - **Items:** how to put items in the inventory from a script (the inventory is native).
+  - **Items:** how to put items in the inventory from a script without a pickup (the inventory
+    is native; `Game.items.drop` leaves a pickup to collect).
+  - **Accessories:** whether a new texture variation of an accessory (a 2nd or 3rd entry in
+    `AccesoryVariations`) can be added and worn.
   - **Fights:** how to end one cleanly (`EndCombat` doesn't), and whether the combat director's
     `OnRegisterDamage` hook sees every hit.
   - **Save stores:** what the save manager's `Get/SetGameProgressionData` keys are (`"Level"` read

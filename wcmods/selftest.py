@@ -20,6 +20,8 @@ def run(cfg, oodle, log=print):
         log(f"  [{'ok' if ok else 'FAIL'}] {name}{(' - ' + detail) if detail else ''}")
 
     check("blake3 test vector", blake3(b"").hex().startswith("af1349b9f5f9a1a6"))
+    check("name hashes as in the game's name maps (CityHash64, every length)", _name_hashes())
+    check("unversioned property headers write back as they read", _unversioned_headers())
     lua = mouselook.script(mouselook.merge([mouselook.validate({"sensitivity": 1.5, "invert": True, "smoothing": 50})]))
     problems = luacheck.check(lua)
     check("mouse look script", not problems and "@SETTINGS@" not in lua and "sensitivity = 1.5" in lua
@@ -136,6 +138,13 @@ def run(cfg, oodle, log=print):
         check("pak file names stored like the game's", rp.legacy_file_names == 0 and base_pak.legacy_file_names == 0,
               f"ours {rp.legacy_file_names}, game {base_pak.legacy_file_names} stored the old way")
 
+        ok, detail = _cooked_table(io)
+        check("cooked item table: every row read and written back the same, and a new row added", ok, detail)
+        ok, detail = _items_section(cfg)
+        check("new items (items.json): tag, herb row, item table row, recipe, starting count, a game item's "
+              "recipe; mistakes refused",
+              ok, detail)
+
     if oodle:
         from . import csvdata
         from .gamefiles import NONASSET
@@ -200,6 +209,85 @@ def run(cfg, oodle, log=print):
     else:
         log("  [skip] no save yet")
     return all(results)
+
+
+def _name_hashes():
+    from .cityhash import name_hash
+    # Stored hashes from the game's DT_QuestObjectsInfo name map: one name for each of CityHash64's
+    # length branches (up to 16, 32 and 64 bytes, and longer).
+    vectors = [("NewRow", 0x8C07177607C72E43), ("Gameplay.Combat.Character.Badger", 0xC06922E4C7EC49BA),
+               ("Gameplay.Combat.Attack.Ancestor.1", 0x2539218B357C41AC),
+               ("/Game/Art/UXD/Textures/gui_icons/gui_icons_accesories/T_UI_Accessory_AutumnWreath_D",
+                0x2382F8DFD9CE00C9)]
+    return all(name_hash(n) == h for n, h in vectors)
+
+
+def _unversioned_headers():
+    from .cooked import _Reader, read_header, split_name, write_header
+    cases = [([], set()), ([0], set()), ([0, 1, 2, 3, 4, 5, 6], {4, 5, 6}), ([0, 2, 3, 9], {3}),
+             (list(range(130)), set(range(0, 130, 7))), ([200, 201], set()), (list(range(40)), {1, 33})]
+    for present, zero in cases:
+        if read_header(_Reader(write_header(present, zero))) != (present, zero):
+            return False
+    return (split_name("NewRow_45") == ("NewRow", 46) and split_name("Foo_0") == ("Foo", 1)
+            and split_name("Foo_01") == ("Foo_01", 0) and split_name("Gameplay.Item") == ("Gameplay.Item", 0))
+
+
+def _cooked_table(io):
+    from . import cooked
+    path, schema = cooked.TABLES["DT_QuestObjectsInfo"]
+    data = io.read_file(path)
+    dt = cooked.DataTable(data, schema)
+    same = dt.bytes() == data
+    count = len(dt.rows)
+    ok = same and dt.check_encoder() and dt.pkg.check_hashes(len(dt.pkg.names)) and count > 100
+    tag = "Gameplay.Inventory.Consumable.WCModsSelfTest"
+    _, herb = dt.find("itemTag", "Gameplay.Inventory.Consumable.SmallHealingHerb")
+    dt.add("WCMods_SelfTest", {"itemTag": tag, "Name": cooked.base_text("Test Herb", tag + ".Name"),
+                               "Description": cooked.base_text("Héals a little", tag + ".Description"),
+                               "Icon": herb["Icon"], "ItemGroupIcon": 1})
+    back = cooked.DataTable(dt.bytes(), schema)
+    name, row = back.rows[-1]
+    added = (name == "WCMods_SelfTest" and row["itemTag"] == tag and row["Description"]["text"] == "Héals a little"
+             and "ItemRarity" not in row and row["ItemGroupIcon"] == 1 and back.check_encoder() and back.pkg.check_hashes(len(back.pkg.names))
+             and back.rows[:-1] == dt.rows[:-1])
+    return ok and added, f"{count} rows" + ("" if same else "; rebuilt package differs")
+
+
+def _items_section(cfg):
+    import json
+    from . import mods, pipeline
+    good = {"items": [
+        {"id": "WCModsTestHerb", "like": "MediumHealingHerb", "name": "Test Herb", "description": "Heals.",
+         "recipe": {"Dandelion": 2, "WCModsTestStone": 1}, "rarity": "Rare", "give": 2},
+        {"id": "WCModsTestStone", "kind": "material", "name": "Test Stone", "description": "A stone.", "icon": "Rock"}],
+        "recipes": {"Cosmetic.Head.MossPatch.1": {"Moss": 3, "WCModsTestStone": 1}}}
+    bad = {"items": [
+        {"id": "SmallCatnip", "kind": "consumable", "name": "Again", "description": "x", "like": "SmallCatnip"},
+        {"id": "WCModsCrown", "kind": "accessory", "name": "Crown", "description": "x"},
+        {"id": "WCModsNoStone", "like": "SmallHealingHerb", "name": "x", "description": "x", "recipe": {"Moonrock": 1}},
+        {"id": "WCModsWhat", "like": "SmallHealingHerb", "name": "x", "description": "x", "effect": "Gameplay.Effect.Fly"}],
+        "recipes": {"Cosmetic.Head.NoSuchHat.1": {"Moss": 1}}}
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _mods_folder(tmp, {"good": ({"name": "Good", "enabled": True}, {"items.json": json.dumps(good)}),
+                                  "bad": ({"name": "Bad", "enabled": True}, {"items.json": json.dumps(bad)})})
+        out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
+        rows = out.get("table_rows", {}).get("DT_QuestObjectsInfo", [])
+        csv = out.get("csv_changes", {})
+        use = [c for c in csv.get("Wrc/Content/Gameplay/DataTables/NonAsset/Consumables.csv", []) if c["by"] == "good"]
+        recipe = [c for c in csv.get("Wrc/Content/Gameplay/DataTables/NonAsset/BarteringCost.csv", [])
+                  if c["by"] == "good"]
+        warned = [w for w in out["warnings"] if w.startswith("items: bad:")]
+        given = [o for o in out["save_ops"] if o.get("key") == "Gameplay.Inventory.Consumable.WCModsTestHerb"]
+        has_save = os.path.isfile(os.path.join(cfg.save_dir, SAV_NAME))
+        gave = (len(given) == 1 and given[0]["value"] == 2 and given[0].get("only_new")) if has_save else             any("no save yet" in w for w in out["warnings"])
+        ok = gave and (out["sections"]["items"]["status"] == "ok" and sorted(r["row"] for r in rows)
+              == ["WCMods_WCModsTestHerb", "WCMods_WCModsTestStone"] and len(use) == 1
+              and sorted(c["row"] for c in recipe) == ["Gameplay.Inventory.Consumable.WCModsTestHerb",
+                                                       "Gameplay.Inventory.Cosmetic.Head.MossPatch.1"]
+              and "Wrc/Config/Tags/WCModsItems.ini" in out["files"] and len(warned) == 5
+              and any("art" in w for w in warned) and "zzz_WCMods_P.utoc" in out["outputs"])
+        return ok, f"{len(rows)} rows, {len(warned)} refused" + ("" if ok else f"; {out['warnings']}")
 
 
 def _script_mod(cfg):

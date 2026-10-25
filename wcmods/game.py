@@ -320,6 +320,19 @@ function Game.levelName()
     return w and Game.name(w) or nil
 end
 
+-- The game's own screens and popups showing now, by class ("WBP_GuiPopupInventory_C", the map, the
+-- pause menu...); empty while you're just playing. Looked up at most four times a second.
+local shownScreens, shownAt = {}, nil
+function Game.screens()
+    if shownAt and os.clock() - shownAt < 0.25 then return shownScreens end
+    shownAt, shownScreens = os.clock(), {}
+    for _, w in ipairs(Game.findAll("GuiScreenWrc")) do
+        local ok, vis = pcall(function() return w:IsVisible() end)
+        if ok and vis then shownScreens[#shownScreens + 1] = Game.className(w) end
+    end
+    return shownScreens
+end
+
 function Game.gameInstance()
     local w = Game.world()
     local ok, gi = pcall(function() return w.OwningGameInstance end)
@@ -590,6 +603,47 @@ function Game.onKey(key, fn, modifiers, help)
     else
         RegisterKeyBind(k, wrapped)
     end
+end
+
+-- Whether a key or controller button went down this frame, in the game's own input: Game.pressed("T"),
+-- Game.pressed("Gamepad_FaceButton_Top") (Unreal's key names). Unlike Game.onKey, it only sees keys
+-- while the game has the focus, and it sees controller buttons too.
+local pressKeys = {}
+function Game.pressed(key)
+    local c = Game.controller()
+    if not c then return false end
+    local k = pressKeys[key]
+    if not k then
+        k = { KeyName = FName(key) }
+        pressKeys[key] = k
+    end
+    local ok, yes = pcall(function() return c:WasInputKeyJustPressed(k) end)
+    return ok and yes == true
+end
+
+-- fn() when any of `keys` (a key name or a list: {"T", "Gamepad_DPad_Up"}) is pressed in the game, checked
+-- every frame with Game.pressed. With `help`, the mod menu's Overview lists the keys. Returns an id
+-- for Game.cancel.
+function Game.onPress(keys, fn, help)
+    if type(keys) ~= "table" then keys = { keys } end
+    if help then
+        local line = table.concat(keys, " or ") .. "\t" .. (tostring(help):gsub("[\t\n]", " ")) .. "\n"
+        ExecuteInGameThread(function()
+            local ok, list = pcall(function() return ModRef:GetSharedVariable("WCModsMenu.keys") end)
+            list = ok and list or ""
+            if not tostring(list):find(line, 1, true) then
+                pcall(function() ModRef:SetSharedVariable("WCModsMenu.keys", tostring(list) .. line) end)
+            end
+        end)
+    end
+    return Game.onFrame(function()
+        for _, key in ipairs(keys) do
+            if Game.pressed(key) then
+                fn(key)
+                return
+            end
+        end
+    end)
 end
 
 -- ===================================================================================== hooks
@@ -1305,6 +1359,221 @@ function Game.items.drop(tag, count, where)
     Game.setTagCounts(a.Reward, { [tag] = count })
     return a
 end
+
+-- ===================================================================================== cats of a mod's own
+-- A cat of a mod's own, standing in the world: one of the game's clan cats (its "filler" class) with the
+-- colours, eyes, size and name IDs a mod gives it. wcmods keeps it where it was put: it's spawned again
+-- when the game unloads it (a level change, a far-off area), and its colours go back on when the game
+-- sets it up again.
+--   local npc = Game.npcs.spawn({ at = { -60040, -200, 813 }, yaw = 180, size = 0.9, eyes = 15,
+--       colours = { fur = "#8c919e", pattern = "#33363f", markings = "#f2f2f7" } })
+--   if npc:near(300) then ... end   -- your cat is within 3 m
+Game.npcs = {}
+local NPC_CLASS = "/Game/Gameplay/Blueprints/Quest/Givers/BP_Quest_Filler.BP_Quest_Filler_C"
+local NPC_PARAMS = { fur = "Fur Color", pattern = "Pattern Mask Color", markings = "Markings Mask Color",
+                     nose = "Nose Color", paws = "Paws Color", whiskers = "Whiskers Color", ears = "Ears Color" }
+local NPC_MESHES = { "SkeletalMeshComponent", "Fur", "Tail", "Ears" }
+local npcs = {}
+local Npc = {}
+Npc.__index = Npc
+local npcWatch          -- the timer that keeps them in the world, started by the first spawn
+local GARBAGE = 0x00200000   -- EInternalObjectFlags::Garbage: destroyed, though still valid to UE4SS until collected
+
+-- Whether the cat's actor is in the world (not destroyed, by a script or the level it was in going away).
+local function alive(a)
+    if not valid(a) then return false end
+    local ok, gone = pcall(function() return a:HasAnyInternalFlags(GARBAGE) end)
+    return not (ok and gone)
+end
+
+-- "#rrggbb" as the linear colour a material takes, or nil.
+local function linearColour(hex)
+    local r, g, b = tostring(hex):match("^#?(%x%x)(%x%x)(%x%x)$")
+    if not r then return nil end
+    local function lin(c)
+        c = tonumber(c, 16) / 255
+        return c <= 0.04045 and c / 12.92 or ((c + 0.055) / 1.055) ^ 2.4
+    end
+    return { R = lin(r), G = lin(g), B = lin(b), A = 1.0 }
+end
+
+local function npcClass()
+    local cls = Game.object(NPC_CLASS)
+    if not cls then
+        pcall(LoadAsset, NPC_CLASS:match("^[^.]+"))
+        cls = Game.object(NPC_CLASS)
+    end
+    return cls
+end
+
+-- Put the colours and eyes on the cat's materials; true if any had to change (the game had set its own).
+local function paintNpc(n)
+    local changed = false
+    for _, field in ipairs(NPC_MESHES) do
+        local ok, mesh = pcall(function() return n.actor[field] end)
+        if ok and valid(mesh) then
+            for i = 0, mesh:GetNumMaterials() - 1 do
+                local mat = mesh:GetMaterial(i)
+                if valid(mat) and mat:GetClass():GetFName():ToString() == "MaterialInstanceDynamic" then
+                    local have = {}
+                    pcall(function()
+                        mat.VectorParameterValues:ForEach(function(_, e)
+                            local v = e:get()
+                            have[v.ParameterInfo.Name:ToString()] = v.ParameterValue
+                        end)
+                        mat.ScalarParameterValues:ForEach(function(_, e)
+                            local v = e:get()
+                            have[v.ParameterInfo.Name:ToString()] = v.ParameterValue
+                        end)
+                    end)
+                    for param, want in pairs(n.paint) do
+                        local cur = have[param]
+                        if cur ~= nil then
+                            if type(want) == "number" then
+                                if math.abs(cur - want) > 0.01 then
+                                    mat:SetScalarParameterValue(FName(param), want)
+                                    changed = true
+                                end
+                            elseif math.abs(cur.R - want.R) > 0.002 or math.abs(cur.G - want.G) > 0.002
+                                or math.abs(cur.B - want.B) > 0.002 then
+                                mat:SetVectorParameterValue(FName(param), want)
+                                changed = true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return changed
+end
+
+local function spawnNpc(n)
+    if n.level and Game.levelName() ~= n.level then return false end
+    local cls = npcClass()
+    local world = Game.player() or Game.world()
+    if not cls or not world then return false end
+    local q = { X = 0, Y = 0, Z = 0, W = 1 }
+    pcall(function()
+        local r = Game.library("KismetMathLibrary"):Conv_RotatorToQuaternion(Game.rotator(0, n.yaw, 0))
+        q = { X = r.X, Y = r.Y, Z = r.Z, W = r.W }
+    end)
+    local xf = { Translation = n.at, Rotation = q, Scale3D = { X = 1, Y = 1, Z = 1 } }
+    local gs = Game.library("GameplayStatics")
+    local ok, a = pcall(function() return gs:BeginDeferredActorSpawnFromClass(world, cls, xf, 1, nil, 0) end)
+    if not ok or not valid(a) then return false end
+    pcall(function()
+        -- Not one of the save's cats: no unique ID for the save to keep it by.
+        local ids = a:K2_GetComponentsByClass(Game.object("/Script/SwtAdventure.SwtAdventureIUIDComponent"))
+        for i = 1, #ids do ids[i]:get().bIsEnabled = false end
+    end)
+    pcall(function()
+        local d = a.DefaultCustomData
+        if n.size then d.CatSize = n.size end
+        if n.prefix then d.PrefixNameId = n.prefix end
+        if n.suffix then d.SuffixNameId = n.suffix end
+    end)
+    pcall(function() gs:FinishSpawningActor(a, xf, 0) end)
+    n.actor = a
+    n.spawns = n.spawns + 1
+    paintNpc(n)
+    return true
+end
+
+-- A new cat of the mod's own at `at` ({x, y, z} or {X =, Y =, Z =}), facing `yaw` degrees. Options:
+-- colours = {fur, pattern, markings, nose, paws, whiskers, ears} as "#rrggbb"; eyes = an iris colour
+-- slot (0-24, as in palette.json); size (the game's cats are about 0.4-1.1); prefix and suffix = name
+-- IDs ("STR_CAT_NAME1", "_PAW") for the game's own name for it; level = the level it stands in (the
+-- one you're in when it's spawned; "L_WorldMap_01_P" is the forest). Returns the npc, which appears
+-- whenever you're in its level.
+function Game.npcs.spawn(opts)
+    opts = opts or {}
+    local at = opts.at or {}
+    local n = setmetatable({
+        at = { X = at.X or at[1] or 0, Y = at.Y or at[2] or 0, Z = at.Z or at[3] or 0 },
+        yaw = opts.yaw or 0, size = opts.size, prefix = opts.prefix, suffix = opts.suffix,
+        level = opts.level or Game.levelName(), paint = {}, spawns = 0, removed = false,
+    }, Npc)
+    for part, hex in pairs(opts.colours or {}) do
+        local param, c = NPC_PARAMS[part], linearColour(hex)
+        if param and c then n.paint[param] = c end
+    end
+    if opts.eyes then
+        n.paint["IndexIrisColorCurveLeft"] = opts.eyes + 1      -- row 0 of the eye atlas is the eye's white
+        n.paint["IndexIrisColorCurveRight"] = opts.eyes + 1
+    end
+    npcs[#npcs + 1] = n
+    if Game.player() then pcall(spawnNpc, n) end
+    -- Keep every cat in the world, with its colours.
+    npcWatch = npcWatch or Game.every(0.5, function()
+        if not Game.player() then return end
+        for _, c in ipairs(npcs) do
+            if not c.removed then
+                if alive(c.actor) then pcall(paintNpc, c) else pcall(spawnNpc, c) end
+            end
+        end
+    end)
+    return n
+end
+
+-- Every cat spawned by this script (removed ones too, with npc.removed set).
+function Game.npcs.all() return npcs end
+
+-- The cat's actor while it's in the world, else nil.
+function Npc:actorOrNil() return alive(self.actor) and self.actor or nil end
+function Npc:valid() return self:actorOrNil() ~= nil end
+-- Where it stands ({X, Y, Z}).
+function Npc:location()
+    local a = self:actorOrNil()
+    if a then
+        local ok, l = pcall(function() return a:K2_GetActorLocation() end)
+        if ok then return { X = l.X, Y = l.Y, Z = l.Z } end
+    end
+    return self.at
+end
+-- How far your cat is, in cm (nil without one).
+function Npc:distance()
+    local me = Game.cat()
+    if not me then return nil end
+    local a, b = me:location(), self:location()
+    if not a then return nil end
+    return math.sqrt((a.X - b.X) ^ 2 + (a.Y - b.Y) ^ 2 + (a.Z - b.Z) ^ 2)
+end
+-- Whether your cat is within `radius` cm (300 by default).
+function Npc:near(radius)
+    local d = self:distance()
+    return d ~= nil and d <= (radius or 300)
+end
+-- Turn to face a place ({X, Y, Z}) or an actor; your cat with no argument.
+function Npc:face(target)
+    local a = self:actorOrNil()
+    if not a then return false end
+    local to = target
+    if to == nil then to = Game.cat() and Game.cat():location() end
+    if type(to) == "userdata" then
+        local ok, l = pcall(function() return to:K2_GetActorLocation() end)
+        to = ok and l or nil
+    end
+    if not to then return false end
+    local from = self:location()
+    self.yaw = math.deg(math.atan(to.Y - from.Y, to.X - from.X))
+    return pcall(function() a:K2_SetActorRotation(Game.rotator(0, self.yaw, 0), false) end)
+end
+-- Move it, and where it comes back to.
+function Npc:moveTo(x, y, z)
+    if type(x) == "table" then x, y, z = x.X or x[1], x.Y or x[2], x.Z or x[3] end
+    self.at = { X = x, Y = y, Z = z }
+    local a = self:actorOrNil()
+    if a then pcall(function() a:K2_SetActorLocation(self.at, false, {}, true) end) end
+end
+-- Take it out of the world for good.
+function Npc:remove()
+    self.removed = true
+    local a = self:actorOrNil()
+    if a then pcall(function() a:K2_DestroyActor() end) end
+    self.actor = nil
+end
+
 
 -- ===================================================================================== the fresh-kill pile
 Game.freshKill = {}
