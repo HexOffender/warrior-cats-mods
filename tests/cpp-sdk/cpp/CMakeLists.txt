@@ -5,4 +5,5 @@ wcmods_mod(${WCMODS_TARGET}
     src/test_game.cpp
     src/test_events.cpp
     src/test_menu.cpp
+    src/test_reflect.cpp
 )

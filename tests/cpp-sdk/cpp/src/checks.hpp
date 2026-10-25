@@ -26,6 +26,8 @@ namespace t
     auto run_world(UObject* cat) -> void;   // Game.hpp reads, once your cat is there
     auto run_writes() -> void;           // Game.hpp writes, when the Python side asks
     auto setup_menu() -> void;           // Menu.hpp: pages, keys with help, shared values
+    auto run_reflect(UObject* cat) -> void;   // Reflect.hpp, once your cat is there
+    auto setup_background() -> void;     // Events.hpp: other threads, settings that change
     auto snapshot_menu() -> void;        // what the pages' rows hold, and the menu's state, into values
 
     // The after-hook that forges GetConsoleVariableFloatValue's result (test_events.cpp sets it up, run_writes

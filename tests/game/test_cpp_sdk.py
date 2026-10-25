@@ -314,6 +314,72 @@ def test_shared_values(agent):
     assert _request(agent, "events")["values"]["shared.ping"] == "pong"
 
 
+def test_reflect_matches_lua(agent):
+    """Reflect.hpp: properties by path (an object, a float, an enum in a struct, an array, a map, a struct's
+    member), describe, spawn, and a write Lua then reads back."""
+    r = _ready(agent, "world")
+    assert not _failed(r, "world"), _failed(r, "world")
+    v = r["values"]
+    lua = agent.lua("""
+        local p = Game.player()
+        local look = Game.cat():customization()
+        local n = 0
+        for _ in pairs(Game.cat():rewards() or {}) do n = n + 1 end
+        return { state = Game.name(Game.controller().PlayerState), tags = p.Tags:GetArrayNum(), clan = look.ClanType,
+                 clan_name = Game.cat():clan(), rewards = n, x = p:K2_GetActorLocation().X, dilation = p.CustomTimeDilation }""")
+    assert v["reflect.player_state"] == lua["state"], (v["reflect.player_state"], lua["state"])
+    assert v["reflect.tags"] == lua["tags"], (v["reflect.tags"], lua["tags"])
+    assert v["reflect.clan"] == lua["clan"] and v["reflect.clan.name"].lower().replace(" ", "") == str(lua["clan_name"]).lower().replace(" ", ""), (v["reflect.clan"], v["reflect.clan.name"], lua)
+    assert v["reflect.rewards"] == lua["rewards"], (v["reflect.rewards"], lua["rewards"])
+    assert abs(v["reflect.x"] - lua["x"]) < 100, (v["reflect.x"], lua["x"])
+    assert v["reflect.spawned"] == "Actor", v["reflect.spawned"]
+    try:
+        assert lua["dilation"] == 0.75, lua["dilation"]   # set(cat, "CustomTimeDilation", 0.75), seen by Lua
+    finally:
+        agent.lua("Game.player().CustomTimeDilation = 1")
+
+
+def test_background_work(agent):
+    """Events.hpp: work on a thread of its own, its result handed to the game thread; the thread checks."""
+    time.sleep(0.5)
+    v = _request(agent, "events")["values"]
+    assert v["background.result"] == 500500 and v["background.plain"] is True, v
+    assert v["background.off_game_thread"] is True and v["background.assert_off"] is True, v
+    assert v["background.then_on_game_thread"] is True, v
+
+
+def test_settings_reload(agent):
+    """Events.hpp: a change to settings.json on disk reaches settings() and on_settings_changed."""
+    settings_path = os.path.join(_folder(agent), "settings.json")
+    with open(settings_path, encoding="utf-8") as f:
+        before_text = f.read()
+    before = json.loads(before_text)
+    reloads = _request(agent, "events")["values"].get("settings.reloads", 0)
+    try:
+        changed = dict(before, number=3.5)
+        time.sleep(1.1)   # a file time coarser than a second still differs from the last one seen
+        with open(settings_path, "w", encoding="utf-8", newline="") as f:
+            json.dump(changed, f, indent=2)
+        end = time.time() + 5
+        while time.time() < end:
+            v = _request(agent, "events")["values"]
+            if v.get("settings.reloads", 0) > reloads:
+                break
+            time.sleep(0.3)
+        assert v.get("settings.reloads", 0) > reloads and v["settings.number_now"] == 3.5, v
+    finally:
+        time.sleep(1.1)
+        with open(settings_path, "w", encoding="utf-8", newline="") as f:
+            f.write(before_text)
+    end = time.time() + 5
+    while time.time() < end:
+        v = _request(agent, "events")["values"]
+        if v["settings.number_now"] == before["number"]:
+            break
+        time.sleep(0.3)
+    assert v["settings.number_now"] == before["number"], v
+
+
 def test_keys_pressed(agent):
     """F9 and Ctrl+F9 reach the mod's on_key callbacks. UE4SS reads the real keyboard, so the game has to be
     in front; when Windows won't allow that from here, this is skipped (the registration is checked above)."""
