@@ -59,7 +59,8 @@ class CatsSection(Section):
                 if scars and not any(scars.values()) and len(scars) == len(catlook.SCARS):
                     label.append("no scars")
                 else:
-                    label += [f"{p} scar {n or 'none'}" for p, n in sorted(scars.items())]
+                    label += [f"{p} scar {catlook.SCAR_TYPES[p][n - 1][0] if n else 'none'}"
+                              for p, n in sorted(scars.items())]
                 for cat in mine:
                     for path in cat["paths"]:   # every copy of your cat in the save
                         ctx.save_op({"op": "fields", "path": path, "set": fields, "source": source,

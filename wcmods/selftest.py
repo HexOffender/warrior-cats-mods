@@ -1185,8 +1185,9 @@ def _colour_slots():
     # Scars: "none" takes them all away; each place takes a number the game draws, or an ear's name.
     scars = catlook.validate({"player": {"scars": "none"}})["player"]["scars"]
     some = catlook.validate({"player": {"scars": {"eye": 3, "ear": "notch-left", "body": "none"}}})["player"]["scars"]
+    named = catlook.validate({"player": {"scars": {"eye": "claws-left", "back": "claws-1", "chest": "bite"}}})["player"]["scars"]
     refused = 0
-    for bad in ({"scars": {"eye": 7}}, {"scars": {"chest": 3}}, {"scars": {"ear": "chewed"}},
+    for bad in ({"scars": {"eye": 7}}, {"scars": {"chest": 3}}, {"scars": {"ear": "chewed"}}, {"scars": {"back": 5}},
                 {"scars": {"tail": "none"}}, {"scars": "some"}, {"scars": {"ear": ["notch-left"]}},
                 {"scars": {"body": 2, "back": 4}}):
         try:
@@ -1198,7 +1199,8 @@ def _colour_slots():
     return (ok and fur_refused and not luacheck.check(script) and '["Fur Color"]' in script
             and fields == '(ClanType=RiverClan,FurColorIdx=3,Pattern01ColorIdx=25,CatSize=0.5,Pattern02ColorIdx=26)'
             and set(scars) == set(catlook.SCARS) and not any(scars.values())
-            and some == {"eye": 3, "ear": 5, "back": 0} and refused == 7
+            and some == {"eye": 3, "ear": 5, "back": 0} and named == {"eye": 6, "back": 3, "chest": 1}
+            and refused == 8
             and "ScarEarId=0" in scarred and "ScarBodyId=0" in scarred and "ScarEyeId=0" in scarred)
 
 
@@ -1214,7 +1216,7 @@ def _scars_build(cfg):
     if not os.path.isfile(os.path.join(cfg.save_dir, SAV_NAME)):
         return any("no save yet" in w for w in out["warnings"])
     return (bool(ops) and all(o["set"] == {"ScarEarId": 5, "ScarEyeId": 0} for o in ops)
-            and all(o["label"] == "ear scar 5, eye scar none" for o in ops))
+            and all(o["label"] == "ear scar notch-left, eye scar none" for o in ops))
 
 
 def _rename_struct():

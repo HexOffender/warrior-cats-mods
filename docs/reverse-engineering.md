@@ -801,14 +801,29 @@ on the Gameplay settings panel) is `EnableScars`, which shows or hides them all.
 | Place | Numbers | What the game does |
 |---|---|---|
 | Ear | 1–6 | Swaps the ear model: 1 torn right, 2 torn left, 3 both torn, 4 notched right, 5 notched left, 6 both notched (seen on the Mid Upright ear: `SK_Mid_Upright_torn_right` and so on). 7 and up show as 6 |
-| Eye | 1–6 | `Enable Eyes_Scars`, with `Eyes_Scars_VariationID` 0 (1–2), 2 (3–4) or 1 (5–6) |
+| Eye | 1–6 | `Enable Eyes_Scars`, with `Eyes_Scars_VariationID` 0 (1–2), 2 (3–4) or 1 (5–6). The eye is also shut |
 | Back (`ScarBodyId`) | 1–6 | `Enable Back_Scars`, with `Back_Scars_VariationID` 0 (1–2), 1 (3–4) or 2 (5–6). 7 shows as 1 |
 | Chest | 1–2 | `Enable Chest_Scars`, with `Chest_Scars_VariationID` 0 or 1. 3 shows as 1 |
 
-For eye and back scars, odd numbers use the `Scars Zones` texture `T_Cat_Scars_Zones_01` and even
-ones `T_Cat_Scars_Zones_02`: the side. Which side is which wasn't clear at screenshot size. The
-chest always uses `_01`. The clan cats in a save use eye 1–2, ear 1–6 and back 2–4, and none had a
-chest scar.
+**What they look like:**
+- **The shapes:** `T_Cat_Scars_Gradient` holds them, a 2 × 2 grid in each channel. A scar's
+  variation is its cell.
+  - Red, the eye: 0 a scarred ring, 1 claw marks, 2 a single slash.
+  - Green, the back: 0 a star-shaped bite, 1 claw marks, and nothing in 2. So back 5 and 6 show no
+    scar, which fits the game's own cats only using 2–4.
+  - Blue, the chest: 0 a bite, 1 claw marks, 2 a long slash. No chest number reaches the slash.
+- **The places:** `T_Cat_Scars_Zones_01` and `_02` are masks of where scars go, in the same channels.
+  - The eye's masks are the cat's right eye (01) and left eye (02). Checked in game with the cat
+    facing the camera: eye 1 and 5 shut its right eye, and 2 and 6 its left.
+  - The back's masks are two spots on the back, which is which not checked yet.
+  - The chest's mask is the same in both.
+- **One texture for all:** odd numbers set `Scars Zones` to `_01` and even ones to `_02`, but a cat
+  has one `Scars Zones`. So an eye and a back scar of opposite parity may not both show where their
+  numbers say. Not tried yet.
+- **Not from the materials alone:** setting the materials' scar parameters directly (without the
+  numbers) didn't stay: the game puts the look back from the numbers, and that also shuts the eye.
+
+The clan cats in a save use eye 1–2, ear 1–6 and back 2–4, and none had a chest scar.
 
 ## The game's own UI
 

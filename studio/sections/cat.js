@@ -9,8 +9,6 @@ const PARTS = [
 const SCAR_PARTS = [
   { id: "ear", name: "Ears" }, { id: "eye", name: "Eye" }, { id: "back", name: "Back" }, { id: "chest", name: "Chest" },
 ];
-const EAR_LABELS = { "torn-right": "Torn, right", "torn-left": "Torn, left", "torn-both": "Torn, both",
-  "notch-right": "Notched, right", "notch-left": "Notched, left", "notch-both": "Notched, both" };
 const SLOT_PARTS = [
   { id: "fur", name: "Coat colour", table: "FurColors" },
   { id: "pattern", name: "Pattern colour", table: "PatternMaskColors" },
@@ -34,8 +32,11 @@ export default {
     });
     const coloursCard = el("div", { class: "card" }), slotsCard = el("div", { class: "card" }),
       scarsCard = el("div", { class: "card" });
-    const SCARS = info.scars || { current: {}, top: {}, ear_names: {} };
-    const earName = n => Object.keys(SCARS.ear_names).find(k => SCARS.ear_names[k] === n);
+    // types: each place's scars as [name, label], scar n being the n-th (catlook.SCAR_TYPES).
+    const SCARS = info.scars || { current: {}, types: {} };
+    const scarTypes = part => SCARS.types[part] || [];
+    const scarName = (part, n) => (scarTypes(part)[n - 1] || [])[0];
+    const scarNumber = (part, name) => { const i = scarTypes(part).findIndex(t => t[0] === name); return i < 0 ? undefined : i + 1; };
     const out = wc.codePanel("cats.json");
     root.append(
       el("div", { class: "section-head" },
@@ -59,8 +60,8 @@ export default {
             if (key.startsWith("_")) continue;
             const k = key === "body" ? "back" : key;
             let v = raw === "none" ? 0 : raw;
-            if (k === "ear" && typeof v === "string") v = SCARS.ear_names[v];
-            if (Number.isInteger(v) && v >= 0 && v <= (SCARS.top[k] ?? -1)) look.scars[k] = v;
+            if (typeof v === "string") v = scarNumber(k, v);
+            if (Number.isInteger(v) && v >= 0 && v <= scarTypes(k).length && k in SCARS.types) look.scars[k] = v;
             else scarsRaw[key] = raw;
           }
         }
@@ -79,7 +80,7 @@ export default {
         for (const s of SCAR_PARTS) {
           if (!(s.id in look.scars)) continue;
           const n = look.scars[s.id];
-          player.scars[s.id] = n === 0 ? "none" : s.id === "ear" ? (earName(n) || n) : n;
+          player.scars[s.id] = n === 0 ? "none" : (scarName(s.id, n) || n);
         }
       }
       return { _help: "Written by Clan Mod Studio. See README, \"cats.json\".", ...(Object.keys(player).length ? { player } : {}), ...extra };
@@ -145,20 +146,18 @@ export default {
         el("p", { class: "note", text: "Pick a slot to wear it; click it again to keep the one in your save. Dashed slots are new ones your palettes add, which only your cat wears. Coat slots 20-24 belong to the Feral Edition." }),
         ...blocks);
     }
-    // What a scar number is: an ear's tear or notch, or for eye and back one of three scars on one side
-    // or the other (odd and even numbers; which side is which isn't known yet).
+    // What a scar number looks like, from the build's list; a number past it (a save the game wrote)
+    // as its number.
     function scarLabel(part, n) {
       if (n === 0) return "No scar";
-      if (part === "ear") return EAR_LABELS[earName(n)] || `Scar ${n}`;
-      if (part === "chest") return `Scar ${n}`;
-      return `Scar ${Math.ceil(n / 2)}, side ${n % 2 ? 1 : 2}`;
+      return (scarTypes(part)[n - 1] || [null, `Scar ${n}`])[1];
     }
 
     function renderScars() {
       // An entry the card can't show (written by hand), for this place: kept until another choice is made.
       const rawFor = id => Object.keys(scarsRaw).find(k => (k === "body" ? "back" : k) === id);
       const rows = SCAR_PARTS.map(s => {
-        const top = SCARS.top[s.id] || 0, rawKey = rawFor(s.id);
+        const top = scarTypes(s.id).length, rawKey = rawFor(s.id);
         const now = s.id in SCARS.current ? scarLabel(s.id, SCARS.current[s.id]).toLowerCase() : "no save yet";
         const sel = el("select", { "aria-label": `${s.name} scar` },
           el("option", { value: "", text: `Keep my save's (${now})` }),
@@ -178,7 +177,7 @@ export default {
       const keep = el("button", { class: "btn", type: "button", text: "Keep my save's scars",
         onclick: () => { look.scars = {}; scarsRaw = {}; changed(); renderScars(); } });
       clear(scarsCard).append(el("h2", { text: "Scars" }),
-        el("p", { class: "note", text: "Choose your cat's scars, or none. They go into your save on install, after a backup, and show with the game's Injury system setting on (its Gameplay settings). A boss fight can still give new ones." }),
+        el("p", { class: "note", text: "Choose your cat's scars, or none. An eye scar shuts that eye; right and left are your cat's own. They go into your save on install, after a backup, and show with the game's Injury system setting on (its Gameplay settings). A boss fight can still give new ones." }),
         ...rows, el("div", { class: "row" }, none, keep));
     }
 

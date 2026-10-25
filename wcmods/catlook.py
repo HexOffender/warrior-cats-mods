@@ -3,7 +3,7 @@
     { "player": { "colours": { "fur": "#9fb6e0", "paws": "#ffb6c1", "ears": "#ff9aa6", "nose": "#ff7b9a",
                                "whiskers": "#ffffff" },
                   "slots": { "fur": 11, "pattern": 25, "marking": 26 },
-                  "scars": { "ear": "notch-left", "eye": 3, "back": "none" } } }
+                  "scars": { "ear": "notch-left", "eye": "claws-right", "back": "none" } } }
 
 - "colours" go straight onto your cat's materials while you play, by a UE4SS script, so no other cat
   changes and any colour works. Each part is a vector parameter of the cat's body materials (below).
@@ -16,8 +16,8 @@
   Pattern02ColorIdx (marking colour).
 - "scars" chooses your cat's scars, written into your save on install the same way: "none" for no
   scars at all, or each place on its own (one left out keeps your save's). The save keeps them as
-  ScarEyeId, ScarEarId, ScarBodyId (the back) and ScarChestId, 0 for none; SCAR_CHOICES has what
-  each place can be, as seen in game (docs/reverse-engineering.md, "Scars").
+  ScarEyeId, ScarEarId, ScarBodyId (the back) and ScarChestId, 0 for none; SCAR_TYPES has what
+  each place can be, by name or number (docs/reverse-engineering.md, "Scars").
 
 Your cat is your character in the world, plus the copies menus and portraits show (never another
 cat in the world, even one with your name). In the world those copies must have your character's name
@@ -39,10 +39,21 @@ SLOTS = {"fur": "FurColorIdx", "pattern": "Pattern01ColorIdx", "marking": "Patte
 FERAL_SLOTS = range(20, 25)   # the game swaps these coat slots for others unless you own the Feral Edition
 TARGETS = ("player",)
 SCARS = {"eye": "ScarEyeId", "ear": "ScarEarId", "back": "ScarBodyId", "chest": "ScarChestId"}
-# What the game draws for each number (seen in game): ears are a torn or notched ear model; eye and back
-# scars are one of three, on one side or the other (odd and even numbers); the chest has two.
-EAR_SCARS = {"torn-right": 1, "torn-left": 2, "torn-both": 3, "notch-right": 4, "notch-left": 5, "notch-both": 6}
-SCAR_CHOICES = {"eye": 6, "ear": 6, "back": 6, "chest": 2}   # the highest number for each
+# Every scar each place can have: (name, what it looks like), scar n being the n-th. Ears are the game's torn
+# and notched ear models; an eye scar shuts the eye, odd numbers the cat's right eye and even its left; the
+# back has a bite and claw marks in two spots (which spot is where isn't known yet); the chest a bite or
+# claw marks. The back's 5 and 6 show nothing (the scar texture has no third back scar), so they're left out.
+SCAR_TYPES = {
+    "ear": [("torn-right", "Torn, right"), ("torn-left", "Torn, left"), ("torn-both", "Torn, both"),
+            ("notch-right", "Notched, right"), ("notch-left", "Notched, left"), ("notch-both", "Notched, both")],
+    "eye": [("ring-right", "Scar ring, right eye"), ("ring-left", "Scar ring, left eye"),
+            ("slash-right", "Slash, right eye"), ("slash-left", "Slash, left eye"),
+            ("claws-right", "Claw marks, right eye"), ("claws-left", "Claw marks, left eye")],
+    "back": [("bite-1", "Bite, spot 1"), ("bite-2", "Bite, spot 2"), ("claws-1", "Claw marks, spot 1"),
+             ("claws-2", "Claw marks, spot 2")],
+    "chest": [("bite", "Bite"), ("claws", "Claw marks")],
+}
+SCAR_NAMES = {part: {name: i + 1 for i, (name, _) in enumerate(types)} for part, types in SCAR_TYPES.items()}
 
 
 def validate(raw, where="cats.json"):
@@ -91,8 +102,8 @@ def validate(raw, where="cats.json"):
 
 
 def _scars(value, where):
-    """{part: number} for "none" (no scars) or {"ear": "notch-left", "eye": 3, "back": "none", ...}.
-    Only numbers the game draws a scar for are taken (SCAR_CHOICES)."""
+    """{part: number} for "none" (no scars) or {"ear": "notch-left", "eye": 3, "back": "none", ...}: a
+    scar by its name or number (SCAR_TYPES)."""
     if value == "none":
         return {part: 0 for part in SCARS}
     if not isinstance(value, dict):
@@ -107,14 +118,13 @@ def _scars(value, where):
             part = "back"
         if part not in SCARS:
             raise ValueError(f"{where}.{part} should be one of {', '.join(SCARS)}")
-        top = SCAR_CHOICES[part]
+        top = len(SCAR_TYPES[part])
         if v == "none":
             v = 0
-        elif part == "ear" and isinstance(v, str) and v in EAR_SCARS:
-            v = EAR_SCARS[v]
+        elif isinstance(v, str) and v in SCAR_NAMES[part]:
+            v = SCAR_NAMES[part][v]
         if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= top:
-            names = f', or {", ".join(EAR_SCARS)}' if part == "ear" else ""
-            raise ValueError(f'{where}.{part} should be "none" or a scar from 1 to {top}{names}')
+            raise ValueError(f'{where}.{part} should be "none", {", ".join(SCAR_NAMES[part])}, or 1 to {top}')
         out[part] = v
     return out
 
