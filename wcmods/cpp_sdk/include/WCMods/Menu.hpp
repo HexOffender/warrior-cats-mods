@@ -291,6 +291,7 @@ namespace wcmods
             std::map<std::string, Json> from_lua;   // what Lua shared (WCModsCpp.share)
             std::map<std::string, Json> to_lua;     // what this mod shares (WCModsCpp.mods[id].get)
             std::vector<std::wstring> keys;         // "F9\twhat it does" lines for the Overview
+            std::map<std::string, std::wstring> quests;   // id -> "title\tstatus\tobjective\tprogress" (empty: taken off)
             bool settings_page{true};
         };
         inline auto bridge() -> Bridge&
@@ -472,6 +473,17 @@ namespace wcmods
             lua_push_text(L, lines);
             return 1;
         }
+        inline auto cf_quests(lua_State* L) -> int
+        {
+            std::wstring lines;
+            {
+                Bridge& b = bridge();
+                std::lock_guard lock(b.lock);
+                for (auto& [id, line] : b.quests) lines += wide(id) + L"\t" + line + L"\n";
+            }
+            lua_push_text(L, lines);
+            return 1;
+        }
 
         // ModBase calls this as each Lua mod's state starts, before its scripts run: the state gets WCModsCpp
         // (shared by every C++ mod) with this mod's table under WCModsCpp.mods.
@@ -503,6 +515,8 @@ namespace wcmods
             lua_setfield(L, -2, "get");
             lua_pushcfunction(L, cf_keys);
             lua_setfield(L, -2, "keys");
+            lua_pushcfunction(L, cf_quests);
+            lua_setfield(L, -2, "quests");
             std::string id = utf8(mod().id);
             lua_setfield(L, -2, id.c_str());
             lua_settop(L, top);
@@ -583,6 +597,34 @@ namespace wcmods
         detail::Bridge& b = detail::bridge();
         std::lock_guard lock(b.lock);
         b.to_lua[std::string(name)] = std::move(value);
+    }
+
+    // A quest of the mod's own on the mod menu's Quests page (status: L"available", L"active" or L"done").
+    // Report it again whenever it changes; report_quest(id) alone takes it off.
+    struct QuestReport
+    {
+        std::wstring title;
+        std::wstring status{L"active"};
+        std::wstring objective;
+        std::wstring progress;   // "1 / 2"
+    };
+    inline auto report_quest(std::string_view id, const QuestReport& quest) -> void
+    {
+        auto clean = [](std::wstring s) {
+            for (wchar_t& c : s)
+                if (c == L'\t' || c == L'\n') c = L' ';
+            return s;
+        };
+        detail::Bridge& b = detail::bridge();
+        std::lock_guard lock(b.lock);
+        b.quests[std::string(id)] = clean(quest.title.empty() ? wide(id) : quest.title) + L"\t" + clean(quest.status) + L"\t"
+                                    + clean(quest.objective) + L"\t" + clean(quest.progress);
+    }
+    inline auto report_quest(std::string_view id) -> void
+    {
+        detail::Bridge& b = detail::bridge();
+        std::lock_guard lock(b.lock);
+        b.quests[std::string(id)] = L"\t\t\t";   // an empty title: the menu takes it off
     }
 
     // Whether the mod menu is open, and the id of the page it shows (the menu shares both).

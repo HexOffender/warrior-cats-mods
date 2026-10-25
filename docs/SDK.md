@@ -774,6 +774,8 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Game.hpp` | the game's objects, the world and its managers, your cat, the clock, the fresh-kill pile, the developer switches |
 | `WCMods/Events.hpp` | every frame, timers, keys, hooks on the game's functions, level and player events |
 | `WCMods/Reflect.hpp` | any property by its path, as the kind it is; arrays, maps and structs; what an object has; spawning actors |
+| `WCMods/World.hpp` | what's nearby, the game's screens and input, traces to the ground, the save, items, cats' names, clans and traits |
+| `WCMods/Story.hpp` | quests, fights, and the game's events as one list |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Mod.hpp` | `wcmods::ModBase` and `WCMODS_MOD` |
 
@@ -875,7 +877,40 @@ for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards"))
 | `wcmods::map_entries(object, path)`, `map_entries(value)` | A map's pairs, each key and value a `Value` (the game's tag-count maps: a tag struct, whose `TagName` is the tag, and a count) |
 | `wcmods::describe(object)`, `describe(value)` | Every property of an object or struct, with its name, type and value now: `python wcmods.py inspect` in C++ |
 | `Value::of(x)` | A `Value` from a bool, number, text or object, for `set` |
+| `wcmods::call_reflected(object, STR("GetQuestStatus"), [&](wcmods::Params& p) { ... })` | Call a reflected function through its parameters by name or position (`p.set(L"Key", v)`, `p.set_nth(0, v)`, `p.raw(L"Start")` for a struct's bytes, `p.get(L"ReturnValue")`, `p.nth(i)`, `p.count()`, `p.has(name)`, `p.function()` and `p.bytes()` for the rest): for outputs that are structs, inputs that are arrays or strings, returns that are enums or texts, with no struct to lay out. nullopt when the object or function isn't there |
 | `wcmods::spawn(STR("/Script/Engine.Actor"), {x, y, z})`, `destroy(actor)` | An actor of a class at a place (plain actors; the game's own cats need more, see the Lua module's `Game.npcs`), and taking one out |
+
+**What's around, the game's input, the save, items and names (`World.hpp`)**, game thread only:
+
+| Call | Does |
+|---|---|
+| `wcmods::nearby(wcmods::Kind::Pickups, 3000)` | Things of a kind within so many centimetres of your cat (or of a `from` actor), nearest first, each with `actor`, `location`, `distance`, `name` and `type`. Kinds: `Pickups`, `Interactables`, `Objectives`, `Cats`, `QuestGivers`, `Creatures`, `Climbing`, `Dens`, `FreshKill`, `Zones`, `Checkpoints`, the classes `WCModsWorld` sorts them by. A few times a second, not every frame |
+| `wcmods::screens()` | The game's own screens and popups showing now, by class; none while you're just playing |
+| `wcmods::pressed(L"T")`, `key_down(L"Gamepad_FaceButton_Top")` | A key or controller button that went down this frame, or is held, in the game's own input (Unreal's key names); only while the game has the focus |
+| `wcmods::trace(from, to)`, `ground(x, y, z)` | Where a line first hits the world, and the ground's height below a place |
+| `wcmods::save_manager()` | The game's save manager, which the save calls below go through |
+| `wcmods::save_state(L"Inventory")`, `save_state_text(key)`, `set_save_state(key, json)` | A part of the current slot's live state as Json (and as the text the manager gives), through the save manager, and replacing one |
+| `wcmods::save_progression(primary, sub)`, `save_setting(primary, sub)` | Whole-number progression and settings values |
+| `wcmods::save_slot()`, `save_path()`, `save_file()`, `slot_data()` | The slot in use; the save as plain JSON (`WrcGame.json`, written at every save), whole and this cat's slot of it |
+| `wcmods::items()`, `item_count(tag)`, `item_type(tag)`, `item_name(tag)` | Your items as `{tag: count}` from the last save with the pickups since (call `items()` once early so they're counted), one's count, its kind, and its name after the mods that add items |
+| `wcmods::cat_name(actor)`, `cat_clan(actor)`, `cat_traits()` | A cat's name as the game shows it (your name mods included: wcmods writes `names.json` beside `WCModsNames` on every install), its clan, and your cat's traits from the last save |
+
+**Quests, fights and events (`Story.hpp`)**, game thread only:
+
+| Call | Does |
+|---|---|
+| `wcmods::quest_manager()` | The game's quest manager, which the quest calls go through |
+| `wcmods::quests()`, `describe_quest(object)` | Every quest the manager holds, each a `Quest` (`quest`, `id`, `tag`, `graph`, `type`, `status`, `result`, `tracked`, `xp`) |
+| `wcmods::quest_status(tag)`, `quest_result(tag)`, `quest_successes(tag)` | By a quest's tag (`L"Quest.Main.3"`), with the enums' names |
+| `wcmods::tracked_quest()`, `track_quest(quest, on)`, `start_quest(tag)`, `give_quest(tag)` | The quest followed; following one; starting or handing one out the way the game's quest givers do |
+| `wcmods::objectives(quest)` | Its objectives in order: `id`, `index`, `current`, `target`, `status`, `point` (where to go) |
+| `wcmods::chapter()` | The chapter the story is in ("Chapter00") |
+| `wcmods::combat_active()`, `combat_director()` | Whether a fight is on, and its director |
+| `wcmods::fighter(actor)`, `fight_players()`, `fight_enemies()` | A `Fighter` (a cat's combat component: `actor()`, `level()`, `stance()`, `stat(Stat)`, `move()`, `targets()`), and each side of the fight |
+| `wcmods::fight_turn_order()`, `fight_current()`, `fight_main_enemy()` | Who acts in what order, whose turn it is, and the main enemy |
+| `wcmods::on(wcmods::Event::CombatStart, fn)` | `fn(info)` when the event happens: `Level`, `Player`, `Phase`, `CombatStart`, `CombatEnd`, `GenericEvent`, `QuestStatus`, `Damage`, `TurnEnded`, `Status`, each with what it carries in the `EventInfo` (`name`, `object`, `a`, `b`; Story.hpp lists them). False when the game hasn't got what the event listens to |
+
+The events of fights (`CombatStart`, `CombatEnd`, `Damage`, `TurnEnded`, `Status`) and quests (`QuestStatus`, `GenericEvent`) are checked as far as a test outside a fight can: their hooks are found on this build, and they're the same functions the Lua module's `Game.on` uses; `Level`, `Player` and `Phase` are seen firing.
 
 **When code runs (`Events.hpp`)**, everything calling back on the game thread:
 
@@ -888,6 +923,7 @@ for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards"))
 | `wcmods::on_player(fn)` | `fn(cat)` when your cat appears (the forest loads), changes (a new area) or goes (menus; `nullptr`), looked for four times a second, and once right away |
 | `wcmods::on_level(fn)` | `fn(level name)` once a level has loaded |
 | `wcmods::on_function(STR("/Script/Wrc.GuiHudWrc:OnItemPickedUp"), fn)`, `after_function(...)`, `unhook(id)` | `fn(call)` just before, or just after, the game runs one of its functions, by its full path. `call.self()` is the object, `call.params<Params>()` its parameters as a struct laid out like them (changed before the call, they change what the game does), `call.set_return(v)` its result. 0 and a line in the log when there's no such function |
+| `call.param(L"Tag")`, `call.param(0)` | In a hook, a parameter by its name or position as `get()` gives it, with no struct to lay out; a struct's bytes are the call's own |
 | `wcmods::run_in_background(work, then)` | `work()` on a thread of its own (a file, the network, a long computation; never the game's objects), then `then(result)` on the game thread with what it gave back; `run_in_background(work)` for work that needs nothing after |
 | `wcmods::on_game_thread_now()`, `assert_game_thread(L"what")` | Whether this is the game thread (known once a frame has run); the second says so in the log when it isn't |
 | `wcmods::on_settings_changed(fn)` | `fn()` on the game thread when `settings.json` changed on disk (the studio, a text editor), after `settings()` has been read again; looked for once a second |
@@ -928,6 +964,7 @@ wcmods::menu_page(L"My mod", [](wcmods::Ui& ui) {
 | `wcmods::on_key(key, L"what it does", fn)`, `on_key(key, {modifiers}, help, fn)` | `on_key`, with the key listed on the Overview page with what it does; `key_name(key)` is the name it's listed by |
 | `wcmods::menu_open()`, `menu_page_shown()` | Whether the menu is open, and the id of the page it shows |
 | `wcmods::shared(name)`, `share(name, value)` | Values passed between Lua and C++ mods: `WCModsCpp.share(name, value)` in any Lua script reaches every C++ mod's `shared(name)`, and a C++ mod's `share(name, value)` is read in Lua as `WCModsCpp.mods["<mod id>"].get(name)`. A bool, number or string (null when there's none) |
+| `wcmods::report_quest("my-quest", {.title, .status, .objective, .progress})`, `report_quest(id)` | A quest of the mod's own on the mod menu's Quests page (status L"available", L"active" or L"done"); report it again as it changes, and alone to take it off |
 
 How it works: UE4SS hands a C++ mod every Lua mod's state as it starts (`on_lua_start`), and `ModBase`
 puts a `WCModsCpp.mods["<mod id>"]` table into each, with `pages()`, `draw(id, ui)`, `keys()`,

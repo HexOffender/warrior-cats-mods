@@ -6,4 +6,5 @@ wcmods_mod(${WCMODS_TARGET}
     src/test_events.cpp
     src/test_menu.cpp
     src/test_reflect.cpp
+    src/test_world.cpp
 )

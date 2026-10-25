@@ -183,6 +183,7 @@ namespace t
         game_cat(actor);
         game_world_state();
         run_reflect(actor);
+        run_world_more(actor);
     }
 
     auto run_writes() -> void

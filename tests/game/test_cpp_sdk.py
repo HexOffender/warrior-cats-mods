@@ -380,6 +380,94 @@ def test_settings_reload(agent):
     assert v["settings.number_now"] == before["number"], v
 
 
+def test_world_matches_lua(agent):
+    """World.hpp: what's nearby, the game's screens, the ground, the save, items, and a cat's name, clan and
+    traits, against what Lua sees."""
+    r = _ready(agent, "world")
+    assert not _failed(r, "world"), _failed(r, "world")
+    v = r["values"]
+    v["nearby.pickups.now"] = _request(agent, "events")["values"]["nearby.pickups.now"]   # counted just now
+    lua = agent.lua("""
+        local World = require("WCModsWorld")
+        local N = require("WCModsNames")
+        local c = Game.cat()
+        local at = c:location()
+        local items, n = Game.items.list(), 0
+        for _ in pairs(items) do n = n + 1 end
+        return { pickups = #World.nearby("pickups", 5000), screens = Game.screens(), ground = Game.ground(at.X, at.Y, at.Z),
+                 slot = Game.save.slot(), inventory = Game.save.state("Inventory"), items = n,
+                 inventory_text = Game.save.stateText("Inventory"),
+                 progression = Game.save.progression("GameplayProgression", "Level"),
+                 setting = Game.save.setting("SettingsData", "Minimap"),
+                 name = c:name(), clan = c:clan(), traits = c:traits(),
+                 marigold = N.item("Gameplay.Inventory.Consumable.MediumHealingHerb") }""")
+    assert abs(v["nearby.pickups.now"] - lua["pickups"]) <= 1, (v["nearby.pickups.now"], lua["pickups"])
+    assert v["nearby.pickups"] >= 0 and v["nearby.cats"] >= 0, v
+    assert v["screens"] == (lua["screens"] or []), (v["screens"], lua["screens"])
+    assert lua["ground"] is None or abs(v["ground"] - lua["ground"]) < 5, (v["ground"], lua["ground"])
+    assert v["save.slot"] == lua["slot"], (v["save.slot"], lua["slot"])
+    inv = lua.get("inventory") or {}
+    assert v["save.inventory_keys"] == (len(inv) if isinstance(inv, dict) else -1), (v["save.inventory_keys"], inv)
+    assert v["save.inventory_text"] == lua["inventory_text"] and lua["inventory_text"], (v["save.inventory_text"], lua["inventory_text"])
+    assert v["items.count"] == lua["items"], (v["items.count"], lua["items"])
+    assert v["save.progression"] == lua["progression"] and v["save.setting"] == lua["setting"], (v["save.progression"], lua["progression"], v["save.setting"], lua["setting"])
+    assert v["cat.name"] == lua["name"], (v["cat.name"], lua["name"])
+    assert v["cat.clan"].lower() == str(lua["clan"]).lower(), (v["cat.clan"], lua["clan"])
+    assert v["cat.traits"] == (lua["traits"] or []), (v["cat.traits"], lua["traits"])
+    assert v["item_name.marigold"] == (lua["marigold"] or ""), (v["item_name.marigold"], lua["marigold"])
+    if v["items.count"]:
+        tag = v["items.first_tag"]
+        got = agent.lua("return Game.items.count(%r), Game.items.type(%r) or ''" % (tag, tag))
+        assert v["items.first_count"] == got[0] and v["items.first_type"] == got[1], (v["items.first_count"], v["items.first_type"], got)
+
+
+def test_story_matches_lua(agent):
+    """Story.hpp: quests, the fight that isn't on, the events that fire outside a fight, and a quest
+    reported to the mod menu."""
+    r = _ready(agent, "world")
+    assert not _failed(r, "world"), _failed(r, "world")
+    v = r["values"]
+    lua = agent.lua("""
+        local all = Game.quests.all()
+        local first = all[1]
+        local tracked = Game.quests.tracked()
+        local out = { count = #all, chapter = Game.quests.chapter(), combat = Game.combat.active(),
+                      tracked = tracked and Game.quests.describe(tracked).id or nil }
+        if first then
+            out.first = { id = first.id, tag = first.tag, status = first.status, type = first.type, tracked = first.tracked,
+                          objectives = #Game.quests.objectives(first.quest),
+                          status_by_tag = first.tag and Game.quests.status(first.tag) or nil }
+        end
+        return out""")
+    # A Lua nil is a missing key here.
+    assert v["quests.count"] == lua["count"], (v["quests.count"], lua["count"])
+    assert (v["quests.chapter"] or None) == lua.get("chapter"), (v["quests.chapter"], lua.get("chapter"))
+    assert v["quests.tracked"] == lua.get("tracked"), (v["quests.tracked"], lua.get("tracked"))
+    if lua["count"]:
+        f = lua["first"]
+        assert v["quests.first.id"] == f["id"] and (v["quests.first.tag"] or None) == f.get("tag"), (v["quests.first.id"], v["quests.first.tag"], f)
+        assert v["quests.first.status"] == f.get("status") and v["quests.first.type"] == f.get("type"), (v["quests.first.status"], v["quests.first.type"], f)
+        assert v["quests.first.tracked"] == bool(f.get("tracked")) and v["quests.first.objectives"] == f["objectives"], (v, f)
+        if f.get("tag"):
+            assert v["quests.first.status_by_tag"] == f.get("status_by_tag"), (v["quests.first.status_by_tag"], f.get("status_by_tag"))
+    assert lua["combat"] is False
+    e = _request(agent, "events")["values"]
+    assert e["events.level"] >= 1 and e["events.player"] >= 1, e
+    assert e["events.phase"] >= 1 and e["events.first_phase"], e
+    assert e["events.combat"] == 0, e
+    reported = agent.lua("return Game.quests.reported()")
+    mine = [q for q in (reported or []) if q["id"] == "cpp-sdk-test"]
+    assert mine and mine[0]["title"] == "The C++ test quest" and mine[0]["status"] == "active" and mine[0]["progress"] == "1 / 2", reported
+    _request(agent, "unreport")
+    end = time.time() + 5
+    while time.time() < end:
+        reported = agent.lua("return Game.quests.reported()")
+        if not any(q["id"] == "cpp-sdk-test" for q in (reported or [])):
+            break
+        time.sleep(0.3)
+    assert not any(q["id"] == "cpp-sdk-test" for q in (reported or [])), reported
+
+
 def test_keys_pressed(agent):
     """F9 and Ctrl+F9 reach the mod's on_key callbacks. UE4SS reads the real keyboard, so the game has to be
     in front; when Windows won't allow that from here, this is skipped (the registration is checked above)."""

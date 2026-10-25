@@ -31,6 +31,7 @@
 
 #include <WCMods/Core.hpp>
 #include <WCMods/Game.hpp>
+#include <WCMods/Reflect.hpp>
 
 namespace wcmods
 {
@@ -379,9 +380,26 @@ namespace wcmods
     struct Call
     {
         RC::Unreal::UnrealScriptFunctionCallableContext& context;
+        UFunction* function{};
 
         // The object the function was called on.
         auto self() -> UObject* { return context.Context; }
+        // A parameter by its name or its position, as get() gives it (Reflect.hpp): no struct to lay out.
+        // A struct's bytes are the call's own: use them inside the callback.
+        auto param(std::wstring_view name) -> Value
+        {
+            if (!function) return {};
+            for (FProperty* p : function->ForEachProperty())
+                if (p->GetName() == name) return detail::read(p, p->ContainerPtrToValuePtr<void>(context.TheStack.Locals()));
+            return {};
+        }
+        auto param(int index) -> Value
+        {
+            if (!function || index < 0) return {};
+            for (FProperty* p : function->ForEachProperty())
+                if (index-- == 0) return detail::read(p, p->ContainerPtrToValuePtr<void>(context.TheStack.Locals()));
+            return {};
+        }
         // Its parameters, as a struct laid out like them (see wcmods::call). Changing them before the call
         // (on_function) changes what the game does.
         template <typename Params>
@@ -420,14 +438,6 @@ namespace wcmods
         inline auto hook_function(const TCHAR* path, std::function<void(Call&)> before, std::function<void(Call&)> after) -> HookId
         {
             using Context = RC::Unreal::UnrealScriptFunctionCallableContext;
-            auto wrap = [](std::function<void(Call&)> fn, const wchar_t* when) {
-                auto shared = std::make_shared<std::function<void(Call&)>>(std::move(fn));
-                return [shared, when](Context& context, void*) {
-                    if (!*shared) return;
-                    Call call{context};
-                    guarded(when, [&] { (*shared)(call); });
-                };
-            };
             // Looked up here: UE4SS's own lookup hands a function it can't find on as a null pointer.
             UFunction* function = RC::Unreal::UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, path);
             if (!function)
@@ -435,6 +445,14 @@ namespace wcmods
                 log_line(mod().name, std::format(L"can't hook {}: no such function", path));
                 return 0;
             }
+            auto wrap = [function](std::function<void(Call&)> fn, const wchar_t* when) {
+                auto shared = std::make_shared<std::function<void(Call&)>>(std::move(fn));
+                return [shared, when, function](Context& context, void*) {
+                    if (!*shared) return;
+                    Call call{context, function};
+                    guarded(when, [&] { (*shared)(call); });
+                };
+            };
             std::pair<int, int> ids;
             try
             {

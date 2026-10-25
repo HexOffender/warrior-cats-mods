@@ -42,6 +42,11 @@ namespace t
                 snapshot_events();
                 done("events");
             }
+            else if (what == "unreport")
+            {
+                report_quest("cpp-sdk-test");
+                done("unreport");
+            }
         }
     } // namespace
 
@@ -70,6 +75,7 @@ namespace t
         value("levels", names);
         value("players", players);
         snapshot_menu();
+        snapshot_story();
     }
 
     auto setup_events() -> void
@@ -114,10 +120,14 @@ namespace t
             pre_restart++;
             restart_self = text(name(call.self()));
             restart_pawn = text(name(call.params<RestartParams>().NewPawn));
+            // The same parameter by name and by position (Reflect.hpp), with no struct.
+            if (call.param(L"NewPawn").object != call.params<RestartParams>().NewPawn || call.param(0).object != call.param(L"NewPawn").object
+                || call.param(L"Nope") || call.param(7))
+                restart_pawn = "param() disagreed";
         });
         HookId post = after_function(STR("/Script/Engine.PlayerController:ClientRestart"), [](Call& call) {
             post_restart++;
-            restart_pawn_after = text(name(call.params<RestartParams>().NewPawn));
+            restart_pawn_after = text(name(call.param(L"NewPawn").object));
         });
         expect("on_function.id", pre != 0 && post != 0 && pre != post);
         HookId gone = on_function(STR("/Script/Engine.PlayerController:ClientRestart"), [](Call&) { unhooked_ran++; });
