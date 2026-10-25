@@ -17,3 +17,10 @@ __pycache__/
 *.pyc
 .claude/
 cache/
+
+# The C++ SDK's test mod: what a build and a test run leave in it
+tests/cpp-sdk/dlls/
+tests/cpp-sdk/results.json
+tests/cpp-sdk/request.txt
+tests/cpp-sdk/written.txt
+tests/cpp-sdk/bom.txt

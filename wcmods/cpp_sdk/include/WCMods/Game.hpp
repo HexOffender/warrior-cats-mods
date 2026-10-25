@@ -129,7 +129,7 @@ namespace wcmods
 
     // The same for a function that takes nothing and gives one value back, which this returns (nullopt when
     // the function isn't there, or its result isn't that size):
-    //   auto sprinting = wcmods::call<bool>(cat, STR("IsSprinting"));
+    //   auto dilation = wcmods::call<float>(cat, STR("GetActorTimeDilation"));
     template <typename R>
     auto call(UObject* object, const TCHAR* function) -> std::optional<R>
     {

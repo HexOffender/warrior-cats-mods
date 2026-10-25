@@ -54,18 +54,25 @@ namespace wcmods
     // that isn't there gives null, so settings()["speed"].number(1.0) never throws.
     class Json
     {
+        template <typename T>
+        static constexpr bool is_character = std::is_same_v<T, char> || std::is_same_v<T, wchar_t> ||
+                                             std::is_same_v<T, char8_t> || std::is_same_v<T, char16_t> ||
+                                             std::is_same_v<T, char32_t>;
+
       public:
         enum class Type { Null, Bool, Number, String, Array, Object };
 
         Json() = default;
         Json(std::nullptr_t) {}
         Json(bool v) : m_type(Type::Bool), m_bool(v) {}
-        // Any number: int, size_t, float, double... (not a character, which is text)
+        // Any number: int, size_t, float, double...
         template <typename T>
-            requires(std::is_arithmetic_v<T> && !std::is_same_v<T, bool> && !std::is_same_v<T, char> &&
-                     !std::is_same_v<T, wchar_t> && !std::is_same_v<T, char8_t> && !std::is_same_v<T, char16_t> &&
-                     !std::is_same_v<T, char32_t>)
+            requires(std::is_arithmetic_v<T> && !std::is_same_v<T, bool> && !is_character<T>)
         Json(T v) : m_type(Type::Number), m_number(static_cast<double>(v)) {}
+        // A character is text (write it as a string), not a number or a bool: Json('x') doesn't compile.
+        template <typename T>
+            requires(is_character<T>)
+        Json(T) = delete;
         Json(std::string v) : m_type(Type::String), m_string(std::move(v)) {}
         Json(const char* v) : m_type(Type::String), m_string(v) {}
         Json(std::wstring_view v) : m_type(Type::String), m_string(utf8(v)) {}

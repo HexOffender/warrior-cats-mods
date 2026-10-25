@@ -167,17 +167,25 @@ def status(root, cfg):
 
 
 def cpp_mods(mods, ids=None):
-    """The mods with C++ source (cpp/CMakeLists.txt): the ones named, or the enabled ones."""
+    """The mods with C++ source (cpp/CMakeLists.txt): the ones named (a mod's id in mods/, or the path of a
+    mod folder anywhere, like tests/cpp-sdk), or the enabled ones."""
+    from .mods import Mod
     have = [m for m in mods if os.path.isfile(os.path.join(m.folder, SOURCE, "CMakeLists.txt"))]
     if not ids:
         return [m for m in have if m.enabled]
     by_id = {m.id: m for m in mods}
+    out = []
     for i in ids:
-        if i not in by_id:
-            raise ValueError(f"no mod named {i}")
-        if by_id[i] not in have:
+        if i in by_id:
+            m = by_id[i]
+        elif os.path.isfile(os.path.join(i, "mod.json")):
+            m = Mod(os.path.abspath(i))
+        else:
+            raise ValueError(f"no mod named {i} (nor a mod folder at that path)")
+        if not os.path.isfile(os.path.join(m.folder, SOURCE, "CMakeLists.txt")):
             raise ValueError(f"{i} has no C++ source (cpp/CMakeLists.txt)")
-    return [by_id[i] for i in ids]
+        out.append(m)
+    return out
 
 
 def target_name(mod_id):
