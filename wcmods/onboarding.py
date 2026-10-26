@@ -79,8 +79,8 @@ def install_loader(cfg, zip_path=None, log=print):
 
 def remaps(ctx):
     """Whether the enabled mods remap keys, so the game has to start with the key remapper."""
-    from .cli import _remap_plan
-    send, block, menu_send, _ = _remap_plan(ctx)
+    from .sections.controls import remap_plan
+    send, block, menu_send, _ = remap_plan(ctx.mods_root)
     return bool(send or block or menu_send)
 
 

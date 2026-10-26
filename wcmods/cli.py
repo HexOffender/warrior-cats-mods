@@ -300,23 +300,10 @@ def cmd_palette(ctx, args):
     print("done. Start the game from Steam to see them.")
 
 
-def _remap_plan(ctx):
-    from .sections.controls import ControlsSection, merge
-    sec, datas = ControlsSection(), []
-    for m in mods.discover(ctx.mods_root):   # priority order, so later mods win
-        if m.enabled and sec.claims(m):
-            data = sec.collect(m, None)
-            if data:
-                datas.append(data)
-    merged = merge(datas)
-    send, block, warnings = keymap.plan(merged)
-    menu_send, menu_warnings = keymap.menu_plan(merged)
-    return send, block, menu_send, warnings + menu_warnings
-
-
 def _run_remapper(ctx, args, launching=False):
     """launching: `play` has just asked Steam to start the game, so any play state on disk is old."""
-    send, block, menu_send, warnings = _remap_plan(ctx)
+    from .sections.controls import remap_plan
+    send, block, menu_send, warnings = remap_plan(ctx.mods_root)
     for w in warnings:
         print(f"  warning: {w}")
     if not send and not block and not menu_send:

@@ -11,7 +11,7 @@ import time
 
 from .. import keymap
 from ..config import EXE_NAME
-from ..remapper import INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, MAGIC
+from ..wininput import INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, MAGIC
 from .image import Image
 
 CRASH_REPORTER = "CrashReportClient.exe"

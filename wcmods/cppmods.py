@@ -19,7 +19,11 @@ import shutil
 import subprocess
 
 from . import ue4ss
-from .sections.cpp import BUILD_INFO, DLLS, SOURCE
+
+# A C++ mod's folders and files: its source in cpp/, its built DLLs in dlls/ (sections/cpp.py installs them),
+# and the record of what was built.
+DLLS, SOURCE = "dlls", "cpp"
+BUILD_INFO = "build.json"
 
 REPO = "https://github.com/UE4SS-RE/RE-UE4SS.git"
 CONFIG = "Game__Shipping__Win64"   # the build of UE4SS its releases are, and the one mods must match
@@ -295,7 +299,7 @@ def ide(root, cfg, mods, log=print, open_it=False):
 
 def watch(root, cfg, mods, log=print, every=2.0):
     """Build the mods, then again whenever a file in their cpp/ changes, until Ctrl+C."""
-    from .sections.cpp import SOURCE, source_time
+    from .sections.cpp import source_time
     import time
     if not mods:
         raise ValueError("no enabled mod has C++ source (cpp/CMakeLists.txt); name the mods to build")
@@ -328,7 +332,6 @@ def watch(root, cfg, mods, log=print, every=2.0):
 def keep(mod, log=print):
     """Copy a mod's dlls/main.dll and build.json into dlls/<UE4SS commit>/, so the mod can carry builds for
     several UE4SS versions: an install uses the one for the game's. Returns the folder."""
-    from .sections.cpp import BUILD_INFO, DLLS
     dlls = os.path.join(mod.folder, DLLS)
     info_path = os.path.join(dlls, BUILD_INFO)
     if not os.path.isfile(os.path.join(dlls, "main.dll")) or not os.path.isfile(info_path):
