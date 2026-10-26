@@ -569,9 +569,32 @@ PAUSE = ('(function() for _, s in ipairs(FindAllOf("WBP_GuiScreenPause_C") or {}
          'if s:IsValid() and s:IsInViewport() and s:IsVisible() then return s end end return nil end)()')
 
 
-def _screen_current(agent):
-    """The pause screen's current tab control's name, or None without the screen."""
-    return agent.lua(f'local s = {PAUSE} if not s then return nil end return Game.name(s.CurrentNav.CurrentControl)')
+INVENTORY = ('(function() for _, s in ipairs(FindAllOf("WBP_GuiPopupInventory_C") or {}) do '
+             'if s:IsValid() and s:IsInViewport() and s:IsVisible() then return s end end return nil end)()')
+FIXTURES = {"HorizontalBox_23", "CanvasTitle", "CanvasBackground", "mcGuiFooter"}   # what a page leaves showing beside the tab row
+
+
+def _screen_current(agent, screen=PAUSE):
+    """The screen's current tab control's name, or None without the screen."""
+    return agent.lua(f'local s = {screen} if not s then return nil end return Game.name(s.CurrentNav.CurrentControl)')
+
+
+def _page_state(agent, screen=PAUSE):
+    """What a page should have taken while it shows: the screen's children beside its tab row that are drawn
+    (as a set of names), whether the cursor shows, and the visibility of the game's fade widgets."""
+    out = agent.lua(f"""local s = {screen} local tab = s.CurrentNav.CurrentControl local area = tab:GetParent():GetParent()
+        local tree = s.WidgetTree local showing = {{}}
+        for i = 1, area:GetChildrenCount() do
+            local c = area:GetChildAt(i - 1)
+            local o = c:GetOuter()
+            if o and o:IsValid() and o:GetAddress() == tree:GetAddress() and c:GetVisibility() ~= 1 then showing[#showing+1] = Game.name(c) end
+        end
+        local fades = {{}}
+        for _, w in ipairs(FindAllOf("UserWidget") or {{}}) do
+            if w:IsValid() and w:IsInViewport() and Game.className(w):find("Fade") then fades[#fades+1] = w:GetVisibility() end
+        end
+        return table.concat(showing, ","), Game.controller().bShowMouseCursor, table.concat(fades, ",")""")
+    return {"showing": set(out[0].split(",")) - {""}, "cursor": out[1], "fades": [int(v) for v in out[2].split(",") if v]}
 
 
 def _close_pause(agent):
@@ -587,10 +610,11 @@ def _close_pause(agent):
 
 
 def _open_pause(agent):
-    """Open the pause screen with the keyboard's pause key (P; Enter pauses only in the game's gamepad mode),
+    """Open the pause screen with the pause key: P on the game's keyboard layout, Escape on its mouse-and-keyboard
+    layout (the game switches to that once it has seen the mouse move; Enter pauses only in its gamepad mode),
     pressing again when the game ignored it (it does for a moment after a screen closes)."""
-    for _ in range(4):
-        agent.key("P")
+    for i in range(4):
+        agent.key("P" if i % 2 == 0 else "Escape")
         try:
             agent.wait_lua(f'{PAUSE} ~= nil', timeout=2)
             time.sleep(0.6)   # the screen's fade-in
@@ -600,13 +624,14 @@ def _open_pause(agent):
     return False
 
 
-def _walk_to_tab(agent, title, tries=8):
-    """Press the game's next-tab key until the pause screen's navigation is on the tab with `title`."""
+def _walk_to_tab(agent, title, tries=8, key="Two", screen=PAUSE):
+    """Press a tab key (Two for the next tab, One for the one before) until the screen's navigation is on the
+    tab with `title`."""
     for _ in range(tries):
-        name = _screen_current(agent)
-        if name and agent.lua(f'local s = {PAUSE} local c = s.CurrentNav.CurrentControl return c.Text:ToString()') == title:
+        name = _screen_current(agent, screen)
+        if name and agent.lua(f'local s = {screen} local c = s.CurrentNav.CurrentControl return c.Text:ToString()') == title:
             return True
-        agent.key("Two")
+        agent.key(key)
         time.sleep(0.4)
     return False
 
@@ -654,21 +679,10 @@ def test_ui_tab(agent):
             return drawn(s.mcGuiPanelGeneral), drawn(s.mcGuiPanelBonds)""")
         assert drawn == [False, False], drawn   # the game's panels are under a collapsed canvas while the page shows
         # And so is everything else the screen put beside the tab row (the Bonds tab's cat cards, in plain size
-        # boxes, among them), but its title, footer and background.
-        showing = agent.lua(f"""local s = {PAUSE} local area = s.mcGuiTabGeneral:GetParent():GetParent() local tree = s.WidgetTree
-            local out = {{}}
-            for i = 1, area:GetChildrenCount() do
-                local c = area:GetChildAt(i - 1)
-                local o = c:GetOuter()
-                if o and o:IsValid() and o:GetAddress() == tree:GetAddress() and c:GetVisibility() ~= 1 then out[#out+1] = Game.name(c) end
-            end
-            return table.concat(out, ",")""")
-        assert set(showing.split(",")) <= {"HorizontalBox_23", "CanvasTitle", "CanvasBackground", "mcGuiFooter"}, showing
-        # The page has the mouse: the cursor shows, and the game's fade widget over the screens no longer takes hits.
-        mouse = agent.lua("""local fades = {} for _, w in ipairs(FindAllOf("UserWidget") or {}) do
-                if w:IsValid() and w:IsInViewport() and Game.className(w):find("Fade") then fades[#fades+1] = w:GetVisibility() end end
-            return Game.controller().bShowMouseCursor, table.concat(fades, ",")""")
-        assert mouse[0] is True and mouse[1] and set(mouse[1].split(",")) == {"3"}, mouse
+        # boxes, among them), but its title, footer and background; the page has the mouse: the cursor shows, and
+        # the game's fade widget over the screens no longer takes hits.
+        state = _page_state(agent)
+        assert state["showing"] <= FIXTURES and state["cursor"] is True and state["fades"] and set(state["fades"]) == {3}, state
         assert agent.lua(f"local p = StaticFindObject({v['ui.page.panel']!r}) return p:IsVisible()") is True
         agent.shot("ui-tab", scale=0.5)
         # The page's controls, used the way the player would (through the widgets themselves).
@@ -688,10 +702,8 @@ def test_ui_tab(agent):
         assert v["ui.tab.active"] is False and v["ui.screen.current"] == "mcGuiTabGeneral", v
         assert agent.lua(f'return {PAUSE}.mcGuiPanelGeneral:GetVisibility()') == 3
         # And the mouse given back: the cursor hidden as the game had it, the fade widget taking hits again.
-        mouse = agent.lua("""local fades = {} for _, w in ipairs(FindAllOf("UserWidget") or {}) do
-                if w:IsValid() and w:IsInViewport() and Game.className(w):find("Fade") then fades[#fades+1] = w:GetVisibility() end end
-            return Game.controller().bShowMouseCursor, table.concat(fades, ",")""")
-        assert mouse[0] is False and "3" not in mouse[1].split(","), mouse
+        state = _page_state(agent)
+        assert state["cursor"] is False and 3 not in state["fades"], state
     finally:
         agent.key("BackSpace")
         time.sleep(1)
@@ -699,6 +711,32 @@ def test_ui_tab(agent):
         time.sleep(0.5)
     v = _request(agent, "ui_snapshot")["values"]
     assert v["ui.screen"] is None and v["ui.screen_shown"] is False and v["ui.tab.page"] is False, v
+
+
+def test_ui_inventory_tab(agent):
+    """A tab of the mod's own in the inventory (ui::tab on WBP_GuiPopupInventory_C): reached with the game's tab
+    key, its page covers the item grids and info beside the tab row, and leaving puts them back."""
+    agent.key("I")
+    agent.wait_lua(f"{INVENTORY} ~= nil", timeout=4)
+    time.sleep(0.8)
+    try:
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.inventory.page"] is True and v["ui.inventory.active"] is False, v
+        assert _walk_to_tab(agent, "SDK", tries=8, screen=INVENTORY), _screen_current(agent, INVENTORY)
+        time.sleep(0.5)
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.inventory.active"] is True, v
+        state = _page_state(agent, INVENTORY)
+        assert state["showing"] <= FIXTURES and state["cursor"] is True, state
+        agent.shot("ui-inventory-tab", scale=0.5)
+        assert _walk_to_tab(agent, "Consumable", tries=8, key="One", screen=INVENTORY), _screen_current(agent, INVENTORY)
+        time.sleep(0.5)
+        state = _page_state(agent, INVENTORY)
+        assert "CanvasGrids" in state["showing"] and state["cursor"] is False, state
+    finally:
+        agent.key("BackSpace")
+        time.sleep(1)
+    assert agent.lua(f"return {INVENTORY} == nil")
 
 
 def test_ui_lua(agent):
@@ -755,6 +793,12 @@ def test_ui_lua(agent):
         time.sleep(0.3)
         assert agent.lua("return WCModsCpp.ui.tab_active('lua-tab')") is True
         agent.shot("ui-lua-tab", scale=0.5)
+        # Back to the SDK tab with the tab key the other way, through whatever tabs other mods have between: the
+        # tab leaving gives the mouse and the panels back, the one arriving takes them, and keeps them.
+        assert _walk_to_tab(agent, "SDK", tries=10, key="One"), _screen_current(agent)
+        time.sleep(0.8)
+        state = _page_state(agent)
+        assert state["showing"] <= FIXTURES and state["cursor"] is True and set(state["fades"]) == {3}, state
     finally:
         agent.key("BackSpace")
         time.sleep(1)

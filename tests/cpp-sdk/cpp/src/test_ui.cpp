@@ -13,7 +13,7 @@ namespace t
     {
         std::atomic<int> clicks{}, toggles{}, changes{}, texts{}, screen_events{}, builds{};
         bool screen_shown{};
-        std::string tab_id, gone_id;
+        std::string tab_id, gone_id, inventory_tab_id;
         // The page's controls, named for the Python side (results.json carries their paths) to drive through Lua.
         struct Page
         {
@@ -84,6 +84,13 @@ namespace t
         expect("ui.tabs", ids.size() == 2 && ids[0] == tab_id && ids[1] == gone_id);
         ui::remove_tab(gone_id);
         expect("ui.remove_tab", ui::tabs().size() == 1);
+        // A tab in the inventory too: a second screen, with other panels beside its tab row.
+        inventory_tab_id = ui::tab(L"WBP_GuiPopupInventory_C", L"SDK", [](Widget page) {
+            page.add(ui::heading(L"SDK pouch"));
+            page.add(ui::note(L"A page in the game's inventory, from C++."));
+            page.add(ui::labelled(L"Switch", ui::checkbox(true)));
+        }, {.id = "sdk-inventory-tab"});
+        expect("ui.tab.inventory", inventory_tab_id == "sdk-inventory-tab" && ui::tabs().size() == 2);
         expect("ui.tab_page.before", !ui::tab_page(tab_id) && !ui::tab_active(tab_id));
         ui::on_screen(L"WBP_GuiScreenPause_C", [](Widget s, bool shown) {
             screen_events++;
@@ -369,6 +376,8 @@ namespace t
     {
         value("ui.tab.active", ui::tab_active(tab_id));
         value("ui.tab.page", ui::tab_page(tab_id) ? Json(true) : Json(false));
+        value("ui.inventory.active", ui::tab_active(inventory_tab_id));
+        value("ui.inventory.page", ui::tab_page(inventory_tab_id) ? Json(true) : Json(false));
         value("ui.tab.builds", builds.load());
         value("ui.tab.rows", ui::tab_page(tab_id) ? ui::tab_page(tab_id).count() : -1);
         value("ui.page.button", path_of(pg.button));

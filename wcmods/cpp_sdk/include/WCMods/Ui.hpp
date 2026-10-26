@@ -1788,6 +1788,36 @@ namespace wcmods
                 }
             }
 
+            // While a page shows, what it hid stays hidden and the mouse stays its: the game may show a panel again
+            // (or add one, as the pause screen's Bonds tab does its cat cards), and another mod's tab leaving the
+            // same screen gives the cursor and the fades back as it found them. Looked at four times a second.
+            inline auto keep_tab(Tab& t) -> void
+            {
+                if (t.options.hide_game_panels)
+                {
+                    for (Widget& p : game_panels(t.in_screen, t.button.parent()))
+                    {
+                        Visibility now = p.visibility();
+                        if (now == Visibility::Collapsed) continue;
+                        bool known = false;
+                        for (auto& [w, was] : t.hidden)
+                            if (w == p) known = true;
+                        if (!known) t.hidden.emplace_back(p, now);
+                        p.collapse();
+                    }
+                }
+                if (t.options.mouse)
+                {
+                    if (!get(controller(), L"bShowMouseCursor").boolean()) show_cursor(true);
+                    for (auto& [w, was] : t.passed)
+                    {
+                        if (!w) continue;
+                        Visibility now = w.visibility();
+                        if (now == Visibility::Visible || now == Visibility::SelfHitTestInvisible) w.set_visibility(Visibility::HitTestInvisible);
+                    }
+                }
+            }
+
             inline auto tabs_tick(float dt) -> void
             {
                 std::vector<std::shared_ptr<Tab>> tabs;
@@ -1807,6 +1837,10 @@ namespace wcmods
                     since_search = 0;
                     up.clear();
                 }
+                // Every tab the navigation left is put away before any it reached is shown, whatever order the tabs
+                // were made in: a tab leaving gives the game's panels, the cursor and the fades back, and the next
+                // must take them after that, not before.
+                std::vector<std::shared_ptr<Tab>> arriving;
                 for (auto& t : tabs)
                 {
                     if (t->in_screen)
@@ -1824,15 +1858,19 @@ namespace wcmods
                             t->passed.clear();
                             continue;
                         }
-                        activate_tab(*t, nav_current(t->in_screen) == t->button.object());
+                        bool on = nav_current(t->in_screen) == t->button.object();
+                        if (!on) activate_tab(*t, false);
+                        else if (!t->active) arriving.push_back(t);
+                        else if (search) keep_tab(*t);
                         continue;
                     }
                     if (!search) continue;
                     if (!up.contains(t->screen_type)) up[t->screen_type] = screen(t->screen_type).object();
                     UObject* s = up[t->screen_type];
                     if (!s || !build_tab(*t, s)) continue;
-                    activate_tab(*t, nav_current(s) == t->button.object());
+                    if (nav_current(s) == t->button.object()) arriving.push_back(t);
                 }
+                for (auto& t : arriving) activate_tab(*t, true);
             }
 
             inline auto start_tabs() -> void
@@ -1942,6 +1980,7 @@ namespace wcmods
                 std::lock_guard lock(ts.lock);
                 for (auto& t : ts.tabs)
                 {
+                    if (t->active) ui::detail::activate_tab(*t, false);   // the game's panels, the cursor and the fades back
                     if (t->button) t->button.remove();
                     if (t->frame) t->frame.remove();
                 }

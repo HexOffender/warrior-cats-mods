@@ -1093,8 +1093,12 @@ the state the page shows in your own variables, as the example does with the set
 shows, it takes the mouse (`mouse`, on unless you say otherwise): the cursor is shown, the game's input
 mode is set to game-and-UI, as the game's own menus leave it, and the game's fade widgets (which sit over
 its screens with a full-screen picture that would take every click) let the mouse through, so the page's
-controls, its scroll bar and the wheel answer it; the cursor goes back to hidden, the fades take hits
+controls, its scroll bar and the wheel answer it; the cursor goes back as it was, the fades take hits
 again and the input is flushed when the page goes. The keyboard goes to the page's first control (`focus`).
+Tabs of one mod on one screen are put away before the next is shown, whatever order they were made in,
+so a tab leaving never undoes what the next took; and while a page shows it keeps what it hid hidden and
+the mouse its own, looked at four times a second, so a panel the game shows again, or another mod's tab
+leaving the same screen, takes them away for a moment at most.
 
 The same rules as for scripts keep the game running:
 
