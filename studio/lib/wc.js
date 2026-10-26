@@ -270,7 +270,14 @@ export function modTarget({ file, onLoad, getValue }) {
       select.append(el("option", { value: m.id, text: `${m.name}${has ? "" : " (no " + file + " yet)"}${m.enabled ? "" : " · off"}` }));
     }
     let pick = selectId;
-    if (!pick) { try { pick = localStorage.getItem(key); } catch (e) { /* storage blocked */ } }
+    if (!pick) {
+      try {
+        // The choice made before the picker was shared across pages (one key per file) counts once, then goes.
+        const old = `wc-target:${file}`;
+        pick = localStorage.getItem(key) || localStorage.getItem(old);
+        localStorage.removeItem(old);
+      } catch (e) { /* storage blocked */ }
+    }
     if (!pick || ![...select.options].some(o => o.value === pick)) pick = select.options[0]?.value;
     select.value = pick;
     await load(pick);

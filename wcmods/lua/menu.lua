@@ -944,7 +944,9 @@ local function caller(level)
     local info = debug and debug.getinfo and debug.getinfo(level + 1, "S")
     local src = info and tostring(info.source or "") or ""
     src = src:gsub(SLASH, "/")
-    return src:match("/Mods/([^/]+)/") or src
+    -- A chunk loaded from a string has the string itself as its source: one line of it, no tabs (the
+    -- page list is tab-separated lines), and not too long.
+    return src:match("/Mods/([^/]+)/") or (src:gsub("[\t\r\n].*", ""):sub(1, 60))
 end
 
 -- The groups the menu's side bar shows, in order (menu.GROUPS in wcmods/menu.py, written in here): id,
@@ -955,7 +957,9 @@ Menu.groups = @GROUPS@
 -- Add a page to the mod menu. fn(ui) runs every frame while it shows. opts.group puts it in a group of
 -- the side bar ("mods" by default; Menu.groups lists them), opts.order sorts it within the group (lower
 -- first), and opts.id tells pages with the same title apart (without it, the title; a second mod's page
--- with a title another mod has gets the title plus its mod's name, so the two don't share a tab).
+-- with a title another mod has gets the title plus its mod's name, so the two don't share a tab). Gives
+-- back the id as asked for: a page that shares its title with another mod's is best given opts.id, since
+-- the renamed one isn't known until the next frame, and Menu.open(title) opens the first of them.
 function Menu.page(title, fn, opts)
     opts = opts or {}
     local p = { id = opts.id or title, title = title, fn = fn, order = opts.order or 50,

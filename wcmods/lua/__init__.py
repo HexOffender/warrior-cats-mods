@@ -8,6 +8,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def source(name):
-    """The text of one of these files, as it is."""
-    with open(os.path.join(HERE, name), encoding="utf-8", newline="") as f:
+    """The text of one of these files, with LF line endings whatever the checkout's are."""
+    with open(os.path.join(HERE, name), encoding="utf-8") as f:
         return f.read()
