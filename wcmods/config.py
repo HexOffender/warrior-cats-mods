@@ -1,9 +1,11 @@
-"""Locate the game, its saves and UE4SS (and an optional Oodle DLL); persist overrides in wcmods.json."""
+"""Locate the game, its saves and UE4SS (and an optional Oodle DLL); persist overrides in wcmods.json.
+Locate your own files too: your mods, wcmods.json and backups are in a folder outside wcmods' (data_dir)."""
 import json
 import os
 import re
 import subprocess
 
+DATA_ENV = "WCMODS_DATA"
 STEAM_APP_ID = "3960600"
 GAME_FOLDER = "Warrior Cats Clans of the Forest"
 EXE_NAME = "Wrc-Win64-ShippingDRM.exe"
@@ -20,10 +22,30 @@ HELP = ("wcmods' own settings. game_dir and save_dir: where the game and its sav
         "docs/formats.md says more.")
 
 
+def data_dir():
+    """Where your mods, wcmods.json and backups are: %LOCALAPPDATA%\\WCMods, outside the wcmods folder, so
+    updating wcmods (git pull, or a new download unzipped over it) never touches them. WCMODS_DATA puts
+    them somewhere else (wcmods' own folder, say, to keep everything in one place as older versions did)."""
+    return os.path.abspath(os.environ.get(DATA_ENV) or os.path.join(
+        os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "WCMods"))
+
+
+def same_folder(a, b):
+    """Whether two paths are one folder, however each is spelled (a junction, a subst drive, a short name)."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:   # one of them isn't there
+        return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
 class Config:
-    def __init__(self, root):
+    """wcmods' settings. `root` is wcmods' own folder (its code and caches); `data` is the folder with your
+    mods, wcmods.json and backups (data_dir() unless given: the tests give a folder of their own)."""
+
+    def __init__(self, root, data=None):
         self.root = root
-        self.path = os.path.join(root, "wcmods.json")
+        self.data_dir = data or data_dir()
+        self.path = os.path.join(self.data_dir, "wcmods.json")
         self.data = {}
         self.reload()
 
@@ -40,11 +62,21 @@ class Config:
         ordered = {"_help": HELP, **{k: v for k, v in self.data.items() if k != "_help"}}
         self.data.clear()   # in place: whoever holds this dict keeps it
         self.data.update(ordered)
+        os.makedirs(self.data_dir, exist_ok=True)
         with open(self.path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=2)
             f.write("\n")
 
     # ---- locations ----
+    @property
+    def mods_root(self):
+        return os.path.join(self.data_dir, "mods")
+
+    @property
+    def backups_dir(self):
+        """Save backups (<date>-<time>-<reason>) and removed or replaced mods (mods/)."""
+        return os.path.join(self.data_dir, "backups")
+
     @property
     def game_dir(self):
         d = self.data.get("game_dir")

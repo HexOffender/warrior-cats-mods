@@ -77,6 +77,9 @@ def run(cfg, oodle, log=print):
     check("getting set up: the game found from any of its folders, a first backup, the script loader", _onboarding())
     check("getting set up, the rough edges: an install from before UE4SS is redone, a folder adds only the "
           "ticked mods, no drive letters in UE4SS's .zip, a studio without the game answers", _onboarding_edges())
+    ok, detail = _user_data()
+    check("your files outside wcmods' folder: moved out once, the mod menu keeping your settings, nothing "
+          "overwritten by a second copy, the last install redone", ok, detail)
     ok, detail = _signatures(cfg)
     check("game update signatures: the decoder, and every class and value found where wcmods expects", ok, detail)
     check("mods made for an older version of the game: left out unless used anyway on that build", _outdated_mods(cfg))
@@ -1016,7 +1019,7 @@ def _onboarding():
         os.makedirs(root)
         with open(os.path.join(root, "wcmods.json"), "w") as f:
             json.dump({"save_dir": os.path.join(tmp, "Saves")}, f)
-        cfg = Config(root)
+        cfg = Config(root, root)
         found = onboarding.set_game_dir(cfg, win64)
         backups = os.path.join(tmp, "backups")
         none_yet = onboarding.first_backup(cfg, backups)
@@ -1072,7 +1075,7 @@ def _onboarding_edges():
         with open(os.path.join(conf, "wcmods.json"), "w") as f:
             json.dump({"game_dir": os.path.join(tmp, "Game"),
                        "installed": {"mods": ["m"], "built": built, "ue4ss": False}}, f)
-        cfg = Config(conf)
+        cfg = Config(conf, conf)
         before = pipeline.pending(cfg, discover(root))
         os.makedirs(os.path.join(win64, "ue4ss", "Mods"))
         after = pipeline.pending(cfg, discover(root))
@@ -1101,7 +1104,7 @@ def _onboarding_edges():
         from . import config as config_mod
         kept = config_mod._find_game_dir
         config_mod._find_game_dir = lambda: None   # as on a computer without the game in Steam
-        ctx = Ctx(bare)
+        ctx = Ctx(bare, bare)
         st = studio_mod.Studio(ctx)
         server = studio_mod._Server(("127.0.0.1", 0), None)
         port = server.server_address[1]
@@ -1124,6 +1127,152 @@ def _onboarding_edges():
             config_mod._find_game_dir = kept
         ok.append(all(code == 400 and "hasn't found the game" in a.get("error", "") for code, a in answers))
     return all(ok)
+
+
+def _user_data():
+    """Your files outside wcmods' folder (userdata.py): what an older version kept in its folder moves out
+    on the first start (to another drive too), the mod menu keeps your settings while wcmods' copy updates
+    it, a second copy of wcmods moving in loses nothing, and the last install is redone once so the game
+    finds the mods."""
+    import errno
+    import json
+    from . import pipeline, userdata
+    from .config import Config, EXE_NAME
+    from .mods import discover
+    problems = []
+
+    def read(*parts):
+        try:
+            with open(os.path.join(*parts), encoding="utf-8-sig") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+
+    def write(path, value):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(value if isinstance(value, str) else json.dumps(value))
+
+    shipped_meta = read(userdata.BUILTIN, "mod-menu", "mod.json")
+    shipped_menu = read(userdata.BUILTIN, "mod-menu", "menu.json")
+    with tempfile.TemporaryDirectory() as tmp:
+        game = os.path.join(tmp, "Game")
+        os.makedirs(os.path.join(game, "Wrc", "Binaries", "Win64"))
+        open(os.path.join(game, "Wrc", "Binaries", "Win64", EXE_NAME), "w").close()
+        old, data = os.path.join(tmp, "wcmods"), os.path.join(tmp, "data")
+        write(os.path.join(old, "wcmods.json"), {"game_dir": game, "installed": {"mods": ["mine"], "built": "2999-01-01T00:00:00"}})
+        write(os.path.join(old, "mods", "mine", "mod.json"), {"name": "Mine", "enabled": True})
+        write(os.path.join(old, "mods", "mine", "palette.json"), "{}")
+        write(os.path.join(old, "mods", "_half", "notes.txt"), "half made")
+        write(os.path.join(old, "mods", "mod-menu", "mod.json"), {**shipped_meta, "description": "old", "enabled": False, "priority": 5})
+        write(os.path.join(old, "mods", "mod-menu", "menu.json"), {"_help": "old", "key": "F2", "size": 1.25})
+        write(os.path.join(old, "backups", "20260101-000000-manual", "WrcGame.sav"), "save")
+        write(os.path.join(old, "backups", "mods", "20260101-000000-removed-gone", "mod.json"), {"name": "Gone"})
+        said = []
+        userdata.prepare(old, data, log=said.append)
+        if (read(data, "wcmods.json") or {}).get("game_dir") != game or os.path.exists(os.path.join(old, "wcmods.json")):
+            problems.append("wcmods.json didn't move")
+        if not os.path.isfile(os.path.join(data, "mods", "mine", "palette.json")) or os.path.exists(os.path.join(old, "mods")) \
+                or not os.path.isfile(os.path.join(data, "mods", "_half", "notes.txt")):
+            problems.append(f"mods didn't move: {sorted(os.listdir(os.path.join(data, 'mods')))}")
+        if not os.path.isfile(os.path.join(data, "backups", "20260101-000000-manual", "WrcGame.sav")) \
+                or not os.path.isdir(os.path.join(data, "backups", "mods", "20260101-000000-removed-gone")) \
+                or os.path.exists(os.path.join(old, "backups")):
+            problems.append("backups didn't move")
+        if len(said) != 1 or "1 mod and backups" not in said[0] or data not in said[0]:
+            problems.append(f"said {said}")
+        meta, menu_json = read(data, "mods", "mod-menu", "mod.json"), read(data, "mods", "mod-menu", "menu.json")
+        if meta != {**shipped_meta, "enabled": False, "priority": 5}:
+            problems.append(f"the mod menu's mod.json is {meta}")
+        if menu_json != {**shipped_menu, "key": "F2", "size": 1.25}:
+            problems.append(f"the mod menu's settings are {menu_json}")
+        if userdata.sync_builtin(os.path.join(data, "mods")):
+            problems.append("the mod menu is written again with nothing changed")
+
+        # The last install was made from the old folder: redone once; one made from here isn't.
+        cfg = Config(old, data)
+        found = discover(cfg.mods_root)
+        if not any("moved" in r for r in pipeline.pending(cfg, found)["redo"]):
+            problems.append("an install from the old mods folder isn't redone")
+        cfg.data["installed"]["mods_root"] = cfg.mods_root
+        cfg.save()   # pending() reads wcmods.json afresh
+        if any("moved" in r for r in pipeline.pending(cfg, found)["redo"]):
+            problems.append("an install from this mods folder is redone")
+
+        # A second copy of wcmods moving in: what's here stays (taking settings only the other has); its
+        # copies go to backups, a removed mod's under a number that keeps its id.
+        old2 = os.path.join(tmp, "wcmods2")
+        write(os.path.join(old2, "wcmods.json"), {"game_dir": "elsewhere", "console": True})
+        write(os.path.join(old2, "mods", "mine", "mod.json"), {"name": "Mine, the other copy"})
+        write(os.path.join(old2, "mods", "mod-menu", "menu.json"), {"key": "F3"})
+        write(os.path.join(old2, "backups", "mods", "20260101-000000-removed-gone", "mod.json"), {"name": "Gone too"})
+        said = []
+        userdata.prepare(old2, data, log=said.append)
+        kept = [n for n in os.listdir(os.path.join(data, "backups")) if n.endswith("-wcmods.json")]
+        now = read(data, "wcmods.json")
+        if now["game_dir"] != game or now.get("console") is not True or len(kept) != 1 \
+                or read(data, "backups", kept[0]) != {"game_dir": "elsewhere", "console": True}:
+            problems.append(f"a second wcmods.json: {now}, {kept}")
+        replaced = [n for n in os.listdir(os.path.join(data, "backups", "mods")) if n.endswith("-replaced-mine")]
+        if read(data, "mods", "mine", "mod.json")["name"] != "Mine" or len(replaced) != 1:
+            problems.append(f"a second copy of a mod: {replaced}")
+        if read(data, "mods", "mod-menu", "menu.json")["key"] != "F2" or os.path.exists(os.path.join(old2, "mods")):
+            problems.append("a second copy of the mod menu")
+        if read(data, "backups", "mods", "20260101-000000-2-removed-gone", "mod.json") != {"name": "Gone too"}:
+            problems.append(f"a second removed mod: {sorted(os.listdir(os.path.join(data, 'backups', 'mods')))}")
+        if not any("stays" in s and kept[0] in s for s in said) or not any("-replaced-mine" in s for s in said):
+            problems.append(f"said {said}")
+
+        # A new player: the mod menu as wcmods has it, and nothing to say. Then their old folder after all:
+        # its mod menu replaces the one only put in, so its settings count.
+        said = []
+        fresh = os.path.join(tmp, "new-data")
+        userdata.prepare(os.path.join(tmp, "new"), fresh, log=said.append)
+        if said or sorted(os.listdir(os.path.join(fresh, "mods"))) != ["mod-menu"] \
+                or read(fresh, "mods", "mod-menu", "menu.json") != shipped_menu:
+            problems.append("a first start")
+        old3 = os.path.join(tmp, "wcmods3")
+        write(os.path.join(old3, "mods", "mod-menu", "mod.json"), {**shipped_meta, "enabled": False})
+        write(os.path.join(old3, "mods", "mod-menu", "menu.json"), {"key": "F4"})
+        userdata.prepare(old3, fresh, log=said.append)
+        if read(fresh, "mods", "mod-menu", "menu.json") != {**shipped_menu, "key": "F4"} \
+                or read(fresh, "mods", "mod-menu", "mod.json")["enabled"] is not False:
+            problems.append("an old mod menu over one only put in")
+
+        # WCMODS_DATA as wcmods' own folder, spelled as it is or through a junction: everything stays.
+        said, here = [], os.path.join(tmp, "here")
+        write(os.path.join(here, "mods", "mine", "mod.json"), {"name": "Mine"})
+        write(os.path.join(here, "wcmods.json"), {"console": True})
+        try:
+            import _winapi
+            _winapi.CreateJunction(here, os.path.join(tmp, "there"))
+            spellings = [here, os.path.join(tmp, "there")]
+        except (ImportError, AttributeError, OSError):
+            spellings = [here]
+        for spelled in spellings:
+            userdata.prepare(here, spelled, log=said.append)
+            if said or sorted(os.listdir(os.path.join(here, "mods"))) != ["mine", "mod-menu"] \
+                    or read(here, "wcmods.json") != {"console": True} or os.path.exists(os.path.join(here, "backups")):
+                problems.append(f"data in wcmods' own folder, as {spelled}")
+
+        # A folder going to another drive: copied whole, then the old one taken away.
+        src, dest = os.path.join(tmp, "far", "x"), os.path.join(tmp, "farther", "x")
+        write(os.path.join(src, "mod.json"), {"name": "X"})
+        rename, moves = os.rename, []
+
+        def other_drive(a, b):
+            if a == src:
+                raise OSError(errno.EXDEV, "not the same drive")
+            rename(a, b)
+        os.rename = other_drive
+        try:
+            userdata._move(src, dest, moves)
+        finally:
+            os.rename = rename
+        if moves or os.path.exists(src) or read(dest, "mod.json") != {"name": "X"} \
+                or os.listdir(os.path.dirname(dest)) != ["x"]:
+            problems.append(f"a move to another drive: {moves}")
+    return not problems, "; ".join(problems)
 
 
 def kraken_samples():
@@ -1289,7 +1438,7 @@ def _update_safety(cfg):
             with open(os.path.join(conf, "wcmods.json"), "w") as f:
                 json.dump({"game_dir": cfg.game_dir, "installed": {"mods": ["m"], "built": "2999-01-01T00:00:00",
                                                                      "game_build": 24847281}}, f)
-            p = pipeline.pending(Config(conf), mods.discover(root))
+            p = pipeline.pending(Config(conf, conf), mods.discover(root))
             if not any("game updated" in r for r in p["redo"]):
                 problems.append("an install from the old build isn't redone")
             # The cats' names for the mod menu, built from the game's tables (layout still off).

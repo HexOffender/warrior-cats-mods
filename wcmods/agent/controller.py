@@ -282,10 +282,10 @@ class Agent:
         its record of what's installed. The game must be closed. Returns the build's manifest."""
         if window.game_pid():
             raise AgentError("the game is running; agent.quit() first (installing replaces files it has open)")
-        cfg = Config(self.root)
+        cfg = Config(self.root, self.cfg.data_dir)
         if code_mods:
             cfg.data["allow_code_mods"] = True
-        found = modlib.discover(os.path.join(self.root, "mods"))
+        found = modlib.discover(cfg.mods_root)
         for path in extra:
             m = modlib.Mod(os.path.abspath(os.path.join(self.root, path)))
             m.enabled = True
@@ -293,30 +293,30 @@ class Agent:
         found.sort(key=lambda m: (m.priority, m.id))
         build_dir = os.path.join(self.root, "build", "agent-install")
         manifest = pipeline.build(cfg, found, build_dir, log=lambda m: None)
-        pipeline.install(cfg, build_dir, os.path.join(self.root, "backups"), log=lambda m: None, force=force)
+        pipeline.install(cfg, build_dir, cfg.backups_dir, log=lambda m: None, force=force)
         return manifest
 
     def install_normal(self, force=False):
         """Install the way `wcmods install` does (wcmods.json as it is): what to finish a test session with."""
         if window.game_pid():
             raise AgentError("the game is running; agent.quit() first")
-        cfg = Config(self.root)
+        cfg = Config(self.root, self.cfg.data_dir)
         build_dir = os.path.join(self.root, "build")
-        manifest = pipeline.build(cfg, modlib.discover(os.path.join(self.root, "mods")), build_dir, log=lambda m: None)
-        pipeline.install(cfg, build_dir, os.path.join(self.root, "backups"), log=lambda m: None, force=force)
+        manifest = pipeline.build(cfg, modlib.discover(cfg.mods_root), build_dir, log=lambda m: None)
+        pipeline.install(cfg, build_dir, cfg.backups_dir, log=lambda m: None, force=force)
         cfg.save()
         return manifest
 
     def backup_save(self, reason="agent"):
         """Copy the save aside (backups/<time>-<reason>); returns the backup's name for restore_save."""
-        dest, _ = save.backup(self.cfg.save_dir, os.path.join(self.root, "backups"), reason)
+        dest, _ = save.backup(self.cfg.save_dir, self.cfg.backups_dir, reason)
         return os.path.basename(dest)
 
     def restore_save(self, name):
         """Put a backed-up save back (the game must be closed: it rewrites the save as it plays)."""
         if window.game_pid():
             raise AgentError("the game is running; agent.quit() first")
-        backups = os.path.join(self.root, "backups")
+        backups = self.cfg.backups_dir
         save.backup(self.cfg.save_dir, backups, "before-restore")
         return save.restore(backups, name, self.cfg.save_dir)
 

@@ -235,8 +235,8 @@ def _set_enabled(folder, on, downloaded=False):
         meta = json.load(f)
     meta["enabled"] = bool(on)
     if downloaded:
-        # Only the mods in wcmods' own folder are built in; a download saying it is one couldn't be
-        # removed or updated afterwards.
+        # Only the mods wcmods brings (wcmods/builtin) are built in; a download saying it is one couldn't
+        # be removed or updated afterwards.
         meta.pop("builtin", None)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(meta, f, indent=2)

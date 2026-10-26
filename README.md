@@ -25,11 +25,20 @@ To open it from your desktop, right-click `Clan Mod Studio` and choose *Send to 
 shortcut)*. Close its black window to stop it. If it's already open, double-clicking it again
 brings it back.
 
-**Updating:** unzip a new download over the old folder; your mods and settings stay. With git, note
-that wcmods used to come with palettes, mouse look and other mods in `mods/`. They're now in
-[wcmods-examples](https://github.com/HexOffender/wcmods-examples), so pulling takes them out of
-`mods/` (copy any you changed somewhere first); add back the ones you use. Everything else in `mods/`
-is yours and git leaves it alone, except the mod menu's own folder.
+**Your files** (your mods, wcmods' settings and your backups) are in a folder of your own,
+`%LOCALAPPDATA%\WCMods`, not in this one. Settings and repair shows it and opens it.
+- **What's in it:** `mods\`, `wcmods.json` and `backups\`. Setting the `WCMODS_DATA` environment
+  variable to a folder keeps them there instead.
+- **Moving in:** older versions kept them in this folder. The first start after updating moves them
+  across, and Apply to game puts them in the game again from there.
+
+**Updating:** unzip a new download over the old folder, or `git pull`. Either way only wcmods
+changes; your files stay as they are. The mod menu's settings (key, size, cheats, on or off) are
+yours too and stay as well.
+- **If `git pull` won't start:** it may say your changes to `mods/mod-menu` would be overwritten.
+  That's because older versions saved the menu's settings there. Move the `mod-menu` folder out of
+  `mods` (to your desktop, say), pull again, then move it back into `mods`. The next start takes its
+  settings along.
 
 ## Requirements
 
@@ -47,7 +56,7 @@ Clan Mod Studio's "Get set up" sees to these:
   - **The game's console:** UE4SS's console enabler (`ConsoleEnablerMod`) is on, so `~` or F10 opens
     it (`python wcmods.py console off` turns it off).
   - **Removing it:** delete `dwmapi.dll` and the `ue4ss` folder from `<game>\Wrc\Binaries\Win64`.
-- **`wcmods.json`**, wcmods' own settings file, is made in this folder on the first run: where the game
+- **`wcmods.json`**, wcmods' own settings file, is made in your files' folder on the first run: where the game
   is, whether mods may run code, and what's installed ([docs/formats.md](docs/formats.md#wcmodsjson)
   lists every key). Get set up and the Settings and repair page edit it for you.
 - **Nothing else.** The game's files are compressed with Oodle's Kraken, and wcmods decodes them
@@ -265,8 +274,8 @@ installed. See [docs/agent.md](docs/agent.md).
 
 ## Making mods
 
-A mod is a folder under `mods/` with a `mod.json` and some of these files, which the pages under Make
-mods write for you:
+A mod is a folder under `mods/` in your files' folder (`%LOCALAPPDATA%\WCMods\mods`) with a `mod.json`
+and some of these files, which the pages under Make mods write for you:
 
 | File | What it changes |
 |---|---|

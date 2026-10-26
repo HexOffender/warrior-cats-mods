@@ -19,7 +19,10 @@ A few rules the layout follows:
   strings (one short snippet, the inspector's in `bridge.py`, is the exception that remains).
 - **One home per fact.** A setting, a list or a layout is defined once (the mod menu's groups in
   `menu.GROUPS`, its size limits in `menu.SCALES`) and rendered everywhere else from there.
-- **Other people's mods are theirs.** `mods/` is the player's folder; only `mods/mod-menu/` is wcmods'.
+- **Other people's mods are theirs.** A player's mods, `wcmods.json` and backups live outside the
+  repository (`config.data_dir()`), so nothing a player makes is in a file git tracks. wcmods' own mod,
+  the mod menu, is `wcmods/builtin/mod-menu`; only `mod.json`'s `enabled` and `priority` and its settings
+  are the player's in their copy.
 
 ## Checks to run
 

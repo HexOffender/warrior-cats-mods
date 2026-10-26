@@ -1,6 +1,7 @@
 """In-game options: the mod menu's own settings and the game's console.
 
-The mod menu is a mod of its own (mods/mod-menu, mods.MENU_ID), and its settings are in its menu.json:
+The mod menu is a mod of its own (mods/mod-menu, mods.MENU_ID; wcmods/builtin has wcmods' copy, which
+userdata.sync_builtin keeps your copy up to date with), and its settings are in your copy's menu.json:
 - "key": the key that opens it (menu.KEYS). Applies on the next install.
 - "pad": the controller button that opens it too, an Unreal key name ("" for none; the studio offers
   menu.PADS). Applies on the next install.
@@ -48,7 +49,7 @@ def console_on(cfg):
 def menu_mod(cfg, found=None):
     """The mod that is the mod menu (it has a menu.json): the one that's on, mods/mod-menu first; None
     when there's none."""
-    found = found if found is not None else modlib.discover(os.path.join(cfg.root, "mods"))
+    found = found if found is not None else modlib.discover(cfg.mods_root)
     menus = [m for m in found if os.path.isfile(os.path.join(m.folder, MENU_FILE))]
     menus.sort(key=lambda m: (not m.enabled, m.id != modlib.MENU_ID, m.id))
     return menus[0] if menus else None

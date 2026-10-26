@@ -31,6 +31,11 @@ def test_getting_set_up_rough_edges():
     assert selftest._onboarding_edges()
 
 
+def test_your_files_move_out_of_wcmods_folder_and_the_mod_menu_keeps_your_settings():
+    ok, detail = selftest._user_data()
+    assert ok, detail
+
+
 def test_cpp_mod_dll_goes_in_with_its_settings_and_bad_dlls_are_refused():
     ok, detail = selftest._cpp_mod()
     assert ok, detail
