@@ -13,7 +13,7 @@ It's made for an AI agent working on this repository (Claude Code runs these com
 people. Every command prints plain text, and the ones that return data take `--json`. The same is a
 Python API, `wcmods.agent.Agent`.
 
-Everything on this page was tried in game, made on build 24847281 and rechecked on 26184573, patch 1.1 ([reverse-engineering.md, Game updates](reverse-engineering.md#game-updates)), unless it says otherwise.
+Everything on this page was tried in game on build 24847281 and rechecked on 26184573, patch 1.1 ([reverse-engineering.md, Game updates](reverse-engineering.md#game-updates)), unless it says otherwise.
 
 ## What it needs
 

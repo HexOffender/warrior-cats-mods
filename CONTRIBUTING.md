@@ -14,8 +14,9 @@ A few rules the layout follows:
 - **A section owns its file.** New mod content is a section in `wcmods/sections/` that reads one
   file from a mod, a page in `studio/sections/` that writes it, and a heading in
   [docs/formats.md](docs/formats.md) that documents it.
-- **Lua is in `.lua` files.** Anything that runs in the game is under `wcmods/lua/`; the Python
-  module beside it fills the `@TOKENS@` in. Don't put Lua back into Python strings.
+- **Lua is in `.lua` files.** The scripts and modules that run in the game are under `wcmods/lua/`;
+  the Python module beside each fills the `@TOKENS@` in. New Lua goes there too, not into Python
+  strings (one short snippet, the inspector's in `bridge.py`, is the exception that remains).
 - **One home per fact.** A setting, a list or a layout is defined once (the mod menu's groups in
   `menu.GROUPS`, its size limits in `menu.SCALES`) and rendered everywhere else from there.
 - **Other people's mods are theirs.** `mods/` is the player's folder; only `mods/mod-menu/` is wcmods'.

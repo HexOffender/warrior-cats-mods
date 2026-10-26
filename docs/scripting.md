@@ -14,7 +14,7 @@ Three ways in:
 | **Live** | The console in the mod menu and in Clan Mod Studio, and `wcmods lua`, which run Lua in the game while it's open | [The game bridge](#the-game-bridge) |
 
 All of them are code, so they only run with `"allow_code_mods": true` in `wcmods.json`. Every call on
-this page was tried in game, made on build 24847281 and rechecked on 26184573, patch 1.1 ([reverse-engineering.md, Game updates](reverse-engineering.md#game-updates)), unless it says otherwise. The game's rules and numbers
+this page was tried in game on build 24847281 and rechecked on 26184573, patch 1.1 ([reverse-engineering.md, Game updates](reverse-engineering.md#game-updates)), unless it says otherwise. The game's rules and numbers
 are in [mechanics/](mechanics/README.md), and its insides in
 [reverse-engineering.md](reverse-engineering.md).
 

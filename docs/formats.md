@@ -6,6 +6,12 @@ them by hand, and `python wcmods.py new <name> --kind <palette|controls|...>` st
 A mod that only holds these files runs no code. The game's rules behind the numbers are in
 [mechanics/](mechanics/README.md); how each file reaches the game is in the [README](../README.md#clan-mod-studio)'s table.
 
+Besides these, a mod can hold **`files/Wrc/...`**, whole replacement files at their game path
+(`python wcmods.py extract <pattern>` copies one out to start from), and **`paks/`**, cooked content
+made with Unreal Engine 5.7 for new models, textures and sounds, installed as it is under a
+`zzz_WCMods_` name ([SDK.md, New content](SDK.md#new-content-models-textures-sounds); not yet tried
+with this game). Mods with code are in [SDK.md](SDK.md).
+
 
 ### `palette.json`
 ```json

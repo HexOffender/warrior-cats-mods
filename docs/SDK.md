@@ -47,8 +47,7 @@ try one, drop the repository's .zip on the studio's Mods page and tick it (or `p
 mods/my-mod/
   mod.json            {"name", "description", "enabled", "priority", "version", "author",
                        "requires" (mods it can't work without), "uses" (mods it works with),
-                       "game_builds" (the game's builds it was made for; docs/updating.md),
-                       "studio_title" (nav label), "studio_files" (["my-settings.json"])}
+                       "game_builds", "settings_page", "studio_title", "studio_files": below}
   menu.json           the in-game mod menu itself       -> only mods/mod-menu (see "WCModsMenu")
   files/Wrc/...       replacement game files            -> section "files"
   paks/<name>.pak     cooked content made with Unreal   -> installed as is, with its .utoc/.ucas
