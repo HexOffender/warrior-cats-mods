@@ -26,9 +26,21 @@ namespace wcmods
     namespace uilua
     {
         // ---------------------------------------------------------------------------- values in and out
+        // Whether a userdata is one of UE4SS's object wrappers (a UObject, an actor, a class...), by the name of
+        // its metatable: an FText, a struct or an array handed in by mistake isn't read as an object.
+        inline auto is_object_userdata(lua_State* L, int index) -> bool
+        {
+            if (!lua_isuserdata(L, index) || lua_islightuserdata(L, index)) return false;
+            if (luaL_getmetafield(L, index, "__name") == LUA_TNIL) return false;
+            std::string name = lua_type(L, -1) == LUA_TSTRING ? lua_tostring(L, -1) : "";
+            lua_pop(L, 1);
+            for (const char* kind : {"UObject", "AActor", "UClass", "UWorld", "UFunction", "UDataTable", "UEnum", "UInterface"})
+                if (name == kind) return true;
+            return false;
+        }
         inline auto object_at(lua_State* L, int index) -> UObject*
         {
-            if (!lua_isuserdata(L, index) || lua_islightuserdata(L, index)) return nullptr;
+            if (!is_object_userdata(L, index)) return nullptr;
             RC::LuaMadeSimple::Lua lua(L);
             try
             {

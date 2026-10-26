@@ -224,6 +224,13 @@ namespace t
         expect("at", get(cs.object(), L"LayoutData.Offsets.Left").number() == 5 && get(cs.object(), L"bAutoSize").boolean());
         cs.stretch(Margin(10));
         expect("slot.stretch", get(cs.object(), L"LayoutData.Anchors.Maximum.Y").number() == 1 && get(cs.object(), L"LayoutData.Offsets.Right").number() == 10);
+        // A box slot's share and a canvas slot's size are different SetSizes: each leaves the other kind alone.
+        cs.fill(2).fit();
+        expect("slot.fill.canvas", get(cs.object(), L"LayoutData.Offsets.Right").number() == 10);
+        Widget vb2 = ui::vbox();
+        Slot bs2 = vb2.add(ui::text(L"x"));
+        bs2.fill(1).size(50, 50);
+        expect("slot.size.box", get(bs2.object(), L"Size.SizeRule").number() == 1 && get(bs2.object(), L"Size.Value").number() == 1);
         Widget g = ui::grid();
         Slot gs = g.add(ui::text(L"cell"));
         gs.cell(1, 2);

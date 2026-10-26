@@ -191,6 +191,7 @@ namespace wcmods
         }
         auto size(double w, double h) -> Slot&
         {
+            if (!is_canvas()) return *this;   // a box slot's SetSize takes a share, not pixels (fill(), fit())
             call_reflected(object(), STR("SetSize"), [&](Params& p) { put(p, L"InSize", detail::FVector2D_{w, h}); });
             return *this;
         }
@@ -226,13 +227,16 @@ namespace wcmods
         UClass* m_class{};
         auto child_size(bool fill, float weight) -> Slot&
         {
-            call_reflected(object(), STR("SetSize"), [&](Params& p) {
-                // A box slot's SetSize takes an FSlateChildSize; a canvas slot's an FVector2D: only the first is meant here.
-                if (Value v = p.nth(0); v.kind == Value::Kind::Struct && v.type == L"SlateChildSize")
-                    put_nth(p, 0, detail::FSlateChildSize_{weight, static_cast<uint8_t>(fill ? 1 : 0)});
-            });
+            // A box slot's SetSize takes an FSlateChildSize; a canvas slot's takes a size in pixels (size()).
+            if (!is_box()) return *this;
+            call_reflected(object(), STR("SetSize"), [&](Params& p) { put_nth(p, 0, detail::FSlateChildSize_{weight, static_cast<uint8_t>(fill ? 1 : 0)}); });
             return *this;
         }
+        auto is_box() const -> bool
+        {
+            return wcmods::is_a(object(), STR("/Script/UMG.HorizontalBoxSlot")) || wcmods::is_a(object(), STR("/Script/UMG.VerticalBoxSlot"));
+        }
+        auto is_canvas() const -> bool { return wcmods::is_a(object(), STR("/Script/UMG.CanvasPanelSlot")); }
         template <typename T>
         static auto put(Params& p, std::wstring_view name, const T& value) -> void
         {
@@ -1390,7 +1394,11 @@ namespace wcmods
             static Widget kept;
             static UObject* kept_for{};
             UObject* pc = controller();
-            if (kept && kept_for == pc) return kept;
+            if (kept && kept_for == pc)
+            {
+                auto still = call_reflected(kept.object(), STR("IsInViewport"));
+                if (still && still->get(L"ReturnValue").boolean()) return kept;
+            }
             kept = {};
             for (UObject* w : detail::user_widgets_of(STR("/Script/Wrc.GuiHudWrc")))
             {
@@ -1446,9 +1454,11 @@ namespace wcmods
                     std::lock_guard lock(detail::screens_state().lock);
                     watches = detail::screens_state().watches;
                 }
+                std::map<std::wstring, Widget> found;   // one search a screen type, however many watch it
                 for (auto& w : watches)
                 {
-                    Widget now = screen(w->type);
+                    if (!found.contains(w->type)) found[w->type] = screen(w->type);
+                    Widget now = found[w->type];
                     UObject* o = now.object();
                     if (o == w->seen) continue;
                     if (w->seen) wcmods::detail::guarded(L"on_screen", [&] { w->fn(Widget(), false); });
@@ -1675,12 +1685,13 @@ namespace wcmods
                     t.frame.show_passive();
                     if (t.options.focus)
                     {
-                        // The first control in the page that takes the keyboard, else the page.
+                        // The first control in the page that takes the keyboard without eating the screen's keys (a
+                        // text box would take Backspace and the tab keys as typing), else the page itself.
                         Widget first;
                         t.page.walk([&](const Widget& w) {
                             UObject* o = w.object();
                             if (wcmods::is_a(o, STR("/Script/UMG.Button")) || wcmods::is_a(o, STR("/Script/UMG.CheckBox")) || wcmods::is_a(o, STR("/Script/UMG.Slider"))
-                                || wcmods::is_a(o, STR("/Script/UMG.SpinBox")) || wcmods::is_a(o, STR("/Script/UMG.ComboBoxString")) || wcmods::is_a(o, STR("/Script/UMG.EditableTextBox")))
+                                || wcmods::is_a(o, STR("/Script/UMG.ComboBoxString")))
                                 first = w;
                             return !first;
                         });
@@ -1695,7 +1706,7 @@ namespace wcmods
                 }
             }
 
-            inline auto tabs_tick() -> void
+            inline auto tabs_tick(float dt) -> void
             {
                 std::vector<std::shared_ptr<Tab>> tabs;
                 {
@@ -1707,7 +1718,7 @@ namespace wcmods
                 // only every quarter second, for the tabs not built yet.
                 static double since_search = 1;
                 static std::map<std::wstring, UObject*> up;
-                since_search += 1.0 / 60;
+                since_search += dt;
                 bool search = since_search >= 0.25;
                 if (search)
                 {
@@ -1749,7 +1760,7 @@ namespace wcmods
                     std::lock_guard lock(ts.lock);
                     if (!ts.started) ts.started = start = true;
                 }
-                if (start) every_frame([](float) { wcmods::detail::guarded(L"ui tabs", tabs_tick); });
+                if (start) every_frame([](float dt) { wcmods::detail::guarded(L"ui tabs", [&] { tabs_tick(dt); }); });
             }
         } // namespace detail
 
@@ -1768,17 +1779,29 @@ namespace wcmods
             t->title = title;
             t->build = std::move(build);
             t->options = options;
+            std::vector<std::shared_ptr<detail::Tab>> replaced;
             {
                 detail::Tabs& ts = detail::tabs_state();
                 std::lock_guard lock(ts.lock);
                 std::erase_if(ts.tabs, [&](const std::shared_ptr<detail::Tab>& o) {
                     if (o->id != id) return false;
-                    if (o->button) o->button.remove();
-                    if (o->frame) o->frame.remove();
+                    replaced.push_back(o);
                     return true;
                 });
                 ts.tabs.push_back(t);
             }
+            // An earlier tab with this id that's on a screen comes off on the game thread (tab() may be called
+            // from on_unreal_init or on_update, off it).
+            for (auto& o : replaced)
+                if (o->button || o->frame)
+                    on_game_thread([o] {
+                        if (o->active) detail::activate_tab(*o, false);
+                        if (o->in_screen && o->button) detail::nav_remove(o->in_screen, o->button.object());
+                        Widget row = o->button ? o->button.parent() : Widget();
+                        if (o->button) o->button.remove();
+                        if (o->frame) o->frame.remove();
+                        if (row) detail::fit_row(row);
+                    });
             detail::start_tabs();
             return id;
         }
