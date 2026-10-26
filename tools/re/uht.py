@@ -11,32 +11,36 @@ offset (u16) at +50. A property's table sits next to its struct's other properti
 pointer to one name finds them all. Enum tables are {const char* name, int64 value} pairs.
 See docs/reverse-engineering.md.
 """
+import os
 import re
 import struct
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))   # the repository, for wcmods
+from wcmods import pe  # noqa: E402
+
 
 class Exe:
+    """The exe's bytes and addresses, on wcmods.pe.Image: `data` is the whole file, `base` the image base,
+    va(offset) and off(va) turn file offsets into virtual addresses and back."""
+
     def __init__(self, path):
-        self.data = open(path, "rb").read()
-        pe = struct.unpack_from("<I", self.data, 0x3C)[0]
-        opt = pe + 24
-        self.base = struct.unpack_from("<Q", self.data, opt + 24)[0]
-        first = opt + struct.unpack_from("<H", self.data, pe + 20)[0]
-        self.sections = [struct.unpack_from("<IIII", self.data, first + 40 * i + 8)
-                         for i in range(struct.unpack_from("<H", self.data, pe + 6)[0])]
+        self.image = pe.Image(path)
+        self.data = self.image.raw
+        self.base = self.image.image_base
+        self.sections = [(s.vsize, s.rva, s.rawsize, s.raw) for s in self.image.sections]
 
     def va(self, off):
-        for vsize, va, rsize, raw in self.sections:
-            if raw <= off < raw + rsize:
-                return self.base + va + off - raw
+        for s in self.image.sections:
+            if s.raw <= off < s.raw + s.rawsize:
+                return self.base + s.rva + off - s.raw
         return None
 
     def off(self, va):
         r = va - self.base
-        for vsize, sva, rsize, raw in self.sections:
-            if sva <= r < sva + rsize:
-                return raw + r - sva
+        for s in self.image.sections:
+            if s.rva <= r < s.rva + s.rawsize:
+                return s.raw + r - s.rva
         return None
 
     def cstr(self, va):
