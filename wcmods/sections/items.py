@@ -38,7 +38,7 @@ import json
 import os
 import re
 
-from .. import accessories, cooked, csvdata, png, recolor, texture
+from .. import accessories, cooked, csvdata, names, png, recolor, texture
 from ..save import SAV_NAME, SaveGame
 from ..savejson import SaveDoc
 from ..sdk import Section
@@ -427,8 +427,8 @@ def _current_slot(ctx):
     if not os.path.isfile(sav):
         return None
     try:
-        return str(SaveDoc(SaveGame.load(sav).json_text).get("Shared/General/CurrentCatSlot"))
-    except (KeyError, IndexError, ValueError, TypeError):
+        return names.current_slot(SaveDoc(SaveGame.load(sav).json_text).data)
+    except ValueError:   # a save wcmods can't read: the first slot, as before
         return "0"
 
 

@@ -1365,7 +1365,8 @@ def _rename_struct():
 
 def _names_plan(read_text):
     """A names.json against the game's own tables: renames reach every name with that part, additions
-    get a text in every language, needed suffixes stay, and the ban list follows."""
+    get a text in every language, needed suffixes stay, the ban list follows, and cats are picked by name,
+    place or "player" in a save of one game or several."""
     from . import names
     game = names.GameNames(read_text)
     plan = names.Plan(game, names.merge([names.validate({
@@ -1411,13 +1412,44 @@ def _names_plan(read_text):
     # rename is logged from the name the cat has; the in-game module gets a few added keys to check the game has.
     from . import world
     listed = {c["target"]: c for c in names.cat_list(plan, cats, ops)}
-    data = world.names_data(plan)
+    ndata = world.names_data(plan)
     ok_shown = (listed["RiverClan/Warrior/2"]["name"] == "Glow" and listed["player"]["name"] == "Otterheart"
                 and listed["RiverClan/Warrior/0"]["with_mods"] == "Sparkle"
                 and plan.cat_renames == [("Woodheart", "Sparkle")]
-                and data["added"] and set(data["added"]) <= set(plan.added_keys)
-                and data["whole"].get("STR_CAT_NAME_WCM_GLIMMER_PAW") == "Glimmerpaw")
-    return ok and ok_cats and ok_shown, f"{len(game.prefixes)} prefixes, {len(game.suffixes)} suffixes, {len(added)} new texts"
+                and ndata["added"] and set(ndata["added"]) <= set(plan.added_keys)
+                and ndata["whole"].get("STR_CAT_NAME_WCM_GLIMMER_PAW") == "Glimmerpaw")
+
+    # Two games in one save (a cat slot each; slot 1 being played): its cats come first, your cat first in
+    # each; "player", a name or a place means the game being played, a slot first picks another game's cat,
+    # and a name only another game has still counts; the studio's list keys each cat the same way.
+    two = {"Shared": {"General": {"CurrentCatSlot": 1}}, "0": data["0"],
+           "1": {"GameplayProgression": {"Gameplay.Combat.Character.Cat.Player": {"Customization": cat.format("STR_CAT_NAME53")}},
+                 "NPCData": {"RiverClan": {"Warrior": [cat.format("STR_CAT_NAME1")]}}}}
+    cats2 = names.cats_in_save(two)
+    only_there = names.cat_list(names.Plan(game, names.merge([])), cats2)[4]["name"]   # a cat only slot 0 has
+    plan2 = names.Plan(game, names.merge([names.validate({"cats": {
+        "player": {"fixed": "Me"}, "Woodheart": {"fixed": "Sparkle"}, "0/RiverClan/Warrior/0": {"fixed": "Other"},
+        only_there: {"fixed": "Far"}, "NPCData/RiverClan/Warrior/2": {"fixed": "Prefixed"},   # the old key forms still work
+        "0/GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization": {"fixed": "Old"},
+        "1/": {"fixed": "Nothing"}}})]))
+    ops2 = sorted((o["path"], o["to"], o["where"]) for o in plan2.plan_cats(cats2))
+    shown = names.cat_list(plan2, cats2, ())
+    ok_two = (names.current_slot(two) == "1" and names.current_slot(data) == "0" and only_there
+              and [(c["slot"], c["player"], c["current"]) for c in cats2] == [
+                  ("1", True, True), ("1", False, True), ("0", True, False), ("0", False, False), ("0", False, False), ("0", False, False)]
+              and ops2 == [("0/GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization", "Old", "0/player"),
+                           ("0/NPCData/NarrativeRoles/TheAgingLeader", "Other", "0/NarrativeRoles/TheAgingLeader"),
+                           ("0/NPCData/RiverClan/Warrior/0", "Other", "0/RiverClan/Warrior/0"),
+                           ("0/NPCData/RiverClan/Warrior/1", "Far", "0/RiverClan/Warrior/1"),
+                           ("0/NPCData/RiverClan/Warrior/2", "Prefixed", "0/RiverClan/Warrior/2"),
+                           ("1/GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization", "Me", "you"),
+                           ("1/NPCData/RiverClan/Warrior/0", "Sparkle", "RiverClan/Warrior/0")]
+              and [w for w in plan2.warnings if w.startswith("cats:")] == ["cats: no cat in your save is called '1/'"]
+              and [c["target"] for c in shown] == ["player", "RiverClan/Warrior/0", "0/player", "0/RiverClan/Warrior/0",
+                                                   "0/RiverClan/Warrior/1", "0/RiverClan/Warrior/2"]
+              and [c["where"] for c in shown[:3]] == ["you", "RiverClan/Warrior/0", "your cat"]
+              and all(c["ids"]["PrefixNameId"] == "STR_CAT_NAME53" for c in cats2 if c["player"]))
+    return ok and ok_cats and ok_shown and ok_two, f"{len(game.prefixes)} prefixes, {len(game.suffixes)} suffixes, {len(added)} new texts"
 
 
 def _remapper_presses():

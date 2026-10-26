@@ -524,7 +524,10 @@ of this. Names are matched by their English text (any case) or ID.
   Some cameo names are also clan names (Brightheart is Bright + heart), so both change. `text`
   sets any of the game's text by key: `{ "STR_BOT_NAME_1": "..." }`.
 - **`cats`:** renames cats in your save on install, after a backup. Each key picks a cat: `player`,
-  its current name, or its place from `names --cats` (`RiverClan/Warrior/3`).
+  its current name, or its place from `names --cats` (`RiverClan/Warrior/3`). A save holds a game
+  per cat slot you've started; a key means the game you're playing, and a slot first (`1/player`,
+  `1/Blaze`, `1/RiverClan/Warrior/3`) picks a cat in another one. The Names page lists each game's
+  cats under its own heading, the one you're playing first.
   - A plain name must be a prefix + suffix the game can make, new ones included. Otherwise it's
     used as a fixed name.
   - `{ "prefix": "Glimmer" }` gives the cat its own prefix that grows with rank: Glimmerkit, then

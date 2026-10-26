@@ -13,6 +13,9 @@ export default {
   async mount(root, wc) {
     const { el, api, clear, toast } = wc;
     let spec = EMPTY(), extra = {}, game = null, view = null, timer = null, seq = 0;
+    let nameCount = new Map();               // a cat's name -> how many cats in the save have it
+    let catFilter = "", openSlots = null;    // kept across renders: what's typed into Find a cat, which games are unfolded
+    let settling = false;                    // true just after a search unfolds games, until their toggles have fired
     const afterCells = new Map();   // cat target -> cell showing the name it will have
 
     const target = wc.modTarget({
@@ -218,19 +221,25 @@ export default {
           } }), ...added));
     }
 
-    // How names.json's "cats" names this cat: "player", its name when no other cat has it, else its place
-    // in the save. A place can shift as cats come and go, so entries keyed by place also say "was".
+    // How names.json's "cats" names this cat: "player", its name when it's in the game being played and no other
+    // cat in the save has it, else its place with "was". A cat in another game always goes by its place with
+    // the slot first: a bare name would mean the game being played as soon as a cat there gets that name.
     function catKey(c) {
       if (c.target === "player") return "player";
-      return game.cats.filter(o => o.name === c.name).length > 1 ? c.target : c.name;
+      return c.current && (nameCount.get(c.name) || 0) === 1 ? c.name : c.target;
     }
     function renderCats() {
       if (!game.cats.length) {
         clear(box.cats).append(el("h2", { text: "Cats in your save" }), el("p", { class: "note", text: "No save yet; start the game once." }));
         return;
       }
+      nameCount = new Map();
+      for (const c of game.cats) nameCount.set(c.name, (nameCount.get(c.name) || 0) + 1);
       const keys = new Set(game.cats.map(catKey));
-      const rows = game.cats.map(c => {
+      const slots = [...new Set(game.cats.map(c => c.slot))];   // the game being played comes first
+      if (!openSlots) openSlots = new Set(slots.slice(0, 1));
+      const rows = [];
+      const row = c => {
         const key = catKey(c);
         const cur = spec.cats[key];
         const mode = cur && typeof cur === "object" ? (cur.fixed ? "fixed" : cur.prefix ? "prefix" : "name") : "name";
@@ -250,12 +259,48 @@ export default {
         text.addEventListener("change", update); kind.addEventListener("change", update);
         const after = el("td", { class: "muted", text: c.with_mods === c.name ? "" : c.with_mods });
         afterCells.set(key, after);
-        return el("tr", {},
+        const rank = c.role.replace(/([a-z])([A-Z])/g, "$1 $2");
+        const tr = el("tr", { "data-find": `${c.name} ${c.with_mods} ${rank} ${c.where} ${c.roles.join(" ")}`.toLowerCase() },
           el("td", {}, el("strong", { text: c.name }), el("div", { class: "muted", style: { fontSize: "0.78rem" },
-            text: [c.where.replace(/\//g, " · "), c.roles.length ? `story role: ${c.roles.join(", ")}` : ""].filter(Boolean).join(" — ") })),
-          el("td", { class: "muted", text: c.role.replace(/([a-z])([A-Z])/g, "$1 $2") }),
+            text: [c.where.split("/").join(" · "), c.roles.length ? `story role: ${c.roles.join(", ")}` : ""].filter(Boolean).join(" — ") })),
+          el("td", { class: "muted", text: rank }),
           el("td", {}, el("div", { class: "row" }, text, kind)), after);
-      });
+        rows.push(tr);
+        return tr;
+      };
+      const table = cats => el("div", { class: "table-wrap" }, el("table", { class: "grid-table" },
+        el("thead", {}, el("tr", {}, el("th", { text: "Cat" }), el("th", { text: "Rank" }), el("th", { text: "New name" }), el("th", { text: "After install" }))),
+        el("tbody", {}, ...cats.map(row))));
+      // One game: the table as it always was. Several: a fold per game, the one being played open.
+      const groups = slots.length > 1 ? slots.map(slot => {
+        const cats = game.cats.filter(c => c.slot === slot);
+        const you = cats.find(c => c.player);
+        const fold = el("details", { class: "fold", open: openSlots.has(slot), "data-slot": slot },
+          el("summary", {},
+            el("strong", { text: you ? `${you.name}'s game` : `The game in cat slot ${slot}` }),
+            el("span", { class: "muted", text: `cat slot ${slot} · ${cats.length} cat${cats.length === 1 ? "" : "s"}${cats[0].current ? " · the one you're playing" : ""}` })),
+          table(cats));
+        // Toggles come later than the change, so a search's own unfolding (below) is told apart from the user's.
+        fold.addEventListener("toggle", () => { if (catFilter || settling) return; if (fold.open) openSlots.add(slot); else openSlots.delete(slot); });
+        return fold;
+      }) : [table(game.cats)];
+      const find = el("input", { type: "search", value: catFilter, placeholder: "Find a cat", "aria-label": "Find a cat by name, rank or place", style: { minWidth: "14rem" } });
+      const count = el("span", { class: "muted", role: "status" });
+      const applyFilter = () => {
+        catFilter = find.value.trim().toLowerCase();
+        let shown = 0;
+        for (const tr of rows) { const hit = !catFilter || tr.dataset.find.includes(catFilter); tr.hidden = !hit; shown += hit; }
+        settling = true;
+        for (const g of groups) {
+          if (g.tagName !== "DETAILS") continue;
+          const hits = rows.filter(tr => !tr.hidden && g.contains(tr)).length;
+          g.hidden = !!catFilter && !hits;   // while searching, every game with a match is unfolded
+          g.open = catFilter ? hits > 0 : openSlots.has(g.dataset.slot);
+        }
+        setTimeout(() => { settling = false; }, 0);   // after the toggle events these changes queue
+        count.textContent = catFilter ? `${shown} of ${game.cats.length} cats` : `${game.cats.length} cats${slots.length > 1 ? ` in ${slots.length} games` : ""}`;
+      };
+      find.addEventListener("input", applyFilter);
       // Entries for cats not listed under that key: renames already in the save (the cat has its new
       // name now), or cats this save doesn't have. They stay in names.json until removed here.
       const earlier = Object.keys(spec.cats).filter(k => !keys.has(k)).map(k => {
@@ -266,12 +311,14 @@ export default {
             onclick: () => { delete spec.cats[k]; changed(); render(); } }));
       });
       clear(box.cats).append(el("h2", { text: "Cats in your save" }),
-        el("p", { class: "note", text: "Give any cat a new name. A whole name like Mothheart must be a prefix + suffix (new ones count); a prefix grows with rank (Sparkle: Sparklepaw, then Sparkleheart); a fixed name stays the same. Story roles show the cat cast in them." }),
-        el("div", { class: "table-wrap" }, el("table", { class: "grid-table" },
-          el("thead", {}, el("tr", {}, el("th", { text: "Cat" }), el("th", { text: "Rank" }), el("th", { text: "New name" }), el("th", { text: "After install" }))),
-          el("tbody", {}, ...rows))),
+        el("p", { class: "note", text: `Give any cat a new name. A whole name like Mothheart must be a prefix + suffix (new ones count); a prefix grows with rank (Sparkle: Sparklepaw, then Sparkleheart); a fixed name stays the same. Story roles show the cat cast in them.${slots.length > 1 ? " Your save holds a game per cat slot you've started; each is listed under its own heading, the one you're playing first." : ""}` }),
+        el("div", { class: "row" }, find, count),
+        !game.cats.some(c => c.current) && game.current_slot != null
+          ? el("p", { class: "note", text: `The game you're playing (cat slot ${game.current_slot}) has no named cats yet, so "player" means no one until it does; the games below are your others.` }) : null,
+        ...groups,
         earlier.length ? el("div", { class: "row", style: { flexWrap: "wrap" } },
           el("span", { class: "lbl", title: "Already in your save, or cats this save doesn't have. Keep them so their names keep working.", text: "Earlier renames" }), ...earlier) : null);
+      applyFilter();
     }
 
     function renderNotes() {
