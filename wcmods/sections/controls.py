@@ -2,7 +2,7 @@
 remaps are carried out by the key remapper (`wcmods play` / `wcmods remap`) while the game runs. This
 section checks them at build time and installs the small UE4SS script that tells the remapper when
 you're playing (playstate.py). See README, "Remapping keys"."""
-from .. import controls, keymap, playstate
+from .. import controls, keymap, mods as modlib, playstate
 from ..sdk import Section
 
 DEVICES = ("keyboard", "gamepad", "keys", "menus")
@@ -62,3 +62,19 @@ def merge(datas):
         for device, mapping in data.items():
             merged.setdefault(device, {}).update(mapping)
     return {d: m for d, m in merged.items() if m}
+
+
+def remap_plan(mods_root):
+    """What the enabled mods' controls.json ask the key remapper for: (send, block, menu_send, warnings),
+    keymap.plan and keymap.menu_plan on the merged files. The CLI's remap and play, and the studio's Play,
+    start the remapper on it."""
+    sec, datas = ControlsSection(), []
+    for m in modlib.discover(mods_root):   # priority order, so later mods win
+        if m.enabled and sec.claims(m):
+            data = sec.collect(m, None)
+            if data:
+                datas.append(data)
+    merged = merge(datas)
+    send, block, warnings = keymap.plan(merged)
+    menu_send, menu_warnings = keymap.menu_plan(merged)
+    return send, block, menu_send, warnings + menu_warnings

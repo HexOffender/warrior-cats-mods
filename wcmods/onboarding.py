@@ -12,7 +12,8 @@ import os
 import tempfile
 import time
 
-from . import mods as modlib, pipeline, save, ue4ss
+from . import mods as modlib, pipeline, ue4ss
+from .formats import save
 from .config import EXE_NAME, STEAM_APP_ID, game_running
 
 INBOX = os.path.join(tempfile.gettempdir(), "wcmods-studio-inbox.json")
@@ -79,8 +80,8 @@ def install_loader(cfg, zip_path=None, log=print):
 
 def remaps(ctx):
     """Whether the enabled mods remap keys, so the game has to start with the key remapper."""
-    from .cli import _remap_plan
-    send, block, menu_send, _ = _remap_plan(ctx)
+    from .sections.controls import remap_plan
+    send, block, menu_send, _ = remap_plan(ctx.mods_root)
     return bool(send or block or menu_send)
 
 

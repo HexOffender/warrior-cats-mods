@@ -151,7 +151,7 @@ class Image:
 
 def game_exe(cfg):
     """The game's exe, from wcmods' config; None when the game isn't found."""
-    from .config import EXE_NAME
+    from ..config import EXE_NAME
     if not cfg.game_dir:
         return None
     path = os.path.join(cfg.win64_dir, EXE_NAME)

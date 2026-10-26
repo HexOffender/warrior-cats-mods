@@ -20,6 +20,7 @@ import time
 from ctypes import wintypes
 
 from . import keymap
+from .wininput import INPUT, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, MAGIC, ULONG_PTR
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -31,12 +32,9 @@ MOUSE_BUTTONS = {0x201: ("LeftMouseButton", True), 0x202: ("LeftMouseButton", Fa
                  0x204: ("RightMouseButton", True), 0x205: ("RightMouseButton", False),
                  0x207: ("MiddleMouseButton", True), 0x208: ("MiddleMouseButton", False)}
 LLKHF_INJECTED, LLMHF_INJECTED = 0x10, 0x01
-INPUT_KEYBOARD, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP = 1, 0x1, 0x2
-MAGIC = 0x57434D52   # "WCMR" in dwExtraInfo marks the remapper's own key presses
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 LRESULT = ctypes.c_ssize_t
-ULONG_PTR = ctypes.c_size_t
 
 
 class KBDLLHOOKSTRUCT(ctypes.Structure):
@@ -47,24 +45,6 @@ class KBDLLHOOKSTRUCT(ctypes.Structure):
 class MSLLHOOKSTRUCT(ctypes.Structure):
     _fields_ = [("pt", wintypes.POINT), ("mouseData", wintypes.DWORD), ("flags", wintypes.DWORD),
                 ("time", wintypes.DWORD), ("dwExtraInfo", ULONG_PTR)]
-
-
-class KEYBDINPUT(ctypes.Structure):
-    _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD), ("dwFlags", wintypes.DWORD),
-                ("time", wintypes.DWORD), ("dwExtraInfo", ULONG_PTR)]
-
-
-class MOUSEINPUT(ctypes.Structure):
-    _fields_ = [("dx", wintypes.LONG), ("dy", wintypes.LONG), ("mouseData", wintypes.DWORD),
-                ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", ULONG_PTR)]
-
-
-class _INPUTUNION(ctypes.Union):
-    _fields_ = [("mi", MOUSEINPUT), ("ki", KEYBDINPUT)]   # MOUSEINPUT is the largest member
-
-
-class INPUT(ctypes.Structure):
-    _fields_ = [("type", wintypes.DWORD), ("u", _INPUTUNION)]
 
 
 HOOKPROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)

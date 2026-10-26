@@ -9,7 +9,7 @@ sizes in the zen header and the container's store entry stay valid.
 """
 import struct
 
-from .binio import read_name_batch
+from .formats.binio import read_name_batch
 
 PATH = ("Wrc/Content/Art/Environment/Common/Materials/Curves/Characters/Eyes/Gradients/"
         "CurveAtlas_Characters_Eyes_AllColors.uasset")

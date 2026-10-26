@@ -239,9 +239,11 @@ export const color = {
 
 // ---------- which mod a section edits ----------
 // Renders "Editing mod: [select] [New mod] [Save]". onLoad(obj|null, modId) fires when the target changes;
-// call target.save(obj) to write the file. Picks `defaultId` (creating it on first save) when nothing is chosen.
-export function modTarget({ file, defaultId, defaultName, onLoad, getValue }) {
-  const key = `wc-target:${file}`;
+// call target.save(obj) to write the file. Every page starts on the mod last chosen on any page, else on one
+// mod for a player's own edits, "My mods" (made on the first save). The built-in mod menu is never offered.
+export function modTarget({ file, onLoad, getValue }) {
+  const defaultId = "my-mods", defaultName = "My mods";
+  const key = "wc-target";   // the mod last chosen, on whichever page
   let mods = [], current = null, dirty = false;
   const select = el("select", { "aria-label": `Mod that stores ${file}` });
   const status = el("span", { class: "dirty" });
@@ -258,6 +260,7 @@ export function modTarget({ file, defaultId, defaultName, onLoad, getValue }) {
     clear(select);
     const withFile = [];
     for (const m of mods) {
+      if (m.builtin) continue;   // the mod menu is wcmods' own, not a place for a player's files
       const has = m.kinds.includes(file.replace(".json", "")) || (file === "palette.json" && m.kinds.includes("palette"));
       withFile.push({ m, has });
     }
@@ -267,7 +270,14 @@ export function modTarget({ file, defaultId, defaultName, onLoad, getValue }) {
       select.append(el("option", { value: m.id, text: `${m.name}${has ? "" : " (no " + file + " yet)"}${m.enabled ? "" : " · off"}` }));
     }
     let pick = selectId;
-    if (!pick) { try { pick = localStorage.getItem(key); } catch (e) { /* storage blocked */ } }
+    if (!pick) {
+      try {
+        // The choice made before the picker was shared across pages (one key per file) counts once, then goes.
+        const old = `wc-target:${file}`;
+        pick = localStorage.getItem(key) || localStorage.getItem(old);
+        localStorage.removeItem(old);
+      } catch (e) { /* storage blocked */ }
+    }
     if (!pick || ![...select.options].some(o => o.value === pick)) pick = select.options[0]?.value;
     select.value = pick;
     await load(pick);

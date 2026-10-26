@@ -29,7 +29,8 @@ they are Python code. See docs/SDK.md for the full API.
 import json
 import os
 
-from . import cooked, csvdata, luacheck
+from . import luacheck
+from .formats import cooked, csvdata
 from .gamefiles import NONASSET
 
 
@@ -260,7 +261,7 @@ class BuildContext:
         would (a hash of the PNG file, say): with both, a texture made before comes from the cache
         without making the image again. Returns the new texture's asset path, for an icon or an
         accessory's look."""
-        from . import texture
+        from .formats import texture
         package = texture.new_package_name(name)
         path = texture.content_path(package)
         built = texture.build(self, package, image, like, key)

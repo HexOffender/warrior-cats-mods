@@ -89,7 +89,7 @@ class GameNames:
     """The game's names, read from its tables: read_text(path) returns a NonAsset or Wrc/ file's text."""
 
     def __init__(self, read_text):
-        from .csvdata import Table
+        from .formats.csvdata import Table
         self.tables = {t: Table(read_text(t)) for t in TABLES}
         self.strings = {lang: Table(read_text(strings_path(lang))) for lang in LANGUAGES}
         self.text = {r.fields[0]: r.fields[1] for r in self.strings["EN"].rows if len(r.fields) > 1}

@@ -4,12 +4,13 @@ import re
 import struct
 import tempfile
 
-from . import bridge, catlook, controls, draw, eyeatlas, gamebuild, keymap, luacheck, menu, mouselook, palettes, view, world
+from . import bridge, catcolours, controls, draw, eyeatlas, keymap, luacheck, menu, mouselook, palettes, view, world
+from .exe import gamebuild
 from . import game as game_lua
-from .blake3 import blake3
-from .iostore import IoStoreReader, ModContainerWriter
-from .pak import PakReader, PakWriter
-from .save import JSON_NAME, SAV_NAME, SaveGame
+from .formats.blake3 import blake3
+from .formats.iostore import IoStoreReader, ModContainerWriter
+from .formats.pak import PakReader, PakWriter
+from .formats.save import JSON_NAME, SAV_NAME, SaveGame
 
 
 def run(cfg, oodle, log=print):
@@ -43,7 +44,7 @@ def run(cfg, oodle, log=print):
     problems = luacheck.check(lua)
     check("mouse look script with its menu page", not problems and "@SAVE@" not in lua
           and r'"C:\\mods\\m\\mouselook.json"' in lua, "; ".join(problems[:3]))
-    lua = catlook.script({"fur": (1.0, 0.5, 0.0)}, save={"path": "x", "file": "y", "doc": {"player": {"colours": {}}}})
+    lua = catcolours.script({"fur": (1.0, 0.5, 0.0)}, save={"path": "x", "file": "y", "doc": {"player": {"colours": {}}}})
     problems = luacheck.check(lua) + re.findall(r"@[A-Z_]+@", lua)
     check("your cat's colours script with its menu page", not problems and '"#ff8000"' in lua, "; ".join(problems[:3]))
     lua = menu.host_script({"sections": {}, "notes": {}, "warnings": ["w"], "built": "2026-10-24T01:00:00"}, [], dev=True)
@@ -165,7 +166,7 @@ def run(cfg, oodle, log=print):
           "recipe, icons and an accessory's look of a mod's own; mistakes refused",
           ok, detail)
 
-    from . import csvdata
+    from .formats import csvdata
     from .gamefiles import NONASSET
     names = [p for p in base_pak.entries if p.startswith(NONASSET) and p.endswith(".csv")]
     bad = [p for p in names if csvdata.Table(base_pak.read(p).decode("utf-8")).to_text().encode("utf-8") != base_pak.read(p)]
@@ -182,7 +183,7 @@ def run(cfg, oodle, log=print):
 
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     if os.path.isfile(sav):
-        from .savejson import SaveDoc
+        from .formats.savejson import SaveDoc
         doc = SaveDoc(SaveGame(open(sav, "rb").read()).json_text)
         slot = str(doc.get("Shared/General/CurrentCatSlot"))
         level_path = f"{slot}/GameplayProgression/Level"
@@ -231,7 +232,7 @@ def run(cfg, oodle, log=print):
 
 
 def _name_hashes():
-    from .cityhash import name_hash
+    from .formats.cityhash import name_hash
     # Stored hashes from the game's name maps: names for each of CityHash64's length branches (1-3, 4-7,
     # 8-16, 17-32, 33-64 bytes, and longer).
     vectors = [("1", 0x811F023A122D0BE1), ("10", 0xFE9BEBCA6BBFE5AE), ("Ear", 0xF5BC7B7C8B0DF45C),
@@ -244,7 +245,7 @@ def _name_hashes():
 
 
 def _unversioned_headers():
-    from .cooked import _Reader, read_header, split_name, write_header
+    from .formats.cooked import _Reader, read_header, split_name, write_header
     cases = [([], set()), ([0], set()), ([0, 1, 2, 3, 4, 5, 6], {4, 5, 6}), ([0, 2, 3, 9], {3}),
              (list(range(130)), set(range(0, 130, 7))), ([200, 201], set()), (list(range(40)), {1, 33})]
     for present, zero in cases:
@@ -259,7 +260,7 @@ def _long_save():
     128 KiB of payload; reading only the first one cut a long-played save short ("unpack_from requires a
     buffer of at least ... bytes"). Laid out here by hand, the way the game does it, not by save.py."""
     import zlib
-    from . import save as savelib
+    from .formats import save as savelib
     text = '{"Shared": {"General": {"CurrentCatSlot": 0}}, "Pad": "' + "x" * 500000 + '"}'
     body = text.encode("utf-8")
     payload = (struct.pack("<II", len(body) + 8, len(body)) + bytes((b - 1) & 0xFF for b in body)
@@ -297,7 +298,7 @@ def _long_save():
 
 
 def _cooked_table(io):
-    from . import cooked
+    from .formats import cooked
     path, schema = cooked.TABLES["DT_QuestObjectsInfo"]
     data = io.read_file(path)
     dt = cooked.DataTable(data, schema)
@@ -325,7 +326,7 @@ def _cooked_table(io):
 def _png_file(width, height, ctype, depth, rows, palette=None, trns=None):
     """A PNG as paint programs save them: each row with another of the five filters."""
     import zlib
-    from .png import SIGNATURE
+    from .formats.png import SIGNATURE
     bpp = max(1, {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[ctype] * depth // 8)
     raw, prev = bytearray(), bytes(len(rows[0]))
     for y, line in enumerate(rows):
@@ -350,7 +351,8 @@ def _png_file(width, height, ctype, depth, rows, palette=None, trns=None):
 
 
 def _pictures():
-    from . import bcn, png, recolor
+    from . import recolor
+    from .formats import bcn, png
     w, h = 9, 6
     rgba = bytes(v for y in range(h) for x in range(w) for v in (x * 28, y * 50, x * y * 5, 255 - x * 20))
     ok = png.read(png.write(w, h, rgba)) == (w, h, rgba)
@@ -390,7 +392,8 @@ def _pictures():
 
 
 def _textures(io):
-    from . import accessories, texture
+    from . import accessories
+    from .formats import texture
     from .sections.items import ICON_LIKE
     header = io.container_header()
     # The game's own IDs, worked out from names: the package's, its chunk's and its export's.
@@ -430,7 +433,7 @@ def _textures(io):
 
 def _accessory_looks(io):
     from . import accessories
-    from .cooked import ZenPackage
+    from .formats.cooked import ZenPackage
     data = io.read_file(accessories.GUI_MANAGER)
     looks = accessories.read_variations(data)
     n, m = len(looks["DogCollar"]), len(looks["RopeNecklace"])
@@ -464,7 +467,8 @@ def _accessory_looks(io):
 
 def _items_section(cfg):
     import json
-    from . import accessories, mods, pipeline, png, texture
+    from . import accessories, mods, pipeline
+    from .formats import png, texture
     from .gamefiles import GameFiles
     looks = accessories.read_variations(GameFiles(cfg).read(accessories.GUI_MANAGER))
     collar = f"Gameplay.Inventory.Cosmetic.Neck.DogCollar.{len(looks['DogCollar']) + 1}"
@@ -535,7 +539,7 @@ def _items_section(cfg):
         packed = (ok and all(texture.content_path(p) in made.files for p in (look, icon, stone))
                   and texture.content_path(look)[:-len(".uasset")] + ".ubulk" in made.files)
         if packed:
-            from . import cooked
+            from .formats import cooked
             worn = accessories.read_variations(made.read_file(accessories.GUI_MANAGER))
             path, schema = cooked.TABLES["DT_QuestObjectsInfo"]
             table = {v["itemTag"]: v for _, v in cooked.DataTable(made.read_file(path), schema).rows}
@@ -605,7 +609,8 @@ def _cpp_mod():
     """A C++ mod's dlls/main.dll becomes a UE4SS mod with a wcmods.json naming the mod and its settings, as long
     as its build.json fits the game's UE4SS."""
     import json
-    from . import cppmods, pe
+    from . import cppmods
+    from .exe import pe
     from .mods import Mod
     from .sdk import BuildContext
     from .sections import cpp
@@ -971,9 +976,9 @@ def _requirements(cfg):
 
 
 def _menu_mod(cfg):
-    from . import ingame
+    from . import menusettings
     # Menu settings still in wcmods.json would win over the test's menu.json; they're put back after.
-    kept = {k: cfg.data.pop(k) for k in ingame.LEGACY.values() if k in cfg.data}
+    kept = {k: cfg.data.pop(k) for k in menusettings.LEGACY.values() if k in cfg.data}
     try:
         return _menu_builds(cfg)
     finally:
@@ -1156,7 +1161,7 @@ def _kraken_fixtures():
     """Every fixture decodes to the sample it was made from."""
     import hashlib
     import json
-    from . import kraken
+    from .formats import kraken
     folder = _kraken_dir()
     try:
         with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as f:
@@ -1185,7 +1190,7 @@ def _kraken_fixtures():
 
 def _kraken_against_dll(io, oodle):
     """A few of the game's own compressed blocks: the Python decoder and the DLL agree."""
-    from . import kraken
+    from .formats import kraken
     picks = [i for i, (_, _, _, m) in enumerate(io.blocks) if m][::max(1, len(io.blocks) // 12)][:12]
     bad = 0
     with open(io.ucas_path, "rb") as f:
@@ -1201,7 +1206,7 @@ def _kraken_against_dll(io, oodle):
 def _signatures(cfg):
     """On the installed exe: the decoder cuts .pdata's functions at their ends, and (on a build wcmods was
     checked on) signatures.check finds every class and every member where game.HIDDEN says."""
-    from . import gamebuild, pe, signatures, x64
+    from .exe import gamebuild, pe, signatures, x64
     exe = pe.game_exe(cfg)
     if not exe:
         return False, "no game exe"
@@ -1227,7 +1232,8 @@ def _update_safety(cfg):
     the build; an install made on another build asks to be made again; and the cats' names are built."""
     import copy
     import json
-    from . import game, gamebuild, mods, pe, pipeline, signatures
+    from . import game, mods, pipeline
+    from .exe import gamebuild, pe, signatures
     from .config import Config
     exe = pe.game_exe(cfg)
     if not exe:
@@ -1302,7 +1308,8 @@ def _update_safety(cfg):
 
 
 def _outdated_mods(cfg):
-    from . import gamebuild, mods, pipeline
+    from . import mods, pipeline
+    from .exe import gamebuild
     kept_env, kept_cache = os.environ.get("WCMODS_GAME_BUILD"), gamebuild.CACHE_DIR
     kept_allow = cfg.data.get("allow_outdated")
     os.environ["WCMODS_GAME_BUILD"] = "99999999"   # as if Steam had installed a newer build
@@ -1338,7 +1345,7 @@ def _outdated_mods(cfg):
 
 def _csv_rows():
     """Row removal and addition keep every other byte, the line endings and a missing final newline."""
-    from . import csvdata
+    from .formats import csvdata
     for text in ("#,Name,ID\r\n1,Wood,A\r\n2,Ember,B\r\n3,Berry,C", "#,Name,ID\r\n1,Wood,A\r\n2,Ember,B\r\n3,Berry,C\r\n"):
         out, applied, problems = csvdata.apply_edits(text, {"-": ["2"], "+": [{"#": "4", "Name": "Moth, Sr", "ID": "D"}]})
         end = "\r\n" if text.endswith("\r\n") else ""
@@ -1352,7 +1359,7 @@ def _csv_rows():
 def _colour_slots():
     """Pattern and marking colours take new slots, coats can't; a palette that only adds slots isn't a
     preset; your cat's colours and slots are checked and written as the game keeps them."""
-    from . import catlook
+    from . import catcolours
     with tempfile.TemporaryDirectory() as tmp:
         def load(data):
             path = os.path.join(tmp, "palette.json")
@@ -1368,33 +1375,33 @@ def _colour_slots():
               and not palettes.adds_only(mixed) and palettes.new_slots(adds) == {"pattern": [25], "marking": [30]})
     lua = palettes.ue4ss_script(palettes.merge([adds]))
     ok = ok and not luacheck.check(lua) and "PatternMaskColors = { [25]" in lua and "GROW = { PatternMaskColors" in lua
-    look = catlook.validate({"player": {"colours": {"fur": "#ff6ec7", "nose": "#202020"}, "slots": {"fur": 3, "pattern": 25}}})
-    script = catlook.script(look["player"]["colours"])
+    look = catcolours.validate({"player": {"colours": {"fur": "#ff6ec7", "nose": "#202020"}, "slots": {"fur": 3, "pattern": 25}}})
+    script = catcolours.script(look["player"]["colours"])
     try:
-        catlook.validate({"player": {"slots": {"fur": 25}}})
+        catcolours.validate({"player": {"slots": {"fur": 25}}})
         fur_refused = False
     except ValueError:
         fur_refused = True
     text = '(ClanType=RiverClan,FurColorIdx=11,Pattern01ColorIdx=2,CatSize=0.5)'
-    fields = catlook.set_fields(text, {"FurColorIdx": 3, "Pattern01ColorIdx": 25, "Pattern02ColorIdx": 26})
+    fields = catcolours.set_fields(text, {"FurColorIdx": 3, "Pattern01ColorIdx": 25, "Pattern02ColorIdx": 26})
     # Scars: "none" takes them all away; each place takes a scar's name or the game's number for it.
-    scars = catlook.validate({"player": {"scars": "none"}})["player"]["scars"]
-    some = catlook.validate({"player": {"scars": {"eye": 3, "ear": "notch-left", "body": "none"}}})["player"]["scars"]
-    named = catlook.validate({"player": {"scars": {"eye": "claws-left", "back": "claws-1", "chest": "bite"}}})["player"]["scars"]
+    scars = catcolours.validate({"player": {"scars": "none"}})["player"]["scars"]
+    some = catcolours.validate({"player": {"scars": {"eye": 3, "ear": "notch-left", "body": "none"}}})["player"]["scars"]
+    named = catcolours.validate({"player": {"scars": {"eye": "claws-left", "back": "claws-1", "chest": "bite"}}})["player"]["scars"]
     refused = 0
-    kept = catlook.validate({"player": {"scars": {"back": 5}}})["player"]["scars"]   # the game's, with a warning
+    kept = catcolours.validate({"player": {"scars": {"back": 5}}})["player"]["scars"]   # the game's, with a warning
     for bad in ({"scars": {"eye": 7}}, {"scars": {"chest": 3}}, {"scars": {"ear": "chewed"}}, {"scars": {"back": 7}},
                 {"scars": {"tail": "none"}}, {"scars": "some"}, {"scars": {"ear": ["notch-left"]}},
                 {"scars": {"body": 2, "back": 4}}):
         try:
-            catlook.validate({"player": bad})
+            catcolours.validate({"player": bad})
         except ValueError:
             refused += 1
-    scarred = catlook.set_fields('(ClanType=RiverClan,CatSize=0.5,ScarEarId=4,ScarBodyId=2)',
-                                 {catlook.SCARS[p]: 0 for p in scars})
+    scarred = catcolours.set_fields('(ClanType=RiverClan,CatSize=0.5,ScarEarId=4,ScarBodyId=2)',
+                                 {catcolours.SCARS[p]: 0 for p in scars})
     return (ok and fur_refused and not luacheck.check(script) and '["Fur Color"]' in script
             and fields == '(ClanType=RiverClan,FurColorIdx=3,Pattern01ColorIdx=25,CatSize=0.5,Pattern02ColorIdx=26)'
-            and set(scars) == set(catlook.SCARS) and not any(scars.values())
+            and set(scars) == set(catcolours.SCARS) and not any(scars.values())
             and some == {"eye": 3, "ear": 5, "back": 0} and named == {"eye": 6, "back": 3, "chest": 1}
             and kept == {"back": 5}
             and refused == 8

@@ -131,7 +131,7 @@ export default {
 
     // ---------- layout ----------
     const target = wc.modTarget({
-      file: "palette.json", defaultId: "my-palette", defaultName: "My Palette",
+      file: "palette.json",
       onLoad: obj => { state = fromPalette(obj); renderAll(); loadOtherSlots().catch(() => {}); },
       getValue: () => toPalette(),
     });

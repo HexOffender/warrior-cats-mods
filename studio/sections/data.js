@@ -26,7 +26,7 @@ export default {
     const cache = {};
 
     const target = wc.modTarget({
-      file: "data.json", defaultId: "my-tweaks", defaultName: "My Tweaks",
+      file: "data.json",
       onLoad: obj => { edits = clean(obj); renderList(); if (current) renderTable(); out.set(toJson()); },
       getValue: () => toJson(),
     });

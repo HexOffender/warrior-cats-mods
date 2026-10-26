@@ -18,7 +18,8 @@ import os
 import re
 import time
 
-from .. import mods as modlib, pipeline, save
+from .. import mods as modlib, pipeline
+from ..formats import save
 from ..bridge import Bridge, BridgeError
 from ..config import STEAM_APP_ID, Config
 from ..sdk import lua_value

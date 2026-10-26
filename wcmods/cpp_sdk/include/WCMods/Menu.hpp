@@ -270,7 +270,7 @@ namespace wcmods
     struct PageOptions
     {
         int order{50};               // its place in its group of the side bar, lower first
-        std::string group{"mods"};   // "home", "cat", "world", "story", "fight", "cheats", "mods", "tools", or one of its own
+        std::string group{"mods"};   // one of the side bar's groups (GROUPS in wcmods/menu.py: home, cat, world, story, fight, cheats, mods, tools), or one of its own
         std::string id;              // what tells it from another page with the same title (the title without)
     };
 

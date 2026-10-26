@@ -1,11 +1,11 @@
 // Your cat: colours only your cat wears (coat, paws, ears, nose, whiskers), which colour slots it uses,
-// new pattern and marking slots from palettes included, and its scars. Writes cats.json (see wcmods/catlook.py).
+// new pattern and marking slots from palettes included, and its scars. Writes cats.json (see wcmods/catcolours.py).
 const PARTS = [
   { id: "fur", name: "Coat", note: "Replaces your coat colour, whichever coat slot you have." },
   { id: "paws", name: "Paw pads" }, { id: "ears", name: "Inner ears" }, { id: "nose", name: "Nose" },
   { id: "whiskers", name: "Whiskers" },
 ];
-// Scar places, in the order the card shows them (the build's names: catlook.SCARS).
+// Scar places, in the order the card shows them (the build's names: catcolours.SCARS).
 const SCAR_PARTS = [
   { id: "ear", name: "Ears" }, { id: "eye", name: "Eye" }, { id: "back", name: "Back" }, { id: "chest", name: "Chest" },
 ];
@@ -26,13 +26,13 @@ export default {
     const TABLES = tablesRes.tables || {};
 
     const target = wc.modTarget({
-      file: "cats.json", defaultId: "my-cat", defaultName: "My Cat",
+      file: "cats.json",
       onLoad: obj => { load(obj); render(); },
       getValue: () => toJson(),
     });
     const coloursCard = el("div", { class: "card" }), slotsCard = el("div", { class: "card" }),
       scarsCard = el("div", { class: "card" });
-    // types: each place's scars as [name, label], scar n being the n-th (catlook.SCAR_TYPES).
+    // types: each place's scars as [name, label], scar n being the n-th (catcolours.SCAR_TYPES).
     const SCARS = info.scars || { current: {}, types: {} };
     const scarTypes = part => SCARS.types[part] || [];
     const scarName = (part, n) => (scarTypes(part)[n - 1] || [])[0];
@@ -93,7 +93,7 @@ export default {
     function render() { renderColours(); renderSlots(); renderScars(); out.set(toJson()); }
 
     function renderColours() {
-      // The parts the build knows (catlook.PARTS), labelled here; a part with no label shows its id.
+      // The parts the build knows (catcolours.PARTS), labelled here; a part with no label shows its id.
       const parts = Object.keys(info.parts || {}).map(id => PARTS.find(p => p.id === id) || { id, name: id });
       const rows = parts.map(p => {
         const on = p.id in look.colours;

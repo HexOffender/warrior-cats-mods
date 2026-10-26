@@ -19,7 +19,7 @@ export default {
     const afterCells = new Map();   // cat target -> cell showing the name it will have
 
     const target = wc.modTarget({
-      file: "names.json", defaultId: "my-names", defaultName: "My Names",
+      file: "names.json",
       onLoad: obj => { load(obj); render(); preview(); },
       getValue: () => toJson(),
     });

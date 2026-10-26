@@ -17,13 +17,13 @@ import json
 import os
 import re
 
-from .. import pe, ue4ss
+from .. import ue4ss
+from ..exe import pe
+from ..cppmods import BUILD_INFO, DLLS, SOURCE
 from ..sdk import Section
 
-DLLS, SOURCE = "dlls", "cpp"
 PREFIX = "WCModsCpp_"
 EXPORTS = ("start_mod", "uninstall_mod")    # what UE4SS calls in a C++ mod's main.dll
-BUILD_INFO = "build.json"
 SKIP_DIRS = {"out", "build", "bin", "obj"}     # build output in cpp/ (and cmake-build-*, IDEs'), not source
 VARIANT = re.compile(r"^[0-9a-fA-F]{7,40}$")   # dlls/<UE4SS commit>/: a build for that UE4SS
 

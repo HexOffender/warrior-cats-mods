@@ -1,10 +1,10 @@
 """Your cat (cats.json): colours only your cat wears, by a UE4SS script, and which colour slots it uses,
-in your save. See catlook.py."""
+in your save. See catcolours.py."""
 import os
 
-from .. import catlook, names, palettes
-from ..save import SAV_NAME, SaveGame
-from ..savejson import SaveDoc
+from .. import catcolours, names, palettes
+from ..formats.save import SAV_NAME, SaveGame
+from ..formats.savejson import SaveDoc
 from ..sdk import Section
 
 
@@ -15,30 +15,30 @@ class CatsSection(Section):
     appearance_only = True
 
     def collect(self, mod, ctx):
-        return catlook.validate(self.read_json(mod, "cats.json")) or None
+        return catcolours.validate(self.read_json(mod, "cats.json")) or None
 
     def build(self, ctx, items):
-        merged = catlook.merge(data for _, data in items)
+        merged = catcolours.merge(data for _, data in items)
         source = ", ".join(mod.id for mod, _ in items)
         player = merged.get("player", {"colours": {}, "slots": {}, "scars": {}})
         sav = os.path.join(ctx.cfg.save_dir, SAV_NAME)
         cats = names.cats_in_save(SaveDoc(SaveGame.load(sav).json_text).data) if os.path.isfile(sav) else []
         if player["colours"]:
             if ctx.cfg.ue4ss_mods_dir:
-                key_file = os.path.join(ctx.cfg.ue4ss_mods_dir, catlook.UE4SS_MOD_NAME, "yourcat.txt")
+                key_file = os.path.join(ctx.cfg.ue4ss_mods_dir, catcolours.UE4SS_MOD_NAME, "yourcat.txt")
                 # The in-game menu saves into the mod whose colours win: the one with the highest priority.
                 top = items[-1][0]
                 save = {"path": os.path.abspath(os.path.join(top.folder, "cats.json")),
                         "file": f"mods/{top.id}/cats.json", "doc": self.read_json(top, "cats.json")}
-                script = catlook.script(player["colours"], catlook.save_key(cats), key_file,
+                script = catcolours.script(player["colours"], catcolours.save_key(cats), key_file,
                                         debug=bool(ctx.cfg.data.get("debug_cat_look")), save=save)
-                ctx.add_ue4ss_mod(catlook.UE4SS_MOD_NAME, {"Scripts/main.lua": script, "enabled.txt": ""})
+                ctx.add_ue4ss_mod(catcolours.UE4SS_MOD_NAME, {"Scripts/main.lua": script, "enabled.txt": ""})
             else:
                 ctx.warn("your cat's colours need UE4SS, which isn't installed")
             if not cats:
                 ctx.warn("your cat's colours: no save yet, so they show only once you're in the world")
         slots = player["slots"]
-        if slots.get("fur") in catlook.FERAL_SLOTS:
+        if slots.get("fur") in catcolours.FERAL_SLOTS:
             ctx.warn(f"coat slot {slots['fur']} is one of the Feral Edition's; without it the game gives your cat another")
         added = _new_slots(ctx.mods)
         for part in ("pattern", "marking"):
@@ -47,9 +47,9 @@ class CatsSection(Section):
                 ctx.warn(f"your cat's {part} slot {slot} isn't added by any enabled palette, so it shows no colour")
         scars = player["scars"]
         for part, n in sorted(scars.items()):
-            if n > len(catlook.SCAR_TYPES[part]):
+            if n > len(catcolours.SCAR_TYPES[part]):
                 ctx.warn(f"your cat's {part} scar {n} seems to show nothing (the game has no scar for it); "
-                         f"its scars are {', '.join(catlook.SCAR_NAMES[part])}")
+                         f"its scars are {', '.join(catcolours.SCAR_NAMES[part])}")
         if slots or scars:
             what = "your cat's colour slots" if not scars else "your cat's scars" if not slots else \
                 "your cat's colour slots and scars"
@@ -57,14 +57,14 @@ class CatsSection(Section):
                 ctx.warn(f"{what}: no save yet; start the game once, then install again")
             else:
                 mine = [c for c in cats if c["player"] and c["current"]]   # the game being played, not every slot's cat
-                fields = {catlook.SLOTS[part]: slot for part, slot in slots.items()}
-                fields.update({catlook.SCARS[part]: n for part, n in scars.items()})
+                fields = {catcolours.SLOTS[part]: slot for part, slot in slots.items()}
+                fields.update({catcolours.SCARS[part]: n for part, n in scars.items()})
                 label = [f"{p} slot {s}" for p, s in sorted(slots.items())]
-                if scars and not any(scars.values()) and len(scars) == len(catlook.SCARS):
+                if scars and not any(scars.values()) and len(scars) == len(catcolours.SCARS):
                     label.append("no scars")
                 else:
-                    label += [f"{p} scar " + ("none" if not n else catlook.SCAR_TYPES[p][n - 1][0]
-                                              if n <= len(catlook.SCAR_TYPES[p]) else str(n))
+                    label += [f"{p} scar " + ("none" if not n else catcolours.SCAR_TYPES[p][n - 1][0]
+                                              if n <= len(catcolours.SCAR_TYPES[p]) else str(n))
                               for p, n in sorted(scars.items())]
                 for cat in mine:
                     for path in cat["paths"]:   # every copy of your cat in the save

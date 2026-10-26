@@ -36,7 +36,7 @@ def steam_build(cfg):
         return int(os.environ["WCMODS_GAME_BUILD"])
     if not cfg.game_dir:
         return None
-    from .config import STEAM_APP_ID
+    from ..config import STEAM_APP_ID
     steamapps = os.path.dirname(os.path.dirname(os.path.normpath(cfg.game_dir)))   # <lib>\steamapps
     path = os.path.join(steamapps, f"appmanifest_{STEAM_APP_ID}.acf")
     try:
@@ -110,7 +110,7 @@ def outdated(cfg, mods, build=None):
 def held_back(cfg, mods, build=None):
     """{mod id: why} for the mods a build leaves out on this version of the game: the ones made for an
     older version (unless used anyway), and the ones that need them, which can't work without them."""
-    from . import mods as modlib
+    from .. import mods as modlib
     out = {i: "made for an older version of the game" for i, o in outdated(cfg, mods, build).items() if not o["allowed"]}
     if not out:
         return out
@@ -127,14 +127,15 @@ def held_back(cfg, mods, build=None):
 # ---------- wcmods' own parts on a new build ----------
 def _members():
     """Every member game.HIDDEN reads, as "class:name"."""
-    from . import game
+    from .. import game
     return [f"{cls}:{name}" for cls, fields in game.HIDDEN for name, _, _ in fields]
 
 
 def _version():
     """What wcmods knows of the game's layout: game.HIDDEN and signatures.json. A layout worked out with
     other ones is worked out again."""
-    from . import game, signatures
+    from .. import game
+    from . import signatures
     h = hashlib.sha1(repr(game.HIDDEN).encode())
     try:
         with open(signatures.DATA, "rb") as f:

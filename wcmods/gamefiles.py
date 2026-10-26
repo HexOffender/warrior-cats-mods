@@ -3,9 +3,9 @@ import fnmatch
 import os
 import sys
 
-from .iostore import IoStoreReader
-from .oodle import Oodle
-from .pak import PakReader
+from .formats.iostore import IoStoreReader
+from .formats.oodle import Oodle
+from .formats.pak import PakReader
 
 BASE_PAK = "pakchunk0-Windows.pak"
 BASE_UTOC = "pakchunk0-Windows.utoc"

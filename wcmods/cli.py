@@ -7,10 +7,11 @@ import sys
 import time
 import zipfile
 
-from . import controls, eyeatlas, keymap, mods, names, pipeline, playstate, save, ue4ss
+from . import controls, eyeatlas, keymap, mods, names, pipeline, playstate, ue4ss
+from .formats import save
 from .config import EXE_NAME, STEAM_APP_ID, Config, game_running
 from .gamefiles import GameFiles
-from .savejson import SaveDoc
+from .formats.savejson import SaveDoc
 
 
 class Ctx:
@@ -46,7 +47,7 @@ def cmd_status(ctx, args):
         if pipeline.install_outdated(cfg):
             print("              built by an older wcmods, so the game never finds its files; install again")
     print(f"game running: {'yes' if game_running() else 'no'}")
-    from . import gamebuild
+    from .exe import gamebuild
     now = gamebuild.current(cfg)
     if now["build"]:
         print(f"game build  : {now['build']}" + (" (wcmods was checked on it)" if now["verified"] else
@@ -170,7 +171,8 @@ def cmd_extract(ctx, args):
 def cmd_texture(ctx, args):
     """One of the game's textures as a PNG to paint over: an accessory's look, an item's icon, or a
     texture by its asset path."""
-    from . import accessories, cooked, png, texture
+    from . import accessories
+    from .formats import cooked, png, texture
     what = args.what
     if what.split(".", 1)[0] in ("Head", "Neck", "Body", "Legs"):
         what = "Cosmetic." + what
@@ -300,23 +302,10 @@ def cmd_palette(ctx, args):
     print("done. Start the game from Steam to see them.")
 
 
-def _remap_plan(ctx):
-    from .sections.controls import ControlsSection, merge
-    sec, datas = ControlsSection(), []
-    for m in mods.discover(ctx.mods_root):   # priority order, so later mods win
-        if m.enabled and sec.claims(m):
-            data = sec.collect(m, None)
-            if data:
-                datas.append(data)
-    merged = merge(datas)
-    send, block, warnings = keymap.plan(merged)
-    menu_send, menu_warnings = keymap.menu_plan(merged)
-    return send, block, menu_send, warnings + menu_warnings
-
-
 def _run_remapper(ctx, args, launching=False):
     """launching: `play` has just asked Steam to start the game, so any play state on disk is old."""
-    send, block, menu_send, warnings = _remap_plan(ctx)
+    from .sections.controls import remap_plan
+    send, block, menu_send, warnings = remap_plan(ctx.mods_root)
     for w in warnings:
         print(f"  warning: {w}")
     if not send and not block and not menu_send:
@@ -480,14 +469,14 @@ def cmd_selftest(ctx, args):
 
 
 def cmd_ingame(ctx, args, option):
-    from . import ingame
+    from . import menusettings
     if args.state is not None:
-        opts = ingame.set_options(ctx.cfg, **{option: args.state == "on"})
+        opts = menusettings.set_options(ctx.cfg, **{option: args.state == "on"})
     else:
-        opts = ingame.options(ctx.cfg)
+        opts = menusettings.options(ctx.cfg)
     if option == "cheats":
         from .menu import KEY_NAMES
-        key = KEY_NAMES.get(opts["menu_key"], opts["menu_key"])
+        key = KEY_NAMES.get(opts["key"], opts["key"])
         print(f"cheats start {'on' if opts['cheats'] else 'off'} in the mod menu ({key} in game, Cheats page)")
         if args.state is not None:
             print("install again to apply it (python wcmods.py install)")
@@ -564,7 +553,7 @@ def cmd_game(ctx, args):
 
 def _game_build(ctx, args):
     """Which build is installed, what wcmods found moved on it, and the mods made for older ones."""
-    from . import gamebuild
+    from .exe import gamebuild
     now = gamebuild.current(ctx.cfg)
     if not now["build"]:
         print("couldn't tell which build of the game is installed (no Steam manifest)")
@@ -588,13 +577,13 @@ def _game_build(ctx, args):
 
 
 def _game_signatures(ctx, args):
-    """For maintainers: make wcmods/signatures.json on a verified build, or check another exe against it."""
-    from . import pe, signatures
+    """For maintainers: make wcmods/exe/signatures.json on a verified build, or check another exe against it."""
+    from .exe import pe, signatures
     exe = args.exe or pe.game_exe(ctx.cfg)
     if not exe:
         sys.exit("no game exe found; pass --exe")
     if args.action == "make":
-        from . import gamebuild
+        from .exe import gamebuild
         result = signatures.make(exe)
         # The installed game's build, unless it's another exe (whose build only --build can say).
         installed = pe.game_exe(ctx.cfg)
@@ -613,7 +602,7 @@ def _game_signatures(ctx, args):
 
 
 def cmd_allow_outdated(ctx, args):
-    from . import gamebuild
+    from .exe import gamebuild
     build = gamebuild.current(ctx.cfg)["build"]
     if build is None:
         sys.exit("couldn't tell which build of the game is installed")
@@ -734,6 +723,47 @@ def cmd_studio(ctx, args):
     if args.add and not os.path.exists(args.add):
         sys.exit(f"there's no {args.add}")
     studio.serve(ctx, port=args.port, open_browser=not args.no_browser, add=args.add)
+
+
+# --help in groups: what a player does, then mods, making them, the game, updates, C++ and the agent. A
+# command's help text stays on its add_parser call; this only says where it's listed. "game build" and
+# "game signatures" are forms of one command, so they're spelled out here.
+COMMAND_GROUPS = (
+    ("Playing", ("status", "studio", "play", "remap", "cheats", "console", "backup", "restore")),
+    ("Mods", ("enable", "disable", "add", "remove", "install", "uninstall", "build", "pack", "palette")),
+    ("Making mods", ("new", "files", "extract", "texture", "eyes", "names", "controls", "tables")),
+    ("In the game", ("lua", "inspect", "find", "game")),
+    ("After a game update", (("game build", "which build of the game is installed, what moved, and the mods made for older ones"),
+                             ("game signatures check", "check the installed exe against wcmods' signatures"),
+                             "allow-outdated")),
+    ("C++ mods", ("cpp",)),
+    ("Testing wcmods", ("selftest", "agent")),
+)
+
+
+def _group_help(ap, sub):
+    """Replace argparse's flat list of commands with COMMAND_GROUPS in the epilog. Each command's one-line
+    help comes from its add_parser call; a command no group names is listed under "Other"."""
+    actions = getattr(sub, "_choices_actions", None)
+    if actions is None:   # an argparse without that attribute: keep its own listing
+        return
+    helps = {a.dest: a.help for a in actions}
+    seen, lines = set(), []
+    for title, names in COMMAND_GROUPS + (("Other", tuple(helps)),):
+        rows = []
+        for n in names:
+            name, text = n if isinstance(n, tuple) else (n, helps.get(n))
+            if name in seen or text is None:   # listed already, or a command this wcmods hasn't got
+                continue
+            seen.add(name)
+            rows.append(f"  {name:<24}{text}")
+        if rows:
+            lines.append(title + ":")
+            lines.extend(rows)
+    ap.epilog = "\n".join(lines) + "\n\npython wcmods.py <command> -h says more about one"
+    ap.formatter_class = argparse.RawDescriptionHelpFormatter
+    sub.metavar = "<command>"
+    sub._choices_actions = []   # the flat list; the epilog lists them in groups instead
 
 
 def main(root, argv=None):
@@ -866,6 +896,7 @@ def main(root, argv=None):
         p = sub.add_parser(option, help=text)
         p.add_argument("state", nargs="?", choices=("on", "off"))
         p.set_defaults(fn=lambda c, a, o=option: cmd_ingame(c, a, o))
+    _group_help(ap, sub)
     args = ap.parse_args(argv)
     try:
         args.fn(Ctx(root), args)

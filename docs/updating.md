@@ -3,7 +3,7 @@
 Steam updates *Warrior Cats: Clans of the Forest* by itself, so a player can have a newer build than
 wcmods, or a mod, was made for. wcmods notices, works out what it can by itself, and keeps mods
 that weren't made for the new version out of the game until they're updated. The code is
-`wcmods/gamebuild.py` (builds and mods) and `wcmods/signatures.py` (finding what moved).
+`wcmods/exe/gamebuild.py` (builds and mods) and `wcmods/exe/signatures.py` (finding what moved).
 
 ## For players
 
@@ -46,7 +46,7 @@ health at +0x10C in a resource component, the clock at +0x438 in the game state,
 offsets inside objects, so ASLR doesn't move them (the exe is relocated on every launch, and
 everything here works in RVAs). A rebuild that adds a member to a class does move them.
 
-`wcmods/signatures.json` keeps, for each class:
+`wcmods/exe/signatures.json` keeps, for each class:
 
 - **Its size,** from the class's registration call. The call is
   `GetPrivateStaticClassBody(..., sizeof(T), alignof(T), ..., ClassConstructor, ..., SuperClassFn)`:
@@ -127,13 +127,13 @@ python wcmods.py game signatures make
   looks again.
 - **`game signatures check`:** checks the installed exe, or `--exe <path>`, against the signatures.
   `--json` prints all of it as JSON (what it looked at goes to stderr).
-- **`game signatures make`:** writes `wcmods/signatures.json` from the installed exe, or `--exe <path>`
+- **`game signatures make`:** writes `wcmods/exe/signatures.json` from the installed exe, or `--exe <path>`
   with `--build <number>`. Only do this on a build whose `game.HIDDEN` offsets have been confirmed in
   game.
 - **`WCMODS_GAME_BUILD=<number>`:** makes wcmods act as if that build were installed, to try what an
   update does without one.
 
-The decoder (`wcmods/x64.py`) is checked against the exe's own function table: it decodes 561,065 of
+The decoder (`wcmods/exe/x64.py`) is checked against the exe's own function table: it decodes 561,065 of
 its 563,121 functions exactly to their end (99.6%). The rest hold switch jump tables inside their code,
 which aren't instructions.
 

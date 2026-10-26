@@ -91,7 +91,7 @@ Detailed in SDK.md, "Game files, repacking and new content". The key facts:
   containers are accepted**, so wcmods' own load.
 - **The compression is Kraken throughout.** Every compressed block's Oodle header, in both
   containers (140,969 in the `.ucas`, 639 in the pak, surveyed on 2026-10-26), is decoder type 6
-  (Kraken) with no checksums; one pak block is a stored (`0xCC`) Kraken block. So `wcmods/kraken.py`,
+  (Kraken) with no checksums; one pak block is a stored (`0xCC`) Kraken block. So `wcmods/formats/kraken.py`,
   a pure-Python port of the Kraken parts of [ooz](https://github.com/powzix/ooz) (GPL-3.0), decodes
   everything: 5,932 blocks (339 MB) came out identical to `oo2core_8_win64.dll`, at about 4 MB/s.
   An `oo2core` DLL named by `"oodle_dll"` in `wcmods.json` is used instead when it's there, through
@@ -100,7 +100,7 @@ Detailed in SDK.md, "Game files, repacking and new content". The key facts:
 
 ### Cooked packages and DataTables
 
-Worked out on 2026-10-24 on `DT_QuestObjectsInfo`. `wcmods/cooked.py` reads and writes them; its
+Worked out on 2026-10-24 on `DT_QuestObjectsInfo`. `wcmods/formats/cooked.py` reads and writes them; its
 selftest check decodes all 412 rows, re-encodes them and rebuilds the package byte for byte.
 
 **A zen package (UE 5.7):**
@@ -110,7 +110,7 @@ selftest check decodes all 412 rows, re-encodes them and rebuilds the package by
   names, and (new in 5.6/5.7) the cell import and export maps.
 - **Name map:** an FNameBatch:
   - the count, the string bytes and the hash version (`0xC1640000`);
-  - a u64 hash per name: CityHash64 v1.1 of the name in lower case (`wcmods/cityhash.py`; the
+  - a u64 hash per name: CityHash64 v1.1 of the name in lower case (`wcmods/formats/cityhash.py`; the
     constant k1 is `0xb492b66fbe98f273`);
   - big-endian u16 lengths (bit 15 marks UTF-16), then the strings.
 - **Then:** an i64 pad size and that many bytes, so the next field is 8-aligned (true of all 881
@@ -143,7 +143,7 @@ selftest check decodes all 412 rows, re-encodes them and rebuilds the package by
 
 ### New packages and textures
 
-Worked out on 2026-10-24 for icons and accessory looks (`wcmods/texture.py`), and verified in game:
+Worked out on 2026-10-24 for icons and accessory looks (`wcmods/formats/texture.py`), and verified in game:
 an item's icon and a worn collar, both from packages the game hasn't got.
 
 **IDs come from names** (checked against the game's own container by the selftest):

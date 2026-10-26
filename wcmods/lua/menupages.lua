@@ -1,69 +1,4 @@
-"""The mod menu's pages built on WCModsGame: the overview, your cat, the world, travel, items, quests, the
-fight, the game's developer switches, the log and the menu's own settings, and (with code mods allowed)
-an inspector and a Lua console.
 
-They're part of the menu host's script (menu.host_script puts them in), so they use its locals: Menu,
-SETTINGS, THEME, valid, log, HOST (the status line), everySecond (work done once a second), size, fit,
-win and setPaused. Each page is in a function of its own, which keeps the host's main chunk under Lua's
-200-local limit. data() is what the build hands them from the game's tables: area names and quest titles.
-"""
-import os
-
-# Items the Items page can drop by your cat: every consumable and material in the game's tables.
-ITEMS = (
-    "Consumable.SmallHealingHerb", "Consumable.MediumHealingHerb", "Consumable.BigHealingHerb",
-    "Consumable.FullHealingHerb", "Consumable.SuperHealingHerb", "Consumable.HealingHerbPouch",
-    "Consumable.SmallCatnip", "Consumable.MediumCatnip", "Consumable.BigCatnip", "Consumable.CatnipPouch",
-    "Consumable.ThistlePouch", "Consumable.FishScalePouch", "Consumable.CatThymePouch", "Consumable.FeatherPouch",
-    "Consumable.HerbSpicesPouch", "Consumable.EyewortPouch", "Consumable.ChamomilePouch",
-    "Consumable.AntidoteHerbPouch", "Consumable.ValerianRootPouch", "Consumable.PeppermintPouch",
-    "Consumable.GingerRootPouch", "Consumable.ChestnutPouch", "Consumable.LavenderPouch", "Consumable.TurmericPouch",
-    "Consumable.SagePouch",
-    "Materials.BerryFern", "Materials.Birdnest", "Materials.Bone", "Materials.Borage", "Materials.Broom",
-    "Materials.Burdock", "Materials.CattailReed", "Materials.Cobwebs", "Materials.Comfrey", "Materials.Cotton",
-    "Materials.Dandelion", "Materials.DirtMound", "Materials.Fur", "Materials.Goldenrod", "Materials.Heather",
-    "Materials.Ivy", "Materials.Juniper", "Materials.Leaves", "Materials.Moss", "Materials.Oakgall", "Materials.Pine",
-    "Materials.Poppy", "Materials.Rock", "Materials.Rope", "Materials.SharpeningTreeBark", "Materials.Thyme",
-    "Materials.Willow",
-)
-
-
-def data(read_text=None, cfg=None):
-    """What the pages need from the game and the install: area names by code ("R-05" -> "Willow-Weep"),
-    quest titles by tag and rank, and where the UE4SS log and the saved travel spots are. Without the
-    game's files the names are left out, and the pages show codes and tags instead."""
-    from . import csvdata
-    out = {"areas": {}, "quests": {}, "items": list(ITEMS), "log": "", "places": ""}
-    if cfg is not None:
-        try:
-            out["log"] = os.path.join(cfg.win64_dir, "ue4ss", "UE4SS.log")
-        except Exception:   # no game found
-            pass
-        out["places"] = os.path.join(os.path.dirname(os.path.normpath(cfg.save_dir)), "WCMods", "places.json")
-    if read_text is None:
-        return out
-    try:
-        strings = csvdata.Table(read_text("Wrc/Content/Gameplay/Strings/NonAsset/Strings_EN.csv"))
-        en = {r.fields[0]: r.fields[1] for r in strings.rows if len(r.fields) > 1}
-        base = "Wrc/Content/Gameplay/DataTables/NonAsset/"
-        locations = csvdata.Table(read_text(base + "LocationsData.csv"))
-        code, name = locations.column("Code"), locations.column("IdStrName")
-        for r in locations.rows:
-            if len(r.fields) > max(code, name):
-                out["areas"][r.fields[code]] = en.get(r.fields[name], r.fields[code])
-        dialogues = csvdata.Table(read_text(base + "QuestDialogues.csv"))
-        key = dialogues.column("StringKey")
-        for r in dialogues.rows:
-            tag = r.fields[0] if r.fields else ""
-            if tag.endswith(".Title") and len(r.fields) > key:
-                quest, _, rank = tag[:-len(".Title")].rpartition(".")
-                out["quests"].setdefault(quest, {})[rank] = en.get(r.fields[key], r.fields[key])
-    except Exception:   # a table that can't be read leaves those names out
-        pass
-    return out
-
-
-LUA = r'''
 -- ---------- pages built on WCModsGame ----------
 local okGame, Game = pcall(require, "WCModsGame")
 if not okGame then
@@ -238,13 +173,13 @@ end
             end
         end, { id = "overview-keys", open = true })
         ui.section("What's where", function()
-            ui.field("Your cat", "Stats: health, stamina, level and stats. Colours and Mouse look, when those mods are on.")
-            ui.field("World", "The time of day and the fresh-kill pile; Travel; what's Nearby; your Items.")
-            ui.field("Story", "Quests: the one you follow, its objectives, and every quest's state.")
-            ui.field("Fight", "Both sides of a fight while you're in one.")
-            ui.field("Cheats", "The engine's cheats, and the game's own developer switches.")
-            ui.field("Mods", "Pages from the mods you have on.")
-            ui.field("Tools", "The log, this menu's settings" .. (SETTINGS.dev and ", the Inspector and the Console." or "."))
+            -- Menu.groups (menu.GROUPS in wcmods/menu.py) says what each group holds; Tools has two more
+            -- pages with code mods allowed.
+            for _, g in ipairs(Menu.groups) do
+                if g.where then
+                    ui.field(g.label, g.where .. (g.id == "tools" and (SETTINGS.dev and ", the Inspector and the Lua console." or ".") or ""))
+                end
+            end
         end, { id = "overview-where", open = false })
     end, { order = 0, group = "home" })
 
@@ -739,7 +674,7 @@ end
         ui.field("Opens with", SETTINGS.key_name .. ", and Escape closes it")
         if SETTINGS.pad ~= "" then ui.field("On a controller", SETTINGS.pad_name .. ", and B closes it; the game pauses") end
         ui.note("To change the key or the button, use Clan Mod Studio (Mods page, In game), then install again.")
-        local sz = ui.slider("Size", size, 0.6, 2.2, { step = 0.05, format = "x%.2f" })
+        local sz = ui.slider("Size", size, SETTINGS.size_min, SETTINGS.size_max, { step = 0.05, format = "x%.2f" })
         if math.abs(sz - size) > 1e-3 then
             size = sz
             fit()
@@ -906,7 +841,7 @@ end
         end
         while #con.lines > 40 do table.remove(con.lines, 1) end
     end
-    Menu.page("Console", function(ui)
+    Menu.page("Lua console", function(ui)
         ui.heading("Lua console")
         ui.note("Runs Lua in the game, with WCModsGame as Game (docs/scripting.md). An expression shows its value: " ..
                 "Game.cat():health(). Globals you set stay for the next line.")
@@ -917,10 +852,402 @@ end
         for _, l in ipairs(con.lines) do ui.note(l) end
     end, { order = 91, group = "tools" })
 end)()
-'''
 
+-- ---------- the host's own pages: the mod list, Nearby and Cheats ----------
+-- These need the host's locals (SETTINGS, THEME, valid, log, win, ...) but not WCModsGame, so they're
+-- in a function of their own: their locals stay out of the host chunk's count.
+;(function()
+local function show_value(ui, label, v, depth)
+    depth = depth or 0
+    if type(v) ~= "table" then
+        ui.field(string.rep("   ", depth) .. label, tostring(v))
+        return
+    end
+    local keys = {}
+    for k in pairs(v) do keys[#keys + 1] = k end
+    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+    if #keys == 0 then
+        ui.field(string.rep("   ", depth) .. label, "(none)")
+        return
+    end
+    local simple = #v > 0
+    for _, x in ipairs(v) do if type(x) == "table" then simple = false end end
+    if simple then
+        local parts = {}
+        for i, x in ipairs(v) do parts[i] = tostring(x) end
+        ui.field(string.rep("   ", depth) .. label, table.concat(parts, ", "))
+        return
+    end
+    if label ~= "" then ui.field(string.rep("   ", depth) .. label, "") end
+    for i, k in ipairs(keys) do
+        if i > 40 then
+            ui.note(string.format("... and %d more", #keys - 40))
+            break
+        end
+        show_value(ui, tostring(k), v[k], depth + 1)
+    end
+end
 
-def lua(info=None):
-    """The pages' Lua, with what data() found (or nothing: codes and tags show instead of names)."""
-    from .sdk import lua_value
-    return LUA.replace("@DATA@", lua_value(info if info is not None else data()))
+Menu.page("Installed mods", function(ui)
+    ui.heading("Installed mods")
+    ui.note("Built " .. SETTINGS.built .. ". Turn mods on and off and change what they do in Clan Mod Studio, " ..
+            "then install again. Mods with live settings have pages of their own below this one.")
+    if #SETTINGS.mods == 0 then ui.text("No mods are on.") end
+    for _, m in ipairs(SETTINGS.mods) do
+        ui.section(m.name, function()
+            if m.description ~= "" then ui.text(m.description) end
+            ui.field("Folder", "mods/" .. m.id)
+            ui.field("Contains", #m.kinds > 0 and table.concat(m.kinds, ", ") or "nothing yet")
+            ui.field("Priority", m.priority)
+        end, { id = "mod:" .. m.id, open = false })
+    end
+    ui.separator()
+    ui.heading("What the build set up")
+    for _, s in ipairs(SETTINGS.sections) do
+        ui.section(s.title, function()
+            ui.field("From", table.concat(s.mods, ", "))
+            if s.status ~= "ok" then ui.text("Status: " .. s.status, { color = THEME.danger }) end
+            for _, err in ipairs(s.errors) do ui.text(err, { color = THEME.danger }) end
+            if s.notes then show_value(ui, "", s.notes) end
+        end, { id = "section:" .. s.id, open = false })
+    end
+    if #SETTINGS.warnings > 0 then
+        ui.section("Build warnings", function()
+            for _, w in ipairs(SETTINGS.warnings) do ui.note(w) end
+        end, { open = false })
+    end
+end, { order = 1, group = "home" })
+
+-- Nearby things, through WCModsWorld: any kinds at once, each in its own colour, in the list and (with
+-- "Mark them on screen") as markers drawn with WCModsDraw.
+local okWorld, World = pcall(require, "WCModsWorld")
+local okDraw, Draw = pcall(require, "WCModsDraw")
+if okWorld then
+    local look = { radius = 3000, mark = false, on = { pickups = true }, colors = {} }
+    local function colorOf(kind) return look.colors[kind] or World.kindColor(kind) end
+    local found, foundAt, foundKey = {}, nil, ""
+    local function refresh()
+        local kinds = {}
+        for _, k in ipairs(World.kindOrder()) do
+            if look.on[k] then kinds[#kinds + 1] = k end
+        end
+        local key = table.concat(kinds, ",") .. "@" .. look.radius
+        if foundAt == nil or key ~= foundKey or os.clock() - foundAt >= 0.5 then
+            foundAt, foundKey = os.clock(), key
+            local all = {}
+            for _, k in ipairs(kinds) do
+                for _, it in ipairs(World.nearby(k, look.radius)) do
+                    it.kind = k
+                    all[#all + 1] = it
+                end
+            end
+            table.sort(all, function(a, b) return a.distance < b.distance end)
+            found = all
+        end
+        return found
+    end
+    Menu.page("Nearby", function(ui)
+        ui.heading("Nearby")
+        ui.note("What's around your cat, from the game's own objects (WCModsWorld). Tick the kinds to show; " ..
+                "each has its own colour, here and on screen.")
+        local r = ui.slider("Within", look.radius, 500, 20000, { step = 500, format = "%.0f cm" })
+        if math.abs(r - look.radius) >= 1 then look.radius, foundAt = r, nil end
+        if okDraw then look.mark = ui.switch("Mark them on screen", look.mark) end
+        for _, k in ipairs(World.kindOrder()) do
+            look.on[k] = ui.toggle(World.kindLabel(k), look.on[k] or false, { swatch = colorOf(k) })
+        end
+        ui.section("Colours", function()
+            for _, k in ipairs(World.kindOrder()) do look.colors[k] = ui.color(World.kindLabel(k), colorOf(k)) end
+        end, { open = false })
+        ui.separator()
+        if not World.player() then
+            ui.text("Not in the world yet.")
+            return
+        end
+        local list = refresh()
+        ui.field("Found", #list)
+        for i, it in ipairs(list) do
+            if i > 40 then
+                ui.note(string.format("... and %d more", #list - 40))
+                break
+            end
+            ui.field(string.format("%.0f m", it.distance / 100), it.label .. "   (" .. World.kindLabel(it.kind) .. ")",
+                     { color = colorOf(it.kind) })
+        end
+    end, { order = 22, group = "world" })
+    if okDraw then
+        Draw.onFrame(function(d)
+            if not look.mark then return end
+            local shown, per = 0, {}
+            for _, it in ipairs(refresh()) do
+                if shown >= 80 then break end
+                per[it.kind] = (per[it.kind] or 0) + 1
+                if per[it.kind] <= 20 and it.actor:IsValid() then
+                    shown = shown + 1
+                    d.marker(it.location, it.label, { color = colorOf(it.kind), size = 9, textSize = 13 })
+                end
+            end
+        end)
+    end
+end
+
+-- ---------- cheats ----------
+-- Cheats are the engine's cheat manager on the player controller, as in the game's own debug builds
+-- (the release build leaves it out). With it, the console's cheat commands work (god, slomo,
+-- teleport ...), and the page below has the handy ones. Flying and size are done here instead of with
+-- the engine's fly, ghost and changesize, which the game undoes (see below).
+-- SETTINGS.cheats (wcmods.json "cheats") says whether they start on; the page switches them live.
+-- god: whether this page turned god mode on (the game makes the cat safe by itself at times too).
+local cheats = { on = SETTINGS.cheats, movement = "Walk", speed = 1, size = 1, god = false, flySpeed = 900, command = "" }
+
+local function cheatManager(c)
+    local ok, cm = pcall(function() return c.CheatManager end)
+    if ok and valid(cm) then return cm end
+    return nil
+end
+
+local function makeCheatManager(c)
+    if cheatManager(c) then return cheatManager(c) end
+    local cls = c.CheatClass   -- the game's own cheat class when it has one
+    if not valid(cls) then cls = StaticFindObject("/Script/Engine.CheatManager") end
+    if not valid(cls) then return nil end
+    local cm = StaticConstructObject(cls, c, FName("None"))
+    if not valid(cm) then return nil end
+    c.CheatManager = cm
+    pcall(function() cm:ReceiveInitCheatManager() end)
+    log("cheats on (%s)", cls:GetFName():ToString())
+    return cm
+end
+
+local function setSpeed(c, v)
+    pcall(function() Menu.classes().statics:SetGlobalTimeDilation(c, v) end)
+end
+
+local function pawnOf(c)
+    local ok, p = pcall(function() return c.Pawn end)
+    if ok and valid(p) then return p end
+    return nil
+end
+
+-- ---- flying, done here ----
+-- The engine's Fly and Ghost switch the cat's movement mode, and the game sets it straight back each
+-- frame. So while Fly or Ghost is on, the cat has no gravity and its movement component stands still
+-- (MOVE_None), and this moves it each frame where the game's own controls point it (the way it would
+-- W A S D and the left stick, by the camera), with Space and Left Ctrl (or the triggers) for up and
+-- down. Fly stops at walls; Ghost turns collision off.
+local MOVE_NONE, MOVE_FALLING = 0, 3
+local function key(name) return { KeyName = FName(name) } end
+local keys = {
+    up = key("SpaceBar"), down = key("LeftControl"), w = key("W"), a = key("A"), s = key("S"), d = key("D"),
+    stickX = key("Gamepad_LeftX"), stickY = key("Gamepad_LeftY"),
+    rise = key("Gamepad_RightTriggerAxis"), sink = key("Gamepad_LeftTriggerAxis"),
+}
+local held   -- { pawn = its address, gravity = the game's GravityScale } while flying
+
+local function land(pawn)
+    if held and pawn and pawn:GetAddress() == held.pawn then
+        pcall(function()
+            local m = pawn.CharacterMovement
+            m.GravityScale = held.gravity
+            m:SetMovementMode(MOVE_FALLING, 0)
+        end)
+        pcall(function() pawn:SetActorEnableCollision(true) end)
+    end
+    held = nil
+end
+
+local function setMovement(c, move)
+    local pawn = pawnOf(c)
+    if move == "Walk" then land(pawn) end
+    if pawn and move ~= "Walk" then pcall(function() pawn:SetActorEnableCollision(move ~= "Ghost") end) end
+    cheats.movement = move
+end
+
+local function down(c, key)
+    local ok, yes = pcall(function() return c:IsInputKeyDown(key) end)
+    return ok and yes
+end
+
+local function flyTick()
+    if not cheats.on or cheats.movement == "Walk" then return end
+    local c = controller()
+    local pawn = c and pawnOf(c)
+    if not pawn then return end
+    local m = pawn.CharacterMovement
+    if not valid(m) then return end
+    if not held or held.pawn ~= pawn:GetAddress() then   -- a new cat (a new area): start it flying
+        held = { pawn = pawn:GetAddress(), gravity = m.GravityScale }
+        pawn:SetActorEnableCollision(cheats.movement ~= "Ghost")
+    end
+    m.GravityScale = 0
+    if m.MovementMode ~= MOVE_NONE then m:SetMovementMode(MOVE_NONE, 0) end
+    m.Velocity = { X = 0, Y = 0, Z = 0 }
+    if isOpen then return end   -- the menu has the controls
+    -- The game stops updating its own movement direction while the cat floats (it would keep the
+    -- last one), so this reads the controls itself: W A S D (the game's own keys, which the key
+    -- remapper sends too) and the left stick, by the camera's direction.
+    pcall(function() pawn:ConsumeMovementInputVector() end)   -- don't let the game's input pile up
+    local function axis(k)
+        local ok, v = pcall(function() return c:GetInputAnalogKeyState(k) end)
+        if ok and math.abs(v or 0) > 0.2 then return v end
+        return 0
+    end
+    local f = (down(c, keys.w) and 1 or 0) - (down(c, keys.s) and 1 or 0) + axis(keys.stickY)
+    local r = (down(c, keys.d) and 1 or 0) - (down(c, keys.a) and 1 or 0) + axis(keys.stickX)
+    local dx, dy = 0, 0
+    if f ~= 0 or r ~= 0 then
+        local yaw = math.rad(c.PlayerCameraManager:GetCameraRotation().Yaw)
+        dx = f * math.cos(yaw) - r * math.sin(yaw)
+        dy = f * math.sin(yaw) + r * math.cos(yaw)
+        local n = math.sqrt(dx * dx + dy * dy)
+        if n > 1 then dx, dy = dx / n, dy / n end
+    end
+    local dz = (down(c, keys.up) and 1 or 0) - (down(c, keys.down) and 1 or 0) + axis(keys.rise) - axis(keys.sink)
+    if dx == 0 and dy == 0 and dz == 0 then return end
+    local step = cheats.flySpeed * Menu.classes().statics:GetWorldDeltaSeconds(c)
+    local l = pawn:K2_GetActorLocation()
+    pawn:K2_SetActorLocation({ X = l.X + dx * step, Y = l.Y + dy * step, Z = l.Z + dz * step },
+                             cheats.movement == "Fly", {}, false)
+    if dx ~= 0 or dy ~= 0 then
+        pawn:K2_SetActorRotation({ Pitch = 0, Yaw = math.deg(math.atan(dy, dx)), Roll = 0 }, false)
+    end
+end
+if LoopInGameThreadAfterFrames == nil or not pcall(LoopInGameThreadAfterFrames, 1, function() pcall(flyTick) end) then
+    LoopAsync(16, function()
+        ExecuteInGameThread(function() pcall(flyTick) end)
+        return false
+    end)
+end
+
+-- ---- size, done here ----
+-- The engine's ChangeSize resizes the cat's collision capsule and sets its mesh's scale, but leaves
+-- the mesh where it was in the capsule (so a bigger cat floats), and the game sets the mesh's scale
+-- back. Scaling the whole cat (the actor) grows the capsule and everything on it together; growing
+-- lifts it by the capsule's extra height so it doesn't start inside the ground.
+local scaled   -- { pawn = its address, base = the game's actor scale } while the size isn't 1
+
+local function setSize(c, f)
+    local pawn = pawnOf(c)
+    if not pawn then return end
+    if not scaled or scaled.pawn ~= pawn:GetAddress() then
+        local now = pawn:GetActorScale3D()
+        scaled = { pawn = pawn:GetAddress(), base = { X = now.X, Y = now.Y, Z = now.Z } }
+    end
+    local cap = pawn.CapsuleComponent
+    local before = cap:GetScaledCapsuleHalfHeight()
+    local b = scaled.base
+    pawn:SetActorScale3D({ X = b.X * f, Y = b.Y * f, Z = b.Z * f })
+    local after = cap:GetScaledCapsuleHalfHeight()
+    if after > before then
+        local l = pawn:K2_GetActorLocation()
+        pawn:K2_SetActorLocation({ X = l.X, Y = l.Y, Z = l.Z + (after - before) + 1 }, false, {}, true)
+    end
+    cheats.size = f
+    if f == 1 then scaled = nil end
+end
+
+local function cheatsOff(c)
+    local cm, pawn = cheatManager(c), pawnOf(c)
+    if cheats.movement ~= "Walk" then setMovement(c, "Walk") end
+    if cheats.size ~= 1 then pcall(setSize, c, 1) end
+    if cm then
+        if cheats.god and pawn and not pawn.bCanBeDamaged then pcall(function() cm:God() end) end
+        if not pcall(function() c.CheatManager = nil end) then c.CheatManager = CreateInvalidObject() end
+        log("cheats off")
+    end
+    if cheats.speed ~= 1 then setSpeed(c, 1) end
+    cheats.movement, cheats.speed, cheats.size, cheats.god = "Walk", 1, 1, false
+end
+
+-- A new level brings a new player controller without a cheat manager, and a new cat: give them the
+-- cheats that are on. The game may set the cat's scale again too, so the size is checked each second.
+everySecond[#everySecond + 1] = function()
+    if not cheats.on then return end
+    local c = controller()
+    local pawn = c and pawnOf(c)
+    if not pawn then return end
+    if not cheatManager(c) then
+        makeCheatManager(c)
+        cheats.god = false
+    end
+    if cheats.size ~= 1 then
+        local now = pawn:GetActorScale3D()
+        local want = scaled and scaled.pawn == pawn:GetAddress() and scaled.base.X * cheats.size or nil
+        if not want or math.abs(now.X - want) > 0.01 * want then setSize(c, cheats.size) end
+    end
+end
+
+-- Run a console command as if typed in the game's console.
+local function console(c, cmd)
+    local lib = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
+    if valid(lib) then lib:ExecuteConsoleCommand(c, cmd, c) end
+end
+
+Menu.page("Cheats", function(ui)
+    ui.heading("Cheats")
+    ui.note("The engine's cheat commands, as in the game's debug builds. They start " ..
+            (SETTINGS.cheats and "on" or "off") .. " each time (Clan Mod Studio, Mods page, In game). " ..
+            "Some can break a quest or a save: back up first (Mods page) if you're unsure.")
+    local c = controller()
+    if not c then
+        ui.text("No player yet.")
+        return
+    end
+    local on = ui.switch("Cheats", cheats.on)
+    if on ~= cheats.on then
+        cheats.on = on
+        if on then
+            if not makeCheatManager(c) then ui.text("Couldn't make a cheat manager.", { color = THEME.danger }) end
+        else
+            cheatsOff(c)
+        end
+    end
+    if not cheats.on then return end
+    local cm = cheatManager(c)
+    if not cm then
+        cm = makeCheatManager(c)
+        if not cm then
+            ui.text("Couldn't make a cheat manager.", { color = THEME.danger })
+            return
+        end
+    end
+    local pawn = c.Pawn
+
+    ui.separator()
+    if valid(pawn) then
+        local god = ui.toggle("God mode (nothing hurts you)", not pawn.bCanBeDamaged)
+        if god == pawn.bCanBeDamaged then
+            cm:God()
+            cheats.god = god
+        end
+        local move = ui.radio("Moving", cheats.movement, { "Walk", "Fly", "Ghost" })
+        if move ~= cheats.movement then setMovement(c, move) end
+        if cheats.movement ~= "Walk" then
+            ui.note("W A S D or the left stick move you the way the camera faces; Space and Left Ctrl (or the triggers) " ..
+                    "go up and down. Fly stops at walls; Ghost goes through them.")
+            cheats.flySpeed = ui.slider("Flying speed", cheats.flySpeed, 200, 4000, { step = 100, format = "%.0f cm/s" })
+        end
+        local size = ui.slider("Cat size", cheats.size, 0.25, 4, { step = 0.05, format = "x%.2f" })
+        if math.abs(size - cheats.size) > 0.001 then setSize(c, size) end
+        if ui.button("Teleport to where the camera looks") then cm:Teleport() end
+    else
+        ui.note("Movement cheats show once you're in the world.")
+    end
+    local speed = ui.slider("Game speed", cheats.speed, 0.1, 4, { step = 0.05, format = "x%.2f" })
+    if math.abs(speed - cheats.speed) > 0.001 then
+        cheats.speed = speed
+        setSpeed(c, speed)
+    end
+
+    ui.separator()
+    cheats.command = ui.input("Engine command", cheats.command, { hint = "e.g. stat fps" })
+    local hit = ui.buttons({ "Run", "stat fps", "stat unit" })
+    if hit == 1 and cheats.command ~= "" then console(c, cheats.command)
+    elseif hit == 2 then console(c, "stat fps")
+    elseif hit == 3 then console(c, "stat unit") end
+
+    ui.separator()
+    ui.note("The game's own developer switches (always full health or stamina, attacks that always land, " ..
+            "fast den building ...) are on the Game switches page.")
+end, { order = 50, group = "cheats" })
+end)()

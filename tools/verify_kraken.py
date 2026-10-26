@@ -16,11 +16,11 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
-from wcmods import kraken  # noqa: E402
+from wcmods.formats import kraken  # noqa: E402
 from wcmods.config import Config  # noqa: E402
-from wcmods.iostore import IoStoreReader  # noqa: E402
-from wcmods.oodle import Oodle  # noqa: E402
-from wcmods.pak import PakReader, _entry_header_size  # noqa: E402
+from wcmods.formats.iostore import IoStoreReader  # noqa: E402
+from wcmods.formats.oodle import Oodle  # noqa: E402
+from wcmods.formats.pak import PakReader, _entry_header_size  # noqa: E402
 
 
 def main(args):
@@ -64,7 +64,8 @@ def main(args):
             f.seek(boff)
             check(f"ucas block {bi} ({csize} -> {usize})", f.read(csize), usize)
         if "--files" in args:
-            from wcmods import accessories, cooked, eyeatlas
+            from wcmods import accessories, eyeatlas
+            from wcmods.formats import cooked
             for path in (cooked.TABLES["DT_QuestObjectsInfo"][0], accessories.GUI_MANAGER, eyeatlas.PATH):
                 offset, length = io.chunk_ranges[io.chunk_index(path)]
                 for bi in range(offset // io.block_size, (offset + length - 1) // io.block_size + 1):
