@@ -371,7 +371,8 @@ print(Game.gameState().MY_Field)
 
 Only fixed-size types work (numbers, booleans, names, strings, objects, and arrays of those), not
 maps or structs. To find an offset, read the object's memory while you watch the game (the notes
-describe how). Offsets can move when the game updates; the build these are for is 24847281.
+describe how). Offsets can move when the game updates; these were found on build 24847281 and
+confirmed on 26184573 (patch 1.1).
 
 ## The game bridge
 

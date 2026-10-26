@@ -22,8 +22,8 @@ from . import pe
 
 # The build game.HIDDEN's offsets were confirmed on. HIDDEN holds one layout, so this is one build: after
 # checking a new one, update HIDDEN to it and put its number here.
-VERIFIED_BUILD = 24847281
-VERIFIED_LABEL = "the first release (October 2026)"
+VERIFIED_BUILD = 26184573
+VERIFIED_LABEL = "patch 1.1, October 2026"
 # What a mod.json without "game_builds" was made for: the build every mod before them was made on.
 ASSUMED_BUILDS = (24847281,)
 CACHE_DIR = "cache"

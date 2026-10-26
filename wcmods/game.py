@@ -16,7 +16,8 @@ managers, the combat director, the quest and save managers.
 SHARED_NAME = "WCModsGame"
 
 # Members the game doesn't reflect, found by reverse-engineering build 24847281 (docs/mechanics/,
-# docs/reverse-engineering.md): class, then (property name, offset in the object, type). Rendered into
+# docs/reverse-engineering.md) and confirmed unchanged on 26184573, patch 1.1 (the level component read in
+# game, the rest by signatures.py): class, then (property name, offset in the object, type). Rendered into
 # the Lua as Game.hidden. They're offsets inside objects, so ASLR doesn't move them, but a game update
 # that changes a class's layout does: signatures.py finds them again in a new build, and lua() takes the
 # offsets it found.

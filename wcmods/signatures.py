@@ -34,29 +34,29 @@ MIN_PATTERN = 12     # bytes; shorter patterns match too easily
 MIN_FUNCTION_PATTERN = 20
 
 # Functions the reverse-engineering notes tie to a class whose members its own code hardly touches
-# (docs/mechanics/combat.md, progression.md): RVAs on build 24847281. Each is found again in another
-# build by a pattern of its first instructions that's unique in the whole exe, then read like the
-# class's own code.
+# (docs/mechanics/combat.md, progression.md): RVAs on build 26184573, each 0x260 past where it was on
+# 24847281. Each is found again in another build by a pattern of its first instructions that's unique in
+# the whole exe, then read like the class's own code.
 ANCHORS = {
     "/Script/SwtAdventure.TurnBasedCombatComponent": [
-        (0x17D8010, "builds a fighter's stats from its level"),
-        (0x17D87A0, "a fighter's Prowess with its buffs"),
-        (0x17D9800, "a fighter's speed, from Agility and stamina"),
-        (0x17D6F0A, "setting up a fighter: health and fight stamina from its stats"),
-        (0x17D67D0, "dynamic difficulty: an enemy's level, its AI tier and its moves"),
-        (0x17DB37E, "hitting and missing: the defender's team looked up for a forced miss"),
+        (0x17D8270, "builds a fighter's stats from its level"),
+        (0x17D8A00, "a fighter's Prowess with its buffs"),
+        (0x17D9A60, "a fighter's speed, from Agility and stamina"),
+        (0x17D716A, "setting up a fighter: health and fight stamina from its stats"),
+        (0x17D6A30, "dynamic difficulty: an enemy's level, its AI tier and its moves"),
+        (0x17DB5DE, "hitting and missing: the defender's team looked up for a forced miss"),
     ],
     "/Script/SwtAdventure.SwtAdventureStatusComponent": [
-        (0x17CDEF0, "the end of a round: the self-cure roll, and poison queued on the director"),
-        (0x17CDA26, "loads the status tuning"),
+        (0x17CE150, "the end of a round: the self-cure roll, and poison queued on the director"),
+        (0x17CDC86, "loads the status tuning"),
     ],
     "/Script/SwtAdventure.SwtAdventureDetectionComponent": [
-        (0x17B8B50, "loads the senses from the tuning for the size class"),
-        (0x17B7E60, "reads the senses"),
+        (0x17B8DB0, "loads the senses from the tuning for the size class"),
+        (0x17B80C0, "reads the senses"),
     ],
     "/Script/SwtAdventure.SwtAdventureLevelComponent": [
-        (0x17D8010, "builds a fighter's stats from its level"),
-        (0x17D6F0A, "setting up a fighter: health and fight stamina from its stats"),
+        (0x17D8270, "builds a fighter's stats from its level"),
+        (0x17D716A, "setting up a fighter: health and fight stamina from its stats"),
     ],
 }
 

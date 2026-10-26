@@ -89,20 +89,25 @@ The check never stops a build. If it fails on an exe unlike any wcmods knows, or
 every member is left out, and it's tried again next time. The install records the build and the key,
 so after an update Play and Apply make the install again even when no mod changed.
 
-On build 24847281 the signatures confirm 10 values directly:
+On build 26184573 (patch 1.1; `signatures.json` was made on it) the signatures confirm 23 values directly:
 - the resource component's Value (3 signatures), Max (1) and Scale (1);
 - stamina regen (1);
 - the fresh-kill pile's timer (4) and decay time (3);
 - the clock (2);
-- the combat component's Stamina (2), Clan (1) and Level (3).
+- the combat component's Stance (3), Team (1), Stamina (2), MoveCount (3), Clan (3) and Level (4);
+- the status component's Status (4), StatusRounds (2), SelfCureChance (2) and PoisonDamage (1);
+- the detection component's ConeDistance (3), SoundRadius (2), ProximityDistance (3), WalkSpeedRoaming
+  (1), ZoneEntryDistance (2) and ReactToChase (1).
 
-The rest have no signature of their own: ResourceType, the level component's level and stats, and the
-combat component's stance, other stats and preset damage. Their classes' own code doesn't touch them
-in a way that can be told apart, and the stat getters share one shape for all six stats.
-- **The combat component and ResourceType** are kept when their class's signed members are found where
-  they were. A same-size reorder of the class's other fields can't be seen this way.
+The rest have no signature of their own: ResourceType, the level component's level and stats, the
+combat component's stats, preset damage and AI tier, and half the detection component's senses. Their
+classes' own code doesn't touch them in a way that can be told apart, and the stat getters share one
+shape for all six stats.
+- **The combat and detection components and ResourceType** are kept when their class's signed members
+  are found where they were. A same-size reorder of the class's other fields can't be seen this way.
 - **The level component** has no signed member at all, so after any update its values are switched off
-  until someone checks them.
+  until someone checks them. On 26184573 that was done by reading the player state's component in game
+  (docs/reverse-engineering.md, "Game updates"): nothing had moved.
 
 ### Commands
 
