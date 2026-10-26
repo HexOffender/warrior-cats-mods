@@ -249,7 +249,7 @@ def log_path(win64_dir):
     return None
 
 
-def read_reports(win64_dir, tag="[WCModsPalettes]"):
+def read_reports(win64_dir, tag="[WCModsCore]"):
     """Parse the TABLE lines (the game's original colour tables) and notes our script logs."""
     path = log_path(win64_dir)
     tables, notes = {}, []

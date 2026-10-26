@@ -15,7 +15,7 @@ local patched = {}
 local attempts = 0
 local searched = false
 
-local function log(fmt, ...) print(string.format("[WCModsPalettes] " .. fmt .. "\n", ...)) end
+local function log(fmt, ...) print(string.format("[WCModsCore] " .. fmt .. "\n", ...)) end
 
 local function srgbToLinear(c)
     if c <= 0.04045 then return c / 12.92 end
