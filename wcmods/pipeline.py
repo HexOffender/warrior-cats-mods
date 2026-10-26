@@ -6,7 +6,7 @@ import re
 import shutil
 import struct
 
-from . import bridge, catlook, controls, draw, gamebuild, hostpages, ingame, luacheck, menu, names, texture
+from . import bridge, catcolours, controls, draw, gamebuild, luacheck, menu, menupages, menusettings, names, texture
 from . import ue4ss, view, world
 from . import game as game_lua   # WCModsGame (the name `game` is the game's files in build())
 from . import mods as modlib
@@ -213,14 +213,14 @@ def build(cfg, mods, out_dir, log=print):
     # The in-game mod menu is a mod of its own (mods/mod-menu, with its menu.json): its window and the
     # WCModsMenu module go in only while it's on. Mods that add pages look for the module first, so
     # without the menu they simply have none.
-    menus = [m for m in enabled if os.path.isfile(os.path.join(m.folder, ingame.MENU_FILE))]
+    menus = [m for m in enabled if os.path.isfile(os.path.join(m.folder, menusettings.MENU_FILE))]
     menu_mod = menus[0] if menus else None
     if len(menus) > 1:
         manifest["warnings"].append(f"only one mod menu can be on; using {menu_mod.id} (also on: "
                                     + ", ".join(m.id for m in menus[1:]) + ")")
     manifest["menu"] = menu_mod.id if menu_mod else None
     if menu_mod:
-        opts = ingame.menu_settings(cfg, menu_mod)
+        opts = menusettings.menu_settings(cfg, menu_mod)
         if not opts["key_ok"]:
             manifest["warnings"].append(f"{menu_mod.id}: key {opts['key_given']!r} isn't one of {', '.join(menu.KEYS)}; "
                                         f"using {menu.DEFAULT_KEY}")
@@ -228,7 +228,7 @@ def build(cfg, mods, out_dir, log=print):
             manifest["warnings"].append(f"{menu_mod.id}: controller button {opts['pad_given']!r} isn't an Unreal key "
                                         f"name; using {menu.DEFAULT_PAD}")
         # The pages show the game's own area names and quest titles, read here from its tables.
-        pages = hostpages.data(lambda path: game.read_text(path), cfg)
+        pages = menupages.data(lambda path: game.read_text(path), cfg)
         # The menu's list of installed mods: the ones this build has (not those left out).
         host = menu.host_script(manifest, enabled, opts["key"], cheats=opts["cheats"], scale=opts["size"], pad=opts["pad"],
                                 dev=bool(cfg.data.get("allow_code_mods")), pages=pages)
@@ -387,10 +387,10 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
         cfg.data["installed_ue4ss_shared"] = shared
         # Lua can't make folders, so the ones the scripts write to are made here: WCMods in the game's Saved
         # folder (the menu's saved travel spots) and the bridge's inside it.
-        os.makedirs(os.path.dirname(hostpages.data(cfg=cfg)["places"]), exist_ok=True)
+        os.makedirs(os.path.dirname(menupages.data(cfg=cfg)["places"]), exist_ok=True)
         if bridge.NAME in manifest["ue4ss_mods"]:
             os.makedirs(bridge.folder(cfg), exist_ok=True)
-        ingame.apply_console(cfg)
+        menusettings.apply_console(cfg)
     else:
         skipped = []
         if any(manifest["notes"].get("palettes", {}).get("runtime_palette", {}).values()):
@@ -480,7 +480,7 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                 log(f"  colour slots skipped: your save has no cat at {op['path']}")
                 continue
             if isinstance(current, str):
-                new = catlook.set_fields(current, op["set"])
+                new = catcolours.set_fields(current, op["set"])
                 if new != current:
                     pending[op["path"]] = new
                     labels[op["path"]] = f"your cat: {op.get('label', op['set'])}"

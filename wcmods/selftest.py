@@ -4,7 +4,7 @@ import re
 import struct
 import tempfile
 
-from . import bridge, catlook, controls, draw, eyeatlas, gamebuild, keymap, luacheck, menu, mouselook, palettes, view, world
+from . import bridge, catcolours, controls, draw, eyeatlas, gamebuild, keymap, luacheck, menu, mouselook, palettes, view, world
 from . import game as game_lua
 from .blake3 import blake3
 from .iostore import IoStoreReader, ModContainerWriter
@@ -43,7 +43,7 @@ def run(cfg, oodle, log=print):
     problems = luacheck.check(lua)
     check("mouse look script with its menu page", not problems and "@SAVE@" not in lua
           and r'"C:\\mods\\m\\mouselook.json"' in lua, "; ".join(problems[:3]))
-    lua = catlook.script({"fur": (1.0, 0.5, 0.0)}, save={"path": "x", "file": "y", "doc": {"player": {"colours": {}}}})
+    lua = catcolours.script({"fur": (1.0, 0.5, 0.0)}, save={"path": "x", "file": "y", "doc": {"player": {"colours": {}}}})
     problems = luacheck.check(lua) + re.findall(r"@[A-Z_]+@", lua)
     check("your cat's colours script with its menu page", not problems and '"#ff8000"' in lua, "; ".join(problems[:3]))
     lua = menu.host_script({"sections": {}, "notes": {}, "warnings": ["w"], "built": "2026-10-24T01:00:00"}, [], dev=True)
@@ -971,9 +971,9 @@ def _requirements(cfg):
 
 
 def _menu_mod(cfg):
-    from . import ingame
+    from . import menusettings
     # Menu settings still in wcmods.json would win over the test's menu.json; they're put back after.
-    kept = {k: cfg.data.pop(k) for k in ingame.LEGACY.values() if k in cfg.data}
+    kept = {k: cfg.data.pop(k) for k in menusettings.LEGACY.values() if k in cfg.data}
     try:
         return _menu_builds(cfg)
     finally:
@@ -1352,7 +1352,7 @@ def _csv_rows():
 def _colour_slots():
     """Pattern and marking colours take new slots, coats can't; a palette that only adds slots isn't a
     preset; your cat's colours and slots are checked and written as the game keeps them."""
-    from . import catlook
+    from . import catcolours
     with tempfile.TemporaryDirectory() as tmp:
         def load(data):
             path = os.path.join(tmp, "palette.json")
@@ -1368,33 +1368,33 @@ def _colour_slots():
               and not palettes.adds_only(mixed) and palettes.new_slots(adds) == {"pattern": [25], "marking": [30]})
     lua = palettes.ue4ss_script(palettes.merge([adds]))
     ok = ok and not luacheck.check(lua) and "PatternMaskColors = { [25]" in lua and "GROW = { PatternMaskColors" in lua
-    look = catlook.validate({"player": {"colours": {"fur": "#ff6ec7", "nose": "#202020"}, "slots": {"fur": 3, "pattern": 25}}})
-    script = catlook.script(look["player"]["colours"])
+    look = catcolours.validate({"player": {"colours": {"fur": "#ff6ec7", "nose": "#202020"}, "slots": {"fur": 3, "pattern": 25}}})
+    script = catcolours.script(look["player"]["colours"])
     try:
-        catlook.validate({"player": {"slots": {"fur": 25}}})
+        catcolours.validate({"player": {"slots": {"fur": 25}}})
         fur_refused = False
     except ValueError:
         fur_refused = True
     text = '(ClanType=RiverClan,FurColorIdx=11,Pattern01ColorIdx=2,CatSize=0.5)'
-    fields = catlook.set_fields(text, {"FurColorIdx": 3, "Pattern01ColorIdx": 25, "Pattern02ColorIdx": 26})
+    fields = catcolours.set_fields(text, {"FurColorIdx": 3, "Pattern01ColorIdx": 25, "Pattern02ColorIdx": 26})
     # Scars: "none" takes them all away; each place takes a scar's name or the game's number for it.
-    scars = catlook.validate({"player": {"scars": "none"}})["player"]["scars"]
-    some = catlook.validate({"player": {"scars": {"eye": 3, "ear": "notch-left", "body": "none"}}})["player"]["scars"]
-    named = catlook.validate({"player": {"scars": {"eye": "claws-left", "back": "claws-1", "chest": "bite"}}})["player"]["scars"]
+    scars = catcolours.validate({"player": {"scars": "none"}})["player"]["scars"]
+    some = catcolours.validate({"player": {"scars": {"eye": 3, "ear": "notch-left", "body": "none"}}})["player"]["scars"]
+    named = catcolours.validate({"player": {"scars": {"eye": "claws-left", "back": "claws-1", "chest": "bite"}}})["player"]["scars"]
     refused = 0
-    kept = catlook.validate({"player": {"scars": {"back": 5}}})["player"]["scars"]   # the game's, with a warning
+    kept = catcolours.validate({"player": {"scars": {"back": 5}}})["player"]["scars"]   # the game's, with a warning
     for bad in ({"scars": {"eye": 7}}, {"scars": {"chest": 3}}, {"scars": {"ear": "chewed"}}, {"scars": {"back": 7}},
                 {"scars": {"tail": "none"}}, {"scars": "some"}, {"scars": {"ear": ["notch-left"]}},
                 {"scars": {"body": 2, "back": 4}}):
         try:
-            catlook.validate({"player": bad})
+            catcolours.validate({"player": bad})
         except ValueError:
             refused += 1
-    scarred = catlook.set_fields('(ClanType=RiverClan,CatSize=0.5,ScarEarId=4,ScarBodyId=2)',
-                                 {catlook.SCARS[p]: 0 for p in scars})
+    scarred = catcolours.set_fields('(ClanType=RiverClan,CatSize=0.5,ScarEarId=4,ScarBodyId=2)',
+                                 {catcolours.SCARS[p]: 0 for p in scars})
     return (ok and fur_refused and not luacheck.check(script) and '["Fur Color"]' in script
             and fields == '(ClanType=RiverClan,FurColorIdx=3,Pattern01ColorIdx=25,CatSize=0.5,Pattern02ColorIdx=26)'
-            and set(scars) == set(catlook.SCARS) and not any(scars.values())
+            and set(scars) == set(catcolours.SCARS) and not any(scars.values())
             and some == {"eye": 3, "ear": 5, "back": 0} and named == {"eye": 6, "back": 3, "chest": 1}
             and kept == {"back": 5}
             and refused == 8

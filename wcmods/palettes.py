@@ -18,7 +18,7 @@ script grows those two tables, so the game's colours stay as they are and only c
 slot wear it (a cat's Pattern01ColorIdx picks its pattern colour, Pattern02ColorIdx its marking
 colour). The game checks those indexes against the tables' real size. Coat colours can't grow:
 the game pairs each coat slot with paw, ear, nose and whisker colours it keeps in code, and a coat
-slot without them crashes it, so cats.json colours just your cat's coat instead (see catlook.py).
+slot without them crashes it, so cats.json colours just your cat's coat instead (see catcolours.py).
 """
 import json
 import os

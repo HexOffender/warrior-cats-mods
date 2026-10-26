@@ -429,7 +429,7 @@ export default {
         try { options = await api.patch("/ingame", change); toast("Saved. Apply to game to use it."); await refresh(); }
         catch (e) { toast(e.message, "bad"); }
       };
-      // The choices come from wcmods (ingame.options) as [value, label] pairs. Any Unreal key name works for
+      // The choices come from wcmods (menusettings.options) as [value, label] pairs. Any Unreal key name works for
       // the pad in menu.json, and any size within its limits: one the lists haven't got shows as it is.
       const choices = (list, value, label) => list.some(([v]) => v === value) ? list : [...list, [value, label(value)]];
       const key = el("select", { id: "ig-key" }, ...o.keys.map(([v, label]) => el("option", { value: v, text: label, selected: v === o.key })));

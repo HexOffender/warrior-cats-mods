@@ -467,11 +467,11 @@ def cmd_selftest(ctx, args):
 
 
 def cmd_ingame(ctx, args, option):
-    from . import ingame
+    from . import menusettings
     if args.state is not None:
-        opts = ingame.set_options(ctx.cfg, **{option: args.state == "on"})
+        opts = menusettings.set_options(ctx.cfg, **{option: args.state == "on"})
     else:
-        opts = ingame.options(ctx.cfg)
+        opts = menusettings.options(ctx.cfg)
     if option == "cheats":
         from .menu import KEY_NAMES
         key = KEY_NAMES.get(opts["key"], opts["key"])

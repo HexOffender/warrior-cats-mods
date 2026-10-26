@@ -2087,7 +2087,7 @@ def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0, dev=Fa
     """The host's script, with the overview of this build: the enabled mods and what each section set.
     cheats: whether the Cheats page starts with cheats on (wcmods.json "cheats"); scale: the menu's size,
     1 for the usual (wcmods.json "menu_scale"); dev: whether the Inspector and Console pages are in
-    (they're for code mods, so wcmods.json "allow_code_mods"); pages: hostpages.data(), the area names and
+    (they're for code mods, so wcmods.json "allow_code_mods"); pages: menupages.data(), the area names and
     quest titles the pages show; pad: the controller button that opens it too (an Unreal key name, "" for
     none)."""
     if key not in KEYS:
@@ -2108,6 +2108,6 @@ def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0, dev=Fa
                   "priority": m.priority} for m in enabled],
         "sections": sections, "warnings": manifest["warnings"],
     }
-    from . import hostpages
+    from . import menupages
     return (HOST_LUA.replace("@SETTINGS@", lua_value(settings)).replace("@KEY@", KEY_NAMES.get(key, key))
-            .replace("@PAGES@", hostpages.lua(pages)))
+            .replace("@PAGES@", menupages.lua(pages)))

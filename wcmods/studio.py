@@ -17,8 +17,8 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (bridge, catlook, colors, controls, csvdata, eyeatlas, gamebuild, ingame, mods, modzip, names,
-               onboarding, palettes, pipeline, save, ue4ss)
+from . import (bridge, catcolours, colors, controls, csvdata, eyeatlas, gamebuild, menusettings, mods, modzip,
+               names, onboarding, palettes, pipeline, save, ue4ss)
 from .bridge import Bridge, BridgeError
 from .colors import hex_from_linear
 from .config import game_running
@@ -219,9 +219,9 @@ class Studio:
                 # set_options reloads and saves wcmods.json: not in the middle of an install, which would
                 # lose what the install has noted but not saved yet.
                 with self.lock:
-                    return ingame.set_options(cfg, cheats=body.get("cheats"), console=body.get("console"),
+                    return menusettings.set_options(cfg, cheats=body.get("cheats"), console=body.get("console"),
                                               key=body.get("key"), size=body.get("size"), pad=body.get("pad"))
-            return ingame.options(cfg)
+            return menusettings.options(cfg)
         if parts == ["game", "bridge"] and method == "GET":
             # Whether the game runs with the bridge (wcmods/bridge.py), for the console's status line.
             return Bridge(cfg).status() or {"alive": False, "never": True}
@@ -315,7 +315,7 @@ class Studio:
         if parts == ["settings"]:
             # "Allow mods that run code" (wcmods.json "allow_code_mods"); the studio asks twice first.
             if method == "PATCH" and "allow_code_mods" in body:
-                with self.lock:   # not in the middle of an install (see "ingame")
+                with self.lock:   # not in the middle of an install (see "menusettings")
                     cfg.reload()
                     cfg.data["allow_code_mods"] = bool(body["allow_code_mods"])
                     cfg.save()
@@ -424,10 +424,10 @@ class Studio:
             mine = [c for c in names.cats_in_save(doc.data) if c["player"] and c["current"]]
             if mine:
                 raw = doc.get(mine[0]["paths"][0])
-                for part, field in catlook.SLOTS.items():
+                for part, field in catcolours.SLOTS.items():
                     m = re.search(rf"(?<![A-Za-z0-9_]){field}=(\d+)", raw)
                     current[part] = int(m.group(1)) if m else 0
-                for part, field in catlook.SCARS.items():
+                for part, field in catcolours.SCARS.items():
                     m = re.search(rf"(?<![A-Za-z0-9_]){field}=(\d+)", raw)
                     scars[part] = int(m.group(1)) if m else 0
         except LookupError:
@@ -444,8 +444,8 @@ class Studio:
         slots = {part: {k: colors.hex_from_srgb(v) for k, v in merged.get(part, {}).items()}
                  for part in ("fur", "pattern", "marking")}
         return {"current": current, "palette": slots, "game_slots": palettes.GAME_SLOTS,
-                "feral_slots": list(catlook.FERAL_SLOTS), "parts": catlook.PARTS,
-                "scars": {"current": scars, "types": catlook.SCAR_TYPES}}
+                "feral_slots": list(catcolours.FERAL_SLOTS), "parts": catcolours.PARTS,
+                "scars": {"current": scars, "types": catcolours.SCAR_TYPES}}
 
     def names_preview(self, spec):
         """The game's names, what a names.json (not yet saved) does to them, and the cats in the save."""
