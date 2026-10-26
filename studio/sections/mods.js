@@ -1,6 +1,6 @@
 // Mods: get set up (the first time), add mods you've downloaded, switch them on and off, and apply them
 // to the game. The mod menu is a mod here too (its settings are on its card); mods say in mod.json what
-// they need ("requires") or work with ("uses"). Backups, removed mods and repairs are at the bottom.
+// they need ("requires") or work with ("uses"). Options, backups and repairs are on the Settings and repair page.
 export default {
   title: "Mods",
   async mount(root, wc) {
@@ -20,16 +20,13 @@ export default {
     const changesBox = el("div");
     const addBox = el("div", { class: "card" });
     const listBox = el("div", { class: "card" });
-    const optionsBox = el("div", { class: "card" });
-    const repairBox = el("details", { class: "card fold" });
-    const makeBox = el("details", { class: "card fold" });
 
     root.append(
       el("div", { class: "section-head" },
         el("span", { class: "eyebrow", text: "Your mods" }),
         el("h1", { text: "Mods" }),
         el("p", { class: "note", text: "Add mods you've downloaded, switch them on or off, then press Play (top right)." })),
-      setupBox, updateBox, changesBox, addBox, listBox, optionsBox, repairBox, makeBox);
+      setupBox, updateBox, changesBox, addBox, listBox);
 
     const nameOf = id => (mods.find(m => m.id === id) || {}).name || id;
 
@@ -116,7 +113,7 @@ export default {
           el("span", { class: "muted", text: "So it makes your save. Press Play (top right), get into the forest, quit the game, and come back here. Clan Mod Studio then makes a safety copy of the save before any mod touches it." })));
       } else {
         steps.append(step(s.backup.ok, s.backup.ok ? "Your save is backed up" : "Back up your save",
-          el("span", { class: "muted", text: s.backup.ok ? "If a mod ever spoils it, Backups and repair (at the bottom) puts it back." : "Couldn't make the copy; try Back up now under Backups and repair." })));
+          el("span", { class: "muted", text: s.backup.ok ? "If a mod ever spoils it, Backups and repair (on the Settings and repair page) puts it back." : "Couldn't make the copy; try Back up now under Settings and repair." })));
       }
 
       if (s.loader.ok) {
@@ -249,7 +246,7 @@ export default {
         else if (m.existing) notes.push(el("li", { text: `Replaces the ${m.existing.name}${m.existing.version ? " " + m.existing.version : ""} you have${m.version ? " with " + m.version : ""}. The old copy is kept in backups.` }));
         if (m.code) notes.push(el("li", { class: r.code_allowed ? "" : "warn", text: r.code_allowed
           ? "Runs code on your computer and in the game. Only add mods like this from people you trust."
-          : "Runs code, so it stays off until you allow mods that run code (Options, below). Only do that for mods from people you trust." }));
+          : "Runs code, so it stays off until you allow mods that run code (Options, on the Settings and repair page). Only do that for mods from people you trust." }));
         const needs = m.requires.filter(i => !mods.some(x => x.id === i));
         if (m.requires.length) notes.push(el("li", { class: needs.length ? "warn" : "", text: `Needs ${m.requires.map(nameOf).join(", ")}${needs.length ? ", which you don't have: add it too" : " (turned on with it)"}.` }));
         if (m.uses.includes(MENU) || m.requires.includes(MENU)) notes.push(el("li", { text: "Adds a page to the in-game mod menu." }));
@@ -309,7 +306,7 @@ export default {
       const lines = [];
       if (m.requires.length) lines.push(el("li", { text: `Needs ${m.requires_names.join(", ")}.` }));
       for (const p of m.problems) lines.push(el("li", { class: "bad", text: p.replace(/^needs/, "Needs") + "." }));
-      if (m.code && !(settings && settings.allow_code_mods)) lines.push(el("li", { class: "warn", text: "Runs code, so the game won't get it until you allow mods that run code (Options, below)." }));
+      if (m.code && !(settings && settings.allow_code_mods)) lines.push(el("li", { class: "warn", text: "Runs code, so the game won't get it until you allow mods that run code (Options, on the Settings and repair page)." }));
       if (m.enabled && m.needed_by.length) lines.push(el("li", { class: "muted", text: `${m.needed_by.join(", ")} ${m.needed_by.length > 1 ? "need" : "needs"} it.` }));
       // Made for an older build of the game (gamebuild.py): left out unless the player uses it anyway.
       const old = m.outdated;
@@ -350,7 +347,7 @@ export default {
         // One focus key for the button that asks and the warning's "Leave it out" (not "Use it anyway",
         // which a second press would confirm), so focus moves between them as the card changes.
         const key = `allow:${m.id}`;
-        const warning = `It was made for an older version of the game (build ${old.made_for.join(", ")}). The game has changed since, so it may not work, or may behave unpredictably: a broken page, odd values, a crash. Back up your save first (Backups and repair, below). This only applies to this version of the game; after the next update it's left out again.`;
+        const warning = `It was made for an older version of the game (build ${old.made_for.join(", ")}). The game has changed since, so it may not work, or may behave unpredictably: a broken page, odd values, a crash. Back up your save first (Backups and repair, on the Settings and repair page). This only applies to this version of the game; after the next update it's left out again.`;
         if (!old.allowed && state && state.allow === m.id) announce(`Use ${m.name} anyway? ${warning}`);
         card.append(old.allowed
           ? el("div", { class: "row mod-wide" },
@@ -417,7 +414,7 @@ export default {
         if (r.blocked_by.length) { renderList({ blocked: m.id, by: r.blocked_by, remove: true }); return; }
         const off = (r.turned_off || []).join(", ");
         toast(`Removed ${m.name}.` + (off ? ` Also off, because they need it: ${off}.` : "") +
-          " It's kept in backups; Put it back under Backups and repair.");
+          " It's kept in backups; Put it back under Settings and repair.");
         open.delete(m.id);
         await refresh();
       } catch (e) { toast(e.message, "bad"); }
@@ -483,99 +480,6 @@ export default {
     }
 
     // ---------- options ----------
-    function renderOptions() {
-      clear(optionsBox).append(el("h2", { text: "Options" }));
-      if (options) {
-        const consoleBox = el("input", { type: "checkbox", id: "ig-console", checked: options.console, disabled: !options.console_available });
-        consoleBox.addEventListener("change", async () => {
-          try { options = await api.patch("/ingame", { console: consoleBox.checked }); toast("Saved."); } catch (e) { toast(e.message, "bad"); }
-          renderOptions();
-        });
-        optionsBox.append(el("label", { class: "row", for: "ig-console" }, consoleBox, el("strong", { text: "Game console" }),
-          el("span", { class: "muted", text: options.console_available ? "~ or F10 opens it, from the next time the game starts." : "Needs UE4SS." })));
-      }
-      if (settings) {
-        const code = el("input", { type: "checkbox", id: "allow-code", checked: settings.allow_code_mods });
-        const setCode = async on => {
-          try { settings = await api.patch("/settings", { allow_code_mods: on }); toast(on ? "Mods that run code are allowed. Apply to game to use them." : "Mods that run code are off."); await refresh(); location.reload(); }
-          catch (e) { toast(e.message, "bad"); }
-        };
-        const warn = el("div", { class: "banner", hidden: true },
-          el("strong", { text: "Only for mods from people you trust" }),
-          el("span", { text: "Some mods carry code: Python that runs on your computer when you apply mods, or scripts that run in the game. Code can do anything your account can, so allow it only if you trust every such mod you've added." }),
-          el("div", { class: "row" },
-            el("button", { class: "btn danger", text: "Allow mods that run code", onclick: () => setCode(true) }),
-            el("button", { class: "btn ghost", text: "Cancel", onclick: () => { code.checked = false; warn.hidden = true; code.focus(); } })));
-        code.addEventListener("change", () => {
-          if (code.checked) { warn.hidden = false; code.checked = false; announce(`${warn.children[0].textContent}. ${warn.children[1].textContent}`); } else setCode(false);
-        });
-        optionsBox.append(el("label", { class: "row", for: "allow-code" }, code, el("strong", { text: "Allow mods that run code" }),
-          el("span", { class: "muted", text: "In-game scripts, build steps and studio pages that mods bring. Off unless you turn it on." })), warn);
-      }
-    }
-
-    // ---------- backups and repair ----------
-    async function renderRepair() {
-      const wasOpen = repairBox.open;
-      clear(repairBox).append(el("summary", {}, el("h2", { text: "Backups and repair" })));
-      repairBox.open = wasOpen;
-      let backups = [], removed = [];
-      try { [backups, removed] = await Promise.all([api.get("/backups"), api.get("/mods/removed")]); } catch (e) { /* shown empty */ }
-      const saves = el("div", { class: "stack" },
-        el("div", { class: "row spread" }, el("h3", { text: "Save backups" }),
-          el("button", { class: "btn small", text: "Back up now", onclick: async () => {
-            try { const r = await api.post("/backup"); toast(`Backed up to ${r.name}`); renderRepair(); } catch (e) { toast(e.message, "bad"); }
-          } })),
-        el("p", { class: "note", text: "Your save is backed up before anything that changes it. Restoring backs up the save you have first." }));
-      if (!backups.length) saves.append(el("p", { class: "muted", text: "No backups yet." }));
-      for (const n of backups.slice(0, 10)) {
-        saves.append(el("div", { class: "row spread line" }, el("span", { class: "mono", text: n }),
-          confirmButton("Restore", "Press again to restore", async () => {
-            try { const r = await api.post("/restore", { name: n }); toast(`Restored ${r.restored.join(", ")}`); renderRepair(); }
-            catch (e) { toast(e.message, "bad"); }
-          }, "btn small")));
-      }
-      const gone = el("div", { class: "stack" }, el("h3", { text: "Removed and replaced mods" }));
-      if (!removed.length) gone.append(el("p", { class: "muted", text: "None." }));
-      for (const r of removed.slice(0, 10)) {
-        gone.append(el("div", { class: "row spread line" },
-          el("span", {}, el("strong", { text: r.title }), el("span", { class: "muted", text: ` ${r.why} ${r.when.replace("T", " ")}` })),
-          el("button", { class: "btn small", text: "Put it back", onclick: async () => {
-            try { await api.post("/mods/restore", { name: r.name }); toast(`${r.title} is back (off).`); await refresh(); }
-            catch (e) { toast(e.message, "bad"); }
-          } })));
-      }
-      repairBox.append(saves, gone,
-        el("div", { class: "stack" }, el("h3", { text: "If something's wrong" }),
-          el("div", { class: "row" },
-            el("button", { class: "btn small", text: "Check my mods", onclick: () => bus.emit("run-task", { path: "/build", title: "Check mods" }) }),
-            el("span", { class: "muted", text: "Builds them without installing, to see what each one does and any problems." })),
-          el("div", { class: "row" },
-            confirmButton("Take all mods out of the game", "Press again to take them out", () => bus.emit("run-task", { path: "/uninstall", title: "Take mods out" }), "btn small danger"),
-            el("span", { class: "muted", text: "Your mods stay here. Control remaps and save edits stay in your save; restore a save backup to undo those." }))));
-    }
-
-    // ---------- making your own ----------
-    function renderMake() {
-      const id = el("input", { type: "text", id: "new-mod-id", placeholder: "e.g. my-tweaks", spellcheck: "false" });
-      const name = el("input", { type: "text", id: "new-mod-name", placeholder: "My tweaks" });
-      const desc = el("input", { type: "text", id: "new-mod-desc", placeholder: "What it changes" });
-      clear(makeBox).append(el("summary", {}, el("h2", { text: "Make your own mod" })),
-        el("p", { class: "note", text: "The pages under Make mods (Palettes, Controls, Names, Game data, Save) each save into a mod. Start an empty one here, or from those pages. Save as .zip (under a mod's More) packs one up to share." }),
-        el("form", { class: "row", onsubmit: async e => {
-          e.preventDefault();
-          try {
-            await api.post("/mods", { id: id.value.trim(), name: name.value.trim() || undefined, description: desc.value.trim(), enabled: true });
-            toast(`Made ${id.value.trim()}`); id.value = name.value = desc.value = "";
-            await refresh();
-          } catch (err) { toast(err.message, "bad"); }
-        } },
-          el("div", { class: "field" }, el("label", { for: "new-mod-id", text: "Folder name" }), id),
-          el("div", { class: "field" }, el("label", { for: "new-mod-name", text: "Name" }), name),
-          el("div", { class: "field", style: { flex: "1" } }, el("label", { for: "new-mod-desc", text: "Description" }), desc),
-          el("button", { class: "btn", type: "submit", text: "Make it", style: { alignSelf: "end" } })));
-    }
-
     async function openFolder(what) {
       try { await api.post("/open", what); } catch (e) { toast(e.message, "bad"); }
     }
@@ -586,15 +490,13 @@ export default {
         [mods, options, settings] = await Promise.all([api.get("/mods"), api.get("/ingame").catch(() => null), api.get("/settings")]);
       } catch (e) { toast(e.message, "bad"); }
       renderList();
-      renderOptions();
-      await Promise.all([renderSetup(), renderUpdate(), renderChanges(), renderRepair()]);
+      await Promise.all([renderSetup(), renderUpdate(), renderChanges()]);
       if (notify) bus.emit("mods-changed", { from: "mods" });
     }
 
     renderAdd();
-    renderMake();
     const off = [
-      bus.on("installed", () => { renderChanges(); renderRepair(); }),
+      bus.on("installed", () => renderChanges()),
       bus.on("mods-changed", d => { if (!d || d.from !== "mods") refresh({ notify: false }); }),
       bus.on("focus", () => renderSetup()),
     ];

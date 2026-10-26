@@ -61,7 +61,7 @@ export default {
     try { style = localStorage.getItem("wc-pad-style") || "xbox"; } catch (e) { /* storage blocked */ }
 
     const target = wc.modTarget({
-      file: "controls.json", defaultId: "my-controls", defaultName: "My Controls",
+      file: "controls.json",
       onLoad: obj => { overrides = normalize(obj); render(); },
       getValue: () => toJson(),
     });

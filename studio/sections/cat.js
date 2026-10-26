@@ -26,7 +26,7 @@ export default {
     const TABLES = tablesRes.tables || {};
 
     const target = wc.modTarget({
-      file: "cats.json", defaultId: "my-cat", defaultName: "My Cat",
+      file: "cats.json",
       onLoad: obj => { load(obj); render(); },
       getValue: () => toJson(),
     });

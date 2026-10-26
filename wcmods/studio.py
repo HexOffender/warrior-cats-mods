@@ -35,6 +35,7 @@ MAX_UPLOAD = modzip.MAX_BYTES   # a downloaded mod's .zip
 # The side bar: "play" is installing and managing mods, "make" the pages for making your own.
 BUILTIN_SECTIONS = [
     {"id": "mods", "title": "Mods", "module": "/studio/sections/mods.js", "group": "play"},
+    {"id": "settings", "title": "Settings and repair", "module": "/studio/sections/settings.js", "group": "play"},
     {"id": "palettes", "title": "Palettes", "module": "/studio/sections/palettes.js", "group": "make"},
     {"id": "cat", "title": "Your cat", "module": "/studio/sections/cat.js", "group": "make"},
     {"id": "controls", "title": "Controls", "module": "/studio/sections/controls.js", "group": "make"},
