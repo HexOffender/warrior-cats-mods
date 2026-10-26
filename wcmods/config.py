@@ -37,7 +37,9 @@ class Config:
 
     def save(self):
         """Write wcmods.json, with a _help line first saying what it is (docs/formats.md lists every key)."""
-        self.data = {"_help": HELP, **{k: v for k, v in self.data.items() if k != "_help"}}
+        ordered = {"_help": HELP, **{k: v for k, v in self.data.items() if k != "_help"}}
+        self.data.clear()   # in place: whoever holds this dict keeps it
+        self.data.update(ordered)
         with open(self.path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=2)
             f.write("\n")

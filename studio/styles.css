@@ -64,6 +64,7 @@ button { cursor: pointer; }
 /* controls */
 .btn { border: 1px solid var(--line); background: var(--raised); border-radius: 8px; padding: 7px 14px; font-weight: 500; }
 .btn:hover { border-color: var(--accent); }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
 .btn.ghost { background: none; border-color: transparent; color: var(--accent); }
 .btn.ghost:hover { background: var(--accent-soft); }
