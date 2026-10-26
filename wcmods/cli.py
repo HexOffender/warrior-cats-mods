@@ -25,7 +25,9 @@ class Ctx:
 
     def need_game(self):
         if not self.cfg.game_dir:
-            sys.exit("Couldn't find the game. Put its folder in wcmods.json as \"game_dir\".")
+            sys.exit("Couldn't find the game: the folder with Wrc in it (in Steam, right-click the game, Manage, "
+                     "Browse local files). Clan Mod Studio's Get set up asks for it; or put it in wcmods.json as "
+                     "\"game_dir\".")
 
     @property
     def game(self):
@@ -37,10 +39,10 @@ class Ctx:
 
 def cmd_status(ctx, args):
     cfg = ctx.cfg
-    print(f"game folder : {cfg.game_dir or 'NOT FOUND'}")
+    print(f"game folder : {cfg.game_dir or 'NOT FOUND (Clan Mod Studio, Get set up, asks for it; or set game_dir in wcmods.json)'}")
     print(f"save folder : {cfg.save_dir} ({'found' if os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)) else 'no save yet'})")
     print(f"decoder     : {cfg.oodle_dll or 'wcmods (set oodle_dll in wcmods.json to an oo2core DLL for a faster one)'}")
-    print(f"UE4SS       : {cfg.ue4ss_mods_dir or 'not installed (needed for coat/pattern/marking colours)'}")
+    print(f"UE4SS       : {cfg.ue4ss_mods_dir or 'not installed (the script loader the mod menu and most mods need; Clan Mod Studio, Get set up, installs it)'}")
     if cfg.game_dir:
         inst = os.listdir(cfg.mods_install_dir) if os.path.isdir(cfg.mods_install_dir) else []
         print(f"installed   : {', '.join(inst) if inst else 'nothing'}")

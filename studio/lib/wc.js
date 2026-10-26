@@ -66,6 +66,11 @@ export function el(tag, attrs = {}, ...kids) {
   return n;
 }
 export const $ = (sel, root = document) => root.querySelector(sel);
+
+// A link to one of the docs, opened in a new tab: docLink("docs/scripting.md", "docs/scripting.md"), or with
+// a heading: docLink("README.md#remapping-keys", "Remapping keys").
+export const DOCS = "https://github.com/HexOffender/warrior-cats-mods/blob/main/";
+export const docLink = (path, text) => el("a", { href: DOCS + path, target: "_blank", rel: "noopener", text: text || path });
 export const clear = node => { node.textContent = ""; return node; };
 
 // Say something to screen readers, without showing it: politely, or at once for a problem. The live

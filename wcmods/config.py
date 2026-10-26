@@ -8,7 +8,16 @@ STEAM_APP_ID = "3960600"
 GAME_FOLDER = "Warrior Cats Clans of the Forest"
 EXE_NAME = "Wrc-Win64-ShippingDRM.exe"
 MOD_BASENAME = "zzz_WCMods_P"   # sorts last and carries the _P (patch) priority suffix
-UE4SS_MOD_NAME = "WCModsPalettes"
+# wcmods' own UE4SS mod: the colour tables from your palettes, and the reports `tables` reads. It was
+# WCModsPalettes; an install removes that folder (ue4ss.ours takes every WCMods* folder as wcmods').
+UE4SS_MOD_NAME = "WCModsCore"
+
+
+HELP = ("wcmods' own settings. game_dir and save_dir: where the game and its saves are, when wcmods can't find "
+        "them. allow_code_mods: whether mods may run code. allow_outdated: mods used on a game build they weren't "
+        "made for. console: the game's ~ console on or off. oodle_dll: an oo2core DLL for faster decoding. "
+        "installed, installed_ue4ss, installed_ue4ss_shared: what the last install put in the game; leave them. "
+        "docs/formats.md says more.")
 
 
 class Config:
@@ -27,6 +36,10 @@ class Config:
                 self.data = json.load(f)
 
     def save(self):
+        """Write wcmods.json, with a _help line first saying what it is (docs/formats.md lists every key)."""
+        ordered = {"_help": HELP, **{k: v for k, v in self.data.items() if k != "_help"}}
+        self.data.clear()   # in place: whoever holds this dict keeps it
+        self.data.update(ordered)
         with open(self.path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=2)
             f.write("\n")

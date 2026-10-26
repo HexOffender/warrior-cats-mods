@@ -249,15 +249,17 @@ def log_path(win64_dir):
     return None
 
 
-def read_reports(win64_dir, tag="[WCModsPalettes]"):
-    """Parse the TABLE lines (the game's original colour tables) and notes our script logs."""
+def read_reports(win64_dir, tags=("[WCModsCore]", "[WCModsPalettes]")):
+    """Parse the TABLE lines (the game's original colour tables) and notes our script logs. The second
+    tag is the script's name before wcmods 0.2: a log from the previous install still counts."""
     path = log_path(win64_dir)
     tables, notes = {}, []
     if not path:
         return None
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
-            if tag not in line:
+            tag = next((t for t in tags if t in line), None)
+            if not tag:
                 continue
             msg = line.split(tag, 1)[1].strip()
             if msg.startswith("TABLE "):

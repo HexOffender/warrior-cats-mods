@@ -52,7 +52,7 @@ const SWAPS = {
 export default {
   title: "Controls",
   async mount(root, wc) {
-    const { el, api, clear, toast, input } = wc;
+    const { el, docLink, api, clear, toast, input } = wc;
     let saved = { keyboard: {}, gamepad: {} };
     let overrides = { keyboard: {}, gamepad: {} };
     let otherKeys = {};   // "keys" entries that aren't one of the built-in rows: extra keys while playing
@@ -87,7 +87,7 @@ export default {
         el("h1", { text: "Controls" }),
         el("p", { class: "note", text: "Click Change, then press the key, mouse button, wheel or controller button you want, and save to a mod." })),
       el("div", { class: "banner" }, el("strong", { text: "Keyboard and mouse remaps run through the wcmods key remapper." }),
-        el("span", { text: " The game ignores edited bindings, so press Play (top right), which starts the game with the remapper when a mod remaps keys (or run python wcmods.py play): while you play, your keys stand in for the game's. Controller buttons: use Steam Input. If you'd rather not run the remapper, PowerToys Keyboard Manager does the same job (the README, Remapping keys)." })),
+        el("span", { text: " The game ignores edited bindings, so press Play (top right), which starts the game with the remapper when a mod remaps keys (or run python wcmods.py play): while you play, your keys stand in for the game's. Controller buttons: use Steam Input. If you'd rather not run the remapper, PowerToys Keyboard Manager does the same job (the README, " }), docLink("README.md#remapping-keys", "Remapping keys"), el("span", { text: ")." })),
       target.element,
       el("div", { class: "row" },
         el("span", { class: "eyebrow", text: "Controller presets" }),
