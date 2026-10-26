@@ -673,7 +673,7 @@ end
         ui.heading("This menu")
         ui.field("Opens with", SETTINGS.key_name .. ", and Escape closes it")
         if SETTINGS.pad ~= "" then ui.field("On a controller", SETTINGS.pad_name .. ", and B closes it; the game pauses") end
-        ui.note("To change the key or the button, use Clan Mod Studio (Mods page, In game), then install again.")
+        ui.note("To change the key or the button, use the Mod menu's Settings in Clan Mod Studio, then Apply to game.")
         local sz = ui.slider("Size", size, SETTINGS.size_min, SETTINGS.size_max, { step = 0.05, format = "x%.2f" })
         if math.abs(sz - size) > 1e-3 then
             size = sz
@@ -996,7 +996,7 @@ end
 -- (the release build leaves it out). With it, the console's cheat commands work (god, slomo,
 -- teleport ...), and the page below has the handy ones. Flying and size are done here instead of with
 -- the engine's fly, ghost and changesize, which the game undoes (see below).
--- SETTINGS.cheats (wcmods.json "cheats") says whether they start on; the page switches them live.
+-- SETTINGS.cheats (menu.json "cheats") says whether they start on; the page switches them live.
 -- god: whether this page turned god mode on (the game makes the cat safe by itself at times too).
 local cheats = { on = SETTINGS.cheats, movement = "Walk", speed = 1, size = 1, god = false, flySpeed = 900, command = "" }
 
@@ -1186,8 +1186,8 @@ end
 Menu.page("Cheats", function(ui)
     ui.heading("Cheats")
     ui.note("The engine's cheat commands, as in the game's debug builds. They start " ..
-            (SETTINGS.cheats and "on" or "off") .. " each time (Clan Mod Studio, Mods page, In game). " ..
-            "Some can break a quest or a save: back up first (Mods page) if you're unsure.")
+            (SETTINGS.cheats and "on" or "off") .. " each time (the Mod menu's Settings in Clan Mod Studio). " ..
+            "Some can break a quest or a save: back up first (Settings and repair in Clan Mod Studio) if you're unsure.")
     local c = controller()
     if not c then
         ui.text("No player yet.")

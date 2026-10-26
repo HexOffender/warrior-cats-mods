@@ -26,8 +26,8 @@ export default {
         el("span", { class: "eyebrow", text: "Save editor" }),
         el("h1", { text: "Save" }),
         el("p", { class: "note", text: `Editing cat slot ${slot}. Changes are saved as save.json in a mod and written to your save when you install (game closed, backup first). Experience rates live in Game data, not here.` })),
-      el("div", { class: "banner" }, el("strong", { text: "Not yet confirmed in game" }),
-        el("span", { text: "The save has a checksum whose formula isn't known; the tool keeps the original. If the game rejects an edited save, restore the backup from the Mods page." })),
+      el("div", { class: "banner" }, el("strong", { text: "Edited saves load, and the game keeps the edits when it saves again." }),
+        el("span", { text: " The save's checksum formula isn't known, so the tool keeps the original value, which the game has accepted so far. Your save is backed up before every edit; Settings and repair puts a backup back." })),
       target.element, quick, tree, out.element);
 
     // ---------- helpers ----------

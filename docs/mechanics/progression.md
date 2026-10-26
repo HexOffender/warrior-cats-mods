@@ -125,7 +125,7 @@ bonus. That's a guess: no trait comes near it.
    `Patient`). The lookup fails, the chance stays at its default of 0, and the roll (rand()/32767 at
    or below 0) almost never passes.
 
-So, in build 24847281:
+So, in build 24847281 (and 26184573, which changed none of these tables):
 - Curious gets extra consumables.
 - No one gets extra fresh-kill.
 - Patient does nothing that the exe knows about. A Blueprint could still use the Patient rows;

@@ -31,7 +31,7 @@ Properties, Updates) to "Only update this game when I launch it".
 `mod.json` says which builds of the game a mod was made for:
 
 ```json
-{ "name": "Cool Tweaks", "version": "1.3", "game_builds": [24847281, 24912345] }
+{ "name": "Cool Tweaks", "version": "1.3", "game_builds": [24847281, 26184573] }
 ```
 
 After the game updates, try your mod on the new build. If it works, add the build's number

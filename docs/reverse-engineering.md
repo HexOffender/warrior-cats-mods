@@ -75,7 +75,7 @@ question from *Open questions* when it's answered.
 
 ### Paks and containers
 
-Detailed in SDK.md, "Game files, repacking and new content". The key facts:
+Detailed in [SDK.md, Game files, repacking and new content](SDK.md#game-files-repacking-and-new-content). The key facts:
 - `pakchunk0-Windows.pak` is pak version 12, Oodle-compressed, with no path-hash index
   (`bHasPathHashIndex = 0`), so the engine finds files through the full directory index.
   - **File names are UTF-8 with their exact byte length and no terminator.** Folder names are
@@ -199,7 +199,7 @@ one of its own. Nothing else checks it: no asset registry entry was needed.
 - **Other cats:** NPCs live under `NPCData`. Story roles (`NPCData/NarrativeRoles`) hold exact
   copies of the NPC cast in them, so a rename must change every copy.
 - **Key bindings** are kept in the save, but the game ignores edits to them, and its rebinding
-  screen doesn't work on PC (README, "Remapping keys").
+  screen doesn't work on PC (the README, [Remapping keys](../README.md#remapping-keys)).
 
 ## Engine settings that matter
 
@@ -211,7 +211,9 @@ one of its own. Nothing else checks it: no asset registry entry was needed.
   buttons, check boxes, sliders and drop-downs draw properly.
 - **Input:**
   - `DefaultInput.ini` sets `DefaultViewportMouseCaptureMode=NoCapture`, so the mouse never
-    reaches the game.
+    reached the game at release. Patch 1.1 (build 26184573) added mouse control of the camera without
+    changing that setting, so it's done at runtime some other way (not yet looked at). It's rough, so
+    wcmods keeps its own mouse look ([formats.md, `mouselook.json`](formats.md#mouselookjson)).
   - The game's mouse axes scale by 0.07 per count (`AxisConfig`).
   - `InputSettings.bEnableMouseSmoothing` is on.
 - **Cheat code is compiled in:** the release build still has the engine's cheat code ("God mode

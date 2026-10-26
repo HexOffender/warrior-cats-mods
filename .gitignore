@@ -10,7 +10,6 @@ vanilla/
 build/
 agent-output/
 colour_tables.json
-designer/game-data.js
 
 # Tooling
 __pycache__/

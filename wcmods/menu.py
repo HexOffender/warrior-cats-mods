@@ -1,8 +1,8 @@
 """The in-game mod menu: a shared UE4SS Lua module (WCModsMenu) and the script that hosts the window.
 
-Insert (wcmods.json "menu_key") opens a window with a tab per page. Any UE4SS script adds a page with
+Insert (menu.json "key", the Mod menu's Settings in Clan Mod Studio) opens a window with a tab per page. Any UE4SS script adds a page with
 WCModsMenu.page(title, fn); wcmods' own scripts add pages for their live settings, and the host's
-first page lists the installed mods and what they set, from the build. See docs/SDK.md, "Mod menu".
+first page lists the installed mods and what they set, from the build. See docs/SDK.md, "WCModsMenu".
 
 How the pieces fit: each UE4SS mod runs in a Lua state of its own, so the host and the pages talk
 through UE4SS's shared variables (strings, numbers, booleans and UObjects). The host makes the
@@ -64,8 +64,8 @@ def lua():
 
 def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0, dev=False, pages=None, pad=DEFAULT_PAD):
     """The host's script, with the overview of this build: the enabled mods and what each section set.
-    cheats: whether the Cheats page starts with cheats on (wcmods.json "cheats"); scale: the menu's size,
-    1 for the usual (wcmods.json "menu_scale"); dev: whether the Inspector and Console pages are in
+    cheats: whether the Cheats page starts with cheats on (menu.json "cheats"); scale: the menu's size,
+    1 for the usual (menu.json "size"); dev: whether the Inspector and Lua console pages are in
     (they're for code mods, so wcmods.json "allow_code_mods"); pages: menupages.data(), the area names and
     quest titles the pages show; pad: the controller button that opens it too (an Unreal key name, "" for
     none)."""
