@@ -15,11 +15,22 @@ question from *Open questions* when it's answered.
 
 | | |
 |---|---|
-| Game | Warrior Cats: Clans of the Forest, Steam app 3960600, build 24847281 |
+| Game | Warrior Cats: Clans of the Forest, Steam app 3960600, build 26184573 (patch 1.1, 2026-10-26); the notes were made on build 24847281, the first release |
 | Engine | Unreal Engine 5.7 (Shipping), project name `Wrc` |
-| Exe | `Wrc\Binaries\Win64\Wrc-Win64-ShippingDRM.exe`, 183,670,344 bytes, SHA-256 `f50eb374f8611e4e…` (its PE timestamp, 1974, is a placeholder) |
+| Exe | `Wrc\Binaries\Win64\Wrc-Win64-ShippingDRM.exe`, 183,669,832 bytes, SHA-256 `cd8aafb4d2a423bd…` (on 24847281: 183,670,344 bytes, `f50eb374f8611e4e…`; its PE timestamp, 1974, is a placeholder) |
 | Code | C++ classes are `Swt…` (the studio's shared framework) and `Wrc…` (this game), in `/Script/Wrc`; Blueprints are `BP_…_C`, widgets `WBP_…_C` |
 | UE4SS | v3.0.1 Beta, Git 83330635 (`experimental-latest`) |
+
+### Game updates
+
+- **Build 26184573, patch 1.1 (2026-10-26):** the patch adds mouse control of the camera, bug
+  fixes and quality-of-life changes. Nothing wcmods reads moved: every class in `game.HIDDEN` is
+  the same size, every signed member is where it was (`python wcmods.py game signatures check`),
+  and the level component, which has no signature, was read in game at its old offsets: the
+  level at +0x120 and +0x124 (20, 20) and the stats at +0x154–0x168 (233, 199, 189, 199, 180, 100)
+  matched the save's `Stats`. The anchor functions `signatures.py` keeps (combat, status and
+  detection code around `0x1417B8000`–`0x1417DC000`) each sit 0x260 later than on 24847281; the
+  code addresses elsewhere in these notes are still 24847281's and haven't been checked.
 
 ## How we find things
 

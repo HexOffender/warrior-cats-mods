@@ -4,7 +4,7 @@ import re
 import struct
 import tempfile
 
-from . import bridge, catlook, controls, draw, eyeatlas, keymap, luacheck, menu, mouselook, palettes, view, world
+from . import bridge, catlook, controls, draw, eyeatlas, gamebuild, keymap, luacheck, menu, mouselook, palettes, view, world
 from . import game as game_lua
 from .blake3 import blake3
 from .iostore import IoStoreReader, ModContainerWriter
@@ -500,7 +500,8 @@ def _items_section(cfg):
                                            {"items.json": json.dumps(good), "icons/test.png": picture}),
                                   "bad": ({"name": "Bad", "enabled": True}, {"items.json": json.dumps(bad)}),
                                   "typo": ({"name": "Typo", "enabled": True}, {"items.json": json.dumps(typo)}),
-                                  "tint": ({"name": "Tint", "enabled": True}, {"items.json": json.dumps(tint)})})
+                                  "tint": ({"name": "Tint", "enabled": True}, {"items.json": json.dumps(tint)})},
+                            build=gamebuild.steam_build(cfg))
         out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
         rows = out.get("table_rows", {}).get("DT_QuestObjectsInfo", [])
         csv = out.get("csv_changes", {})
@@ -934,10 +935,14 @@ def _mod_zip_guards():
                 and added[0]["also_on"] == ["Helper"] and back == "pack-2")
 
 
-def _mods_folder(tmp, mods):
+def _mods_folder(tmp, mods, build=None):
+    """Test mods in a folder of their own. With `build`, the installed game's, each mod that doesn't say
+    which builds it was made for is made for that one, so a build on a newer game doesn't hold it back."""
     import json
     root = os.path.join(tmp, "mods")
     for mod_id, (meta, files) in mods.items():
+        if build and not meta.get("builtin") and "game_builds" not in meta and "game_build" not in meta:
+            meta = dict(meta, game_builds=[build])
         os.makedirs(os.path.join(root, mod_id))
         with open(os.path.join(root, mod_id, "mod.json"), "w") as f:
             json.dump(meta, f)
@@ -954,7 +959,8 @@ def _requirements(cfg):
     with tempfile.TemporaryDirectory() as tmp:
         root = _mods_folder(tmp, {"needy": ({"name": "Needy", "requires": ["helper"], "enabled": False}, {}),
                                   "helper": ({"name": "Helper", "enabled": False}, {}),
-                                  "lost": ({"name": "Lost", "requires": ["ghost"], "enabled": True}, {})})
+                                  "lost": ({"name": "Lost", "requires": ["ghost"], "enabled": True}, {})},
+                            build=gamebuild.steam_build(cfg))
         on, _ = mods.switch(mods.discover(root), "needy", True)
         _, blocked = mods.switch(mods.discover(root), "helper", False)
         out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
@@ -1401,7 +1407,8 @@ def _scars_build(cfg):
     from . import mods, pipeline
     with tempfile.TemporaryDirectory() as tmp:
         root = _mods_folder(tmp, {"scars": ({"name": "Scars", "enabled": True},
-                                            {"cats.json": json.dumps({"player": {"scars": {"ear": "notch-left", "eye": "none"}}})})})
+                                            {"cats.json": json.dumps({"player": {"scars": {"ear": "notch-left", "eye": "none"}}})})},
+                            build=gamebuild.steam_build(cfg))
         out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
     ops = [o for o in out["save_ops"] if o.get("op") == "fields"]
     if not os.path.isfile(os.path.join(cfg.save_dir, SAV_NAME)):
