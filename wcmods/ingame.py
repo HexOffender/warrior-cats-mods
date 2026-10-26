@@ -22,7 +22,8 @@ from . import menu, mods as modlib, ue4ss
 
 CONSOLE_MOD = "ConsoleEnablerMod"
 MENU_FILE = "menu.json"
-MENU_SCALES = (0.6, 2.2)   # the mod menu's size, 1 for the usual; A-/A+ in game stay within these too
+MENU_SCALES = menu.SCALES   # the mod menu's size, 1 for the usual; A-/A+ in game stay within these too
+SIZE_CHOICES = ((0.8, "Small"), (1, "Normal"), (1.25, "Large"), (1.5, "Larger"), (1.8, "Largest"))   # the studio's choices
 LEGACY = {"key": "menu_key", "size": "menu_scale", "cheats": "cheats"}   # menu.json key -> old wcmods.json key
 MENU_HELP = ("The in-game mod menu. key: INS, HOME, END, DEL, PAGE_UP, PAGE_DOWN or F1-F12 (not F11). pad: the "
              "controller button that opens it too (an Unreal key name such as Gamepad_Special_Left, the View button; "
@@ -86,12 +87,15 @@ def menu_settings(cfg, mod=None, found=None):
 
 
 def options(cfg):
+    """The in-game options as the studio shows them: the menu's key, pad and size (with the choices for
+    each, as [value, label] pairs), whether cheats start on, and the game's console."""
     m = menu_mod(cfg)
     s = menu_settings(cfg, m)
     return {"cheats": s["cheats"], "console": console_on(cfg),
             "console_available": bool(cfg.ue4ss_mods_dir and os.path.isdir(os.path.join(cfg.ue4ss_mods_dir, CONSOLE_MOD))),
-            "menu_key": s["key"], "menu_keys": list(menu.KEYS), "menu_scale": s["size"],
-            "menu_pad": s["pad"], "menu_pads": [[p, n] for p, n in menu.PAD_NAMES.items()],
+            "key": s["key"], "keys": [[k, menu.KEY_NAMES.get(k, k)] for k in menu.KEYS],
+            "size": s["size"], "sizes": [[v, label] for v, label in SIZE_CHOICES],
+            "pad": s["pad"], "pads": [[p, n] for p, n in menu.PAD_NAMES.items()],
             "menu_mod": m.id if m else None, "menu_on": bool(m and m.enabled)}
 
 
@@ -102,30 +106,30 @@ def apply_console(cfg):
         ue4ss.set_registered(mods_dir, CONSOLE_MOD, bool(cfg.data["console"]))
 
 
-def set_options(cfg, cheats=None, console=None, menu_key=None, menu_scale=None, menu_pad=None):
+def set_options(cfg, cheats=None, console=None, key=None, size=None, pad=None):
     """Change some options (None leaves one as it is) and return them all. The menu's go in its menu.json
     (taking any still in wcmods.json along), the console's in wcmods.json."""
     cfg.reload()   # the studio keeps one Config for its whole run
-    if menu_scale is not None and (isinstance(menu_scale, bool) or not isinstance(menu_scale, (int, float))
-                                   or not MENU_SCALES[0] <= menu_scale <= MENU_SCALES[1]):
-        raise ValueError(f"menu_scale should be a number from {MENU_SCALES[0]} to {MENU_SCALES[1]} (1 is the usual size)")
-    if menu_key is not None and menu_key not in menu.KEYS:
-        raise ValueError(f"menu_key should be one of {', '.join(menu.KEYS)}")
-    if menu_pad is not None and menu_pad not in menu.PADS:
-        raise ValueError(f"menu_pad should be one of {', '.join(repr(p) for p in menu.PADS)}")
-    if any(v is not None for v in (cheats, menu_key, menu_scale, menu_pad)):
+    if size is not None and (isinstance(size, bool) or not isinstance(size, (int, float))
+                             or not MENU_SCALES[0] <= size <= MENU_SCALES[1]):
+        raise ValueError(f"size should be a number from {MENU_SCALES[0]} to {MENU_SCALES[1]} (1 is the usual size)")
+    if key is not None and key not in menu.KEYS:
+        raise ValueError(f"key should be one of {', '.join(menu.KEYS)}")
+    if pad is not None and pad not in menu.PADS:
+        raise ValueError(f"pad should be one of {', '.join(repr(p) for p in menu.PADS)}")
+    if any(v is not None for v in (cheats, key, size, pad)):
         m = menu_mod(cfg)
         if not m:
             raise LookupError("there's no mod menu in your mods (mods/mod-menu with its menu.json)")
         s = menu_settings(cfg, m)
         data = {**_read(m), "key": s["key"], "size": s["size"], "cheats": s["cheats"]}
         data.setdefault("_help", MENU_HELP)
-        if menu_key is not None:
-            data["key"] = menu_key
-        if menu_scale is not None:
-            data["size"] = float(menu_scale)
-        if menu_pad is not None:
-            data["pad"] = menu_pad
+        if key is not None:
+            data["key"] = key
+        if size is not None:
+            data["size"] = float(size)
+        if pad is not None:
+            data["pad"] = pad
         if cheats is not None:
             data["cheats"] = bool(cheats)
         with open(os.path.join(m.folder, MENU_FILE), "w", encoding="utf-8", newline="\n") as f:

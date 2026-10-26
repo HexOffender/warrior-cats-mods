@@ -432,18 +432,15 @@ export default {
         try { options = await api.patch("/ingame", change); toast("Saved. Apply to game to use it."); await refresh(); }
         catch (e) { toast(e.message, "bad"); }
       };
-      const NAMES = { INS: "Insert", HOME: "Home", END: "End", DEL: "Delete", PAGE_UP: "Page Up", PAGE_DOWN: "Page Down" };
-      const key = el("select", { id: "ig-key" }, ...o.menu_keys.map(k => el("option", { value: k, text: NAMES[k] || k, selected: k === o.menu_key })));
-      key.addEventListener("change", () => save({ menu_key: key.value }));
-      // Any Unreal key name works in menu.json: one the list hasn't got shows as it is.
-      const PADS = [...(o.menu_pads || [])];
-      if (!PADS.some(([v]) => v === o.menu_pad)) PADS.push([o.menu_pad, o.menu_pad]);
-      const pad = el("select", { id: "ig-pad" }, ...PADS.map(([v, label]) => el("option", { value: v, text: label, selected: v === o.menu_pad })));
-      pad.addEventListener("change", () => save({ menu_pad: pad.value }));
-      const SIZES = [[0.8, "Small"], [1, "Normal"], [1.25, "Large"], [1.5, "Larger"], [1.8, "Largest"]];
-      if (!SIZES.some(([v]) => v === o.menu_scale)) SIZES.push([o.menu_scale, `x${o.menu_scale}`]);
-      const size = el("select", { id: "ig-size" }, ...SIZES.map(([v, label]) => el("option", { value: String(v), text: label, selected: v === o.menu_scale })));
-      size.addEventListener("change", () => save({ menu_scale: Number(size.value) }));
+      // The choices come from wcmods (ingame.options) as [value, label] pairs. Any Unreal key name works for
+      // the pad in menu.json, and any size within its limits: one the lists haven't got shows as it is.
+      const choices = (list, value, label) => list.some(([v]) => v === value) ? list : [...list, [value, label(value)]];
+      const key = el("select", { id: "ig-key" }, ...o.keys.map(([v, label]) => el("option", { value: v, text: label, selected: v === o.key })));
+      key.addEventListener("change", () => save({ key: key.value }));
+      const pad = el("select", { id: "ig-pad" }, ...choices(o.pads || [], o.pad, v => v).map(([v, label]) => el("option", { value: v, text: label, selected: v === o.pad })));
+      pad.addEventListener("change", () => save({ pad: pad.value }));
+      const size = el("select", { id: "ig-size" }, ...choices(o.sizes || [], o.size, v => `x${v}`).map(([v, label]) => el("option", { value: String(v), text: label, selected: v === o.size })));
+      size.addEventListener("change", () => save({ size: Number(size.value) }));
       const cheats = el("input", { type: "checkbox", id: "ig-cheats", checked: o.cheats });
       cheats.addEventListener("change", () => save({ cheats: cheats.checked }));
       box.append(

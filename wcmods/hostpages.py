@@ -739,7 +739,7 @@ end
         ui.field("Opens with", SETTINGS.key_name .. ", and Escape closes it")
         if SETTINGS.pad ~= "" then ui.field("On a controller", SETTINGS.pad_name .. ", and B closes it; the game pauses") end
         ui.note("To change the key or the button, use Clan Mod Studio (Mods page, In game), then install again.")
-        local sz = ui.slider("Size", size, 0.6, 2.2, { step = 0.05, format = "x%.2f" })
+        local sz = ui.slider("Size", size, SETTINGS.size_min, SETTINGS.size_max, { step = 0.05, format = "x%.2f" })
         if math.abs(sz - size) > 1e-3 then
             size = sz
             fit()

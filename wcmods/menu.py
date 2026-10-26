@@ -1550,7 +1550,7 @@ local function tick()
     end
     for _, key in ipairs({ "smaller", "bigger" }) do
         if Menu.clicked(win.state, key, win[key]) then
-            size = math.max(0.6, math.min(2.2, size * (key == "bigger" and 1.12 or 1 / 1.12)))
+            size = math.max(SETTINGS.size_min, math.min(SETTINGS.size_max, size * (key == "bigger" and 1.12 or 1 / 1.12)))
             fit()
         end
     end
@@ -2045,6 +2045,8 @@ syncCpp()
 
 '''
 
+# The menu's size, as a factor on the usual: what menu.json "size", the studio and A-/A+ in game stay within.
+SCALES = (0.6, 2.2)
 KEY_NAMES = {"INS": "Insert", "HOME": "Home", "END": "End", "DEL": "Delete", "PAGE_UP": "Page Up",
              "PAGE_DOWN": "Page Down"}
 # Controller buttons the game leaves free while you play (its own: the face buttons, bumpers, the left
@@ -2089,7 +2091,7 @@ def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0, dev=Fa
     quest titles the pages show; pad: the controller button that opens it too (an Unreal key name, "" for
     none)."""
     if key not in KEYS:
-        raise ValueError(f"menu_key should be one of {', '.join(KEYS)}")
+        raise ValueError(f"the menu's key should be one of {', '.join(KEYS)}")
     enabled = [m for m in mods if m.enabled]
     sections = []
     for sid, rep in manifest["sections"].items():
@@ -2101,7 +2103,7 @@ def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0, dev=Fa
     settings = {
         "key": key, "key_name": key_name, "built": manifest["built"].replace("T", " "),
         "pad": pad or "", "pad_name": pad_name, "opens": key_name + (f" (or {pad_name} on a controller)" if pad else ""),
-        "cheats": bool(cheats), "scale": float(scale), "dev": bool(dev),
+        "cheats": bool(cheats), "scale": float(scale), "size_min": SCALES[0], "size_max": SCALES[1], "dev": bool(dev),
         "mods": [{"id": m.id, "name": m.name, "description": m.description, "kinds": m.kinds(),
                   "priority": m.priority} for m in enabled],
         "sections": sections, "warnings": manifest["warnings"],

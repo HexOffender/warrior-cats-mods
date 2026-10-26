@@ -474,7 +474,7 @@ def cmd_ingame(ctx, args, option):
         opts = ingame.options(ctx.cfg)
     if option == "cheats":
         from .menu import KEY_NAMES
-        key = KEY_NAMES.get(opts["menu_key"], opts["menu_key"])
+        key = KEY_NAMES.get(opts["key"], opts["key"])
         print(f"cheats start {'on' if opts['cheats'] else 'off'} in the mod menu ({key} in game, Cheats page)")
         if args.state is not None:
             print("install again to apply it (python wcmods.py install)")
