@@ -933,29 +933,54 @@ local function tick()
     end
 end
 
-local function register(p)
-    local list = Menu.shared("pages") or ""
-    local line = p.id .. "\t" .. p.title .. "\t" .. tostring(p.order) .. "\t" .. p.group .. "\n"
-    -- Only a line whose id is this one counts: a plain find would match "Travel" inside another page's
-    -- title ("Fast Travel"), and that page would never get a tab.
-    if not ("\n" .. list):find("\n" .. p.id .. "\t", 1, true) then Menu.share("pages", list .. line) end
+-- The shared list of pages: one line each, id, title, order, group and the mod it came from, tab-separated.
+-- Whose a page with this id is: "" when the line doesn't say (a C++ mod's, or an older script's), nil
+-- when there's none. Whole ids only: a plain find would match "Travel" inside "Fast Travel".
+local function ownerOf(list, id)
+    for line in list:gmatch("[^\n]+") do
+        local lid, rest = line:match("^([^\t]*)\t(.*)$")
+        if lid == id then return rest:match("^[^\t]*\t[^\t]*\t[^\t]*\t([^\t]*)") or "" end
+    end
+    return nil
 end
 
--- The groups the menu's side bar shows, in order. A page names one of these ids (or a group of its own,
+local function register(p)
+    local list = Menu.shared("pages") or ""
+    local have = ownerOf(list, p.id)
+    if have ~= nil and have ~= p.owner then
+        -- Another mod has a page with this id already: this one gets its own, so the two don't both draw
+        -- into one tab (each script's tick draws its page with the shown id).
+        p.id = p.id .. " (" .. p.owner .. ")"
+        have = ownerOf(list, p.id)
+    end
+    if have == nil then
+        Menu.share("pages", list .. p.id .. "\t" .. p.title .. "\t" .. tostring(p.order) .. "\t" .. p.group .. "\t" .. p.owner .. "\n")
+    end
+end
+
+-- The mod a page comes from: the folder under Mods/ its script runs from (UE4SS names a chunk by its
+-- path), else the chunk's name; "" when Lua can't say.
+local SLASH = string.char(92)
+local function caller(level)
+    local info = debug and debug.getinfo and debug.getinfo(level + 1, "S")
+    local src = info and tostring(info.source or "") or ""
+    src = src:gsub(SLASH, "/")
+    return src:match("/Mods/([^/]+)/") or src
+end
+
+-- The groups the menu's side bar shows, in order (menu.GROUPS in wcmods/menu.py, written in here): id,
+-- label, and what the Overview says is there. A page names one of these ids (or a group of its own,
 -- which comes after "mods").
-Menu.groups = {
-    { id = "home", label = "Home" }, { id = "cat", label = "Your cat" }, { id = "world", label = "World" },
-    { id = "story", label = "Story" }, { id = "fight", label = "Fight" }, { id = "cheats", label = "Cheats" },
-    { id = "mods", label = "Mods" }, { id = "tools", label = "Tools" },
-}
+Menu.groups = @GROUPS@
 
 -- Add a page to the mod menu. fn(ui) runs every frame while it shows. opts.group puts it in a group of
 -- the side bar ("mods" by default; Menu.groups lists them), opts.order sorts it within the group (lower
--- first), and opts.id tells pages with the same title apart.
+-- first), and opts.id tells pages with the same title apart (without it, the title; a second mod's page
+-- with a title another mod has gets the title plus its mod's name, so the two don't share a tab).
 function Menu.page(title, fn, opts)
     opts = opts or {}
     local p = { id = opts.id or title, title = title, fn = fn, order = opts.order or 50,
-                group = (tostring(opts.group or "mods"):gsub("[\t\n]", " ")) }
+                group = (tostring(opts.group or "mods"):gsub("[\t\n]", " ")), owner = caller(2) }
     pages[#pages + 1] = p
     ExecuteInGameThread(function() register(p) end)
     if not started then
@@ -1247,7 +1272,7 @@ local function groupRank(g) return GROUP_RANK[g] or (GROUP_RANK.mods + 0.5) end
 local function pageList()
     local out = {}
     for line in (Menu.shared("pages") or ""):gmatch("([^\n]+)") do
-        local id, title, order, group = line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t?([^\t]*)$")
+        local id, title, order, group = line:match("^([^\t]*)\t([^\t]*)\t([^\t]*)\t?([^\t]*)")   -- then the mod's name, which the tabs don't need
         if id then out[#out + 1] = { id = id, title = title, order = tonumber(order) or 50, group = group ~= "" and group or "mods" } end
     end
     table.sort(out, function(a, b)
@@ -2004,7 +2029,7 @@ Menu.page("Cheats", function(ui)
     end
 
     ui.separator()
-    cheats.command = ui.input("Console command", cheats.command, { hint = "e.g. stat fps" })
+    cheats.command = ui.input("Engine command", cheats.command, { hint = "e.g. stat fps" })
     local hit = ui.buttons({ "Run", "stat fps", "stat unit" })
     if hit == 1 and cheats.command ~= "" then console(c, cheats.command)
     elseif hit == 2 then console(c, "stat fps")
@@ -2034,8 +2059,26 @@ PAD_NAMES = {"Gamepad_Special_Left": "View", "Gamepad_LeftThumbstick": "Left sti
 PADS = tuple(PAD_NAMES)
 
 
+# The side bar's groups, in order: id, label, and what the Overview page says is there (Home holds the
+# Overview itself; Tools gains the Inspector and the Lua console with code mods allowed, said in the Lua).
+# Written into the Lua as Menu.groups; the agent's menu driver (agent/menu.py) and the C++ SDK's
+# PageOptions (cpp_sdk/include/WCMods/Menu.hpp) follow it.
+GROUPS = (
+    {"id": "home", "label": "Home"},
+    {"id": "cat", "label": "Your cat",
+     "where": "Stats: health, stamina, level and stats. Colours and Mouse look, when those mods are on."},
+    {"id": "world", "label": "World", "where": "The time of day and the fresh-kill pile; Travel; what's Nearby; your Items."},
+    {"id": "story", "label": "Story", "where": "Quests: the one you follow, its objectives, and every quest's state."},
+    {"id": "fight", "label": "Fight", "where": "Both sides of a fight while you're in one."},
+    {"id": "cheats", "label": "Cheats", "where": "The engine's cheats, and the game's own developer switches."},
+    {"id": "mods", "label": "Mods", "where": "Pages from the mods you have on."},
+    {"id": "tools", "label": "Tools", "where": "The log, this menu's settings"},
+)
+
+
 def lua():
-    return LUA
+    """The shared WCModsMenu module, with the side bar's groups in."""
+    return LUA.replace("@GROUPS@", lua_value([dict(g) for g in GROUPS]))
 
 
 def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0, dev=False, pages=None, pad=DEFAULT_PAD):

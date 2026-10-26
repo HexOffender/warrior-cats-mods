@@ -10,11 +10,12 @@ import json
 import time
 import uuid
 
+from .. import menu
 from ..sdk import lua_value
 
 PREFIX = "WCModsMenu."
-# The side bar's groups in order (Menu.groups in menu.py).
-GROUPS = ("home", "cat", "world", "story", "fight", "cheats", "mods", "tools")
+# The side bar's groups in order (menu.GROUPS, which the Lua's Menu.groups is written from).
+GROUPS = tuple(g["id"] for g in menu.GROUPS)
 CONTROLS = ("button", "switch", "toggle", "slider", "number", "input", "choice", "radio", "color", "section")
 
 

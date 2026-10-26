@@ -238,13 +238,13 @@ end
             end
         end, { id = "overview-keys", open = true })
         ui.section("What's where", function()
-            ui.field("Your cat", "Stats: health, stamina, level and stats. Colours and Mouse look, when those mods are on.")
-            ui.field("World", "The time of day and the fresh-kill pile; Travel; what's Nearby; your Items.")
-            ui.field("Story", "Quests: the one you follow, its objectives, and every quest's state.")
-            ui.field("Fight", "Both sides of a fight while you're in one.")
-            ui.field("Cheats", "The engine's cheats, and the game's own developer switches.")
-            ui.field("Mods", "Pages from the mods you have on.")
-            ui.field("Tools", "The log, this menu's settings" .. (SETTINGS.dev and ", the Inspector and the Console." or "."))
+            -- Menu.groups (menu.GROUPS in wcmods/menu.py) says what each group holds; Tools has two more
+            -- pages with code mods allowed.
+            for _, g in ipairs(Menu.groups) do
+                if g.where then
+                    ui.field(g.label, g.where .. (g.id == "tools" and (SETTINGS.dev and ", the Inspector and the Lua console." or ".") or ""))
+                end
+            end
         end, { id = "overview-where", open = false })
     end, { order = 0, group = "home" })
 
@@ -906,7 +906,7 @@ end
         end
         while #con.lines > 40 do table.remove(con.lines, 1) end
     end
-    Menu.page("Console", function(ui)
+    Menu.page("Lua console", function(ui)
         ui.heading("Lua console")
         ui.note("Runs Lua in the game, with WCModsGame as Game (docs/scripting.md). An expression shows its value: " ..
                 "Game.cat():health(). Globals you set stay for the next line.")

@@ -129,9 +129,9 @@ def test_log_page(agent):
 
 
 def test_console_page(agent):
-    if not any(p["id"] == "Console" for p in agent.menu.pages()):
-        skip("the Console page is only there with code mods allowed")
-    agent.menu.open("Console")
+    if not any(p["id"] == "Lua console" for p in agent.menu.pages()):
+        skip("the Lua console page is only there with code mods allowed")
+    agent.menu.open("Lua console")
     agent.menu.set("Lua", "6 * 7")
     agent.menu.press("Run")
     assert agent.menu.read().has("42"), agent.menu.read().text()
