@@ -783,7 +783,7 @@ UE4SS it was built for; the install says when theirs is another. Other DLLs in `
 
 ### `WCMods.hpp`
 
-wcmods' C++ SDK, four headers on top of UE4SS's own API (`RC::CppUserModBase`, `RC::Unreal::...`;
+wcmods' C++ SDK, headers on top of UE4SS's own API (`RC::CppUserModBase`, `RC::Unreal::...`;
 UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` includes together:
 
 | Header | Holds |
@@ -795,6 +795,8 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/World.hpp` | what's nearby, the game's screens and input, traces to the ground, the save, items, cats' names, clans and traits |
 | `WCMods/Story.hpp` | quests, fights, and the game's events as one list |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
+| `WCMods/Ui.hpp` | the game's own UI: a tab of your own in its screens (the pause menu, the inventory, the settings), the HUD and its parts, overlays, every control the engine has |
+| `WCMods/UiLua.hpp` | the same for Lua mods, as `WCModsCpp.ui` (docs/scripting.md, "The game's own menus and HUD") |
 | `WCMods/Mod.hpp` | `wcmods::ModBase` and `WCMODS_MOD` |
 
 The mod from `new --kind cpp`:
@@ -1004,6 +1006,80 @@ puts a `WCModsCpp.mods["<mod id>"]` table into each, with `pages()`, `draw(id, u
 call is one of its `ui.*` rows), lists its keys, and tells it when the menu opens and which page
 shows. The Lua stays where the menu is; the C++ page's function only ever runs on the game thread.
 
+**The game's own UI (`Ui.hpp`)**, game thread only
+
+The game's menus are UMG, like the mod menu, and `Ui.hpp` works with them directly: a tab of the mod's
+own in the pause screen, the inventory or the settings, with a page of the engine's controls in the game's
+font; the HUD and its parts; overlays on the viewport; and any widget the engine has, made, placed, styled
+and watched. Sizes are the game's own units: its UI is laid out for a 3840×2160 screen and scaled to fit,
+so a 52-point title and a 700-wide control look as the game's do.
+
+```cpp
+wcmods::ui::tab(L"WBP_GuiScreenPause_C", L"Mods", [](wcmods::Widget page) {
+    page.add(wcmods::ui::heading(L"My mod"));
+    auto on = wcmods::ui::checkbox(wcmods::settings()["on"].boolean());
+    on.on_toggle([](bool v) { wcmods::settings().set("on", v); });
+    page.add(wcmods::ui::labelled(L"Enabled", on));
+    page.add(wcmods::ui::labelled(L"Speed", wcmods::ui::slider(1, 0.5, 3, 0.1)));
+});
+wcmods::ui::hud_part(L"mcGuiMinimap").collapse();                       // no minimap
+wcmods::ui::overlay(L"notes").add(wcmods::ui::text(L"Hello")).at(100, 100);   // over the game's UI
+```
+
+A `Widget` is a handle on any widget: it knows when the game has destroyed what it points at (then it's
+false, and every call on it does nothing), and compares equal to another handle on the same widget. The
+helpers in `wcmods::ui` make widgets styled by `ui::theme()` (the game's Amarante font, its light text,
+36-point rows and 52-point headings; change it to change what they make). The engine's own controls
+(check boxes, sliders, number and text boxes, drop-downs) are drawn for a 1080-pixel screen, so
+`labelled()` and `scaled()` grow them by the theme's `control_scale`.
+
+| Call | Does |
+|---|---|
+| `wcmods::ui::tab(L"WBP_GuiScreenPause_C", L"Mods", fn, {id, inset, hide_game_panels, scroll, focus})` | A tab of the mod's own in one of the game's screens, by the screen's class (`WBP_GuiScreenPause_C`, `WBP_GuiPopupInventory_C`, `WBP_GuiPopupGameSettings_C`, `WBP_GuiPopupSettings_C`...): a tab button like the screen's own after them, which the game's tab keys reach (1 and 2, a controller's shoulder buttons), and `fn(page)` filling its page (a column to add rows to) each time the screen opens. The game's panels hide while the page shows and come back after. Gives back the tab's id. Keep the title short, as the game's are |
+| `wcmods::ui::tab_page(id)`, `tab_active(id)`, `remove_tab(id)`, `tabs()` | The tab's page while its screen is up (else empty), whether the game's navigation is on it, taking it out, and every tab's id |
+| `wcmods::ui::screen(L"WBP_GuiPopupInventory_C")`, `on_screen(type, fn)` | One of the game's screens while it shows (a base class works too, `GuiPopupCommonSettings`), and `fn(screen, shown)` when a screen of a class comes on the viewport and when it goes, looked for four times a second. `wcmods::screens()` (World.hpp) lists the ones showing |
+| `wcmods::ui::hud()`, `hud_part(L"mcGuiMinimap")` | The HUD while you play (`WBP_GuiHudGameWrc_C`), and one of its parts by name: `mcGuiMinimap`, `mcGuiEnergyBar`, `mcGuiHudCharacter`, `mcGuiQuestObjective`, `mcGuiContextualMenu`, `mcGuiSenseControl`, `mcGuiAreaName`...; its layers `CanvasExploration`, `CanvasCombat` and `CanvasOver` take widgets of your own |
+| `wcmods::ui::overlay(L"name", {layer, passive})`, `remove_overlay(name)` | A canvas of the mod's own on the viewport, by name, made once and kept: add widgets and place them with `at(x, y)` or their slot. `passive` (the default) lets the mouse through to the game. It goes with the level and comes back empty when asked for again |
+| `wcmods::ui::widget(L"ExpandableArea")` | Any of the engine's widgets by its class, plain: `TextBlock`, `Button`, `CheckBox`, `Slider`, `SpinBox`, `ComboBoxString`, `EditableTextBox`, `MultiLineEditableTextBox`, `EditableText`, `ProgressBar`, `Image`, `Border`, `SizeBox`, `Spacer`, `HorizontalBox`, `VerticalBox`, `ScrollBox`, `CanvasPanel`, `Overlay`, `GridPanel`, `UniformGridPanel`, `WrapBox`, `WidgetSwitcher`, `ScaleBox`, `ExpandableArea`, `BackgroundBlur`, `Throbber`, `CircularThrobber`, `RichTextBlock`, `InputKeySelector`, `ListView`... (any class in `/Script/UMG`), or by a full class path |
+| `wcmods::ui::game_widget(class)` | One of the game's own widget Blueprints, by its class or its path, made the way the game makes its widgets |
+| `wcmods::ui::text(L"Hi", {size, color, wrap, justify})`, `heading(str)`, `note(str)` | Text in the game's font; a heading; smaller grey text |
+| `wcmods::ui::button(label, color)`, `checkbox(on)`, `slider(value, lo, hi, step)`, `number(value, lo, hi, step)`, `input(text, hint)`, `choice({options}, selected)`, `progress(fraction, color)`, `image(texture path, w, h)`, `rect(color, w, h)` | The controls, styled: a button with a label, a check box, a slider, a number box you can drag or type in, a text box with a hint, a drop-down, a bar, a picture (a texture the game has loaded), a flat colour |
+| `wcmods::ui::hbox()`, `vbox()`, `scroll()`, `border(color, padding)`, `box(w, h)`, `spacer(w, h)`, `canvas()`, `overlay_box()`, `grid()`, `uniform_grid()`, `wrap()`, `switcher()`, `scale(factor)` | Layouts: widgets side by side, one under another, a list that scrolls, a box around one widget, a fixed size, empty room, free placement, one over another, grids, a flow that wraps, one of several, and a scaled one |
+| `wcmods::ui::row({widgets}, gap)`, `labelled(label, control, width)`, `scaled(control, width)` | A row (the first widget takes the room left), a labelled control as the game's settings rows, and a control grown to the game's size |
+| `Widget::add(child)`, `add({children})`, `remove(child)`, `remove()`, `clear()` | Put a widget in a panel (at the end) or in a content widget (as its one content), giving back its `Slot`; take one out; take this one out of wherever it is; take every child out |
+| `Widget::parent()`, `children()`, `child(i)`, `count()`, `find(name)`, `find_all(type)`, `walk(fn)` | The tree: the widget this one sits in, the widgets in it, one by its name anywhere down the tree (the game's screens name their parts: `find(L"mcGuiFooter")`), every one of a class, and `fn(widget)` down the tree (false stops) |
+| `Widget::slot()`, `at(x, y)` | The slot it sits in, and on a canvas, its top-left at a place |
+| `Slot::padding(m)`, `fill(weight)`, `fit()`, `align(h, v)` | In a box: room around it, a share of the room left or only what it needs, where it sits (`Align::Fill`, `Start`, `Center`, `End`) |
+| `Slot::anchors(x0, y0, x1, y1)`, `stretch(inset)`, `offsets(m)`, `position(x, y)`, `size(w, h)`, `alignment(x, y)`, `auto_size(on)`, `layer(z)`, `at(x, y)`, `cell(row, column, spans)` | On a canvas: its anchors and offsets, its place and size, which point of it sits at its position, whether it sizes itself, its layer; on a grid, its cell |
+| `Widget::show()`, `show_passive()`, `hide()`, `collapse()`, `set_visibility(v)`, `visibility()`, `visible()` | Shown and taking input; shown and letting input through; hidden keeping its room; gone; any `Visibility`; what it's set to; whether it's drawn now |
+| `Widget::set_enabled(on)`, `enabled()`, `set_opacity(f)`, `opacity()`, `set_scale(x, y)`, `set_angle(deg)`, `set_translation(x, y)`, `set_pivot(x, y)`, `set_tooltip(text)` | Enabled or greyed; its opacity; drawn bigger, turned, moved, around a pivot; a tooltip |
+| `Widget::focus()`, `focused()`, `hovered()` | The keyboard's (and a controller's) focus: give it, whether it or a widget in it has it; whether the mouse is over it |
+| `Widget::text()`, `set_text(str)`, `set_hint(str)`, `set_font(size, typeface)`, `set_color(c)`, `set_wrap(on)`, `set_justify(a)`, `set_shadow(offset, c)` | The text a text block, text box or button shows, and how: the game's font sizes (52 titles, 36 rows), a colour, wrapping, justification, a shadow. A game control with a `Text` property (a tab button) takes `set_text` too |
+| `Widget::value()`, `set_value(v)`, `set_range(lo, hi, step)`, `checked()`, `set_checked(on)` | What a control holds: a slider's or number box's number, a bar's fraction, a drop-down's index, a check box (1 or 0, or as a bool); a range and step |
+| `Widget::options()`, `add_option(s)`, `set_options({s})`, `option()`, `set_option(s)` | A drop-down's options and the one chosen |
+| `Widget::set_image(texture)`, `set_tint(c)`, `set_padding(m)`, `set_size(w, h)`, `set_active(i)`, `play(animation, reverse)` | A picture; the colour an image, border, button, bar or slider is drawn in; room inside a border; a size box's, spacer's or image's size; a switcher's child; a user widget's animation by name (`AniScreenIn`) |
+| `Widget::on_click(fn)`, `on_change(fn)`, `on_toggle(fn)`, `on_text(fn)`, `clicked()`, `changed()` | `fn()` when a button is clicked, `fn(value)` when a slider, number box or drop-down changes, `fn(on)` when a check box is ticked, `fn(text)` when a text box's text changes, each looked at every frame while the widget lasts; or asked: true on the frame it happened (the first ask starts the watch) |
+| `Widget::get(path)`, `set(path, value)`, `call(function, fill)`, `object()`, `valid()`, `name()`, `type()`, `is_a(path)` | Any property and any reflected function, as `Reflect.hpp` has them (`python wcmods.py inspect` lists a widget's); the `UObject*`; whether it's still there; its name, class, and whether it's of a class |
+| `UiColor::hex(L"#ffcc00")`, `to_hex()`, `Margin`, `Vec2`, `Visibility`, `Align` | A colour as an image editor shows it (converted to the engine's linear colours where a call wants one; UE4SS has a `Color` of its own, hence the name), room on four sides, a pair, and the enums |
+| `wcmods::ui::theme()` | What the helpers make: `text_size`, `heading_size`, `text`, `heading`, `muted`, `accent`, `field`, `button`, `panel` colours, `typeface`, `game_font`, `control_scale`, `control_width` |
+| `wcmods::ui::viewport_size()`, `viewport_scale()`, `show_cursor(on)` | The viewport in pixels and the UI's scale; the mouse cursor (the game hides it in its menus: shown, your controls take the mouse) |
+
+How a tab works: the game's screens keep their tabs (the pause screen's General, Controls, Quest...; the
+inventory's Consumable, Materials, Accessories; the settings' Audio, Gameplay...) as `GuiButtonState`
+controls in a row, listed in the screen's `NavControls` navigation, which the tab keys move along. A tab of
+the mod's own is one more of the game's tab buttons (made from the class of the screen's own, so it looks
+the same), put after them in the row and appended to that list, so the game's own navigation selects it;
+the row is drawn smaller when the tabs no longer fit. While the navigation is on it, the page (a border
+over the panels' area, the panels hidden) shows and the keyboard goes to its first control: the arrows,
+Tab and Enter then move among and use the page's controls. The cat maker's categories are a circular
+icon menu (`GuiCircularMenu`), not a tab row, so `tab()` doesn't reach it; its screen and parts are
+still there through `screen()`, `find()` and `add()`.
+
+The tab's page is built again each time the screen opens, because the game makes its screens anew; keep
+the state the page shows in your own variables, as the example does with the settings. A page's controls
+answer the mouse when the cursor shows (`show_cursor(true)`; the game's menus hide it) and the keyboard
+when focused.
+
 The same rules as for scripts keep the game running:
 
 - **The game thread.** Touch the game's objects only on the game thread: in `every_frame`, a timer, a
@@ -1018,10 +1094,11 @@ The same rules as for scripts keep the game running:
 ### Testing the SDK
 
 Every call above is checked in the game. `tests/cpp-sdk` is a C++ mod that calls all of them (one file
-a header, `test_core.cpp`, `test_game.cpp`, `test_events.cpp`) and records what it got in its
+a header, `test_core.cpp`, `test_game.cpp`, `test_events.cpp`, `test_ui.cpp`...) and records what it got in its
 `results.json`; `tests/game/test_cpp_sdk.py` reads that, compares it with what Lua sees of the same
 things, and asks the mod to make changes (heal, the clock, a teleport, the cat's size, a switch, a
-console command, its settings) that Lua then confirms, before putting them back. With the game closed:
+console command, its settings, a tab in the pause screen with every kind of control, an overlay, a label on
+the HUD) that Lua then confirms, before putting them back. With the game closed:
 
 ```bash
 python wcmods.py cpp build tests/cpp-sdk

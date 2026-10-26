@@ -884,6 +884,32 @@ keeps a claim in UE4SS shared variables (`WCModsDialogue.owner` and `.at`), rene
 up, and `busy()` is true for the other mods. When two cats are in reach, the first script to hear
 the key talks.
 
+**The screens' tabs** (worked out on 2026-10-25, the basis of the C++ SDK's `ui::tab`):
+- A screen with tabs (the pause screen `WBP_GuiScreenPause_C`, the inventory `WBP_GuiPopupInventory_C`,
+  the settings `WBP_GuiPopupGameSettings_C` / `WBP_GuiPopupSettings_C`) keeps them as `GuiButtonState`
+  controls (`WBP_GuiButtonTab_C`) in a `HorizontalBox` (`HorizontalBox_23`, between a key hint control on
+  each side and two spacers), and lists them in its `NavControls.ControlsNavigation` (a `LinearNavigation`).
+  The tab keys (1 and 2 on a keyboard, the shoulder buttons on a controller) move `CurrentNav.CurrentControl`
+  along that list and the screen's native `OnNavigationChanged` switches the panel (`CurrentPanel`,
+  `CurrentGrid`); `ControlSelected` follows. The tabs don't answer the mouse at all.
+- A control appended to that list is reached by the keys and selected like the game's own (its
+  `CanvasSelected` shown), and the game leaves the last panel up: that's how a mod's tab gets its page in.
+  A tab made from `WBP_GuiButtonTab_C` with `WidgetBlueprintLibrary:Create` shows its `Text` property once
+  it's constructed (set it before adding it to the row; its text blocks are `mcGuiTextNormal` and
+  `mcGuiTextSelected`); it has no inner `UButton`.
+- The pause screen's panels sit in `CanvasPanels`, the inventory's grids in `CanvasGrids` (with
+  `mcGuiItemInfo` beside them), the settings' panels straight in `CanvasContent`.
+- The cat maker (`WBP_GuiScreenCustomization_C`) has no tab row: its categories are a circular icon menu,
+  `mcGuiCategoryMenu` (`GuiCircularMenu`: radius 900, 30° apart, four `FCategoryMenuItemsData` icon
+  pairs, items made at construct). Making that screen outside the flow and putting it on the viewport
+  closed the game (an access violation), so adding a category there is still open.
+- **Keys:** on a keyboard, P opens the pause screen and I the inventory; Backspace is Back. Enter pauses
+  only while the game is in its gamepad mode (the HUD showing controller glyphs). A closed screen stays
+  as an object a while (`FindFirstOf` finds the dead one first): the one showing is the one with
+  `IsInViewport()` and `IsVisible()` both true.
+- **Slate focus:** `SetKeyboardFocus` on a widget takes the keyboard away from the game's screens until
+  `WidgetBlueprintLibrary:SetFocusToGameViewport()` or the game's own focus handling gives it back.
+
 **Not tried yet:**
 - The HUD's `OnItemPickedUp(tag, quantity, total, bCanShowPopup)` is reflected. Calling it may give
   the game's "… OBTAINED" toast for anything.
