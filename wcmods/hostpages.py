@@ -195,6 +195,12 @@ end
         if not s.cat then
             ui.text("Not in the world yet. The pages about your cat and the world fill in once you're playing.")
         else
+            local okN, N = pcall(require, "WCModsNames")
+            if okN and type(N) == "table" and N.loaded and N.loaded() == false then
+                ui.text("The game isn't showing the names your mods add: it isn't reading wcmods' pak (~mods/zzz_WCMods_P.pak), " ..
+                        "so a renamed cat shows as <MISSING STRING TABLE ENTRY>. In Clan Mod Studio, check the game folder under " ..
+                        "Get set up and Apply again, or put your save back from Backups and repair.", { color = THEME.heading })
+            end
             ui.columns({ { "Cat", s.name or "?" }, { "Clan", s.clan or "?" }, { "Level", s.level }, { "Rank", s.rank or "?" } })
             if s.hp and s.maxhp and s.maxhp > 0 then
                 ui.progress("Health", s.hp / s.maxhp, { color = "#e06c6c", format = string.format("%.0f / %.0f", s.hp, s.maxhp) })

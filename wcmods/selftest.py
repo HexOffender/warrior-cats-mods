@@ -1407,7 +1407,17 @@ def _names_plan(read_text):
                and texts.get("STR_CAT_NAME_WCM_GLIMMER_PAW") == "Glimmerpaw"
                and [w for w in plan.warnings if w.startswith("cats:")] == [
                    "cats: no cat in your save is called 'RiverClan/Warrior/1'", "cats: no cat in your save is called 'Nobody'"])
-    return ok and ok_cats, f"{len(game.prefixes)} prefixes, {len(game.suffixes)} suffixes, {len(added)} new texts"
+    # Shown names: a cat already renamed to a mod's own text (Glow) is listed by that text, not blank, and a
+    # rename is logged from the name the cat has; the in-game module gets a few added keys to check the game has.
+    from . import world
+    listed = {c["target"]: c for c in names.cat_list(plan, cats, ops)}
+    data = world.names_data(plan)
+    ok_shown = (listed["RiverClan/Warrior/2"]["name"] == "Glow" and listed["player"]["name"] == "Otterheart"
+                and listed["RiverClan/Warrior/0"]["with_mods"] == "Sparkle"
+                and plan.cat_renames == [("Woodheart", "Sparkle")]
+                and data["added"] and set(data["added"]) <= set(plan.added_keys)
+                and data["whole"].get("STR_CAT_NAME_WCM_GLIMMER_PAW") == "Glimmerpaw")
+    return ok and ok_cats and ok_shown, f"{len(game.prefixes)} prefixes, {len(game.suffixes)} suffixes, {len(added)} new texts"
 
 
 def _remapper_presses():

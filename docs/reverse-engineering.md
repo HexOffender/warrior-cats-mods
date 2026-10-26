@@ -458,6 +458,14 @@ From `wcmods/names.py` (checked against the tables and the save):
   (Black + face, `STR_CAT_NAME27_FACE`) is left out on purpose.
 - **The save** stores `PrefixNameId` and `SuffixNameId`. A rank-up swaps the suffix ID.
   Apprentices may leave the suffix out, which then comes from their rank.
+- **How a name is shown** (seen in game, 2026-10-25): the HUD and the Select Your Cat screen look
+  up `PrefixNameId` + `SuffixNameId` as saved in the string table `SwtStrings`, which the game
+  loads from `Strings_<language>.csv` under `NonAsset` (the exe holds that path next to
+  `SwtStrings`/`SwtNamespace`). The prefix table isn't consulted: an ID in no table shows fine as
+  long as the text exists, and a saved `_STAR` reads -star whatever the cat's rank. A key the table
+  hasn't got shows as the engine's `<MISSING STRING TABLE ENTRY>`; "Cat 1" is the game's own
+  fallback for the player's name, referenced from four places (a cat panel with rank and
+  experience, the den, dilemma popups and the trait/name screen).
 - **Name screen suggestions:** `PrefixNameFilters.csv` and `SuffixNameFilters.csv` score names
   against a cat's clan, looks and (for suffixes) traits.
 - **Rogues** take a whole name from `NPC/RogueNames.csv` (`STR_ROGUE_CAT_NAME_<n>`; the table's

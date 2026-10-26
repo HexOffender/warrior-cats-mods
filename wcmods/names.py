@@ -142,7 +142,7 @@ def cat_list(plan, cats, ops=()):
         roles = [p.rsplit("/", 1)[-1] for p in cat["paths"] if "/NarrativeRoles/" in p]
         out.append({"target": "player" if first == PLAYER_PATH else _where(first), "where": _where(first),
                     "roles": roles, "role": ids.get("Role", "Player" if first == PLAYER_PATH else ""),
-                    "name": plan.display(ids, final=False), "with_mods": renamed.get(first, plan.display(ids))})
+                    "name": plan.current_name(ids), "with_mods": renamed.get(first, plan.display(ids))})
     return out
 
 
@@ -450,7 +450,7 @@ class Plan:
                 if not fields or self._has(cat, how):
                     continue
                 expect = {k: v for k, v in ids.items() if k in ("PrefixNameId", "SuffixNameId")}
-                before, after = self.display(ids, final=False), self._shown(fields, ids)
+                before, after = self.current_name(ids), self._shown(fields, ids)
                 self.cat_renames.append((before, after))
                 for path in cat["paths"]:
                     ops.append({"op": "name", "path": path, "set": fields, "expect": expect,
@@ -467,6 +467,12 @@ class Plan:
         key = ids.get("PrefixNameId", "") + suffix
         text = self.final if final else self.game.text
         return text.get(key) or text.get(ids.get("PrefixNameId", ""), "")
+
+    def current_name(self, ids):
+        """The name a cat has now: the game's own text for its IDs, else the text a names mod gives them (a
+        cat renamed by an earlier install), else the IDs themselves (renamed by a mod that's off now)."""
+        return (self.display(ids, final=False) or self.display(ids)
+                or ids.get("PrefixNameId", "") + ids.get("SuffixNameId", ""))
 
     def _targets(self, target, how, cats):
         """Cats a cats entry means. A place (RiverClan/Warrior/3) can shift as the game adds and removes
