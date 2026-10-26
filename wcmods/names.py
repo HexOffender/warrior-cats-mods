@@ -13,7 +13,9 @@ How the game names cats (checked against its tables and save):
 - NPC/NameBanList.csv lists prefix + suffix combinations the game never hands out (canon names).
 - The save stores each cat as text with PrefixNameId="..." and SuffixNameId="..." (the player under
   GameplayProgression, NPCs under NPCData); story roles like {THE AGING LEADER} show the name of
-  the NPC cast in them (NPCData/NarrativeRoles).
+  the NPC cast in them (NPCData/NarrativeRoles). A save holds a game per cat slot started (the
+  account data's numbered keys, each with its own player cat and clans); Shared/General/CurrentCatSlot
+  is the one being played, and what "player", a name or a place means unless a slot is given first.
 
 Names added by mods get IDs made from the name (STR_CAT_NAME_WCM_SPARROW), so a saved cat keeps its
 name whatever other mods add. Removing a prefix or suffix only stops the game handing it out: its
@@ -34,10 +36,49 @@ TABLES = (PREFIXES, PREFIX_LOOKS, SUFFIXES, SUFFIX_LOOKS, ROGUES, BANNED)
 CLANS = ("ThunderClan", "RiverClan", "ShadowClan", "WindClan", "OutOfClans")
 RANKS = ("Kit", "Apprentice", "Warrior", "Deputy", "Leader", "MedicineCat", "Queen", "Elder", "RogueCat",
          "RogueCatLeader", "StarClanAncestor")
-PLAYER_PATH = "0/GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization"
+PLAYER_TAIL = "GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization"   # your cat: <slot>/PLAYER_TAIL
 SECTIONS = ("prefixes", "suffixes", "rogues", "banned", "names", "text", "cats")
 # A whole field name: not the tail of a longer one (say, MotherPrefixNameId).
 _FIELD = re.compile(r'(?<![A-Za-z0-9_])(PrefixNameId|SuffixNameId)="([^"]*)"')
+_SLOT_TARGET = re.compile(r"^(\d+)/(.*)$")   # a cats key with the slot first: 1/player, 1/Blaze, 1/RiverClan/Warrior/3
+
+
+def current_slot(data):
+    """The slot being played, as its key in the account data ("1"); "0" when the save doesn't say."""
+    try:
+        return str(data["Shared"]["General"]["CurrentCatSlot"])
+    except (KeyError, TypeError):
+        return "0"
+
+
+def is_player(path):
+    return path.split("/", 1)[1:] == [PLAYER_TAIL]
+
+
+def place(path):
+    """Where a cat is, without its slot: "player" for your cat, else its path under NPCData
+    ("Clans/RiverClan/Warrior/3", "NarrativeRoles/TheAgingLeader")."""
+    if is_player(path):
+        return "player"
+    parts = path.split("/")
+    return "/".join(parts[2:] if parts[1:2] == ["NPCData"] else parts[1:])
+
+
+def target_of(cat):
+    """The cats key that picks this cat by place: "player" or its place, with the slot first
+    ("1/player", "1/Clans/RiverClan/Warrior/3") for a cat in a game other than the one being played."""
+    where = place(cat["paths"][0])
+    return where if cat["current"] else f"{cat['slot']}/{where}"
+
+
+def _parse_target(target):
+    """A cats key as (slot or None, the rest: "player", a name or a place)."""
+    m = _SLOT_TARGET.match(target)
+    return (m.group(1), m.group(2)) if m else (None, target)
+
+
+def _slot_order(slot):
+    return (0, int(slot)) if slot.isdigit() else (1, slot)
 
 
 def strings_path(lang):
@@ -132,16 +173,18 @@ def mod_specs(mod_list):
 
 
 def cat_list(plan, cats, ops=()):
-    """The cats in a save for showing: the target to name them by (cats key in names.json), where they
-    are, their rank, story roles and their name before and after the plan (ops: plan_cats' renames,
-    which win over the plan's text changes)."""
+    """The cats in a save for showing: the target to name them by (cats key in names.json), their slot
+    (the game they're in) and whether it's the one being played, where they are in it, their rank, story
+    roles and their name before and after the plan (ops: plan_cats' renames, which win over the plan's
+    text changes). The game being played comes first, your cat first in each."""
     renamed = {op["path"]: op["to"] for op in ops}
     out = []
     for cat in cats:
         first, ids = cat["paths"][0], cat["ids"]
         roles = [p.rsplit("/", 1)[-1] for p in cat["paths"] if "/NarrativeRoles/" in p]
-        out.append({"target": "player" if first == PLAYER_PATH else _where(first), "where": _where(first),
-                    "roles": roles, "role": ids.get("Role", "Player" if first == PLAYER_PATH else ""),
+        out.append({"target": target_of(cat), "slot": cat["slot"], "current": cat["current"], "player": cat["player"],
+                    "where": "you" if cat["player"] and cat["current"] else "your cat" if cat["player"] else place(first),
+                    "roles": roles, "role": ids.get("Role", "Player" if cat["player"] else ""),
                     "name": plan.display(ids, final=False), "with_mods": renamed.get(first, plan.display(ids))})
     return out
 
@@ -441,7 +484,7 @@ class Plan:
                 if not any(self._has(c, how) for c in cats):
                     self.warnings.append(f"cats: no cat in your save is called '{target}'")
                 continue
-            if len(hits) > 1 and "/" not in target:
+            if len(hits) > 1 and "/" not in _parse_target(target)[1]:
                 self.warnings.append(f"cats: {len(hits)} cats are called '{target}', and all of them are renamed; "
                                      "use a cat's place from `names --cats` to pick one")
             for cat in hits:
@@ -454,7 +497,7 @@ class Plan:
                 self.cat_renames.append((before, after))
                 for path in cat["paths"]:
                     ops.append({"op": "name", "path": path, "set": fields, "expect": expect,
-                                "from": before, "to": after, "where": _where(path)})
+                                "from": before, "to": after, "where": _where(path, cat["current"])})
         return ops
 
     def _has(self, cat, how):
@@ -469,16 +512,31 @@ class Plan:
         return text.get(key) or text.get(ids.get("PrefixNameId", ""), "")
 
     def _targets(self, target, how, cats):
-        """Cats a cats entry means. A place (RiverClan/Warrior/3) can shift as the game adds and removes
-        cats, so a place with "was" only counts while the cat there still has that name."""
-        if target.lower() == "player":
-            return [c for c in cats if PLAYER_PATH in c["paths"]]
-        if "/" in target:
-            hits = [c for c in cats if any(p == target or p.endswith("/" + target) for p in c["paths"])]
+        """Cats a cats entry means: "player", a name or a place (RiverClan/Warrior/3), each with a slot
+        first ("1/player", "1/Blaze") for a game other than the one being played. Without a slot, a name
+        or place means the game being played, or any game when that one has no such cat (so a names.json
+        from before a second game was started keeps working); "player" is only ever the cat being played.
+        A place can shift as the game adds and removes cats, so a place with "was" only counts while the
+        cat there still has that name."""
+        slot, want = _parse_target(target)
+        if not want:
+            return []
+        if want.lower() == "player":
+            hits = [c for c in cats if c["player"]]
+            return [c for c in hits if c["slot"] == slot] if slot is not None else [c for c in hits if c["current"]]
+        if "/" in want:
+            # A place as names --cats shows it, or (as older names.json files could say it) with the NPCData
+            # step kept, or a cat's whole path in the save.
+            hits = [c for c in cats if any(place(p) == want or place(p).endswith("/" + want)
+                                           or p == target or p.endswith("/" + want) for p in c["paths"])]
             if how.get("was"):
                 hits = [c for c in hits if self._called(c, how["was"])]
-            return hits
-        return [c for c in cats if self._called(c, target)]
+        else:
+            hits = [c for c in cats if self._called(c, want)]
+        if slot is not None:
+            return [c for c in hits if c["slot"] == slot]
+        here = [c for c in hits if c["current"]]
+        return here or hits
 
     def _called(self, cat, name):
         return name.lower() in (self.display(cat["ids"]).lower(), self.display(cat["ids"], final=False).lower())
@@ -560,8 +618,10 @@ def _average(items, col):
 
 def cats_in_save(data):
     """Every named cat in a save's account data: [{"paths": [...], "ids": {"PrefixNameId", "SuffixNameId",
-    "Role"}}]. A story role (NPCData/NarrativeRoles) holds a copy of a clan or outsider cat's text; copies
-    are one cat, listed under all their paths, so a rename reaches every place the game reads it from."""
+    "Role"}, "slot": "1", "player": bool, "current": bool}]. A save holds a game per cat slot started; the
+    one being played (current_slot) comes first, then the others by number, your cat first in each. A
+    story role (NPCData/NarrativeRoles) holds a copy of a clan or outsider cat's text; copies are one
+    cat, listed under all their paths, so a rename reaches every place the game reads it from."""
     found = {}
 
     def walk(o, path):
@@ -572,27 +632,30 @@ def cats_in_save(data):
             for i, v in enumerate(o):
                 walk(v, f"{path}/{i}" if path else str(i))
         elif isinstance(o, str) and "PrefixNameId=" in o:
-            found.setdefault(o, []).append(path)
+            found.setdefault((path.split("/", 1)[0], o), []).append(path)   # the same text in two games is two cats
 
     walk(data, "")
+    current = current_slot(data)
     cats = []
-    for text, paths in found.items():
+    for (slot, text), paths in found.items():
         ids = dict(_FIELD.findall(text))
         role = _ROLE.search(text)
         if role:
             ids["Role"] = role.group(1)
-        # The player first, then each cat's own place before the story roles it's cast in.
-        paths.sort(key=lambda p: (p != PLAYER_PATH, "/NarrativeRoles/" in p, p))
-        cats.append({"paths": paths, "ids": ids})
-    cats.sort(key=lambda c: (c["paths"][0] != PLAYER_PATH, c["paths"][0]))
+        # Your cat first, then each cat's own place before the story roles it's cast in.
+        paths.sort(key=lambda p: (not is_player(p), "/NarrativeRoles/" in p, p))
+        cats.append({"paths": paths, "ids": ids, "slot": slot, "player": is_player(paths[0]), "current": slot == current})
+    # The game being played first, then your cat, the clans, and last the cats that are only story roles.
+    cats.sort(key=lambda c: (not c["current"], _slot_order(c["slot"]), not c["player"],
+                             "/NarrativeRoles/" in c["paths"][0], c["paths"][0]))
     return cats
 
 
-def _where(path):
-    if path == PLAYER_PATH:
-        return "you"
-    parts = path.split("/")
-    return "/".join(parts[2:]) if parts[1:2] == ["NPCData"] else path
+def _where(path, current=True):
+    """A cat's path for people: "you" for your cat, else its place, with the slot first when the cat is
+    in a game other than the one being played."""
+    where = "you" if is_player(path) else place(path)
+    return where if current else f"{path.split('/', 1)[0]}/{'player' if is_player(path) else where}"
 
 
 def rename_struct(text, fields, expect):

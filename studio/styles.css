@@ -144,12 +144,14 @@ input.switch:checked { background: var(--good); }
 input.switch:checked::after { left: 23px; }
 @media (prefers-reduced-motion: no-preference) { input.switch, input.switch::after { transition: background .15s, left .15s; } }
 h3.group { margin-top: 8px; }
-.card.fold { display: block; }
-.card.fold > * + * { margin-top: 14px; }
-.card.fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
-.card.fold > summary::-webkit-details-marker { display: none; }
-.card.fold > summary::before { content: "\25B8"; color: var(--muted); }
-.card.fold[open] > summary::before { content: "\25BE"; }
+.fold { display: block; }
+.fold > * + * { margin-top: 14px; }
+.fold > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: "\25B8"; color: var(--muted); }
+.fold[open] > summary::before { content: "\25BE"; }
+.card > .fold { border-top: 1px solid var(--line); padding-top: 10px; }
+.fold > summary > .muted { font-weight: 400; font-size: 0.9rem; }
 .stack { display: grid; gap: 8px; }
 .line { border-top: 1px solid var(--line); padding-top: 8px; }
 .ok-line { color: var(--good); }

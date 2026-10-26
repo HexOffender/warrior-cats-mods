@@ -56,7 +56,7 @@ class CatsSection(Section):
             if not os.path.isfile(sav):
                 ctx.warn(f"{what}: no save yet; start the game once, then install again")
             else:
-                mine = [c for c in cats if names.PLAYER_PATH in c["paths"]]
+                mine = [c for c in cats if c["player"] and c["current"]]   # the game being played, not every slot's cat
                 fields = {catlook.SLOTS[part]: slot for part, slot in slots.items()}
                 fields.update({catlook.SCARS[part]: n for part, n in scars.items()})
                 label = [f"{p} slot {s}" for p, s in sorted(slots.items())]

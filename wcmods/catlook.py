@@ -184,10 +184,10 @@ def script(colours, save_key="", key_file="", debug=False, save=None):
 
 
 def save_key(cats):
-    """Your cat's name IDs as the script matches them, from cats_in_save(); "" without a player cat."""
-    from .names import PLAYER_PATH
+    """Your cat's name IDs as the script matches them, from cats_in_save(): the player cat of the game being
+    played (a save holds one per cat slot started); "" without one."""
     for cat in cats:
-        if PLAYER_PATH in cat["paths"]:
+        if cat["player"] and cat["current"]:
             return f'{cat["ids"].get("PrefixNameId", "")}|{cat["ids"].get("SuffixNameId", "")}'
     return ""
 

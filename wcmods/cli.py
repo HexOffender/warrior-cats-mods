@@ -224,11 +224,20 @@ def cmd_names(ctx, args):
     if args.cats:
         if not cats:
             print("no save yet; start the game once")
-        for c in names.cat_list(plan, cats, ops):
+        shown = names.cat_list(plan, cats, ops)
+        games = len({c["slot"] for c in shown})
+        last = None
+        for c in shown:
+            if games > 1 and c["slot"] != last:
+                print(("" if last is None else "\n") + f"cat slot {c['slot']}" + (" (the game you're playing):" if c["current"] else ":"))
+                last = c["slot"]
             now = c["name"] + (f" -> {c['with_mods']}" if c["with_mods"] != c["name"] else "")
             roles = f"  (story role: {', '.join(c['roles'])})" if c["roles"] else ""
             print(f"  {now:30s} {c['role']:16s} {c['target']}{roles}")
-        print('\nIn names.json, "cats" takes a cat by the name shown here, "player", or the last column.')
+        print()
+        print('In names.json, "cats" takes a cat by the name shown here, "player", or the last column'
+              + (" (a slot first, like 1/player, picks a cat in another game; without one it means the game "
+                 "you're playing)." if games > 1 else "."))
         return
 
     def show(title, items):
