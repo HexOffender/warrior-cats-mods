@@ -74,7 +74,6 @@ def run(cfg, oodle, log=print):
     check("mods that need other mods: switched on together, left out of a build without them", _requirements(cfg))
     check("the mod menu is a mod: its window and module only with it on", _menu_mod(cfg))
     check("getting set up: the game found from any of its folders, a first backup, the script loader", _onboarding())
-    check("palettes without the Oodle DLL: eye colours left out with a warning, the rest built", _palettes_without_oodle(cfg))
     check("getting set up, the rough edges: an install from before UE4SS is redone, a folder adds only the "
           "ticked mods, no drive letters in UE4SS's .zip, a studio without the game answers", _onboarding_edges())
     ok, detail = _signatures(cfg)
@@ -98,44 +97,47 @@ def run(cfg, oodle, log=print):
     check("cat rename inside save text", _rename_struct())
     check("palette switching", _palette_switching())
 
+    ok, detail = _kraken_fixtures()
+    check("Kraken decoder: samples compressed by Oodle itself, at several levels, decode back", ok, detail)
     base_pak = PakReader(os.path.join(cfg.paks_dir, "pakchunk0-Windows.pak"), oodle)
     csv = base_pak.read("Wrc/Content/Gameplay/DataTables/NonAsset/NPC/CatSize.csv")
     check("read base pak", csv.startswith(b"--,Role"), f"{len(base_pak.entries)} files")
-    if oodle:
-        tuning = base_pak.read("Wrc/Content/Gameplay/DataTables/NonAsset/TuningData.csv")
-        check("Oodle decompress (pak)", len(tuning) > 1000 and tuning[:200].isascii())
+    tuning = base_pak.read("Wrc/Content/Gameplay/DataTables/NonAsset/TuningData.csv")
+    check(f"Kraken decompress (pak, {oodle.name})", len(tuning) > 1000 and tuning[:200].isascii())
 
     io = IoStoreReader(os.path.join(cfg.paks_dir, "pakchunk0-Windows.utoc"), oodle)
     check("read base utoc", len(io.files) > 1000, f"{len(io.files)} files, toc v{io.version}")
+    if oodle.path:
+        ok, detail = _kraken_against_dll(io, oodle)
+        check("Kraken decoder: the game's own blocks decode the same as the oo2core DLL", ok, detail)
 
-    if oodle:
-        header = io.container_header()
-        raw = io.read_chunk(next(i for i, c in enumerate(io.chunk_ids) if c[11] & 0x3F == 6))
-        check("container header round-trip", header.serialize() == raw, f"{len(header.package_ids)} packages")
+    header = io.container_header()
+    raw = io.read_chunk(next(i for i, c in enumerate(io.chunk_ids) if c[11] & 0x3F == 6))
+    check("container header round-trip", header.serialize() == raw, f"{len(header.package_ids)} packages")
 
-        ci = io.chunk_index(eyeatlas.PATH)
-        original = io.read_chunk(ci)
-        meta_ok = _meta_hash(io, ci) == blake3(original, 20)
-        check("chunk hash is BLAKE3-160", meta_ok)
-        atlas = eyeatlas.EyeAtlas(original)
-        check("eye atlas layout", (atlas.width, atlas.height) == (64, 26), f"{atlas.width}x{atlas.height}, rows {atlas.labels[1]}..{atlas.labels[20]}")
-        palettes.apply_eyes(atlas, {"Amber": (1.0, 0.0, 1.0)})
-        patched = atlas.bytes()
-        diff = [i for i in range(len(original)) if original[i] != patched[i]]
-        inside = all(atlas.pixel_offset <= i < atlas.pixel_offset + atlas.width * atlas.height * 8 for i in diff)
-        check("atlas patch stays inside pixel block", bool(diff) and inside and len(patched) == len(original))
+    ci = io.chunk_index(eyeatlas.PATH)
+    original = io.read_chunk(ci)
+    meta_ok = _meta_hash(io, ci) == blake3(original, 20)
+    check("chunk hash is BLAKE3-160", meta_ok)
+    atlas = eyeatlas.EyeAtlas(original)
+    check("eye atlas layout", (atlas.width, atlas.height) == (64, 26), f"{atlas.width}x{atlas.height}, rows {atlas.labels[1]}..{atlas.labels[20]}")
+    palettes.apply_eyes(atlas, {"Amber": (1.0, 0.0, 1.0)})
+    patched = atlas.bytes()
+    diff = [i for i in range(len(original)) if original[i] != patched[i]]
+    inside = all(atlas.pixel_offset <= i < atlas.pixel_offset + atlas.width * atlas.height * 8 for i in diff)
+    check("atlas patch stays inside pixel block", bool(diff) and inside and len(patched) == len(original))
 
-        with tempfile.TemporaryDirectory() as tmp:
-            pid = struct.unpack("<Q", io.chunk_ids[ci][:8])[0]
-            imports, shaders = header.entry_for(pid)
-            w = ModContainerWriter(b"WCTEST01")
-            w.add_package(eyeatlas.PATH, io.chunk_ids[ci], patched, imports, shaders)
-            w.write(os.path.join(tmp, "t.utoc"), os.path.join(tmp, "t.ucas"))
-            mod = IoStoreReader(os.path.join(tmp, "t.utoc"))
-            back = mod.read_file(eyeatlas.PATH)
-            mh = mod.container_header()
-            check("mod container round-trip", back == patched and mh.entry_for(pid) == (imports, shaders)
-                  and _meta_hash(mod, mod.chunk_index(eyeatlas.PATH)) == blake3(patched, 20))
+    with tempfile.TemporaryDirectory() as tmp:
+        pid = struct.unpack("<Q", io.chunk_ids[ci][:8])[0]
+        imports, shaders = header.entry_for(pid)
+        w = ModContainerWriter(b"WCTEST01")
+        w.add_package(eyeatlas.PATH, io.chunk_ids[ci], patched, imports, shaders)
+        w.write(os.path.join(tmp, "t.utoc"), os.path.join(tmp, "t.ucas"))
+        mod = IoStoreReader(os.path.join(tmp, "t.utoc"))
+        back = mod.read_file(eyeatlas.PATH)
+        mh = mod.container_header()
+        check("mod container round-trip", back == patched and mh.entry_for(pid) == (imports, shaders)
+              and _meta_hash(mod, mod.chunk_index(eyeatlas.PATH)) == blake3(patched, 20))
 
     with tempfile.TemporaryDirectory() as tmp:
         pw = PakWriter()
@@ -150,37 +152,33 @@ def run(cfg, oodle, log=print):
         check("pak file names stored like the game's", rp.legacy_file_names == 0 and base_pak.legacy_file_names == 0,
               f"ours {rp.legacy_file_names}, game {base_pak.legacy_file_names} stored the old way")
 
-    if oodle:
-        ok, detail = _cooked_table(io)
-        check("cooked item table: every row read and written back the same, and a new row added", ok, detail)
-        ok, detail = _textures(io)
-        check("new textures: a copy of the game's with the IDs the game would give it, new pixels in every mip",
-              ok, detail)
-        ok, detail = _accessory_looks(io)
-        check("accessory looks: the game's lists read, new looks and their tags added, the rest as it was",
-              ok, detail)
-        ok, detail = _items_section(cfg)
-        check("new items (items.json): tag, herb row, item table row, recipe, starting count, a game item's "
-              "recipe, icons and an accessory's look of a mod's own; mistakes refused",
-              ok, detail)
-    else:
-        log("  [skip] the game's item table, textures and accessories need the Oodle DLL")
+    ok, detail = _cooked_table(io)
+    check("cooked item table: every row read and written back the same, and a new row added", ok, detail)
+    ok, detail = _textures(io)
+    check("new textures: a copy of the game's with the IDs the game would give it, new pixels in every mip",
+          ok, detail)
+    ok, detail = _accessory_looks(io)
+    check("accessory looks: the game's lists read, new looks and their tags added, the rest as it was",
+          ok, detail)
+    ok, detail = _items_section(cfg)
+    check("new items (items.json): tag, herb row, item table row, recipe, starting count, a game item's "
+          "recipe, icons and an accessory's look of a mod's own; mistakes refused",
+          ok, detail)
 
-    if oodle:
-        from . import csvdata
-        from .gamefiles import NONASSET
-        names = [p for p in base_pak.entries if p.startswith(NONASSET) and p.endswith(".csv")]
-        bad = [p for p in names if csvdata.Table(base_pak.read(p).decode("utf-8")).to_text().encode("utf-8") != base_pak.read(p)]
-        check("CSV editor round-trips every game table", not bad, f"{len(names)} tables" + (f"; differs: {bad[:3]}" if bad else ""))
-        xp = base_pak.read(NONASSET + "CombatBaseExperience.csv").decode("utf-8")
-        new, applied, problems = csvdata.apply_edits(xp, {"*": {"BaseExperience": "x2"}, "Fish": {"DifficultyOffset": 1}})
-        t0, t1 = csvdata.Table(xp), csvdata.Table(new)
-        doubled = all(int(b.fields[1]) == 2 * int(a.fields[1]) for a, b in zip(t0.rows, t1.rows))
-        check("CSV edits (multiply + single cell)", doubled and not problems and t1.rows[0].fields[2] == "1"
-              and len(new.splitlines()) == len(xp.splitlines()), f"{len(applied)} cells")
-        from .sdk import BuildContext
-        ok, detail = _names_plan(lambda p: base_pak.read(BuildContext.data_path(p)).decode("utf-8"))
-        check("names plan against the game's name tables", ok, detail)
+    from . import csvdata
+    from .gamefiles import NONASSET
+    names = [p for p in base_pak.entries if p.startswith(NONASSET) and p.endswith(".csv")]
+    bad = [p for p in names if csvdata.Table(base_pak.read(p).decode("utf-8")).to_text().encode("utf-8") != base_pak.read(p)]
+    check("CSV editor round-trips every game table", not bad, f"{len(names)} tables" + (f"; differs: {bad[:3]}" if bad else ""))
+    xp = base_pak.read(NONASSET + "CombatBaseExperience.csv").decode("utf-8")
+    new, applied, problems = csvdata.apply_edits(xp, {"*": {"BaseExperience": "x2"}, "Fish": {"DifficultyOffset": 1}})
+    t0, t1 = csvdata.Table(xp), csvdata.Table(new)
+    doubled = all(int(b.fields[1]) == 2 * int(a.fields[1]) for a, b in zip(t0.rows, t1.rows))
+    check("CSV edits (multiply + single cell)", doubled and not problems and t1.rows[0].fields[2] == "1"
+          and len(new.splitlines()) == len(xp.splitlines()), f"{len(applied)} cells")
+    from .sdk import BuildContext
+    ok, detail = _names_plan(lambda p: base_pak.read(BuildContext.data_path(p)).decode("utf-8"))
+    check("names plan against the game's name tables", ok, detail)
 
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     if os.path.isfile(sav):
@@ -1060,8 +1058,8 @@ def _onboarding_edges():
         os.makedirs(conf)
         built = (datetime.datetime.now() + datetime.timedelta(minutes=1)).isoformat(timespec="seconds")
         with open(os.path.join(conf, "wcmods.json"), "w") as f:
-            json.dump({"game_dir": os.path.join(tmp, "Game"), "oodle_dll": os.path.join(tmp, "none.dll"),
-                       "installed": {"mods": ["m"], "built": built, "ue4ss": False, "oodle": True}}, f)
+            json.dump({"game_dir": os.path.join(tmp, "Game"),
+                       "installed": {"mods": ["m"], "built": built, "ue4ss": False}}, f)
         cfg = Config(conf)
         before = pipeline.pending(cfg, discover(root))
         os.makedirs(os.path.join(win64, "ue4ss", "Mods"))
@@ -1116,23 +1114,81 @@ def _onboarding_edges():
     return all(ok)
 
 
-def _palettes_without_oodle(cfg):
-    from . import mods, pipeline
-    found, searched, data = cfg._oodle_found, cfg._oodle_searched, cfg.data.pop("oodle_dll", None)
-    cfg._oodle_found, cfg._oodle_searched = None, True
+def kraken_samples():
+    """Inputs for the Kraken fixtures in tests/kraken (made by tools/make_kraken_fixtures.py with an
+    oo2core DLL): {name: bytes}, the same every time, shaped to reach the decoder's paths: text
+    (Huffman and short matches), records (tANS, RLE and arrays), long runs of one byte (memset
+    quanta), noise (stored as it is) and a mix with matches further back than 64 KB."""
+    import random
+    import struct
+    rng = random.Random(20261026)
+    words = ("the clan cats walk the forest at dawn moss fern river shadow thunder wind sky star leaf "
+             "paw whisker tail claw den nest prey hunt patrol border moon gathering warrior apprentice "
+             "medicine elder kit queen leader deputy camp hollow stream oak pine bramble heather").split()
+    text = bytearray()
+    while len(text) < 64 * 1024:
+        n = rng.randint(4, 14)
+        line = " ".join(rng.choice(words) for _ in range(n)).capitalize() + ".\r\n"
+        text += line.encode()
+    records = bytearray()
+    for i in range(6 * 1024):
+        records += struct.pack("<IHHf", i, i % 7, 1000 + (i * 37) % 500, float(i % 13) / 4)
+        if i % 512 == 511:
+            records += bytes(64)
+    runs = bytes(70 * 1024) + text[:1024] + bytes(200 * 1024) + b"\xff" * 3000
+    noise = rng.randbytes(20 * 1024)
+    mixed = bytes(text) + bytes(records[:100 * 1024]) + bytes(text) + noise[:4096] + bytes(text[:30000])
+    return {"text": bytes(text), "records": bytes(records), "runs": runs, "noise": noise, "mixed": mixed}
+
+
+def _kraken_dir():
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests", "kraken")
+
+
+def _kraken_fixtures():
+    """Every fixture decodes to the sample it was made from."""
+    import hashlib
+    import json
+    from . import kraken
+    folder = _kraken_dir()
     try:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = _mods_folder(tmp, {"colours": ({"name": "Colours", "enabled": True},
-                                                  {"palette.json": '{"eyes": {"Green": "#00ff00"}, "fur": {"0": "#ff8000"}}'})})
-            out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
-            rep = out["sections"].get("palettes", {})
-            return (rep.get("status") == "ok" and "colours" in rep.get("mods", [])
-                    and any("eye colours left out" in w for w in out["warnings"])
-                    and not [k for k, r in out["sections"].items() if r["status"] == "failed"])
-    finally:
-        cfg._oodle_found, cfg._oodle_searched = found, searched
-        if data:
-            cfg.data["oodle_dll"] = data
+        with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as f:
+            manifest = json.load(f)
+    except OSError as e:
+        return False, f"no fixtures: {e}"
+    samples = kraken_samples()
+    bad = []
+    for entry in manifest:
+        raw = samples.get(entry["sample"])
+        if raw is None or len(raw) != entry["size"] or hashlib.sha1(raw).hexdigest() != entry["sha1"]:
+            bad.append(f"{entry['file']}: the sample isn't what the fixture was made from")
+            continue
+        with open(os.path.join(folder, entry["file"]), "rb") as f:
+            packed = f.read()
+        try:
+            got = kraken.decompress(packed, len(raw))
+        except kraken.KrakenError as e:
+            bad.append(f"{entry['file']}: {e}")
+            continue
+        if got != raw:
+            first = next(i for i in range(len(raw)) if got[i] != raw[i])
+            bad.append(f"{entry['file']}: differs at byte {first}")
+    return not bad, f"{len(manifest)} fixtures" + (f"; {bad[:3]}" if bad else "")
+
+
+def _kraken_against_dll(io, oodle):
+    """A few of the game's own compressed blocks: the Python decoder and the DLL agree."""
+    from . import kraken
+    picks = [i for i, (_, _, _, m) in enumerate(io.blocks) if m][::max(1, len(io.blocks) // 12)][:12]
+    bad = 0
+    with open(io.ucas_path, "rb") as f:
+        for bi in picks:
+            boff, csize, usize, _ = io.blocks[bi]
+            f.seek(boff)
+            raw = f.read(csize)
+            if kraken.decompress(raw, usize) != oodle.decompress(raw, usize):
+                bad += 1
+    return bad == 0, f"{len(picks)} blocks" + (f", {bad} differ" if bad else "")
 
 
 def _signatures(cfg):
@@ -1223,11 +1279,11 @@ def _update_safety(cfg):
             p = pipeline.pending(Config(conf), mods.discover(root))
             if not any("game updated" in r for r in p["redo"]):
                 problems.append("an install from the old build isn't redone")
-            if cfg.oodle_dll:   # the cats' names for the mod menu, built from the game's tables (layout still off)
-                pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
-                with open(os.path.join(tmp, "out", "ue4ss_shared", "WCModsNames", "WCModsNames.lua"), encoding="utf-8") as f:
-                    if len(f.read()) < 1000:
-                        problems.append("WCModsNames is empty")
+            # The cats' names for the mod menu, built from the game's tables (layout still off).
+            pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
+            with open(os.path.join(tmp, "out", "ue4ss_shared", "WCModsNames", "WCModsNames.lua"), encoding="utf-8") as f:
+                if len(f.read()) < 1000:
+                    problems.append("WCModsNames is empty")
     finally:
         signatures.check = kept_check
         gamebuild.CACHE_DIR = kept_cache

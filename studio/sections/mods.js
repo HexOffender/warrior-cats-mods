@@ -146,16 +146,6 @@ export default {
           el("a", { href: s.loader.page, target: "_blank", rel: "noopener", class: "muted", text: "UE4SS on GitHub" })));
       }
 
-      if (!s.oodle.ok) {
-        const path = el("input", { type: "text", id: "setup-oodle", "aria-label": "Where the oo2core file is", spellcheck: "false", placeholder: "C:\\...\\oo2core_9_win64.dll", style: { flex: "1", minWidth: "260px" } });
-        steps.append(step(false, "Optional: a file from another game",
-          el("span", { class: "muted", text: "Mods that change cat names, game data or eye colours read the game's own files, and that needs a file called oo2core_…_win64.dll. Many other games come with it; Clan Mod Studio looked in your Steam games and didn't find one. Everything else works without it. If you have it, paste where it is:" }),
-          el("div", { class: "row" }, path, el("button", { class: "btn", text: "Use it", onclick: async () => {
-            try { await api.post("/setup/oodle", { path: path.value }); toast("Got it."); renderSetup(); }
-            catch (e) { toast(e.message, "bad"); }
-          } }))));
-      }
-
       setupBox.append(el("div", { class: "card setup" },
         el("h2", { text: "Get set up" }),
         el("p", { class: "note", text: "A few things before your first mod; each is done once." }),

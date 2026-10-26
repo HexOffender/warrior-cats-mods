@@ -18,7 +18,8 @@ class GameFiles:
 
     @property
     def oodle(self):
-        if self._oodle is None and self.cfg.oodle_dll:
+        """The decompressor: wcmods' own, or the oo2core DLL wcmods.json names."""
+        if self._oodle is None:
             self._oodle = Oodle(self.cfg.oodle_dll)
         return self._oodle
 

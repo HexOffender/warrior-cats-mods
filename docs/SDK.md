@@ -273,8 +273,6 @@ What it can't do (yet):
   one costs.
 - **Growing in the world:** new materials aren't found in the forest; they come from `give`, a
   recipe or a script.
-- New items need the Oodle DLL, because the item table and the textures are compressed in the
-  game's files.
 
 ### New content: models, textures, sounds
 

@@ -164,7 +164,7 @@ class BuildContext:
 
     def cooked_table(self, name):
         """The rows of one of the game's cooked tables (cooked.TABLES) as the game ships them, as
-        [(row name, {field: value})]: ctx.cooked_table("DT_QuestObjectsInfo"). Needs the Oodle DLL."""
+        [(row name, {field: value})]: ctx.cooked_table("DT_QuestObjectsInfo")."""
         if name not in cooked.TABLES:
             raise ValueError(f"wcmods can't read the cooked table {name} (it knows {', '.join(sorted(cooked.TABLES))})")
         return self._cooked_table(name)[1]
@@ -259,7 +259,7 @@ class BuildContext:
         `image` may be a function that makes the image, and `key` text that changes whenever the image
         would (a hash of the PNG file, say): with both, a texture made before comes from the cache
         without making the image again. Returns the new texture's asset path, for an icon or an
-        accessory's look. Needs the Oodle DLL."""
+        accessory's look."""
         from . import texture
         package = texture.new_package_name(name)
         path = texture.content_path(package)
