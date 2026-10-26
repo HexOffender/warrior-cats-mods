@@ -915,7 +915,7 @@ for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards"))
 | `wcmods::save_state(L"Inventory")`, `save_state_text(key)`, `set_save_state(key, json)` | A part of the current slot's live state as Json (and as the text the manager gives), through the save manager, and replacing one |
 | `wcmods::save_progression(primary, sub)`, `save_setting(primary, sub)` | Whole-number progression and settings values |
 | `wcmods::save_slot()`, `save_path()`, `save_file()`, `slot_data()` | The slot in use; the save as plain JSON (`WrcGame.json`, written at every save), whole and this cat's slot of it |
-| `wcmods::items()`, `item_count(tag)`, `item_type(tag)`, `item_name(tag)` | Your items as `{tag: count}` from the last save with the pickups since (call `items()` once early so they're counted), one's count, its kind, and its name after the mods that add items |
+| `wcmods::items()`, `item_count(tag)`, `item_type(tag)`, `item_name(tag)` | Your items as `{tag: count}` from the last save with the pickups since (call `items()` once early so they're counted), one's count, its kind, and its name after the mods that add items. The kind is `Consumable` (herbs and pouches), `Collectible` (materials), `Equipment` (accessories) or `Quest`: the quest manager's `GetItemType` where it answers, else from the tag (`Gameplay.Inventory.Consumable`, `.Materials`, `.Cosmetic`, `.Quest`), as the game's item stats table ships empty and that call says None for every item |
 | `wcmods::cat_name(actor)`, `cat_clan(actor)`, `cat_traits()` | A cat's name as the game shows it (your name mods included: wcmods writes `names.json` beside `WCModsNames` on every install), its clan, and your cat's traits from the last save |
 | `wcmods::senses(animal)`, `detection_component(animal)` | A roaming animal's senses, as a `Senses` of pointers to read and write: `cone_angle`, `cone_distance`, `sound_radius`, `sound_speed`, `pounce_distance`, `proximity_distance`, `target_distance`, `walk_speed_roaming`, `walk_speed_chasing`, `zone_entry_distance`, `zone_exit_distance`, `react_to_chase`. They're the detection component's own copy of the tuning for its size class, so a change is this animal's alone; false for a cat |
 | `wcmods::npc_detected(animal)`, `npc_target(animal)`, `blackboard(animal)`, `blackboard_bool(animal, L"Hunted")`, `blackboard_float(...)`, `blackboard_object(...)` | What an animal's AI knows: whether it has noticed a cat and which, and its controller's blackboard by key (Detected, Target, StartLocation, RoamingLocation, DetectionRange, ChaseReactionTime, Hunted, HunterPawn, PointOfInterest, bShouldAllowMovement, ArrivedAtTarget; in a fight AffectedByCondition, IsExhausted, IsAlive, WeakestEnemy, SlowestEnemy, SelectedAttack). nullptr / nullopt without an AI controller |
@@ -1031,7 +1031,12 @@ false, and every call on it does nothing), and compares equal to another handle 
 helpers in `wcmods::ui` make widgets styled by `ui::theme()` (the game's Amarante font, its light text,
 36-point rows and 52-point headings; change it to change what they make). The engine's own controls
 (check boxes, sliders, number and text boxes, drop-downs) are drawn for a 1080-pixel screen, so
-`labelled()` and `scaled()` grow them by the theme's `control_scale`.
+`labelled()` and `scaled()` grow them by the theme's `control_scale`: a slider, a number or text box or a
+drop-down in a scale box, with its text set to `text_size / control_scale` so that it comes out at the
+theme's size (set the font after `labelled()` for another); a check box by a render transform (in the game,
+a scale box didn't grow one), in a box that reserves the room it's drawn in: its pictures and its style's
+padding times `control_scale`, so 24 × `control_scale` tall for `checkbox()`. A button, text or a layout is
+left as it is.
 
 | Call | Does |
 |---|---|
@@ -1045,7 +1050,7 @@ helpers in `wcmods::ui` make widgets styled by `ui::theme()` (the game's Amarant
 | `wcmods::ui::text(L"Hi", {size, color, wrap, justify})`, `heading(str)`, `note(str)` | Text in the game's font; a heading; smaller grey text |
 | `wcmods::ui::button(label, color)`, `checkbox(on)`, `slider(value, lo, hi, step)`, `number(value, lo, hi, step)`, `input(text, hint)`, `choice({options}, selected)`, `progress(fraction, color)`, `image(texture path, w, h)`, `rect(color, w, h)` | The controls, styled: a button with a label, a check box, a slider, a number box you can drag or type in, a text box with a hint, a drop-down, a bar, a picture (a texture the game has loaded), a flat colour |
 | `wcmods::ui::hbox()`, `vbox()`, `scroll()`, `border(color, padding)`, `box(w, h)`, `spacer(w, h)`, `canvas()`, `overlay_box()`, `grid()`, `uniform_grid()`, `wrap()`, `switcher()`, `scale(factor)` | Layouts: widgets side by side, one under another, a list that scrolls, a box around one widget, a fixed size, empty room, free placement, one over another, grids, a flow that wraps, one of several, and a scaled one |
-| `wcmods::ui::row({widgets}, gap)`, `labelled(label, control, width)`, `scaled(control, width)` | A row (the first widget takes the room left), a labelled control as the game's settings rows, and a control grown to the game's size |
+| `wcmods::ui::row({widgets}, gap)`, `labelled(label, control, width)`, `scaled(control, width)` | A row (the first widget takes the room left), a labelled control as the game's settings rows, and a control grown to the game's size: a check box by a render transform in a box of its drawn size, a number or text box or drop-down in a scale box with its text fitted, a button, text or layout as it is |
 | `Widget::add(child)`, `add({children})`, `remove(child)`, `remove()`, `clear()` | Put a widget in a panel (at the end) or in a content widget (as its one content), giving back its `Slot`; take one out; take this one out of wherever it is; take every child out |
 | `Widget::parent()`, `children()`, `child(i)`, `count()`, `find(name)`, `find_all(type)`, `walk(fn)` | The tree: the widget this one sits in, the widgets in it, one by its name anywhere down the tree (the game's screens name their parts: `find(L"mcGuiFooter")`), every one of a class, and `fn(widget)` down the tree (false stops) |
 | `Widget::slot()`, `at(x, y)` | The slot it sits in, and on a canvas, its top-left at a place |
@@ -1074,6 +1079,15 @@ over the panels' area, the panels hidden) shows and the keyboard goes to its fir
 Tab and Enter then move among and use the page's controls. The cat maker's categories are a circular
 icon menu (`GuiCircularMenu`), not a tab row, so `tab()` doesn't reach it; its screen and parts are
 still there through `screen()`, `find()` and `add()`.
+
+What `hide_game_panels` hides while the page shows, and puts back as it was after: the screen's own user
+widgets beside the tab row other than its footer and title; the panels a pause screen lists in
+`PausePanels` (General, Controls, Quest, Party, Bonds); and every `GuiPanel` and `GuiScrollGrid` (the
+engine's classes for a screen's pages and grids, `/Script/SwtEngine`) under the tab row's area, through the
+screen's own layout panels however deep (not inside another user widget of the screen's, such as its
+footer, and not inside what a mod added to the area, such as a tab's page), each with what's inside it.
+The page's frame is drawn in the theme's `panel` colour, translucent, so a panel left showing would show
+through: say if one does.
 
 The tab's page is built again each time the screen opens, because the game makes its screens anew; keep
 the state the page shows in your own variables, as the example does with the settings. A page's controls
