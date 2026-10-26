@@ -47,6 +47,9 @@ Clan Mod Studio's "Get set up" sees to these:
   - **The game's console:** UE4SS's console enabler (`ConsoleEnablerMod`) is on, so `~` or F10 opens
     it (`python wcmods.py console off` turns it off).
   - **Removing it:** delete `dwmapi.dll` and the `ue4ss` folder from `<game>\Wrc\Binaries\Win64`.
+- **`wcmods.json`**, wcmods' own settings file, is made in this folder on the first run: where the game
+  is, whether mods may run code, and what's installed ([docs/formats.md](docs/formats.md#wcmodsjson)
+  lists every key). Get set up and the Settings and repair page edit it for you.
 - **Nothing else.** The game's files are compressed with Oodle's Kraken, and wcmods decodes them
   itself (`wcmods/formats/kraken.py`, a Python port of the open-source [ooz](https://github.com/powzix/ooz)
   decoder, GPL-3.0). It's pure Python, so it takes a few seconds for a big texture or the item

@@ -226,6 +226,25 @@ stay. Added names and parts appear in every language with their English text. Ad
 made from their name (`STR_CAT_NAME_WCM_SPARROW`), so saved cats keep their names whatever else
 your mods add.
 
+### `wcmods.json`
+
+Not a mod file: wcmods' own settings, in the wcmods folder, made on the first run and edited by Clan
+Mod Studio and the commands. Every key is optional.
+
+| Key | What it is |
+|---|---|
+| `game_dir` | The game's folder (the one with `Wrc` in it). Found through Steam; set it when it isn't, or Get set up asks for it |
+| `save_dir` | Where the game keeps its saves, when it isn't `%LOCALAPPDATA%\Wrc\Saved\SaveGames` |
+| `oodle_dll` | An `oo2core_*_win64.dll` from another installed game, for faster decoding of the game's files (wcmods decodes them itself without one) |
+| `allow_code_mods` | `true` lets mods that carry code run it (build steps, in-game scripts, studio pages, C++): only for mods from people you trust. Options on the Settings and repair page |
+| `allow_outdated` | `{ "<mod>": [<build>, ...] }`: mods used anyway on game builds they weren't made for ("Use it anyway", `wcmods allow-outdated`) |
+| `console` | Whether the game's `~` console (UE4SS's console enabler) is on |
+| `debug_cat_look` | `true` makes your cat's colours script log every cat it sees |
+| `installed`, `installed_ue4ss`, `installed_ue4ss_shared` | What the last install put in the game: the mods, when they were built, the game build, the UE4SS mods and shared modules. The studio compares them with your mods; leave them alone |
+| `menu_key`, `menu_scale`, `cheats` | The mod menu's settings from older versions; the next change moves them into `mods/mod-menu/menu.json` ([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)) |
+
+The file starts with a `_help` line saying the same.
+
 ### `save.json`
 ```json
 { "set": { "0/GameplayProgression/Level": 5 },
