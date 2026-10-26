@@ -17,13 +17,15 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (bridge, catcolours, colors, controls, csvdata, eyeatlas, gamebuild, menusettings, mods, modzip,
-               names, onboarding, palettes, pipeline, save, ue4ss)
+from . import (bridge, catcolours, colors, controls, eyeatlas, menusettings, mods, modzip, names, onboarding,
+               palettes, pipeline, ue4ss)
+from .formats import csvdata, save
+from .exe import gamebuild
 from .bridge import Bridge, BridgeError
 from .colors import hex_from_linear
 from .config import game_running
 from .gamefiles import NONASSET
-from .savejson import SaveDoc
+from .formats.savejson import SaveDoc
 from .sdk import BuildContext
 from .sections.files import classify
 

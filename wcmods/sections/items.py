@@ -38,9 +38,10 @@ import json
 import os
 import re
 
-from .. import accessories, cooked, csvdata, names, png, recolor, texture
-from ..save import SAV_NAME, SaveGame
-from ..savejson import SaveDoc
+from .. import accessories, names, recolor
+from ..formats import cooked, csvdata, png, texture
+from ..formats.save import SAV_NAME, SaveGame
+from ..formats.savejson import SaveDoc
 from ..sdk import Section
 
 TAG_ROOT = "Gameplay.Inventory."

@@ -3,8 +3,8 @@ in your save. See catcolours.py."""
 import os
 
 from .. import catcolours, names, palettes
-from ..save import SAV_NAME, SaveGame
-from ..savejson import SaveDoc
+from ..formats.save import SAV_NAME, SaveGame
+from ..formats.savejson import SaveDoc
 from ..sdk import Section
 
 

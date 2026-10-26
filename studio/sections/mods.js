@@ -30,7 +30,7 @@ export default {
 
     const nameOf = id => (mods.find(m => m.id === id) || {}).name || id;
 
-    // ---------- after a game update (wcmods/gamebuild.py) ----------
+    // ---------- after a game update (wcmods/exe/gamebuild.py) ----------
     let update = null;   // what wcmods found the update changed, once asked (it takes a while the first time)
     let asking = null;   // that question, asked once however often the page redraws
     let drawing = 0;     // the latest redraw: an older one that finishes later draws nothing

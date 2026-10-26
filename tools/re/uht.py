@@ -17,7 +17,7 @@ import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))   # the repository, for wcmods
-from wcmods import pe  # noqa: E402
+from wcmods.exe import pe  # noqa: E402
 
 
 class Exe:

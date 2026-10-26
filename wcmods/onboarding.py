@@ -12,7 +12,8 @@ import os
 import tempfile
 import time
 
-from . import mods as modlib, pipeline, save, ue4ss
+from . import mods as modlib, pipeline, ue4ss
+from .formats import save
 from .config import EXE_NAME, STEAM_APP_ID, game_running
 
 INBOX = os.path.join(tempfile.gettempdir(), "wcmods-studio-inbox.json")

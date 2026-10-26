@@ -6,17 +6,19 @@ import re
 import shutil
 import struct
 
-from . import bridge, catcolours, controls, draw, gamebuild, luacheck, menu, menupages, menusettings, names, texture
+from . import bridge, catcolours, controls, draw, luacheck, menu, menupages, menusettings, names
+from .formats import texture
+from .exe import gamebuild
 from . import ue4ss, view, world
 from . import game as game_lua   # WCModsGame (the name `game` is the game's files in build())
 from . import mods as modlib
-from .blake3 import blake3
+from .formats.blake3 import blake3
 from .config import MOD_BASENAME, UE4SS_MOD_NAME, Config, game_running
 from .gamefiles import GameFiles
-from .iostore import ModContainerWriter
-from .pak import PakReader, PakWriter
-from .save import SAV_NAME, SaveGame, backup, write_save
-from .savejson import SaveDoc
+from .formats.iostore import ModContainerWriter
+from .formats.pak import PakReader, PakWriter
+from .formats.save import SAV_NAME, SaveGame, backup, write_save
+from .formats.savejson import SaveDoc
 from .sdk import BuildContext
 from .sections import load_sections
 

@@ -15,7 +15,7 @@ table). A pattern only has to be unique among those, so it stays short and survi
 changing. On another build, check() finds the class again the same way, compares its size, and reads
 each member's offset out of the matching code; several sites must agree.
 
-    python wcmods.py game signatures make     # on the build wcmods was verified on: wcmods/signatures.json
+    python wcmods.py game signatures make     # on the build wcmods was verified on: wcmods/exe/signatures.json
     python wcmods.py game signatures check    # on the installed game: what moved, and where to
 
 Works on the exe on disk (pe.Image); nothing runs the game.
@@ -25,7 +25,8 @@ import os
 import re
 import struct
 
-from . import game, pe, x64
+from .. import game
+from . import pe, x64
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signatures.json")
 RSP = 4
@@ -547,7 +548,7 @@ def check(image_path, sigs=None, log=print):
       offset, or the offset can't be one (outside the class, misaligned); "lost": none matched and it
       can't be kept. These mean its offset is None, so it's left out.
     """
-    from .game import HIDDEN
+    from ..game import HIDDEN
     widths = {f"{c}:{n}": WIDTH.get(kind, 4) for c, fields in HIDDEN for n, _, kind in fields}
     sigs = sigs or load()
     img = pe.Image(image_path)

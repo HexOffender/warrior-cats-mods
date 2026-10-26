@@ -7,10 +7,11 @@ import sys
 import time
 import zipfile
 
-from . import controls, eyeatlas, keymap, mods, names, pipeline, playstate, save, ue4ss
+from . import controls, eyeatlas, keymap, mods, names, pipeline, playstate, ue4ss
+from .formats import save
 from .config import EXE_NAME, STEAM_APP_ID, Config, game_running
 from .gamefiles import GameFiles
-from .savejson import SaveDoc
+from .formats.savejson import SaveDoc
 
 
 class Ctx:
@@ -46,7 +47,7 @@ def cmd_status(ctx, args):
         if pipeline.install_outdated(cfg):
             print("              built by an older wcmods, so the game never finds its files; install again")
     print(f"game running: {'yes' if game_running() else 'no'}")
-    from . import gamebuild
+    from .exe import gamebuild
     now = gamebuild.current(cfg)
     if now["build"]:
         print(f"game build  : {now['build']}" + (" (wcmods was checked on it)" if now["verified"] else
@@ -170,7 +171,8 @@ def cmd_extract(ctx, args):
 def cmd_texture(ctx, args):
     """One of the game's textures as a PNG to paint over: an accessory's look, an item's icon, or a
     texture by its asset path."""
-    from . import accessories, cooked, png, texture
+    from . import accessories
+    from .formats import cooked, png, texture
     what = args.what
     if what.split(".", 1)[0] in ("Head", "Neck", "Body", "Legs"):
         what = "Cosmetic." + what
@@ -551,7 +553,7 @@ def cmd_game(ctx, args):
 
 def _game_build(ctx, args):
     """Which build is installed, what wcmods found moved on it, and the mods made for older ones."""
-    from . import gamebuild
+    from .exe import gamebuild
     now = gamebuild.current(ctx.cfg)
     if not now["build"]:
         print("couldn't tell which build of the game is installed (no Steam manifest)")
@@ -575,13 +577,13 @@ def _game_build(ctx, args):
 
 
 def _game_signatures(ctx, args):
-    """For maintainers: make wcmods/signatures.json on a verified build, or check another exe against it."""
-    from . import pe, signatures
+    """For maintainers: make wcmods/exe/signatures.json on a verified build, or check another exe against it."""
+    from .exe import pe, signatures
     exe = args.exe or pe.game_exe(ctx.cfg)
     if not exe:
         sys.exit("no game exe found; pass --exe")
     if args.action == "make":
-        from . import gamebuild
+        from .exe import gamebuild
         result = signatures.make(exe)
         # The installed game's build, unless it's another exe (whose build only --build can say).
         installed = pe.game_exe(ctx.cfg)
@@ -600,7 +602,7 @@ def _game_signatures(ctx, args):
 
 
 def cmd_allow_outdated(ctx, args):
-    from . import gamebuild
+    from .exe import gamebuild
     build = gamebuild.current(ctx.cfg)["build"]
     if build is None:
         sys.exit("couldn't tell which build of the game is installed")

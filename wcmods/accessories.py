@@ -13,7 +13,7 @@ into the running game.
 """
 import struct
 
-from .cooked import ZenPackage, split_name
+from .formats.cooked import ZenPackage, split_name
 
 GUI_MANAGER = "Wrc/Content/Gameplay/Blueprints/Core/BP_WrcGuiManager.uasset"
 ENUM_PREFIX = "EAccesoryIds::"

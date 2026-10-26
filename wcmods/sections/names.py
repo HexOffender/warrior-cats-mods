@@ -13,8 +13,8 @@ and any name the game shows, and rename cats in your save. See names.py for how 
 import os
 
 from .. import names
-from ..save import SAV_NAME, SaveGame
-from ..savejson import SaveDoc
+from ..formats.save import SAV_NAME, SaveGame
+from ..formats.savejson import SaveDoc
 from ..sdk import Section
 
 

@@ -9,8 +9,8 @@ Paths start inside the save's account object; see savejson.py.
 """
 import os
 
-from ..save import SAV_NAME, SaveGame
-from ..savejson import SaveDoc
+from ..formats.save import SAV_NAME, SaveGame
+from ..formats.savejson import SaveDoc
 from ..sdk import Section
 
 

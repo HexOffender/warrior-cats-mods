@@ -688,7 +688,7 @@ Clan Mod Studio's "Get set up" sees to these:
     it (`python wcmods.py console off` turns it off).
   - **Removing it:** delete `dwmapi.dll` and the `ue4ss` folder from `<game>\Wrc\Binaries\Win64`.
 - **Nothing else.** The game's files are compressed with Oodle's Kraken, and wcmods decodes them
-  itself (`wcmods/kraken.py`, a Python port of the open-source [ooz](https://github.com/powzix/ooz)
+  itself (`wcmods/formats/kraken.py`, a Python port of the open-source [ooz](https://github.com/powzix/ooz)
   decoder, GPL-3.0). It's pure Python, so it takes a few seconds for a big texture or the item
   table; `"oodle_dll"` in `wcmods.json`, set to an `oo2core_*_win64.dll` another installed game
   ships, makes that a hundred times faster, which only shows when extracting many files.

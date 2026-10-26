@@ -17,7 +17,8 @@ import json
 import os
 import re
 
-from .. import pe, ue4ss
+from .. import ue4ss
+from ..exe import pe
 from ..cppmods import BUILD_INFO, DLLS, SOURCE
 from ..sdk import Section
 
