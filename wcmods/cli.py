@@ -33,17 +33,12 @@ class Ctx:
             self._game = GameFiles(self.cfg)
         return self._game
 
-    def need_oodle(self):
-        if self.game.oodle is None:
-            sys.exit("No Oodle DLL found (oo2core_*_win64.dll). Set \"oodle_dll\" in wcmods.json "
-                     "to one shipped by another installed game.")
-
 
 def cmd_status(ctx, args):
     cfg = ctx.cfg
     print(f"game folder : {cfg.game_dir or 'NOT FOUND'}")
     print(f"save folder : {cfg.save_dir} ({'found' if os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)) else 'no save yet'})")
-    print(f"oodle dll   : {cfg.oodle_dll or 'NOT FOUND (needed for eye palettes, game data and extract)'}")
+    print(f"decoder     : {cfg.oodle_dll or 'wcmods (set oodle_dll in wcmods.json to an oo2core DLL for a faster one)'}")
     print(f"UE4SS       : {cfg.ue4ss_mods_dir or 'not installed (needed for coat/pattern/marking colours)'}")
     if cfg.game_dir:
         inst = os.listdir(cfg.mods_install_dir) if os.path.isdir(cfg.mods_install_dir) else []
@@ -162,7 +157,6 @@ def cmd_files(ctx, args):
 
 
 def cmd_extract(ctx, args):
-    ctx.need_oodle()
     out = os.path.join(ctx.root, args.out)
     hits = ctx.game.find(args.pattern)
     for p in hits:
@@ -177,7 +171,6 @@ def cmd_texture(ctx, args):
     """One of the game's textures as a PNG to paint over: an accessory's look, an item's icon, or a
     texture by its asset path."""
     from . import accessories, cooked, png, texture
-    ctx.need_oodle()
     what = args.what
     if what.split(".", 1)[0] in ("Head", "Neck", "Body", "Legs"):
         what = "Cosmetic." + what
@@ -212,7 +205,6 @@ def cmd_texture(ctx, args):
 
 def cmd_names(ctx, args):
     from .sdk import BuildContext
-    ctx.need_oodle()
     game = names.GameNames(lambda path: ctx.game.read_text(BuildContext.data_path(path)))
     plan = names.Plan(game, names.merge(names.mod_specs(mods.discover(ctx.mods_root))))
     sav = os.path.join(ctx.cfg.save_dir, save.SAV_NAME)
@@ -262,7 +254,6 @@ def cmd_names(ctx, args):
 
 def cmd_eyes(ctx, args):
     from .colors import hex_from_linear
-    ctx.need_oodle()
     atlas = eyeatlas.EyeAtlas(ctx.game.read(eyeatlas.PATH))
     print("Eye palette slots (use these names in palette.json \"eyes\"):")
     for r, label in enumerate(atlas.labels):

@@ -31,7 +31,7 @@ ITEMS = (
 def data(read_text=None, cfg=None):
     """What the pages need from the game and the install: area names by code ("R-05" -> "Willow-Weep"),
     quest titles by tag and rank, and where the UE4SS log and the saved travel spots are. Without the
-    game's files (no Oodle DLL) the names are left out, and the pages show codes and tags instead."""
+    game's files the names are left out, and the pages show codes and tags instead."""
     from . import csvdata
     out = {"areas": {}, "quests": {}, "items": list(ITEMS), "log": "", "places": ""}
     if cfg is not None:

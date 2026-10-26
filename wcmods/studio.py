@@ -158,7 +158,7 @@ class Studio:
                                          "module": f"/mods/{m.id}/studio/section.js", "from_mod": m.id,
                                          "group": "play"})
             return {"game_dir": cfg.game_dir, "save_found": os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)),
-                    "oodle": bool(cfg.oodle_dll), "ue4ss": bool(cfg.ue4ss_mods_dir), "game_running": game_running(),
+                    "ue4ss": bool(cfg.ue4ss_mods_dir), "game_running": game_running(),
                     "installed": cfg.data.get("installed"), "install_outdated": pipeline.install_outdated(cfg),
                     "code_changed": self.code_changed(),
                     "allow_code_mods": bool(cfg.data.get("allow_code_mods")),
@@ -175,10 +175,6 @@ class Studio:
             return {**onboarding.status(cfg, self.ctx.backups), "inbox": os.path.basename(waiting) if waiting else None}
         if parts == ["setup", "game"] and method == "POST":
             return {"dir": onboarding.set_game_dir(cfg, body.get("dir"))}
-        if parts == ["setup", "oodle"] and method == "POST":
-            path = onboarding.set_oodle(cfg, body.get("path"))
-            self.ctx._game = None   # its readers were made without the DLL: the pages read the game afresh
-            return {"path": path}
         if parts == ["setup", "backup"] and method == "POST":
             with self.lock:   # two pages asking at once make one copy
                 return {"name": onboarding.first_backup(cfg, self.ctx.backups)}

@@ -103,12 +103,6 @@ class ItemsSection(Section):
         return {"items": items, "recipes": recipes} if items or recipes else None
 
     def build(self, ctx, items):
-        if ctx.game.oodle is None:
-            # DT_QuestObjectsInfo is compressed in the game's files, and without a row there the
-            # inventory doesn't show the item.
-            ctx.warn("new items left out: they need the Oodle DLL (oo2core_*_win64.dll, from another game) to "
-                     "read the game's item table")
-            return
         game = Game(ctx)
         slot = _current_slot(ctx)
         made = {}                      # tag -> mod id

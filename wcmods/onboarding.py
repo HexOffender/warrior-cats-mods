@@ -5,8 +5,7 @@ The steps, in the order the studio shows them:
 1. the game: found on the Steam libraries, or a folder the player picks;
 2. a safety copy of the save, made the first time the studio sees one;
 3. UE4SS, the script loader most mods need: downloaded from its GitHub releases (or a .zip the player
-   gives) and set up for players (ue4ss.install_loader);
-4. optional: the Oodle DLL from another game, which only names, game data and eye-colour mods need.
+   gives) and set up for players (ue4ss.install_loader).
 """
 import json
 import os
@@ -24,7 +23,7 @@ def _game_ok(folder):
 
 
 def status(cfg, backups_root):
-    """{"game", "save", "backup", "loader", "oodle", "running", "done"}: each step's state for the studio."""
+    """{"game", "save", "backup", "loader", "running", "done"}: each step's state for the studio."""
     cfg.reload()
     game = cfg.game_dir if _game_ok(cfg.game_dir) else None
     win64 = cfg.win64_dir if game else None
@@ -34,9 +33,7 @@ def status(cfg, backups_root):
            "save": {"ok": save_found},
            "backup": {"ok": bool(backups), "latest": backups[-1] if backups else None},
            "loader": {"ok": ue4ss.loader_installed(win64), "page": ue4ss.RELEASE_PAGE},
-           "oodle": {"ok": bool(cfg.oodle_dll), "path": cfg.oodle_dll},
            "running": game_running()}
-    # The Oodle DLL is optional: most mods don't need it.
     out["done"] = all(out[k]["ok"] for k in ("game", "save", "backup", "loader"))
     return out
 
@@ -56,27 +53,6 @@ def set_game_dir(cfg, folder):
     raise ValueError(f"the game isn't in {folder}: it's the folder with Wrc in it, usually "
                      r"...\steamapps\common\Warrior Cats Clans of the Forest")
 
-
-def set_oodle(cfg, path):
-    """Use an Oodle DLL (oo2core_*_win64.dll) from another game."""
-    path = os.path.normpath(str(path or "").strip().strip('"'))
-    if os.path.isdir(path):
-        found = sorted(f for f in os.listdir(path) if f.lower().startswith("oo2core_") and f.lower().endswith("_win64.dll"))
-        if not found:
-            raise ValueError(f"there's no oo2core_*_win64.dll in {path}")
-        path = os.path.join(path, found[-1])
-    name = os.path.basename(path).lower()
-    if not (os.path.isfile(path) and name.startswith("oo2core_") and name.endswith("_win64.dll")):
-        raise ValueError("pick a file called oo2core_<number>_win64.dll")
-    from .oodle import Oodle
-    try:
-        Oodle(path)
-    except OSError as e:
-        raise ValueError(f"Windows couldn't load {path}: {e}") from None
-    cfg.reload()
-    cfg.data["oodle_dll"] = path
-    cfg.save()
-    return path
 
 
 def first_backup(cfg, backups_root):

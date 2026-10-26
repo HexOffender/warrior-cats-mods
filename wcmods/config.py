@@ -1,4 +1,4 @@
-"""Locate the game, its saves, Oodle and UE4SS; persist overrides in wcmods.json."""
+"""Locate the game, its saves and UE4SS (and an optional Oodle DLL); persist overrides in wcmods.json."""
 import json
 import os
 import re
@@ -16,7 +16,6 @@ class Config:
         self.root = root
         self.path = os.path.join(root, "wcmods.json")
         self.data = {}
-        self._oodle_searched, self._oodle_found = False, None
         self.reload()
 
     def reload(self):
@@ -62,17 +61,10 @@ class Config:
 
     @property
     def oodle_dll(self):
+        """An oo2core DLL named by "oodle_dll" in wcmods.json, or None: wcmods decodes the game's files
+        itself (kraken.py); the DLL is only a speed-up for extracting many of them."""
         d = self.data.get("oodle_dll")
-        if d and os.path.isfile(d):
-            return d
-        if not self._oodle_searched:   # walking every Steam library is slow; do it once per run
-            from .oodle import find_oodle_dll
-            self._oodle_searched = True
-            self._oodle_found = find_oodle_dll(_steam_common_dirs())
-        # Kept apart from data, so a reload() before wcmods.json is saved doesn't lose what was found.
-        if self._oodle_found:
-            self.data["oodle_dll"] = self._oodle_found
-        return self._oodle_found
+        return d if d and os.path.isfile(d) else None
 
     @property
     def ue4ss_mods_dir(self):

@@ -313,8 +313,6 @@ def pending(cfg, mods):
     redo = []
     if now and inst.get("ue4ss") is False and cfg.ue4ss_mods_dir:
         redo.append("the script loader (UE4SS) is in now")
-    if now and inst.get("oodle") is False and cfg.oodle_dll:
-        redo.append("the oo2core file is set now")
     # The game updated since (or its exe changed): wcmods' in-game module has to follow it. An install
     # from before the build was recorded was made on the build every one was then.
     build = gamebuild.steam_build(cfg)
@@ -406,12 +404,11 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
 
     if manifest["save_ops"]:
         apply_save_ops(cfg, manifest["save_ops"], backups_root, log)
-    # What the game had then: an install made without UE4SS (or the Oodle DLL) left parts out, so
-    # pending() asks for another once it's there.
+    # What the game had then: an install made without UE4SS left parts out, so pending() asks for
+    # another once it's there.
     game_info = manifest.get("game") or {}
     cfg.data["installed"] = {"mods": manifest["mods"], "built": manifest["built"], "ue4ss": bool(mods_dir),
-                             "oodle": bool(cfg.oodle_dll), "game_build": game_info.get("build"),
-                             "layout": game_info.get("layout")}
+                             "game_build": game_info.get("build"), "layout": game_info.get("layout")}
     cfg.save()
     return manifest
 
