@@ -1,10 +1,10 @@
 -- The in-game mod menu: the window, its tabs, and the first pages. Written by wcmods on every install;
--- change wcmods.json ("menu_key") and install again rather than editing this.
+-- change its key in menu.json (the Mod menu's Settings in Clan Mod Studio) and install again rather than editing this.
 --
 -- @KEY@ opens and closes it, and Escape closes it; so does a controller's button (SETTINGS.pad), with B
 -- closing it too. While it's open the game's controls are paused (the UI takes the keyboard and mouse,
 -- or the game itself pauses when the controller opened it) and the cursor shows; closing gives them
--- back. Pages come from any UE4SS script through WCModsMenu.page (docs/SDK.md, "Mod menu"); the window
+-- back. Pages come from any UE4SS script through WCModsMenu.page (docs/SDK.md, "WCModsMenu"); the window
 -- shares its content panel with them and they build their rows into it.
 local Menu = require("WCModsMenu")
 local SETTINGS = @SETTINGS@
@@ -130,7 +130,7 @@ local function build(c, lib)
 end
 
 -- Size the window for this screen: undo the game's UI shrink, times the player's own size (A-/A+,
--- and wcmods.json "menu_scale"), and keep it within the screen.
+-- and menu.json "size"), and keep it within the screen.
 local size = SETTINGS.scale
 local BASE_W, BASE_H = 1080, 700
 local function fit()
