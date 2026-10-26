@@ -102,6 +102,19 @@ namespace wcmods
 
         inline auto property_type(FProperty* p) -> std::wstring { return p ? p->GetClass().GetFName().ToString() : std::wstring{}; }
 
+        // A struct's properties, deprecated ones too, as UE4SS's field iterator walks them: own_properties()
+        // the struct's own (a function's parameters, in order), properties_in_chain() its own and then each
+        // parent's. What UStruct::ForEachProperty and ForEachPropertyInChain gave before UE4SS deprecated
+        // them; a range-for over either, and returning out of it stops the walk there.
+        inline auto own_properties(UStruct* type) -> TFieldRange<FProperty>
+        {
+            return TFieldRange<FProperty>(type, EFieldIterationFlags::IncludeDeprecated);
+        }
+        inline auto properties_in_chain(UStruct* type) -> TFieldRange<FProperty>
+        {
+            return TFieldRange<FProperty>(type, EFieldIterationFlags::Default);
+        }
+
         // "EClanType::RiverClan" -> "RiverClan"
         inline auto short_enum_name(std::wstring name) -> std::wstring
         {
@@ -200,7 +213,7 @@ namespace wcmods
         inline auto struct_property(UStruct* type, std::wstring_view name) -> FProperty*
         {
             if (!type) return nullptr;
-            for (FProperty* p : type->ForEachPropertyInChain())
+            for (FProperty* p : properties_in_chain(type))
                 if (p->GetName() == name) return p;
             return nullptr;
         }
@@ -420,7 +433,7 @@ namespace wcmods
     {
         std::vector<Member> out;
         if (!object || !object->GetClassPrivate()) return out;
-        for (FProperty* p : object->GetClassPrivate()->ForEachPropertyInChain())
+        for (FProperty* p : detail::properties_in_chain(object->GetClassPrivate()))
         {
             Value v = detail::read(p, p->ContainerPtrToValuePtr<void>(object));
             out.push_back({p->GetName(), v.type, v});
@@ -434,7 +447,7 @@ namespace wcmods
         if (value.kind != Value::Kind::Struct) return out;
         detail::Place place = detail::place_of(value);
         if (!place.type) return out;
-        for (FProperty* p : place.type->ForEachPropertyInChain())
+        for (FProperty* p : detail::properties_in_chain(place.type))
         {
             Value v = detail::read(p, p->ContainerPtrToValuePtr<void>(place.container));
             out.push_back({p->GetName(), v.type, v});
@@ -486,7 +499,7 @@ namespace wcmods
         ~Params()
         {
             if (!m_function || m_bytes.empty()) return;
-            for (FProperty* p : m_function->ForEachProperty()) p->DestroyValue_InContainer(m_bytes.data());
+            for (FProperty* p : detail::own_properties(m_function)) p->DestroyValue_InContainer(m_bytes.data());
         }
         Params(Params&& other) noexcept : m_function(other.m_function), m_bytes(std::move(other.m_bytes)) { other.m_function = nullptr; }
         auto operator=(Params&& other) noexcept -> Params&
@@ -538,7 +551,7 @@ namespace wcmods
         {
             int n = 0;
             if (m_function)
-                for ([[maybe_unused]] FProperty* p : m_function->ForEachProperty()) ++n;
+                for ([[maybe_unused]] FProperty* p : detail::own_properties(m_function)) ++n;
             return n;
         }
 
@@ -549,7 +562,7 @@ namespace wcmods
         auto find(int index) -> FProperty*
         {
             if (!m_function || index < 0) return nullptr;
-            for (FProperty* p : m_function->ForEachProperty())
+            for (FProperty* p : detail::own_properties(m_function))
                 if (index-- == 0) return p;
             return nullptr;
         }
@@ -557,7 +570,7 @@ namespace wcmods
         auto find(std::wstring_view name) -> FProperty*
         {
             if (!m_function) return nullptr;
-            for (FProperty* p : m_function->ForEachProperty())
+            for (FProperty* p : detail::own_properties(m_function))
                 if (p->GetName() == name) return p;
             return nullptr;
         }
