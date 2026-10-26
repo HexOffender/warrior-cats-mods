@@ -446,10 +446,32 @@ end
 -- A cat's name from its name ids (its customization's PrefixNameId and SuffixNameId), or nil.
 function N.name(prefix, suffix)
     prefix, suffix = prefix or "", suffix or ""
-    if N.whole[prefix] then return N.whole[prefix] end
+    -- A whole name first: a fixed name or a cat's own prefix has one under prefix + suffix, a cameo cat or a
+    -- rogue (and a loner with only a prefix) under the prefix alone. Then the tables' parts.
+    local whole = N.whole[prefix .. suffix] or N.whole[prefix]
+    if whole then return whole end
     local p = N.prefixes[prefix]
     if p then return p .. (N.suffixes[suffix] or "") end
     return gameText(prefix .. suffix) or gameText(prefix)
+end
+
+-- Whether the game has the names your mods add. They're text in wcmods' pak: a game that isn't reading
+-- that pak shows "<MISSING STRING TABLE ENTRY>" for a cat renamed to one (and calls it "Cat 1" in
+-- dialogue), while the save already carries the new ID. nil when no mod adds a name; asked once.
+local loaded = nil
+function N.loaded()
+    if #N.added == 0 then return nil end
+    if loaded == nil then
+        loaded = false
+        for _, key in ipairs(N.added) do
+            if gameText(key) then loaded = true break end
+        end
+        if not loaded then
+            print("[WCModsNames] the game hasn't got the names your mods add (no text under " .. N.added[1] ..
+                  "): it isn't reading wcmods' pak (~mods/zzz_WCMods_P.pak)\n")
+        end
+    end
+    return loaded
 end
 
 -- An item's name from its tag ("Gameplay.Inventory.Consumable.MediumHealingHerb" is "Marigold"), or nil.
@@ -475,9 +497,10 @@ def item_names(ctx):
 
 def names_data(plan=None, items=None):
     """The name tables WCModsNames and the C++ SDK's cat_name share: {"prefixes", "suffixes", "whole",
-    "items"}, each {id or tag: English text}, after the enabled name mods (names.Plan). Without a plan (no
-    game data) the tables are empty, and names come from the game's own text."""
-    data = {"prefixes": {}, "suffixes": {}, "whole": {}, "items": dict(items or {})}
+    "items"}, each {id or tag: English text}, after the enabled name mods (names.Plan), and "added", a few
+    text keys the mods add (N.loaded() checks the game has them). Without a plan (no game data) the tables
+    are empty, and names come from the game's own text."""
+    data = {"prefixes": {}, "suffixes": {}, "whole": {}, "items": dict(items or {}), "added": []}
     if plan is not None:
         data["prefixes"] = {p["id"]: p["final"] for p in plan.prefixes}
         data["suffixes"] = {s["id"]: s["final"] for s in plan.suffixes}
@@ -486,6 +509,8 @@ def names_data(plan=None, items=None):
             if key.startswith("STR_CAT_NAME_ICONIC_") or key.startswith("STR_CAT_NAME_WCM"):
                 whole[key] = text
         data["whole"] = whole
+        # A few texts the mods add, for N.loaded(): the game has them only if it reads wcmods' pak.
+        data["added"] = sorted(plan.added_keys)[:3]
     return data
 
 

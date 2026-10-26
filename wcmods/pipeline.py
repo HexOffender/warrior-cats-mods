@@ -131,6 +131,17 @@ def build(cfg, mods, out_dir, log=print):
                 rep["errors"].append(f"{name}: rows not added ({error})")
                 if rep["status"] == "ok":
                     rep["status"] = "partial"
+    # A section's save edits go with its table edits: a cat's new name is an ID whose text the pak adds, and
+    # a new item's inventory entry needs its rows. With a table of theirs left out, the save would point at
+    # text or items the game hasn't got (the cat shows as "<MISSING STRING TABLE ENTRY>"), so they stay out too.
+    broken = {sid for _, ids, _ in csv_failures + table_failures for sid in ids}
+    kept = [op for op in ctx.save_ops if op.get("section") not in broken]
+    if len(kept) != len(ctx.save_ops):
+        ctx.save_ops = kept
+        for sid in broken:
+            if sid in report:
+                report[sid]["errors"].append("its save edits were left out too: they'd point at text or items "
+                                             "the game wouldn't have")
 
     manifest = {"mods": [m.id for m in enabled], "sections": report, "outputs": [], "ue4ss_mods": [],
                 "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,

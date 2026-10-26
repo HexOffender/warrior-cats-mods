@@ -337,6 +337,10 @@ namespace wcmods
         detail::Names& n = detail::names();
         {
             std::lock_guard lock(n.lock);
+            // A whole name first (a fixed name or a cat's own prefix is under prefix + suffix; a cameo cat or
+            // a rogue under the prefix alone), then the tables' parts.
+            const Json& full = n.data["whole"][utf8(prefix + suffix)];
+            if (full.is_string()) return full.wstring();
             const Json& whole = n.data["whole"][utf8(prefix)];
             if (whole.is_string()) return whole.wstring();
             const Json& p = n.data["prefixes"][utf8(prefix)];

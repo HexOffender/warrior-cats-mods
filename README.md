@@ -537,6 +537,12 @@ of this. Names are matched by their English text (any case) or ID.
   Story roles (`{THE AGING LEADER}` in dialogue) show the cat cast in them, so renaming that cat
   renames the role. A cat is skipped if its name changed between building and installing.
 
+  A name the game doesn't have (a new prefix, a fixed name) is text wcmods adds to the game, so the
+  game shows it only while the mod is installed. If a renamed cat shows as `<MISSING STRING TABLE
+  ENTRY>` (dialogue and the den call it "Cat 1"), the save has its new name but the game isn't
+  loading wcmods' pak: check the game folder in Get set up, then Apply again, or put the save back
+  from Backups and repair. The mod menu's Overview says so too.
+
 Renames change the English text only. The other languages translate names, and those translations
 stay. Added names and parts appear in every language with their English text. Added parts get IDs
 made from their name (`STR_CAT_NAME_WCM_SPARROW`), so saved cats keep their names whatever else
@@ -633,6 +639,12 @@ Confirmed in game, scripting (2026-10-24):
 - **The new mod menu pages** (Game, Game switches, Inspector, Console) run against the live game
   without errors. They were checked with a recording stand-in for the menu, not opened on screen.
 
+Confirmed in game, names (2026-10-25):
+- **Cat renames in a save** show on screen: a fixed name (Callie), a new prefix (Fawnpaw) and a whole
+  name made with it (Fawnstar), on the HUD and the Select Your Cat screen. The game shows the saved
+  suffix as it is (`_STAR` on an apprentice-rank cat reads -star). A name ID whose text the game
+  hasn't got shows as `<MISSING STRING TABLE ENTRY>`.
+
 Not yet confirmed in game:
 - **Scripting:**
   - the mod menu's new pages on screen;
@@ -652,8 +664,7 @@ Not yet confirmed in game:
   but no cooked content has been tried in game yet.
 - **Names beyond the text.** Renamed and added names reach the game's text table (Mothpaw,
   Sparrowheart, Mothwhisper and the rogue Moss were read back in game). Still unchecked: new cats
-  getting added parts, removed parts and ban list changes; the name screen's suggestions; and cat
-  renames in a save (they're applied after a backup, so `restore latest` undoes them).
+  getting added parts, removed parts and ban list changes, and the name screen's suggestions.
 
 After a game update, run `selftest` before installing again.
 
