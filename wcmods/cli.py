@@ -723,6 +723,47 @@ def cmd_studio(ctx, args):
     studio.serve(ctx, port=args.port, open_browser=not args.no_browser, add=args.add)
 
 
+# --help in groups: what a player does, then mods, making them, the game, updates, C++ and the agent. A
+# command's help text stays on its add_parser call; this only says where it's listed. "game build" and
+# "game signatures" are forms of one command, so they're spelled out here.
+COMMAND_GROUPS = (
+    ("Playing", ("status", "studio", "play", "remap", "cheats", "console", "backup", "restore")),
+    ("Mods", ("enable", "disable", "add", "remove", "install", "uninstall", "build", "pack", "palette")),
+    ("Making mods", ("new", "files", "extract", "texture", "eyes", "names", "controls", "tables")),
+    ("In the game", ("lua", "inspect", "find", "game")),
+    ("After a game update", (("game build", "which build of the game is installed, what moved, and the mods made for older ones"),
+                             ("game signatures check", "check the installed exe against wcmods' signatures"),
+                             "allow-outdated")),
+    ("C++ mods", ("cpp",)),
+    ("Testing wcmods", ("selftest", "agent")),
+)
+
+
+def _group_help(ap, sub):
+    """Replace argparse's flat list of commands with COMMAND_GROUPS in the epilog. Each command's one-line
+    help comes from its add_parser call; a command no group names is listed under "Other"."""
+    actions = getattr(sub, "_choices_actions", None)
+    if actions is None:   # an argparse without that attribute: keep its own listing
+        return
+    helps = {a.dest: a.help for a in actions}
+    seen, lines = set(), []
+    for title, names in COMMAND_GROUPS + (("Other", tuple(helps)),):
+        rows = []
+        for n in names:
+            name, text = n if isinstance(n, tuple) else (n, helps.get(n))
+            if name in seen or text is None:   # listed already, or a command this wcmods hasn't got
+                continue
+            seen.add(name)
+            rows.append(f"  {name:<24}{text}")
+        if rows:
+            lines.append(title + ":")
+            lines.extend(rows)
+    ap.epilog = "\n".join(lines) + "\n\npython wcmods.py <command> -h says more about one"
+    ap.formatter_class = argparse.RawDescriptionHelpFormatter
+    sub.metavar = "<command>"
+    sub._choices_actions = []   # the flat list; the epilog lists them in groups instead
+
+
 def main(root, argv=None):
     ap = argparse.ArgumentParser(prog="wcmods", description="Warrior Cats: Clans of the Forest mod tool")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -853,6 +894,7 @@ def main(root, argv=None):
         p = sub.add_parser(option, help=text)
         p.add_argument("state", nargs="?", choices=("on", "off"))
         p.set_defaults(fn=lambda c, a, o=option: cmd_ingame(c, a, o))
+    _group_help(ap, sub)
     args = ap.parse_args(argv)
     try:
         args.fn(Ctx(root), args)
