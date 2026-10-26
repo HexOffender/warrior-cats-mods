@@ -8,6 +8,7 @@ import struct
 import zlib
 
 from .binio import fnv64, read_fstring, write_fstring, write_utf8_string
+from .oodle import Oodle
 
 PAK_MAGIC = 0x5A6F12E1
 PAK_VERSION = 12
@@ -35,7 +36,7 @@ def _read_file_name(buf, p):
 class PakReader:
     def __init__(self, path, oodle=None):
         self.path = path
-        self.oodle = oodle
+        self.oodle = oodle or Oodle()   # wcmods' own Kraken decoder unless a DLL-backed one is given
         self.entries = {}
         self.legacy_file_names = 0   # names stored the way older wcmods wrote them (see _read_file_name)
         with open(path, "rb") as f:
@@ -92,8 +93,8 @@ class PakReader:
             if not e.method:
                 f.seek(e.offset + header)
                 return f.read(e.raw_size)
-            if self.oodle is None or self.methods[e.method - 1] != "Oodle":
-                raise RuntimeError(f"{path} is compressed ({self.methods[e.method - 1]}); Oodle DLL needed")
+            if self.methods[e.method - 1] != "Oodle":
+                raise RuntimeError(f"{path} is compressed with {self.methods[e.method - 1]}, which wcmods can't read")
             out, pos = [], e.offset + header
             for k, csize in enumerate(e.block_sizes):
                 f.seek(pos)

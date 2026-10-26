@@ -196,7 +196,7 @@ it was holding down is let go. Details:
 Everything the studio does is also available as a command:
 
 ```
-python wcmods.py status      # game, save, Oodle, UE4SS, and your mods
+python wcmods.py status      # game, save, UE4SS, and your mods
 python wcmods.py selftest    # checks every file format against your install (writes nothing)
 python wcmods.py install     # builds the enabled mods and installs them (game closed)
 python wcmods.py play        # starts the game with your key remaps (see Remapping keys)
@@ -493,8 +493,7 @@ to start with. `like` borrows the rest from a game item, and `"recipes"` changes
 herbs and accessories cost. An icon or a look can be a PNG of the mod's own or one of the game's
 recoloured (`{"tint": "#a8c4ff"}`, made from your game files at install); `python wcmods.py texture
 <item or accessory>` saves the game's as a PNG to paint over. New looks work for neck, body and paw
-accessories, not head ones. Every key is in [SDK.md](docs/SDK.md) ("New items"). New items need the
-Oodle DLL.
+accessories, not head ones. Every key is in [SDK.md](docs/SDK.md) ("New items").
 
 ### `names.json`
 ```json
@@ -571,7 +570,9 @@ colour.
 ## What's verified
 
 `selftest` checks, against your install:
-- **Game files:** reading the paks, container and save; Oodle decompression; the eye atlas layout.
+- **Game files:** reading the paks, container and save; the eye atlas layout. wcmods' own Kraken
+  decoder (the compression the game's files use) decodes samples Oodle itself compressed, and the
+  game's own blocks the same as an oo2core DLL when one is set.
 - **Writers:** paks and IoStore containers read back identically, with correct BLAKE3 chunk hashes.
   The pak's directory index stores file names the way the game's own pak does (see below).
 - **CSV editor:** reproduces all 67 runtime tables byte-for-byte.
@@ -686,7 +687,8 @@ Clan Mod Studio's "Get set up" sees to these:
   - **The game's console:** UE4SS's console enabler (`ConsoleEnablerMod`) is on, so `~` or F10 opens
     it (`python wcmods.py console off` turns it off).
   - **Removing it:** delete `dwmapi.dll` and the `ue4ss` folder from `<game>\Wrc\Binaries\Win64`.
-- **Optional:** an `oo2core_*_win64.dll` from another installed game, found automatically on your
-  Steam libraries (here: Planet Zoo), or picked in "Get set up". It's only used to read the game's
-  compressed files, which mods that change names, game data or eye colours need. Without it,
-  palettes still change coats, patterns and markings, and say that eye colours were left out.
+- **Nothing else.** The game's files are compressed with Oodle's Kraken, and wcmods decodes them
+  itself (`wcmods/kraken.py`, a Python port of the open-source [ooz](https://github.com/powzix/ooz)
+  decoder, GPL-3.0). It's pure Python, so it takes a few seconds for a big texture or the item
+  table; `"oodle_dll"` in `wcmods.json`, set to an `oo2core_*_win64.dll` another installed game
+  ships, makes that a hundred times faster, which only shows when extracting many files.

@@ -78,7 +78,14 @@ Detailed in SDK.md, "Game files, repacking and new content". The key facts:
   chunk ID and header entry (imports, shader maps) can be reused for a patched copy.
 - **Mods load from `Paks\~mods\`**, and a `_P` suffix gives patch priority. **Unsigned paks and
   containers are accepted**, so wcmods' own load.
-- Oodle comes from another game's `oo2core_8_win64.dll` (here Planet Zoo's), through `OodleLZ_Decompress`.
+- **The compression is Kraken throughout.** Every compressed block's Oodle header, in both
+  containers (140,969 in the `.ucas`, 639 in the pak, surveyed on 2026-10-26), is decoder type 6
+  (Kraken) with no checksums; one pak block is a stored (`0xCC`) Kraken block. So `wcmods/kraken.py`,
+  a pure-Python port of the Kraken parts of [ooz](https://github.com/powzix/ooz) (GPL-3.0), decodes
+  everything: 5,932 blocks (339 MB) came out identical to `oo2core_8_win64.dll`, at about 4 MB/s.
+  An `oo2core` DLL named by `"oodle_dll"` in `wcmods.json` is used instead when it's there, through
+  `OodleLZ_Decompress`; the fixtures in `tests/kraken` were made with its `OodleLZ_Compress`
+  (`tools/make_kraken_fixtures.py`).
 
 ### Cooked packages and DataTables
 
