@@ -1,6 +1,6 @@
 """Mod discovery, and what mods need from each other.
 
-A mod is a folder under mods/ with a mod.json:
+A mod is a folder under mods/ (in your own folder, config.data_dir(); not wcmods') with a mod.json:
   {"name": "Game Tweaks", "description": "...", "enabled": true, "priority": 0,
    "version": "1.2", "author": "...",          what the studio shows about it
    "requires": ["mod-menu"],                    mods it can't work without: turned on with it
@@ -8,7 +8,7 @@ A mod is a folder under mods/ with a mod.json:
 and any of:
   files/<game path>   loose files that replace the game's (CSV data, configs, movies)
   paks/<name>.pak     cooked content made with Unreal Engine 5.7 (with its .utoc/.ucas), installed as is
-  menu.json           the in-game mod menu itself and its settings (mods/mod-menu; pipeline.py)
+  menu.json           the in-game mod menu itself and its settings (mods/mod-menu, from wcmods/builtin; pipeline.py)
   palette.json        colour palette (sections/palettes.py)
   controls.json       button remaps (sections/controls.py)
   mouselook.json      mouse look settings (sections/mouselook.py)

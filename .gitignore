@@ -1,9 +1,9 @@
-﻿# Personal and machine-specific
+﻿# Your mods, wcmods.json and backups are outside this folder (%LOCALAPPDATA%\WCMods; wcmods/userdata.py).
+# Here is where older versions kept them, until the first start moves them out, and where WCMODS_DATA set
+# to this folder keeps them.
 backups/
 wcmods.json
-# Your mods: wcmods ships only the mod menu (example mods are in the wcmods-examples repository)
-mods/*
-!mods/mod-menu/
+mods/
 
 # Generated from the installed game (game data, not ours to redistribute)
 vanilla/

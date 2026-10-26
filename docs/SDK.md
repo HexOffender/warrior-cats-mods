@@ -514,8 +514,8 @@ by itself after a level change.
 
 ## `WCModsMenu`
 
-The mod menu is a mod of its own: **Mod menu**, `mods/mod-menu`, the one mod that comes with wcmods. It starts
-on.
+The mod menu is a mod of its own: **Mod menu**, `mods/mod-menu`, the one mod that comes with wcmods
+(`wcmods/builtin/mod-menu`, copied into your mods with your settings kept). It starts on.
 - **While it's on:** a build puts in its window (`WCModsMenuHost`) and this module.
 - **While it's off:** there's neither, and `pcall(require, "WCModsMenu")` fails, so a script that
   adds a page checks first:

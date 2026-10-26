@@ -307,8 +307,9 @@ class Studio:
             m = self.mod(parts[1])
             return Download(modzip.pack(m), modzip.zip_name(m))
         if parts == ["open"] and method == "POST":
-            # Show a folder in Explorer: the mods folder, or one mod's.
-            folder = self.ctx.mods_root if body.get("what") == "mods" else self.mod(body.get("id", "")).folder
+            # Show a folder in Explorer: the mods folder, the folder with all your files, or one mod's.
+            folder = ({"mods": self.ctx.mods_root, "data": cfg.data_dir}.get(body.get("what"))
+                      or self.mod(body.get("id", "")).folder)
             if not hasattr(os, "startfile"):
                 raise RuntimeError(f"open {folder} yourself (this only works on Windows)")
             os.makedirs(folder, exist_ok=True)
@@ -321,7 +322,7 @@ class Studio:
                     cfg.reload()
                     cfg.data["allow_code_mods"] = bool(body["allow_code_mods"])
                     cfg.save()
-            return {"allow_code_mods": bool(cfg.data.get("allow_code_mods"))}
+            return {"allow_code_mods": bool(cfg.data.get("allow_code_mods")), "data_dir": cfg.data_dir}
         if parts == ["mods"] and method == "POST":
             m = mods.create(self.ctx.mods_root, body["id"], body.get("name"), body.get("description", ""),
                             enabled=bool(body.get("enabled", False)), priority=int(body.get("priority", 0)))

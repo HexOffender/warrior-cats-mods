@@ -297,7 +297,7 @@ def pending(cfg, mods):
     # wcmods.json read afresh into a Config of its own: reloading the studio's would throw away what an
     # install running at the same time has noted but not saved yet.
     try:
-        data = Config(cfg.root).data
+        data = Config(cfg.root, cfg.data_dir).data
     except (OSError, ValueError):   # being written this moment
         data = cfg.data
     # What an install would put in: mods made for an older version of the game stay out (unless used anyway).
@@ -322,6 +322,11 @@ def pending(cfg, mods):
         redo.append(f"the game updated (build {build})")
     elif now and inst.get("layout") and gamebuild.layout_key(cfg) not in (None, inst["layout"]):
         redo.append("the game, or what wcmods knows of it, changed")
+    # Scripts and C++ mods in the game find their settings in your mods' folders; an install made while those
+    # were somewhere else (wcmods' own folder, before they moved out of it) still points there.
+    was_root = inst.get("mods_root") or os.path.join(cfg.root, "mods")
+    if now and os.path.normcase(os.path.abspath(was_root)) != os.path.normcase(os.path.abspath(cfg.mods_root)):
+        redo.append(f"your mods moved (to {cfg.mods_root})")
     out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed, "redo": redo}
     out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo)
     return out
@@ -410,7 +415,8 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
     # another once it's there.
     game_info = manifest.get("game") or {}
     cfg.data["installed"] = {"mods": manifest["mods"], "built": manifest["built"], "ue4ss": bool(mods_dir),
-                             "game_build": game_info.get("build"), "layout": game_info.get("layout")}
+                             "game_build": game_info.get("build"), "layout": game_info.get("layout"),
+                             "mods_root": cfg.mods_root}
     cfg.save()
     return manifest
 

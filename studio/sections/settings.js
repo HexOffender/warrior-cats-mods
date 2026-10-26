@@ -51,6 +51,14 @@ export default {
     // ---------- backups and repair ----------
     async function renderRepair() {
       clear(repairBox).append(el("h2", { text: "Backups and repair" }));
+      if (settings && settings.data_dir) {
+        repairBox.append(el("div", { class: "row" },
+          el("span", { class: "muted" }, "Your mods, settings and backups are in ", el("span", { class: "mono", text: settings.data_dir }),
+            ", outside Clan Mod Studio's folder, so updating it leaves them alone."),
+          el("button", { class: "btn small", text: "Open the folder", onclick: async () => {
+            try { await api.post("/open", { what: "data" }); } catch (e) { toast(e.message, "bad"); }
+          } })));
+      }
       let backups = [], removed = [];
       try { [backups, removed] = await Promise.all([api.get("/backups"), api.get("/mods/removed")]); } catch (e) { /* shown empty */ }
       const saves = el("div", { class: "stack" },

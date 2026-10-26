@@ -1,6 +1,6 @@
 # The files a mod is made of
 
-A mod is a folder under `mods/` with a `mod.json` (its name and what it needs; [SDK.md](SDK.md#mod-folder)
+A mod is a folder under `mods/` in your files' folder ([`wcmods.json`](#wcmodsjson) says where) with a `mod.json` (its name and what it needs; [SDK.md](SDK.md#mod-folder)
 lists every key) and any of the files below. Clan Mod Studio's Make pages write them; you can also write
 them by hand, and `python wcmods.py new <name> --kind <palette|controls|...>` starts one from a template.
 A mod that only holds these files runs no code. The game's rules behind the numbers are in
@@ -228,8 +228,11 @@ your mods add.
 
 ### `wcmods.json`
 
-Not a mod file: wcmods' own settings, in the wcmods folder, made on the first run and edited by Clan
-Mod Studio and the commands. Every key is optional.
+Not a mod file: wcmods' own settings, made on the first run and edited by Clan Mod Studio and the
+commands. Every key is optional. It's in your files' folder, `%LOCALAPPDATA%\WCMods`, with `mods\` and
+`backups\` (`WCMODS_DATA` moves the folder; `python wcmods.py status` shows where it is), so updating
+wcmods never touches it. Older versions kept all three in the wcmods folder; the first start after
+updating moves them out (`wcmods/userdata.py`).
 
 | Key | What it is |
 |---|---|
@@ -240,7 +243,7 @@ Mod Studio and the commands. Every key is optional.
 | `allow_outdated` | `{ "<mod>": [<build>, ...] }`: mods used anyway on game builds they weren't made for ("Use it anyway", `wcmods allow-outdated`) |
 | `console` | Whether the game's `~` console (UE4SS's console enabler) is on |
 | `debug_cat_look` | `true` makes your cat's colours script log every cat it sees |
-| `installed`, `installed_ue4ss`, `installed_ue4ss_shared` | What the last install put in the game: the mods, when they were built, the game build, the UE4SS mods and shared modules. The studio compares them with your mods; leave them alone |
+| `installed`, `installed_ue4ss`, `installed_ue4ss_shared` | What the last install put in the game: the mods, when they were built, the game build, the mods folder they came from, the UE4SS mods and shared modules. The studio compares them with your mods; leave them alone |
 | `menu_key`, `menu_scale`, `cheats` | The mod menu's settings from older versions; the next change moves them into `mods/mod-menu/menu.json` ([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)) |
 
 The file starts with a `_help` line saying the same.

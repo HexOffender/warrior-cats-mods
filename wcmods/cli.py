@@ -9,24 +9,30 @@ import zipfile
 
 from . import controls, eyeatlas, keymap, mods, names, pipeline, playstate, ue4ss
 from .formats import save
-from .config import EXE_NAME, STEAM_APP_ID, Config, game_running
+from .config import EXE_NAME, STEAM_APP_ID, Config, data_dir, game_running
 from .gamefiles import GameFiles
 from .formats.savejson import SaveDoc
 
 
 class Ctx:
-    def __init__(self, root):
+    """`root` is wcmods' folder; your mods, wcmods.json and backups are in `data` (config.data_dir() unless
+    given), where what an older version kept in wcmods' folder is moved first (userdata.prepare)."""
+
+    def __init__(self, root, data=None):
+        from . import userdata
+        data = data or data_dir()
+        userdata.prepare(root, data)
         self.root = root
-        self.cfg = Config(root)
-        self.mods_root = os.path.join(root, "mods")
+        self.cfg = Config(root, data)
+        self.mods_root = self.cfg.mods_root
         self.build_dir = os.path.join(root, "build")
-        self.backups = os.path.join(root, "backups")
+        self.backups = self.cfg.backups_dir
         self._game = None
 
     def need_game(self):
         if not self.cfg.game_dir:
             sys.exit("Couldn't find the game: the folder with Wrc in it (in Steam, right-click the game, Manage, "
-                     "Browse local files). Clan Mod Studio's Get set up asks for it; or put it in wcmods.json as "
+                     f"Browse local files). Clan Mod Studio's Get set up asks for it; or put it in {self.cfg.path} as "
                      "\"game_dir\".")
 
     @property
@@ -41,6 +47,7 @@ def cmd_status(ctx, args):
     cfg = ctx.cfg
     print(f"game folder : {cfg.game_dir or 'NOT FOUND (Clan Mod Studio, Get set up, asks for it; or set game_dir in wcmods.json)'}")
     print(f"save folder : {cfg.save_dir} ({'found' if os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)) else 'no save yet'})")
+    print(f"your files  : {cfg.data_dir} (your mods, wcmods.json and backups)")
     print(f"decoder     : {cfg.oodle_dll or 'wcmods (set oodle_dll in wcmods.json to an oo2core DLL for a faster one)'}")
     print(f"UE4SS       : {cfg.ue4ss_mods_dir or 'not installed (the script loader the mod menu and most mods need; Clan Mod Studio, Get set up, installs it)'}")
     if cfg.game_dir:
@@ -99,7 +106,7 @@ def cmd_add(ctx, args):
         if d.get("skipped"):
             print(f"skipped {d['id']} ({d['name']}): it {d['skipped']}")
             continue
-        print(f"added {d['id']} ({d['name']})" + (f"; the old copy is in backups/mods/{d['replaced']}" if d["replaced"] else ""))
+        print(f"added {d['id']} ({d['name']})" + (f"; the old copy is in {os.path.join(ctx.backups, 'mods', d['replaced'])}" if d["replaced"] else ""))
         for name in d["also_on"]:
             print(f"  also turned on {name} ({d['id']} needs it)")
         # The same check as the studio's preview (names as Windows sees them), so case can't hide code.
@@ -128,7 +135,7 @@ def cmd_remove(ctx, args):
         sys.exit(f"{e} (or remove it with --with-dependents, which turns them off too)")
     for i in need:
         print(f"disabled {i} (it needs {m.id})")
-    print(f"moved {args.mod} to backups/mods/{moved}; install again to take it out of the game")
+    print(f"moved {args.mod} to {os.path.join(ctx.backups, 'mods', moved)}; install again to take it out of the game")
 
 
 def cmd_pack(ctx, args):
