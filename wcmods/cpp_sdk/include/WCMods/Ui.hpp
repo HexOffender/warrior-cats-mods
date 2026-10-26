@@ -1219,7 +1219,7 @@ namespace wcmods
         }
         // One of the engine's controls grown to the game's size (the theme's control_scale): a slider, a number or
         // text box or a drop-down in a scale box, its text set to come out at the theme's text_size; a check box
-        // drawn bigger by a render transform (a scale box leaves its pictures as they are), in a box that reserves
+        // drawn bigger by a render transform (in the game, a scale box didn't grow one), in a box that reserves
         // the room it's drawn in; a button, text or a layout left as it is (made at the game's size already).
         // With a width, that's the control's room, in the game's units.
         inline auto scaled(const Widget& control, double width = 0) -> Widget
@@ -1228,10 +1228,15 @@ namespace wcmods
             float factor = theme().control_scale;
             if (wcmods::is_a(o, STR("/Script/UMG.CheckBox")))
             {
-                // A render transform changes nothing in the layout, so the box is as tall as the check box is drawn
-                // (its pictures: 24 from checkbox(), 16 the engine's own), and as wide when there's no width.
-                double drawn = control.get(L"WidgetStyle.UncheckedImage.ImageSize.Y").number(16) * factor;
-                Widget room = box(width > 0 ? width : drawn, drawn);
+                // A render transform changes nothing in the layout, so the box is as big as the check box is drawn:
+                // its pictures (24 from checkbox(), 16 the engine's own) and its style's padding, times the scale;
+                // as wide as that too when there's no width.
+                auto style = [&](const wchar_t* path, double fallback) { return control.get(path).number(fallback); };
+                double wide = (style(L"WidgetStyle.UncheckedImage.ImageSize.X", 16) + style(L"WidgetStyle.Padding.Left", 0)
+                               + style(L"WidgetStyle.Padding.Right", 0)) * factor;
+                double tall = (style(L"WidgetStyle.UncheckedImage.ImageSize.Y", 16) + style(L"WidgetStyle.Padding.Top", 0)
+                               + style(L"WidgetStyle.Padding.Bottom", 0)) * factor;
+                Widget room = box(width > 0 ? width : wide, tall);
                 room.add(control);
                 control.slot().align(Align::Start, Align::Center);
                 Widget check = control;
@@ -1577,8 +1582,8 @@ namespace wcmods
             // The game's panels a screen switches between, for a page to hide while it shows: the user widgets of
             // the screen's own beside the tab row (not its footer or title, not the background), the panels a pause
             // screen lists (PausePanels: General, Controls, Quest, Party, Bonds), and every GuiPanel and
-            // GuiScrollGrid (SwtEngine's classes for a screen's pages and grids) under the tab row's area however
-            // deep the screen nests it, each with what's inside it.
+            // GuiScrollGrid (SwtEngine's classes for a screen's pages and grids) under the tab row's area, through
+            // the screen's own layout panels however deep, each with what's inside it.
             inline auto game_panels(UObject* screen, const Widget& tab_row) -> std::vector<Widget>
             {
                 std::vector<Widget> out;
@@ -1613,7 +1618,15 @@ namespace wcmods
                     if (wcmods::is_a(o, STR("/Script/UMG.UserWidget"))) return;
                     for (const Widget& c : w.children()) collect(c);
                 };
-                for (const Widget& w : area.children()) collect(w);
+                UObject* tree = get(screen, L"WidgetTree").object;
+                for (const Widget& w : area.children())
+                {
+                    // Only through the screen's own layout (what its designer put in its widget tree): what a mod added
+                    // to the area, such as a tab's page frame, is left alone with what's in it.
+                    UObject* o = w.object();
+                    if (!o || !tree || o->GetOuterPrivate() != tree) continue;
+                    collect(w);
+                }
                 return out;
             }
 

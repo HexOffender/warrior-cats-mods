@@ -402,6 +402,7 @@ def test_world_matches_lua(agent):
     r = _ready(agent, "world")
     assert not _failed(r, "world"), _failed(r, "world")
     v = r["values"]
+    assert _close_pause(agent), "the pause screen stayed up"   # screens were recorded with none showing
     v["nearby.pickups.now"] = _request(agent, "events")["values"]["nearby.pickups.now"]   # counted just now
     lua = agent.lua("""
         local World = require("WCModsWorld")
@@ -573,6 +574,18 @@ def _screen_current(agent):
     return agent.lua(f'local s = {PAUSE} if not s then return nil end return Game.name(s.CurrentNav.CurrentControl)')
 
 
+def _close_pause(agent):
+    """Close the pause screen when it's up. The game has been seen to put it up on its own after its window
+    changed focus (test_keys_pressed brings the game to the front), and the checks that expect no screen
+    showing need it down."""
+    for _ in range(3):
+        if not agent.lua(f'return {PAUSE} ~= nil'):
+            return True
+        agent.key("BackSpace")
+        time.sleep(1)
+    return not agent.lua(f'return {PAUSE} ~= nil')
+
+
 def _open_pause(agent):
     """Open the pause screen with the keyboard's pause key (P; Enter pauses only in the game's gamepad mode),
     pressing again when the game ignored it (it does for a moment after a screen closes)."""
@@ -601,6 +614,7 @@ def _walk_to_tab(agent, title, tries=8):
 def test_ui_widgets(agent):
     """Ui.hpp: every kind of widget made, placed, styled and read back; an overlay on the viewport; the HUD's
     parts; the game's font on the text."""
+    assert _close_pause(agent), "the pause screen stayed up"   # ui::screen() is checked to find none
     r = _request(agent, "ui")
     assert not _failed(r, "ui"), _failed(r, "ui")
     v = r["values"]

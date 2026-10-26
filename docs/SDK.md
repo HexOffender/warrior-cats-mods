@@ -1033,9 +1033,10 @@ helpers in `wcmods::ui` make widgets styled by `ui::theme()` (the game's Amarant
 (check boxes, sliders, number and text boxes, drop-downs) are drawn for a 1080-pixel screen, so
 `labelled()` and `scaled()` grow them by the theme's `control_scale`: a slider, a number or text box or a
 drop-down in a scale box, with its text set to `text_size / control_scale` so that it comes out at the
-theme's size (set the font after `labelled()` for another); a check box by a render transform (a scale box
-leaves its pictures as they are), in a box that reserves the room it's drawn in, 24 × `control_scale` tall.
-A button, text or a layout is left as it is.
+theme's size (set the font after `labelled()` for another); a check box by a render transform (in the game,
+a scale box didn't grow one), in a box that reserves the room it's drawn in: its pictures and its style's
+padding times `control_scale`, so 24 × `control_scale` tall for `checkbox()`. A button, text or a layout is
+left as it is.
 
 | Call | Does |
 |---|---|
@@ -1082,9 +1083,11 @@ still there through `screen()`, `find()` and `add()`.
 What `hide_game_panels` hides while the page shows, and puts back as it was after: the screen's own user
 widgets beside the tab row other than its footer and title; the panels a pause screen lists in
 `PausePanels` (General, Controls, Quest, Party, Bonds); and every `GuiPanel` and `GuiScrollGrid` (the
-engine's classes for a screen's pages and grids, `/Script/SwtEngine`) anywhere under the tab row's area,
-however deep the screen nests it, with what's inside it. The page's frame is drawn in the theme's `panel`
-colour, translucent, so a panel left showing would show through: say if one does.
+engine's classes for a screen's pages and grids, `/Script/SwtEngine`) under the tab row's area, through the
+screen's own layout panels however deep (not inside another user widget of the screen's, such as its
+footer, and not inside what a mod added to the area, such as a tab's page), each with what's inside it.
+The page's frame is drawn in the theme's `panel` colour, translucent, so a panel left showing would show
+through: say if one does.
 
 The tab's page is built again each time the screen opens, because the game makes its screens anew; keep
 the state the page shows in your own variables, as the example does with the settings. A page's controls
