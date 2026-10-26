@@ -425,7 +425,7 @@ class Studio:
         try:
             text, _ = self.save_text()
             doc = SaveDoc(text)
-            mine = [c for c in names.cats_in_save(doc.data) if names.PLAYER_PATH in c["paths"]]
+            mine = [c for c in names.cats_in_save(doc.data) if c["player"] and c["current"]]
             if mine:
                 raw = doc.get(mine[0]["paths"][0])
                 for part, field in catlook.SLOTS.items():
@@ -456,16 +456,19 @@ class Studio:
         if self._names is None:
             self._names = names.GameNames(lambda path: self.ctx.game.read_text(BuildContext.data_path(path)))
         plan = names.Plan(self._names, names.merge([spec]))
+        cats, slot = [], None
         try:
             text, _ = self.save_text()
-            cats = names.cats_in_save(SaveDoc(text).data)
+            doc = SaveDoc(text)
+            cats, slot = names.cats_in_save(doc.data), names.current_slot(doc.data)
         except LookupError:
-            cats = []
+            pass
         ops = plan.plan_cats(cats)
         return {**self._names.summary(), "final": {"prefixes": [p["final"] for p in plan.prefixes],
                                                    "suffixes": [s["final"] for s in plan.suffixes],
                                                    "rogues": [r["final"] for r in plan.rogues]},
-                "cats": names.cat_list(plan, cats, ops), "renames": [{"from": a, "to": b} for a, b in plan.cat_renames],
+                "cats": names.cat_list(plan, cats, ops), "current_slot": slot,
+                "renames": [{"from": a, "to": b} for a, b in plan.cat_renames],
                 "warnings": plan.warnings, "changed_texts": _changed_texts(plan.edits.get(names.strings_path("EN"), {}))}
 
     def eyes(self):
