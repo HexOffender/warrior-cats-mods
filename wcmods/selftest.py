@@ -1131,8 +1131,10 @@ def _onboarding_edges():
 
 def _user_data():
     """Your files outside wcmods' folder (userdata.py): what an older version kept in its folder moves out
-    on the first start, the mod menu keeps your settings while wcmods' copy updates it, a second copy of
-    wcmods moving in overwrites nothing, and the last install is redone once so the game finds the mods."""
+    on the first start (to another drive too), the mod menu keeps your settings while wcmods' copy updates
+    it, a second copy of wcmods moving in loses nothing, and the last install is redone once so the game
+    finds the mods."""
+    import errno
     import json
     from . import pipeline, userdata
     from .config import Config, EXE_NAME
@@ -1197,34 +1199,79 @@ def _user_data():
         if any("moved" in r for r in pipeline.pending(cfg, found)["redo"]):
             problems.append("an install from this mods folder is redone")
 
-        # A second copy of wcmods moving in: what's here stays; its copies go to backups.
+        # A second copy of wcmods moving in: what's here stays (taking settings only the other has); its
+        # copies go to backups, a removed mod's under a number that keeps its id.
         old2 = os.path.join(tmp, "wcmods2")
-        write(os.path.join(old2, "wcmods.json"), {"game_dir": "elsewhere"})
+        write(os.path.join(old2, "wcmods.json"), {"game_dir": "elsewhere", "console": True})
         write(os.path.join(old2, "mods", "mine", "mod.json"), {"name": "Mine, the other copy"})
         write(os.path.join(old2, "mods", "mod-menu", "menu.json"), {"key": "F3"})
+        write(os.path.join(old2, "backups", "mods", "20260101-000000-removed-gone", "mod.json"), {"name": "Gone too"})
         said = []
         userdata.prepare(old2, data, log=said.append)
         kept = [n for n in os.listdir(os.path.join(data, "backups")) if n.endswith("-wcmods.json")]
-        if read(data, "wcmods.json")["game_dir"] != game or len(kept) != 1 or read(data, "backups", kept[0]) != {"game_dir": "elsewhere"}:
-            problems.append(f"a second wcmods.json: {kept}")
+        now = read(data, "wcmods.json")
+        if now["game_dir"] != game or now.get("console") is not True or len(kept) != 1 \
+                or read(data, "backups", kept[0]) != {"game_dir": "elsewhere", "console": True}:
+            problems.append(f"a second wcmods.json: {now}, {kept}")
         replaced = [n for n in os.listdir(os.path.join(data, "backups", "mods")) if n.endswith("-replaced-mine")]
         if read(data, "mods", "mine", "mod.json")["name"] != "Mine" or len(replaced) != 1:
             problems.append(f"a second copy of a mod: {replaced}")
         if read(data, "mods", "mod-menu", "menu.json")["key"] != "F2" or os.path.exists(os.path.join(old2, "mods")):
             problems.append("a second copy of the mod menu")
+        if read(data, "backups", "mods", "20260101-000000-2-removed-gone", "mod.json") != {"name": "Gone too"}:
+            problems.append(f"a second removed mod: {sorted(os.listdir(os.path.join(data, 'backups', 'mods')))}")
+        if not any("stays" in s and kept[0] in s for s in said) or not any("-replaced-mine" in s for s in said):
+            problems.append(f"said {said}")
 
-        # A new player: the mod menu as wcmods has it, and nothing to say. WCMODS_DATA as wcmods' own
-        # folder: everything stays where it is.
+        # A new player: the mod menu as wcmods has it, and nothing to say. Then their old folder after all:
+        # its mod menu replaces the one only put in, so its settings count.
         said = []
-        userdata.prepare(os.path.join(tmp, "new"), os.path.join(tmp, "new-data"), log=said.append)
-        if said or sorted(os.listdir(os.path.join(tmp, "new-data", "mods"))) != ["mod-menu"] \
-                or read(tmp, "new-data", "mods", "mod-menu", "menu.json") != shipped_menu:
+        fresh = os.path.join(tmp, "new-data")
+        userdata.prepare(os.path.join(tmp, "new"), fresh, log=said.append)
+        if said or sorted(os.listdir(os.path.join(fresh, "mods"))) != ["mod-menu"] \
+                or read(fresh, "mods", "mod-menu", "menu.json") != shipped_menu:
             problems.append("a first start")
-        here = os.path.join(tmp, "here")
+        old3 = os.path.join(tmp, "wcmods3")
+        write(os.path.join(old3, "mods", "mod-menu", "mod.json"), {**shipped_meta, "enabled": False})
+        write(os.path.join(old3, "mods", "mod-menu", "menu.json"), {"key": "F4"})
+        userdata.prepare(old3, fresh, log=said.append)
+        if read(fresh, "mods", "mod-menu", "menu.json") != {**shipped_menu, "key": "F4"} \
+                or read(fresh, "mods", "mod-menu", "mod.json")["enabled"] is not False:
+            problems.append("an old mod menu over one only put in")
+
+        # WCMODS_DATA as wcmods' own folder, spelled as it is or through a junction: everything stays.
+        said, here = [], os.path.join(tmp, "here")
         write(os.path.join(here, "mods", "mine", "mod.json"), {"name": "Mine"})
-        userdata.prepare(here, here, log=said.append)
-        if said or sorted(os.listdir(os.path.join(here, "mods"))) != ["mine", "mod-menu"]:
-            problems.append("data in wcmods' own folder")
+        write(os.path.join(here, "wcmods.json"), {"console": True})
+        try:
+            import _winapi
+            _winapi.CreateJunction(here, os.path.join(tmp, "there"))
+            spellings = [here, os.path.join(tmp, "there")]
+        except (ImportError, AttributeError, OSError):
+            spellings = [here]
+        for spelled in spellings:
+            userdata.prepare(here, spelled, log=said.append)
+            if said or sorted(os.listdir(os.path.join(here, "mods"))) != ["mine", "mod-menu"] \
+                    or read(here, "wcmods.json") != {"console": True} or os.path.exists(os.path.join(here, "backups")):
+                problems.append(f"data in wcmods' own folder, as {spelled}")
+
+        # A folder going to another drive: copied whole, then the old one taken away.
+        src, dest = os.path.join(tmp, "far", "x"), os.path.join(tmp, "farther", "x")
+        write(os.path.join(src, "mod.json"), {"name": "X"})
+        rename, moves = os.rename, []
+
+        def other_drive(a, b):
+            if a == src:
+                raise OSError(errno.EXDEV, "not the same drive")
+            rename(a, b)
+        os.rename = other_drive
+        try:
+            userdata._move(src, dest, moves)
+        finally:
+            os.rename = rename
+        if moves or os.path.exists(src) or read(dest, "mod.json") != {"name": "X"} \
+                or os.listdir(os.path.dirname(dest)) != ["x"]:
+            problems.append(f"a move to another drive: {moves}")
     return not problems, "; ".join(problems)
 
 

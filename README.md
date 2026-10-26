@@ -36,8 +36,9 @@ brings it back.
 changes; your files stay as they are. The mod menu's settings (key, size, cheats, on or off) are
 yours too and stay as well.
 - **If `git pull` won't start:** it may say your changes to `mods/mod-menu` would be overwritten.
-  That's because older versions saved the menu's settings there. Run `git checkout -- mods/mod-menu`,
-  pull again, and set the menu's key and size again on the Mods page.
+  That's because older versions saved the menu's settings there. Move the `mod-menu` folder out of
+  `mods` (to your desktop, say), pull again, then move it back into `mods`. The next start takes its
+  settings along.
 
 ## Requirements
 

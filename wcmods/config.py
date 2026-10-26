@@ -30,6 +30,14 @@ def data_dir():
         os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "WCMods"))
 
 
+def same_folder(a, b):
+    """Whether two paths are one folder, however each is spelled (a junction, a subst drive, a short name)."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:   # one of them isn't there
+        return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
 class Config:
     """wcmods' settings. `root` is wcmods' own folder (its code and caches); `data` is the folder with your
     mods, wcmods.json and backups (data_dir() unless given: the tests give a folder of their own)."""

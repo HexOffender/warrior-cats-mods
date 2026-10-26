@@ -11,12 +11,14 @@ brings the copy there up to date, keeping what's yours: whether it's on, its pri
 Older versions kept mods/, wcmods.json and backups/ in wcmods' own folder; the first start after an update
 moves them here.
 """
-import datetime
 import errno
 import json
 import os
 import shutil
 import sys
+
+from .config import same_folder
+from .modzip import BACKUP_NAME, _backup, _stamp
 
 BUILTIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "builtin")
 YOURS = ("enabled", "priority")            # in a built-in mod's mod.json: as you set them
@@ -25,37 +27,59 @@ SETTINGS = ("menu.json", "settings.json")  # a built-in mod's settings: your val
 
 def prepare(root, data_dir, log=None):
     """Ready the data folder before anything reads it: what an older version left in wcmods' folder (root)
-    moved in, and the built-in mods up to date. `log` gets what moved (stderr unless given, so a command
-    printing JSON stays readable)."""
+    moved in, and the built-in mods up to date. `log` gets what moved and anything that couldn't be done
+    (stderr unless given, so a command printing JSON stays readable); none of that stops the command."""
     log = log or (lambda m: print(m, file=sys.stderr))
-    moved, problems = migrate(root, data_dir)
+    try:
+        moved, notes, problems = migrate(root, data_dir)
+    except OSError as e:
+        moved, notes, problems = [], [], [f"{root}'s files ({e.strerror or e})"]
     if moved:
         log(f"Moved your {_join(moved)} out of the wcmods folder, to {data_dir}, where updating wcmods won't "
             "touch them. Apply to game once (or `wcmods install`), so the game finds your mods there.")
+    for note in notes:
+        log(note)
     for p in problems:
         log(f"Couldn't move {p}. Close whatever has it open; the next start tries again.")
-    sync_builtin(os.path.join(data_dir, "mods"))
+    try:
+        sync_builtin(os.path.join(data_dir, "mods"))
+    except OSError as e:
+        log(f"Couldn't bring the mods that come with wcmods up to date in {os.path.join(data_dir, 'mods')} "
+            f"({e.strerror or e}).")
 
 
 def migrate(root, data_dir):
     """Move wcmods.json, mods/ and backups/ from wcmods' folder, where older versions kept them, into
-    data_dir. Nothing is overwritten: when data_dir already has a wcmods.json or a mod of the same name (a
-    second copy of wcmods moving in), the one already there stays and the old one goes to data_dir's backups,
-    a mod as a replaced one (Settings and repair puts it back). An old copy of a built-in mod is dropped then:
-    the one there has your settings. Returns ([what moved], [what couldn't be, and why]); what couldn't (a
-    file open in another program) stays, for the next start."""
-    if _same(root, data_dir):   # WCMODS_DATA is wcmods' own folder: everything stays where it is
-        return [], []
-    moved, problems = [], []
+    data_dir. Nothing is lost when data_dir has some already (a newer version ran from another folder first,
+    or a second copy of wcmods moves in):
+    - wcmods.json: the one there stays and takes the settings only yours has; yours goes to backups.
+    - a mod: the one there stays; yours goes to backups as a replaced one (Settings and repair puts it back).
+    - a built-in mod (the mod menu): yours replaces the one there while that still has wcmods' defaults
+      (it was only put in); otherwise yours is dropped, as the one there has settings of its own.
+    Returns ([what moved], [notes on what didn't], [what couldn't be moved, and why]); what couldn't (a file
+    open in another program) stays, for the next start."""
+    if same_folder(root, data_dir):   # WCMODS_DATA is wcmods' own folder: everything stays where it is
+        return [], [], []
+    moved, notes, problems = [], [], []
     backups = os.path.join(data_dir, "backups")
 
     old = os.path.join(root, "wcmods.json")
     if os.path.isfile(old):
         new = os.path.join(data_dir, "wcmods.json")
-        if os.path.exists(new):
-            new = _free(os.path.join(backups, f"{_stamp()}-wcmods.json"))
-        if _move(old, new, problems):
-            moved.append("settings (wcmods.json)")
+        if not os.path.exists(new):
+            if _move(old, new, problems):
+                moved.append("settings (wcmods.json)")
+        else:
+            yours, there = _read_json(old) or {}, _read_json(new)
+            added = sorted(k for k in yours if there is not None and k not in there and not k.startswith("_"))
+            if added:
+                with open(new, "w", encoding="utf-8") as f:
+                    json.dump({**there, **{k: yours[k] for k in added}}, f, indent=2)
+                    f.write("\n")
+            aside = _free(os.path.join(backups, f"{_stamp()}-wcmods.json"))
+            if _move(old, aside, problems):
+                notes.append(f"{new} was there already, so it stays" + (f", with {', '.join(added)} from yours"
+                             if added else "") + f"; your old wcmods.json is in {aside}.")
 
     old = os.path.join(root, "mods")
     if os.path.isdir(old):
@@ -63,16 +87,18 @@ def migrate(root, data_dir):
         for name in sorted(os.listdir(old)):
             src, dest = os.path.join(old, name), os.path.join(data_dir, "mods", name)
             builtin = os.path.isfile(os.path.join(BUILTIN, name, "mod.json"))
+            if builtin and os.path.isdir(dest) and _untouched(dest, name):
+                shutil.rmtree(dest, ignore_errors=True)
             if not os.path.exists(dest):
                 if _move(src, dest, problems) and not builtin and os.path.isfile(os.path.join(dest, "mod.json")):
                     n += 1
             elif builtin:
                 shutil.rmtree(src, ignore_errors=True)
             else:
-                from .modzip import _backup
                 try:
-                    _backup(src, backups, "replaced")
-                    n += 1
+                    kept = _backup(src, backups, "replaced")
+                    notes.append(f"{dest} was there already, so it stays; your old copy is in {kept} "
+                                 "(Settings and repair can put it back).")
                 except OSError as e:
                     problems.append(f"{src} ({e.strerror or e})")
         _rmdir(old)
@@ -86,14 +112,15 @@ def migrate(root, data_dir):
             src = os.path.join(old, name)
             if name == "mods" and os.path.isdir(src):   # removed and replaced mods: in with any already there
                 for entry in sorted(os.listdir(src)):
-                    any_moved |= _move(os.path.join(src, entry), _free(os.path.join(backups, "mods", entry)), problems)
+                    dest = _free_mod_backup(os.path.join(backups, "mods"), entry)
+                    any_moved |= _move(os.path.join(src, entry), dest, problems)
                 _rmdir(src)
             else:
                 any_moved |= _move(src, _free(os.path.join(backups, name)), problems)
         _rmdir(old)
         if any_moved:
             moved.append("backups")
-    return moved, problems
+    return moved, notes, problems
 
 
 def sync_builtin(mods_root):
@@ -140,6 +167,20 @@ def _sync(src, dest, rel):
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     with open(dest, "wb") as f:
         f.write(new)
+    return True
+
+
+def _untouched(folder, mod_id):
+    """Whether the copy of a built-in mod in folder has nothing of yours yet: wcmods' own on/off and
+    priority, and its settings as they come."""
+    for name in ("mod.json",) + SETTINGS:
+        shipped = _read_json(os.path.join(BUILTIN, mod_id, name))
+        if shipped is None:
+            continue
+        mine = _read_json(os.path.join(folder, name)) or {}
+        keys = YOURS if name == "mod.json" else [k for k in {**shipped, **mine} if not k.startswith("_")]
+        if any(mine.get(k, shipped.get(k)) != shipped.get(k) for k in keys):
+            return False
     return True
 
 
@@ -191,19 +232,22 @@ def _free(path):
     return path
 
 
+def _free_mod_backup(folder, name):
+    """folder/name for a removed or replaced mod's backup, numbered after its time when that's taken, as
+    modzip numbers them, so the mod's id at the end of the name stays as it was."""
+    m = BACKUP_NAME.match(name)
+    path, n = os.path.join(folder, name), 2
+    while m and os.path.exists(path):
+        path = os.path.join(folder, f"{m.group(1)}-{n}-{m.group(2)}-{m.group(3)}")
+        n += 1
+    return path if m else _free(path)
+
+
 def _rmdir(path):
     try:
         os.rmdir(path)   # only when empty
     except OSError:
         pass
-
-
-def _same(a, b):
-    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
-
-
-def _stamp():
-    return datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
 def _join(items):

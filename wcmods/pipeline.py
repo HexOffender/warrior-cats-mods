@@ -13,7 +13,7 @@ from . import ue4ss, view, world
 from . import game as game_lua   # WCModsGame (the name `game` is the game's files in build())
 from . import mods as modlib
 from .formats.blake3 import blake3
-from .config import MOD_BASENAME, UE4SS_MOD_NAME, Config, game_running
+from .config import MOD_BASENAME, UE4SS_MOD_NAME, Config, game_running, same_folder
 from .gamefiles import GameFiles
 from .formats.iostore import ModContainerWriter
 from .formats.pak import PakReader, PakWriter
@@ -325,7 +325,7 @@ def pending(cfg, mods):
     # Scripts and C++ mods in the game find their settings in your mods' folders; an install made while those
     # were somewhere else (wcmods' own folder, before they moved out of it) still points there.
     was_root = inst.get("mods_root") or os.path.join(cfg.root, "mods")
-    if now and os.path.normcase(os.path.abspath(was_root)) != os.path.normcase(os.path.abspath(cfg.mods_root)):
+    if now and not same_folder(was_root, cfg.mods_root):
         redo.append(f"your mods moved (to {cfg.mods_root})")
     out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed, "redo": redo}
     out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo)
