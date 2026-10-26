@@ -10,6 +10,7 @@ Format notes (verified against pakchunk0-Windows.utoc, UE 5.7):
 import struct
 
 from .binio import read_fstring, write_fstring
+from .oodle import Oodle
 from .blake3 import blake3
 
 TOC_MAGIC = b"-==--==--==--==-"
@@ -27,7 +28,7 @@ class IoStoreReader:
     def __init__(self, utoc_path, oodle=None):
         self.utoc_path = utoc_path
         self.ucas_path = utoc_path[:-5] + ".ucas"
-        self.oodle = oodle
+        self.oodle = oodle or Oodle()   # wcmods' own Kraken decoder unless a DLL-backed one is given
         buf = open(utoc_path, "rb").read()
         if buf[:16] != TOC_MAGIC:
             raise ValueError(f"{utoc_path}: not a utoc file")
@@ -73,10 +74,10 @@ class IoStoreReader:
                 raw = f.read(csize)
                 if method == 0:
                     parts.append(raw[:usize])
-                elif self.oodle is not None and self.methods[method - 1] == "Oodle":
+                elif self.methods[method - 1] == "Oodle":
                     parts.append(self.oodle.decompress(raw, usize))
                 else:
-                    raise RuntimeError("chunk is Oodle-compressed; an Oodle DLL is required")
+                    raise RuntimeError(f"chunk is compressed with {self.methods[method - 1]}, which wcmods can't read")
         data = b"".join(parts)
         start = offset - first * self.block_size
         return data[start:start + length]

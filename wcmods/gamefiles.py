@@ -1,6 +1,7 @@
 """Read any game file by path, from the legacy pak or the IoStore container."""
 import fnmatch
 import os
+import sys
 
 from .iostore import IoStoreReader
 from .oodle import Oodle
@@ -18,9 +19,15 @@ class GameFiles:
 
     @property
     def oodle(self):
-        """The decompressor: wcmods' own, or the oo2core DLL wcmods.json names."""
+        """The decompressor: wcmods' own, or the oo2core DLL wcmods.json names (wcmods' own when that
+        DLL can't be loaded, with a line on stderr)."""
         if self._oodle is None:
-            self._oodle = Oodle(self.cfg.oodle_dll)
+            dll = self.cfg.oodle_dll
+            try:
+                self._oodle = Oodle(dll)
+            except (OSError, AttributeError) as e:   # can't be loaded, or isn't an oo2core DLL
+                print(f"wcmods: couldn't load the Oodle DLL {dll} ({e}); decoding in Python instead", file=sys.stderr)
+                self._oodle = Oodle()
         return self._oodle
 
     @property

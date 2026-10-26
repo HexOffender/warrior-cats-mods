@@ -127,17 +127,6 @@ class _Bits:
         self.refill_backwards()
         return rv
 
-    def read_gamma(self):
-        """A gamma value; at least 23 bits must be in the window."""
-        n = _clz32(self.bits)
-        n = 2 * n + 2
-        if n >= 24:
-            raise KrakenError("bad gamma code")
-        self.bitpos += n
-        r = self.bits >> (32 - n)
-        self.bits = (self.bits << n) & _M32
-        return r - 2
-
     def read_distance(self, v, backwards=False):
         """An offset code parametrized by `v`."""
         bits = self.bits
