@@ -65,7 +65,7 @@ def code_stamp():
     newest = 0.0
     for folder, _, names in os.walk(here):
         for n in names:
-            if n.endswith(".py"):
+            if n.endswith((".py", ".lua")):
                 newest = max(newest, os.path.getmtime(os.path.join(folder, n)))
     return newest
 
