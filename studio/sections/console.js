@@ -13,7 +13,7 @@ const EXAMPLES = [
 export default {
   title: "Console",
   async mount(root, wc) {
-    const { el, api, clear, toast } = wc;
+    const { el, docLink, api, clear, toast } = wc;
     const status = el("span", { class: "chip" }, el("i"), "…");
     const code = el("textarea", { id: "con-code", spellcheck: false, "aria-label": "Lua to run", placeholder: "Game.cat():name()", style: { minHeight: "140px" } });
     const log = el("pre", { class: "log", role: "log", "aria-label": "Output", style: { whiteSpace: "pre-wrap" } });
@@ -27,7 +27,7 @@ export default {
       el("div", { class: "section-head" },
         el("span", { class: "eyebrow", text: "Scripting" }),
         el("h1", { text: "Console" }),
-        el("p", { class: "note", text: "Runs Lua in the running game, with WCModsGame as Game (docs/scripting.md). An expression shows its value; print shows too. Globals you set stay for the next run. It needs the game running after an install with code mods allowed." })),
+        el("p", { class: "note" }, "Runs Lua in the running game, with WCModsGame as Game (", docLink("docs/scripting.md"), "). An expression shows its value; print shows too. Globals you set stay for the next run. It needs the game running after an install with code mods allowed.")),
       el("div", { class: "card" },
         el("div", { class: "row spread" }, el("strong", { text: "Lua" }), status),
         el("div", { class: "row", style: { flexWrap: "wrap", gap: "6px" } },
