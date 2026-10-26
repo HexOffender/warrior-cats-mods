@@ -7,8 +7,13 @@ def test_adding_a_downloaded_mod_from_a_zip_and_refusing_unsafe_ones():
     assert selftest._mod_zips()
 
 
-def test_a_zip_cant_hide_code_or_claim_to_come_with_wcmods():
+def test_a_zip_cant_hide_code_and_needing_the_mod_menu_needs_nothing_more():
     assert selftest._mod_zip_guards()
+
+
+def test_menu_pages_mod_added_and_updated_keeping_your_settings():
+    ok, detail = selftest._menu_pages()
+    assert ok, detail
 
 
 def test_key_remapper_presses():
@@ -31,7 +36,7 @@ def test_getting_set_up_rough_edges():
     assert selftest._onboarding_edges()
 
 
-def test_your_files_move_out_of_wcmods_folder_and_the_mod_menu_keeps_your_settings():
+def test_your_files_move_out_of_wcmods_folder_and_the_old_mod_menus_settings_into_wcmods_json():
     ok, detail = selftest._user_data()
     assert ok, detail
 

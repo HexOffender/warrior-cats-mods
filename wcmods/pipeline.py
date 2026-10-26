@@ -47,6 +47,12 @@ def user_pak_name(mod_id, stem):
     return f"{PAK_PREFIX}{safe(mod_id)}_{safe(re.sub(r'_P$', '', stem))}_P"
 
 
+def saved_folder(cfg):
+    """WCMods in the game's Saved folder, beside its saves: the folder scripts keep their own files in
+    (Game.save.folder() in WCModsGame), made by every install."""
+    return os.path.join(os.path.dirname(os.path.normpath(cfg.save_dir)), "WCMods")
+
+
 def remove_paks(folder):
     """Remove every pak file wcmods installed (its own and the ones mods ship); returns their paths."""
     gone = []
@@ -212,30 +218,28 @@ def build(cfg, mods, out_dir, log=print):
                 manifest["outputs"].append(name + ext)
             manifest["paks"].append({"mod": m.id, "file": f"paks/{stem}", "installed_as": name})
             log(f"  {m.id}: paks/{stem} goes in as {name}")
-    # The in-game mod menu is a mod of its own (mods/mod-menu, with its menu.json): its window and the
-    # WCModsMenu module go in only while it's on. Mods that add pages look for the module first, so
-    # without the menu they simply have none.
-    menus = [m for m in enabled if os.path.isfile(os.path.join(m.folder, menusettings.MENU_FILE))]
-    menu_mod = menus[0] if menus else None
-    if len(menus) > 1:
-        manifest["warnings"].append(f"only one mod menu can be on; using {menu_mod.id} (also on: "
-                                    + ", ".join(m.id for m in menus[1:]) + ")")
-    manifest["menu"] = menu_mod.id if menu_mod else None
-    if menu_mod:
-        opts = menusettings.menu_settings(cfg, menu_mod)
-        if not opts["key_ok"]:
-            manifest["warnings"].append(f"{menu_mod.id}: key {opts['key_given']!r} isn't one of {', '.join(menu.KEYS)}; "
-                                        f"using {menu.DEFAULT_KEY}")
-        if not opts["pad_ok"]:
-            manifest["warnings"].append(f"{menu_mod.id}: controller button {opts['pad_given']!r} isn't an Unreal key "
-                                        f"name; using {menu.DEFAULT_PAD}")
-        # The pages show the game's own area names and quest titles, read here from its tables.
-        pages = menupages.data(lambda path: game.read_text(path), cfg)
-        # The menu's list of installed mods: the ones this build has (not those left out).
-        host = menu.host_script(manifest, enabled, opts["key"], cheats=opts["cheats"], scale=opts["size"], pad=opts["pad"],
-                                dev=bool(cfg.data.get("allow_code_mods")), pages=pages)
-        manifest["warnings"] += [f"{menu.HOST_NAME}: {p}" for p in luacheck.check(host)[:3]]
-        ctx.ue4ss_mods[menu.HOST_NAME] = ({"Scripts/main.lua": host.encode(), "enabled.txt": b""}, None)
+    # The in-game mod menu's window is wcmods' own: it goes in with every build (the install leaves it out
+    # without UE4SS, as it does every UE4SS mod), with the WCModsMenu module that mods add pages with. Its
+    # pages about the game are a mod of their own, Menu pages (menupages.py); the window's Overview says how
+    # to get it while this build hasn't got it.
+    opts = menusettings.menu_settings(cfg)
+    if not opts["key_ok"]:
+        manifest["warnings"].append(f"the mod menu's key {opts['key_given']!r} (wcmods.json menu_key) isn't one of "
+                                    f"{', '.join(menu.KEYS)}; using {menu.DEFAULT_KEY}")
+    if not opts["pad_ok"]:
+        manifest["warnings"].append(f"the mod menu's controller button {opts['pad_given']!r} (wcmods.json menu_pad) "
+                                    f"isn't an Unreal key name; using {menu.DEFAULT_PAD}")
+    try:   # where UE4SS's log is, or will be once the game has run with it
+        log_path = ue4ss.log_path(cfg.win64_dir) or os.path.join(cfg.win64_dir, "ue4ss", "UE4SS.log")
+    except Exception:   # no game found
+        log_path = ""
+    # The menu's list of installed mods: the ones this build has (not those left out).
+    host = menu.host_script(manifest, enabled, opts["key"], scale=opts["size"], pad=opts["pad"],
+                            dev=bool(cfg.data.get("allow_code_mods")), log=log_path,
+                            pages_note=menupages.note(cfg, mods, {m.id for m in enabled}))
+    manifest["warnings"] += [f"{menu.HOST_NAME}: {p}" for p in luacheck.check(host)[:3]]
+    ctx.ue4ss_mods[menu.HOST_NAME] = ({"Scripts/main.lua": host.encode(), "enabled.txt": b""}, None)
+    manifest["menu"] = {k: opts[k] for k in ("key", "pad", "size")}
     # The game bridge runs Lua that wcmods sends it, so it's code: only with code mods allowed.
     if cfg.data.get("allow_code_mods"):
         ctx.ue4ss_mods[bridge.NAME] = ({"Scripts/main.lua": bridge.script(cfg).encode(), "enabled.txt": b""}, None)
@@ -246,10 +250,8 @@ def build(cfg, mods, out_dir, log=print):
             with open(dst, "wb") as f:
                 f.write(data)
         manifest["ue4ss_mods"].append(name)
-    # Shared Lua modules go in whatever mods are on, for any UE4SS script to require (the menu's with
-    # the mod menu).
-    shared_files = {m.SHARED_NAME: m.lua(fit["offsets"]) if m is game_lua else m.lua()
-                    for m in SHARED_LUA if m is not menu or menu_mod}
+    # Shared Lua modules go in whatever mods are on, for any UE4SS script to require.
+    shared_files = {m.SHARED_NAME: m.lua(fit["offsets"]) if m is game_lua else m.lua() for m in SHARED_LUA}
     plan = None
     try:   # the cats' names, after the enabled name mods, for WCModsWorld's labels
         plan = names.Plan(names.GameNames(lambda path: game.read_text(BuildContext.data_path(path))),
@@ -261,7 +263,9 @@ def build(cfg, mods, out_dir, log=print):
         item_labels = world.item_names(ctx)
     except Exception as e:   # no game data (no Oodle DLL)
         log(f"  (item names for the mod menu left out: {e})")
-    shared_files[world.NAMES_NAME] = world.names_lua(plan, item_labels)
+    # Areas' names and quests' titles, for the menu's pages (WCModsNames' N.area and N.quest).
+    places = world.place_names(lambda path: game.read_text(path))
+    shared_files[world.NAMES_NAME] = world.names_lua(plan, item_labels, places)
     for name, text in shared_files.items():
         shared = os.path.join(out_dir, "ue4ss_shared", name)
         os.makedirs(shared)
@@ -273,7 +277,7 @@ def build(cfg, mods, out_dir, log=print):
     with open(os.path.join(out_dir, "ue4ss_shared", game_lua.SHARED_NAME, "offsets.json"), "w", encoding="utf-8") as f:
         json.dump(game_lua.offsets_json(fit["offsets"], build), f, indent=2)
     with open(os.path.join(out_dir, "ue4ss_shared", world.NAMES_NAME, "names.json"), "w", encoding="utf-8") as f:
-        json.dump(world.names_data(plan, item_labels), f, ensure_ascii=False)
+        json.dump(world.names_data(plan, item_labels, places), f, ensure_ascii=False)
 
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
@@ -327,6 +331,10 @@ def pending(cfg, mods):
     was_root = inst.get("mods_root") or os.path.join(cfg.root, "mods")
     if now and os.path.normcase(os.path.abspath(was_root)) != os.path.normcase(os.path.abspath(cfg.mods_root)):
         redo.append(f"your mods moved (to {cfg.mods_root})")
+    # The mod menu's key, button and size are written into its script at install.
+    menu_now = {k: v for k, v in menusettings.menu_settings(cfg, data).items() if k in ("key", "pad", "size")}
+    if isinstance(inst.get("menu"), dict) and inst["menu"] != menu_now:
+        redo.append("the mod menu's settings changed")
     out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed, "redo": redo}
     out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo)
     return out
@@ -393,8 +401,9 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
             ue4ss.remove_shared(mods_dir, name)
         cfg.data["installed_ue4ss_shared"] = shared
         # Lua can't make folders, so the ones the scripts write to are made here: WCMods in the game's Saved
-        # folder (the menu's saved travel spots) and the bridge's inside it.
-        os.makedirs(os.path.dirname(menupages.data(cfg=cfg)["places"]), exist_ok=True)
+        # folder (WCModsGame's Game.save.folder(): the Menu pages mod's saved travel spots, say) and the
+        # bridge's inside it.
+        os.makedirs(saved_folder(cfg), exist_ok=True)
         if bridge.NAME in manifest["ue4ss_mods"]:
             os.makedirs(bridge.folder(cfg), exist_ok=True)
         menusettings.apply_console(cfg)
@@ -416,7 +425,7 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
     game_info = manifest.get("game") or {}
     cfg.data["installed"] = {"mods": manifest["mods"], "built": manifest["built"], "ue4ss": bool(mods_dir),
                              "game_build": game_info.get("build"), "layout": game_info.get("layout"),
-                             "mods_root": cfg.mods_root}
+                             "mods_root": cfg.mods_root, "menu": manifest.get("menu")}
     cfg.save()
     return manifest
 

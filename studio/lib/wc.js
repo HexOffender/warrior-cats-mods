@@ -265,7 +265,6 @@ export function modTarget({ file, onLoad, getValue }) {
     clear(select);
     const withFile = [];
     for (const m of mods) {
-      if (m.builtin) continue;   // the mod menu is wcmods' own, not a place for a player's files
       const has = m.kinds.includes(file.replace(".json", "")) || (file === "palette.json" && m.kinds.includes("palette"));
       withFile.push({ m, has });
     }

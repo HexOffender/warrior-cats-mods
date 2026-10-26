@@ -92,14 +92,13 @@ def allow(cfg, mod_id, build, on=True):
 
 
 def outdated(cfg, mods, build=None):
-    """{mod id: {"made_for", "allowed"}} for the mods that are on and weren't made for the installed build.
-    Built-in mods are wcmods' own and follow its signatures instead."""
+    """{mod id: {"made_for", "allowed"}} for the mods that are on and weren't made for the installed build."""
     build = build if build is not None else steam_build(cfg)
     if build is None:
         return {}
     out = {}
     for m in mods:
-        if not m.enabled or m.builtin:
+        if not m.enabled:
             continue
         builds = made_for(m)
         if build not in builds:

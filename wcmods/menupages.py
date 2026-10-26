@@ -1,73 +1,154 @@
-"""The mod menu's pages built on WCModsGame: the overview, your cat, the world, travel, items, quests, the
-fight, the game's developer switches, the log and the menu's own settings, and (with code mods allowed)
-an inspector and a Lua console.
+"""The mod menu's pages about the game: a mod of their own, Menu pages (mods/menu-pages), from its own
+repository, github.com/HexOffender/wcmods-menu-pages. The menu itself (the window, WCModsMenu, the
+window's own pages) is wcmods' (menu.py); Menu pages adds your cat, the world, travel, items, quests,
+fights and cheats to it through WCModsMenu like any mod does. It's an in-game script, so it runs only with
+"allow_code_mods" on, as any script does.
 
-They're part of the menu host's script (menu.host_script puts them in), so they use its locals: Menu,
-SETTINGS, THEME, valid, log, HOST (the status line), everySecond (work done once a second), size, fit,
-win and setPaused. Each page is in a function of its own, which keeps the host's main chunk under Lua's
-200-local limit. data() is what the build hands them from the game's tables: area names and quest titles.
+Get set up in Clan Mod Studio (or `wcmods menu-pages`) adds it from its latest release on GitHub, or from
+a .zip of it you downloaded; doing that again updates it, keeping whether it's on and its settings
+(settings.json: "cheats", whether its Cheats page starts with cheats on). It can be added like any mod too.
 """
+import json
 import os
-from .lua import source as lua_source
+import re
+import tempfile
 
-# Items the Items page can drop by your cat: every consumable and material in the game's tables.
-ITEMS = (
-    "Consumable.SmallHealingHerb", "Consumable.MediumHealingHerb", "Consumable.BigHealingHerb",
-    "Consumable.FullHealingHerb", "Consumable.SuperHealingHerb", "Consumable.HealingHerbPouch",
-    "Consumable.SmallCatnip", "Consumable.MediumCatnip", "Consumable.BigCatnip", "Consumable.CatnipPouch",
-    "Consumable.ThistlePouch", "Consumable.FishScalePouch", "Consumable.CatThymePouch", "Consumable.FeatherPouch",
-    "Consumable.HerbSpicesPouch", "Consumable.EyewortPouch", "Consumable.ChamomilePouch",
-    "Consumable.AntidoteHerbPouch", "Consumable.ValerianRootPouch", "Consumable.PeppermintPouch",
-    "Consumable.GingerRootPouch", "Consumable.ChestnutPouch", "Consumable.LavenderPouch", "Consumable.TurmericPouch",
-    "Consumable.SagePouch",
-    "Materials.BerryFern", "Materials.Birdnest", "Materials.Bone", "Materials.Borage", "Materials.Broom",
-    "Materials.Burdock", "Materials.CattailReed", "Materials.Cobwebs", "Materials.Comfrey", "Materials.Cotton",
-    "Materials.Dandelion", "Materials.DirtMound", "Materials.Fur", "Materials.Goldenrod", "Materials.Heather",
-    "Materials.Ivy", "Materials.Juniper", "Materials.Leaves", "Materials.Moss", "Materials.Oakgall", "Materials.Pine",
-    "Materials.Poppy", "Materials.Rock", "Materials.Rope", "Materials.SharpeningTreeBark", "Materials.Thyme",
-    "Materials.Willow",
-)
+from . import modzip
+from .mods import Mod
+
+ID = "menu-pages"
+NAME = "Menu pages"
+REPO = "HexOffender/wcmods-menu-pages"
+RELEASE_API = f"https://api.github.com/repos/{REPO}/releases/latest"
+RELEASE_PAGE = f"https://github.com/{REPO}/releases/latest"
+ASSET = re.compile(r"^menu-pages[^/\\]*\.zip$")
+MAX_ZIP = 20 * 1024 * 1024
+SETTINGS = "settings.json"
+ABOUT = "The pages about your cat, the world, quests, fights and cheats"
 
 
-def data(read_text=None, cfg=None):
-    """What the pages need from the game and the install: area names by code ("R-05" -> "Willow-Weep"),
-    quest titles by tag and rank, and where the UE4SS log and the saved travel spots are. Without the
-    game's files the names are left out, and the pages show codes and tags instead."""
-    from .formats import csvdata
-    out = {"areas": {}, "quests": {}, "items": list(ITEMS), "log": "", "places": ""}
-    if cfg is not None:
-        try:
-            out["log"] = os.path.join(cfg.win64_dir, "ue4ss", "UE4SS.log")
-        except Exception:   # no game found
-            pass
-        out["places"] = os.path.join(os.path.dirname(os.path.normpath(cfg.save_dir)), "WCMods", "places.json")
-    if read_text is None:
-        return out
+def installed(mods_root):
+    """The Menu pages mod in your mods, or None."""
+    folder = os.path.join(mods_root, ID)
+    if not os.path.isfile(os.path.join(folder, "mod.json")):
+        return None
     try:
-        strings = csvdata.Table(read_text("Wrc/Content/Gameplay/Strings/NonAsset/Strings_EN.csv"))
-        en = {r.fields[0]: r.fields[1] for r in strings.rows if len(r.fields) > 1}
-        base = "Wrc/Content/Gameplay/DataTables/NonAsset/"
-        locations = csvdata.Table(read_text(base + "LocationsData.csv"))
-        code, name = locations.column("Code"), locations.column("IdStrName")
-        for r in locations.rows:
-            if len(r.fields) > max(code, name):
-                out["areas"][r.fields[code]] = en.get(r.fields[name], r.fields[code])
-        dialogues = csvdata.Table(read_text(base + "QuestDialogues.csv"))
-        key = dialogues.column("StringKey")
-        for r in dialogues.rows:
-            tag = r.fields[0] if r.fields else ""
-            if tag.endswith(".Title") and len(r.fields) > key:
-                quest, _, rank = tag[:-len(".Title")].rpartition(".")
-                out["quests"].setdefault(quest, {})[rank] = en.get(r.fields[key], r.fields[key])
-    except Exception:   # a table that can't be read leaves those names out
-        pass
-    return out
+        return Mod(folder)
+    except (OSError, ValueError):   # a broken mod.json: as good as not there
+        return None
 
 
-LUA = lua_source("menupages.lua")
+def note(cfg, mods, built):
+    """What the menu's Overview says about the Menu pages mod: how to get its pages while this build hasn't
+    got them (`mods`: all your mods; `built`: the ids the build has), "" when it has."""
+    m = next((m for m in mods if m.id == ID), None)
+    if m is None:
+        return f"{ABOUT} are a mod of their own, Menu pages. In Clan Mod Studio, Get set up on the Mods page adds it."
+    if not m.enabled:
+        return f"{ABOUT} come with the Menu pages mod, which is off: turn it on in Clan Mod Studio, then Apply to game."
+    if m.id not in built:
+        return f"{ABOUT} come with the Menu pages mod, which this install left out (Installed mods says why)."
+    if not cfg.data.get("allow_code_mods"):
+        return (f"{ABOUT} come with the Menu pages mod, which runs code: allow mods that run code (Options, on the "
+                "Settings and repair page in Clan Mod Studio), then Apply to game.")
+    return ""
 
 
-def lua(info=None):
-    """The pages' Lua, with what data() found (or nothing: codes and tags show instead of names)."""
-    from .sdk import lua_value
-    return LUA.replace("@DATA@", lua_value(info if info is not None else data()))
+def status(cfg):
+    """{"installed", "enabled", "version", "code" (mods that run code are allowed, which it needs), "page"
+    (its releases on GitHub)}, for Get set up."""
+    m = installed(cfg.mods_root)
+    return {"installed": bool(m), "enabled": bool(m and m.enabled), "version": m.version if m else None,
+            "code": bool(cfg.data.get("allow_code_mods")), "page": RELEASE_PAGE}
+
+
+def find_release(timeout=20):
+    """The latest release's .zip: {"name", "url", "size", "version", "page"} from GitHub."""
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(RELEASE_API, headers={"User-Agent": "wcmods", "Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.load(r)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise RuntimeError(f"Menu pages has no release on GitHub yet ({RELEASE_PAGE})") from None
+        raise
+    for a in data.get("assets", []):
+        if ASSET.match(a.get("name", "")):
+            return {"name": a["name"], "url": a["browser_download_url"], "size": a.get("size"),
+                    "version": str(data.get("tag_name") or "").lstrip("v"), "page": RELEASE_PAGE}
+    raise RuntimeError(f"the latest Menu pages release has no menu-pages .zip; download it from {RELEASE_PAGE} "
+                       "and add it on the Mods page")
+
+
+def _read_settings(mod):
+    if not mod:
+        return None
+    try:
+        with open(os.path.join(mod.folder, SETTINGS), encoding="utf-8-sig") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_settings(mod, data):
+    with open(os.path.join(mod.folder, SETTINGS), "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+
+def add(cfg, zip_path=None, log=print):
+    """Add Menu pages to your mods, or update it: from `zip_path`, or its latest release downloaded from
+    GitHub. An update keeps whether it's on and your values in its settings.json (a key only the new copy
+    has is added); the older copy goes to backups, as with any mod replaced. Returns {"id", "name",
+    "version", "from", "replaced" (the older copy's backup, or None)}."""
+    from . import ue4ss
+    cfg.reload()
+    old = installed(cfg.mods_root)
+    mine = _read_settings(old)
+    if mine is None and "cheats" in cfg.data:
+        # Cheats at start, from when the mod menu was wcmods' own (wcmods.json "cheats", or the old
+        # mods/mod-menu's menu.json, which userdata moved there).
+        mine = {"cheats": bool(cfg.data["cheats"])}
+    enable = old.enabled if old else True
+
+    def put(path, label):
+        added = modzip.add_zip(path, cfg.mods_root, cfg.backups_dir, ids=[ID], enable=enable, name=label)
+        return next(a for a in added if a.get("id") == ID)
+
+    if zip_path:
+        done, source = put(zip_path, os.path.basename(zip_path)), os.path.basename(zip_path)
+    else:
+        asset = find_release()
+        log(f"downloading {asset['name']} ({(asset['size'] or 0) / 1024:.0f} KB) from GitHub...")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = ue4ss.download(asset, tmp, limit=MAX_ZIP, what="Menu pages")
+            done = put(path, asset["name"])
+        source = asset["name"]
+    new = installed(cfg.mods_root)
+    if new and mine:
+        shipped = _read_settings(new) or {}
+        want = {**shipped, **{k: v for k, v in mine.items() if not str(k).startswith("_")}}
+        if want != shipped:
+            _write_settings(new, want)
+    if "cheats" in cfg.data:
+        cfg.data.pop("cheats")
+        cfg.save()
+    log(f"  {NAME} {new.version if new else ''} is in your mods" + (" (the older copy is in backups)" if done.get("replaced") else ""))
+    return {"id": ID, "name": NAME, "version": new.version if new else None, "from": source, "replaced": done.get("replaced")}
+
+
+def cheats(cfg, on=None):
+    """Whether Menu pages' Cheats page starts with cheats on (its settings.json "cheats"); with `on`, set
+    that first. Raises LookupError when the mod isn't in your mods."""
+    m = installed(cfg.mods_root)
+    if not m:
+        raise LookupError(f"{NAME} isn't in your mods: Get set up in Clan Mod Studio adds it "
+                          "(or python wcmods.py menu-pages)")
+    data = _read_settings(m) or {}
+    if on is not None and data.get("cheats") != bool(on):
+        data["cheats"] = bool(on)
+        _write_settings(m, data)
+    return bool(data.get("cheats", False))

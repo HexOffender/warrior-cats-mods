@@ -21,7 +21,7 @@ function MOD.save()
     if not MOD.settingsFile then return false, "this mod has no settings.json" end
     local ok, Menu = pcall(require, "WCModsMenu")
     if ok then return Menu.saveJson(MOD.settingsFile, MOD.settings) end
-    -- Without the mod menu (its own mod, which may be off), WCModsGame writes it.
+    -- Without WCModsMenu (an install gone wrong), WCModsGame writes it.
     local okG, G = pcall(require, "WCModsGame")
     if not okG then return false, "neither WCModsMenu nor WCModsGame is installed" end
     local f, err = io.open(MOD.settingsFile, "wb")
@@ -32,8 +32,8 @@ function MOD.save()
 end
 
 -- A mod menu page for this mod: MOD.page(function(ui) ... end, { title, order, group }). Making one replaces
--- the page wcmods would make for the settings. The mod menu is a mod of its own: when it's off this does
--- nothing and returns false.
+-- the page wcmods would make for the settings. Returns false when WCModsMenu isn't there (it's installed
+-- with UE4SS, as this script is, so that's an install gone wrong).
 local pageMade = false
 function MOD.page(fn, opts)
     pageMade = true

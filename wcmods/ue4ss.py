@@ -65,8 +65,9 @@ def find_release(timeout=20):
                        "and give the .zip to Clan Mod Studio")
 
 
-def download(asset, folder, timeout=60):
-    """Download a release asset into folder; returns the file's path."""
+def download(asset, folder, timeout=60, limit=MAX_ZIP, what="UE4SS"):
+    """Download a release asset (UE4SS's, or `what` else's, at most `limit` bytes) into folder; returns
+    the file's path."""
     import urllib.request
     path = os.path.join(folder, os.path.basename(asset["name"]))
     req = urllib.request.Request(asset["url"], headers={"User-Agent": "wcmods"})
@@ -77,11 +78,11 @@ def download(asset, folder, timeout=60):
             if not chunk:
                 break
             got += len(chunk)
-            if got > MAX_ZIP:
-                raise RuntimeError("the UE4SS download is far bigger than it should be; stopped")
+            if got > limit:
+                raise RuntimeError(f"the {what} download is far bigger than it should be; stopped")
             f.write(chunk)
     if asset.get("size") and got != asset["size"]:
-        raise RuntimeError(f"the UE4SS download stopped early ({got} of {asset['size']} bytes); try again")
+        raise RuntimeError(f"the {what} download stopped early ({got} of {asset['size']} bytes); try again")
     return path
 
 
@@ -120,8 +121,8 @@ def install_loader(zip_path, win64_dir, console=True, log=print):
 
 
 def configure_loader(win64_dir, console=True):
-    """UE4SS set up for players: its debug console windows off, its cheat-manager enabler off (the mod
-    menu's Cheats page does that, and can switch cheats off again), and its console enabler (~ or F10
+    """UE4SS set up for players: its debug console windows off, its cheat-manager enabler off (the Menu
+    pages mod's Cheats page does that, and can switch cheats off again), and its console enabler (~ or F10
     opens the game's console) on or off."""
     ini = os.path.join(win64_dir, "ue4ss", "UE4SS-settings.ini")
     if os.path.isfile(ini):

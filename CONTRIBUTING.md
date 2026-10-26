@@ -20,9 +20,10 @@ A few rules the layout follows:
 - **One home per fact.** A setting, a list or a layout is defined once (the mod menu's groups in
   `menu.GROUPS`, its size limits in `menu.SCALES`) and rendered everywhere else from there.
 - **Other people's mods are theirs.** A player's mods, `wcmods.json` and backups live outside the
-  repository (`config.data_dir()`), so nothing a player makes is in a file git tracks. wcmods' own mod,
-  the mod menu, is `wcmods/builtin/mod-menu`; only `mod.json`'s `enabled` and `priority` and its settings
-  are the player's in their copy.
+  repository (`config.data_dir()`), so nothing a player makes is in a file git tracks. wcmods ships no
+  mods: the mod menu's window is wcmods' own code, and its pages about the game are a mod in their own
+  repository ([wcmods-menu-pages](https://github.com/HexOffender/wcmods-menu-pages)), which adds them
+  through the same `WCModsMenu` any mod uses.
 
 ## Checks to run
 

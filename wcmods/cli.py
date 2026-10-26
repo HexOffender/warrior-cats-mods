@@ -103,9 +103,6 @@ def cmd_add(ctx, args):
     else:
         done = modzip.add_zip(args.path, ctx.mods_root, ctx.backups, ids=ids, enable=enable)
     for d in done:
-        if d.get("skipped"):
-            print(f"skipped {d['id']} ({d['name']}): it {d['skipped']}")
-            continue
         print(f"added {d['id']} ({d['name']})" + (f"; the old copy is in {os.path.join(ctx.backups, 'mods', d['replaced'])}" if d["replaced"] else ""))
         for name in d["also_on"]:
             print(f"  also turned on {name} ({d['id']} needs it)")
@@ -479,21 +476,37 @@ def cmd_selftest(ctx, args):
 
 def cmd_ingame(ctx, args, option):
     from . import menusettings
+    if option == "cheats":
+        # The Menu pages mod's setting (its settings.json), which its Cheats page reads as the game starts.
+        from . import menupages
+        from .menu import KEY_NAMES
+        on = menupages.cheats(ctx.cfg, None if args.state is None else args.state == "on")
+        key = menusettings.menu_settings(ctx.cfg)["key"]
+        key = KEY_NAMES.get(key, key)
+        print(f"cheats start {'on' if on else 'off'} in the mod menu ({key} in game, the Menu pages mod's Cheats page)"
+              + (", from the next time the game starts" if args.state is not None else ""))
+        return
     if args.state is not None:
         opts = menusettings.set_options(ctx.cfg, **{option: args.state == "on"})
     else:
         opts = menusettings.options(ctx.cfg)
-    if option == "cheats":
-        from .menu import KEY_NAMES
-        key = KEY_NAMES.get(opts["key"], opts["key"])
-        print(f"cheats start {'on' if opts['cheats'] else 'off'} in the mod menu ({key} in game, Cheats page)")
-        if args.state is not None:
-            print("install again to apply it (python wcmods.py install)")
-    else:
-        if not opts["console_available"]:
-            print("UE4SS's console unlocker (ConsoleEnablerMod) isn't installed; this applies once UE4SS is")
-        print(f"the game's console is {'on: ~ or F10 opens it' if opts['console'] else 'off'}"
-              + (" (from the next time the game starts)" if args.state is not None else ""))
+    if not opts["console_available"]:
+        print("UE4SS's console unlocker (ConsoleEnablerMod) isn't installed; this applies once UE4SS is")
+    print(f"the game's console is {'on: ~ or F10 opens it' if opts['console'] else 'off'}"
+          + (" (from the next time the game starts)" if args.state is not None else ""))
+
+
+def cmd_menu_pages(ctx, args):
+    from . import menupages
+    if args.zip and not os.path.isfile(args.zip):
+        sys.exit(f"there's no {args.zip}")
+    r = menupages.add(ctx.cfg, args.zip)
+    print(f"{r['name']} {r['version'] or ''} is in your mods ({r['from']})"
+          + (f"; the older copy is in {os.path.join(ctx.backups, 'mods', r['replaced'])}" if r["replaced"] else ""))
+    if not ctx.cfg.data.get("allow_code_mods"):
+        print("it's an in-game script: set \"allow_code_mods\": true in wcmods.json (Clan Mod Studio: Options, on the "
+              "Settings and repair page) for an install to put it in the game")
+    print("install again to put it in the game (python wcmods.py install)")
 
 
 def _bridge(ctx):
@@ -739,7 +752,7 @@ def cmd_studio(ctx, args):
 # "game signatures" are forms of one command, so they're spelled out here.
 COMMAND_GROUPS = (
     ("Playing", ("status", "studio", "play", "remap", "cheats", "console", "backup", "restore")),
-    ("Mods", ("enable", "disable", "add", "remove", "install", "uninstall", "build", "pack", "palette")),
+    ("Mods", ("enable", "disable", "add", "menu-pages", "remove", "install", "uninstall", "build", "pack", "palette")),
     ("Making mods", ("new", "files", "extract", "texture", "eyes", "names", "controls", "tables")),
     ("In the game", ("lua", "inspect", "find", "game")),
     ("After a game update", (("game build", "which build of the game is installed, what moved, and the mods made for older ones"),
@@ -900,7 +913,12 @@ def main(root, argv=None):
     p.set_defaults(fn=cmd_cpp)
     from .agent import cli as agent_cli
     agent_cli.register(sub)
-    for option, text in (("cheats", "show, or set, whether cheats start on in the mod menu (needs install)"),
+    p = sub.add_parser("menu-pages", help="add the mod menu's pages about the game (the Menu pages mod) from its "
+                                          "latest GitHub release, or update it, keeping its settings")
+    p.add_argument("--zip", help="a menu-pages .zip you downloaded, rather than the latest release")
+    p.set_defaults(fn=cmd_menu_pages)
+    for option, text in (("cheats", "show, or set, whether cheats start on in the mod menu's Cheats page (the Menu "
+                                    "pages mod's setting)"),
                          ("console", "show, or switch on or off, the game's console (~ or F10; needs UE4SS)")):
         p = sub.add_parser(option, help=text)
         p.add_argument("state", nargs="?", choices=("on", "off"))

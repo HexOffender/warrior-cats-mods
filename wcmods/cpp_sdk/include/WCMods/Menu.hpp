@@ -599,7 +599,8 @@ namespace wcmods
         b.to_lua[std::string(name)] = std::move(value);
     }
 
-    // A quest of the mod's own on the mod menu's Quests page (status: L"available", L"active" or L"done").
+    // A quest of the mod's own on the mod menu's Quests page, the Menu pages mod's (status: L"available",
+    // L"active" or L"done"); any script reads it with Game.quests.reported().
     // Report it again whenever it changes; report_quest(id) alone takes it off.
     struct QuestReport
     {

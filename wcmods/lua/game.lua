@@ -1067,6 +1067,13 @@ function Game.save.path()
     return base .. "\\Wrc\\Saved\\SaveGames\\WrcGame.json"
 end
 
+-- A folder scripts can keep their own files in: WCMods in the game's Saved folder, beside its saves. Every
+-- install makes it (Lua can't make folders), and updating a mod or wcmods leaves it alone.
+function Game.save.folder()
+    local base = os.getenv("LOCALAPPDATA") or ""
+    return base .. "\\Wrc\\Saved\\WCMods"
+end
+
 local fileCache = { at = -1, data = nil }
 -- The whole save as of the game's last save, as a table (cached for a second).
 function Game.save.file()

@@ -24,6 +24,13 @@ def test_names_module_with_the_games_own_text():
     assert "function N.name(" in lua and lua.rstrip().endswith("return N")
 
 
+def test_names_module_with_areas_and_quests():
+    lua = world.names_lua(places=({"R-05": "Willow-Weep"}, {"Gameplay.Quest.Moss": {"Apprentice": "Moss for the dens"}}))
+    assert not problems(lua)
+    assert '["R-05"] = "Willow-Weep"' in lua and '["Apprentice"] = "Moss for the dens"' in lua
+    assert "function N.area(" in lua and "function N.quest(" in lua
+
+
 def test_mouse_look_script():
     lua = mouselook.script(mouselook.merge([mouselook.validate({"sensitivity": 1.5, "invert": True, "smoothing": 50})]))
     assert not problems(lua)
@@ -44,10 +51,18 @@ def test_your_cats_colours_script_with_its_menu_page():
 
 
 def test_mod_menu_window_script_with_the_dev_pages():
-    lua = menu.host_script(MANIFEST, [], dev=True)
+    lua = menu.host_script(MANIFEST, [], dev=True, log=r"C:\Game\ue4ss\UE4SS.log", pages_note="Get set up adds it.")
     assert not problems(lua)
-    assert 'Menu.page("Inspector"' in lua and 'Menu.page("Lua console"' in lua and '"Materials.Moss"' in lua
-    assert 'ui.heading("Nearby")' in lua and 'group = "cheats"' in lua   # the host's own pages are in too
+    assert 'Menu.page("Inspector"' in lua and 'Menu.page("Lua console"' in lua
+    assert 'Menu.page("Overview"' in lua and 'Menu.page("Installed mods"' in lua and 'Menu.page("Log"' in lua
+    assert '"Get set up adds it."' in lua and r'"C:\\Game\\ue4ss\\UE4SS.log"' in lua
+    # The pages about the game are the Menu pages mod's (github.com/HexOffender/wcmods-menu-pages).
+    assert 'Menu.page("Cheats"' not in lua and 'Menu.page("Nearby"' not in lua and '"Materials.Moss"' not in lua
+
+
+def test_mod_menu_shows_a_scripts_status_line():
+    assert "function Menu.status(" in menu.lua()
+    assert 'Menu.shared("status")' in menu.host_script(MANIFEST, [])
 
 
 def test_mod_menu_opens_from_a_controller_too():

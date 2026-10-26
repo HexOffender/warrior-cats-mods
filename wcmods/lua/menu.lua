@@ -1,4 +1,5 @@
--- WCModsMenu: pages in the in-game mod menu (Insert). Installed by wcmods; any UE4SS script can add one:
+-- WCModsMenu: pages in the in-game mod menu (Insert). Installed by wcmods with UE4SS, the window too;
+-- any UE4SS script can add one:
 --
 --   local Menu = require("WCModsMenu")
 --   Menu.page("My mod", function(ui)
@@ -949,9 +950,9 @@ local function caller(level)
     return src:match("/Mods/([^/]+)/") or (src:gsub("[\t\r\n].*", ""):sub(1, 60))
 end
 
--- The groups the menu's side bar shows, in order (menu.GROUPS in wcmods/menu.py, written in here): id,
--- label, and what the Overview says is there. A page names one of these ids (or a group of its own,
--- which comes after "mods").
+-- The groups the menu's side bar shows, in order (menu.GROUPS in wcmods/menu.py, written in here): id and
+-- label. A page names one of these ids (or a group of its own, which comes after "mods"); a group shows
+-- once a page is in it.
 Menu.groups = @GROUPS@
 
 -- Add a page to the mod menu. fn(ui) runs every frame while it shows. opts.group puts it in a group of
@@ -984,6 +985,13 @@ function Menu.isOpen() return Menu.shared("open") and true or false end
 -- it on its next frame.
 function Menu.open(page) Menu.share("request", "open\t" .. tostring(page or "")) end
 function Menu.close() Menu.share("request", "close\t") end
+
+-- The line under the window's title, while the menu is open: one line of how things stand, e.g. your
+-- cat's health and where it is. nil or "" puts back the menu's own line (how to open and close it). One
+-- script's line at a time: the last one set shows. The player can hide it (Tools, Menu).
+function Menu.status(text)
+    Menu.share("status", (tostring(text or ""):gsub("[\r\n]+", " ")))
+end
 
 -- Tell the menu about a key a script uses, so its Overview page lists it: Menu.key("F6", "Mouse look on and off").
 function Menu.key(key, what)

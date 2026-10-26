@@ -33,11 +33,13 @@ brings it back.
   across, and Apply to game puts them in the game again from there.
 
 **Updating:** unzip a new download over the old folder, or `git pull`. Either way only wcmods
-changes; your files stay as they are. The mod menu's settings (key, size, cheats, on or off) are
-yours too and stay as well.
+changes; your files stay as they are. The mod menu's settings (its key, controller button and size)
+are in your `wcmods.json`, so they stay as well.
 - **If `git pull` won't start:** it may say your changes to `mods/mod-menu` would be overwritten.
   That's because older versions saved the menu's settings there. Run `git checkout -- mods/mod-menu`,
-  pull again, and set the menu's key and size again on the Mods page.
+  pull again, and set the menu's key and size again under Options on the Settings and repair page.
+- **The menu's pages about the game** are a mod of their own now, Menu pages (below). Get set up
+  offers it after an update; until it's in, the menu has the Overview, your mods' pages and the Tools.
 
 ## Requirements
 
@@ -46,12 +48,12 @@ Clan Mod Studio's "Get set up" sees to these:
 - **Python 3.10 or newer.** The launchers offer to install it with winget (Windows' own installer)
   or send you to python.org. The Microsoft Store's Python works too.
 - **UE4SS**, the script loader, for coat, pattern, marking and eye-button colours, your cat's own
-  colours, mouse look, the mod menu (with its cheats), overlays and scripts from mods.
+  colours, mouse look, the mod menu, overlays and scripts from mods.
   - **Install it:** "Install it" downloads the `UE4SS_v*.zip` from its `experimental-latest` GitHub
     release (tried with `UE4SS_v3.0.1-1181-g83330635.zip`) and puts it in the game. Or give the
     studio that .zip yourself.
   - **How it's set up:** its debug console windows are off. Its cheat-manager enabler is off too,
-    because the mod menu's Cheats page does that job and can switch cheats off again.
+    because the Menu pages mod's Cheats page does that job and can switch cheats off again.
   - **The game's console:** UE4SS's console enabler (`ConsoleEnablerMod`) is on, so `~` or F10 opens
     it (`python wcmods.py console off` turns it off).
   - **Removing it:** delete `dwmapi.dll` and the `ue4ss` folder from `<game>\Wrc\Binaries\Win64`.
@@ -77,7 +79,9 @@ keys. It stops by itself when the game closes.
 **Clan Mod Studio** puts your mods in the game. Its **Mods** page is where you start:
 - **Add a mod:** drop a downloaded mod's .zip on the page. It shows what's in it (what the mod
   changes, whether it runs code, what else it needs) before you add it.
-- **Example mods:** wcmods comes with one mod, the mod menu. Example mods are in their own
+- **The menu's pages:** "Add the menu's pages" puts in Menu pages, the mod with the mod menu's
+  pages about your cat and the game (below).
+- **Example mods:** wcmods comes with no mods of its own. Example mods are in their own
   repository, [wcmods-examples](https://github.com/HexOffender/wcmods-examples): themed palettes, eye and coat colours, mouse look,
   controls, game tweaks and more. Drop its .zip on the page and tick the ones you want.
 - **Switch mods on and off:** a mod that needs another turns that one on too, and turning off a mod
@@ -125,37 +129,43 @@ pause screen, inventory and settings, change the HUD and draw over it, with the 
 ([the game's own UI, `Ui.hpp`](docs/SDK.md#wcmodshpp)); Lua scripts get the same through it
 ([the game's own menus and HUD](docs/scripting.md#the-games-own-menus-and-hud)).
 
-**In game, Insert opens the mod menu** (with UE4SS). A status line under its title shows how your
-cat is doing, and the side bar groups the pages: Home (an Overview and the installed mods), Your cat,
-World, Story, Fight, Cheats, Mods (the pages other mods add) and Tools (the log, the menu's own
-settings, and with code mods allowed the Inspector and the Lua console). The Overview's "What's where"
-says what each group holds, and [docs/SDK.md](docs/SDK.md#wcmodsmenu) lists every page.
+**In game, Insert opens the mod menu** (with UE4SS). It comes with wcmods and goes in with every
+install. The side bar groups its pages: Home (an Overview of the keys and what's where, and the
+installed mods), the groups the pages from mods go in (Your cat, World, Story, Fight, Cheats, Mods) and
+Tools (the log, the menu's own settings, and with code mods allowed the Inspector and the Lua console).
+[docs/SDK.md](docs/SDK.md#wcmodsmenu) lists every page.
 
 Everything there changes live. Mouse look and your cat's colours change as you move their sliders,
 and Save writes the change back to the mod, so the next install keeps it.
-
-**The mod menu is a mod of its own**, **Mod menu** (`mods/mod-menu`), on to begin with:
-- **Turning it off:** the game has no menu, and mods that add a page to it still work; they just
-  have no page.
-- **Mods that can't do without it:** they say so in their `mod.json` (`"requires"`), and turning
-  one on turns the menu on too.
-- **Its settings:** its card's Settings (its `menu.json`) set the key that opens it, the controller
-  button that does too (View, to begin with), its size and whether cheats start on. A- and A+ in the
-  menu's top bar resize it while you play.
+- **Its settings:** Options, on the Settings and repair page, set the key that opens it, the
+  controller button that does too (View, to begin with) and its size. A- and A+ in the menu's top bar
+  resize it while you play.
 - **With a controller:** View opens it, the d-pad moves between its controls and A presses them, and
   View or B closes it. Opened from a controller, the game pauses while it's open.
-- **The game's console:** it's under Options on the Settings and repair page.
+- **The game's console:** it's under Options on the Settings and repair page too.
 - **Your own page:** [docs/SDK.md, `WCModsMenu`](docs/SDK.md#wcmodsmenu) shows how a script adds one.
 
-**Cheats** are the engine's cheat manager, which the release build leaves off. The menu's Cheats
+**The pages about the game are a mod of their own, Menu pages**
+([HexOffender/wcmods-menu-pages](https://github.com/HexOffender/wcmods-menu-pages)): At a glance,
+your cat's Stats, World, Travel, Nearby, Items, Quests, Fight, Cheats and Game switches, and the line
+under the menu's title saying how your cat is doing.
+- **Getting it:** Get set up, on the Mods page, has "Add the menu's pages", which downloads its latest
+  release and adds it to your mods; "Get the latest" on its card updates it, keeping its settings.
+  `python wcmods.py menu-pages` does the same, and its `.zip` can be added like any mod.
+- **It's an in-game script,** so like any script it runs only with mods that run code allowed
+  (Options, on the Settings and repair page). Without it, or with it off, the menu's Overview says
+  what's missing.
+
+**Cheats** are the engine's cheat manager, which the release build leaves off. Menu pages' Cheats
 page switches them on and off while you play, and has god mode, fly and ghost (W A S D or the left
 stick move the way the camera faces; Space and Left Ctrl, or the triggers, go up and down; ghost goes
 through walls), cat size, game speed, teleport to where the
 camera looks, and a box for any engine command. With cheats on, the console's cheat commands work
 too (`god`, `slomo 0.5`, `teleport`). The console's own `fly`, `ghost` and `changesize` don't stick:
 the game puts its cat back to its own movement each frame and resets its mesh's scale, so the page
-does those itself (it scales the whole cat, and moves it while flying). `python wcmods.py cheats on` makes them start on (install
-again to apply), and `python wcmods.py console on|off` switches the game's console (`~` or F10).
+does those itself (it scales the whole cat, and moves it while flying). Its "Start with cheats on"
+switch, or `python wcmods.py cheats on`, makes them start on from the next time the game starts, and
+`python wcmods.py console on|off` switches the game's console (`~` or F10).
 Some cheats can break a quest or a save, so back up first if you're unsure (Settings and repair).
 
 The original game files are never modified (uninstall takes everything out again), and save edits are
@@ -252,8 +262,9 @@ this build. See [docs/updating.md](docs/updating.md).
 Also: `new <name> --kind palette|controls|files|data|items|names|save|script`, `eyes`,
 `tables`, `names [--cats] [--json]`, `controls [--json]`, `files <pattern>`, `extract <pattern>`,
 `texture <item|accessory|/Game/...>` (one of the game's textures as a PNG),
-`build`, `backup`, `restore [name|latest]`, `cheats [on|off]` (whether the mod menu's cheats start
-on), `console [on|off]` (the game's `~` console). With code mods allowed and the game running:
+`build`, `backup`, `restore [name|latest]`, `menu-pages [--zip file]` (add or update the Menu pages
+mod), `cheats [on|off]` (whether Menu pages' cheats start on), `console [on|off]` (the game's `~`
+console). With code mods allowed and the game running:
 `lua <code>` or `lua -f file.lua` (run Lua in the game), `inspect <expr>` (an object's properties and
 functions), `find <class>`, `game` (is the bridge up?) and `game types` (Lua type files for your
 editor).
