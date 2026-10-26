@@ -1426,10 +1426,18 @@ function Game.items.info(tag)
     if ok and found then return row end
     return nil
 end
+-- An item's kind: "Consumable" (herbs and pouches), "Collectible" (materials), "Equipment" (accessories) or
+-- "Quest". The quest manager's own answer when it has one; its item stats table ships empty, though (every
+-- item is None to it), so otherwise the kind comes from the tag: Gameplay.Inventory.Consumable, .Materials,
+-- .Cosmetic or .Quest. nil for a tag that isn't an item's.
+local TAG_KINDS = { Consumable = "Consumable", Materials = "Collectible", Cosmetic = "Equipment", Quest = "Quest" }
 function Game.items.type(tag)
     local qm = Game.manager("quests")
     local ok, t = pcall(function() return qm:GetItemType(Game.tag(tag)) end)
-    return ok and Game.enums.itemType[t] or nil
+    local kind = ok and Game.enums.itemType[t] or nil
+    if kind and kind ~= "None" then return kind end
+    local segment = tostring(tag):match("^Gameplay%.Inventory%.(%a+)%.")
+    return segment and TAG_KINDS[segment] or nil
 end
 
 local PICKUPS = "/Game/Gameplay/Blueprints/WorldElements/Pickups/"

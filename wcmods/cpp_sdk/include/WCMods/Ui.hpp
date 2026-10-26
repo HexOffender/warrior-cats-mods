@@ -477,12 +477,14 @@ namespace wcmods
             return *this;
         }
         // The text's size (points, in the game's units: its titles are 52, its rows about 36) and, with a name,
-        // its font ("Regular", "Bold"; the face must exist in the font). Keeps the font that was set.
+        // its font ("Regular", "Bold"; the face must exist in the font). Keeps the font that was set. A number
+        // box's, a text box's and a drop-down's own text too (their font sits in them, or in their style).
         auto set_font(float size, std::wstring_view typeface = {}) -> Widget&
         {
             UObject* o = text_object();
             Value font = wcmods::get(o, L"Font");
             if (!font) font = wcmods::get(o, L"WidgetStyle.Font");
+            if (!font) font = wcmods::get(o, L"WidgetStyle.TextStyle.Font");   // a text box's, in the engine's newer versions
             if (font.kind != Value::Kind::Struct) return *this;
             if (!call_reflected(o, STR("SetFont"), [&](Params& p) {
                     void* at = p.raw(L"InFontInfo");
@@ -1021,6 +1023,21 @@ namespace wcmods
                     wcmods::set(w.object(), L"WidgetStyle." + std::wstring(brush) + L".ImageSize.Y", px);
                 }
             }
+            // The text in a number or text box or a drop-down that scaled() is about to grow by `factor`: set so
+            // it comes out at the theme's text_size (the engine draws it at its own size, and the scale box grows
+            // it with the control). Set the font after labelled() for another size.
+            inline auto fit_field_text(Widget w, float factor) -> void
+            {
+                UObject* o = w.object();
+                if (!o || factor <= 0 || theme().text_size <= 0) return;
+                for (const TCHAR* kind : {STR("/Script/UMG.SpinBox"), STR("/Script/UMG.ComboBoxString"), STR("/Script/UMG.EditableTextBox"),
+                                          STR("/Script/UMG.MultiLineEditableTextBox"), STR("/Script/UMG.EditableText"), STR("/Script/UMG.MultiLineEditableText")})
+                {
+                    if (!wcmods::is_a(o, kind)) continue;
+                    w.set_font(theme().text_size / factor);
+                    return;
+                }
+            }
         } // namespace detail
 
         // One of the engine's widgets by its class ("TextBlock", "Button", "CheckBox", "Slider", "SpinBox",
@@ -1200,13 +1217,30 @@ namespace wcmods
             }
             return h;
         }
-        // One of the engine's controls grown to the game's size (the theme's control_scale), in a scale box; a
-        // button or text is left as it is (they're made at the game's size already).
+        // One of the engine's controls grown to the game's size (the theme's control_scale): a slider, a number or
+        // text box or a drop-down in a scale box, its text set to come out at the theme's text_size; a check box
+        // drawn bigger by a render transform (a scale box leaves its pictures as they are), in a box that reserves
+        // the room it's drawn in; a button, text or a layout left as it is (made at the game's size already).
+        // With a width, that's the control's room, in the game's units.
         inline auto scaled(const Widget& control, double width = 0) -> Widget
         {
             UObject* o = control.object();
+            float factor = theme().control_scale;
+            if (wcmods::is_a(o, STR("/Script/UMG.CheckBox")))
+            {
+                // A render transform changes nothing in the layout, so the box is as tall as the check box is drawn
+                // (its pictures: 24 from checkbox(), 16 the engine's own), and as wide when there's no width.
+                double drawn = control.get(L"WidgetStyle.UncheckedImage.ImageSize.Y").number(16) * factor;
+                Widget room = box(width > 0 ? width : drawn, drawn);
+                room.add(control);
+                control.slot().align(Align::Start, Align::Center);
+                Widget check = control;
+                check.set_pivot(0, 0.5).set_scale(factor, factor);
+                return room;
+            }
             bool plain = wcmods::is_a(o, STR("/Script/UMG.Button")) || wcmods::is_a(o, STR("/Script/UMG.TextLayoutWidget")) || wcmods::is_a(o, STR("/Script/UMG.PanelWidget"));
-            float factor = plain ? 1.0f : theme().control_scale;
+            if (plain) factor = 1.0f;
+            else detail::fit_field_text(control, factor);
             Widget s = scale(factor);
             if (width > 0)
             {
@@ -1540,11 +1574,20 @@ namespace wcmods
             }
             inline auto nav_current(UObject* screen) -> UObject* { return get(screen, L"CurrentNav.CurrentControl").object; }
 
-            // The game's panels a screen switches between: the user widgets of its own that sit beside the tab row's
-            // canvas, as GuiPanels or grids (not the footer, the title, the background).
+            // The game's panels a screen switches between, for a page to hide while it shows: the user widgets of
+            // the screen's own beside the tab row (not its footer or title, not the background), the panels a pause
+            // screen lists (PausePanels: General, Controls, Quest, Party, Bonds), and every GuiPanel and
+            // GuiScrollGrid (SwtEngine's classes for a screen's pages and grids) under the tab row's area however
+            // deep the screen nests it, each with what's inside it.
             inline auto game_panels(UObject* screen, const Widget& tab_row) -> std::vector<Widget>
             {
                 std::vector<Widget> out;
+                auto take = [&](const Widget& w) {
+                    if (!w) return;
+                    for (const Widget& have : out)
+                        if (have == w) return;
+                    out.push_back(w);
+                };
                 Widget area = tab_row.parent();
                 for (const Widget& w : area.children())
                 {
@@ -1553,16 +1596,24 @@ namespace wcmods
                     if (!o || !wcmods::is_a(o, STR("/Script/UMG.UserWidget"))) continue;
                     std::wstring type = w.type();
                     if (type.find(L"Footer") != std::wstring::npos || type.find(L"Title") != std::wstring::npos) continue;
-                    out.push_back(w);
+                    take(w);
                 }
-                // Panels in a canvas of their own (the pause screen's CanvasPanels, the inventory's CanvasGrids).
-                for (const Widget& w : area.children())
-                {
+                for (Value& v : elements(screen, L"PausePanels"))
+                    if (v.object) take(Widget(v.object));
+                // Panels and grids anywhere under the area, but not in the tab row, and not inside another widget of
+                // the screen's (a panel taken already, its footer: their parts are theirs).
+                std::function<void(const Widget&)> collect = [&](const Widget& w) {
+                    if (!w || w == tab_row) return;
                     UObject* o = w.object();
-                    if (!o || !wcmods::is_a(o, STR("/Script/UMG.CanvasPanel"))) continue;
-                    for (const Widget& c : w.children())
-                        if (wcmods::is_a(c.object(), STR("/Script/SwtEngine.GuiPanel")) || wcmods::is_a(c.object(), STR("/Script/SwtEngine.GuiScrollGrid"))) out.push_back(c);
-                }
+                    if (wcmods::is_a(o, STR("/Script/SwtEngine.GuiPanel")) || wcmods::is_a(o, STR("/Script/SwtEngine.GuiScrollGrid")))
+                    {
+                        take(w);
+                        return;
+                    }
+                    if (wcmods::is_a(o, STR("/Script/UMG.UserWidget"))) return;
+                    for (const Widget& c : w.children()) collect(c);
+                };
+                for (const Widget& w : area.children()) collect(w);
                 return out;
             }
 

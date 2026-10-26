@@ -4,6 +4,7 @@
 #include "checks.hpp"
 
 #include <atomic>
+#include <format>
 #include <string>
 
 namespace t
@@ -253,14 +254,36 @@ namespace t
         expect("set_active", sw.get(L"ActiveWidgetIndex").number() == 1);
         Widget rw = ui::row({ui::text(L"a"), ui::text(L"b")}, 10);
         expect("ui.row", rw.type() == L"HorizontalBox" && rw.count() == 2 && get(rw.child(1).slot().object(), L"Padding.Left").number() == 10);
-        Widget lb = ui::labelled(L"Label", ui::checkbox(), 300);
+        float grow = ui::theme().control_scale;
+        Widget lb = ui::labelled(L"Label", ui::slider(0), 300);
         expect("ui.labelled", lb.count() == 2 && lb.child(0).text() == L"Label" && lb.child(1).type() == L"ScaleBox"
-                                  && lb.child(1).child(0).type() == L"SizeBox" && lb.child(1).child(0).child(0).type() == L"CheckBox");
-        expect("ui.scaled", ui::scaled(ui::slider(0)).get(L"UserSpecifiedScale").number() == ui::theme().control_scale
-                                && ui::scaled(ui::button(L"b")).get(L"UserSpecifiedScale").number() == 1);
+                                  && lb.child(1).child(0).type() == L"SizeBox" && lb.child(1).child(0).child(0).type() == L"Slider"
+                                  && lb.child(1).get(L"UserSpecifiedScale").number() == grow);
+        // A check box is grown by a render transform instead (a scale box leaves its pictures as they are), in a
+        // box that reserves the room it's drawn in: its 24-pixel pictures times the scale.
+        Widget lc = ui::labelled(L"Check", ui::checkbox(), 300);
+        Widget room = lc.child(1);
+        Widget cb = room.child(0);
+        expect("ui.labelled.checkbox", room.type() == L"SizeBox" && cb.type() == L"CheckBox" && cb.get(L"RenderTransform.Scale.X").number() == grow
+                                           && cb.get(L"RenderTransform.Scale.Y").number() == grow && cb.get(L"RenderTransformPivot.X").number() == 0
+                                           && room.get(L"WidthOverride").number() == 300 && room.get(L"HeightOverride").number() == 24 * grow,
+               text(std::format(L"{} holding {}, scale {}, room {}x{}", room.type(), cb.type(), cb.get(L"RenderTransform.Scale.X").number(),
+                                room.get(L"WidthOverride").number(), room.get(L"HeightOverride").number())));
+        expect("ui.scaled", ui::scaled(ui::slider(0)).get(L"UserSpecifiedScale").number() == grow
+                                && ui::scaled(ui::button(L"b")).get(L"UserSpecifiedScale").number() == 1
+                                && ui::scaled(ui::checkbox()).get(L"HeightOverride").number() == 24 * grow
+                                && ui::scaled(ui::checkbox()).get(L"WidthOverride").number() == 24 * grow);
+        // The text in a scaled number box, text box or drop-down is set to come out at the theme's text_size.
+        float field = ui::theme().text_size / grow;
+        expect("ui.labelled.field_font", ui::labelled(L"N", ui::number(1)).child(1).child(0).child(0).get(L"Font.Size").number() == field
+                                             && ui::labelled(L"T", ui::input(L"x")).child(1).child(0).child(0).get(L"WidgetStyle.TextStyle.Font.Size").number() == field
+                                             && ui::labelled(L"C", ui::choice({L"a"})).child(1).child(0).child(0).get(L"Font.Size").number() == field);
         Widget nb = ui::number(1);
         nb.set_font(20);
         expect("set_font.spinbox", nb.get(L"Font.Size").number() == 20);
+        Widget tb = ui::input(L"a");
+        tb.set_font(20);
+        expect("set_font.textbox", tb.get(L"WidgetStyle.TextStyle.Font.Size").number() == 20);
 
         // ----- state
         tx.hide();

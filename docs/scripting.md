@@ -275,7 +275,7 @@ questline on one.
 |---|---|
 | `Game.items.list()`, `Game.items.count(tag)` | Your items, `{["Gameplay.Inventory.Materials.Dandelion"] = 6, …}`: as of the game's last save (it writes `WrcGame.json` each time), with pickups since then from the HUD's pickup messages |
 | `Game.items.drop(tag, count, where)` | A pickup holding the items on the ground by your cat (or at `where`), for the cat to pick up as usual. It returns the actor. Seen in game: the cat collects it with Interact, and `itemPickedUp` fires |
-| `Game.items.info(tag)`, `Game.items.type(tag)` | What the quest manager knows of an item (often nothing) |
+| `Game.items.info(tag)`, `Game.items.type(tag)` | What the quest manager knows of an item (nothing, as shipped: its item stats table is empty), and an item's kind: the quest manager's answer where it has one, else from the tag: `"Consumable"` (herbs and pouches), `"Collectible"` (materials), `"Equipment"` (accessories) or `"Quest"`; nil for a tag that isn't an item's |
 
 **Why items can't be put in the inventory directly:** the inventory is native, with no reflected way to
 change it. Triggering a pickup's `OnInteracted` from Lua plays its effect and removes it, but doesn't

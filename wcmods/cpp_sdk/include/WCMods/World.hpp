@@ -267,11 +267,22 @@ namespace wcmods
         return out;
     }
     inline auto item_count(std::string_view tag) -> double { return items()[tag].number(); }
-    // What kind of item a tag is ("Consumable", "Equipment", "Quest", "Collectible"), or empty.
+    // What kind of item a tag is: "Consumable" (herbs and pouches), "Collectible" (materials), "Equipment"
+    // (accessories) or "Quest"; empty for a tag that isn't an item's. The game's own answer first (the quest
+    // manager's GetItemType), but its item stats table ships empty, so that is None for every item, and then
+    // the kind comes from the tag: Gameplay.Inventory.Consumable, .Materials, .Cosmetic or .Quest.
     inline auto item_type(std::wstring_view tag) -> std::wstring
     {
         auto r = call_reflected(manager(STR("quests")), STR("GetItemType"), [&](Params& p) { set(p.nth(0), L"TagName", tag); });
-        return r ? r->get(L"ReturnValue").string() : std::wstring{};
+        std::wstring kind = r ? r->get(L"ReturnValue").string() : std::wstring{};
+        if (!kind.empty() && kind != L"None") return kind;
+        static const std::pair<std::wstring_view, const wchar_t*> kinds[] = {{L"Gameplay.Inventory.Consumable.", L"Consumable"},
+                                                                            {L"Gameplay.Inventory.Materials.", L"Collectible"},
+                                                                            {L"Gameplay.Inventory.Cosmetic.", L"Equipment"},
+                                                                            {L"Gameplay.Inventory.Quest.", L"Quest"}};
+        for (const auto& [prefix, name] : kinds)
+            if (tag.starts_with(prefix)) return name;
+        return {};
     }
 
     // ============================================================================================ cats' names, clans and traits
