@@ -1,0 +1,14 @@
+# The game-free tests (tests/unit/) on every push and pull request. The in-game tests (tests/game/) need the
+# game and run on a developer's machine with `python wcmods.py agent test`.
+name: tests
+on: [push, pull_request]
+jobs:
+  unit:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest
+      - run: python -m pytest

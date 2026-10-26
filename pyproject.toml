@@ -1,0 +1,11 @@
+# wcmods runs on a plain Python 3.10+ and needs nothing installed: this file is only for the tests.
+#
+#   python -m pip install pytest
+#   python -m pytest
+#
+# tests/unit/ runs without the game (the file formats, the Lua the sections write, mod packaging, setup);
+# tests/game/ needs the game running and is run by `python wcmods.py agent test` instead, never by pytest.
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+pythonpath = ["."]
+addopts = "-q"

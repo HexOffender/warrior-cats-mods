@@ -24,3 +24,4 @@ tests/cpp-sdk/results.json
 tests/cpp-sdk/request.txt
 tests/cpp-sdk/written.txt
 tests/cpp-sdk/bom.txt
+.pytest_cache/
