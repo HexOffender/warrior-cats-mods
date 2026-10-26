@@ -519,11 +519,16 @@ class Plan:
         A place can shift as the game adds and removes cats, so a place with "was" only counts while the
         cat there still has that name."""
         slot, want = _parse_target(target)
+        if not want:
+            return []
         if want.lower() == "player":
             hits = [c for c in cats if c["player"]]
             return [c for c in hits if c["slot"] == slot] if slot is not None else [c for c in hits if c["current"]]
         if "/" in want:
-            hits = [c for c in cats if any(place(p) == want or place(p).endswith("/" + want) for p in c["paths"])]
+            # A place as names --cats shows it, or (as older names.json files could say it) with the NPCData
+            # step kept, or a cat's whole path in the save.
+            hits = [c for c in cats if any(place(p) == want or place(p).endswith("/" + want)
+                                           or p == target or p.endswith("/" + want) for p in c["paths"])]
             if how.get("was"):
                 hits = [c for c in hits if self._called(c, how["was"])]
         else:

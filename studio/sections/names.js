@@ -15,6 +15,7 @@ export default {
     let spec = EMPTY(), extra = {}, game = null, view = null, timer = null, seq = 0;
     let nameCount = new Map();               // a cat's name -> how many cats in the save have it
     let catFilter = "", openSlots = null;    // kept across renders: what's typed into Find a cat, which games are unfolded
+    let settling = false;                    // true just after a search unfolds games, until their toggles have fired
     const afterCells = new Map();   // cat target -> cell showing the name it will have
 
     const target = wc.modTarget({
@@ -220,11 +221,12 @@ export default {
           } }), ...added));
     }
 
-    // How names.json's "cats" names this cat: "player", its name when no other cat in the save has it, else its
-    // place, with its slot first for a game other than the one being played (a save holds a game per cat slot).
+    // How names.json's "cats" names this cat: "player", its name when it's in the game being played and no other
+    // cat in the save has it, else its place with "was". A cat in another game always goes by its place with
+    // the slot first: a bare name would mean the game being played as soon as a cat there gets that name.
     function catKey(c) {
       if (c.target === "player") return "player";
-      return (nameCount.get(c.name) || 0) > 1 ? c.target : c.name;
+      return c.current && (nameCount.get(c.name) || 0) === 1 ? c.name : c.target;
     }
     function renderCats() {
       if (!game.cats.length) {
@@ -278,8 +280,8 @@ export default {
             el("strong", { text: you ? `${you.name}'s game` : `The game in cat slot ${slot}` }),
             el("span", { class: "muted", text: `cat slot ${slot} · ${cats.length} cat${cats.length === 1 ? "" : "s"}${cats[0].current ? " · the one you're playing" : ""}` })),
           table(cats));
-        // Toggles come later than the change, so a search's own unfolding (below) is told apart by the search text.
-        fold.addEventListener("toggle", () => { if (catFilter) return; if (fold.open) openSlots.add(slot); else openSlots.delete(slot); });
+        // Toggles come later than the change, so a search's own unfolding (below) is told apart from the user's.
+        fold.addEventListener("toggle", () => { if (catFilter || settling) return; if (fold.open) openSlots.add(slot); else openSlots.delete(slot); });
         return fold;
       }) : [table(game.cats)];
       const find = el("input", { type: "search", value: catFilter, placeholder: "Find a cat", "aria-label": "Find a cat by name, rank or place", style: { minWidth: "14rem" } });
@@ -288,12 +290,14 @@ export default {
         catFilter = find.value.trim().toLowerCase();
         let shown = 0;
         for (const tr of rows) { const hit = !catFilter || tr.dataset.find.includes(catFilter); tr.hidden = !hit; shown += hit; }
+        settling = true;
         for (const g of groups) {
           if (g.tagName !== "DETAILS") continue;
           const hits = rows.filter(tr => !tr.hidden && g.contains(tr)).length;
           g.hidden = !!catFilter && !hits;   // while searching, every game with a match is unfolded
           g.open = catFilter ? hits > 0 : openSlots.has(g.dataset.slot);
         }
+        setTimeout(() => { settling = false; }, 0);   // after the toggle events these changes queue
         count.textContent = catFilter ? `${shown} of ${game.cats.length} cats` : `${game.cats.length} cats${slots.length > 1 ? ` in ${slots.length} games` : ""}`;
       };
       find.addEventListener("input", applyFilter);
@@ -309,6 +313,8 @@ export default {
       clear(box.cats).append(el("h2", { text: "Cats in your save" }),
         el("p", { class: "note", text: `Give any cat a new name. A whole name like Mothheart must be a prefix + suffix (new ones count); a prefix grows with rank (Sparkle: Sparklepaw, then Sparkleheart); a fixed name stays the same. Story roles show the cat cast in them.${slots.length > 1 ? " Your save holds a game per cat slot you've started; each is listed under its own heading, the one you're playing first." : ""}` }),
         el("div", { class: "row" }, find, count),
+        !game.cats.some(c => c.current) && game.current_slot != null
+          ? el("p", { class: "note", text: `The game you're playing (cat slot ${game.current_slot}) has no named cats yet, so "player" means no one until it does; the games below are your others.` }) : null,
         ...groups,
         earlier.length ? el("div", { class: "row", style: { flexWrap: "wrap" } },
           el("span", { class: "lbl", title: "Already in your save, or cats this save doesn't have. Keep them so their names keep working.", text: "Earlier renames" }), ...earlier) : null);

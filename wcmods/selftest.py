@@ -1419,18 +1419,22 @@ def _names_plan(read_text):
     only_there = names.cat_list(names.Plan(game, names.merge([])), cats2)[4]["name"]   # a cat only slot 0 has
     plan2 = names.Plan(game, names.merge([names.validate({"cats": {
         "player": {"fixed": "Me"}, "Woodheart": {"fixed": "Sparkle"}, "0/RiverClan/Warrior/0": {"fixed": "Other"},
-        only_there: {"fixed": "Far"}}})]))
+        only_there: {"fixed": "Far"}, "NPCData/RiverClan/Warrior/2": {"fixed": "Prefixed"},   # the old key forms still work
+        "0/GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization": {"fixed": "Old"},
+        "1/": {"fixed": "Nothing"}}})]))
     ops2 = sorted((o["path"], o["to"], o["where"]) for o in plan2.plan_cats(cats2))
     shown = names.cat_list(plan2, cats2, ())
     ok_two = (names.current_slot(two) == "1" and names.current_slot(data) == "0" and only_there
               and [(c["slot"], c["player"], c["current"]) for c in cats2] == [
                   ("1", True, True), ("1", False, True), ("0", True, False), ("0", False, False), ("0", False, False), ("0", False, False)]
-              and ops2 == [("0/NPCData/NarrativeRoles/TheAgingLeader", "Other", "0/NarrativeRoles/TheAgingLeader"),
+              and ops2 == [("0/GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization", "Old", "0/player"),
+                           ("0/NPCData/NarrativeRoles/TheAgingLeader", "Other", "0/NarrativeRoles/TheAgingLeader"),
                            ("0/NPCData/RiverClan/Warrior/0", "Other", "0/RiverClan/Warrior/0"),
                            ("0/NPCData/RiverClan/Warrior/1", "Far", "0/RiverClan/Warrior/1"),
+                           ("0/NPCData/RiverClan/Warrior/2", "Prefixed", "0/RiverClan/Warrior/2"),
                            ("1/GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization", "Me", "you"),
                            ("1/NPCData/RiverClan/Warrior/0", "Sparkle", "RiverClan/Warrior/0")]
-              and not [w for w in plan2.warnings if w.startswith("cats:")]
+              and [w for w in plan2.warnings if w.startswith("cats:")] == ["cats: no cat in your save is called '1/'"]
               and [c["target"] for c in shown] == ["player", "RiverClan/Warrior/0", "0/player", "0/RiverClan/Warrior/0",
                                                    "0/RiverClan/Warrior/1", "0/RiverClan/Warrior/2"]
               and [c["where"] for c in shown[:3]] == ["you", "RiverClan/Warrior/0", "your cat"]
