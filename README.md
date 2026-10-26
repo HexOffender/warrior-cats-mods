@@ -36,8 +36,9 @@ brings it back.
 changes; your files stay as they are. The mod menu's settings (its key, controller button and size)
 are in your `wcmods.json`, so they stay as well.
 - **If `git pull` won't start:** it may say your changes to `mods/mod-menu` would be overwritten.
-  That's because older versions saved the menu's settings there. Run `git checkout -- mods/mod-menu`,
-  pull again, and set the menu's key and size again under Options on the Settings and repair page.
+  That's because older versions saved the menu's settings there. Move the `mod-menu` folder out of
+  `mods` (to your desktop, say), pull again, then move it back into `mods`. The next start takes its
+  settings into `wcmods.json`.
 - **The menu's pages about the game** are a mod of their own now, Menu pages (below). Get set up
   offers it after an update; until it's in, the menu has the Overview, your mods' pages and the Tools.
 

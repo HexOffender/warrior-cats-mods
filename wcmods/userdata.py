@@ -10,54 +10,82 @@ moves them here. They also had the mod menu as a mod of its own, mods/mod-menu, 
 menu.json: the menu is wcmods' own now, so its settings move into wcmods.json and that folder goes
 (retire_menu_mod).
 """
-import datetime
 import errno
 import json
 import os
 import shutil
 import sys
 
+from .config import same_folder
+from .modzip import BACKUP_NAME, _backup, _stamp
+
 OLD_MENU = "mod-menu"   # the mod menu's own mod, from when it was one
 # Its menu.json's settings -> where they are now, in wcmods.json ("cheats" waits there for the Menu pages
 # mod, whose setting it is: menupages.add takes it).
 OLD_MENU_KEYS = {"key": "menu_key", "pad": "menu_pad", "size": "menu_scale", "cheats": "cheats"}
+OLD_MENU_DEFAULTS = {"key": "INS", "pad": "Gamepad_Special_Left", "size": 1.0, "cheats": False}   # as it came
 
 
 def prepare(root, data_dir, log=None):
     """Ready the data folder before anything reads it: what an older version left in wcmods' folder (root)
-    moved in, and an old mods/mod-menu's settings moved into wcmods.json. `log` gets what moved (stderr
-    unless given, so a command printing JSON stays readable)."""
+    moved in, and an old mods/mod-menu's settings moved into wcmods.json. `log` gets what moved and anything
+    that couldn't be done (stderr unless given, so a command printing JSON stays readable); none of that
+    stops the command."""
     log = log or (lambda m: print(m, file=sys.stderr))
-    moved, problems = migrate(root, data_dir)
+    try:
+        moved, notes, problems = migrate(root, data_dir)
+    except OSError as e:
+        moved, notes, problems = [], [], [f"{root}'s files ({e.strerror or e})"]
     if moved:
         log(f"Moved your {_join(moved)} out of the wcmods folder, to {data_dir}, where updating wcmods won't "
             "touch them. Apply to game once (or `wcmods install`), so the game finds your mods there.")
+    for note in notes:
+        log(note)
     for p in problems:
         log(f"Couldn't move {p}. Close whatever has it open; the next start tries again.")
-    if retire_menu_mod(data_dir):
-        log("The mod menu is part of wcmods now, so it's no longer in your mods; its key, button and size are "
-            "in wcmods.json. Its pages about the game are a mod of their own, Menu pages: Get set up in Clan Mod "
-            "Studio adds it. Apply to game once.")
+    try:
+        if retire_menu_mod(data_dir):
+            log("The mod menu is part of wcmods now, so it's no longer in your mods; its key, button and size are "
+                "in wcmods.json. Its pages about the game are a mod of their own, Menu pages: Get set up in Clan "
+                "Mod Studio adds it. Apply to game once.")
+    except OSError as e:
+        log(f"Couldn't move the old mod menu's settings out of {os.path.join(data_dir, 'mods', OLD_MENU)} "
+            f"({e.strerror or e}).")
 
 
 def migrate(root, data_dir):
     """Move wcmods.json, mods/ and backups/ from wcmods' folder, where older versions kept them, into
-    data_dir. Nothing is overwritten: when data_dir already has a wcmods.json or a mod of the same name (a
-    second copy of wcmods moving in), the one already there stays and the old one goes to data_dir's backups,
-    a mod as a replaced one (Settings and repair puts it back). Returns ([what moved], [what couldn't be, and why]); what couldn't (a
-    file open in another program) stays, for the next start."""
-    if _same(root, data_dir):   # WCMODS_DATA is wcmods' own folder: everything stays where it is
-        return [], []
-    moved, problems = [], []
+    data_dir. Nothing is lost when data_dir has some already (a newer version ran from another folder first,
+    or a second copy of wcmods moves in):
+    - wcmods.json: the one there stays and takes the settings only yours has; yours goes to backups.
+    - a mod: the one there stays; yours goes to backups as a replaced one (Settings and repair puts it back).
+    - the mod menu's own mod, from when it was one (mods/mod-menu): yours replaces the one there while that
+      still has the menu's defaults (it was only put in); otherwise yours is dropped, as the one there has
+      settings of its own. retire_menu_mod then moves them into wcmods.json.
+    Returns ([what moved], [notes on what didn't], [what couldn't be moved, and why]); what couldn't (a file
+    open in another program) stays, for the next start."""
+    if same_folder(root, data_dir):   # WCMODS_DATA is wcmods' own folder: everything stays where it is
+        return [], [], []
+    moved, notes, problems = [], [], []
     backups = os.path.join(data_dir, "backups")
 
     old = os.path.join(root, "wcmods.json")
     if os.path.isfile(old):
         new = os.path.join(data_dir, "wcmods.json")
-        if os.path.exists(new):
-            new = _free(os.path.join(backups, f"{_stamp()}-wcmods.json"))
-        if _move(old, new, problems):
-            moved.append("settings (wcmods.json)")
+        if not os.path.exists(new):
+            if _move(old, new, problems):
+                moved.append("settings (wcmods.json)")
+        else:
+            yours, there = _read_json(old) or {}, _read_json(new)
+            added = sorted(k for k in yours if there is not None and k not in there and not k.startswith("_"))
+            if added:
+                with open(new, "w", encoding="utf-8") as f:
+                    json.dump({**there, **{k: yours[k] for k in added}}, f, indent=2)
+                    f.write("\n")
+            aside = _free(os.path.join(backups, f"{_stamp()}-wcmods.json"))
+            if _move(old, aside, problems):
+                notes.append(f"{new} was there already, so it stays" + (f", with {', '.join(added)} from yours"
+                             if added else "") + f"; your old wcmods.json is in {aside}.")
 
     old = os.path.join(root, "mods")
     if os.path.isdir(old):
@@ -65,16 +93,18 @@ def migrate(root, data_dir):
         for name in sorted(os.listdir(old)):
             src, dest = os.path.join(old, name), os.path.join(data_dir, "mods", name)
             menu = _is_old_menu(src)
+            if menu and _is_old_menu(dest) and _untouched(dest):
+                shutil.rmtree(dest, ignore_errors=True)
             if not os.path.exists(dest):
                 if _move(src, dest, problems) and not menu and os.path.isfile(os.path.join(dest, "mod.json")):
                     n += 1
             elif menu:   # one there already: its settings are the ones to keep
                 shutil.rmtree(src, ignore_errors=True)
             else:
-                from .modzip import _backup
                 try:
-                    _backup(src, backups, "replaced")
-                    n += 1
+                    kept = _backup(src, backups, "replaced")
+                    notes.append(f"{dest} was there already, so it stays; your old copy is in {kept} "
+                                 "(Settings and repair can put it back).")
                 except OSError as e:
                     problems.append(f"{src} ({e.strerror or e})")
         _rmdir(old)
@@ -88,14 +118,15 @@ def migrate(root, data_dir):
             src = os.path.join(old, name)
             if name == "mods" and os.path.isdir(src):   # removed and replaced mods: in with any already there
                 for entry in sorted(os.listdir(src)):
-                    any_moved |= _move(os.path.join(src, entry), _free(os.path.join(backups, "mods", entry)), problems)
+                    dest = _free_mod_backup(os.path.join(backups, "mods"), entry)
+                    any_moved |= _move(os.path.join(src, entry), dest, problems)
                 _rmdir(src)
             else:
                 any_moved |= _move(src, _free(os.path.join(backups, name)), problems)
         _rmdir(old)
         if any_moved:
             moved.append("backups")
-    return moved, problems
+    return moved, notes, problems
 
 
 def _is_old_menu(folder):
@@ -126,6 +157,12 @@ def retire_menu_mod(data_dir):
         cfg.save()
     shutil.rmtree(folder, ignore_errors=True)
     return True
+
+
+def _untouched(folder):
+    """Whether the old mod menu in folder has nothing of yours: its settings as they came."""
+    mine = _read_json(os.path.join(folder, "menu.json")) or {}
+    return all(mine.get(k, v) == v for k, v in OLD_MENU_DEFAULTS.items())
 
 
 def _read_json(path):
@@ -176,19 +213,22 @@ def _free(path):
     return path
 
 
+def _free_mod_backup(folder, name):
+    """folder/name for a removed or replaced mod's backup, numbered after its time when that's taken, as
+    modzip numbers them, so the mod's id at the end of the name stays as it was."""
+    m = BACKUP_NAME.match(name)
+    path, n = os.path.join(folder, name), 2
+    while m and os.path.exists(path):
+        path = os.path.join(folder, f"{m.group(1)}-{n}-{m.group(2)}-{m.group(3)}")
+        n += 1
+    return path if m else _free(path)
+
+
 def _rmdir(path):
     try:
         os.rmdir(path)   # only when empty
     except OSError:
         pass
-
-
-def _same(a, b):
-    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
-
-
-def _stamp():
-    return datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
 def _join(items):
