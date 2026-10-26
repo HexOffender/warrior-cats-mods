@@ -783,8 +783,9 @@ def _cpp_sdk():
     for name in sorted(os.listdir(test_src)) if os.path.isdir(test_src) else []:
         with open(os.path.join(test_src, name), encoding="utf-8") as f:
             tested += f.read()
-    # A call as the SDK's: not `Json::object(` for the SDK's object(path), and not part of a longer name.
-    untested = sorted(n for n in names - private if not re.search(rf"(?<![:\w]){n}\s*[(<]", tested))
+    # A call as the SDK's: not `Json::object(` for the SDK's object(path), and not part of a longer name;
+    # the game's UI is called as `ui::text(`.
+    untested = sorted(n for n in names - private if not re.search(rf"(?<![:\w])(?:ui::)?{n}\s*[(<]", tested))
     if untested:
         problems.append(f"not called by tests/cpp-sdk: {', '.join(untested[:8])}")
     test_py = os.path.join(os.path.dirname(here), "tests", "game", "test_cpp_sdk.py")

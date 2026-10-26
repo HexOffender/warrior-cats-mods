@@ -83,7 +83,9 @@ quest objectives with the shared Lua modules wcmods installs (docs/SDK.md, "Over
 [quest-markers](https://github.com/HexOffender/wcmods-examples/tree/main/quest-markers) in wcmods-examples, a custom quest with on-screen markers).
 Mods can run C++ in the game too, as UE4SS C++ mods: `python wcmods.py new my-mod --kind cpp`, then
 `python wcmods.py cpp setup` and `cpp build my-mod` build its `cpp/` against the game's UE4SS (docs/SDK.md,
-"C++ mods", lists what that needs).
+"C++ mods", lists what that needs). A C++ mod can put a tab of its own in the game's pause screen,
+inventory and settings, change the HUD and draw over it, with the game's own controls (docs/SDK.md,
+"The game's own UI"); Lua scripts get the same through it (docs/scripting.md, "The game's own menus and HUD").
 
 **In game, Insert opens the mod menu** (with UE4SS). A status line under its title shows how your
 cat is doing, and the side bar groups the pages:

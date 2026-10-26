@@ -561,3 +561,157 @@ def test_keys_pressed(agent):
     v = _request(agent, "events")["values"]
     assert v["key.f9"] >= 1, v["key.f9"]
     assert v["key.ctrl_f9"] >= 1, v["key.ctrl_f9"]
+
+
+# The pause screen that's up: a closed one lingers as a dead object a while, so FindFirstOf can't be trusted.
+PAUSE = ('(function() for _, s in ipairs(FindAllOf("WBP_GuiScreenPause_C") or {}) do '
+         'if s:IsValid() and s:IsInViewport() and s:IsVisible() then return s end end return nil end)()')
+
+
+def _screen_current(agent):
+    """The pause screen's current tab control's name, or None without the screen."""
+    return agent.lua(f'local s = {PAUSE} if not s then return nil end return Game.name(s.CurrentNav.CurrentControl)')
+
+
+def _open_pause(agent):
+    """Open the pause screen with the keyboard's pause key (P; Enter pauses only in the game's gamepad mode),
+    pressing again when the game ignored it (it does for a moment after a screen closes)."""
+    for _ in range(4):
+        agent.key("P")
+        try:
+            agent.wait_lua(f'{PAUSE} ~= nil', timeout=2)
+            time.sleep(0.6)   # the screen's fade-in
+            return True
+        except Exception:
+            time.sleep(0.8)
+    return False
+
+
+def _walk_to_tab(agent, title, tries=8):
+    """Press the game's next-tab key until the pause screen's navigation is on the tab with `title`."""
+    for _ in range(tries):
+        name = _screen_current(agent)
+        if name and agent.lua(f'local s = {PAUSE} local c = s.CurrentNav.CurrentControl return c.Text:ToString()') == title:
+            return True
+        agent.key("Two")
+        time.sleep(0.4)
+    return False
+
+
+def test_ui_widgets(agent):
+    """Ui.hpp: every kind of widget made, placed, styled and read back; an overlay on the viewport; the HUD's
+    parts; the game's font on the text."""
+    r = _request(agent, "ui")
+    assert not _failed(r, "ui"), _failed(r, "ui")
+    v = r["values"]
+    assert v["ui.widget.kinds"] >= 36, v["ui.widget.kinds"]
+    assert v["ui.text.font"] == "Amarante", v["ui.text.font"]
+    assert v["ui.hud.class"] == "WBP_GuiHudGameWrc_C", v["ui.hud.class"]
+    w, h = agent.lua("local v = Game.library('WidgetLayoutLibrary'):GetViewportSize(Game.controller()) return v.X, v.Y")
+    assert (v["ui.viewport.w"], v["ui.viewport.h"]) == (w, h), (v["ui.viewport.w"], v["ui.viewport.h"], w, h)
+    # The overlay's label and the HUD's are the game's widgets now: Lua sees them, on screen, with their text.
+    for key, text in (("ui.overlay.label", "SDK overlay"), ("ui.hud.label", "SDK HUD")):
+        assert agent.lua(f"local w = StaticFindObject({v[key]!r}) return w:GetText():ToString(), w:IsVisible()") == [text, True], key
+    assert agent.lua(f"local m = StaticFindObject({v['ui.hud.minimap']!r}) return Game.className(m)") == "WBP_GuiHudControlMinimap_C"
+    agent.shot("ui-overlay-hud", scale=0.5)
+    _request(agent, "ui_teardown")
+    assert agent.lua(f"local w = StaticFindObject({v['ui.overlay.label']!r}) return w == nil or not w:IsValid() or not w:IsVisible()")
+
+
+def test_ui_tab(agent):
+    """A tab of the mod's own in the pause screen (Ui.hpp's ui::tab): the game's own tab key reaches it, its page
+    shows with every kind of control, the game's panel is hidden meanwhile, the controls' events reach the mod
+    when Lua uses them, and leaving the tab puts the game's panel back."""
+    assert _open_pause(agent), "the pause screen didn't open"
+    try:
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.screen"] and v["ui.screen_shown"] is True and v["ui.screen_events"] >= 1, v
+        assert v["ui.tab.page"] is True and v["ui.tab.builds"] >= 1 and v["ui.tab.rows"] >= 10, v
+        assert v["ui.tab.active"] is False, v
+        assert _walk_to_tab(agent, "SDK"), _screen_current(agent)
+        time.sleep(0.3)
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.tab.active"] is True, v
+        general = agent.lua(f'local s = {PAUSE} return s.mcGuiPanelGeneral:GetVisibility(), s.mcGuiPanelBonds:GetVisibility()')
+        assert general == [1, 1], general   # the game's panels are collapsed while the page shows
+        assert agent.lua(f"local p = StaticFindObject({v['ui.page.panel']!r}) return p:IsVisible()") is True
+        agent.shot("ui-tab", scale=0.5)
+        # The page's controls, used the way the player would (through the widgets themselves).
+        agent.lua(f"StaticFindObject({v['ui.page.check']!r}):SetIsChecked(false)")
+        agent.lua(f"StaticFindObject({v['ui.page.slider']!r}):SetValue(0.8)")
+        agent.lua(f"StaticFindObject({v['ui.page.input']!r}):SetText(FText('Otterpaw'))")
+        time.sleep(0.3)
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.toggles"] >= 1 and v["ui.last_toggle"] is False, v
+        assert v["ui.changes"] >= 1 and abs(v["ui.last_change"] - 0.8) < 0.01, v
+        assert v["ui.texts"] >= 1 and v["ui.last_text"] == "Otterpaw", v
+        # Back to the game's first tab: its panel shows again, the page is gone.
+        for _ in range(8):
+            agent.key("One")
+            time.sleep(0.3)
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.tab.active"] is False and v["ui.screen.current"] == "mcGuiTabGeneral", v
+        assert agent.lua(f'return {PAUSE}.mcGuiPanelGeneral:GetVisibility()') == 3
+    finally:
+        agent.key("BackSpace")
+        time.sleep(1)
+        agent.key("BackSpace")
+        time.sleep(0.5)
+    v = _request(agent, "ui_snapshot")["values"]
+    assert v["ui.screen"] is None and v["ui.screen_shown"] is False and v["ui.tab.page"] is False, v
+
+
+def test_ui_lua(agent):
+    """WCModsCpp.ui (UiLua.hpp): a Lua mod makes and places widgets, keeps an overlay and puts a tab in the pause
+    screen through the C++ mod's functions."""
+    assert agent.lua("return type(WCModsCpp.ui) == 'table' and type(WCModsCpp.ui.tab) == 'function'")
+    out = agent.lua("""
+        local ui = WCModsCpp.ui
+        local t = ui.text("From Lua", { size = 40, color = "#ff8800" })
+        local b = ui.button("Go")
+        local c = ui.check(true)
+        local s = ui.slider(0.25, 0, 1)
+        local row = ui.row({ t, b })
+        local col = ui.vbox()
+        ui.add(col, { row, ui.labelled("Switch", c), ui.labelled("Slider", s) })
+        local canvas = ui.overlay("lua-test", 1200)
+        local slot = ui.add(canvas, col)
+        ui.place(slot, { position = { 300, 300 }, auto = true })
+        local w, h, scale = ui.viewport()
+        local vis = ui.visible(t)
+        return { text = ui.text(t), kind = Game.className(t), checked = ui.checked(c), value = ui.value(s),
+                 rows = #ui.children(col), found = ui.find(col, Game.name(b)):GetAddress() == b:GetAddress(), vis = vis, w = w, scale = scale,
+                 canvas = Game.className(canvas), clicked = ui.clicked(b), changed = ui.changed(s),
+                 theme = ui.theme().text_size, hud = Game.className(ui.hud()), mini = Game.className(ui.hud("mcGuiMinimap")) }
+    """)
+    assert out["text"] == "From Lua" and out["kind"] == "TextBlock" and out["checked"] is True, out
+    assert abs(out["value"] - 0.25) < 0.01 and out["rows"] == 3 and out["found"] is True, out
+    assert out["vis"] == "visible" and out["w"] > 100 and out["scale"] > 0 and out["canvas"] == "CanvasPanel", out
+    assert out["clicked"] is False and out["changed"] is False and out["theme"] > 0, out
+    assert out["hud"] == "WBP_GuiHudGameWrc_C" and out["mini"] == "WBP_GuiHudControlMinimap_C", out
+    agent.shot("ui-lua-overlay", scale=0.5)
+    # A tab from Lua: registered now, its page there once the pause screen is up, filled by the script.
+    tab = agent.lua("""
+        local ui = WCModsCpp.ui
+        local id = ui.tab("WBP_GuiScreenPause_C", "Lua tab", "lua-tab")
+        return id, ui.tab_page(id) == nil, ui.tab_active(id), ui.tabs()
+    """)
+    assert tab[0] == "lua-tab" and tab[1] is True and tab[2] is False and "lua-tab" in tab[3], tab
+    assert _open_pause(agent), "the pause screen didn't open"
+    try:
+        page = agent.lua("""
+            local ui = WCModsCpp.ui
+            local page, gen = ui.tab_page("lua-tab")
+            if page then ui.add(page, { ui.heading("Lua page"), ui.note("Made by a Lua mod through WCModsCpp.ui.") }) end
+            return page ~= nil, gen, page and #ui.children(page) or 0
+        """)
+        assert page[0] is True and page[1] >= 1 and page[2] == 2, page
+        assert _walk_to_tab(agent, "Lua tab"), _screen_current(agent)
+        time.sleep(0.3)
+        assert agent.lua("return WCModsCpp.ui.tab_active('lua-tab')") is True
+        agent.shot("ui-lua-tab", scale=0.5)
+    finally:
+        agent.key("BackSpace")
+        time.sleep(1)
+        agent.lua("WCModsCpp.ui.remove_tab('lua-tab') WCModsCpp.ui.remove_overlay('lua-test')")
+    assert agent.lua("local t = WCModsCpp.ui.tabs() for _, id in ipairs(t) do if id == 'lua-tab' then return false end end return true")

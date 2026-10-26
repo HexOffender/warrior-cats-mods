@@ -11,6 +11,7 @@
 #include <WCMods/Core.hpp>
 #include <WCMods/Events.hpp>
 #include <WCMods/Menu.hpp>
+#include <WCMods/UiLua.hpp>
 
 namespace wcmods
 {
@@ -42,7 +43,8 @@ namespace wcmods
 
         ~ModBase() override { detail::key_binder() = nullptr; }
 
-        // Each Lua mod's state gets WCModsCpp as it starts, for the mod menu and shared values (Menu.hpp). A
+        // Each Lua mod's state gets WCModsCpp as it starts, for the mod menu and shared values (Menu.hpp) and
+        // the game's UI (UiLua.hpp). A
         // mod that overrides this calls ModBase::on_lua_start from its own, or loses those. (UE4SS's
         // register_on_lua_start is left to the mod: it keeps one function a mod, and this doesn't take it.)
         auto on_lua_start(RC::StringViewType mod_name, RC::LuaMadeSimple::Lua& lua, RC::LuaMadeSimple::Lua& main_lua,
@@ -50,6 +52,7 @@ namespace wcmods
         {
             RC::CppUserModBase::on_lua_start(mod_name, lua, main_lua, async_lua, hook_lua);
             detail::lua_started(lua);
+            detail::lua_started_ui(lua);
         }
     };
 } // namespace wcmods
@@ -64,5 +67,6 @@ namespace wcmods
     {                                                                                                          \
         ::wcmods::detail::stop();                                                                              \
         ::wcmods::detail::stop_menu();                                                                         \
+        ::wcmods::detail::stop_ui();                                                                           \
         delete mod;                                                                                            \
     }

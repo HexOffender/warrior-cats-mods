@@ -448,6 +448,72 @@ The mod menu (Insert) builds these pages on `WCModsGame`, in the side bar's grou
 A script mod with a `settings.json` and no page of its own gets one under Mods: a row for each
 setting (`heal_key` shows as "Heal key"), and Save.
 
+## The game's own menus and HUD
+
+A C++ mod built with wcmods' SDK (docs/SDK.md, "C++ mods") puts a `WCModsCpp.ui` table into every
+script's state as the game starts, so a script can put a tab of its own in the game's pause screen, the
+inventory or the settings, reach the HUD and its parts, keep an overlay, and make, place and style any of
+the engine's controls, with the C++ doing the work. Widgets come back as UE4SS's own objects, so
+everything a script can do with a widget (`:SetText(FText(...))`, `:SetVisibility(1)`, reading its
+properties) still works on them. Any C++ mod with the SDK brings it (the C++ SDK test mod,
+`tests/cpp-sdk`, does); without one, `WCModsCpp.ui` is nil, and a script checks before using it.
+
+```lua
+local ui = WCModsCpp and WCModsCpp.ui
+if ui then
+    -- A tab in the pause screen. Its page is there while the screen is up, made anew each time it opens
+    -- (the game makes its screens anew), so the script fills it when it sees a new one.
+    local id = ui.tab("WBP_GuiScreenPause_C", "My mod")
+    local seen = 0
+    local on = ui.check(MOD.settings.on)
+    Game.onFrame(function()
+        local page, generation = ui.tab_page(id)
+        if page and generation ~= seen then
+            seen = generation
+            on = ui.check(MOD.settings.on)
+            ui.add(page, { ui.heading("My mod"), ui.labelled("Enabled", on),
+                           ui.labelled("Speed", ui.slider(MOD.settings.speed, 0.5, 3, 0.1)) })
+        end
+        if ui.changed(on) then MOD.settings.on = ui.checked(on) end
+    end)
+    -- The HUD's parts, and a label of your own over the game.
+    ui.visible(ui.hud("mcGuiMinimap"), false)
+    local canvas = ui.overlay("my-notes")
+    local label = ui.text("Hello", { size = 48 })
+    ui.add(canvas, label)
+    ui.at(label, 100, 100)
+end
+```
+
+Sizes are the game's own units (its UI is laid out for a 3840×2160 screen): a 52-point title and a
+700-wide control look as the game's do. The script asks rather than being called: `ui.clicked(w)` and
+`ui.changed(w)` are true on the frame a button was clicked or a value changed (the first ask starts the
+watch), and `ui.tab_page(id)` gives the page and a count of how many times it has been built.
+
+| `ui.` | Does |
+|---|---|
+| `tab(screen, title, id, {hide_panels, scroll, focus, inset})` | A tab in one of the game's screens by its class (`"WBP_GuiScreenPause_C"`, `"WBP_GuiPopupInventory_C"`, `"WBP_GuiPopupGameSettings_C"`), which the game's tab keys reach; gives back its id (the title's when `id` is nil). Keep the title short |
+| `tab_page(id)`, `tab_active(id)`, `remove_tab(id)`, `tabs()` | The page (a column to add rows to) and its build count while the screen is up, else nil; whether the game's navigation is on the tab; taking it out; every id |
+| `screen(class)`, `hud()`, `hud(part)` | A screen of the game's while it shows (`screen("WBP_GuiPopupInventory_C")`); the HUD; one of its parts by name (`hud("mcGuiMinimap")`, `mcGuiEnergyBar`, `mcGuiQuestObjective`, `CanvasOver` to add to) |
+| `overlay(name, layer, passive)`, `remove_overlay(name)` | A canvas of the script's own on the viewport, by name, kept; `passive` (the default) lets the mouse through. It goes with the level and comes back empty when asked for again |
+| `make(kind)`, `game_widget(class or widget)` | Any of the engine's widgets by class (`"TextBlock"`, `"Button"`, `"CheckBox"`, `"Slider"`, `"SpinBox"`, `"ComboBoxString"`, `"EditableTextBox"`, `"ProgressBar"`, `"Image"`, `"Border"`, `"SizeBox"`, `"ScrollBox"`, `"CanvasPanel"`, `"WidgetSwitcher"`... any in `/Script/UMG`), plain; one of the game's own widget Blueprints by its class path or the class of a widget you have |
+| `text(str, {size, color, wrap, justify})`, `heading(str)`, `note(str)` | Text in the game's font; a heading; smaller grey text. `text(widget)` reads a widget's text and `text(widget, str)` sets it |
+| `button(label, color)`, `check(on)`, `slider(value, lo, hi, step)`, `number(value, lo, hi, step)`, `input(text, hint)`, `choice({options}, selected)`, `progress(fraction, color)`, `image(path, w, h)`, `rect(color, w, h)` | The controls, styled for the game's screens |
+| `hbox()`, `vbox()`, `scroll()`, `border(color, {padding})`, `box(w, h)`, `spacer(w, h)`, `canvas()`, `row({widgets}, gap)`, `labelled(label, control, width)`, `scaled(control, width)` | Layouts, a row, a labelled control as the game's settings rows, a control grown to the game's size |
+| `add(parent, child)`, `add(parent, {children})`, `remove(widget)`, `remove(parent, child)`, `clear(widget)` | Put a widget in a panel or content widget (gives back the slot); take one out; take every child out |
+| `parent(w)`, `children(w)`, `find(w, name)`, `find_all(w, class)`, `slot(w)` | The tree: the widget it sits in, the widgets in it, one by name anywhere down the tree, every one of a class, its slot |
+| `place(slot or widget, {padding, fill, halign, valign, anchors, offsets, position, size, alignment, auto, layer, stretch, row, column})`, `at(w, x, y)` | How a widget sits in its slot (a box's room and share, a canvas's anchors, place and size, a grid's cell); on a canvas, its top-left at a place |
+| `visible(w, mode)`, `visible(w)` | Shown (`true` or `"shown"`), `"visible"` (taking input), `"passive"` (letting input through), `"hidden"`, `"collapsed"` or `false`; asked, its mode and whether it's drawn |
+| `enabled(w, on)`, `opacity(w, f)`, `focus(w)`, `focused(w)`, `hovered(w)`, `valid(w)` | Enabled; opacity; the keyboard's focus; the mouse over it; whether the game still has it |
+| `font(w, size, typeface)`, `color(w, hex)`, `tint(w, hex)`, `wrap(w, on)`, `justify(w, how)`, `hint(w, text)`, `padding(w, l, t, r, b)`, `size(w, w, h)`, `scale(w, x, y)`, `angle(w, deg)`, `translate(w, x, y)`, `tooltip(w, text)`, `image(w, path)` | How it looks |
+| `value(w, v)`, `value(w)`, `checked(w, on)`, `range(w, lo, hi, step)`, `options(w, {...})`, `options(w)`, `option(w, s)`, `option(w)`, `active(w, i)`, `play(w, animation, reverse)` | What a control holds and offers |
+| `clicked(w)`, `changed(w)` | True on the frame a button was clicked or a value changed since the last ask |
+| `viewport()`, `cursor(on)`, `theme()`, `theme({...})` | The viewport's width, height and scale; the mouse cursor; the helpers' look (`text_size`, `heading_size`, `text`, `heading`, `muted`, `accent`, `button`, `panel`, `typeface`, `game_font`, `control_scale`, `control_width`) |
+
+Colours are `"#rrggbb"` or `"#rrggbbaa"`, as an image editor shows them. The functions run on the thread
+that calls them: a script calls them from its frame loop or a key, on the game thread, never from
+`LoopAsync`. Two scripts (or a script and a C++ mod) can each have tabs in one screen.
+
 ## Testing in the game
 
 `python wcmods.py agent ...` drives the running game for you or an agent:

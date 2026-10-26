@@ -34,6 +34,10 @@ namespace t
     auto snapshot_menu() -> void;        // what the pages' rows hold, and the menu's state, into values
     auto snapshot_status() -> void;      // your cat's status condition members now, into values (test_game.cpp)
     auto snapshot_fight() -> void;       // the fight's fighters with their hidden members, into values (test_world.cpp)
+    auto setup_ui() -> void;             // Ui.hpp: a tab in the pause screen, a screen watch (test_ui.cpp)
+    auto run_ui() -> void;               // Ui.hpp: every widget, an overlay, the HUD, on the game thread when asked
+    auto snapshot_ui() -> void;          // the tab's and page's state and the events so far, into values
+    auto teardown_ui() -> void;          // the overlay and the HUD label off again
 
     // The after-hook that forges GetConsoleVariableFloatValue's result (test_events.cpp sets it up, run_writes
     // checks it and takes it out).

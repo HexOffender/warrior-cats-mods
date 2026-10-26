@@ -67,6 +67,22 @@ namespace t
                 snapshot_fight();
                 done("fight");
             }
+            else if (what == "ui")
+            {
+                phase("ui");
+                run_ui();
+                done("ui");
+            }
+            else if (what == "ui_snapshot")
+            {
+                snapshot_ui();
+                done("ui_snapshot");
+            }
+            else if (what == "ui_teardown")
+            {
+                teardown_ui();
+                done("ui_teardown");
+            }
         }
     } // namespace
 

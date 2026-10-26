@@ -321,7 +321,8 @@ namespace wcmods
                 if (value.kind != Value::Kind::Text) return false;
                 if (t == L"StrProperty") *static_cast<FString*>(target.at) = FString(value.text.c_str());
                 else if (t == L"NameProperty") *static_cast<FName*>(target.at) = FName(value.text.c_str());
-                else return false;   // FText is made by the game; set the FString it shows instead
+                else if (t == L"TextProperty") *static_cast<FText*>(target.at) = FText(value.text.c_str());
+                else return false;
                 return true;
             case Value::Kind::Object:
                 if (value.kind != Value::Kind::Object) return false;
@@ -371,7 +372,7 @@ namespace wcmods
     // get(custom, L"ClanType"), get(tags, L"[0]")).
     inline auto get(const Value& from, std::wstring_view path) -> Value { return detail::walk(from, path); }
 
-    // Write a property: a bool, a number (to an int, float or enum), text (to an FString or FName, or an
+    // Write a property: a bool, a number (to an int, float or enum), text (to an FString, FName or FText, or an
     // enum's name), or an object. False when there's no such property, or it isn't that kind.
     inline auto set(UObject* object, std::wstring_view path, const Value& value) -> bool { return detail::write(get(object, path), value); }
     inline auto set(UObject* object, std::wstring_view path, bool value) -> bool { return set(object, path, Value::of(value)); }
