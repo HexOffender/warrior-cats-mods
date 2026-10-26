@@ -1,14 +1,21 @@
 # wcmods SDK
 
-The mod manager is built from **sections**. Each section handles one kind of mod content: the
-built-in ones are replacement files, game data, names, palettes, your cat's colours, controls,
-mouse look and save edits. A mod can add code of its own in four places:
+For mod makers who write code. A mod made of JSON files alone needs none of this: those files are in
+[formats.md](formats.md), and Clan Mod Studio writes them. If your mod is Lua that runs in the game,
+read [scripting.md](scripting.md) first; this page then has the mod folder and `mod.json`, Python build
+steps and studio pages, repacking and new content, the shared Lua modules a script can draw and find
+things with, and C++ mods. [docs/README.md](README.md) lists every page.
+
+The mod manager is built from **sections**. Each section handles one kind of mod content: the eleven
+built-in ones are replacement files, game data, new items, names, palettes, your cat's colours,
+controls, mouse look, save edits, in-game scripts and C++ mods. A mod can add code of its own in four
+places:
 
 | Part | File in the mod folder | Runs in | Built on |
 |---|---|---|---|
 | Build step | `section.py` | `wcmods build` / `install` | `wcmods.sdk` (Python) |
 | Studio page | `studio/section.js` | `wcmods studio`, in your browser | `studio/lib/wc.js` |
-| In-game script | `scripts/main.lua` (no Python), or written by its `section.py` | the game, through UE4SS | UE4SS Lua, plus the shared modules below: `WCModsGame`, `WCModsDraw`, `WCModsMenu`, `WCModsView`, `WCModsWorld` |
+| In-game script | `scripts/main.lua` (no Python), or written by its `section.py` | the game, through UE4SS | UE4SS Lua, plus the six shared modules below: `WCModsGame`, `WCModsDraw`, `WCModsMenu`, `WCModsView`, `WCModsWorld`, `WCModsNames` |
 | C++ mod | `cpp/` (source), built into `dlls/main.dll` | the game, through UE4SS | UE4SS's C++ API, plus `WCMods.hpp` (see [C++ mods](#c-mods)) |
 
 All of them only run when `"allow_code_mods": true` is set in `wcmods.json`, because they are
@@ -64,6 +71,28 @@ mods/my-mod/
   studio/section.js   your own studio page              (code mod)
 ```
 
+Only `mod.json`'s `name` is needed; the rest is what Clan Mod Studio shows and how the mod fits with others:
+
+- **`requires`:** the mods it can't work without, by folder name. Turning it on turns them on.
+  While one is missing or off, building leaves this mod out and says why (installing stops, as for
+  any mod that didn't build, unless `--force`).
+- **`uses`:** mods it works with when they're on, such as `mod-menu` for a page in the mod menu.
+  Nothing is turned on for them; the studio just shows it.
+- **`game_builds`:** the builds of the game it was made for (a mod without it was made for
+  24847281). After a game update, a mod that doesn't list the new build is left out until it's
+  updated, or you choose "Use it anyway" for that build. See [updating.md](updating.md).
+- **`priority`:** mods are applied in priority order, then by folder name, and the higher one wins
+  when two set the same thing.
+- **`settings_page`:** for a script mod with a `settings.json`: `false` keeps it off the mod menu's
+  Mods group (it gets a page there by default; [scripting.md](scripting.md#script-mods)).
+- **`studio_title`** and **`studio_files`:** for a mod with a `studio/section.js` page: the side bar's
+  label, and the files its page edits.
+- **`builtin`:** wcmods' own mods (the mod menu); they can be turned off, not removed, and follow
+  wcmods' own checks after a game update.
+
+A mod without code is just these files ([formats.md](formats.md)); mods with code (a `section.py`,
+`scripts/`, a `studio/` page, `cpp/`) stay out of the game until the player allows mods that run code.
+
 ## Python: `wcmods.sdk`
 
 ```python
@@ -118,7 +147,8 @@ for shared data, and `0/...` for cat slot 0.
 
 Helpers you can import: `wcmods.csvdata` (format-preserving CSV editing), `wcmods.savejson`
 (format-preserving save JSON), `wcmods.cooked` (cooked DataTables), `wcmods.texture` (the game's
-textures, read and copied), `wcmods.png`, `wcmods.bcn` (DXT1/DXT5), `wcmods.recolor`,
+textures, read and copied), `wcmods.png`, `wcmods.bcn` (DXT1/DXT5) (those six live under
+`wcmods/formats/` and keep these names too), `wcmods.recolor`,
 `wcmods.accessories` (the game's lists of accessory looks), `wcmods.colors`, `wcmods.palettes`,
 `wcmods.eyeatlas`, `wcmods.gamefiles`, `wcmods.names` (the game's name tables). `wcmods.sdk.lua_value(data)` writes
 JSON-style data (dicts, lists, strings, numbers, booleans) as a Lua literal, for handing a mod's
@@ -537,12 +567,12 @@ and the fresh-kill pile. The side bar lists the pages in groups:
 | Fight | **Fight** (both sides during a fight) |
 | Cheats | **Cheats** (the engine's cheat manager), **Game switches** (the developers' own) |
 | Mods | Pages scripts add, and a script mod's settings page |
-| Tools | **Log** (UE4SS's log, newest first), **Menu** (its size, pausing, the status line), and with code mods allowed **Inspector** and **Console** |
+| Tools | **Log** (UE4SS's log, newest first), **Menu** (its size, pausing, the status line), and with code mods allowed **Inspector** and **Lua console** |
 
 Cheats is the engine's cheat manager, switched on and off live (`"cheats"` says whether it starts
-on). It has god mode, fly and ghost, cat size, game speed, teleport and a console command box. Flying
+on). It has god mode, fly and ghost, cat size, game speed, teleport and an engine command box. Flying
 and size are done by the menu itself, because the game undoes the engine's own `fly`, `ghost` and
-`changesize`. The pages built on `WCModsGame` are in docs/scripting.md, "In the mod menu".
+`changesize`. The pages built on `WCModsGame` are in [scripting.md, In the mod menu](scripting.md#in-the-mod-menu).
 
 wcmods' mouse look and your cat's colours have live settings with Save, and any script can add a page
 (a C++ mod too: `wcmods::menu_page` in [C++ mods](#c-mods) draws the same rows from C++):
@@ -562,8 +592,11 @@ Menu.page("My mod", function(ui)
         settings.count = ui.number("Count", settings.count or 3, { min = 0, max = 10, step = 1 })
     end, { open = false })
     if ui.button("Save", { kind = "primary" }) then Menu.saveJson(SAVE_PATH, settings) end
-end, { group = "mods", order = 40 })
+end, { group = "mods", order = 40, id = "my-mod-settings" })
 ```
+
+`id` tells the page from another mod's with the same title (without it, the title is the id; a page
+whose title another mod already uses gets the title plus its mod's name).
 
 While the menu shows a page, its function runs every frame. Each `ui` call is one row of the page,
 and returns what the player set it to, or the value it was given when they didn't touch it. So one
@@ -794,7 +827,7 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Story.hpp` | quests, fights, and the game's events as one list |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Ui.hpp` | the game's own UI: a tab of your own in its screens (the pause menu, the inventory, the settings), the HUD and its parts, overlays, every control the engine has |
-| `WCMods/UiLua.hpp` | the same for Lua mods, as `WCModsCpp.ui` (docs/scripting.md, "The game's own menus and HUD") |
+| `WCMods/UiLua.hpp` | the same for Lua mods, as `WCModsCpp.ui` ([scripting.md, The game's own menus and HUD](scripting.md#the-games-own-menus-and-hud)) |
 | `WCMods/Mod.hpp` | `wcmods::ModBase` and `WCMODS_MOD` |
 
 The mod from `new --kind cpp`:

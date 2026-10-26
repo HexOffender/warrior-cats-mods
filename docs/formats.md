@@ -1,0 +1,227 @@
+# The files a mod is made of
+
+A mod is a folder under `mods/` with a `mod.json` (its name and what it needs; [SDK.md](SDK.md#mod-folder)
+lists every key) and any of the files below. Clan Mod Studio's Make pages write them; you can also write
+them by hand, and `python wcmods.py new <name> --kind <palette|controls|...>` starts one from a template.
+A mod that only holds these files runs no code. The game's rules behind the numbers are in
+[mechanics/](mechanics/README.md); how each file reaches the game is in the [README](../README.md#clan-mod-studio)'s table.
+
+
+### `palette.json`
+```json
+{ "eyes": { "Amber": "#FFB300", "Sky": ["#001B2E", "#00E5FF"] },
+  "fur": { "3": "#D9380B" }, "pattern": { "0": "#3B2A6B" }, "marking": { "0": "#FFF4E0" } }
+```
+Eye keys are the game's slot names (`python wcmods.py eyes`). Some names don't match the colour
+(`Yellow` is green). One colour keeps the game's shading; a list is spread from pupil to rim. The
+cat creator's eye buttons are recoloured to match. Coat, pattern and marking keys are slots 0–24
+(0–14 natural, 15–24 bright extras); `python wcmods.py tables` lists the game's originals.
+
+A recoloured slot changes every cat with that slot. To add colours instead, give **pattern** and
+**marking** colours slot numbers from 25 up:
+```json
+{ "pattern": { "25": "#ff00cc" }, "marking": { "25": "#00e5ff", "26": "#7cfc00" } }
+```
+The game's colours stay as they are, and only cats set to a new slot wear it (the Your cat page or
+`cats.json` picks it for your cat). Slot numbers are fixed, so several palettes can each add colours,
+and your cat keeps its colour whatever else you turn on. Quick palettes leave alone a palette that
+only adds slots. The game checks these indexes against the colour list's real size, so a new slot
+nobody adds just shows no colour, never a crash.
+
+Coat colours can't take new slots. The game pairs each of its coat colours with paw, ear, nose and
+whisker colours it keeps in its code, and a coat slot past 24 has none, which crashes it. To give
+just your cat a coat colour of its own, use `cats.json`'s `colours`.
+
+#### Ready-made palettes
+
+Ten themed palettes are in [wcmods-examples](https://github.com/HexOffender/wcmods-examples): ThunderClan Forest, RiverClan
+Waters, ShadowClan Night, WindClan Moor, SkyClan Sunset, StarClan Silverpelt, Dark Forest, Leaf-bare
+Frost, Pastel Kits and Vivid Clans (`palette-*`). Add the ones you want from its .zip on the Mods page,
+or with `python wcmods.py add ../wcmods-examples/palette-dark-forest`. Each one recolours coats,
+patterns, markings and eyes. The
+natural coats are a colour grade of the game's own, so every slot keeps its place from light to dark;
+the bright extras and the eyes get the theme's own colours.
+
+To switch quickly, tick palettes under **Quick palettes** on the Palettes page and press **Apply**,
+with the game closed. That turns the ticked palettes on, turns the other palette-only mods off, and
+installs. If the install fails, the previous choice is put back. Mods that hold anything besides a
+palette are never touched.
+
+Pick one theme at a time; two themes together show only one of them. Eyes-only and coats-only
+palettes (Gemstone Eyes, Richer Coats, StarClan Glow Eyes) go on top of a theme, because the themes
+are priority -10. From the command line:
+
+```
+python wcmods.py palette                                     # list the palette mods and which are on
+python wcmods.py palette palette-starclan-silverpelt         # use just that one, and install
+python wcmods.py palette palette-dark-forest gemstone-eyes   # Dark Forest coats with gemstone eyes
+python wcmods.py palette --none                              # back to the game's colours
+```
+
+`tools/make_palettes.py --out ../wcmods-examples` generates them from the game's colours
+(`colour_tables.json` and the eye atlas), into a checkout of wcmods-examples. Edit its themes and run it
+again to change them. It keeps each one's priority and anything else you added to its `mod.json`. A
+palette you've added is your own copy, so add it again to get the new one.
+
+### `cats.json`
+```json
+{ "player": { "colours": { "fur": "#9fb6e0", "paws": "#ffb6c1", "ears": "#ff9aa6", "nose": "#ff7b9a", "whiskers": "#ffffff" },
+              "slots": { "fur": 11, "pattern": 25, "marking": 26 },
+              "scars": { "ear": "notch-left", "eye": "claws-right", "back": "none" } } }
+```
+- **`colours`** go onto your cat's own materials while you play. That covers menus and portraits,
+  and every part is optional. No other cat changes, and any colour works, including paws, ears,
+  nose and whiskers, which have no slots at all. The game sets your cat's colours again whenever it
+  sets your cat up, so the UE4SS script (`WCModsCatLook`) puts yours back twice a second.
+  Uninstalling brings your saved colours back.
+- **`slots`** picks which colour slot your cat wears, written into your save on install, after a
+  backup: `fur` 0–24 (20–24 are the Feral Edition's, which the game swaps without it), `pattern`
+  and `marking` any slot, including new ones a palette adds. Leave a part out to keep your save's.
+- **`scars`** chooses your cat's scars, written into your save on install after a backup: `"none"`
+  for none at all, or each place on its own (leave one out to keep your save's):
+  - `ear`: `torn-right`, `torn-left`, `torn-both`, `notch-right`, `notch-left`, `notch-both`;
+  - `eye` (it shuts the eye): `ring-right`, `ring-left`, `slash-right`, `slash-left`,
+    `claws-right`, `claws-left`, the cat's own right and left;
+  - `back`: `bite-1`, `bite-2`, `claws-1`, `claws-2`, a bite or claw marks in one of two spots;
+  - `chest`: `bite` or `claws`;
+  - `"none"` for no scar there. Numbers work too: a place's scars in this order, from 1.
+
+  Scars show with the game's own Injury system switch on (its Gameplay settings). A boss fight can
+  still give new ones. The studio's **Your cat** page has a Scars card for them.
+
+### `controls.json`
+```json
+{ "keyboard": { "Player_Interact": "F", "Player_Movement_Up": "K" },
+  "keys": { "I": "W", "Escape": "P" },
+  "menus": { "keys": { "Escape": "BackSpace" } },
+  "gamepad": { "Player_Run": "LT" } }
+```
+
+- **`keyboard`** moves an action to a new key: here Interact goes from E to F. Actions are the game's;
+  `python wcmods.py controls` lists them with their keys. The game's axis actions list only one
+  direction, so `Player_Movement_Up` is the back key (S) and `Player_Camera_Right` is the left key.
+- **`keys`** maps a key you press straight to a game key while you play. Use it for keys no action
+  lists: the built-in W, D, Up and Right, or any other key the game uses. `"T": "W"` makes T go
+  forward and W stop. The game key stops working on its own once something stands in for it, unless
+  an action still uses it (then it's a second key for that job). Enter, Space, Escape, Backspace
+  and Tab always keep working.
+- **`menus`** is a separate set of key pairs used only while the game shows a menu with its cursor
+  (the title screen is confirmed; check the pause menu and others with `play --debug`). Here `Escape`
+  opens the pause menu while playing (it sends P) and closes menus (it sends Backspace). In menus the
+  game's own keys keep working too. A letter, digit or Space used here also changes what you type on
+  the name screen, and the build warns about it. A press finishes as it started: the Escape that opens
+  the menu is released as P. Remapping Escape (or Enter, Space, Backspace, Tab) while playing means
+  prompts and dialogue shown during play don't get it; the build warns about that too.
+- **`gamepad`** is kept for planning. The remapper doesn't handle controllers; use Steam Input.
+
+Keys are Unreal key names. Controller buttons also take short names (A/B/X/Y, LB/RB, LT/RT,
+Start). The build checks the names, and `python wcmods.py play` applies keyboard and mouse remaps
+(see the README, [Remapping keys](../README.md#remapping-keys)).
+
+### `mouselook.json`
+```json
+{ "sensitivity": 1.0, "invert": false, "smoothing": 0, "toggle_key": "F6" }
+```
+The game's own camera took no mouse input at release (`DefaultViewportMouseCaptureMode=NoCapture`
+in its settings, so no binding can change that); patch 1.1 (October 2026) added a rough mouse control
+of the camera of its own. Mouse look stays, because it's smoother and adjustable. It's a UE4SS script. While you explore with the cursor hidden, it captures the mouse and moves the camera
+(`BP_AdventureCamera`) itself. It lets go whenever the game shows its cursor. The arrow keys
+and right stick still work. `toggle_key` switches it off and on in game. R (or LB) levels the
+tilt. `pitch_min`/`pitch_max` limit the tilt (default -20/23, the game's own). `smoothing` is how
+long the camera takes to catch up with the mouse, in milliseconds: 0 (the default) follows it at
+once, and the game eases the arrow keys and stick over about 200. `"debug": true` logs what it
+does to `ue4ss\UE4SS.log`, including whether each turn stayed and how even the frames were. The
+`mouse-look` mod and the Mouse look card on the Controls page both edit this file.
+
+How it turns the camera, and how the game's own camera works (`SwtAdventureCameraActor`, its
+tuning keys, splines and the lean while the cat moves), is in
+[reverse-engineering.md, The exploration camera](reverse-engineering.md#the-exploration-camera).
+
+Known issues:
+- With `smoothing` above 0, fast diagonal moves roll the camera slightly, because the spring arm
+  eases turn and tilt together.
+- Mouse look stops when the engine's look input is switched off (`IsLookInputIgnored`), but the
+  game's own camera locks (`EInputRestriction::CameraRotationDisabled`) aren't visible to scripts,
+  so the mouse may still turn the camera where the arrow keys can't.
+
+### `data.json`
+```json
+{ "CombatBaseExperience.csv": { "*": { "BaseExperience": "x2" } },
+  "TuningData.csv": { "Gameplay.Exploration.Player.MoveAndRun.Run.Speed": 450 } }
+```
+Rows are matched by their first column. `"-": ["53"]` removes rows and `"+": [{ "#": "91", ... }]`
+adds them (missing columns stay empty).
+
+### `items.json`
+```json
+{ "items": [ { "id": "MoonHerb", "like": "MediumHealingHerb", "name": "Moon Herb",
+               "description": "Health Recovery (medium). Picked under a full moon.",
+               "recipe": { "Dandelion": 2, "Cotton": 1 }, "give": 3 } ] }
+```
+New herbs, materials and accessory looks: a name, a description and an icon in the inventory, what
+the herb does (one of the game's herb effects), a recipe at the medicine cat's bartering, and some
+to start with. `like` borrows the rest from a game item, and `"recipes"` changes what the game's own
+herbs and accessories cost. An icon or a look can be a PNG of the mod's own or one of the game's
+recoloured (`{"tint": "#a8c4ff"}`, made from your game files at install); `python wcmods.py texture
+<item or accessory>` saves the game's as a PNG to paint over. New looks work for neck, body and paw
+accessories, not head ones. Every key is in [SDK.md, New items](SDK.md#new-items-itemsjson).
+
+### `names.json`
+```json
+{ "prefixes": { "rename": { "Otter": "Moth" }, "add": { "Sparrow": { "like": "Wren" } }, "remove": ["Pigeon"] },
+  "suffixes": { "rename": { "pelt": "coat" }, "add": { "whisper": {} }, "remove": ["face"] },
+  "rogues":   { "rename": { "Chesnut": "Chestnut" }, "add": ["Moss"], "remove": ["Fury"] },
+  "banned":   { "add": ["Lionheart"], "remove": ["Tigerstar"] },
+  "names":    { "Brightheart": "Brightfur" },
+  "cats":     { "player": "Mothheart", "Blaze": { "fixed": "Sparkle" }, "Cedarkit": { "prefix": "Glimmer" } } }
+```
+A clan cat's name is a prefix and a suffix (Otter + paw). The suffix changes with rank: kits are
+-kit, apprentices -paw, leaders -star. `python wcmods.py names` lists every part with your mods'
+changes, and `names --cats` lists the cats in your save. The **Names** page in the studio edits all
+of this. Names are matched by their English text (any case) or ID.
+
+- **`prefixes` / `suffixes`:**
+  - `rename` changes every name with that part: Otterpaw, Otterheart and the rest become Mothpaw,
+    Mothheart.
+  - `add` makes a new part that every combination exists for. `like` copies how often another part
+    is used (each clan for prefixes, each rank for suffixes) and how it's suggested on the name
+    screen. Without it, the new part gets the average.
+  - `remove` stops the game handing a part out; cats that already have it keep their names. The
+    kit, paw and star suffixes are kept, because kits, apprentices and leaders need them.
+  - `weights` sets how often one is used, e.g. `{ "Fern": { "ThunderClan": 0.07 } }`.
+- **`rogues`:** the whole names cats outside the clans get.
+- **`banned`:** names the game never hands out (mostly canon characters). `add` takes any prefix +
+  suffix the game can make, and `"clear": true` empties the list.
+- **`names`:** changes every text that's exactly this name, including the nine canon cameo cats.
+  Some cameo names are also clan names (Brightheart is Bright + heart), so both change. `text`
+  sets any of the game's text by key: `{ "STR_BOT_NAME_1": "..." }`.
+- **`cats`:** renames cats in your save on install, after a backup. Each key picks a cat: `player`,
+  its current name, or its place from `names --cats` (`RiverClan/Warrior/3`). A save holds a game
+  per cat slot you've started; a key means the game you're playing, and a slot first (`1/player`,
+  `1/Blaze`, `1/RiverClan/Warrior/3`) picks a cat in another one. The Names page lists each game's
+  cats under its own heading, the one you're playing first.
+  - A plain name must be a prefix + suffix the game can make, new ones included. Otherwise it's
+    used as a fixed name.
+  - `{ "prefix": "Glimmer" }` gives the cat its own prefix that grows with rank: Glimmerkit, then
+    Glimmerpaw.
+  - `{ "fixed": "Sparkle" }` never changes.
+
+  Story roles (`{THE AGING LEADER}` in dialogue) show the cat cast in them, so renaming that cat
+  renames the role. A cat is skipped if its name changed between building and installing.
+
+  A name the game doesn't have (a new prefix, a fixed name) is text wcmods adds to the game, so the
+  game shows it only while the mod is installed. If a renamed cat shows as `<MISSING STRING TABLE
+  ENTRY>` (dialogue and the den call it "Cat 1"), the save has its new name but the game isn't
+  loading wcmods' pak: check the game folder in Get set up, then Apply again, or put the save back
+  from Backups and repair (the Settings and repair page). The mod menu's Overview says so too.
+
+Renames change the English text only. The other languages translate names, and those translations
+stay. Added names and parts appear in every language with their English text. Added parts get IDs
+made from their name (`STR_CAT_NAME_WCM_SPARROW`), so saved cats keep their names whatever else
+your mods add.
+
+### `save.json`
+```json
+{ "set": { "0/GameplayProgression/Level": 5 },
+  "add": { "0/GameplayProgression/State/Inventory": { "Gameplay.Inventory.Consumable.SmallCatnip": 5 } } }
+```
