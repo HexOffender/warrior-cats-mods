@@ -1040,7 +1040,7 @@ left as it is.
 
 | Call | Does |
 |---|---|
-| `wcmods::ui::tab(L"WBP_GuiScreenPause_C", L"Mods", fn, {id, inset, hide_game_panels, scroll, focus})` | A tab of the mod's own in one of the game's screens, by the screen's class (`WBP_GuiScreenPause_C`, `WBP_GuiPopupInventory_C`, `WBP_GuiPopupGameSettings_C`, `WBP_GuiPopupSettings_C`...): a tab button like the screen's own after them, which the game's tab keys reach (1 and 2, a controller's shoulder buttons), and `fn(page)` filling its page (a column to add rows to) each time the screen opens. The game's panels hide while the page shows and come back after. Gives back the tab's id. Keep the title short, as the game's are |
+| `wcmods::ui::tab(L"WBP_GuiScreenPause_C", L"Mods", fn, {id, inset, hide_game_panels, scroll, focus, mouse})` | A tab of the mod's own in one of the game's screens, by the screen's class (`WBP_GuiScreenPause_C`, `WBP_GuiPopupInventory_C`, `WBP_GuiPopupGameSettings_C`, `WBP_GuiPopupSettings_C`...): a tab button like the screen's own after them, which the game's tab keys reach (1 and 2, a controller's shoulder buttons), and `fn(page)` filling its page (a column to add rows to) each time the screen opens. The game's panels hide while the page shows and come back after. Gives back the tab's id. Keep the title short, as the game's are |
 | `wcmods::ui::tab_page(id)`, `tab_active(id)`, `remove_tab(id)`, `tabs()` | The tab's page while its screen is up (else empty), whether the game's navigation is on it, taking it out, and every tab's id |
 | `wcmods::ui::screen(L"WBP_GuiPopupInventory_C")`, `on_screen(type, fn)` | One of the game's screens while it shows (a base class works too, `GuiPopupCommonSettings`), and `fn(screen, shown)` when a screen of a class comes on the viewport and when it goes, looked for four times a second. `wcmods::screens()` (World.hpp) lists the ones showing |
 | `wcmods::ui::hud()`, `hud_part(L"mcGuiMinimap")` | The HUD while you play (`WBP_GuiHudGameWrc_C`), and one of its parts by name: `mcGuiMinimap`, `mcGuiEnergyBar`, `mcGuiHudCharacter`, `mcGuiQuestObjective`, `mcGuiContextualMenu`, `mcGuiSenseControl`, `mcGuiAreaName`...; its layers `CanvasExploration`, `CanvasCombat` and `CanvasOver` take widgets of your own |
@@ -1080,19 +1080,21 @@ Tab and Enter then move among and use the page's controls. The cat maker's categ
 icon menu (`GuiCircularMenu`), not a tab row, so `tab()` doesn't reach it; its screen and parts are
 still there through `screen()`, `find()` and `add()`.
 
-What `hide_game_panels` hides while the page shows, and puts back as it was after: the screen's own user
-widgets beside the tab row other than its footer and title; the panels a pause screen lists in
-`PausePanels` (General, Controls, Quest, Party, Bonds); and every `GuiPanel` and `GuiScrollGrid` (the
-engine's classes for a screen's pages and grids, `/Script/SwtEngine`) under the tab row's area, through the
-screen's own layout panels however deep (not inside another user widget of the screen's, such as its
-footer, and not inside what a mod added to the area, such as a tab's page), each with what's inside it.
-The page's frame is drawn in the theme's `panel` colour, translucent, so a panel left showing would show
-through: say if one does.
+What `hide_game_panels` hides while the page shows, and puts back as it was after: everything the screen
+put beside the tab row, in the canvas the row sits in: the panels its tabs switch between (the pause
+screen's General, Controls, Quest, Party and Bonds, in a canvas of their own), and what a tab adds there
+(the Bonds tab's cat cards, in plain size boxes), each with what's inside it. The screen's fixtures stay:
+its title, footer and background, told by their names (`CanvasTitle`, `mcGuiFooter`, `CanvasBackground`),
+and so does what a mod added to the area (a tab's page frame). The page's frame is drawn in the theme's
+`panel` colour, translucent, so a panel left showing would show through: say if one does.
 
 The tab's page is built again each time the screen opens, because the game makes its screens anew; keep
-the state the page shows in your own variables, as the example does with the settings. A page's controls
-answer the mouse when the cursor shows (`show_cursor(true)`; the game's menus hide it) and the keyboard
-when focused.
+the state the page shows in your own variables, as the example does with the settings. While the page
+shows, it takes the mouse (`mouse`, on unless you say otherwise): the cursor is shown, the game's input
+mode is set to game-and-UI, as the game's own menus leave it, and the game's fade widgets (which sit over
+its screens with a full-screen picture that would take every click) let the mouse through, so the page's
+controls, its scroll bar and the wheel answer it; the cursor goes back to hidden, the fades take hits
+again and the input is flushed when the page goes. The keyboard goes to the page's first control (`focus`).
 
 The same rules as for scripts keep the game running:
 

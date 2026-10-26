@@ -1222,7 +1222,7 @@ namespace wcmods
         // drawn bigger by a render transform (in the game, a scale box didn't grow one), in a box that reserves
         // the room it's drawn in; a button, text or a layout left as it is (made at the game's size already).
         // With a width, that's the control's room, in the game's units.
-        inline auto scaled(const Widget& control, double width = 0) -> Widget
+        inline auto scaled(Widget control, double width = 0) -> Widget
         {
             UObject* o = control.object();
             float factor = theme().control_scale;
@@ -1239,8 +1239,7 @@ namespace wcmods
                 Widget room = box(width > 0 ? width : wide, tall);
                 room.add(control);
                 control.slot().align(Align::Start, Align::Center);
-                Widget check = control;
-                check.set_pivot(0, 0.5).set_scale(factor, factor);
+                control.set_pivot(0, 0.5).set_scale(factor, factor);
                 return room;
             }
             bool plain = wcmods::is_a(o, STR("/Script/UMG.Button")) || wcmods::is_a(o, STR("/Script/UMG.TextLayoutWidget")) || wcmods::is_a(o, STR("/Script/UMG.PanelWidget"));
@@ -1520,6 +1519,8 @@ namespace wcmods
             bool hide_game_panels{true};     // hide the game's panels while the page shows
             bool scroll{true};               // the page scrolls when it's taller than its room
             bool focus{true};                // give the page the keyboard when it shows (its controls take arrows and Enter)
+            bool mouse{true};                // show the cursor and let the page take the mouse while it shows (the game's
+                                             // menus hide it); clicks, the wheel and the scroll bar work. Put back after
         };
         namespace detail
         {
@@ -1537,6 +1538,8 @@ namespace wcmods
                 Widget page;       // what the builder filled
                 bool active{};
                 std::vector<std::pair<Widget, Visibility>> hidden;   // the game's panels this page hid, and how they were
+                std::vector<std::pair<Widget, Visibility>> passed;   // the game's fade widgets letting the mouse through, and how they were
+                bool cursor_was{};  // whether the game showed the cursor before the page took the mouse
                 int generation{};   // how many times it has been built (a new screen each time)
             };
             struct Tabs
@@ -1579,53 +1582,25 @@ namespace wcmods
             }
             inline auto nav_current(UObject* screen) -> UObject* { return get(screen, L"CurrentNav.CurrentControl").object; }
 
-            // The game's panels a screen switches between, for a page to hide while it shows: the user widgets of
-            // the screen's own beside the tab row (not its footer or title, not the background), the panels a pause
-            // screen lists (PausePanels: General, Controls, Quest, Party, Bonds), and every GuiPanel and
-            // GuiScrollGrid (SwtEngine's classes for a screen's pages and grids) under the tab row's area, through
-            // the screen's own layout panels however deep, each with what's inside it.
+            // What a page covers while it shows, to hide meanwhile: every child of the tab row's area that the screen
+            // put there (the panels its tabs switch between, in whatever it keeps them in; what a tab adds beside
+            // them, as the pause screen's Bonds tab does its cat cards, in plain size boxes), except the tab row and
+            // the screen's fixtures, its title, footer and background, told by their names. What a mod added to the
+            // area (a tab's page frame) is in a widget tree of its own and is left alone.
             inline auto game_panels(UObject* screen, const Widget& tab_row) -> std::vector<Widget>
             {
                 std::vector<Widget> out;
-                auto take = [&](const Widget& w) {
-                    if (!w) return;
-                    for (const Widget& have : out)
-                        if (have == w) return;
-                    out.push_back(w);
-                };
                 Widget area = tab_row.parent();
-                for (const Widget& w : area.children())
-                {
-                    if (w == tab_row) continue;
-                    UObject* o = w.object();
-                    if (!o || !wcmods::is_a(o, STR("/Script/UMG.UserWidget"))) continue;
-                    std::wstring type = w.type();
-                    if (type.find(L"Footer") != std::wstring::npos || type.find(L"Title") != std::wstring::npos) continue;
-                    take(w);
-                }
-                for (Value& v : elements(screen, L"PausePanels"))
-                    if (v.object) take(Widget(v.object));
-                // Panels and grids anywhere under the area, but not in the tab row, and not inside another widget of
-                // the screen's (a panel taken already, its footer: their parts are theirs).
-                std::function<void(const Widget&)> collect = [&](const Widget& w) {
-                    if (!w || w == tab_row) return;
-                    UObject* o = w.object();
-                    if (wcmods::is_a(o, STR("/Script/SwtEngine.GuiPanel")) || wcmods::is_a(o, STR("/Script/SwtEngine.GuiScrollGrid")))
-                    {
-                        take(w);
-                        return;
-                    }
-                    if (wcmods::is_a(o, STR("/Script/UMG.UserWidget"))) return;
-                    for (const Widget& c : w.children()) collect(c);
-                };
                 UObject* tree = get(screen, L"WidgetTree").object;
+                auto fixture = [](const std::wstring& s) {
+                    return s.find(L"Footer") != std::wstring::npos || s.find(L"Title") != std::wstring::npos || s.find(L"Background") != std::wstring::npos;
+                };
                 for (const Widget& w : area.children())
                 {
-                    // Only through the screen's own layout (what its designer put in its widget tree): what a mod added
-                    // to the area, such as a tab's page frame, is left alone with what's in it.
                     UObject* o = w.object();
-                    if (!o || !tree || o->GetOuterPrivate() != tree) continue;
-                    collect(w);
+                    if (!o || w == tab_row || !tree || o->GetOuterPrivate() != tree) continue;
+                    if (fixture(w.name()) || fixture(w.type())) continue;
+                    out.push_back(w);
                 }
                 return out;
             }
@@ -1730,12 +1705,48 @@ namespace wcmods
                 return true;
             }
 
+            // The game's input mode as its own menus leave it: the game and the UI both, the mouse free, with the
+            // cursor kept; `flush` lets go of keys held. The mod menu (wcmods/menu.py) does the same.
+            inline auto game_and_ui_input(bool flush) -> void
+            {
+                UObject* lib = wcmods::object(STR("/Script/UMG.Default__WidgetBlueprintLibrary"));
+                call_reflected(lib, STR("SetInputMode_GameAndUIEx"), [&](Params& p) {
+                    p.set(L"PlayerController", controller());
+                    p.set(L"InWidgetToFocus", static_cast<UObject*>(nullptr));
+                    p.set(L"InMouseLockMode", 0);   // EMouseLockMode::DoNotLock
+                    p.set(L"bHideCursorDuringCapture", false);
+                    p.set(L"bFlushInput", flush);
+                });
+            }
+
             inline auto activate_tab(Tab& t, bool on) -> void
             {
                 if (t.active == on) return;
                 t.active = on;
                 if (on)
                 {
+                    if (t.options.mouse)
+                    {
+                        // The game's menus hide the cursor and leave the mouse to the game: shown, and the UI given its
+                        // share of the input, the page's controls, scroll bar and wheel answer it.
+                        t.cursor_was = get(controller(), L"bShowMouseCursor").boolean();
+                        show_cursor(true);
+                        game_and_ui_input(false);
+                        // The game keeps fade widgets over its screens (WBP_GuiFadeGameMode and the like) whose
+                        // full-screen picture takes every hit meant for a page inside a screen: while the page
+                        // shows, they let the mouse through (drawn as before, no longer hit-tested).
+                        for (UObject* o : wcmods::find_all(STR("UserWidget")))
+                        {
+                            if (!o || o == t.in_screen || class_name(o).find(L"Fade") == std::wstring::npos) continue;
+                            auto in = call_reflected(o, STR("IsInViewport"));
+                            if (!in || !in->get(L"ReturnValue").boolean()) continue;
+                            Widget w(o);
+                            Visibility was = w.visibility();
+                            if (was != Visibility::Visible && was != Visibility::SelfHitTestInvisible) continue;
+                            t.passed.emplace_back(w, was);
+                            w.set_visibility(Visibility::HitTestInvisible);
+                        }
+                    }
                     if (t.options.hide_game_panels)
                     {
                         for (Widget& p : game_panels(t.in_screen, t.button.parent()))
@@ -1767,6 +1778,13 @@ namespace wcmods
                     t.frame.collapse();
                     for (auto& [p, was] : t.hidden) p.set_visibility(was);
                     t.hidden.clear();
+                    if (t.options.mouse)
+                    {
+                        for (auto& [w, was] : t.passed) w.set_visibility(was);
+                        t.passed.clear();
+                        show_cursor(t.cursor_was);
+                        game_and_ui_input(true);
+                    }
                 }
             }
 
@@ -1803,6 +1821,7 @@ namespace wcmods
                             t->button = t->frame = t->page = {};
                             t->active = false;
                             t->hidden.clear();
+                            t->passed.clear();
                             continue;
                         }
                         activate_tab(*t, nav_current(t->in_screen) == t->button.object());

@@ -646,8 +646,29 @@ def test_ui_tab(agent):
         time.sleep(0.3)
         v = _request(agent, "ui_snapshot")["values"]
         assert v["ui.tab.active"] is True, v
-        general = agent.lua(f'local s = {PAUSE} return s.mcGuiPanelGeneral:GetVisibility(), s.mcGuiPanelBonds:GetVisibility()')
-        assert general == [1, 1], general   # the game's panels are collapsed while the page shows
+        drawn = agent.lua(f"""local s = {PAUSE}
+            local function drawn(w)
+                while w and w:IsValid() do local v = w:GetVisibility() if v == 1 or v == 2 then return false end w = w:GetParent() end
+                return true
+            end
+            return drawn(s.mcGuiPanelGeneral), drawn(s.mcGuiPanelBonds)""")
+        assert drawn == [False, False], drawn   # the game's panels are under a collapsed canvas while the page shows
+        # And so is everything else the screen put beside the tab row (the Bonds tab's cat cards, in plain size
+        # boxes, among them), but its title, footer and background.
+        showing = agent.lua(f"""local s = {PAUSE} local area = s.mcGuiTabGeneral:GetParent():GetParent() local tree = s.WidgetTree
+            local out = {{}}
+            for i = 1, area:GetChildrenCount() do
+                local c = area:GetChildAt(i - 1)
+                local o = c:GetOuter()
+                if o and o:IsValid() and o:GetAddress() == tree:GetAddress() and c:GetVisibility() ~= 1 then out[#out+1] = Game.name(c) end
+            end
+            return table.concat(out, ",")""")
+        assert set(showing.split(",")) <= {"HorizontalBox_23", "CanvasTitle", "CanvasBackground", "mcGuiFooter"}, showing
+        # The page has the mouse: the cursor shows, and the game's fade widget over the screens no longer takes hits.
+        mouse = agent.lua("""local fades = {} for _, w in ipairs(FindAllOf("UserWidget") or {}) do
+                if w:IsValid() and w:IsInViewport() and Game.className(w):find("Fade") then fades[#fades+1] = w:GetVisibility() end end
+            return Game.controller().bShowMouseCursor, table.concat(fades, ",")""")
+        assert mouse[0] is True and mouse[1] and set(mouse[1].split(",")) == {"3"}, mouse
         assert agent.lua(f"local p = StaticFindObject({v['ui.page.panel']!r}) return p:IsVisible()") is True
         agent.shot("ui-tab", scale=0.5)
         # The page's controls, used the way the player would (through the widgets themselves).
@@ -666,6 +687,11 @@ def test_ui_tab(agent):
         v = _request(agent, "ui_snapshot")["values"]
         assert v["ui.tab.active"] is False and v["ui.screen.current"] == "mcGuiTabGeneral", v
         assert agent.lua(f'return {PAUSE}.mcGuiPanelGeneral:GetVisibility()') == 3
+        # And the mouse given back: the cursor hidden as the game had it, the fade widget taking hits again.
+        mouse = agent.lua("""local fades = {} for _, w in ipairs(FindAllOf("UserWidget") or {}) do
+                if w:IsValid() and w:IsInViewport() and Game.className(w):find("Fade") then fades[#fades+1] = w:GetVisibility() end end
+            return Game.controller().bShowMouseCursor, table.concat(fades, ",")""")
+        assert mouse[0] is False and "3" not in mouse[1].split(","), mouse
     finally:
         agent.key("BackSpace")
         time.sleep(1)
@@ -687,7 +713,8 @@ def test_ui_lua(agent):
         local s = ui.slider(0.25, 0, 1)
         local row = ui.row({ t, b })
         local col = ui.vbox()
-        ui.add(col, { row, ui.labelled("Switch", c), ui.labelled("Slider", s) })
+        local switch = ui.labelled("Switch", c)
+        ui.add(col, { row, switch, ui.labelled("Slider", s) })
         local canvas = ui.overlay("lua-test", 1200)
         local slot = ui.add(canvas, col)
         ui.place(slot, { position = { 300, 300 }, auto = true })
@@ -696,13 +723,17 @@ def test_ui_lua(agent):
         return { text = ui.text(t), kind = Game.className(t), checked = ui.checked(c), value = ui.value(s),
                  rows = #ui.children(col), found = ui.find(col, Game.name(b)):GetAddress() == b:GetAddress(), vis = vis, w = w, scale = scale,
                  canvas = Game.className(canvas), clicked = ui.clicked(b), changed = ui.changed(s),
-                 theme = ui.theme().text_size, hud = Game.className(ui.hud()), mini = Game.className(ui.hud("mcGuiMinimap")) }
+                 theme = ui.theme().text_size, hud = Game.className(ui.hud()), mini = Game.className(ui.hud("mcGuiMinimap")),
+                 check_scale = c.RenderTransform.Scale.X, check_room = Game.className(ui.children(switch)[2]),
+                 check_tall = ui.children(switch)[2].HeightOverride }
     """)
     assert out["text"] == "From Lua" and out["kind"] == "TextBlock" and out["checked"] is True, out
     assert abs(out["value"] - 0.25) < 0.01 and out["rows"] == 3 and out["found"] is True, out
     assert out["vis"] == "visible" and out["w"] > 100 and out["scale"] > 0 and out["canvas"] == "CanvasPanel", out
     assert out["clicked"] is False and out["changed"] is False and out["theme"] > 0, out
     assert out["hud"] == "WBP_GuiHudGameWrc_C" and out["mini"] == "WBP_GuiHudControlMinimap_C", out
+    # labelled() from Lua goes through the same scaled(): the check box grown by a render transform in a size box.
+    assert abs(out["check_scale"] - 3) < 1e-3 and out["check_room"] == "SizeBox" and abs(out["check_tall"] - 72) < 1e-3, out
     agent.shot("ui-lua-overlay", scale=0.5)
     # A tab from Lua: registered now, its page there once the pause screen is up, filled by the script.
     tab = agent.lua("""

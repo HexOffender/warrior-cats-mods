@@ -645,6 +645,7 @@ namespace wcmods
                 o.hide_game_panels = field_bool(L, 4, "hide_panels", true);
                 o.scroll = field_bool(L, 4, "scroll", true);
                 o.focus = field_bool(L, 4, "focus", true);
+                o.mouse = field_bool(L, 4, "mouse", true);
                 lua_getfield(L, 4, "inset");
                 if (lua_istable(L, -1)) o.inset = margin_at(L, lua_gettop(L));
                 lua_pop(L, 1);
