@@ -15,7 +15,7 @@ engine-level findings (files, objects, the camera, cheats, UE4SS) are in
 | [quests-and-bonding.md](quests-and-bonding.md) | Quest kinds, how dialogue answers are scored, bonding levels and rewards, the story cast |
 | [npcs.md](npcs.md) | How the clans are filled: numbers, sizes, scars, looks, names |
 
-All of it is for Steam build 24847281.
+All of it was made on build 24847281 and rechecked on 26184573, patch 1.1 ([reverse-engineering.md, Game updates](../reverse-engineering.md#game-updates)).
 
 ## The main findings
 

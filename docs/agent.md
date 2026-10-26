@@ -13,13 +13,13 @@ It's made for an AI agent working on this repository (Claude Code runs these com
 people. Every command prints plain text, and the ones that return data take `--json`. The same is a
 Python API, `wcmods.agent.Agent`.
 
-Everything on this page was tried in game on build 24847281 unless it says otherwise.
+Everything on this page was tried in game, made on build 24847281 and rechecked on 26184573, patch 1.1 ([reverse-engineering.md, Game updates](reverse-engineering.md#game-updates)), unless it says otherwise.
 
 ## What it needs
 
 - **The game:** Windows, the game from Steam, and UE4SS (as for any code mod).
 - **A test install:** `agent install` builds your enabled mods with code mods allowed for that one
-  build, so the bridge (docs/scripting.md, "The game bridge") goes in.
+  build, so the bridge ([scripting.md, The game bridge](scripting.md#the-game-bridge)) goes in.
   - **Code runs:** that means the code of every mod that's on runs too (its `section.py` as it
     builds, its scripts in the game), mods you've downloaded included, even with "allow_code_mods"
     off in `wcmods.json`. Turn off any mod you don't trust first, or use `--no-code-mods` (no bridge).
@@ -100,7 +100,7 @@ control that isn't on the page gives an error that lists the controls the page h
 
 ## The mod menu
 
-The menu's pages are drawn by their scripts every frame (docs/SDK.md, "`WCModsMenu`"). Each row tells
+The menu's pages are drawn by their scripts every frame ([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)). Each row tells
 the menu module what it shows. The agent reads those rows rather than pixels, and uses a control by
 handing the page its new value. The page then runs exactly as if the player had clicked:
 
@@ -284,7 +284,7 @@ The suite here has 42 tests:
 - **The mod menu:** `test_menu.py`. Every page draws without an error (with a picture of each), the
   Stats page matches your cat, the Health slider and Heal work, "Hold this time" holds the clock,
   and a Travel spot can be saved and forgotten. It also checks a jump and Back, the Items, Quests,
-  Log, Console and Inspector pages, a script's settings page, and that Insert opens and closes the
+  Log, Lua console and Inspector pages, a script's settings page, and that Insert opens and closes the
   menu.
 
 ## What it changes, and what it won't do

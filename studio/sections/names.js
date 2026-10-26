@@ -55,7 +55,7 @@ export default {
       }
     }
     function toJson() {
-      const o = { _help: "Written by Clan Mod Studio. See README, \"names.json\"." };
+      const o = { _help: "Written by Clan Mod Studio. See docs/formats.md, names.json." };
       for (const [k, v] of Object.entries(spec)) {
         const part = {};
         if (k === "names" || k === "cats") Object.assign(part, v);

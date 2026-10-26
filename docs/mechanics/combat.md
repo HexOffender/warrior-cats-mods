@@ -3,7 +3,8 @@
 How a fight works: stats, the damage formula, hitting and missing, stances, moves, status
 conditions, dilemmas and the AI. Part of the [mechanics notes](README.md).
 
-**Sources:** the formulas were read from the exe's code (build 24847281, addresses below). The
+**Sources:** the formulas were read from the exe's code (build 24847281, addresses below; the game's
+classes and values were found unchanged on 26184573, [reverse-engineering.md, Game updates](../reverse-engineering.md#game-updates)). The
 numbers are from `DataTables/NonAsset`: `TuningData.csv`, `AttackMove.csv`, `CharacterAttacks.csv`,
 `CharacterStatsBase.csv`, `CombatStance.csv`, `CombatDilemmas.csv`, `AICombatChances.csv`,
 `CombatBaseExperience.csv`, `SkirmishRank.csv` and the two `Effects/` tables. Names come from

@@ -13,7 +13,7 @@ What the items do and what they cost. Part of the [mechanics notes](README.md).
 
 `EItemRarity`: Common, Uncommon, Rare, Mythic.
 
-A mod can add herbs and materials of its own with `items.json` (docs/SDK.md, "New items"). What
+A mod can add herbs and materials of its own with `items.json` ([SDK.md, New items](../SDK.md#new-items-itemsjson)). What
 makes an item, and how accessories are listed, is in
 [reverse-engineering.md](../reverse-engineering.md#items).
 

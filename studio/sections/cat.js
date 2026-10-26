@@ -83,7 +83,7 @@ export default {
           player.scars[s.id] = n === 0 ? "none" : (scarName(s.id, n) || n);
         }
       }
-      return { _help: "Written by Clan Mod Studio. See README, \"cats.json\".", ...(Object.keys(player).length ? { player } : {}), ...extra };
+      return { _help: "Written by Clan Mod Studio. See docs/formats.md, cats.json.", ...(Object.keys(player).length ? { player } : {}), ...extra };
     }
     function changed() { target.markDirty(); out.set(toJson()); }
 

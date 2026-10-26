@@ -14,7 +14,7 @@ Three ways in:
 | **Live** | The console in the mod menu and in Clan Mod Studio, and `wcmods lua`, which run Lua in the game while it's open | [The game bridge](#the-game-bridge) |
 
 All of them are code, so they only run with `"allow_code_mods": true` in `wcmods.json`. Every call on
-this page was tried in game on build 24847281 unless it says otherwise. The game's rules and numbers
+this page was tried in game, made on build 24847281 and rechecked on 26184573, patch 1.1 ([reverse-engineering.md, Game updates](reverse-engineering.md#game-updates)), unless it says otherwise. The game's rules and numbers
 are in [mechanics/](mechanics/README.md), and its insides in
 [reverse-engineering.md](reverse-engineering.md).
 
@@ -22,14 +22,14 @@ are in [mechanics/](mechanics/README.md), and its insides in
 
 ```
 mods/my-mod/
-  mod.json            {"name", "description", "enabled", "priority", "version", "author",
-                       "uses": ["mod-menu"] (for its page), "settings_page" (optional, true)}
+  mod.json            {"name", ...; "uses": ["mod-menu"] for its page; "settings_page": false for none}
+                      (every key: SDK.md, Mod folder)
   scripts/main.lua    runs when the game starts
   scripts/*.lua       more files, for require("name") from main.lua
   settings.json       optional: the script's settings
 ```
 
-Install (`python wcmods.py install`, or Install in the studio) with the game closed. wcmods turns each
+Install (`python wcmods.py install`, or Apply to game in the studio) with the game closed. wcmods turns each
 mod's `scripts/` into a UE4SS mod of its own, `WCModsScript_<mod id>`, and writes its `main.lua`. That
 sets up two globals, then runs yours:
 
@@ -417,8 +417,8 @@ allowed, as the rest of this page does.
 
 ## In the mod menu
 
-The mod menu (Insert) builds these pages on `WCModsGame`, in the side bar's groups (docs/SDK.md,
-"`WCModsMenu`"). They're live, and a change applies at once:
+The mod menu (Insert) builds these pages on `WCModsGame`, in the side bar's groups
+([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)). They're live, and a change applies at once:
 
 - **Overview:** your cat's health, stamina and experience as bars, the territory, area, time and
   fresh-kill pile, the quest you follow, quick buttons (Heal, Full stamina, Morning, Evening), the
@@ -444,14 +444,14 @@ The mod menu (Insert) builds these pages on `WCModsGame`, in the side bar's grou
   game instance, the fight, any manager, or a class name. You'll see the class chain, every property
   with its value, and every function. Numbers and switches can be changed in place, object properties
   open with a click, and functions without parameters can be called.
-- **Console** (with code mods allowed): type Lua, Run, and see what it printed and returned.
+- **Lua console** (with code mods allowed): type Lua, Run, and see what it printed and returned.
 
 A script mod with a `settings.json` and no page of its own gets one under Mods: a row for each
 setting (`heal_key` shows as "Heal key"), and Save.
 
 ## The game's own menus and HUD
 
-A C++ mod built with wcmods' SDK (docs/SDK.md, "C++ mods") puts a `WCModsCpp.ui` table into every
+A C++ mod built with wcmods' SDK ([SDK.md, C++ mods](SDK.md#c-mods)) puts a `WCModsCpp.ui` table into every
 script's state as the game starts, so a script can put a tab of its own in the game's pause screen, the
 inventory or the settings, reach the HUD and its parts, keep an overlay, and make, place and style any of
 the engine's controls, with the C++ doing the work. Widgets come back as UE4SS's own objects, so
