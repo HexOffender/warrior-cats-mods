@@ -195,8 +195,13 @@ namespace wcmods
     // the whole of it as of the last save, and this cat's slot in it (GameplayProgression, NPCData...).
     inline auto save_path() -> std::filesystem::path
     {
-        const char* base = std::getenv("LOCALAPPDATA");
-        return std::filesystem::path(base ? base : "") / L"Wrc" / L"Saved" / L"SaveGames" / L"WrcGame.json";
+        // %LOCALAPPDATA% as the wide text it is (the CRT's own copy, freed here), so a user name outside the
+        // ANSI code page comes through whole.
+        wchar_t* base = nullptr;
+        size_t length = 0;
+        std::filesystem::path local = _wdupenv_s(&base, &length, L"LOCALAPPDATA") == 0 && base ? base : L"";
+        std::free(base);
+        return local / L"Wrc" / L"Saved" / L"SaveGames" / L"WrcGame.json";
     }
     inline auto save_file() -> Json
     {

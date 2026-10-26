@@ -398,14 +398,14 @@ namespace wcmods
         auto param(std::wstring_view name) -> Value
         {
             if (!function) return {};
-            for (FProperty* p : function->ForEachProperty())
+            for (FProperty* p : detail::own_properties(function))
                 if (p->GetName() == name) return read_param(p);
             return {};
         }
         auto param(int index) -> Value
         {
             if (!function || index < 0) return {};
-            for (FProperty* p : function->ForEachProperty())
+            for (FProperty* p : detail::own_properties(function))
                 if (index-- == 0) return read_param(p);
             return {};
         }
