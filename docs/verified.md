@@ -71,6 +71,17 @@ folders. `python wcmods.py selftest` checks, against your install:
   colour and made at bartering. Accessories you already have show as an empty slot there, the
   game's own too.
 
+**2026-10-27, accessories' models** (build 26184573, a test mod's two looks for DogCollar, one from an
+OBJ file and one from a GLB, each a ring with a bell: `WCModsModels` installed):
+- A copy of DogCollar's mesh, 1.5 times as big, loaded from wcmods' container and showed on the cat's
+  neck in the collar's look, bending with the neck as the cat groomed.
+- In the inventory, each look worn showed on the picture of the cat in its own shape and colour;
+  switching between the two and back to none left no shape behind.
+- In the forest, the cat wore the ring and bell in its look while walking; the neck's mesh was the
+  mod's (`SK_BellCollar`) and `CustomData` said DogCollar look 3.
+- A mod made on the Items page (a GLB model and a JPEG picture, saved there as a PNG) showed the same
+  way in the forest, the ring in the picture's stripes.
+
 **2026-10-24, scripting:**
 - **The bridge and the commands:** they run Lua in the game; `lua`, `inspect`, `find`, `game` and
   `game types` all work. A script mod loads with its settings, and its events fire.
@@ -125,6 +136,10 @@ folders. `python wcmods.py selftest` checks, against your install:
   as while exploring.
 
 ## Not yet confirmed in game
+
+- **Accessories' models:** on other cats (a mod's cats, NPCs), in the main menu's and the save
+  slots' pictures, on body and paw accessories, and on a brawny or chubby cat (the body-shape morphs
+  are taken from the cat's body, close to the game's own for the Dog Collar, but not seen in game).
 
 - **Scripting:**
   - the studio's Console page;

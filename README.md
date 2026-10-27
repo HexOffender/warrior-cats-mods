@@ -108,7 +108,7 @@ The pages under **Make mods** are for making your own; each edits a file in a mo
 | **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | the game itself (`WCModsRemap`), and the key remapper (`wcmods play`) for movement and the camera; see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert, smoothing | `mouselook.json` | UE4SS script |
 | **Names** | rename, add and remove name prefixes, suffixes and rogue names; the ban list; cameo cats and any shown name; the cats in your save | `names.json` | edited tables and text in the mod pak; cat renames in your save, on install |
-| **Items** | herbs and materials of your own: name, description, icon (the game's, recoloured, or your own PNG), what a herb does, the medicine cat's recipe, some to start with | `items.json` | new rows and textures in the mod pak; starting ones in your save |
+| **Items** | herbs, materials and accessories of your own: name, description, icon (the game's, recoloured, or your own picture), what a herb does, an accessory's look (recoloured or your own picture) and shape (your own model, OBJ or glTF from Blender), the medicine cat's recipe, some to start with | `items.json`, with the pictures and models it names | new rows, textures and meshes in the mod pak; a UE4SS script that puts models on the cats wearing them; starting ones in your save |
 | **Characters** | cats of your own: name, title, colours, eyes, size, where they stand, what they say | `npcs.json` | the [Sandbox mode](https://github.com/HexOffender/wcmods-sandbox) mod, in its sandbox games |
 | **Questlines** | quests with those cats, step by step (talk, pick things up, go somewhere), one after another, with rewards | `quests.json` | the Sandbox mode mod |
 | **Game data** | XP, costs, rewards, speeds and ~440 tuning values, in any runtime table | `data.json` | edited tables in the mod pak |
@@ -313,7 +313,8 @@ this build. See [docs/updating.md](docs/updating.md).
 
 Also: `new <name> --kind palette|controls|files|data|items|names|save|script`, `eyes`,
 `tables`, `names [--cats] [--json]`, `controls [--json]`, `files <pattern>`, `extract <pattern>`,
-`texture <item|accessory|/Game/...>` (one of the game's textures as a PNG),
+`texture <item|accessory|/Game/...>` (one of the game's textures as a PNG), `model <accessory>` (an
+accessory and the cat as OBJ files, to make a model of your own on),
 `build`, `backup`, `restore [name|latest]`, `menu-pages [--zip file]` (add or update the Menu pages
 mod), `cheats [on|off]` (whether Menu pages' cheats start on), `console [on|off]` (the game's `~`
 console). With code mods allowed and the game running:
@@ -345,7 +346,7 @@ and some of these files, which the pages under Make mods write for you:
 | `cats.json` | colours only your cat wears, which slots it wears, its scars |
 | `controls.json`, `mouselook.json` | key and button remaps; mouse look |
 | `data.json` | the game's tables: XP, costs, speeds, tuning values |
-| `items.json` | new herbs, materials and accessory looks |
+| `items.json` | new herbs, materials and accessory looks, with pictures and models of the mod's own |
 | `npcs.json`, `quests.json` | cats of the mod's own, and questlines with them (for Sandbox mode) |
 | `names.json` | cat name parts, rogue names, the ban list, the cats in your save |
 | `save.json` | edits to your save |

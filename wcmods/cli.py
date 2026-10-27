@@ -212,6 +212,31 @@ def cmd_texture(ctx, args):
     print("paint over it and keep the size; a mod's items.json uses it as an item's \"icon\" or an accessory's \"texture\"")
 
 
+def cmd_model(ctx, args):
+    """An accessory and the cat as OBJ files, and the accessory's look, to make a model of your own on."""
+    import io
+    from . import models
+    what = args.what.split("Cosmetic.", 1)[-1]
+    parts = what.split(".")
+    if len(parts) == 3 and parts[2].isdigit():
+        name, look = parts[1], int(parts[2])
+    elif len(parts) == 1:
+        name, look = parts[0], 1
+    else:
+        sys.exit(f"{args.what}: give an accessory and its look, e.g. Neck.DogCollar.1")
+    try:
+        data, _ = models.start_kit(ctx.game, name, look)
+    except ValueError as e:
+        sys.exit(str(e))
+    out = args.out or os.path.join(ctx.root, "vanilla", "models", name)
+    os.makedirs(out, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        z.extractall(out)
+        listed = z.namelist()
+    print(f"{name}: {', '.join(listed)} -> {out}")
+    print("README.txt says how to make a model on them; a mod's items.json uses it as an accessory's \"model\"")
+
+
 def cmd_names(ctx, args):
     from .sdk import BuildContext
     game = names.GameNames(lambda path: ctx.game.read_text(BuildContext.data_path(path)))
@@ -766,7 +791,7 @@ def cmd_studio(ctx, args):
 COMMAND_GROUPS = (
     ("Playing", ("status", "studio", "play", "remap", "cheats", "console", "backup", "restore")),
     ("Mods", ("enable", "disable", "add", "menu-pages", "remove", "install", "uninstall", "build", "pack", "palette")),
-    ("Making mods", ("new", "files", "extract", "texture", "eyes", "names", "controls", "tables")),
+    ("Making mods", ("new", "files", "extract", "texture", "model", "eyes", "names", "controls", "tables")),
     ("In the game", ("lua", "inspect", "find", "game")),
     ("After a game update", (("game build", "which build of the game is installed, what moved, and the mods made for older ones"),
                              ("game signatures check", "check the installed exe against wcmods' signatures"),
@@ -843,6 +868,11 @@ def main(root, argv=None):
     p.add_argument("what")
     p.add_argument("--out", help="where to write the PNG (default vanilla/textures/<name>.png)")
     p.set_defaults(fn=cmd_texture)
+    p = sub.add_parser("model", help="save an accessory (Neck.DogCollar.1) and the cat as OBJ files to make a model of "
+                                     "your own on, with the look as a PNG")
+    p.add_argument("what")
+    p.add_argument("--out", help="the folder to write them to (default vanilla/models/<accessory>/)")
+    p.set_defaults(fn=cmd_model)
     p = sub.add_parser("extract", help="copy game files matching a pattern into vanilla/ to start a files mod")
     p.add_argument("pattern")
     p.add_argument("--out", default="vanilla")

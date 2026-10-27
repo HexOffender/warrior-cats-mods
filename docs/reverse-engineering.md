@@ -175,6 +175,64 @@ an item's icon and a worn collar, both from packages the game hasn't got.
 The game loads it from a soft path (an item's `Icon`) or a soft reference (an accessory's look) like
 one of its own. Nothing else checks it: no asset registry entry was needed.
 
+### Skeletal meshes
+
+Worked out on 2026-10-27 for accessories' models (`wcmods/formats/skelmesh.py`). Every accessory's mesh
+and the cat's body (`SK_CatMaster`) read and write back byte for byte, morph data re-encoded included
+(the selftest checks all 45), and a copy with new geometry renders on a cat in game.
+
+**The package:** an `AnimCurveMetaData` export (6 bytes), one `UMorphTarget` per body-shape morph
+(`SHP_Slim`, `SHP_Brawny`, `SHP_Chubby`, ...; the body has 67, accessories 3 to 7, some head ones
+none), then the mesh. Everything is inline: no `.ubulk`, no streamed LODs.
+
+**The mesh export:** its unversioned properties, a u32 HasGuid, then:
+- `FStripDataFlags` (5, 0), `ImportedBounds` (7 doubles; the properties hold a second copy of the
+  same 56 bytes), the materials (`FSkeletalMaterial`: material, slot name, a u32 "imported name
+  follows" (0), `FMeshUVChannelInfo` (two u32 flags, four floats), then a u32 0), the reference
+  skeleton (56 bones for an accessory, 57 for the body: FName and parent; bind poses as 10 doubles;
+  the name map);
+- a u32 bCooked (1), the LOD count (1 to 5) and each LOD's render data;
+- a 112-byte tail whose bytes 106 and 107 are the in-lined and non-optional LOD counts.
+
+**A LOD:**
+- `FStripDataFlags`, bIsLODCookedOut (0), bInlined (1), `RequiredBones` (u16, every bone);
+- the render sections, each with its own strip flags (5, 1: duplicated vertices left out): material
+  (u16), base index, triangles, bRecomputeTangent, a u8 mask channel, bCastShadow,
+  bVisibleInRayTracing, base vertex, an empty cloth mapping array, `BoneMap` (u16 indices into the
+  skeleton), vertices, MaxBoneInfluences, an i16 -1, a zero GUID and -1 (no clothing), bDisabled;
+- `ActiveBoneIndices` (the bones used and their parents), then `BuffersSize`: exactly the length of
+  the streamed data that follows.
+
+**The streamed data:**
+- strip flags, the index size (u8: 2), the indices as a bulk array (element size, count, data);
+- the position buffer: stride 12, count, then `FVector3f`s;
+- the vertex buffer: strip flags, UV channel count, vertex count, two u32 0s (half-precision UVs,
+  8-bit tangents), the tangents (two `FPackedNormal`s a vertex, TangentX with w 127 and TangentZ with
+  the binormal sign in w) and the UVs (half floats);
+- the skin weights: strip flags, six u32s (variable bones 0, influences 8 in LOD 0 and 4 below, the
+  total, vertices, 16-bit indices 0, 16-bit weights 0), then per vertex the bone indices (into the
+  section's `BoneMap`) and then as many weights, u8s summing to 255; an empty lookup buffer (strip
+  flags, 0, element size 4, count 0);
+- the vertex colours (strip flags, stride 4, count, white in the game's), an empty skin weight
+  profile map, 32 bytes alike in every mesh (six -1s, 1, 0), a u32 "morph data follows";
+- the morph data (`FMorphTargetVertexInfoBuffers`): a u32 array, then per morph its smallest and
+  largest delta (`FVector4f`: xyz the position's, w the normal's), its first batch and batch count,
+  the total, and the position and normal precisions (0.004 cm and 1/2048). The array starts with a
+  10-u32 header per batch of up to 64 moved vertices (data offset in bytes, packed index and position
+  bit widths with a has-normals bit and the count, the first vertex, the position minimums, the
+  normal bit widths and their minimums), then each batch's bit-packed elements from the u32-aligned
+  data offset (index minus the first vertex minus its place in the batch, the position delta and the
+  normal delta, each a quantized integer above the batch's minimum), then 3 zero u32s;
+- 14 bytes alike in every mesh.
+
+The LOD buffers keep the morphs in the order of the mesh's `MorphTargets` property, an array of the
+morph exports' indices in the properties. Each `UMorphTarget` export is its properties (the mesh)
+and HasGuid, strip flags, a u32 1, the LOD count, and per LOD: 1, the vertices it moves, how many
+deltas it had before quantizing, its section indices, bGeneratedByEngine and a 0.
+
+**Space:** centimetres, Z up, the cat facing +Y, triangles clockwise seen from outside (the cross
+product of the edges points in).
+
 ### The save
 
 `%LOCALAPPDATA%\Wrc\Saved\SaveGames\WrcGame.sav`:
@@ -818,6 +876,20 @@ Worked out on 2026-10-24 and verified in game with a new herb and a new material
   - **Head accessories always show look 1**, the list and `AccesoriesTestTags` patched or not: a new
     look 2 for BigLeaf was worn as look 1. None of the game's head accessories has a second look.
     Neck, body and paw accessories show theirs.
+- **New models** (`wcmods/models.py`, `wcmods/lua/models.lua`), worked out on 2026-10-27:
+  - The GUI manager's defaults also hold `AccesoryMeshes`: each accessory's key FName and a soft
+    reference to its skeletal mesh (`SK_StringandBones` for StringBones, `SK_Winter` for
+    WinterWreath, `SK_DandelionsHeaddress` for DandelionHeaddress).
+  - A cat wears accessories on its `SwtAdventureCustomizableMeshComponent`'s `AccSkelNeckComp`,
+    `AccSkelPawComp`, `AccSkelBodyComp` and `AccSkelHeadComp` (skeletal mesh components with no mesh
+    and hidden when nothing's worn). Its `CustomData` names them: `AccesoryNeckId` (a string,
+    "DogCollar", or "None") and `AccesoryNeckVar` (the look), and the same for Paw, Head and Body.
+  - Setting a component's mesh (`SetSkeletalMeshAsset`) to a copy of the accessory's mesh worked: it
+    kept the accessory's material and the look's picture, followed the cat's bones (grooming,
+    walking), and showed in the inventory's picture of the cat too. `RefreshShape` doesn't set the
+    accessories again, so a script has to put the model back after the game does.
+  - UE4SS's `LoadAsset` can't load a mod's mesh (it isn't in the asset registry);
+    `KismetSystemLibrary:LoadAsset_Blocking` with a soft reference made from the path can.
 - **Bartering** shows an accessory you already have as an empty slot: the Cedar Cuff's went blank
   once one was picked up, and a mod's new look does the same.
 - **Take care:** picking up an item with an invalid accessory tag (`Cosmetic.Head.1`) got it into

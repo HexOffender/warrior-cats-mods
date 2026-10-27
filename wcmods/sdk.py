@@ -121,6 +121,7 @@ class BuildContext:
         self._tuning = None     # TuningData.csv as numbers, read once (ctx.tuning)
         self._texts = {}        # language -> {key: text} (ctx.text)
         self._cooked = {}       # cooked table name -> (the game's asset, its rows) (ctx.cooked_table)
+        self._body = None       # the cat's body, read once for the models that need it (ctx.add_mesh)
 
     @property
     def cache_dir(self):
@@ -267,6 +268,25 @@ class BuildContext:
         built = texture.build(self, package, image, like, key)
         self.add_package(path, built["data"], built["chunk_id"], built["imports"], built["shaders"],
                          bulk=built["bulk"], source=source)
+        return package + "." + package.rsplit("/", 1)[-1]
+
+    def add_mesh(self, name, model, like, source="", key=None):
+        """A new skeletal mesh, /Game/WCMods/<name> ("my_mod/SK_MoonCollar"), made from a model (a
+        models.Model, or a function that reads one) as a copy of `like`, one of the game's accessory meshes
+        (its asset path): the same skeleton, material, LODs and body-shape morphs, with the model's shape
+        tied to the cat's body (models.py). `key` is text that changes whenever the model would (a hash of
+        its file); with it, a mesh made before comes from the cache. Returns the new mesh's asset path."""
+        from . import models
+        from .formats import texture
+        package = texture.new_package_name(name)
+        if self._body is None:
+            self._body = models.Body(self.game)
+        built = models.build(self, package, like, model, key if key is not None else repr(model), self._body)
+        if built["farthest"] > models.FAR:
+            self.warn(f"{source or name}: part of the model is {built['farthest']:.0f} cm from the cat; models are in "
+                      "metres, with Y up, around the cat of the start kit (docs/SDK.md, New items)")
+        self.add_package(texture.content_path(package), built["data"], built["chunk_id"], built["imports"],
+                         built["shaders"], source=source)
         return package + "." + package.rsplit("/", 1)[-1]
 
     def add_ue4ss_mod(self, name, files):

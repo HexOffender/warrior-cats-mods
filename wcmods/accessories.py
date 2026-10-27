@@ -98,6 +98,32 @@ def read_variations(data):
     return {name: textures for name, (_, textures) in _lists(pkg, pkg.export_data[off:off + size]).items()}
 
 
+MESH_ENTRY = struct.Struct("<II" + "IIIIi")    # key FName, then a soft reference
+
+
+def read_meshes(data):
+    """{accessory name: its skeletal mesh's asset path} from BP_WrcGuiManager's package bytes: the
+    AccesoryMeshes map, each accessory's key (FName "EAccesoryIds::<name>") and a soft reference."""
+    pkg = ZenPackage(data)
+    off, size = pkg.export(_defaults(pkg))
+    blob, names = pkg.export_data[off:off + size], pkg.names
+    for p in range(0, len(blob) - 4):
+        (count,) = struct.unpack_from("<i", blob, p)
+        if not 8 <= count <= 256 or p + 4 + count * MESH_ENTRY.size > len(blob):
+            continue
+        out = {}
+        for k in range(count):
+            key, num, pk, pn, ak, an, sub = MESH_ENTRY.unpack_from(blob, p + 4 + k * MESH_ENTRY.size)
+            if (num or pn or an or sub or key >= len(names) or pk >= len(names) or ak >= len(names)
+                    or not names[key].startswith(ENUM_PREFIX) or not names[pk].startswith("/Game/")):
+                out = None
+                break
+            out[names[key][len(ENUM_PREFIX):]] = f"{names[pk]}.{names[ak]}"
+        if out:
+            return out
+    raise ValueError("the GUI manager's list of accessory models isn't where expected (the game may have updated)")
+
+
 def add_looks(data, looks):
     """BP_WrcGuiManager's package with new looks: looks are {"name", "var", "path", "tag"}, var the
     look's number (its accessory's next). Each texture goes at the end of its accessory's list and each

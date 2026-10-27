@@ -188,7 +188,10 @@ the herb does (one of the game's herb effects), a recipe at the medicine cat's b
 to start with. `like` borrows the rest from a game item, and `"recipes"` changes what the game's own
 herbs and accessories cost. An icon or a look can be a PNG of the mod's own or one of the game's
 recoloured (`{"tint": "#a8c4ff"}`, made from your game files at install); `python wcmods.py texture
-<item or accessory>` saves the game's as a PNG to paint over. New looks work for neck, body and paw
+<item or accessory>` saves the game's as a PNG to paint over. A new look can also have a shape of its
+own, `"model": "models/my-collar.glb"`: an OBJ or glTF file made in Blender or the like, in metres
+around the cat that `python wcmods.py model <accessory>` saves to start from; it follows the cat's
+body and needs the script loader (UE4SS) in the game. New looks work for neck, body and paw
 accessories, not head ones. Every key is in [SDK.md, New items](SDK.md#new-items-itemsjson).
 
 ### `npcs.json`
