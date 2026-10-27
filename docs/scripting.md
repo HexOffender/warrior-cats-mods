@@ -109,7 +109,7 @@ local Game = require("WCModsGame")   -- a script mod has it as Game already
 | `Game.set(o, "A.B", value)` | Set one; true, or false and why |
 | `Game.call(o, "Function", ...)` | Call a function safely: `true, results...` or `false, error` |
 | `Game.find("Class")`, `Game.findAll("Class")` | One object of a class (kept while it lasts) or all of them; short class names, e.g. `"WrcRoamingEnemy"` |
-| `Game.object(path)`, `Game.load(path)` | An object by its path; load an asset |
+| `Game.object(path)`, `Game.load(path)` | An object by its path; load an asset, a mod's own too (`/Game/WCMods/<mod>/...`, which UE4SS's `LoadAsset` can't find) |
 | `Game.library(name)` | A function library for static calls: `GameplayStatics`, `KismetSystemLibrary`, `KismetMathLibrary`, `BFLSwtQuest`, `QuestManager`, `SaveManager`, … (`Game.libraries`) |
 | `Game.className(o)`, `Game.name(o)`, `Game.fullName(o)`, `Game.parents(o)`, `Game.isA(o, "Class")` | What an object is |
 | `Game.str(v)` | The text of an FString, FName or FText |
@@ -305,7 +305,7 @@ questline on one.
 | Call | Gives or does |
 |---|---|
 | `Game.items.list()`, `Game.items.count(tag)` | Your items, `{["Gameplay.Inventory.Materials.Dandelion"] = 6, …}`: as of the game's last save (it writes `WrcGame.json` each time), with pickups since then from the HUD's pickup messages |
-| `Game.items.drop(tag, count, where)` | A pickup holding the items on the ground by your cat (or at `where`), for the cat to pick up as usual. It returns the actor. Seen in game: the cat collects it with Interact, and `itemPickedUp` fires |
+| `Game.items.drop(tag, count, where)` | A pickup holding the items on the ground by your cat (or below `where`), for the cat to pick up as usual. It returns the actor. A mod's herb or material lies there as its own model (items.json `model`), or as the game's pickup of the herb it's `like`. Seen in game: the cat collects it with Interact, and `itemPickedUp` fires |
 | `Game.items.info(tag)`, `Game.items.type(tag)` | What the quest manager knows of an item (nothing, as shipped: its item stats table is empty), and an item's kind: the quest manager's answer where it has one, else from the tag: `"Consumable"` (herbs and pouches), `"Collectible"` (materials), `"Equipment"` (accessories) or `"Quest"`; nil for a tag that isn't an item's |
 
 **Why items can't be put in the inventory directly:** the inventory is native, with no reflected way to

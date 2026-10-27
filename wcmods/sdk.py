@@ -113,6 +113,7 @@ class BuildContext:
         self.csv_edits = {}     # csv path -> [(edits, section, source)]
         self.table_rows = {}    # cooked table name -> [(row name, values, section, source)]
         self.ue4ss_mods = {}    # name -> ({relpath: bytes}, section)
+        self.ue4ss_shared = {}  # Lua module name -> (text, section)
         self.save_ops = []      # [{"op": ..., "section": ..., ...}]
         self.warnings = []
         self.notes = {}
@@ -270,21 +271,27 @@ class BuildContext:
                          bulk=built["bulk"], source=source)
         return package + "." + package.rsplit("/", 1)[-1]
 
-    def add_mesh(self, name, model, like, source="", key=None):
+    def add_mesh(self, name, model, like, source="", key=None, on_cat=True):
         """A new skeletal mesh, /Game/WCMods/<name> ("my_mod/SK_MoonCollar"), made from a model (a
         models.Model, or a function that reads one) as a copy of `like`, one of the game's accessory meshes
         (its asset path): the same skeleton, material, LODs and body-shape morphs, with the model's shape
-        tied to the cat's body (models.py). `key` is text that changes whenever the model would (a hash of
-        its file); with it, a mesh made before comes from the cache. Returns the new mesh's asset path."""
+        tied to the cat's body (models.py). With on_cat False, the model stays as it is, on the skeleton's
+        root bone, for a mesh shown on its own (a pickup's on the ground). `key` is text that changes
+        whenever the model would (a hash of its file); with it, a mesh made before comes from the cache.
+        Returns the new mesh's asset path."""
         from . import models
         from .formats import texture
         package = texture.new_package_name(name)
-        if self._body is None:
+        if on_cat and self._body is None:
             self._body = models.Body(self.game)
-        built = models.build(self, package, like, model, key if key is not None else repr(model), self._body)
-        if built["farthest"] > models.FAR:
+        built = models.build(self, package, like, model, key if key is not None else repr(model),
+                             self._body if on_cat else None)
+        if on_cat and built["farthest"] > models.FAR:
             self.warn(f"{source or name}: part of the model is {built['farthest']:.0f} cm from the cat; models are in "
                       "metres, with Y up, around the cat of the start kit (docs/SDK.md, New items)")
+        elif not on_cat and built["farthest"] > models.GROUND_FAR:
+            self.warn(f"{source or name}: part of the model is {built['farthest']:.0f} cm from its spot on the ground; "
+                      "models are in metres, with Y up, standing at their origin (docs/SDK.md, New items)")
         self.add_package(texture.content_path(package), built["data"], built["chunk_id"], built["imports"],
                          built["shaders"], source=source)
         return package + "." + package.rsplit("/", 1)[-1]
@@ -300,6 +307,13 @@ class BuildContext:
                 for problem in luacheck.check(text)[:3]:
                     self.warn(f"{name}/{rel}: {problem}")
         self.ue4ss_mods[name] = ({k: v.encode() if isinstance(v, str) else v for k, v in files.items()}, self.current)
+
+    def add_ue4ss_shared(self, name, text):
+        """A Lua module any UE4SS script can require(name), installed beside WCModsGame (ue4ss/Mods/shared/
+        <name>/<name>.lua) when UE4SS is present: data a section gives the shared scripts, say."""
+        for problem in luacheck.check(text)[:3]:
+            self.warn(f"{name}.lua: {problem}")
+        self.ue4ss_shared[name] = (text, self.current)
 
     def edit_save(self, path, value, source=""):
         """Set an existing save value at install time (path like 'Shared/SettingsData/Minimap')."""
@@ -324,11 +338,11 @@ class BuildContext:
         self._snapshot = (dict(self.files), dict(self.packages), dict(self.new_packages),
                           {k: list(v) for k, v in self.csv_edits.items()},
                           {k: list(v) for k, v in self.table_rows.items()}, dict(self.ue4ss_mods),
-                          list(self.save_ops), list(self.warnings))
+                          dict(self.ue4ss_shared), list(self.save_ops), list(self.warnings))
 
     def rollback(self):
         (self.files, self.packages, self.new_packages, self.csv_edits, self.table_rows, self.ue4ss_mods,
-         self.save_ops, self.warnings) = self._snapshot
+         self.ue4ss_shared, self.save_ops, self.warnings) = self._snapshot
         self.notes.pop(self.current, None)
 
     def end(self):

@@ -35,6 +35,12 @@ accessory's own, as a copy) where it sits on the cat. "opacity" below 1 lets the
 script wears it in the cats' eye glass then, in its "glass" colour, as no see-through material the game
 has for cats shows a picture.
 
+A herb's or a material's "model" is how it lies on the ground as a pickup (a script's Game.items.drop,
+a story's reward), with "texture" (a PNG) painted on it and "place" to move, turn and size it there: a
+copy of an accessory's mesh with the model on its root bone, which WCModsGame shows in place of the
+pickup's own when it drops one. The install lists them in the shared Lua module WCModsItems. Without a
+model, a herb lies there as the game's pickup of the herb it's "like", when the game has one.
+
 "like" names a game item to start from (its effect, when it can be used, icon and icon group); the
 item's own keys override those. "recipes" changes what the medicine cat wants for one of the game's
 items, by its tag (with or without "Gameplay.Inventory."). See docs/SDK.md for every key.
@@ -66,6 +72,16 @@ FLAG_KEYS = ("combat", "exploring", "fight_only")
 MODELS_SCRIPT = "WCModsModels"            # the in-game script that puts mods' models on the cats wearing them
 SLOT_FIELDS = {"Head": "Head", "Neck": "Neck", "Body": "Body", "Legs": "Paw"}   # tag slot -> the cat's CustomData
 GLASS = "#ffffff"                         # a see-through accessory's colour, unless it says
+ITEMS_LUA = "WCModsItems"                 # the shared Lua module that tells WCModsGame how mod items look on the ground
+PICKUPS = "Wrc/Content/Gameplay/Blueprints/WorldElements/Pickups/BP_Pickup_"   # the game's pickups, one class each
+# The accessory a model on the ground is a copy of: one LOD, no body-shape morphs, the accessories' usual
+# material (M_Characters_NPC), whose look's texture a picture is a copy of (2048 x 2048, as herbs' are).
+GROUND_LIKE = "SharpBonePiercing"
+GROUND_PLAIN = (200, 196, 186)            # a model on the ground without a picture: a plain light grey
+# Under a model's picture, its ARM (ambient occlusion, roughness, metal) is all-lit, quite rough, not
+# metal, and its normal map flat, in place of the copied accessory's.
+GROUND_ARM = (255, 204, 0)
+FLAT_NORMAL = "/Engine/EngineMaterials/FlatNormal.FlatNormal"
 
 
 class ItemsSection(Section):
@@ -134,6 +150,7 @@ class ItemsSection(Section):
         made = {}                      # tag -> mod id
         looks = []                     # new accessory looks, for the GUI manager's lists
         worn = {}                      # the cat's slot -> accessory -> look number -> {"mesh", "opacity", "glass"}
+        ground = {}                    # tag -> how a herb or a material lies on the ground (WCModsItems)
         # Materials first, so a mod's herb can be made from a material it adds; and the highest priority
         # mod first, so where two add the same item, the later one wins as everywhere else.
         ordered = sorted(((mod, item) for mod, data in reversed(items) for item in data["items"]),
@@ -168,6 +185,18 @@ class ItemsSection(Section):
                             entry["glass"] = [round(c, 4) for c in colors.to_linear(colors.parse(item.get("glass", GLASS)))]
                         worn.setdefault(SLOT_FIELDS[look["slot"]], {}).setdefault(look["name"], {})[look["var"]] = entry
                     game.added[look["name"]] = game.added.get(look["name"], 0) + 1
+                pickup = rows.get("pickup")
+                entry = None
+                if pickup and pickup["model"] is not None:   # a model of its own on the ground
+                    try:
+                        entry = ground_model(ctx, game, mod, item, tag, pickup)
+                    except ValueError as e:                    # the item's still good, only its look there isn't
+                        ctx.warn(f"{mod.id}: {item['id']}: its model on the ground: {e}; it lies there as the game's "
+                                 "pickup instead")
+                if entry is None and pickup and pickup["class"]:
+                    entry = {"class": pickup["class"]}
+                if entry:
+                    ground[tag] = entry
             except ValueError as e:
                 ctx.warn(f"{mod.id}: {item['id']}: {e}")
                 continue
@@ -211,11 +240,47 @@ class ItemsSection(Section):
                          "game's shape, solid")
             ctx.add_ue4ss_mod(MODELS_SCRIPT, {"Scripts/main.lua": models.script(worn), "enabled.txt": ""})
             ctx.note("models", {slot: {name: sorted(v) for name, v in byname.items()} for slot, byname in worn.items()})
+        if ground:
+            if not ctx.cfg.ue4ss_mods_dir and any("mesh" in g for g in ground.values()):
+                ctx.warn("herbs and materials lie on the ground only where a script drops them, and scripts need the "
+                         "script loader (UE4SS), which isn't installed: Get set up on the Mods page adds it")
+            ctx.add_ue4ss_shared(ITEMS_LUA, items_lua(ground))
+            ctx.note("ground", sorted(t[len(TAG_ROOT):] for t, g in ground.items() if "mesh" in g))
         if made:
             lines = ["[/Script/GameplayTags.GameplayTagsList]"]
             lines += [f'GameplayTagList=(Tag="{tag}",DevComment="wcmods: {by}")' for tag, by in sorted(made.items())]
             ctx.add_file(TAGS_INI, ("\r\n".join(lines) + "\r\n").encode("utf-8"), source="items")
             ctx.note("items", sorted(made))
+
+
+def ground_model(ctx, game, mod, item, tag, pickup):
+    """{"mesh", "texture", "arm", "normal", "class"}: a herb's or a material's model on the ground, made
+    into a copy of GROUND_LIKE's mesh, with its picture a copy of that accessory's look."""
+    shape, spot, picture = pickup["model"], item.get("place"), pickup["picture"]
+    name = f"{mod.id}/{tag[len(TAG_ROOT):].split('.')[0]}_{item['id']}"     # a herb and a material may share an id
+    mesh = ctx.add_mesh(f"{name}_SK", lambda: models.place(shape.read(mod, ctx), spot, base=True), game.ground_mesh(),
+                        source=f"{mod.id}: {item['id']}", key=f"{shape.key(mod, ctx)}|{json.dumps(spot, sort_keys=True)}",
+                        on_cat=False)
+    if picture is None:
+        look = game.ground_plain()
+    else:
+        look = ctx.add_texture(f"{name}_BC", lambda: picture.read(mod, ctx), game.ground_look(), source=mod.id,
+                               key=picture.key(mod, ctx))
+    out = {"mesh": mesh, "texture": look, "arm": game.ground_arm(), "normal": FLAT_NORMAL}
+    if pickup["class"]:
+        out["class"] = pickup["class"]
+    return out
+
+
+def items_lua(ground):
+    """The WCModsItems module: {tag: {"mesh", "texture", "arm", "normal", "class"}} for the herbs and
+    materials of the mods that look their own way on the ground (each key there only when it has one)."""
+    from ..sdk import lua_value
+    return ("-- Written by wcmods from your mods' items.json: how their herbs and materials look on the ground.\n"
+            "-- Do not edit; edit items.json (or the Items page in Clan Mod Studio) and install again.\n"
+            "-- WCModsGame's Game.items.drop reads it: a mesh with its picture in place of the pickup's own, or\n"
+            "-- the game's pickup (class) of the herb an item is like.\n"
+            f"return {{ pickups = {lua_value(ground)} }}\n")
 
 
 class Game:
@@ -233,6 +298,8 @@ class Game:
         self.added = {}                # accessory name -> new looks given out so far
         self._looks = None
         self._meshes = None
+        self._pickups = None
+        self._plain = {}               # the shared plain textures under models on the ground: "arm", "look"
 
     def looks(self):
         """The game's looks for each accessory: {name: [texture asset paths]} (variation n is [n - 1])."""
@@ -275,11 +342,10 @@ class Game:
             look = self.look(item, like)
             tag = f"{TAG_ROOT}Cosmetic.{look['slot']}.{look['name']}.{look['var']}"
         else:
-            if item.get("texture") is not None:
-                raise ValueError('only accessories take a "texture" (their look); an item\'s picture is its "icon"')
-            for key in ("model", "place", "opacity", "glass"):
+            for key in ("opacity", "glass"):
                 if item.get(key) is not None:
-                    raise ValueError(f'only accessories take a "{key}": herbs and materials are only seen as their icon')
+                    raise ValueError(f'only accessories take "{key}": a herb\'s or a material\'s model is solid')
+            pickup = self.pickup(item, like)
             tag = f"{TAG_ROOT}{KINDS[kind]}.{item['id']}"
         if tag in self.info or tag in self.use:
             raise ValueError(f"the game already has {tag}; change it with data.json instead")
@@ -293,6 +359,8 @@ class Game:
                 "ItemCategoryColor": _enum("color", item.get("color"), cooked.ITEM_CATEGORY_COLOR,
                                            base.get("ItemCategoryColor", 0))}
         rows = {"info": info}
+        if kind != "accessory":
+            rows["pickup"] = pickup
         if look:
             rows["look"] = look
             if isinstance(info["Icon"], Picture):    # a copy of the accessory's own icon, for its format
@@ -356,6 +424,55 @@ class Game:
         if self._meshes is None:
             self._meshes = accessories.read_meshes(self.ctx.read_game_file(accessories.GUI_MANAGER))
         return self._meshes
+
+    def pickup(self, item, like):
+        """How a herb or a material lies on the ground: {"model" (a ModelFile, or None), "picture" (a Picture,
+        or None), "class"}, class being the game's pickup of the item it's like (BP_Pickup_<class>), if any."""
+        spec = item.get("texture")
+        if spec is not None and not (isinstance(spec, str) and spec.lower().endswith(".png")):
+            raise ValueError('a herb\'s or a material\'s "texture" is a picture (a PNG) painted on its "model"; its '
+                             'picture in the inventory is its "icon"')
+        if item.get("model") is None:
+            for key in ("texture", "place"):
+                if item.get(key) is not None:
+                    raise ValueError(f'"{key}" goes with a "model": how the item looks on the ground')
+        if self._pickups is None:
+            self._pickups = {p[len(PICKUPS):-len(".uasset")] for p in self.ctx.game.find(PICKUPS + "*.uasset")}
+        short = like.rsplit(".", 1)[-1] if like else None
+        return {"model": ModelFile(item["model"]) if item.get("model") else None,
+                "picture": Picture(spec) if spec else None,
+                "class": short if short in self._pickups else None}
+
+    def ground_mesh(self):
+        """The mesh a model on the ground is a copy of (its asset path)."""
+        mesh = self.meshes().get(GROUND_LIKE)
+        if mesh is None:
+            raise ValueError(f"the game has no {GROUND_LIKE} mesh to make a model on the ground from")
+        return mesh
+
+    def ground_look(self):
+        """The texture a model on the ground's picture is a copy of (its asset path)."""
+        looks = self.looks().get(GROUND_LIKE)
+        if not looks:
+            raise ValueError(f"the game has no {GROUND_LIKE} look to make a picture on the ground from")
+        return looks[0]
+
+    def ground_arm(self):
+        """The plain ARM texture under every model on the ground's picture, made once an install."""
+        like = self.ground_look().replace("_BC", "_ARM")
+        if "arm" not in self._plain and not self.ctx.game.exists(texture.content_path(like.split(".", 1)[0])):
+            raise ValueError(f"the game has no {like} to make a plain ARM texture from")
+        return self._shared_plain("arm", "_items/T_GroundARM", GROUND_ARM, like)
+
+    def ground_plain(self):
+        """The one plain grey picture for models on the ground without one of their own."""
+        return self._shared_plain("look", "_items/T_GroundPlain", GROUND_PLAIN, self.ground_look())
+
+    def _shared_plain(self, what, name, rgb, like):
+        if what not in self._plain:
+            plain = Plain(rgb)
+            self._plain[what] = self.ctx.add_texture(name, plain.read, like, source="items", key=plain.key())
+        return self._plain[what]
 
     def icon(self, icon, base):
         if isinstance(icon, dict):                # the game's icon (or another texture) recoloured
@@ -528,6 +645,20 @@ class GameShape:
         if not self.mesh:
             raise ValueError("the game has no model for this accessory to place")
         return models.from_mesh(skelmesh.SkeletalMesh(ctx.read_game_file(texture.content_path(self.mesh.split(".", 1)[0]))))
+
+
+class Plain:
+    """A picture of one colour, for a model without one of its own: as big as the texture it goes in
+    (the accessories' looks are 2048 x 2048), so it isn't scaled up pixel by pixel."""
+
+    def __init__(self, rgb, size=2048):
+        self.rgb, self.size = tuple(rgb), size
+
+    def key(self, mod=None, ctx=None):
+        return "plain|" + ",".join(map(str, self.rgb))
+
+    def read(self, mod=None, ctx=None):
+        return self.size, self.size, bytes(self.rgb + (255,)) * (self.size * self.size)
 
 
 class Recolour:

@@ -914,6 +914,26 @@ Worked out on 2026-10-24 and verified in game with a new herb and a new material
     nothing. The cats' eye glass (`MI_Cat_Cornea`, parent `M_Character_Eyes_Cornea`) is see-through
     on an accessory: `Glass Opacity` and `Glass Color` set how much and its colour, with no picture.
     That's what a see-through look is worn in.
+- **Pickups** (worked out on 2026-10-27 for models on the ground):
+  - The game has 23 pickup classes (`/Game/Gameplay/Blueprints/WorldElements/Pickups/BP_Pickup_<Item>`,
+    herbs and pouches), and uses a few of them for many items: a herb's look on the ground is its
+    class's, whatever its `Reward` holds (Marigold lies as `BP_Pickup_MediumHealingHerb`). Materials
+    have none.
+  - A pickup's components: `RootComponent` (a scene component), `StaticMeshComponent` (the herb,
+    `SM_GPE_<Herb>` with `MI_GPE_<Herb>`, its origin at its base), `InteractionComponent` (a
+    `SwtQuestInteractSphereComponent`, hidden, which the cat collects it by), `EffectComponent`,
+    `UIDComponent` and `PickupHintComponent` (the sparkle, Niagara). The herbs' textures are 2048 x
+    2048 DXT1.
+  - Hiding `StaticMeshComponent` and adding a `SkeletalMeshComponent` with `AddComponentByClass`
+    worked: with no animation it draws its mesh in the reference pose, so a mesh with every vertex on
+    the root bone shows as modelled, at the actor's origin. The cat's whole body showed that way,
+    standing, in the default orange of its material without the game's settings. An accessory's
+    material takes a `MaterialInstanceDynamic` with `LYR1 Albedo` (the picture), `LYR1 ARM` and
+    `LYR1 Normal` (`/Engine/EngineMaterials/FlatNormal` loads), as on a cat.
+  - Collected with Interact, the pickup hides itself (`bHidden`) and its added component with it.
+  - A cat's location is the middle of its body, about 30 cm above the ground, so a pickup dropped
+    there floats; a line traced down from just above finds the ground, but one started inside a rock
+    hits where it starts.
 - **Bartering** shows an accessory you already have as an empty slot: the Cedar Cuff's went blank
   once one was picked up, and a mod's new look does the same.
 - **Take care:** picking up an item with an invalid accessory tag (`Cosmetic.Head.1`) got it into

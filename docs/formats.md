@@ -194,7 +194,10 @@ own, `"model": "models/my-collar.glb"`: an OBJ or glTF file made in Blender or t
 around the cat that `python wcmods.py model <accessory>` saves to start from; it follows the cat's
 body and needs the script loader (UE4SS) in the game. `"place"` moves, turns and scales that shape (or
 the accessory's own) where it sits on the cat, and `"opacity"` below 1 makes it see-through glass of the
-`"glass"` colour. New looks work for neck, body and paw accessories, not head ones. Every key is in [SDK.md, New items](SDK.md#new-items-itemsjson).
+`"glass"` colour. New looks work for neck, body and paw accessories, not head ones. A herb's or a
+material's `"model"` (with a `"texture"` PNG and a `"place"`) is how it lies on the ground when a script
+drops it for the cat to pick up; without one it lies there as the game's pickup of the herb it's
+`like`. Every key is in [SDK.md, New items](SDK.md#new-items-itemsjson).
 
 ### `npcs.json`
 ```json

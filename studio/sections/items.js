@@ -1,6 +1,7 @@
 // Items: herbs, materials and accessories of the mod's own (items.json): a name, a description, an icon (the
 // game's, in other colours, or a picture of your own), what using a herb does, a recipe at the medicine cat's,
-// and for an accessory its look (a picture) and its shape (a model of your own, OBJ or glTF).
+// for an accessory its look (a picture) and its shape (a model of your own, OBJ or glTF), and for a herb or a
+// material how it lies on the ground for the cat to pick up (a model of your own, with its picture).
 // They're real items in the game, everywhere, not only in Sandbox mode. See wcmods/sections/items.py.
 import { listEditor, field, itemChoices, itemSelect } from "../lib/story.js";
 import { shapeDrawing, asPng, placeMesh } from "../lib/shape.js";
@@ -18,6 +19,9 @@ const MOVES = [["forward", "Forward / back", "cm toward the head (- toward the t
 const TURNS = [["yaw", "Turn", "degrees, its front toward the cat's left"], ["pitch", "Tip", "degrees, its front up"],
   ["roll", "Tilt", "degrees, its left side down"]];
 const STRETCH = [["forward", "Length"], ["up", "Height"], ["left", "Width"]];
+// The same for a model on the ground, which has no cat to be relative to: its origin is the pickup's spot.
+const GROUND_MOVES = [["forward", "Forward / back", "cm"], ["up", "Up / down", "cm above the ground"], ["left", "Left / right", "cm"]];
+const GROUND_TURNS = [["yaw", "Turn", "degrees around"], ["pitch", "Tip", "degrees, its front up"], ["roll", "Tilt", "degrees, its left side down"]];
 
 // "Moon Herb" -> "MoonHerb": an item's id is part of its tag, letters and digits.
 function itemId(name, taken) {
@@ -152,12 +156,14 @@ export default {
       const tagNote = el("span", { class: "muted mono", text: tagOf(it) });
 
       const kindSel = el("select", { "aria-label": "Kind", onchange: () => {
+        const wasWorn = kindOf(it) === "accessory";
         it.kind = kindSel.value;
         it.like = (kindSel.value === "material" ? materials : kindSel.value === "accessory" ? wearables : herbs)[0]?.short;
         if (it.kind !== "consumable") { delete it.effect; delete it.group; delete it.type; }
         if (it.kind === "material") delete it.recipe;
+        // A model and picture are worn on an accessory and lie on the ground for a herb or a material.
+        if (wasWorn !== (it.kind === "accessory")) for (const k of ["texture", "model", "place", "opacity", "glass"]) delete it[k];
         if (it.kind === "accessory") { delete it.icon; it.texture = it.texture || { tint: "#a8c4ff" }; }
-        else { delete it.texture; delete it.model; }
         changed(true);
       } }, el("option", { value: "consumable", text: "Herb (it can be used)" }), el("option", { value: "material", text: "Material (for quests and recipes)" }),
         el("option", { value: "accessory", text: "Accessory (something to wear)" }));
@@ -228,6 +234,7 @@ export default {
               : "Its icon, badge and (for a herb) what it does, unless you change them below."))),
       ];
       if (accessory && like) cards.push(lookCard(it, like, redraw), shapeCard(it, like, redraw));
+      if (!accessory) cards.push(groundCard(it, like, redraw));
       cards.push(el("div", { class: "card" }, el("h3", { text: "Icon" }), field("Icon", modeSel), iconExtra, iconPicker));
       if (kind === "consumable") {
         const effect = el("select", { "aria-label": "What using it does", onchange: () => {
@@ -419,9 +426,81 @@ export default {
         field("Shape", sel), row, drawing.element, facts, placeControls(it, paint), picker);
     }
 
+    // ---------- a herb's or a material's look on the ground, where the cat picks it up ----------
+    function groundCard(it, like, redraw) {
+      const drawing = shapeDrawing();
+      const facts = el("p", { class: "muted", style: { fontSize: "0.9rem" } });
+      let cat = null, model = null;
+      const paint = () => { if (cat) drawing.draw({ cat, model: model ? placeMesh(model, it.place, true) : null, ground: true }); };
+      const modelPicker = el("input", { type: "file", accept: MODEL_FILES, hidden: true, onchange: async () => {
+        const f = modelPicker.files[0];
+        modelPicker.value = "";
+        if (!f) return;
+        try {
+          if (!await modReady()) return;
+          toast(`Reading ${f.name}…`);
+          const r = await api.upload(`/mods/${encodeURIComponent(target.current)}/model?name=${encodeURIComponent(`${it.id}-ground`)}&file=${encodeURIComponent(f.name)}&ground=1`,
+            f, "application/octet-stream");
+          it.model = r.path;
+          toast(`Added ${f.name}: ${r.vertices} vertices, ${r.triangles} triangles, ${r.size_cm.join(" x ")} cm.`);
+          changed(); redraw();
+        } catch (e) { toast(e.message, "bad"); }
+      } });
+      const picPicker = picturePicker(`${it.id}-ground`, r => {
+        it.texture = r.path;
+        toast(`Added the picture (${r.width} x ${r.height}). It's scaled to 2048 x 2048 in the game.`);
+        changed(); redraw();
+      });
+      // Without a model, it lies there as the game's pickup of the item it starts from, or as Horsetail.
+      const own = like && like.pickup ? `${like.name}, as the game has it` : "Horsetail (the game has no pickup of its own for it)";
+      const sel = el("select", { "aria-label": "On the ground", onchange: () => {
+        if (sel.value === "game") { delete it.model; delete it.texture; delete it.place; changed(); redraw(); }
+        else { modelPicker.click(); sel.value = it.model ? "own" : "game"; }
+      } },
+      el("option", { value: "game", text: own }),
+      el("option", { value: "own", text: "A model of my own (OBJ or glTF)…" }));
+      sel.value = it.model ? "own" : "game";
+      const cards = [field("On the ground", sel)];
+      if (it.model) {
+        const preview = el("img", { class: "item-icon", alt: `${it.name || "The item"}'s picture` });
+        const previewBox = el("div", { class: "icon-box" }, preview);
+        previewBox.hidden = true;            // shown once there's a picture to show (one in the mod's pictures/)
+        if (isPicture(it.texture)) (async () => {
+          try { preview.src = await api.image(modPath("picture", it.texture)); previewBox.hidden = false; } catch (e) { /* none to show */ }
+        })();
+        cards.push(el("div", { class: "row" }, el("span", { class: "muted mono", text: it.model }),
+          el("button", { class: "btn small", text: "Choose another…", onclick: () => modelPicker.click() })));
+        cards.push(el("div", { class: "cat-head" }, previewBox,
+          el("div", { class: "stack", style: { flex: "1", minWidth: "220px" } },
+            el("div", { class: "row" }, el("span", { class: "lbl", text: "Picture" }),
+              el("span", { class: "muted mono", text: isPicture(it.texture) ? it.texture : "none: plain grey" }),
+              el("button", { class: "btn small", text: isPicture(it.texture) ? "Choose another…" : "Choose a picture…", onclick: () => picPicker.click() }),
+              isPicture(it.texture) ? el("button", { class: "btn ghost small", text: "No picture", onclick: () => { delete it.texture; changed(); redraw(); } }) : null),
+            el("p", { class: "note", text: "Painted on the model through its UVs, as in Blender. PNG, JPEG or WebP; it's solid: see-through parts of the picture show as their colour." }))));
+        cards.push(drawing.element, facts, placeControls(it, paint, GROUND_MOVES, GROUND_TURNS));
+        (async () => {
+          try {
+            cat = (await api.get("/game/cat-shape")).cat;
+            try {
+              model = await api.get(`/mods/${encodeURIComponent(target.current)}/model-view?path=${encodeURIComponent(it.model)}&ground=1`);
+              let low = Infinity;
+              for (let k = 2; k < model.p.length; k += 3) low = Math.min(low, model.p[k]);
+              facts.textContent = `${model.vertices} vertices, ${model.triangles} triangles, ${model.size_cm.join(" x ")} cm; ` +
+                (Math.abs(low) > 2 ? `its bottom is ${Math.round(low)} cm ${low > 0 ? "above" : "below"} the ground as it's made (Up / down below moves it).`
+                  : "it stands on the ground as it's made.");
+            } catch (e) { facts.textContent = `Couldn't read ${it.model}: ${e.message}`; }
+            paint();
+          } catch (e) { facts.textContent = `Couldn't draw it: ${e.message}`; }
+        })();
+      }
+      return el("div", { class: "card" }, el("h3", { text: "On the ground" }),
+        el("p", { class: "note", text: "How it lies in the forest for your cat to pick up: when a script or a story leaves it there (a quest's reward, say). A model of your own, made in Blender or any 3D program and saved as OBJ or glTF (.glb), in metres with Y up (the programs' usual settings), standing on the ground at its origin; the cat beside it shows its size. The game needs the script loader (UE4SS) for this." }),
+        ...cards, modelPicker, picPicker);
+    }
+
     // Sliders (with number boxes) for where it sits: moved, turned, sized and stretched. The drawing above
     // follows them as they move; the game gets it at the next Apply.
-    function placeControls(it, paint) {
+    function placeControls(it, paint, moves = MOVES, turns = TURNS) {
       const box = el("div", { class: "stack" });
       const get = () => it.place || {};
       // The size sliders' own values: one size for all of it, and a stretch each way. items.json keeps a
@@ -465,9 +544,9 @@ export default {
         clear(box);
         const place = get();
         readScale();
-        box.append(el("h4", { text: "Where it sits", style: { margin: "6px 0 0" } }));
-        for (const [key, label, hint] of MOVES) box.append(slider(label, hint, place[key] ?? 0, -25, 25, 0.1, v => set(key, Math.round(v * 100) / 100, 0), null, -100, 100));
-        for (const [key, label, hint] of TURNS) box.append(slider(label, hint, place[key] ?? 0, -180, 180, 1, v => set(key, Math.round(v * 10) / 10, 0), null, -360, 360));
+        box.append(el("h4", { text: moves === MOVES ? "Where it sits" : "Where it lies", style: { margin: "6px 0 0" } }));
+        for (const [key, label, hint] of moves) box.append(slider(label, hint, place[key] ?? 0, -25, 25, 0.1, v => set(key, Math.round(v * 100) / 100, 0), null, -100, 100));
+        for (const [key, label, hint] of turns) box.append(slider(label, hint, place[key] ?? 0, -180, 180, 1, v => set(key, Math.round(v * 10) / 10, 0), null, -360, 360));
         // Each way's size (size times stretch) must stay within 0.01 to 20.
         box.append(slider("Size", "times as big", size, 0.2, 4, 0.01, v => setScale("size", v), null, 0.05, 20));
         for (const [axis, label] of STRETCH) {
