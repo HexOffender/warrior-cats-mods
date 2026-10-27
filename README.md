@@ -218,9 +218,12 @@ and the script works on those:
   the map; with Pounce moved off Space, Space still confirms dialogue. A key that takes an action stops doing
   its own (with Interact on Q, Q no longer tracks scents; the build says so).
 - **A key standing for another** while you play (`keys`) or in menus (`menus`): it does all of that key's
-  jobs there, and none of its own. Menus are every screen but the HUD, the fight menu (Attack, Rest,
-  Herbs, Flee and the moves) included. Letters still type on the name screen, and do the other key's job
-  there too (the build says so).
+  jobs there, and none of its own. Menus are every screen but the HUD: the title and cat maker, the
+  pause menu and its pages, the inventory, the map, photo mode, a fight's menu, and talking to a cat.
+  Letters still type on the name screen, and do the other key's job there too (the build says so).
+  A few screens read some keys directly, like movement: the map's zoom and move (arrows, WASD), photo
+  mode's camera (Shift+WASD, Z/C) and turning the cat in the cat maker (Q/E). A menu pair standing for
+  an arrow key or WASD therefore also goes to the key remapper, which can do those (the build says so).
 
 The game's own prompts and its Controls screen still show its own keys, as those come from the bindings no
 script can change. Seen working in game: Interact on F, Run on G, Scent tracking on the middle mouse button,
@@ -244,8 +247,8 @@ list). A key whose action moved stops doing it, unless another action still uses
 and the wheel can stand in for keys. The pause menu hasn't been checked yet.
 
 When the key remapper has work to do, start the game with `python wcmods.py play` (or the studio's
-Play, or `Play with key remaps.bat`) instead of from Steam. Its "play" test can't see the pause menu yet
-(the game draws its own cursor), so its remaps may apply there too. When everything you remap is done inside
+Play, or `Play with key remaps.bat`) instead of from Steam. Its "play" means no game screen is showing:
+exploring, photo mode, or talking to a cat. When everything you remap is done inside
 the game, they start the game without it:
 
 ```

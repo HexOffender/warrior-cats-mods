@@ -122,7 +122,8 @@ palette you've added is your own copy, so add it again to get the new one.
   move through them with I and K and confirm with F. The game's own keys keep working too. A letter,
   digit or Space used here still types on the name screen and does the other key's job there too, and
   the build warns about it. A press finishes as it started: the Escape that closes a menu is released
-  as Backspace.
+  as Backspace. A pair standing for an arrow key or WASD also goes to the key remapper, as the map
+  zooms and moves on those keys by reading them itself.
 - **`gamepad`** moves an action to a controller button, like `keyboard` (here Run goes to LT). The
   sticks can't move; use Steam Input for them.
 

@@ -141,7 +141,8 @@ def native_plan(merged):
     those keys. "play" applies while you explore (the controller and the HUD), "menu" in the game's menus
     (any other screen). keys says where each changed action is now. rest is controls.json with only what the
     script can't do (movement and the camera, keys standing for them or for keys that send nothing, mouse
-    buttons in menus), for plan and menu_plan.
+    buttons in menus, and menu pairs standing for the arrows or WASD, which the map reads itself), for
+    plan and menu_plan.
     """
     plans = {"play": ({}, {}), "menu": ({}, {})}
     rest, warnings, setters, moved = {}, [], {}, set()
@@ -216,7 +217,13 @@ def native_plan(merged):
                     drop(where, command, s)
                     if where == "play" and command.startswith("Player_"):
                         warnings.append(f"{command} is on {s}, but {s} now stands for {d}; move {command} too")
-            if where == "menu" and (len(s) == 1 or s in DIGITS or s == "SpaceBar"):
+            if where == "menu" and d in AXIS_KEYS:
+                # The map zooms and moves on those keys by reading them itself: only the key remapper can
+                # do that part. With it running it holds the key back, so the game sees d.
+                rest.setdefault("menus", {})[src] = dst
+                warnings.append(f"menus: {s} moves through menus as {d}, but zooming and moving the map with it "
+                                f"needs the key remapper (Play)")
+            elif where == "menu" and (len(s) == 1 or s in DIGITS or s == "SpaceBar"):
                 warnings.append(f"menus: {s} still types on the name screen, and does {d}'s job there too")
     for (where, key), who in sorted(setters.items()):
         # A move shows in both play and menus; say so once.

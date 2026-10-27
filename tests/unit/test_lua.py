@@ -137,8 +137,10 @@ def test_in_game_menu_keys_and_any_command():
     assert menu["drop"]["Player_Show_Inventory"] == ["I"] and menu["drop"]["Player_Pause"] == ["Escape"]
     assert plan["play"]["send"] == {"G": ["Button_Skip"], "P": ["Player_Pause"]}
     assert plan["play"]["drop"] == {"Button_Skip": ["Enter"], "Player_Pause": ["Escape"]}
-    assert rest == {"menus": {"ThumbMouseButton": "BackSpace"}}
-    assert sum("types on the name screen" in w for w in warns) == 3
+    # I and K also go to the key remapper, which alone can zoom and move the map (it reads those keys).
+    assert rest == {"menus": {"I": "Up", "K": "Down", "ThumbMouseButton": "BackSpace"}}
+    assert sum("zooming and moving the map" in w for w in warns) == 2
+    assert sum("types on the name screen" in w for w in warns) == 1
     _, _, warns = keymap.native_plan({"keyboard": {"Player_ShowHideControls": "H"}})
     assert warns == ["keyboard: no key sends Player_ShowHideControls in the game; H will"]
 
