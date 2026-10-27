@@ -132,7 +132,7 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.add_table_row(table, row, values, source=mod.id)` | Add a row to one of those tables; rows from every section are merged and written into a copy of the game's asset (fields in `cooked.SCHEMAS`; text as `cooked.base_text("Moon Herb", key)`) |
 | `ctx.add_texture(name, image, like, source=mod.id, key=None)` | A new texture `/Game/WCMods/<name>`, a copy of the game's texture `like` (same size, format and mips) with the pixels of `image`: `(width, height, RGBA bytes)` as `png.read` gives, or a function that makes them. With `key` (text that changes when the picture does), an install reuses the texture it made last time. Returns the new asset path, for an icon or a look |
 | `ctx.add_mesh(name, model, like, source=mod.id, key=None, on_cat=True)` | A new skeletal mesh `/Game/WCMods/<name>`, a copy of the game's accessory mesh `like` (its skeleton, material, LODs and body-shape morphs) with a model's shape tied to the cat's body: `model` is a `models.Model` (`models.read(name, bytes)` reads OBJ and glTF) or a function that reads one. With `on_cat=False` the model stays as it is, on the skeleton's root bone, for a mesh shown on its own (a pickup's). With `key`, an install reuses the mesh it made last time. Returns the new asset path. Showing it on a cat takes a script (the items section's `WCModsModels`) |
-| `ctx.add_animation(name, read, kind="cat", clip=None, claws=False, source=mod.id, key=None)` | A new animation `/Game/WCMods/<name>` from a glTF file: `read()` gives its `(file name, bytes, sibling)` (`sibling(name)` the bytes of a file a `.gltf` names, or None), `clip` names the animation in it (the first by default), `kind` says whose skeleton (`animations.KINDS`: `"cat"`, `"mouse"`, `"bird"`...). It's a copy of one of the game's sequences on that skeleton with the file's keys in it ([Animations](#animations-animationsjson)); for a cat, `claws` out. With `key`, an install reuses the sequence it made last time. Returns `(asset path, seconds)`; scripts play it with `Game.anims.play` |
+| `ctx.add_animation(name, read, kind="cat", clip=None, claws=False, source=mod.id, key=None)` | A new animation `/Game/WCMods/<name>` from a glTF file: `read()` gives its `(file name, bytes, sibling)` (`sibling(name)` the bytes of a file a `.gltf` names, or None), `clip` names the animation in it (the first by default), `kind` says whose skeleton (`animations.KINDS`: `"cat"`, `"mouse"`, `"bird"`...). It's a copy of one of the game's sequences on that skeleton with the file's keys in it ([Animations](#animations-animationsjson)); for a cat, `claws` out. With `key` (text that changes whenever the file does), an install reuses the sequence it made last time; without it, it's made each install. An animation whose package another has already (mod names or ids that differ only in case, or in `-` and `_`) is refused. Returns `(asset path, seconds)`; scripts play it with `Game.anims.play` |
 | `ctx.add_ue4ss_shared(name, text)` | A Lua module any UE4SS script can `require(name)`, installed beside `WCModsGame` (with UE4SS): data a section gives the shared scripts, as the items section's `WCModsItems` tells `Game.items.drop` how mod items look on the ground |
 | `ctx.add_package(path, data, chunk_id, imports, shaders, bulk=None)` | Add a cooked package the game hasn't got, with its chunk ID, container header entry and `.ubulk`; `add_texture` is the easy way |
 | `ctx.cache_dir` | A folder for work an install can reuse (wcmods' `cache/`; the selftest's stays in its temp folder) |
@@ -451,9 +451,12 @@ Studio writes the file and saves the start kits.
 **How a file becomes the game's:**
 - **Bones:** each of the game's bones moves as the file's bone of the same name (in any case) moves from
   its rest pose (the skin's bind pose, or the node's own transform without one), measured below the
-  armature object. So the frames Blender gives bones of its own, and where the armature object stands,
-  don't matter. Bones the file hasn't got hold the pose they rest in; bones of its own are left out.
-  The rig should be the kit's: a bone the file puts somewhere else turns about the file's place for it.
+  armature object (the node above the game's root bone, or above the file's topmost bone with a game
+  bone's name). So the frames Blender gives bones of its own, where the armature object stands, and
+  bones of the file's own between the game's, don't matter. The game's bones start from the pose the
+  game skins the animal's mesh in, which isn't always its skeleton's (the rabbit's differs on most
+  bones); bones the file hasn't got hold that pose, and bones of its own are left out. The rig should
+  be the kit's: a bone the file puts somewhere else turns about the file's place for it.
 - **Time:** the animation is sampled at the rate the game's own animations of that animal have (30 keys
   a second; the birds' 24), from its first key to its last, up to 60 seconds. Blender's frame rate (24
   by default) doesn't matter.
@@ -463,7 +466,8 @@ Studio writes the file and saves the start kits.
   `A_CatMaster_Meow`; one of each animal's own), its keys replaced with the file's, written with
   Unreal's per-track codec in full floats (`formats/anim.py`). A copy of one of the animals whose
   sequences are all in ACL is moved to the engine's own compression settings. Copies are cached in
-  `cache/animations` under the file's bytes.
+  `cache/animations` under the file's bytes. A broken file leaves only its animation out, with a
+  warning, as does one the Animations page saved before its file was chosen.
 
 **How it plays:** in the slot the animal's AnimBlueprint plays the game's own montages in, over what
 it's doing: the whole body, blended in and out. The animal stays where it is: moving the root moves its

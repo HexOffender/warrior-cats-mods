@@ -303,18 +303,22 @@ class BuildContext:
         `clip` names the animation in it (the first by default). It's for `kind`'s skeleton (animations.KINDS:
         "cat", "mouse"...), as a copy of one of the game's sequences on it (animations.py); for a cat,
         `claws` out. `key` is text that changes whenever the file would (a hash of it); with it, an
-        animation made before comes from the cache. Returns (the new sequence's asset path, its seconds)."""
+        animation made before comes from the cache, and without it, it's made each install. Returns (the
+        new sequence's asset path, its seconds)."""
         from . import animations
         from .formats import texture
         if kind not in animations.KINDS:
             raise ValueError(f"there's no animal {kind!r} to animate (there are {', '.join(animations.KINDS)})")
         package = texture.new_package_name(name)
+        path = texture.content_path(package)
+        if any(p.lower() == path.lower() for p in self.packages):
+            # The game names packages in any case, and new_package_name makes - and the like _.
+            raise ValueError(f"{package} is another animation's already (their mods' names or ids differ only "
+                             "in case, or in - and _)")
         if self._skeletons is None:
             self._skeletons = animations.Game(self.read_game_file)
-        built = animations.build(self, package, kind, read, clip, key if key is not None else repr(read),
-                                 claws=claws, game=self._skeletons)
-        self.add_package(texture.content_path(package), built["data"], built["chunk_id"], built["imports"],
-                         built["shaders"], source=source)
+        built = animations.build(self, package, kind, read, clip, key, claws=claws, game=self._skeletons)
+        self.add_package(path, built["data"], built["chunk_id"], built["imports"], built["shaders"], source=source)
         return package + "." + package.rsplit("/", 1)[-1], built["seconds"]
 
     def add_ue4ss_mod(self, name, files):

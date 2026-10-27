@@ -1543,7 +1543,12 @@ end
 -- loads a soft reference.
 local function loadSequence(path)
     local s = animLoaded[path]
-    if valid(s) then return s end
+    if valid(s) then
+        -- One the game let go of can leave another object where it was: only the same sequence is reused.
+        local ok, full = pcall(function() return s:GetFullName() end)
+        if ok and full == "AnimSequence " .. path then return s end
+        animLoaded[path] = nil
+    end
     if not valid(animLib) then animLib = Game.object("/Script/Engine.Default__KismetSystemLibrary") end
     if not animLib then return nil end
     local ok, obj = pcall(function()

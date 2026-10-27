@@ -747,10 +747,16 @@ def _animations(io):
         gltf = animations.Gltf("cat.glb", glb)
         skeleton = anim.Skeleton(read(animations.asset("cat", "skeleton")))
         seq = anim.AnimSequence(read("/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Stretch_1"))
-        back = animations.retarget(gltf, gltf.clip("A_CatMaster_Stretch_1"), skeleton, seq.track_map, seq.frame_rate())
+        pose = animations.Game(io.read_file).rest("cat")
+        back = animations.retarget(gltf, gltf.clip("A_CatMaster_Stretch_1"), skeleton, seq.track_map, seq.frame_rate(),
+                                   pose)
         worst = max(math.dist(a, b) for (T, _, _), (T2, _, _) in zip(seq.tracks(), back) for a, b in zip(T, T2))
-        kit_ok = worst < 1e-3 and len(gltf.clips) == len(animations.KINDS["cat"]["examples"])
-        detail_kit = f"kit round trip {worst:.1e} cm"
+
+        def apart(a, b):                  # q and -q are the same turn
+            return min(max(abs(x - y) for x, y in zip(a, b)), max(abs(x + y) for x, y in zip(a, b)))
+        turn = max(apart(a, b) for (_, Q, _), (_, Q2, _) in zip(seq.tracks(), back) for a, b in zip(Q, Q2))
+        kit_ok = worst < 1e-3 and turn < 1e-4 and len(gltf.clips) == len(animations.KINDS["cat"]["examples"])
+        detail_kit = f"kit round trip {worst:.1e} cm, {turn:.1e} in rotations"
     except (ValueError, KeyError) as e:
         detail_kit = f"start kit: {e}"
     detail = (f"{sum(codecs.values())} sequences ({', '.join(f'{n} {c}' for c, n in sorted(codecs.items()))}); "

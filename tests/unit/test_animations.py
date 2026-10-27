@@ -52,8 +52,16 @@ class Skel:
 
 
 class Mesh:
-    """A triangle skinned to the spine and the tail, as skelmesh's geometry() gives one (its own bone order)."""
-    bones = [("tail", 1), ("spine", 0)]
+    """A triangle skinned to the spine and the tail, as skelmesh's geometry() gives one (its own bone order),
+    resting with its tail turned round from the skeleton's (as the rabbit's right ear is), in skelmesh's
+    poses (rotation, translation, scale: 10 numbers)."""
+    bones = [("tail", 1), ("spine", -1)]
+
+    def __init__(self):
+        skel = Skel()
+        tail = A._decompose(A._mul(A._trs(*skel.poses[2]), A._trs((0, 0, 0), turn((0, 1, 0), 180), (1, 1, 1))))
+        self.poses = [tuple(tail[1]) + tuple(tail[0]) + (1.0, 1.0, 1.0),
+                      tuple(skel.poses[1][1]) + tuple(skel.poses[1][0]) + (1.0, 1.0, 1.0)]
 
     def geometry(self, lod=0):
         return {"positions": [(0.0, -10.0, 15.0), (0.0, -14.0, 15.0), (1.0, -12.0, 16.0)],
@@ -110,11 +118,14 @@ def test_a_start_kits_animation_comes_back_as_the_same_keys():
     glb = A.write_rig(skel, Mesh(), [("Wag", bones, keys, 30.0)], "test")
     gltf = A.Gltf("kit.glb", glb)
     assert [c["name"] for c in gltf.clips] == ["Wag"] and abs(gltf.clips[0]["seconds"] - 0.2) < 1e-6
-    back = A.retarget(gltf, gltf.clip("Wag"), skel, bones, 30.0)
+    back = A.retarget(gltf, gltf.clip("Wag"), skel, bones, 30.0, A.rest_pose(skel, Mesh()))
     for (T, Q, S), (T2, Q2, S2) in zip(keys, back):
         assert len(T2) == 7
         assert all(close(a, b, 1e-4) for a, b in zip(T, T2))
         assert all(same_rotation(a, b, 1e-6) for a, b in zip(Q, Q2))
+    # The kit rests as the game skins the mesh, so moving from the skeleton's pose would turn the tail round.
+    off = A.retarget(gltf, gltf.clip("Wag"), skel, bones, 30.0)
+    assert not same_rotation(off[2][1][0], keys[2][1][0], 1e-3)
     # The mesh is skinned to the skeleton's bones by name, whatever order the mesh keeps them in.
     doc = json.loads(glb[20:20 + struct.unpack_from("<I", glb, 12)[0]])
     assert doc["skins"][0]["joints"] == [0, 1, 2, 3] and [n["name"] for n in doc["nodes"][:4]] == ["root", "spine", "tail", "Camera_ref"]
@@ -203,6 +214,56 @@ def test_blenders_own_bone_frames_and_an_armature_node_dont_change_the_keys():
         assert all(close(s, (1.0, 1.0, 1.0), 1e-6) for s in S2)
 
 
+def test_the_mesh_rest_pose_is_the_meshs_own_and_the_skeletons_for_bones_it_hasnt_got():
+    skel = Skel()
+    pose = A.rest_pose(skel, Mesh())
+    assert pose[0] == skel.poses[0] and pose[3] == skel.poses[3] and pose[1] == skel.poses[1]
+    assert same_rotation(pose[2][1], A._decompose(A._mul(A._trs(*skel.poses[2]),
+                                                         A._trs((0, 0, 0), turn((0, 1, 0), 180), (1, 1, 1))))[1])
+    # A file that only turns the spine leaves the tail where the mesh rests it.
+    at = A.reference_globals(skel, pose)[1][1]
+    gltf = A.Gltf("one.gltf", gltf_file([{"name": "spine", "translation": list(A.t_from_game(at))}],
+                                        [(0, "rotation", [(0, 0, 0, 1), turn((0, 1, 0), 30)])],
+                                        {0: column(A._inv((A.IDENTITY[0], at)))}, [0.0, 0.5]))
+    back = A.retarget(gltf, gltf.clip(), skel, [0, 1, 2], 30.0, pose)
+    assert all(same_rotation(q, pose[2][1]) for q in back[2][1])
+
+
+def test_a_bone_of_the_files_own_between_the_games_doesnt_move_the_rig():
+    # Blender writes children before parents; a bone the game hasn't got sits between the root and the spine.
+    # The rig's space is the armature's, above the root, so the root turning gives the same keys either way.
+    skel = Skel()
+    ref = A.reference_globals(skel)
+    g_root, g_spine, g_tail = ref[0], ref[1], ref[2]
+    g_extra = A._mul(g_root, A._trs((0, 0, 0), turn((1, 0, 0), 90), (1, 1, 1)))
+
+    def local(parent_g, g):
+        t, q, s = A._decompose(A.m_from_game(A._mul(A._inv(parent_g), g)))
+        return {"translation": list(t), "rotation": list(q), "scale": list(s)}
+
+    def keys(extra):
+        if extra:
+            nodes = [dict(name="tail", **local(g_spine, g_tail)), dict(name="spine", children=[0], **local(g_extra, g_spine)),
+                     dict(name="extra", children=[1], **local(g_root, g_extra)),
+                     dict(name="root", children=[2], **local(A.IDENTITY, g_root)), {"name": "Armature", "children": [3]}]
+            ibms = {0: column(A._inv(g_tail)), 1: column(A._inv(g_spine)), 2: column(A._inv(g_extra)),
+                    3: column(A._inv(g_root))}
+        else:
+            nodes = [dict(name="tail", **local(g_spine, g_tail)), dict(name="spine", children=[0], **local(g_root, g_spine)),
+                     dict(name="root", children=[1], **local(A.IDENTITY, g_root)), {"name": "Armature", "children": [2]}]
+            ibms = {0: column(A._inv(g_tail)), 1: column(A._inv(g_spine)), 2: column(A._inv(g_root))}
+        root = 3 if extra else 2
+        data = gltf_file(nodes, [(root, "rotation", [(0, 0, 0, 1), turn((0, 1, 0), 90)])], ibms, [0.0, 1.0])
+        data = json.loads(data)
+        data["scenes"] = [{"nodes": [len(nodes) - 1]}]
+        gltf = A.Gltf("x.gltf", json.dumps(data).encode())
+        return A.retarget(gltf, gltf.clip(), skel, [0, 1, 2], 30.0)
+    plain, extra = keys(False), keys(True)
+    for (T, Q, _), (T2, Q2, _) in zip(plain, extra):
+        assert all(close(a, b, 1e-4) for a, b in zip(T, T2)) and all(same_rotation(a, b, 1e-6) for a, b in zip(Q, Q2))
+    assert same_rotation(plain[0][1][-1], A.q_swap(turn((0, 1, 0), 90)), 1e-6)    # the root turns about the game's up
+
+
 def test_bones_a_file_leaves_out_hold_their_reference_pose():
     skel = Skel()
     at = A.reference_globals(skel)[1][1]                         # where the game's spine is, as a kit has it
@@ -238,6 +299,13 @@ def test_clips_and_files_that_cant_be_used_are_refused():
     info = A.describe("b.gltf", gltf_file([{"name": "wing"}, {"name": "tail"}], [(0, "rotation", [(0, 0, 0, 1)])],
                                           {0: column(A.IDENTITY), 1: column(A.IDENTITY)}, [0.0]), "cat", skel)
     assert info["matched"] == ["tail"] and info["extra"] == ["wing"] and info["missing"] == ["root", "spine"]
+    # Files broken in ways glTF doesn't allow are refused as files wcmods can't read, not as wcmods' own errors.
+    for broken in ({"asset": {}, "nodes": [{"name": "spine", "children": [7]}]},
+                   {"asset": {}, "nodes": ["spine"]},
+                   {"asset": {}, "nodes": [{"name": 5}], "skins": [{"joints": [3]}]},
+                   {"asset": {}, "nodes": [{"name": "spine", "children": [0]}]}):
+        with pytest.raises(ValueError, match="wcmods can read|loop"):
+            A.describe("x.gltf", json.dumps(broken).encode(), "cat", skel)
 
 
 def test_channels_sample_linear_step_and_cubic():
@@ -296,6 +364,10 @@ def test_imported_package_names_are_written_as_the_game_writes_them():
     assert struct.unpack_from("<2Q", data, 16) == tuple(name_hash(n) for n in names)
     assert struct.unpack_from(">2H", data, 32) == tuple(len(n) for n in names)
     assert data.endswith(b"".join(n.encode() for n in names) + b"\0" * 8)
+    # A name ending in _ and a number keeps the number apart, as Unreal's FNames do ("_02" isn't one).
+    assert [anim._split_number(n) for n in ("/Game/A_2", "/Game/A_02", "/Game/A_0", "A")] == \
+        [("/Game/A", 3), ("/Game/A_02", 0), ("/Game/A", 1), ("A", 0)]
+    assert anim._name_section(["/Game/A_2"]).endswith(b"/Game/A" + struct.pack("<i", 3))
 
 
 def sequence_with(props):
@@ -341,11 +413,16 @@ def test_animations_json_is_read_and_checked(tmp_path):
     wave = {"id": "Wave", "name": "Wave", "file": "animations/wave.glb", "emote": True, "key": "F6"}
     (tmp_path / "animations.json").write_text(json.dumps({"animations": [wave]}))
     assert AnimationsSection().collect(mod, None) == [wave]
-    (tmp_path / "animations.json").write_text(json.dumps({"animations": [wave, wave]}))
-    with pytest.raises(ValueError, match="called Wave too"):
+    (tmp_path / "animations.json").write_text(json.dumps({"animations": [wave, dict(wave, id="wave")]}))
+    with pytest.raises(ValueError, match="called wave too"):
         AnimationsSection().collect(mod, None)
     (tmp_path / "animations.json").write_text(json.dumps({"animations": []}))
     assert AnimationsSection().collect(mod, None) is None
+    # One the Animations page saved before its file was chosen is left out, and the others install.
+    ctx = FakeCtx()
+    (tmp_path / "animations.json").write_text(json.dumps({"animations": [{"id": "New", "name": "New"}, wave]}))
+    assert AnimationsSection().collect(mod, ctx) == [wave]
+    assert ctx.warnings == ["m: New: no file chosen yet, so it's left out"]
 
 
 class FakeCtx:

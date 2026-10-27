@@ -29,7 +29,10 @@ from . import models
 FORMATS = (".glb", ".gltf")
 MAX_FILE = 64 * 1024 * 1024
 MAX_SECONDS = 60
-CACHE_VERSION = 1   # change when the writer or the retargeting changes, so cached sequences are made again
+CACHE_VERSION = 2   # change when the writer or the retargeting changes, so cached sequences are made again
+# What a broken file can make the reading or the retargeting raise besides ValueError: each is the file's fault,
+# so it's a ValueError too, and only that animation is left out.
+BROKEN = (KeyError, IndexError, TypeError, AttributeError, ArithmeticError, RecursionError, struct.error)
 
 _ART = "/Game/Art/Characters/"
 # The skeletons an animation can be for: its label, the skeleton, the mesh the start kit shows, the sequence a
@@ -196,13 +199,13 @@ class Gltf:
         try:
             self.doc, accessor = models.gltf_document(name, data, sibling)
             self._read(accessor)
-        except (struct.error, KeyError, IndexError, TypeError, json.JSONDecodeError, UnicodeDecodeError) as e:
+        except BROKEN + (json.JSONDecodeError, UnicodeDecodeError) as e:
             raise ValueError(f"{os.path.basename(name)} isn't a glTF file wcmods can read ({type(e).__name__}: {e})") from None
 
     def _read(self, accessor):
         doc = self.doc
         nodes = doc.get("nodes", [])
-        self.names = [n.get("name") or f"node {i}" for i, n in enumerate(nodes)]
+        self.names = [str(n.get("name") or f"node {i}") for i, n in enumerate(nodes)]
         self.parent = [None] * len(nodes)
         for i, n in enumerate(nodes):
             for c in n.get("children", []):
@@ -217,17 +220,17 @@ class Gltf:
                                                 n.get("scale", (1, 1, 1)))))
         self.order = []                   # parents before children
         seen = set()
-
-        def visit(i):
-            if i in seen:
-                raise ValueError("the file's nodes loop")
-            seen.add(i)
-            self.order.append(i)
-            for c in nodes[i].get("children", []):
-                visit(c)
         for i in range(len(nodes)):
-            if self.parent[i] is None:
-                visit(i)
+            stack = [i] if self.parent[i] is None else []
+            while stack:
+                j = stack.pop()
+                if j in seen:
+                    raise ValueError("the file's nodes loop")
+                seen.add(j)
+                self.order.append(j)
+                stack.extend(reversed(nodes[j].get("children", [])))
+        if len(seen) != len(nodes):
+            raise ValueError("the file's nodes loop")       # some are only under each other
         # Where each joint was when the mesh was bound to it (the skin's inverse bind matrices), when there's
         # a skin: that's the pose the animation moves from, whatever its nodes' own transforms say.
         self.bind = {}
@@ -364,18 +367,35 @@ def _slerp(a, b, u):
 
 
 # ------------------------------------------------------------------------------------------- retargeting
-def reference_globals(skeleton):
-    """Each game bone's reference pose in model space."""
+def rest_pose(skeleton, mesh):
+    """Each of the skeleton's bones' pose [(translation, rotation, scale)] as the game skins the kind's mesh
+    (formats/skelmesh.py) in: the mesh's own reference pose, which isn't always its skeleton's (the rabbit's
+    differs on most of its bones, with its right ear, eyelid and cheek turned round; the cats' front paws by
+    a centimetre), and the skeleton's for bones the mesh hasn't got."""
+    own = {name.lower(): (v[4:7], v[0:4], v[7:10]) for (name, _), v in zip(mesh.bones, mesh.poses)}
+    return [own.get(name.lower(), pose) for (name, _), pose in zip(skeleton.bones, skeleton.poses)]
+
+
+def reference_globals(skeleton, pose=None):
+    """Each game bone's reference pose (`pose`, or the skeleton's own) in model space."""
     g = []
-    for (name, parent), (t, q, s) in zip(skeleton.bones, skeleton.poses):
+    for (name, parent), (t, q, s) in zip(skeleton.bones, pose or skeleton.poses):
         local = _trs(t, q, s)
         g.append(local if parent < 0 else _mul(g[parent], local))
     return g
 
 
-def retarget(gltf, clip, skeleton, bones, rate):
+def _depth(gltf, i):
+    d, p = 0, gltf.parent[i]
+    while p is not None:
+        d, p = d + 1, gltf.parent[p]
+    return d
+
+
+def retarget(gltf, clip, skeleton, bones, rate, pose=None):
     """The clip's keys for the skeleton's `bones` (indexes), at `rate` keys a second: [(translations,
-    rotations, scales)] a bone, relative to its parent in the game's space."""
+    rotations, scales)] a bone, relative to its parent in the game's space. `pose` is the pose the game's
+    bones move from (rest_pose; the skeleton's own by default)."""
     if clip["seconds"] > MAX_SECONDS:
         raise ValueError(f"the animation is {clip['seconds']:.1f} s long; an animation can be up to {MAX_SECONDS} s")
     n = max(2, int(round(clip["seconds"] * rate)) + 1)
@@ -383,25 +403,21 @@ def retarget(gltf, clip, skeleton, bones, rate):
     if not joints:
         raise ValueError("none of the file's bones has the name of one of the game's (export the start kit's "
                          "armature, keeping its bones' names)")
+    pose = pose or skeleton.poses
     rest = gltf._rest_globals()
-    ref = reference_globals(skeleton)
-    ref_local = [_trs(*pose) for pose in skeleton.poses]
-    # The rig's own space: the node above its top matched bone (Blender's armature object), at rest. A
-    # joint's motion from its rest pose, in that space, is put on the game's bone at its reference pose:
-    # G'(t) = R^-1 G(t) G(rest)^-1 R G'(ref). So where the armature object stands, and how it's turned
-    # and sized, doesn't matter; moving it in the animation moves the whole animal.
-    matched = set(joints.values())
-    top = next(iter(matched))
-    while gltf.parent[top] is not None and gltf.parent[top] in matched:
-        top = gltf.parent[top]
+    ref = reference_globals(skeleton, pose)
+    ref_local = [_trs(*p) for p in pose]
+    # The rig's own space: the node above the game's root bone, or above the file's topmost bone with a
+    # game bone's name (Blender's armature object), at rest. A joint's motion from its rest pose, in that
+    # space, is put on the game's bone at its reference pose: G'(t) = R^-1 G(t) G(rest)^-1 R G'(ref). So
+    # where the armature object stands, and how it's turned and sized, doesn't matter; moving it in the
+    # animation moves the whole animal.
+    root = next((b for b, (_, parent) in enumerate(skeleton.bones) if parent < 0), 0)
+    top = joints.get(root)
+    if top is None:
+        top = min(joints.values(), key=lambda i: (_depth(gltf, i), i))
     above = gltf.parent[top]
-    rig = IDENTITY
-    if above is not None:
-        rig = gltf.rest[above]
-        p = gltf.parent[above]
-        while p is not None:
-            rig = _mul(gltf.rest[p], rig)
-            p = gltf.parent[p]
+    rig = IDENTITY if above is None else rest[above]
     unrig = _inv(rig)
     moved = {b: _mul(_inv(rest[j]), _mul(rig, ref[b])) for b, j in joints.items()}
     out = {b: ([], [], []) for b in bones}
@@ -432,17 +448,20 @@ def describe(name, data, kind, skeleton, sibling=None):
     """What a file holds for a kind's skeleton: {"clips": [{"name", "seconds"}], "matched": the game's bones it
     has, "missing": the game's bones it hasn't got, "extra": its bones the game hasn't got}."""
     gltf = Gltf(name, data, sibling)
-    joints = gltf.joints(skeleton)
-    keyed = set(track_bones(skeleton))
-    animated = {c[0] for clip in gltf.clips for c in clip["channels"]}
-    names = {skeleton.bones[b][0].lower() for b in joints}
-    skin_joints = {j for skin in gltf.doc.get("skins", []) for j in skin.get("joints", [])}
-    candidates = skin_joints or animated
-    return {"kind": kind,
-            "clips": [{"name": c["name"], "seconds": round(c["seconds"], 3)} for c in gltf.clips],
-            "matched": sorted(skeleton.bones[b][0] for b in joints if b in keyed),
-            "missing": sorted(skeleton.bones[b][0] for b in keyed if b not in joints),
-            "extra": sorted(gltf.names[i] for i in candidates if gltf.names[i].lower() not in names)}
+    try:
+        joints = gltf.joints(skeleton)
+        keyed = set(track_bones(skeleton))
+        animated = {c[0] for clip in gltf.clips for c in clip["channels"]}
+        names = {skeleton.bones[b][0].lower() for b in joints}
+        skin_joints = {j for skin in gltf.doc.get("skins", []) for j in skin.get("joints", [])}
+        candidates = skin_joints or animated
+        return {"kind": kind,
+                "clips": [{"name": c["name"], "seconds": round(c["seconds"], 3)} for c in gltf.clips],
+                "matched": sorted(skeleton.bones[b][0] for b in joints if b in keyed),
+                "missing": sorted(skeleton.bones[b][0] for b in keyed if b not in joints),
+                "extra": sorted(gltf.names[i] for i in candidates if gltf.names[i].lower() not in names)}
+    except BROKEN as e:
+        raise ValueError(f"{os.path.basename(name)} isn't a glTF file wcmods can read ({type(e).__name__}: {e})") from None
 
 
 # ----------------------------------------------------------------------------------------------- building
@@ -450,7 +469,7 @@ class Game:
     """The game's skeletons and templates, read once an install and only when an animation needs them."""
 
     def __init__(self, read):
-        self.read, self._skeletons = read, {}
+        self.read, self._skeletons, self._rests = read, {}, {}
 
     def skeleton(self, kind):
         from .formats import anim, texture
@@ -458,12 +477,21 @@ class Game:
             self._skeletons[kind] = anim.Skeleton(self.read(texture.content_path(asset(kind, "skeleton"))))
         return self._skeletons[kind]
 
+    def rest(self, kind):
+        """The pose the game skins `kind`'s mesh in (rest_pose)."""
+        from .formats import skelmesh, texture
+        if kind not in self._rests:
+            mesh = skelmesh.SkeletalMesh(self.read(texture.content_path(asset(kind, "mesh"))), morphs=False)
+            self._rests[kind] = rest_pose(self.skeleton(kind), mesh)
+        return self._rests[kind]
+
 
 def build(ctx, package, kind, read_file, clip, key, claws=False, game=None):
     """{"data", "chunk_id", "imports", "shaders", "seconds"} for a new sequence `package`: the clip `clip`
     (a name, or None for the first) of the glTF file read_file() gives as (name, data, sibling), for a kind
-    of animal, in a copy of the kind's template. Kept in cache/animations under the template's bytes and
-    `key` (text that changes whenever the file would), so an install doesn't make it twice."""
+    of animal, in a copy of the kind's template. With `key` (text that changes whenever the file would) it's
+    kept in cache/animations under that and the template's bytes, so an install doesn't make it twice;
+    without, it's made each time."""
     from .formats import anim, texture
     template_path = texture.content_path(asset(kind, "template"))
     template = ctx.read_game_file(template_path)
@@ -472,7 +500,7 @@ def build(ctx, package, kind, read_file, clip, key, claws=False, game=None):
     cache = os.path.join(ctx.cache_dir, "animations")
     found, meta = os.path.join(cache, digest + ".uasset"), os.path.join(cache, digest + ".json")
     imports, shaders = ctx.game.io.container_header().entry_for(texture.package_id(asset(kind, "template")))
-    if os.path.isfile(found) and os.path.isfile(meta):
+    if key is not None and os.path.isfile(found) and os.path.isfile(meta):
         with open(found, "rb") as f:
             data = f.read()
         with open(meta, encoding="utf-8") as f:
@@ -484,10 +512,12 @@ def build(ctx, package, kind, read_file, clip, key, claws=False, game=None):
         skeleton = game.skeleton(kind)
         seq = anim.AnimSequence(template)
         name, file_data, sibling = read_file()
-        gltf = Gltf(name, file_data, sibling)
-        chosen = gltf.clip(clip)
-        bones = track_bones(skeleton)
-        keys = retarget(gltf, chosen, skeleton, bones, seq.frame_rate())
+        bones, pose = track_bones(skeleton), game.rest(kind)
+        try:
+            gltf = Gltf(name, file_data, sibling)
+            keys = retarget(gltf, gltf.clip(clip), skeleton, bones, seq.frame_rate(), pose)
+        except BROKEN as e:
+            raise ValueError(f"{os.path.basename(name)} has something in it wcmods can't read ({type(e).__name__}: {e})") from None
         new_imports = seq.use_unreal_codec(imports)
         if seq.codec == "acl" or kind != "cat":
             seq.clear_curves()                  # an ACL template's curves are in ACL; the animals' are faces
@@ -498,11 +528,12 @@ def build(ctx, package, kind, read_file, clip, key, claws=False, game=None):
         seq.rename(package, package.rsplit("/", 1)[-1])
         data = seq.bytes()
         info = {"seconds": round(seq.length, 4), "imports": [f"{i:016x}" for i in new_imports]}
-        os.makedirs(cache, exist_ok=True)
-        for path, content in ((meta, json.dumps(info).encode()), (found, data)):
-            with open(path + ".tmp", "wb") as f:
-                f.write(content)
-            os.replace(path + ".tmp", path)
+        if key is not None:
+            os.makedirs(cache, exist_ok=True)
+            for path, content in ((meta, json.dumps(info).encode()), (found, data)):
+                with open(path + ".tmp", "wb") as f:
+                    f.write(content)
+                os.replace(path + ".tmp", path)
     return {"data": data, "chunk_id": texture.chunk_id(texture.package_id(package), texture.CHUNK_EXPORT_BUNDLE),
             "imports": [int(i, 16) for i in info["imports"]], "shaders": shaders, "seconds": info["seconds"]}
 
@@ -576,8 +607,9 @@ def start_kit(game, kind):
 
 
 def write_rig(skeleton, mesh, examples, name):
-    """A .glb: the skeleton's bones as nodes (named as the game names them, at their reference pose), the
-    mesh's first LOD skinned to them, and each example [(name, track table, tracks, rate)] as an animation."""
+    """A .glb: the skeleton's bones as nodes (named as the game names them, in the pose the game skins the
+    mesh in: rest_pose), the mesh's first LOD skinned to them, and each example [(name, track table, tracks,
+    rate)] as an animation."""
     buf = bytearray()
     views, accessors = [], []
 
@@ -598,15 +630,16 @@ def write_rig(skeleton, mesh, examples, name):
         accessors.append(acc)
         return len(accessors) - 1
 
+    pose = rest_pose(skeleton, mesh)
     nodes = []
-    for (bone, parent), (t, q, s) in zip(skeleton.bones, skeleton.poses):
+    for (bone, parent), (t, q, s) in zip(skeleton.bones, pose):
         nodes.append({"name": bone, "translation": list(t_from_game(t)), "rotation": list(q_swap(q)),
                       "scale": list(s_swap(s))})
     for b, (_, parent) in enumerate(skeleton.bones):
         if parent >= 0:
             nodes[parent].setdefault("children", []).append(b)
     roots = [b for b, (_, parent) in enumerate(skeleton.bones) if parent < 0]
-    ref = reference_globals(skeleton)
+    ref = reference_globals(skeleton, pose)
     ibms = []
     for g in ref:
         m, t = m_from_game(_inv(g))           # column-major, as glTF keeps matrices

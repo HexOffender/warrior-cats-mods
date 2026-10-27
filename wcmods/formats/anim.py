@@ -167,10 +167,10 @@ class Skeleton:
             return None
         bones = []
         for k in range(n):
-            ni, _, parent = struct.unpack_from("<IIi", ex, p + 4 + 12 * k)
+            ni, number, parent = struct.unpack_from("<IIi", ex, p + 4 + 12 * k)
             if ni >= len(names) or not -1 <= parent < k or (k == 0) != (parent == -1):
                 return None
-            bones.append((names[ni], parent))
+            bones.append((names[ni] + (f"_{number - 1}" if number else ""), parent))
         q = p + 4 + 12 * n
         if struct.unpack_from("<i", ex, q)[0] != n:
             return None
@@ -594,7 +594,8 @@ class AnimSequence:
         for n in lengths:
             names.append(raw[p:p + n].decode("ascii"))
             p += n
-        return names
+        numbers = struct.unpack_from(f"<{count}i", raw, p)
+        return [n + (f"_{k - 1}" if k else "") for n, k in zip(names, numbers)]
 
     def rename(self, package_name, object_name):
         """Name it /Game/...: the package's and the sequence's names, and the export's public hash."""
@@ -640,11 +641,21 @@ class AnimSequence:
 
 def _name_section(names):
     """An ImportedPackageNames section: a name batch (count, string bytes, hash version, the names' hashes,
-    big-endian lengths, the strings), then an i32 number (0) per name."""
+    big-endian lengths, the strings), then each name's i32 number."""
     if not names:
         return struct.pack("<I", 0)
-    strings = b"".join(n.encode("ascii") for n in names)
+    split = [_split_number(n) for n in names]
+    strings = b"".join(n.encode("ascii") for n, _ in split)
     return (struct.pack("<IIQ", len(names), len(strings), NAME_HASH_VERSION)
-            + struct.pack(f"<{len(names)}Q", *(name_hash(n) for n in names))
-            + struct.pack(f">{len(names)}H", *(len(n) for n in names)) + strings
-            + b"\0" * (4 * len(names)))
+            + struct.pack(f"<{len(names)}Q", *(name_hash(n) for n, _ in split))
+            + struct.pack(f">{len(names)}H", *(len(n) for n, _ in split)) + strings
+            + struct.pack(f"<{len(names)}i", *(k for _, k in split)))
+
+
+def _split_number(name):
+    """An FName's text and number as Unreal splits them: "A_2" is ("A", 3); "A_02" and "A" are themselves, 0."""
+    base, _, digits = name.rpartition("_")
+    if base and digits.isascii() and digits.isdigit() and (digits == "0" or digits[0] != "0") \
+            and int(digits) < 2 ** 31 - 1:
+        return base, int(digits) + 1
+    return name, 0

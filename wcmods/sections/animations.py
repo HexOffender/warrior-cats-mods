@@ -60,16 +60,20 @@ class AnimationsSection(Section):
         raw = self.read_json(mod, "animations.json")
         if not isinstance(raw, dict) or not isinstance(raw.get("animations", []), list):
             raise ValueError('animations.json should be an object: {"animations": [...]}')
-        found = raw.get("animations", [])
-        seen = set()
-        for i, a in enumerate(found):
+        found, seen = [], set()
+        for i, a in enumerate(raw.get("animations", [])):
             what = f"animations.json: animation {i + 1}"
             if not isinstance(a, dict):
                 raise ValueError(f"{what} should be an object")
+            if not a.get("file") and isinstance(a.get("id"), str):
+                # One the Animations page saved before its file was chosen: the others still install.
+                ctx.warn(f"{mod.id}: {a['id']}: no file chosen yet, so it's left out")
+                continue
             check(a, what)
-            if a["id"] in seen:
-                raise ValueError(f"{what}: another animation is called {a['id']} too")
-            seen.add(a["id"])
+            if a["id"].lower() in seen:     # the game's package names are any case
+                raise ValueError(f"{what}: another animation is called {a['id']} too (ids differ in more than case)")
+            seen.add(a["id"].lower())
+            found.append(a)
         return found or None
 
     def build(self, ctx, items):

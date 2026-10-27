@@ -588,6 +588,13 @@ Seen in game on 2026-10-27 (build 26184573) and read from the class dump.
   true). Your cat played `A_CatMaster_Stretch_1` this way in the forest, with its body shape, fur,
   tail, ears and accessories following. The same call plays on the animals: a roaming mouse's
   `ABP_Mice_C` spun a mod's sequence in place, and a bird's `ABP_Bird_C` too.
+- **A mesh's rest pose isn't always its skeleton's:** the game skins a mesh with its own reference
+  skeleton's bind pose (the skin's inverse bind matrices are from it), and a sequence's keys are
+  absolute, so that's the pose a new animation moves bones from and leaves the others in. The rabbit's
+  `SK_Rabbit` differs from `SK_Rabbit_Skeleton` on 33 of its 38 bones (up to 17 degrees on the tail;
+  `ear_R`, `Eyelid_R` and `cheeks_R` turned 180 degrees about themselves); the cat's `SK_CatMaster`
+  only on the front legs (`Forearm_f` 1.2 degrees, `paw_f` and `Finger_f` 0.85 cm and 2 to 3 degrees);
+  the other animals' are their skeletons' (read from the files, 2026-10-27).
 - **Out of view:** the animals' meshes (`VisibilityBasedAnimTickOption` 4) don't update their bones
   while they're not rendered: a montage on a far bird plays, but its bones stay put until it's seen.
 - **Lua states:** `Game.anims` keeps what each UE4SS script started in that script's own Lua state, so

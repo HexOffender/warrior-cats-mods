@@ -403,7 +403,10 @@ class SkeletalMesh:
             r.t("II4fi")
             self.materials.append((pkg.names[name[0]], ex[at:r.p]))
         at = r.p
-        self.bones = [(pkg.names[r.t("II")[0]], r.t("i")) for _ in range(r.t("i"))]
+        self.bones = []
+        for _ in range(r.t("i")):
+            name, number = r.t("II")
+            self.bones.append((pkg.names[name] + (f"_{number - 1}" if number else ""), r.t("i")))
         self.poses = [r.t("10d") for _ in range(r.t("i"))]
         if len(self.poses) != len(self.bones):
             raise FormatError("bones and bind poses disagree")

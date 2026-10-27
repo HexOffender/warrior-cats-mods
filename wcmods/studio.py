@@ -747,7 +747,8 @@ class Studio:
             raise ValueError("the file has no animation: in Blender, export with Animation on")
         if not info["matched"]:
             raise ValueError("none of the file's bones has the name of one of the game's: animate the start kit's armature")
-        stem = re.sub(r"[^A-Za-z0-9_-]+", "-", os.path.splitext(os.path.basename(name or filename))[0]).strip("-")[:40]             or "animation"
+        stem = (re.sub(r"[^A-Za-z0-9_-]+", "-", os.path.splitext(os.path.basename(name or filename))[0]).strip("-")[:40]
+                or "animation")
         folder = os.path.join(mod.folder, ANIMATIONS)
         os.makedirs(folder, exist_ok=True)
         with open(os.path.join(folder, stem + ext), "wb") as f:
