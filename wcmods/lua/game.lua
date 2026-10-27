@@ -1480,6 +1480,148 @@ function Game.items.drop(tag, count, where)
     return a
 end
 
+-- ===================================================================================== animations
+-- Mods' animations (animations.json) and the game's own sequences, played on a cat or an animal over what
+-- it's doing, in the slot its AnimBlueprint plays the game's own montages in:
+--   Game.anims.play(Game.cat(), "my-mod/Wave")                -- once
+--   Game.anims.play(npc, "my-mod/Swim", { loop = true })      -- until Game.anims.stop(npc)
+-- A mod's animation is for one skeleton (its "for": cats, mice...); an actor of another kind can't play it.
+Game.anims = {}
+local ANIM_SLOT = "DefaultSlot"
+local ANIM_LOOPS = 100000     -- a looping animation: a montage this many times as long, until it's stopped
+local ANIM_BLEND = 0.25
+local animModule              -- the install's WCModsAnims, read on first use (false without one)
+local animLoaded = {}         -- asset path -> its sequence
+local animPlaying = {}        -- actor address -> { id, montage, anim }
+local animLib
+
+local function anims()
+    if animModule == nil then
+        local ok, m = pcall(require, "WCModsAnims")
+        animModule = ok and type(m) == "table" and m or false
+    end
+    return animModule or {}
+end
+
+-- Every mod's animation: { [id] = { name, kind, path, loop, speed, blend, emote, key } }.
+function Game.anims.list() return anims().animations or {} end
+
+local function animActor(who)
+    if who == nil then return Game.player() end
+    if type(who) == "table" and who.actor then return who.actor end
+    return who
+end
+
+-- The mesh an actor's AnimBlueprint runs on: a character's Mesh, else its first skeletal mesh (quest givers).
+local function animMesh(actor)
+    if not valid(actor) then return nil end
+    local ok, mesh = pcall(function() return actor.Mesh end)
+    if ok and valid(mesh) then return mesh end
+    local cls = Game.object("/Script/Engine.SkeletalMeshComponent")
+    if not cls then return nil end
+    local okC, comp = pcall(function() return actor:GetComponentByClass(cls) end)
+    if okC and valid(comp) then return comp end
+    return nil
+end
+
+-- What kind of animal an actor is, by its mesh: "cat", "mouse", "bird"... or nil.
+function Game.anims.kind(who)
+    local mesh = animMesh(animActor(who))
+    if not mesh then return nil end
+    local ok, sk = pcall(function() return mesh:GetSkeletalMeshAsset() end)
+    if not ok or not valid(sk) then return nil end
+    local name = Game.name(sk)
+    for kind, meshes in pairs(anims().kinds or { cat = { "SK_CatMaster" } }) do
+        for _, m in ipairs(meshes) do
+            if m == name then return kind end
+        end
+    end
+    return nil
+end
+
+-- A mod's sequence isn't in the game's asset registry, so it's loaded by its path the way the game
+-- loads a soft reference.
+local function loadSequence(path)
+    local s = animLoaded[path]
+    if valid(s) then return s end
+    if not valid(animLib) then animLib = Game.object("/Script/Engine.Default__KismetSystemLibrary") end
+    if not animLib then return nil end
+    local ok, obj = pcall(function()
+        return animLib:LoadAsset_Blocking(animLib:Conv_SoftObjPathToSoftObjRef(animLib:MakeSoftObjectPath(path)))
+    end)
+    if ok and valid(obj) then
+        animLoaded[path] = obj
+        return obj
+    end
+    return nil
+end
+
+-- Play an animation on a cat or an animal (yours when `who` is nil): a mod's by its id ("my-mod/Wave"),
+-- or one of the game's sequences by its path. opts: loop (until stopped), speed, blend (seconds in and
+-- out); a mod's animation brings its own. Returns the montage playing it, or nil and why.
+function Game.anims.play(who, id, opts)
+    opts = opts or {}
+    local actor = animActor(who)
+    local mesh = animMesh(actor)
+    if not mesh then return nil, "there's no one to play it on" end
+    local info = Game.anims.list()[id]
+    local path = info and info.path or (type(id) == "string" and id:sub(1, 6) == "/Game/" and id) or nil
+    if not path then return nil, "there's no animation " .. tostring(id) end
+    if info and info.kind then
+        local kind = Game.anims.kind(actor)
+        if kind ~= info.kind then
+            return nil, string.format("%s is for %s, not %s", info.name or id, info.kind, kind or "this one")
+        end
+    end
+    local seq = loadSequence(path)
+    if not seq then return nil, "couldn't load " .. path end
+    local okI, ai = pcall(function() return mesh:GetAnimInstance() end)
+    if not okI or not valid(ai) then return nil, "it has no AnimBlueprint to play it" end
+    local loop = opts.loop
+    if loop == nil and info then loop = info.loop end
+    local speed = opts.speed or (info and info.speed) or 1.0
+    local blend = opts.blend or (info and info.blend) or ANIM_BLEND
+    local ok, m = pcall(function()
+        return ai:PlaySlotAnimationAsDynamicMontage(seq, FName(ANIM_SLOT), blend, blend, speed, loop and ANIM_LOOPS or 1, -1.0, 0.0)
+    end)
+    if not ok or not valid(m) then return nil, ok and "the game didn't play it" or tostring(m) end
+    animPlaying[actor:GetAddress()] = { id = id, montage = m, anim = ai }
+    return m
+end
+
+-- The animation Game.anims.play started on a cat or an animal that's still playing (its id), or nil.
+function Game.anims.playing(who)
+    local actor = animActor(who)
+    if not valid(actor) then return nil end
+    local key = actor:GetAddress()
+    local p = animPlaying[key]
+    if not p then return nil end
+    if valid(p.anim) and valid(p.montage) then
+        local ok, on = pcall(function() return p.anim:Montage_IsPlaying(p.montage) end)
+        if ok and on then return p.id end
+    end
+    animPlaying[key] = nil
+    return nil
+end
+
+-- Stop what Game.anims.play started on it, blending out over `blend` seconds (the animation's own by
+-- default). Returns whether something stopped.
+function Game.anims.stop(who, blend)
+    local actor = animActor(who)
+    if not valid(actor) then return false end
+    local key = actor:GetAddress()
+    local p = animPlaying[key]
+    animPlaying[key] = nil
+    if not (p and valid(p.anim) and valid(p.montage)) then return false end
+    local info = Game.anims.list()[p.id]
+    local out = blend or (info and info.blend) or ANIM_BLEND
+    return (pcall(function() p.anim:Montage_Stop(out, p.montage) end))
+end
+
+-- The same on a cat: Game.cat():animate("my-mod/Wave"), Game.cat(npc):stopAnimation().
+function Cat:animate(id, opts) return Game.anims.play(self.actor, id, opts) end
+function Cat:stopAnimation(blend) return Game.anims.stop(self.actor, blend) end
+
 -- ===================================================================================== cats of a mod's own
 -- A cat of a mod's own, standing in the world: one of the game's clan cats (its "filler" class) with the
 -- colours, eyes, size and name IDs a mod gives it. wcmods keeps it where it was put: it's spawned again

@@ -237,6 +237,52 @@ def cmd_model(ctx, args):
     print("README.txt says how to make a model on them; a mod's items.json uses it as an accessory's \"model\"")
 
 
+def cmd_animation(ctx, args):
+    """A cat or an animal rigged to its skeleton as a .glb, to animate in Blender; or what a file holds for it."""
+    import io
+    from . import animations
+    from .formats import anim, texture
+    if args.kind not in animations.KINDS:
+        sys.exit(f"{args.kind}: give one of {', '.join(animations.KINDS)}")
+    if args.check:
+        with open(args.check, "rb") as f:
+            data = f.read()
+        folder = os.path.dirname(os.path.abspath(args.check))
+
+        def sibling(name):
+            path = os.path.join(folder, name)
+            if os.path.isfile(path):
+                with open(path, "rb") as f:
+                    return f.read()
+            return None
+        skeleton = anim.Skeleton(ctx.game.read(texture.content_path(animations.asset(args.kind, "skeleton"))))
+        try:
+            info = animations.describe(args.check, data, args.kind, skeleton, sibling)
+        except ValueError as e:
+            sys.exit(str(e))
+        for c in info["clips"]:
+            print(f"animation {c['name']!r}: {c['seconds']:.2f} s")
+        if not info["clips"]:
+            print("no animation in it (export with Animation on)")
+        print(f"has {len(info['matched'])} of the game's bones for {animations.KINDS[args.kind]['label'].lower()}")
+        if info["missing"]:
+            print(f"leaves where they rest: {', '.join(info['missing'])}")
+        if info["extra"]:
+            print(f"not the game's, left out: {', '.join(info['extra'])}")
+        return
+    try:
+        data, _ = animations.start_kit(ctx.game, args.kind)
+    except ValueError as e:
+        sys.exit(str(e))
+    out = args.out or os.path.join(ctx.root, "vanilla", "animations", args.kind)
+    os.makedirs(out, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        z.extractall(out)
+        listed = z.namelist()
+    print(f"{args.kind}: {', '.join(listed)} -> {out}")
+    print("README.txt says how to animate it; a mod's animations.json uses the .glb you export as an animation's \"file\"")
+
+
 def cmd_names(ctx, args):
     from .sdk import BuildContext
     game = names.GameNames(lambda path: ctx.game.read_text(BuildContext.data_path(path)))
@@ -797,7 +843,7 @@ def cmd_studio(ctx, args):
 COMMAND_GROUPS = (
     ("Playing", ("status", "studio", "play", "remap", "cheats", "console", "backup", "restore")),
     ("Mods", ("enable", "disable", "add", "menu-pages", "remove", "install", "uninstall", "build", "pack", "palette")),
-    ("Making mods", ("new", "files", "extract", "texture", "model", "eyes", "names", "controls", "tables")),
+    ("Making mods", ("new", "files", "extract", "texture", "model", "animation", "eyes", "names", "controls", "tables")),
     ("In the game", ("lua", "inspect", "find", "game")),
     ("After a game update", (("game build", "which build of the game is installed, what moved, and the mods made for older ones"),
                              ("game signatures check", "check the installed exe against wcmods' signatures"),
@@ -879,6 +925,12 @@ def main(root, argv=None):
     p.add_argument("what")
     p.add_argument("--out", help="the folder to write them to (default vanilla/models/<accessory>/)")
     p.set_defaults(fn=cmd_model)
+    p = sub.add_parser("animation", help="save a cat (or an animal: mouse, bird...) rigged to its skeleton as a .glb to "
+                                         "animate in Blender, or --check what a glTF file holds for it")
+    p.add_argument("kind", nargs="?", default="cat")
+    p.add_argument("--check", metavar="FILE", help="a .glb or .gltf: its animations, and the game's bones it moves")
+    p.add_argument("--out", help="the folder to write the kit to (default vanilla/animations/<kind>/)")
+    p.set_defaults(fn=cmd_animation)
     p = sub.add_parser("extract", help="copy game files matching a pattern into vanilla/ to start a files mod")
     p.add_argument("pattern")
     p.add_argument("--out", default="vanilla")

@@ -8,7 +8,7 @@ Studio, the mod menu in game, remapping keys, and the command line. After a game
 
 **If you make mods:**
 1. [formats.md](formats.md): the JSON files a mod is made of (palettes, your cat, controls, mouse
-   look, game data, items, names, save edits). No code needed; Clan Mod Studio's Make pages write them.
+   look, game data, items, animations, names, save edits). No code needed; Clan Mod Studio's Make pages write them.
 2. [scripting.md](scripting.md): Lua in the game with `WCModsGame`: your cat, items, quests, fights,
    events, hooks, the mod menu's pages and the live console. Read this before SDK.md.
 3. [SDK.md](SDK.md): the mod folder and `mod.json`, Python build steps, studio pages, repacking and
@@ -28,7 +28,7 @@ confirmed in game, and what hasn't).
 | [updating.md](updating.md) | Game updates: what wcmods follows by itself, mods made for older builds, the signatures | players, mod makers, wcmods |
 | [formats.md](formats.md) | Every JSON file a mod can hold, with examples | mod makers |
 | [scripting.md](scripting.md) | `WCModsGame`, script mods, the bridge and console, the mod menu's pages, the game's own UI from Lua | mod makers (Lua) |
-| [SDK.md](SDK.md) | The mod folder, `wcmods.sdk` build steps, studio pages, repacking, new items and content, the shared Lua modules, C++ mods | mod makers (code) |
+| [SDK.md](SDK.md) | The mod folder, `wcmods.sdk` build steps, studio pages, repacking, new items, animations and content, the shared Lua modules, C++ mods | mod makers (code) |
 | [mechanics/](mechanics/README.md) | Combat, progression, exploration, clan life, items, quests, NPCs: the rules and the tables behind them | mod makers |
 | [reverse-engineering.md](reverse-engineering.md) | Files and formats, the save, game objects, the camera, cheats, UE4SS, names, colours, the game's UI; the method and tools | mod makers, wcmods |
 | [agent.md](agent.md) | The agent controller: launching the game, menus, keys, pictures, the in-game tests | wcmods |

@@ -233,6 +233,117 @@ deltas it had before quantizing, its section indices, bGeneratedByEngine and a 0
 **Space:** centimetres, Z up, the cat facing +Y, triangles clockwise seen from outside (the cross
 product of the edges points in).
 
+### Animations
+
+Worked out on 2026-10-27 from the game's files, and checked in game: a sequence wcmods wrote (a copy of
+the game's Stretch with a wagging tail, in a new package) loaded and played on the player's cat.
+
+**What the game has** (`/Game/Art/Characters/<Who>/Animations/`): 757 `AnimSequence`s (`A_…`) and 708
+`AnimMontage`s (`AM_…`). The cat has 247 sequences and 149 montages; each roaming animal and boss
+(badger, bird, dog, fox, mouse, rabbit, rat, snake, squirrel) has 30 to 40 of its own. Also blend spaces
+(`BS_Lean`), aim offsets (`A_CatMaster_AO_*`) and pose assets (`PA_Body`, `PA_Face`... the body-shape
+sliders, played by the AnimBlueprint). Every montage plays in the slot `DefaultSlot` (group
+`DefaultGroup`).
+
+**Skeletons:** one per kind of animal. The cat's is `/Game/Art/Characters/CatMaster/Skel/SK_CatMaster_Skeleton`,
+58 bones: `root`, `Spine_base`, `spine_01`–`05`, `neck`, `head`, `mouth`, `tongue_01`–`03`, the ears,
+eyelids, eyes, cheeks and `mustache_L/R`, `Breast`, `belly`, `butt`, front legs (`clavicle_blade`,
+`UpperArm_f`, `Forearm_f`, `paw_f`, `Finger_f`), back legs (`thigh_b`, `calf_b`, `HorseLink_b`, `ball_b`,
+`thigh_cor_b`), `tail_01`–`05`, then `Camera`, `Camera_ref` and `Target_ref`. The body mesh uses the first
+57, accessories the first 56. The animals' have 24 (bird) to 46 (squirrel) bones with names of their
+own (`Root`, `Rat_Pelvis`, `Fox_Head`...). The skeleton export's reference skeleton is read like a
+mesh's (bones as FName and parent, then poses as 10 doubles: rotation x, y, z, w, translation, scale).
+A mesh keeps its bones in an order of its own (the cat's starts `root`, `spine_01`...), not the
+skeleton's; the sequences' track tables index the skeleton's.
+
+**A sequence package:** one `AnimSequence` export, plus one export per notify object for sequences with
+notifies (footstep sounds: `BP_AnimStepNotify_C`, `AnimNotify_PlayNativeAudioEvent`). It imports its
+skeleton and its compression settings (`/Engine/Animation/DefaultAnimBoneCompressionSettings`,
+`DefaultAnimCurveCompressionSettings`, `DefaultVariableFrameStrippingSettings`, or the ACL plugin's).
+Everything is inline.
+
+**The export:**
+- **Properties** (unversioned), the class's own before its parents': for `A_CatMaster_Meow` the
+  bone, curve and frame-stripping settings (indexes 0–2, imports), `SequenceLength` (20, a float),
+  `Skeleton` (24) and `AssetUserData` (26, one null). The birds' and some foxes' add
+  `PlatformTargetFrameRate` (17, a cooked `FPerPlatformFrameRate`: a u32 1, then 24 and 1). Sequences
+  with notifies or root motion have more. The sequence export isn't always the first: notify objects
+  can come before it.
+- a u32 HasGuid (0), the `SkeletonGuid` (16 bytes, the skeleton's), `FStripDataFlags` (5, 0), a u32
+  bSerializeCompressedData (1);
+- **the compressed data** (`FCompressedAnimSequence`): i32 `CompressedRawDataSize` (only for
+  statistics), the track table (an i32 array: each track's bone in the skeleton; the cat's sequences
+  have 56 or 57 tracks, bones 0 onwards), the curve names (an array of FNames), an i32 byte count and
+  a u32 "in bulk data" (0), the bone data (that many bytes), the bone codec's name (an FString, the
+  codec object's name in the settings: `AnimCompress_PerTrackCompression_5`), the curve codec's path
+  (an FString), an i32 count and the curve bytes, then the bone codec's own fields;
+- the package file tag follows the last export.
+
+**The codecs** (the bone codec's name picks one; `DefaultAnimBoneCompressionSettings` holds
+`AnimCompress_BitwiseCompressOnly` (two), `AnimCompress_PerTrackCompression` (eight, `_1` to `_7`)
+and `AnimCompress_RemoveLinearKeys`). Of the game's 757 sequences:
+- **ACL** (519, `AnimBoneCompressionCodec_ACL_0`, with `/ACLPlugin/ACLAnimBoneCompressionSettings`): the
+  bone data is an ACL stream; the codec's fields are an i32 key count and a u32 0. Most animals' and
+  bosses' sequences and 137 of the cat's. Every sequence of the squirrel, bird, fox, badger, dog and
+  snake is in ACL.
+- **Unreal's per-track codec** (229: 99 of the cat's, the mice, rats and most rabbit ones). Its fields:
+  i32 key count, four u8s (key encoding 2 = per-track, then the translation, rotation and scale formats,
+  6 = identity, unused here), then i32s: the byte stream's size, the track offsets' count (2 per
+  track), the scale offsets' count (1 per track) and the scale offsets' stride (1). The bone data is the
+  track offsets (translation, rotation), the scale offsets, then the byte stream.
+- **Unreal's constant-key codec** (9 of the cat's, `AnimCompress_BitwiseCompressOnly_0`): key encoding
+  0, translations and scales as 3 floats (format 0), rotations as 3 floats (format 1); four offsets per
+  track (offset and key count for translation and rotation) and two per scale.
+
+The codec's object only matters for finding it: the engine decodes Unreal's formats by the key
+encoding and formats in the data, so a sequence of full-precision per-track keys under the template's
+`AnimCompress_PerTrackCompression_5` plays (seen in game).
+
+**A per-track track** (at its offset in the byte stream; -1 = identity: no translation, no rotation):
+- a u32 header: key count (bits 0–23), flags (24–27), format (28–31). Flag bits 0–2 say which of x, y, z
+  are stored (the others are 0; none set means all three), bit 3 that a frame table follows;
+- format 1 (`Float96NoW`): a float per stored component. Format 2 (`Fixed48NoW`): a u16 per stored
+  component; a rotation's is (v - 32767) / 32767, a translation's or scale's (v - 255) / 1 (Unreal's
+  `(1 << (15 - 7)) - 1` offset and an integer `255 >> 7` factor: steps of a whole unit; the game only has
+  scale 1.0 = 256 in it). Format 3 (`IntervalFixed32NoW`): first a (minimum, range) pair of floats per
+  stored component, then a u32 per key, x in bits 21–31, y in 10–20, z in 0–9, each `min + range * q / (2^bits - 1)`;
+- rotations drop w (w = sqrt(1 - x² - y² - z²), so w is kept positive);
+- one key: the same all through. Keys without a frame table are spread evenly over the sequence (2
+  keys: the first and the last frame); with one, the table follows the keys, 4-aligned, a u8 frame
+  number per key (u16 from 256 frames on);
+- each track is 4-aligned. The game writes each bone's scale, translation, then rotation.
+
+Every track's size computed this way ends where the next begins in all 229 per-track sequences, and
+the keys decode to unit rotations that move smoothly, next to the skeleton's reference pose.
+
+**The curves** (morph targets the sequence drives: `shp_claw_hiden_l/r`, `shp_claw_b_hiden_l/r` (claws
+in), `shp_pupil_l/r`, `shp_comisure_*` (mouth corners), `shp_extensor_*`, `shp_fat_l/r`...; the animals'
+have none). With `AnimCurveCompressionCodec_CompressedRichCurve` the bytes are a 12-byte header per
+curve (u8 format (1 = constant), u8 key-time format, u8 pre- and post-infinity, a float value (or i32
+key count), an i32 offset of its keys) and then the keys. `A_CatMaster_Meow` holds all six of its curves
+at 1.0 (claws in, pupils normal).
+
+**Time:** 30 keys a second (`A_CatMaster_Meow`: 80 keys, 2.633 s; `Stretch_1`: 161 keys, 5.333 s), but
+24 where `PlatformTargetFrameRate` says (the birds'); a key's time is its place along the sequence,
+(key / (keys - 1)) * length, and every sequence's length is (keys - 1) at its rate.
+
+**Space:** a key is the bone's transform relative to its parent, in centimetres, as the reference pose
+(`Spine_base` -10.9 cm along Y and 17.5 cm up from `root`; the spine and tail bones point along -Y).
+
+**Making one** (wcmods' way, seen in game): copy one of the game's sequences on the same skeleton
+without notifies (`A_CatMaster_Meow` for cats), put new per-track keys in it (format 1 for every
+track, scale, translation and rotation), its key count and `SequenceLength`, then rename the package
+and the export (name map and public hash) and add it to the mod container with the template's
+container header entry, as for textures. The game loads it by path
+(`KismetSystemLibrary:LoadAsset_Blocking`), like a mod's mesh. A copy left with the template's six
+curves keeps the claws in; setting the four `shp_claw*_hiden` ones to 0 shows them (seen in game).
+- **A copy of an ACL sequence** (the animals with no other kind): its bone compression settings import
+  swapped for `/Engine/Animation/DefaultAnimBoneCompressionSettings` (the import map entry's export hash,
+  the container header's package ID at the same place, and the name in `ImportedPackageNames`, the
+  header's last section: a name batch and an i32 number a name), its codec name for one of those
+  settings' codecs, and its curves dropped (they're in ACL too). A bird made that way played (seen in
+  game).
+
 ### The save
 
 `%LOCALAPPDATA%\Wrc\Saved\SaveGames\WrcGame.sav`:
@@ -448,6 +559,44 @@ kinds are built on:
 
 Colour fields: `FurColorIdx` picks the coat, `Pattern01ColorIdx` the pattern colour, and
 `Pattern02ColorIdx` the marking colour. `EyeLeftColorIdx` and `EyeRightColorIdx` pick the eyes.
+
+### How cats and animals are animated
+
+Seen in game on 2026-10-27 (build 26184573) and read from the class dump.
+
+- **One AnimBlueprint drives every cat:** your cat's `CharacterMesh0` (`SK_CatMaster`), walking NPCs'
+  and quest givers' meshes all run `ABP_CatMaker_C` (parent `GuiCatCustomAnimInst`); the menu and
+  portrait cats run its child `ABP_CatMaker_Child_UI`. The fur, tail, ears and the four accessory
+  components have no AnimBlueprint: they follow the body (`LeaderPoseComponent` = `CharacterMesh0`).
+- **`ABP_CatMaker`:** a locomotion state machine (51 sequence players, random idle breaks), a lean
+  blend space, look-at and IK, pose-asset nodes for the body-shape sliders and one `Slot` node, where
+  montages play.
+- **Animals:** `ABP_Mice_C`, `ABP_Rabbit_C`... are children of `ABP_Enemy_Base` (parent
+  `GuiCharacterCustomAnimInst`), which has the slot. Their montages play in `DefaultSlot` too.
+- **The game's own montages** are played by tag: `USwtPlayMontageComponent` (on the cat, `PlayMontageComponent`)
+  plays a row of a DataTable of `FSwtAnimationStruct` (`AnimationMontage`, `GameplayTag`,
+  `bCanBeInterrupted`, `VoiceoverTag`, `UpgradeLevel`, `BlocksInput`) with
+  `K2_PlayMontageOfTag(tag, rate, bForceInterrupt, bQueueIfCurrentlyPlaying, bStopMontages)`. The cat's
+  table is `DT_Cat_CombatAnimations` (despite its name: `Animation.Exploration.Meow`,
+  `Animation.Exploration.Interaction.Dig`/`Sleep.1`/`Sniff`..., `Animation.Combat.Hit.*`, the attacks);
+  each animal has its own `DT_<Animal>_CombatAnimations`. The sitting montage is
+  `BP_WrcGuiManager`'s `SimpleSitMontg`.
+- **Playing a sequence from Lua works**, without a montage asset: load it
+  (`KismetSystemLibrary:LoadAsset_Blocking`), then on the mesh's anim instance
+  `PlaySlotAnimationAsDynamicMontage(sequence, FName("DefaultSlot"), blendIn, blendOut, rate, loops,
+  blendOutTriggerTime, startAt)`. It returns a transient `AnimMontage` (`IsAnyMontagePlaying()` is then
+  true). Your cat played `A_CatMaster_Stretch_1` this way in the forest, with its body shape, fur,
+  tail, ears and accessories following. The same call plays on the animals: a roaming mouse's
+  `ABP_Mice_C` spun a mod's sequence in place, and a bird's `ABP_Bird_C` too.
+- **Out of view:** the animals' meshes (`VisibilityBasedAnimTickOption` 4) don't update their bones
+  while they're not rendered: a montage on a far bird plays, but its bones stay put until it's seen.
+- **Lua states:** `Game.anims` keeps what each UE4SS script started in that script's own Lua state, so
+  the bridge can't see the emotes' script's montage (the anim instance's `IsAnyMontagePlaying` can).
+- **No emotes:** the game has no emote feature; its one-off animations (meow, sit, dig, sniff,
+  stretch, yawn, the photo-mode poses) are played by interactions, the idle breaks and photo mode.
+- **No swimming:** cats have no swim animation, state or water movement in the game's files; "swim" is
+  only in effects (`NS_Fishes_Swimming_*`, `NS_MallarDuck_Swimming`, `MI_Swan_Swimming`), and water
+  only a footstep surface (`EAdventurePhysicalFloorType::Water`).
 
 ## Character creation and traits
 
@@ -1349,6 +1498,8 @@ The rules of play are in [mechanics/](mechanics/README.md):
   whether raising it opens the cheats popup and the key cheats, and which of the cheats manager's
   switches the release build obeys (`bUseForcesQuests`, `bSkipSequences` and `bSkipTutorial` it
   doesn't).
+- **Animations:** how ACL streams are laid out (not needed to write sequences); whether the named
+  characters' own skeletons (`SK_NPC_Brightheart_Skeleton`...) can play the cats' sequences.
 - **Scripting:**
   - **Items:** how to put items in the inventory from a script without a pickup (the inventory
     is native; `Game.items.drop` leaves a pickup to collect).

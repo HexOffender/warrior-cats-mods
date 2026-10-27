@@ -17,6 +17,10 @@ folders. `python wcmods.py selftest` checks, against your install:
 - **CSV editor:** reproduces all 67 runtime tables byte-for-byte.
 - **Cooked assets:** the item table's 412 rows read and write back byte-for-byte; texture copies get
   the IDs the game's own packages have; the accessory look lists read back with new looks added.
+- **Animations:** all 757 of the game's animation sequences read and write back byte-for-byte (519 in ACL,
+  229 in Unreal's per-track codec, 9 in its constant-key one), and the 238 not in ACL decode; each
+  animal's template takes new keys and reads them back (the ACL ones moved to the engine's own settings);
+  the game's Stretch, put in the cats' start kit and read back from it, gives the same keys.
 - **Save editor:** changes only the values it's told to.
 - **UE4SS scripts:** the generated Lua has balanced blocks and brackets (a light structure check;
   there's no Lua interpreter to fully parse it). Builds also warn if any UE4SS script fails it.
@@ -101,6 +105,27 @@ without a model; `Game.items.drop` for each):
   pickup and its model were gone from the ground.
 - A picture added to the block on the Items page (saved there as a PNG) showed on it in the forest.
 
+**2026-10-27, animations** (build 26184573, a test mod's `animations.json`: a wave made in Blender 5.2.3
+from the cats' start kit, the same with claws out at 1.5 times the speed, a looping paddle as an emote
+on F7 and as a script's swim, and a spin for mice and for birds; `WCModsEmotes` and `WCModsAnims`
+installed):
+- A sequence wcmods wrote first (the game's Stretch with a wagging tail, in a new package) loaded by
+  its path and played on the cat through `PlaySlotAnimationAsDynamicMontage`, with its fur, tail, ears
+  and build following.
+- The mod menu showed an Emotes page under Your cat with both waves and the wave's key. Its button
+  played the Blender wave: the cat lifted and waved its front left paw, then went back to its idle.
+- F6 played the wave. F7 started the paddle, which was still playing two seconds later (its clip is
+  one), F7 again stopped it, and walking off after F7 stopped it too.
+- With claws out a claw showed on the raised paw; the plain wave kept the paw round.
+- From a script: the swim looped on the cat (legs paddling, head up) until `Game.anims.stop`;
+  `Game.anims.play` with a mouse's animation on the cat said "Mouse spin is for mouse, not cat".
+- A roaming mouse (a copy of one of its per-track sequences) spun in place, a quarter turn every
+  shot; a bird (a copy of one of its ACL sequences, moved to the engine's settings) turned its root a
+  full circle a second (read from the bone, after making its mesh tick out of view).
+- In Blender (not in game): a new action keyed on the imported start kit and exported as a .glb put
+  every bone within 0.2 cm of where Blender showed it, with the armature object left alone or moved,
+  turned and sized; the game's Meow through Blender came back within 0.6 degrees.
+
 **2026-10-24, scripting:**
 - **The bridge and the commands:** they run Lua in the game; `lua`, `inspect`, `find`, `game` and
   `game types` all work. A script mod loads with its settings, and its events fire.
@@ -163,6 +188,10 @@ without a model; `Game.items.drop` for each):
   - the script set each picture once (its debug log), so nothing fought over them.
 
 ## Not yet confirmed in game
+
+- **Animations:** on the clans' cats in the forest and on quest givers (they run the same AnimBlueprint
+  and mesh, but only your cat was watched); the rats', rabbits', squirrels', foxes', badgers', dogs' and
+  snakes' (made the same way as the mice's and birds'); an emote's key on a controller button.
 
 - **Accessories' models:** on other cats (a mod's cats, NPCs) and in the save slots' pictures; and on
   a cat whose build the game set up as brawny or chubby (`RefreshShape` doesn't apply a build, so only

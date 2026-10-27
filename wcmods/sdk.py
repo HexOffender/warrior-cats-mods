@@ -123,6 +123,7 @@ class BuildContext:
         self._texts = {}        # language -> {key: text} (ctx.text)
         self._cooked = {}       # cooked table name -> (the game's asset, its rows) (ctx.cooked_table)
         self._body = None       # the cat's body, read once for the models that need it (ctx.add_mesh)
+        self._skeletons = None  # the game's skeletons, read once for the animations that need them (ctx.add_animation)
 
     @property
     def cache_dir(self):
@@ -295,6 +296,26 @@ class BuildContext:
         self.add_package(texture.content_path(package), built["data"], built["chunk_id"], built["imports"],
                          built["shaders"], source=source)
         return package + "." + package.rsplit("/", 1)[-1]
+
+    def add_animation(self, name, read, kind="cat", clip=None, claws=False, source="", key=None):
+        """A new animation, /Game/WCMods/<name> ("my_mod/A_Wave"), from a glTF file: read() gives its
+        (file name, bytes, sibling) (sibling(name) the bytes of a file a .gltf refers to, or None), and
+        `clip` names the animation in it (the first by default). It's for `kind`'s skeleton (animations.KINDS:
+        "cat", "mouse"...), as a copy of one of the game's sequences on it (animations.py); for a cat,
+        `claws` out. `key` is text that changes whenever the file would (a hash of it); with it, an
+        animation made before comes from the cache. Returns (the new sequence's asset path, its seconds)."""
+        from . import animations
+        from .formats import texture
+        if kind not in animations.KINDS:
+            raise ValueError(f"there's no animal {kind!r} to animate (there are {', '.join(animations.KINDS)})")
+        package = texture.new_package_name(name)
+        if self._skeletons is None:
+            self._skeletons = animations.Game(self.read_game_file)
+        built = animations.build(self, package, kind, read, clip, key if key is not None else repr(read),
+                                 claws=claws, game=self._skeletons)
+        self.add_package(texture.content_path(package), built["data"], built["chunk_id"], built["imports"],
+                         built["shaders"], source=source)
+        return package + "." + package.rsplit("/", 1)[-1], built["seconds"]
 
     def add_ue4ss_mod(self, name, files):
         """files: {"Scripts/main.lua": text, ...}. Installed only when UE4SS is present.

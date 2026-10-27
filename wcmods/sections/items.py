@@ -586,6 +586,7 @@ class Picture:
 class ModelFile:
     """A model in the mod's folder (models.py: .obj, .gltf, .glb), made into a mesh once the item is
     known to be good."""
+    what = "model"                 # what the messages call it
 
     def __init__(self, rel):
         self.rel = rel
@@ -594,13 +595,13 @@ class ModelFile:
         folder = os.path.realpath(mod.folder)
         path = os.path.realpath(os.path.join(folder, os.path.dirname(self.rel), rel))
         if os.path.commonpath([folder, path]) != folder:
-            raise ValueError(f"{self.rel}: models must be in the mod's own folder")
+            raise ValueError(f"{self.rel}: {self.what}s must be in the mod's own folder")
         return path
 
     def _bytes(self, mod, rel=None):
         path = self._path(mod, rel or os.path.basename(self.rel))
         if not os.path.isfile(path):
-            raise ValueError(f"there's no {'model' if rel is None else 'file'} {rel or self.rel} in the mod's folder")
+            raise ValueError(f"there's no {self.what if rel is None else 'file'} {rel or self.rel} in the mod's folder")
         with open(path, "rb") as f:
             return f.read()
 

@@ -367,9 +367,11 @@ def _find_start(ex, names):
 
 
 class SkeletalMesh:
-    """One of the game's cooked skeletal meshes, to read or to copy with new geometry."""
+    """One of the game's cooked skeletal meshes, to read or to copy with new geometry. With morphs=False,
+    which morph is which isn't worked out: the mesh's geometry can be read (without morphs), not copied
+    (the animals' meshes that keep their morph list elsewhere read that way)."""
 
-    def __init__(self, data):
+    def __init__(self, data, morphs=True):
         self.pkg = pkg = ZenPackage(data)
         em = pkg.summary[8]
         self.export_names = [pkg.names[struct.unpack_from("<I", pkg.data, em + EXPORT_ENTRY * i + 16)[0]]
@@ -423,7 +425,7 @@ class SkeletalMesh:
         # The morph targets, in the order the LOD buffers keep them: the MorphTargets property, the
         # array of their exports in the mesh's properties.
         morph_exports = [i for i, n in enumerate(self.export_names) if i != self.main and n.startswith("SHP_")]
-        nm = len(self.lods[0].morphs)
+        nm = len(self.lods[0].morphs) if morphs else 0
         self.morph_order = None
         for p in range(0, len(self.props) - 4 * (nm + 1)):
             if struct.unpack_from("<i", self.props, p)[0] != nm:
