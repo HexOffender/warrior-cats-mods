@@ -100,8 +100,11 @@ control that isn't on the page gives an error that lists the controls the page h
 
 ## The mod menu
 
-The menu's pages are drawn by their scripts every frame ([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)). Each row tells
-the menu module what it shows. The agent reads those rows rather than pixels, and uses a control by
+The menu's pages are drawn by their scripts every frame ([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)). The pages
+about the game (Stats below, World, Travel, Quests, Cheats ...) are the Menu pages mod's: for a test
+install with them, `agent install --with ../wcmods-menu-pages/menu-pages` (a checkout of
+[wcmods-menu-pages](https://github.com/HexOffender/wcmods-menu-pages) beside wcmods), or have it in your
+mods. Each row tells the menu module what it shows. The agent reads those rows rather than pixels, and uses a control by
 handing the page its new value. The page then runs exactly as if the player had clicked:
 
 ```

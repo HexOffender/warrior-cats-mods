@@ -136,7 +136,6 @@ def add(cfg, zip_path=None, log=print):
     if "cheats" in cfg.data:
         cfg.data.pop("cheats")
         cfg.save()
-    log(f"  {NAME} {new.version if new else ''} is in your mods" + (" (the older copy is in backups)" if done.get("replaced") else ""))
     return {"id": ID, "name": NAME, "version": new.version if new else None, "from": source, "replaced": done.get("replaced")}
 
 

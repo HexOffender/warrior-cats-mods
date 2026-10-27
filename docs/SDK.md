@@ -572,6 +572,8 @@ script (`scripts/`), so it runs only with mods that run code allowed, like any s
   `settings.json` (`wcmods/menupages.py`). Its `.zip` can be added like any mod's too.
 - **Its settings:** `settings.json`'s `"cheats"`, whether the Cheats page starts with cheats on (its
   "Start with cheats on" switch, or `python wcmods.py cheats on|off`).
+- **After a game update:** like any mod, it lists the builds it was made for (`"game_builds"`), and a
+  build leaves it out on a newer one until a release adds it, or the player chooses "Use it anyway".
 - **What it uses:** only what any mod can: this module (`Menu.page`, `Menu.status`), `WCModsGame`,
   `WCModsWorld`, `WCModsDraw` and `WCModsNames` (`area`, `quest` and `item` for the game's names). Its
   saved travel spots are in `Game.save.folder()`, so they stay when it's updated.

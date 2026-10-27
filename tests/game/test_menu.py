@@ -22,7 +22,7 @@ def teardown(agent):
 def need_pages(agent):
     """Skip a test of the Menu pages mod's pages when it isn't in the game."""
     if not any(p["id"] == "At a glance" for p in agent.menu.pages()):
-        skip("the Menu pages mod isn't in the game (python wcmods.py menu-pages, then install with code mods allowed)")
+        skip("the Menu pages mod isn't in the game (agent install --with ../wcmods-menu-pages/menu-pages)")
 
 
 def test_every_page_draws(agent):

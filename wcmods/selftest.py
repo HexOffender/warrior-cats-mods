@@ -192,6 +192,10 @@ def run(cfg, oodle, log=print):
     from .sdk import BuildContext
     ok, detail = _names_plan(lambda p: base_pak.read(BuildContext.data_path(p)).decode("utf-8"))
     check("names plan against the game's name tables", ok, detail)
+    areas, quests = world.place_names(lambda p: base_pak.read(p).decode("utf-8"))
+    check("area names and quest titles from the game's tables (WCModsNames' area and quest)",
+          len(areas) > 20 and len(quests) > 20 and all(quests.values()) and "R-05" in areas,
+          f"{len(areas)} areas, {len(quests)} quests")
 
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     if os.path.isfile(sav):
