@@ -8,7 +8,7 @@ export default {
     const KIND = {
       files: "Replaces game files", "cooked content": "New models or textures",
       palette: "Colours", controls: "Controls", "mouse look": "Mouse look", data: "Game rules and numbers",
-      names: "Cat names", cats: "Your cat's colours", save: "Changes your save", "in-game script": "In-game script",
+      names: "Cat names", cats: "Your cat's colours", animations: "Animations", save: "Changes your save", "in-game script": "In-game script",
       "C++ mod": "C++ mod", "C++ source": "C++ source", code: "Build step (code)", "studio page": "Studio page",
     };
     let mods = [], filter = "all", search = "", settings = null;
