@@ -131,6 +131,24 @@ def test_a_start_kits_animation_comes_back_as_the_same_keys():
     assert doc["skins"][0]["joints"] == [0, 1, 2, 3] and [n["name"] for n in doc["nodes"][:4]] == ["root", "spine", "tail", "Camera_ref"]
 
 
+def test_a_replacement_is_fitted_to_the_games_keys():
+    # A replacement has as many keys as the game's sequence, spread from the clip's first key to its last:
+    # the same motion, slower or faster.
+    skel = Skel()
+    bones = A.track_bones(skel)
+    keys = motion(skel, bones, 7)
+    glb = A.write_rig(skel, Mesh(), [("Wag", bones, keys, 30.0)], "test")
+    gltf = A.Gltf("kit.glb", glb)
+    pose = A.rest_pose(skel, Mesh())
+    for n in (4, 7, 13):
+        fitted = A.retarget(gltf, gltf.clip("Wag"), skel, bones, 30.0, pose, keys=n)
+        for (T, Q, _), (T2, Q2, _) in zip(keys, fitted):
+            assert len(T2) == len(Q2) == n
+            assert close(T[0], T2[0], 1e-4) and close(T[-1], T2[-1], 1e-4)
+            assert same_rotation(Q[0], Q2[0], 1e-6) and same_rotation(Q[-1], Q2[-1], 1e-6)
+    same = A.retarget(gltf, gltf.clip("Wag"), skel, bones, 30.0, pose, keys=7)
+    assert all(close(a, b, 1e-4) for (T, _, _), (T2, _, _) in zip(keys, same) for a, b in zip(T, T2))
+
 def gltf_file(nodes, channels, ibms, times):
     """A .gltf with its data inline: `nodes` as glTF nodes, `channels` [(node, path, values)] sampled at
     `times`, and a skin of the joints in `ibms` {node: column-major matrix}."""
@@ -390,6 +408,50 @@ def test_a_sequences_length_and_frame_rate_come_from_its_properties():
         sequence_with(other).sequence_length()
 
 
+
+def test_a_replacement_keeps_the_sequences_length_and_properties():
+    # The game's with notifies have properties wcmods can't get through to SequenceLength (19 here): new keys
+    # go in only as many as it has, and the properties stay as they were.
+    props = write_header([0, 1, 2, 19, 20, 24, 26], set()) + b"\0" * 40
+    seq = sequence_with(props)
+    seq.handle, seq.nkeys, seq.track_map, seq.length = "AnimCompress_PerTrackCompression_5", 3, [0], None
+    one = [((0.0, 0.0, 0.0),) * 3, ((0.0, 0.0, 0.0, 1.0),) * 3, ((1.0, 1.0, 1.0),) * 3]
+    with pytest.raises(anim.FormatError, match="doesn't know"):
+        seq.set_tracks([one])                     # a new length can't be written
+    with pytest.raises(ValueError, match="2 keys for a sequence of 3"):
+        seq.set_tracks([[part[:2] for part in one]], keep_length=True)
+    seq.set_tracks([one], keep_length=True)
+    assert seq.nkeys == 3 and seq.length is None and seq.props == props and seq.codec == "per-track"
+    acl = sequence_with(props)
+    acl.handle, acl.nkeys, acl.track_map = "AnimBoneCompressionCodec_ACL_Default", 3, [0]
+    with pytest.raises(ValueError, match="use_unreal_codec"):
+        acl.set_tracks([one], keep_length=True)
+
+
+GAME_FILES = ["Wrc/Content/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1.uasset",
+              "Wrc/Content/Art/Characters/CatMaster/Animations/AM_Meow.uasset",
+              "Wrc/Content/Art/Characters/CatMaster/Animations/BS_Lean.uasset",
+              "Wrc/Content/Art/Characters/CatMaster/Animations/A_CatMaster_Sit_1.uasset",
+              "Wrc/Content/Art/Characters/CatMaster/Animations/Cinematic/A_CatMaster_Sit_1.uasset",
+              "Wrc/Content/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1.uexp",
+              "Wrc/Content/Art/Characters/Enemy/Mice/Animations/A_Mice_Walk_1.uasset"]
+
+
+def test_the_sequence_a_replacement_takes_the_place_of_is_found_by_name_or_path():
+    found = A.game_sequences(GAME_FILES, "cat")
+    assert sorted(found) == ["A_CatMaster_Sit_1", "A_CatMaster_Trot_1"]     # sequences only, the cats' only
+    assert A.find_sequence(GAME_FILES, "cat", "A_CatMaster_Trot_1") == "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1"
+    assert A.find_sequence(GAME_FILES, "mouse", "A_Mice_Walk_1") == "/Game/Art/Characters/Enemy/Mice/Animations/A_Mice_Walk_1"
+    with pytest.raises(ValueError, match="2 sequences called A_CatMaster_Sit_1: give the path"):
+        A.find_sequence(GAME_FILES, "cat", "A_CatMaster_Sit_1")
+    sit = "/Game/Art/Characters/CatMaster/Animations/Cinematic/A_CatMaster_Sit_1"
+    assert A.find_sequence(GAME_FILES, "cat", sit) == sit
+    assert A.find_sequence(GAME_FILES, "cat", sit + ".A_CatMaster_Sit_1") == sit
+    with pytest.raises(ValueError, match="some like it: A_CatMaster_Trot_1"):
+        A.find_sequence(GAME_FILES, "cat", "Trot")
+    with pytest.raises(ValueError, match="no sequence A_Mice_Walk_1 for cats"):
+        A.find_sequence(GAME_FILES, "cat", "A_Mice_Walk_1")
+
 # ------------------------------------------------------------------------------------------ animations.json
 @pytest.mark.parametrize("entry, message", [
     ({"id": "Wave", "name": "Wave", "file": "a.fbx"}, "glTF file"),
@@ -402,6 +464,10 @@ def test_a_sequences_length_and_frame_rate_come_from_its_properties():
     ({"id": "Wave", "name": "Wave", "file": "a.glb", "key": "F6"}, '"emote": true too'),
     ({"id": "Wave", "name": "Wave", "file": "a.glb", "emote": True, "key": "F 6"}, "key names"),
     ({"id": "Wave", "name": "Wave", "file": "a.glb", "colour": "red"}, "unknown key"),
+    ({"id": "Trot", "name": "Trot", "file": "a.glb", "replaces": "Trot 1"}, "one of the game's sequences"),
+    ({"id": "Trot", "name": "Trot", "file": "a.glb", "replaces": "A_CatMaster_Trot_1", "loop": True}, 'takes no "loop"'),
+    ({"id": "Trot", "name": "Trot", "file": "a.glb", "replaces": "A_CatMaster_Trot_1", "emote": True, "key": "F6"},
+     'takes no "emote", "key"'),
 ])
 def test_animations_that_cant_be_used_are_refused(entry, message):
     with pytest.raises(ValueError, match=message):
@@ -437,13 +503,19 @@ def test_animations_json_is_read_and_checked(tmp_path):
 class FakeCtx:
     def __init__(self):
         self.cfg = type("Cfg", (), {"ue4ss_mods_dir": "x"})()
-        self.made, self.shared, self.scripts, self.warnings, self.notes = [], {}, {}, [], {}
+        self.made, self.shared, self.scripts, self.warnings, self.notes, self.replaced = [], {}, {}, [], {}, []
 
     def add_animation(self, name, read, kind="cat", clip=None, claws=False, source="", key=None):
         if "Broken" in name:
             raise ValueError("the file has no animation")
         self.made.append((name, kind, clip, claws))
         return "/Game/WCMods/" + name + "." + name.rsplit("/", 1)[-1], 2.0
+
+    def replace_animation(self, sequence, read, kind="cat", clip=None, source="", key=None):
+        if sequence == "A_Nothing":
+            raise ValueError("the game has no sequence A_Nothing for cats")
+        self.replaced.append((sequence, kind, clip))
+        return "/Game/Art/Characters/CatMaster/Animations/" + sequence + "." + sequence, 0.4667
 
     def add_ue4ss_shared(self, name, text):
         self.shared[name] = text
@@ -478,6 +550,23 @@ def test_the_install_lists_the_animations_and_puts_the_emotes_on_keys(tmp_path):
     assert '{ ["id"] = "m/Wave", ["name"] = "Wave", ["key"] = "F6" }' in script
     assert ctx.notes["emotes"] == ["m/Wave"]
 
+
+def test_a_replacement_goes_in_the_games_sequences_place(tmp_path):
+    mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()
+    later = type("Mod", (), {"id": "n", "folder": str(tmp_path)})()
+    (tmp_path / "w.glb").write_bytes(b"glTF")
+    trot = {"id": "Trot", "name": "Trot", "file": "w.glb", "clip": "Run", "replaces": "A_CatMaster_Trot_1"}
+    check(trot, "animations.json: animation 1")
+    ctx = FakeCtx()
+    AnimationsSection().build(ctx, [(mod, [trot]), (later, [dict(trot, id="Prance")])])
+    assert ctx.replaced == [("A_CatMaster_Trot_1", "cat", "Run")] * 2
+    assert ctx.warnings == ["n: Prance: m/Trot replaces A_CatMaster_Trot_1 too; this one goes in (its mod comes later: "
+                            "a higher priority, or the same and a later name)"]
+    assert ctx.notes == {"replaced": {"A_CatMaster_Trot_1": "n/Prance"}}
+    assert not ctx.made and not ctx.shared and not ctx.scripts      # not one of Game.anims'
+    ctx = FakeCtx()
+    AnimationsSection().build(ctx, [(mod, [dict(trot, replaces="A_Nothing")])])
+    assert ctx.warnings == ["m: Trot: the game has no sequence A_Nothing for cats"] and not ctx.notes
 
 def test_an_install_without_emotes_has_no_emotes_script(tmp_path):
     mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()

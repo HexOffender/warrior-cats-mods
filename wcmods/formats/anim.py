@@ -504,11 +504,13 @@ class AnimSequence:
         return out
 
     # ------------------------------------------------------------------------------------------ writing
-    def set_tracks(self, tracks, length=None, bones=None):
+    def set_tracks(self, tracks, length=None, bones=None, keep_length=False):
         """New keys (as tracks() gives them, every list as long), written with Unreal's per-track codec in
         full floats, and `length` seconds (by default the keys at the sequence's frame rate). A track per
         entry of the track table, or of `bones` (skeleton bone indexes), which becomes the track table;
-        bones without a track hold their reference pose."""
+        bones without a track hold their reference pose. With `keep_length`, as many keys as the sequence
+        has, and its own length stays: the one way to put new keys in a sequence whose properties wcmods
+        can't get through to SequenceLength (the game's with notifies, its footsteps among them)."""
         if "_ACL" in self.handle:
             raise ValueError("an ACL sequence takes Unreal's keys only once use_unreal_codec() moved it to its settings")
         if bones is not None:
@@ -520,7 +522,11 @@ class AnimSequence:
         n = len(tracks[0][0])
         if not 1 < n <= MAX_KEYS or any(len(part) != n for track in tracks for part in track):
             raise ValueError("every track needs the same number of keys, at least two")
-        self._value_at(SEQUENCE_LENGTH)   # the copy's length can be written
+        if keep_length:
+            if n != self.nkeys:
+                raise ValueError(f"{n} keys for a sequence of {self.nkeys}: keeping its length takes as many")
+        else:
+            self._value_at(SEQUENCE_LENGTH)   # the copy's length can be written
         offsets, scales, stream = [], [], bytearray()
         for T, Q, S in tracks:            # as the game writes them: scale, translation, rotation
             scales.append(len(stream))
@@ -533,7 +539,8 @@ class AnimSequence:
         self.nkeys, self.nbs, self.nto, self.nso, self.stride = n, len(stream), len(offsets), len(scales), 1
         self.codec, self.encoding, self.formats = "per-track", PER_TRACK, [IDENTITY, IDENTITY, IDENTITY]
         self.raw_size = len(tracks) * (48 + 40 * n)     # Unreal's estimate of the raw keys, for statistics
-        self.length = float(length) if length is not None else (n - 1) / self.frame_rate()
+        if not keep_length:
+            self.length = float(length) if length is not None else (n - 1) / self.frame_rate()
 
     def clear_curves(self):
         """No curves (the morphs keep what the AnimBlueprint gives them)."""

@@ -106,6 +106,16 @@ without a model; `Game.items.drop` for each):
   pickup and its model were gone from the ground.
 - A picture added to the block on the Items page (saved there as a PNG) showed on it in the forest.
 
+**2026-10-27, a game animation replaced** (build 26184573, a test mod's `animations.json` with the cats'
+start kit and `"clip": "A_CatMaster_Sleep_Loop_2", "replaces": "A_CatMaster_Trot_1"`):
+- The install wrote the trot again (its keys from the sleep loop, fitted to the trot's 15 keys, its
+  footsteps and curves kept, ACL moved to the engine's settings) and the game loaded it.
+- Moving at the game's walking speed (174 cm/s, W held), the cat's head was 1.8 to 3.5 cm above its root
+  bone and its spine 2.9 to 5.0: curled up as the sleep loop has it. The same moves without the mod: the
+  head 14.1 to 15.6, the spine 11.7 to 13.1, the game's trot. Standing still before it moved, the head
+  was at 14.2, the game's idle.
+- `selftest`: the trot replaced by the kit's own trot gives back the game's keys within 4e-6 cm.
+
 **2026-10-27, animations** (build 26184573, a test mod's `animations.json`: a wave made in Blender 5.2.3
 from the cats' start kit, the same with claws out at 1.5 times the speed, a looping paddle as an emote
 on F7 and as a script's swim, and a spin for mice and for birds; `WCModsEmotes` and `WCModsAnims`

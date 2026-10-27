@@ -518,6 +518,19 @@ class Studio:
             # The cats and animals an animation can be for, for the Animations page.
             return {"kinds": [{"id": k, "label": v["label"], "examples": len(v["examples"])}
                               for k, v in animations.KINDS.items()]}
+        if parts == ["game", "anim-sequences"] and method == "GET":
+            # The game's sequences for a kind, for an animation to replace one: their names, and the paths of
+            # the names that are in more than one place.
+            kind = (query or {}).get("for", "cat")
+            if kind not in animations.KINDS:
+                raise ValueError(f"there's no animal {kind!r}")
+            found = animations.game_sequences(self.ctx.game.io.files, kind)
+            return {"sequences": sorted(({"name": n, "paths": p if len(p) > 1 else []} for n, p in found.items()),
+                                        key=lambda s: s["name"].lower())}
+        if parts == ["game", "anim-sequence"] and method == "GET":
+            # One of them: where it is, how long it plays and how many keys it has (a replacement is fitted to them).
+            q = query or {}
+            return self.anim_sequence(q.get("for", "cat"), q.get("name", ""))
         if parts == ["game", "anim-kit"] and method == "GET":
             # A cat or an animal rigged to its skeleton as a .glb, to animate in Blender (animations.py).
             data, filename = animations.start_kit(self.ctx.game, (query or {}).get("for", "cat"))
@@ -770,6 +783,21 @@ class Studio:
                     return f.read()
             return None
         return animations.describe(rel, data, kind, self._skeleton(kind), sibling)
+
+    def anim_sequence(self, kind, name):
+        """One of the game's sequences an animation can replace: {"path", "seconds", "keys"}."""
+        from .formats import anim, texture
+        if kind not in animations.KINDS:
+            raise ValueError(f"there's no animal {kind!r}")
+        try:
+            path = animations.find_sequence(self.ctx.game.io.files, kind, name)
+        except ValueError as e:
+            raise LookupError(str(e)) from None
+        try:
+            seq = anim.AnimSequence(self.ctx.game.read(texture.content_path(path)))
+            return {"path": path, "seconds": round((seq.nkeys - 1) / seq.frame_rate(), 4), "keys": seq.nkeys}
+        except anim.FormatError as e:
+            raise ValueError(f"{name} isn't a sequence wcmods can read ({e})") from None
 
     def _skin_distance(self, model):
         """How far the model's farthest vertex is from the cat's skin (cm)."""
