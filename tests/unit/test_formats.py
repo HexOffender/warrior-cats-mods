@@ -1,6 +1,8 @@
 """The game's file formats, without the game: the hashes, the save codec, pictures, the Kraken decoder and
 the CSV editor. These are the checks `python wcmods.py selftest` runs before it touches the game's files."""
-from wcmods import selftest
+import pytest
+
+from wcmods import controls, selftest
 from wcmods.formats.blake3 import blake3
 
 
@@ -44,3 +46,11 @@ def test_colour_slots_and_your_cats_colours_and_scars():
 
 def test_palette_switching():
     assert selftest._palette_switching()
+
+
+def test_bindings_read_and_a_save_without_any():
+    text = '{"acct": {"Shared": {"InputKeyboard": {"Player_Interact": "0,Player_Interact,E,1.000000.1"}}}}'
+    assert controls.read_bindings(text) == {"keyboard": {"Player_Interact": "E"}, "gamepad": {}}
+    for empty in ("{}", '{"acct": {}}'):   # a save the game hasn't written settings to yet
+        with pytest.raises(LookupError):
+            controls.read_bindings(empty)

@@ -274,7 +274,10 @@ def cmd_controls(ctx, args):
     path = os.path.join(ctx.cfg.save_dir, save.SAV_NAME)
     if not os.path.isfile(path):
         sys.exit("No save found yet. Launch the game once first.")
-    b = controls.read_bindings(save.SaveGame.load(path).json_text)
+    try:
+        b = controls.read_bindings(save.SaveGame.load(path).json_text)
+    except LookupError as e:
+        sys.exit(f"No bindings to show: {e}.")
     if args.json:
         print(json.dumps(b, indent=2))
         return
@@ -373,6 +376,9 @@ def cmd_remap(ctx, args):
 
 
 def cmd_play(ctx, args):
+    if not ctx.cfg.data.get("allow_code_mods") and pipeline.code_installed(ctx.cfg.data):
+        print("warning: the game has code from a test install (agent install), and mods that run code are off; "
+              "`wcmods install` takes it out")
     launching = not game_running()
     if launching:
         print("starting the game through Steam...")
