@@ -19,6 +19,10 @@ with the file's animation in it (ctx.add_animation, animations.py, formats/anim.
 in the shared Lua module WCModsAnims, from which WCModsGame's Game.anims plays them by their id,
 "<mod>/<id>"; with emotes, the WCModsEmotes script puts those on their keys and on a mod menu page. They
 play over what the cat or animal is doing, in the slot its AnimBlueprint plays the game's own montages in.
+
+One with "replaces" (a game sequence: "A_CatMaster_Trot_1") goes in that sequence's place instead
+(ctx.replace_animation): every cat, or every animal of that kind, plays it wherever the game played its
+own, fitted to that one's length. It isn't one of Game.anims' then.
 See docs/SDK.md for every key.
 """
 import re
@@ -29,7 +33,10 @@ from .items import ModelFile
 
 ID = re.compile(r"[A-Za-z][A-Za-z0-9]{0,47}$")
 KEY = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,39}$")      # one of Unreal's key names: "F6", "T", "Gamepad_DPad_Up"
-KEYS = {"id", "name", "file", "for", "clip", "loop", "speed", "blend", "emote", "key", "claws"}
+REPLACES = re.compile(r"(/Game/[A-Za-z0-9_/]+/)?A_[A-Za-z0-9_]{1,120}$")   # a game sequence's name or path
+KEYS = {"id", "name", "file", "for", "clip", "loop", "speed", "blend", "emote", "key", "claws", "replaces"}
+# What a replacement can't have: the game plays it where it played its own, as it played that.
+NOT_WITH_REPLACES = ("loop", "speed", "blend", "emote", "key", "claws")
 ANIMS_LUA = "WCModsAnims"       # the shared Lua module that lists the install's animations
 EMOTES_SCRIPT = "WCModsEmotes"  # the script that puts the emotes on keys and a menu page
 SPEEDS = (0.1, 10.0)
@@ -77,12 +84,26 @@ class AnimationsSection(Section):
         return found or None
 
     def build(self, ctx, items):
-        made, emotes, keys = {}, [], {}
+        made, emotes, keys, replaced = {}, [], {}, {}
         for mod, found in items:
             for a in found:
                 full = f"{mod.id}/{a['id']}"
                 kind = a.get("for", "cat")
                 file = AnimationFile(a["file"])
+                if a.get("replaces"):
+                    try:
+                        path, _ = ctx.replace_animation(
+                            a["replaces"], lambda file=file, mod=mod: file.parts(mod), kind=kind, clip=a.get("clip"),
+                            source=f"{mod.id}: {a['id']}", key=file.key(mod))
+                    except ValueError as e:
+                        ctx.warn(f"{mod.id}: {a['id']}: {e}")
+                        continue
+                    short = path.split(".", 1)[0].rsplit("/", 1)[-1]
+                    if short in replaced:       # mods come lowest priority first: the later one goes in
+                        ctx.warn(f"{mod.id}: {a['id']}: {replaced[short]} replaces {short} too; this one goes in "
+                                 "(its mod comes later: a higher priority, or the same and a later name)")
+                    replaced[short] = full
+                    continue
                 try:
                     path, seconds = ctx.add_animation(
                         f"{mod.id}/A_{a['id']}", lambda file=file, mod=mod: file.parts(mod), kind=kind, clip=a.get("clip"),
@@ -102,6 +123,8 @@ class AnimationsSection(Section):
                         keys[a["key"]] = full
                     emotes.append(emote)
                 made[full] = entry
+        if replaced:
+            ctx.note("replaced", replaced)
         if not made:
             return
         if not ctx.cfg.ue4ss_mods_dir:
@@ -132,6 +155,14 @@ def check(a, what):
         raise ValueError(f"{what}: \"for\" should be one of {', '.join(animations.KINDS)}")
     if a.get("clip") is not None and (not isinstance(a["clip"], str) or not a["clip"]):
         raise ValueError(f"{what}: \"clip\" should be the name of an animation in the file")
+    if a.get("replaces") is not None:
+        if not isinstance(a["replaces"], str) or not REPLACES.match(a["replaces"]):
+            raise ValueError(f"{what}: \"replaces\" should be one of the game's sequences, by its name "
+                             "(\"A_CatMaster_Trot_1\") or its path")
+        given = [f'"{k}"' for k in NOT_WITH_REPLACES if a.get(k) not in (None, False)]
+        if given:
+            raise ValueError(f"{what}: one that replaces a game sequence plays where the game played that, as it "
+                             f"played it, so it takes no {', '.join(given)}")
     for key in ("loop", "emote", "claws"):
         if a.get(key) is not None and not isinstance(a[key], bool):
             raise ValueError(f"{what}: \"{key}\" should be true or false")

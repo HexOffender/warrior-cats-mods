@@ -1,10 +1,15 @@
 // Animations: the mod's own (animations.json), made in Blender and saved as glTF, for cats or one kind of animal.
 // A cat's can be an emote, played on your cat from a key or the mod menu's Emotes page; scripts play any of
-// them on any cat or animal of their kind (Game.anims). See wcmods/sections/animations.py and wcmods/animations.py.
+// them on any cat or animal of their kind (Game.anims). One can replace one of the game's own sequences instead
+// ("replaces"): every cat, or every animal of its kind, plays it where the game played that one.
+// See wcmods/sections/animations.py and wcmods/animations.py.
 import { listEditor, field } from "../lib/story.js";
 
 const FILES = ".glb,.gltf";
-const EDITED = new Set(["id", "name", "file", "for", "clip", "loop", "speed", "blend", "emote", "key", "claws"]);
+const EDITED = new Set(["id", "name", "file", "for", "clip", "loop", "speed", "blend", "emote", "key", "claws", "replaces"]);
+// What a replacement doesn't take: the game plays it where it played its own, as it played that.
+const NOT_WITH_REPLACES = ["loop", "speed", "blend", "emote", "key", "claws"];
+const short = path => (path || "").split("/").pop();
 
 // "Tail wave" -> "TailWave": an animation's id is part of its name in the game, letters and digits.
 function animId(name, taken) {
@@ -22,6 +27,9 @@ export default {
     const { el, api, toast, clear, input } = wc;
     let anims = [], extra = {};
     let kinds;
+    const sequences = {};   // the game's sequences by kind, read once each: [{name, paths}]
+    const sequencesOf = kind => (sequences[kind] = sequences[kind] || api.get(`/game/anim-sequences?for=${encodeURIComponent(kind)}`)
+      .then(r => r.sequences).catch(e => { delete sequences[kind]; throw e; }));
     try { kinds = (await api.get("/game/anim-kinds")).kinds; }
     catch (e) { root.append(el("div", { class: "error-card" }, el("strong", { text: "Couldn't read the game's animals" }), el("span", { text: e.message }))); return {}; }
     const kindLabel = k => (kinds.find(x => x.id === k) || {}).label || k;
@@ -34,7 +42,7 @@ export default {
     const out = wc.codePanel("animations.json");
     const editor = listEditor({
       noun: "animation", empty: "No animations yet. Add one: an emote for your cat, or something for a script to play on a cat or an animal.",
-      label: a => [el("strong", { text: a.name || a.id }), el("span", { class: "muted", text: ` ${a.emote ? "emote" : kindLabel(a.for || "cat").toLowerCase()}` })],
+      label: a => [el("strong", { text: a.name || a.id }), el("span", { class: "muted", text: ` ${a.replaces ? `replaces ${short(a.replaces)}` : a.emote ? "emote" : kindLabel(a.for || "cat").toLowerCase()}` })],
       add: () => {
         const name = "New emote";
         anims.push({ id: animId(name, anims.map(x => x.id)), name, for: "cat", emote: true, _new: true });
@@ -91,15 +99,51 @@ export default {
         idNote.textContent = idOf(a);
         changed();
       }, onchange: () => draw() });
-      const idOf = x => `In scripts: Game.anims.play(cat, "${target.current || "this-mod"}/${x.id}")`;
+      const idOf = x => x.replaces ? `Plays where the game played ${short(x.replaces)}; scripts don't play it by name.`
+        : `In scripts: Game.anims.play(cat, "${target.current || "this-mod"}/${x.id}")`;
       const idNote = el("span", { class: "muted mono", text: idOf(a) });
       const forSel = el("select", { "aria-label": "For", onchange: () => {
         a.for = forSel.value;
         if (a.for !== "cat") { delete a.emote; delete a.key; delete a.claws; }
-        delete a.file; delete a.clip; delete a._info;
+        delete a.file; delete a.clip; delete a._info; delete a.replaces;
         changed(true);
       } }, ...kinds.map(k => el("option", { value: k.id, text: k.label })));
       forSel.value = kind;
+
+      // ---------- in place of one of the game's ----------
+      const listId = `anim-sequences-${kind}`;
+      const seqList = el("datalist", { id: listId });
+      const seqFacts = el("p", { class: "note" });
+      const seqInput = el("input", { type: "text", list: listId, value: a.replaces || "", spellcheck: "false", placeholder: "None: a new animation",
+        "aria-label": "The game's sequence it replaces", style: { minWidth: "22em" }, onchange: async () => {
+          const v = seqInput.value.trim(), path = v.split(".")[0];   // a path may come with its object's name
+          if (!v) { delete a.replaces; changed(true); return; }
+          const refuse = text => { toast(text, "bad"); seqInput.value = a.replaces || ""; };
+          try {
+            const known = await sequencesOf(kind);
+            const hit = known.find(s => s.name === v || s.paths.includes(path)) || known.find(s => s.name.toLowerCase() === v.toLowerCase());
+            if (!hit) return refuse(`The game has no sequence ${v} for ${kindLabel(kind).toLowerCase()}.`);
+            if (hit.additive) return refuse(`${hit.name} is an additive animation (its keys are added to another pose); replacing those isn't supported.`);
+            if (hit.paths.length > 1 && !hit.paths.includes(path)) return refuse(`There are ${hit.paths.length} called ${hit.name}: choose one by its path.`);
+            const chosen = hit.paths.length > 1 ? path : hit.name;
+            await api.get(`/game/anim-sequence?for=${encodeURIComponent(kind)}&name=${encodeURIComponent(chosen)}`);   // one wcmods can read
+            a.replaces = chosen;
+            for (const k of NOT_WITH_REPLACES) delete a[k];
+            changed(true);
+          } catch (e) { refuse(e.message); }
+        } });
+      sequencesOf(kind).then(list => seqList.append(...list.filter(s => !s.additive).flatMap(s => s.paths.length > 1
+        ? s.paths.map(p => el("option", { value: p })) : [el("option", { value: s.name })]))).catch(() => {});
+      if (a.replaces) {
+        const who = kind === "cat" ? "Every cat (yours and the clans')" : `Every one of the ${kindLabel(kind).toLowerCase()}`;
+        seqFacts.textContent = `${who} plays this where the game played ${short(a.replaces)}.`;
+        api.get(`/game/anim-sequence?for=${encodeURIComponent(kind)}&name=${encodeURIComponent(a.replaces)}`)
+          .then(s => { seqFacts.textContent = `${who} plays this where the game played ${short(a.replaces)}, fitted to its ${s.seconds.toFixed(2)} s (${s.keys} keys at the game's rate): make yours that long to see it at the speed you made it. Its footsteps and other cues stay where they were.`
+            + (s.root_motion ? " The game's has root motion: where the game uses it (attacks, jumps), its root bone's movement moves the animal itself, so keep your root's path close to the game's." : ""); })
+          .catch(e => { seqFacts.textContent = e.message; });
+      } else {
+        seqFacts.textContent = "Leave it empty for a new animation (an emote, or one for scripts). Choose one of the game's, like A_CatMaster_Trot_1, and this plays in its place instead, everywhere the game plays it. The start kit has some of them to start from.";
+      }
 
       // ---------- the file ----------
       const facts = el("p", { class: "note" });
@@ -162,15 +206,18 @@ export default {
           field("Name", name, cat ? "What the Emotes page calls it." : null), idNote,
           el("div", { style: { display: "grid", gap: "10px", alignItems: "start", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" } },
             field("For", forSel, "Every cat shares one skeleton; each kind of animal has its own, and plays only its own animations."))),
+        el("div", { class: "card" }, el("h3", { text: "Replaces one of the game's" }),
+          field("The game's sequence", el("div", { class: "row" }, seqInput, seqList)), seqFacts),
         el("div", { class: "card" }, el("h3", { text: "The animation" }),
           el("p", { class: "note", text: "Animate the start kit's armature in Blender, keeping its bones' names, then File > Export > glTF 2.0 as glTF Binary (.glb) with Animation on. Units are metres with Y up, Blender's own settings. Bones you don't move hold their place; moving the root moves the body, not the cat." }),
           fileRow, picker, field("Which animation in the file", clipSel), facts),
+      ];
+      if (!a.replaces) cards.push(
         el("div", { class: "card" }, el("h3", { text: "How it plays" }),
           el("label", { class: "row" }, loop, el("span", { text: "Loop until it's stopped (a script stops it, or for an emote, its key again or walking off)" })),
           el("div", { class: "row" }, el("span", { class: "lbl", text: "Speed" }), speed, el("span", { class: "muted", text: "1 is as made" }),
-            el("span", { class: "lbl", text: "Blend" }), blend, el("span", { class: "muted", text: "seconds from what it was doing, and back" }))),
-      ];
-      if (cat) {
+            el("span", { class: "lbl", text: "Blend" }), blend, el("span", { class: "muted", text: "seconds from what it was doing, and back" }))));
+      if (cat && !a.replaces) {
         const emote = el("input", { type: "checkbox", checked: !!a.emote, onchange: () => { a.emote = emote.checked || undefined; if (!a.emote) delete a.key; changed(true); } });
         const claws = el("input", { type: "checkbox", checked: !!a.claws, onchange: () => { a.claws = claws.checked || undefined; changed(); } });
         const keyLabel = el("span", { class: "mono", text: a.key || "no key" });

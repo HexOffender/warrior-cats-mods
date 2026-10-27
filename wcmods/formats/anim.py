@@ -54,6 +54,9 @@ UE_CODEC = "AnimCompress_PerTrackCompression_5"
 # SequenceLength (a float).
 OBJECT_PROPERTIES = (0, 1, 2)
 FRAME_RATE, SEQUENCE_LENGTH = 17, 20
+# Read only for whether they're set (present in the header and not zero): AdditiveAnimType (an additive
+# sequence's keys are added to another pose: the cats' Meow_1 and aim offsets) and bEnableRootMotion.
+ADDITIVE_TYPE, ROOT_MOTION = 3, 10
 MAX_KEYS = 1 << 16
 
 
@@ -416,6 +419,19 @@ class AnimSequence:
             raise FormatError("the sequence's frame rate isn't laid out as expected")
         return num / den
 
+    def _set(self, index):
+        """Whether a property is set: in the header, and not zero."""
+        present, zero = read_header(_Reader(self.props))
+        return index in present and index not in zero
+
+    def additive(self):
+        """Whether its keys are added to another pose (AdditiveAnimType set) rather than a pose of their own."""
+        return self._set(ADDITIVE_TYPE)
+
+    def root_motion(self):
+        """Whether it has root motion on (bEnableRootMotion): where the game takes it, the root bone moves the animal."""
+        return self._set(ROOT_MOTION)
+
     def _value_at(self, index):
         """Where a property's value is in the properties (LookupError when it's left out). Only the
         properties wcmods knows may come before SequenceLength, as in the game's plain sequences."""
@@ -504,11 +520,13 @@ class AnimSequence:
         return out
 
     # ------------------------------------------------------------------------------------------ writing
-    def set_tracks(self, tracks, length=None, bones=None):
+    def set_tracks(self, tracks, length=None, bones=None, keep_length=False):
         """New keys (as tracks() gives them, every list as long), written with Unreal's per-track codec in
         full floats, and `length` seconds (by default the keys at the sequence's frame rate). A track per
         entry of the track table, or of `bones` (skeleton bone indexes), which becomes the track table;
-        bones without a track hold their reference pose."""
+        bones without a track hold their reference pose. With `keep_length`, as many keys as the sequence
+        has, and its own length stays: the one way to put new keys in a sequence whose properties wcmods
+        can't get through to SequenceLength (the game's with notifies, its footsteps among them)."""
         if "_ACL" in self.handle:
             raise ValueError("an ACL sequence takes Unreal's keys only once use_unreal_codec() moved it to its settings")
         if bones is not None:
@@ -520,7 +538,11 @@ class AnimSequence:
         n = len(tracks[0][0])
         if not 1 < n <= MAX_KEYS or any(len(part) != n for track in tracks for part in track):
             raise ValueError("every track needs the same number of keys, at least two")
-        self._value_at(SEQUENCE_LENGTH)   # the copy's length can be written
+        if keep_length:
+            if n != self.nkeys:
+                raise ValueError(f"{n} keys for a sequence of {self.nkeys}: keeping its length takes as many")
+        else:
+            self._value_at(SEQUENCE_LENGTH)   # the copy's length can be written
         offsets, scales, stream = [], [], bytearray()
         for T, Q, S in tracks:            # as the game writes them: scale, translation, rotation
             scales.append(len(stream))
@@ -533,7 +555,8 @@ class AnimSequence:
         self.nkeys, self.nbs, self.nto, self.nso, self.stride = n, len(stream), len(offsets), len(scales), 1
         self.codec, self.encoding, self.formats = "per-track", PER_TRACK, [IDENTITY, IDENTITY, IDENTITY]
         self.raw_size = len(tracks) * (48 + 40 * n)     # Unreal's estimate of the raw keys, for statistics
-        self.length = float(length) if length is not None else (n - 1) / self.frame_rate()
+        if not keep_length:
+            self.length = float(length) if length is not None else (n - 1) / self.frame_rate()
 
     def clear_curves(self):
         """No curves (the morphs keep what the AnimBlueprint gives them)."""

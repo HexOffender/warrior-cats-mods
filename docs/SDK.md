@@ -408,15 +408,17 @@ What it can't do (yet):
 
 Animations of a mod's own, made in Blender (or anything that writes glTF), for cats or for one kind of
 animal: emotes your cat plays from a key or the mod menu, or anything a script plays on a cat or an
-animal (a swim for RiverClan cats, say, once a mod makes them swim). The Animations page in Clan Mod
-Studio writes the file and saves the start kits.
+animal (a swim for RiverClan cats, say, once a mod makes them swim). Or one of the game's own
+animations replaced: a trot of your own for every cat, say. The Animations page in Clan Mod Studio
+writes the file and saves the start kits.
 
 ```json
 {
   "animations": [
     { "id": "Wave", "name": "Wave", "file": "animations/wave.glb", "emote": true, "key": "F6" },
     { "id": "Swim", "name": "Swim", "file": "animations/swim.glb", "loop": true },
-    { "id": "Spin", "name": "Spin", "file": "animations/spin.glb", "for": "mouse", "clip": "Spin" }
+    { "id": "Spin", "name": "Spin", "file": "animations/spin.glb", "for": "mouse", "clip": "Spin" },
+    { "id": "Trot", "name": "My trot", "file": "animations/trot.glb", "replaces": "A_CatMaster_Trot_1" }
   ]
 }
 ```
@@ -428,6 +430,7 @@ Studio writes the file and saves the start kits.
 | `file` | A glTF file in the mod's folder: `.glb`, or a `.gltf` with its data inside or beside it |
 | `for` | Whose skeleton: `cat` (the default: every cat in the forest, yours and the clans'), `mouse`, `rat`, `rabbit`, `squirrel`, `bird`, `fox`, `badger`, `dog` or `snake` |
 | `clip` | Which animation in the file (Blender's action name); the first by default |
+| `replaces` | One of the game's sequences for that skeleton, by its name (`"A_CatMaster_Trot_1"`) or its path (`"/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1"`, for a name in more than one folder): this plays in its place instead (below). It takes no `loop`, `speed`, `blend`, `emote`, `key` or `claws` |
 | `loop` | Play it over and over until it's stopped (a script's `Game.anims.stop`, or an emote's key again) |
 | `speed` | How fast, 0.1 to 10 (1 as it was made) |
 | `blend` | Seconds it takes to blend in from what the animal was doing, and back out at the end, 0 to 2 (0.25) |
@@ -479,11 +482,30 @@ emotes, the `WCModsEmotes` script adds the mod menu's Emotes page and their keys
 game has the focus. An emote's key or button again stops it, and so does walking off (the game's walk is
 under it). It all needs the script loader (UE4SS).
 
+**Replacing one of the game's (`replaces`):** the game's sequence itself is written again with the
+file's keys in place of its own, in wcmods' container under the same name, so every cat (or every
+animal of that kind) plays yours wherever the game played it: the AnimBlueprint's walk, trot or idle,
+and anything else that uses the same sequence (the walk and run are in three cutscenes too; the run in
+a scar montage). The file's clip is fitted to the game's sequence: as many keys as it has, from the
+clip's first key to its last, so a clip of another length plays faster or slower. Make it the game's
+length to see it at the speed you made it: the start kit's examples are the game's own, at their
+length (the trot is 0.47 s), and the Animations page shows the length of the one you choose.
+Everything else in it stays the game's: its length, its notifies (the footsteps fall where they did),
+its curves (the claws' among them) and how the AnimBlueprint blends it with the others. An ACL sequence
+(most of the game's) is moved to the engine's own compression settings, as a copy is. Two mods
+replacing the same one: the later mod's goes in (a higher priority, or the same and a later name),
+with a warning. A replacement isn't one of `Game.anims`' animations: scripts don't play it by its id.
+Additive sequences (their keys are added to another pose: the cats' `A_CatMaster_Meow_1`, its jump
+recovery and aim offsets) can't be replaced, and are refused. Some of the game's have root motion
+(`bEnableRootMotion`: the walk, the attacks): where the game uses it, as it does for attacks and
+jumps, the root bone's movement moves the animal itself, so keep your root's path close to the game's.
+
 **What it can't do (yet):** move an animal (swimming, flying, new ways to walk are animations only);
 play on part of the body (the game's slot is the whole body); play on the named characters with models
-of their own (Brightheart, Tallstar...), whose skeletons are their own; replace one of the game's own
-animations. Animals far off or out of view don't move their bones until they're seen, the engine's way,
-so a script's animation on one shows when it comes into view.
+of their own (Brightheart, Tallstar...), whose skeletons are their own; replace one of the game's
+animations for one cat only (every cat shares the AnimBlueprint and its sequences). Animals far off or
+out of view don't move their bones until they're seen, the engine's way, so a script's animation on one
+shows when it comes into view.
 
 ### New content: models, textures, sounds
 

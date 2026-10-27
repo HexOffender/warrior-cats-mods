@@ -208,7 +208,9 @@ Animations of the mod's own, made in Blender and saved as glTF (`.glb`), for cat
 (`"for"`: mouse, rat, rabbit, squirrel, bird, fox, badger, dog, snake). A cat's can be an emote: a button
 on the mod menu's Emotes page, and a key. Scripts play any of them (`Game.anims.play`). `python wcmods.py
 animation <kind>` saves the animal rigged to the game's skeleton to animate. They play over what the
-animal is doing, where it stands, and need the script loader (UE4SS). Every key is in
+animal is doing, where it stands, and need the script loader (UE4SS). One with `"replaces":
+"A_CatMaster_Trot_1"` (one of the game's sequences) plays in that one's place instead, for every cat or
+every animal of the kind, fitted to its length. Every key is in
 [SDK.md, Animations](SDK.md#animations-animationsjson).
 
 ### `npcs.json`

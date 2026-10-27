@@ -110,6 +110,7 @@ class BuildContext:
         self.files = {}         # pak path -> (bytes, section, source)
         self.packages = {}      # asset path -> (bytes, section, source)
         self.new_packages = {}  # asset path of a package the game hasn't got -> (chunk id, imports, shaders, bulk)
+        self.patch_imports = {} # asset path of a patched game package -> the package IDs it imports now
         self.csv_edits = {}     # csv path -> [(edits, section, source)]
         self.table_rows = {}    # cooked table name -> [(row name, values, section, source)]
         self.ue4ss_mods = {}    # name -> ({relpath: bytes}, section)
@@ -242,9 +243,14 @@ class BuildContext:
             raise ValueError(f"{table} has no field {', '.join(unknown)} (it has {', '.join(sorted(fields))})")
         self.table_rows.setdefault(table, []).append((row, dict(values), self.current, source))
 
-    def patch_package(self, path, data, source=""):
-        """Replace a cooked asset (.uasset) with patched bytes (they may be longer or shorter)."""
+    def patch_package(self, path, data, source="", imports=None):
+        """Replace a cooked asset (.uasset) with patched bytes (they may be longer or shorter). `imports`: the
+        package IDs it imports (the container header's), when the patch changed them; the game's otherwise."""
         self.packages[path] = (bytes(data), self.current, source)
+        if imports is not None:
+            self.patch_imports[path] = list(imports)
+        else:
+            self.patch_imports.pop(path, None)
 
     def add_package(self, path, data, chunk_id, imports, shaders=(), bulk=None, source=""):
         """Add a cooked asset the game hasn't got ("Wrc/Content/WCMods/.../T_X.uasset"), with its
@@ -321,6 +327,27 @@ class BuildContext:
         self.add_package(path, built["data"], built["chunk_id"], built["imports"], built["shaders"], source=source)
         return package + "." + package.rsplit("/", 1)[-1], built["seconds"]
 
+    def replace_animation(self, sequence, read, kind="cat", clip=None, source="", key=None):
+        """One of the game's sequences played with a glTF file's keys instead, wherever the game plays it (for
+        every animal on that skeleton): `sequence` is its name ("A_CatMaster_Trot_1") or path, in `kind`'s
+        folder; read, clip and key as add_animation's. The clip is fitted to the sequence's length, and the
+        sequence keeps its notifies (footsteps) and curves. Returns (its asset path, its seconds)."""
+        from . import animations
+        from .formats import texture
+        if kind not in animations.KINDS:
+            raise ValueError(f"there's no animal {kind!r} to animate (there are {', '.join(animations.KINDS)})")
+        package = animations.find_sequence(self.game.io.files, kind, sequence)
+        path = texture.content_path(package)
+        if path in self.packages and self.packages[path][1] != self.current:
+            # Another section's change to the same package (a higher-priority mod's replacement in this one
+            # takes the place of an earlier one, as files do).
+            raise ValueError(f"{package.rsplit('/', 1)[-1]} is changed by {self.packages[path][1]} already")
+        if self._skeletons is None:
+            self._skeletons = animations.Game(self.read_game_file)
+        built = animations.build(self, package, kind, read, clip, key, game=self._skeletons, replace=True)
+        self.patch_package(path, built["data"], source=source, imports=built["imports"])
+        return package + "." + package.rsplit("/", 1)[-1], built["seconds"]
+
     def add_ue4ss_mod(self, name, files):
         """files: {"Scripts/main.lua": text, ...}. Installed only when UE4SS is present.
 
@@ -360,13 +387,13 @@ class BuildContext:
     # ---- section isolation ----
     def begin(self, section_id):
         self.current = section_id
-        self._snapshot = (dict(self.files), dict(self.packages), dict(self.new_packages),
+        self._snapshot = (dict(self.files), dict(self.packages), dict(self.new_packages), dict(self.patch_imports),
                           {k: list(v) for k, v in self.csv_edits.items()},
                           {k: list(v) for k, v in self.table_rows.items()}, dict(self.ue4ss_mods),
                           dict(self.ue4ss_shared), list(self.save_ops), list(self.warnings))
 
     def rollback(self):
-        (self.files, self.packages, self.new_packages, self.csv_edits, self.table_rows, self.ue4ss_mods,
+        (self.files, self.packages, self.new_packages, self.patch_imports, self.csv_edits, self.table_rows, self.ue4ss_mods,
          self.ue4ss_shared, self.save_ops, self.warnings) = self._snapshot
         self.notes.pop(self.current, None)
 

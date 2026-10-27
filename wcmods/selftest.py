@@ -748,9 +748,11 @@ def _animations(io):
         import io as _io
         import zipfile
         kits, short = {}, []
+        glbs = {}
         for kind in animations.KINDS:        # every kind's kit, with all its examples
             data, _ = animations.start_kit(game, kind)
-            kits[kind] = animations.Gltf(f"{kind}.glb", zipfile.ZipFile(_io.BytesIO(data)).read(f"{kind}.glb"))
+            glbs[kind] = zipfile.ZipFile(_io.BytesIO(data)).read(f"{kind}.glb")
+            kits[kind] = animations.Gltf(f"{kind}.glb", glbs[kind])
             if len(kits[kind].clips) != len(animations.KINDS[kind]["examples"]):
                 short.append(kind)
         gltf = kits["cat"]
@@ -766,10 +768,36 @@ def _animations(io):
             back = animations.retarget(gltf, gltf.clip(example), skeleton, seq.track_map, seq.frame_rate(), pose)
             worst = max([worst] + [math.dist(a, b) for (T, _, _), (T2, _, _) in zip(keys, back) for a, b in zip(T, T2)])
             turn = max([turn] + [apart(a, b) for (_, Q, _), (_, Q2, _) in zip(keys, back) for a, b in zip(Q, Q2)])
-        kit_ok = worst < 1e-3 and turn < 1e-4 and not short
+        # The trot (ACL, with footsteps) replaced by the kit's own trot: the game's keys again, with its length,
+        # notifies, curves and properties, and the engine's codec settings imported in place of ACL's.
+        # An additive one (Meow_1: keys added to another pose) is refused.
+        trot = "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1"
+        kit = lambda: ("cat.glb", glbs["cat"], None)       # noqa: E731
+        with tempfile.TemporaryDirectory() as cache:
+            ctx = type("Ctx", (), {"read_game_file": staticmethod(io.read_file), "cache_dir": cache,
+                                   "game": type("Game", (), {"io": io})()})()
+            built = animations.build(ctx, trot, "cat", kit, "A_CatMaster_Trot_1", None, replace=True)
+            try:
+                animations.build(ctx, animations.find_sequence(io.files, "cat", "A_CatMaster_Meow_1"), "cat", kit,
+                                 "A_CatMaster_Meow", None, replace=True)
+                additive_refused = False
+            except ValueError as e:
+                additive_refused = "additive" in str(e)
+        original, replaced = anim.AnimSequence(read(trot)), anim.AnimSequence(built["data"])
+        theirs = dict(zip(original.track_map, original.tracks(original.bind_pose(skeleton))))
+        ours = dict(zip(replaced.track_map, replaced.tracks()))
+        moved = max(math.dist(a, b) for bone, (T, _, _) in theirs.items() for a, b in zip(T, ours[bone][0]))
+        turned = max(apart(a, b) for bone, (_, Q, _) in theirs.items() for a, b in zip(Q, ours[bone][1]))
+        kept = (replaced.props == original.props and len(replaced.exports) == len(original.exports)
+                and replaced.nkeys == original.nkeys and replaced.curves == original.curves
+                and replaced.codec == "per-track" and texture.package_id(anim.UE_SETTINGS) in built["imports"])
+        kit_ok = worst < 1e-3 and turn < 1e-4 and not short and kept and moved < 1e-3 and turned < 1e-4 and additive_refused
         detail_kit = (f"{len(kits)} start kits, {sum(len(k.clips) for k in kits.values())} examples"
                       + (f" (short: {', '.join(short)})" if short else "")
-                      + f"; kit round trip {worst:.1e} cm, {turn:.1e} in rotations")
+                      + f"; kit round trip {worst:.1e} cm, {turn:.1e} in rotations"
+                      + f"; the trot replaced by the kit's {moved:.1e} cm, {turned:.1e}"
+                      + ("" if kept else " (its length, notifies, curves or codec didn't come through)")
+                      + ("" if additive_refused else "; an additive sequence (Meow_1) wasn't refused"))
     except (ValueError, KeyError) as e:
         detail_kit = f"start kit: {e}"
     detail = (f"{sum(codecs.values())} sequences ({', '.join(f'{n} {c}' for c, n in sorted(codecs.items()))}); "

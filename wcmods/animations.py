@@ -418,13 +418,14 @@ def _depth(gltf, i):
     return d
 
 
-def retarget(gltf, clip, skeleton, bones, rate, pose=None):
+def retarget(gltf, clip, skeleton, bones, rate, pose=None, keys=None):
     """The clip's keys for the skeleton's `bones` (indexes), at `rate` keys a second: [(translations,
     rotations, scales)] a bone, relative to its parent in the game's space. `pose` is the pose the game's
-    bones move from (rest_pose; the skeleton's own by default)."""
+    bones move from (rest_pose; the skeleton's own by default). With `keys`, that many, spread evenly from
+    the clip's first key to its last (a replacement fits the game's sequence: its length is the game's)."""
     if clip["seconds"] > MAX_SECONDS:
         raise ValueError(f"the animation is {clip['seconds']:.1f} s long; an animation can be up to {MAX_SECONDS} s")
-    n = max(2, int(round(clip["seconds"] * rate)) + 1)
+    n = keys or max(2, int(round(clip["seconds"] * rate)) + 1)
     joints = gltf.joints(skeleton)
     if not joints:
         raise ValueError("none of the file's bones has the name of one of the game's (export the start kit's "
@@ -448,7 +449,7 @@ def retarget(gltf, clip, skeleton, bones, rate, pose=None):
     moved = {b: _mul(_inv(rest[j]), _mul(rig, ref[b])) for b, j in joints.items()}
     out = {b: ([], [], []) for b in bones}
     for k in range(n):
-        t = min(clip["seconds"], k / rate)
+        t = clip["seconds"] * k / (n - 1) if keys else min(clip["seconds"], k / rate)
         local = gltf._locals_at(clip, t)
         g = {}
         for i in gltf.order:
@@ -512,20 +513,65 @@ class Game:
         return self._rests[kind]
 
 
-def build(ctx, package, kind, read_file, clip, key, claws=False, game=None):
+def folder(kind):
+    """Where a kind's own files are: /Game/Art/Characters/CatMaster/, .../Enemy/Mice/..."""
+    return _ART + KINDS[kind]["skeleton"].split("/Skel/")[0] + "/"
+
+
+def game_sequences(files, kind):
+    """The game's sequences in a kind's folder (`files`: the game's container paths), by name: {"A_CatMaster_Trot_1":
+    ["/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1"], ...}; a name can be in more than one place.
+    Sequences are named A_ (montages AM_, blend spaces BS_), as the game names them."""
+    from .formats import texture
+    top = texture.content_path(folder(kind))[:-len(".uasset")]
+    out = {}
+    for path in files:
+        name = path.rsplit("/", 1)[-1]
+        if path.startswith(top) and name.startswith("A_") and name.endswith(".uasset"):
+            out.setdefault(name[:-len(".uasset")], []).append("/Game/" + path[len("Wrc/Content/"):-len(".uasset")])
+    return out
+
+
+def find_sequence(files, kind, name):
+    """The asset path of the game's sequence `name` replaces: a name ("A_CatMaster_Trot_1") or a path
+    ("/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1"), in the kind's folder. ValueError when it
+    isn't there, or when the name is in more than one place (then the path says which)."""
+    sequences = game_sequences(files, kind)
+    if name.startswith("/Game/"):
+        path = name.split(".", 1)[0]
+        short = path.rsplit("/", 1)[-1]
+        if path in sequences.get(short, []):
+            return path
+        raise ValueError(f"the game has no sequence {path} in {folder(kind)} ({KINDS[kind]['label'].lower()}' "
+                         "animations)")
+    places = sequences.get(name)
+    if not places:
+        near = sorted(n for n in sequences if name.lower() in n.lower())[:5]
+        raise ValueError(f"the game has no sequence {name} for {KINDS[kind]['label'].lower()}"
+                         + (f" (some like it: {', '.join(near)})" if near else ""))
+    if len(places) > 1:
+        raise ValueError(f"the game has {len(places)} sequences called {name}: give the path of one ({', '.join(places)})")
+    return places[0]
+
+
+def build(ctx, package, kind, read_file, clip, key, claws=False, game=None, replace=False):
     """{"data", "chunk_id", "imports", "shaders", "seconds"} for a new sequence `package`: the clip `clip`
     (a name, or None for the first) of the glTF file read_file() gives as (name, data, sibling), for a kind
     of animal, in a copy of the kind's template. With `key` (text that changes whenever the file would) it's
     kept in cache/animations under that and the template's bytes, so an install doesn't make it twice;
-    without, it's made each time."""
+    without, it's made each time.
+
+    With `replace`, `package` is one of the game's sequences, and this is it with the clip's keys in place
+    of its own: as many keys as it has, the clip stretched or squeezed to its length, which stays, with its
+    notifies (the footsteps) and its curves. So every animal that plays it plays the clip."""
     from .formats import anim, texture
-    template_path = texture.content_path(asset(kind, "template"))
-    template = ctx.read_game_file(template_path)
-    digest = hashlib.sha1(f"{CACHE_VERSION}|{package}|{kind}|{clip}|{bool(claws)}|{key}|".encode()
+    template_name = package if replace else asset(kind, "template")
+    template = ctx.read_game_file(texture.content_path(template_name))
+    digest = hashlib.sha1(f"{CACHE_VERSION}|{package}|{kind}|{clip}|{bool(claws)}|{key}|{bool(replace)}|".encode()
                           + hashlib.sha1(template).digest()).hexdigest()
     cache = os.path.join(ctx.cache_dir, "animations")
     found, meta = os.path.join(cache, digest + ".uasset"), os.path.join(cache, digest + ".json")
-    imports, shaders = ctx.game.io.container_header().entry_for(texture.package_id(asset(kind, "template")))
+    imports, shaders = ctx.game.io.container_header().entry_for(texture.package_id(template_name))
     if key is not None and os.path.isfile(found) and os.path.isfile(meta):
         with open(found, "rb") as f:
             data = f.read()
@@ -536,24 +582,41 @@ def build(ctx, package, kind, read_file, clip, key, claws=False, game=None):
         texture._clear_out(cache)
         game = game or Game(ctx.read_game_file)
         skeleton = game.skeleton(kind)
-        seq = anim.AnimSequence(template)
+        try:
+            seq = anim.AnimSequence(template)
+            on = seq.skeleton_name() if replace else None
+        except anim.FormatError as e:
+            raise ValueError(f"{template_name} isn't a sequence wcmods can read ({e})") from None
+        if replace and on.lower() != asset(kind, "skeleton").lower():
+            raise ValueError(f"{template_name} is on {on.rsplit('/', 1)[-1]}, not the {KINDS[kind]['label'].lower()}' "
+                             "skeleton")
+        if replace and seq.additive():
+            raise ValueError(f"{template_name.rsplit('/', 1)[-1]} is an additive animation (its keys are added to "
+                             "another pose, not a pose of their own); replacing those isn't supported")
         name, file_data, sibling = read_file()
         bones, pose = track_bones(skeleton), game.rest(kind)
         try:
             gltf = Gltf(name, file_data, sibling)
-            keys = retarget(gltf, gltf.clip(clip), skeleton, bones, seq.frame_rate(), pose)
+            keys = retarget(gltf, gltf.clip(clip), skeleton, bones, seq.frame_rate(), pose,
+                            keys=seq.nkeys if replace else None)
         except BROKEN as e:
             raise ValueError(f"{os.path.basename(name)} has something in it wcmods can't read ({type(e).__name__}: {e})") from None
         new_imports = seq.use_unreal_codec(imports)
-        if seq.codec == "acl" or kind != "cat":
-            seq.clear_curves()                  # an ACL template's curves are in ACL; the animals' are faces
-        seq.set_tracks(keys, bones=bones)
-        if kind == "cat":
-            present = [c for c in CLAWS if c in seq.curves]
-            seq.set_constant_curves({c: 0.0 if claws else 1.0 for c in present})
-        seq.rename(package, package.rsplit("/", 1)[-1])
+        if replace:
+            # The game's own: its length, notifies and curves (the claws' among them) stay as they are.
+            seq.set_tracks(keys, bones=bones, keep_length=True)
+            seconds = (seq.nkeys - 1) / seq.frame_rate()
+        else:
+            if seq.codec == "acl" or kind != "cat":
+                seq.clear_curves()              # an ACL template's curves are in ACL; the animals' are faces
+            seq.set_tracks(keys, bones=bones)
+            if kind == "cat":
+                present = [c for c in CLAWS if c in seq.curves]
+                seq.set_constant_curves({c: 0.0 if claws else 1.0 for c in present})
+            seq.rename(package, package.rsplit("/", 1)[-1])
+            seconds = seq.length
         data = seq.bytes()
-        info = {"seconds": round(seq.length, 4), "imports": [f"{i:016x}" for i in new_imports]}
+        info = {"seconds": round(seconds, 4), "imports": [f"{i:016x}" for i in new_imports]}
         if key is not None:
             os.makedirs(cache, exist_ok=True)
             for path, content in ((meta, json.dumps(info).encode()), (found, data)):

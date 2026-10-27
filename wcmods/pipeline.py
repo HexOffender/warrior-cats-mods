@@ -197,7 +197,7 @@ def build(cfg, mods, out_dir, log=print):
             ci = io.chunk_index(path)
             cid = io.chunk_ids[ci]
             imports, shaders = header.entry_for(struct.unpack("<Q", cid[:8])[0])
-            container.add_package(path, cid, data, imports, shaders)
+            container.add_package(path, cid, data, ctx.patch_imports.get(path, imports), shaders)
         container.write(os.path.join(out_dir, MOD_BASENAME + ".utoc"), os.path.join(out_dir, MOD_BASENAME + ".ucas"))
         manifest["outputs"] += [MOD_BASENAME + ".utoc", MOD_BASENAME + ".ucas"]
     # Cooked content mods ship themselves (paks/): copied as they are, under names that load after the
