@@ -1,12 +1,12 @@
-"""Key remaps inside the game: a UE4SS script, written from controls.json, that moves the game's actions to
-other keys, mouse buttons and controller buttons.
+"""Key remaps inside the game: a UE4SS script, written from controls.json, that moves the game's actions and
+menu keys to other keys, mouse buttons and controller buttons.
 
 The game's bindings live in native code that nothing can reach (see docs/reverse-engineering.md, "Input"),
-but each key goes to the game's listeners as OnKeyPressed(key), and each action bound to it as
-OnListenCommand(command): both are reflected and can be hooked. The script sends an action's command when
-its new key is pressed and drops the game's own when it comes from the old key. keymap.native_plan says
-what it does; movement, the camera and the menus are left to the key remapper outside the game
-(remapper.py, `wcmods play`).
+but each key goes to the game's listeners as OnKeyPressed(key), and each command bound to it as
+OnListenCommand(command): both are reflected and can be hooked. The script sends a command when its new key
+is pressed and drops the game's own when it comes from the old key. keymap.native_plan says what it does;
+what the game reads as axes (movement, the camera, the map's zoom and move) is left to the key remapper
+outside the game (remapper.py, `wcmods play`).
 """
 import os
 

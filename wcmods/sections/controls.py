@@ -1,9 +1,9 @@
 """Button remapping (controls.json). The game ignores edited bindings in its save, so remaps are carried
 out at runtime. Inside the game, a UE4SS script (gameremap.py) moves the game's actions and menu keys to
 other keys, mouse buttons and controller buttons. What it can't move (movement and the camera, and mouse
-buttons in menus) is left to the key remapper outside the game (`wcmods play` / `wcmods remap`), for which this section
-installs the small UE4SS script that tells it when you're playing (playstate.py). See README,
-"Remapping keys"."""
+buttons in menus) is left to the key remapper outside the game (`wcmods play` / `wcmods remap`), for
+which this section installs the small UE4SS script that tells it when you're playing (playstate.py).
+See README, "Remapping keys"."""
 from .. import controls, gameremap, keymap, mods as modlib, playstate
 from ..sdk import Section
 
