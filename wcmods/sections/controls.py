@@ -1,7 +1,7 @@
 """Button remapping (controls.json). The game ignores edited bindings in its save, so remaps are carried
-out at runtime. Inside the game, a UE4SS script (gameremap.py) moves the game's actions to other keys,
-mouse buttons and controller buttons. What it can't move (movement and the camera, and the "menus" list)
-is left to the key remapper outside the game (`wcmods play` / `wcmods remap`), for which this section
+out at runtime. Inside the game, a UE4SS script (gameremap.py) moves the game's actions and menu keys to
+other keys, mouse buttons and controller buttons. What it can't move (movement and the camera, and mouse
+buttons in menus) is left to the key remapper outside the game (`wcmods play` / `wcmods remap`), for which this section
 installs the small UE4SS script that tells it when you're playing (playstate.py). See README,
 "Remapping keys"."""
 from .. import controls, gameremap, keymap, mods as modlib, playstate
@@ -42,7 +42,7 @@ class ControlsSection(Section):
         if not merged:
             return
         in_game, outside, warnings = split(merged, bool(ctx.cfg.ue4ss_mods_dir))
-        if in_game["send"] or in_game["drop"]:
+        if gameremap.has_work(in_game):
             ctx.add_ue4ss_mod(gameremap.UE4SS_MOD_NAME, {"Scripts/main.lua": gameremap.script(in_game),
                                                          "enabled.txt": ""})
         send, block, outside_warnings = keymap.plan(outside)
@@ -75,7 +75,7 @@ def split(merged, in_game):
     in_game: whether the script is there to do its part (UE4SS installed); without it, the key remapper
     does everything it can."""
     if not in_game:
-        return {"send": {}, "drop": {}, "keys": {}}, merged, []
+        return {"play": {"send": {}, "drop": {}}, "menu": {"send": {}, "drop": {}}, "keys": {}}, merged, []
     return keymap.native_plan(merged)
 
 

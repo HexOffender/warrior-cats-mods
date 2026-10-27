@@ -18,8 +18,13 @@ UE4SS_MOD_NAME = "WCModsRemap"
 def script(plan, debug=False):
     """plan: keymap.native_plan's first result."""
     from .sdk import lua_value
-    data = {"send": plan["send"], "drop": plan["drop"], "keys": plan["keys"], "debug": debug}
+    data = {"play": plan["play"], "menu": plan["menu"], "keys": plan["keys"], "debug": debug}
     return LUA_TEMPLATE.replace("@PLAN@", lua_value(data))
+
+
+def has_work(plan):
+    """Whether keymap.native_plan left the script anything to do."""
+    return any(plan[where]["send"] or plan[where]["drop"] for where in ("play", "menu"))
 
 
 def installed(cfg):

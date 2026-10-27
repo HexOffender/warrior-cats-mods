@@ -106,6 +106,10 @@ folders. `python wcmods.py selftest` checks, against your install:
 - With the script installed, the key remapper was left only the movement remap (T for W).
 - With "allow_code_mods" off (no bridge, no script mods), the build still put `WCModsRemap` in, and the
   game started from Steam had Interact on F, Map on N and Scent tracking on the middle button.
+- Menus and other commands: in the pause menu, K and I moved the selection down and up (the arrows still
+  did too), U confirmed Resume, and O closed the map, the inventory and the quest page. `Button_ShoulderR`
+  on PageDown went to the next tab, and 2 no longer did. While playing, K still opened the quest page and
+  I the inventory (the menu pairs left play alone), and H, standing for E, opened the travel map.
 
 ## Not yet confirmed in game
 

@@ -1057,23 +1057,50 @@ Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`W
   actions bound to the key goes to `SwtPlayerController:OnListenCommand(Command, InputEvent)`, before
   `OnKeyPressed`. Each open screen (`SwtScreen`, the HUD's two included) has an input component of its own
   and gets the same as `SwtScreen:OnKeyPressed(Key, fromPlayer)` and `OnListenCommand(Command, InputEvent,
-  fromPlayer)`. While a screen is open, the controller hears nothing. What keys sent, in play:
+  fromPlayer)`.
+- **Who hears a key.** While you explore: the controller, and two screens, the HUD
+  (`WBP_GuiHudGameWrc_C`) and `WBP_GuiScreenOnlineOver_C`. With a menu open (the pause screen, the map,
+  the inventory): only that menu's screen, not the controller or the HUD. The engine's cursor flag can't
+  tell them apart: `bShowMouseCursor` read false in the pause menu and the map, as the game draws its own
+  cursor (so `WCModsPlayState`, which tests it, reports those menus as play).
+- **What each key sends** is the same in play and in the pause menu. Every key and mouse button was
+  pressed on its own with every command turned into NoCommand, so nothing happened (`keymap.KEY_COMMANDS`):
 
   | Key | Commands |
   |---|---|
-  | E | 7 `Button_X`, 67 `Player_Interact` |
-  | Q | 79 `Player_Scent_Tracking`, 90 `Player_PhotoMode_HideUI` |
-  | LeftShift | 72 `Player_Run`, 96 `AnimTool_PlayAnim` |
-  | R | 27 `Button_Randomize`, 80 `Player_Camera_Reset` |
-  | I | 77 `Player_Show_Inventory`, 94 `Minigame_Button_A` |
-  | M | 76 `Player_Show_Map` |
-  | K | 78 `Player_Show_Quest`, 95 `Minigame_Button_B` |
-  | L | 81 `Player_Growl`, 93 `Minigame_Button_Y` |
-  | Escape | 91 `Player_Pause` |
-  | W | 1 `Button_Up` only |
-  | F, G | nothing |
+  | W / Up, S / Down | `Button_Up`, `Button_Down` |
+  | A / Left, D / Right | `Button_Left`, `Button_Right` (A and D also `AnimTool_PreviousAnim`/`NextAnim`) |
+  | Enter | `Button_A`, `Button_Confirm`, `Button_Skip` |
+  | BackSpace | `Button_B`, `Button_Back` |
+  | Escape | `Player_Pause` |
+  | SpaceBar | `Button_Y`, `Player_Pounce`, `Player_PhotoMode_Shoot`, `AnimTool_PlayLoopAnim` |
+  | E | `Button_X`, `Player_Interact` |
+  | C | `Player_Friend_Talk`, `Player_Drop` |
+  | X | `Player_ReturnToCamp`, `Player_Den_Place`, `Player_PhotoMode_Exit`, `AnimTool_StopAnim` |
+  | Q | `Player_Scent_Tracking`, `Player_PhotoMode_HideUI` |
+  | R | `Button_Randomize`, `Player_Camera_Reset` |
+  | I | `Player_Show_Inventory`, `Minigame_Button_A` |
+  | J | `Player_Play`, `Minigame_Button_X` |
+  | K | `Player_Show_Quest`, `Minigame_Button_B` |
+  | L | `Player_Growl`, `Minigame_Button_Y` |
+  | M | `Player_Show_Map` |
+  | P | `Button_Start` |
+  | T | `Button_StickR` |
+  | V | `Button_Select` |
+  | 1, 2, 3, 4 | `Button_ShoulderL`, `Button_ShoulderR` (the menus' tabs), `Button_TriggerL`, `Button_TriggerR` |
+  | LeftShift, RightShift | `Player_Run` (LeftShift also `AnimTool_PlayAnim`) |
+  | LeftControl, RightControl, right mouse button | `Player_Crouch` |
+  | Left mouse button | `Button_Confirm`, `Player_Interact` |
 
-  In a screen, BackSpace sent 6 `Button_B` and 25 `Button_Back`. The map's "Show info" on E is `Button_X`.
+  Nothing else sends a command: the other letters, 0 and 5 to 9, F1 to F12, the number pad, Tab, CapsLock,
+  Delete, Home, End, PageUp, PageDown, the punctuation keys, the middle and side mouse buttons and the
+  wheel. All of them still reach `OnKeyPressed`. Tilde, Alt, Insert and F11 weren't tried. Two more
+  findings:
+  - **Pause is on Escape.** The save's `Player_Pause` says Enter, but Enter confirms. P sends
+    `Button_Start`.
+  - **Mouse presses in menus** go to the button under the cursor. Only their releases reach the screen.
+  - **A probe glitch:** in one run, keys stopped reaching the game for a few seconds after a posted F10.
+    Pressed again on their own, they were fine.
 - **Movement and the camera are axes.** W sends only `Button_Up`, and no reflected function sees the
   axis values, so nothing inside the game can move them. The key remapper outside the game does.
 - **`ECommands` moved in patch 1.1.** `Player_Mouse_Camera_Up` and `_Right` were added after
@@ -1088,15 +1115,20 @@ Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`W
   - **Not hookable:** `SwtInputComponent:OnListenCommandInternal` never fired in a hook for real keys,
     as the game calls it natively, and `SwtManager:OnListenCommand` and `OnKeyPressed` never fired.
 - **The in-game remap** is built on that. On a remapped key's `OnKeyPressed`/`OnKeyReleased` it sends the
-  action's command to whatever heard the key (the controller through its input component, or the
-  screen). In `OnListenCommand` it sets the game's own command to NoCommand when the key it came from
-  (`WasInputKeyJustPressed`/`Released`, `IsInputKeyDown`) is one the action moved off. Seen in game:
+  commands to whatever heard the key (the controller through its input component, or the screen). In
+  `OnListenCommand` it sets the game's own command to NoCommand when the key it came from
+  (`WasInputKeyJustPressed`/`Released`, `IsInputKeyDown`) is one the command moved off. The controller and
+  the HUD's two screens get the play set, any other screen the menu set. Seen in game:
   - Interact on F opened the travel map at a tunnel, and E did nothing there.
   - Run on G: 2 s of S+G went 361 units against 256 walking, and LeftShift no longer ran.
   - Scent tracking on the middle mouse button turned on, and Q did nothing.
   - The pause screen's Controls tab was unchanged.
   - In the map, E still toggled the legend (its `Button_X`).
   - Map on N opened the map in play and closed it from inside the map screen; M did neither.
+  - **Menu keys:** in the pause menu, I and K moved the selection (the arrows still did), U confirmed
+    Resume, and O closed the map, the inventory and the quest page. In play, K and I kept their own jobs.
+  - **Tabs:** `Button_ShoulderR` on PageDown went to the next tab, and 2 no longer did.
+  - **A second Interact:** H, standing for E while you play, opened the travel map.
 - **Not tried yet:** a controller, the mouse wheel, and a key held while a screen opens (the script lets
   go of an action whose key is no longer down, checked every few frames).
 

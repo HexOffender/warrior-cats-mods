@@ -103,21 +103,44 @@ def test_key_remap_plan():
 
 
 def test_in_game_remap_plan():
-    # The same moves inside the game: each action is sent on its new key and dropped from its old one.
-    # Den_Place leaves X, but Return to camp keeps it; the controller's Run takes LT, so Crouch leaves LT.
-    # Forward on I and moving back on K are axes, left for the key remapper, as are the menus.
+    # The same moves inside the game: each action is sent on its new key and dropped from its old one,
+    # in play and in menus. Den_Place leaves X, but Return to camp keeps it; the controller's Run takes LT,
+    # so Crouch leaves LT. J stands for C while you play (Drop and Talk to friend) and stops sending its own
+    # Play. Escape closes menus as Backspace does, and stops pausing there. Forward on I and moving back on
+    # K are axes, left for the key remapper.
     plan, rest, warns = keymap.native_plan({
         "keyboard": {"Player_Interact": "F", "Player_Scent_Tracking": "E", "Player_Den_Place": "Z",
                      "Player_Movement_Up": "K"},
         "keys": {"I": "W", "J": "C"}, "gamepad": {"Player_Run": "LT"}, "menus": {"Escape": "BackSpace"}})
-    assert plan["send"] == {"F": ["Player_Interact"], "E": ["Player_Scent_Tracking"], "Z": ["Player_Den_Place"],
-                            "Gamepad_LeftTrigger": ["Player_Run"], "J": ["Player_Drop", "Player_Friend_Talk"]}
-    assert plan["drop"] == {"Player_Interact": ["E"], "Player_Scent_Tracking": ["Q"], "Player_Den_Place": ["X"],
-                            "Player_Run": ["Gamepad_RightShoulder"], "Player_Crouch": ["Gamepad_LeftTrigger"]}
-    assert plan["keys"]["Player_Interact"] == ["F", "Gamepad_FaceButton_Bottom"]
-    assert plan["keys"]["Player_Crouch"] == ["LeftControl"]
-    assert rest == {"keyboard": {"Player_Movement_Up": "K"}, "keys": {"I": "W"}, "menus": {"Escape": "BackSpace"}}
-    assert len(warns) == 1 and "Player_Crouch is on Gamepad_LeftTrigger" in warns[0]
+    moves = {"F": ["Player_Interact"], "E": ["Player_Scent_Tracking"], "Z": ["Player_Den_Place"],
+             "Gamepad_LeftTrigger": ["Player_Run"]}
+    moved = {"Player_Interact": ["E"], "Player_Scent_Tracking": ["Q"], "Player_Den_Place": ["X"],
+             "Player_Run": ["Gamepad_RightShoulder"], "Player_Crouch": ["Gamepad_LeftTrigger"]}
+    assert plan["play"]["send"] == {**moves, "J": ["Player_Friend_Talk", "Player_Drop"]}
+    assert plan["play"]["drop"] == {**moved, "Player_Play": ["J"], "Minigame_Button_X": ["J"]}
+    assert plan["menu"]["send"] == {**moves, "Escape": ["Button_B", "Button_Back"]}
+    assert plan["menu"]["drop"] == {**moved, "Player_Pause": ["Escape"]}
+    assert plan["keys"]["Player_Interact"] == ["F", "LeftMouseButton", "Gamepad_FaceButton_Bottom"]
+    assert plan["keys"]["Player_Crouch"] == ["LeftControl", "RightControl", "RightMouseButton"]
+    assert rest == {"keyboard": {"Player_Movement_Up": "K"}, "keys": {"I": "W"}}
+    assert len(warns) == 2 and "Player_Crouch is on Gamepad_LeftTrigger" in warns[0] and "Player_Play is on J" in warns[1]
+
+
+def test_in_game_menu_keys_and_any_command():
+    # Menu navigation on I/K and Confirm on F; the game's Skip moved to F everywhere, Pause to P (the game
+    # pauses on Escape, whatever its save says). A mouse button can't stand in for a key in menus.
+    plan, rest, warns = keymap.native_plan({"menus": {"I": "Up", "K": "Down", "F": "Enter", "ThumbMouseButton": "BackSpace"},
+                                            "keyboard": {"Button_Skip": "G", "Player_Pause": "P"}})
+    menu = plan["menu"]
+    assert menu["send"]["I"] == ["Button_Up"] and menu["send"]["K"] == ["Button_Down"]
+    assert menu["send"]["F"] == ["Button_A", "Button_Confirm", "Button_Skip"]
+    assert menu["drop"]["Player_Show_Inventory"] == ["I"] and menu["drop"]["Player_Pause"] == ["Escape"]
+    assert plan["play"]["send"] == {"G": ["Button_Skip"], "P": ["Player_Pause"]}
+    assert plan["play"]["drop"] == {"Button_Skip": ["Enter"], "Player_Pause": ["Escape"]}
+    assert rest == {"menus": {"ThumbMouseButton": "BackSpace"}}
+    assert sum("types on the name screen" in w for w in warns) == 3
+    _, _, warns = keymap.native_plan({"keyboard": {"Player_ShowHideControls": "H"}})
+    assert warns == ["keyboard: no key sends Player_ShowHideControls in the game; H will"]
 
 
 def test_in_game_remap_warnings():
@@ -128,14 +151,16 @@ def test_in_game_remap_warnings():
     assert any("is a stick" in w for w in warns)
     # The Controls screen's keys the save doesn't list move too, and a mouse button can take an action.
     plan, rest, warns = keymap.native_plan({"keyboard": {"Player_Show_Map": "N", "Player_Run": "ThumbMouseButton"}})
-    assert plan["send"] == {"N": ["Player_Show_Map"], "ThumbMouseButton": ["Player_Run"]} and not rest and not warns
+    assert plan["play"]["send"] == {"N": ["Player_Show_Map"], "ThumbMouseButton": ["Player_Run"]}
+    assert not rest and not warns
 
 
 def test_in_game_remap_script():
-    plan, _, _ = keymap.native_plan({"keyboard": {"Player_Interact": "F"}})
+    plan, _, _ = keymap.native_plan({"keyboard": {"Player_Interact": "F"}, "menus": {"I": "Up"}})
     lua = gameremap.script(plan)
     assert not problems(lua)
-    assert '["send"] = { ["F"] = { "Player_Interact" } }' in lua and '["drop"] = { ["Player_Interact"] = { "E" } }' in lua
+    assert '["play"] = { ["send"] = { ["F"] = { "Player_Interact" } }, ["drop"] = { ["Player_Interact"] = { "E" } } }' in lua
+    assert '["I"] = { "Button_Up" }' in lua
 
 
 def test_key_remapper_gets_only_what_the_game_cant_do(tmp_path):
