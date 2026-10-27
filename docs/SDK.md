@@ -437,9 +437,9 @@ Studio writes the file and saves the start kits.
 - **The start kit:** `python wcmods.py animation cat` (or `mouse`, `bird`...), or the Animations page's
   "Save a start kit", writes `<kind>.glb` and a README: the animal's mesh rigged to the game's own
   skeleton, its bones named as the game names them and at the pose they rest in, with some of the game's
-  own animations on it as actions to start from (the cats' Stretch, Meow, Shake and a sitting idle; the
-  mice's, rats' and rabbits' idle, walk or a hit; the other animals' are in ACL, which wcmods doesn't decode
-  yet).
+  own animations on it as actions to start from: for cats an idle, walking, trotting and running, sitting,
+  the meow, a stretch, a shake, a yawn, sniffing, playing, sleeping and a photo-mode pose; for each animal
+  its idle, walk and run (the birds' flying, the snakes' slide) and one of its attacks.
 - **In Blender:** File > Import > glTF 2.0 with its own settings, animate the armature (a new action),
   then File > Export > glTF 2.0 as glTF Binary (`.glb`) with Animation on. Units are metres with Y up and
   the animal facing +Z, Blender's own settings. Checked with Blender 5.2.3 LTS: a new action's bones land

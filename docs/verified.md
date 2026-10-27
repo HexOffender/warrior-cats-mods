@@ -18,9 +18,10 @@ folders. `python wcmods.py selftest` checks, against your install:
 - **Cooked assets:** the item table's 412 rows read and write back byte-for-byte; texture copies get
   the IDs the game's own packages have; the accessory look lists read back with new looks added.
 - **Animations:** all 757 of the game's animation sequences read and write back byte-for-byte (519 in ACL,
-  229 in Unreal's per-track codec, 9 in its constant-key one), and the 238 not in ACL decode; each
-  animal's template takes new keys and reads them back (the ACL ones moved to the engine's own settings);
-  the game's Stretch, put in the cats' start kit and read back from it, gives the same keys.
+  229 in Unreal's per-track codec, 9 in its constant-key one) and decode, the ACL ones with their own
+  skeleton's pose; each animal's template takes new keys and reads them back (the ACL ones moved to the
+  engine's own settings); every kind's start kit carries all its examples (49), and the game's Stretch
+  and Idle (ACL), put in the cats' start kit and read back from it, give the same keys.
 - **Save editor:** changes only the values it's told to.
 - **UE4SS scripts:** the generated Lua has balanced blocks and brackets (a light structure check;
   there's no Lua interpreter to fully parse it). Builds also warn if any UE4SS script fails it.
@@ -125,6 +126,15 @@ installed):
 - In Blender (not in game): a new action keyed on the imported start kit and exported as a .glb put
   every bone within 0.2 cm of where Blender showed it, with the armature object left alone or moved,
   turned and sized; the game's Meow through Blender came back within 0.6 degrees.
+
+**2026-10-27, ACL** (build 26184573; the game's own ACL sequences on the cat, paused at a key and read
+bone by bone):
+- `A_CatMaster_Get_Up_1` at keys 30, 27 and 8, `A_CatMaster_NPC_Sniffing_1` at 47 and
+  `A_CatMaster_Powerfull_Loop_1` at 30 (stripped keyframes, between the kept ones, at all but 30 of
+  Get_Up), and `A_CatMaster_Run_1` (a loop, with scale) at 10 and its last key, 19: the head, neck, mouth,
+  ears, `Spine_base`, `spine_01`, `tail_01` and `tail_05` turned exactly as `formats/acl.py` decodes them.
+  The bones the AnimBlueprint layers over (the other spine and tail bones, `belly`, `butt`, the legs) were
+  off by the same angles as with a per-track sequence.
 
 **2026-10-24, scripting:**
 - **The bridge and the commands:** they run Lua in the game; `lua`, `inspect`, `find`, `game` and

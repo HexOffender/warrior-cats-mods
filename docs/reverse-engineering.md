@@ -283,7 +283,8 @@ Everything is inline.
 `AnimCompress_BitwiseCompressOnly` (two), `AnimCompress_PerTrackCompression` (eight, `_1` to `_7`)
 and `AnimCompress_RemoveLinearKeys`). Of the game's 757 sequences:
 - **ACL** (519, `AnimBoneCompressionCodec_ACL_0`, with `/ACLPlugin/ACLAnimBoneCompressionSettings`): the
-  bone data is an ACL stream; the codec's fields are an i32 key count and a u32 0. Most animals' and
+  bone data is an ACL stream ([ACL streams](#acl-streams)); the codec's fields are an i32 key count and a
+  u32 0. Most animals' and
   bosses' sequences and 137 of the cat's. Every sequence of the squirrel, bird, fox, badger, dog and
   snake is in ACL.
 - **Unreal's per-track codec** (229: 99 of the cat's, the mice, rats and most rabbit ones). Its fields:
@@ -343,6 +344,75 @@ curves keeps the claws in; setting the four `shp_claw*_hiden` ones to 0 shows th
   header's last section: a name batch and an i32 number a name), its codec name for one of those
   settings' codecs, and its curves dropped (they're in ACL too). A bird made that way played (seen in
   game).
+
+### ACL streams
+
+Worked out on 2026-10-27 from ACL 2.1.0's sources (github.com/nfrechette/acl, MIT:
+`core/impl/compressed_headers.h`, `compression/impl/write_*.h`, `decompression/impl/*`), then checked
+against all 519 of the game's ACL sequences and against the game's own poses (below). `formats/acl.py`
+decodes them; wcmods only reads ACL, and writes its own sequences in Unreal's per-track codec.
+
+**What the game has:** every stream is ACL 2.1.0 (tag `0xAC11AC11`, version 10), uniformly sampled
+(algorithm 0), of transforms (track type 12, `qvvf`), with no database. Rotations are always format 3
+(drop w, variable bits), translations and scales format 1 (variable). All but one leave sub tracks that
+didn't move at the bind pose rather than the identity; 350 have several segments, 252 are wrap-optimized
+(loops), 112 have stripped keyframes and 133 no scale.
+
+**Layout** (little-endian; offsets from the stream's start unless said):
+- **Headers:** a raw buffer header (u32 size, the stream's length; u32 hash), then the tracks header
+  (24 bytes): u32 tag, u16 version, u8 algorithm, u8 track type, u32 tracks (one a sequence track, in its
+  track table's order), u32 samples, f32 sample rate, and u32 flags. The flags: bit 0 has scale, bit 1 the
+  default scale (0 or 1), bit 2 the scale format, bit 3 the translation format, bits 4–7 the rotation
+  format, bit 8 a database, bit 9 trivial defaults (without it a default sub track is the bind pose), bit
+  10 stripped keyframes, bit 30 wrap-optimized (the repeated last sample is left out, so Unreal's key
+  count is the samples + 1, the last key the first again).
+- **The transform tracks header** (52 bytes at 32): segments; animated sub tracks (all of them, then
+  rotations, translations, scales); constant samples (rotations, translations, scales); then offsets from
+  this header: the database (`0xFFFFFFFF`), the segment headers, the sub track types, the constant data
+  and the clip range data. With several segments each segment's first sample follows (u32s, then
+  `0xFFFFFFFF`).
+- **Sub track types:** 2 bits a track, from the most significant, 16 to a u32: 0 default, 1 constant, 2
+  animated. The rotations' words, the translations', then the scales' (left out without scale).
+- **Constant data:** rotations in groups of 4, x of each, then y, then z (w left out); then translations
+  and scales, 3 floats each.
+- **Clip range data,** for the animated sub tracks: rotations in groups of up to 4 (the group's minimum
+  x, y, z and extent x, y, z, a float each per member); then a translation's or a scale's minimum and
+  extent (6 floats).
+- **A segment** has a header (16 bytes; 20 with stripped keyframes): the bits one sample takes (all, the
+  rotations', the translations') and the offset of its data, and with stripped keyframes a mask of the
+  samples it keeps (sample k at bit 31 - k). Its data: a byte per animated sub track, its bits per
+  component (0: constant in this segment; 31: raw floats; rotations padded to a multiple of 4); with
+  several segments, 2-aligned, the segment ranges (rotations in groups of 4: minimum x of the 4, y, z,
+  extent x, y, z, a byte each, or for a sub track constant in the segment its 16-bit sample split high
+  and low; 6 bytes a translation or scale); then, 4-aligned, the samples as big-endian bit fields, each
+  sample's rotations, then translations, then scales.
+- **A value** is `clip_min + clip_extent * (segment_min + segment_extent * q / (2^bits - 1))`, the
+  segment's numbers in 255ths; a rotation's w is `sqrt(1 - x² - y² - z²)`.
+- **Stripped keyframes** lie between the samples the segment keeps: lerped (rotations nlerped) by
+  where they are between them. Every segment of the game's keeps its first and last sample, so that's
+  all that's needed.
+
+Every segment's sample size computed from the bits per component adds up to the size its header gives,
+in all 519 streams.
+
+**The bind pose:** what a stream leaves at its default is the skeleton's reference pose for the track's
+bone (Unreal's ACL plugin compresses against `USkeleton::GetRefLocalPoses`). Where a mesh rests
+otherwise than its skeleton, no stream of the game's leaves a bone at default but the cat's
+`A_CatMaster_AO_CC` (an aim offset), so the choice shows nowhere else.
+
+**Checked in game** (2026-10-27, build 26184573): the game's own ACL sequences played on the cat,
+paused at a key (`Montage_Pause`, `Montage_SetPosition`) and read bone by bone (`GetSocketTransform`,
+parent bone space), against the decode of that key:
+- `A_CatMaster_Get_Up_1` (6 segments, stripped keyframes) at keys 30, 27 and 8 (27 and 8 stripped);
+  `A_CatMaster_NPC_Sniffing_1` at key 47 (stripped, the tail tip turning 2.1 degrees from the key before);
+  `A_CatMaster_Powerfull_Loop_1` at key 30 (stripped, the mouth 1.5 degrees from the key before);
+  `A_CatMaster_Run_1` (wrap-optimized, with scale) at keys 10 and 19 (its last).
+- The rotations of `Spine_base`, `spine_01`, `neck`, `head`, `mouth`, the ears and `tail_01` and `tail_05`
+  were the decode's (0.000 degrees apart). The other spine and tail bones, `belly` and `butt` were off by
+  the same small angles in every pose and in a per-track control (`A_CatMaster_Stretch_1`): the
+  AnimBlueprint's own lean and tail layers. The legs' IK moves them more.
+- Translations can't be compared this way: the per-bone translation retargeting gives most bones their
+  translation from the skeleton.
 
 ### The save
 
@@ -1505,8 +1575,9 @@ The rules of play are in [mechanics/](mechanics/README.md):
   whether raising it opens the cheats popup and the key cheats, and which of the cheats manager's
   switches the release build obeys (`bUseForcesQuests`, `bSkipSequences` and `bSkipTutorial` it
   doesn't).
-- **Animations:** how ACL streams are laid out (not needed to write sequences); whether the named
-  characters' own skeletons (`SK_NPC_Brightheart_Skeleton`...) can play the cats' sequences.
+- **Animations:** whether the named characters' own skeletons (`SK_NPC_Brightheart_Skeleton`...) can
+  play the cats' sequences; ACL's curves (the cat's ACL sequences keep theirs in ACL too, which wcmods
+  doesn't read).
 - **Scripting:**
   - **Items:** how to put items in the inventory from a script without a pickup (the inventory
     is native; `Game.items.drop` leaves a pickup to collect).
