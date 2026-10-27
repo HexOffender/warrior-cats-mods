@@ -12,9 +12,9 @@ const VIEWS = [
 function point(m, i) { return [m.p[3 * i], m.p[3 * i + 1], m.p[3 * i + 2]]; }
 
 // A mesh moved, turned and scaled as items.json's "place" says, the same way models.place does at install:
-// scaled and turned about the middle of its bounds (roll, then pitch, then yaw), then moved. X is the cat's
-// left, Y its front, Z up.
-export function placeMesh(mesh, place) {
+// scaled and turned about the middle of its bounds (with base, of its bottom: a model on the ground), roll,
+// then pitch, then yaw, then moved. X is the cat's left, Y its front, Z up.
+export function placeMesh(mesh, place, base = false) {
   if (!mesh || !place) return mesh;
   const s = place.scale, deg = Math.PI / 180;
   const k = typeof s === "object" && s ? [s.left ?? 1, s.forward ?? 1, s.up ?? 1] : [s ?? 1, s ?? 1, s ?? 1];
@@ -22,6 +22,7 @@ export function placeMesh(mesh, place) {
   const move = [place.left || 0, place.forward || 0, place.up || 0];
   const [lo, hi] = bounds([mesh]);
   const c = [0, 1, 2].map(i => (lo[i] + hi[i]) / 2);
+  if (base) c[2] = lo[2];
   const p = new Array(mesh.p.length);
   for (let i = 0; i < mesh.p.length; i += 3) {
     let x = (mesh.p[i] - c[0]) * k[0], y = (mesh.p[i + 1] - c[1]) * k[1], z = (mesh.p[i + 2] - c[2]) * k[2];

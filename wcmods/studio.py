@@ -492,11 +492,14 @@ class Studio:
             # A picture for the mod (an item's icon), sent as the body: kept in the mod's pictures/ folder.
             return self.add_picture(self.mod(parts[1]), (query or {}).get("name", ""), upload)
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "model" and method == "POST":
-            # A model for an accessory (OBJ or glTF), sent as the body: kept in the mod's models/ folder.
-            return self.add_model(self.mod(parts[1]), (query or {}).get("name", ""), (query or {}).get("file", ""), upload)
+            # A model for an accessory or for a herb on the ground (?ground=1), OBJ or glTF, sent as the body:
+            # kept in the mod's models/ folder.
+            return self.add_model(self.mod(parts[1]), (query or {}).get("name", ""), (query or {}).get("file", ""), upload,
+                                  on_cat=(query or {}).get("ground") != "1")
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "model-view" and method == "GET":
-            # A model in the mod's folder, in the game's space, for the Items page's drawing of it on the cat.
-            return self.model_view(self.mod(parts[1]), (query or {}).get("path", ""))
+            # A model in the mod's folder, in the game's space, for the Items page's drawing of it on the cat
+            # (or on the ground, ?ground=1).
+            return self.model_view(self.mod(parts[1]), (query or {}).get("path", ""), on_cat=(query or {}).get("ground") != "1")
         if parts == ["game", "accessory"] and method == "GET":
             # An accessory's own shape and the cat it sits on, for the same drawing.
             return self.accessory_view((query or {}).get("of", ""))
@@ -678,9 +681,10 @@ class Studio:
             f.write(data)
         return {"path": f"{PICTURES}/{stem}.png", "width": w, "height": h}
 
-    def add_model(self, mod, name, filename, upload):
+    def add_model(self, mod, name, filename, upload, on_cat=True):
         """Keep a model sent from the Items page in the mod's models/ folder, once it reads; returns its path
-        in the mod, what it is (vertices, triangles, size) and how far it reaches from the cat."""
+        in the mod, what it is (vertices, triangles, size) and, for one worn on the cat, how far it reaches
+        from the cat."""
         if not upload:
             raise ValueError("send the model as the request's body")
         ext = os.path.splitext(filename)[1].lower()
@@ -697,7 +701,10 @@ class Studio:
         # The last one stays: the saved items.json names it until the page is saved again.
         with open(os.path.join(folder, stem + ext), "wb") as f:
             f.write(data)
-        return {"path": f"{MODELS}/{stem}{ext}", **model.summary(), "farthest_cm": round(self._skin_distance(model), 1)}
+        out = {"path": f"{MODELS}/{stem}{ext}", **model.summary()}
+        if on_cat:
+            out["farthest_cm"] = round(self._skin_distance(model), 1)
+        return out
 
     def _skin_distance(self, model):
         """How far the model's farthest vertex is from the cat's skin (cm)."""
@@ -706,7 +713,7 @@ class Studio:
         step = max(1, len(model.positions) // 2000)    # a sample is enough to see a model in the wrong place
         return max(self._skin.nearest(p, 1)[0][0] for p in model.positions[::step])
 
-    def model_view(self, mod, rel):
+    def model_view(self, mod, rel, on_cat=True):
         folder = os.path.realpath(mod.folder)
         path = os.path.realpath(os.path.join(folder, rel))
         if os.path.commonpath([folder, path]) != folder or not os.path.isfile(path):
@@ -721,8 +728,10 @@ class Studio:
                     return f.read()
             return None
         model = models.read(rel, data, sibling)
-        return {**_view(model.positions, model.triangles), **model.summary(),
-                "farthest_cm": round(self._skin_distance(model), 1)}
+        out = {**_view(model.positions, model.triangles), **model.summary()}
+        if on_cat:
+            out["farthest_cm"] = round(self._skin_distance(model), 1)
+        return out
 
     def accessory_view(self, of):
         """{"accessory": its shape, "cat": the cat's skin (a light LOD), "slot"} for one of the game's

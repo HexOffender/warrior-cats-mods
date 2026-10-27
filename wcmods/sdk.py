@@ -286,9 +286,12 @@ class BuildContext:
             self._body = models.Body(self.game)
         built = models.build(self, package, like, model, key if key is not None else repr(model),
                              self._body if on_cat else None)
-        if built["farthest"] > models.FAR:
+        if on_cat and built["farthest"] > models.FAR:
             self.warn(f"{source or name}: part of the model is {built['farthest']:.0f} cm from the cat; models are in "
                       "metres, with Y up, around the cat of the start kit (docs/SDK.md, New items)")
+        elif not on_cat and built["farthest"] > models.GROUND_FAR:
+            self.warn(f"{source or name}: part of the model is {built['farthest']:.0f} cm from its spot on the ground; "
+                      "models are in metres, with Y up, standing at their origin (docs/SDK.md, New items)")
         self.add_package(texture.content_path(package), built["data"], built["chunk_id"], built["imports"],
                          built["shaders"], source=source)
         return package + "." + package.rsplit("/", 1)[-1]

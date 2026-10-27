@@ -37,6 +37,7 @@ MAX_FILE = 64 * 1024 * 1024
 NEAREST = 4                     # body vertices a model's vertex takes its weights from
 BODY = "/Game/Art/Characters/CatMaster/Skel/SK_CatMaster"
 FAR = 25.0                      # cm: a model this far from the cat is probably in the wrong place or units
+GROUND_FAR = 150.0              # cm: a model on the ground reaching this far from its spot, likewise
 
 
 def to_game(x, y, z):
@@ -337,8 +338,9 @@ def _unit(v):
 # ------------------------------------------------------------------------------------------- placing
 # Where a model sits on the cat, tweaked: moved (cm), turned (degrees) and scaled, in the cat's own terms.
 # The game's X is the cat's left, Y its front, Z up. Scaling and turning are about the model's centre
-# (the middle of its bounds); then it moves. Yaw turns its front toward the cat's left, pitch raises its
-# front, roll lowers its left side.
+# (the middle of its bounds), or for a model on the ground the middle of its base, so it stays on the
+# ground as it grows; then it moves. Yaw turns its front toward the cat's left, pitch raises its front,
+# roll lowers its left side.
 MOVES = ("forward", "up", "left")
 TURNS = ("yaw", "pitch", "roll")
 PLACE_KEYS = set(MOVES) | set(TURNS) | {"scale"}
@@ -394,8 +396,9 @@ def _turn(v, roll, pitch, yaw):
     return (x, y, z)
 
 
-def place(model, spec):
-    """The model moved, turned and scaled as `spec` says ("place" in items.json, check_place first)."""
+def place(model, spec, base=False):
+    """The model moved, turned and scaled as `spec` says ("place" in items.json, check_place first): about
+    its middle, or with base, the middle of its bottom (a model on the ground)."""
     if not spec:
         return model
     sx, sy, sz = _scales(spec)
@@ -403,6 +406,8 @@ def place(model, spec):
     move = (float(spec.get("left", 0.0)), float(spec.get("forward", 0.0)), float(spec.get("up", 0.0)))
     lo, hi = model.bounds()
     c = [(a + b) / 2 for a, b in zip(lo, hi)]
+    if base:
+        c[2] = lo[2]
     positions = []
     for p in model.positions:
         v = _turn(((p[0] - c[0]) * sx, (p[1] - c[1]) * sy, (p[2] - c[2]) * sz), roll, pitch, yaw)
@@ -541,7 +546,7 @@ def rigid_model(model):
     """The model in set_geometry's terms with every vertex on the skeleton's root bone: shown on its own
     (a pickup's, on the ground), a mesh in its reference pose draws it just as it is."""
     return {"positions": model.positions, "normals": model.normals, "tangents": tangents(model), "uvs": model.uvs,
-            "triangles": model.triangles, "weights": [[(0, 1.0)]] * len(model.positions), "morphs": {}}
+            "triangles": model.triangles, "weights": [[(0, 1.0)] for _ in model.positions], "morphs": {}}
 
 
 class Body:
@@ -566,15 +571,16 @@ class Body:
         return self._skins[key]
 
 
-CACHE_VERSION = 1   # change when the mesh copy, the transfer or the readers change, so cached meshes are made again
+CACHE_VERSION = 2   # change when the mesh copy, the transfer or the readers change, so cached meshes are made again
 
 
 def build(ctx, package, like, model, key, body):
     """{"data", "chunk_id", "imports", "shaders", "farthest"} for a new mesh `package`: a copy of the game's
     mesh `like` (an asset path) with `model` (a Model, or a function that reads one) tied to the cat's
-    `body` (a Body), or with body None, on the root bone as it is (rigid_model). Kept in cache/meshes
-    under the template's and the body's bytes and `key`, text that changes whenever the model would, so
-    an install doesn't make the same mesh twice."""
+    `body` (a Body), or with body None, on the root bone as it is (rigid_model). "farthest" is how far it
+    reaches from the cat's skin, or without a body from its origin (cm). Kept in cache/meshes under the
+    template's and the body's bytes and `key`, text that changes whenever the model would, so an install
+    doesn't make the same mesh twice."""
     import hashlib
     from .formats import skelmesh, texture
     template = ctx.read_game_file(texture.content_path(like.split(".", 1)[0]))
@@ -594,7 +600,7 @@ def build(ctx, package, like, model, key, body):
         mesh = skelmesh.SkeletalMesh(template)
         model = model() if callable(model) else model
         if body is None:
-            geo, farthest = rigid_model(model), 0.0
+            geo, farthest = rigid_model(model), max(math.hypot(*p) for p in model.positions)
         else:
             geo, farthest = mesh_model(model, body.skin(mesh.morph_names))
         mesh.set_geometry(geo)

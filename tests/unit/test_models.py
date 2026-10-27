@@ -321,3 +321,14 @@ def test_a_plain_picture_is_as_big_as_its_texture():
     w, h, rgba = Plain((1, 2, 3), size=8).read()
     assert (w, h) == (8, 8) and len(rgba) == 8 * 8 * 4 and rgba[:8] == bytes((1, 2, 3, 255)) * 2
     assert Plain((1, 2, 3)).key() == "plain|1,2,3"
+
+
+def test_a_model_on_the_ground_grows_and_turns_about_its_base():
+    block = models.Model([(-1.0, -1.0, 0.0), (1.0, -1.0, 0.0), (1.0, 1.0, 2.0), (-1.0, 1.0, 2.0)],
+                         [(0.0, 0.0, 1.0)] * 4, [(0, 0), (1, 0), (1, 1), (0, 1)], [(0, 1, 2), (0, 2, 3)])
+    bigger = models.place(block, {"scale": 2}, base=True)
+    assert min(p[2] for p in bigger.positions) == 0.0 and max(p[2] for p in bigger.positions) == 4.0
+    assert min(p[2] for p in models.place(block, {"scale": 2}).positions) == -1.0     # about its middle, it sinks
+    geo = models.rigid_model(block)
+    geo["weights"][0].append((1, 0.0))
+    assert geo["weights"][1] == [(0, 1.0)]                 # each vertex has its own list

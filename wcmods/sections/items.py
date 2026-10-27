@@ -186,10 +186,17 @@ class ItemsSection(Section):
                         worn.setdefault(SLOT_FIELDS[look["slot"]], {}).setdefault(look["name"], {})[look["var"]] = entry
                     game.added[look["name"]] = game.added.get(look["name"], 0) + 1
                 pickup = rows.get("pickup")
+                entry = None
                 if pickup and pickup["model"] is not None:   # a model of its own on the ground
-                    ground[tag] = ground_model(ctx, game, mod, item, tag, pickup)
-                elif pickup and pickup["class"]:
-                    ground[tag] = {"class": pickup["class"]}
+                    try:
+                        entry = ground_model(ctx, game, mod, item, tag, pickup)
+                    except ValueError as e:                    # the item's still good, only its look there isn't
+                        ctx.warn(f"{mod.id}: {item['id']}: its model on the ground: {e}; it lies there as the game's "
+                                 "pickup instead")
+                if entry is None and pickup and pickup["class"]:
+                    entry = {"class": pickup["class"]}
+                if entry:
+                    ground[tag] = entry
             except ValueError as e:
                 ctx.warn(f"{mod.id}: {item['id']}: {e}")
                 continue
@@ -235,9 +242,8 @@ class ItemsSection(Section):
             ctx.note("models", {slot: {name: sorted(v) for name, v in byname.items()} for slot, byname in worn.items()})
         if ground:
             if not ctx.cfg.ue4ss_mods_dir and any("mesh" in g for g in ground.values()):
-                ctx.warn("herbs and materials with a model of their own need the script loader (UE4SS), which isn't "
-                         "installed: Get set up on the Mods page adds it. Until then they lie on the ground as the "
-                         "game's Horsetail")
+                ctx.warn("herbs and materials lie on the ground only where a script drops them, and scripts need the "
+                         "script loader (UE4SS), which isn't installed: Get set up on the Mods page adds it")
             ctx.add_ue4ss_shared(ITEMS_LUA, items_lua(ground))
             ctx.note("ground", sorted(t[len(TAG_ROOT):] for t, g in ground.items() if "mesh" in g))
         if made:
@@ -252,13 +258,14 @@ def ground_model(ctx, game, mod, item, tag, pickup):
     into a copy of GROUND_LIKE's mesh, with its picture a copy of that accessory's look."""
     shape, spot, picture = pickup["model"], item.get("place"), pickup["picture"]
     name = f"{mod.id}/{tag[len(TAG_ROOT):].split('.')[0]}_{item['id']}"     # a herb and a material may share an id
-    mesh = ctx.add_mesh(f"{name}_SK", lambda: models.place(shape.read(mod, ctx), spot), game.ground_mesh(),
+    mesh = ctx.add_mesh(f"{name}_SK", lambda: models.place(shape.read(mod, ctx), spot, base=True), game.ground_mesh(),
                         source=f"{mod.id}: {item['id']}", key=f"{shape.key(mod, ctx)}|{json.dumps(spot, sort_keys=True)}",
                         on_cat=False)
     if picture is None:
-        picture = Plain(GROUND_PLAIN)
-    look = ctx.add_texture(f"{name}_BC", lambda: picture.read(mod, ctx), game.ground_look(), source=mod.id,
-                           key=picture.key(mod, ctx))
+        look = game.ground_plain()
+    else:
+        look = ctx.add_texture(f"{name}_BC", lambda: picture.read(mod, ctx), game.ground_look(), source=mod.id,
+                               key=picture.key(mod, ctx))
     out = {"mesh": mesh, "texture": look, "arm": game.ground_arm(), "normal": FLAT_NORMAL}
     if pickup["class"]:
         out["class"] = pickup["class"]
@@ -292,7 +299,7 @@ class Game:
         self._looks = None
         self._meshes = None
         self._pickups = None
-        self._arm = None
+        self._plain = {}               # the shared plain textures under models on the ground: "arm", "look"
 
     def looks(self):
         """The game's looks for each accessory: {name: [texture asset paths]} (variation n is [n - 1])."""
@@ -452,13 +459,20 @@ class Game:
 
     def ground_arm(self):
         """The plain ARM texture under every model on the ground's picture, made once an install."""
-        if self._arm is None:
-            like = self.ground_look().replace("_BC", "_ARM")
-            if not self.ctx.game.exists(texture.content_path(like.split(".", 1)[0])):
-                raise ValueError(f"the game has no {like} to make a plain ARM texture from")
-            arm = Plain(GROUND_ARM)
-            self._arm = self.ctx.add_texture("_items/T_GroundARM", arm.read, like, source="items", key="arm|" + arm.key())
-        return self._arm
+        like = self.ground_look().replace("_BC", "_ARM")
+        if "arm" not in self._plain and not self.ctx.game.exists(texture.content_path(like.split(".", 1)[0])):
+            raise ValueError(f"the game has no {like} to make a plain ARM texture from")
+        return self._shared_plain("arm", "_items/T_GroundARM", GROUND_ARM, like)
+
+    def ground_plain(self):
+        """The one plain grey picture for models on the ground without one of their own."""
+        return self._shared_plain("look", "_items/T_GroundPlain", GROUND_PLAIN, self.ground_look())
+
+    def _shared_plain(self, what, name, rgb, like):
+        if what not in self._plain:
+            plain = Plain(rgb)
+            self._plain[what] = self.ctx.add_texture(name, plain.read, like, source="items", key=plain.key())
+        return self._plain[what]
 
     def icon(self, icon, base):
         if isinstance(icon, dict):                # the game's icon (or another texture) recoloured

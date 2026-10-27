@@ -521,7 +521,9 @@ def _items_section(cfg):
         {"id": "WCModsOut", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": "../good/icons/test.png"},
         {"id": "WCModsShaped", "like": "SmallHealingHerb", "name": "x", "description": "x", "texture": "a.png"},
         {"id": "WCModsNoRing", "like": "Neck.DogCollar.1", "name": "x", "description": "x", "model": "models/none.glb"},
-        {"id": "WCModsSeeHerb", "like": "SmallHealingHerb", "name": "x", "description": "x", "opacity": 0.5}],
+        {"id": "WCModsSeeHerb", "like": "SmallHealingHerb", "name": "x", "description": "x", "opacity": 0.5},
+        {"id": "WCModsLostPebble", "kind": "material", "name": "x", "description": "x", "icon": "Rock",
+         "model": "models/none.obj"}],
         "recipes": {"Cosmetic.Head.NoSuchHat.1": {"Moss": 1}}}
     colour = (200, 60, 160, 255)
     picture = png.write(32, 32, bytes(colour) * 1024)
@@ -559,13 +561,14 @@ def _items_section(cfg):
                   "WCMods_" + collar[len("Gameplay.Inventory."):].replace(".", "_"),
                   "WCMods_" + ring_tag[len("Gameplay.Inventory."):].replace(".", "_"),
                   "WCMods_" + glass_tag[len("Gameplay.Inventory."):].replace(".", "_"),
-                  "WCMods_Materials_WCModsTestPebble"]) and len(use) == 2
+                  "WCMods_Materials_WCModsTestPebble", "WCMods_Materials_WCModsLostPebble"]) and len(use) == 2
               and sorted(c["row"] for c in recipe) == sorted(["Gameplay.Inventory.Consumable.WCModsTestHerb", collar,
                                                               "Gameplay.Inventory.Cosmetic.Head.MossPatch.1"])
-              and "Wrc/Config/Tags/WCModsItems.ini" in out["files"] and len(warned) == 12
+              and "Wrc/Config/Tags/WCModsItems.ini" in out["files"] and len(warned) == 13
               and all(any(s in w for w in warned) for s in ('needs "like"', "first look", "only accessories",
                                                              "no picture", "own folder", 'goes with a "model"',
-                                                             "a picture (a PNG)", "no model"))
+                                                             "a picture (a PNG)", "no model",
+                                                             "pickup instead"))
               and "zzz_WCMods_P.utoc" in out["outputs"] and "WCModsModels" in out["ue4ss_mods"]
               and "WCModsItems" in out["ue4ss_shared"])
         # What went into wcmods' container: the new textures (the look with its .ubulk), the look in the

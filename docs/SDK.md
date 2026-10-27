@@ -376,7 +376,9 @@ game's pickup of the herb it's `like` (a herb like Marigold looks like Marigold)
 game has no pickup of its own for it (materials, pouches it lacks). With one, it's that model:
 - **Where it goes:** made in metres with Y up, like an accessory's, standing at its origin, which is the
   pickup's spot on the ground (the game's Horsetail is about 30 cm tall). `place` moves, turns and sizes it
-  from there; the Items page's "On the ground" card draws it beside the cat as you move it.
+  from there, about the middle of its base so it stays on the ground as it grows; the Items page's "On
+  the ground" card draws it beside the cat as you move it. The build warns about a model reaching more
+  than 1.5 m from its spot (one in centimetres, say).
 - **Its look:** `texture`, a PNG painted on it through its UVs (Blender's own), scaled to 2048 x 2048
   like the accessories' looks. Without one it's a plain light grey. It's solid: see-through parts of a
   picture show as their colour, so leaves are shaped in the model.
@@ -385,7 +387,8 @@ game has no pickup of its own for it (materials, pouches it lacks). With one, it
   and the picture as a copy of that accessory's look. The install lists them in a shared Lua module,
   `WCModsItems`, and `Game.items.drop` shows the model in place of the pickup's own when it drops one,
   with the picture on the accessories' material (a plain ARM and a flat normal map under it). It's
-  still the game's pickup, collected with Interact as usual. It needs the script loader (UE4SS).
+  still the game's pickup, collected with Interact as usual. It needs the script loader (UE4SS). A
+  model or picture that can't be read leaves the item as it is, lying as the game's pickup, with a warning.
 
 What it can't do (yet):
 - **New effects:** each herb effect is one of the game's Blueprints, so a new herb does what one of

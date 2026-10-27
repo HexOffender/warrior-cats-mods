@@ -431,7 +431,7 @@ export default {
       const drawing = shapeDrawing();
       const facts = el("p", { class: "muted", style: { fontSize: "0.9rem" } });
       let cat = null, model = null;
-      const paint = () => { if (cat) drawing.draw({ cat, model: model ? placeMesh(model, it.place) : null, ground: true }); };
+      const paint = () => { if (cat) drawing.draw({ cat, model: model ? placeMesh(model, it.place, true) : null, ground: true }); };
       const modelPicker = el("input", { type: "file", accept: MODEL_FILES, hidden: true, onchange: async () => {
         const f = modelPicker.files[0];
         modelPicker.value = "";
@@ -439,7 +439,7 @@ export default {
         try {
           if (!await modReady()) return;
           toast(`Reading ${f.name}…`);
-          const r = await api.upload(`/mods/${encodeURIComponent(target.current)}/model?name=${encodeURIComponent(`${it.id}-ground`)}&file=${encodeURIComponent(f.name)}`,
+          const r = await api.upload(`/mods/${encodeURIComponent(target.current)}/model?name=${encodeURIComponent(`${it.id}-ground`)}&file=${encodeURIComponent(f.name)}&ground=1`,
             f, "application/octet-stream");
           it.model = r.path;
           toast(`Added ${f.name}: ${r.vertices} vertices, ${r.triangles} triangles, ${r.size_cm.join(" x ")} cm.`);
@@ -482,7 +482,7 @@ export default {
           try {
             cat = (await api.get("/game/cat-shape")).cat;
             try {
-              model = await api.get(`/mods/${encodeURIComponent(target.current)}/model-view?path=${encodeURIComponent(it.model)}`);
+              model = await api.get(`/mods/${encodeURIComponent(target.current)}/model-view?path=${encodeURIComponent(it.model)}&ground=1`);
               let low = Infinity;
               for (let k = 2; k < model.p.length; k += 3) low = Math.min(low, model.p[k]);
               facts.textContent = `${model.vertices} vertices, ${model.triangles} triangles, ${model.size_cm.join(" x ")} cm; ` +

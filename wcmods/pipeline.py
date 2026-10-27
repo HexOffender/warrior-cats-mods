@@ -268,7 +268,7 @@ def build(cfg, mods, out_dir, log=print):
     places = world.place_names(lambda path: game.read_text(path))
     shared_files[world.NAMES_NAME] = world.names_lua(plan, item_labels, places)
     for name, (text, section) in ctx.ue4ss_shared.items():   # the sections' own (items: WCModsItems)
-        if name in shared_files:
+        if name.lower() in {n.lower() for n in shared_files}:   # folders on Windows don't mind the case
             raise ValueError(f"{section}: a shared Lua module {name} is wcmods' own")
         shared_files[name] = text
     for name, text in shared_files.items():
