@@ -94,6 +94,17 @@ folders. `python wcmods.py selftest` checks, against your install:
   suffix as it is (`_STAR` on an apprentice-rank cat reads -star). A name ID whose text the game
   hasn't got shows as `<MISSING STRING TABLE ENTRY>`.
 
+**2026-10-27, key remaps inside the game** (build 26184573, `WCModsRemap` installed from a test mod's
+`controls.json`, started without the key remapper):
+- Interact on F opened the travel map at a tunnel, and E did nothing there.
+- Run on G: S+G for 2 s went 361 units, walking 256; LeftShift no longer ran.
+- Scent tracking on the middle mouse button (posted to the window) turned it on; Q did nothing.
+- The pause screen's Controls tab opened as before, showing the game's own keys.
+- In the map, E still toggled the legend.
+- Map on N: N opened the map and closed it again from inside it; M did neither.
+- `Game.npcs.interactKeys()` gave F, the pad's A and the left mouse button.
+- With the script installed, the key remapper was left only the movement remap (T for W).
+
 ## Not yet confirmed in game
 
 - **Scripting:**
@@ -107,6 +118,8 @@ folders. `python wcmods.py selftest` checks, against your install:
 - **New pattern and marking slots on a cat.** The lists grow in game (slot 25 read back with its new
   colour), and the game's code checks those indexes against the real list size, but no cat has been
   seen wearing a new slot yet.
+- **Key remaps inside the game** on controller buttons and the mouse wheel, and a remapped key
+  held while a screen opens.
 - **Parts of the mod menu.** Not yet checked: Save on the Mouse look and Your cat pages, cats'
   own names in Nearby labels, god mode, game speed and teleport on the Cheats page, and the pause
   menu under the key remapper.

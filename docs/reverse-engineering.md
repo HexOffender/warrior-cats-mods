@@ -204,7 +204,7 @@ one of its own. Nothing else checks it: no asset registry entry was needed.
   `SetStateJsonDataFromString` write to `Shared`, data for the whole save, not to a cat's slot
   (seen in game, build 26184573).
 - **Key bindings** are kept in the save, but the game ignores edits to them, and its rebinding
-  screen doesn't work on PC (the README, [Remapping keys](../README.md#remapping-keys)).
+  screen doesn't work on PC (*Input* below; the README, [Remapping keys](../README.md#remapping-keys)).
 
 ## Engine settings that matter
 
@@ -1028,6 +1028,77 @@ in game):
 - The game's quest log (`UGuiHudQuest`) works from native quest objects (`UQuestBase`), so a mod's
   quests can't go in it without real quest data. They go on the mod menu's Quests page instead
   (`Game.quests.report`).
+
+## Input
+
+Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`WCModsRemap`,
+`wcmods/gameremap.py`).
+
+- **Legacy input, not Enhanced Input.** The controller (`BP_WrcGameplayPlayerController_C <
+  AWrcGameplayPlayerController < … < ASwtPlayerController`) has a `WrcPlayerInput` (`< SwtAdventurePlayerInput
+  < SwtPlayerInput < PlayerInput`) and an input component, `PC_InputComponent0` (`WrcInputComponent <
+  SwtAdventureInputComponent < SwtInputComponent < InputComponent`). The cat's `PawnInputComponent0` is the
+  same class. The Enhanced Input plugin is in the build but nothing uses it.
+- **The bindings can't be reached.** `InputSettings` holds only the engine template's (Jump on Space and
+  the pad's A, Move Forward / Backward, Move Right / Left, Turn and Look Up on WASD, the mouse and the
+  sticks). The game's own actions, named after its `ECommands` enum (`Player_Interact` …), are put into the
+  player's `PlayerInput` at runtime. They come from the save's `Shared.InputKeyboard` and `InputGamepad`,
+  plus keys the save doesn't list: I Inventory, K Quest, M Map, L Meow and Escape Pause (its Controls screen
+  shows them), and the left mouse button for Interact. `PlayerInput`'s action and axis mappings aren't
+  reflected (only `DebugExecBindings` and `InvertedAxis` are), and neither is anything on the rebinding
+  screen (`GuiPopupControlConfig`, `GuiCustomConfigKey` with an `ActionCommand` and no functions). So no
+  script can change a binding, and the game's prompts and Controls screen always show its own keys.
+  `InputSettings:AddActionMapping` and `ForceRebuildKeymaps` are reflected, but the engine's rebuild resets
+  every player's mappings to `InputSettings`' and would lose the game's own (from the engine's code; not
+  tried).
+- **What a key does.** Each key the controller's input component gets goes to
+  `SwtPlayerController:OnKeyPressed(Key)` and `OnKeyReleased(Key)`. That's every key, mouse buttons
+  included (the middle button came through), and controller buttons presumably too. Each of the game's
+  actions bound to the key goes to `SwtPlayerController:OnListenCommand(Command, InputEvent)`, before
+  `OnKeyPressed`. Each open screen (`SwtScreen`, the HUD's two included) has an input component of its own
+  and gets the same as `SwtScreen:OnKeyPressed(Key, fromPlayer)` and `OnListenCommand(Command, InputEvent,
+  fromPlayer)`. While a screen is open, the controller hears nothing. What keys sent, in play:
+
+  | Key | Commands |
+  |---|---|
+  | E | 7 `Button_X`, 67 `Player_Interact` |
+  | Q | 79 `Player_Scent_Tracking`, 90 `Player_PhotoMode_HideUI` |
+  | LeftShift | 72 `Player_Run`, 96 `AnimTool_PlayAnim` |
+  | R | 27 `Button_Randomize`, 80 `Player_Camera_Reset` |
+  | I | 77 `Player_Show_Inventory`, 94 `Minigame_Button_A` |
+  | M | 76 `Player_Show_Map` |
+  | K | 78 `Player_Show_Quest`, 95 `Minigame_Button_B` |
+  | L | 81 `Player_Growl`, 93 `Minigame_Button_Y` |
+  | Escape | 91 `Player_Pause` |
+  | W | 1 `Button_Up` only |
+  | F, G | nothing |
+
+  In a screen, BackSpace sent 6 `Button_B` and 25 `Button_Back`. The map's "Show info" on E is `Button_X`.
+- **Movement and the camera are axes.** W sends only `Button_Up`, and no reflected function sees the
+  axis values, so nothing inside the game can move them. The key remapper outside the game does.
+- **`ECommands` moved in patch 1.1.** `Player_Mouse_Camera_Up` and `_Right` were added after
+  `Player_Camera_Right`, so everything after them is 2 higher than in a class dump of the first release
+  (Interact 65 → 67). Read the numbers from the game:
+  `StaticFindObject("/Script/SwtEngine.ECommands"):ForEachName(function(name, value) … end)`.
+- **Commands can be sent and changed.**
+  - **Sending:** `pc.InputComponent:OnListenCommandInternal(77, 0)` from Lua opened the inventory, as
+    `pc:OnListenCommand(77, 0)` did. It reaches the controller's input listeners only, not the screens.
+  - **Changing:** a pre-hook on `OnListenCommand` that sets the command with `param:set()` changes what
+    the game does: 77 → 76 opened the map on I. NoCommand (0) does nothing.
+  - **Not hookable:** `SwtInputComponent:OnListenCommandInternal` never fired in a hook for real keys,
+    as the game calls it natively, and `SwtManager:OnListenCommand` and `OnKeyPressed` never fired.
+- **The in-game remap** is built on that. On a remapped key's `OnKeyPressed`/`OnKeyReleased` it sends the
+  action's command to whatever heard the key (the controller through its input component, or the
+  screen). In `OnListenCommand` it sets the game's own command to NoCommand when the key it came from
+  (`WasInputKeyJustPressed`/`Released`, `IsInputKeyDown`) is one the action moved off. Seen in game:
+  - Interact on F opened the travel map at a tunnel, and E did nothing there.
+  - Run on G: 2 s of S+G went 361 units against 256 walking, and LeftShift no longer ran.
+  - Scent tracking on the middle mouse button turned on, and Q did nothing.
+  - The pause screen's Controls tab was unchanged.
+  - In the map, E still toggled the legend (its `Button_X`).
+  - Map on N opened the map in play and closed it from inside the map screen; M did neither.
+- **Not tried yet:** a controller, the mouse wheel, and a key held while a screen opens (the script lets
+  go of an action whose key is no longer down, checked every few frames).
 
 ## Game mechanics
 

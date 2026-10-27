@@ -7,7 +7,7 @@ import sys
 import time
 import zipfile
 
-from . import controls, eyeatlas, keymap, mods, names, pipeline, playstate, ue4ss
+from . import controls, eyeatlas, gameremap, keymap, mods, names, pipeline, playstate, ue4ss
 from .formats import save
 from .config import EXE_NAME, STEAM_APP_ID, Config, data_dir, game_running
 from .gamefiles import GameFiles
@@ -315,11 +315,14 @@ def cmd_palette(ctx, args):
 def _run_remapper(ctx, args, launching=False):
     """launching: `play` has just asked Steam to start the game, so any play state on disk is old."""
     from .sections.controls import remap_plan
-    send, block, menu_send, warnings = remap_plan(ctx.mods_root)
+    send, block, menu_send, warnings = remap_plan(ctx.mods_root, ctx.cfg)
     for w in warnings:
         print(f"  warning: {w}")
     if not send and not block and not menu_send:
-        print("No keyboard or mouse remaps in the enabled mods' controls.json; nothing to do.")
+        if ctx.cfg.game_dir and gameremap.installed(ctx.cfg):
+            print("Your remaps work inside the game (the WCModsRemap script); the key remapper has nothing to do.")
+        else:
+            print("No keyboard or mouse remaps in the enabled mods' controls.json; nothing to do.")
         return
     state_file = playstate.state_path(ctx.cfg) if ctx.cfg.game_dir else None
     script = os.path.join(os.path.dirname(state_file), "Scripts", "main.lua") if state_file else None

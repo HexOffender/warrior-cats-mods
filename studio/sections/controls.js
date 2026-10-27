@@ -86,8 +86,8 @@ export default {
         el("span", { class: "eyebrow", text: "Button remapper" }),
         el("h1", { text: "Controls" }),
         el("p", { class: "note", text: "Click Change, then press the key, mouse button, wheel or controller button you want, and save to a mod." })),
-      el("div", { class: "banner" }, el("strong", { text: "Keyboard and mouse remaps run through the wcmods key remapper." }),
-        el("span", { text: " The game ignores edited bindings, so press Play (top right), which starts the game with the remapper when a mod remaps keys (or run python wcmods.py play): while you play, your keys stand in for the game's. Controller buttons: use Steam Input. If you'd rather not run the remapper, PowerToys Keyboard Manager does the same job (the README, " }), docLink("README.md#remapping-keys", "Remapping keys"), el("span", { text: ")." })),
+      el("div", { class: "banner" }, el("strong", { text: "Most remaps work inside the game." }),
+        el("span", { text: " The game ignores edited bindings, so wcmods moves its actions (Interact, Run, Pounce and the rest) while it runs, with a small script installed with your mods: on keys, mouse buttons and controller buttons, however you start the game. Movement, the camera and the \"In menus\" list are out of a script's reach, so they go through the wcmods key remapper, which Play (top right) starts when it's needed. Controller sticks: use Steam Input. More in the README, " }), docLink("README.md#remapping-keys", "Remapping keys"), el("span", { text: "." })),
       target.element,
       el("div", { class: "row" },
         el("span", { class: "eyebrow", text: "Controller presets" }),
@@ -396,11 +396,10 @@ export default {
       clear(live).append(el("h2", { text: "Using your remaps" }),
         el("ol", { style: { margin: "0", paddingLeft: "1.3em", display: "grid", gap: "6px" } },
           el("li", { text: "Save to a mod (top of this page)." }),
-          el("li", { text: "Apply to game once (top right, game closed). That adds the small script that tells the remapper when you're playing; after that, key changes need no install." }),
-          el("li", { text: "Start the game with python wcmods.py play. It stops by itself when the game closes. If the game is already open, use python wcmods.py remap." }),
-          el("li", { text: "Your keys work while you play: the game in front and its cursor hidden. Menus and the name screen use only the \"In menus\" list, and other programs keep your normal keys. A key whose action moved stops doing it." }),
-          el("li", { text: "Controller buttons: in Steam, right-click the game, then Properties, Controller, and remap them with Steam Input." })),
-        el("p", { class: "note", text: "Add --dry-run to see what would be remapped without changing anything. The game ignores edited bindings in its save and its rebinding screen is unfinished on PC, which is why the remapper works from outside the game. Mouse look above doesn't depend on any of this." }));
+          el("li", { text: "Apply to game (top right, game closed). Moved actions then work inside the game, from Steam too: the new key does the action, and the old key stops doing it but keeps its other jobs. The game's prompts and its Controls screen still show its own keys." }),
+          el("li", { text: "Movement, the camera and the \"In menus\" list: start the game with Play (or python wcmods.py play), which runs the key remapper until the game closes. If the game is already open, use python wcmods.py remap. Those keys work while you play: the game in front and its cursor hidden." }),
+          el("li", { text: "Controller sticks: in Steam, right-click the game, then Properties, Controller, and remap them with Steam Input." })),
+        el("p", { class: "note", text: "Add --dry-run to see what the key remapper would do without changing anything. The game ignores edited bindings in its save and its rebinding screen is unfinished on PC, which is why wcmods remaps while it runs. Mouse look above doesn't depend on any of this." }));
     }
 
     await Promise.all([target.refresh(), loadMouseLook()]);

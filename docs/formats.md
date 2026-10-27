@@ -106,23 +106,36 @@ palette you've added is your own copy, so add it again to get the new one.
 - **`keyboard`** moves an action to a new key: here Interact goes from E to F. Actions are the game's;
   `python wcmods.py controls` lists them with their keys. The game's axis actions list only one
   direction, so `Player_Movement_Up` is the back key (S) and `Player_Camera_Right` is the left key.
+  The Controls screen's `Player_Show_Inventory` (I), `Player_Show_Quest` (K), `Player_Show_Map` (M)
+  and `Player_Growl` (L) aren't in the save, but move the same way. A new key can be a mouse button.
 - **`keys`** maps a key you press straight to a game key while you play. Use it for keys no action
   lists: the built-in W, D, Up and Right, or any other key the game uses. `"T": "W"` makes T go
   forward and W stop. The game key stops working on its own once something stands in for it, unless
-  an action still uses it (then it's a second key for that job). Enter, Space, Escape, Backspace
-  and Tab always keep working.
+  an action still uses it (then it's a second key for that job).
 - **`menus`** is a separate set of key pairs used only while the game shows a menu with its cursor
   (the title screen is confirmed; check the pause menu and others with `play --debug`). Here `Escape`
   opens the pause menu while playing (it sends P) and closes menus (it sends Backspace). In menus the
   game's own keys keep working too. A letter, digit or Space used here also changes what you type on
   the name screen, and the build warns about it. A press finishes as it started: the Escape that opens
-  the menu is released as P. Remapping Escape (or Enter, Space, Backspace, Tab) while playing means
-  prompts and dialogue shown during play don't get it; the build warns about that too.
-- **`gamepad`** is kept for planning. The remapper doesn't handle controllers; use Steam Input.
+  the menu is released as P.
+- **`gamepad`** moves an action to a controller button, like `keyboard` (here Run goes to LT). The
+  sticks can't move; use Steam Input for them.
 
 Keys are Unreal key names. Controller buttons also take short names (A/B/X/Y, LB/RB, LT/RT,
-Start). The build checks the names, and `python wcmods.py play` applies keyboard and mouse remaps
-(see the README, [Remapping keys](../README.md#remapping-keys)).
+Start). The build checks the names. Two things carry the remaps out (the README,
+[Remapping keys](../README.md#remapping-keys)):
+- **Inside the game**, the `WCModsRemap` UE4SS script (written by `wcmods/gameremap.py` from
+  `keymap.native_plan`) does every action that's a button, on any key, mouse button or controller
+  button, and every `keys` entry that stands for such an action's key. The action's command is sent
+  when its new key is pressed, and the game's own is dropped when it comes from the old key, which keeps
+  its other jobs (Space still confirms dialogue when Pounce moves). A key that takes an action stops
+  doing its own action, and the build warns. Other scripts read where an action is now from the shared
+  variable `WCModsRemap.<action>` (its keys, comma-separated).
+- **The key remapper outside the game** (`python wcmods.py play`) does the rest, keyboard and mouse
+  only: movement and the camera (axes the game reads every frame), `keys` entries for them or for keys
+  no action lists, and `menus`. Remapping Escape (or Enter, Space, Backspace, Tab) there while
+  playing means prompts and dialogue shown during play don't get it; the build warns about that.
+  Without UE4SS, it does everything it can.
 
 ### `mouselook.json`
 ```json

@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from wcmods import catcolours, draw, game, keymap, luacheck, menu, mouselook, palettes, view, world
+from wcmods import catcolours, draw, game, gameremap, keymap, luacheck, menu, mouselook, palettes, view, world
 
 MANIFEST = {"sections": {}, "notes": {}, "warnings": ["w"], "built": "2026-10-24T01:00:00"}
 
@@ -100,3 +100,56 @@ def test_key_remap_plan():
     send, block, warns = keymap.plan({"keyboard": {"Player_Interact": "F", "Player_Scent_Tracking": "E",
                                                    "Player_Den_Place": "Z"}, "keys": {"I": "W"}})
     assert send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"} and not warns
+
+
+def test_in_game_remap_plan():
+    # The same moves inside the game: each action is sent on its new key and dropped from its old one.
+    # Den_Place leaves X, but Return to camp keeps it; the controller's Run takes LT, so Crouch leaves LT.
+    # Forward on I and moving back on K are axes, left for the key remapper, as are the menus.
+    plan, rest, warns = keymap.native_plan({
+        "keyboard": {"Player_Interact": "F", "Player_Scent_Tracking": "E", "Player_Den_Place": "Z",
+                     "Player_Movement_Up": "K"},
+        "keys": {"I": "W", "J": "C"}, "gamepad": {"Player_Run": "LT"}, "menus": {"Escape": "BackSpace"}})
+    assert plan["send"] == {"F": ["Player_Interact"], "E": ["Player_Scent_Tracking"], "Z": ["Player_Den_Place"],
+                            "Gamepad_LeftTrigger": ["Player_Run"], "J": ["Player_Drop", "Player_Friend_Talk"]}
+    assert plan["drop"] == {"Player_Interact": ["E"], "Player_Scent_Tracking": ["Q"], "Player_Den_Place": ["X"],
+                            "Player_Run": ["Gamepad_RightShoulder"], "Player_Crouch": ["Gamepad_LeftTrigger"]}
+    assert plan["keys"]["Player_Interact"] == ["F", "Gamepad_FaceButton_Bottom"]
+    assert plan["keys"]["Player_Crouch"] == ["LeftControl"]
+    assert rest == {"keyboard": {"Player_Movement_Up": "K"}, "keys": {"I": "W"}, "menus": {"Escape": "BackSpace"}}
+    assert len(warns) == 1 and "Player_Crouch is on Gamepad_LeftTrigger" in warns[0]
+
+
+def test_in_game_remap_warnings():
+    _, _, warns = keymap.native_plan({"keyboard": {"Player_Interact": "Q", "Player_Pounce": "W"},
+                                      "gamepad": {"Player_Camera_Up": "RB"}})
+    assert any("Player_Scent_Tracking is on Q" in w for w in warns)       # Q's own job stops
+    assert any(w.startswith("W now does Player_Pounce") for w in warns)   # W still walks too
+    assert any("is a stick" in w for w in warns)
+    # The Controls screen's keys the save doesn't list move too, and a mouse button can take an action.
+    plan, rest, warns = keymap.native_plan({"keyboard": {"Player_Show_Map": "N", "Player_Run": "ThumbMouseButton"}})
+    assert plan["send"] == {"N": ["Player_Show_Map"], "ThumbMouseButton": ["Player_Run"]} and not rest and not warns
+
+
+def test_in_game_remap_script():
+    plan, _, _ = keymap.native_plan({"keyboard": {"Player_Interact": "F"}})
+    lua = gameremap.script(plan)
+    assert not problems(lua)
+    assert '["send"] = { ["F"] = { "Player_Interact" } }' in lua and '["drop"] = { ["Player_Interact"] = { "E" } }' in lua
+
+
+def test_key_remapper_gets_only_what_the_game_cant_do(tmp_path):
+    from wcmods import mods as modlib
+    from wcmods.sections.controls import remap_plan
+    modlib.create(str(tmp_path / "mods"), "keys", enabled=True)
+    (tmp_path / "mods" / "keys" / "controls.json").write_text(
+        '{"keyboard": {"Player_Interact": "F"}, "keys": {"T": "W"}}', encoding="utf-8")
+
+    class Cfg:   # a game whose last install put the in-game script in
+        ue4ss_mods_dir = str(tmp_path / "Mods")
+    script = tmp_path / "Mods" / gameremap.UE4SS_MOD_NAME / "Scripts" / "main.lua"
+    assert remap_plan(str(tmp_path / "mods"), Cfg())[:2] == ({"F": "E", "T": "W"}, {"E", "W"})
+    script.parent.mkdir(parents=True)
+    script.write_text("--", encoding="utf-8")
+    assert remap_plan(str(tmp_path / "mods"), Cfg())[:2] == ({"T": "W"}, {"W"})
+    assert remap_plan(str(tmp_path / "mods"))[:2] == ({"F": "E", "T": "W"}, {"E", "W"})

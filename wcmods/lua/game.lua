@@ -1621,18 +1621,23 @@ end
 -- The keys the game's Interact is on: the keyboard's and the controller's, from your settings in the save,
 -- and the left mouse button, which the game's prompt shows. Reading the save takes a while (40 ms), so it's
 -- read once, and again after one of the game's screens closes (its settings are where a key is remapped).
+-- When wcmods' in-game remap (WCModsRemap) has moved Interact, its keys are the ones it says.
 local interactKeys, interactStale
 function Game.npcs.interactKeys()
     if interactKeys and not interactStale then return interactKeys end
     interactStale = false
     local keys = {}
-    pcall(function()
+    local okRemap, remapped = pcall(function() return ModRef:GetSharedVariable("WCModsRemap.Player_Interact") end)
+    if okRemap and type(remapped) == "string" and remapped ~= "" then
+        for key in remapped:gmatch("[^,]+") do keys[#keys + 1] = key end
+    end
+    if #keys == 0 then pcall(function()
         local _, account = next(Game.save.file())
         for _, section in ipairs({ "InputKeyboard", "InputGamepad" }) do
             local key = tostring(account.Shared[section].Player_Interact):match("^[^,]*,[^,]*,([^,]+)")
             if key then keys[#keys + 1] = key end
         end
-    end)
+    end) end
     if #keys == 0 then keys = { "E", "Gamepad_FaceButton_Bottom" } end
     keys[#keys + 1] = "LeftMouseButton"
     interactKeys = keys
