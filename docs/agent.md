@@ -152,8 +152,10 @@ can't be asked.
 ## Keys, walking and the game's screens
 
 - **The game's own controls:** `key` posts key presses to the game's window (`WM_KEYDOWN` and
-  `WM_KEYUP`): W, A, S, D walk, SpaceBar pounces, E interacts, P pauses (Enter only while the game is in
-  its gamepad mode), I opens the inventory, BackSpace is Back. It doesn't move the
+  `WM_KEYUP`): W, A, S, D walk, SpaceBar pounces, E interacts, Escape pauses, I opens the inventory, T
+  opens the map, BackSpace is Back. A posted P only sometimes pauses (the game's `Player_Pause` is Enter,
+  which pauses only in its gamepad mode), so use Escape. The pause screen's Main Menu asks first: press
+  `WBP_GuiPopupCommonYesNo_C`'s `mcGuiButtonYes` (seen in game, build 26184573). It doesn't move the
   mouse or change which window is in front. This was tried with the game in front; behind other
   windows the game may throttle itself, and that hasn't been checked.
 - **UE4SS's key binds:** binds such as the mod menu's Insert and a script's `Game.onKey` read the
