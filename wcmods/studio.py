@@ -17,8 +17,8 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (bridge, catcolours, colors, controls, eyeatlas, menupages, menusettings, models, mods, modzip, names,
-               onboarding, packs, palettes, pipeline, recolor, story, ue4ss)
+from . import (animations, bridge, catcolours, colors, controls, eyeatlas, menupages, menusettings, models, mods, modzip,
+               names, onboarding, packs, palettes, pipeline, recolor, story, ue4ss)
 from .formats import cooked, csvdata, png, save, texture
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
@@ -31,10 +31,11 @@ from .sections.files import classify
 
 NO_GAME = "Clan Mod Studio hasn't found the game yet: Get set up, on the Mods page, asks where it is"
 
-MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "items.json", "names.json", "cats.json",
-             "save.json", "settings.json") + story.FILES
+MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "items.json", "animations.json",
+             "names.json", "cats.json", "save.json", "settings.json") + story.FILES
 PICTURES = "pictures"        # a mod's own pictures (an item's icon, an accessory's look), added on the Items page
 MODELS = "models"            # a mod's own models (an accessory's shape), added on the Items page
+ANIMATIONS = "animations"    # a mod's own animations (glTF), added on the Animations page
 MAX_PICTURE = 8 * 1024 ** 2
 ITEM_ROOT = "Gameplay.Inventory."
 MAX_UPLOAD = modzip.MAX_BYTES   # a downloaded mod's .zip
@@ -48,6 +49,7 @@ BUILTIN_SECTIONS = [
     {"id": "controls", "title": "Controls", "module": "/studio/sections/controls.js", "group": "make"},
     {"id": "names", "title": "Names", "module": "/studio/sections/names.js", "group": "make"},
     {"id": "items", "title": "Items", "module": "/studio/sections/items.js", "group": "make"},
+    {"id": "animations", "title": "Animations", "module": "/studio/sections/animations.js", "group": "make"},
     {"id": "npcs", "title": "Characters", "module": "/studio/sections/npcs.js", "group": "make"},
     {"id": "quests", "title": "Questlines", "module": "/studio/sections/quests.js", "group": "make"},
     {"id": "data", "title": "Game data", "module": "/studio/sections/data.js", "group": "make"},
@@ -95,6 +97,7 @@ class Studio:
         self._skin = None    # the cat's skin, to say how far a model reaches from it
         self._views = {}     # accessory -> its shape and the cat's, for the Items page's drawing
         self._pictures = {}  # texture -> its full-size PNG, to paint over (the last few)
+        self._anims = None   # the game's skeletons, read once for the Animations page
 
     # ---------- helpers ----------
     def mods(self):
@@ -511,6 +514,22 @@ class Studio:
             name, look = _accessory_look((query or {}).get("of", ""))
             data, filename = models.start_kit(self.ctx.game, name, look)
             return Download(data, filename)
+        if parts == ["game", "anim-kinds"] and method == "GET":
+            # The cats and animals an animation can be for, for the Animations page.
+            return {"kinds": [{"id": k, "label": v["label"], "examples": len(v["examples"])}
+                              for k, v in animations.KINDS.items()]}
+        if parts == ["game", "anim-kit"] and method == "GET":
+            # A cat or an animal rigged to its skeleton as a .glb, to animate in Blender (animations.py).
+            data, filename = animations.start_kit(self.ctx.game, (query or {}).get("for", "cat"))
+            return Download(data, filename)
+        if len(parts) == 3 and parts[0] == "mods" and parts[2] == "animation" and method == "POST":
+            # A glTF animation, sent as the body: kept in the mod's animations/ folder once it reads.
+            q = query or {}
+            return self.add_animation(self.mod(parts[1]), q.get("name", ""), q.get("file", ""), q.get("for", "cat"), upload)
+        if len(parts) == 3 and parts[0] == "mods" and parts[2] == "animation-info" and method == "GET":
+            # What an animation file in the mod holds: its animations, and the game's bones it moves.
+            q = query or {}
+            return self.animation_info(self.mod(parts[1]), q.get("path", ""), q.get("for", "cat"))
         if parts == ["game", "texture"] and method == "GET":
             # One of the game's pictures at full size to paint over: an accessory's look, an item's icon.
             asset = self.texture_asset((query or {}).get("of", ""), (query or {}).get("what", "icon"))
@@ -705,6 +724,52 @@ class Studio:
         if on_cat:
             out["farthest_cm"] = round(self._skin_distance(model), 1)
         return out
+
+    def _skeleton(self, kind):
+        if kind not in animations.KINDS:
+            raise ValueError(f"there's no animal {kind!r} (there are {', '.join(animations.KINDS)})")
+        if self._anims is None:
+            self._anims = animations.Game(self.ctx.game.read)
+        return self._anims.skeleton(kind)
+
+    def add_animation(self, mod, name, filename, kind, upload):
+        """Keep a glTF animation sent from the Animations page in the mod's animations/ folder, once it reads
+        and has an animation; returns its path in the mod and what it holds (animations.describe)."""
+        if not upload:
+            raise ValueError("send the animation as the request's body")
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in animations.FORMATS:
+            raise ValueError("animations are glTF files: in Blender, File > Export > glTF 2.0, as glTF Binary (.glb)")
+        with open(upload, "rb") as f:
+            data = f.read()
+        info = animations.describe(filename, data, kind, self._skeleton(kind))   # a .gltf with its data elsewhere is refused
+        if not info["clips"]:
+            raise ValueError("the file has no animation: in Blender, export with Animation on")
+        if not info["matched"]:
+            raise ValueError("none of the file's bones has the name of one of the game's: animate the start kit's armature")
+        stem = (re.sub(r"[^A-Za-z0-9_-]+", "-", os.path.splitext(os.path.basename(name or filename))[0]).strip("-")[:40]
+                or "animation")
+        folder = os.path.join(mod.folder, ANIMATIONS)
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, stem + ext), "wb") as f:
+            f.write(data)
+        return {"path": f"{ANIMATIONS}/{stem}{ext}", **info}
+
+    def animation_info(self, mod, rel, kind):
+        folder = os.path.realpath(mod.folder)
+        path = os.path.realpath(os.path.join(folder, rel))
+        if os.path.commonpath([folder, path]) != folder or not os.path.isfile(path):
+            raise LookupError(f"{mod.id} has no animation {rel}")
+        with open(path, "rb") as f:
+            data = f.read()
+
+        def sibling(name):
+            p = os.path.realpath(os.path.join(os.path.dirname(path), name))
+            if os.path.commonpath([folder, p]) == folder and os.path.isfile(p):
+                with open(p, "rb") as f:
+                    return f.read()
+            return None
+        return animations.describe(rel, data, kind, self._skeleton(kind), sibling)
 
     def _skin_distance(self, model):
         """How far the model's farthest vertex is from the cat's skin (cm)."""

@@ -199,6 +199,18 @@ material's `"model"` (with a `"texture"` PNG and a `"place"`) is how it lies on 
 drops it for the cat to pick up; without one it lies there as the game's pickup of the herb it's
 `like`. Every key is in [SDK.md, New items](SDK.md#new-items-itemsjson).
 
+### `animations.json`
+```json
+{ "animations": [ { "id": "Wave", "name": "Wave", "file": "animations/wave.glb", "emote": true, "key": "F6" },
+                  { "id": "Spin", "name": "Spin", "file": "animations/spin.glb", "for": "mouse", "loop": true } ] }
+```
+Animations of the mod's own, made in Blender and saved as glTF (`.glb`), for cats or one kind of animal
+(`"for"`: mouse, rat, rabbit, squirrel, bird, fox, badger, dog, snake). A cat's can be an emote: a button
+on the mod menu's Emotes page, and a key. Scripts play any of them (`Game.anims.play`). `python wcmods.py
+animation <kind>` saves the animal rigged to the game's skeleton to animate. They play over what the
+animal is doing, where it stands, and need the script loader (UE4SS). Every key is in
+[SDK.md, Animations](SDK.md#animations-animationsjson).
+
 ### `npcs.json`
 ```json
 { "npcs": [ { "id": "mossfoot", "name": "Mossfoot", "title": "Elder",

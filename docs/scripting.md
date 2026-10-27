@@ -313,6 +313,34 @@ change it. Triggering a pickup's `OnInteracted` from Lua plays its effect and re
 hand over the items. So `drop` uses the game's own pickup: the rewards go through the normal path when
 the cat picks it up.
 
+### Animations
+
+Mods' animations ([SDK.md, Animations](SDK.md#animations-animationsjson)) and the game's own sequences,
+played on a cat or an animal over what it's doing, in the slot its AnimBlueprint plays the game's
+montages in:
+
+```lua
+Game.anims.play(nil, "my-mod/Wave")                         -- your cat, once
+Game.anims.play(npc, "my-mod/Swim", { loop = true })       -- a clan cat, until it's stopped
+Game.cat():animate("/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Stretch_1.A_CatMaster_Stretch_1")
+Game.anims.stop(npc)
+```
+
+| Call | Gives or does |
+|---|---|
+| `Game.anims.play(who, id, opts)` | Play an animation on `who` (an actor or a `Game.cat()`; your cat when nil): a mod's by its id (`"<mod id>/<id>"`), or one of the game's sequences by its path. `opts`: `loop`, `speed`, `blend` (seconds in and out); a mod's animation brings its own. Returns the montage playing it, or nil and why (`"Swim is for cat, not mouse"`) |
+| `Game.anims.stop(who, blend)` | Stop what `play` started on it, blending out; true if something stopped |
+| `Game.anims.playing(who)` | The id of what `play` started on it, while it plays; else nil |
+| `Game.anims.list()` | Every mod's animation: `{["my-mod/Wave"] = {name, kind, path, loop, speed, blend, seconds, emote, key}}` |
+| `Game.anims.kind(who)` | What it is, by its mesh: `"cat"`, `"mouse"`, `"bird"`... (nil for others) |
+| `cat:animate(id, opts)`, `cat:stopAnimation(blend)` | The same on a `Game.cat()` |
+
+A mod's animation is for one skeleton (its `for`): every cat with the game's cat mesh (yours, the clans',
+quest givers) shares the cats', and each kind of animal has its own. Each UE4SS script has a Lua state of
+its own, so `playing` and `stop` know what that script started (the emotes' script keeps its own).
+Seen in game: an emote and a looping swim on your cat, a spin on a roaming mouse and on a bird. A far
+or hidden animal doesn't move its bones until it's in view (the engine's way), though the montage plays.
+
 ### The world's state
 
 | Call | Gives or does |

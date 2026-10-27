@@ -177,6 +177,10 @@ def run(cfg, oodle, log=print):
     ok, detail = _skeletal_meshes(io)
     check("accessory models: every accessory's mesh and the cat's read and written back the same, and a model "
           "through OBJ into a copy tied to the cat", ok, detail)
+    ok, detail = _animations(io)
+    check("animations: every one of the game's sequences read and written back the same, the ones in Unreal's own "
+          "codecs decoded, each animal's template copied with new keys, and a game animation through a start kit "
+          "and back", ok, detail)
     ok, detail = _items_section(cfg)
     check("new items (items.json): tag, herb row, item table row, recipe, starting count, a game item's "
           "recipe, icons, an accessory's look, model, place and glass of a mod's own; mistakes refused",
@@ -683,6 +687,84 @@ def _skeletal_meshes(io):
     if not copied:
         detail += f"; the copy didn't read back (farthest {farthest:.1f} cm)"
     return not bad and set(meshes) >= set(looks) and same and copied, detail
+
+
+def _animations(io):
+    """The game's sequences (formats/anim.py) and a mod's animations (animations.py), against the game's files."""
+    import collections
+    from . import animations
+    from .formats import anim, texture
+    paths = [p for p in io.files if p.startswith("Wrc/Content/") and p.rsplit("/", 1)[-1].startswith("A_")
+             and p.endswith(".uasset")]
+    codecs, bad, undecoded = collections.Counter(), [], []
+    for p in paths:
+        data = io.read_file(p)
+        if not anim.is_sequence(data):
+            continue
+        name = p.rsplit("/", 1)[-1][:-len(".uasset")]
+        try:
+            seq = anim.AnimSequence(data)
+            if seq.bytes() != data:
+                bad.append(name)
+                continue
+            codecs[seq.codec] += 1
+            if seq.codec != "acl":
+                seq.tracks()
+        except ValueError as e:
+            undecoded.append(f"{name} ({e})")
+    read = lambda path: io.read_file(texture.content_path(path))          # noqa: E731
+    copies = []
+    for kind in animations.KINDS:
+        try:
+            skeleton = anim.Skeleton(read(animations.asset(kind, "skeleton")))
+            seq = anim.AnimSequence(read(animations.asset(kind, "template")))
+            imports, _ = io.container_header().entry_for(texture.package_id(animations.asset(kind, "template")))
+            imports = seq.use_unreal_codec(imports)
+            bones = animations.track_bones(skeleton)
+            if seq.codec == "acl" or kind != "cat":
+                seq.clear_curves()
+            keys = [([t, t], [q, q], [s, s]) for t, q, s in (skeleton.poses[b] for b in bones)]
+            seq.set_tracks(keys, bones=bones)
+            seq.rename(f"/Game/WCMods/t/A_{kind}", f"A_{kind}")
+            back = anim.AnimSequence(seq.bytes())
+            # w comes back from x, y and z, so a rotation near w = 0 is only as close as float x, y, z make it.
+            same = all(max(abs(x - y) for x, y in zip(a[1][0], (q if q[3] >= 0 else tuple(-v for v in q)))) < 1e-3
+                       for a, q in zip(back.tracks(), (skeleton.poses[b][1] for b in bones)))
+            if not (same and back.codec == "per-track" and back.track_map == bones and len(imports) == len(set(imports))
+                    and abs(back.sequence_length() - 1 / back.frame_rate()) < 1e-6
+                    and texture.package_id(anim.UE_SETTINGS) in imports):
+                copies.append(f"{kind}: the copy reads back otherwise")
+        except (ValueError, KeyError) as e:
+            copies.append(f"{kind} ({e})")
+    # The game's Stretch in the start kit's glTF and back: the same keys.
+    kit_ok, detail_kit = False, ""
+    try:
+        game = type("Game", (), {"read": staticmethod(io.read_file)})()
+        data, _ = animations.start_kit(game, "cat")
+        import io as _io
+        import zipfile
+        glb = zipfile.ZipFile(_io.BytesIO(data)).read("cat.glb")
+        gltf = animations.Gltf("cat.glb", glb)
+        skeleton = anim.Skeleton(read(animations.asset("cat", "skeleton")))
+        seq = anim.AnimSequence(read("/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Stretch_1"))
+        pose = animations.Game(io.read_file).rest("cat")
+        back = animations.retarget(gltf, gltf.clip("A_CatMaster_Stretch_1"), skeleton, seq.track_map, seq.frame_rate(),
+                                   pose)
+        worst = max(math.dist(a, b) for (T, _, _), (T2, _, _) in zip(seq.tracks(), back) for a, b in zip(T, T2))
+
+        def apart(a, b):                  # q and -q are the same turn
+            return min(max(abs(x - y) for x, y in zip(a, b)), max(abs(x + y) for x, y in zip(a, b)))
+        turn = max(apart(a, b) for (_, Q, _), (_, Q2, _) in zip(seq.tracks(), back) for a, b in zip(Q, Q2))
+        kit_ok = worst < 1e-3 and turn < 1e-4 and len(gltf.clips) == len(animations.KINDS["cat"]["examples"])
+        detail_kit = f"kit round trip {worst:.1e} cm, {turn:.1e} in rotations"
+    except (ValueError, KeyError) as e:
+        detail_kit = f"start kit: {e}"
+    detail = (f"{sum(codecs.values())} sequences ({', '.join(f'{n} {c}' for c, n in sorted(codecs.items()))}); "
+              f"{len(animations.KINDS)} templates; {detail_kit}")
+    for what, items in (("differ", bad), ("don't decode", undecoded), ("templates", copies)):
+        if items:
+            detail += f"; {what}: {items[:3]}"
+    return not bad and not undecoded and not copies and kit_ok and codecs["acl"] > 0, detail
 
 
 def _script_mod(cfg):

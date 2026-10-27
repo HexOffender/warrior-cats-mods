@@ -4,6 +4,7 @@ import inspect
 import os
 
 from ..sdk import Section
+from .animations import AnimationsSection
 from .cats import CatsSection
 from .controls import ControlsSection
 from .cpp import CppSection
@@ -18,7 +19,7 @@ from .scripts import ScriptsSection
 from .story import StorySection
 
 # Order matters only where outputs layer: replacement files first, CSV edits on top of them.
-BUILTIN = (FilesSection, DataSection, ItemsSection, StorySection, NamesSection, PaletteSection, CatsSection, ControlsSection, MouseLookSection,
+BUILTIN = (FilesSection, DataSection, ItemsSection, AnimationsSection, StorySection, NamesSection, PaletteSection, CatsSection, ControlsSection, MouseLookSection,
            SaveSection, ScriptsSection, CppSection)
 
 

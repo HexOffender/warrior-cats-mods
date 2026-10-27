@@ -172,7 +172,8 @@ GLTF_TYPES = {5120: "b", 5121: "B", 5122: "h", 5123: "H", 5125: "I", 5126: "f"}
 GLTF_WIDTH = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}
 
 
-def _read_glb(data):
+def _glb_parts(data):
+    """(JSON document, binary chunk) of a .glb."""
     magic, version, length = struct.unpack_from("<4sII", data, 0)
     if magic != b"glTF" or version != 2:
         raise ValueError("not a glTF 2 binary (.glb) file")
@@ -187,10 +188,24 @@ def _read_glb(data):
         p += 8 + size + (-size % 4)
     if doc is None:
         raise ValueError("the .glb has no JSON part")
-    return _read_gltf(doc, binary, None)
+    return doc, binary
 
 
-def _read_gltf(doc, binary, sibling):
+def _read_glb(data):
+    return _read_gltf(*_glb_parts(data), None)
+
+
+def gltf_document(name, data, sibling=None):
+    """(doc, accessor) of a .glb or .gltf: its JSON, and accessor(i), the values of accessor i as a list
+    (tuples for vectors and matrices). `sibling(name)` returns the bytes of a file a .gltf refers to."""
+    if os.path.splitext(name)[1].lower() == ".glb":
+        doc, binary = _glb_parts(data)
+    else:
+        doc, binary = json.loads(data.decode("utf-8")), None
+    return doc, _accessor(doc, binary, sibling)
+
+
+def _accessor(doc, binary, sibling):
     unsupported = [e for e in doc.get("extensionsRequired", []) if e not in ("KHR_materials_unlit", "KHR_texture_transform")]
     if unsupported:
         raise ValueError(f"the file needs {', '.join(unsupported)}, which wcmods can't read "
@@ -229,7 +244,11 @@ def _read_gltf(doc, binary, sibling):
                 v = tuple(max(-1.0, x / scale) for x in v)
             out.append(v if width > 1 else v[0])
         return out
+    return accessor
 
+
+def _read_gltf(doc, binary, sibling):
+    accessor = _accessor(doc, binary, sibling)
     out = []
     scene = doc.get("scenes", [{}])[doc.get("scene", 0)] if doc.get("scenes") else None
     roots = scene.get("nodes", []) if scene else range(len(doc.get("nodes", [])))

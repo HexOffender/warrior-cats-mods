@@ -6,9 +6,9 @@ read [scripting.md](scripting.md) first; this page then has the mod folder and `
 steps and studio pages, repacking and new content, the shared Lua modules a script can draw and find
 things with, and C++ mods. [docs/README.md](README.md) lists every page.
 
-The mod manager is built from **sections**. Each section handles one kind of mod content: the eleven
-built-in ones are replacement files, game data, new items, names, palettes, your cat's colours,
-controls, mouse look, save edits, in-game scripts and C++ mods. A mod can add code of its own in four
+The mod manager is built from **sections**. Each section handles one kind of mod content: the thirteen
+built-in ones are replacement files, game data, new items, animations, characters and questlines, names,
+palettes, your cat's colours, controls, mouse look, save edits, in-game scripts and C++ mods. A mod can add code of its own in four
 places:
 
 | Part | File in the mod folder | Runs in | Built on |
@@ -132,6 +132,7 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.add_table_row(table, row, values, source=mod.id)` | Add a row to one of those tables; rows from every section are merged and written into a copy of the game's asset (fields in `cooked.SCHEMAS`; text as `cooked.base_text("Moon Herb", key)`) |
 | `ctx.add_texture(name, image, like, source=mod.id, key=None)` | A new texture `/Game/WCMods/<name>`, a copy of the game's texture `like` (same size, format and mips) with the pixels of `image`: `(width, height, RGBA bytes)` as `png.read` gives, or a function that makes them. With `key` (text that changes when the picture does), an install reuses the texture it made last time. Returns the new asset path, for an icon or a look |
 | `ctx.add_mesh(name, model, like, source=mod.id, key=None, on_cat=True)` | A new skeletal mesh `/Game/WCMods/<name>`, a copy of the game's accessory mesh `like` (its skeleton, material, LODs and body-shape morphs) with a model's shape tied to the cat's body: `model` is a `models.Model` (`models.read(name, bytes)` reads OBJ and glTF) or a function that reads one. With `on_cat=False` the model stays as it is, on the skeleton's root bone, for a mesh shown on its own (a pickup's). With `key`, an install reuses the mesh it made last time. Returns the new asset path. Showing it on a cat takes a script (the items section's `WCModsModels`) |
+| `ctx.add_animation(name, read, kind="cat", clip=None, claws=False, source=mod.id, key=None)` | A new animation `/Game/WCMods/<name>` from a glTF file: `read()` gives its `(file name, bytes, sibling)` (`sibling(name)` the bytes of a file a `.gltf` names, or None), `clip` names the animation in it (the first by default), `kind` says whose skeleton (`animations.KINDS`: `"cat"`, `"mouse"`, `"bird"`...). It's a copy of one of the game's sequences on that skeleton with the file's keys in it ([Animations](#animations-animationsjson)); for a cat, `claws` out. With `key` (text that changes whenever the file does), an install reuses the sequence it made last time; without it, it's made each install. An animation whose package another has already (mod names or ids that differ only in case, or in `-` and `_`) is refused. Returns `(asset path, seconds)`; scripts play it with `Game.anims.play` |
 | `ctx.add_ue4ss_shared(name, text)` | A Lua module any UE4SS script can `require(name)`, installed beside `WCModsGame` (with UE4SS): data a section gives the shared scripts, as the items section's `WCModsItems` tells `Game.items.drop` how mod items look on the ground |
 | `ctx.add_package(path, data, chunk_id, imports, shaders, bulk=None)` | Add a cooked package the game hasn't got, with its chunk ID, container header entry and `.ubulk`; `add_texture` is the easy way |
 | `ctx.cache_dir` | A folder for work an install can reuse (wcmods' `cache/`; the selftest's stays in its temp folder) |
@@ -152,6 +153,8 @@ textures, read and copied), `wcmods.png`, `wcmods.bcn` (DXT1/DXT5) (those six li
 `wcmods/formats/` and keep these names too), `wcmods.recolor`,
 `wcmods.accessories` (the game's lists of accessory looks and models), `wcmods.models` (OBJ and glTF
 models, tied to the cat), `wcmods.formats.skelmesh` (the game's skeletal meshes, read and copied),
+`wcmods.animations` (glTF animations onto the game's skeletons, and the start kits), `wcmods.formats.anim`
+(the game's animation sequences and skeletons, read, decoded and copied with new keys),
 `wcmods.colors`, `wcmods.palettes`,
 `wcmods.eyeatlas`, `wcmods.gamefiles`, `wcmods.names` (the game's name tables). `wcmods.sdk.lua_value(data)` writes
 JSON-style data (dicts, lists, strings, numbers, booleans) as a Lua literal, for handing a mod's
@@ -398,6 +401,87 @@ What it can't do (yet):
 - **Growing in the world:** new herbs and materials aren't found in the forest on their own; they come
   from `give`, a recipe, a questline's reward or a script's `Game.items.drop`.
 - **Accessories on the ground:** a dropped accessory lies there as Horsetail; its model is for wearing.
+
+### Animations (`animations.json`)
+
+Animations of a mod's own, made in Blender (or anything that writes glTF), for cats or for one kind of
+animal: emotes your cat plays from a key or the mod menu, or anything a script plays on a cat or an
+animal (a swim for RiverClan cats, say, once a mod makes them swim). The Animations page in Clan Mod
+Studio writes the file and saves the start kits.
+
+```json
+{
+  "animations": [
+    { "id": "Wave", "name": "Wave", "file": "animations/wave.glb", "emote": true, "key": "F6" },
+    { "id": "Swim", "name": "Swim", "file": "animations/swim.glb", "loop": true },
+    { "id": "Spin", "name": "Spin", "file": "animations/spin.glb", "for": "mouse", "clip": "Spin" }
+  ]
+}
+```
+
+| Key | |
+|---|---|
+| `id` | Letters and digits, starting with a letter. Scripts know it as `"<mod id>/<id>"`; in the game it's `/Game/WCMods/<mod id>/A_<id>` |
+| `name` | What the Emotes page calls it |
+| `file` | A glTF file in the mod's folder: `.glb`, or a `.gltf` with its data inside or beside it |
+| `for` | Whose skeleton: `cat` (the default: every cat in the forest, yours and the clans'), `mouse`, `rat`, `rabbit`, `squirrel`, `bird`, `fox`, `badger`, `dog` or `snake` |
+| `clip` | Which animation in the file (Blender's action name); the first by default |
+| `loop` | Play it over and over until it's stopped (a script's `Game.anims.stop`, or an emote's key again) |
+| `speed` | How fast, 0.1 to 10 (1 as it was made) |
+| `blend` | Seconds it takes to blend in from what the animal was doing, and back out at the end, 0 to 2 (0.25) |
+| `emote` | Cats only: an emote, a button on the mod menu's Emotes page (Your cat) |
+| `key` | With `emote`: a key that plays it (and stops it), by the game's own name for it (`"F6"`, `"T"`, `"Gamepad_DPad_Up"`; the Animations page captures one) |
+| `claws` | Cats only: claws out while it plays (the game's own animations keep them in) |
+
+**Making one:**
+- **The start kit:** `python wcmods.py animation cat` (or `mouse`, `bird`...), or the Animations page's
+  "Save a start kit", writes `<kind>.glb` and a README: the animal's mesh rigged to the game's own
+  skeleton, its bones named as the game names them and at the pose they rest in, with some of the game's
+  own animations on it as actions to start from (the cats' Stretch, Meow, Shake and a sitting idle; the
+  mice's, rats' and rabbits' idle, walk or a hit; the other animals' are in ACL, which wcmods doesn't decode
+  yet).
+- **In Blender:** File > Import > glTF 2.0 with its own settings, animate the armature (a new action),
+  then File > Export > glTF 2.0 as glTF Binary (`.glb`) with Animation on. Units are metres with Y up and
+  the animal facing +Z, Blender's own settings. Checked with Blender 5.2.3 LTS: a new action's bones land
+  within 0.2 cm of where Blender shows them, with the armature object left where it was or moved, turned
+  and sized.
+- **Checking a file:** `python wcmods.py animation cat --check wave.glb` lists the animations in it and
+  the game's bones it has; the Animations page says the same when you choose one.
+
+**How a file becomes the game's:**
+- **Bones:** each of the game's bones moves as the file's bone of the same name (in any case) moves from
+  its rest pose (the skin's bind pose, or the node's own transform without one), measured below the
+  armature object (the node above the game's root bone, or above the file's topmost bone with a game
+  bone's name). So the frames Blender gives bones of its own, where the armature object stands, and
+  bones of the file's own between the game's, don't matter. The game's bones start from the pose the
+  game skins the animal's mesh in, which isn't always its skeleton's (the rabbit's differs on most
+  bones); bones the file hasn't got hold that pose, and bones of its own are left out. The rig should
+  be the kit's: a bone the file puts somewhere else turns about the file's place for it.
+- **Time:** the animation is sampled at the rate the game's own animations of that animal have (30 keys
+  a second; the birds' 24), from its first key to its last, up to 60 seconds. Blender's frame rate (24
+  by default) doesn't matter.
+- **What's left out:** shape keys (morph targets); the cats' claws are in unless `claws` says out, and
+  their pupils as the game's animations leave them.
+- **The sequence:** at install, a copy of one of the game's sequences on that skeleton (the cats'
+  `A_CatMaster_Meow`; one of each animal's own), its keys replaced with the file's, written with
+  Unreal's per-track codec in full floats (`formats/anim.py`). A copy of one of the animals whose
+  sequences are all in ACL is moved to the engine's own compression settings. Copies are cached in
+  `cache/animations` under the file's bytes. A broken file leaves only its animation out, with a
+  warning, as does one the Animations page saved before its file was chosen.
+
+**How it plays:** in the slot the animal's AnimBlueprint plays the game's own montages in, over what
+it's doing: the whole body, blended in and out. The animal stays where it is: moving the root moves its
+body during the animation, not the animal. The install lists every animation in a shared Lua module,
+`WCModsAnims`, which `Game.anims` plays them from ([scripting.md](scripting.md#animations)); with
+emotes, the `WCModsEmotes` script adds the mod menu's Emotes page and their keys. A key works while the
+game has the focus. An emote's key or button again stops it, and so does walking off (the game's walk is
+under it). It all needs the script loader (UE4SS).
+
+**What it can't do (yet):** move an animal (swimming, flying, new ways to walk are animations only);
+play on part of the body (the game's slot is the whole body); play on the named characters with models
+of their own (Brightheart, Tallstar...), whose skeletons are their own; replace one of the game's own
+animations. Animals far off or out of view don't move their bones until they're seen, the engine's way,
+so a script's animation on one shows when it comes into view.
 
 ### New content: models, textures, sounds
 
