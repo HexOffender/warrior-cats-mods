@@ -244,7 +244,9 @@ updating moves them out (`wcmods/userdata.py`).
 | `console` | Whether the game's `~` console (UE4SS's console enabler) is on |
 | `debug_cat_look` | `true` makes your cat's colours script log every cat it sees |
 | `installed`, `installed_ue4ss`, `installed_ue4ss_shared` | What the last install put in the game: the mods, when they were built, the game build, the mods folder they came from, the UE4SS mods and shared modules. The studio compares them with your mods; leave them alone |
-| `menu_key`, `menu_scale`, `cheats` | The mod menu's settings from older versions; the next change moves them into `mods/mod-menu/menu.json` ([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)) |
+| `menu_key`, `menu_pad`, `menu_scale` | The mod menu's key (`INS`, `HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN`, `F1`-`F12` but F11), the controller button that opens it too (an Unreal key name, `""` for none) and its size (0.6 to 2.2). Options on the Settings and repair page; an install puts them in the game ([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)) |
+| `skip_menu_pages` | `true` once Get set up was told "Not now" for the Menu pages mod |
+| `cheats` | From when the mod menu was a mod of its own: whether its cheats started on. Adding the Menu pages mod takes it into that mod's `settings.json` |
 
 The file starts with a `_help` line saying the same.
 

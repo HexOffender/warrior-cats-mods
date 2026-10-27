@@ -48,7 +48,6 @@ mods/my-mod/
   mod.json            {"name", "description", "enabled", "priority", "version", "author",
                        "requires" (mods it can't work without), "uses" (mods it works with),
                        "game_builds", "settings_page", "studio_title", "studio_files": below}
-  menu.json           the in-game mod menu itself       -> only mods/mod-menu (see "WCModsMenu")
   files/Wrc/...       replacement game files            -> section "files"
   paks/<name>.pak     cooked content made with Unreal   -> installed as is, with its .utoc/.ucas
                       Engine 5.7 (see "New content")
@@ -75,8 +74,9 @@ Only `mod.json`'s `name` is needed; the rest is what Clan Mod Studio shows and h
 - **`requires`:** the mods it can't work without, by folder name. Turning it on turns them on.
   While one is missing or off, building leaves this mod out and says why (installing stops, as for
   any mod that didn't build, unless `--force`).
-- **`uses`:** mods it works with when they're on, such as `mod-menu` for a page in the mod menu.
-  Nothing is turned on for them; the studio just shows it.
+- **`uses`:** mods it works with when they're on. `mod-menu` means the mod menu, for a page in it:
+  that's wcmods' own, so it's always there (in `requires` too). Nothing is turned on for them; the
+  studio just shows it.
 - **`game_builds`:** the builds of the game it was made for (a mod without it was made for
   24847281). After a game update, a mod that doesn't list the new build is left out until it's
   updated, or you choose "Use it anyway" for that build. See [updating.md](updating.md).
@@ -86,8 +86,6 @@ Only `mod.json`'s `name` is needed; the rest is what Clan Mod Studio shows and h
   Mods group (it gets a page there by default; [scripting.md](scripting.md#script-mods)).
 - **`studio_title`** and **`studio_files`:** for a mod with a `studio/section.js` page: the side bar's
   label, and the files its page edits.
-- **`builtin`:** wcmods' own mods (the mod menu); they can be turned off, not removed, and follow
-  wcmods' own checks after a game update.
 
 A mod without code is just these files ([formats.md](formats.md)); mods with code (a `section.py`,
 `scripts/`, a `studio/` page, `cpp/`) stay out of the game until the player allows mods that run code.
@@ -376,7 +374,7 @@ UE4SS script can `require` them, wcmods' or one written by hand:
 | `WCModsMenu` | Pages in the mod menu (Insert): buttons, switches, sliders, drop-downs, text boxes, colours, images |
 | `WCModsView` | What the camera sees: its matrices, and world-to-screen positions |
 | `WCModsWorld` | Finds things in the world (pickups, interactables, quest objectives, cats, creatures) and the game's managers |
-| `WCModsNames` | Cats' names: every name part's text after your name mods, and `name(prefix id, suffix id)`, which falls back on the game's own text (written on each install; `WCModsGame` and `WCModsWorld` use it) |
+| `WCModsNames` | Cats' names: every name part's text after your name mods, and `name(prefix id, suffix id)`, which falls back on the game's own text; items', areas' and quests' names: `item(tag)`, `area(code)` (`"R-05"` is `"Willow-Weep"`), `quest(tag, rank)` (a quest's title for a rank: `"Apprentice"`, `"Warrior"`, `"Deputy"` or `"Leader"`, or another rank's). Written on each install from the game's tables; `WCModsGame` and `WCModsWorld` use it |
 
 ### Shipping a script
 
@@ -514,28 +512,21 @@ by itself after a level change.
 
 ## `WCModsMenu`
 
-The mod menu is a mod of its own: **Mod menu**, `mods/mod-menu`, the one mod that comes with wcmods
-(`wcmods/builtin/mod-menu`, copied into your mods with your settings kept). It starts on.
-- **While it's on:** a build puts in its window (`WCModsMenuHost`) and this module.
-- **While it's off:** there's neither, and `pcall(require, "WCModsMenu")` fails, so a script that
-  adds a page checks first:
+The mod menu is wcmods' own: every install with UE4SS puts in its window (`WCModsMenuHost`, with its
+own pages, below) and this module, so a script can count on `require("WCModsMenu")`. Its pages about
+the game are a mod of their own, **Menu pages** (below), which adds them through this module as any
+mod does.
+- **A mod with a page** says `"uses": ["mod-menu"]` in its `mod.json`, which the studio shows as
+  "Page in the mod menu". Mouse look and script mods with a `settings.json` show it without saying so.
+  (`mod-menu` was the menu's own mod when it was one; it's always there now, so it's met in
+  `"requires"` too.)
 
-```lua
-local okMenu, Menu = pcall(require, "WCModsMenu")
-if okMenu then Menu.page("My mod", function(ui) ... end) end
-```
-
-- **A mod that only works with the menu** says so in its `mod.json`: `"requires": ["mod-menu"]`.
-  Turning it on then turns the menu on too, and a build leaves it out while the menu is off.
-- **A mod that only adds a page** says `"uses": ["mod-menu"]`, which the studio shows as "Page in
-  the mod menu". Mouse look and script mods with a `settings.json` show it without saying so.
-
-The menu's settings are in its `menu.json`, set on its card in Clan Mod Studio: `"key"` (`INS`,
-`HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN` or `F1`-`F12` but F11), `"pad"` (the controller button
-that opens it too, as an Unreal key name: View, `Gamepad_Special_Left`, by default and `""` for none),
-`"size"` (0.6 to 2.2, 1 by default) and `"cheats"` (whether the Cheats page starts with cheats on).
-Older setups kept these in `wcmods.json` as `"menu_key"`, `"menu_scale"` and `"cheats"`. Those still
-count, and the first change in the studio moves them into `menu.json`.
+The menu's settings are in `wcmods.json`, set under Options on the Settings and repair page in Clan
+Mod Studio: `"menu_key"` (`INS`, `HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN` or `F1`-`F12` but F11),
+`"menu_pad"` (the controller button that opens it too, as an Unreal key name: View,
+`Gamepad_Special_Left`, by default and `""` for none) and `"menu_scale"` (0.6 to 2.2, 1 by default).
+When the menu was a mod of its own they were in `mods/mod-menu/menu.json`; the first start after
+updating moves them into `wcmods.json` and removes that folder.
 
 Insert (or a controller's View button) opens the menu in game, and Insert or Escape closes it (View or
 B too, when the controller opened it). While it's open, the menu has the keyboard and mouse, the cursor
@@ -547,31 +538,50 @@ The menu works without a mouse too:
   tab, so Up and Down pick a page, Enter opens it and Right goes into it.
 - **Using a control:** Enter, Space or A presses a button, ticks a box or opens a list. A slider
   takes Enter to grab it, Left and Right to move it, and Enter again to let go.
-- **From a controller:** View (`"pad"` in `menu.json`; the menu's card in the studio picks another
+- **From a controller:** View (`"menu_pad"` in `wcmods.json`; Options in the studio picks another
   button, or none) opens it, and View or B closes it. The game can only hear a controller while it has
   input, so a menu opened this way leaves the game its input and pauses it instead. It doesn't open
   while something else has the game paused, such as the game's own pause menu.
 - **Seeing where you are:** the control with focus has a gold ring. The page you're on, and a chosen
   option, are light with dark text, so they show without relying on colour.
 
-Under the title, a status line shows your cat (name, level, rank, health, stamina, clan), the time
-and the fresh-kill pile. The side bar lists the pages in groups:
+Under the title, a status line says how to open and close the menu, or what a script tells it
+(`Menu.status`): with Menu pages, your cat's name, level, rank, health and stamina, where it is, the
+time and the fresh-kill pile. The side bar lists the pages in groups; a group shows once a page is in
+it:
 
 | Group | Pages |
 |---|---|
-| Home | **Overview** (your cat and the world at a glance, quick buttons, the keys scripts use), **Installed mods** (each mod and what each part of the build set up) |
-| Your cat | **Stats** (health, stamina, size, level, stats), **Colours**, **Mouse look** |
-| World | **World** (the clock, which can be held, and the fresh-kill pile), **Travel** (saved spots, checkpoints and areas, and Back), **Nearby** (what's around your cat, `WCModsWorld`), **Items** (what you carry, and an item to drop) |
-| Story | **Quests** (the one you follow and its objectives, with "Go to objective"; the rest by state) |
-| Fight | **Fight** (both sides during a fight) |
-| Cheats | **Cheats** (the engine's cheat manager), **Game switches** (the developers' own) |
+| Home | **Overview** (the keys, the keys scripts use, and each group's pages; how to get Menu pages while the build hasn't got it), **Installed mods** (each mod and what each part of the build set up); with Menu pages, **At a glance** (your cat and the world, quick buttons) |
+| Your cat | **Colours**, **Mouse look**; with Menu pages, **Stats** (health, stamina, size, level, stats) |
+| World | With Menu pages: **World** (the clock, which can be held, and the fresh-kill pile), **Travel** (saved spots, checkpoints and areas, and Back), **Nearby** (what's around your cat, `WCModsWorld`), **Items** (what you carry, and an item to drop) |
+| Story | With Menu pages: **Quests** (the one you follow and its objectives, with "Go to objective"; the rest by state) |
+| Fight | With Menu pages: **Fight** (both sides during a fight) |
+| Cheats | With Menu pages: **Cheats** (the engine's cheat manager), **Game switches** (the developers' own) |
 | Mods | Pages scripts add, and a script mod's settings page |
 | Tools | **Log** (UE4SS's log, newest first), **Menu** (its size, pausing, the status line), and with code mods allowed **Inspector** and **Lua console** |
 
-Cheats is the engine's cheat manager, switched on and off live (`"cheats"` says whether it starts
-on). It has god mode, fly and ghost, cat size, game speed, teleport and an engine command box. Flying
-and size are done by the menu itself, because the game undoes the engine's own `fly`, `ghost` and
-`changesize`. The pages built on `WCModsGame` are in [scripting.md, In the mod menu](scripting.md#in-the-mod-menu).
+### Menu pages
+
+The pages about the game are a mod of their own, **Menu pages** (`mods/menu-pages`), from
+[HexOffender/wcmods-menu-pages](https://github.com/HexOffender/wcmods-menu-pages). It's an in-game
+script (`scripts/`), so it runs only with mods that run code allowed, like any script.
+- **Getting it:** Get set up in Clan Mod Studio ("Add the menu's pages") downloads its latest
+  release's `menu-pages-*.zip` and adds it, as `python wcmods.py menu-pages` does (`--zip file` for one
+  you downloaded). Its card's "Get the latest" updates it, keeping whether it's on and its
+  `settings.json` (`wcmods/menupages.py`). Its `.zip` can be added like any mod's too.
+- **Its settings:** `settings.json`'s `"cheats"`, whether the Cheats page starts with cheats on (its
+  "Start with cheats on" switch, or `python wcmods.py cheats on|off`).
+- **After a game update:** like any mod, it lists the builds it was made for (`"game_builds"`), and a
+  build leaves it out on a newer one until a release adds it, or the player chooses "Use it anyway".
+- **What it uses:** only what any mod can: this module (`Menu.page`, `Menu.status`), `WCModsGame`,
+  `WCModsWorld`, `WCModsDraw` and `WCModsNames` (`area`, `quest` and `item` for the game's names). Its
+  saved travel spots are in `Game.save.folder()`, so they stay when it's updated.
+
+Cheats is the engine's cheat manager, switched on and off live. It has god mode, fly and ghost, cat
+size, game speed, teleport and an engine command box. Flying and size are done by the page itself,
+because the game undoes the engine's own `fly`, `ghost` and `changesize`. The pages built on
+`WCModsGame` are in [scripting.md, In the mod menu](scripting.md#in-the-mod-menu).
 
 wcmods' mouse look and your cat's colours have live settings with Save, and any script can add a page
 (a C++ mod too: `wcmods::menu_page` in [C++ mods](#c-mods) draws the same rows from C++):
@@ -631,7 +641,9 @@ default, and a group of its own comes after `mods`). `order` sorts it within the
 first, 50 by default). `Menu.isOpen()` says whether the menu is open, `Menu.open(page)` opens it (on
 a page, by title or id) and `Menu.close()` closes it, e.g. from a script's own key.
 `Menu.key("F6", "Mouse look on and off")` lists a key a script uses on the Overview page
-(`Game.onKey`'s fourth argument does the same).
+(`Game.onKey`'s fourth argument does the same). `Menu.status(text)` sets the line under the window's
+title while the menu is open (one line; nil or `""` puts back the menu's own, and the last script to
+set it wins); the player can hide it on the Menu page.
 `Menu.saveJson(path, value)` writes a Lua value as JSON (keys sorted, notes like `"_help"` first)
 and returns true, or false and why; `Menu.list(t)` marks a table as a JSON list, so an empty one is
 written `[]`. `Menu.json(value)` gives the JSON text, `Menu.color(hex)` the linear colour the game's

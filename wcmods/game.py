@@ -94,10 +94,12 @@ def offsets_json(offsets=None, build=None):
     return {"game_build": build, "members": members}
 
 
-def lua(offsets=None):
-    """The module's Lua; `offsets` as for hidden()."""
+def lua(offsets=None, saved=None):
+    """The module's Lua; `offsets` as for hidden(); `saved`, the folder Game.save.folder() names (the one
+    an install makes, pipeline.saved_folder), or None for the usual one."""
+    from .sdk import lua_value
     rows = []
     for cls, fields in hidden(offsets):
         items = ", ".join(f'{{ "{n}", 0x{o:X}, "{k}" }}' for n, o, k in fields)
         rows.append(f'    ["{cls}"] = {{ {items} }},')
-    return LUA.replace("@HIDDEN@", "{\n" + "\n".join(rows) + "\n}")
+    return LUA.replace("@HIDDEN@", "{\n" + "\n".join(rows) + "\n}").replace("@SAVED@", lua_value(saved))

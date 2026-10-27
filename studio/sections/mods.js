@@ -1,18 +1,17 @@
 // Mods: get set up (the first time), add mods you've downloaded, switch them on and off, and apply them
-// to the game. The mod menu is a mod here too (its settings are on its card); mods say in mod.json what
-// they need ("requires") or work with ("uses"). Options, backups and repairs are on the Settings and repair page.
+// to the game. Mods say in mod.json what they need ("requires") or work with ("uses"). Options (the mod
+// menu's key among them), backups and repairs are on the Settings and repair page.
 export default {
   title: "Mods",
   async mount(root, wc) {
     const { el, api, clear, toast, bus, confirmButton, announce } = wc;
     const KIND = {
-      files: "Replaces game files", "cooked content": "New models or textures", "mod menu": "The in-game menu",
+      files: "Replaces game files", "cooked content": "New models or textures",
       palette: "Colours", controls: "Controls", "mouse look": "Mouse look", data: "Game rules and numbers",
       names: "Cat names", cats: "Your cat's colours", save: "Changes your save", "in-game script": "In-game script",
       "C++ mod": "C++ mod", "C++ source": "C++ source", code: "Build step (code)", "studio page": "Studio page",
     };
-    const MENU = "mod-menu";
-    let mods = [], filter = "all", search = "", options = null, settings = null;
+    let mods = [], filter = "all", search = "", settings = null;
     const open = new Set();   // mod cards with "More" open
 
     const setupBox = el("div");
@@ -76,7 +75,7 @@ export default {
     }
 
     // ---------- getting set up (wcmods/onboarding.py): shown until every step is done ----------
-    let loaderNote = "";
+    let loaderNote = "", pagesNote = "";
     async function renderSetup() {
       let s;
       try { s = await api.get("/setup"); } catch (e) { clear(setupBox); return; }
@@ -141,6 +140,38 @@ export default {
               el("button", { class: "btn small", text: "Use a .zip I downloaded…", disabled: !!blocked, onclick: () => input.click() }),
               blocked ? el("span", { class: "muted", text: blocked }) : null, input),
           el("a", { href: s.loader.page, target: "_blank", rel: "noopener", class: "muted", text: "UE4SS on GitHub" })));
+      }
+
+      // The menu's pages about the game: a mod of their own (wcmods/menupages.py), from its GitHub releases.
+      if (s.pages.ok) {
+        steps.append(step(true, s.pages.installed ? "The menu's pages are in your mods" : "The menu's pages: skipped",
+          s.pages.installed
+            ? el("span", { class: "muted", text: `Menu pages ${s.pages.version || ""}: your cat, the world, quests, fights and cheats in the in-game menu.` })
+            : el("span", { class: "muted" }, "Skipped for now. To add it later, download its .zip from ",
+              el("a", { href: s.pages.page, target: "_blank", rel: "noopener", text: "its GitHub page" }),
+              " and drop it on this page, or run python wcmods.py menu-pages.")));
+      } else {
+        const input = el("input", { type: "file", accept: ".zip,application/zip", hidden: true });
+        const addPages = async (file, skip = false) => {
+          pagesNote = skip ? "" : file ? `Adding ${file.name}…` : "Downloading Menu pages from GitHub…";
+          renderSetup();
+          try {
+            const r = file ? await api.upload("/setup/pages", file) : await api.post("/setup/pages", skip ? { skip: true } : {});
+            if (!skip) toast(`Menu pages ${r.result.version || ""} is in your mods.` + (settings && settings.allow_code_mods ? " Press Play to put it in the game."
+              : " It runs code, so allow mods that run code (Options, on the Settings and repair page) for the game to get it."));
+            pagesNote = "";
+            await refresh();
+          } catch (e) { pagesNote = ""; toast(e.message, "bad"); renderSetup(); }
+        };
+        input.addEventListener("change", () => input.files[0] && addPages(input.files[0]));
+        steps.append(step(false, "Add the menu's pages",
+          el("span", { class: "muted", text: "The in-game menu (Insert) lists your mods and their pages. Its pages about your cat, the world, travel, quests, fights and cheats are a mod of their own, Menu pages. It's a script, so it needs mods that run code allowed (Options, on the Settings and repair page). Clan Mod Studio downloads it from its GitHub page (under 100 KB)." }),
+          pagesNote ? el("span", { class: "muted", role: "status", text: pagesNote })
+            : el("div", { class: "row" },
+              el("button", { class: "btn primary", text: "Add it", onclick: () => addPages(null) }),
+              el("button", { class: "btn small", text: "Use a .zip I downloaded…", onclick: () => input.click() }),
+              el("button", { class: "btn ghost small", text: "Not now", onclick: () => addPages(null, true) }), input),
+          el("a", { href: s.pages.page, target: "_blank", rel: "noopener", class: "muted", text: "Menu pages on GitHub" })));
       }
 
       setupBox.append(el("div", { class: "card setup" },
@@ -242,14 +273,13 @@ export default {
         const pick = el("input", { type: "checkbox", checked: r.mods.length === 1, id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
         picks.set(m.id, pick);
         const notes = [];
-        if (m.existing && m.existing.builtin) notes.push(el("li", { class: "warn", text: `Left out: ${m.existing.name} comes with Clan Mod Studio, so this copy doesn't replace it.` }));
-        else if (m.existing) notes.push(el("li", { text: `Replaces the ${m.existing.name}${m.existing.version ? " " + m.existing.version : ""} you have${m.version ? " with " + m.version : ""}. The old copy is kept in backups.` }));
+        if (m.existing) notes.push(el("li", { text: `Replaces the ${m.existing.name}${m.existing.version ? " " + m.existing.version : ""} you have${m.version ? " with " + m.version : ""}. The old copy is kept in backups.` }));
         if (m.code) notes.push(el("li", { class: r.code_allowed ? "" : "warn", text: r.code_allowed
           ? "Runs code on your computer and in the game. Only add mods like this from people you trust."
           : "Runs code, so it stays off until you allow mods that run code (Options, on the Settings and repair page). Only do that for mods from people you trust." }));
         const needs = m.requires.filter(i => !mods.some(x => x.id === i));
         if (m.requires.length) notes.push(el("li", { class: needs.length ? "warn" : "", text: `Needs ${m.requires.map(nameOf).join(", ")}${needs.length ? ", which you don't have: add it too" : " (turned on with it)"}.` }));
-        if (m.uses.includes(MENU) || m.requires.includes(MENU)) notes.push(el("li", { text: "Adds a page to the in-game mod menu." }));
+        if (m.menu_page) notes.push(el("li", { text: "Adds a page to the in-game mod menu." }));
         addBox.append(el("div", { class: "mod preview" },
           r.mods.length > 1 ? pick : null,
           el("div", { class: "mod-body" },
@@ -266,11 +296,10 @@ export default {
           if (!ids.length) { toast("Pick at least one.", "bad"); return; }
           try {
             const res = await add(ids, on.checked);
-            const added = res.added.filter(a => !a.skipped), left = res.added.filter(a => a.skipped);
+            const added = res.added;
             const also = [...new Set(added.flatMap(a => a.also_on || []))];
             toast(`Added ${added.map(a => a.name).join(", ")}.`
               + (also.length ? ` Also on, because ${added.length > 1 ? "they need" : "it needs"} them: ${also.join(", ")}.` : "")
-              + (left.length ? ` Left out ${left.map(a => a.name).join(", ")}: ${left.length > 1 ? "they come" : "it comes"} with Clan Mod Studio.` : "")
               + (on.checked ? " Press Play to play with it." : ""));
             inboxShown = false;
             renderAdd();
@@ -295,14 +324,9 @@ export default {
     function modCard(m, state) {
       const toggle = el("input", { type: "checkbox", role: "switch", class: "switch", id: `mod-on-${m.id}`, checked: m.enabled, "aria-label": m.name });
       toggle.addEventListener("change", () => switchMod(m, toggle.checked));
-      const menuMod = mods.find(x => x.id === MENU);
       const flags = [];
-      if (m.builtin) flags.push(el("span", { class: "chip", text: "Comes with Clan Mod Studio" }));
-      if (m.menu_page && m.id !== MENU) {
-        flags.push(el("span", { class: "chip", title: "It has a page in the in-game mod menu (Insert)",
-          text: menuMod && menuMod.enabled ? "Page in the mod menu" : "Page in the mod menu (the menu is off)" }));
-      }
-      for (const k of m.kinds) if (k !== "mod menu") flags.push(el("span", { class: "chip", text: KIND[k] || k }));
+      if (m.menu_page) flags.push(el("span", { class: "chip", title: "It has a page in the in-game mod menu (Insert)", text: "Page in the mod menu" }));
+      for (const k of m.kinds) flags.push(el("span", { class: "chip", text: KIND[k] || k }));
       const lines = [];
       if (m.requires.length) lines.push(el("li", { text: `Needs ${m.requires_names.join(", ")}.` }));
       for (const p of m.problems) lines.push(el("li", { class: "bad", text: p.replace(/^needs/, "Needs") + "." }));
@@ -327,9 +351,7 @@ export default {
           flags.length ? el("div", { class: "row" }, ...flags) : null,
           lines.length ? el("ul", { class: "notes" }, ...lines) : null),
         el("div", { class: "mod-actions" },
-          m.id === MENU || m.kinds.includes("mod menu")
-            ? el("button", { class: "btn small", "data-focus": `more:${m.id}`, "aria-expanded": String(more), "aria-label": `${m.name} settings`, text: more ? "Close settings" : "Settings", onclick: () => { more ? open.delete(m.id) : open.add(m.id); renderList(); } })
-            : el("button", { class: "btn ghost small", "data-focus": `more:${m.id}`, "aria-expanded": String(more), "aria-label": `More about ${m.name}`, text: more ? "Less" : "More", onclick: () => { more ? open.delete(m.id) : open.add(m.id); renderList(); } })));
+          el("button", { class: "btn ghost small", "data-focus": `more:${m.id}`, "aria-expanded": String(more), "aria-label": `More about ${m.name}`, text: more ? "Less" : "More", onclick: () => { more ? open.delete(m.id) : open.add(m.id); renderList(); } })));
       if (state && state.blocked === m.id) {
         const them = state.by.length > 1 ? "them" : "it";
         const ask = `${state.by.map(b => b.name).join(", ")} ${state.by.length > 1 ? "need" : "needs"} ${m.name}. ` +
@@ -364,7 +386,7 @@ export default {
               el("button", { class: "btn small", "data-focus": key, text: "Use it anyway…", "aria-label": `Use ${m.name} anyway…`, onclick: () => renderList({ allow: m.id }) }),
               el("span", { class: "muted", text: "Or wait for its maker to update it." })));
       }
-      if (more) card.append(m.kinds.includes("mod menu") ? menuSettings(m) : details(m));
+      if (more) card.append(details(m));
       return card;
     }
 
@@ -404,7 +426,16 @@ export default {
             try { toast(`Saved ${await api.download(`/mods/${encodeURIComponent(m.id)}/zip`)}`); } catch (e) { toast(e.message, "bad"); }
           } }),
           m.kinds.includes("C++ source") ? el("button", { class: "btn small", text: "Build C++", onclick: () => buildCpp(m) }) : null,
-          m.builtin ? null : confirmButton("Remove", "Press again to remove", () => removeMod(m), "btn small danger")));
+          m.menu_pages ? el("button", { class: "btn small", text: "Get the latest", onclick: async () => {
+            toast("Looking for a newer Menu pages on GitHub…");
+            try {
+              const r = await api.post("/setup/pages", {});
+              toast(r.result.unchanged ? `Menu pages ${r.result.version} is the latest already.`
+                : `Menu pages ${r.result.version || ""} is in your mods, with your settings kept. Apply to game to use it.`);
+              await refresh();
+            } catch (e) { toast(e.message, "bad"); }
+          } }) : null,
+          confirmButton("Remove", "Press again to remove", () => removeMod(m), "btn small danger")));
     }
 
     // Removing a mod that mods which are on need asks first, as switching it off does.
@@ -420,43 +451,13 @@ export default {
       } catch (e) { toast(e.message, "bad"); }
     }
 
-    // The mod menu's own settings (its menu.json, through /ingame).
-    function menuSettings(m) {
-      const box = el("div", { class: "mod-wide details" });
-      if (!options) { box.append(el("p", { class: "muted", text: "Loading…" })); return box; }
-      const o = options;
-      const save = async change => {
-        try { options = await api.patch("/ingame", change); toast("Saved. Apply to game to use it."); await refresh(); }
-        catch (e) { toast(e.message, "bad"); }
-      };
-      // The choices come from wcmods (menusettings.options) as [value, label] pairs. Any Unreal key name works for
-      // the pad in menu.json, and any size within its limits: one the lists haven't got shows as it is.
-      const choices = (list, value, label) => list.some(([v]) => v === value) ? list : [...list, [value, label(value)]];
-      const key = el("select", { id: "ig-key" }, ...o.keys.map(([v, label]) => el("option", { value: v, text: label, selected: v === o.key })));
-      key.addEventListener("change", () => save({ key: key.value }));
-      const pad = el("select", { id: "ig-pad" }, ...choices(o.pads || [], o.pad, v => v).map(([v, label]) => el("option", { value: v, text: label, selected: v === o.pad })));
-      pad.addEventListener("change", () => save({ pad: pad.value }));
-      const size = el("select", { id: "ig-size" }, ...choices(o.sizes || [], o.size, v => `x${v}`).map(([v, label]) => el("option", { value: String(v), text: label, selected: v === o.size })));
-      size.addEventListener("change", () => save({ size: Number(size.value) }));
-      const cheats = el("input", { type: "checkbox", id: "ig-cheats", checked: o.cheats });
-      cheats.addEventListener("change", () => save({ cheats: cheats.checked }));
-      box.append(
-        el("div", { class: "row" }, el("label", { for: "ig-key", class: "lbl", text: "Opens with" }), key,
-          el("label", { for: "ig-pad", class: "lbl", text: "or on a controller" }), pad,
-          el("label", { for: "ig-size", class: "lbl", text: "Size" }), size),
-        el("label", { class: "row", for: "ig-cheats" }, cheats, el("strong", { text: "Cheats on when the game starts" }),
-          el("span", { class: "muted", text: "Its Cheats page switches them on and off while you play." })),
-        el("p", { class: "note", text: "In game, A- and A+ in the menu's top bar change its size until the game closes. Opened from a controller, the game pauses while it's open, and the same button or B closes it. Other mods add their pages to it; with the menu off they just don't show." }));
-      return box;
-    }
-
     function renderList(state = null) {
       const shown = mods.filter(m => (filter === "all" || (filter === "on") === m.enabled)
         && (!search || `${m.name} ${m.id} ${m.description} ${m.author}`.toLowerCase().includes(search)));
       const presets = shown.filter(m => m.preset);
       // String(): a name that isn't text (a mistake in a mod.json) mustn't stop the list from showing.
       const byName = (a, b) => String(a.name).localeCompare(String(b.name));
-      const rest = shown.filter(m => !m.preset).sort((a, b) => (b.builtin - a.builtin) || byName(a, b));
+      const rest = shown.filter(m => !m.preset).sort(byName);
       const searchBox = el("input", { type: "search", id: "mod-search", placeholder: "Find a mod", value: search, "aria-label": "Find a mod" });
       searchBox.addEventListener("input", () => { search = searchBox.value.trim().toLowerCase(); renderList(); searchAgain(); });
       const chips = ["all", "on", "off"].map(f => el("button", { class: "chip", id: `mod-show-${f}`, "aria-pressed": String(filter === f), text: { all: "All", on: "On", off: "Off" }[f],
@@ -487,7 +488,7 @@ export default {
     // notify: tell the rest of the studio (the top bar's Apply button); not when another page told us.
     async function refresh({ notify = true } = {}) {
       try {
-        [mods, options, settings] = await Promise.all([api.get("/mods"), api.get("/ingame").catch(() => null), api.get("/settings")]);
+        [mods, settings] = await Promise.all([api.get("/mods"), api.get("/settings")]);
       } catch (e) { toast(e.message, "bad"); }
       renderList();
       await Promise.all([renderSetup(), renderUpdate(), renderChanges()]);

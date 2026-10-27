@@ -5,14 +5,17 @@ The steps, in the order the studio shows them:
 1. the game: found on the Steam libraries, or a folder the player picks;
 2. a safety copy of the save, made the first time the studio sees one;
 3. UE4SS, the script loader most mods need: downloaded from its GitHub releases (or a .zip the player
-   gives) and set up for players (ue4ss.install_loader).
+   gives) and set up for players (ue4ss.install_loader);
+4. the mod menu's pages about the game, a mod of their own (Menu pages): downloaded from its GitHub
+   releases (or a .zip the player gives) into their mods (menupages.add), or skipped for now (wcmods.json
+   "skip_menu_pages").
 """
 import json
 import os
 import tempfile
 import time
 
-from . import mods as modlib, pipeline, ue4ss
+from . import menupages, mods as modlib, pipeline, ue4ss
 from .formats import save
 from .config import EXE_NAME, STEAM_APP_ID, game_running
 
@@ -24,7 +27,7 @@ def _game_ok(folder):
 
 
 def status(cfg, backups_root):
-    """{"game", "save", "backup", "loader", "running", "done"}: each step's state for the studio."""
+    """{"game", "save", "backup", "loader", "pages", "running", "done"}: each step's state for the studio."""
     cfg.reload()
     game = cfg.game_dir if _game_ok(cfg.game_dir) else None
     win64 = cfg.win64_dir if game else None
@@ -34,8 +37,12 @@ def status(cfg, backups_root):
            "save": {"ok": save_found},
            "backup": {"ok": bool(backups), "latest": backups[-1] if backups else None},
            "loader": {"ok": ue4ss.loader_installed(win64), "page": ue4ss.RELEASE_PAGE},
+           "pages": menupages.status(cfg),
            "running": game_running()}
-    out["done"] = all(out[k]["ok"] for k in ("game", "save", "backup", "loader"))
+    # The pages step is done once they're in your mods (on or off, code allowed or not: the mod's card says
+    # what's missing), or skipped.
+    out["pages"]["ok"] = out["pages"]["installed"] or bool(cfg.data.get("skip_menu_pages"))
+    out["done"] = all(out[k]["ok"] for k in ("game", "save", "backup", "loader", "pages"))
     return out
 
 
@@ -62,6 +69,19 @@ def first_backup(cfg, backups_root):
         return None
     where, _ = save.backup(cfg.save_dir, backups_root, "first-run")
     return os.path.basename(where)
+
+
+def add_pages(cfg, zip_path=None, log=print):
+    """Put the Menu pages mod in your mods, or update it: from `zip_path`, or downloaded from GitHub."""
+    return menupages.add(cfg, zip_path, log=log)
+
+
+def skip_pages(cfg):
+    """Get set up without the Menu pages mod for now (it can still be added, then or as any mod)."""
+    cfg.reload()
+    cfg.data["skip_menu_pages"] = True
+    cfg.save()
+    return {"skipped": True}
 
 
 def install_loader(cfg, zip_path=None, log=print):

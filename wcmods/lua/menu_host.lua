@@ -1,11 +1,13 @@
--- The in-game mod menu: the window, its tabs, and the first pages. Written by wcmods on every install;
--- change its key in menu.json (the Mod menu's Settings in Clan Mod Studio) and install again rather than editing this.
+-- The in-game mod menu: the window, its tabs, and its own pages (the Overview, the installed mods and the
+-- Tools). Written by wcmods on every install with UE4SS; change its key in Clan Mod Studio (Settings and
+-- repair, Options) and install again rather than editing this.
 --
 -- @KEY@ opens and closes it, and Escape closes it; so does a controller's button (SETTINGS.pad), with B
 -- closing it too. While it's open the game's controls are paused (the UI takes the keyboard and mouse,
 -- or the game itself pauses when the controller opened it) and the cursor shows; closing gives them
--- back. Pages come from any UE4SS script through WCModsMenu.page (docs/SDK.md, "WCModsMenu"); the window
--- shares its content panel with them and they build their rows into it.
+-- back. Pages come from any UE4SS script through WCModsMenu.page (docs/SDK.md, "WCModsMenu"), the pages
+-- about the game from the Menu pages mod; the window shares its content panel with them and they build
+-- their rows into it.
 local Menu = require("WCModsMenu")
 local SETTINGS = @SETTINGS@
 
@@ -101,7 +103,8 @@ local function build(c, lib)
     local close = ringed("Close", Menu.button("Close", nil, 13))
     column:AddChildToVerticalBox(header)
 
-    -- Under the header: how your cat is doing (HOST.status, from the Game pages), or how to use the menu.
+    -- Under the header: how your cat is doing (a script's Menu.status, the Menu pages mod's), or how to use
+    -- the menu.
     local status = text(SETTINGS.opens .. " opens and closes this menu. Changes apply at once; a page's Save keeps them.",
                         12, THEME.muted, true)
     local hs = column:AddChildToVerticalBox(status)
@@ -130,7 +133,7 @@ local function build(c, lib)
 end
 
 -- Size the window for this screen: undo the game's UI shrink, times the player's own size (A-/A+,
--- and menu.json "size"), and keep it within the screen.
+-- and wcmods.json "menu_scale"), and keep it within the screen.
 local size = SETTINGS.scale
 local BASE_W, BASE_H = 1080, 700
 local function fit()
@@ -445,9 +448,11 @@ local function closeMenu()
     end
 end
 
--- What the status line under the header says: the Game pages fill this in (HOST.status).
-local HOST = { status = nil, statusOn = true }
+-- What the status line under the header says: a script's Menu.status (the Menu pages mod's: how your cat
+-- is doing), or how to use the menu. The Menu page can hide a script's line (HOST.statusOn).
+local HOST = { statusOn = true }
 local statusAt, statusShown = -1, nil
+local USAGE = SETTINGS.opens .. " opens and closes this menu. Changes apply at once; a page's Save keeps them."
 
 local function tick()
     if not isOpen then return end
@@ -460,11 +465,10 @@ local function tick()
     updateTabs()
     pointTabs()
     showFocus()
-    if HOST.status and os.clock() - statusAt >= 0.5 then
+    if os.clock() - statusAt >= 0.25 then
         statusAt = os.clock()
-        local ok, line = pcall(HOST.status)
-        line = (HOST.statusOn and ok and line) or (SETTINGS.opens .. " opens and closes this menu. Changes apply at once; " ..
-                                                   "a page's Save keeps them.")
+        local line = HOST.statusOn and Menu.shared("status") or nil
+        if type(line) ~= "string" or line == "" then line = USAGE end
         if line ~= statusShown then
             statusShown = line
             pcall(function() win.status:SetText(FText(line)) end)
@@ -479,11 +483,6 @@ local function tick()
     if Menu.clicked(win.state, "close", win.close) then closeMenu() end
     if isOpen and win.pause:IsChecked() ~= paused then setPaused(win.pause:IsChecked()) end
 end
-
--- Work that needs doing once a second (cheats on a new level's cat). It runs here, on the game thread
--- with everything else: a LoopAsync would run it on another thread in this same Lua state, and two
--- threads in one Lua state at once crash the game.
-local everySecond, nextSecond = {}, 0
 
 -- A script asked for the menu (Menu.open / Menu.close).
 local function requests()
@@ -539,14 +538,6 @@ local function frame()
     end
     local okR, errR = pcall(requests)
     if not okR then log("error: %s", tostring(errR)) end
-    local now = os.clock()
-    if now >= nextSecond then
-        nextSecond = now + 1
-        for _, fn in ipairs(everySecond) do
-            local ok2, err2 = pcall(fn)
-            if not ok2 then log("error: %s", tostring(err2)) end
-        end
-    end
 end
 
 if LoopInGameThreadAfterFrames == nil or not pcall(LoopInGameThreadAfterFrames, 1, frame) then
@@ -567,7 +558,7 @@ RegisterKeyBind(Key.ESCAPE, function()
     ExecuteInGameThread(function() if isOpen then pcall(closeMenu) end end)
 end)
 
--- The pages are in menupages.lua, pasted in here by menu.host_script:
+-- The window's own pages are in menu_host_pages.lua, pasted in here by menu.host_script:
 @PAGES@
 log("ready: %s opens the mod menu", SETTINGS.key_name)
 syncCpp()

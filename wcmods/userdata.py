@@ -1,15 +1,14 @@
 """Your own files, kept outside wcmods' folder so that updating wcmods (git pull, or a new download unzipped
 over it) never touches them. config.data_dir() says where: %LOCALAPPDATA%\\WCMods, unless WCMODS_DATA says.
 
-  mods/          your mods, the mod menu among them
-  wcmods.json    wcmods' settings and its record of what's installed
+  mods/          your mods
+  wcmods.json    wcmods' settings (the mod menu's key among them) and its record of what's installed
   backups/       save backups, and mods that were removed or replaced (backups/mods)
 
-The mods that come with wcmods (the mod menu) are in wcmods/builtin. Each start puts them in mods/, or
-brings the copy there up to date, keeping what's yours: whether it's on, its priority and its settings.
-
 Older versions kept mods/, wcmods.json and backups/ in wcmods' own folder; the first start after an update
-moves them here.
+moves them here. They also had the mod menu as a mod of its own, mods/mod-menu, with its settings in its
+menu.json: the menu is wcmods' own now, so its settings move into wcmods.json and that folder goes
+(retire_menu_mod).
 """
 import errno
 import json
@@ -20,20 +19,23 @@ import sys
 from .config import same_folder
 from .modzip import BACKUP_NAME, _backup, _stamp
 
-BUILTIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "builtin")
-YOURS = ("enabled", "priority")            # in a built-in mod's mod.json: as you set them
-SETTINGS = ("menu.json", "settings.json")  # a built-in mod's settings: your values, with keys wcmods adds
+OLD_MENU = "mod-menu"   # the mod menu's own mod, from when it was one
+# Its menu.json's settings -> where they are now, in wcmods.json ("cheats" waits there for the Menu pages
+# mod, whose setting it is: menupages.add takes it).
+OLD_MENU_KEYS = {"key": "menu_key", "pad": "menu_pad", "size": "menu_scale", "cheats": "cheats"}
+OLD_MENU_DEFAULTS = {"key": "INS", "pad": "Gamepad_Special_Left", "size": 1.0, "cheats": False}   # as it came
 
 
 def prepare(root, data_dir, log=None):
     """Ready the data folder before anything reads it: what an older version left in wcmods' folder (root)
-    moved in, and the built-in mods up to date. `log` gets what moved and anything that couldn't be done
-    (stderr unless given, so a command printing JSON stays readable); none of that stops the command."""
+    moved in, and an old mods/mod-menu's settings moved into wcmods.json. `log` gets what moved and anything
+    that couldn't be done (stderr unless given, so a command printing JSON stays readable); none of that
+    stops the command."""
     log = log or (lambda m: print(m, file=sys.stderr))
     try:
         moved, notes, problems = migrate(root, data_dir)
-    except OSError as e:
-        moved, notes, problems = [], [], [f"{root}'s files ({e.strerror or e})"]
+    except (OSError, ValueError) as e:   # ValueError: a wcmods.json that isn't JSON
+        moved, notes, problems = [], [], [f"{root}'s files ({getattr(e, 'strerror', None) or e})"]
     if moved:
         log(f"Moved your {_join(moved)} out of the wcmods folder, to {data_dir}, where updating wcmods won't "
             "touch them. Apply to game once (or `wcmods install`), so the game finds your mods there.")
@@ -42,10 +44,13 @@ def prepare(root, data_dir, log=None):
     for p in problems:
         log(f"Couldn't move {p}. Close whatever has it open; the next start tries again.")
     try:
-        sync_builtin(os.path.join(data_dir, "mods"))
-    except OSError as e:
-        log(f"Couldn't bring the mods that come with wcmods up to date in {os.path.join(data_dir, 'mods')} "
-            f"({e.strerror or e}).")
+        if retire_menu_mod(data_dir):
+            log("The mod menu is part of wcmods now, so it's no longer in your mods; its key, button and size are "
+                "in wcmods.json. Its pages about the game are a mod of their own, Menu pages: Get set up in Clan "
+                "Mod Studio adds it. Apply to game once.")
+    except (OSError, ValueError) as e:   # ValueError: a wcmods.json that isn't JSON
+        log(f"Couldn't move the old mod menu's settings out of {os.path.join(data_dir, 'mods', OLD_MENU)} "
+            f"({getattr(e, 'strerror', None) or e}).")
 
 
 def migrate(root, data_dir):
@@ -54,8 +59,9 @@ def migrate(root, data_dir):
     or a second copy of wcmods moves in):
     - wcmods.json: the one there stays and takes the settings only yours has; yours goes to backups.
     - a mod: the one there stays; yours goes to backups as a replaced one (Settings and repair puts it back).
-    - a built-in mod (the mod menu): yours replaces the one there while that still has wcmods' defaults
-      (it was only put in); otherwise yours is dropped, as the one there has settings of its own.
+    - the mod menu's own mod, from when it was one (mods/mod-menu): yours replaces the one there while that
+      still has the menu's defaults (it was only put in); otherwise yours is dropped, as the one there has
+      settings of its own. retire_menu_mod then moves them into wcmods.json.
     Returns ([what moved], [notes on what didn't], [what couldn't be moved, and why]); what couldn't (a file
     open in another program) stays, for the next start."""
     if same_folder(root, data_dir):   # WCMODS_DATA is wcmods' own folder: everything stays where it is
@@ -86,13 +92,15 @@ def migrate(root, data_dir):
         n = 0
         for name in sorted(os.listdir(old)):
             src, dest = os.path.join(old, name), os.path.join(data_dir, "mods", name)
-            builtin = os.path.isfile(os.path.join(BUILTIN, name, "mod.json"))
-            if builtin and os.path.isdir(dest) and _untouched(dest, name):
+            menu = _is_old_menu(src)
+            if menu and _is_old_menu(dest) and _untouched(dest):
                 shutil.rmtree(dest, ignore_errors=True)
             if not os.path.exists(dest):
-                if _move(src, dest, problems) and not builtin and os.path.isfile(os.path.join(dest, "mod.json")):
+                if _move(src, dest, problems) and not menu and os.path.isfile(os.path.join(dest, "mod.json")):
                     n += 1
-            elif builtin:
+            elif menu:   # one there already: its settings are the ones to keep, if it's the old menu too
+                if not _is_old_menu(dest):   # a player's own mod-menu: take the old menu's settings from here
+                    _take_menu_settings(src, data_dir)
                 shutil.rmtree(src, ignore_errors=True)
             else:
                 try:
@@ -123,65 +131,46 @@ def migrate(root, data_dir):
     return moved, notes, problems
 
 
-def sync_builtin(mods_root):
-    """Put the mods that come with wcmods (wcmods/builtin) in mods_root, or bring the copies there up to
-    date: each file as wcmods has it, except what's yours. That's mod.json's "enabled" and "priority", and
-    the values in a settings file (a key only wcmods' copy has is added; the "_help" notes are wcmods'). A
-    file is written only when that changes it, so an install doesn't see a change that isn't one. Returns
-    the ids put in or updated."""
-    changed = []
-    for mod_id in sorted(os.listdir(BUILTIN)) if os.path.isdir(BUILTIN) else []:
-        src = os.path.join(BUILTIN, mod_id)
-        if not os.path.isfile(os.path.join(src, "mod.json")):
-            continue
-        wrote = False
-        for folder, _, files in os.walk(src):
-            for name in files:
-                rel = os.path.relpath(os.path.join(folder, name), src)
-                wrote = _sync(os.path.join(folder, name), os.path.join(mods_root, mod_id, rel), rel) or wrote
-        if wrote:
-            changed.append(mod_id)
-    return changed
+def _is_old_menu(folder):
+    """Whether this folder is the mod menu's own mod, from when it was one: wcmods' mod.json and menu.json,
+    and nothing else of a mod's."""
+    if os.path.basename(folder) != OLD_MENU or not os.path.isfile(os.path.join(folder, "menu.json")):
+        return False
+    meta = _read_json(os.path.join(folder, "mod.json"))
+    return bool(meta) and meta.get("author") == "wcmods" and set(os.listdir(folder)) <= {"mod.json", "menu.json"}
 
 
-def _sync(src, dest, rel):
-    with open(src, "rb") as f:
-        new = f.read()
-    if rel == "mod.json" or rel in SETTINGS:
-        shipped, mine = json.loads(new.decode("utf-8-sig")), _read_json(dest)
-        if mine is None:
-            if os.path.exists(dest) and rel != "mod.json":
-                return False   # settings that can't be read are yours to fix, not wcmods' to replace
-            mine = {}
-        if rel == "mod.json":
-            want = {**shipped, **{k: mine[k] for k in YOURS if k in mine}}
-        else:
-            want = {**shipped, **{k: v for k, v in mine.items() if not k.startswith("_")}}
-        if want == mine:
-            return False
-        new = (json.dumps(want, indent=2) + "\n").encode("utf-8")
-    elif os.path.isfile(dest):
-        with open(dest, "rb") as f:
-            if f.read() == new:
-                return False
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    with open(dest, "wb") as f:
-        f.write(new)
+def retire_menu_mod(data_dir):
+    """The mod menu was a mod of its own (mods/mod-menu); it's wcmods' own now. Move that mod's settings into
+    wcmods.json (where wcmods.json has none of its own for them) and remove the folder. Returns whether
+    there was one. A mod-menu that's someone's own mod (more in it than wcmods put there) is left alone."""
+    folder = os.path.join(data_dir, "mods", OLD_MENU)
+    if not _is_old_menu(folder):
+        return False
+    _take_menu_settings(folder, data_dir)
+    shutil.rmtree(folder, ignore_errors=True)
     return True
 
 
-def _untouched(folder, mod_id):
-    """Whether the copy of a built-in mod in folder has nothing of yours yet: wcmods' own on/off and
-    priority, and its settings as they come."""
-    for name in ("mod.json",) + SETTINGS:
-        shipped = _read_json(os.path.join(BUILTIN, mod_id, name))
-        if shipped is None:
-            continue
-        mine = _read_json(os.path.join(folder, name)) or {}
-        keys = YOURS if name == "mod.json" else [k for k in {**shipped, **mine} if not k.startswith("_")]
-        if any(mine.get(k, shipped.get(k)) != shipped.get(k) for k in keys):
-            return False
-    return True
+def _take_menu_settings(folder, data_dir):
+    """The old mod menu's settings (its menu.json, in folder) into data_dir's wcmods.json, where that has
+    none of its own for them."""
+    old = _read_json(os.path.join(folder, "menu.json")) or {}
+    from .config import Config
+    cfg = Config(data_dir, data_dir)
+    changed = False
+    for key, new in OLD_MENU_KEYS.items():
+        if key in old and new not in cfg.data and not (key == "cheats" and not old[key]):
+            cfg.data[new] = old[key]
+            changed = True
+    if changed:
+        cfg.save()
+
+
+def _untouched(folder):
+    """Whether the old mod menu in folder has nothing of yours: its settings as they came."""
+    mine = _read_json(os.path.join(folder, "menu.json")) or {}
+    return all(mine.get(k, v) == v for k, v in OLD_MENU_DEFAULTS.items())
 
 
 def _read_json(path):

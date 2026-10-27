@@ -2,10 +2,9 @@
 
 A downloaded mod is a .zip with the mod's folder in it (its mod.json and the rest), or with mod.json
 and the rest at the top; one .zip can hold several mods, and the mod folders can be deeper (a whole
-download of the wcmods-examples repository works; a mod that comes with wcmods, the mod menu, is
-skipped rather than replaced). Adding a mod copies files into mods/ and nothing in it runs; mods that run code
-still need "allow_code_mods" (mods.Mod.has_code). A mod added switched on turns on the mods it
-requires too, as switching it on does.
+download of the wcmods-examples repository works). Adding a mod copies files into mods/ and nothing in it
+runs; mods that run code still need "allow_code_mods" (mods.Mod.has_code). A mod added switched on turns
+on the mods it requires too, as switching it on does.
 
 A .zip is checked before anything is written: no file may land outside its mod's folder (absolute
 paths, "..", drive letters), no two files may be one file on Windows (names that differ only in case,
@@ -32,7 +31,6 @@ MAX_BYTES = 4 * 1024 ** 3        # cooked content can be big, but not this big
 MAX_META = 1024 * 1024           # a mod.json bigger than this isn't one
 IGNORED = ("__MACOSX", ".git", "__pycache__", ".DS_Store", "Thumbs.db")
 CODE = ("section.py", "scripts", "dlls", "cpp", "studio/section.js")
-BUILTIN_SKIP = "comes with wcmods, so it's left as it is; update wcmods instead"
 # A backup's folder in backups/mods: <time>[-n]-<why>-<id>. The number (for a second backup in the same
 # second) goes after the time, so the id is everything after "<why>-", even one ending in "-2".
 BACKUP_NAME = re.compile(r"^(\d{8}-\d{6})(?:-\d+)?-(removed|replaced)-(.+)$")
@@ -142,14 +140,6 @@ def _kinds(names):
     return kinds
 
 
-def _builtin(folder):
-    """Whether the mod in this folder is one that comes with wcmods."""
-    try:
-        return Mod(folder).builtin
-    except (OSError, ValueError):
-        return False
-
-
 def _found(mods_root, mod_id, meta, names, size, root):
     kinds = _kinds(names)
     existing = None
@@ -157,15 +147,16 @@ def _found(mods_root, mod_id, meta, names, size, root):
     if os.path.isfile(os.path.join(folder, "mod.json")):
         try:
             old = Mod(folder)
-            existing = {"name": old.name, "version": old.version, "builtin": old.builtin}
+            existing = {"name": old.name, "version": old.version}
         except (OSError, ValueError):
-            existing = {"name": mod_id, "version": "", "builtin": False}
+            existing = {"name": mod_id, "version": ""}
     req = meta.get("requires")
     uses = meta.get("uses")
     ids = lambda v: [x for x in ([v] if isinstance(v, str) else v if isinstance(v, list) else []) if isinstance(x, str)]
     return {"id": mod_id, "name": str(meta.get("name") or mod_id), "description": str(meta.get("description") or ""),
             "version": str(meta.get("version") or ""), "author": str(meta.get("author") or ""),
-            "requires": ids(req), "uses": ids(uses), "kinds": kinds,
+            "requires": [i for i in ids(req) if i != modlib.MENU_ID], "uses": ids(uses), "kinds": kinds,
+            "menu_page": modlib.MENU_ID in ids(req) + ids(uses),
             "code": any(n == c or n.startswith(c + "/") for n in names for c in CODE),
             "files": len(names), "bytes": size, "existing": existing, "root": root}
 
@@ -229,15 +220,11 @@ def _backup(folder, backups_root, why):
     return dest
 
 
-def _set_enabled(folder, on, downloaded=False):
+def _set_enabled(folder, on):
     path = os.path.join(folder, "mod.json")
     with open(path, encoding="utf-8-sig") as f:
         meta = json.load(f)
     meta["enabled"] = bool(on)
-    if downloaded:
-        # Only the mods wcmods brings (wcmods/builtin) are built in; a download saying it is one couldn't
-        # be removed or updated afterwards.
-        meta.pop("builtin", None)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(meta, f, indent=2)
         f.write("\n")
@@ -245,7 +232,7 @@ def _set_enabled(folder, on, downloaded=False):
 
 def _place(tmp, mods_root, mod_id, backups_root, enable):
     """Move a mod unpacked in tmp to mods/<id>, keeping any copy that's there in backups/mods/."""
-    _set_enabled(tmp, enable, downloaded=True)
+    _set_enabled(tmp, enable)
     final = os.path.join(mods_root, mod_id)
     replaced = None
     if os.path.exists(final):
@@ -258,8 +245,6 @@ def _needs_on(mods_root, done):
     """Turn on what the mods just added (switched on) require, as switching them on does. Each entry's
     "also_on" gets the names of the mods that went on with it."""
     for d in done:
-        if d.get("skipped"):
-            continue
         found = modlib.discover(mods_root)
         names = {m.id: m.name for m in found}
         try:
@@ -270,20 +255,14 @@ def _needs_on(mods_root, done):
 
 
 def add_zip(path, mods_root, backups_root, ids=None, enable=True, name=None):
-    """Add the mods in a .zip (all of them, or those in `ids`), on unless enable=False. Mods that come with
-    wcmods (the mod menu) aren't replaced: they're skipped, unless that leaves nothing to add.
+    """Add the mods in a .zip (all of them, or those in `ids`), on unless enable=False.
     Returns [{id, name, code, replaced (the old copy's backup folder, or None), also_on (mods turned on
-    because it needs them)}], then [{id, name, skipped (why)}] for the ones left out."""
+    because it needs them)}]."""
     with zipfile.ZipFile(path) as z:
         found = _inspect(z, mods_root, name or os.path.basename(path))
         chosen = [f for f in found if ids is None or f["id"] in ids]
         if not chosen:
             raise ValueError("none of the mods asked for is in this .zip")
-        skipped = [f for f in chosen if f["existing"] and f["existing"]["builtin"]]
-        chosen = [f for f in chosen if f not in skipped]
-        if not chosen:
-            raise ValueError("this .zip would replace a mod that comes with wcmods (" +
-                             ", ".join(f["id"] for f in skipped) + "); update wcmods instead")
         if sum(f["bytes"] for f in chosen) > MAX_BYTES:
             raise ValueError(f"this .zip unpacks to more than {MAX_BYTES // 1024 ** 3} GB")
         members = _members(z)
@@ -319,7 +298,7 @@ def add_zip(path, mods_root, backups_root, ids=None, enable=True, name=None):
             done.append({"id": f["id"], "name": f["name"], "code": f["code"], "replaced": replaced, "also_on": []})
     if enable:
         _needs_on(mods_root, done)
-    return done + [{"id": f["id"], "name": f["name"], "skipped": BUILTIN_SKIP} for f in skipped]
+    return done
 
 
 def _mod_folders(path):
@@ -368,7 +347,7 @@ def add_folder(path, mods_root, backups_root, ids=None, enable=True):
         raise ValueError("that's already in your mods folder")
     # Every mod.json is checked, and each mod named as add_zip names it (its "id", else its folder),
     # before anything is copied.
-    plan, taken, skipped = [], set(), []
+    plan, taken = [], set()
     for folder in folders:
         try:
             with open(os.path.join(folder, "mod.json"), encoding="utf-8-sig") as f:
@@ -384,15 +363,9 @@ def add_folder(path, mods_root, backups_root, ids=None, enable=True):
         taken.add(mod_id)
         if ids is not None and mod_id not in ids:
             continue
-        if _builtin(os.path.join(mods_root, mod_id)):
-            skipped.append({"id": mod_id, "name": str(meta.get("name") or mod_id), "skipped": BUILTIN_SKIP})
-        else:
-            plan.append((folder, mod_id))
-    if not plan and not skipped:
-        raise ValueError("none of the mods picked are in it")
+        plan.append((folder, mod_id))
     if not plan:
-        raise ValueError("that would replace a mod that comes with wcmods (" + ", ".join(s["id"] for s in skipped) +
-                         "); update wcmods instead")
+        raise ValueError("none of the mods picked are in it")
     done = []
     for folder, mod_id in plan:
         tmp = tempfile.mkdtemp(prefix=f"_adding-{mod_id}-", dir=mods_root)
@@ -407,7 +380,7 @@ def add_folder(path, mods_root, backups_root, ids=None, enable=True):
         done.append({"id": mod_id, "name": m.name, "code": m.has_code(), "replaced": replaced, "also_on": []})
     if enable:
         _needs_on(mods_root, done)
-    return done + skipped
+    return done
 
 
 class Needed(ValueError):
@@ -423,8 +396,6 @@ def remove(mod, backups_root, found=(), cascade=False):
     """Take a mod out of mods/: it's moved to backups/mods/ (restore() puts it back). Returns that folder's
     name. `found` is every mod: while mods that are on need this one, removing it is refused (Needed),
     unless cascade, which turns them off first, as turning it off does."""
-    if mod.builtin:
-        raise ValueError(f"{mod.name} comes with wcmods; turn it off instead")
     found = list(found)
     need = modlib.needing(found, mod.id) if found else []
     if need:

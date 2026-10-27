@@ -60,4 +60,22 @@ end
 -- An item's name from its tag ("Gameplay.Inventory.Consumable.MediumHealingHerb" is "Marigold"), or nil.
 function N.item(tag) return N.items[tag] end
 
+-- An area's name from its code (a WrcZoneNameTrigger's ZoneCode: "R-05" is "Willow-Weep"), or nil.
+function N.area(code) return N.areas[code] end
+
+-- A quest's title from its tag (Game.quests.describe(q).tag), for a rank: "Apprentice", "Warrior", "Deputy"
+-- or "Leader" (a quest's title can change with your cat's). Without one for that rank (or with no rank),
+-- another rank's; nil when the game has no title for it.
+local RANKS = { "Apprentice", "Warrior", "Deputy", "Leader" }
+function N.quest(tag, rank)
+    local titles = N.quests[tag]
+    if not titles then return nil end
+    if rank and titles[rank] then return titles[rank] end
+    for _, r in ipairs(RANKS) do
+        if titles[r] then return titles[r] end
+    end
+    local _, any = next(titles)
+    return any
+end
+
 return N

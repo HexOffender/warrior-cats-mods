@@ -17,8 +17,8 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (bridge, catcolours, colors, controls, eyeatlas, menusettings, mods, modzip, names, onboarding,
-               palettes, pipeline, ue4ss)
+from . import (bridge, catcolours, colors, controls, eyeatlas, menupages, menusettings, mods, modzip, names,
+               onboarding, palettes, pipeline, ue4ss)
 from .formats import csvdata, save
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
@@ -32,7 +32,7 @@ from .sections.files import classify
 NO_GAME = "Clan Mod Studio hasn't found the game yet: Get set up, on the Mods page, asks where it is"
 
 MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "items.json", "names.json", "cats.json",
-             "save.json", "settings.json", "menu.json")
+             "save.json", "settings.json")
 MAX_UPLOAD = modzip.MAX_BYTES   # a downloaded mod's .zip
 # The side bar: "play" is installing and managing mods, "make" the pages for making your own.
 BUILTIN_SECTIONS = [
@@ -184,6 +184,13 @@ class Studio:
         if parts == ["setup", "loader"] and method == "POST":
             # UE4SS: downloaded from GitHub, or from a .zip sent as the body.
             return self.run(lambda log: onboarding.install_loader(cfg, upload, log))
+        if parts == ["setup", "pages"] and method == "POST":
+            # The mod menu's pages (wcmods/menupages.py): downloaded from GitHub, from a .zip sent as the body,
+            # or skipped for now.
+            if body.get("skip"):
+                with self.lock:
+                    return {"result": onboarding.skip_pages(cfg)}
+            return self.run(lambda log: onboarding.add_pages(cfg, upload, log))
         if parts == ["play"] and method == "POST":
             self.need_current_code()
             return self.run(lambda log: onboarding.play(self.ctx, log, force=bool(body.get("force"))))
@@ -216,13 +223,14 @@ class Studio:
             onboarding.clear_inbox()
             return {"cleared": True}
         if parts == ["ingame"]:
-            # The game's console, cheats at start and the mod menu's key (wcmods/ingame.py).
+            # The game's console, the mod menu's key, button and size, and Menu pages' cheats at start
+            # (wcmods/menusettings.py).
             if method == "PATCH":
                 # set_options reloads and saves wcmods.json: not in the middle of an install, which would
                 # lose what the install has noted but not saved yet.
                 with self.lock:
-                    return menusettings.set_options(cfg, cheats=body.get("cheats"), console=body.get("console"),
-                                              key=body.get("key"), size=body.get("size"), pad=body.get("pad"))
+                    return menusettings.set_options(cfg, console=body.get("console"), key=body.get("key"),
+                                                    size=body.get("size"), pad=body.get("pad"), cheats=body.get("cheats"))
             return menusettings.options(cfg)
         if parts == ["game", "bridge"] and method == "GET":
             # Whether the game runs with the bridge (wcmods/bridge.py), for the console's status line.
@@ -250,8 +258,9 @@ class Studio:
                     unmet.setdefault(i, []).append(f"left out: it {why}")
             return [{**m.to_dict(), "problems": unmet.get(m.id, []),
                      "needed_by": [titles[i] for i in mods.needing(found, m.id)],
-                     "requires_names": [titles.get(i, i) for i in m.requires],
-                     "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id)} for m in found]
+                     "requires_names": [titles.get(i, i) for i in m.requires if i != mods.MENU_ID],
+                     "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id),
+                     "menu_pages": m.id == menupages.ID} for m in found]
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "allow-outdated" and method == "POST":
             # Use a mod made for an older version of the game anyway, on this build only (the page warns first).
             build = gamebuild.current(cfg)["build"]

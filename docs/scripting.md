@@ -43,13 +43,12 @@ sets up two globals, then runs yours:
 | `settingsFile` | Where `MOD.save()` writes, or nil |
 | `save()` | Write `MOD.settings` back to `settings.json`, for the next time the game starts and the next install. Returns true, or false and why |
 | `log(fmt, ...)` | Print `[Mod name] text` to `ue4ss\UE4SS.log` |
-| `page(fn, {title, order, group})` | A page in the mod menu (`fn(ui)`, as in [SDK.md](SDK.md#wcmodsmenu)). The menu is a mod of its own; while it's off this does nothing and returns false |
+| `page(fn, {title, order, group})` | A page in the mod menu (`fn(ui)`, as in [SDK.md](SDK.md#wcmodsmenu)). The menu goes in with UE4SS, as scripts do; returns false only if `WCModsMenu` is missing |
 
 **A settings page for free:** a mod with a `settings.json` and no page of its own gets one. It has a row
 per setting (on/off, number, text, `"#rrggbb"` colours) and a Save button, and keys starting with `_` show as notes.
-`"settings_page": false` in `mod.json` turns that off. The page is in the mod menu, so it shows while
-the Mod menu mod is on; say `"uses": ["mod-menu"]` in `mod.json` so Clan Mod Studio shows that the
-mod has one. A script that can't work without the menu says `"requires": ["mod-menu"]` instead.
+`"settings_page": false` in `mod.json` turns that off. The page is in the mod menu, which goes in with
+every install; say `"uses": ["mod-menu"]` in `mod.json` so Clan Mod Studio shows that the mod has one.
 
 `python wcmods.py new my-script --kind script` makes a new one to start from.
 [game-tweaks](https://github.com/HexOffender/wcmods-examples/tree/main/game-tweaks), in wcmods-examples, is a complete one: it
@@ -348,6 +347,7 @@ others, so try each one.
 |---|---|
 | `Game.save.file()`, `Game.save.slotData()` | The whole save as of the game's last save, as a table; this cat's slot in it |
 | `Game.save.write()` | Save now (the game's own Save) |
+| `Game.save.folder()` | A folder for a script's own files: `WCMods` in the game's Saved folder, beside its saves. Every install makes it, and updating a mod or wcmods leaves it alone |
 | `Game.save.slot()` | The save slot in use |
 | `Game.save.progression(primary, sub)`, `setProgression`, `setting`, `setSetting` | The save manager's number stores. What their keys are isn't worked out yet |
 
@@ -417,20 +417,23 @@ allowed, as the rest of this page does.
 
 ## In the mod menu
 
-The mod menu (Insert) builds these pages on `WCModsGame`, in the side bar's groups
-([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)). They're live, and a change applies at once:
+The mod menu (Insert) has these pages built on `WCModsGame`, in the side bar's groups
+([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)). From At a glance to Game switches they're the Menu pages
+mod's ([SDK.md, Menu pages](SDK.md#menu-pages)), a script like any other, built only on what this page
+and SDK.md describe; the rest are the window's own. They're live, and a change applies at once:
 
-- **Overview:** your cat's health, stamina and experience as bars, the territory, area, time and
-  fresh-kill pile, the quest you follow, quick buttons (Heal, Full stamina, Morning, Evening), the
-  keys scripts use (from `Game.onKey`'s `help` and `Menu.key`), and where things are in the menu.
+- **Overview:** the menu's keys, the keys scripts use (from `Game.onKey`'s `help` and `Menu.key`), and
+  each group's pages.
+- **At a glance:** your cat's health, stamina and experience as bars, the territory, area, time and
+  fresh-kill pile, the quest you follow, and quick buttons (Heal, Full stamina, Morning, Evening).
 - **Stats:** health, stamina and its regeneration, fight stamina, size, level and experience, and
   the six stats.
 - **World:** the clock, with presets and "Hold this time", and the fresh-kill pile, with "Keep it at
   least here". The area is the last one your cat walked into (the game says so as you cross the
   boundary).
 - **Travel:** where your cat is, Back (to where it was before the last jump), spots you save by name
-  (kept in `%LOCALAPPDATA%\Wrc\Saved\WCMods\places.json`), the game's checkpoints, and every area by
-  territory. A jump lands on the ground.
+  (kept in `places.json` in `Game.save.folder()`, `%LOCALAPPDATA%\Wrc\Saved\WCMods`), the game's
+  checkpoints, and every area by territory. A jump lands on the ground.
 - **Items:** what you carry, by kind, and an item to drop by your cat as a pickup.
 - **Quests:** the quest you follow and its objectives (with "Go to objective" when an objective has
   a place), and every quest by state, with Follow. The titles are the game's own, for your rank.

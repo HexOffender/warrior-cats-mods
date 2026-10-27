@@ -1,8 +1,12 @@
 """The in-game mod menu: a shared UE4SS Lua module (WCModsMenu) and the script that hosts the window.
+Both go in with every install while UE4SS is there: the menu is wcmods' own, not a mod you can turn off.
 
-Insert (menu.json "key", the Mod menu's Settings in Clan Mod Studio) opens a window with a tab per page. Any UE4SS script adds a page with
-WCModsMenu.page(title, fn); wcmods' own scripts add pages for their live settings, and the host's
-first page lists the installed mods and what they set, from the build. See docs/SDK.md, "WCModsMenu".
+Insert (wcmods.json "menu_key"; Options on Clan Mod Studio's Settings and repair page) opens a window with
+a tab per page. Any UE4SS script adds a page with WCModsMenu.page(title, fn); wcmods' own scripts add
+pages for their live settings, and the window's own pages list the installed mods and what they set, from
+the build, the keys, the log and the menu's settings. The pages about the game (your cat, the world,
+quests, fights, cheats) are a mod of their own, Menu pages (menupages.py fetches it). See docs/SDK.md,
+"WCModsMenu".
 
 How the pieces fit: each UE4SS mod runs in a Lua state of its own, so the host and the pages talk
 through UE4SS's shared variables (strings, numbers, booleans and UObjects). The host makes the
@@ -23,8 +27,9 @@ KEYS = ("INS", "HOME", "END", "DEL", "PAGE_UP", "PAGE_DOWN") + tuple(f"F{n}" for
 LUA = lua_source("menu.lua")
 
 HOST_LUA = lua_source("menu_host.lua")
+HOST_PAGES_LUA = lua_source("menu_host_pages.lua")   # the window's own pages, pasted into HOST_LUA
 
-# The menu's size, as a factor on the usual: what menu.json "size", the studio and A-/A+ in game stay within.
+# The menu's size, as a factor on the usual: what wcmods.json "menu_scale", the studio and A-/A+ in game stay within.
 SCALES = (0.6, 2.2)
 KEY_NAMES = {"INS": "Insert", "HOME": "Home", "END": "End", "DEL": "Delete", "PAGE_UP": "Page Up",
              "PAGE_DOWN": "Page Down"}
@@ -40,20 +45,20 @@ PAD_NAMES = {"Gamepad_Special_Left": "View", "Gamepad_LeftThumbstick": "Left sti
 PADS = tuple(PAD_NAMES)
 
 
-# The side bar's groups, in order: id, label, and what the Overview page says is there (Home holds the
-# Overview itself; Tools gains the Inspector and the Lua console with code mods allowed, said in the Lua).
-# Written into the Lua as Menu.groups; the agent's menu driver (agent/menu.py) and the C++ SDK's
-# PageOptions (cpp_sdk/include/WCMods/Menu.hpp) follow it.
+# The side bar's groups, in order: id and label. A group shows once a page is in it; Home has the
+# Overview and the installed mods, Tools the log, this menu's settings, and the Inspector and the Lua
+# console with code mods allowed (the window's own pages, menu_host_pages.lua). The Menu pages mod's pages
+# go in Your cat, World, Story, Fight and Cheats. Written into the Lua as Menu.groups; the agent's menu
+# driver (agent/menu.py) and the C++ SDK's PageOptions (cpp_sdk/include/WCMods/Menu.hpp) follow it.
 GROUPS = (
     {"id": "home", "label": "Home"},
-    {"id": "cat", "label": "Your cat",
-     "where": "Stats: health, stamina, level and stats. Colours and Mouse look, when those mods are on."},
-    {"id": "world", "label": "World", "where": "The time of day and the fresh-kill pile; Travel; what's Nearby; your Items."},
-    {"id": "story", "label": "Story", "where": "Quests: the one you follow, its objectives, and every quest's state."},
-    {"id": "fight", "label": "Fight", "where": "Both sides of a fight while you're in one."},
-    {"id": "cheats", "label": "Cheats", "where": "The engine's cheats, and the game's own developer switches."},
-    {"id": "mods", "label": "Mods", "where": "Pages from the mods you have on."},
-    {"id": "tools", "label": "Tools", "where": "The log, this menu's settings"},
+    {"id": "cat", "label": "Your cat"},
+    {"id": "world", "label": "World"},
+    {"id": "story", "label": "Story"},
+    {"id": "fight", "label": "Fight"},
+    {"id": "cheats", "label": "Cheats"},
+    {"id": "mods", "label": "Mods"},
+    {"id": "tools", "label": "Tools"},
 )
 
 
@@ -62,13 +67,13 @@ def lua():
     return LUA.replace("@GROUPS@", lua_value([dict(g) for g in GROUPS]))
 
 
-def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0, dev=False, pages=None, pad=DEFAULT_PAD):
+def host_script(manifest, mods, key=DEFAULT_KEY, scale=1.0, dev=False, pad=DEFAULT_PAD, log="", pages_note=""):
     """The host's script, with the overview of this build: the enabled mods and what each section set.
-    cheats: whether the Cheats page starts with cheats on (menu.json "cheats"); scale: the menu's size,
-    1 for the usual (menu.json "size"); dev: whether the Inspector and Lua console pages are in
-    (they're for code mods, so wcmods.json "allow_code_mods"); pages: menupages.data(), the area names and
-    quest titles the pages show; pad: the controller button that opens it too (an Unreal key name, "" for
-    none)."""
+    scale: the menu's size, 1 for the usual (wcmods.json "menu_scale"); dev: whether the Inspector and Lua
+    console pages are in (they're for code mods, so wcmods.json "allow_code_mods"); pad: the controller
+    button that opens it too (an Unreal key name, "" for none); log: where UE4SS's log is, for the Log page;
+    pages_note: what the Overview says about the Menu pages mod while the build hasn't got it ("" when it
+    has)."""
     if key not in KEYS:
         raise ValueError(f"the menu's key should be one of {', '.join(KEYS)}")
     enabled = [m for m in mods if m.enabled]
@@ -82,11 +87,11 @@ def host_script(manifest, mods, key=DEFAULT_KEY, cheats=False, scale=1.0, dev=Fa
     settings = {
         "key": key, "key_name": key_name, "built": manifest["built"].replace("T", " "),
         "pad": pad or "", "pad_name": pad_name, "opens": key_name + (f" (or {pad_name} on a controller)" if pad else ""),
-        "cheats": bool(cheats), "scale": float(scale), "size_min": SCALES[0], "size_max": SCALES[1], "dev": bool(dev),
+        "scale": float(scale), "size_min": SCALES[0], "size_max": SCALES[1], "dev": bool(dev),
+        "log": log or "", "pages_note": pages_note or "",
         "mods": [{"id": m.id, "name": m.name, "description": m.description, "kinds": m.kinds(),
                   "priority": m.priority} for m in enabled],
         "sections": sections, "warnings": manifest["warnings"],
     }
-    from . import menupages
     return (HOST_LUA.replace("@SETTINGS@", lua_value(settings)).replace("@KEY@", KEY_NAMES.get(key, key))
-            .replace("@PAGES@", menupages.lua(pages)))
+            .replace("@PAGES@", HOST_PAGES_LUA))

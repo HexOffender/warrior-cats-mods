@@ -3,12 +3,12 @@
 A mod is a folder under mods/ (in your own folder, config.data_dir(); not wcmods') with a mod.json:
   {"name": "Game Tweaks", "description": "...", "enabled": true, "priority": 0,
    "version": "1.2", "author": "...",          what the studio shows about it
-   "requires": ["mod-menu"],                    mods it can't work without: turned on with it
-   "uses": ["mod-menu"]}                        mods it works with when they're on (the mod menu, for a page)
+   "requires": ["menu-pages"],                  mods it can't work without: turned on with it
+   "uses": ["mod-menu"]}                        mods it works with when they're on ("mod-menu", the in-game
+                                                menu's window, for a page: wcmods' own, so always there)
 and any of:
   files/<game path>   loose files that replace the game's (CSV data, configs, movies)
   paks/<name>.pak     cooked content made with Unreal Engine 5.7 (with its .utoc/.ucas), installed as is
-  menu.json           the in-game mod menu itself and its settings (mods/mod-menu, from wcmods/builtin; pipeline.py)
   palette.json        colour palette (sections/palettes.py)
   controls.json       button remaps (sections/controls.py)
   mouselook.json      mouse look settings (sections/mouselook.py)
@@ -27,8 +27,10 @@ import json
 import os
 import re
 
-MENU_ID = "mod-menu"   # the mod menu's own mod: other mods name it in "requires" or "uses"
-CONTENT = (("files", "files"), ("paks", "cooked content"), ("menu.json", "mod menu"), ("palette.json", "palette"), ("controls.json", "controls"),
+# The in-game mod menu's window, which mods name in "requires" or "uses" for a page in it. It was a mod of its
+# own; it's wcmods' now (menu.py), so it's always there: a mod needing it needs nothing more.
+MENU_ID = "mod-menu"
+CONTENT = (("files", "files"), ("paks", "cooked content"), ("palette.json", "palette"), ("controls.json", "controls"),
            ("mouselook.json", "mouse look"), ("data.json", "data"), ("items.json", "items"), ("names.json", "names"), ("cats.json", "cats"),
            ("save.json", "save"), ("scripts", "in-game script"), ("dlls", "C++ mod"), ("cpp", "C++ source"),
            ("section.py", "code"),
@@ -56,7 +58,6 @@ class Mod:
         self.author = str(meta.get("author") or "")
         self.requires = _ids(meta.get("requires"))
         self.uses = [i for i in _ids(meta.get("uses")) if i not in self.requires]
-        self.builtin = bool(meta.get("builtin", False))   # comes with wcmods: it can be turned off, not removed
 
     def kinds(self):
         return [kind for name, kind in CONTENT if os.path.exists(os.path.join(self.folder, name))]
@@ -91,8 +92,9 @@ class Mod:
     def to_dict(self):
         return {"id": self.id, "name": self.name, "description": self.description, "enabled": self.enabled,
                 "priority": self.priority, "kinds": self.kinds(), "preset": palette_only(self),
-                "version": self.version, "author": self.author, "requires": self.requires, "uses": self.uses,
-                "builtin": self.builtin, "code": self.has_code(), "menu_page": self.menu_page()}
+                "version": self.version, "author": self.author,
+                "requires": [i for i in self.requires if i != MENU_ID], "uses": self.uses,
+                "code": self.has_code(), "menu_page": self.menu_page()}
 
 
 def _ids(value):
@@ -103,12 +105,13 @@ def _ids(value):
 
 
 def needed(mods, mod_id):
-    """The mods `mod_id` requires, and what they require in turn (ids, nearest first); missing ones too."""
+    """The mods `mod_id` requires, and what they require in turn (ids, nearest first); missing ones too. The
+    mod menu (MENU_ID) isn't one: it's wcmods' own."""
     by_id = {m.id: m for m in mods}
     out, todo = [], list(by_id[mod_id].requires) if mod_id in by_id else []
     while todo:
         i = todo.pop(0)
-        if i in out or i == mod_id:
+        if i in out or i == mod_id or i == MENU_ID:
             continue
         out.append(i)
         if i in by_id:

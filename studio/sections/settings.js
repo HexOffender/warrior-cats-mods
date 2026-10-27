@@ -1,5 +1,5 @@
-// Settings and repair: the game's console and whether mods may run code (Options), your save backups,
-// removed mods and repairs, and starting an empty mod of your own. The Mods page is for getting set up,
+// Settings and repair: the in-game mod menu's key, button and size, the game's console and whether mods may
+// run code (Options), your save backups, removed mods and repairs, and starting an empty mod of your own. The Mods page is for getting set up,
 // adding mods and switching them on and off.
 export default {
   title: "Settings and repair",
@@ -14,7 +14,7 @@ export default {
       el("div", { class: "section-head" },
         el("span", { class: "eyebrow", text: "Your mods" }),
         el("h1", { text: "Settings and repair" }),
-        el("p", { class: "note", text: "The game's console and mods that run code, your save backups, mods you removed, and a mod of your own to start from." })),
+        el("p", { class: "note", text: "The mod menu, the game's console and mods that run code, your save backups, mods you removed, and a mod of your own to start from." })),
       optionsBox, repairBox, makeBox);
 
     function renderOptions() {
@@ -45,6 +45,38 @@ export default {
         });
         optionsBox.append(el("label", { class: "row", for: "allow-code" }, code, el("strong", { text: "Allow mods that run code" }),
           el("span", { class: "muted", text: "In-game scripts, build steps and studio pages that mods bring. Off unless you turn it on." })), warn);
+      }
+      if (options) {
+        // The mod menu's window (wcmods/menusettings.py, in wcmods.json), with the choices from wcmods as
+        // [value, label] pairs. Any Unreal key name works for the pad in wcmods.json, and any size within its
+        // limits: one the lists haven't got shows as it is.
+        const save = async change => {
+          try {
+            options = await api.patch("/ingame", change);
+            toast("cheats" in change ? "Saved. It applies from the next time the game starts." : "Saved. Apply to game to use it.");
+            bus.emit("mods-changed", { from: "settings" });
+          }
+          catch (e) { toast(e.message, "bad"); }
+          renderOptions();
+        };
+        const choices = (list, value, label) => list.some(([v]) => v === value) ? list : [...list, [value, label(value)]];
+        const key = el("select", { id: "ig-key" }, ...options.keys.map(([v, label]) => el("option", { value: v, text: label, selected: v === options.key })));
+        key.addEventListener("change", () => save({ key: key.value }));
+        const pad = el("select", { id: "ig-pad" }, ...choices(options.pads || [], options.pad, v => v).map(([v, label]) => el("option", { value: v, text: label, selected: v === options.pad })));
+        pad.addEventListener("change", () => save({ pad: pad.value }));
+        const size = el("select", { id: "ig-size" }, ...choices(options.sizes || [], options.size, v => `x${v}`).map(([v, label]) => el("option", { value: String(v), text: label, selected: v === options.size })));
+        size.addEventListener("change", () => save({ size: Number(size.value) }));
+        // Menu pages' setting (its settings.json), while that mod is in your mods.
+        const cheats = options.cheats === null ? null : el("input", { type: "checkbox", id: "ig-cheats", checked: options.cheats });
+        if (cheats) cheats.addEventListener("change", () => save({ cheats: cheats.checked }));
+        optionsBox.append(
+          el("h3", { text: "The mod menu" }),
+          el("div", { class: "row" }, el("label", { for: "ig-key", class: "lbl", text: "Opens with" }), key,
+            el("label", { for: "ig-pad", class: "lbl", text: "or on a controller" }), pad,
+            el("label", { for: "ig-size", class: "lbl", text: "Size" }), size),
+          cheats ? el("label", { class: "row", for: "ig-cheats" }, cheats, el("strong", { text: "Cheats on when the game starts" }),
+            el("span", { class: "muted", text: "Menu pages' Cheats page switches them on and off while you play." })) : null,
+          el("p", { class: "note", text: "The in-game menu lists your mods, and mods add their pages to it; Menu pages (Get set up, on the Mods page) adds your cat, the world, quests, fights and cheats. In game, A- and A+ in its top bar change its size until the game closes. Opened from a controller, the game pauses while it's open, and the same button or B closes it. Needs UE4SS." }));
       }
     }
 

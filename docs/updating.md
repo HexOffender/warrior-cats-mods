@@ -36,8 +36,7 @@ Properties, Updates) to "Only update this game when I launch it".
 
 After the game updates, try your mod on the new build. If it works, add the build's number
 (`python wcmods.py game build` shows it) and share the new version. A mod without `game_builds` was
-made for build 24847281, like every mod made before the list existed. Built-in mods (`"builtin":
-true`, such as the mod menu) are wcmods' own and follow its checks instead.
+made for build 24847281, like every mod made before the list existed.
 
 ## For wcmods: the signatures
 
