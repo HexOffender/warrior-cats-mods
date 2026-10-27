@@ -861,6 +861,18 @@ Worked out on 2026-10-24 for `Game.npcs`, and checked in game with two cats.
     when nothing is in reach, so wcmods makes a prompt of its own from the same class, on the HUD's
     `CanvasExploration`, and listens to Interact's keys itself (`Player_Interact` in the save's
     `InputKeyboard` and `InputGamepad`).
+  - **The quest HUD.** `WBP_GuiHudGameWrc`'s `mcGuiQuestObjective` (`GuiHudCurrentObjectives`: `mcGuiTitle`,
+    `mcGuiLocation` in `CanvasLocation`, `mcGuiActivity`, and `mcGuiGoal1` to `3`, each with `mcGuiIcon`,
+    `mcGuiGoalName`, `mcGuiGoalValues` and `CanvasCheck`; `AniMessageShow`/`Hide`) stays as it's set when
+    the game has no quest of its own to show. The banners `mcGuiBeginQuestMessage`, `mcGuiQuestUpdateMessage`
+    and `mcGuiQuestCompetedMessage` play with `SequenceEvent()`; their text blocks aren't properties
+    (`mcGuiTextQuestType`, `mcGuiTextQuestName`, `mcGuiTextObjective`, `mcGuiText`, found by walking the
+    widget tree), and the begin banner stays until it's hidden.
+  - **Map markers.** A `SwtAdventurePOIComponent` added at runtime (`AddComponentByClass`, then
+    `FinishAddComponent`) on any actor, a plain `Actor` spawned for a place included, registers with the
+    minimap (`GuiHudMinimap.POIWidgetMap` grew by one) and leaves it when the actor goes. Its
+    `CustomPOIIcon` takes the `MI_UI_Icon*` materials; `bStickPOIToBorder` keeps it at the minimap's edge.
+    Textures and materials load with `LoadAsset` on their whole object path, not the package's.
   - **Dialogues** are `NpcDialogue` graphs (`GenericGraph`) of `QuestDialogueNode`s: camera actions,
     `QuestDialogueTalkingNode`s with a `Paragraph` and a `TalkingSource` (0 the cat, 1 you; several "you"
     children of one node are the answer choices) and screens (`QuestDialogueActionCreateScreen`). Giving a

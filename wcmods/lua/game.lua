@@ -1618,11 +1618,13 @@ function Npc:prompt(text, reach)
     Game.npcs.watchPrompts()
 end
 
--- The keys the game's Interact is on: the keyboard's and the controller's, from your settings in the save
--- (read again every 10 seconds, for a remap), and the left mouse button, which the game's prompt shows.
-local interactKeys, interactRead
+-- The keys the game's Interact is on: the keyboard's and the controller's, from your settings in the save,
+-- and the left mouse button, which the game's prompt shows. Reading the save takes a while (40 ms), so it's
+-- read once, and again after one of the game's screens closes (its settings are where a key is remapped).
+local interactKeys, interactStale
 function Game.npcs.interactKeys()
-    if interactKeys and os.clock() - interactRead < 10 then return interactKeys end
+    if interactKeys and not interactStale then return interactKeys end
+    interactStale = false
     local keys = {}
     pcall(function()
         local _, account = next(Game.save.file())
@@ -1633,7 +1635,7 @@ function Game.npcs.interactKeys()
     end)
     if #keys == 0 then keys = { "E", "Gamepad_FaceButton_Bottom" } end
     keys[#keys + 1] = "LeftMouseButton"
-    interactKeys, interactRead = keys, os.clock()
+    interactKeys = keys
     return keys
 end
 
@@ -1689,7 +1691,39 @@ local function promptSpot(n, View, view)
     return x, y, inView
 end
 
+-- The game's Interact, once per press. A press belongs to the prompt that was on screen when it was made,
+-- the one the player saw: so presses are read before this frame's prompt is worked out, against last
+-- frame's. With the game's own prompt up then (a pickup, a tunnel), it's the game's, even when taking the
+-- pickup ends a quest's step and puts this script's prompt up in the same frame; with a cat's prompt up,
+-- it's for that cat; with neither, but this script's dialogue box up, it moves the talk on. (The game
+-- takes the key too, as nothing hooked can keep it from the game; the game has nothing in reach then.)
+local function readInteract()
+    if #interactFns == 0 then return end
+    for _, key in ipairs(Game.npcs.interactKeys()) do
+        if prompt.held[key] then
+            if not Game.keyDown(key) then prompt.held[key] = nil end
+        elseif Game.pressed(key) then
+            prompt.held[key] = true
+            local at = prompt.at
+            if not prompt.gameUp and (at or Game.dialogue.showing()) then
+                for _, fn in ipairs(interactFns) do
+                    local ok, err = pcall(fn, at)
+                    if not ok then log("npcs.onInteract: %s", tostring(err)) end
+                end
+            end
+            return
+        end
+    end
+end
+
 local function updatePrompt()
+    if #Game.screens() > 0 then
+        interactStale = interactKeys ~= nil   -- read the keys again once the screen closes
+        prompt.at, prompt.gameUp = nil, true  -- nothing a press in a screen does is for a cat
+        if valid(prompt.widget) then prompt.widget:SetVisibility(COLLAPSED) end
+        return
+    end
+    readInteract()
     viewModule = viewModule or select(2, pcall(require, "WCModsView"))
     local View = type(viewModule) == "table" and viewModule or nil
     local view = View and View.current()
@@ -1709,7 +1743,8 @@ local function updatePrompt()
     end
     local h = gameHud()
     local talking = Game.dialogue.showing() or Game.dialogue.busy()
-    local show = best and h and #Game.screens() == 0 and not talking and not gamePromptUp(h)
+    prompt.gameUp = h ~= nil and gamePromptUp(h)
+    local show = best and h and not talking and not prompt.gameUp
     prompt.at = show and best or nil
     local w = show and promptWidget(h) or (valid(prompt.widget) and prompt.widget) or nil
     if w then
@@ -1723,24 +1758,6 @@ local function updatePrompt()
             w:SetVisibility(SHOWN)
         else
             w:SetVisibility(COLLAPSED)
-        end
-    end
-    -- The game's Interact, once per press: at the cat under the prompt, or (while this script's dialogue
-    -- box is up) to move its talk on.
-    if #interactFns == 0 or #Game.screens() > 0 then return end
-    for _, key in ipairs(Game.npcs.interactKeys()) do
-        if prompt.held[key] then
-            if not Game.keyDown(key) then prompt.held[key] = nil end
-        elseif Game.pressed(key) then
-            prompt.held[key] = true
-            local at = prompt.at
-            if at or Game.dialogue.showing() then
-                for _, fn in ipairs(interactFns) do
-                    local ok, err = pcall(fn, at)
-                    if not ok then log("npcs.onInteract: %s", tostring(err)) end
-                end
-            end
-            return
         end
     end
 end
@@ -1795,6 +1812,8 @@ function Game.npcs.spawn(opts)
                 if alive(c.actor) then
                     pcall(paintNpc, c)
                     if c.labelSpec then showLabel(c) end
+                    -- Its map marker goes on the cat it is now (spawned again, it's a new actor).
+                    if c.markerSpec and c.markerOn ~= c.actor then c:mapMarker(c.markerSpec.icon, c.markerSpec.opts) end
                 else
                     pcall(spawnNpc, c)
                 end
@@ -1892,6 +1911,200 @@ function Npc:remove()
     local a = self:actorOrNil()
     if a then pcall(function() a:K2_DestroyActor() end) end
     self.actor = nil
+end
+
+-- ===================================================================================== the game's quest HUD
+-- The game's own pieces for a quest, for a mod's quests (worked out in game on 2026-10-27; the game shows
+-- them only for its own quests, which Sandbox mode has none of, so nothing of the game's takes them back):
+--   Game.hud.objective({ title = "A Soft Nest", location = "Sandbox story", activity = "Find moss",
+--                        goals = { { name = "Moss", progress = "1/2", icon = "/Game/.../T_Icon.T_Icon" } } })
+--   Game.hud.banner("done")                       -- the game's "Quest completed!", with its particles
+--   local m = Game.mapMarker({ x, y, z }, { icon = "search" })   -- on the minimap and the map; m:remove()
+--   npc:mapMarker("talk")                         -- on a mod's cat, wherever it is
+Game.hud = {}
+local BANNERS = { begin = "mcGuiBeginQuestMessage", update = "mcGuiQuestUpdateMessage",
+                  done = "mcGuiQuestCompetedMessage", failed = "mcGuiQuestFailedMessage" }
+local objective = { on = nil }   -- the HUD the panel was put on (a new HUD starts without it)
+local textures = {}
+
+local function texture(path)
+    if not path then return nil end
+    if textures[path] == nil then
+        local t = Game.object(path)
+        if not valid(t) then t = Game.load(path) end   -- by its whole path: loading the package alone isn't enough
+        textures[path] = valid(t) and t or false
+    end
+    return textures[path] or nil
+end
+
+-- The game's current-objective panel (on the left): the quest's title, where it is, what to do now and up
+-- to three goals ({name, progress, icon (a texture's asset path), done}). Game.hud.objective(nil) puts it
+-- away. Returns false and why when there's no HUD.
+function Game.hud.objective(spec)
+    local h = gameHud()
+    if not h then return false, "no HUD (in a menu, or loading)" end
+    local o = h.mcGuiQuestObjective
+    return pcall(function()
+        if not spec then
+            if objective.on == h then
+                o:PlayAnimation(o.AniMessageHide, 0, 1, 0, 1, false)
+                Game.after(0.5, function()
+                    if objective.on ~= h and valid(o) then o:SetVisibility(COLLAPSED) end
+                end)
+            end
+            objective.on = nil
+            return
+        end
+        o.mcGuiTitle:SetText(FText(spec.title or ""))
+        o.mcGuiActivity:SetText(FText(spec.activity or ""))
+        o.mcGuiLocation:SetText(FText(spec.location or ""))
+        o.CanvasLocation:SetVisibility(spec.location and SHOWN or COLLAPSED)
+        for i = 1, 3 do
+            local g, goal = o["mcGuiGoal" .. i], spec.goals and spec.goals[i]
+            if goal then
+                g.mcGuiGoalName:SetText(FText(goal.name or ""))
+                g.mcGuiGoalValues:SetText(FText(goal.progress or ""))
+                g.CanvasCheck:SetVisibility(goal.done and SHOWN or COLLAPSED)
+                local t = texture(goal.icon)
+                if t then g.mcGuiIcon:SetBrushFromTexture(t, false) end
+                g.mcGuiIcon:SetVisibility(t and SHOWN or COLLAPSED)
+                g:SetVisibility(SHOWN)
+            else
+                g:SetVisibility(COLLAPSED)
+            end
+        end
+        if objective.on ~= h then
+            o:SetVisibility(SHOWN)
+            o:PlayAnimation(o.AniMessageShow, 0, 1, 0, 1, false)
+            objective.on = h
+        end
+    end)
+end
+
+-- The text blocks in one of the game's widgets, by name (they aren't properties of it, so its tree is walked).
+local function textBlocks(w)
+    local found = {}
+    local function walk(x, depth)
+        if not valid(x) or depth > 8 then return end
+        if Game.isA(x, "TextBlock") then found[Game.name(x)] = x end
+        if Game.isA(x, "PanelWidget") then
+            for i = 0, x:GetChildrenCount() - 1 do walk(x:GetChildAt(i), depth + 1) end
+        end
+    end
+    pcall(function() walk(w.WidgetTree.RootWidget, 0) end)
+    return found
+end
+
+-- One of the game's quest banners, with its particles: "begin" (a quest taken up: {kind ("Main Quest"),
+-- title, text ("New Objective")}), "update" ({kind: "Quest Update"}), "done" ("Quest completed!") or
+-- "failed". It goes after `seconds` (4.5; the game's own code would take it away for its own quests).
+local bannerShown = {}
+function Game.hud.banner(kind, opts)
+    opts = opts or {}
+    local h = gameHud()
+    local part = BANNERS[kind]
+    if not (h and part) then return false, part and "no HUD" or ("no banner " .. tostring(kind)) end
+    return pcall(function()
+        local b = h[part]
+        local t = textBlocks(b)
+        local texts = { mcGuiTextQuestType = opts.kind, mcGuiTextQuestName = opts.title, mcGuiTextObjective = opts.text,
+                        mcGuiText = opts.text }
+        for name, text in pairs(texts) do
+            if t[name] and text then t[name]:SetText(FText(text)) end
+        end
+        b:SetVisibility(SHOWN)
+        b:SequenceEvent()
+        local mine = {}
+        bannerShown[part] = mine
+        Game.after(opts.seconds or 4.5, function()
+            if bannerShown[part] == mine and valid(b) then b:SetVisibility(COLLAPSED) end
+        end)
+    end)
+end
+
+-- ------------------------------------------------------------------ markers on the minimap and the map
+-- The game's own point of interest (SwtAdventurePOIComponent), as its quest givers and dens have: on the
+-- minimap (kept at its edge when it's further off, with `border`, the default) and on the world map.
+-- `where` is a place ({x, y, z} or {X, Y, Z}, an actor of its own) or an actor to put it on (it follows
+-- it). `icon` is one of the game's ("search", "talk", "barter", "freshkill", "trainer", "den", "outpost",
+-- "skirmish", "madcat", or a clan) or a material's path.
+local MARKER_ICONS = {
+    search = "MI_UI_IconSearch", talk = "MI_UI_IconGossip", barter = "MI_UI_IconBarter",
+    freshkill = "MI_UI_IconFreshkill", trainer = "MI_UI_IconTrainer", den = "MI_UI_IconDenVisit",
+    outpost = "MI_UI_IconOutpost", skirmish = "MI_UI_IconSkirmish", madcat = "MI_UI_IconMadCat",
+    thunderclan = "MI_UI_Icon_Thunderclan", riverclan = "MI_UI_Icon_Riverclan", windclan = "MI_UI_Icon_Windclan",
+    shadowclan = "MI_UI_Icon_Shadowclan",
+}
+local MARKER_DIR = "/Game/Art/UXD/Materials/MaterialInstances/"
+local POI_CLASS = "/Script/SwtAdventure.SwtAdventurePOIComponent"
+local Marker = {}
+Marker.__index = Marker
+
+local function markerIcon(icon)
+    local name = MARKER_ICONS[icon or "search"]
+    local path = name and (MARKER_DIR .. name .. "." .. name) or icon
+    return texture(path)   -- a material loads the same way
+end
+
+local function xform(at)
+    return { Translation = at, Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Scale3D = { X = 1, Y = 1, Z = 1 } }
+end
+
+function Game.mapMarker(where, opts)
+    opts = opts or {}
+    local m = setmetatable({ icon = opts.icon, border = opts.border ~= false }, Marker)
+    local gs = Game.library("GameplayStatics")
+    local ok, err = pcall(function()
+        local actor = where
+        local at = { X = 0, Y = 0, Z = 0 }
+        if type(where) == "table" then
+            at = { X = where.X or where[1], Y = where.Y or where[2], Z = where.Z or where[3] }
+            actor = gs:BeginDeferredActorSpawnFromClass(Game.player() or Game.world(), Game.object("/Script/Engine.Actor"),
+                                                        xform(at), 1, nil, 0)
+            m.owned = true
+        end
+        local c = actor:AddComponentByClass(Game.object(POI_CLASS), false, xform(m.owned and at or { X = 0, Y = 0, Z = 0 }), true)
+        c.bStickPOIToBorder = m.border
+        c.bShowPOIAtBegin = true
+        c.bShouldShowIcon = true
+        c.bCanAppearOnWorldMap = opts.map ~= false
+        local mat = markerIcon(m.icon)
+        if mat then c.CustomPOIIcon = mat end
+        actor:FinishAddComponent(c, false, xform(m.owned and at or { X = 0, Y = 0, Z = 0 }))
+        if m.owned then gs:FinishSpawningActor(actor, xform(at), 0) end
+        m.actor, m.component = actor, c
+    end)
+    if not ok then return nil, tostring(err) end
+    return m
+end
+
+function Marker:valid() return valid(self.component) end
+-- Move a marker of its own place (one on an actor goes where the actor goes).
+function Marker:moveTo(x, y, z)
+    if type(x) == "table" then x, y, z = x.X or x[1], x.Y or x[2], x.Z or x[3] end
+    if self.owned and valid(self.actor) then
+        pcall(function() self.actor:K2_SetActorLocation({ X = x, Y = y, Z = z }, false, {}, true) end)
+    end
+end
+function Marker:remove()
+    if self.owned then
+        if valid(self.actor) then pcall(function() self.actor:K2_DestroyActor() end) end
+    elseif valid(self.component) then
+        pcall(function() self.component:K2_DestroyComponent(self.component) end)
+    end
+    self.actor, self.component = nil, nil
+end
+
+-- A marker on a mod's cat (npc:mapMarker("talk")), put back on it whenever it's spawned again;
+-- npc:mapMarker(nil) takes it off.
+function Npc:mapMarker(icon, opts)
+    if self.marker then self.marker:remove() end
+    self.marker, self.markerOn = nil, nil
+    self.markerSpec = icon and { icon = icon, opts = opts } or nil
+    if icon and self:actorOrNil() then
+        self.marker = Game.mapMarker(self.actor, { icon = icon, border = not (opts and opts.border == false) })
+        self.markerOn = self.actor
+    end
 end
 
 
