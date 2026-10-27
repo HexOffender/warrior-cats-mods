@@ -94,6 +94,36 @@ folders. `python wcmods.py selftest` checks, against your install:
   suffix as it is (`_STAR` on an apprentice-rank cat reads -star). A name ID whose text the game
   hasn't got shows as `<MISSING STRING TABLE ENTRY>`.
 
+**2026-10-27, key remaps inside the game** (build 26184573, `WCModsRemap` installed from a test mod's
+`controls.json`, started without the key remapper):
+- Interact on F opened the travel map at a tunnel, and E did nothing there.
+- Run on G: S+G for 2 s went 361 units, walking 256; LeftShift no longer ran.
+- Scent tracking on the middle mouse button (posted to the window) turned it on; Q did nothing.
+- The pause screen's Controls tab opened as before, showing the game's own keys.
+- In the map, E still toggled the legend.
+- Map on N: N opened the map and closed it again from inside it; M did neither.
+- `Game.npcs.interactKeys()` gave F, the pad's A and the left mouse button.
+- With the script installed, the key remapper was left only the movement remap (T for W).
+- With "allow_code_mods" off (no bridge, no script mods), the build still put `WCModsRemap` in, and the
+  game started from Steam had Interact on F, Map on N and Scent tracking on the middle button.
+- Menus and other commands: in the pause menu, K and I moved the selection down and up (the arrows still
+  did too), U confirmed Resume, and O closed the map, the inventory and the quest page. `Button_ShoulderR`
+  on PageDown went to the next tab, and 2 no longer did. While playing, K still opened the quest page and
+  I the inventory (the menu pairs left play alone), and H, standing for E, opened the travel map.
+- The game's other screens, with the same menu keys:
+  - **Before play:** the title, Select your cat, the clan selection and the cat maker. Holding O asked
+    to go back there, as holding Backspace does.
+  - **Pause and its pages:** the pause tabs, Help, Settings, the yes/no popup and photo mode.
+  - **While playing:** the inventory, the map, and a talk with a clan cat (F started it, U moved it on).
+  - **Map, photo mode, cat maker:** the map's zoom and move, photo mode's camera and the cat maker's
+    turning read their keys directly, so they follow only the key remapper (reverse-engineering.md,
+    Input).
+  - **Play state:** `WCModsPlayState` said "menu" in the pause menu, the map and the inventory, and "play"
+    while exploring and talking.
+- In a fight (pounced on a rogue cat): the same menu keys moved through Attack, Rest, Herbs and Flee, U
+  opened the moves and used Provoking Stare (it hit), and O went back. Every key sent the same commands
+  as while exploring.
+
 ## Not yet confirmed in game
 
 - **Scripting:**
@@ -107,6 +137,10 @@ folders. `python wcmods.py selftest` checks, against your install:
 - **New pattern and marking slots on a cat.** The lists grow in game (slot 25 read back with its new
   colour), and the game's code checks those indexes against the real list size, but no cat has been
   seen wearing a new slot yet.
+- **Key remaps inside the game** on controller buttons and the mouse wheel, a remapped key held
+  while a screen opens, and in den decorating, the name screen, cutscenes and minigames.
+- **The key remapper outside the game** with the new play state (only the state file was read; the
+  agent's keys don't pass through Windows' keyboard hook).
 - **Parts of the mod menu.** Not yet checked: Save on the Mouse look and Your cat pages, cats'
   own names in Nearby labels, god mode, game speed and teleport on the Cheats page, and the pause
   menu under the key remapper.

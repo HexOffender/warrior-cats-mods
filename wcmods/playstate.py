@@ -2,9 +2,10 @@
 
 The remapper runs outside the game, so it can't tell exploring from a menu or the name screen.
 Windows doesn't help: the game draws its own cursor, which Windows reports as shown in menus and
-in play alike. The game knows, though, so this script writes "play" while you explore with the
-cursor hidden (the same test mouse look uses) and "menu" otherwise. The controls section ships
-it whenever there are keyboard remaps.
+in play alike, and the engine's cursor flag reads false in menus too. The game knows, though, so
+this script writes "menu" while one of its screens shows (the pause menu, the map, a fight's menu)
+and "play" otherwise. The controls section ships
+it whenever the key remapper has work to do (what the in-game remap, gameremap.py, can't).
 """
 import json
 import os

@@ -272,7 +272,7 @@ end)
 | `npc:label({name, title, extra, icon, range})` | The game's label over its head: the name, the title under it, `extra` (a line above it, in the game's green), and `icon`, one of the game's quest marks: `"available"` (a new quest), `"ongoing"`, `"done"` (to hand in). It shows while your cat is within `range` cm (2000). `npc:label(nil)` takes it away |
 | `npc:prompt(text, reach)` | The game's prompt ("Talk") while your cat is within `reach` cm (250), at the cat, or at the screen's edge on its side when it's out of view. The cat in view comes first, and the game's own prompt (a pickup, a tunnel, its own cats) wins over it. `npc:prompt(nil)` takes it away |
 | `Game.npcs.onInteract(fn)` | `fn(npc)` when the game's Interact is pressed with that cat's prompt showing; `fn(nil)` when it's pressed while this script's dialogue box is up, so the same key moves a talk on |
-| `Game.npcs.interactKeys()` | The keys Interact is on: the keyboard's and the controller's from your settings (`E`, `Gamepad_FaceButton_Bottom`), and the left mouse button, which the prompt shows |
+| `Game.npcs.interactKeys()` | The keys Interact is on: the keyboard's and the controller's from your settings (`E`, `Gamepad_FaceButton_Bottom`), or where wcmods' in-game remap moved them (the shared variable `WCModsRemap.Player_Interact`), and the left mouse button, which the prompt shows |
 
 **The game's quest HUD and map markers.** The objective panel, the quest banners and the minimap's markers
 are the game's own too. The game shows them only for its own quests, so in Sandbox mode, which has none,

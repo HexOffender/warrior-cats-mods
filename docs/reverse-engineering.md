@@ -204,7 +204,7 @@ one of its own. Nothing else checks it: no asset registry entry was needed.
   `SetStateJsonDataFromString` write to `Shared`, data for the whole save, not to a cat's slot
   (seen in game, build 26184573).
 - **Key bindings** are kept in the save, but the game ignores edits to them, and its rebinding
-  screen doesn't work on PC (the README, [Remapping keys](../README.md#remapping-keys)).
+  screen doesn't work on PC (*Input* below; the README, [Remapping keys](../README.md#remapping-keys)).
 
 ## Engine settings that matter
 
@@ -1028,6 +1028,144 @@ in game):
 - The game's quest log (`UGuiHudQuest`) works from native quest objects (`UQuestBase`), so a mod's
   quests can't go in it without real quest data. They go on the mod menu's Quests page instead
   (`Game.quests.report`).
+
+## Input
+
+Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`WCModsRemap`,
+`wcmods/gameremap.py`).
+
+- **Legacy input, not Enhanced Input.** The controller (`BP_WrcGameplayPlayerController_C <
+  AWrcGameplayPlayerController < … < ASwtPlayerController`) has a `WrcPlayerInput` (`< SwtAdventurePlayerInput
+  < SwtPlayerInput < PlayerInput`) and an input component, `PC_InputComponent0` (`WrcInputComponent <
+  SwtAdventureInputComponent < SwtInputComponent < InputComponent`). The cat's `PawnInputComponent0` is the
+  same class. The Enhanced Input plugin is in the build but nothing uses it.
+- **The bindings can't be reached.** `InputSettings` holds only the engine template's (Jump on Space and
+  the pad's A, Move Forward / Backward, Move Right / Left, Turn and Look Up on WASD, the mouse and the
+  sticks). The game's own actions, named after its `ECommands` enum (`Player_Interact` …), are put into the
+  player's `PlayerInput` at runtime. They come from the save's `Shared.InputKeyboard` and `InputGamepad`,
+  plus keys the save doesn't list: I Inventory, K Quest, M Map, L Meow and Escape Pause (its Controls screen
+  shows them), and the left mouse button for Interact. `PlayerInput`'s action and axis mappings aren't
+  reflected (only `DebugExecBindings` and `InvertedAxis` are), and neither is anything on the rebinding
+  screen (`GuiPopupControlConfig`, `GuiCustomConfigKey` with an `ActionCommand` and no functions). So no
+  script can change a binding, and the game's prompts and Controls screen always show its own keys.
+  `InputSettings:AddActionMapping` and `ForceRebuildKeymaps` are reflected, but the engine's rebuild resets
+  every player's mappings to `InputSettings`' and would lose the game's own (from the engine's code; not
+  tried).
+- **What a key does.** Each key the controller's input component gets goes to
+  `SwtPlayerController:OnKeyPressed(Key)` and `OnKeyReleased(Key)`. That's every key, mouse buttons
+  included (the middle button came through), and controller buttons presumably too. Each of the game's
+  actions bound to the key goes to `SwtPlayerController:OnListenCommand(Command, InputEvent)`, before
+  `OnKeyPressed`. Each open screen (`SwtScreen`, the HUD's two included) has an input component of its own
+  and gets the same as `SwtScreen:OnKeyPressed(Key, fromPlayer)` and `OnListenCommand(Command, InputEvent,
+  fromPlayer)`.
+- **Who hears a key.** While you explore: the controller, and two screens, the HUD
+  (`WBP_GuiHudGameWrc_C`) and `WBP_GuiScreenOnlineOver_C`. With a menu open (the pause screen, the map,
+  the inventory): only that menu's screen, not the controller or the HUD. The engine's cursor flag can't
+  tell them apart: `bShowMouseCursor` read false in the pause menu and the map, as the game draws its own
+  cursor (so `WCModsPlayState`, which tests it, reports those menus as play).
+- **In a fight**, keys go to all of them at once: the controller, the HUD's two screens, the fight menu
+  (`WBP_GuiPopupCombat_C`: Attack, Rest, Herbs, Flee, then the moves) and `WBP_GuiHudCombatOver_C`. The
+  fight menu moves with `Button_Up`/`Down` and picks with `Button_Confirm`, as other menus do. (A fight
+  for testing: teleport behind a roaming animal, a `BP_Exploration_Character_Base_C` outside a
+  `MovieScene`, and pounce. Digging a prey burrow gave Earth & Stones instead of a fight.)
+- **What each key sends** is the same in play, in the pause menu and in a fight. Every key and mouse button was
+  pressed on its own with every command turned into NoCommand, so nothing happened (`keymap.KEY_COMMANDS`):
+
+  | Key | Commands |
+  |---|---|
+  | W / Up, S / Down | `Button_Up`, `Button_Down` |
+  | A / Left, D / Right | `Button_Left`, `Button_Right` (A and D also `AnimTool_PreviousAnim`/`NextAnim`) |
+  | Enter | `Button_A`, `Button_Confirm`, `Button_Skip` |
+  | BackSpace | `Button_B`, `Button_Back` |
+  | Escape | `Player_Pause` |
+  | SpaceBar | `Button_Y`, `Player_Pounce`, `Player_PhotoMode_Shoot`, `AnimTool_PlayLoopAnim` |
+  | E | `Button_X`, `Player_Interact` |
+  | C | `Player_Friend_Talk`, `Player_Drop` |
+  | X | `Player_ReturnToCamp`, `Player_Den_Place`, `Player_PhotoMode_Exit`, `AnimTool_StopAnim` |
+  | Q | `Player_Scent_Tracking`, `Player_PhotoMode_HideUI` |
+  | R | `Button_Randomize`, `Player_Camera_Reset` |
+  | I | `Player_Show_Inventory`, `Minigame_Button_A` |
+  | J | `Player_Play`, `Minigame_Button_X` |
+  | K | `Player_Show_Quest`, `Minigame_Button_B` |
+  | L | `Player_Growl`, `Minigame_Button_Y` |
+  | M | `Player_Show_Map` |
+  | P | `Button_Start` |
+  | T | `Button_StickR` |
+  | V | `Button_Select` |
+  | 1, 2, 3, 4 | `Button_ShoulderL`, `Button_ShoulderR` (the menus' tabs), `Button_TriggerL`, `Button_TriggerR` |
+  | LeftShift, RightShift | `Player_Run` (LeftShift also `AnimTool_PlayAnim`) |
+  | LeftControl, RightControl, right mouse button | `Player_Crouch` |
+  | Left mouse button | `Button_Confirm`, `Player_Interact` |
+
+  Nothing else sends a command: the other letters, 0 and 5 to 9, F1 to F12, the number pad, Tab, CapsLock,
+  Delete, Home, End, PageUp, PageDown, the punctuation keys, the middle and side mouse buttons and the
+  wheel. All of them still reach `OnKeyPressed`. Tilde, Alt, Insert and F11 weren't tried. Two more
+  findings:
+  - **Pause is on Escape.** The save's `Player_Pause` says Enter, but Enter confirms. P sends
+    `Button_Start`.
+  - **Mouse presses in menus** go to the button under the cursor. Only their releases reach the screen.
+  - **A probe glitch:** in one run, keys stopped reaching the game for a few seconds after a posted F10.
+    Pressed again on their own, they were fine.
+- **Movement and the camera are axes.** W sends only `Button_Up`, and no reflected function sees the
+  axis values, so nothing inside the game can move them. The key remapper outside the game does. Other
+  screens read keys that way too, so a key standing for one there needs the key remapper:
+  - the map zooms on Up/Down and moves on WASD (holding K for Down didn't zoom; the `Map_Axis_*`
+    commands are never sent);
+  - photo mode's camera moves on Shift+WASD and goes up and down on Z/C (Z sends nothing);
+  - the clan selection and the cat maker turn the cat on Q/E.
+- **The game's screens**, surveyed on 2026-10-27 with the test remaps installed: I/K for Up/Down, U for
+  Enter, O for Backspace in menus, and `Button_ShoulderR` on PageDown. The screens that hear keys, and
+  what the remaps did:
+
+  | Where | Who hears keys | Seen |
+  |---|---|---|
+  | Title (`WBP_GuiScreenMainMenu_C`) | it and the front end's controller | K, I moved; U opened Prophecy |
+  | Select your cat (`…SelectYourCat_C`) | it and the title behind it | K, I moved through the cats; O back; U continued |
+  | Clan selection (`…SelectClan_C`) | it and the controller | K and D moved, U chose |
+  | Cat maker (`…Customization_C`) | it and the controller | K moved down the sliders; holding O about 5 s asked to go back, as Backspace does |
+  | Pause (`WBP_GuiScreenPause_C`) | it | K, I, U; tabs on PageDown. Quest has sub-tabs on 3/4 (`Button_TriggerL`/`R`) |
+  | Help (`WBP_GuiPopupHelp_C`), Settings (`…GameSettings_C`) | it and the pause screen | K moved down the lists; O back. Settings has no key bindings (Player Configuration is vibration, inverting and sensitivity) |
+  | Yes/no (`…CommonYesNo_C`) | it and the screen behind | O cancelled; A/D choose |
+  | Photo mode (`WBP_GuiPopupPhotoMode_C`) | it, the HUD and the controller | K moved down its list; Q hid the UI; X left |
+  | Inventory (`…Inventory_C`), map (`…WorldMap_C`) | it | tabs on PageDown, O closed; the map's zoom and move as above |
+  | A fight (`WBP_GuiPopupCombat_C`) | it, `…HudCombatOver_C`, the HUD and the controller | K, I, U and O drove the fight menu and the moves |
+  | Talking to a cat (`WBP_QuestGiver_Dialogue2_C`) | it alone | F (Interact moved) started the talk; U moved it on |
+
+  Not reached: decorating a den (the apprentice had no den to enter), the name screen, cutscenes,
+  minigames and the online screens. Every screen but the HUD counts as a menu for the in-game remap.
+  `WCModsPlayState` now calls a menu any visible `GuiScreenWrc`. That covers every screen above except
+  photo mode and talks (the dialogue box isn't one), which it counts as play, as it always has. It used
+  to test `bShowMouseCursor`, which said "play" in every menu.
+- **`ECommands` moved in patch 1.1.** `Player_Mouse_Camera_Up` and `_Right` were added after
+  `Player_Camera_Right`, so everything after them is 2 higher than in a class dump of the first release
+  (Interact 65 → 67). Read the numbers from the game:
+  `StaticFindObject("/Script/SwtEngine.ECommands"):ForEachName(function(name, value) … end)`.
+- **Commands can be sent and changed.**
+  - **Sending:** `pc.InputComponent:OnListenCommandInternal(77, 0)` from Lua opened the inventory, as
+    `pc:OnListenCommand(77, 0)` did. It reaches the controller's input listeners only, not the screens.
+  - **Changing:** a pre-hook on `OnListenCommand` that sets the command with `param:set()` changes what
+    the game does: 77 → 76 opened the map on I. NoCommand (0) does nothing.
+  - **Not hookable:** `SwtInputComponent:OnListenCommandInternal` never fired in a hook for real keys,
+    as the game calls it natively, and `SwtManager:OnListenCommand` and `OnKeyPressed` never fired.
+- **The in-game remap** is built on that. On a remapped key's `OnKeyPressed`/`OnKeyReleased` it sends the
+  commands to whatever heard the key (the controller through its input component, or the screen). In
+  `OnListenCommand` it sets the game's own command to NoCommand when the key it came from
+  (`WasInputKeyJustPressed`/`Released`, `IsInputKeyDown`) is one the command moved off. The controller and
+  the HUD's two screens get the play set, any other screen the menu set. Seen in game:
+  - Interact on F opened the travel map at a tunnel, and E did nothing there.
+  - Run on G: 2 s of S+G went 361 units against 256 walking, and LeftShift no longer ran.
+  - Scent tracking on the middle mouse button turned on, and Q did nothing.
+  - The pause screen's Controls tab was unchanged.
+  - In the map, E still toggled the legend (its `Button_X`).
+  - Map on N opened the map in play and closed it from inside the map screen; M did neither.
+  - **Menu keys:** in the pause menu, I and K moved the selection (the arrows still did), U confirmed
+    Resume, and O closed the map, the inventory and the quest page. In play, K and I kept their own jobs.
+  - **Tabs:** `Button_ShoulderR` on PageDown went to the next tab, and 2 no longer did.
+  - **A second Interact:** H, standing for E while you play, opened the travel map.
+  - **In a fight:** K and I moved through Attack, Rest, Herbs and Flee (Down still did), U opened Attack
+    and used Provoking Stare, which hit, and O went back. K didn't open the quest page mid-fight.
+- **Not tried yet:** a controller, the mouse wheel, and a key held while a screen opens (the script lets
+  go of an action whose key is no longer down, checked every few frames).
 
 ## Game mechanics
 
