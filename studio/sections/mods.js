@@ -11,7 +11,6 @@ export default {
       names: "Cat names", cats: "Your cat's colours", save: "Changes your save", "in-game script": "In-game script",
       "C++ mod": "C++ mod", "C++ source": "C++ source", code: "Build step (code)", "studio page": "Studio page",
     };
-    const PAGES = "menu-pages";   // the mod menu's pages about the game (wcmods/menupages.py), updated from its card
     let mods = [], filter = "all", search = "", settings = null;
     const open = new Set();   // mod cards with "More" open
 
@@ -146,7 +145,11 @@ export default {
       // The menu's pages about the game: a mod of their own (wcmods/menupages.py), from its GitHub releases.
       if (s.pages.ok) {
         steps.append(step(true, s.pages.installed ? "The menu's pages are in your mods" : "The menu's pages: skipped",
-          el("span", { class: "muted", text: s.pages.installed ? `Menu pages ${s.pages.version || ""}: your cat, the world, quests, fights and cheats in the in-game menu.` : "Add Menu pages later from this step, or as any mod." })));
+          s.pages.installed
+            ? el("span", { class: "muted", text: `Menu pages ${s.pages.version || ""}: your cat, the world, quests, fights and cheats in the in-game menu.` })
+            : el("span", { class: "muted" }, "Skipped for now. To add it later, download its .zip from ",
+              el("a", { href: s.pages.page, target: "_blank", rel: "noopener", text: "its GitHub page" }),
+              " and drop it on this page, or run python wcmods.py menu-pages.")));
       } else {
         const input = el("input", { type: "file", accept: ".zip,application/zip", hidden: true });
         const addPages = async (file, skip = false) => {
@@ -423,10 +426,14 @@ export default {
             try { toast(`Saved ${await api.download(`/mods/${encodeURIComponent(m.id)}/zip`)}`); } catch (e) { toast(e.message, "bad"); }
           } }),
           m.kinds.includes("C++ source") ? el("button", { class: "btn small", text: "Build C++", onclick: () => buildCpp(m) }) : null,
-          m.id === PAGES ? el("button", { class: "btn small", text: "Get the latest", onclick: async () => {
-            toast("Downloading Menu pages from GitHub…");
-            try { const r = await api.post("/setup/pages", {}); toast(`Menu pages ${r.result.version || ""} is in your mods, with your settings kept.`); await refresh(); }
-            catch (e) { toast(e.message, "bad"); }
+          m.menu_pages ? el("button", { class: "btn small", text: "Get the latest", onclick: async () => {
+            toast("Looking for a newer Menu pages on GitHub…");
+            try {
+              const r = await api.post("/setup/pages", {});
+              toast(r.result.unchanged ? `Menu pages ${r.result.version} is the latest already.`
+                : `Menu pages ${r.result.version || ""} is in your mods, with your settings kept. Apply to game to use it.`);
+              await refresh();
+            } catch (e) { toast(e.message, "bad"); }
           } }) : null,
           confirmButton("Remove", "Press again to remove", () => removeMod(m), "btn small danger")));
     }

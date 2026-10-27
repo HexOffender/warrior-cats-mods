@@ -1070,6 +1070,8 @@ end
 -- A folder scripts can keep their own files in: WCMods in the game's Saved folder, beside its saves. Every
 -- install makes it (Lua can't make folders), and updating a mod or wcmods leaves it alone.
 function Game.save.folder()
+    local saved = @SAVED@   -- the folder the install made (beside wcmods.json's save_dir), when it said
+    if saved then return saved end
     local base = os.getenv("LOCALAPPDATA") or ""
     return base .. "\\Wrc\\Saved\\WCMods"
 end

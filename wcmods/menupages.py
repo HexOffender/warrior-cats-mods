@@ -64,16 +64,8 @@ def status(cfg):
 
 def find_release(timeout=20):
     """The latest release's .zip: {"name", "url", "size", "version", "page"} from GitHub."""
-    import urllib.error
-    import urllib.request
-    req = urllib.request.Request(RELEASE_API, headers={"User-Agent": "wcmods", "Accept": "application/vnd.github+json"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            data = json.load(r)
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            raise RuntimeError(f"Menu pages has no release on GitHub yet ({RELEASE_PAGE})") from None
-        raise
+    from .ue4ss import github_release
+    data = github_release(RELEASE_API, NAME, RELEASE_PAGE, timeout)
     for a in data.get("assets", []):
         if ASSET.match(a.get("name", "")):
             return {"name": a["name"], "url": a["browser_download_url"], "size": a.get("size"),
@@ -102,8 +94,9 @@ def _write_settings(mod, data):
 def add(cfg, zip_path=None, log=print):
     """Add Menu pages to your mods, or update it: from `zip_path`, or its latest release downloaded from
     GitHub. An update keeps whether it's on and your values in its settings.json (a key only the new copy
-    has is added); the older copy goes to backups, as with any mod replaced. Returns {"id", "name",
-    "version", "from", "replaced" (the older copy's backup, or None)}."""
+    has is added); the older copy goes to backups, as with any mod replaced. From GitHub, a release of the
+    version you have changes nothing ("unchanged"). Returns {"id", "name", "version", "from", "replaced" (the
+    older copy's backup, or None), "unchanged"}."""
     from . import ue4ss
     cfg.reload()
     old = installed(cfg.mods_root)
@@ -122,6 +115,9 @@ def add(cfg, zip_path=None, log=print):
         done, source = put(zip_path, os.path.basename(zip_path)), os.path.basename(zip_path)
     else:
         asset = find_release()
+        if old and asset["version"] and asset["version"] == old.version:
+            return {"id": ID, "name": NAME, "version": old.version, "from": asset["name"], "replaced": None,
+                    "unchanged": True}
         log(f"downloading {asset['name']} ({(asset['size'] or 0) / 1024:.0f} KB) from GitHub...")
         with tempfile.TemporaryDirectory() as tmp:
             path = ue4ss.download(asset, tmp, limit=MAX_ZIP, what="Menu pages")
@@ -136,7 +132,16 @@ def add(cfg, zip_path=None, log=print):
     if "cheats" in cfg.data:
         cfg.data.pop("cheats")
         cfg.save()
-    return {"id": ID, "name": NAME, "version": new.version if new else None, "from": source, "replaced": done.get("replaced")}
+    return {"id": ID, "name": NAME, "version": new.version if new else None, "from": source,
+            "replaced": done.get("replaced"), "unchanged": False}
+
+
+def cheats_or_none(cfg):
+    """cheats(), or None without the mod: for showing the setting only where there is one."""
+    try:
+        return cheats(cfg)
+    except LookupError:
+        return None
 
 
 def cheats(cfg, on=None):

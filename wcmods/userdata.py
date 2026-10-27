@@ -34,8 +34,8 @@ def prepare(root, data_dir, log=None):
     log = log or (lambda m: print(m, file=sys.stderr))
     try:
         moved, notes, problems = migrate(root, data_dir)
-    except OSError as e:
-        moved, notes, problems = [], [], [f"{root}'s files ({e.strerror or e})"]
+    except (OSError, ValueError) as e:   # ValueError: a wcmods.json that isn't JSON
+        moved, notes, problems = [], [], [f"{root}'s files ({getattr(e, 'strerror', None) or e})"]
     if moved:
         log(f"Moved your {_join(moved)} out of the wcmods folder, to {data_dir}, where updating wcmods won't "
             "touch them. Apply to game once (or `wcmods install`), so the game finds your mods there.")
@@ -48,9 +48,9 @@ def prepare(root, data_dir, log=None):
             log("The mod menu is part of wcmods now, so it's no longer in your mods; its key, button and size are "
                 "in wcmods.json. Its pages about the game are a mod of their own, Menu pages: Get set up in Clan "
                 "Mod Studio adds it. Apply to game once.")
-    except OSError as e:
+    except (OSError, ValueError) as e:   # ValueError: a wcmods.json that isn't JSON
         log(f"Couldn't move the old mod menu's settings out of {os.path.join(data_dir, 'mods', OLD_MENU)} "
-            f"({e.strerror or e}).")
+            f"({getattr(e, 'strerror', None) or e}).")
 
 
 def migrate(root, data_dir):
@@ -98,7 +98,9 @@ def migrate(root, data_dir):
             if not os.path.exists(dest):
                 if _move(src, dest, problems) and not menu and os.path.isfile(os.path.join(dest, "mod.json")):
                     n += 1
-            elif menu:   # one there already: its settings are the ones to keep
+            elif menu:   # one there already: its settings are the ones to keep, if it's the old menu too
+                if not _is_old_menu(dest):   # a player's own mod-menu: take the old menu's settings from here
+                    _take_menu_settings(src, data_dir)
                 shutil.rmtree(src, ignore_errors=True)
             else:
                 try:
@@ -145,6 +147,14 @@ def retire_menu_mod(data_dir):
     folder = os.path.join(data_dir, "mods", OLD_MENU)
     if not _is_old_menu(folder):
         return False
+    _take_menu_settings(folder, data_dir)
+    shutil.rmtree(folder, ignore_errors=True)
+    return True
+
+
+def _take_menu_settings(folder, data_dir):
+    """The old mod menu's settings (its menu.json, in folder) into data_dir's wcmods.json, where that has
+    none of its own for them."""
     old = _read_json(os.path.join(folder, "menu.json")) or {}
     from .config import Config
     cfg = Config(data_dir, data_dir)
@@ -155,8 +165,6 @@ def retire_menu_mod(data_dir):
             changed = True
     if changed:
         cfg.save()
-    shutil.rmtree(folder, ignore_errors=True)
-    return True
 
 
 def _untouched(folder):

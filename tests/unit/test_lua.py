@@ -31,6 +31,12 @@ def test_names_module_with_areas_and_quests():
     assert "function N.area(" in lua and "function N.quest(" in lua
 
 
+def test_game_module_names_the_saved_folder_the_install_makes():
+    lua = game.lua(None, r"D:\Saves\WCMods")
+    assert not problems(lua)
+    assert 'local saved = "D:\\\\Saves\\\\WCMods"' in lua and "local saved = nil" in game.lua()
+
+
 def test_mouse_look_script():
     lua = mouselook.script(mouselook.merge([mouselook.validate({"sensitivity": 1.5, "invert": True, "smoothing": 50})]))
     assert not problems(lua)

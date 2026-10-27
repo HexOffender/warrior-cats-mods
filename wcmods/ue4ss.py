@@ -52,12 +52,30 @@ def loader_identity(win64_dir):
     return {"commit": commit, "dll": digest}
 
 
+def github_release(api, what, page, timeout=20):
+    """A GitHub release, as its API gives it (its "tag_name" and "assets"), from its API address. Trouble
+    reaching GitHub is a RuntimeError saying so, with `page` for downloading `what` by hand."""
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(api, headers={"User-Agent": "wcmods", "Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise RuntimeError(f"{what} has no release on GitHub yet ({page})") from None
+        if e.code in (403, 429):
+            raise RuntimeError(f"GitHub is turning requests away for now (too many); try again in an hour, or "
+                               f"download {what} from {page} and give the .zip to Clan Mod Studio") from None
+        raise RuntimeError(f"GitHub answered {e.code} for {what}; try again later, or download it from {page}") from None
+    except (OSError, ValueError) as e:   # no connection, a timeout, a page that isn't JSON
+        raise RuntimeError(f"couldn't reach GitHub for {what} ({getattr(e, 'reason', None) or e}); try again, "
+                           f"or download it from {page} and give the .zip to Clan Mod Studio") from None
+
+
 def find_release(timeout=20):
     """The UE4SS download wcmods uses: {"name", "url", "size", "page"} from GitHub."""
-    import urllib.request
-    req = urllib.request.Request(RELEASE_API, headers={"User-Agent": "wcmods", "Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = json.load(r)
+    data = github_release(RELEASE_API, "UE4SS", RELEASE_PAGE, timeout)
     for a in data.get("assets", []):
         if ASSET.match(a.get("name", "")):
             return {"name": a["name"], "url": a["browser_download_url"], "size": a.get("size"), "page": RELEASE_PAGE}
@@ -72,15 +90,18 @@ def download(asset, folder, timeout=60, limit=MAX_ZIP, what="UE4SS"):
     path = os.path.join(folder, os.path.basename(asset["name"]))
     req = urllib.request.Request(asset["url"], headers={"User-Agent": "wcmods"})
     got = 0
-    with urllib.request.urlopen(req, timeout=timeout) as r, open(path, "wb") as f:
-        while True:
-            chunk = r.read(1024 * 1024)
-            if not chunk:
-                break
-            got += len(chunk)
-            if got > limit:
-                raise RuntimeError(f"the {what} download is far bigger than it should be; stopped")
-            f.write(chunk)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r, open(path, "wb") as f:
+            while True:
+                chunk = r.read(1024 * 1024)
+                if not chunk:
+                    break
+                got += len(chunk)
+                if got > limit:
+                    raise RuntimeError(f"the {what} download is far bigger than it should be; stopped")
+                f.write(chunk)
+    except OSError as e:   # the connection dropped, or GitHub turned the download away
+        raise RuntimeError(f"the {what} download failed ({getattr(e, 'reason', None) or e}); try again") from None
     if asset.get("size") and got != asset["size"]:
         raise RuntimeError(f"the {what} download stopped early ({got} of {asset['size']} bytes); try again")
     return path

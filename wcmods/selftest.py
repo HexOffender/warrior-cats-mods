@@ -84,8 +84,8 @@ def run(cfg, oodle, log=print):
           "from the old mod menu taken along", ok, detail)
     check("getting set up: the game found from any of its folders, a first backup, the script loader, the menu's "
           "pages (skipped)", _onboarding())
-    check("getting set up, the rough edges: an install from before UE4SS is redone, a folder adds only the "
-          "ticked mods, no drive letters in UE4SS's .zip, a studio without the game answers", _onboarding_edges())
+    check("getting set up, the rough edges: an install from before UE4SS is redone, the mod menu goes in with "
+          "no mods on, a folder adds only the ticked mods, no drive letters in UE4SS's .zip, a studio without the game answers", _onboarding_edges())
     ok, detail = _user_data()
     check("your files outside wcmods' folder: moved out once, the old mod menu's settings into wcmods.json, nothing "
           "overwritten by a second copy, the last install redone", ok, detail)
@@ -1034,7 +1034,7 @@ def _menu_pages():
     settings.json; again with a newer .zip, turned off in between: still off, your settings kept and the
     new copy's new keys added, the older copy in backups."""
     import json
-    from . import menupages
+    from . import menupages, menusettings, modzip
     from .config import Config
     problems = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -1072,6 +1072,20 @@ def _menu_pages():
             problems.append("a .zip without menu-pages was taken")
         except ValueError:
             pass
+        # Get the latest when GitHub's latest is the version you have: nothing downloaded or replaced.
+        kept = menupages.find_release
+        menupages.find_release = lambda timeout=20: {"name": "menu-pages-1.1.zip", "url": "http://invalid/", "size": 1,
+                                                     "version": "1.1", "page": ""}
+        try:
+            same = menupages.add(cfg, log=lambda m: None)
+        finally:
+            menupages.find_release = kept
+        if not same["unchanged"] or len(modzip.removed(cfg.backups_dir)) != 1:
+            problems.append(f"Get the latest with nothing newer: {same}")
+        # The studio's Options show and set its cheats at start.
+        if menusettings.options(cfg)["cheats"] is not True or menusettings.set_options(cfg, cheats=False)["cheats"] is not False \
+                or menupages.cheats(cfg) is not False:
+            problems.append("cheats at start through the studio's Options")
     return not problems, "; ".join(problems)
 
 
@@ -1152,9 +1166,17 @@ def _onboarding_edges():
                        "installed": {"mods": ["m"], "built": built, "ue4ss": False}}, f)
         cfg = Config(conf, conf)
         before = pipeline.pending(cfg, discover(root))
+        fresh = os.path.join(tmp, "fresh")   # a first start with no mods: nothing to install without UE4SS
+        os.makedirs(fresh)
+        with open(os.path.join(fresh, "wcmods.json"), "w") as f:
+            json.dump({"game_dir": os.path.join(tmp, "Game")}, f)
+        none_yet = pipeline.pending(Config(fresh, fresh), [])
         os.makedirs(os.path.join(win64, "ue4ss", "Mods"))
         after = pipeline.pending(cfg, discover(root))
         ok.append(not before["any"] and after["any"] and after["redo"])
+        # With UE4SS, the mod menu's window is worth an install even with no mods on.
+        window = pipeline.pending(Config(fresh, fresh), [])
+        ok.append(not none_yet["any"] and window["any"] and any("mod menu" in r for r in window["redo"]))
 
         # A folder holding two mods, one of them ticked.
         drop = _mods_folder(os.path.join(tmp, "drop"), {"one": ({"name": "One"}, {}), "two": ({"name": "Two"}, {})})
@@ -1331,6 +1353,18 @@ def _user_data():
             if said or sorted(os.listdir(os.path.join(here, "mods"))) != ["mine", "mod-menu"] \
                     or read(here, "wcmods.json") != {"console": True} or os.path.exists(os.path.join(here, "backups")):
                 problems.append(f"data in wcmods' own folder, as {spelled}")
+
+        # The old mod menu moving in where the data folder has a mod-menu of a player's own: that one stays,
+        # and the old one's settings still go into wcmods.json.
+        own, old4 = os.path.join(tmp, "own-data"), os.path.join(tmp, "wcmods4")
+        write(os.path.join(own, "mods", "mod-menu", "mod.json"), {"name": "My menu", "author": "me"})
+        write(os.path.join(own, "mods", "mod-menu", "scripts", "main.lua"), "")
+        write(os.path.join(old4, "mods", "mod-menu", "mod.json"), menu_meta)
+        write(os.path.join(old4, "mods", "mod-menu", "menu.json"), {"key": "F6"})
+        userdata.prepare(old4, own, log=lambda m: None)
+        if (read(own, "wcmods.json") or {}).get("menu_key") != "F6" \
+                or read(own, "mods", "mod-menu", "mod.json") != {"name": "My menu", "author": "me"}:
+            problems.append(f"the old mod menu beside a player's own: {read(own, 'wcmods.json')}")
 
         # A folder going to another drive: copied whole, then the old one taken away.
         src, dest = os.path.join(tmp, "far", "x"), os.path.join(tmp, "farther", "x")

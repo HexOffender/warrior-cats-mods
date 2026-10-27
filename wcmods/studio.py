@@ -17,8 +17,8 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (bridge, catcolours, colors, controls, eyeatlas, menusettings, mods, modzip, names, onboarding,
-               palettes, pipeline, ue4ss)
+from . import (bridge, catcolours, colors, controls, eyeatlas, menupages, menusettings, mods, modzip, names,
+               onboarding, palettes, pipeline, ue4ss)
 from .formats import csvdata, save
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
@@ -223,13 +223,14 @@ class Studio:
             onboarding.clear_inbox()
             return {"cleared": True}
         if parts == ["ingame"]:
-            # The game's console and the mod menu's key, button and size (wcmods/menusettings.py).
+            # The game's console, the mod menu's key, button and size, and Menu pages' cheats at start
+            # (wcmods/menusettings.py).
             if method == "PATCH":
                 # set_options reloads and saves wcmods.json: not in the middle of an install, which would
                 # lose what the install has noted but not saved yet.
                 with self.lock:
                     return menusettings.set_options(cfg, console=body.get("console"), key=body.get("key"),
-                                                    size=body.get("size"), pad=body.get("pad"))
+                                                    size=body.get("size"), pad=body.get("pad"), cheats=body.get("cheats"))
             return menusettings.options(cfg)
         if parts == ["game", "bridge"] and method == "GET":
             # Whether the game runs with the bridge (wcmods/bridge.py), for the console's status line.
@@ -258,7 +259,8 @@ class Studio:
             return [{**m.to_dict(), "problems": unmet.get(m.id, []),
                      "needed_by": [titles[i] for i in mods.needing(found, m.id)],
                      "requires_names": [titles.get(i, i) for i in m.requires if i != mods.MENU_ID],
-                     "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id)} for m in found]
+                     "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id),
+                     "menu_pages": m.id == menupages.ID} for m in found]
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "allow-outdated" and method == "POST":
             # Use a mod made for an older version of the game anyway, on this build only (the page warns first).
             build = gamebuild.current(cfg)["build"]

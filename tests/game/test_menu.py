@@ -4,7 +4,9 @@ the pages about the game are the Menu pages mod's, so their tests skip without i
 menu-pages, or Get set up in Clan Mod Studio, then install with code mods allowed)."""
 import time
 
+from wcmods import menupages
 from wcmods.agent import skip
+from wcmods.sections import scripts
 
 WINDOW = ("Overview", "Installed mods", "Log", "Menu")   # the window's own pages, always there
 
@@ -20,9 +22,15 @@ def teardown(agent):
 
 
 def need_pages(agent):
-    """Skip a test of the Menu pages mod's pages when it isn't in the game."""
-    if not any(p["id"] == "At a glance" for p in agent.menu.pages()):
-        skip("the Menu pages mod isn't in the game (agent install --with ../wcmods-menu-pages/menu-pages)")
+    """Skip a test of the Menu pages mod's pages when it isn't in the game; fail when it was installed but its
+    pages aren't there (its script didn't load)."""
+    if any(p["id"] == "At a glance" for p in agent.menu.pages()):
+        return
+    agent.cfg.reload()
+    installed = scripts.ue4ss_name(menupages.ID) in (agent.cfg.data.get("installed_ue4ss") or [])
+    assert not installed, (f"{scripts.ue4ss_name(menupages.ID)} is installed but its pages aren't in the menu: "
+                           "its script didn't load (the Log page, or UE4SS.log, says why)")
+    skip("the Menu pages mod isn't in the game (agent install --with ../wcmods-menu-pages/menu-pages)")
 
 
 def test_every_page_draws(agent):

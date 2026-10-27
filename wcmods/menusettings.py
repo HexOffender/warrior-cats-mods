@@ -7,7 +7,8 @@ The mod menu's window is wcmods' own (menu.py), and its settings are in wcmods.j
 - "menu_scale": its size, 1 for the usual (MENU_SCALES). Applies on the next install; A- and A+ in the
   menu change it for the session.
 When the menu was a mod of its own, they were in mods/mod-menu/menu.json; userdata.prepare moves them in.
-Whether cheats start on is the Menu pages mod's setting now (menupages.cheats).
+Whether cheats start on is the Menu pages mod's setting now (menupages.cheats); the studio shows it here
+too, while that mod is in your mods.
 
 The game's console is UE4SS's console unlocker (ConsoleEnablerMod): ~ or F10 opens it. wcmods.json's
 "console" remembers the choice; it applies the next time the game starts.
@@ -15,7 +16,7 @@ The game's console is UE4SS's console unlocker (ConsoleEnablerMod): ~ or F10 ope
 import os
 import re
 
-from . import menu, ue4ss
+from . import menu, menupages, ue4ss
 
 CONSOLE_MOD = "ConsoleEnablerMod"
 MENU_SCALES = menu.SCALES   # the mod menu's size, 1 for the usual; A-/A+ in game stay within these too
@@ -59,9 +60,10 @@ def menu_settings(cfg, data=None):
 
 def options(cfg):
     """The in-game options as the studio shows them: the menu's key, pad and size (with the choices for
-    each, as [value, label] pairs) and the game's console."""
+    each, as [value, label] pairs), the game's console, and whether Menu pages' cheats start on (None
+    without that mod)."""
     s = menu_settings(cfg)
-    return {"console": console_on(cfg),
+    return {"console": console_on(cfg), "cheats": menupages.cheats_or_none(cfg),
             "console_available": bool(cfg.ue4ss_mods_dir and os.path.isdir(os.path.join(cfg.ue4ss_mods_dir, CONSOLE_MOD))),
             "key": s["key"], "keys": [[k, menu.KEY_NAMES.get(k, k)] for k in menu.KEYS],
             "size": s["size"], "sizes": [[v, label] for v, label in SIZE_CHOICES],
@@ -75,8 +77,9 @@ def apply_console(cfg):
         ue4ss.set_registered(mods_dir, CONSOLE_MOD, bool(cfg.data["console"]))
 
 
-def set_options(cfg, console=None, key=None, size=None, pad=None):
-    """Change some options (None leaves one as it is) and return them all, all kept in wcmods.json."""
+def set_options(cfg, console=None, key=None, size=None, pad=None, cheats=None):
+    """Change some options (None leaves one as it is) and return them all: the menu's and the console's in
+    wcmods.json, cheats in Menu pages' settings.json."""
     cfg.reload()   # the studio keeps one Config for its whole run
     if size is not None and (isinstance(size, bool) or not isinstance(size, (int, float))
                              or not MENU_SCALES[0] <= size <= MENU_SCALES[1]):
@@ -95,4 +98,6 @@ def set_options(cfg, console=None, key=None, size=None, pad=None):
         cfg.data["console"] = bool(console)
         apply_console(cfg)
     cfg.save()
+    if cheats is not None:
+        menupages.cheats(cfg, bool(cheats))
     return options(cfg)

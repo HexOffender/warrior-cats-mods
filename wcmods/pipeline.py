@@ -251,7 +251,8 @@ def build(cfg, mods, out_dir, log=print):
                 f.write(data)
         manifest["ue4ss_mods"].append(name)
     # Shared Lua modules go in whatever mods are on, for any UE4SS script to require.
-    shared_files = {m.SHARED_NAME: m.lua(fit["offsets"]) if m is game_lua else m.lua() for m in SHARED_LUA}
+    shared_files = {m.SHARED_NAME: m.lua(fit["offsets"], saved_folder(cfg)) if m is game_lua else m.lua()
+                    for m in SHARED_LUA}
     plan = None
     try:   # the cats' names, after the enabled name mods, for WCModsWorld's labels
         plan = names.Plan(names.GameNames(lambda path: game.read_text(BuildContext.data_path(path))),
@@ -309,7 +310,10 @@ def pending(cfg, mods):
     now = {m.id for m in mods if m.enabled} - left_out
     inst = data.get("installed")
     if not inst:
-        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "redo": [], "any": bool(now)}
+        # The mod menu's window goes in with every install, so with the script loader there one is worth
+        # making even with no mods on.
+        redo = ["the mod menu isn't in the game yet"] if not now and cfg.ue4ss_mods_dir else []
+        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "redo": redo, "any": bool(now or redo)}
     was = set(inst.get("mods", []))
     try:
         built = datetime.datetime.fromisoformat(inst.get("built", "")).timestamp()
@@ -317,7 +321,7 @@ def pending(cfg, mods):
         built = 0.0
     changed = sorted(m.id for m in mods if m.enabled and m.id in was and _newest(m.folder) > built + 1)
     redo = []
-    if now and inst.get("ue4ss") is False and cfg.ue4ss_mods_dir:
+    if inst.get("ue4ss") is False and cfg.ue4ss_mods_dir:   # the mod menu at least goes in now
         redo.append("the script loader (UE4SS) is in now")
     # The game updated since (or its exe changed): wcmods' in-game module has to follow it. An install
     # from before the build was recorded was made on the build every one was then.

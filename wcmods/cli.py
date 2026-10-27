@@ -501,6 +501,9 @@ def cmd_menu_pages(ctx, args):
     if args.zip and not os.path.isfile(args.zip):
         sys.exit(f"there's no {args.zip}")
     r = menupages.add(ctx.cfg, args.zip)
+    if r["unchanged"]:
+        print(f"{r['name']} {r['version']} is the latest already")
+        return
     print(f"{r['name']} {r['version'] or ''} is in your mods ({r['from']})"
           + (f"; the older copy is in {os.path.join(ctx.backups, 'mods', r['replaced'])}" if r["replaced"] else ""))
     if not ctx.cfg.data.get("allow_code_mods"):
