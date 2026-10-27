@@ -312,9 +312,15 @@ def cmd_palette(ctx, args):
     print("done. Start the game from Steam to see them.")
 
 
+DEPRECATED = ("note: the key remapper outside the game is deprecated. Remaps work inside the game now (the "
+              "WCModsRemap script, installed with your mods); this is kept for what the game reads itself: "
+              "movement, the camera, the map's zoom and move, and mouse buttons in menus.")
+
+
 def _run_remapper(ctx, args, launching=False):
     """launching: `play` has just asked Steam to start the game, so any play state on disk is old."""
     from .sections.controls import remap_plan
+    print(DEPRECATED)
     send, block, menu_send, warnings = remap_plan(ctx.mods_root, ctx.cfg)
     for w in warnings:
         print(f"  warning: {w}")
@@ -861,8 +867,9 @@ def main(root, argv=None):
     p = sub.add_parser("controls", help="show the key/button bindings stored in your save")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_controls)
-    for name, fn, text in (("play", cmd_play, "start the game and remap keys (controls.json) until it closes"),
-                           ("remap", cmd_remap, "remap keys (controls.json) while the game runs; start the game yourself")):
+    for name, fn, text in (("play", cmd_play, "start the game with the old key remapper, for remaps the game can't do "
+                                               "itself (deprecated)"),
+                           ("remap", cmd_remap, "run the old key remapper while the game runs (deprecated)")):
         p = sub.add_parser(name, help=text)
         p.add_argument("--dry-run", action="store_true", help="only report which remaps would happen")
         p.add_argument("--in-menus", action="store_true", help="remap in menus too (off: menus and name entry keep your keys)")

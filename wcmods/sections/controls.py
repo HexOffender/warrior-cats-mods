@@ -1,9 +1,9 @@
 """Button remapping (controls.json). The game ignores edited bindings in its save, so remaps are carried
 out at runtime. Inside the game, a UE4SS script (gameremap.py) moves the game's actions and menu keys to
-other keys, mouse buttons and controller buttons. What it can't move (movement and the camera, and mouse
-buttons in menus) is left to the key remapper outside the game (`wcmods play` / `wcmods remap`), for
-which this section installs the small UE4SS script that tells it when you're playing (playstate.py).
-See README, "Remapping keys"."""
+other keys, mouse buttons and controller buttons: that's the way remaps work. What it can't move
+(movement and the camera, the map's zoom and move, and mouse buttons in menus) is left to the old key
+remapper outside the game (`wcmods play` / `wcmods remap`, deprecated), for which this section installs
+the small UE4SS script that tells it when you're playing (playstate.py). See README, "Remapping keys"."""
 from .. import controls, gameremap, keymap, mods as modlib, playstate
 from ..sdk import Section
 
@@ -53,10 +53,14 @@ class ControlsSection(Section):
             # Lets the remapper tell play from menus (see playstate.py).
             path = playstate.state_path(ctx.cfg)
             if path:
+                n = len(send) + len(menu_send)
+                ctx.warn(f"{n} {'remap' if n == 1 else 'remaps'} here (movement, the camera, the map's zoom and move, "
+                         "mouse buttons in menus) only work with the old key remapper, which is deprecated: start the "
+                         "game with `Play with key remaps.bat` or `python wcmods.py play` for them")
                 ctx.add_ue4ss_mod(playstate.UE4SS_MOD_NAME, {"Scripts/main.lua": playstate.script(path), "enabled.txt": ""})
             else:
-                ctx.warn("without UE4SS, every remap goes through the key remapper (`wcmods play`), which can't "
-                         "tell menus from play, so it remaps whenever the game is in front")
+                ctx.warn("without UE4SS, every remap goes through the old key remapper (`wcmods play`, deprecated), "
+                         "which can't tell menus from play, so it remaps whenever the game is in front")
         ctx.note("controls", merged)
         ctx.note("remaps", {"in_game": in_game, "send": send, "block": sorted(block), "menus": menu_send})
 
