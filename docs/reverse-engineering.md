@@ -1063,7 +1063,12 @@ Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`W
   the inventory): only that menu's screen, not the controller or the HUD. The engine's cursor flag can't
   tell them apart: `bShowMouseCursor` read false in the pause menu and the map, as the game draws its own
   cursor (so `WCModsPlayState`, which tests it, reports those menus as play).
-- **What each key sends** is the same in play and in the pause menu. Every key and mouse button was
+- **In a fight**, keys go to all of them at once: the controller, the HUD's two screens, the fight menu
+  (`WBP_GuiPopupCombat_C`: Attack, Rest, Herbs, Flee, then the moves) and `WBP_GuiHudCombatOver_C`. The
+  fight menu moves with `Button_Up`/`Down` and picks with `Button_Confirm`, as other menus do. (A fight
+  for testing: teleport behind a roaming animal, a `BP_Exploration_Character_Base_C` outside a
+  `MovieScene`, and pounce. Digging a prey burrow gave Earth & Stones instead of a fight.)
+- **What each key sends** is the same in play, in the pause menu and in a fight. Every key and mouse button was
   pressed on its own with every command turned into NoCommand, so nothing happened (`keymap.KEY_COMMANDS`):
 
   | Key | Commands |
@@ -1129,6 +1134,8 @@ Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`W
     Resume, and O closed the map, the inventory and the quest page. In play, K and I kept their own jobs.
   - **Tabs:** `Button_ShoulderR` on PageDown went to the next tab, and 2 no longer did.
   - **A second Interact:** H, standing for E while you play, opened the travel map.
+  - **In a fight:** K and I moved through Attack, Rest, Herbs and Flee (Down still did), U opened Attack
+    and used Provoking Stare, which hit, and O went back. K didn't open the quest page mid-fight.
 - **Not tried yet:** a controller, the mouse wheel, and a key held while a screen opens (the script lets
   go of an action whose key is no longer down, checked every few frames).
 

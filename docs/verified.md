@@ -110,6 +110,9 @@ folders. `python wcmods.py selftest` checks, against your install:
   did too), U confirmed Resume, and O closed the map, the inventory and the quest page. `Button_ShoulderR`
   on PageDown went to the next tab, and 2 no longer did. While playing, K still opened the quest page and
   I the inventory (the menu pairs left play alone), and H, standing for E, opened the travel map.
+- In a fight (pounced on a rogue cat): the same menu keys moved through Attack, Rest, Herbs and Flee, U
+  opened the moves and used Provoking Stare (it hit), and O went back. Every key sent the same commands
+  as while exploring.
 
 ## Not yet confirmed in game
 

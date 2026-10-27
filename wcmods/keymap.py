@@ -41,7 +41,7 @@ GAME_GAMEPAD = {
     "Player_Pause": "Gamepad_Special_Right",
 }
 # Every command each key and mouse button sends to the game's listeners, seen in game with each one
-# pressed on its own (2026-10-27, build 26184573; the same in play and in the pause menu). Keys not
+# pressed on its own (2026-10-27, build 26184573; the same in play, the pause menu and a fight). Keys not
 # listed send none. In menus, mouse presses go to the button under the cursor instead.
 KEY_COMMANDS = {
     "W": ["Button_Up"], "S": ["Button_Down"], "A": ["Button_Left", "AnimTool_PreviousAnim"],

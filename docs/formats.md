@@ -116,7 +116,8 @@ palette you've added is your own copy, so add it again to get the new one.
   lists: the built-in W, D, Up and Right, or any other key the game uses. `"T": "W"` makes T go
   forward and W stop. The game key stops working on its own once something stands in for it, unless
   an action still uses it (then it's a second key for that job).
-- **`menus`** is a separate set of key pairs used only in the game's menus (every screen but the HUD).
+- **`menus`** is a separate set of key pairs used only in the game's menus (every screen but the HUD,
+  a fight's menu included).
   Here `Escape` closes menus (it stands for Backspace); `{"I": "Up", "K": "Down", "F": "Enter"}` would
   move through them with I and K and confirm with F. The game's own keys keep working too. A letter,
   digit or Space used here still types on the name screen and does the other key's job there too, and

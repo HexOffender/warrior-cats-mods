@@ -65,7 +65,8 @@ local function commands()
 end
 
 -- Which set applies to a listener. While you explore, the keys go to the controller and the HUD's two
--- screens; with a menu open, only to the menu's screen. (The game draws its own cursor, so the engine's
+-- screens; with a menu open, only to the menu's screen; in a fight, to all of those and the fight's
+-- menu, which counts as a menu. (The game draws its own cursor, so the engine's
 -- cursor flag can't tell: it reads false in the pause menu and the map too.)
 local PLAY_SCREENS = { WBP_GuiHudGameWrc_C = true, WBP_GuiScreenOnlineOver_C = true }
 local function where(how, listener)

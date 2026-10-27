@@ -218,14 +218,15 @@ and the script works on those:
   the map; with Pounce moved off Space, Space still confirms dialogue. A key that takes an action stops doing
   its own (with Interact on Q, Q no longer tracks scents; the build says so).
 - **A key standing for another** while you play (`keys`) or in menus (`menus`): it does all of that key's
-  jobs there, and none of its own. Menus are every screen but the HUD. Letters still type on the name
-  screen, and do the other key's job there too (the build says so).
+  jobs there, and none of its own. Menus are every screen but the HUD, the fight menu (Attack, Rest,
+  Herbs, Flee and the moves) included. Letters still type on the name screen, and do the other key's job
+  there too (the build says so).
 
 The game's own prompts and its Controls screen still show its own keys, as those come from the bindings no
 script can change. Seen working in game: Interact on F, Run on G, Scent tracking on the middle mouse button,
 Map on N (in the map screen too), H as a second Interact, the pause menu moved with I and K and confirmed
-with U, O closing menus, and the next tab on PageDown instead of 2; the old keys did nothing, and the
-Controls screen was as before. Controller buttons and the wheel are done the same way but haven't been
+with U, O closing menus, the next tab on PageDown instead of 2, and a fight's menu and moves picked with
+I, K and U; the old keys did nothing, and the Controls screen was as before. Controller buttons and the wheel are done the same way but haven't been
 tried yet. Scripts that listen for Interact themselves (`Game.npcs`, for a mod's own cats) follow it to its
 new key.
 

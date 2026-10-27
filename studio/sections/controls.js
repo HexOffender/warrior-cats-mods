@@ -271,7 +271,7 @@ export default {
         .map(a => [overrides.keyboard[a.id], a.name]));
       renderPairs(extraCard, "Extra keys while playing", "Any key can stand for any game key while you play, " +
         "e.g. Escape for the key that opens the pause menu. The game key then stops working on its own, unless an action above still uses it.", otherKeys, rowKeys);
-      renderPairs(menuCard, "In menus", "Used only in the game's menus (every screen but the HUD), e.g. Escape for the key that closes a menu, " +
+      renderPairs(menuCard, "In menus", "Used only in the game's menus (every screen but the HUD, a fight's menu too), e.g. Escape for the key that closes a menu, " +
         "or I and K for Up and Down. Done inside the game; the game's own keys keep working too. A letter used here still types on the name " +
         "screen and does the other key's job there too. Mouse buttons here need the key remapper (Play).", menuKeys, {});
       out.set(toJson());
