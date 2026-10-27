@@ -73,10 +73,10 @@ Clan Mod Studio's "Get set up" sees to these:
 python wcmods.py studio      # what double-clicking Clan Mod Studio does
 ```
 
-Also in this folder: **`Play with key remaps.bat`** starts the game with the key remapper (see
-[Remapping keys](#remapping-keys)), which the studio's Play button does too when your mods remap
-movement or the camera; other remaps work inside the game. It stops by itself when the
-game closes.
+Also in this folder: **`Play with key remaps.bat`** starts the game with the old key remapper, which
+is deprecated (see [Remapping keys](#remapping-keys)). Remaps work inside the game however you start
+it; the old remapper is only for remapping movement or the camera. It stops by itself when the game
+closes.
 
 **Clan Mod Studio** puts your mods in the game. Its **Mods** page is where you start:
 - **Add a mod:** drop a downloaded mod's .zip on the page. It shows what's in it (what the mod
@@ -105,7 +105,7 @@ The pages under **Make mods** are for making your own; each edits a file in a mo
 |---|---|---|---|
 | **Palettes** | eye, coat, pattern and marking colours on a live cat; new pattern and marking colours | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
 | **Your cat** | colours only your cat wears (coat, paws, ears, nose, whiskers); which colour slots it wears; its scars | `cats.json` | UE4SS script (colours); your save, on install (slots, scars) |
-| **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | the game itself (`WCModsRemap`), and the key remapper (`wcmods play`) for movement and the camera; see [Remapping keys](#remapping-keys) |
+| **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | the game itself (`WCModsRemap`); movement and the camera only with the old key remapper (deprecated); see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert, smoothing | `mouselook.json` | UE4SS script |
 | **Names** | rename, add and remove name prefixes, suffixes and rogue names; the ban list; cameo cats and any shown name; the cats in your save | `names.json` | edited tables and text in the mod pak; cat renames in your save, on install |
 | **Items** | herbs and materials of your own: name, description, icon (the game's, recoloured, or your own PNG), what a herb does, the medicine cat's recipe, some to start with | `items.json` | new rows and textures in the mod pak; starting ones in your save |
@@ -204,10 +204,10 @@ has what was found). So wcmods remaps while the game runs. Set your keys on the 
 | The game's actions that are buttons: Interact, Pounce, Run, Crouch, Scent tracking, Drop, Talk to friend, Place den decoration, Return to camp, Reset camera, Pause, and the Controls screen's Inventory (I), Quest (K), Map (M) and Meow (L), onto keyboard keys, mouse buttons or controller buttons | **the game**, through wcmods' `WCModsRemap` script: start the game any way you like, from Steam too |
 | Any other of the game's commands, everywhere: the menus' Confirm, Back, Skip, tab buttons and the rest (`"keyboard": {"Button_Skip": "G"}`) | **the game** |
 | A key that stands for another while you play (`"keys": {"H": "E"}`) | **the game** |
-| A key that stands for another in menus, the "In menus" list (`"menus"`): I and K for Up and Down, F for Enter | **the game** (mouse buttons there: the key remapper) |
-| Movement and the camera (Move back, Move left, Camera down, Camera left, and keys standing for W, D, Up or Right) | **the key remapper** outside the game (`wcmods play`, below) |
+| A key that stands for another in menus, the "In menus" list (`"menus"`): I and K for Up and Down, F for Enter | **the game** (mouse buttons there: the old key remapper) |
+| Movement and the camera (Move back, Move left, Camera down, Camera left, and keys standing for W, D, Up or Right) | only **the old key remapper** outside the game (deprecated, below) |
 | The controller's sticks | **Steam Input** (in Steam, right-click the game, then Properties, Controller) |
-| Anything, without UE4SS | **the key remapper**, for keyboard and mouse |
+| Anything, without UE4SS | **the old key remapper**, for keyboard and mouse |
 
 **Inside the game.** The `WCModsRemap` script is installed with your mods whenever they remap anything it
 can do, with "Allow mods that run code" on or off (it's wcmods' own script, like mouse look's). Every key
@@ -223,7 +223,7 @@ and the script works on those:
   Letters still type on the name screen, and do the other key's job there too (the build says so).
   A few screens read some keys directly, like movement: the map's zoom and move (arrows, WASD), photo
   mode's camera (Shift+WASD, Z/C) and turning the cat in the cat maker (Q/E). A menu pair standing for
-  an arrow key or WASD therefore also goes to the key remapper, which can do those (the build says so).
+  an arrow key or WASD therefore also goes to the old key remapper, which can do those (the build says so).
 
 The game's own prompts and its Controls screen still show its own keys, as those come from the bindings no
 script can change. Seen working in game: Interact on F, Run on G, Scent tracking on the middle mouse button,
@@ -233,10 +233,11 @@ I, K and U; the old keys did nothing, and the Controls screen was as before. Con
 tried yet. Scripts that listen for Interact themselves (`Game.npcs`, for a mod's own cats) follow it to its
 new key.
 
-**The key remapper outside the game.** What the game reads as axes every frame (movement and the
-camera) is out of a script's reach, so those remaps go through the wcmods key remapper, as do mouse
-buttons in the "In menus" list (in menus, a click goes to the button under the cursor, not to the game's
-keys). While you play, the keys in your mods' `controls.json` stand in for the game's. "Play"
+**The old key remapper outside the game (deprecated).** Remapping is done inside the game now, and the
+old key remapper is kept only for what a script can't reach: what the game reads as axes every frame
+(movement and the camera, the map's zoom and move) and mouse buttons in the "In menus" list (in menus, a
+click goes to the button under the cursor, not to the game's keys). The studio's Play doesn't start it
+any more; when your mods have remaps only it can do, the build and Play say so. While you play, the keys in your mods' `controls.json` stand in for the game's. "Play"
 means the game window is in front and you're exploring, not in a menu. A small UE4SS script
 (`WCModsPlayState`, installed with your mods when the remapper has work to do) tells the remapper
 which it is. Windows can't, because the game draws its own cursor. Without that script, remaps
@@ -246,10 +247,9 @@ programs keep your normal keys, except for the menu remaps you set (the Controls
 list). A key whose action moved stops doing it, unless another action still uses it. Mouse buttons
 and the wheel can stand in for keys. The pause menu hasn't been checked yet.
 
-When the key remapper has work to do, start the game with `python wcmods.py play` (or the studio's
-Play, or `Play with key remaps.bat`) instead of from Steam. Its "play" means no game screen is showing:
-exploring, photo mode, or talking to a cat. When everything you remap is done inside
-the game, they start the game without it:
+To use it, start the game with `Play with key remaps.bat` or `python wcmods.py play` instead of from
+Steam or the studio's Play. Its "play" means no game screen is showing: exploring, photo mode, or
+talking to a cat. When everything you remap is done inside the game, `play` just starts the game:
 
 ```
 python wcmods.py play              # start the game through Steam and remap until it closes
@@ -288,7 +288,7 @@ in groups):
 python wcmods.py status      # game, save, UE4SS, and your mods
 python wcmods.py selftest    # checks every file format against your install (writes nothing)
 python wcmods.py install     # builds the enabled mods and installs them (game closed)
-python wcmods.py play        # starts the game, with the key remapper when it's needed (see Remapping keys)
+python wcmods.py play        # starts the game with the old key remapper (deprecated; see Remapping keys)
 python wcmods.py uninstall   # removes them again
 ```
 

@@ -99,8 +99,8 @@ def install_loader(cfg, zip_path=None, log=print):
 
 
 def remaps(ctx):
-    """Whether the enabled mods remap keys that the in-game script can't, so the game has to start with the
-    key remapper."""
+    """Whether the enabled mods remap keys that the in-game script can't, which only the old (deprecated) key
+    remapper does."""
     from .sections.controls import remap_plan
     send, block, menu_send, _ = remap_plan(ctx.mods_root, ctx.cfg)
     return bool(send or block or menu_send)
@@ -108,7 +108,8 @@ def remaps(ctx):
 
 def play(ctx, log=print, force=False):
     """Clan Mod Studio's Play: apply waiting changes (with the game closed), then start the game through
-    Steam, with the key remapper in a window of its own when mods remap keys."""
+    Steam. Remaps work inside the game; the old key remapper (deprecated) isn't started, and Play says when
+    some remaps need it."""
     cfg = ctx.cfg
     if game_running():
         raise RuntimeError("the game is already running")
@@ -120,14 +121,12 @@ def play(ctx, log=print, force=False):
         pipeline.install(cfg, ctx.build_dir, ctx.backups, log, force=force)
         applied = True
     with_remaps = remaps(ctx)
+    os.startfile(f"steam://rungameid/{STEAM_APP_ID}")
+    log("starting the game through Steam")
     if with_remaps:
-        # The launcher runs `wcmods play` (the game, then the remapper until it closes) in a window of its own,
-        # and keeps that window open on an error so it can be read.
-        os.startfile(os.path.join(ctx.root, "Play with key remaps.bat"))
-        log("starting the game with your key remaps (their window closes when the game does)")
-    else:
-        os.startfile(f"steam://rungameid/{STEAM_APP_ID}")
-        log("starting the game through Steam")
+        log("some of your remaps (movement, the camera, the map's zoom and move, mouse buttons in menus) only "
+            "work with the old key remapper, which is deprecated: start the game with Play with key remaps.bat "
+            "for them")
     return {"applied": applied, "remaps": with_remaps}
 
 

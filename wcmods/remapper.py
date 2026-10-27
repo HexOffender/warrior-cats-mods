@@ -1,8 +1,8 @@
-"""The key remapper: while the game is in front and you're playing (exploring, not in a menu), keys you
-press stand in for the game's own keys. Menus, the cat-naming screen and every other program are left alone.
+"""The key remapper, deprecated: remaps work inside the game now (gameremap.py), and this is kept only for
+what the game reads itself, movement and the camera, and for setups without UE4SS. While the game is in
+front and you're playing (exploring, not in a menu), keys you press stand in for the game's own keys. Menus, the cat-naming screen and every other program are left alone.
 The game says which it is through a small UE4SS script (playstate.py) that writes "play" or "menu" to a
-file; without it, the remapper remaps whenever the game is in front. It's for what the in-game remap
-(gameremap.py) can't do: movement, the camera and menu keys, or everything when UE4SS isn't installed.
+file; without it, the remapper remaps whenever the game is in front.
 
 Windows only. It uses a low-level keyboard hook (and a mouse hook when a mouse button or the wheel
 stands in for a key): a remapped key is held back and the game's key is sent in its place with
