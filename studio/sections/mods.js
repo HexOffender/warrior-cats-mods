@@ -265,12 +265,15 @@ export default {
     // What's in a .zip (or folder) before adding it; add(ids, enable) and cancel() do the rest.
     function renderPreview(r, name, add, cancel) {
       const picks = new Map();
-      addBox.append(el("div", { class: "row spread" }, el("h2", { text: r.mods.length > 1 ? `${r.mods.length} mods in ${name}` : `Add ${r.mods[0].name}?` }),
+      const pack = r.mods.find(m => m.kinds.includes("mod pack"));
+      addBox.append(el("div", { class: "row spread" }, el("h2", { text: pack ? `Add the mod pack ${pack.name}?` : r.mods.length > 1 ? `${r.mods.length} mods in ${name}` : `Add ${r.mods[0].name}?` }),
         el("span", { class: "muted mono", text: name })),
-        r.mods.length > 1 ? el("p", { class: "note", text: "Tick the ones you want. With palettes, pick one theme at a time." }) : null);
+        pack ? el("p", { class: "note", text: "A mod pack: its mods go together. Mods you already have aren't ticked, so yours stay as they are; tick one to use the pack's copy instead." })
+          : r.mods.length > 1 ? el("p", { class: "note", text: "Tick the ones you want. With palettes, pick one theme at a time." }) : null);
       for (const m of r.mods) {
-        // One mod is simply added; out of several (a collection like wcmods-examples) the player picks.
-        const pick = el("input", { type: "checkbox", checked: r.mods.length === 1, id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
+        // One mod is simply added; out of several (a collection like wcmods-examples) the player picks. A mod
+        // pack's are ticked, except mods the player has already.
+        const pick = el("input", { type: "checkbox", checked: r.mods.length === 1 || (!!pack && !m.existing), id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
         picks.set(m.id, pick);
         const notes = [];
         if (m.existing) notes.push(el("li", { text: `Replaces the ${m.existing.name}${m.existing.version ? " " + m.existing.version : ""} you have${m.version ? " with " + m.version : ""}. The old copy is kept in backups.` }));

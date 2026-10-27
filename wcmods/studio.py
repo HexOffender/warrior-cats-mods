@@ -18,8 +18,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (bridge, catcolours, colors, controls, eyeatlas, menupages, menusettings, mods, modzip, names,
-               onboarding, palettes, pipeline, ue4ss)
-from .formats import csvdata, save
+               onboarding, packs, palettes, pipeline, recolor, story, ue4ss)
+from .formats import cooked, csvdata, png, save, texture
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
 from .colors import hex_from_linear
@@ -32,16 +32,23 @@ from .sections.files import classify
 NO_GAME = "Clan Mod Studio hasn't found the game yet: Get set up, on the Mods page, asks where it is"
 
 MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "items.json", "names.json", "cats.json",
-             "save.json", "settings.json")
+             "save.json", "settings.json") + story.FILES
+PICTURES = "pictures"        # a mod's own pictures (an item's icon), added on the Items page
+MAX_PICTURE = 8 * 1024 ** 2
+ITEM_ROOT = "Gameplay.Inventory."
 MAX_UPLOAD = modzip.MAX_BYTES   # a downloaded mod's .zip
 # The side bar: "play" is installing and managing mods, "make" the pages for making your own.
 BUILTIN_SECTIONS = [
     {"id": "mods", "title": "Mods", "module": "/studio/sections/mods.js", "group": "play"},
+    {"id": "packs", "title": "Mod packs", "module": "/studio/sections/packs.js", "group": "play"},
     {"id": "settings", "title": "Settings and repair", "module": "/studio/sections/settings.js", "group": "play"},
     {"id": "palettes", "title": "Palettes", "module": "/studio/sections/palettes.js", "group": "make"},
     {"id": "cat", "title": "Your cat", "module": "/studio/sections/cat.js", "group": "make"},
     {"id": "controls", "title": "Controls", "module": "/studio/sections/controls.js", "group": "make"},
     {"id": "names", "title": "Names", "module": "/studio/sections/names.js", "group": "make"},
+    {"id": "items", "title": "Items", "module": "/studio/sections/items.js", "group": "make"},
+    {"id": "npcs", "title": "Characters", "module": "/studio/sections/npcs.js", "group": "make"},
+    {"id": "quests", "title": "Questlines", "module": "/studio/sections/quests.js", "group": "make"},
     {"id": "data", "title": "Game data", "module": "/studio/sections/data.js", "group": "make"},
     {"id": "save", "title": "Save", "module": "/studio/sections/save.js", "group": "make"},
 ]
@@ -82,6 +89,8 @@ class Studio:
         self.cpp_tools = None   # cppmods.status() as it was when that build started, for the page's polls
         self._eyes = None
         self._names = None   # the game's name tables, read once
+        self._items = None   # the game's items, read once
+        self._icons = {}     # (item tag or texture, tint) -> PNG bytes
 
     # ---------- helpers ----------
     def mods(self):
@@ -98,6 +107,15 @@ class Studio:
         if not os.path.isfile(path):
             raise LookupError("no save yet; start the game once")
         return save.SaveGame.load(path).json_text, os.path.getmtime(path)
+
+    def build(self):
+        """The installed game's build, or None (no game found, or Steam doesn't say)."""
+        if not self.ctx.cfg.game_dir:
+            return None
+        try:
+            return gamebuild.current(self.ctx.cfg)["build"]
+        except OSError:
+            return None
 
     def code_changed(self):
         return code_stamp() > self.code_stamp
@@ -313,8 +331,9 @@ class Studio:
             with self.lock:
                 return {"restored": modzip.restore(self.ctx.backups, body["name"], self.ctx.mods_root)}
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "zip" and method == "GET":
+            found = self.mods()
             m = self.mod(parts[1])
-            return Download(modzip.pack(m), modzip.zip_name(m))
+            return Download(modzip.pack(m, found), modzip.zip_name(m))
         if parts == ["open"] and method == "POST":
             # Show a folder in Explorer: the mods folder, the folder with all your files, or one mod's.
             folder = ({"mods": self.ctx.mods_root, "data": cfg.data_dir}.get(body.get("what"))
@@ -334,11 +353,12 @@ class Studio:
             return {"allow_code_mods": bool(cfg.data.get("allow_code_mods")), "data_dir": cfg.data_dir}
         if parts == ["mods"] and method == "POST":
             m = mods.create(self.ctx.mods_root, body["id"], body.get("name"), body.get("description", ""),
-                            enabled=bool(body.get("enabled", False)), priority=int(body.get("priority", 0)))
+                            enabled=bool(body.get("enabled", False)), priority=int(body.get("priority", 0)),
+                            game_build=self.build())
             return m.to_dict()
         if len(parts) == 2 and parts[0] == "mods" and method == "PATCH":
             m = self.mod(parts[1])
-            m.update(**{k: body.get(k) for k in ("enabled", "priority", "name", "description")})
+            m.update(**{k: body.get(k) for k in ("enabled", "priority", "name", "description", "version", "author")})
             return m.to_dict()
         if len(parts) == 4 and parts[0] == "mods" and parts[2] == "file":
             m, name = self.mod(parts[1]), parts[3]
@@ -358,7 +378,12 @@ class Studio:
                 json.loads(text)  # refuse to write broken JSON
                 with open(path, "w", encoding="utf-8", newline="\n") as f:
                     f.write(text if text.endswith("\n") else text + "\n")
-                return {"saved": name}
+                # Cats and questlines come into the game with the Sandbox mode mod: turning this mod on turns
+                # that one on, and a shared .zip says it's needed.
+                if name in story.FILES and story.SANDBOX_ID not in m.requires:
+                    m.update(requires=m.requires + [story.SANDBOX_ID])
+                # A quest half made still saves; what would keep it out of the game is said now, not at Apply.
+                return {"saved": name, "requires": m.requires, "problem": story_problem(m) if name in story.FILES else None}
             if method == "DELETE":
                 if os.path.isfile(path):
                     os.remove(path)
@@ -419,6 +444,56 @@ class Studio:
             return {"account": doc.account, "data": doc.data, "save_time": mtime}
         if parts == ["cat"] and method == "GET":
             return self.cat_info()
+        if parts == ["packs"] and method == "GET":
+            return packs.describe(cfg, self.mods())
+        if parts == ["packs"] and method == "POST":
+            # Make a pack, or change one: {id, name, description, author, version, mods: [ids]}.
+            pack_id = body.get("id")
+            with self.lock:
+                if not pack_id:   # a new pack: never one that's there already
+                    taken = {m.id for m in self.mods()}
+                    base = pack_id = modzip.safe_id(body.get("name") or "pack")
+                    n = 2
+                    while pack_id in taken:
+                        pack_id, n = f"{base}-{n}", n + 1
+                p = packs.save(self.ctx.mods_root, self.mods(), pack_id, (body.get("name") or "").strip(), body.get("mods") or [],
+                               description=(body.get("description") or "").strip(), author=(body.get("author") or "").strip(),
+                               version=(body.get("version") or "").strip(), game_build=self.build())
+            return p.to_dict()
+        if len(parts) == 3 and parts[0] == "packs" and parts[2] == "play" and method == "POST":
+            with self.lock:   # not while an install reads which mods are on
+                return packs.play(cfg, self.mods(), parts[1])
+        if parts == ["packs", "stop"] and method == "POST":
+            with self.lock:
+                return packs.stop(cfg, self.mods())
+        if parts == ["game", "items"] and method == "GET":
+            return self.game_items()
+        if parts == ["game", "icon"] and method == "GET":
+            # An item's icon (or a texture's) as a small PNG, recoloured with ?tint=#rrggbb, for the Items page.
+            return Download(self.icon((query or {}).get("of", ""), (query or {}).get("tint")), "icon.png", "image/png")
+        if parts == ["game", "where"] and method == "POST":
+            # Where your cat stands in the game, for a cat or a quest's place (through the game bridge).
+            if not cfg.data.get("allow_code_mods"):
+                raise PermissionError("reading where your cat is goes through the game bridge, which runs code: allow "
+                                      "mods that run code first (Options, on the Settings and repair page)")
+            try:
+                reply = Bridge(cfg).run(WHERE_LUA, timeout=10)
+            except BridgeError as e:
+                raise RuntimeError(str(e)) from None
+            spot = (reply.get("result") or [None])[0]
+            if not reply.get("ok") or not isinstance(spot, dict):
+                raise RuntimeError(reply.get("error") or "your cat isn't in the world: go into the forest first")
+            return spot
+        if len(parts) == 3 and parts[0] == "mods" and parts[2] == "picture" and method == "POST":
+            # A picture for the mod (an item's icon), sent as the body: kept in the mod's pictures/ folder.
+            return self.add_picture(self.mod(parts[1]), (query or {}).get("name", ""), upload)
+        if len(parts) == 4 and parts[0] == "mods" and parts[2] == "picture" and method == "GET":
+            m = self.mod(parts[1])
+            path = os.path.join(m.folder, PICTURES, os.path.basename(parts[3]))
+            if not os.path.isfile(path):
+                raise LookupError(f"{m.id} has no picture {parts[3]}")
+            with open(path, "rb") as f:
+                return Download(f.read(), os.path.basename(path), "image/png")
         if parts == ["names"] and method == "GET":
             return self.names_preview({})
         if parts == ["names", "preview"] and method == "POST":
@@ -479,6 +554,87 @@ class Studio:
                 "renames": [{"from": a, "to": b} for a, b in plan.cat_renames],
                 "warnings": plan.warnings, "changed_texts": _changed_texts(plan.edits.get(names.strings_path("EN"), {}))}
 
+    def _reader(self):
+        """A build context only for reading the game's tables (it never builds)."""
+        return BuildContext(self.ctx.cfg, self.ctx.game, os.path.join(tempfile.gettempdir(), "wcmods-studio"))
+
+    def game_items(self):
+        """The game's items for the Items and Questlines pages: tag, kind, name, description, and for herbs
+        what using them does; and the choices an item has (effects, badges, rarities, colours)."""
+        if self._items is None:
+            b = self._reader()
+            use = {r["key"]: r for r in b.table("Consumables.csv")}
+            recipes = {r["key"] for r in b.table("BarteringCost.csv")}
+
+            def text(v):
+                if isinstance(v, dict) and v.get("key"):
+                    return b.text(v["key"])
+                return v.get("text", "") if isinstance(v, dict) else ""
+
+            items = []
+            for _, v in b.cooked_table("DT_QuestObjectsInfo"):
+                tag = v.get("itemTag") or ""
+                name = text(v.get("Name"))
+                if not tag.startswith(ITEM_ROOT) or tag.count(".") < 3 or not name:   # "None" accessories
+                    continue
+                kind = tag.split(".")[2]
+                u = use.get(tag, {})
+                items.append({"tag": tag, "kind": {"Consumable": "consumable", "Materials": "material",
+                                                    "Cosmetic": "accessory"}.get(kind, kind.lower()),
+                              "short": tag[len(ITEM_ROOT):] if kind == "Cosmetic" else tag.split(".", 3)[3],
+                              "name": name, "description": text(v.get("Description")),
+                              "effect": u.get("EffectOnUse"), "type": u.get("Type"), "recipe": tag in recipes})
+            items.sort(key=lambda i: (i["kind"], i["name"].lower()))
+            self._items = {"items": items,
+                           "effects": sorted({r["EffectOnUse"] for r in use.values() if r.get("EffectOnUse")}),
+                           "groups": list(cooked.ITEM_GROUP_ICON), "rarities": list(cooked.ITEM_RARITY),
+                           "colors": list(cooked.ITEM_CATEGORY_COLOR)}
+        return self._items
+
+    def icon(self, of, tint=None):
+        """An item's icon (by its tag) or a game texture (/Game/...) as a PNG of 128 pixels or so, maybe
+        recoloured."""
+        key = (of, tint)
+        if key not in self._icons:
+            asset = of
+            if not of.startswith("/Game/"):
+                row = next((v for _, v in self._reader().cooked_table("DT_QuestObjectsInfo") if v.get("itemTag") == of), None)
+                if not row or not isinstance(row.get("Icon"), dict):
+                    raise LookupError(f"the game has no item {of}")
+                asset = f"{row['Icon']['package']}.{row['Icon']['asset']}"
+            tex = texture.load(self.ctx.game, asset)
+            mip = next((i for i, m in enumerate(tex.mips) if m[0] <= 128), len(tex.mips) - 1)
+            w, h, rgba = tex.image(mip)
+            if tint:
+                spec = {"tint": tint}
+                recolor.check(spec, "tint")
+                rgba = recolor.apply(rgba, spec)
+            if len(self._icons) > 300:
+                self._icons.clear()
+            self._icons[key] = png.write(w, h, rgba)
+        return self._icons[key]
+
+    def add_picture(self, mod, name, upload):
+        """Keep a PNG sent from the Items page in the mod's pictures/ folder; returns its path in the mod."""
+        if not upload:
+            raise ValueError("send the picture as the request's body")
+        if os.path.getsize(upload) > MAX_PICTURE:
+            raise ValueError(f"that picture is over {MAX_PICTURE // 1024 ** 2} MB")
+        stem = re.sub(r"[^A-Za-z0-9_-]+", "-", os.path.splitext(os.path.basename(name))[0]).strip("-")[:40] or "picture"
+        with open(upload, "rb") as f:
+            data = f.read()
+        try:
+            w, h, _ = png.read(data)
+        except Exception:   # noqa: BLE001 - whatever is wrong with it, it isn't a PNG wcmods can use
+            raise ValueError("that isn't a PNG picture (save it as .png first)") from None
+        if not (16 <= w <= 4096 and 16 <= h <= 4096):
+            raise ValueError(f"the picture is {w} x {h}; it should be 16 to 4096 pixels each way")
+        folder = os.path.join(mod.folder, PICTURES)
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, stem + ".png"), "wb") as f:
+            f.write(data)
+        return {"path": f"{PICTURES}/{stem}.png", "width": w, "height": h}
+
     def eyes(self):
         if self._eyes is None:
             atlas = eyeatlas.EyeAtlas(self.ctx.game.read(eyeatlas.PATH))
@@ -491,6 +647,32 @@ class Studio:
         with self.lock:
             result = fn(lines.append)
         return {"log": lines, "result": result}
+
+
+def story_problem(mod):
+    """What's wrong with a mod's npcs.json and quests.json together (a quest naming a cat that's gone), or None."""
+    raw = {}
+    for name in story.FILES:
+        path = os.path.join(mod.folder, name)
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8-sig") as f:
+                raw[name] = json.load(f)
+    try:
+        story.read(raw.get("npcs.json"), raw.get("quests.json"))
+    except ValueError as e:
+        return str(e)
+    return None
+
+
+# Where your cat is, through the game bridge: a place and level for a cat or a quest's step.
+WHERE_LUA = """
+local me = Game and Game.cat()
+local l = me and me:location()
+if not l then return nil end
+local yaw = 0
+pcall(function() yaw = Game.player():K2_GetActorRotation().Yaw end)
+return { at = { math.floor(l.X), math.floor(l.Y), math.floor(l.Z) }, yaw = math.floor(yaw), level = Game.levelName() }
+"""
 
 
 def _changed_texts(edits):

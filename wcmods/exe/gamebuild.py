@@ -98,7 +98,7 @@ def outdated(cfg, mods, build=None):
         return {}
     out = {}
     for m in mods:
-        if not m.enabled:
+        if not m.enabled or m.meta.get("pack"):   # a mod pack has nothing of the game's in it to go out of date
             continue
         builds = made_for(m)
         if build not in builds:

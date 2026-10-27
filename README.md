@@ -90,6 +90,10 @@ keys. It stops by itself when the game closes.
 - **Play** (top right): puts what's changed in the game, then starts it. Apply to game does just the
   first part. Both need the game closed, and a banner lists what isn't in the game yet.
 - **The rest:** each mod's More has its priority, its folder, Save as .zip (to share it) and Remove.
+- **Mod packs**, the next page: a set of mods shared and played together as one experience (a story
+  with its cats, quests and items, the colours and names that suit it). Make one from your mods; its
+  Save as .zip carries every mod in it. **Play only this pack** turns its mods on and the rest off, and
+  **Back to my mods** puts yours back. A pack someone sent you is added like any mod, on the Mods page.
 - **Settings and repair**, the other page under Your mods: the game's console, allowing mods that run
   code, your save backups, removed mods (a removed or replaced mod is kept in `backups/mods/`, and
   Put it back does that), "Take all mods out of the game", and starting an empty mod of your own.
@@ -103,6 +107,9 @@ The pages under **Make mods** are for making your own; each edits a file in a mo
 | **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | the key remapper while you play (`wcmods play`); see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert, smoothing | `mouselook.json` | UE4SS script |
 | **Names** | rename, add and remove name prefixes, suffixes and rogue names; the ban list; cameo cats and any shown name; the cats in your save | `names.json` | edited tables and text in the mod pak; cat renames in your save, on install |
+| **Items** | herbs and materials of your own: name, description, icon (the game's, recoloured, or your own PNG), what a herb does, the medicine cat's recipe, some to start with | `items.json` | new rows and textures in the mod pak; starting ones in your save |
+| **Characters** | cats of your own: name, title, colours, eyes, size, where they stand, what they say | `npcs.json` | the [Sandbox mode](https://github.com/HexOffender/wcmods-sandbox) mod, in its sandbox games |
+| **Questlines** | quests with those cats, step by step (talk, pick things up, go somewhere), one after another, with rewards | `quests.json` | the Sandbox mode mod |
 | **Game data** | XP, costs, rewards, speeds and ~440 tuning values, in any runtime table | `data.json` | edited tables in the mod pak |
 | **Save** | level, XP, health, stamina, fresh-kill pile, stats, inventory, settings, anything else | `save.json` | your save, on install |
 
@@ -117,6 +124,16 @@ The pages under **Make mods** are for making your own; each edits a file in a mo
 With code mods allowed, `python wcmods.py lua "Game.cat():name()"`, the studio's **Console** page and
 the mod menu's Lua console run Lua in the game while it's open. See [docs/scripting.md](docs/scripting.md);
 the example is [game-tweaks](https://github.com/HexOffender/wcmods-examples/tree/main/game-tweaks) in wcmods-examples.
+
+**Stories without code:** Items, Characters and Questlines make a whole story with no code. The
+cats and quests come into the game with the [Sandbox mode](https://github.com/HexOffender/wcmods-sandbox)
+mod (a mod that saves cats or quests needs it, so turning it on turns that on too); items are real items,
+in story games as well. "Use where my cat is standing" fills in a place from the game while it runs (it
+goes through the game bridge, so it needs mods that run code allowed).
+
+**Sharing what you make:** every page under Make mods has a **Share** part: the mod's name, author,
+version and description, **Save as .zip** for others to add on their Mods page, and **Export** and
+**Import** for just that page's file.
 
 Mods can also ship whole replacement files (`files/Wrc/...`), and their own pages and build
 steps written with the shared library (see [docs/SDK.md](docs/SDK.md)). UE4SS scripts can draw
@@ -295,6 +312,7 @@ and some of these files, which the pages under Make mods write for you:
 | `controls.json`, `mouselook.json` | key and button remaps; mouse look |
 | `data.json` | the game's tables: XP, costs, speeds, tuning values |
 | `items.json` | new herbs, materials and accessory looks |
+| `npcs.json`, `quests.json` | cats of the mod's own, and questlines with them (for Sandbox mode) |
 | `names.json` | cat name parts, rogue names, the ban list, the cats in your save |
 | `save.json` | edits to your save |
 
@@ -307,7 +325,8 @@ game ([docs/scripting.md](docs/scripting.md)) and bring build steps, studio page
 **Sharing a mod:** Save as .zip (a mod's More, in the studio) or `wcmods pack <mod>` writes a .zip
 with the mod's folder in it, and that's what the studio's Add a mod takes. A .zip can hold several
 mod folders, or one mod's files at the top (it's then named after the .zip). Adding a mod never
-runs anything in it. Mods with code (a `section.py`, `scripts/`, a `studio/` page) stay out of the
+runs anything in it. A mod pack (`"pack": true` in its mod.json, its mods in `"requires"`) packs
+every mod in it into its .zip. Mods with code (a `section.py`, `scripts/`, a `studio/` page) stay out of the
 game until "Allow mods that run code" is on (Options on the Settings and repair page, or
 `"allow_code_mods": true` in `wcmods.json`), which is only for mods from people you trust.
 
