@@ -330,6 +330,90 @@ def _unit(v):
     return (v[0] / n, v[1] / n, v[2] / n) if n > 1e-12 else (0.0, 0.0, 1.0)
 
 
+# ------------------------------------------------------------------------------------------- placing
+# Where a model sits on the cat, tweaked: moved (cm), turned (degrees) and scaled, in the cat's own terms.
+# The game's X is the cat's left, Y its front, Z up. Scaling and turning are about the model's centre
+# (the middle of its bounds); then it moves. Yaw turns its front toward the cat's left, pitch raises its
+# front, roll lowers its left side.
+MOVES = ("forward", "up", "left")
+TURNS = ("yaw", "pitch", "roll")
+PLACE_KEYS = set(MOVES) | set(TURNS) | {"scale"}
+MAX_MOVE, MAX_SCALE = 100.0, 20.0
+
+
+def check_place(spec, where):
+    """Raise ValueError for a "place" that can't be used."""
+    if not isinstance(spec, dict):
+        raise ValueError(f'{where}: "place" should be an object, e.g. {{"up": 1.5, "scale": 1.2}}')
+    unknown = sorted(k for k in spec if k not in PLACE_KEYS and not k.startswith("_"))
+    if unknown:
+        raise ValueError(f'{where}: "place" has unknown key(s) {", ".join(unknown)} (it takes '
+                         f'{", ".join(MOVES + TURNS)} and scale)')
+
+    def number(key, v, lo, hi):
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi:
+            raise ValueError(f'{where}: "place" {key} should be a number from {lo:g} to {hi:g}')
+
+    for k in MOVES:
+        if k in spec:
+            number(k, spec[k], -MAX_MOVE, MAX_MOVE)
+    for k in TURNS:
+        if k in spec:
+            number(k, spec[k], -360, 360)
+    s = spec.get("scale")
+    if isinstance(s, dict):
+        bad = sorted(set(s) - set(MOVES))
+        if bad:
+            raise ValueError(f'{where}: "place" scale takes forward, up and left, not {", ".join(bad)}')
+        for k, v in s.items():
+            number(f"scale {k}", v, 0.01, MAX_SCALE)
+    elif s is not None:
+        number("scale", s, 0.01, MAX_SCALE)
+
+
+def _scales(spec):
+    s = spec.get("scale", 1.0)
+    if isinstance(s, dict):
+        return (float(s.get("left", 1.0)), float(s.get("forward", 1.0)), float(s.get("up", 1.0)))
+    return (float(s),) * 3
+
+
+def _turn(v, roll, pitch, yaw):
+    """Roll, then pitch, then yaw (radians) of a vector in the game's space."""
+    x, y, z = v
+    c, s = math.cos(roll), math.sin(roll)
+    x, z = x * c + z * s, -x * s + z * c
+    c, s = math.cos(pitch), math.sin(pitch)
+    y, z = y * c - z * s, y * s + z * c
+    c, s = math.cos(yaw), math.sin(yaw)
+    x, y = x * c + y * s, -x * s + y * c
+    return (x, y, z)
+
+
+def place(model, spec):
+    """The model moved, turned and scaled as `spec` says ("place" in items.json, check_place first)."""
+    if not spec:
+        return model
+    sx, sy, sz = _scales(spec)
+    roll, pitch, yaw = (math.radians(float(spec.get(k, 0.0))) for k in ("roll", "pitch", "yaw"))
+    move = (float(spec.get("left", 0.0)), float(spec.get("forward", 0.0)), float(spec.get("up", 0.0)))
+    lo, hi = model.bounds()
+    c = [(a + b) / 2 for a, b in zip(lo, hi)]
+    positions = []
+    for p in model.positions:
+        v = _turn(((p[0] - c[0]) * sx, (p[1] - c[1]) * sy, (p[2] - c[2]) * sz), roll, pitch, yaw)
+        positions.append((v[0] + c[0] + move[0], v[1] + c[1] + move[1], v[2] + c[2] + move[2]))
+    # A normal scales by the inverse of the scale, so it stays square to its stretched face.
+    normals = [_unit(_turn((n[0] / sx, n[1] / sy, n[2] / sz), roll, pitch, yaw)) for n in model.normals]
+    return Model(positions, normals, list(model.uvs), list(model.triangles))
+
+
+def from_mesh(mesh, lod=0):
+    """One of the game's meshes (skelmesh.SkeletalMesh) as a Model, to place the game's own shape."""
+    geo = mesh.geometry(lod)
+    return Model(geo["positions"], geo["normals"], geo["uvs"], geo["triangles"])
+
+
 # --------------------------------------------------------------------------------------------- tangents
 def tangents(model):
     """(x, y, z, sign) a vertex: the direction U grows along the surface, square to the normal, and
@@ -509,12 +593,13 @@ def build(ctx, package, like, model, key, body):
             "imports": imports, "shaders": shaders, "farthest": farthest}
 
 
-def script(shapes):
-    """The WCModsModels script (lua/models.lua) for {slot: {accessory: {look number: mesh asset path}}}, the
-    slot as the cat's CustomData names it (Neck, Paw, Body, Head)."""
+def script(worn):
+    """The WCModsModels script (lua/models.lua) for {slot: {accessory: {look number: {"mesh": asset path,
+    "opacity": 0..1, "glass": linear [r, g, b]}}}} (each key there only when the look has it), the slot as
+    the cat's CustomData names it (Neck, Paw, Body, Head)."""
     from .lua import source
     from .sdk import lua_value
-    return source("models.lua").replace("@MODELS@", lua_value(shapes))
+    return source("models.lua").replace("@MODELS@", lua_value(worn))
 
 
 # --------------------------------------------------------------------------------------------- writing

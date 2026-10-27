@@ -81,6 +81,10 @@ OBJ file and one from a GLB, each a ring with a bell: `WCModsModels` installed):
   mod's (`SK_BellCollar`) and `CustomData` said DogCollar look 3.
 - A mod made on the Items page (a GLB model and a JPEG picture, saved there as a PNG) showed the same
   way in the forest, the ring in the picture's stripes.
+- Where it sits and see-through (`place`, `opacity`, `glass`): a ring made at the model's origin, put on
+  the neck with the Items page's sliders (forward 11.7, up 16.4, tip 15, size 1.2) and set to 40% in a
+  gold glass, sat on the neck in the inventory's picture and in the forest, the cat's fur showing
+  through it. Switching from it to the game's own Dog Collar look showed the game's collar as it is.
 
 **2026-10-24, scripting:**
 - **The bridge and the commands:** they run Lua in the game; `lua`, `inspect`, `find`, `game` and
@@ -140,6 +144,8 @@ OBJ file and one from a GLB, each a ring with a bell: `WCModsModels` installed):
 - **Accessories' models:** on other cats (a mod's cats, NPCs), in the main menu's and the save
   slots' pictures, on body and paw accessories, and on a brawny or chubby cat (the body-shape morphs
   are taken from the cat's body, close to the game's own for the Dog Collar, but not seen in game).
+  A placed copy of the game's own shape (`place` without a `model`) was built and checked by the
+  selftest, not seen in game.
 
 - **Scripting:**
   - the studio's Console page;

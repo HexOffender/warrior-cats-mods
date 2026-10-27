@@ -179,7 +179,7 @@ def run(cfg, oodle, log=print):
           "through OBJ into a copy tied to the cat", ok, detail)
     ok, detail = _items_section(cfg)
     check("new items (items.json): tag, herb row, item table row, recipe, starting count, a game item's "
-          "recipe, icons, an accessory's look and an accessory's model of a mod's own; mistakes refused",
+          "recipe, icons, an accessory's look, model, place and glass of a mod's own; mistakes refused",
           ok, detail)
 
     from .formats import csvdata
@@ -504,7 +504,9 @@ def _items_section(cfg):
         {"id": "WCModsTestCollar", "like": "Neck.DogCollar.1", "name": "Test Collar", "description": "Blue.",
          "texture": {"tint": "#a8c4ff"}, "recipe": {"Bone": 1}},
         {"id": "WCModsTestRing", "like": "Neck.DogCollar.1", "name": "Test Ring", "description": "Its own shape.",
-         "model": "models/ring.obj"}],
+         "model": "models/ring.obj"},
+        {"id": "WCModsTestGlass", "like": "Neck.DogCollar.1", "name": "Test Glass", "description": "Lower, bigger, glass.",
+         "place": {"up": -1.5, "pitch": 10, "scale": 1.2}, "opacity": 0.5, "glass": "#a8e0ff"}],
         "recipes": {"Cosmetic.Head.MossPatch.1": {"Moss": 3, "WCModsTestStone": 1}}}
     bad = {"items": [
         {"id": "SmallCatnip", "kind": "consumable", "name": "Again", "description": "x", "like": "SmallCatnip"},
@@ -516,7 +518,8 @@ def _items_section(cfg):
         {"id": "WCModsLost", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": "missing.png"},
         {"id": "WCModsOut", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": "../good/icons/test.png"},
         {"id": "WCModsShaped", "like": "SmallHealingHerb", "name": "x", "description": "x", "model": "ring.obj"},
-        {"id": "WCModsNoRing", "like": "Neck.DogCollar.1", "name": "x", "description": "x", "model": "models/none.glb"}],
+        {"id": "WCModsNoRing", "like": "Neck.DogCollar.1", "name": "x", "description": "x", "model": "models/none.glb"},
+        {"id": "WCModsSeeHerb", "like": "SmallHealingHerb", "name": "x", "description": "x", "opacity": 0.5}],
         "recipes": {"Cosmetic.Head.NoSuchHat.1": {"Moss": 1}}}
     colour = (200, 60, 160, 255)
     picture = png.write(32, 32, bytes(colour) * 1024)
@@ -545,16 +548,18 @@ def _items_section(cfg):
                 any("no save yet" in w for w in out["warnings"]))
         rep = out["sections"]["items"]
         ring_tag = f"Gameplay.Inventory.Cosmetic.Neck.DogCollar.{len(looks['DogCollar']) + 2}"
+        glass_tag = f"Gameplay.Inventory.Cosmetic.Neck.DogCollar.{len(looks['DogCollar']) + 3}"
         ok = gave and (rep["status"] == "partial" and any("typo" in e and "should be text" in e for e in rep["errors"])
               and any("tint" in e and "colour like" in e for e in rep["errors"])
               and sorted(r["row"] for r in rows) == sorted([
                   "WCMods_Consumable_WCModsTestHerb", "WCMods_Materials_WCModsTestHerb",
                   "WCMods_Materials_WCModsTestStone", "WCMods_Consumable_WCModsTestPicture",
                   "WCMods_" + collar[len("Gameplay.Inventory."):].replace(".", "_"),
-                  "WCMods_" + ring_tag[len("Gameplay.Inventory."):].replace(".", "_")]) and len(use) == 2
+                  "WCMods_" + ring_tag[len("Gameplay.Inventory."):].replace(".", "_"),
+                  "WCMods_" + glass_tag[len("Gameplay.Inventory."):].replace(".", "_")]) and len(use) == 2
               and sorted(c["row"] for c in recipe) == sorted(["Gameplay.Inventory.Consumable.WCModsTestHerb", collar,
                                                               "Gameplay.Inventory.Cosmetic.Head.MossPatch.1"])
-              and "Wrc/Config/Tags/WCModsItems.ini" in out["files"] and len(warned) == 11
+              and "Wrc/Config/Tags/WCModsItems.ini" in out["files"] and len(warned) == 12
               and all(any(s in w for w in warned) for s in ('needs "like"', "first look", "only accessories",
                                                              "no picture", "own folder", 'take a "model"', "no model"))
               and "zzz_WCMods_P.utoc" in out["outputs"] and "WCModsModels" in out["ue4ss_mods"])
@@ -580,13 +585,26 @@ def _items_section(cfg):
             with open(os.path.join(tmp, "out", "ue4ss", "WCModsModels", "Scripts", "main.lua"), encoding="utf-8") as f:
                 lua = f.read()
             ring_path = "/Game/WCMods/good/SK_WCModsTestRing.SK_WCModsTestRing"
-            packed = (worn["DogCollar"] == looks["DogCollar"] + [look + ".T_WCModsTestCollar_BC", looks["DogCollar"][0]]
+            # The glass one: the Dog Collar's own shape placed lower and bigger, worn as glass of its colour.
+            glass = skelmesh.SkeletalMesh(made.read_file(texture.content_path("/Game/WCMods/good/SK_WCModsTestGlass")))
+            game = GameFiles(cfg)
+            collar = skelmesh.SkeletalMesh(game.read(texture.content_path(
+                accessories.read_meshes(game.read(accessories.GUI_MANAGER))["DogCollar"].split(".", 1)[0])))
+            placed = models.place(models.from_mesh(collar), {"up": -1.5, "pitch": 10, "scale": 1.2})
+            where = all(math.dist(a, b) < 1e-3 for a, b in zip(glass.lods[0].positions, placed.positions))
+            n = len(looks["DogCollar"])
+            packed = (worn["DogCollar"] == looks["DogCollar"] + [look + ".T_WCModsTestCollar_BC", looks["DogCollar"][0],
+                                                                 looks["DogCollar"][0]]
                       and table["Gameplay.Inventory.Consumable.WCModsTestPicture"]["Icon"]["package"] == icon
                       and all(abs(a - b) <= 4 for a, b in zip(pixels[:4], colour))
                       and all(L.vertex_count == len(model.positions) for L in mesh.lods)
                       and mesh.export_names[mesh.main] == "SK_WCModsTestRing"
                       and all(len(m) > 0 for m in mesh.lods[0].morphs)
-                      and f'["{len(looks["DogCollar"]) + 2}"] = "{ring_path}"' in lua and not luacheck.check(lua))
+                      and f'["{n + 2}"] = {{ ["mesh"] = "{ring_path}" }}' in lua
+                      and f'["{n + 3}"] = {{ ["mesh"] = "/Game/WCMods/good/SK_WCModsTestGlass.SK_WCModsTestGlass", '
+                          '["opacity"] = 0.5, ["glass"] = { 0.3916, 0.7454, 1.0 } }' in lua
+                      and glass.lods[0].vertex_count == collar.lods[0].vertex_count and where
+                      and not luacheck.check(lua))
         return ok and packed, f"{len(rows)} rows, {len(warned)} refused" + ("" if ok else f"; {out['warnings']}")
 
 

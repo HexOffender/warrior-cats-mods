@@ -1,15 +1,18 @@
--- Written by wcmods from your mods' items.json: accessories with a model of their own. Do not edit; edit
--- items.json (or the Items page in Clan Mod Studio) and install again.
+-- Written by wcmods from your mods' items.json: accessories with a model, a place or an opacity of their own.
+-- Do not edit; edit items.json (or the Items page in Clan Mod Studio) and install again.
 -- The game puts an accessory's own mesh on a cat and the look's picture on it; when the look is one of
--- these, this puts the model's mesh in its place (a copy of the accessory's, made at install), on every
--- cat that wears it: yours in the forest, the copies in menus and portraits, other cats. It checks twice a
--- second, because the game sets a cat's accessories again whenever it sets the cat up.
--- { slot = { accessory = { ["look number"] = mesh path } } }
+-- these, this puts the look's own mesh in its place (a copy of the accessory's, made at install), and for
+-- a see-through one the cats' eye glass in its colour, on every cat that wears it: yours in the forest,
+-- the copies in menus and portraits, other cats. It checks twice a second, because the game sets a cat's
+-- accessories again whenever it sets the cat up.
+-- { slot = { accessory = { ["look number"] = { mesh = path, opacity = 0..1, glass = { r, g, b } } } } }
 local MODELS = @MODELS@
 -- The cat's accessory slots: CustomData's Accesory<slot>Id and Accesory<slot>Var, and the slot's mesh.
 local SLOTS = { Neck = "AccSkelNeckComp", Paw = "AccSkelPawComp", Body = "AccSkelBodyComp", Head = "AccSkelHeadComp" }
 -- Actors that show a copy of a cat in menus and portraits, whose pictures are taken again after a change.
 local MENU_ACTORS = { "CatCustomActor", "MainMenu", "Customization_Player" }
+-- The only see-through material the game has made for cats: their eyes' glass. It has no picture.
+local GLASS = "/Game/Art/Characters/CatMaster/Materials/MI_Cat_Cornea.MI_Cat_Cornea"
 
 local function log(fmt, ...) print(string.format("[WCModsModels] " .. fmt .. "\n", ...)) end
 local function valid(o) return o ~= nil and o:IsValid() end
@@ -18,11 +21,14 @@ local function str(v) local ok, s = pcall(function() return v:ToString() end) re
 local OURS = {}
 for _, byName in pairs(MODELS) do
     for _, byVar in pairs(byName) do
-        for _, path in pairs(byVar) do OURS[path] = true end
+        for _, look in pairs(byVar) do
+            if look.mesh then OURS[look.mesh] = true end
+        end
     end
 end
 
-local loaded, failed, original = {}, {}, {}
+local loaded, failed = {}, {}
+local original, originalMats, glassOn = {}, {}, {}   -- per component: the game's mesh and materials, our glass
 local ksl = nil
 
 -- A mod's mesh isn't in the game's asset registry, so it's loaded by its path the way the game loads a
@@ -54,24 +60,57 @@ local function setMesh(c, m)
     end
 end
 
--- One cat: each slot whose look has a model gets it; a slot that has one of ours on a look without a
--- model gets the game's mesh back (when the game changed the look but not the mesh).
+-- The look's opacity: every material slot in glass of its colour, or the game's materials back.
+local function setGlass(c, key, look)
+    local mine = glassOn[key]
+    local first = c:GetMaterial(0)
+    local wearing = mine and valid(mine.mid) and valid(first) and first:GetAddress() == mine.mid:GetAddress()
+    if look and look.opacity then
+        if wearing and mine.opacity == look.opacity and mine.glass == look.glass then return 0 end
+        local glass = load(GLASS)
+        if not glass then return 0 end
+        if not wearing then
+            local mats = {}
+            for i = 0, c:GetNumMaterials() - 1 do mats[i] = c:GetMaterial(i) end
+            originalMats[key] = mats
+        end
+        for i = 0, c:GetNumMaterials() - 1 do
+            local mid = c:CreateDynamicMaterialInstance(i, glass, FName("WCModsGlass"))
+            if valid(mid) then
+                mid:SetScalarParameterValue(FName("Glass Opacity"), look.opacity)
+                mid:SetVectorParameterValue(FName("Glass Color"), { R = look.glass[1], G = look.glass[2], B = look.glass[3], A = 1.0 })
+                if i == 0 then glassOn[key] = { mid = mid, opacity = look.opacity, glass = look.glass } end
+            end
+        end
+        return 1
+    elseif wearing then
+        for i, m in pairs(originalMats[key] or {}) do
+            if valid(m) then c:SetMaterial(i, m) end
+        end
+        glassOn[key], originalMats[key] = nil, nil
+        return 1
+    end
+    return 0
+end
+
+-- One cat: each slot whose look has a mesh of its own gets it; a slot that has one of ours on a look
+-- without one gets the game's mesh back (when the game changed the look but not the mesh). Then its glass.
 local function apply(comp)
     local changed = 0
     local data = comp.CustomData
     for slot, field in pairs(SLOTS) do
         local ok, c = pcall(function() return comp[field] end)
         if ok and valid(c) then
-            local want = nil
+            local look = nil
             local byName = MODELS[slot]
             if byName then
-                local id = str(data["Accesory" .. slot .. "Id"])
-                local byVar = byName[id]
+                local byVar = byName[str(data["Accesory" .. slot .. "Id"])]
                 if byVar then
                     local var = data["Accesory" .. slot .. "Var"]
-                    want = byVar[tostring(math.tointeger(var) or var)]   -- look numbers are keys as text
+                    look = byVar[tostring(math.tointeger(var) or var)]   -- look numbers are keys as text
                 end
             end
+            local want = look and look.mesh
             local current, path = meshOf(c)
             local key = c:GetAddress()
             if want and path ~= want then
@@ -82,10 +121,15 @@ local function apply(comp)
                     changed = changed + 1
                 end
             elseif not want and path and OURS[path] then
-                if valid(original[key]) then setMesh(c, original[key]) end
+                -- The game sets the mesh again on every change of look; this is for when it hasn't. Taken
+                -- off, the slot is hidden and the mesh left as it is.
+                if valid(original[key]) then
+                    setMesh(c, original[key])
+                    changed = changed + 1
+                end
                 original[key] = nil
-                changed = changed + 1
             end
+            changed = changed + setGlass(c, key, look)
         end
     end
     return changed
@@ -126,7 +170,7 @@ local function tick()
     end
     if total > 0 and not said then
         said = true
-        log("a cat wears an accessory with a model of a mod's own")
+        log("a cat wears an accessory of a mod's own (a model, a place or glass)")
     end
 end
 

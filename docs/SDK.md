@@ -248,7 +248,16 @@ everything the game needs for a new item:
       "name": "Bell Collar",
       "description": "A ring of braided grass with a bell from Twolegplace.",
       "texture": "pictures/bell-collar.png",
-      "model": "models/bell-collar.glb"
+      "model": "models/bell-collar.glb",
+      "place": { "up": -0.5, "forward": 0.8, "pitch": 10, "scale": 1.1 }
+    },
+    {
+      "id": "IceCollar",
+      "like": "Neck.DogCollar.1",
+      "name": "Ice Collar",
+      "description": "Clear as the river in leaf-bare.",
+      "opacity": 0.4,
+      "glass": "#bfe6ff"
     }
   ],
   "recipes": {
@@ -266,6 +275,8 @@ everything the game needs for a new item:
 | `icon` | An item to borrow the icon of (`"Rock"`), a texture of the game's, e.g. `"/Game/Art/UXD/Textures/gui_icons/gui_icons_inventory/T_UI_Icon_Flower_Marigold_D"` (`wcmods files "*gui_icons_inventory*"` lists them), a PNG in the mod's folder (`"icons/moon-herb.png"`), or a recolour (below) |
 | `texture` | Accessories: the new look, a recolour of the one it's `like` (`{"tint": "#a8c4ff"}`) or a PNG in the mod's folder. With a `model`, it can be left out: the model wears the look it's `like` |
 | `model` | Accessories: a shape of its own for this look, an OBJ or glTF file in the mod's folder (`"models/bell-collar.glb"`; below) |
+| `place` | Accessories: where its shape sits, moved, turned and scaled from where it was made (below): `forward`, `up` and `left` in cm, `yaw`, `pitch` and `roll` in degrees, and `scale`, one number or `{"forward", "up", "left"}`. Without a `model`, it places the accessory's own shape |
+| `opacity`, `glass` | Accessories: from 0 to 1, how much of it shows (1 by default). Below 1 the cat shows through it, and it's worn as glass of the `glass` colour (`"#bfe6ff"`, white by default) instead of its look (below) |
 | `effect` | Herbs: what using one does, one of the game's herb effects, such as `Gameplay.Effect.Consumable.Health.2` (+50 health). [items.md](mechanics/items.md) lists them |
 | `type`, `target` | Herbs: the effect's kind (`Health`, `Stamina`, `BuffStrength`, …), and who it's for: `Owner`, or `OwnerTeam` for your whole team |
 | `combat`, `exploring`, `fight_only` | Herbs: `true` or `false` for usable in fights, usable while exploring, and whether its effect ends with the fight |
@@ -325,7 +336,28 @@ Unreal Engine is needed:
   loader (UE4SS), which Get set up installs. Without it, the look shows on the game's shape.
 - **Limits:** up to 65,535 vertices; the game's accessories have a few hundred to a few thousand.
   Neck, body and paw accessories, as for looks. Models made for one accessory can be used as another
-  (a collar shape as a bracelet's look), but they're worn where they were made.
+  (a collar shape as a bracelet's look), but they're worn where they're placed.
+
+**Where it sits.** `"place"` moves, turns and scales a look's shape from where it was made, so a model
+made anywhere (or one of the game's shapes) can be put where it belongs. The Items page has sliders
+for it and draws the result on the cat as they move:
+
+| Place key | |
+|---|---|
+| `forward`, `up`, `left` | Centimetres toward the cat's head, up, and toward its left (negative the other way), up to 100 |
+| `yaw`, `pitch`, `roll` | Degrees: yaw turns its front toward the cat's left, pitch raises its front, roll lowers its left side |
+| `scale` | How many times as big, from 0.01 to 20: one number, or `{"forward": 1.2, "up": 1, "left": 0.8}` to stretch it |
+
+It's scaled and turned about its own middle (the middle of its bounds), then moved. The new place is
+made into the mesh at install, so the shape follows the bones and body shapes of the part of the cat
+it's moved to. Without a `model`, `place` moves the accessory's own shape (a copy of it for this look).
+
+**See-through.** `"opacity"` below 1 lets the cat show through an accessory, as much as it says.
+The game has no see-through material for cats that shows a picture: the accessory's own material is
+always solid, and the materials of the game that fade aren't made for skinned meshes (they show as a
+grey grid on one). So a see-through look is worn as the cats' own eye glass, in the colour `"glass"`
+says, and its picture doesn't show. The `WCModsModels` script puts the glass on (UE4SS), and the game's
+material comes back when the cat wears another look.
 
 What it can't do (yet):
 - **New effects:** each herb effect is one of the game's Blueprints, so a new herb does what one of

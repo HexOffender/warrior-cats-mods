@@ -3,14 +3,21 @@
 // and for an accessory its look (a picture) and its shape (a model of your own, OBJ or glTF).
 // They're real items in the game, everywhere, not only in Sandbox mode. See wcmods/sections/items.py.
 import { listEditor, field, itemChoices, itemSelect } from "../lib/story.js";
-import { shapeDrawing, asPng } from "../lib/shape.js";
+import { shapeDrawing, asPng, placeMesh } from "../lib/shape.js";
 
 const KIND = { consumable: "Herb", material: "Material", accessory: "Accessory" };
 const EDITED = new Set(["id", "kind", "like", "name", "description", "icon", "effect", "rarity", "group", "recipe", "give", "type",
-  "texture", "model"]);
+  "texture", "model", "place", "opacity", "glass"]);
 const SLOTS = { Neck: "Neck", Body: "Body", Legs: "Paw" };   // accessories that can take new looks; head ones can't
 const MODEL_FILES = ".obj,.glb,.gltf";
 const PICTURE_FILES = "image/png,image/jpeg,image/webp,image/gif,image/bmp";
+// Where an accessory sits ("place"): moves in cm, turns in degrees, sizes as a factor. The sliders' ranges;
+// the number boxes beside them take more, as far as items.json does.
+const MOVES = [["forward", "Forward / back", "cm toward the head (- toward the tail)"], ["up", "Up / down", "cm"],
+  ["left", "Left / right", "cm toward the cat's left"]];
+const TURNS = [["yaw", "Turn", "degrees, its front toward the cat's left"], ["pitch", "Tip", "degrees, its front up"],
+  ["roll", "Tilt", "degrees, its left side down"]];
+const STRETCH = [["forward", "Length"], ["up", "Height"], ["left", "Width"]];
 
 // "Moon Herb" -> "MoonHerb": an item's id is part of its tag, letters and digits.
 function itemId(name, taken) {
@@ -81,7 +88,8 @@ export default {
       for (const k of ["Consumable", "Materials"]) if (byTag.has(`Gameplay.Inventory.${k}.${short}`)) return `Gameplay.Inventory.${k}.${short}`;
       return null;
     }
-    const likeOf = it => byTag.get(fullTag(it.like)) || null;
+    // Functions, not consts: the first draw happens inside target.refresh(), above.
+    function likeOf(it) { return byTag.get(fullTag(it.like)) || null; }
     function tagOf(it) {
       if (kindOf(it) === "accessory") {
         const like = likeOf(it);
@@ -120,7 +128,7 @@ export default {
     async function modReady() {
       return target.mods.some(m => m.id === target.current) || await target.save();
     }
-    const modPath = (what, file) => `/mods/${encodeURIComponent(target.current)}/${what}/${encodeURIComponent(file.split("/").pop())}`;
+    function modPath(what, file) { return `/mods/${encodeURIComponent(target.current)}/${what}/${encodeURIComponent(file.split("/").pop())}`; }
 
     function drawItem(box, it, i) {
       const redraw = () => { clear(box); drawItem(box, it, i); };
@@ -304,7 +312,7 @@ export default {
       } },
       el("option", { value: "tint", text: `${like.name}'s look in another colour` }),
       el("option", { value: "own", text: "A picture of my own…" }),
-      it.model || mode === "like" ? el("option", { value: "like", text: `${like.name}'s look as it is` }) : null);
+      it.model || it.place || it.opacity !== undefined || mode === "like" ? el("option", { value: "like", text: `${like.name}'s look as it is` }) : null);
       sel.value = mode;
       const extra = el("div", { class: "row" });
       if (mode === "tint") {
@@ -315,16 +323,47 @@ export default {
         extra.append(el("span", { class: "muted mono", text: tex }), el("button", { class: "btn small", text: "Choose another…", onclick: () => picker.click() }));
       }
       extra.append(paintOver(fullTag(it.like), "look"));
+      // Opacity: below 100% it's worn as glass, as the game has no see-through material for cats with a picture.
+      const shown = Math.round((it.opacity ?? 1) * 100);
+      const glassNote = el("span", { class: "muted", style: { fontSize: "0.85rem" } });
+      const glass = el("input", { type: "color", value: it.glass || (tex && tex.tint) || "#ffffff", "aria-label": "Glass colour",
+        onchange: () => { it.glass = glass.value; changed(); } });
+      const glassRow = el("div", { class: "row" }, el("span", { class: "lbl", text: "Glass colour" }), glass, glassNote);
+      const opacity = el("input", { type: "range", min: "0", max: "100", step: "5", value: String(shown), "aria-label": "Opacity",
+        style: { flex: "1", minWidth: "140px" } });
+      const pct = el("span", { class: "mono", text: `${shown}%` });
+      const showGlass = () => {
+        glassRow.hidden = (it.opacity ?? 1) >= 1;
+        glassNote.textContent = "The cat shows through it: it's worn as glass of this colour, without its picture.";
+      };
+      opacity.addEventListener("input", () => {
+        const v = Number(opacity.value) / 100;
+        pct.textContent = `${opacity.value}%`;
+        if (v >= 1) { delete it.opacity; delete it.glass; } else { it.opacity = v; it.glass = it.glass || glass.value; }
+        showGlass();
+        changed();
+      });
+      opacity.addEventListener("change", () => redraw());
+      showGlass();
+      const see = el("div", { class: "stack" }, el("div", { class: "row" }, el("span", { class: "lbl", text: "Opacity" }), opacity, pct), glassRow,
+        el("p", { class: "note", text: "100% shows its look. Below that the cat shows through it, as glass in one colour: the game has no see-through material for cats that shows a picture." }));
       return el("div", { class: "card" }, el("h3", { text: "Look" }),
         el("p", { class: "note", text: "The picture on it, wrapped around its shape. A picture of your own is painted over the game's (save it below): its colours land where the game's do on the shape, or on a model of your own through its UVs. PNG, JPEG or WebP; a see-through background stays see-through only as PNG." }),
         el("div", { class: "cat-head" }, el("div", { class: "icon-box" }, preview),
-          el("div", { class: "stack", style: { flex: "1", minWidth: "220px" } }, field("Look", sel), extra)), picker);
+          el("div", { class: "stack", style: { flex: "1", minWidth: "220px" } }, field("Look", sel), extra)), see, picker);
     }
 
-    // ---------- an accessory's shape: its own, or a model of the mod's ----------
+    // ---------- an accessory's shape: its own, or a model of the mod's; and where it sits ----------
     function shapeCard(it, like, redraw) {
       const drawing = shapeDrawing();
       const facts = el("p", { class: "muted", style: { fontSize: "0.9rem" } });
+      let view = null, model = null;
+      const paint = () => {
+        if (!view) return;
+        const base = model || (it.place ? view.accessory : null);
+        drawing.draw({ cat: view.cat, accessory: view.accessory, model: base ? placeMesh(base, it.place) : null,
+          opacity: it.opacity ?? 1, glass: it.glass });
+      };
       const picker = el("input", { type: "file", accept: MODEL_FILES, hidden: true, onchange: async () => {
         const f = picker.files[0];
         picker.value = "";
@@ -336,14 +375,15 @@ export default {
             f, "application/octet-stream");
           it.model = r.path;
           toast(`Added ${f.name}: ${r.vertices} vertices, ${r.triangles} triangles, ${r.size_cm.join(" x ")} cm.` +
-            (r.farthest_cm > 25 ? " It's far from the cat: models are in metres, around the cat of the start kit." : ""), r.farthest_cm > 25 ? "bad" : "info");
+            (r.farthest_cm > 25 ? " It's far from the cat: models are in metres, around the cat of the start kit (or move it into place below)." : ""),
+            r.farthest_cm > 25 ? "bad" : "info");
           changed(); redraw();
         } catch (e) { toast(e.message, "bad"); }
       } });
       const sel = el("select", { "aria-label": "Shape", onchange: () => {
         if (sel.value === "like") {
           delete it.model;
-          if (!it.texture) it.texture = { tint: "#a8c4ff" };    // a new look needs a picture of its own then
+          if (!it.texture && it.opacity === undefined) it.texture = { tint: "#a8c4ff" };   // a new look needs something of its own
           changed(); redraw();
         } else { picker.click(); sel.value = it.model ? "own" : "like"; }
       } },
@@ -362,22 +402,74 @@ export default {
       row.append(kit);
       (async () => {
         try {
-          const view = await api.get(`/game/accessory?of=${encodeURIComponent(like.short)}`);
-          let model = null;
+          view = await api.get(`/game/accessory?of=${encodeURIComponent(like.short)}`);
           if (it.model) {
             try {
               model = await api.get(`/mods/${encodeURIComponent(target.current)}/model-view?path=${encodeURIComponent(it.model)}`);
               facts.textContent = `${model.vertices} vertices, ${model.triangles} triangles, ${model.size_cm.join(" x ")} cm; ` +
-                (model.farthest_cm > 25 ? `part of it is ${model.farthest_cm} cm from the cat: is it in metres, around the cat of the start kit?`
-                  : `at most ${model.farthest_cm} cm from the cat.`);
+                (model.farthest_cm > 25 ? `part of it is ${model.farthest_cm} cm from the cat as it's made: move it into place below, or check it's in metres.`
+                  : `at most ${model.farthest_cm} cm from the cat as it's made.`);
             } catch (e) { facts.textContent = `Couldn't read ${it.model}: ${e.message}`; }
           } else facts.textContent = `${like.name} as the game has it. A model of your own takes its place for this look only.`;
-          drawing.draw({ cat: view.cat, accessory: view.accessory, model });
+          paint();
         } catch (e) { facts.textContent = `Couldn't draw it: ${e.message}`; }
       })();
-      return el("div", { class: "card" }, el("h3", { text: "Shape" }),
-        el("p", { class: "note", text: "A model of your own, made in Blender or any 3D program and saved as OBJ or glTF (.glb). Make it around the cat of the start kit, in metres with Y up (the programs' usual settings): wherever it sits, it follows the nearest part of the cat as it moves, and grows and slims with the cat's build. Its look is the picture above, through the model's UVs. The game needs the script loader (UE4SS) for this." }),
-        field("Shape", sel), row, drawing.element, facts, picker);
+      return el("div", { class: "card" }, el("h3", { text: "Shape and place" }),
+        el("p", { class: "note", text: "A model of your own, made in Blender or any 3D program and saved as OBJ or glTF (.glb). Make it around the cat of the start kit, in metres with Y up (the programs' usual settings), or anywhere and move it into place here: wherever it sits, it follows the nearest part of the cat as it moves, and grows and slims with the cat's build. Its look is the picture above, through the model's UVs. The game needs the script loader (UE4SS) for this." }),
+        field("Shape", sel), row, drawing.element, facts, placeControls(it, paint), picker);
+    }
+
+    // Sliders (with number boxes) for where it sits: moved, turned, sized and stretched. The drawing above
+    // follows them as they move; the game gets it at the next Apply.
+    function placeControls(it, paint) {
+      const box = el("div", { class: "stack" });
+      const get = () => it.place || {};
+      // The size sliders' own values: one size for all of it, and a stretch each way. items.json keeps a
+      // number when nothing's stretched, else each way's size (the size times its stretch).
+      let size = 1, stretch = { forward: 1, up: 1, left: 1 };
+      const readScale = () => {
+        const s = get().scale;
+        size = typeof s === "number" ? s : 1;
+        stretch = Object.fromEntries(STRETCH.map(([a]) => [a, typeof s === "object" && s ? s[a] ?? 1 : 1]));
+      };
+      const set = (key, value, neutral) => {
+        const place = { ...get() };
+        if (value === neutral) delete place[key]; else place[key] = value;
+        if (Object.keys(place).length) it.place = place; else delete it.place;
+        changed();
+        paint();
+      };
+      const setScale = (axis, v) => {
+        if (axis === "size") size = v; else stretch[axis] = v;
+        const round = x => Math.round(x * 1000) / 1000;
+        const stretched = STRETCH.some(([a]) => round(stretch[a]) !== 1);
+        set("scale", stretched ? Object.fromEntries(STRETCH.map(([a]) => [a, round(size * stretch[a])])) : round(size), 1);
+      };
+      function slider(label, hint, value, min, max, step, onInput, aria) {
+        const range = el("input", { type: "range", min: String(min), max: String(max), step: String(step), value: String(value),
+          "aria-label": aria || label, style: { width: "100%" } });
+        const num = el("input", { type: "number", step: String(step), value: String(value), "aria-label": `${aria || label} (number)`, style: { width: "100%" } });
+        range.addEventListener("input", () => { num.value = range.value; onInput(Number(range.value)); });
+        num.addEventListener("change", () => { const v = Number(num.value); if (Number.isFinite(v)) { range.value = String(v); onInput(v); } });
+        return el("div", { style: { display: "grid", gridTemplateColumns: "8.5em minmax(100px, 1fr) 5.5em minmax(0, 16em)", gap: "4px 10px", alignItems: "center" } },
+          el("span", { class: "lbl", text: label }), range, num, el("span", { class: "muted", style: { fontSize: "0.85rem" }, text: hint || "" }));
+      }
+      const draw = () => {
+        clear(box);
+        const place = get();
+        readScale();
+        box.append(el("h4", { text: "Where it sits", style: { margin: "6px 0 0" } }));
+        for (const [key, label, hint] of MOVES) box.append(slider(label, hint, place[key] ?? 0, -25, 25, 0.1, v => set(key, Math.round(v * 100) / 100, 0)));
+        for (const [key, label, hint] of TURNS) box.append(slider(label, hint, place[key] ?? 0, -180, 180, 1, v => set(key, Math.round(v * 10) / 10, 0)));
+        box.append(slider("Size", "times as big", size, 0.2, 4, 0.01, v => setScale("size", v)));
+        for (const [axis, label] of STRETCH) {
+          box.append(slider(`Stretch: ${label.toLowerCase()}`, null, stretch[axis], 0.2, 4, 0.01, v => setScale(axis, v), `Stretch ${label}`));
+        }
+        box.append(el("div", { class: "row" }, el("button", { class: "btn ghost small", text: "Put it back where it was made",
+          onclick: () => { delete it.place; changed(); paint(); draw(); } })));
+      };
+      draw();
+      return box;
     }
 
     // ---------- the medicine cat's recipe: materials and how many ----------

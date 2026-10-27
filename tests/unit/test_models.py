@@ -215,9 +215,46 @@ def test_a_model_takes_the_weights_and_morphs_of_the_skin_under_it():
 
 # ------------------------------------------------------------------------------- the items section
 def test_the_models_script_knows_each_look():
-    lua = models.script({"Neck": {"DogCollar": {3: "/Game/WCMods/m/SK_A.SK_A"}}})
+    lua = models.script({"Neck": {"DogCollar": {3: {"mesh": "/Game/WCMods/m/SK_A.SK_A"},
+                                                4: {"opacity": 0.5, "glass": [1.0, 0.5, 0.25]}}}})
     assert not luacheck.check(lua) and "@MODELS@" not in lua
-    assert '["Neck"] = { ["DogCollar"] = { ["3"] = "/Game/WCMods/m/SK_A.SK_A" } }' in lua
+    assert '["3"] = { ["mesh"] = "/Game/WCMods/m/SK_A.SK_A" }' in lua
+    assert '["4"] = { ["opacity"] = 0.5, ["glass"] = { 1.0, 0.5, 0.25 } }' in lua
+
+
+# ------------------------------------------------------------------------------------------------ placing
+def square():
+    """A 2 x 2 cm square around (0, 10, 20), facing the cat's front."""
+    return models.Model([(-1.0, 10.0, 19.0), (1.0, 10.0, 19.0), (1.0, 10.0, 21.0), (-1.0, 10.0, 21.0)],
+                        [(0.0, 1.0, 0.0)] * 4, [(0, 0), (1, 0), (1, 1), (0, 1)], [(0, 1, 2), (0, 2, 3)])
+
+
+def test_placing_moves_turns_and_scales_about_the_middle():
+    m = square()
+    moved = models.place(m, {"forward": 2, "up": -1, "left": 0.5})
+    assert close(moved.positions[0], (-0.5, 12.0, 18.0)) and moved.triangles == m.triangles
+    bigger = models.place(m, {"scale": 2})
+    assert close(bigger.positions[0], (-2.0, 10.0, 18.0)) and close(bigger.normals[0], (0.0, 1.0, 0.0))
+    # Yaw turns its front toward the cat's left (+X), pitch raises it, roll lowers the left side.
+    assert close(models.place(m, {"yaw": 90}).normals[0], (1.0, 0.0, 0.0))
+    assert close(models.place(m, {"pitch": 90}).normals[0], (0.0, 0.0, 1.0))
+    rolled = models.place(m, {"roll": 90})
+    assert close(rolled.positions[2], (1.0, 10.0, 19.0))           # its top corner on the left goes down
+    # Stretched one way, its normals stay square to the face.
+    tall = models.place(models.Model([(0, 0, 0), (1, 0, 1), (0, 1, 0)], [models._unit((-1.0, 0.0, 1.0))] * 3,
+                                     [(0, 0)] * 3, [(0, 1, 2)]), {"scale": {"up": 2}})
+    a, b, c = tall.positions
+    edge = [b[k] - a[k] for k in range(3)]
+    assert abs(sum(edge[k] * tall.normals[0][k] for k in range(3))) < 1e-9
+    assert models.place(m, None) is m and models.place(m, {}) is m
+
+
+@pytest.mark.parametrize("place, message", [
+    ({"up": "a lot"}, "up should be a number"), ({"forward": 500}, "-100 to 100"), ({"spin": 3}, "unknown"),
+    ({"scale": 0}, "scale should be"), ({"scale": {"tall": 2}}, "forward, up and left"), ([1, 2], "an object")])
+def test_places_that_cant_be_used_are_refused(place, message):
+    with pytest.raises(ValueError, match=message):
+        models.check_place(place, "items.json: item 1")
 
 
 def test_items_json_model_must_be_a_model_file(tmp_path):
@@ -226,6 +263,12 @@ def test_items_json_model_must_be_a_model_file(tmp_path):
                                                                 "description": "a", "model": "models/a.fbx"}]}))
     with pytest.raises(ValueError, match="model file"):
         ItemsSection().collect(mod, None)
+    for extra, message in (({"opacity": 1.5}, "from 0"), ({"opacity": 0.5, "glass": "glassy"}, "colour like"),
+                           ({"place": {"up": True}}, "up should be a number")):
+        (tmp_path / "items.json").write_text(json.dumps({"items": [dict(
+            {"id": "A", "like": "Neck.DogCollar.1", "name": "a", "description": "a"}, **extra)]}))
+        with pytest.raises(ValueError, match=message):
+            ItemsSection().collect(mod, None)
     outside = ModelFile("../elsewhere/a.obj")
     with pytest.raises(ValueError, match="own folder"):
         outside.read(mod)

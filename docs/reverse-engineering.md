@@ -890,6 +890,30 @@ Worked out on 2026-10-24 and verified in game with a new herb and a new material
     accessories again, so a script has to put the model back after the game does.
   - UE4SS's `LoadAsset` can't load a mod's mesh (it isn't in the asset registry);
     `KismetSystemLibrary:LoadAsset_Blocking` with a soft reference made from the path can.
+  - An accessory slot that's empty in `CustomData` is hidden again within a second (`SetHiddenInGame`),
+    so a test that puts a mesh on one has to clear that over and over.
+  - Changing look (DogCollar look 3 to look 1, in the inventory) sets the slot's mesh and a new
+    `MaterialInstanceDynamic` of the accessory's material with the look's `LYR1 Albedo`, so nothing a
+    script put on the slot for the old look is left. Taking it off hides the slot and leaves its mesh.
+  - Calling anything on a null object from Lua crashes the game (EXCEPTION_ACCESS_VIOLATION reading
+    0x10 or 0x18, the class and name of a UObject): check `IsValid()` on what `GetMaterial`,
+    `K2_GetTextureParameterValue` and the like return first.
+- **Materials and see-through accessories** (2026-10-27):
+  - Every accessory's material is an instance of `M_Characters_NPC` (three head wreaths:
+    `M_EnvPropMasksMaster_GPE_Foliage`). Its parameters are the look (`LYR1 Albedo`, `LYR1 ARM`,
+    `LYR1 Normal`), emissive, UV and wind settings: no opacity. About half the instances carry
+    shaders of their own (87 KB), the rest use the master's (1 to 1.3 KB).
+  - A material the game didn't cook for skinned meshes shows as the engine's grey default on an
+    accessory: `M_VFX_PropsMaster`, `M_Blockmesh` and the Interchange glTF materials
+    (`/InterchangeAssets/gltf/MaterialInstances/MI_Default_Blend`) all did, whatever their
+    parameters said. A "GPUSkin" string in a material's package doesn't mean it was.
+  - Of the materials made for cats, `M_Characters_Enemies` (the animals') showed the collar's picture
+    properly, but none cut out a picture's see-through parts: a PNG loaded at runtime
+    (`KismetRenderingLibrary:ImportFileAsTexture2D`) with clear stripes showed them solid on it, on
+    `MI_ANeck_DogCollar` and on `MI_ABody_PineNeedles`; its `LYR1 Opacity Mask Intensity` changed
+    nothing. The cats' eye glass (`MI_Cat_Cornea`, parent `M_Character_Eyes_Cornea`) is see-through
+    on an accessory: `Glass Opacity` and `Glass Color` set how much and its colour, with no picture.
+    That's what a see-through look is worn in.
 - **Bartering** shows an accessory you already have as an empty slot: the Cedar Cuff's went blank
   once one was picked up, and a mod's new look does the same.
 - **Take care:** picking up an item with an invalid accessory tag (`Cosmetic.Head.1`) got it into
