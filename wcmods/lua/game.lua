@@ -1666,6 +1666,8 @@ local function promptWidget(h)
         slot:SetAlignment({ X = 0.5, Y = 0.5 })
         slot:SetAnchors({ Minimum = { X = 0, Y = 0 }, Maximum = { X = 0, Y = 0 } })
         made.mcGuiButtonAction.ActionCommand = INTERACT_COMMAND
+        -- The game puts the key's picture on a prompt when it sets one up; made here, it needs asking.
+        pcall(function() made.mcGuiButtonAction:OnSetupInputs() end)
         prompt.slot = slot
         return made
     end)

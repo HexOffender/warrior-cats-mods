@@ -137,6 +137,7 @@ Start). The build checks the names. Two things carry the remaps out (the README,
   when it comes from the old key, which keeps its other jobs (Space still confirms dialogue when Pounce
   moves). A key that takes an action stops doing its own action, and the build warns. Other scripts read
   where an action is now from the shared variable `WCModsRemap.<action>` (its keys, comma-separated).
+  The game's pictures of keys (prompts, menu footers, the Controls tab) show the new keys too.
 - **The old key remapper outside the game** (`python wcmods.py play`, deprecated) is the only way to the
   rest, keyboard and mouse only, when you start the game with it: movement and the camera (axes the game reads every frame), `keys` entries for them or for keys
   that send nothing, and mouse buttons in `menus`. Remapping Escape (or Enter, Space, Backspace, Tab)

@@ -99,7 +99,6 @@ folders. `python wcmods.py selftest` checks, against your install:
 - Interact on F opened the travel map at a tunnel, and E did nothing there.
 - Run on G: S+G for 2 s went 361 units, walking 256; LeftShift no longer ran.
 - Scent tracking on the middle mouse button (posted to the window) turned it on; Q did nothing.
-- The pause screen's Controls tab opened as before, showing the game's own keys.
 - In the map, E still toggled the legend.
 - Map on N: N opened the map and closed it again from inside it; M did neither.
 - `Game.npcs.interactKeys()` gave F, the pad's A and the left mouse button.
@@ -123,6 +122,15 @@ folders. `python wcmods.py selftest` checks, against your install:
 - In a fight (pounced on a rogue cat): the same menu keys moved through Attack, Rest, Herbs and Flee, U
   opened the moves and used Provoking Stare (it hit), and O went back. Every key sent the same commands
   as while exploring.
+- **Key pictures** (a test mod with Interact on F, G standing for C while you play, and Escape for
+  Backspace in menus):
+  - the Travel prompt at a tunnel showed F in keyboard mode, and the pad's X in the game's gamepad mode
+    (Interact moved only on the keyboard); after teleporting away and back it still showed F;
+  - the Talk prompt for the sandbox's studio cat showed F (before this, wcmods' own prompt showed a
+    blank circle, as nothing set its picture up);
+  - the pause screen's footer showed Escape for Back and Enter for Confirm; the tab keys kept 1 and 2;
+  - the Controls tab showed F for Interact and G for Drop; Pause and the rest kept the game's keys;
+  - the script set each picture once (its debug log), so nothing fought over them.
 
 ## Not yet confirmed in game
 

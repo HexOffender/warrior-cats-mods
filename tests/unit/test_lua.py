@@ -124,6 +124,15 @@ def test_in_game_remap_plan():
     assert plan["keys"]["Player_Crouch"] == ["LeftControl", "RightControl", "RightMouseButton"]
     assert rest == {"keyboard": {"Player_Movement_Up": "K"}, "keys": {"I": "W"}}
     assert len(warns) == 2 and "Player_Crouch is on Gamepad_LeftTrigger" in warns[0] and "Player_Play is on J" in warns[1]
+    # The game's key pictures show the new keys: a command can have one for each device, and the menu
+    # pair's commands show Escape in menus only.
+    icons = plan["icons"]
+    assert icons["play"]["Player_Interact"] == ["F"] and icons["play"]["Player_Run"] == ["Gamepad_LeftTrigger"]
+    assert icons["play"]["Player_Drop"] == ["J"] and "Button_Back" not in icons["play"]
+    assert icons["menu"]["Button_Back"] == ["Escape"] and "Player_Drop" not in icons["menu"]
+    assert keymap.native_plan({"keyboard": {"Player_Interact": "F"}, "gamepad": {"Player_Interact": "Y"},
+                               "keys": {"H": "E"}})[0]["icons"]["play"]["Player_Interact"] == [
+        "F", "Gamepad_FaceButton_Top", "H"]   # moves first, then keys standing for others
 
 
 def test_in_game_menu_keys_and_any_command():
@@ -163,6 +172,8 @@ def test_in_game_remap_script():
     assert not problems(lua)
     assert '["play"] = { ["send"] = { ["F"] = { "Player_Interact" } }, ["drop"] = { ["Player_Interact"] = { "E" } } }' in lua
     assert '["I"] = { "Button_Up" }' in lua
+    assert '["icons"] = { ["play"] = { ["Player_Interact"] = { "F" } }' in lua
+    assert "NotifyOnNewObject" in lua and "mcGuiButtonImage" in lua
 
 
 def test_key_remapper_gets_only_what_the_game_cant_do(tmp_path):
