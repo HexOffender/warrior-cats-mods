@@ -208,7 +208,8 @@ has what was found). So wcmods remaps while the game runs. Set your keys on the 
 | The controller's sticks | **Steam Input** (in Steam, right-click the game, then Properties, Controller) |
 | Anything, without UE4SS | **the key remapper**, for keyboard and mouse |
 
-**Inside the game.** The `WCModsRemap` script is installed with your mods whenever they move an action.
+**Inside the game.** The `WCModsRemap` script is installed with your mods whenever they move an action,
+with "Allow mods that run code" on or off (it's wcmods' own script, like mouse look's).
 The new key does the action, in play and in the game's screens, and the old key stops doing it but keeps
 its other jobs: with Interact on F, E still shows info on the map, and with Pounce moved off Space,
 Space still confirms dialogue. A key that takes an action stops doing its own (with Interact on Q,

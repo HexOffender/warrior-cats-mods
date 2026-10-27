@@ -104,6 +104,8 @@ folders. `python wcmods.py selftest` checks, against your install:
 - Map on N: N opened the map and closed it again from inside it; M did neither.
 - `Game.npcs.interactKeys()` gave F, the pad's A and the left mouse button.
 - With the script installed, the key remapper was left only the movement remap (T for W).
+- With "allow_code_mods" off (no bridge, no script mods), the build still put `WCModsRemap` in, and the
+  game started from Steam had Interact on F, Map on N and Scent tracking on the middle button.
 
 ## Not yet confirmed in game
 
