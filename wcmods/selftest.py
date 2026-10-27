@@ -1,4 +1,5 @@
 """Round-trip checks against the installed game and save. Writes only to a temp folder."""
+import math
 import os
 import re
 import struct
@@ -173,9 +174,12 @@ def run(cfg, oodle, log=print):
     ok, detail = _accessory_looks(io)
     check("accessory looks: the game's lists read, new looks and their tags added, the rest as it was",
           ok, detail)
+    ok, detail = _skeletal_meshes(io)
+    check("accessory models: every accessory's mesh and the cat's read and written back the same, and a model "
+          "through OBJ into a copy tied to the cat", ok, detail)
     ok, detail = _items_section(cfg)
     check("new items (items.json): tag, herb row, item table row, recipe, starting count, a game item's "
-          "recipe, icons and an accessory's look of a mod's own; mistakes refused",
+          "recipe, icons, an accessory's look, model, place and glass of a mod's own; mistakes refused",
           ok, detail)
 
     from .formats import csvdata
@@ -498,7 +502,11 @@ def _items_section(cfg):
         {"id": "WCModsTestPicture", "like": "SmallHealingHerb", "name": "Test Picture", "description": "Its own icon.",
          "icon": "icons/test.png"},
         {"id": "WCModsTestCollar", "like": "Neck.DogCollar.1", "name": "Test Collar", "description": "Blue.",
-         "texture": {"tint": "#a8c4ff"}, "recipe": {"Bone": 1}}],
+         "texture": {"tint": "#a8c4ff"}, "recipe": {"Bone": 1}},
+        {"id": "WCModsTestRing", "like": "Neck.DogCollar.1", "name": "Test Ring", "description": "Its own shape.",
+         "model": "models/ring.obj"},
+        {"id": "WCModsTestGlass", "like": "Neck.DogCollar.1", "name": "Test Glass", "description": "Lower, bigger, glass.",
+         "place": {"up": -1.5, "pitch": 10, "scale": 1.2}, "opacity": 0.5, "glass": "#a8e0ff"}],
         "recipes": {"Cosmetic.Head.MossPatch.1": {"Moss": 3, "WCModsTestStone": 1}}}
     bad = {"items": [
         {"id": "SmallCatnip", "kind": "consumable", "name": "Again", "description": "x", "like": "SmallCatnip"},
@@ -508,16 +516,21 @@ def _items_section(cfg):
         {"id": "WCModsHat", "like": "Head.BigLeaf.1", "name": "x", "description": "x", "texture": {"tint": "#ffffff"}},
         {"id": "WCModsShiny", "like": "SmallHealingHerb", "name": "x", "description": "x", "texture": {"tint": "#ffffff"}},
         {"id": "WCModsLost", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": "missing.png"},
-        {"id": "WCModsOut", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": "../good/icons/test.png"}],
+        {"id": "WCModsOut", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": "../good/icons/test.png"},
+        {"id": "WCModsShaped", "like": "SmallHealingHerb", "name": "x", "description": "x", "model": "ring.obj"},
+        {"id": "WCModsNoRing", "like": "Neck.DogCollar.1", "name": "x", "description": "x", "model": "models/none.glb"},
+        {"id": "WCModsSeeHerb", "like": "SmallHealingHerb", "name": "x", "description": "x", "opacity": 0.5}],
         "recipes": {"Cosmetic.Head.NoSuchHat.1": {"Moss": 1}}}
     colour = (200, 60, 160, 255)
     picture = png.write(32, 32, bytes(colour) * 1024)
+    ring = _ring_obj(cfg)
     with tempfile.TemporaryDirectory() as tmp:
         typo = {"items": [{"id": "WCModsTypo", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": 5}]}
         tint = {"items": [{"id": "WCModsBlue", "like": "SmallHealingHerb", "name": "x", "description": "x",
                            "icon": {"tint": "blue"}}]}
         root = _mods_folder(tmp, {"good": ({"name": "Good", "enabled": True},
-                                           {"items.json": json.dumps(good), "icons/test.png": picture}),
+                                           {"items.json": json.dumps(good), "icons/test.png": picture,
+                                            "models/ring.obj": ring}),
                                   "bad": ({"name": "Bad", "enabled": True}, {"items.json": json.dumps(bad)}),
                                   "typo": ({"name": "Typo", "enabled": True}, {"items.json": json.dumps(typo)}),
                                   "tint": ({"name": "Tint", "enabled": True}, {"items.json": json.dumps(tint)})},
@@ -534,18 +547,22 @@ def _items_section(cfg):
         gave = ((len(given) == 1 and given[0]["value"] == 2 and given[0].get("only_new")) if has_save else
                 any("no save yet" in w for w in out["warnings"]))
         rep = out["sections"]["items"]
+        ring_tag = f"Gameplay.Inventory.Cosmetic.Neck.DogCollar.{len(looks['DogCollar']) + 2}"
+        glass_tag = f"Gameplay.Inventory.Cosmetic.Neck.DogCollar.{len(looks['DogCollar']) + 3}"
         ok = gave and (rep["status"] == "partial" and any("typo" in e and "should be text" in e for e in rep["errors"])
               and any("tint" in e and "colour like" in e for e in rep["errors"])
               and sorted(r["row"] for r in rows) == sorted([
                   "WCMods_Consumable_WCModsTestHerb", "WCMods_Materials_WCModsTestHerb",
                   "WCMods_Materials_WCModsTestStone", "WCMods_Consumable_WCModsTestPicture",
-                  "WCMods_" + collar[len("Gameplay.Inventory."):].replace(".", "_")]) and len(use) == 2
+                  "WCMods_" + collar[len("Gameplay.Inventory."):].replace(".", "_"),
+                  "WCMods_" + ring_tag[len("Gameplay.Inventory."):].replace(".", "_"),
+                  "WCMods_" + glass_tag[len("Gameplay.Inventory."):].replace(".", "_")]) and len(use) == 2
               and sorted(c["row"] for c in recipe) == sorted(["Gameplay.Inventory.Consumable.WCModsTestHerb", collar,
                                                               "Gameplay.Inventory.Cosmetic.Head.MossPatch.1"])
-              and "Wrc/Config/Tags/WCModsItems.ini" in out["files"] and len(warned) == 9
+              and "Wrc/Config/Tags/WCModsItems.ini" in out["files"] and len(warned) == 12
               and all(any(s in w for w in warned) for s in ('needs "like"', "first look", "only accessories",
-                                                             "no picture", "own folder"))
-              and "zzz_WCMods_P.utoc" in out["outputs"])
+                                                             "no picture", "own folder", 'take a "model"', "no model"))
+              and "zzz_WCMods_P.utoc" in out["outputs"] and "WCModsModels" in out["ue4ss_mods"])
         # What went into wcmods' container: the new textures (the look with its .ubulk), the look in the
         # game's list, and the icons in the item table.
         made = IoStoreReader(os.path.join(tmp, "out", "zzz_WCMods_P.utoc"))
@@ -555,15 +572,94 @@ def _items_section(cfg):
         packed = (ok and all(texture.content_path(p) in made.files for p in (look, icon, stone))
                   and texture.content_path(look)[:-len(".uasset")] + ".ubulk" in made.files)
         if packed:
-            from .formats import cooked
+            from . import models
+            from .formats import cooked, skelmesh
             worn = accessories.read_variations(made.read_file(accessories.GUI_MANAGER))
             path, schema = cooked.TABLES["DT_QuestObjectsInfo"]
             table = {v["itemTag"]: v for _, v in cooked.DataTable(made.read_file(path), schema).rows}
             pixels = texture.Texture(made.read_file(texture.content_path(icon))).image(0)[2]
-            packed = (worn["DogCollar"] == looks["DogCollar"] + [look + ".T_WCModsTestCollar_BC"]
+            # The ring: the Dog Collar's mesh with the model in it, worn with the collar's own look, and the
+            # script that puts it on a cat knowing which look it is.
+            mesh = skelmesh.SkeletalMesh(made.read_file(texture.content_path("/Game/WCMods/good/SK_WCModsTestRing")))
+            model = models.read("ring.obj", ring.encode())
+            with open(os.path.join(tmp, "out", "ue4ss", "WCModsModels", "Scripts", "main.lua"), encoding="utf-8") as f:
+                lua = f.read()
+            ring_path = "/Game/WCMods/good/SK_WCModsTestRing.SK_WCModsTestRing"
+            # The glass one: the Dog Collar's own shape placed lower and bigger, worn as glass of its colour.
+            glass = skelmesh.SkeletalMesh(made.read_file(texture.content_path("/Game/WCMods/good/SK_WCModsTestGlass")))
+            game = GameFiles(cfg)
+            collar = skelmesh.SkeletalMesh(game.read(texture.content_path(
+                accessories.read_meshes(game.read(accessories.GUI_MANAGER))["DogCollar"].split(".", 1)[0])))
+            placed = models.place(models.from_mesh(collar), {"up": -1.5, "pitch": 10, "scale": 1.2})
+            where = all(math.dist(a, b) < 1e-3 for a, b in zip(glass.lods[0].positions, placed.positions))
+            n = len(looks["DogCollar"])
+            packed = (worn["DogCollar"] == looks["DogCollar"] + [look + ".T_WCModsTestCollar_BC", looks["DogCollar"][0],
+                                                                 looks["DogCollar"][0]]
                       and table["Gameplay.Inventory.Consumable.WCModsTestPicture"]["Icon"]["package"] == icon
-                      and all(abs(a - b) <= 4 for a, b in zip(pixels[:4], colour)))
+                      and all(abs(a - b) <= 4 for a, b in zip(pixels[:4], colour))
+                      and all(L.vertex_count == len(model.positions) for L in mesh.lods)
+                      and mesh.export_names[mesh.main] == "SK_WCModsTestRing"
+                      and all(len(m) > 0 for m in mesh.lods[0].morphs)
+                      and f'["{n + 2}"] = {{ ["mesh"] = "{ring_path}" }}' in lua
+                      and f'["{n + 3}"] = {{ ["mesh"] = "/Game/WCMods/good/SK_WCModsTestGlass.SK_WCModsTestGlass", '
+                          '["opacity"] = 0.5, ["glass"] = { 0.3916, 0.7454, 1.0 } }' in lua
+                      and glass.lods[0].vertex_count == collar.lods[0].vertex_count and where
+                      and not luacheck.check(lua))
         return ok and packed, f"{len(rows)} rows, {len(warned)} refused" + ("" if ok else f"; {out['warnings']}")
+
+
+def _ring_obj(cfg):
+    """A model for a test: the Dog Collar's own shape, a fifth bigger, as an OBJ file (models.write_obj)."""
+    from . import accessories, models
+    from .formats import skelmesh, texture
+    from .gamefiles import GameFiles
+    game = GameFiles(cfg)
+    path = accessories.read_meshes(game.read(accessories.GUI_MANAGER))["DogCollar"].split(".", 1)[0]
+    mesh = skelmesh.SkeletalMesh(game.read(texture.content_path(path)))
+    geo = mesh.geometry(0)
+    o = mesh.bounds[:3]
+    geo["positions"] = [tuple(o[c] + (p[c] - o[c]) * 1.2 for c in range(3)) for p in geo["positions"]]
+    return models.write_obj("ring", geo)
+
+
+def _skeletal_meshes(io):
+    """Every accessory's mesh and the cat's body read and written back byte for byte (their morph data
+    re-encoded), the GUI manager's model for every accessory with looks, and a model through OBJ into a copy."""
+    from . import accessories, models
+    from .formats import skelmesh, texture
+    gui = io.read_file(accessories.GUI_MANAGER)
+    meshes, looks = accessories.read_meshes(gui), accessories.read_variations(gui)
+    paths = sorted({p.split(".", 1)[0] for p in meshes.values()}) + [models.BODY]
+    bad = []
+    for p in paths:
+        data = io.read_file(texture.content_path(p))
+        try:
+            if skelmesh.SkeletalMesh(data).bytes() != data:
+                bad.append(p.rsplit("/", 1)[-1])
+        except ValueError as e:
+            bad.append(f"{p.rsplit('/', 1)[-1]} ({e})")
+    mesh = skelmesh.SkeletalMesh(io.read_file(texture.content_path(meshes["DogCollar"].split(".", 1)[0])))
+    geo = mesh.geometry(0)
+    model = models.read("collar.obj", models.write_obj("collar", geo).encode())
+    # The same triangles in the same places (a read joins vertices that are alike in every way).
+    same = len(model.triangles) == len(geo["triangles"]) and all(
+        math.dist(model.positions[i], geo["positions"][j]) < 1e-3
+        for t, u in zip(model.triangles, geo["triangles"]) for i, j in zip(t, u))
+    body = models.Body(type("Game", (), {"read": staticmethod(io.read_file)})())
+    shaped, farthest = models.mesh_model(model, body.skin(mesh.morph_names))
+    mesh.set_geometry(shaped)
+    mesh.rename("/Game/WCMods/t/SK_Test", "SK_Test")
+    back = skelmesh.SkeletalMesh(mesh.bytes())
+    copied = (back.lods[0].vertex_count == len(model.positions) and back.export_names[back.main] == "SK_Test"
+              and back.morph_names == mesh.morph_names and farthest < 3)
+    detail = f"{len(paths)} meshes"
+    if bad:
+        detail += f"; differ: {bad[:4]}"
+    if not same:
+        detail += "; OBJ round trip differs"
+    if not copied:
+        detail += f"; the copy didn't read back (farthest {farthest:.1f} cm)"
+    return not bad and set(meshes) >= set(looks) and same and copied, detail
 
 
 def _script_mod(cfg):

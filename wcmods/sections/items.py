@@ -27,7 +27,13 @@ An item needs four things in the game, and this section writes them all:
 A picture of the mod's own ("icon" or an accessory's "texture", a PNG), or one of the game's in other
 colours ({"from": ..., "tint": "#a8c4ff"}, made from the player's own game files), becomes a new
 texture, a copy of one of the game's (texture.py, recolor.py). An accessory's new look goes into the
-game's list of its looks, in the GUI manager Blueprint (accessories.py).
+game's list of its looks, in the GUI manager Blueprint (accessories.py). An accessory's "model" (an OBJ
+or glTF file in the mod's folder) gives that look a shape of its own: a copy of the accessory's mesh
+with the model in it, tied to the cat's body (models.py, formats/skelmesh.py), which the in-game script
+WCModsModels puts on any cat wearing the look. "place" moves, turns and scales that shape (or the
+accessory's own, as a copy) where it sits on the cat. "opacity" below 1 lets the cat show through it: the
+script wears it in the cats' eye glass then, in its "glass" colour, as no see-through material the game
+has for cats shows a picture.
 
 "like" names a game item to start from (its effect, when it can be used, icon and icon group); the
 item's own keys override those. "recipes" changes what the medicine cat wants for one of the game's
@@ -38,7 +44,7 @@ import json
 import os
 import re
 
-from .. import accessories, names, recolor
+from .. import accessories, colors, models, names, recolor
 from ..formats import cooked, csvdata, png, texture
 from ..formats.save import SAV_NAME, SaveGame
 from ..formats.savejson import SaveDoc
@@ -51,12 +57,15 @@ INVENTORY = "GameplayProgression/State/Inventory"     # in the save slot being p
 TABLE = "DT_QuestObjectsInfo"
 ID = re.compile(r"[A-Za-z][A-Za-z0-9]{0,47}$")
 KEYS = {"id", "kind", "like", "name", "description", "icon", "effect", "type", "target", "combat", "exploring",
-        "fight_only", "group", "rarity", "color", "recipe", "give", "texture"}
+        "fight_only", "group", "rarity", "color", "recipe", "give", "texture", "model", "place", "opacity", "glass"}
 # The game's inventory icon a new icon is a copy of (512 x 512, DXT5).
 ICON_LIKE = "/Game/Art/UXD/Textures/gui_icons/gui_icons_inventory/T_UI_Icon_Inventory_Horsetail_D"
 TEXT_KEYS = ("kind", "like", "effect", "type", "target", "group", "rarity", "color")
 PICTURE_KEYS = ("icon", "texture")         # text, or a recolour: {"from": ..., "tint": "#rrggbb", ...}
 FLAG_KEYS = ("combat", "exploring", "fight_only")
+MODELS_SCRIPT = "WCModsModels"            # the in-game script that puts mods' models on the cats wearing them
+SLOT_FIELDS = {"Head": "Head", "Neck": "Neck", "Body": "Body", "Legs": "Paw"}   # tag slot -> the cat's CustomData
+GLASS = "#ffffff"                         # a see-through accessory's colour, unless it says
 
 
 class ItemsSection(Section):
@@ -96,6 +105,22 @@ class ItemsSection(Section):
                         raise ValueError(f"{what} ({item['id']}): \"{key}\".from should be text")
                 elif v is not None and not isinstance(v, str):
                     raise ValueError(f"{what} ({item['id']}): \"{key}\" should be text or a recolour")
+            model = item.get("model")
+            if model is not None and (not isinstance(model, str) or not model.lower().endswith(models.FORMATS)):
+                raise ValueError(f"{what} ({item['id']}): \"model\" should be a model file in the mod's folder "
+                                 f"({', '.join(models.FORMATS)}), e.g. \"models/my-collar.obj\"")
+            if item.get("place") is not None:
+                models.check_place(item["place"], f"{what} ({item['id']})")
+            opacity = item.get("opacity")
+            if opacity is not None and (isinstance(opacity, bool) or not isinstance(opacity, (int, float))
+                                        or not 0 <= opacity <= 1):
+                raise ValueError(f"{what} ({item['id']}): \"opacity\" should be a number from 0 (none of it shows) "
+                                 "to 1 (all of it)")
+            if item.get("glass") is not None:
+                try:
+                    colors.parse(item["glass"])
+                except ValueError:
+                    raise ValueError(f"{what} ({item['id']}): \"glass\" should be a colour like \"#a8e0ff\"") from None
             for key in FLAG_KEYS:
                 if item.get(key) is not None and not isinstance(item[key], bool):
                     raise ValueError(f"{what} ({item['id']}): \"{key}\" should be true or false")
@@ -108,6 +133,7 @@ class ItemsSection(Section):
         slot = _current_slot(ctx)
         made = {}                      # tag -> mod id
         looks = []                     # new accessory looks, for the GUI manager's lists
+        worn = {}                      # the cat's slot -> accessory -> look number -> {"mesh", "opacity", "glass"}
         # Materials first, so a mod's herb can be made from a material it adds; and the highest priority
         # mod first, so where two add the same item, the later one wins as everywhere else.
         ordered = sorted(((mod, item) for mod, data in reversed(items) for item in data["items"]),
@@ -123,10 +149,24 @@ class ItemsSection(Section):
                                             like_icon, source=mod.id, key=icon.key(mod, ctx))
                     rows["info"]["Icon"] = cooked.soft_path(asset)
                 if look:                             # the accessory's new look: a copy of its texture
-                    picture = look["picture"]
-                    asset = ctx.add_texture(f"{mod.id}/T_{item['id']}_BC", lambda: picture.read(mod, ctx),
-                                            look["like"], source=mod.id, key=picture.key(mod, ctx))
+                    picture, shape, spot = look["picture"], look["model"], item.get("place")
+                    mesh = None
+                    if shape is not None:            # a shape of its own: a copy of the accessory's mesh
+                        mesh = ctx.add_mesh(f"{mod.id}/SK_{item['id']}", lambda: models.place(shape.read(mod, ctx), spot),
+                                            look["mesh"], source=f"{mod.id}: {item['id']}",
+                                            key=f"{shape.key(mod, ctx)}|{json.dumps(spot, sort_keys=True)}")
+                    asset = look["like"]             # a model without a picture of its own wears the look's
+                    if picture is not None:
+                        asset = ctx.add_texture(f"{mod.id}/T_{item['id']}_BC", lambda: picture.read(mod, ctx),
+                                                look["like"], source=mod.id, key=picture.key(mod, ctx))
                     looks.append({"name": look["name"], "var": look["var"], "path": asset, "tag": tag})
+                    see_through = item.get("opacity") is not None and item["opacity"] < 1
+                    if mesh or see_through:          # what the WCModsModels script does when a cat wears it
+                        entry = {"mesh": mesh} if mesh else {}
+                        if see_through:
+                            entry["opacity"] = float(item["opacity"])
+                            entry["glass"] = [round(c, 4) for c in colors.to_linear(colors.parse(item.get("glass", GLASS)))]
+                        worn.setdefault(SLOT_FIELDS[look["slot"]], {}).setdefault(look["name"], {})[look["var"]] = entry
                     game.added[look["name"]] = game.added.get(look["name"], 0) + 1
             except ValueError as e:
                 ctx.warn(f"{mod.id}: {item['id']}: {e}")
@@ -164,6 +204,13 @@ class ItemsSection(Section):
             data = accessories.add_looks(ctx.read_game_file(accessories.GUI_MANAGER), looks)
             ctx.patch_package(accessories.GUI_MANAGER, data, source="items")
             ctx.note("looks", [f"{e['name']} {e['var']}" for e in looks])
+        if worn:
+            if not ctx.cfg.ue4ss_mods_dir:
+                ctx.warn("accessories with a model, a place or an opacity of their own need the script loader (UE4SS), "
+                         "which isn't installed: Get set up on the Mods page adds it. Until then they show as the "
+                         "game's shape, solid")
+            ctx.add_ue4ss_mod(MODELS_SCRIPT, {"Scripts/main.lua": models.script(worn), "enabled.txt": ""})
+            ctx.note("models", {slot: {name: sorted(v) for name, v in byname.items()} for slot, byname in worn.items()})
         if made:
             lines = ["[/Script/GameplayTags.GameplayTagsList]"]
             lines += [f'GameplayTagList=(Tag="{tag}",DevComment="wcmods: {by}")' for tag, by in sorted(made.items())]
@@ -185,6 +232,7 @@ class Game:
         self.materials = {t for t in self.info if t.startswith(TAG_ROOT + "Materials.")}
         self.added = {}                # accessory name -> new looks given out so far
         self._looks = None
+        self._meshes = None
 
     def looks(self):
         """The game's looks for each accessory: {name: [texture asset paths]} (variation n is [n - 1])."""
@@ -229,6 +277,9 @@ class Game:
         else:
             if item.get("texture") is not None:
                 raise ValueError('only accessories take a "texture" (their look); an item\'s picture is its "icon"')
+            for key in ("model", "place", "opacity", "glass"):
+                if item.get(key) is not None:
+                    raise ValueError(f'only accessories take a "{key}": herbs and materials are only seen as their icon')
             tag = f"{TAG_ROOT}{KINDS[kind]}.{item['id']}"
         if tag in self.info or tag in self.use:
             raise ValueError(f"the game already has {tag}; change it with data.json instead")
@@ -277,18 +328,34 @@ class Game:
             raise ValueError(f"{name} has {len(lists[name])} look(s), not {var}")
         base = lists[name][int(var) - 1]
         spec = item.get("texture")
+        shape = ModelFile(item["model"]) if item.get("model") else None
+        if shape is None and item.get("place"):
+            shape = GameShape(self.meshes().get(name))      # the accessory's own shape, put elsewhere
         if isinstance(spec, dict):
             if spec.get("from") is not None:
                 raise ValueError('an accessory\'s "texture" recolours its own look, so it takes no "from"')
             picture = Recolour(spec, base)
         elif isinstance(spec, str) and spec.lower().endswith(".png"):
             picture = Picture(spec)
+        elif spec is None and (shape is not None or item.get("opacity") is not None):
+            picture = None                       # it wears the look it's "like" as it is, in a new shape or see-through
         else:
             raise ValueError('an accessory needs "texture": its new look, a recolour of its own ({"tint": "#a8c4ff"}) '
                              "or a PNG in the mod's folder (paint over the game's: python wcmods.py texture "
-                             f"{like[len(TAG_ROOT):]})")
+                             f"{like[len(TAG_ROOT):]}), or a \"model\" of its own")
+        mesh = None
+        if shape is not None:
+            mesh = self.meshes().get(name)
+            if mesh is None:
+                raise ValueError(f"the game has no model for {name} to copy")
         return {"slot": slot, "name": name, "var": len(lists[name]) + self.added.get(name, 0) + 1,
-                "like": base, "picture": picture}
+                "like": base, "picture": picture, "model": shape, "mesh": mesh}
+
+    def meshes(self):
+        """The game's model for each accessory: {name: skeletal mesh asset path}."""
+        if self._meshes is None:
+            self._meshes = accessories.read_meshes(self.ctx.read_game_file(accessories.GUI_MANAGER))
+        return self._meshes
 
     def icon(self, icon, base):
         if isinstance(icon, dict):                # the game's icon (or another texture) recoloured
@@ -397,6 +464,70 @@ class Picture:
             raise ValueError(f"{self.rel}: {e}") from None
         except Exception as e:                  # a broken file: zlib.error, struct.error, ...
             raise ValueError(f"{self.rel} isn't a PNG wcmods can read ({type(e).__name__}: {e})") from None
+
+
+class ModelFile:
+    """A model in the mod's folder (models.py: .obj, .gltf, .glb), made into a mesh once the item is
+    known to be good."""
+
+    def __init__(self, rel):
+        self.rel = rel
+
+    def _path(self, mod, rel):
+        folder = os.path.realpath(mod.folder)
+        path = os.path.realpath(os.path.join(folder, os.path.dirname(self.rel), rel))
+        if os.path.commonpath([folder, path]) != folder:
+            raise ValueError(f"{self.rel}: models must be in the mod's own folder")
+        return path
+
+    def _bytes(self, mod, rel=None):
+        path = self._path(mod, rel or os.path.basename(self.rel))
+        if not os.path.isfile(path):
+            raise ValueError(f"there's no {'model' if rel is None else 'file'} {rel or self.rel} in the mod's folder")
+        with open(path, "rb") as f:
+            return f.read()
+
+    def key(self, mod, ctx=None):
+        """Text that changes when the model does (with a .gltf, the files it names too), for the mesh cache."""
+        data = self._bytes(mod)
+        h = hashlib.sha1(data)
+        if self.rel.lower().endswith(".gltf"):
+            try:
+                for b in json.loads(data.decode("utf-8")).get("buffers", []):
+                    uri = b.get("uri") or ""
+                    if uri and not uri.startswith("data:"):
+                        h.update(self._bytes(mod, uri))
+            except (ValueError, AttributeError):
+                pass                             # read() says what's wrong with it
+        return "model|" + h.hexdigest()
+
+    def read(self, mod, ctx=None):
+        """The model (models.Model)."""
+        def sibling(name):
+            try:
+                return self._bytes(mod, name)
+            except ValueError:
+                return None
+        try:
+            return models.read(self.rel, self._bytes(mod), sibling)
+        except ValueError as e:
+            raise ValueError(f"{self.rel}: {e}") from None
+
+
+class GameShape:
+    """An accessory's own shape (its mesh's first LOD), as a model to place somewhere else on the cat."""
+
+    def __init__(self, mesh):
+        self.mesh = mesh                          # its asset path
+
+    def key(self, mod, ctx):
+        return "game|" + self.mesh
+
+    def read(self, mod, ctx):
+        from ..formats import skelmesh
+        if not self.mesh:
+            raise ValueError("the game has no model for this accessory to place")
+        return models.from_mesh(skelmesh.SkeletalMesh(ctx.read_game_file(texture.content_path(self.mesh.split(".", 1)[0]))))
 
 
 class Recolour:

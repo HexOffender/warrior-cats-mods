@@ -71,6 +71,26 @@ folders. `python wcmods.py selftest` checks, against your install:
   colour and made at bartering. Accessories you already have show as an empty slot there, the
   game's own too.
 
+**2026-10-27, accessories' models** (build 26184573, a test mod's two looks for DogCollar, one from an
+OBJ file and one from a GLB, each a ring with a bell: `WCModsModels` installed):
+- A copy of DogCollar's mesh, 1.5 times as big, loaded from wcmods' container and showed on the cat's
+  neck in the collar's look, bending with the neck as the cat groomed.
+- In the inventory, each look worn showed on the picture of the cat in its own shape and colour;
+  switching between the two and back to none left no shape behind.
+- In the forest, the cat wore the ring and bell in its look while walking; the neck's mesh was the
+  mod's (`SK_BellCollar`) and `CustomData` said DogCollar look 3.
+- A mod made on the Items page (a GLB model and a JPEG picture, saved there as a PNG) showed the same
+  way in the forest, the ring in the picture's stripes.
+- Where it sits and see-through (`place`, `opacity`, `glass`): a ring made at the model's origin, put on
+  the neck with the Items page's sliders (forward 11.7, up 16.4, tip 15, size 1.2) and set to 40% in a
+  gold glass, sat on the neck in the inventory's picture and in the forest, the cat's fur showing
+  through it. Switching from it to the game's own Dog Collar look showed the game's collar as it is.
+- The other slots and the rest: a ring modelled at the origin, placed on a front paw as a new Oak
+  Wrap look; the Dog Collar's own shape placed lower and a quarter bigger (`place` with no model); and
+  Mud Marks as green glass on the hip. All three showed in the inventory's picture, in the forest and
+  on the main menu's cat. With `SHP_Chubby` set to full on the body, fur and accessory slots by hand,
+  the collar and the ring stayed on the cat as it filled out.
+
 **2026-10-24, scripting:**
 - **The bridge and the commands:** they run Lua in the game; `lua`, `inspect`, `find`, `game` and
   `game types` all work. A script mod loads with its settings, and its events fire.
@@ -133,6 +153,10 @@ folders. `python wcmods.py selftest` checks, against your install:
   - the script set each picture once (its debug log), so nothing fought over them.
 
 ## Not yet confirmed in game
+
+- **Accessories' models:** on other cats (a mod's cats, NPCs) and in the save slots' pictures; and on
+  a cat whose build the game set up as brawny or chubby (`RefreshShape` doesn't apply a build, so only
+  the morph set by hand was seen).
 
 - **Scripting:**
   - the studio's Console page;

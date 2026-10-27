@@ -17,7 +17,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (bridge, catcolours, colors, controls, eyeatlas, menupages, menusettings, mods, modzip, names,
+from . import (bridge, catcolours, colors, controls, eyeatlas, menupages, menusettings, models, mods, modzip, names,
                onboarding, packs, palettes, pipeline, recolor, story, ue4ss)
 from .formats import cooked, csvdata, png, save, texture
 from .exe import gamebuild
@@ -33,7 +33,8 @@ NO_GAME = "Clan Mod Studio hasn't found the game yet: Get set up, on the Mods pa
 
 MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "items.json", "names.json", "cats.json",
              "save.json", "settings.json") + story.FILES
-PICTURES = "pictures"        # a mod's own pictures (an item's icon), added on the Items page
+PICTURES = "pictures"        # a mod's own pictures (an item's icon, an accessory's look), added on the Items page
+MODELS = "models"            # a mod's own models (an accessory's shape), added on the Items page
 MAX_PICTURE = 8 * 1024 ** 2
 ITEM_ROOT = "Gameplay.Inventory."
 MAX_UPLOAD = modzip.MAX_BYTES   # a downloaded mod's .zip
@@ -91,6 +92,9 @@ class Studio:
         self._names = None   # the game's name tables, read once
         self._items = None   # the game's items, read once
         self._icons = {}     # (item tag or texture, tint) -> PNG bytes
+        self._skin = None    # the cat's skin, to say how far a model reaches from it
+        self._views = {}     # accessory -> its shape and the cat's, for the Items page's drawing
+        self._pictures = {}  # texture -> its full-size PNG, to paint over (the last few)
 
     # ---------- helpers ----------
     def mods(self):
@@ -487,6 +491,29 @@ class Studio:
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "picture" and method == "POST":
             # A picture for the mod (an item's icon), sent as the body: kept in the mod's pictures/ folder.
             return self.add_picture(self.mod(parts[1]), (query or {}).get("name", ""), upload)
+        if len(parts) == 3 and parts[0] == "mods" and parts[2] == "model" and method == "POST":
+            # A model for an accessory (OBJ or glTF), sent as the body: kept in the mod's models/ folder.
+            return self.add_model(self.mod(parts[1]), (query or {}).get("name", ""), (query or {}).get("file", ""), upload)
+        if len(parts) == 3 and parts[0] == "mods" and parts[2] == "model-view" and method == "GET":
+            # A model in the mod's folder, in the game's space, for the Items page's drawing of it on the cat.
+            return self.model_view(self.mod(parts[1]), (query or {}).get("path", ""))
+        if parts == ["game", "accessory"] and method == "GET":
+            # An accessory's own shape and the cat it sits on, for the same drawing.
+            return self.accessory_view((query or {}).get("of", ""))
+        if parts == ["game", "model-kit"] and method == "GET":
+            # An accessory and the cat as OBJ files, with its look, to make a model of your own on (models.py).
+            name, look = _accessory_look((query or {}).get("of", ""))
+            data, filename = models.start_kit(self.ctx.game, name, look)
+            return Download(data, filename)
+        if parts == ["game", "texture"] and method == "GET":
+            # One of the game's pictures at full size to paint over: an accessory's look, an item's icon.
+            asset = self.texture_asset((query or {}).get("of", ""), (query or {}).get("what", "icon"))
+            if asset not in self._pictures:          # a look takes seconds to decode: the last few kept
+                if len(self._pictures) >= 4:
+                    self._pictures.pop(next(iter(self._pictures)))
+                w, h, rgba = texture.load(self.ctx.game, asset).image(0)
+                self._pictures[asset] = png.write(w, h, rgba)
+            return Download(self._pictures[asset], asset.split(".", 1)[0].rsplit("/", 1)[-1] + ".png", "image/png")
         if len(parts) == 4 and parts[0] == "mods" and parts[2] == "picture" and method == "GET":
             m = self.mod(parts[1])
             path = os.path.join(m.folder, PICTURES, os.path.basename(parts[3]))
@@ -571,6 +598,8 @@ class Studio:
                     return b.text(v["key"])
                 return v.get("text", "") if isinstance(v, dict) else ""
 
+            from . import accessories
+            looks = accessories.read_variations(self.ctx.game.read(accessories.GUI_MANAGER))
             items = []
             for _, v in b.cooked_table("DT_QuestObjectsInfo"):
                 tag = v.get("itemTag") or ""
@@ -579,11 +608,19 @@ class Studio:
                     continue
                 kind = tag.split(".")[2]
                 u = use.get(tag, {})
-                items.append({"tag": tag, "kind": {"Consumable": "consumable", "Materials": "material",
-                                                    "Cosmetic": "accessory"}.get(kind, kind.lower()),
-                              "short": tag[len(ITEM_ROOT):] if kind == "Cosmetic" else tag.split(".", 3)[3],
-                              "name": name, "description": text(v.get("Description")),
-                              "effect": u.get("EffectOnUse"), "type": u.get("Type"), "recipe": tag in recipes})
+                item = {"tag": tag, "kind": {"Consumable": "consumable", "Materials": "material",
+                                             "Cosmetic": "accessory"}.get(kind, kind.lower()),
+                        "short": tag[len(ITEM_ROOT):] if kind == "Cosmetic" else tag.split(".", 3)[3],
+                        "name": name, "description": text(v.get("Description")),
+                        "effect": u.get("EffectOnUse"), "type": u.get("Type"), "recipe": tag in recipes}
+                parts = tag.split(".")
+                if kind == "Cosmetic" and len(parts) == 6 and parts[5].isdigit():
+                    # An accessory's look: its slot, the accessory, which look, and the look's picture.
+                    own = looks.get(parts[4], [])
+                    n = int(parts[5])
+                    item.update({"slot": parts[3], "accessory": parts[4], "look_number": n, "looks": len(own),
+                                 "look": own[n - 1] if 0 < n <= len(own) else None})
+                items.append(item)
             items.sort(key=lambda i: (i["kind"], i["name"].lower()))
             self._items = {"items": items,
                            "effects": sorted({r["EffectOnUse"] for r in use.values() if r.get("EffectOnUse")}),
@@ -635,6 +672,92 @@ class Studio:
             f.write(data)
         return {"path": f"{PICTURES}/{stem}.png", "width": w, "height": h}
 
+    def add_model(self, mod, name, filename, upload):
+        """Keep a model sent from the Items page in the mod's models/ folder, once it reads; returns its path
+        in the mod, what it is (vertices, triangles, size) and how far it reaches from the cat."""
+        if not upload:
+            raise ValueError("send the model as the request's body")
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in models.FORMATS:
+            raise ValueError(f"models are {', '.join(models.FORMATS)} files (Blender: File > Export > Wavefront "
+                             "or glTF 2.0)")
+        with open(upload, "rb") as f:
+            data = f.read()
+        model = models.read(filename, data)          # a .gltf whose data is in another file is refused here
+        stem = re.sub(r"[^A-Za-z0-9_-]+", "-", os.path.splitext(os.path.basename(name or filename))[0]).strip("-")[:40] \
+            or "model"
+        folder = os.path.join(mod.folder, MODELS)
+        os.makedirs(folder, exist_ok=True)
+        # The last one stays: the saved items.json names it until the page is saved again.
+        with open(os.path.join(folder, stem + ext), "wb") as f:
+            f.write(data)
+        return {"path": f"{MODELS}/{stem}{ext}", **model.summary(), "farthest_cm": round(self._skin_distance(model), 1)}
+
+    def _skin_distance(self, model):
+        """How far the model's farthest vertex is from the cat's skin (cm)."""
+        if self._skin is None:
+            self._skin = models.Body(self.ctx.game).skin(())
+        step = max(1, len(model.positions) // 2000)    # a sample is enough to see a model in the wrong place
+        return max(self._skin.nearest(p, 1)[0][0] for p in model.positions[::step])
+
+    def model_view(self, mod, rel):
+        folder = os.path.realpath(mod.folder)
+        path = os.path.realpath(os.path.join(folder, rel))
+        if os.path.commonpath([folder, path]) != folder or not os.path.isfile(path):
+            raise LookupError(f"{mod.id} has no model {rel}")
+        with open(path, "rb") as f:
+            data = f.read()
+
+        def sibling(name):
+            p = os.path.realpath(os.path.join(os.path.dirname(path), name))
+            if os.path.commonpath([folder, p]) == folder and os.path.isfile(p):
+                with open(p, "rb") as f:
+                    return f.read()
+            return None
+        model = models.read(rel, data, sibling)
+        return {**_view(model.positions, model.triangles), **model.summary(),
+                "farthest_cm": round(self._skin_distance(model), 1)}
+
+    def accessory_view(self, of):
+        """{"accessory": its shape, "cat": the cat's skin (a light LOD), "slot"} for one of the game's
+        accessories (DogCollar, or a look's tag Neck.DogCollar.1)."""
+        name, _ = _accessory_look(of)
+        if name not in self._views:
+            from . import accessories
+            from .formats import skelmesh
+            meshes = accessories.read_meshes(self.ctx.game.read(accessories.GUI_MANAGER))
+            if name not in meshes:
+                raise LookupError(f"the game has no accessory {name}")
+            mesh = skelmesh.SkeletalMesh(self.ctx.game.read(texture.content_path(meshes[name].split(".", 1)[0])))
+            geo = mesh.geometry(0)
+            if "cat" not in self._views:
+                body = skelmesh.SkeletalMesh(self.ctx.game.read(texture.content_path(models.BODY)))
+                lod = min(2, len(body.lods) - 1)
+                cat = body.geometry(lod)
+                sec = body.lods[lod].sections[0]
+                first = sec.base_index // 3
+                self._views["cat"] = _view(cat["positions"], cat["triangles"][first:first + sec.triangles])
+            self._views[name] = {"accessory": _view(geo["positions"], geo["triangles"]), "cat": self._views["cat"]}
+        return self._views[name]
+
+    def texture_asset(self, of, what="icon"):
+        """A texture's asset path: an item's icon (by its tag), an accessory's look (what="look", by the look's
+        tag, Neck.DogCollar.1), or a texture by its own path (/Game/...)."""
+        from . import accessories
+        if of.startswith("/Game/"):
+            return of
+        short = of.split("Cosmetic.", 1)[-1]
+        if what == "look":
+            name, look = _accessory_look(short)
+            lists = accessories.read_variations(self.ctx.game.read(accessories.GUI_MANAGER))
+            if name not in lists or not 0 < look <= len(lists[name]):
+                raise LookupError(f"the game has no look {of}")
+            return lists[name][look - 1]
+        row = next((v for _, v in self._reader().cooked_table("DT_QuestObjectsInfo") if v.get("itemTag") == of), None)
+        if not row or not isinstance(row.get("Icon"), dict):
+            raise LookupError(f"the game has no item {of}")
+        return f"{row['Icon']['package']}.{row['Icon']['asset']}"
+
     def eyes(self):
         if self._eyes is None:
             atlas = eyeatlas.EyeAtlas(self.ctx.game.read(eyeatlas.PATH))
@@ -647,6 +770,25 @@ class Studio:
         with self.lock:
             result = fn(lines.append)
         return {"log": lines, "result": result}
+
+
+def _accessory_look(of):
+    """("DogCollar", 1) from "DogCollar", "Neck.DogCollar.1" or "Gameplay.Inventory.Cosmetic.Neck.DogCollar.1"."""
+    parts = of.split("Cosmetic.", 1)[-1].split(".")
+    if len(parts) == 3 and parts[2].isdigit():
+        return parts[1], int(parts[2])
+    if len(parts) == 1 and parts[0]:
+        return parts[0], 1
+    raise ValueError(f"{of!r}: give an accessory's look, e.g. Neck.DogCollar.1")
+
+
+VIEW_TRIANGLES = 30000   # a model drawn on the Items page: enough triangles to see its shape
+
+
+def _view(positions, triangles):
+    """A mesh for the Items page's drawing: flat lists, positions in cm to 0.01."""
+    step = max(1, -(-len(triangles) // VIEW_TRIANGLES))
+    return {"p": [round(c, 2) for p in positions for c in p], "t": [i for t in triangles[::step] for i in t]}
 
 
 def story_problem(mod):
