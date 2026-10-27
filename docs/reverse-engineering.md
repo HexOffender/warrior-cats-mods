@@ -198,6 +198,11 @@ one of its own. Nothing else checks it: no asset registry entry was needed.
   under *Character creation and traits*).
 - **Other cats:** NPCs live under `NPCData`. Story roles (`NPCData/NarrativeRoles`) hold exact
   copies of the NPC cast in them, so a rename must change every copy.
+- **Story scenes seen:** each slot lists the story scenes its cat has watched under `Sequences`
+  (`ProphecyIntro`, `RankUpApprentice`; *The game's live state*).
+- **Account-wide data:** the save manager's `SetGameProgressionData` and
+  `SetStateJsonDataFromString` write to `Shared`, data for the whole save, not to a cat's slot
+  (seen in game, build 26184573).
 - **Key bindings** are kept in the save, but the game ignores edits to them, and its rebinding
   screen doesn't work on PC (the README, [Remapping keys](../README.md#remapping-keys)).
 
@@ -303,6 +308,27 @@ Read in a fight with a level 20 cat against a weak bird:
 is named `SwtAdventureMultiObjectiveQuest_0`, and its outer, a `QuestDynamicGraph` such as
 `QuestGraph_Tutorial` or `QuestGraphProcedural_Deliver`, says which quest it is. There are 40 in
 `/Game/Quests/QuestLines/QuestLine_Main`.
+
+Seen in game on build 26184573 (2026-10-26), building the Sandbox mode mod:
+- **Loading a cat:** the game state (`SwtQuestGameplayGameState`) goes through phases 1 → 4 while a
+  cat loads, set by `Server_SetPhase`. The quests are built from `QuestLine_Main` between the quest
+  manager's `OnNPCGenerationCompleted` and `Server_SetPhase(2)`.
+- **Clearing them:** the quest manager's `ResetQuests(false)` empties `Quests`. Called in a pre-hook of
+  `Server_SetPhase` with phase 2, the cat starts with no quest marks anywhere. Called mid-play, the
+  quests go but the minimap's quest diamond stays.
+
+**The story scenes:** the first load of a new cat plays `Gameplay.Narrative.Prophecy.Intro.<Clan>`, then
+`Gameplay.Narrative.RankUp.<Clan>` (the apprentice ceremony). Seen in game (build 26184573):
+- While one plays it's in the sequencer manager's `ActiveSequences`, an array of
+  `FSwtActiveSequenceStruct` whose `SequencePlayer` is the running player.
+- The save records the ones a cat has seen, per slot, under `Sequences` (`ProphecyIntro`,
+  `RankUpApprentice`).
+- **Skipping one** works through the game's own skip popup, `WBP_GuiPopupSkip_C`: take its
+  `mcGuiHoldButtonSkip.ButtonCommand` and call the popup's `OnListenCommand(cmd, 0, controller)`
+  (pressed), then `OnListenCommand(cmd, 1, controller)` (released) about 2.5 s later, as holding the
+  button does.
+- **Don't** call `SequencePlayer:GoToEndAndStop()` instead: the scene stopped, but the game waited
+  for it forever, and a skip after that crashed the game.
 
 **Driving the menus:**
 - **Front-end screens:** calling a screen's `OnKeyPressed`/`OnKeyReleased` (Enter) and
@@ -643,6 +669,10 @@ from `EPopupCheatsIds`:
   `ForcedDifficulty`, `bFastHousingCrafting`, `bAllowCatSizeOverride` / `CatSizeOverride`,
   `bShowFloatingPercent` and more. Whether the release build obeys each isn't known; the mod menu's
   Game switches page sets them.
+- **Ignored by the release build** (seen in game, build 26184573): `bUseForcesQuests`,
+  `bSkipSequences` and `bSkipTutorial`. With all three set, a new cat's quests were still built and
+  the prophecy intro still played. To clear quests or skip scenes, see *The game's
+  live state*.
 
 **Cheat gameplay tags** (likely what `KeyCheatsMap` maps keys to): `Cheats.Gameplay.ForceCombatWin` /
 `ForceCombatLose`, `ConsumeItem`, `BondingDialogue`, `TestGiveGifts`, `TeleportTest`,
@@ -924,11 +954,38 @@ the key talks.
   pairs, items made at construct). Making that screen outside the flow and putting it on the viewport
   closed the game (an access violation), so adding a category there is still open.
 - **Keys:** on a keyboard, P opens the pause screen and I the inventory; Backspace is Back. Enter pauses
-  only while the game is in its gamepad mode (the HUD showing controller glyphs). A closed screen stays
+  only while the game is in its gamepad mode (the HUD showing controller glyphs; Enter is the action
+  `Player_Pause`). Keys posted to the window (the agent's `key`) are different: Escape pauses every time,
+  while a posted P only sometimes does. T opens the map in keyboard mode. The pause screen's Main Menu
+  asks first, in `WBP_GuiPopupCommonYesNo_C` (yes is `mcGuiButtonYes`). A closed screen stays
   as an object a while (`FindFirstOf` finds the dead one first): the one showing is the one with
   `IsInViewport()` and `IsVisible()` both true.
 - **Slate focus:** `SetKeyboardFocus` on a widget takes the keyboard away from the game's screens until
   `WidgetBlueprintLibrary:SetFocusToGameViewport()` or the game's own focus handling gives it back.
+
+**The main menu** (worked out on build 26184573, 2026-10-26, for the Sandbox mode mod's button; seen
+in game):
+- Its buttons are `WBP_GuiButtonMenu_C` in the vertical box `VerticalBoxButtons`. Each one's slot has
+  a bottom padding of -90, except Exit's (0). The keys move along `NavControls.ControlsNavigation`, a
+  `LinearNavigation`.
+- **A button of a mod's own:** one made with `WidgetBlueprintLibrary:Create` and added to the box
+  shows in the game's style. Appended to the nav list (`list[n+1] = w` grows the TArray from Lua), the
+  keys reach it and it takes focus like the game's own.
+- **But it's never pressed.** Real presses on the game's own buttons call `SwtScreen:OnUIPress`; the
+  screen never calls it for an added button. A mod polls `Game.pressed("Enter")` while its button is
+  `NavControls.CurrentControl` instead.
+- **Placing it:** `ShiftChild` can't be called from Lua (UE4SS reports a TrivialObject), so
+  to put a button in the middle, `RemoveChild` the ones after it and `AddChildToVerticalBox` them
+  back in order.
+- `w.ParentScreen = s` fails without an error; setting it with `Game.set` works.
+
+**The cat choice** (`WBP_GuiScreenSelectYourCat_C`, seen in game, build 26184573):
+- `mcGuiButtonCatN` is save slot N-1. `mcGuiInfo2` is its "<Clan> Prophecy N%" line.
+- The keys move through a native `GridNavigation` (`CurrentNav`), so unlike the main menu's its list
+  can't be changed from Lua.
+- The quest manager's `OnCharacterSlot(slot)` fires when a cat is chosen, and once at startup with the
+  last slot played; it doesn't fire as the cursor moves between cats.
+- `SetIsEnabled(false)` (`UWidget`) greys a cat's portrait, but the cat can still be chosen.
 
 **Not tried yet:**
 - The HUD's `OnItemPickedUp(tag, quantity, total, bCanShowPopup)` is reflected. Calling it may give
@@ -968,7 +1025,8 @@ The rules of play are in [mechanics/](mechanics/README.md):
   looked at (groups of options?).
 - **Cheats:** where the cheats access level (`ESwtCheatsEnableType`) is set (`EnabledMode` is 7),
   whether raising it opens the cheats popup and the key cheats, and which of the cheats manager's
-  switches the release build obeys.
+  switches the release build obeys (`bUseForcesQuests`, `bSkipSequences` and `bSkipTutorial` it
+  doesn't).
 - **Scripting:**
   - **Items:** how to put items in the inventory from a script without a pickup (the inventory
     is native; `Game.items.drop` leaves a pickup to collect).
@@ -977,7 +1035,7 @@ The rules of play are in [mechanics/](mechanics/README.md):
   - **Fights:** how to end one cleanly (`EndCombat` doesn't), and whether the combat director's
     `OnRegisterDamage` hook sees every hit.
   - **Save stores:** what the save manager's `Get/SetGameProgressionData` keys are (`"Level"` read
-    0).
+    0). They're account-wide (`Shared`), not a cat's.
 - **Mouse look:** whether the game ever overrides the root's yaw in free mode. An old build's
   log suggested one turn in five was lost, but the code says no, and the current build's log
   shows none lost after the first seconds.
