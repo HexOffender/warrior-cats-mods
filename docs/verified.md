@@ -91,6 +91,16 @@ OBJ file and one from a GLB, each a ring with a bell: `WCModsModels` installed):
   on the main menu's cat. With `SHP_Chubby` set to full on the body, fur and accessory slots by hand,
   the collar and the ring stayed on the cat as it filled out.
 
+**2026-10-27, models on the ground** (build 26184573, a test mod's herb with a striped gem model and
+picture, a material with a plain block model turned 30 degrees, and a herb `like` Comfrey Poultice
+without a model; `Game.items.drop` for each):
+- The gem and the block lay on the ground where they were dropped, the gem in its picture's stripes and
+  the block plain grey; the pickup's own herb (Marigold, Horsetail) was hidden. The third lay as the
+  game's Comfrey pickup.
+- The cat collected the gem with Interact as usual: "Test Gem obtained", one in the inventory, and the
+  pickup and its model were gone from the ground.
+- A picture added to the block on the Items page (saved there as a PNG) showed on it in the forest.
+
 **2026-10-24, scripting:**
 - **The bridge and the commands:** they run Lua in the game; `lua`, `inspect`, `find`, `game` and
   `game types` all work. A script mod loads with its settings, and its events fire.
@@ -157,10 +167,11 @@ OBJ file and one from a GLB, each a ring with a bell: `WCModsModels` installed):
 - **Accessories' models:** on other cats (a mod's cats, NPCs) and in the save slots' pictures; and on
   a cat whose build the game set up as brawny or chubby (`RefreshShape` doesn't apply a build, so only
   the morph set by hand was seen).
+- **Models on the ground:** dropped by a questline's reward or by Sandbox mode's stories (the same
+  `Game.items.drop`, but not watched).
 
 - **Scripting:**
   - the studio's Console page;
-  - items dropped with `Game.items.drop` being picked up;
   - the damage, quest-status and status events;
   - whether the game obeys each of its developer switches.
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.

@@ -1,6 +1,7 @@
 // A drawing of an accessory's shape on the cat, from the side and from the front, for the Items page: the
 // cat's skin in grey, the game's accessory faint, and a model of the mod's own in colour, all in the game's
-// space (cm, Z up, the cat facing +Y). Meshes come from the API as flat lists: {p: [x, y, z, ...], t: [a, b, c, ...]}.
+// space (cm, Z up, the cat facing +Y). Or a herb's model on the ground, with the cat beside it for its size.
+// Meshes come from the API as flat lists: {p: [x, y, z, ...], t: [a, b, c, ...]}.
 import { el } from "./wc.js";
 
 const VIEWS = [
@@ -47,6 +48,15 @@ function bounds(meshes) {
 
 function unit(v) { const n = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / n, v[1] / n, v[2] / n]; }
 
+// The cat moved to stand behind a model on the ground (or where one would be) and to its left, a little
+// apart, facing it: beside it from the front, and from the side too.
+function beside(cat, model) {
+  const [mlo, mhi] = model ? bounds([model]) : [[0, 0, 0], [0, 0, 0]];
+  const [clo, chi] = bounds([cat]);
+  const shift = [mhi[0] + 8 - clo[0], mlo[1] - 8 - chi[1], 0];
+  return { p: cat.p.map((v, i) => v + shift[i % 3]), t: cat.t };
+}
+
 // Every triangle of the meshes, as [depth, screen points, colour] in the order to paint them.
 function triangles(view, layers, toScreen) {
   const out = [];
@@ -68,15 +78,17 @@ function triangles(view, layers, toScreen) {
 
 // draw({cat, accessory, model, glass, opacity}): a model (or the accessory placed elsewhere) replaces the
 // accessory, which then shows as an outline; below opacity 1 it's drawn as see-through glass of that colour.
+// draw({cat, model, ground: true}): a model lying on the ground (its origin), the cat standing beside it.
 export function shapeDrawing() {
   const canvases = VIEWS.map(v => el("canvas", { width: "300", height: "250", "aria-label": `${v.title} view`,
     style: { width: "100%", maxWidth: "300px", borderRadius: "10px", background: "var(--stage)" } }));
   const element = el("div", { style: { display: "grid", gap: "10px", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" } },
     ...VIEWS.map((v, i) => el("figure", { style: { margin: "0" } }, canvases[i],
       el("figcaption", { class: "muted", style: { fontSize: "0.85rem" }, text: v.title }))));
-  function draw({ cat, accessory, model, glass, opacity = 1 }) {
+  function draw({ cat, accessory, model, glass, opacity = 1, ground = false }) {
     const worn = opacity < 1 ? { rgb: rgbOf(glass) || [235, 245, 255], alpha: Math.max(0.2, opacity) } : null;
-    const focus = [model, accessory].filter(Boolean);
+    if (ground) cat = beside(cat, model);
+    const focus = ground ? [cat, model].filter(Boolean) : [model, accessory].filter(Boolean);
     const [lo, hi] = bounds(focus.length ? focus : [cat]);
     VIEWS.forEach((view, i) => {
       const canvas = canvases[i];
@@ -87,9 +99,17 @@ export function shapeDrawing() {
       for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) corners.push([x, y, z]);
       const xs = corners.map(view.x), ys = corners.map(view.y);
       const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-      const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 4) * 2.2;
+      const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 4) * (ground ? 1.25 : 2.2);
       const scale = Math.min(canvas.width, canvas.height) / span;
       const toScreen = p => [canvas.width / 2 + (view.x(p) - cx) * scale, canvas.height / 2 - (view.y(p) - cy) * scale];
+      if (ground) {                          // the ground, where the pickup's origin is
+        const y = toScreen([0, 0, 0])[1];
+        g.fillStyle = "rgba(140,120,95,0.18)";
+        g.fillRect(0, y, canvas.width, canvas.height - y);
+        g.strokeStyle = "rgba(140,120,95,0.7)";
+        g.lineWidth = 1;
+        g.beginPath(); g.moveTo(0, y); g.lineTo(canvas.width, y); g.stroke();
+      }
       const layers = [{ mesh: cat, rgb: [205, 198, 190], alpha: 1 }];
       if (model) layers.push({ mesh: model, rgb: worn ? worn.rgb : [236, 150, 70], alpha: worn ? worn.alpha : 1 });
       else if (accessory) layers.push({ mesh: accessory, rgb: worn ? worn.rgb : [120, 170, 235], alpha: worn ? worn.alpha : 1 });

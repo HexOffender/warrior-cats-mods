@@ -506,7 +506,9 @@ def _items_section(cfg):
         {"id": "WCModsTestRing", "like": "Neck.DogCollar.1", "name": "Test Ring", "description": "Its own shape.",
          "model": "models/ring.obj"},
         {"id": "WCModsTestGlass", "like": "Neck.DogCollar.1", "name": "Test Glass", "description": "Lower, bigger, glass.",
-         "place": {"up": -1.5, "pitch": 10, "scale": 1.2}, "opacity": 0.5, "glass": "#a8e0ff"}],
+         "place": {"up": -1.5, "pitch": 10, "scale": 1.2}, "opacity": 0.5, "glass": "#a8e0ff"},
+        {"id": "WCModsTestPebble", "kind": "material", "name": "Test Pebble", "description": "A ring on the ground.",
+         "icon": "Rock", "model": "models/ring.obj", "texture": "icons/test.png", "place": {"up": 2}}],
         "recipes": {"Cosmetic.Head.MossPatch.1": {"Moss": 3, "WCModsTestStone": 1}}}
     bad = {"items": [
         {"id": "SmallCatnip", "kind": "consumable", "name": "Again", "description": "x", "like": "SmallCatnip"},
@@ -517,7 +519,7 @@ def _items_section(cfg):
         {"id": "WCModsShiny", "like": "SmallHealingHerb", "name": "x", "description": "x", "texture": {"tint": "#ffffff"}},
         {"id": "WCModsLost", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": "missing.png"},
         {"id": "WCModsOut", "like": "SmallHealingHerb", "name": "x", "description": "x", "icon": "../good/icons/test.png"},
-        {"id": "WCModsShaped", "like": "SmallHealingHerb", "name": "x", "description": "x", "model": "ring.obj"},
+        {"id": "WCModsShaped", "like": "SmallHealingHerb", "name": "x", "description": "x", "texture": "a.png"},
         {"id": "WCModsNoRing", "like": "Neck.DogCollar.1", "name": "x", "description": "x", "model": "models/none.glb"},
         {"id": "WCModsSeeHerb", "like": "SmallHealingHerb", "name": "x", "description": "x", "opacity": 0.5}],
         "recipes": {"Cosmetic.Head.NoSuchHat.1": {"Moss": 1}}}
@@ -556,13 +558,16 @@ def _items_section(cfg):
                   "WCMods_Materials_WCModsTestStone", "WCMods_Consumable_WCModsTestPicture",
                   "WCMods_" + collar[len("Gameplay.Inventory."):].replace(".", "_"),
                   "WCMods_" + ring_tag[len("Gameplay.Inventory."):].replace(".", "_"),
-                  "WCMods_" + glass_tag[len("Gameplay.Inventory."):].replace(".", "_")]) and len(use) == 2
+                  "WCMods_" + glass_tag[len("Gameplay.Inventory."):].replace(".", "_"),
+                  "WCMods_Materials_WCModsTestPebble"]) and len(use) == 2
               and sorted(c["row"] for c in recipe) == sorted(["Gameplay.Inventory.Consumable.WCModsTestHerb", collar,
                                                               "Gameplay.Inventory.Cosmetic.Head.MossPatch.1"])
               and "Wrc/Config/Tags/WCModsItems.ini" in out["files"] and len(warned) == 12
               and all(any(s in w for w in warned) for s in ('needs "like"', "first look", "only accessories",
-                                                             "no picture", "own folder", 'take a "model"', "no model"))
-              and "zzz_WCMods_P.utoc" in out["outputs"] and "WCModsModels" in out["ue4ss_mods"])
+                                                             "no picture", "own folder", 'goes with a "model"',
+                                                             "a picture (a PNG)", "no model"))
+              and "zzz_WCMods_P.utoc" in out["outputs"] and "WCModsModels" in out["ue4ss_mods"]
+              and "WCModsItems" in out["ue4ss_shared"])
         # What went into wcmods' container: the new textures (the look with its .ubulk), the look in the
         # game's list, and the icons in the item table.
         made = IoStoreReader(os.path.join(tmp, "out", "zzz_WCMods_P.utoc"))
@@ -605,6 +610,21 @@ def _items_section(cfg):
                           '["opacity"] = 0.5, ["glass"] = { 0.3916, 0.7454, 1.0 } }' in lua
                       and glass.lods[0].vertex_count == collar.lods[0].vertex_count and where
                       and not luacheck.check(lua))
+            # The pebble: the ring as it is (2 cm up) on the ground mesh's root bone, with its picture and
+            # the plain ARM, in WCModsItems; the herb like Marigold lies as the game's pickup of it.
+            pebble = "/Game/WCMods/good/Materials_WCModsTestPebble_SK"
+            ground = skelmesh.SkeletalMesh(made.read_file(texture.content_path(pebble))).geometry(0)
+            lifted = models.place(model, {"up": 2})
+            with open(os.path.join(tmp, "out", "ue4ss_shared", "WCModsItems", "WCModsItems.lua"), encoding="utf-8") as f:
+                items_lua = f.read()
+            packed = (packed and all(w == [(0, 1.0)] for w in ground["weights"]) and not any(ground["morphs"].values())
+                      and all(math.dist(a, b) < 1e-3 for a, b in zip(ground["positions"], lifted.positions))
+                      and all(texture.content_path(p) in made.files for p in (
+                          "/Game/WCMods/good/Materials_WCModsTestPebble_BC", "/Game/WCMods/_items/T_GroundARM"))
+                      and f'["Gameplay.Inventory.Materials.WCModsTestPebble"] = {{ ["mesh"] = "{pebble}.Materials_WCModsTestPebble_SK"'
+                          in items_lua
+                      and '["Gameplay.Inventory.Consumable.WCModsTestHerb"] = { ["class"] = "MediumHealingHerb" }' in items_lua
+                      and not luacheck.check(items_lua))
         return ok and packed, f"{len(rows)} rows, {len(warned)} refused" + ("" if ok else f"; {out['warnings']}")
 
 

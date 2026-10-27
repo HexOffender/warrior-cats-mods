@@ -11,7 +11,7 @@ import pytest
 
 from wcmods import luacheck, models
 from wcmods.formats import skelmesh
-from wcmods.sections.items import ItemsSection, ModelFile
+from wcmods.sections.items import PICKUPS, Game, ItemsSection, ModelFile, Plain, items_lua
 
 
 def close(a, b, eps=1e-4):
@@ -279,3 +279,45 @@ def test_items_json_model_must_be_a_model_file(tmp_path):
     key = inside.key(mod)
     (tmp_path / "models" / "a.obj").write_text("v 0 0 0\nv 0.2 0 0\nv 0 0.1 0\nf 1 2 3\n")
     assert inside.key(mod) != key                         # a changed model is made into a mesh again
+
+
+# --------------------------------------------------------------------------------------- on the ground
+def test_a_model_on_the_ground_stays_as_it_is_on_the_root_bone():
+    m = square()
+    geo = models.rigid_model(m)
+    assert geo["positions"] == m.positions and geo["triangles"] == m.triangles and geo["morphs"] == {}
+    assert geo["weights"] == [[(0, 1.0)]] * 4 and len(geo["tangents"]) == 4
+
+
+class FakeGameFiles:
+    def find(self, pattern):
+        return [PICKUPS + "MediumHealingHerb.uasset", PICKUPS + "SmallHealingHerb.uasset"]
+
+
+def test_herbs_lie_on_the_ground_as_their_model_or_as_the_game_pickup_of_what_theyre_like():
+    game = object.__new__(Game)
+    game.ctx, game._pickups = type("Ctx", (), {"game": FakeGameFiles()})(), None
+    own = game.pickup({"model": "models/moon.obj", "texture": "pictures/moon.png"},
+                      "Gameplay.Inventory.Consumable.MediumHealingHerb")
+    assert own["model"].rel == "models/moon.obj" and own["picture"].rel == "pictures/moon.png"
+    assert own["class"] == "MediumHealingHerb"
+    assert game.pickup({}, "Gameplay.Inventory.Materials.Moss") == {"model": None, "picture": None, "class": None}
+    for item, message in (({"texture": "a.png"}, 'goes with a "model"'), ({"place": {"up": 1}}, 'goes with a "model"'),
+                          ({"model": "a.obj", "texture": {"tint": "#ffffff"}}, r"a picture \(a PNG\)")):
+        with pytest.raises(ValueError, match=message):
+            game.pickup(item, None)
+
+
+def test_the_items_module_says_how_each_item_lies_on_the_ground():
+    lua = items_lua({"Gameplay.Inventory.Consumable.Moon": {"mesh": "/Game/WCMods/m/A.A", "texture": "/Game/WCMods/m/B.B",
+                                                            "class": "MediumHealingHerb"},
+                     "Gameplay.Inventory.Consumable.Sun": {"class": "BigHealingHerb"}})
+    assert not luacheck.check(lua) and lua.startswith("-- Written by wcmods")
+    assert '["Gameplay.Inventory.Consumable.Moon"] = { ["mesh"] = "/Game/WCMods/m/A.A"' in lua
+    assert 'return { pickups = {' in lua and '["Gameplay.Inventory.Consumable.Sun"] = { ["class"] = "BigHealingHerb" }' in lua
+
+
+def test_a_plain_picture_is_as_big_as_its_texture():
+    w, h, rgba = Plain((1, 2, 3), size=8).read()
+    assert (w, h) == (8, 8) and len(rgba) == 8 * 8 * 4 and rgba[:8] == bytes((1, 2, 3, 255)) * 2
+    assert Plain((1, 2, 3)).key() == "plain|1,2,3"

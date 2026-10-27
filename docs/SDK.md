@@ -131,7 +131,8 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.cooked_table("DT_QuestObjectsInfo")` | The rows of a cooked table wcmods can read (`cooked.TABLES`), as `[(row name, {field: value})]`, as the game ships them |
 | `ctx.add_table_row(table, row, values, source=mod.id)` | Add a row to one of those tables; rows from every section are merged and written into a copy of the game's asset (fields in `cooked.SCHEMAS`; text as `cooked.base_text("Moon Herb", key)`) |
 | `ctx.add_texture(name, image, like, source=mod.id, key=None)` | A new texture `/Game/WCMods/<name>`, a copy of the game's texture `like` (same size, format and mips) with the pixels of `image`: `(width, height, RGBA bytes)` as `png.read` gives, or a function that makes them. With `key` (text that changes when the picture does), an install reuses the texture it made last time. Returns the new asset path, for an icon or a look |
-| `ctx.add_mesh(name, model, like, source=mod.id, key=None)` | A new skeletal mesh `/Game/WCMods/<name>`, a copy of the game's accessory mesh `like` (its skeleton, material, LODs and body-shape morphs) with a model's shape tied to the cat's body: `model` is a `models.Model` (`models.read(name, bytes)` reads OBJ and glTF) or a function that reads one. With `key`, an install reuses the mesh it made last time. Returns the new asset path. Showing it on a cat takes a script (the items section's `WCModsModels`) |
+| `ctx.add_mesh(name, model, like, source=mod.id, key=None, on_cat=True)` | A new skeletal mesh `/Game/WCMods/<name>`, a copy of the game's accessory mesh `like` (its skeleton, material, LODs and body-shape morphs) with a model's shape tied to the cat's body: `model` is a `models.Model` (`models.read(name, bytes)` reads OBJ and glTF) or a function that reads one. With `on_cat=False` the model stays as it is, on the skeleton's root bone, for a mesh shown on its own (a pickup's). With `key`, an install reuses the mesh it made last time. Returns the new asset path. Showing it on a cat takes a script (the items section's `WCModsModels`) |
+| `ctx.add_ue4ss_shared(name, text)` | A Lua module any UE4SS script can `require(name)`, installed beside `WCModsGame` (with UE4SS): data a section gives the shared scripts, as the items section's `WCModsItems` tells `Game.items.drop` how mod items look on the ground |
 | `ctx.add_package(path, data, chunk_id, imports, shaders, bulk=None)` | Add a cooked package the game hasn't got, with its chunk ID, container header entry and `.ubulk`; `add_texture` is the easy way |
 | `ctx.cache_dir` | A folder for work an install can reuse (wcmods' `cache/`; the selftest's stays in its temp folder) |
 | `ctx.add_ue4ss_mod(name, {"Scripts/main.lua": text})` | Ship a UE4SS Lua mod; installed and registered only when UE4SS is present. `.lua` files get a structure check (balanced blocks and brackets) and problems become build warnings |
@@ -258,6 +259,16 @@ everything the game needs for a new item:
       "description": "Clear as the river in leaf-bare.",
       "opacity": 0.4,
       "glass": "#bfe6ff"
+    },
+    {
+      "id": "Moonstone",
+      "kind": "material",
+      "name": "Moonstone",
+      "description": "A pale stone that shines at night.",
+      "icon": "icons/moonstone.png",
+      "model": "models/moonstone.glb",
+      "texture": "pictures/moonstone.png",
+      "place": { "yaw": 30 }
     }
   ],
   "recipes": {
@@ -273,9 +284,9 @@ everything the game needs for a new item:
 | `like` | A game item to start from, by its short name (`"MediumHealingHerb"`) or whole tag: its kind, effect, when it can be used, icon, icon group, rarity and colour. An accessory's is the look it's a copy of, `"Neck.DogCollar.1"`. The item's other keys override those |
 | `kind` | `"consumable"` (a herb or pouch), `"material"` or `"accessory"`, when there's no `like` |
 | `icon` | An item to borrow the icon of (`"Rock"`), a texture of the game's, e.g. `"/Game/Art/UXD/Textures/gui_icons/gui_icons_inventory/T_UI_Icon_Flower_Marigold_D"` (`wcmods files "*gui_icons_inventory*"` lists them), a PNG in the mod's folder (`"icons/moon-herb.png"`), or a recolour (below) |
-| `texture` | Accessories: the new look, a recolour of the one it's `like` (`{"tint": "#a8c4ff"}`) or a PNG in the mod's folder. With a `model`, it can be left out: the model wears the look it's `like` |
-| `model` | Accessories: a shape of its own for this look, an OBJ or glTF file in the mod's folder (`"models/bell-collar.glb"`; below) |
-| `place` | Accessories: where its shape sits, moved, turned and scaled from where it was made (below): `forward`, `up` and `left` in cm, `yaw`, `pitch` and `roll` in degrees, and `scale`, one number or `{"forward", "up", "left"}`. Without a `model`, it places the accessory's own shape |
+| `texture` | Accessories: the new look, a recolour of the one it's `like` (`{"tint": "#a8c4ff"}`) or a PNG in the mod's folder. With a `model`, it can be left out: the model wears the look it's `like`. Herbs and materials: a PNG painted on their `model` on the ground (below) |
+| `model` | Accessories: a shape of its own for this look, an OBJ or glTF file in the mod's folder (`"models/bell-collar.glb"`; below). Herbs and materials: how it lies on the ground for the cat to pick up (On the ground, below) |
+| `place` | Accessories: where its shape sits, moved, turned and scaled from where it was made (below): `forward`, `up` and `left` in cm, `yaw`, `pitch` and `roll` in degrees, and `scale`, one number or `{"forward", "up", "left"}`. Without a `model`, it places the accessory's own shape. Herbs and materials: where their `model` lies, the same way, `up` being above the ground |
 | `opacity`, `glass` | Accessories: from 0 to 1, how much of it shows (1 by default). Below 1 the cat shows through it, and it's worn as glass of the `glass` colour (`"#bfe6ff"`, white by default) instead of its look (below) |
 | `effect` | Herbs: what using one does, one of the game's herb effects, such as `Gameplay.Effect.Consumable.Health.2` (+50 health). [items.md](mechanics/items.md) lists them |
 | `type`, `target` | Herbs: the effect's kind (`Health`, `Stamina`, `BuffStrength`, …), and who it's for: `Owner`, or `OwnerTeam` for your whole team |
@@ -359,13 +370,31 @@ grey grid on one). So a see-through look is worn as the cats' own eye glass, in 
 says, and its picture doesn't show. The `WCModsModels` script puts the glass on (UE4SS), and the game's
 material comes back when the cat wears another look.
 
+**On the ground.** A herb or a material lies in the forest as a pickup when a script leaves it
+there (`Game.items.drop`, a questline's reward, Sandbox mode's stories). Without a `model` it's the
+game's pickup of the herb it's `like` (a herb like Marigold looks like Marigold), or Horsetail when the
+game has no pickup of its own for it (materials, pouches it lacks). With one, it's that model:
+- **Where it goes:** made in metres with Y up, like an accessory's, standing at its origin, which is the
+  pickup's spot on the ground (the game's Horsetail is about 30 cm tall). `place` moves, turns and sizes it
+  from there; the Items page's "On the ground" card draws it beside the cat as you move it.
+- **Its look:** `texture`, a PNG painted on it through its UVs (Blender's own), scaled to 2048 x 2048
+  like the accessories' looks. Without one it's a plain light grey. It's solid: see-through parts of a
+  picture show as their colour, so leaves are shaped in the model.
+- **How it's made:** at install, a copy of an accessory's mesh (Sharp Bone Piercing's, which has one
+  LOD and no body shapes) with the model on its root bone, under `/Game/WCMods/<mod>/<Kind>_<id>_SK`,
+  and the picture as a copy of that accessory's look. The install lists them in a shared Lua module,
+  `WCModsItems`, and `Game.items.drop` shows the model in place of the pickup's own when it drops one,
+  with the picture on the accessories' material (a plain ARM and a flat normal map under it). It's
+  still the game's pickup, collected with Interact as usual. It needs the script loader (UE4SS).
+
 What it can't do (yet):
 - **New effects:** each herb effect is one of the game's Blueprints, so a new herb does what one of
   the game's does (heal 25, 50 or 100, stamina, a stat buff, a cure, experience).
 - **Head accessories:** new looks (and so models) for head accessories don't show, as the game
   always shows a head accessory's first look. `"recipes"` can change what an existing one costs.
-- **Growing in the world:** new materials aren't found in the forest; they come from `give`, a
-  recipe or a script.
+- **Growing in the world:** new herbs and materials aren't found in the forest on their own; they come
+  from `give`, a recipe, a questline's reward or a script's `Game.items.drop`.
+- **Accessories on the ground:** a dropped accessory lies there as Horsetail; its model is for wearing.
 
 ### New content: models, textures, sounds
 

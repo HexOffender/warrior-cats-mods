@@ -15,6 +15,10 @@ game. Swapping two axes mirrors the space, which also turns the files' counter-c
 the game's clockwise ones, so the vertex order of a triangle stays as it is. OBJ's texture V runs up
 the picture and the game's down (glTF's too), so an OBJ's V is flipped.
 
+A herb's or a material's model is how it lies on the ground as a pickup: the same copy of an accessory's
+mesh, with every vertex on the skeleton's root bone and no morphs, so it keeps its shape wherever it's
+shown on its own (`rigid_model`). Its origin is the spot on the ground the pickup is at.
+
 `start_kit` writes the accessory and the cat as OBJ files to model on, with the look as a PNG.
 """
 import base64
@@ -533,6 +537,13 @@ def mesh_model(model, skin):
              "triangles": model.triangles, "weights": weights, "morphs": morphs}, farthest)
 
 
+def rigid_model(model):
+    """The model in set_geometry's terms with every vertex on the skeleton's root bone: shown on its own
+    (a pickup's, on the ground), a mesh in its reference pose draws it just as it is."""
+    return {"positions": model.positions, "normals": model.normals, "tangents": tangents(model), "uvs": model.uvs,
+            "triangles": model.triangles, "weights": [[(0, 1.0)]] * len(model.positions), "morphs": {}}
+
+
 class Body:
     """The cat's body, read once an install and only when a model needs it."""
 
@@ -561,13 +572,14 @@ CACHE_VERSION = 1   # change when the mesh copy, the transfer or the readers cha
 def build(ctx, package, like, model, key, body):
     """{"data", "chunk_id", "imports", "shaders", "farthest"} for a new mesh `package`: a copy of the game's
     mesh `like` (an asset path) with `model` (a Model, or a function that reads one) tied to the cat's
-    `body` (a Body). Kept in cache/meshes under the template's and the body's bytes and `key`, text that
-    changes whenever the model would, so an install doesn't make the same mesh twice."""
+    `body` (a Body), or with body None, on the root bone as it is (rigid_model). Kept in cache/meshes
+    under the template's and the body's bytes and `key`, text that changes whenever the model would, so
+    an install doesn't make the same mesh twice."""
     import hashlib
     from .formats import skelmesh, texture
     template = ctx.read_game_file(texture.content_path(like.split(".", 1)[0]))
     digest = hashlib.sha1(f"{CACHE_VERSION}|{package}|{like}|{key}|".encode() + hashlib.sha1(template).digest()
-                          + hashlib.sha1(body.data()).digest()).hexdigest()
+                          + (hashlib.sha1(body.data()).digest() if body else b"rigid")).hexdigest()
     cache = os.path.join(ctx.cache_dir, "meshes")
     found, meta = os.path.join(cache, digest + ".uasset"), os.path.join(cache, digest + ".json")
     imports, shaders = ctx.game.io.container_header().entry_for(texture.package_id(like.split(".", 1)[0]))
@@ -580,7 +592,11 @@ def build(ctx, package, like, model, key, body):
     else:
         texture._clear_out(cache)
         mesh = skelmesh.SkeletalMesh(template)
-        geo, farthest = mesh_model(model() if callable(model) else model, body.skin(mesh.morph_names))
+        model = model() if callable(model) else model
+        if body is None:
+            geo, farthest = rigid_model(model), 0.0
+        else:
+            geo, farthest = mesh_model(model, body.skin(mesh.morph_names))
         mesh.set_geometry(geo)
         mesh.rename(package, package.rsplit("/", 1)[-1])
         data = mesh.bytes()

@@ -177,10 +177,17 @@ function Game.object(path)
     return nil
 end
 
--- Load an asset by path ("/Game/Mods/MyHat/SM_Hat.SM_Hat"), or nil and why.
+-- Load an asset by path ("/Game/WCMods/my_mod/T_Moon_Icon.T_Moon_Icon"), or nil and why. A mod's own
+-- assets aren't in the game's asset registry, which UE4SS's LoadAsset looks them up in, so those load
+-- the way the game loads a soft reference.
 function Game.load(path)
     local ok, o = pcall(LoadAsset, path)
     if ok and valid(o) then return o end
+    local ksl = Game.library("KismetSystemLibrary")
+    local ok2, o2 = pcall(function()
+        return ksl:LoadAsset_Blocking(ksl:Conv_SoftObjPathToSoftObjRef(ksl:MakeSoftObjectPath(path)))
+    end)
+    if ok2 and valid(o2) then return o2 end
     return nil, ok and "not found" or tostring(o)
 end
 
@@ -1384,21 +1391,81 @@ function Game.items.type(tag)
 end
 
 local PICKUPS = "/Game/Gameplay/Blueprints/WorldElements/Pickups/"
--- Put a pickup holding `count` of an item on the ground (by your cat, or at `where`), for the cat to
+-- A model on the ground wears the accessories' material (M_Characters_NPC): its picture, and a plain
+-- ARM and a flat normal map in place of the copied accessory's.
+local GROUND_PARAMS = { texture = "LYR1 Albedo", arm = "LYR1 ARM", normal = "LYR1 Normal" }
+local IDENTITY = { Translation = { X = 0, Y = 0, Z = 0 }, Rotation = { X = 0, Y = 0, Z = 0, W = 1 },
+                   Scale3D = { X = 1, Y = 1, Z = 1 } }
+local groundLooks        -- WCModsItems' pickups, read on the first drop (false when no mod has any)
+
+-- How a mod's item lies on the ground, from the install's WCModsItems: { mesh, texture, arm, normal,
+-- class } (items.json "model"), { class } (the game's pickup of the herb it's like), or nil.
+local function groundLook(tag)
+    if groundLooks == nil then
+        local ok, m = pcall(require, "WCModsItems")
+        groundLooks = ok and type(m) == "table" and type(m.pickups) == "table" and m.pickups or false
+    end
+    return groundLooks and groundLooks[tag] or nil
+end
+
+-- The game's pickup BP_Pickup_<short>, loaded when `load` says it's there to load.
+local function pickupClass(short, load)
+    local path = PICKUPS .. "BP_Pickup_" .. short
+    local cls = Game.object(path .. ".BP_Pickup_" .. short .. "_C")
+    if not cls and load then
+        pcall(LoadAsset, path)
+        cls = Game.object(path .. ".BP_Pickup_" .. short .. "_C")
+    end
+    return cls
+end
+
+-- Show a mod item's model in place of the pickup's own mesh: a copy of an accessory's mesh made at
+-- install (on its root bone, so it keeps its shape on its own), with the item's picture. The pickup is
+-- still the game's, collected the same way (by its interact sphere, which the meshes don't change).
+local function dressPickup(a, look)
+    local mesh = Game.load(look.mesh)
+    local cls = Game.object("/Script/Engine.SkeletalMeshComponent")
+    if not (mesh and cls) then return false end
+    local ok, comp = pcall(function() return a:AddComponentByClass(cls, false, IDENTITY, false) end)
+    if not ok or not valid(comp) then return false end
+    pcall(function() comp:SetSkeletalMeshAsset(mesh) end)
+    pcall(function() comp:SetCollisionEnabled(0) end)
+    local mat = comp:GetMaterial(0)
+    if valid(mat) then
+        local mid = comp:CreateDynamicMaterialInstance(0, mat, FName("WCModsGround"))
+        if valid(mid) then
+            for key, param in pairs(GROUND_PARAMS) do
+                local tex = look[key] and Game.load(look[key])
+                if tex then mid:SetTextureParameterValue(FName(param), tex) end
+            end
+        end
+    end
+    local own = a.StaticMeshComponent
+    if valid(own) then
+        pcall(function() own:SetVisibility(false, false) end)
+        pcall(function() own:SetCollisionEnabled(0) end)
+    end
+    return true
+end
+
+-- Put a pickup holding `count` of an item on the ground (by your cat, or below `where`), for the cat to
 -- pick up the usual way: Game.items.drop("Gameplay.Inventory.Materials.Moss", 5). Returns the actor.
+-- A mod's herb or material with a model of its own lies there as that model (items.json "model").
 function Game.items.drop(tag, count, where)
     count = count or 1
-    local short = tag:match("%.([%w]+)$") or "SmallHealingHerb"
-    local cls = Game.object(PICKUPS .. "BP_Pickup_" .. short .. ".BP_Pickup_" .. short .. "_C")
-    if not cls then
-        pcall(LoadAsset, PICKUPS .. "BP_Pickup_SmallHealingHerb")
-        cls = Game.object(PICKUPS .. "BP_Pickup_SmallHealingHerb.BP_Pickup_SmallHealingHerb_C")
-    end
+    local look = groundLook(tag)
+    local cls = pickupClass(tag:match("%.([%w]+)$") or "SmallHealingHerb", false)
+        or (look and look.class and pickupClass(look.class, true)) or pickupClass("SmallHealingHerb", true)
     if not cls then return nil, "no pickup class loaded" end
     local at = where or (Game.cat() and Game.cat():location())
     if at ~= nil and type(at) ~= "table" then at = Game.cat(at) and Game.cat(at):location() end
     if not at then return nil, "nowhere to put it" end
-    local xf = { Translation = { X = at.X + 60, Y = at.Y, Z = at.Z }, Rotation = { X = 0, Y = 0, Z = 0, W = 1 },
+    -- On the ground below: a cat's location is the middle of its body. A line that starts inside a rock
+    -- hits where it starts, so that height is left as it is.
+    local x, y = at.X + 60, at.Y
+    local ground = Game.trace({ X = x, Y = y, Z = at.Z + 50 }, { X = x, Y = y, Z = at.Z - 300 })
+    local z = ground and ground.Z < at.Z + 49 and ground.Z or at.Z
+    local xf = { Translation = { X = x, Y = y, Z = z }, Rotation = { X = 0, Y = 0, Z = 0, W = 1 },
                  Scale3D = { X = 1, Y = 1, Z = 1 } }
     local gs = Game.library("GameplayStatics")
     local ok, a = pcall(function() return gs:BeginDeferredActorSpawnFromClass(Game.player() or Game.world(), cls, xf, 1, nil, 0) end)
@@ -1409,6 +1476,7 @@ function Game.items.drop(tag, count, where)
     end)
     pcall(function() gs:FinishSpawningActor(a, xf, 0) end)
     Game.setTagCounts(a.Reward, { [tag] = count })
+    if look and look.mesh then pcall(dressPickup, a, look) end
     return a
 end
 

@@ -267,6 +267,10 @@ def build(cfg, mods, out_dir, log=print):
     # Areas' names and quests' titles, for the menu's pages (WCModsNames' N.area and N.quest).
     places = world.place_names(lambda path: game.read_text(path))
     shared_files[world.NAMES_NAME] = world.names_lua(plan, item_labels, places)
+    for name, (text, section) in ctx.ue4ss_shared.items():   # the sections' own (items: WCModsItems)
+        if name in shared_files:
+            raise ValueError(f"{section}: a shared Lua module {name} is wcmods' own")
+        shared_files[name] = text
     for name, text in shared_files.items():
         shared = os.path.join(out_dir, "ue4ss_shared", name)
         os.makedirs(shared)
