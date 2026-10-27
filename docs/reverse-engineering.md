@@ -1196,7 +1196,10 @@ Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`W
     device, or the key has no picture there). A button counts as play or menu by the first `SwtScreen` up
     its outers; one outside any screen (a prompt made from Lua) is play, and so is the Controls tab, which
     shows play's keys. It compares with the image itself each frame: a prompt's animations reach the
-    image by name, and one put the blank picture back on a prompt that then showed again.
+    image by name, and one put the blank picture back on a prompt that then showed again. And a picture the
+    game was still loading when the image was swapped lands on the image on screen: the first pause
+    screen's Back once showed the widget's default (the pad's A) that way. A key's picture there that the
+    script didn't put is taken as the game's choice.
 - **Not tried yet:** a controller, the mouse wheel, and a key held while a screen opens (the script lets
   go of an action whose key is no longer down, checked every few frames).
 

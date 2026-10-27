@@ -189,7 +189,6 @@ end
 local icons = { play = {}, menu = {} }   -- command number -> {key, ...}
 local pictures                           -- {kinds = {kind = {key = {image, hud}}}, of = {texture = {kind, ...}}}
 local found, buttons, taken = {}, {}, {} -- widgets made since the last look; those followed; those swapped
-local textures = {}                      -- path -> texture, as they're loaded
 local imageClass, userWidgetClass, screenClass, controlsClass
 
 local function softPath(ptr)
@@ -227,12 +226,11 @@ local function readPictures(gm)
     return { kinds = kinds, of = of }
 end
 
+-- Found again each time rather than kept: a texture nothing shows can be freed, and a kept handle to it
+-- could then point at another object.
 local function texture(path)
-    local t = textures[path]
-    if valid(t) then return t end
-    t = StaticFindObject(path)
+    local t = StaticFindObject(path)
     if not valid(t) then pcall(function() t = LoadAsset(path) end) end
-    if valid(t) then textures[path] = t end
     return t
 end
 
@@ -267,12 +265,19 @@ local function take(b)
         pcall(function() gm = beyond.GuiManager end)
         if not valid(gm) then pcall(function() gm = FindFirstOf("BP_WrcGameInstance_C").GuiManager end) end
         if not valid(gm) then return false end
-        pictures = readPictures(gm)
+        local ok, read = pcall(readPictures, gm)
+        if not ok then
+            log("can't read the game's key pictures, so they show its own keys: %s", tostring(read))
+            icons = { play = {}, menu = {} }
+            return false
+        end
+        pictures = read
     end
     local decoy = StaticConstructObject(imageClass, b.w)
     pcall(function() decoy:SetBrushResourceObject(real.Brush.ResourceObject) end)
     b.w.mcGuiButtonImage = decoy
     b.real, b.decoy, b.hud = real, decoy, b.w.bUseHudButtonImage
+    pcall(function() b.set = real.Brush.ResourceObject:GetFName():ToString() end)
     taken[#taken + 1] = b
     debug("key picture for command %d (%s) on %s", command(b), b.where, b.w:GetFullName())
     return true
@@ -280,6 +285,15 @@ end
 
 -- What the game chose, or the new key's picture in the same table.
 local function show(b)
+    local now = b.real.Brush.ResourceObject
+    local nowName = valid(now) and now:GetFName():ToString() or nil
+    -- A picture the game was still loading when the image was swapped lands on the image it was asked
+    -- for, the one on screen (the first pause screen's Back kept the widget's default otherwise): a key's
+    -- picture there that this script didn't put is the game's choice.
+    if nowName and nowName ~= b.set and pictures.of[nowName] then
+        b.decoy:SetBrushResourceObject(now)
+        b.set = nowName
+    end
     local tex = b.decoy.Brush.ResourceObject
     if not valid(tex) then return end
     local name = tex:GetFName():ToString()
@@ -298,12 +312,12 @@ local function show(b)
     -- Checked against the image itself: the widgets' animations reach it by its name, not the property,
     -- and one blanked a prompt that showed again without its picture.
     local want = path and path:match("[^%.]+$") or name
-    local now = b.real.Brush.ResourceObject
-    if valid(now) and now:GetFName():ToString() == want then return end
+    if nowName == want then b.set = want return end
     local t = path and texture(path) or tex
     if valid(t) then
         debug("key picture %s for command %d (the game's %s)", want, command(b), name)
         b.real:SetBrushFromTexture(t, false)
+        b.set = want
     end
 end
 

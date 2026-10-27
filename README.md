@@ -226,8 +226,9 @@ and the script works on those:
   an arrow key or WASD therefore also goes to the old key remapper, which can do those (the build says so).
 
 The game's pictures of keys follow too: prompts such as Travel and Talk, the menus' footers (Back,
-Confirm) and the pause screen's Controls tab show the new key, from the game's own pictures. A key keeps
-its picture wherever it still does its own job (with Interact on F, the map's E for its legend stays E).
+Confirm) and the pause screen's Controls tab show the new key, from the game's own pictures. A command
+that didn't move keeps the game's picture (with Escape standing for Backspace in menus, the footers' Back
+shows Escape while Confirm keeps Enter).
 The keyboard's pictures follow keyboard moves and a controller's follow controller moves. A key the game
 has no picture for (the middle mouse button, the wheel) leaves the game's picture as it was. Movement and
 the camera, which only the old key remapper can move, keep theirs. Seen working in game: Interact on F, Run on G,
