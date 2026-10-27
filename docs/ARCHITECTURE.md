@@ -7,7 +7,7 @@ A map of the code for anyone changing it. What each part does for a player is in
 
 | Where | What |
 |---|---|
-| `wcmods.py`, `Clan Mod Studio.bat`, `Play with key remaps.bat` | The entry points: the command line, and the two launchers a player double-clicks (`wcmods/findpython.bat` finds or offers to install Python) |
+| `wcmods.py`, `Clan Mod Studio.bat`, `Play with key remaps.bat` | The entry points: the command line, and the launchers a player double-clicks (the second, for the deprecated key remapper) (`wcmods/findpython.bat` finds or offers to install Python) |
 | `wcmods/` | The Python package (below) |
 | `wcmods/lua/` | wcmods' in-game Lua, as `.lua` files: the shared modules, the mod menu's host and pages, and the scripts the sections write for mods. The Python module beside each one reads it and fills its `@TOKENS@` in |
 | `wcmods/sections/` | The eleven built-in build sections, one per kind of mod content |
@@ -35,7 +35,7 @@ DLL from another game is an optional speed-up a player points `wcmods.json` at.
 | **`exe/`** | `pe` (reading the exe), `x64` (decoding its code), `signatures` (finding the hidden members again after a game update; `signatures.json`), `gamebuild` (which build Steam installed, mods made for older ones) | Nothing here runs the game ([updating.md](updating.md)) |
 | **Game content helpers** | `gamefiles` (the reader every section uses), `names`, `palettes`, `eyeatlas`, `colors`, `recolor`, `accessories`, `catcolours` (your cat's colours and scars), `controls`, `keymap` (both remap plans), `mouselook`, `playstate` | Each knows one of the game's tables or files and the mod file that edits it |
 | **In-game Lua generators** | `game` (`WCModsGame`), `menu` and `menupages` (the mod menu's module, host and pages), `draw`, `view`, `world` (the other shared modules), `bridge` (the Lua bridge the console and agent use), `mouselook`, `catcolours`, `palettes`, `playstate`, `gameremap` (the in-game key remap) (scripts written per install) | Each reads its Lua from `wcmods/lua/` and fills the settings in with `str.replace` on `@TOKENS@`; they import nothing but `lua_value` |
-| **Windows** | `remapper` (the key remapper outside the game, for what `gameremap` can't do: low-level hooks), `wininput` (the SendInput structs it and the agent share) | |
+| **Windows** | `remapper` (the old key remapper outside the game, deprecated, for what `gameremap` can't do: low-level hooks), `wininput` (the SendInput structs it and the agent share) | |
 | **Checks** | `selftest` (`python wcmods.py selftest`, against the installed game), `agent/` (in-game tests) | `tests/unit/` runs the game-free parts of the self-test under pytest |
 
 ## The build pipeline

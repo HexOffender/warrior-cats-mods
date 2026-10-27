@@ -86,8 +86,8 @@ export default {
         el("span", { class: "eyebrow", text: "Button remapper" }),
         el("h1", { text: "Controls" }),
         el("p", { class: "note", text: "Click Change, then press the key, mouse button, wheel or controller button you want, and save to a mod." })),
-      el("div", { class: "banner" }, el("strong", { text: "Most remaps work inside the game." }),
-        el("span", { text: " The game ignores edited bindings, so wcmods moves its actions (Interact, Run, Pounce and the rest) while it runs, with a small script installed with your mods: on keys, mouse buttons and controller buttons, however you start the game. Menu keys too (the \"In menus\" list). Movement and the camera are out of a script's reach, so they go through the wcmods key remapper, which Play (top right) starts when it's needed. Controller sticks: use Steam Input. More in the README, " }), docLink("README.md#remapping-keys", "Remapping keys"), el("span", { text: "." })),
+      el("div", { class: "banner" }, el("strong", { text: "Remaps work inside the game." }),
+        el("span", { text: " The game ignores edited bindings, so wcmods moves its actions (Interact, Run, Pounce and the rest) while it runs, with a small script installed with your mods: on keys, mouse buttons and controller buttons, however you start the game. Menu keys too (the \"In menus\" list). Movement and the camera are out of a script's reach: only the old key remapper, which is deprecated, does those (start the game with Play with key remaps.bat). Controller sticks: use Steam Input. More in the README, " }), docLink("README.md#remapping-keys", "Remapping keys"), el("span", { text: "." })),
       target.element,
       el("div", { class: "row" },
         el("span", { class: "eyebrow", text: "Controller presets" }),
@@ -273,7 +273,7 @@ export default {
         "e.g. Escape for the key that opens the pause menu. The game key then stops working on its own, unless an action above still uses it.", otherKeys, rowKeys);
       renderPairs(menuCard, "In menus", "Used only in the game's menus (every screen but the HUD, a fight's menu too), e.g. Escape for the key that closes a menu, " +
         "or I and K for Up and Down. Done inside the game; the game's own keys keep working too. A letter used here still types on the name " +
-        "screen and does the other key's job there too. Mouse buttons here need the key remapper (Play).", menuKeys, {});
+        "screen and does the other key's job there too. Mouse buttons here need the old key remapper (deprecated).", menuKeys, {});
       out.set(toJson());
     }
 
@@ -397,9 +397,9 @@ export default {
         el("ol", { style: { margin: "0", paddingLeft: "1.3em", display: "grid", gap: "6px" } },
           el("li", { text: "Save to a mod (top of this page)." }),
           el("li", { text: "Apply to game (top right, game closed). Moved actions then work inside the game, from Steam too: the new key does the action, and the old key stops doing it but keeps its other jobs. The game's prompts and its Controls screen still show its own keys." }),
-          el("li", { text: "Movement and the camera (and mouse buttons in the \"In menus\" list): start the game with Play (or python wcmods.py play), which runs the key remapper until the game closes. If the game is already open, use python wcmods.py remap. Those keys work while you play, with the game in front." }),
+          el("li", { text: "Movement and the camera (and mouse buttons in the \"In menus\" list) only work with the old key remapper, which is deprecated: start the game with Play with key remaps.bat (or python wcmods.py play). It runs until the game closes; python wcmods.py remap starts it when the game is already open." }),
           el("li", { text: "Controller sticks: in Steam, right-click the game, then Properties, Controller, and remap them with Steam Input." })),
-        el("p", { class: "note", text: "Add --dry-run to see what the key remapper would do without changing anything. The game ignores edited bindings in its save and its rebinding screen is unfinished on PC, which is why wcmods remaps while it runs. Mouse look above doesn't depend on any of this." }));
+        el("p", { class: "note", text: "Add --dry-run to see what the old key remapper would do without changing anything. The game ignores edited bindings in its save and its rebinding screen is unfinished on PC, which is why wcmods remaps while it runs. Mouse look above doesn't depend on any of this." }));
     }
 
     await Promise.all([target.refresh(), loadMouseLook()]);

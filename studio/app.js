@@ -64,7 +64,7 @@ async function refreshStatus() {
   if (active) renderNav();   // the pages may have changed
   installBtn.disabled = !!why || busy;
   installBtn.title = why || "Build your mods and put them in the game";
-  // Play applies what's waiting first, then starts the game (with key remaps, when mods have any).
+  // Play applies what's waiting first, then starts the game through Steam (remaps work inside the game).
   playBtn.disabled = !!why || busy;
   playBtn.textContent = info.game_running ? "Playing" : changes && changes.any ? "Apply and play" : "Play";
   playBtn.title = info.game_running ? "The game is running" : why || "Start the game" + (changes && changes.any ? ", after putting your changes in" : "");
