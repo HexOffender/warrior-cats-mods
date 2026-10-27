@@ -253,8 +253,40 @@ happens when the game unloads the cat and wcmods spawns it again.
 `Game.trace(from, to)` gives where a straight line first hits something, and `Game.ground(x, y, z)`
 the height of the ground below a place.
 
-The game gives these cats no Talk prompt or name of their own on screen; a script draws them with
-`WCModsDraw`. What they say can go in the game's own dialogue box:
+**The game's own label and Talk prompt.** The game fills in and shows these only for the cats it set up
+itself, so wcmods does it for a mod's cats. The label is the one the game's quest givers wear: its icon, a
+line in green, the name and the role. The prompt is the game's, with the glyph of its Interact key or
+button, which follows the keyboard or the controller:
+
+```lua
+npc:label({ name = "Brindlemoon", title = "Elder", extra = "A Soft Nest", icon = "available" })
+npc:prompt("Talk")
+Game.npcs.onInteract(function(who)
+    if who == npc then Game.dialogue.say("Brindlemoon", "Good hunting.") end
+    if who == nil then Game.dialogue.hide() end      -- Interact again while the box is up
+end)
+```
+
+| Call | |
+|---|---|
+| `npc:label({name, title, extra, icon, range})` | The game's label over its head: the name, the title under it, `extra` (a line above it, in the game's green), and `icon`, one of the game's quest marks: `"available"` (a new quest), `"ongoing"`, `"done"` (to hand in). It shows while your cat is within `range` cm (2000). `npc:label(nil)` takes it away |
+| `npc:prompt(text, reach)` | The game's prompt ("Talk") while your cat is within `reach` cm (250), at the cat, or at the screen's edge on its side when it's out of view. The cat in view comes first, and the game's own prompt (a pickup, a tunnel, its own cats) wins over it. `npc:prompt(nil)` takes it away |
+| `Game.npcs.onInteract(fn)` | `fn(npc)` when the game's Interact is pressed with that cat's prompt showing; `fn(nil)` when it's pressed while this script's dialogue box is up, so the same key moves a talk on |
+| `Game.npcs.interactKeys()` | The keys Interact is on: the keyboard's and the controller's from your settings (`E`, `Gamepad_FaceButton_Bottom`), and the left mouse button, which the prompt shows |
+
+**The game's quest HUD and map markers.** The objective panel, the quest banners and the minimap's markers
+are the game's own too. The game shows them only for its own quests, so in Sandbox mode, which has none,
+nothing of the game's takes them back:
+
+| Call | |
+|---|---|
+| `Game.hud.objective({title, location, activity, goals})` | The game's current-objective panel, on the left: the quest's title, a place under it (with the game's pin), what to do now, and up to three `goals`, `{name, progress ("1/2"), icon (a texture's asset path), done}`. `Game.hud.objective(nil)` puts it away |
+| `Game.hud.banner(kind, {kind, title, text, seconds})` | One of the game's banners, with its particles: `"begin"` (a quest taken up: its kind, "Quest", its title and the first objective), `"update"`, `"done"` ("Quest completed!") or `"failed"`. It goes after `seconds` (4.5) |
+| `Game.mapMarker(where, {icon, border, map})` | A marker on the minimap and the world map, the game's own point of interest: `where` is a place (`{x, y, z}`) or an actor it follows; `icon` is `"search"` (a ?), `"talk"`, `"barter"`, `"freshkill"`, `"trainer"`, `"den"`, `"outpost"`, `"skirmish"`, `"madcat"`, a Clan, or a material's path; it stays at the minimap's edge when it's further off (`border = false` doesn't). Returns a marker with `remove()` and `moveTo(x, y, z)` |
+| `npc:mapMarker(icon)` | The same on a mod's cat, put back on it when it's spawned again; `npc:mapMarker(nil)` takes it off |
+
+Where the label or prompt isn't wanted, a script draws its own with `WCModsDraw`. What they say goes in the
+game's own dialogue box:
 
 | Call | |
 |---|---|

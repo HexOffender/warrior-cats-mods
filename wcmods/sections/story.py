@@ -20,6 +20,14 @@ def script(text):
             'if not ok then print("[WCModsStory] couldn\'t share the cats and questlines: " .. tostring(err) .. "\\n") end\n')
 
 
+def _icon(row):
+    """An item row's icon as the texture's asset path ("/Game/.../T_X.T_X"), or None."""
+    icon = row.get("Icon")
+    if isinstance(icon, dict) and icon.get("package") and icon.get("asset"):
+        return f"{icon['package']}.{icon['asset']}"
+    return None
+
+
 class StorySection(Section):
     id = "story"
     title = "Characters and questlines"
@@ -37,12 +45,17 @@ class StorySection(Section):
         if not any(m.id == story.SANDBOX_ID for m in ctx.mods):
             ctx.warn("cats and questlines come into the game with the Sandbox mode mod (github.com/HexOffender/"
                      "wcmods-sandbox), and it isn't on; they go in, but nothing shows them until it is")
-        # Items the quests name: the game's, or one a mod adds (the items section comes first).
-        known = {v.get("itemTag") for _, v in ctx.cooked_table("DT_QuestObjectsInfo")}
-        known |= set(ctx.notes.get("items", {}).get("items", []))
+        # Items the quests name: the game's, or one a mod adds (the items section comes first), with their icons.
+        icons = {v.get("itemTag"): _icon(v) for _, v in ctx.cooked_table("DT_QuestObjectsInfo")}
+        for _, v, _, _ in ctx.table_rows.get("DT_QuestObjectsInfo", []):
+            icons[v.get("itemTag")] = _icon(v)
+        known = set(icons) | set(ctx.notes.get("items", {}).get("items", []))
+        used = set()
         for mod, data in items:
+            used |= story.items_used(data)
             for tag in sorted(story.items_used(data) - known):
                 ctx.warn(f"{mod.id}: quests.json names the item {tag}, which the game hasn't got (and no mod adds)")
-        ctx.add_ue4ss_mod(UE4SS_NAME, {"Scripts/main.lua": script(story.bundle(items)), "enabled.txt": ""})
+        icons = {tag: icons[tag] for tag in sorted(used) if icons.get(tag)}
+        ctx.add_ue4ss_mod(UE4SS_NAME, {"Scripts/main.lua": script(story.bundle(items, icons)), "enabled.txt": ""})
         ctx.note("story", {mod.id: {"npcs": [c["id"] for c in data["npcs"]], "quests": [q["id"] for q in data["quests"]]}
                            for mod, data in items})

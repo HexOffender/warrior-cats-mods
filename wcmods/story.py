@@ -298,10 +298,11 @@ def read(npcs_raw, quests_raw):
     return {"npcs": cats, "quests": qs}
 
 
-def bundle(items):
-    """Every mod's cats and questlines, [(mod, {"npcs", "quests"})], as the JSON text the game gets."""
-    return json.dumps({"format": FORMAT, "mods": [{"id": mod.id, "name": mod.name, **data} for mod, data in items]},
-                      ensure_ascii=False, separators=(",", ":"))
+def bundle(items, icons=None):
+    """Every mod's cats and questlines, [(mod, {"npcs", "quests"})], as the JSON text the game gets, with the
+    icons of the items they name ({tag: texture asset path}) for the game's objective panel."""
+    return json.dumps({"format": FORMAT, "mods": [{"id": mod.id, "name": mod.name, **data} for mod, data in items],
+                       "icons": icons or {}}, ensure_ascii=False, separators=(",", ":"))
 
 
 def items_used(data):
