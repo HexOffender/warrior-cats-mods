@@ -95,12 +95,15 @@ end
 
 -- One cat: each slot whose look has a mesh of its own gets it; a slot that has one of ours on a look
 -- without one gets the game's mesh back (when the game changed the look but not the mesh). Then its glass.
+local seen = {}   -- the slots looked at this tick, so what's kept for ones that are gone is let go
 local function apply(comp)
     local changed = 0
     local data = comp.CustomData
     for slot, field in pairs(SLOTS) do
-        local ok, c = pcall(function() return comp[field] end)
+        local ok, c = nil, nil
+        if MODELS[slot] then ok, c = pcall(function() return comp[field] end) end   -- no mod's look is for it
         if ok and valid(c) then
+            seen[c:GetAddress()] = true
             local look = nil
             local byName = MODELS[slot]
             if byName then
@@ -153,9 +156,16 @@ local function retake(owner)
     end
 end
 
+local function forget(t)
+    for key in pairs(t) do
+        if not seen[key] then t[key] = nil end
+    end
+end
+
 local said = false
 local function tick()
     local total = 0
+    seen = {}
     for _, comp in ipairs(FindAllOf("SwtAdventureCustomizableMeshComponent") or {}) do
         if valid(comp) then
             local ok, n = pcall(apply, comp)
@@ -168,6 +178,9 @@ local function tick()
             end
         end
     end
+    forget(original)
+    forget(originalMats)
+    forget(glassOn)
     if total > 0 and not said then
         said = true
         log("a cat wears an accessory of a mod's own (a model, a place or glass)")

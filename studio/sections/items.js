@@ -327,7 +327,7 @@ export default {
       const shown = Math.round((it.opacity ?? 1) * 100);
       const glassNote = el("span", { class: "muted", style: { fontSize: "0.85rem" } });
       const glass = el("input", { type: "color", value: it.glass || (tex && tex.tint) || "#ffffff", "aria-label": "Glass colour",
-        onchange: () => { it.glass = glass.value; changed(); } });
+        onchange: () => { it.glass = glass.value; changed(); redraw(); } });
       const glassRow = el("div", { class: "row" }, el("span", { class: "lbl", text: "Glass colour" }), glass, glassNote);
       const opacity = el("input", { type: "range", min: "0", max: "100", step: "5", value: String(shown), "aria-label": "Opacity",
         style: { flex: "1", minWidth: "140px" } });
@@ -443,14 +443,21 @@ export default {
         if (axis === "size") size = v; else stretch[axis] = v;
         const round = x => Math.round(x * 1000) / 1000;
         const stretched = STRETCH.some(([a]) => round(stretch[a]) !== 1);
-        set("scale", stretched ? Object.fromEntries(STRETCH.map(([a]) => [a, round(size * stretch[a])])) : round(size), 1);
+        const each = a => Math.min(20, Math.max(0.01, round(size * stretch[a])));
+        set("scale", stretched ? Object.fromEntries(STRETCH.map(([a]) => [a, each(a)])) : round(size), 1);
       };
-      function slider(label, hint, value, min, max, step, onInput, aria) {
+      // min/max are the slider's; lo/hi what items.json takes, which the number box keeps to.
+      function slider(label, hint, value, min, max, step, onInput, aria, lo = min, hi = max) {
         const range = el("input", { type: "range", min: String(min), max: String(max), step: String(step), value: String(value),
           "aria-label": aria || label, style: { width: "100%" } });
         const num = el("input", { type: "number", step: String(step), value: String(value), "aria-label": `${aria || label} (number)`, style: { width: "100%" } });
         range.addEventListener("input", () => { num.value = range.value; onInput(Number(range.value)); });
-        num.addEventListener("change", () => { const v = Number(num.value); if (Number.isFinite(v)) { range.value = String(v); onInput(v); } });
+        num.addEventListener("change", () => {
+          let v = Number(num.value);
+          if (!Number.isFinite(v)) v = value;
+          v = Math.min(hi, Math.max(lo, v));
+          num.value = String(v); range.value = String(v); onInput(v);
+        });
         return el("div", { style: { display: "grid", gridTemplateColumns: "8.5em minmax(100px, 1fr) 5.5em minmax(0, 16em)", gap: "4px 10px", alignItems: "center" } },
           el("span", { class: "lbl", text: label }), range, num, el("span", { class: "muted", style: { fontSize: "0.85rem" }, text: hint || "" }));
       }
@@ -459,11 +466,12 @@ export default {
         const place = get();
         readScale();
         box.append(el("h4", { text: "Where it sits", style: { margin: "6px 0 0" } }));
-        for (const [key, label, hint] of MOVES) box.append(slider(label, hint, place[key] ?? 0, -25, 25, 0.1, v => set(key, Math.round(v * 100) / 100, 0)));
-        for (const [key, label, hint] of TURNS) box.append(slider(label, hint, place[key] ?? 0, -180, 180, 1, v => set(key, Math.round(v * 10) / 10, 0)));
-        box.append(slider("Size", "times as big", size, 0.2, 4, 0.01, v => setScale("size", v)));
+        for (const [key, label, hint] of MOVES) box.append(slider(label, hint, place[key] ?? 0, -25, 25, 0.1, v => set(key, Math.round(v * 100) / 100, 0), null, -100, 100));
+        for (const [key, label, hint] of TURNS) box.append(slider(label, hint, place[key] ?? 0, -180, 180, 1, v => set(key, Math.round(v * 10) / 10, 0), null, -360, 360));
+        // Each way's size (size times stretch) must stay within 0.01 to 20.
+        box.append(slider("Size", "times as big", size, 0.2, 4, 0.01, v => setScale("size", v), null, 0.05, 20));
         for (const [axis, label] of STRETCH) {
-          box.append(slider(`Stretch: ${label.toLowerCase()}`, null, stretch[axis], 0.2, 4, 0.01, v => setScale(axis, v), `Stretch ${label}`));
+          box.append(slider(`Stretch: ${label.toLowerCase()}`, null, stretch[axis], 0.2, 4, 0.01, v => setScale(axis, v), `Stretch ${label}`, 0.05, 20));
         }
         box.append(el("div", { class: "row" }, el("button", { class: "btn ghost small", text: "Put it back where it was made",
           onclick: () => { delete it.place; changed(); paint(); draw(); } })));

@@ -94,6 +94,7 @@ class Studio:
         self._icons = {}     # (item tag or texture, tint) -> PNG bytes
         self._skin = None    # the cat's skin, to say how far a model reaches from it
         self._views = {}     # accessory -> its shape and the cat's, for the Items page's drawing
+        self._pictures = {}  # texture -> its full-size PNG, to paint over (the last few)
 
     # ---------- helpers ----------
     def mods(self):
@@ -507,8 +508,12 @@ class Studio:
         if parts == ["game", "texture"] and method == "GET":
             # One of the game's pictures at full size to paint over: an accessory's look, an item's icon.
             asset = self.texture_asset((query or {}).get("of", ""), (query or {}).get("what", "icon"))
-            w, h, rgba = texture.load(self.ctx.game, asset).image(0)
-            return Download(png.write(w, h, rgba), asset.split(".", 1)[0].rsplit("/", 1)[-1] + ".png", "image/png")
+            if asset not in self._pictures:          # a look takes seconds to decode: the last few kept
+                if len(self._pictures) >= 4:
+                    self._pictures.pop(next(iter(self._pictures)))
+                w, h, rgba = texture.load(self.ctx.game, asset).image(0)
+                self._pictures[asset] = png.write(w, h, rgba)
+            return Download(self._pictures[asset], asset.split(".", 1)[0].rsplit("/", 1)[-1] + ".png", "image/png")
         if len(parts) == 4 and parts[0] == "mods" and parts[2] == "picture" and method == "GET":
             m = self.mod(parts[1])
             path = os.path.join(m.folder, PICTURES, os.path.basename(parts[3]))
@@ -683,10 +688,7 @@ class Studio:
             or "model"
         folder = os.path.join(mod.folder, MODELS)
         os.makedirs(folder, exist_ok=True)
-        for other in models.FORMATS:                 # one model per item: a new one replaces the last
-            old = os.path.join(folder, stem + other)
-            if other != ext and os.path.isfile(old):
-                os.remove(old)
+        # The last one stays: the saved items.json names it until the page is saved again.
         with open(os.path.join(folder, stem + ext), "wb") as f:
             f.write(data)
         return {"path": f"{MODELS}/{stem}{ext}", **model.summary(), "farthest_cm": round(self._skin_distance(model), 1)}
