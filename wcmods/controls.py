@@ -47,9 +47,13 @@ GAMEPAD_ALIASES = {
 
 
 def read_bindings(json_text):
-    """Return {'keyboard': {action: key}, 'gamepad': {action: key}}; entries it can't read are left out."""
+    """Return {'keyboard': {action: key}, 'gamepad': {action: key}}; entries it can't read are left out.
+    Raises LookupError when the save has no settings yet (an empty save, before the game has written any)."""
     doc = json.loads(json_text)
-    shared = next(iter(doc.values()))["Shared"]
+    account = next(iter(doc.values()), None)
+    if not isinstance(account, dict) or not isinstance(account.get("Shared"), dict):
+        raise LookupError("the save has no key bindings yet; start the game and reach the main menu once")
+    shared = account["Shared"]
     out = {}
     for device, section in SECTIONS.items():
         out[device] = {}
