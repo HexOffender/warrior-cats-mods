@@ -35,8 +35,9 @@ import re
 # own; it's wcmods' now (menu.py), so it's always there: a mod needing it needs nothing more.
 MENU_ID = "mod-menu"
 CONTENT = (("files", "files"), ("paks", "cooked content"), ("palette.json", "palette"), ("controls.json", "controls"),
-           ("mouselook.json", "mouse look"), ("data.json", "data"), ("items.json", "items"), ("npcs.json", "characters"),
-           ("quests.json", "questlines"), ("names.json", "names"), ("cats.json", "cats"),
+           ("mouselook.json", "mouse look"), ("data.json", "data"), ("items.json", "items"),
+           ("animations.json", "animations"), ("npcs.json", "characters"), ("quests.json", "questlines"),
+           ("names.json", "names"), ("cats.json", "cats"),
            ("save.json", "save"), ("scripts", "in-game script"), ("dlls", "C++ mod"), ("cpp", "C++ source"),
            ("section.py", "code"),
            (os.path.join("studio", "section.js"), "studio page"))

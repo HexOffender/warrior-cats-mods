@@ -8,8 +8,10 @@ export default {
     const KIND = {
       files: "Replaces game files", "cooked content": "New models or textures",
       palette: "Colours", controls: "Controls", "mouse look": "Mouse look", data: "Game rules and numbers",
+      items: "New items", animations: "Animations", characters: "New characters", questlines: "Questlines",
       names: "Cat names", cats: "Your cat's colours", save: "Changes your save", "in-game script": "In-game script",
       "C++ mod": "C++ mod", "C++ source": "C++ source", code: "Build step (code)", "studio page": "Studio page",
+      "mod pack": "Mod pack",
     };
     let mods = [], filter = "all", search = "", settings = null;
     const open = new Set();   // mod cards with "More" open

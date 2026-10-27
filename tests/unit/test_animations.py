@@ -408,6 +408,15 @@ def test_animations_that_cant_be_used_are_refused(entry, message):
         check(entry, "animations.json: animation 1")
 
 
+def test_a_mod_with_animations_json_says_so(tmp_path):
+    # The Studio's mod picker and the Mods page go by a mod's kinds.
+    from wcmods.mods import Mod
+    (tmp_path / "mod.json").write_text(json.dumps({"name": "Waves"}))
+    assert "animations" not in Mod(str(tmp_path)).kinds()
+    (tmp_path / "animations.json").write_text(json.dumps({"animations": []}))
+    assert "animations" in Mod(str(tmp_path)).kinds()
+
+
 def test_animations_json_is_read_and_checked(tmp_path):
     mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()
     wave = {"id": "Wave", "name": "Wave", "file": "animations/wave.glb", "emote": True, "key": "F6"}

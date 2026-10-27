@@ -55,6 +55,8 @@ mods/my-mod/
   items.json          new herbs, materials and looks    -> section "items" (see "New items")
   pictures/, models/  an item's own icons and looks (PNG) and accessories' shapes (OBJ, glTF), named
                       in items.json; the studio's Items page keeps the ones you add there
+  animations.json     animations made in Blender        -> section "animations" (see "Animations")
+  animations/         their glTF files (.glb), named in animations.json
   names.json          cat names                         -> section "names"
   palette.json        colour palettes                   -> section "palettes"
   cats.json           your cat's own colours and slots  -> section "cats"
