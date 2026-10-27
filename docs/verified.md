@@ -85,6 +85,11 @@ OBJ file and one from a GLB, each a ring with a bell: `WCModsModels` installed):
   the neck with the Items page's sliders (forward 11.7, up 16.4, tip 15, size 1.2) and set to 40% in a
   gold glass, sat on the neck in the inventory's picture and in the forest, the cat's fur showing
   through it. Switching from it to the game's own Dog Collar look showed the game's collar as it is.
+- The other slots and the rest: a ring modelled at the origin, placed on a front paw as a new Oak
+  Wrap look; the Dog Collar's own shape placed lower and a quarter bigger (`place` with no model); and
+  Mud Marks as green glass on the hip. All three showed in the inventory's picture, in the forest and
+  on the main menu's cat. With `SHP_Chubby` set to full on the body, fur and accessory slots by hand,
+  the collar and the ring stayed on the cat as it filled out.
 
 **2026-10-24, scripting:**
 - **The bridge and the commands:** they run Lua in the game; `lua`, `inspect`, `find`, `game` and
@@ -149,11 +154,9 @@ OBJ file and one from a GLB, each a ring with a bell: `WCModsModels` installed):
 
 ## Not yet confirmed in game
 
-- **Accessories' models:** on other cats (a mod's cats, NPCs), in the main menu's and the save
-  slots' pictures, on body and paw accessories, and on a brawny or chubby cat (the body-shape morphs
-  are taken from the cat's body, close to the game's own for the Dog Collar, but not seen in game).
-  A placed copy of the game's own shape (`place` without a `model`) was built and checked by the
-  selftest, not seen in game.
+- **Accessories' models:** on other cats (a mod's cats, NPCs) and in the save slots' pictures; and on
+  a cat whose build the game set up as brawny or chubby (`RefreshShape` doesn't apply a build, so only
+  the morph set by hand was seen).
 
 - **Scripting:**
   - the studio's Console page;
