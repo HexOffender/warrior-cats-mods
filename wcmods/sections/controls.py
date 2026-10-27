@@ -50,12 +50,13 @@ class ControlsSection(Section):
         for w in warnings + outside_warnings + menu_warnings:
             ctx.warn(w)
         if send or block or menu_send:
-            ctx.warn(f"{len(send) + len(menu_send) + len(block)} of these remaps (movement, the camera, the map's "
-                     "zoom and move, mouse buttons in menus) only work with the old key remapper, which is "
-                     "deprecated: start the game with `Play with key remaps.bat` or `python wcmods.py play` for them")
             # Lets the remapper tell play from menus (see playstate.py).
             path = playstate.state_path(ctx.cfg)
             if path:
+                n = len(send) + len(menu_send)
+                ctx.warn(f"{n} {'remap' if n == 1 else 'remaps'} here (movement, the camera, the map's zoom and move, "
+                         "mouse buttons in menus) only work with the old key remapper, which is deprecated: start the "
+                         "game with `Play with key remaps.bat` or `python wcmods.py play` for them")
                 ctx.add_ue4ss_mod(playstate.UE4SS_MOD_NAME, {"Scripts/main.lua": playstate.script(path), "enabled.txt": ""})
             else:
                 ctx.warn("without UE4SS, every remap goes through the old key remapper (`wcmods play`, deprecated), "

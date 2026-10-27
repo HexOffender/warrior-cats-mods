@@ -124,9 +124,9 @@ def play(ctx, log=print, force=False):
     os.startfile(f"steam://rungameid/{STEAM_APP_ID}")
     log("starting the game through Steam")
     if with_remaps:
-        log("some of your remaps (movement, the camera, the map's zoom and move, mouse buttons in menus) only "
-            "work with the old key remapper, which is deprecated: start the game with Play with key remaps.bat "
-            "for them")
+        log("some of your remaps only work with the old key remapper, which is deprecated (what the game reads "
+            "itself, such as movement and the camera, or every remap without UE4SS): start the game with "
+            "Play with key remaps.bat for them")
     return {"applied": applied, "remaps": with_remaps}
 
 
