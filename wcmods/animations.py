@@ -38,37 +38,63 @@ _ART = "/Game/Art/Characters/"
 # The skeletons an animation can be for: its label, the skeleton, the mesh the start kit shows, the sequence a
 # new one is a copy of (a plain one: no notifies, no curves but the cats' constant ones), the meshes that run
 # it in the game (to tell which actors can play it), and the game's sequences the start kit carries as
-# examples (the ones in Unreal's own codecs, which wcmods decodes).
+# examples (an idle, walking and running, and something of their own; ACL ones decoded by formats/acl.py).
+_COMBAT = "Animations/Combat/"
 KINDS = {
     "cat": {"label": "Cats", "skeleton": "CatMaster/Skel/SK_CatMaster_Skeleton", "mesh": "CatMaster/Skel/SK_CatMaster",
             "template": "CatMaster/Animations/A_CatMaster_Meow", "meshes": ["SK_CatMaster"],
-            "examples": ["CatMaster/Animations/A_CatMaster_Stretch_1", "CatMaster/Animations/A_CatMaster_Meow",
-                         "CatMaster/Animations/A_CatMaster_Shake_1", "CatMaster/Animations/A_CatMaster_Stand_1_c"]},
+            "examples": ["CatMaster/Animations/" + a for a in (
+                "A_CatMaster_Idle_1", "A_CatMaster_Walk_1", "A_CatMaster_Trot_1", "A_CatMaster_Run_1",
+                "A_CatMaster_Stand_1_c", "A_CatMaster_Meow", "A_CatMaster_Stretch_1", "A_CatMaster_Shake_1",
+                "A_CatMaster_Yawn_1", "A_CatMaster_Sniffing_1", "A_CatMaster_Play_1", "A_CatMaster_Sleep_Loop_2",
+                "PhotoMode/A_CatMaster_Pose_Photo_Mode_1")]},
     "mouse": {"label": "Mice", "skeleton": "Enemy/Mice/Skel/SK_Mice_Skeleton", "mesh": "Enemy/Mice/Skel/SK_Mice",
               "template": "Enemy/Mice/Animations/Combat/A_Mice_Hit_Out_T", "meshes": ["SK_Mice"],
-              "examples": ["Enemy/Mice/Animations/A_Mice_Idle_1", "Enemy/Mice/Animations/A_Mice_Walk_1"]},
+              "examples": ["Enemy/Mice/Animations/A_Mice_Idle_1", "Enemy/Mice/Animations/A_Mice_Walk_1",
+                           "Enemy/Mice/Animations/A_Mice_Run_1",
+                           "Enemy/Mice/" + _COMBAT + "OffensiveStance/A_Mice_C_Rodent_Bite"]},
     "rat": {"label": "Rats", "skeleton": "Enemy/Rats/Skel/SK_Rats_Skeleton", "mesh": "Enemy/Rats/Skel/SK_Rats",
             "template": "Enemy/Rats/Animations/Combat/A_Rats_Hit_Out_T", "meshes": ["SK_Rats"],
-            "examples": ["Enemy/Rats/Animations/A_Rats_Idle_1", "Enemy/Rats/Animations/A_Rats_Walk_1"]},
+            "examples": ["Enemy/Rats/Animations/A_Rats_Idle_1", "Enemy/Rats/Animations/A_Rats_Walk_1",
+                         "Enemy/Rats/Animations/A_Rats_Run_1",
+                         "Enemy/Rats/" + _COMBAT + "RecklessStance/A_Rats_Tail_Attack"]},
     "rabbit": {"label": "Rabbits", "skeleton": "Enemy/Rabbit/Skel/SK_Rabbit_Skeleton", "mesh": "Enemy/Rabbit/Skel/SK_Rabbit",
                "template": "Enemy/Rabbit/Animations/Combat/A_Rabbit_Hit_Out_N", "meshes": ["SK_Rabbit"],
-               "examples": ["Enemy/Rabbit/Animations/Combat/A_Rabbit_Hit_1"]},
+               "examples": ["Enemy/Rabbit/Animations/A_Rabbit_Idle_1", "Enemy/Rabbit/Animations/A_Rabbit_Walk_1",
+                            "Enemy/Rabbit/Animations/A_Rabbit_Run_1", "Enemy/Rabbit/Animations/A_Rabbit_Alert_1",
+                            "Enemy/Rabbit/" + _COMBAT + "SneakyStance/A_Rabbit_Jump_Attack"]},
     "squirrel": {"label": "Squirrels", "skeleton": "Enemy/Squirrel/Skel/SK_Squirrel_Skeleton",
                  "mesh": "Enemy/Squirrel/Skel/SK_Squirrel",
                  "template": "Enemy/Squirrel/Animations/Combat/SneakyStance/A_Squirrel_Sneaky_Stance_Stand_1",
-                 "meshes": ["SK_Squirrel"], "examples": []},
+                 "meshes": ["SK_Squirrel"],
+                 "examples": ["Enemy/Squirrel/Animations/A_Squirrel_Stand_1", "Enemy/Squirrel/Animations/A_Squirrel_Walk_1",
+                              "Enemy/Squirrel/Animations/A_Squirrel_Run_1",
+                              "Enemy/Squirrel/" + _COMBAT + "OffensiveStance/A_Squirrel_Taunt"]},
     "bird": {"label": "Birds", "skeleton": "Enemy/Bird/Skel/SK_Bird_Skeleton", "mesh": "Enemy/Bird/Skel/SK_Bird",
-             "template": "Enemy/Bird/Animations/Combat/A_Bird_Lose_2", "meshes": ["SK_Bird"], "examples": []},
+             "template": "Enemy/Bird/Animations/Combat/A_Bird_Lose_2", "meshes": ["SK_Bird"],
+             "examples": ["Enemy/Bird/Animations/A_Bird_Idle_1", "Enemy/Bird/Animations/A_Bird_Walk_1",
+                          "Enemy/Bird/Animations/A_Bird_Flying_Loop_1",
+                          "Enemy/Bird/" + _COMBAT + "OffensiveStance/A_Bird_Peck"]},
     "fox": {"label": "Foxes", "skeleton": "Enemy/Fox/Skel/Sk_Fox_Skeleton", "mesh": "Enemy/Fox/Skel/Sk_Fox",
-            "template": "Enemy/Fox/Animations/Combat/A_Fox_Hit_Out_N", "meshes": ["Sk_Fox"], "examples": []},
+            "template": "Enemy/Fox/Animations/Combat/A_Fox_Hit_Out_N", "meshes": ["Sk_Fox"],
+            "examples": ["Enemy/Fox/Animations/A_Fox_Idle_1", "Enemy/Fox/Animations/A_Fox_Walk_1",
+                         "Enemy/Fox/Animations/A_Fox_Run_1",
+                         "Enemy/Fox/" + _COMBAT + "OffensiveStance/A_Fox_Quick_Claw"]},
     "badger": {"label": "Badgers", "skeleton": "Enemy/Badger/Skel/Sk_Badger_Skeleton", "mesh": "Enemy/Badger/Skel/Sk_Badger",
                "template": "Enemy/Badger/Animations/Combat/OffensiveStance/A_Badger_Offensive_Stance_Stand_1",
-               "meshes": ["Sk_Badger"], "examples": []},
+               "meshes": ["Sk_Badger"],
+               "examples": ["Enemy/Badger/Animations/A_Badger_Stand_1", "Enemy/Badger/Animations/A_Badger_Walk1",
+                            "Enemy/Badger/Animations/A_Badger_Run_1",
+                            "Enemy/Badger/" + _COMBAT + "OffensiveStance/A_Badger_Strong_Claw"]},
     "dog": {"label": "Dogs", "skeleton": "Enemy/Dog/Skel/SK_Dog_Skeleton", "mesh": "Enemy/Dog/Skel/SK_Dog",
             "template": "Enemy/Dog/Animations/Combat/SneakyStance/A_Dog_Sneaky_Stance_Stand_1", "meshes": ["SK_Dog"],
-            "examples": []},
+            "examples": ["Enemy/Dog/Animations/A_Dog_Idle_1", "Enemy/Dog/Animations/A_Dog_Walk_1",
+                         "Enemy/Dog/Animations/A_Dog_Run_1",
+                         "Enemy/Dog/" + _COMBAT + "RecklessStance/A_Dog_Hyper_Roar"]},
     "snake": {"label": "Snakes", "skeleton": "Enemy/Snake/Skel/SK_Snake_Skeleton", "mesh": "Enemy/Snake/Skel/SK_Snake",
-              "template": "Enemy/Snake/Animations/Combat/A_Snake_Hit_Out_T", "meshes": ["SK_Snake"], "examples": []},
+              "template": "Enemy/Snake/Animations/Combat/A_Snake_Hit_Out_T", "meshes": ["SK_Snake"],
+              "examples": ["Enemy/Snake/Animations/A_Snake_Stand_1", "Enemy/Snake/Animations/A_Snake_Slide_Loop",
+                           "Enemy/Snake/" + _COMBAT + "OffensiveStance/A_Snake_Taunt"]},
 }
 # The cats' claws: the sequences hold these curves at 1 (claws in); "claws" out puts them at 0.
 CLAWS = ("shp_claw_hiden_l", "shp_claw_hiden_r", "shp_claw_b_hiden_l", "shp_claw_b_hiden_r")
@@ -589,9 +615,13 @@ def start_kit(game, kind):
     for path in KINDS[kind]["examples"]:
         try:
             seq = anim.AnimSequence(game.read(texture.content_path(_ART + path)))
-            examples.append((path.rsplit("/", 1)[-1], seq.track_map, seq.tracks(), seq.frame_rate()))
+            if seq.skeleton_name().lower() != asset(kind, "skeleton").lower():
+                continue                          # moved to another skeleton: its bind pose isn't this one
+            examples.append((path.rsplit("/", 1)[-1], seq.track_map, seq.tracks(seq.bind_pose(skeleton)),
+                             seq.frame_rate()))
         except (KeyError, ValueError):
-            continue                              # one the game no longer has, or in ACL
+            continue                              # one the game no longer has, or one an update made unreadable
+                                                  # (the selftest counts each kit's examples)
     rate = anim.AnimSequence(game.read(texture.content_path(asset(kind, "template")))).frame_rate()
     data = write_rig(skeleton, mesh, examples, kind)
     label = KINDS[kind]["label"]

@@ -13,8 +13,8 @@ HasGuid, the SkeletonGuid, FStripDataFlags, a u32 bSerializeCompressedData, then
     the bone codec's name in its settings (FString), the curve codec's path (FString), i32 count and
     the curve bytes;
   * then the bone codec's own fields. ACL (AnimBoneCompressionCodec_ACL_*): i32 keys and a u32 0; the
-    bone data is an ACL stream. Unreal's (AnimCompress_*): i32 keys, u8 key encoding (2 = per track,
-    0 = constant key lerp), u8 translation, rotation and scale formats, then i32 sizes: the byte
+    bone data is an ACL stream (formats/acl.py). Unreal's (AnimCompress_*): i32 keys, u8 key encoding
+    (2 = per track, 0 = constant key lerp), u8 translation, rotation and scale formats, then i32 sizes: the byte
     stream, the track offsets, the scale offsets and the scale offsets' stride. The bone data is the
     track offsets, the scale offsets, then the byte stream.
 
@@ -437,10 +437,16 @@ class AnimSequence:
             raise FormatError("the sequence has properties wcmods doesn't know before its length")
         raise LookupError(index)
 
-    def tracks(self):
-        """Every track's keys: [(translations, rotations, scales)], each a list of one value per key."""
+    def tracks(self, bind=None):
+        """Every track's keys: [(translations, rotations, scales)], each a list of one value per key. An ACL
+        stream leaves what didn't move from the bind pose out: `bind` gives that, a (translation, rotation,
+        scale) a track, the skeleton's reference pose for the track's bone (bind_pose)."""
         if self.codec == "acl":
-            raise FormatError("the sequence is compressed with ACL, which wcmods doesn't decode")
+            from . import acl
+            out = acl.decode(self.blob, bind)
+            if len(out) != len(self.track_map) or any(len(t) != self.nkeys for track in out for t in track):
+                raise FormatError("the ACL stream's tracks or keys aren't the sequence's")
+            return out
         n = self.nkeys
         if not 0 < n <= MAX_KEYS:
             raise FormatError(f"{n} keys")
@@ -470,6 +476,20 @@ class AnimSequence:
                 raise FormatError(f"key {self.codec} isn't one wcmods reads")
             out.append((T, Q, S))
         return out
+
+    def bind_pose(self, skeleton):
+        """The skeleton's (formats/anim.Skeleton) reference pose for each of the sequence's tracks, for tracks()."""
+        if any(not 0 <= b < len(skeleton.poses) for b in self.track_map):
+            raise FormatError("the sequence's tracks aren't all bones of that skeleton")
+        return [skeleton.poses[b] for b in self.track_map]
+
+    def skeleton_name(self):
+        """The package of the skeleton the sequence is on ("/Game/Art/Characters/.../SK_Mice_Skeleton"), from the
+        package names it imports."""
+        found = [n for n in self._package_names() if n.lower().endswith("skeleton")]
+        if len(found) != 1:
+            raise FormatError("couldn't tell which skeleton the sequence is on")
+        return found[0]
 
     def constant_curves(self):
         """{curve name: value} for the curves that hold one value all through (all of them in the copies)."""
