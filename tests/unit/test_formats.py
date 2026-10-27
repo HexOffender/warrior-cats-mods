@@ -40,6 +40,10 @@ def test_cat_rename_inside_save_text():
     assert selftest._rename_struct()
 
 
+def test_cats_named_with_a_mods_text_the_build_leaves_out_are_warned_about():
+    assert selftest._names_without_text()
+
+
 def test_colour_slots_and_your_cats_colours_and_scars():
     assert selftest._colour_slots()
 

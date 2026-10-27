@@ -664,6 +664,21 @@ def _where(path, current=True):
     return where if current else f"{path.split('/', 1)[0]}/{'player' if is_player(path) else where}"
 
 
+def without_text(cats, ops, has_text):
+    """Cats whose name is text a mod adds (an ID with _WCM_ in it, after the renames in ops: save ops as the
+    build makes them) that has_text(key) says the game won't have. The save keeps that ID whether or not the
+    mod is still on, so the game shows <MISSING STRING TABLE ENTRY>. [(where, key)], in cats' order."""
+    renamed = {op["path"]: op["set"] for op in ops if op.get("op") == "name"}
+    out = []
+    for cat in cats:
+        ids = {**cat["ids"], **renamed.get(cat["paths"][0], {})}
+        prefix = ids.get("PrefixNameId", "")
+        key = prefix + (ids.get("SuffixNameId") or _RANK_SUFFIX.get(ids.get("Role", ""), ""))
+        if "_WCM_" in key and not has_text(key) and not has_text(prefix):   # as display(): a rogue's is the prefix
+            out.append((_where(cat["paths"][0], cat["current"]), key))
+    return out
+
+
 def rename_struct(text, fields, expect):
     """Set PrefixNameId/SuffixNameId inside a cat's save text. Returns the new text, or None when the
     cat no longer has the name it had at build time (expect)."""

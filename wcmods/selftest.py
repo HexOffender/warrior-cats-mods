@@ -87,6 +87,7 @@ def run(cfg, oodle, log=print):
           "pages (skipped)", _onboarding())
     check("getting set up, the rough edges: an install from before UE4SS is redone, the mod menu goes in with "
           "no mods on, a folder adds only the ticked mods, no drive letters in UE4SS's .zip, a studio without the game answers", _onboarding_edges())
+    check("Steam's copy of the game: found from its appmanifest, and told apart from the one mods go into", _steam_copy())
     ok, detail = _user_data()
     check("your files outside wcmods' folder: moved out once, the old mod menu's settings into wcmods.json, nothing "
           "overwritten by a second copy, the last install redone", ok, detail)
@@ -108,7 +109,10 @@ def run(cfg, oodle, log=print):
     check("CSV rows added and removed in the file's own style", _csv_rows())
     check("new colour slots and your cat's colours, slots and scars", _colour_slots())
     check("your cat's scars written into every copy of your cat in the save on install", _scars_build(cfg))
+    check("a pak always goes in with a container beside it (empty with no cooked package): the game reads it "
+          "only then", _pak_with_container(cfg))
     check("cat rename inside save text", _rename_struct())
+    check("cats named with a mod's own text that the build doesn't give the game: warned about", _names_without_text())
     check("palette switching", _palette_switching())
 
     ok, detail = _kraken_fixtures()
@@ -279,6 +283,25 @@ def _unversioned_headers():
             and split_name("Foo_01") == ("Foo_01", 0) and split_name("Gameplay.Item") == ("Gameplay.Item", 0))
 
 
+def _gvas(archives):
+    """A save file around the CompressedData property's archives: its tail is size (int32), flags (u8),
+    count (int32), the archives."""
+    return (b"GVAS" + bytes(20) + b"CompressedData" + bytes(1) + b"ArrayProperty" + bytes(1)
+            + struct.pack("<i", len(archives) + 4) + bytes(1) + struct.pack("<i", len(archives)) + archives + bytes(4))
+
+
+def _small_save(text):
+    """A save file holding `text` (under 128 KiB) in one archive, laid out as _long_save lays out the game's."""
+    import zlib
+    from .formats import save as savelib
+    body = text.encode("utf-8")
+    payload = (struct.pack("<II", len(body) + 8, len(body)) + bytes((b - 1) & 0xFF for b in body)
+               + struct.pack("<I", len(body)))
+    packed = zlib.compress(payload)
+    return _gvas(savelib.ARCHIVE_TAG + struct.pack("<q", 0x20000) + bytes([3])
+                 + struct.pack("<qq", len(packed), len(payload)) * 2 + packed)
+
+
 def _long_save():
     """A save whose JSON runs past 128 KiB. The game writes CompressedData as one compressed archive per
     128 KiB of payload; reading only the first one cut a long-played save short ("unpack_from requires a
@@ -294,16 +317,11 @@ def _long_save():
     packed = [zlib.compress(piece) for piece in pieces]
     head = savelib.ARCHIVE_TAG + struct.pack("<q", block) + bytes([3])
     archives = b"".join(head + struct.pack("<qq", len(c), len(u)) * 2 + c for c, u in zip(packed, pieces))
-
-    def gvas(data):   # the property's tail: size (int32), flags (u8), count (int32), the archives
-        return (b"GVAS" + bytes(20) + b"CompressedData" + bytes(1) + b"ArrayProperty" + bytes(1)
-                + struct.pack("<i", len(data) + 4) + bytes(1) + struct.pack("<i", len(data)) + data + bytes(4))
-
     want = [len(piece) for piece in pieces]
-    if len(want) < 4 or SaveGame(gvas(archives)).json_text != text:
+    if len(want) < 4 or SaveGame(_gvas(archives)).json_text != text:
         return False, "a save of several archives doesn't read back"
     # What wcmods writes for it has the same shape: an archive per 128 KiB, none over the game's buffer.
-    new = SaveGame(gvas(archives)).to_bytes()
+    new = SaveGame(_gvas(archives)).to_bytes()
     again = SaveGame(new)
     sizes, p = [], again._data_start
     while p < again._data_end:
@@ -316,7 +334,7 @@ def _long_save():
     # One archive of several blocks (the engine's general layout) reads too.
     one = (head + struct.pack("<qq", sum(map(len, packed)), len(payload))
            + b"".join(struct.pack("<qq", len(c), len(u)) for c, u in zip(packed, pieces)) + b"".join(packed))
-    if SaveGame(gvas(one)).json_text != text:
+    if SaveGame(_gvas(one)).json_text != text:
         return False, "an archive of several blocks doesn't read back"
     return True, f"{len(want)} archives for {len(payload)} bytes"
 
@@ -1450,6 +1468,45 @@ def _onboarding_edges():
     return all(ok)
 
 
+def _steam_copy():
+    """Steam's copy of the game, from its appmanifest in a made-up Steam library: found under the folder the
+    manifest names, told apart from another copy wcmods installs into (and said so in Get set up's status),
+    and no copy at all with no manifest or no game in its folder."""
+    import json
+    from . import config as config_mod, onboarding
+    from .config import EXE_NAME, STEAM_APP_ID, Config
+    with tempfile.TemporaryDirectory() as tmp:
+        lib = os.path.join(tmp, "Library")
+        steam = os.path.join(lib, "steamapps", "common", "Moved Game")   # not GAME_FOLDER: the manifest says
+        other = os.path.join(tmp, "Copy")
+        for game in (steam, other):
+            os.makedirs(os.path.join(game, "Wrc", "Binaries", "Win64"))
+            open(os.path.join(game, "Wrc", "Binaries", "Win64", EXE_NAME), "w").close()
+        root = os.path.join(tmp, "wcmods")
+        os.makedirs(root)
+        with open(os.path.join(root, "wcmods.json"), "w") as f:
+            json.dump({"game_dir": other, "save_dir": tmp}, f)
+        cfg = Config(root, root)
+        kept = config_mod._steam_library_dirs
+        config_mod._steam_library_dirs = lambda: [lib]
+        try:
+            no_manifest = config_mod.steam_game_dir()
+            with open(os.path.join(lib, "steamapps", f"appmanifest_{STEAM_APP_ID}.acf"), "w") as f:
+                f.write('"AppState"\n{\n\t"appid"\t\t"%s"\n\t"installdir"\t\t"Moved Game"\n}\n' % STEAM_APP_ID)
+            found = config_mod.steam_game_dir()
+            elsewhere = config_mod.steam_elsewhere(cfg)
+            st = onboarding.status(cfg, os.path.join(tmp, "backups"))
+            cfg.data["game_dir"] = steam
+            same = config_mod.steam_elsewhere(cfg)
+            os.remove(os.path.join(steam, "Wrc", "Binaries", "Win64", EXE_NAME))
+            no_game = config_mod.steam_game_dir()   # Steam's folder without the game: being moved or installed
+        finally:
+            config_mod._steam_library_dirs = kept
+        return (no_manifest is None and found == steam and elsewhere == steam and same is None and no_game is None
+                and st["game"]["ok"] and st["game"]["steam"] == steam and other in st["game"]["steam_text"]
+                and "<MISSING STRING TABLE ENTRY>" in st["game"]["steam_text"])
+
+
 def _user_data():
     """Your files outside wcmods' folder (userdata.py): what an older version kept in its folder moves out
     on the first start (to another drive too), the old mod menu's settings go into wcmods.json and its folder
@@ -1892,6 +1949,38 @@ def _colour_slots():
             and "ScarEarId=0" in scarred and "ScarBodyId=0" in scarred and "ScarEyeId=0" in scarred)
 
 
+def _pak_with_container(cfg):
+    """A build that only edits tables (no cooked package) still ships a container beside its pak, empty, as the
+    game reads a pak in ~mods only with one (seen on build 26184573); a build that changes no file ships neither;
+    and an install with a pak alone is outdated."""
+    import json
+    import shutil
+    from . import mods, pipeline
+    from .formats.oodle import Oodle
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _mods_folder(tmp, {"moth": ({"name": "Moth", "enabled": True},
+                                           {"names.json": json.dumps({"prefixes": {"rename": {"Otter": "Moth"}}})}),
+                                  "none": ({"name": "Nothing", "enabled": True}, {})},
+                            build=gamebuild.steam_build(cfg))
+        out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
+        utoc = os.path.join(tmp, "out", "zzz_WCMods_P.utoc")
+        empty = os.path.isfile(utoc) and not IoStoreReader(utoc, Oodle()).files
+        mods.switch(mods.discover(root), "moth", False)
+        bare = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out2"), log=lambda m: None)
+        # An install from before has a pak alone: outdated, so the studio says Apply again and Play applies first.
+        game = os.path.join(tmp, "game")
+        mods_dir = os.path.join(game, "Wrc", "Content", "Paks", "~mods")
+        os.makedirs(mods_dir)
+        here = type("Cfg", (), {"game_dir": game, "mods_install_dir": mods_dir})()
+        shutil.copy2(os.path.join(tmp, "out", "zzz_WCMods_P.pak"), mods_dir)
+        alone = pipeline.install_outdated(here)
+        for ext in (".utoc", ".ucas"):
+            shutil.copy2(os.path.join(tmp, "out", "zzz_WCMods_P" + ext), mods_dir)
+        paired = pipeline.install_outdated(here)
+    return (out["outputs"][:3] == ["zzz_WCMods_P.pak", "zzz_WCMods_P.utoc", "zzz_WCMods_P.ucas"] and empty
+            and not [o for o in bare["outputs"] if o.startswith("zzz_WCMods_P")] and alone and not paired)
+
+
 def _scars_build(cfg):
     """A cats.json with scars and no slots makes one save edit per copy of your cat, setting the scar fields."""
     import json
@@ -1916,6 +2005,68 @@ def _rename_struct():
     moved_on = names.rename_struct(text, {"PrefixNameId": "STR_CAT_NAME53"}, {"PrefixNameId": "STR_CAT_NAME1"})
     return (new == '(ClanType=RiverClan,Role=Apprentice,PrefixNameId="STR_CAT_NAME53",SuffixNameId="_HEART",CatSize=0.5)'
             and moved_on is None)
+
+
+def _names_without_text():
+    """Cats named with a mod's own text that a build doesn't give the game: found after the build's own
+    renames (back to a game name clears one, to a mod's name makes one), a rogue by its name alone and an
+    apprentice by its rank's suffix, never a cat with the game's names; the build's warning names them, and
+    reads the game's text only when the save has such a name."""
+    import json
+    from . import names, pipeline
+    from .config import Config
+    from .formats.save import SAV_NAME
+    from .sdk import BuildContext
+    cat = '(ClanType=RiverClan,Role={},PrefixNameId="{}"{})'
+    heart = ',SuffixNameId="_HEART"'
+    data = {"0": {"GameplayProgression": {"Gameplay.Combat.Character.Cat.Player": {
+                      "Customization": cat.format("Leader", "STR_CAT_NAME_WCM_FAWN", ',SuffixNameId="_STAR"')}},
+                  "NPCData": {"RiverClan": {"Warrior": [cat.format("Warrior", "STR_CAT_NAME1", heart),
+                                                        cat.format("Warrior", "STR_CAT_NAME_WCM_GLOW", heart),
+                                                        cat.format("Warrior", "STR_CAT_NAME2", heart)],
+                                            "Apprentice": [cat.format("Apprentice", "STR_CAT_NAME_WCM_SPARK", "")]},
+                              "Outsiders": [cat.format("RogueCat", "STR_ROGUE_CAT_NAME_WCM_MOSS", "")]}}}
+    ops = [{"op": "name", "path": "0/NPCData/RiverClan/Warrior/1", "set": {"PrefixNameId": "STR_CAT_NAME3"}},
+           {"op": "name", "path": "0/NPCData/RiverClan/Warrior/2", "set": {"PrefixNameId": "STR_CAT_NAME_WCM_FIXED_ODD"}},
+           {"op": "set", "path": "0/Shared", "value": 1}]
+    keys = {"STR_CAT_NAME1_HEART", "STR_CAT_NAME3_HEART", "STR_CAT_NAME_WCM_SPARK_PAW"}
+    gone = [("you", "STR_CAT_NAME_WCM_FAWN_STAR"), ("Outsiders/0", "STR_ROGUE_CAT_NAME_WCM_MOSS"),
+            ("RiverClan/Warrior/2", "STR_CAT_NAME_WCM_FIXED_ODD_HEART")]
+    ok = names.without_text(names.cats_in_save(data), ops, keys.__contains__) == gone
+
+    def table(have):
+        return "Key,SourceString\r\n" + "".join(f"{k},x\r\n" for k in sorted(have))
+
+    class Build:   # what the warning reads of a build: the files made so far and the save edits
+        def __init__(self, files=None, save_ops=()):
+            self.files, self.save_ops = files or {}, list(save_ops)
+
+    class Game:
+        reads = 0
+
+        def read_text(self, path):
+            Game.reads += 1
+            return table(keys)
+
+    en = BuildContext.data_path(names.strings_path("EN"))
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "wcmods.json"), "w") as f:
+            json.dump({"save_dir": tmp}, f)
+        cfg = Config(tmp, tmp)
+        no_save = pipeline.names_without_text(cfg, Build(save_ops=ops), Game())
+        with open(os.path.join(tmp, SAV_NAME), "wb") as f:
+            f.write(_small_save(json.dumps({"acct": data})))
+        warned = pipeline.names_without_text(cfg, Build(save_ops=ops), Game())
+        # The text a names mod in the build adds counts (the Fawn names are back), read from the build's file.
+        back = table(keys | {k for _, k in gone}).encode()
+        fine = pipeline.names_without_text(cfg, Build({en: (back, "names", "csv edits")}, ops), Game())
+        reads = Game.reads
+        with open(os.path.join(tmp, SAV_NAME), "wb") as f:
+            f.write(_small_save(json.dumps({"acct": {"0": {"NPCData": {"X": [cat.format("Warrior", "STR_CAT_NAME1", heart)]}}}})))
+        plain = pipeline.names_without_text(cfg, Build(), Game())
+    return (ok and no_save == [] and fine == [] and plain == [] and Game.reads == reads == 1 and len(warned) == 1
+            and warned[0].startswith("3 cats in your save have a name a mod made")
+            and all(k in warned[0] for _, k in gone) and "your cat (STR_CAT_NAME_WCM_FAWN_STAR)" in warned[0])
 
 
 def _names_plan(read_text):

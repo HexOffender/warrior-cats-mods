@@ -89,6 +89,13 @@ Detailed in [SDK.md, Game files, repacking and new content](SDK.md#game-files-re
   chunk ID and header entry (imports, shader maps) can be reused for a patched copy.
 - **Mods load from `Paks\~mods\`**, and a `_P` suffix gives patch priority. **Unsigned paks and
   containers are accepted**, so wcmods' own load.
+- **A pak there is read only with a `.utoc`/`.ucas` of the same name beside it**, and the reverse.
+  Seen on build 26184573 (2026-10-27): `zzz_WCMods_P.pak` holding text edits alone was ignored (the
+  HUD named the renamed cat "Cat 1", and `BlueprintPathsLibrary.FileExists` didn't find the pak's
+  `Wrc/WCMods/BuildInfo.json` while it found the game's `Strings_EN.csv`). The same pak was read once
+  a container sat beside it, an empty one (no chunks but its header) included. Builds before that
+  shipped a container only with cooked packages, so their text and table edits were lost whenever a
+  build had none.
 - **The compression is Kraken throughout.** Every compressed block's Oodle header, in both
   containers (140,969 in the `.ucas`, 639 in the pak, surveyed on 2026-10-26), is decoder type 6
   (Kraken) with no checksums; one pak block is a stored (`0xCC`) Kraken block. So `wcmods/formats/kraken.py`,

@@ -36,6 +36,10 @@ def test_getting_set_up_rough_edges():
     assert selftest._onboarding_edges()
 
 
+def test_steams_copy_of_the_game_told_apart_from_the_one_mods_go_into():
+    assert selftest._steam_copy()
+
+
 def test_your_files_move_out_of_wcmods_folder_and_the_old_mod_menus_settings_into_wcmods_json():
     ok, detail = selftest._user_data()
     assert ok, detail

@@ -13,7 +13,9 @@ from . import ue4ss, view, world
 from . import game as game_lua   # WCModsGame (the name `game` is the game's files in build())
 from . import mods as modlib
 from .formats.blake3 import blake3
-from .config import MOD_BASENAME, UE4SS_MOD_NAME, Config, game_running, same_folder
+from .config import (MOD_BASENAME, UE4SS_MOD_NAME, Config, game_running, same_folder, steam_elsewhere,
+                     steam_elsewhere_text)
+from .formats.csvdata import Table
 from .gamefiles import GameFiles
 from .formats.iostore import ModContainerWriter
 from .formats.pak import PakReader, PakWriter
@@ -62,6 +64,34 @@ def remove_paks(folder):
                 os.remove(os.path.join(folder, name))
                 gone.append(os.path.join(folder, name))
     return gone
+
+
+def names_without_text(cfg, ctx, game):
+    """Build warnings for cats in your save named with a mod's own text (an ID with _WCM_ in it) that this
+    build doesn't give the game, once the sections' CSV edits are in: the mod that named them is off or left
+    out, so the game would show <MISSING STRING TABLE ENTRY>. The game's text is only read when a cat has
+    such a name."""
+    sav = os.path.join(cfg.save_dir, SAV_NAME)
+    try:
+        text = SaveGame.load(sav).json_text if os.path.isfile(sav) else ""
+        if "_WCM_" not in text:
+            return []
+        path = BuildContext.data_path(names.strings_path("EN"))
+        strings = ctx.files[path][0].decode("utf-8") if path in ctx.files else game.read_text(path)
+        keys = {r.fields[0] for r in Table(strings).rows if r.fields}
+        missing = names.without_text(names.cats_in_save(SaveDoc(text).data), ctx.save_ops, keys.__contains__)
+    except Exception:   # a save or table that can't be read: the sections that need them say so
+        return []
+    if not missing:
+        return []
+    shown = [f"{'your cat' if where == 'you' else where} ({key})" for where, key in missing[:5]]
+    if len(missing) > 5:
+        shown.append(f"{len(missing) - 5} more")
+    them = "it" if len(missing) == 1 else "them"
+    cats = "a cat in your save has" if len(missing) == 1 else f"{len(missing)} cats in your save have"
+    return [f"{cats} a name a mod made, and no mod in this build gives the game its text, so the game will show "
+            f"{them} as <MISSING STRING TABLE ENTRY>: {', '.join(shown)}. Turn the mod that named {them} back on, "
+            f"or rename {them} in names.json; Backups and repair puts your save back as it was before"]
 # Shared Lua modules installed with any build, for UE4SS scripts to require (docs/SDK.md, "Overlays").
 SHARED_LUA = (view, draw, world, menu, game_lua)
 
@@ -150,6 +180,13 @@ def build(cfg, mods, out_dir, log=print):
             if sid in report:
                 report[sid]["errors"].append("its save edits were left out too: they'd point at text or items "
                                              "the game wouldn't have")
+    # What else leaves a renamed cat without its text: a mod that named one is off now, or the mods go into a
+    # copy of the game Steam doesn't start.
+    ctx.warnings += names_without_text(cfg, ctx, game)
+    steam = steam_elsewhere(cfg)
+    if steam:
+        ctx.warnings.append(steam_elsewhere_text(steam, cfg.game_dir) + ". Use Steam's folder (Get set up, on Clan "
+                            "Mod Studio's Mods page, or game_dir in wcmods.json) and install again")
 
     manifest = {"mods": [m.id for m in enabled], "sections": report, "outputs": [], "ue4ss_mods": [],
                 "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
@@ -183,9 +220,11 @@ def build(cfg, mods, out_dir, log=print):
         pak.add(MARKER, json.dumps({"mods": manifest["mods"]}, indent=2).encode())
         pak.write(os.path.join(out_dir, MOD_BASENAME + ".pak"), MOD_BASENAME + ".pak")
         manifest["outputs"].append(MOD_BASENAME + ".pak")
-    if ctx.packages:
-        io = game.io
-        header = io.container_header()
+        # The game reads a pak in ~mods only with a container of the same name beside it (seen on build
+        # 26184573: a pak of text edits alone was ignored), so one goes with every pak, empty when no
+        # package changed.
+        io = game.io if ctx.packages else None
+        header = io.container_header() if ctx.packages else None
         container = ModContainerWriter(blake3(MOD_BASENAME.lower().encode(), 8))
         for path, (data, _, _) in ctx.packages.items():
             if path in ctx.new_packages:
@@ -554,11 +593,14 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
 
 
 def install_outdated(cfg):
-    """True when the installed mod pak was built by an older wcmods, whose file names the engine never
-    matches (see pak._read_file_name): the pak loads but none of its files are used. Installing fixes it."""
+    """True when the installed mod pak was built by an older wcmods in a way the game never reads: with no
+    container beside it (the game reads a pak in ~mods only with one), or with file names the engine never
+    matches (see pak._read_file_name). Installing fixes it."""
     path = os.path.join(cfg.mods_install_dir, MOD_BASENAME + ".pak") if cfg.game_dir else None
     if not path or not os.path.isfile(path):
         return False
+    if not os.path.isfile(os.path.join(cfg.mods_install_dir, MOD_BASENAME + ".utoc")):
+        return True
     try:
         return PakReader(path).legacy_file_names > 0
     except (OSError, ValueError, struct.error):

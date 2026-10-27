@@ -159,6 +159,16 @@ bone by bone):
   suffix as it is (`_STAR` on an apprentice-rank cat reads -star). A name ID whose text the game
   hasn't got shows as `<MISSING STRING TABLE ENTRY>`.
 
+**2026-10-27, names on build 26184573** (a test mod adding the prefix Fawn and renaming the cat
+Fawnstar, as a player reported it showing "Cat 1"):
+- **The pak needs a container beside it.** With the names mod's text edits alone, the game ignored
+  `zzz_WCMods_P.pak`: the HUD said "Cat 1" and the game's string table had no Fawnstar. With a
+  container beside it, from an eye colour or an empty one as every build now writes, the HUD said
+  Fawnstar and `WCModsNames` found the added names.
+- **A renamed cat whose mod is off** (the pak read, the names mod left out): the HUD said "Cat 1",
+  and the build warned about that cat and its name ID. The mod menu's Overview can't tell then,
+  as no mod adds names.
+
 **2026-10-27, key remaps inside the game** (build 26184573, `WCModsRemap` installed from a test mod's
 `controls.json`, started without the key remapper):
 - Interact on F opened the travel map at a tunnel, and E did nothing there.

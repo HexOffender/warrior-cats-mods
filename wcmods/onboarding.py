@@ -17,7 +17,7 @@ import time
 
 from . import menupages, mods as modlib, pipeline, ue4ss
 from .formats import save
-from .config import EXE_NAME, STEAM_APP_ID, game_running
+from .config import EXE_NAME, STEAM_APP_ID, game_running, steam_elsewhere, steam_elsewhere_text
 
 INBOX = os.path.join(tempfile.gettempdir(), "wcmods-studio-inbox.json")
 
@@ -27,13 +27,17 @@ def _game_ok(folder):
 
 
 def status(cfg, backups_root):
-    """{"game", "save", "backup", "loader", "pages", "running", "done"}: each step's state for the studio."""
+    """{"game", "save", "backup", "loader", "pages", "running", "done"}: each step's state for the studio. The
+    game's "steam" is Steam's copy of the game when it isn't the one found (with "steam_text" saying what that
+    means): the Mods page offers to switch, whether or not every step is done."""
     cfg.reload()
     game = cfg.game_dir if _game_ok(cfg.game_dir) else None
     win64 = cfg.win64_dir if game else None
     save_found = os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME))
     backups = save.list_backups(backups_root)
-    out = {"game": {"ok": bool(game), "dir": game},
+    steam = steam_elsewhere(cfg) if game else None
+    out = {"game": {"ok": bool(game), "dir": game, "steam": steam,
+                    "steam_text": steam_elsewhere_text(steam, game) if steam else None},
            "save": {"ok": save_found},
            "backup": {"ok": bool(backups), "latest": backups[-1] if backups else None},
            "loader": {"ok": ue4ss.loader_installed(win64), "page": ue4ss.RELEASE_PAGE},
@@ -123,6 +127,10 @@ def play(ctx, log=print, force=False):
     with_remaps = remaps(ctx)
     os.startfile(f"steam://rungameid/{STEAM_APP_ID}")
     log("starting the game through Steam")
+    steam = steam_elsewhere(cfg)
+    if steam:
+        log(f"warning: {steam_elsewhere_text(steam, cfg.game_dir)}. Use Steam's folder (Get set up, on the Mods "
+            "page) and apply again")
     if with_remaps:
         log("some of your remaps only work with the old key remapper, which is deprecated (what the game reads "
             "itself, such as movement and the camera, or every remap without UE4SS): start the game with "

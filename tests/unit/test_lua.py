@@ -195,7 +195,7 @@ def test_key_remapper_gets_only_what_the_game_cant_do(tmp_path):
 
 def test_play_starts_the_game_without_the_old_key_remapper(tmp_path, monkeypatch):
     # The key remapper outside the game is deprecated: Play always starts the game through Steam, and only
-    # says when some remaps need the old remapper.
+    # says when some remaps need the old remapper, and when Steam's copy of the game isn't the one mods go into.
     from types import SimpleNamespace
     from wcmods import onboarding
     started, said = [], []
@@ -203,11 +203,13 @@ def test_play_starts_the_game_without_the_old_key_remapper(tmp_path, monkeypatch
     monkeypatch.setattr(onboarding.pipeline, "pending", lambda cfg, found: {"any": False})
     monkeypatch.setattr(onboarding.pipeline, "install_outdated", lambda cfg: False)
     monkeypatch.setattr(onboarding.os, "startfile", started.append, raising=False)
-    ctx = SimpleNamespace(cfg=None, mods_root=str(tmp_path), root=str(tmp_path))
-    for needed in (False, True):
+    ctx = SimpleNamespace(cfg=SimpleNamespace(game_dir=str(tmp_path / "Copy")), mods_root=str(tmp_path), root=str(tmp_path))
+    for needed, steam in ((False, None), (True, None), (False, str(tmp_path / "Steam"))):
         monkeypatch.setattr(onboarding, "remaps", lambda c, needed=needed: needed)
+        monkeypatch.setattr(onboarding, "steam_elsewhere", lambda c, steam=steam: steam)
         started.clear()
         said.clear()
         assert onboarding.play(ctx, log=said.append)["remaps"] is needed
         assert started == [f"steam://rungameid/{onboarding.STEAM_APP_ID}"]
         assert any("deprecated" in s for s in said) is needed
+        assert any(s.startswith(f"warning: Steam starts the game from {steam}") for s in said) is bool(steam)
