@@ -225,12 +225,18 @@ and the script works on those:
   mode's camera (Shift+WASD, Z/C) and turning the cat in the cat maker (Q/E). A menu pair standing for
   an arrow key or WASD therefore also goes to the old key remapper, which can do those (the build says so).
 
-The game's own prompts and its Controls screen still show its own keys, as those come from the bindings no
-script can change. Seen working in game: Interact on F, Run on G, Scent tracking on the middle mouse button,
-Map on N (in the map screen too), H as a second Interact, the pause menu moved with I and K and confirmed
-with U, O closing menus, the next tab on PageDown instead of 2, and a fight's menu and moves picked with
-I, K and U; the old keys did nothing, and the Controls screen was as before. Controller buttons and the wheel are done the same way but haven't been
-tried yet. Scripts that listen for Interact themselves (`Game.npcs`, for a mod's own cats) follow it to its
+The game's pictures of keys follow too: prompts such as Travel and Talk, the menus' footers (Back,
+Confirm) and the pause screen's Controls tab show the new key, from the game's own pictures. A command
+that didn't move keeps the game's picture (with Escape standing for Backspace in menus, the footers' Back
+shows Escape while Confirm keeps Enter).
+The keyboard's pictures follow keyboard moves and a controller's follow controller moves. A key the game
+has no picture for (the middle mouse button, the wheel) leaves the game's picture as it was. Movement and
+the camera, which only the old key remapper can move, keep theirs. Seen working in game: Interact on F, Run on G,
+Scent tracking on the middle mouse button, Map on N (in the map screen too), H as a second Interact, the
+pause menu moved with I and K and confirmed with U, O closing menus, the next tab on PageDown instead of
+2, and a fight's menu and moves picked with I, K and U; the old keys did nothing. The Travel and Talk
+prompts and the Controls tab showed F for Interact, and the pause screen's Back showed Escape for a
+menu pair. Controller buttons and the wheel are done the same way but haven't been tried yet. Scripts that listen for Interact themselves (`Game.npcs`, for a mod's own cats) follow it to its
 new key.
 
 **The old key remapper outside the game (deprecated).** Remapping is done inside the game now, and the

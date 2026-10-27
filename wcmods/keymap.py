@@ -136,10 +136,12 @@ def native_plan(merged):
     left for the key remapper outside the game.
 
     Returns (plan, rest, warnings). plan is {"play": {"send": ..., "drop": ...}, "menu": {...},
-    "keys": {action: [key, ...]}}. In each, send is {key: [command, ...]}: pressing the key sends those
-    commands; drop is {command: [key, ...]}: the game's own command is dropped when it comes from one of
-    those keys. "play" applies while you explore (the controller and the HUD), "menu" in the game's menus
-    (any other screen). keys says where each changed action is now. rest is controls.json with only what the
+    "keys": {action: [key, ...]}, "icons": {"play": ..., "menu": ...}}. In each, send is {key: [command,
+    ...]}: pressing the key sends those commands; drop is {command: [key, ...]}: the game's own command is
+    dropped when it comes from one of those keys. "play" applies while you explore (the controller and the
+    HUD), "menu" in the game's menus (any other screen). keys says where each changed action is now; icons
+    is {command: [key, ...]}, the keys the game's pictures of that command's key show instead of its own.
+    rest is controls.json with only what the
     script can't do (movement and the camera, keys standing for them or for keys that send nothing, mouse
     buttons in menus, and menu pairs standing for the arrows or WASD, which the map reads itself), for
     plan and menu_plan.
@@ -245,6 +247,15 @@ def native_plan(merged):
         keys[action] = [k for i, k in enumerate(found) if k not in dropped and k not in found[:i]]
     plan = {where: {"send": sends, "drop": drops} for where, (sends, drops) in plans.items()}
     plan["keys"] = keys
+    # The keys the game's key pictures (prompts, footers, the Controls tab) show for each command that has a
+    # new one: moved actions first, then keys standing for others. The script shows the first with a
+    # picture in the same set as the game's (the keyboard's, or the controller's).
+    plan["icons"] = {}
+    for where, (sends, _) in plans.items():
+        icons = plan["icons"][where] = {}
+        for key, commands in sends.items():
+            for command in commands:
+                icons.setdefault(command, []).append(key)
     return plan, rest, warnings
 
 

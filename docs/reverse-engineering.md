@@ -1142,8 +1142,8 @@ Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`W
   plus keys the save doesn't list: I Inventory, K Quest, M Map, L Meow and Escape Pause (its Controls screen
   shows them), and the left mouse button for Interact. `PlayerInput`'s action and axis mappings aren't
   reflected (only `DebugExecBindings` and `InvertedAxis` are), and neither is anything on the rebinding
-  screen (`GuiPopupControlConfig`, `GuiCustomConfigKey` with an `ActionCommand` and no functions). So no
-  script can change a binding, and the game's prompts and Controls screen always show its own keys.
+  screen (`GuiPopupControlConfig`, `GuiCustomConfigKey` with an `ActionCommand`). So no script can change
+  a binding. The game's pictures of keys can still be changed (below, "Key pictures").
   `InputSettings:AddActionMapping` and `ForceRebuildKeymaps` are reflected, but the engine's rebuild resets
   every player's mappings to `InputSettings`' and would lose the game's own (from the engine's code; not
   tried).
@@ -1251,7 +1251,7 @@ Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`W
   - Interact on F opened the travel map at a tunnel, and E did nothing there.
   - Run on G: 2 s of S+G went 361 units against 256 walking, and LeftShift no longer ran.
   - Scent tracking on the middle mouse button turned on, and Q did nothing.
-  - The pause screen's Controls tab was unchanged.
+  - The pause screen's Controls tab showed F for Interact (key pictures, below).
   - In the map, E still toggled the legend (its `Button_X`).
   - Map on N opened the map in play and closed it from inside the map screen; M did neither.
   - **Menu keys:** in the pause menu, I and K moved the selection (the arrows still did), U confirmed
@@ -1260,6 +1260,42 @@ Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`W
   - **A second Interact:** H, standing for E while you play, opened the travel map.
   - **In a fight:** K and I moved through Attack, Rest, Herbs and Flee (Down still did), U opened Attack
     and used Provoking Stare, which hit, and O went back. K didn't open the quest page mid-fight.
+- **Key pictures** (worked out on 2026-10-27 in game, build 26184573):
+  - **The widgets.** Each picture of a key is a button widget holding a command and an image,
+    `mcGuiButtonImage`: `GuiActionButtonControl` (`ActionCommand`; the HUD's prompts in
+    `mcGuiContextualMenu.mcGuiPrompt1`–`3`, the scent and other HUD hints, and the Controls tab's
+    `GuiConfigButtonControl`s inside each `GuiCustomConfigKey`) or `GuiCommandButtonControl`
+    (`ButtonCommand`; the footers' `mcGuiCommandBack` (`Button_Back`), `mcGuiCommandConfirm` and
+    `mcGuiCommandUse` (`Button_Confirm`), and the tab hints `mcGuiControl1`/`2` (`Button_ShoulderL`/`R`),
+    `mcGuiControlLT`/`RT`).
+  - **Command to key** is native: the game finds a key bound to the command (Interact's prompt shows the
+    left mouse button, not E), from the bindings no script can reach.
+  - **Key to picture** comes from the GUI manager's tables, `DataKeysMap` (`DT_Keys`, 94 rows: keyboard
+    keys and the two main mouse buttons) and `GamepadButtonsMap.DataGamepadButtonsMap` (one table per
+    `EGuiConsolesTypes`: 1 is `DT_GamepadButtonsKeyboard`, 4 and 5 `DT_GamepadButtonsXbox`, and PS4, PS5
+    and Switch ones). Rows are `FUIButtonsMap`: `Key`, soft `Image` and `HudImage`, `KeyCode`, `Enabled`.
+    UE4SS reads them with `ForEachRow`, and a soft pointer's path is
+    `ptr:GetObjectID():GetAssetPathName():ToString()`. The textures load with `LoadAsset`.
+  - **When the game sets one:** in its native setup, `OnSetupInputs` (reflected, but a hook never fires:
+    it's called natively). That runs when a button is set up and when the input device changes, and the
+    HUD's contextual menu runs it for its prompts all the time (a picture set on a prompt from Lua was
+    back to the game's the next frame). A prompt made from Lua and given a command gets no picture until
+    something sets it up; calling `OnSetupInputs()` from Lua puts the right one on.
+  - **Brush size** is the widget's own (32×32 on the footers, 128×128 on prompts), whatever the texture,
+    so swapping the texture keeps the layout.
+  - **How the in-game remap changes them.** The setup writes to whatever image `mcGuiButtonImage` points
+    at. Pointed at a new `Image` made with `StaticConstructObject` and never drawn, the game's choice
+    lands there, and the image on screen keeps what a script puts on it. `WCModsRemap` finds the buttons
+    with `NotifyOnNewObject` on the two classes (it walks up the class chain, so their Blueprints count),
+    swaps the image of each whose command has a new key, and every frame shows the new key's picture from
+    the table the game's picture came from (or the game's own when the command didn't move on that
+    device, or the key has no picture there). A button counts as play or menu by the first `SwtScreen` up
+    its outers; one outside any screen (a prompt made from Lua) is play, and so is the Controls tab, which
+    shows play's keys. It compares with the image itself each frame: a prompt's animations reach the
+    image by name, and one put the blank picture back on a prompt that then showed again. And a picture the
+    game was still loading when the image was swapped lands on the image on screen: the first pause
+    screen's Back once showed the widget's default (the pad's A) that way. A key's picture there that the
+    script didn't put is taken as the game's choice.
 - **Not tried yet:** a controller, the mouse wheel, and a key held while a screen opens (the script lets
   go of an action whose key is no longer down, checked every few frames).
 
