@@ -122,7 +122,7 @@ palette you've added is your own copy, so add it again to get the new one.
   move through them with I and K and confirm with F. The game's own keys keep working too. A letter,
   digit or Space used here still types on the name screen and does the other key's job there too, and
   the build warns about it. A press finishes as it started: the Escape that closes a menu is released
-  as Backspace. A pair standing for an arrow key or WASD also goes to the key remapper, as the map
+  as Backspace. A pair standing for an arrow key or WASD also goes to the old key remapper, as the map
   zooms and moves on those keys by reading them itself.
 - **`gamepad`** moves an action to a controller button, like `keyboard` (here Run goes to LT). The
   sticks can't move; use Steam Input for them.
@@ -137,8 +137,8 @@ Start). The build checks the names. Two things carry the remaps out (the README,
   when it comes from the old key, which keeps its other jobs (Space still confirms dialogue when Pounce
   moves). A key that takes an action stops doing its own action, and the build warns. Other scripts read
   where an action is now from the shared variable `WCModsRemap.<action>` (its keys, comma-separated).
-- **The key remapper outside the game** (`python wcmods.py play`) does the rest, keyboard and mouse
-  only: movement and the camera (axes the game reads every frame), `keys` entries for them or for keys
+- **The old key remapper outside the game** (`python wcmods.py play`, deprecated) is the only way to the
+  rest, keyboard and mouse only, when you start the game with it: movement and the camera (axes the game reads every frame), `keys` entries for them or for keys
   that send nothing, and mouse buttons in `menus`. Remapping Escape (or Enter, Space, Backspace, Tab)
   there while playing means prompts and dialogue shown during play don't get it; the build warns about
   that. Without UE4SS, it does everything it can.

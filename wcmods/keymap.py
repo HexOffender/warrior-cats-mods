@@ -222,7 +222,7 @@ def native_plan(merged):
                 # do that part. With it running it holds the key back, so the game sees d.
                 rest.setdefault("menus", {})[src] = dst
                 warnings.append(f"menus: {s} moves through menus as {d}, but zooming and moving the map with it "
-                                f"needs the key remapper (Play)")
+                                f"needs the old key remapper (deprecated; `wcmods play`)")
             elif where == "menu" and (len(s) == 1 or s in DIGITS or s == "SpaceBar"):
                 warnings.append(f"menus: {s} still types on the name screen, and does {d}'s job there too")
     for (where, key), who in sorted(setters.items()):

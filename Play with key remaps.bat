@@ -1,7 +1,8 @@
 @echo off
-rem Double-click to start Warrior Cats with your key remaps (the Controls page) active.
-rem The remapper stops by itself when the game closes; close this window to stop it sooner.
-rem Clan Mod Studio's Play button does the same.
+rem Double-click to start Warrior Cats with the old key remapper, which is deprecated: remaps work inside
+rem the game now, however you start it. This is only for the remaps the game can't do itself (movement,
+rem the camera, the map's zoom and move, mouse buttons in menus). The remapper stops by itself when the
+rem game closes; close this window to stop it sooner.
 title Warrior Cats - key remapper
 cd /d "%~dp0"
 if not exist "%~dp0wcmods\findpython.bat" goto :moved

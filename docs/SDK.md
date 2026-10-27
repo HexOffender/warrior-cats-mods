@@ -58,8 +58,8 @@ mods/my-mod/
   names.json          cat names                         -> section "names"
   palette.json        colour palettes                   -> section "palettes"
   cats.json           your cat's own colours and slots  -> section "cats"
-  controls.json       key and button remaps             -> section "controls" (checked at build;
-                                                           applied by `wcmods play`, keyboard and mouse)
+  controls.json       key and button remaps             -> section "controls" (applied inside the
+                                                           game by the WCModsRemap script)
   mouselook.json      mouse look settings               -> section "mouselook"
   save.json           save edits                        -> section "save"
   scripts/main.lua    an in-game Lua script (code mod)  -> section "scripts" (docs/scripting.md)
