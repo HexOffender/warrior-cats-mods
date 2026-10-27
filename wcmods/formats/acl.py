@@ -11,10 +11,10 @@ prose, with what was checked in game.
 A stream (offsets from its start; little-endian):
   * raw_buffer_header: u32 size, u32 hash; tracks_header (24): u32 tag 0xAC11AC11, u16 version (10 = 2.1.0),
     u8 algorithm (0, uniformly sampled), u8 track type (12, qvvf), u32 tracks, u32 samples, f32 sample rate,
-    u32 packed flags: bit 0 has scale, bit 1 the default scale (0 or 1), bit 2 scale format, bit 3
-    translation format (1 = variable), bits 4-7 rotation format (3 = drop w, variable), bit 8 database,
-    bit 9 trivial defaults (without it, a default sub track is the bind pose), bit 10 stripped keyframes,
-    bit 30 wrap-optimized (the repeated last sample is left out);
+    u32 packed flags: bit 0 has scale, bit 1 the default scale (0 for an additive sequence, or 1), bit 2
+    scale format, bit 3 translation format (1 = variable), bits 4-7 rotation format (3 = drop w, variable),
+    bit 8 database, bit 9 trivial defaults (the identity was what the compressor left out), bit 10 stripped
+    keyframes, bit 30 wrap-optimized (the repeated last sample is left out);
   * transform_tracks_header (52, at 32): segments, animated sub tracks (all, rotations, translations, scales),
     constant samples (rotations, translations, scales), then offsets from this header: database, segment
     headers, sub track types, constant data, clip range data. With several segments, their first samples
@@ -33,7 +33,14 @@ A stream (offsets from its start; little-endian):
     translation or scale), then (4-aligned) the samples: big-endian bit fields, a sample's rotations, then
     translations, then scales.
 A value is clip_min + clip_extent * (segment_min + segment_extent * q / (2^bits - 1)), segment values in 255ths;
-a rotation's w is sqrt(1 - x^2 - y^2 - z^2).
+a sub track constant in its segment is clip_min + clip_extent * its 16-bit sample / 65535, and a raw one its
+floats as they are. A rotation's w is sqrt(|1 - x^2 - y^2 - z^2|), and the quaternion normalized (as ACL's
+interpolation leaves it).
+
+What a stream leaves at its default is what Unreal's ACL plugin gives it: for a sequence that isn't additive
+(default scale 1), a rotation's and translation's are the bone's bind pose, the skeleton's reference pose;
+for an additive one, the identity. A scale's is the default scale, whatever the bind pose's (the prop
+A_GPE_TiedBranch_Falling's root rests at scale 100 and plays at 1).
 """
 import math
 import struct
@@ -55,7 +62,11 @@ def _float(u):
 
 
 def _quat(x, y, z):
-    return (x, y, z, math.sqrt(max(0.0, 1.0 - x * x - y * y - z * z)))
+    # A quantized x, y, z can come out a little over a length of 1 near a half turn: ACL takes the absolute
+    # value there (quat_from_positive_w), so w isn't 0, and normalizes when it interpolates.
+    w = math.sqrt(abs(1.0 - x * x - y * y - z * z))
+    n = math.sqrt(x * x + y * y + z * z + w * w) or 1.0
+    return (x / n, y / n, z / n, w / n)
 
 
 def _lerp(a, b, u):
@@ -105,8 +116,9 @@ def info(blob):
 
 def decode(blob, bind=None):
     """Every track's keys, as formats/anim.py's tracks() gives them: [(translations, rotations, scales)], one value
-    a key. `bind` is the bind pose for each track [(translation, rotation, scale)], which a sub track the stream
-    leaves at its default takes (needed unless the stream's defaults are trivial)."""
+    a key. `bind` is the bind pose for each track [(translation, rotation, scale)], which a rotation or
+    translation the stream leaves at its default takes (needed unless the sequence is additive, or its
+    defaults the identity)."""
     try:
         return _decode(blob, bind)
     except (struct.error, IndexError, KeyError) as e:
@@ -116,7 +128,8 @@ def decode(blob, bind=None):
 def _decode(blob, bind):
     head = info(blob)
     ntracks, nsamples = head["tracks"], head["samples"]
-    if bind is None and not head["trivial"]:
+    additive = head["default_scale"] == 0.0
+    if bind is None and not head["trivial"] and not additive:
         raise FormatError("the stream leaves sub tracks at the bind pose, which isn't given")
     if bind is not None and len(bind) != ntracks:
         raise FormatError(f"{len(bind)} bind poses for {ntracks} tracks")
@@ -145,10 +158,12 @@ def _decode(blob, bind):
     constant = [[t for t in range(ntracks) if k[t] == 1] for k in (rk, tk, sk)]
     if [len(a) for a in animated] != [n_rot, n_trans, n_scale] or [len(c) for c in constant] != [c_rot, c_trans, c_scale]:
         raise FormatError("the stream's sub track counts don't add up")
-    # Defaults, then the constant sub tracks.
-    rest = [bind[t] if bind is not None and not head["trivial"] else
-            ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0), (head["default_scale"],) * 3) for t in range(ntracks)]
-    fixed_t, fixed_r, fixed_s = ([list(r[i]) for r in rest] for i in range(3))
+    # Defaults (the bind pose's rotation and translation, unless additive; the default scale), then the
+    # constant sub tracks.
+    use_bind = bind is not None and not additive
+    fixed_t = [tuple(bind[t][0]) if use_bind else (0.0, 0.0, 0.0) for t in range(ntracks)]
+    fixed_r = [tuple(bind[t][1]) if use_bind else (0.0, 0.0, 0.0, 1.0) for t in range(ntracks)]
+    fixed_s = [(head["default_scale"],) * 3] * ntracks
     p = H + const_off
     if rot_format == QUAT_FULL:
         for t in constant[0]:

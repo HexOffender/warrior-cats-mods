@@ -615,10 +615,13 @@ def start_kit(game, kind):
     for path in KINDS[kind]["examples"]:
         try:
             seq = anim.AnimSequence(game.read(texture.content_path(_ART + path)))
+            if seq.skeleton_name().lower() != asset(kind, "skeleton").lower():
+                continue                          # moved to another skeleton: its bind pose isn't this one
             examples.append((path.rsplit("/", 1)[-1], seq.track_map, seq.tracks(seq.bind_pose(skeleton)),
                              seq.frame_rate()))
         except (KeyError, ValueError):
-            continue                              # one the game no longer has
+            continue                              # one the game no longer has, or one an update made unreadable
+                                                  # (the selftest counts each kit's examples)
     rate = anim.AnimSequence(game.read(texture.content_path(asset(kind, "template")))).frame_rate()
     data = write_rig(skeleton, mesh, examples, kind)
     label = KINDS[kind]["label"]

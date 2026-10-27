@@ -354,18 +354,19 @@ decodes them; wcmods only reads ACL, and writes its own sequences in Unreal's pe
 
 **What the game has:** every stream is ACL 2.1.0 (tag `0xAC11AC11`, version 10), uniformly sampled
 (algorithm 0), of transforms (track type 12, `qvvf`), with no database. Rotations are always format 3
-(drop w, variable bits), translations and scales format 1 (variable). All but one leave sub tracks that
-didn't move at the bind pose rather than the identity; 350 have several segments, 252 are wrap-optimized
-(loops), 112 have stripped keyframes and 133 no scale.
+(drop w, variable bits), translations and scales format 1 (variable). Four are additive (default scale
+0: the cat's aim offsets `A_CatMaster_AO_CC`, `_CL`, `_CR` and the cinematic `A_CatMaster_Meow_1`); 350
+have several segments, 252 are wrap-optimized (loops), 112 have stripped keyframes and 133 no scale.
 
 **Layout** (little-endian; offsets from the stream's start unless said):
 - **Headers:** a raw buffer header (u32 size, the stream's length; u32 hash), then the tracks header
   (24 bytes): u32 tag, u16 version, u8 algorithm, u8 track type, u32 tracks (one a sequence track, in its
   track table's order), u32 samples, f32 sample rate, and u32 flags. The flags: bit 0 has scale, bit 1 the
-  default scale (0 or 1), bit 2 the scale format, bit 3 the translation format, bits 4–7 the rotation
-  format, bit 8 a database, bit 9 trivial defaults (without it a default sub track is the bind pose), bit
-  10 stripped keyframes, bit 30 wrap-optimized (the repeated last sample is left out, so Unreal's key
-  count is the samples + 1, the last key the first again).
+  default scale (0 for an additive sequence, or 1), bit 2 the scale format, bit 3 the translation format,
+  bits 4–7 the rotation format, bit 8 a database, bit 9 trivial defaults (only says the compressor's
+  defaults were the identity; it isn't what decides them), bit 10 stripped keyframes, bit 30
+  wrap-optimized (the repeated last sample is left out, so Unreal's key count is the samples + 1, the last
+  key the first again).
 - **The transform tracks header** (52 bytes at 32): segments; animated sub tracks (all of them, then
   rotations, translations, scales); constant samples (rotations, translations, scales); then offsets from
   this header: the database (`0xFFFFFFFF`), the segment headers, the sub track types, the constant data
@@ -387,7 +388,11 @@ didn't move at the bind pose rather than the identity; 350 have several segments
   and low; 6 bytes a translation or scale); then, 4-aligned, the samples as big-endian bit fields, each
   sample's rotations, then translations, then scales.
 - **A value** is `clip_min + clip_extent * (segment_min + segment_extent * q / (2^bits - 1))`, the
-  segment's numbers in 255ths; a rotation's w is `sqrt(1 - x² - y² - z²)`.
+  segment's numbers in 255ths; one constant in its segment is `clip_min + clip_extent * sample / 65535`,
+  and a raw one its floats as they are. A rotation's w is `sqrt(|1 - x² - y² - z²|)`: near a half turn the
+  quantized x, y, z can come out a little over a length of 1, and ACL takes the absolute value (4046
+  samples in 94 of the game's sequences; leaving w at 0 there turns a bone up to 3 degrees otherwise),
+  then normalizes as it interpolates.
 - **Stripped keyframes** lie between the samples the segment keeps: lerped (rotations nlerped) by
   where they are between them. Every segment of the game's keeps its first and last sample, so that's
   all that's needed.
@@ -395,10 +400,14 @@ didn't move at the bind pose rather than the identity; 350 have several segments
 Every segment's sample size computed from the bits per component adds up to the size its header gives,
 in all 519 streams.
 
-**The bind pose:** what a stream leaves at its default is the skeleton's reference pose for the track's
-bone (Unreal's ACL plugin compresses against `USkeleton::GetRefLocalPoses`). Where a mesh rests
-otherwise than its skeleton, no stream of the game's leaves a bone at default but the cat's
-`A_CatMaster_AO_CC` (an aim offset), so the choice shows nowhere else.
+**Defaults:** what a stream leaves at its default is what Unreal's ACL plugin gives it
+(`ACLDecompressionImpl.h`): in a sequence that isn't additive, a rotation or translation is the
+skeleton's reference pose for the track's bone (the plugin compresses against
+`USkeleton::GetRefLocalPoses`); in an additive one, the identity. A scale is always the header's default
+scale, whatever the reference pose's: the prop `A_GPE_TiedBranch_Falling` has no scale sub tracks and its
+root's reference scale is 100, and it plays at 1. Where a mesh rests otherwise than its skeleton, no
+sequence of the game's that isn't additive leaves a bone at default, so the mesh's rest pose never comes
+into it.
 
 **Checked in game** (2026-10-27, build 26184573): the game's own ACL sequences played on the cat,
 paused at a key (`Montage_Pause`, `Montage_SetPosition`) and read bone by bone (`GetSocketTransform`,
