@@ -428,6 +428,15 @@ def test_a_replacement_keeps_the_sequences_length_and_properties():
         acl.set_tracks([one], keep_length=True)
 
 
+def test_additive_sequences_and_root_motion_are_told_from_the_properties():
+    # AdditiveAnimType (3) and bEnableRootMotion (10) count when they're in the header and not zero.
+    assert sequence_with(write_header([0, 1, 2, 3, 20], set()) + b"\0" * 20).additive()
+    assert not sequence_with(write_header([0, 1, 2, 3, 20], {3}) + b"\0" * 20).additive()
+    plain = sequence_with(write_header([0, 1, 2, 20], set()) + b"\0" * 20)
+    assert not plain.additive() and not plain.root_motion()
+    assert sequence_with(write_header([0, 1, 2, 10, 20], set()) + b"\0" * 20).root_motion()
+
+
 GAME_FILES = ["Wrc/Content/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1.uasset",
               "Wrc/Content/Art/Characters/CatMaster/Animations/AM_Meow.uasset",
               "Wrc/Content/Art/Characters/CatMaster/Animations/BS_Lean.uasset",

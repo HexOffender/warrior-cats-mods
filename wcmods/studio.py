@@ -98,6 +98,7 @@ class Studio:
         self._views = {}     # accessory -> its shape and the cat's, for the Items page's drawing
         self._pictures = {}  # texture -> its full-size PNG, to paint over (the last few)
         self._anims = None   # the game's skeletons, read once for the Animations page
+        self._sequences = {}  # kind -> the game's sequences an animation can replace, read once
 
     # ---------- helpers ----------
     def mods(self):
@@ -519,14 +520,9 @@ class Studio:
             return {"kinds": [{"id": k, "label": v["label"], "examples": len(v["examples"])}
                               for k, v in animations.KINDS.items()]}
         if parts == ["game", "anim-sequences"] and method == "GET":
-            # The game's sequences for a kind, for an animation to replace one: their names, and the paths of
-            # the names that are in more than one place.
-            kind = (query or {}).get("for", "cat")
-            if kind not in animations.KINDS:
-                raise ValueError(f"there's no animal {kind!r}")
-            found = animations.game_sequences(self.ctx.game.io.files, kind)
-            return {"sequences": sorted(({"name": n, "paths": p if len(p) > 1 else []} for n, p in found.items()),
-                                        key=lambda s: s["name"].lower())}
+            # The game's sequences for a kind, for an animation to replace one: their names and paths, and
+            # which are additive (those can't be replaced).
+            return {"sequences": self.anim_sequences((query or {}).get("for", "cat"))}
         if parts == ["game", "anim-sequence"] and method == "GET":
             # One of them: where it is, how long it plays and how many keys it has (a replacement is fitted to them).
             q = query or {}
@@ -784,8 +780,26 @@ class Studio:
             return None
         return animations.describe(rel, data, kind, self._skeleton(kind), sibling)
 
+    def anim_sequences(self, kind):
+        """[{"name", "paths", "additive"}] for a kind's sequences, by name."""
+        from .formats import anim, texture
+        if kind not in animations.KINDS:
+            raise ValueError(f"there's no animal {kind!r}")
+        if kind not in self._sequences:
+            out = []
+            for name, paths in animations.game_sequences(self.ctx.game.io.files, kind).items():
+                additive = False
+                for path in paths:
+                    try:
+                        additive = additive or anim.AnimSequence(self.ctx.game.read(texture.content_path(path))).additive()
+                    except (anim.FormatError, ValueError, KeyError):
+                        pass        # not one wcmods reads: the install says so if it's chosen
+                out.append({"name": name, "paths": paths, "additive": additive})
+            self._sequences[kind] = sorted(out, key=lambda s: s["name"].lower())
+        return self._sequences[kind]
+
     def anim_sequence(self, kind, name):
-        """One of the game's sequences an animation can replace: {"path", "seconds", "keys"}."""
+        """One of the game's sequences an animation can replace: {"path", "seconds", "keys", "root_motion"}."""
         from .formats import anim, texture
         if kind not in animations.KINDS:
             raise ValueError(f"there's no animal {kind!r}")
@@ -795,7 +809,11 @@ class Studio:
             raise LookupError(str(e)) from None
         try:
             seq = anim.AnimSequence(self.ctx.game.read(texture.content_path(path)))
-            return {"path": path, "seconds": round((seq.nkeys - 1) / seq.frame_rate(), 4), "keys": seq.nkeys}
+            if seq.additive():
+                raise ValueError(f"{path.rsplit('/', 1)[-1]} is an additive animation (its keys are added to another "
+                                 "pose, not a pose of their own); replacing those isn't supported")
+            return {"path": path, "seconds": round((seq.nkeys - 1) / seq.frame_rate(), 4), "keys": seq.nkeys,
+                    "root_motion": seq.root_motion()}
         except anim.FormatError as e:
             raise ValueError(f"{name} isn't a sequence wcmods can read ({e})") from None
 

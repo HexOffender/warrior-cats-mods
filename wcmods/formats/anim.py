@@ -54,6 +54,9 @@ UE_CODEC = "AnimCompress_PerTrackCompression_5"
 # SequenceLength (a float).
 OBJECT_PROPERTIES = (0, 1, 2)
 FRAME_RATE, SEQUENCE_LENGTH = 17, 20
+# Read only for whether they're set (present in the header and not zero): AdditiveAnimType (an additive
+# sequence's keys are added to another pose: the cats' Meow_1 and aim offsets) and bEnableRootMotion.
+ADDITIVE_TYPE, ROOT_MOTION = 3, 10
 MAX_KEYS = 1 << 16
 
 
@@ -415,6 +418,19 @@ class AnimSequence:
         if cooked != 1 or num <= 0 or den <= 0:
             raise FormatError("the sequence's frame rate isn't laid out as expected")
         return num / den
+
+    def _set(self, index):
+        """Whether a property is set: in the header, and not zero."""
+        present, zero = read_header(_Reader(self.props))
+        return index in present and index not in zero
+
+    def additive(self):
+        """Whether its keys are added to another pose (AdditiveAnimType set) rather than a pose of their own."""
+        return self._set(ADDITIVE_TYPE)
+
+    def root_motion(self):
+        """Whether it has root motion on (bEnableRootMotion): where the game takes it, the root bone moves the animal."""
+        return self._set(ROOT_MOTION)
 
     def _value_at(self, index):
         """Where a property's value is in the properties (LookupError when it's left out). Only the

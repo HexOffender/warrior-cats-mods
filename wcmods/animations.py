@@ -590,6 +590,9 @@ def build(ctx, package, kind, read_file, clip, key, claws=False, game=None, repl
         if replace and on.lower() != asset(kind, "skeleton").lower():
             raise ValueError(f"{template_name} is on {on.rsplit('/', 1)[-1]}, not the {KINDS[kind]['label'].lower()}' "
                              "skeleton")
+        if replace and seq.additive():
+            raise ValueError(f"{template_name.rsplit('/', 1)[-1]} is an additive animation (its keys are added to "
+                             "another pose, not a pose of their own); replacing those isn't supported")
         name, file_data, sibling = read_file()
         bones, pose = track_bones(skeleton), game.rest(kind)
         try:

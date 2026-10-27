@@ -116,25 +116,30 @@ export default {
       const seqFacts = el("p", { class: "note" });
       const seqInput = el("input", { type: "text", list: listId, value: a.replaces || "", spellcheck: "false", placeholder: "None: a new animation",
         "aria-label": "The game's sequence it replaces", style: { minWidth: "22em" }, onchange: async () => {
-          const v = seqInput.value.trim();
+          const v = seqInput.value.trim(), path = v.split(".")[0];   // a path may come with its object's name
           if (!v) { delete a.replaces; changed(true); return; }
+          const refuse = text => { toast(text, "bad"); seqInput.value = a.replaces || ""; };
           try {
             const known = await sequencesOf(kind);
-            const hit = known.find(s => s.name === v || s.paths.includes(v)) || known.find(s => s.name.toLowerCase() === v.toLowerCase());
-            if (!hit) { toast(`The game has no sequence ${v} for ${kindLabel(kind).toLowerCase()}.`, "bad"); seqInput.value = a.replaces || ""; return; }
-            if (hit.paths.length && !hit.paths.includes(v)) { toast(`There are ${hit.paths.length} called ${hit.name}: choose one by its path.`, "bad"); return; }
-            a.replaces = hit.paths.includes(v) ? v : hit.name;
+            const hit = known.find(s => s.name === v || s.paths.includes(path)) || known.find(s => s.name.toLowerCase() === v.toLowerCase());
+            if (!hit) return refuse(`The game has no sequence ${v} for ${kindLabel(kind).toLowerCase()}.`);
+            if (hit.additive) return refuse(`${hit.name} is an additive animation (its keys are added to another pose); replacing those isn't supported.`);
+            if (hit.paths.length > 1 && !hit.paths.includes(path)) return refuse(`There are ${hit.paths.length} called ${hit.name}: choose one by its path.`);
+            const chosen = hit.paths.length > 1 ? path : hit.name;
+            await api.get(`/game/anim-sequence?for=${encodeURIComponent(kind)}&name=${encodeURIComponent(chosen)}`);   // one wcmods can read
+            a.replaces = chosen;
             for (const k of NOT_WITH_REPLACES) delete a[k];
             changed(true);
-          } catch (e) { toast(e.message, "bad"); }
+          } catch (e) { refuse(e.message); }
         } });
-      sequencesOf(kind).then(list => seqList.append(...list.flatMap(s => s.paths.length
+      sequencesOf(kind).then(list => seqList.append(...list.filter(s => !s.additive).flatMap(s => s.paths.length > 1
         ? s.paths.map(p => el("option", { value: p })) : [el("option", { value: s.name })]))).catch(() => {});
       if (a.replaces) {
         const who = kind === "cat" ? "Every cat (yours and the clans')" : `Every one of the ${kindLabel(kind).toLowerCase()}`;
         seqFacts.textContent = `${who} plays this where the game played ${short(a.replaces)}.`;
         api.get(`/game/anim-sequence?for=${encodeURIComponent(kind)}&name=${encodeURIComponent(a.replaces)}`)
-          .then(s => { seqFacts.textContent = `${who} plays this where the game played ${short(a.replaces)}, fitted to its ${s.seconds.toFixed(2)} s (${s.keys} keys at the game's rate): make yours that long to see it at the speed you made it. Its footsteps and other cues stay where they were.`; })
+          .then(s => { seqFacts.textContent = `${who} plays this where the game played ${short(a.replaces)}, fitted to its ${s.seconds.toFixed(2)} s (${s.keys} keys at the game's rate): make yours that long to see it at the speed you made it. Its footsteps and other cues stay where they were.`
+            + (s.root_motion ? " The game's has root motion: where the game uses it (attacks, jumps), its root bone's movement moves the animal itself, so keep your root's path close to the game's." : ""); })
           .catch(e => { seqFacts.textContent = e.message; });
       } else {
         seqFacts.textContent = "Leave it empty for a new animation (an emote, or one for scripts). Choose one of the game's, like A_CatMaster_Trot_1, and this plays in its place instead, everywhere the game plays it. The start kit has some of them to start from.";

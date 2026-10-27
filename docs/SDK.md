@@ -495,6 +495,10 @@ its curves (the claws' among them) and how the AnimBlueprint blends it with the 
 (most of the game's) is moved to the engine's own compression settings, as a copy is. Two mods
 replacing the same one: the later mod's goes in (a higher priority, or the same and a later name),
 with a warning. A replacement isn't one of `Game.anims`' animations: scripts don't play it by its id.
+Additive sequences (their keys are added to another pose: the cats' `A_CatMaster_Meow_1`, its jump
+recovery and aim offsets) can't be replaced, and are refused. Some of the game's have root motion
+(`bEnableRootMotion`: the walk, the attacks): where the game uses it, as it does for attacks and
+jumps, the root bone's movement moves the animal itself, so keep your root's path close to the game's.
 
 **What it can't do (yet):** move an animal (swimming, flying, new ways to walk are animations only);
 play on part of the body (the game's slot is the whole body); play on the named characters with models
