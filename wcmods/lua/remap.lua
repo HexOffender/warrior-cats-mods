@@ -13,11 +13,15 @@
 --   NoCommand, which every listener ignores.
 -- Movement and the camera are axes, read by the game every frame rather than sent as commands, so they
 -- can't be moved here; the key remapper outside the game (`wcmods play`) does those.
+--
+-- The game's pictures of keys (prompts such as Travel and Talk, the menus' Back and Confirm, the pause
+-- screen's Controls tab) follow too: see "Key pictures" below.
 local PLAN = @PLAN@
 -- PLAN.play and PLAN.menu: what applies while you explore (the controller and the HUD) and in the game's
 -- menus. In each, send = {key = {command, ...}}: pressing the key sends those commands;
 -- drop = {command = {key, ...}}: the game's own command is dropped when it comes from one of these keys.
 -- PLAN.keys: {action = {key, ...}}: every key each changed action is on now, for other scripts.
+-- PLAN.icons.play and .menu: {command = {key, ...}}: the keys its pictures show now, the first that has one.
 
 local PRESSED, RELEASED = 0, 1   -- EInputEvent
 local NO_COMMAND = 0
@@ -69,10 +73,13 @@ end
 -- menu, which counts as a menu. (The game draws its own cursor, so the engine's
 -- cursor flag can't tell: it reads false in the pause menu and the map too.)
 local PLAY_SCREENS = { WBP_GuiHudGameWrc_C = true, WBP_GuiScreenOnlineOver_C = true }
+local function screenSet(screen)
+    local ok, name = pcall(function() return screen:GetClass():GetFName():ToString() end)
+    return (ok and PLAY_SCREENS[name]) and "play" or "menu"
+end
 local function where(how, listener)
     if how == "controller" then return "play" end
-    local ok, name = pcall(function() return listener:GetClass():GetFName():ToString() end)
-    return (ok and PLAY_SCREENS[name]) and "play" or "menu"
+    return screenSet(listener)
 end
 
 local injecting = false
@@ -168,6 +175,191 @@ local function releaseLost()
     end
 end
 
+-- Key pictures. Each picture of a key the game draws is a button widget holding a command:
+-- GuiActionButtonControl (ActionCommand: the prompts, the Controls tab's keys) or GuiCommandButtonControl
+-- (ButtonCommand: the menus' footers and tab keys). When the game sets one up (as it's made, when the
+-- controller or keyboard takes over, and all the time for the HUD's prompts), native code finds the key
+-- bound to the command and puts that key's picture on the widget's mcGuiButtonImage, from the GUI
+-- manager's tables (DT_Keys for the keyboard and mouse, one per controller). Neither step can be changed,
+-- but the widget reaches its image through that property: pointed at an image of the script's own, which
+-- is never drawn, the game's picture goes there. The one on screen then shows what this script puts on it: the
+-- picture of the command's new key from the table the game's came from, or the game's own when the
+-- command didn't move or its new key has no picture there (a controller's picture while it moved on the
+-- keyboard, say).
+local icons = { play = {}, menu = {} }   -- command number -> {key, ...}
+local pictures                           -- {kinds = {kind = {key = {image, hud}}}, of = {texture = {kind, ...}}}
+local found, buttons, taken = {}, {}, {} -- widgets made since the last look; those followed; those swapped
+local textures = {}                      -- path -> texture, as they're loaded
+local imageClass, userWidgetClass, screenClass, controlsClass
+
+local function softPath(ptr)
+    local ok, p = pcall(function() return ptr:GetObjectID():GetAssetPathName():ToString() end)
+    if ok and p ~= "" and p ~= "None" then return p end
+end
+
+-- Every picture in the game's tables, by kind ("keyboard", or the controller's table) and key, and the
+-- kinds each texture is in. The keyboard's are DT_Keys and the "PC" controller table.
+local function readPictures(gm)
+    local kinds, of = {}, {}
+    local function read(kind, dt)
+        local byKey = kinds[kind] or {}
+        kinds[kind] = byKey
+        dt:ForEachRow(function(_, row)
+            local key = row.Key.KeyName:ToString()
+            local image, hud = softPath(row.Image), softPath(row.HudImage)
+            if key ~= "None" and image and not byKey[key] then byKey[key] = { image = image, hud = hud or image } end
+            for _, p in ipairs({ image, hud }) do
+                local name = p and p:match("[^%.]+$")
+                if name then
+                    of[name] = of[name] or {}
+                    local seen = false
+                    for _, k in ipairs(of[name]) do seen = seen or k == kind end
+                    if not seen then of[name][#of[name] + 1] = kind end
+                end
+            end
+        end)
+    end
+    read("keyboard", gm.DataKeysMap)
+    gm.GamepadButtonsMap.DataGamepadButtonsMap:ForEach(function(console, dt)
+        dt = dt:get()
+        read(console:get() == 1 and "keyboard" or dt:GetFName():ToString(), dt)
+    end)
+    return { kinds = kinds, of = of }
+end
+
+local function texture(path)
+    local t = textures[path]
+    if valid(t) then return t end
+    t = StaticFindObject(path)
+    if not valid(t) then pcall(function() t = LoadAsset(path) end) end
+    if valid(t) then textures[path] = t end
+    return t
+end
+
+-- The screen a widget is on (the first one up its outers, which hears the keys), and the game instance
+-- past it.
+local function screenOf(w)
+    local cur, screen = w, nil
+    for _ = 1, 40 do
+        local ok, outer = pcall(function() return cur:GetOuter() end)
+        if not (ok and valid(outer)) then return screen, nil end
+        if not screen and outer:IsA(screenClass) then screen = outer end
+        if outer:GetClass():GetFName():ToString() ~= "WidgetTree" and not outer:IsA(userWidgetClass) then
+            return screen, outer
+        end
+        cur = outer
+    end
+    return screen, nil
+end
+
+local function command(b)
+    if b.action then return b.w.ActionCommand end
+    return b.w.ButtonCommand
+end
+
+-- Point the widget at an image of the script's own, so the game's picture lands there.
+local function take(b)
+    local real = b.w.mcGuiButtonImage
+    if not valid(real) then return false end
+    if not pictures then
+        local _, beyond = screenOf(b.w)
+        local gm
+        pcall(function() gm = beyond.GuiManager end)
+        if not valid(gm) then pcall(function() gm = FindFirstOf("BP_WrcGameInstance_C").GuiManager end) end
+        if not valid(gm) then return false end
+        pictures = readPictures(gm)
+    end
+    local decoy = StaticConstructObject(imageClass, b.w)
+    pcall(function() decoy:SetBrushResourceObject(real.Brush.ResourceObject) end)
+    b.w.mcGuiButtonImage = decoy
+    b.real, b.decoy, b.hud = real, decoy, b.w.bUseHudButtonImage
+    taken[#taken + 1] = b
+    debug("key picture for command %d (%s) on %s", command(b), b.where, b.w:GetFullName())
+    return true
+end
+
+-- What the game chose, or the new key's picture in the same table.
+local function show(b)
+    local tex = b.decoy.Brush.ResourceObject
+    if not valid(tex) then return end
+    local name = tex:GetFName():ToString()
+    local path
+    local keys = icons[b.where][command(b)]
+    local kinds = keys and pictures.of[name]
+    if kinds then
+        for _, key in ipairs(keys) do
+            for _, kind in ipairs(kinds) do
+                local p = pictures.kinds[kind][key]
+                if p then path = b.hud and p.hud or p.image break end
+            end
+            if path then break end
+        end
+    end
+    -- Checked against the image itself: the widgets' animations reach it by its name, not the property,
+    -- and one blanked a prompt that showed again without its picture.
+    local want = path and path:match("[^%.]+$") or name
+    local now = b.real.Brush.ResourceObject
+    if valid(now) and now:GetFName():ToString() == want then return end
+    local t = path and texture(path) or tex
+    if valid(t) then
+        debug("key picture %s for command %d (the game's %s)", want, command(b), name)
+        b.real:SetBrushFromTexture(t, false)
+    end
+end
+
+local function followNew()
+    local new = found
+    found = {}
+    for _, f in ipairs(new) do
+        local w, action = f[1], f[2]
+        local ok, name = pcall(function() return w:GetFullName() end)
+        -- The game's own templates live in its packages; the ones on screen in the transient package.
+        if ok and name:find(" /Engine/Transient%.") then buttons[#buttons + 1] = { w = w, action = action } end
+    end
+end
+
+local function lookAtButtons()
+    followNew()
+    local keep = {}
+    for _, b in ipairs(buttons) do
+        if valid(b.w) then
+            local c = command(b)
+            if c ~= NO_COMMAND and (icons.play[c] or icons.menu[c]) then
+                -- The Controls tab shows what keys do while you play, on a menu; prompts outside any screen
+                -- are play's too.
+                if not b.where then
+                    local screen = not b.w:IsA(controlsClass) and screenOf(b.w)
+                    b.where = screen and screenSet(screen) or "play"
+                end
+                if not (icons[b.where][c] and take(b)) then keep[#keep + 1] = b end
+            else
+                keep[#keep + 1] = b
+            end
+        end
+    end
+    buttons = keep
+end
+
+local function showPictures()
+    local keep = {}
+    for _, b in ipairs(taken) do
+        if valid(b.w) and valid(b.real) and valid(b.decoy) then
+            keep[#keep + 1] = b
+            local ok, err = pcall(show, b)
+            if not ok then report("showing a key picture", err) end
+        end
+    end
+    taken = keep
+end
+
+if next(PLAN.icons.play) or next(PLAN.icons.menu) then
+    for _, h in ipairs({ { "/Script/SwtEngine.GuiActionButtonControl", true },
+                         { "/Script/SwtEngine.GuiCommandButtonControl", false } }) do
+        local ok, err = pcall(NotifyOnNewObject, h[1], function(w) found[#found + 1] = { w, h[2] } end)
+        if not ok then log("can't follow %s: %s", h[1], tostring(err)) end
+    end
+end
+
 local HOOKS = {
     { "/Script/SwtEngine.SwtPlayerController:OnKeyPressed", onKey("controller", PRESSED) },
     { "/Script/SwtEngine.SwtPlayerController:OnKeyReleased", onKey("controller", RELEASED) },
@@ -206,25 +398,49 @@ local function setup()
         end)
         if not ok then log("can't hook %s: %s", path, tostring(err)) end
     end
+    imageClass = StaticFindObject("/Script/UMG.Image")
+    userWidgetClass = StaticFindObject("/Script/UMG.UserWidget")
+    screenClass = StaticFindObject("/Script/SwtEngine.SwtScreen")
+    controlsClass = StaticFindObject("/Script/Wrc.GuiConfigButtonControl")
+    if valid(imageClass) and valid(userWidgetClass) and valid(screenClass) and valid(controlsClass) then
+        for _, set in ipairs({ "play", "menu" }) do
+            for name, keys in pairs(PLAN.icons[set]) do
+                if byName[name] then icons[set][byName[name]] = keys end
+            end
+        end
+    else
+        log("can't find the classes to show key pictures with")
+    end
     log("remapping in game: %d keys in play and menus", nkeys)
     return true
 end
 
 -- Everything runs on the game thread, where the hooks do (two threads in one Lua state crash the game).
 -- The game's classes are there once it has started, so the hooks go in on the first tick that finds them.
+-- Key pictures are kept up every frame, the rest every sixth.
 local ready, failed = false, false
+local every, frame = 6, 0
 local function tick()
     if not ready and not failed then
         local ok, done = pcall(setup)
         if not ok then report("setup", done) end
         ready, failed = ok and done, not ok
     end
-    if next(held) then
-        local ok, err = pcall(releaseLost)
-        if not ok then report("letting go of keys", err) end
+    frame = frame + 1
+    if frame % every == 0 then
+        if next(held) then
+            local ok, err = pcall(releaseLost)
+            if not ok then report("letting go of keys", err) end
+        end
+        if ready and (next(found) or next(buttons)) then
+            local ok, err = pcall(lookAtButtons)
+            if not ok then report("looking at key pictures", err) end
+        end
     end
+    if next(taken) then showPictures() end
 end
-if LoopInGameThreadAfterFrames == nil or not pcall(LoopInGameThreadAfterFrames, 6, tick) then
+if LoopInGameThreadAfterFrames == nil or not pcall(LoopInGameThreadAfterFrames, 1, tick) then
+    every = 1
     LoopAsync(100, function()
         ExecuteInGameThread(tick)
         return false

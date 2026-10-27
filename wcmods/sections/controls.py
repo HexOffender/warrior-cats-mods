@@ -75,7 +75,8 @@ def split(merged, in_game):
     in_game: whether the script is there to do its part (UE4SS installed); without it, the key remapper
     does everything it can."""
     if not in_game:
-        return {"play": {"send": {}, "drop": {}}, "menu": {"send": {}, "drop": {}}, "keys": {}}, merged, []
+        return ({"play": {"send": {}, "drop": {}}, "menu": {"send": {}, "drop": {}}, "keys": {},
+                 "icons": {"play": {}, "menu": {}}}, merged, [])
     return keymap.native_plan(merged)
 
 
