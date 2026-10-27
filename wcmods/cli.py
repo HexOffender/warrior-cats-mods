@@ -376,6 +376,9 @@ def cmd_remap(ctx, args):
 
 
 def cmd_play(ctx, args):
+    if not ctx.cfg.data.get("allow_code_mods") and pipeline.code_installed(ctx.cfg.data):
+        print("warning: the game has code from a test install (agent install), and mods that run code are off; "
+              "`wcmods install` takes it out")
     launching = not game_running()
     if launching:
         print("starting the game through Steam...")

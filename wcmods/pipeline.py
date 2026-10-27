@@ -294,6 +294,14 @@ def _newest(folder):
     return newest
 
 
+def code_installed(data):
+    """The UE4SS mods in the game that run mods' code (the bridge, scripts, C++ mods), from wcmods.json's
+    record of the last install (`data`)."""
+    from .sections import cpp, scripts
+    return sorted(n for n in data.get("installed_ue4ss", [])
+                  if n == bridge.NAME or n.startswith((scripts.PREFIX, cpp.PREFIX)))
+
+
 def pending(cfg, mods):
     """How your mods differ from what's installed: {"installed" (ever), "on" and "off" (ids turned on or off
     since), "changed" (on both times, with files changed since), "redo" (why the last install has to be
@@ -339,6 +347,10 @@ def pending(cfg, mods):
     menu_now = {k: v for k, v in menusettings.menu_settings(cfg, data).items() if k in ("key", "pad", "size")}
     if isinstance(inst.get("menu"), dict) and inst["menu"] != menu_now:
         redo.append("the mod menu's settings changed")
+    # A test install (`agent install`) puts code in with "allow_code_mods" off; the next Apply or Play
+    # takes it out again.
+    if not data.get("allow_code_mods") and code_installed(data):
+        redo.append("the game has code from a test install, and mods that run code are off")
     out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed, "redo": redo}
     out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo)
     return out

@@ -29,6 +29,8 @@ Everything on this page was tried in game on build 24847281 and rechecked on 261
   - **More mods:** `--with <mod folder>` adds a mod that isn't in `mods/`, switched on for the build,
     e.g. `--with ../wcmods-examples/game-tweaks` (from a checkout of wcmods-examples beside wcmods).
 - **Afterwards:** `agent install --normal` installs as `wcmods.json` says, like `wcmods install`.
+  Until then, with "allow_code_mods" off, the studio says the game has code from a test install, and
+  its Apply to game and Play take it out (`wcmods play` warns about it).
   If tests changed your save, `wcmods restore <backup>` puts it back; the test runner backs it up
   first and prints the name.
 

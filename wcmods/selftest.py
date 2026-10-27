@@ -1177,6 +1177,16 @@ def _onboarding_edges():
         # With UE4SS, the mod menu's window is worth an install even with no mods on.
         window = pipeline.pending(Config(fresh, fresh), [])
         ok.append(not none_yet["any"] and window["any"] and any("mod menu" in r for r in window["redo"]))
+        # A test install (agent install) left code in the game: Apply takes it out unless code mods are allowed.
+        tested = os.path.join(tmp, "tested")
+        os.makedirs(tested)
+        for allow in (False, True):
+            with open(os.path.join(tested, "wcmods.json"), "w") as f:
+                json.dump({"game_dir": os.path.join(tmp, "Game"), "allow_code_mods": allow,
+                           "installed_ue4ss": ["WCModsCore", "WCModsScript_m", "WCModsMenuHost", "WCModsBridge"],
+                           "installed": {"mods": ["m"], "built": built, "ue4ss": True}}, f)
+            redo = pipeline.pending(Config(tested, tested), discover(root))["redo"]
+            ok.append(any("test install" in r for r in redo) != allow)
 
         # A folder holding two mods, one of them ticked.
         drop = _mods_folder(os.path.join(tmp, "drop"), {"one": ({"name": "One"}, {}), "two": ({"name": "Two"}, {})})
