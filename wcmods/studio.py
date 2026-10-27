@@ -382,8 +382,6 @@ class Studio:
                 # that one on, and a shared .zip says it's needed.
                 if name in story.FILES and story.SANDBOX_ID not in m.requires:
                     m.update(requires=m.requires + [story.SANDBOX_ID])
-                # Made on this build of the game now, so it isn't left out as made for an older one.
-                m.made_on(self.build())
                 # A quest half made still saves; what would keep it out of the game is said now, not at Apply.
                 return {"saved": name, "requires": m.requires, "problem": story_problem(m) if name in story.FILES else None}
             if method == "DELETE":
@@ -450,8 +448,14 @@ class Studio:
             return packs.describe(cfg, self.mods())
         if parts == ["packs"] and method == "POST":
             # Make a pack, or change one: {id, name, description, author, version, mods: [ids]}.
-            pack_id = body.get("id") or modzip.safe_id(body.get("name") or "")
+            pack_id = body.get("id")
             with self.lock:
+                if not pack_id:   # a new pack: never one that's there already
+                    taken = {m.id for m in self.mods()}
+                    base = pack_id = modzip.safe_id(body.get("name") or "pack")
+                    n = 2
+                    while pack_id in taken:
+                        pack_id, n = f"{base}-{n}", n + 1
                 p = packs.save(self.ctx.mods_root, self.mods(), pack_id, (body.get("name") or "").strip(), body.get("mods") or [],
                                description=(body.get("description") or "").strip(), author=(body.get("author") or "").strip(),
                                version=(body.get("version") or "").strip(), game_build=self.build())

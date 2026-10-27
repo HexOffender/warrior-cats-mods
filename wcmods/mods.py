@@ -92,16 +92,6 @@ class Mod:
             f.write("\n")
         self.__init__(self.folder)
 
-    def made_on(self, build):
-        """Note that the mod was changed on this build of the game ("game_builds"), so it isn't left out as
-        made for an older one. Nothing changes without a build, or when it's noted already."""
-        if not build:
-            return
-        builds = self.meta.get("game_builds", self.meta.get("game_build"))
-        builds = [builds] if isinstance(builds, int) else builds if isinstance(builds, list) else []
-        if build not in builds:
-            self.update(game_builds=[b for b in builds if isinstance(b, int)] + [build])
-
     def set_enabled(self, value):
         self.update(enabled=bool(value))
 

@@ -137,7 +137,3 @@ def test_mods_made_in_the_studio_note_the_games_build(tmp_path):
     assert gamebuild.made_for(m) == [26184573]
     old = modlib.create(str(tmp_path), "old")
     assert gamebuild.made_for(old) == list(gamebuild.ASSUMED_BUILDS)
-    old.made_on(26184573)
-    assert old.meta["game_builds"] == [26184573]
-    old.made_on(26184573)
-    assert old.meta["game_builds"] == [26184573]
