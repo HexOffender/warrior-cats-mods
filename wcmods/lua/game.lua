@@ -1549,6 +1549,220 @@ local function spawnNpc(n)
     return true
 end
 
+-- ------------------------------------------------------------------ the game's own label and Talk prompt
+-- A cat of the game's kind carries the game's label over its head (an icon, a line, its name and its role,
+-- as the quest givers show) and could take the game's Interact prompt, but the game only fills and shows
+-- them for the cats it set up itself (seen in game, 2026-10-27: a spawned cat's label had a placeholder
+-- name at opacity 0, and the game's prompt never came up for it). These do it for a mod's cats:
+--   npc:label({ name = "Brindlemoon", title = "Elder", extra = "A Soft Nest", icon = "available" })
+--   npc:prompt("Talk")                          -- the game's prompt, with its Interact glyph, when you're in reach
+--   Game.npcs.onInteract(function(npc) ... end) -- the game's Interact key or button pressed there
+local LABEL_RANGE, REACH = 2000, 250      -- cm: the label shows within LABEL_RANGE, the prompt within REACH
+local LABEL_ICONS = { available = "CanvasAvailable", ongoing = "CanvasOngoing", done = "CanvasCompleted" }
+local SHOWN, COLLAPSED = 4, 1             -- ESlateVisibility: SelfHitTestInvisible, Collapsed
+local ICON_ABOVE = -100                   -- the icon above the label's lines (the game moves it for its own cats)
+local INTERACT_COMMAND = 67               -- the action the game's own prompt glyph shows: Interact
+local PROMPT_MARGIN = 120                 -- px: how far in from the screen's edges a prompt stays
+
+local function labelWidgets(n)
+    local a = n:actorOrNil()
+    if not a then return nil end
+    local ok, c = pcall(function() return a.QuestWidgetComponent.WidgetsContainer end)
+    if not (ok and valid(c)) then return nil end
+    return c, c.mcGuiActorName, c.mcGuiActorStatus
+end
+
+-- Fill in the label (once for each label and each time the cat is spawned) and show it while your cat is
+-- within its range. False when the cat has no label to show (it isn't in the world).
+local function showLabel(n)
+    local c, name, status = labelWidgets(n)
+    if not c then return false end
+    local l = n.labelSpec
+    return pcall(function()
+        if not (l and n:near(l.range or LABEL_RANGE)) then
+            name:SetRenderOpacity(0)
+            status:SetRenderOpacity(0)
+            return
+        end
+        if n.labelSet ~= l or n.labelOn ~= c then
+            name.mcGuiTextName:SetText(FText(l.name or ""))
+            name.mcGuiTextRole:SetText(FText(l.title or ""))
+            name.mcGuiTextRole:SetVisibility(l.title and SHOWN or COLLAPSED)
+            name.mcGuiTextExtraInfo:SetText(FText(l.extra or ""))
+            name.mcGuiTextExtraInfo:SetVisibility(l.extra and SHOWN or COLLAPSED)
+            for key, canvas in pairs(LABEL_ICONS) do status[canvas]:SetVisibility(l.icon == key and SHOWN or COLLAPSED) end
+            status:SetRenderTranslation({ X = 0, Y = ICON_ABOVE })
+            n.labelSet, n.labelOn = l, c
+        end
+        name:SetRenderOpacity(1)
+        status:SetRenderOpacity(l.icon and 1 or 0)
+    end)
+end
+
+-- The label over the cat's head, in the game's own style: {name, title (smaller, under it), extra (a line
+-- above it, in the game's green), icon ("available", "ongoing" or "done": the game's quest marks), range
+-- (cm)}. npc:label(nil) takes it away. Returns false when it can't be shown now (it shows once the cat is
+-- in the world).
+function Npc:label(spec)
+    self.labelSpec = spec and { name = spec.name, title = spec.title, extra = spec.extra, icon = spec.icon,
+                                range = spec.range } or nil
+    local ok = showLabel(self)
+    return ok
+end
+
+-- The game's Interact prompt over the cat ("Talk"), with the glyph of its Interact key or button, while
+-- your cat is within `reach` cm (250) and nothing of the game's own is in reach; npc:prompt(nil) takes it
+-- away. Game.npcs.onInteract hears the key.
+function Npc:prompt(text, reach)
+    self.promptText, self.reach = text, reach
+    Game.npcs.watchPrompts()
+end
+
+-- The keys the game's Interact is on: the keyboard's and the controller's, from your settings in the save
+-- (read again every 10 seconds, for a remap), and the left mouse button, which the game's prompt shows.
+local interactKeys, interactRead
+function Game.npcs.interactKeys()
+    if interactKeys and os.clock() - interactRead < 10 then return interactKeys end
+    local keys = {}
+    pcall(function()
+        local _, account = next(Game.save.file())
+        for _, section in ipairs({ "InputKeyboard", "InputGamepad" }) do
+            local key = tostring(account.Shared[section].Player_Interact):match("^[^,]*,[^,]*,([^,]+)")
+            if key then keys[#keys + 1] = key end
+        end
+    end)
+    if #keys == 0 then keys = { "E", "Gamepad_FaceButton_Bottom" } end
+    keys[#keys + 1] = "LeftMouseButton"
+    interactKeys, interactRead = keys, os.clock()
+    return keys
+end
+
+local prompt = { widget = nil, slot = nil, hud = nil, text = nil, at = nil, held = {} }
+local interactFns = {}
+local promptWatch, viewModule
+
+local function gameHud()
+    local h = Game.find("WBP_GuiHudGameWrc_C")
+    return valid(h) and h or nil
+end
+
+-- The prompt this script shows: the game's own prompt widget (the one its contextual menu uses), made
+-- again on a new HUD, on the HUD's exploration layer.
+local function promptWidget(h)
+    if valid(prompt.widget) and prompt.hud == h then return prompt.widget end
+    local ok, w = pcall(function()
+        local cls = h.mcGuiContextualMenu.mcGuiPrompt1:GetClass()
+        local pc = Game.controller()
+        local made = Game.object("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(pc, cls, pc)
+        local slot = h.CanvasExploration:AddChildToCanvas(made)
+        slot:SetAutoSize(true)
+        slot:SetAlignment({ X = 0.5, Y = 0.5 })
+        slot:SetAnchors({ Minimum = { X = 0, Y = 0 }, Maximum = { X = 0, Y = 0 } })
+        made.mcGuiButtonAction.ActionCommand = INTERACT_COMMAND
+        prompt.slot = slot
+        return made
+    end)
+    if not (ok and valid(w)) then return nil end
+    prompt.widget, prompt.hud, prompt.text = w, h, nil
+    return w
+end
+
+-- Whether the game's own prompt is up (a pickup, a tunnel or one of its cats in reach): then it wins.
+local function gamePromptUp(h)
+    local ok, v = pcall(function() return h.mcGuiContextualMenu:GetVisibility() end)
+    return ok and v ~= COLLAPSED and v ~= 2
+end
+
+-- Where a cat's prompt goes on screen (pixels), and whether the cat is in view: at its body when it is,
+-- else at the screen's edge on its side (beside or behind your cat), so the key still says what it does.
+local function promptSpot(n, View, view)
+    local l = n.actor:K2_GetActorLocation()
+    local at = { X = l.X, Y = l.Y, Z = l.Z - 15 }
+    local x, y = View.worldToScreen(at, view)
+    local inView = x ~= nil and x >= 0 and x <= view.width and y >= 0 and y <= view.height
+    if not x then
+        local right = View.cameraSpace(at, view)
+        x, y = (right or 0) < 0 and 0 or view.width, view.height * 0.7
+    end
+    x = math.max(PROMPT_MARGIN, math.min(view.width - PROMPT_MARGIN, x))
+    y = math.max(PROMPT_MARGIN, math.min(view.height - PROMPT_MARGIN, y))
+    return x, y, inView
+end
+
+local function updatePrompt()
+    viewModule = viewModule or select(2, pcall(require, "WCModsView"))
+    local View = type(viewModule) == "table" and viewModule or nil
+    local view = View and View.current()
+    -- The nearest cat in reach that you can see; one out of view only when there's none in view.
+    local best, bestX, bestY, bestScore
+    if view then
+        for _, n in ipairs(npcs) do
+            if n.promptText and not n.removed then
+                local away = n:valid() and n:distance()
+                if away and away <= (n.reach or REACH) then
+                    local x, y, inView = promptSpot(n, View, view)
+                    local score = away + (inView and 0 or 1e6)
+                    if not bestScore or score < bestScore then best, bestX, bestY, bestScore = n, x, y, score end
+                end
+            end
+        end
+    end
+    local h = gameHud()
+    local talking = Game.dialogue.showing() or Game.dialogue.busy()
+    local show = best and h and #Game.screens() == 0 and not talking and not gamePromptUp(h)
+    prompt.at = show and best or nil
+    local w = show and promptWidget(h) or (valid(prompt.widget) and prompt.widget) or nil
+    if w then
+        if show then
+            if prompt.text ~= best.promptText then
+                w.mcGuiTextAction:SetText(FText(best.promptText))
+                prompt.text = best.promptText
+            end
+            local scale = Game.library("WidgetLayoutLibrary"):GetViewportScale(Game.player())
+            prompt.slot:SetPosition({ X = bestX / scale, Y = bestY / scale })
+            w:SetVisibility(SHOWN)
+        else
+            w:SetVisibility(COLLAPSED)
+        end
+    end
+    -- The game's Interact, once per press: at the cat under the prompt, or (while this script's dialogue
+    -- box is up) to move its talk on.
+    if #interactFns == 0 or #Game.screens() > 0 then return end
+    for _, key in ipairs(Game.npcs.interactKeys()) do
+        if prompt.held[key] then
+            if not Game.keyDown(key) then prompt.held[key] = nil end
+        elseif Game.pressed(key) then
+            prompt.held[key] = true
+            local at = prompt.at
+            if at or Game.dialogue.showing() then
+                for _, fn in ipairs(interactFns) do
+                    local ok, err = pcall(fn, at)
+                    if not ok then log("npcs.onInteract: %s", tostring(err)) end
+                end
+            end
+            return
+        end
+    end
+end
+
+function Game.npcs.watchPrompts()
+    promptWatch = promptWatch or Game.onFrame(function()
+        if not Game.player() then return end
+        local ok, err = pcall(updatePrompt)
+        if not ok and not prompt.failed then
+            prompt.failed = true
+            log("npc prompts: %s", tostring(err))
+        end
+    end)
+end
+
+-- fn(npc) when the game's Interact key or button is pressed with a cat's prompt showing; fn(nil) when
+-- it's pressed while this script's dialogue box is up (Game.dialogue), so the same key moves a talk on.
+function Game.npcs.onInteract(fn)
+    interactFns[#interactFns + 1] = fn
+    Game.npcs.watchPrompts()
+end
+
 -- A new cat of the mod's own at `at` ({x, y, z} or {X =, Y =, Z =}), facing `yaw` degrees. Options:
 -- colours = {fur, pattern, markings, nose, paws, whiskers, ears} as "#rrggbb"; eyes = an iris colour
 -- slot (0-24, as in palette.json); size (the game's cats are about 0.4-1.1); prefix and suffix = name
@@ -1578,7 +1792,12 @@ function Game.npcs.spawn(opts)
         if not Game.player() then return end
         for _, c in ipairs(npcs) do
             if not c.removed then
-                if alive(c.actor) then pcall(paintNpc, c) else pcall(spawnNpc, c) end
+                if alive(c.actor) then
+                    pcall(paintNpc, c)
+                    if c.labelSpec then showLabel(c) end
+                else
+                    pcall(spawnNpc, c)
+                end
             end
         end
     end)

@@ -843,8 +843,28 @@ Worked out on 2026-10-24 for `Game.npcs`, and checked in game with two cats.
 - **The save:** the cat's `SwtAdventureIUIDComponent` has `bWasDynamicallySpawned` and no ID (-1).
   wcmods switches it off before the spawn finishes. After a session with two spawned cats, the
   save's `NPCData` was the same size as before.
-- **No Talk prompt:** the game shows none for a spawned filler, so the examples draw the name and the
-  talk themselves.
+- **The label and the prompt** (worked out on 2026-10-27, on a spawned filler beside the medicine cat):
+  - **The label.** Every quest actor has a `QuestWidgetComponent` whose widget, a
+    `WBP_GuiQuestNpcWidgetsContainer` (screen space), holds `mcGuiActorName` (`mcGuiTextName`,
+    `mcGuiTextRole`, `mcGuiTextExtraInfo`) and `mcGuiActorStatus` (`CanvasAvailable`, `CanvasOngoing`,
+    `CanvasCompleted`). The game fades them in by distance with their render opacity. For a spawned filler
+    the label is there, with a placeholder name and role ("Deputy"), at opacity 0, and nothing fades it in.
+    Setting the texts and the opacity shows it, in the game's style. The status icon sits over the first
+    line unless it's moved up (render translation -100).
+  - **The prompt.** The game's Talk prompt didn't come up for a spawned filler, even with its
+    `InteractComponent` (a 22 cm sphere, collision off on a spawned one) switched on and an `NpcDialogue`
+    given (the medicine cat's is in `QuestComponent.NpcDialogue`). The choice of what's in reach is made in
+    native code, and `QuestPlayerController:OnCanInteract` never fired in a hook, not even for a pickup.
+  - **The prompt's widget.** The HUD's `mcGuiContextualMenu` (`WBP_GuiContextualMenu`) has three
+    `WBP_GuiExplorationPrompt`s: `mcGuiTextAction` and `mcGuiButtonAction`, a `GuiActionButtonControl` whose
+    `ActionCommand` 67 is Interact and draws its key or button. The game hides the menu again every frame
+    when nothing is in reach, so wcmods makes a prompt of its own from the same class, on the HUD's
+    `CanvasExploration`, and listens to Interact's keys itself (`Player_Interact` in the save's
+    `InputKeyboard` and `InputGamepad`).
+  - **Dialogues** are `NpcDialogue` graphs (`GenericGraph`) of `QuestDialogueNode`s: camera actions,
+    `QuestDialogueTalkingNode`s with a `Paragraph` and a `TalkingSource` (0 the cat, 1 you; several "you"
+    children of one node are the answer choices) and screens (`QuestDialogueActionCreateScreen`). Giving a
+    spawned cat one didn't make the game talk with it, for the reason above.
 - **Keys:** the game's Interact (E) would also use whatever else is in reach (a travel tunnel opened
   the map). The examples talk on T and the controller's d-pad up, read from the game's own input
   (`WasInputKeyJustPressed`). That also works with keys the agent posts to the window, which UE4SS
