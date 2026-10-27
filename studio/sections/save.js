@@ -13,7 +13,7 @@ export default {
     const slot = String(getPath(data, "Shared/General/CurrentCatSlot") ?? 0);
     const P = `${slot}/GameplayProgression`;
     const target = wc.modTarget({
-      file: "save.json",
+      file: "save.json", share: false,   // edits to your own save: nothing to share
       onLoad: obj => { edits = { set: { ...(obj?.set || {}) }, add: JSON.parse(JSON.stringify(obj?.add || {})) }; delete edits.set._help; render(); },
       getValue: () => ({ _help: "Written by Clan Mod Studio. Applied to your save on install, after a backup.", ...edits }),
     });

@@ -4,8 +4,10 @@ A mod is a folder under mods/ (in your own folder, config.data_dir(); not wcmods
   {"name": "Game Tweaks", "description": "...", "enabled": true, "priority": 0,
    "version": "1.2", "author": "...",          what the studio shows about it
    "requires": ["menu-pages"],                  mods it can't work without: turned on with it
-   "uses": ["mod-menu"]}                        mods it works with when they're on ("mod-menu", the in-game
+   "uses": ["mod-menu"],                        mods it works with when they're on ("mod-menu", the in-game
                                                 menu's window, for a page: wcmods' own, so always there)
+   "pack": true}                                a mod pack: nothing of its own, its "requires" are its mods
+                                                (packs.py)
 and any of:
   files/<game path>   loose files that replace the game's (CSV data, configs, movies)
   paks/<name>.pak     cooked content made with Unreal Engine 5.7 (with its .utoc/.ucas), installed as is
@@ -14,6 +16,8 @@ and any of:
   mouselook.json      mouse look settings (sections/mouselook.py)
   data.json           gameplay data edits (sections/data.py)
   items.json          new herbs and materials (sections/items.py)
+  npcs.json           cats of the mod's own, and quests.json, questlines with them (sections/story.py; the
+  quests.json         Sandbox mode mod brings them into the game)
   names.json          cat names: prefixes, suffixes, rogues, the ban list, cats in your save (sections/names.py)
   cats.json           your cat's own colours and colour slots (sections/cats.py)
   save.json           save edits (sections/savedit.py)
@@ -31,7 +35,8 @@ import re
 # own; it's wcmods' now (menu.py), so it's always there: a mod needing it needs nothing more.
 MENU_ID = "mod-menu"
 CONTENT = (("files", "files"), ("paks", "cooked content"), ("palette.json", "palette"), ("controls.json", "controls"),
-           ("mouselook.json", "mouse look"), ("data.json", "data"), ("items.json", "items"), ("names.json", "names"), ("cats.json", "cats"),
+           ("mouselook.json", "mouse look"), ("data.json", "data"), ("items.json", "items"), ("npcs.json", "characters"),
+           ("quests.json", "questlines"), ("names.json", "names"), ("cats.json", "cats"),
            ("save.json", "save"), ("scripts", "in-game script"), ("dlls", "C++ mod"), ("cpp", "C++ source"),
            ("section.py", "code"),
            (os.path.join("studio", "section.js"), "studio page"))
@@ -60,7 +65,8 @@ class Mod:
         self.uses = [i for i in _ids(meta.get("uses")) if i not in self.requires]
 
     def kinds(self):
-        return [kind for name, kind in CONTENT if os.path.exists(os.path.join(self.folder, name))]
+        kinds = [kind for name, kind in CONTENT if os.path.exists(os.path.join(self.folder, name))]
+        return ["mod pack"] + kinds if self.meta.get("pack") else kinds
 
     def has_code(self):
         """Whether it runs code (Python at build time, Lua or C++ in game, a studio page): only with code mods allowed."""
@@ -86,6 +92,16 @@ class Mod:
             f.write("\n")
         self.__init__(self.folder)
 
+    def made_on(self, build):
+        """Note that the mod was changed on this build of the game ("game_builds"), so it isn't left out as
+        made for an older one. Nothing changes without a build, or when it's noted already."""
+        if not build:
+            return
+        builds = self.meta.get("game_builds", self.meta.get("game_build"))
+        builds = [builds] if isinstance(builds, int) else builds if isinstance(builds, list) else []
+        if build not in builds:
+            self.update(game_builds=[b for b in builds if isinstance(b, int)] + [build])
+
     def set_enabled(self, value):
         self.update(enabled=bool(value))
 
@@ -94,7 +110,7 @@ class Mod:
                 "priority": self.priority, "kinds": self.kinds(), "preset": palette_only(self),
                 "version": self.version, "author": self.author,
                 "requires": [i for i in self.requires if i != MENU_ID], "uses": self.uses,
-                "code": self.has_code(), "menu_page": self.menu_page()}
+                "code": self.has_code(), "menu_page": self.menu_page(), "pack": bool(self.meta.get("pack"))}
 
 
 def _ids(value):
@@ -223,7 +239,10 @@ def discover(mods_root):
 VALID_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 
-def create(mods_root, mod_id, name=None, description="", enabled=False, priority=0):
+def create(mods_root, mod_id, name=None, description="", enabled=False, priority=0, game_build=None):
+    """A new, empty mod. game_build: the build of the game it's made on (mod.json "game_builds"); without
+    one it counts as made for the build mods were made on before builds were noted, and a newer game
+    leaves it out (exe/gamebuild.py)."""
     if not VALID_ID.match(mod_id):
         raise ValueError("mod folder names use lowercase letters, digits, '-', '_' or '.'")
     folder = os.path.join(mods_root, mod_id)
@@ -231,7 +250,10 @@ def create(mods_root, mod_id, name=None, description="", enabled=False, priority
         raise ValueError(f"a mod named {mod_id} already exists")
     os.makedirs(folder)
     with open(os.path.join(folder, "mod.json"), "w", encoding="utf-8") as f:
-        json.dump({"name": name or mod_id.replace("-", " ").title(), "description": description,
-                   "enabled": enabled, "priority": priority}, f, indent=2)
+        meta = {"name": name or mod_id.replace("-", " ").title(), "description": description,
+                "enabled": enabled, "priority": priority}
+        if game_build:
+            meta["game_builds"] = [game_build]
+        json.dump(meta, f, indent=2)
         f.write("\n")
     return Mod(folder)

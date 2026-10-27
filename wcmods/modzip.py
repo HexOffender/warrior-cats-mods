@@ -153,6 +153,8 @@ def _found(mods_root, mod_id, meta, names, size, root):
     req = meta.get("requires")
     uses = meta.get("uses")
     ids = lambda v: [x for x in ([v] if isinstance(v, str) else v if isinstance(v, list) else []) if isinstance(x, str)]
+    if meta.get("pack"):
+        kinds = ["mod pack"] + kinds
     return {"id": mod_id, "name": str(meta.get("name") or mod_id), "description": str(meta.get("description") or ""),
             "version": str(meta.get("version") or ""), "author": str(meta.get("author") or ""),
             "requires": [i for i in ids(req) if i != modlib.MENU_ID], "uses": ids(uses), "kinds": kinds,
@@ -436,16 +438,25 @@ def restore(backups_root, name, mods_root):
     return entry["id"]
 
 
-def pack(mod):
-    """The mod as a .zip (its folder inside, named as it is), to share. Returns the bytes."""
+def pack(mod, found=()):
+    """The mod as a .zip (its folder inside, named as it is), to share. Returns the bytes. A mod pack
+    (packs.py) carries the mods in it too, each in its own folder, from `found` (the mods folder's mods)."""
     import io
+    folders = [mod]
+    if mod.meta.get("pack"):
+        by_id = {m.id: m for m in found}
+        missing = [i for i in modlib.needed(list(found), mod.id) if i not in by_id]
+        if missing:
+            raise ValueError(f"{mod.name} needs {', '.join(missing)}, which isn't in your mods, so the pack can't carry it")
+        folders += [by_id[i] for i in modlib.needed(list(found), mod.id)]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for folder, dirs, files in os.walk(mod.folder):
-            dirs[:] = sorted(d for d in dirs if d not in IGNORED)
-            for f in sorted(files):
-                if f in IGNORED or f.endswith(".pyc"):
-                    continue
-                full = os.path.join(folder, f)
-                z.write(full, os.path.join(mod.id, os.path.relpath(full, mod.folder)).replace(os.sep, "/"))
+        for m in folders:
+            for folder, dirs, files in os.walk(m.folder):
+                dirs[:] = sorted(d for d in dirs if d not in IGNORED)
+                for f in sorted(files):
+                    if f in IGNORED or f.endswith(".pyc"):
+                        continue
+                    full = os.path.join(folder, f)
+                    z.write(full, os.path.join(m.id, os.path.relpath(full, m.folder)).replace(os.sep, "/"))
     return buf.getvalue()

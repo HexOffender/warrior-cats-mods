@@ -24,9 +24,9 @@ export const api = {
   put: (p, b) => call("PUT", p, b),
   patch: (p, b) => call("PATCH", p, b),
   del: p => call("DELETE", p),
-  // Send a file as the request's body (a downloaded mod's .zip); the answer is JSON.
-  async upload(p, file) {
-    const res = await fetch("/api" + p, { method: "POST", headers: { "X-WC-Token": TOKEN, "Content-Type": "application/zip" }, body: file });
+  // Send a file as the request's body (a downloaded mod's .zip, a picture); the answer is JSON.
+  async upload(p, file, type = "application/zip") {
+    const res = await fetch("/api" + p, { method: "POST", headers: { "X-WC-Token": TOKEN, "Content-Type": type }, body: file });
     let data = null;
     try { data = await res.json(); } catch (e) { /* empty body */ }
     if (!res.ok) throw new Error((data && data.error) || `${res.status} ${res.statusText}`);
@@ -49,7 +49,31 @@ export const api = {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     return name;
   },
+  // A picture the API makes (an item's icon) as a URL for an <img>; kept, so asking again is free.
+  async image(p) {
+    if (!images.has(p)) {
+      images.set(p, (async () => {
+        const res = await fetch("/api" + p, { headers: { "X-WC-Token": TOKEN } });
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        return URL.createObjectURL(await res.blob());
+      })());
+      images.get(p).catch(() => images.delete(p));
+    }
+    return images.get(p);
+  },
+  forget(p) { images.delete(p); },
 };
+const images = new Map();   // API path -> Promise of an object URL
+
+// Hand the browser a file to save that the page made itself (a .json exported from a page).
+export function saveFile(name, text, type = "application/json") {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = el("a", { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
 
 // ---------- DOM ----------
 export function el(tag, attrs = {}, ...kids) {
@@ -246,9 +270,13 @@ export const color = {
 // Renders "Editing mod: [select] [New mod] [Save]". onLoad(obj|null, modId) fires when the target changes;
 // call target.save(obj) to write the file. Every page starts on the mod last chosen on any page, else on one
 // mod for a player's own edits, "My mods" (made on the first save). The built-in mod menu is never offered.
-export function modTarget({ file, onLoad, getValue }) {
+// The mod a page saves its file into, with a Share part: the mod's details (its name, author, version and
+// description, which a shared .zip carries), Save as .zip for others to add on their Mods page, and the
+// page's file on its own, out (Export) and in (Import). share: false leaves the Share part out.
+export function modTarget({ file, onLoad, getValue, share = true }) {
   const defaultId = "my-mods", defaultName = "My mods";
   const key = "wc-target";   // the mod last chosen, on whichever page
+  const kind = file.replace(".json", "");
   let mods = [], current = null, dirty = false;
   const select = el("select", { "aria-label": `Mod that stores ${file}` });
   const status = el("span", { class: "dirty" });
@@ -257,15 +285,18 @@ export function modTarget({ file, onLoad, getValue }) {
   const newBox = el("span", { class: "row", hidden: true });
   const newId = el("input", { type: "text", placeholder: "my-mod-name", "aria-label": "New mod folder name", spellcheck: "false" });
   newBox.append(newId, el("button", { class: "btn small", text: "Create", onclick: () => create(newId.value.trim()) }));
-  const box = el("div", { class: "target" },
+  const bar = el("div", { class: "target" },
     el("span", { class: "lbl", text: "Editing mod" }), select, newBtn, newBox, el("span", { style: { flex: "1" } }), status, saveBtn);
+  const shareBox = share ? shareCard() : null;
+  const box = shareBox ? el("div", { class: "stack" }, bar, shareBox.element) : bar;
 
   async function refresh(selectId) {
     mods = await api.get("/mods");
     clear(select);
     const withFile = [];
     for (const m of mods) {
-      const has = m.kinds.includes(file.replace(".json", "")) || (file === "palette.json" && m.kinds.includes("palette"));
+      const has = m.kinds.includes(kind) || (file === "palette.json" && m.kinds.includes("palette"))
+        || (file === "npcs.json" && m.kinds.includes("characters")) || (file === "quests.json" && m.kinds.includes("questlines"));
       withFile.push({ m, has });
     }
     withFile.sort((a, b) => (b.has - a.has) || a.m.id.localeCompare(b.m.id));
@@ -295,6 +326,7 @@ export function modTarget({ file, onLoad, getValue }) {
       if (r.exists) { try { obj = JSON.parse(r.text); } catch (e) { toast(`${file} in ${id} isn't valid JSON`, "bad"); } }
     }
     setDirty(false);
+    shareBox?.show(mods.find(m => m.id === id));
     onLoad(obj, id);
   }
   // Saving to a mod means you want it applied: create it if it's new. A mod that exists but is off
@@ -318,28 +350,106 @@ export function modTarget({ file, onLoad, getValue }) {
     } catch (e) { toast(e.message, "bad"); }
   }
   function setDirty(v) { dirty = v; status.textContent = v ? "Unsaved changes" : ""; }
+  // Writes the page's file into the mod; true when it's saved. quiet: no toast (Save as .zip says what it did).
+  async function save(quiet = false) {
+    try {
+      const value = getValue();
+      if (value === undefined) return false;   // the page said what's wrong
+      const existing = await ensureMod(current);
+      const r = await api.put(`/mods/${encodeURIComponent(current)}/file/${file}`, { text: JSON.stringify(value, null, 2) });
+      setDirty(false);
+      if (r && r.problem) {
+        toast(`Saved, but it can't go in the game until this is sorted: ${r.problem}`, "bad");
+      } else if (existing && !existing.enabled) {
+        await api.patch(`/mods/${encodeURIComponent(current)}`, { enabled: true });
+        if (!quiet) toast(`Saved and turned on ${existing.name}. Apply to game to use it.`);
+      } else if (!quiet) {
+        toast(`Saved ${file} in ${current}. Apply to game to use it.`);
+      }
+      bus.emit("mods-changed");
+      await refresh(current);
+      return true;
+    } catch (e) { toast(e.message, "bad"); return false; }
+  }
   select.addEventListener("change", async () => {
     if (dirty) toast("Switched mods; unsaved changes were dropped");
     await load(select.value);
   });
   newBtn.addEventListener("click", () => { newBox.hidden = !newBox.hidden; if (!newBox.hidden) newId.focus(); });
-  saveBtn.addEventListener("click", async () => {
-    try {
+  saveBtn.addEventListener("click", () => save());
+
+  // ---------- sharing ----------
+  function shareCard() {
+    const fields = {
+      name: el("input", { type: "text", "aria-label": "Mod name", placeholder: "My mod" }),
+      author: el("input", { type: "text", "aria-label": "Author", placeholder: "your name" }),
+      version: el("input", { type: "text", "aria-label": "Version", placeholder: "1.0", size: "6" }),
+      description: el("textarea", { "aria-label": "Description", rows: "2", style: { minHeight: "54px", fontFamily: "var(--body)", fontSize: "0.95rem" },
+        placeholder: "What it does, in a sentence or two. People see this before they add it." }),
+    };
+    const field = (label, input) => el("label", { class: "field" }, el("span", { class: "lbl", text: label }), input);
+    const needs = el("p", { class: "note" });
+    const picker = el("input", { type: "file", accept: ".json,application/json", hidden: true });
+    picker.addEventListener("change", async () => {
+      const f = picker.files[0];
+      picker.value = "";
+      if (!f) return;
+      let obj;
+      try { obj = JSON.parse(await f.text()); } catch (e) { toast(`${f.name} isn't a ${file} (it isn't valid JSON)`, "bad"); return; }
+      if (!obj || typeof obj !== "object" || Array.isArray(obj)) { toast(`${f.name} isn't a ${file}`, "bad"); return; }
+      onLoad(obj, current);
+      setDirty(true);
+      toast(`Loaded ${f.name}. Save to mod to keep it in ${select.selectedOptions[0]?.textContent || current}.`);
+    });
+    const saveDetails = el("button", { class: "btn small", text: "Save details", onclick: async () => {
+      try {
+        await ensureMod(current);
+        const body = Object.fromEntries(Object.entries(fields).map(([k, i]) => [k, i.value.trim()]));
+        if (!body.name) delete body.name;
+        await api.patch(`/mods/${encodeURIComponent(current)}`, body);
+        toast("Saved the mod's details");
+        bus.emit("mods-changed");
+        // Not refresh(): that loads the file again, and the page may have changes not saved yet.
+        mods = await api.get("/mods");
+        const m = mods.find(x => x.id === current), opt = [...select.options].find(o => o.value === current);
+        if (m && opt) opt.textContent = opt.textContent.replace(/^.*?(?= \(no |\s·\soff|$)/, m.name);
+        show(m);
+      } catch (e) { toast(e.message, "bad"); }
+    } });
+    const zipBtn = el("button", { class: "btn primary small", text: "Save as .zip", onclick: async () => {
+      // What's on the page goes in: unsaved changes are saved first.
+      if ((dirty || !mods.some(m => m.id === current)) && !await save(true)) return;
+      try { toast(`Saved ${await api.download(`/mods/${encodeURIComponent(current)}/zip`)}. Send it to anyone: they drop it on their Mods page.`); }
+      catch (e) { toast(e.message, "bad"); }
+    } });
+    const exportBtn = el("button", { class: "btn small", text: `Export ${file}`, onclick: () => {
       const value = getValue();
-      const existing = await ensureMod(current);
-      await api.put(`/mods/${encodeURIComponent(current)}/file/${file}`, { text: JSON.stringify(value, null, 2) });
-      setDirty(false);
-      if (existing && !existing.enabled) {
-        await api.patch(`/mods/${encodeURIComponent(current)}`, { enabled: true });
-        toast(`Saved and turned on ${existing.name}. Apply to game to use it.`);
-      } else {
-        toast(`Saved ${file} in ${current}. Apply to game to use it.`);
-      }
-      bus.emit("mods-changed");
-      await refresh(current);
-    } catch (e) { toast(e.message, "bad"); }
-  });
-  return { element: box, refresh, markDirty: () => setDirty(true), get current() { return current; } };
+      if (value === undefined) return;
+      saveFile(`${current}-${file}`, JSON.stringify(value, null, 2) + "\n");
+    } });
+    const importBtn = el("button", { class: "btn small", text: `Import ${file}…`, onclick: () => picker.click() });
+    const element = el("details", { class: "card fold", "data-key": `share:${file}` },
+      el("summary", {}, el("h3", { text: "Share" }), el("span", { class: "muted", text: "Save as a .zip for others, or export this page's file" })),
+      el("p", { class: "note", text: "A .zip is the whole mod, ready to share: whoever you send it to drops it on Clan Mod Studio's Mods page (or on the file that opens the studio). Its name, author, version and description below go with it." }),
+      el("div", { style: { display: "grid", gap: "10px", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" } },
+        field("Name", fields.name), field("Author", fields.author), field("Version", fields.version)),
+      field("Description", fields.description),
+      needs,
+      el("div", { class: "row" }, saveDetails, el("span", { style: { flex: "1" } }), zipBtn, exportBtn, importBtn, picker),
+      el("p", { class: "note", text: `Export gives just this page's ${file}, to keep or to send to someone making mods; Import loads one into this page (Save to mod keeps it).` }));
+    function show(m) {
+      fields.name.value = m ? m.name : (current === defaultId ? defaultName : current || "");
+      fields.author.value = m ? m.author || "" : "";
+      fields.version.value = m ? m.version || "" : "";
+      fields.description.value = m ? m.description || "" : "";
+      const req = m ? m.requires || [] : [];
+      needs.textContent = req.length ? `It needs ${req.map(i => (mods.find(x => x.id === i) || {}).name || i).join(", ")}: whoever adds it is asked to add that too (their Mods page says so).` : "";
+      needs.hidden = !req.length;
+    }
+    return { element, show };
+  }
+  return { element: box, refresh, markDirty: () => setDirty(true), save: () => save(), get current() { return current; },
+           get mods() { return mods; } };
 }
 
 export function codePanel(title) {

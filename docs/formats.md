@@ -172,6 +172,63 @@ recoloured (`{"tint": "#a8c4ff"}`, made from your game files at install); `pytho
 <item or accessory>` saves the game's as a PNG to paint over. New looks work for neck, body and paw
 accessories, not head ones. Every key is in [SDK.md, New items](SDK.md#new-items-itemsjson).
 
+### `npcs.json`
+```json
+{ "npcs": [ { "id": "mossfoot", "name": "Mossfoot", "title": "Elder",
+              "colours": { "fur": "#7a6a58", "pattern": "#4a3f33", "markings": "#d8cfc0" },
+              "eyes": 6, "size": 0.8,
+              "lines": ["The forest is yours, young one."] } ] }
+```
+Cats of the mod's own, made on Clan Mod Studio's Characters page. The
+[Sandbox mode](https://github.com/HexOffender/wcmods-sandbox) mod brings them into the forest with a
+sandbox cat, so a mod with them needs it (`"requires": ["sandbox"]`, which the studio adds).
+- `id`: small letters, digits and dashes; quests name the cat by it. `name` and `title` (smaller, above
+  the name) show over its head.
+- `colours`: any of `fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears`; the rest are the
+  game's. `eyes` is an iris colour slot (0 to 24), `size` the cat's size (0.3 to 1.5; the game's are about
+  0.4 to 1.1). The game chooses the pattern's shape.
+- Where it stands: with no `at`, beside the sandbox cat the first time it comes into the forest, and there
+  for that cat after. `"at": [x, y, z]` (cm, with `yaw` in degrees and `level`) puts it in one place for
+  every cat; the studio fills it in from where your cat stands.
+- `lines`: what it says when you talk to it (G, or the d-pad's up) and no quest wants it.
+
+### `quests.json`
+```json
+{ "quests": [ {
+    "id": "dandelions", "title": "Dandelions for Mossfoot", "giver": "mossfoot", "after": [],
+    "steps": [
+      { "do": "talk", "lines": ["Bring me three dandelions?"] },
+      { "do": "collect", "item": "Gameplay.Inventory.Materials.Dandelion", "count": 3 },
+      { "do": "visit", "place": "medicine-cat" },
+      { "do": "visit", "at": [-60040, -200, 813], "radius": 400, "objective": "Go to the old oak" },
+      { "do": "talk", "npc": "mossfoot", "lines": ["Thank you!"] } ],
+    "reward": { "Gameplay.Inventory.Consumable.SmallHealingHerb": 2 } } ] }
+```
+Questlines with the mod's own cats, made on the Questlines page, run by Sandbox mode.
+- A quest starts once the quests in `after` (this mod's) are done, at once with none. `giver` is one of
+  the mod's cats: a talk step with no `npc` is with them.
+- Its `steps` go in order. `talk`: the cat says its `lines`, and the step is done after the last.
+  `collect`: pick up `count` of `item` (its whole tag; a mod's own item is
+  `Gameplay.Inventory.Consumable.<id>` or `...Materials.<id>`) from the step's start. `visit`: go within
+  `radius` cm (400) of `at`, or of the nearest `place` (`medicine-cat`).
+- `objective` is what the quest panel says for a step (the studio writes one when it's left empty).
+- `reward`: items dropped at the cat's paws when the last step is done.
+- How far each sandbox cat has got is kept in `sandbox-story.json` beside the game's saves.
+
+wcmods checks both files at install and puts every enabled mod's together into one UE4SS mod,
+`WCModsStory`, which shares them as JSON text in the UE4SS shared variable `WCMods.story`
+(`{"format": 1, "mods": [{"id", "name", "npcs", "quests"}]}`), for any script to read.
+
+### Mod packs
+```json
+{ "name": "The Moonlit Path", "description": "...", "version": "1.0", "author": "...",
+  "pack": true, "requires": ["moonlit-cats", "moonlit-palette"] }
+```
+A mod pack is a mod.json and nothing else: a set of mods that go together as one experience. Its mods
+are its `"requires"`, so turning it on turns them on. Its .zip (Save as .zip, or `wcmods pack`) carries
+every mod in it. Clan Mod Studio's Mod packs page makes them, plays one on its own (every other mod
+off, but Menu pages) and goes back to your own mods (`"pack_before"` in `wcmods.json` remembers them).
+
 ### `names.json`
 ```json
 { "prefixes": { "rename": { "Otter": "Moth" }, "add": { "Sparrow": { "like": "Wren" } }, "remove": ["Pigeon"] },
@@ -241,6 +298,7 @@ updating moves them out (`wcmods/userdata.py`).
 | `oodle_dll` | An `oo2core_*_win64.dll` from another installed game, for faster decoding of the game's files (wcmods decodes them itself without one) |
 | `allow_code_mods` | `true` lets mods that carry code run it (build steps, in-game scripts, studio pages, C++): only for mods from people you trust. Options on the Settings and repair page |
 | `allow_outdated` | `{ "<mod>": [<build>, ...] }`: mods used anyway on game builds they weren't made for ("Use it anyway", `wcmods allow-outdated`) |
+| `pack_before` | `{ "pack": "<pack>", "on": ["<mod>", ...] }`: while a mod pack is played on its own, the mods that were on before it (the Mod packs page's Back to my mods) |
 | `console` | Whether the game's `~` console (UE4SS's console enabler) is on |
 | `debug_cat_look` | `true` makes your cat's colours script log every cat it sees |
 | `installed`, `installed_ue4ss`, `installed_ue4ss_shared` | What the last install put in the game: the mods, when they were built, the game build, the mods folder they came from, the UE4SS mods and shared modules. The studio compares them with your mods; leave them alone |

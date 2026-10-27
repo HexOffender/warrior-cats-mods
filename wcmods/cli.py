@@ -143,12 +143,13 @@ def cmd_pack(ctx, args):
     m = found[args.mod]
     out = args.out or modzip.zip_name(m)
     with open(out, "wb") as f:
-        f.write(modzip.pack(m))
+        f.write(modzip.pack(m, list(found.values())))   # a mod pack carries its mods
     print(f"wrote {out}: give it to someone, and they add it with Clan Mod Studio or `wcmods add {os.path.basename(out)}`")
 
 
 def cmd_new(ctx, args):
-    mod = mods.create(ctx.mods_root, args.id)
+    from .exe import gamebuild
+    mod = mods.create(ctx.mods_root, args.id, game_build=gamebuild.current(ctx.cfg)["build"] if ctx.cfg.game_dir else None)
     template = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", args.kind)
     if os.path.isdir(template):
         shutil.copytree(template, mod.folder, dirs_exist_ok=True)
