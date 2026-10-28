@@ -1,0 +1,12 @@
+/* The Palettes page: its colour cards, the rows of whole-tab buttons, and a colour the page doesn't know yet. Linked
+   by app.js when the page opens; rules shared with other pages are in styles.css. */
+#pal-panel .card { border-radius: 10px; box-shadow: none; }      /* the 190px colour cards: plain, so the uneven corners don't read as a glitch */
+/* A card's before and after colours (a coat's two halves, an eye's two strips) fill their button: .btn centres its
+   content, which would leave them no size. */
+#pal-panel .btn.swatch { align-items: stretch; justify-content: stretch; }
+.pal-row { gap: 6px 8px; }
+.pal-row > .eyebrow { min-width: 9.5em; }
+/* The game's colour before the game has run with the script loader (and a new colour's empty "before" half):
+   stripes, never a made-up colour. */
+.pal-unknown { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--muted) 55%, transparent) 0 4px, transparent 4px 9px); }
+.pal-tables { border-left: 3px solid var(--changed); padding-left: 10px; }
