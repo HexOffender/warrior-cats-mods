@@ -67,7 +67,10 @@ export default {
 
     let state = blank();
     const view = { tab: "eyes", fur: 2, pattern: 3, marking: 10, eyeL: 2, eyeR: 2, vanilla: false };
-    function blank() { return { eyes: {}, fur: {}, pattern: {}, marking: {} }; }
+    // kept: the file's sections this page doesn't edit (coat presets, the cat maker's iris swatches), written back
+    // as they were. They belong to the file: starting from the game's colours or another palette keeps them.
+    function blank(kept = {}) { return { eyes: {}, fur: {}, pattern: {}, marking: {}, kept }; }
+    const EDITED = new Set(["eyes", "fur", "pattern", "marking", "_help"]);
 
     // ---------- maths (mirrors wcmods/palettes.apply_eyes) ----------
     function eyeRamp(row, ov) {
@@ -98,8 +101,9 @@ export default {
       const m = /^(?:row|iris)?(\d+)$/.exec(k);
       return m && +m[1] < EYE_LABEL.length ? +m[1] : null;
     }
-    function fromPalette(p) {
-      const s = blank();
+    function fromPalette(p, kept) {
+      const s = blank(kept);
+      if (!kept) for (const [k, v] of Object.entries(p || {})) if (!EDITED.has(k)) s.kept[k] = v;
       for (const [key, val] of Object.entries((p && p.eyes) || {})) {
         const row = eyeRow(key);
         const colors = (Array.isArray(val) ? val : [val]).map(color.normHex);
@@ -125,7 +129,7 @@ export default {
         const keys = Object.keys(state[sec]).map(Number).sort((a, b) => a - b);
         if (keys.length) { out[sec] = {}; for (const i of keys) out[sec][String(i)] = state[sec][i]; }
       }
-      return out;
+      return Object.assign(out, state.kept);
     }
     const curHex = (sec, i) => state[sec][i] || TABLE(sec)[i];
 
@@ -221,11 +225,11 @@ export default {
     async function renderPresets() {
       const mods = await api.get("/mods");
       clear(presetRow).append(el("span", { class: "eyebrow", text: "Start from" }),
-        el("button", { class: "chip", text: "Game colours", onclick: () => { state = blank(); target.markDirty(); renderAll(); } }));
+        el("button", { class: "chip", text: "Game colours", onclick: () => { state = blank(state.kept); target.markDirty(); renderAll(); } }));
       for (const m of mods.filter(m => m.kinds.includes("palette") && m.id !== target.current)) {
         presetRow.append(el("button", { class: "chip", text: m.name, title: `Copy ${m.id}'s palette here`, onclick: async () => {
           const r = await api.get(`/mods/${encodeURIComponent(m.id)}/file/palette.json`);
-          try { state = fromPalette(JSON.parse(r.text)); target.markDirty(); renderAll(); toast(`Copied ${m.name}`); } catch (e) { toast(e.message, "bad"); }
+          try { state = fromPalette(JSON.parse(r.text), state.kept); target.markDirty(); renderAll(); toast(`Copied ${m.name}`); } catch (e) { toast(e.message, "bad"); }
         } }));
       }
       presetRow.append(el("span", { class: "eyebrow", style: { marginLeft: "12px" }, text: "Restyle this tab" }),
