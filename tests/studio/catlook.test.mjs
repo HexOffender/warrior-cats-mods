@@ -107,10 +107,45 @@ test("the whole file round-trips: other cats, notes, the file's own keys, and a 
   assert.deepEqual(Object.keys(looks), ["player", "Hawkleaf", "WindClan/Warrior/1"]);
   assert.deepEqual(C.cantChange(looks.player, fileExtra).map(e => e.where), ["version"]);
   const back = C.toJson(looks, fileExtra, K);
-  assert.deepEqual(back, { _help: C.HELP, player: { look: { tail: 3 } },
-    cats: { _comment: "two cats", Hawkleaf: { slots: { fur: 4 } }, "WindClan/Warrior/1": { scars: "none" } }, version: 2 });
+  assert.deepEqual(back, { _help: "old", player: { look: { tail: 3 } },
+    cats: { _comment: "two cats", Hawkleaf: { slots: { fur: 4 } }, "WindClan/Warrior/1": { scars: "none" } }, version: 2 },
+    "a _help written by hand is kept, as every \"_\" key is");
+  assert.equal(Object.keys(back)[0], "_help");
   // Every part of a cat cleared on the page: it's left out of the file.
   looks.Hawkleaf.slots = {};
   assert.equal("Hawkleaf" in C.toJson(looks, fileExtra, K).cats, false);
   assert.deepEqual(C.toJson(C.load(null, K).looks, {}, K), { _help: C.HELP });
+});
+
+test("the page's own help line is written afresh", () => {
+  const { looks, fileExtra } = C.load({ _help: "Written by Clan Mod Studio. An older wording.", player: { look: { tail: 3 } } }, K);
+  assert.deepEqual(fileExtra, {});
+  assert.equal(C.toJson(looks, fileExtra, K)._help, C.HELP);
+});
+
+test("a cat's entry that isn't a look is kept as written and listed, until the page sets a look for that cat", () => {
+  const file = { player: "none", cats: { Hawkleaf: null, Mosspaw: { slots: { fur: 4 } } } };
+  const { looks, fileExtra } = C.load(file, K);
+  assert.deepEqual(Object.keys(looks), ["player", "Mosspaw"]);
+  assert.deepEqual(fileExtra, { player: "none", "cats.Hawkleaf": null });
+  assert.deepEqual(C.cantChange(looks.player, fileExtra).map(e => [e.where, e.value]), [["player", "none"], ["cats.Hawkleaf", null]]);
+  assert.deepEqual(C.toJson(looks, fileExtra, K), { _help: C.HELP, cats: { Hawkleaf: null, Mosspaw: { slots: { fur: 4 } } }, player: "none" },
+    "written back as they were");
+  assert.equal(C.lookFor(looks, "player", K), false);
+  // A look set for each on the page takes its place.
+  looks.player.slots.fur = 2;
+  looks.Hawkleaf = C.parseOne({ look: { tail: 1 } }, K);
+  assert.equal(C.lookFor(looks, "player", K), true);
+  assert.equal(C.lookFor(looks, "cats.Hawkleaf", K), true);
+  assert.deepEqual(C.toJson(looks, fileExtra, K), { _help: C.HELP, player: { slots: { fur: 2 } },
+    cats: { Hawkleaf: { look: { tail: 1 } }, Mosspaw: { slots: { fur: 4 } } } });
+  // Removed from the list, it's gone from the file.
+  const { looks: l2, fileExtra: f2 } = C.load(file, K);
+  C.cantChange(l2.player, f2).find(e => e.where === "player").remove();
+  assert.equal("player" in C.toJson(l2, f2, K), false);
+  // "cats" that isn't a list of cats: kept, until the page sets another cat's look.
+  const { looks: l3, fileExtra: f3 } = C.load({ cats: "none" }, K);
+  assert.deepEqual(C.toJson(l3, f3, K), { _help: C.HELP, cats: "none" });
+  l3.Hawkleaf = C.parseOne({ slots: { fur: 1 } }, K);
+  assert.deepEqual(C.toJson(l3, f3, K), { _help: C.HELP, cats: { Hawkleaf: { slots: { fur: 1 } } } });
 });

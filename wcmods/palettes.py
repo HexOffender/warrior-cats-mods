@@ -47,6 +47,8 @@ SECTIONS = ("eyes",) + tuple(RUNTIME_SECTIONS) + ("coats",)
 COAT_PARTS = ("fur", "nose", "paws", "whiskers", "ears")   # a coat preset's colours; "fur" is the one it needs
 GAME_SLOTS = 25                       # entries in each of the game's colour tables
 GROWABLE = ("pattern", "marking")     # sections whose tables can take slots past GAME_SLOTS
+# Each part's colours in the words the studio's pages use, for what load() says is wrong: "colour 3", not "slot 3".
+PLAIN = {"fur": "coat", "pattern": "pattern", "marking": "marking", "iris_ui": "cat maker eye button"}
 
 
 def load(path):
@@ -72,20 +74,21 @@ def load(path):
             out["coats"] = _coats(entries, name)
             continue
         if not isinstance(entries, dict):
-            raise ValueError(f'{name}: {section} should be an object of colours by slot, like {{"3": "#ff7a1a"}}'
-                             if section != "eyes" else f'{name}: eyes should be an object of colours by slot name, '
-                             'like {"Amber": "#ffb300"}')
+            raise ValueError(f'{name}: {section} should be an object of {PLAIN[section]} colours by colour number, like '
+                             '{"3": "#ff7a1a"}' if section != "eyes" else f'{name}: eyes should be an object of colours '
+                             'by the game\'s eye colour names, like {"Amber": "#ffb300"}')
         parsed = {}
         for key, spec in entries.items():
             if str(key).startswith("_"):
                 continue
             if section != "eyes" and not re.fullmatch(r"[0-9]+", str(key)):
-                raise ValueError(f"{name}: {section} keys are slot numbers starting at 0, got '{key}'")
+                raise ValueError(f"{name}: {section} keys are {PLAIN[section]} colour numbers, counted from 0; got '{key}'")
             if section != "eyes":
                 key = str(int(key))   # "03" is colour 3, as the game counts
             if section != "eyes" and int(key) >= GAME_SLOTS and section not in GROWABLE:
-                raise ValueError(f"{name}: {section} has slots 0-{GAME_SLOTS - 1}; only pattern and marking colours "
-                                 "take new slots (to colour just your cat's coat, use cats.json)")
+                raise ValueError(f"{name}: {section} has the game's {PLAIN[section]} colours 0-{GAME_SLOTS - 1} only; only "
+                                 f"pattern and marking colours take new ones, {GAME_SLOTS} and up (to colour just your cat's "
+                                 "coat, use cats.json)")
             if isinstance(spec, list) and spec and not isinstance(spec[0], (int, float)):
                 if section != "eyes":
                     raise ValueError(f"{name}: {section}.{key} must be a single colour (gradients are eyes-only)")
@@ -132,6 +135,36 @@ def _coats(entries, path):
                     raise ValueError(f"{where}.{part}: {e}") from None
         out[str(name)] = preset
     return out
+
+
+def named_twice(raw, eye_row=None):
+    """[(part, row or number, [key, ...])] for the colours a palette.json (`raw`, as json.load reads it) names with
+    more than one key ("03" and "3", "Amber" and "iris2"), the keys in the file's order: the build takes the later.
+    eye_row(key) is the row an eye key means (eyeatlas.resolve with the game's names), KeyError for none; without
+    it the eyes aren't looked at."""
+    out = []
+    for part in SECTIONS:
+        entries = raw.get(part) if isinstance(raw, dict) else None
+        if part == "coats" or not isinstance(entries, dict) or (part == "eyes" and eye_row is None):
+            continue
+        found = {}
+        for key in entries:
+            if str(key).startswith("_"):
+                continue
+            try:
+                at = eye_row(key) if part == "eyes" else int(key)
+            except (KeyError, ValueError):
+                continue   # said on its own: a key that isn't one of the eyes, or a number
+            found.setdefault(at, []).append(key)
+        out += [(part, at, keys) for at, keys in found.items() if len(keys) > 1]
+    return out
+
+
+def eye_word(labels, row):
+    """An eye row in the studio's words: "the eye white", "extra eye 1" (the game's "Dlc" rows) or "the Amber eye"."""
+    label = labels[row]
+    dlc = re.fullmatch(r"(?i)dlc([0-9]*)", label)
+    return "the eye white" if row == 0 else f"extra eye {dlc.group(1)}".strip() if dlc else f"the {label} eye"
 
 
 def new_slots(palette):

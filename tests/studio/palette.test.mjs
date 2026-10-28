@@ -49,9 +49,10 @@ test("what the page can't show is listed with why, and written back as it was", 
     'Coat "30": "#ffffff" (the game has coats 0-24 only)',
     'Coat "x": "#000000" (not a colour number)',
   ]);
-  assert.deepEqual(s.kept, { iris_ui: { 1: "#ff0000" }, coats: { Ash: { fur: "#9a9590", like: 12 } }, name: "Dawn" });
+  assert.deepEqual(s.kept, { iris_ui: { 1: "#ff0000" }, coats: { Ash: { fur: "#9a9590", like: 12 } }, name: "Dawn", _help: "old help" });
   const back = P.toPalette(s, LABELS);
-  assert.equal(back._help, P.HELP, "the page's own help line replaces the old one");
+  assert.equal(back._help, "old help", "a help line written by hand is kept, as every \"_\" key is");
+  assert.equal(Object.keys(back)[0], "_help");
   assert.deepEqual(back.eyes, { Ambre: "#ffffff", Amber: "not a colour", _note: "mine", Hazel: "#00FF00" });
   assert.deepEqual(back.fur, { 3: ["#000000", "#ffffff"], 30: "#ffffff", x: "#000000", _why: "warm", 4: "#123456" });
   assert.deepEqual(back.pattern, { 25: "#FF00CC" });
@@ -74,12 +75,67 @@ test("a round trip keeps eye names, sorts numbers, and keeps a one-colour eye li
   assert.deepEqual(P.toPalette(P.fromPalette(null, opts), LABELS), { _help: P.HELP }, "no file: nothing but the help line");
 });
 
-test("two keys for one eye or one colour: the later is the page's, the earlier stays as written", () => {
-  const s = P.fromPalette({ eyes: { iris2: "#ff0000", Amber: "#00ff00" } }, opts);
+test("the page's own help line is written afresh", () => {
+  const s = P.fromPalette({ _help: "Written by Clan Mod Studio. An older wording.", fur: { 3: "#ff0000" } }, opts);
+  assert.deepEqual(s.kept, {});
+  assert.equal(P.toPalette(s, LABELS)._help, P.HELP);
+});
+
+test("two keys for one eye or one colour, in an order the page can read: the later is the page's, as in the build", () => {
+  const s = P.fromPalette({ eyes: { Amber: "#ff0000", iris2: "#00ff00" }, fur: { "03": "#111111", "003": "#222222" } }, opts);
   assert.deepEqual(s.eyes[2].colors, ["#00FF00"]);
-  assert.deepEqual(s.unread, [{ section: "eyes", key: "iris2", value: "#ff0000", why: "another entry names the same eye" }]);
+  assert.deepEqual(s.fur, { 3: "#222222" });
+  assert.deepEqual(s.unread, [
+    { section: "eyes", key: "Amber", value: "#ff0000", why: '"iris2", later in the file, also names the Amber eye: the game uses that one', slot: 2 },
+    { section: "fur", key: "03", value: "#111111", why: '"003", later in the file, also names coat colour 3: the game uses that one', slot: 3 },
+  ]);
+  assert.match(P.describeUnread(s.unread[0], s), /; Save puts the colour set here in its place\)$/);
+  // Save keeps the one the page shows, which is the one the build takes: it doesn't flip to the earlier.
   const back = P.toPalette(s, LABELS);
-  assert.deepEqual(Object.keys(back.eyes), ["iris2", "Amber"], "the page's own comes last, so the build takes it too");
+  assert.deepEqual([back.eyes, back.fur], [{ Amber: "#00FF00" }, { 3: "#222222" }]);
+  assert.deepEqual(P.fromPalette(back, opts).unread, []);
+});
+
+test("two keys for one colour where one is a plain number: a conflict, both written back untouched", () => {
+  // The browser reads "3" and "9" first whatever the file's order, so the page can't tell which the build takes.
+  const s = P.fromPalette({ eyes: { iris09: "#ff0000", 9: "#00ff00" }, pattern: { "03": "#111111", 3: "#222222" } }, opts);
+  assert.deepEqual([s.eyes, s.pattern], [{}, {}], "neither is the page's");
+  assert.deepEqual(s.unread.map(u => [u.section, u.key, u.slot]), [["eyes", "9", 9], ["eyes", "iris09", 9], ["pattern", "3", 3], ["pattern", "03", 3]]);
+  assert.match(s.unread[0].why, /^"9" and "iris09" both name the Sky eye, and which one the game uses depends on their order in the file/);
+  assert.match(s.unread[2].why, /^"3" and "03" both name pattern colour 3/);
+  let back = P.toPalette(s, LABELS);
+  assert.deepEqual([back.eyes, back.pattern], [{ 9: "#00ff00", iris09: "#ff0000" }, { 3: "#222222", "03": "#111111" }]);
+  // A colour set on the page takes the place of both.
+  s.pattern[3] = "#333333";
+  assert.ok(P.replaced(s, s.unread[2]) && P.replaced(s, s.unread[3]) && !P.replaced(s, s.unread[0]));
+  back = P.toPalette(s, LABELS);
+  assert.deepEqual(back.pattern, { 3: "#333333" });
+  assert.deepEqual(back.eyes, { 9: "#00ff00", iris09: "#ff0000" });
+});
+
+test("a part that isn't a list of colours stays as written until the page has colours of its own in it", () => {
+  const s = P.fromPalette({ fur: ["#ffffff"], eyes: "Amber" }, opts);
+  assert.deepEqual(s.unread.map(u => [u.section, u.key]), [["eyes", null], ["fur", null]]);
+  assert.deepEqual(P.toPalette(s, LABELS), { _help: P.HELP, fur: ["#ffffff"], eyes: "Amber" });
+  s.fur[2] = "#123456";
+  assert.equal(P.describeUnread(s.unread[1], s), 'Coat: ["#ffffff"] (not a list of colours by number; Save puts your colours on this tab in its place)');
+  assert.equal(P.describeUnread(s.unread[0], s), 'Eyes: "Amber" (not a list of eye colours by name)');
+  const back = P.toPalette(s, LABELS);
+  assert.deepEqual(back.fur, { 2: "#123456" }, "the page's colours, not the old value written over them");
+  assert.equal(back.eyes, "Amber");
+});
+
+test("an unreadable entry for a colour the page sets gives way to the page's", () => {
+  const s = P.fromPalette({ fur: { 3: ["#000000", "#ffffff"] }, eyes: { Amber: "not a colour" } }, opts);
+  s.fur[3] = "#445566";
+  s.eyes[2] = { mode: "single", colors: ["#00FF00"] };
+  const back = P.toPalette(s, LABELS);
+  assert.deepEqual([back.fur, back.eyes], [{ 3: "#445566" }, { Amber: "#00FF00" }]);
+});
+
+test("the eyes in the page's words", () => {
+  assert.deepEqual([0, 2, 21, 25].map(r => P.eyeWord(LABELS, r)), ["Eye white", "Amber", "Extra eye 1", "Extra eye 5"]);
+  assert.deepEqual([0, 2, 21].map(r => P.eyeWord(LABELS, r, true)), ["the eye white", "Amber", "extra eye 1"]);
 });
 
 test("without the game's eye names the file's eyes are kept as they are", () => {
@@ -88,6 +144,17 @@ test("without the game's eye names the file's eyes are kept as they are", () => 
   assert.deepEqual(s.eyes, {});
   assert.deepEqual(s.unread, []);
   assert.deepEqual(P.toPalette(s, null), { _help: P.HELP, fur: { 3: "#FF0000" }, eyes });
+});
+
+test("without the game's eye names, Game colours and Start from change the file's eyes all the same", () => {
+  const s = P.fromPalette({ eyes: { Amber: "#ffb300", _why: "warm" }, fur: { 3: "#ff0000" } }, { labels: null });
+  const game = P.gameColours(s, 25);
+  assert.deepEqual(game.kept.eyes, { _why: "warm" }, "the eyes go, their note stays");
+  assert.equal("eyes" in P.toPalette(P.gameColours(P.fromPalette({ eyes: { Amber: "#ffb300" } }, { labels: null }), 25), null), false);
+  const from = P.startFrom(s, { eyes: { Sky: "#0000ff" }, fur: { 5: "#555555" } }, { labels: null });
+  assert.deepEqual(from.kept.eyes, { Sky: "#0000ff", _why: "warm" });
+  assert.deepEqual(P.startFrom(s, { fur: {} }, { labels: null }).kept.eyes, { _why: "warm" });
+  assert.deepEqual(s.kept.eyes, { Amber: "#ffb300", _why: "warm" }, "the state it was given is left alone (Undo)");
 });
 
 test("a new colour's number is past the game's, this palette's and every other palette's", () => {

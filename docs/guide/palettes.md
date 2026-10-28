@@ -48,7 +48,9 @@ You can:
   new colours;
 - switch between ready-made palettes in one go with **Switch between ready-made palettes** (open it
   from its heading): tick the ones you want and press Apply. That switches the ticked ones on, the other
-  palettes that hold nothing else off, and puts them in the game;
+  palettes that hold nothing else off, and puts them in the game. Colours you haven't saved yet are saved
+  first, and the palette you're editing is ticked too (a toast says so), so they go in rather than being
+  switched off;
 - compare with the game's own colours: **Cat shows: the game's**, beside the drawing, and back with
   **my colours**.
 
@@ -99,7 +101,13 @@ new pattern or marking colour. The pieces that make them work have been, one by 
 - **Applying while the game runs.** Close the game first; the buttons say so while it's open.
 - **A palette.json written by hand.** Entries the page can't show (a misspelt eye, a coat number past
   24, something a palette hasn't got) are listed under the tabs, "entries this page can't show". They
-  stay in the file as written until you press their **Remove**.
+  stay in the file as written until you press their **Remove**, or until you set the colour one of them
+  is for on the page: then Save writes yours in its place, and its line says so.
+- **One colour written twice** (`"03"` and `"3"`, or `"Amber"` and `"iris2"`). The game uses the one
+  later in the file. When the page can tell which that is, it shows that one, and Save keeps only it.
+  When one of the two is a plain number, it can't: both are listed as "both name pattern colour 3" and
+  saved as they are, and the note under the Editing mod bar after **Save to mod** says which one Apply
+  uses. Remove the one you don't want, or set the colour on the page.
 
 ## Undo
 

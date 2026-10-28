@@ -310,9 +310,11 @@ class Studio:
         return notes.warnings
 
     def _palette_notes(self, mod, notes):
-        data = palettes.load(os.path.join(mod.folder, "palette.json"))
+        path = os.path.join(mod.folder, "palette.json")
+        data = palettes.load(path)
         # An eye key that isn't one of the game's eye colours: the build skips it. Checked against the names the
         # Palettes page already read (eyes()), only while the game's files can be read.
+        labels = None
         if data.get("eyes") and self.ctx.cfg.game_dir:
             try:
                 labels = self.eyes()["labels"]
@@ -323,6 +325,15 @@ class Studio:
                     eyeatlas.resolve(labels, key)
                 except KeyError as e:
                     notes.warn(f"eyes: {e.args[0]}, so Apply leaves it out")
+        # One colour named twice ("03" and "3", "Amber" and "iris2"): the build takes the later in the file, which the
+        # Palettes page can't always tell (it lists both as a conflict), so it's said here, from the file's own order.
+        with open(path, encoding="utf-8-sig") as f:
+            raw = json.load(f)
+        for part, at, keys in palettes.named_twice(raw, (lambda k: eyeatlas.resolve(labels, k)) if labels else None):
+            what = palettes.eye_word(labels, at) if part == "eyes" else f"{palettes.PLAIN[part]} colour {at}"
+            said = ", ".join(f'"{k}"' for k in keys[:-1]) + f' and "{keys[-1]}"'
+            both, later, rest = ("both", "the later", "the other") if len(keys) == 2 else ("all", "the last", "the others")
+            notes.warn(f'{part}: {said} {both} name {what}, and Apply uses "{keys[-1]}", {later} in the file: remove {rest}')
         # A new colour another palette that's on adds too: the one later in the Mods list shows.
         mine = palettes.new_slots(data)
         found = self.mods() if mine else []

@@ -21,8 +21,8 @@ def put(st, mod_id, doc):
 def test_a_coat_colour_past_the_games_and_an_unknown_part_are_problems(studio):
     make_mod(studio, "mine")
     r = put(studio, "mine", {"fur": {"30": "#fff"}})
-    assert r["problems"] == ["palette.json: fur has slots 0-24; only pattern and marking colours take new slots (to colour "
-                             "just your cat's coat, use cats.json)"]
+    assert r["problems"] == ["palette.json: fur has the game's coat colours 0-24 only; only pattern and marking colours "
+                             "take new ones, 25 and up (to colour just your cat's coat, use cats.json)"]
     r = put(studio, "mine", {"pattern": {"25": "#fff"}, "hats": {}})
     assert len(r["problems"]) == 1 and "unknown part 'hats'" in r["problems"][0]
     assert r["notes"] == []
@@ -36,6 +36,23 @@ def test_an_eye_the_game_hasnt_got_is_a_note_once_the_game_is_found(studio, fake
     assert r["notes"] == [
         "Eyes: 'Ambre' isn't one of the game's eye colours (" + ", ".join(EYE_LABELS) + "), so Apply leaves it out",
         "Eyes: 'row26' is past the game's 26 eye colours (they're 0-25), so Apply leaves it out"]
+
+
+def test_one_colour_named_twice_says_which_one_apply_uses(studio, fake_game, monkeypatch):
+    # The Palettes page reads "3" before "03" whatever the file's order, so it lists the two as a conflict: the note
+    # says which one the build takes, from the file's own order.
+    make_mod(studio, "mine")
+    r = put(studio, "mine", {"pattern": {"03": "#111111", "3": "#222222"}, "fur": {"1": "#000", "01": "#fff", "001": "#888"}})
+    assert r["problems"] == []
+    assert r["notes"] == [
+        'Fur: "1", "01" and "001" all name coat colour 1, and Apply uses "001", the last in the file: remove the others',
+        'Pattern: "03" and "3" both name pattern colour 3, and Apply uses "3", the later in the file: remove the other']
+    # Eyes, once the game's names can be read: an eye named two ways.
+    monkeypatch.setattr(studio, "eyes", lambda: {"labels": EYE_LABELS, "rows": []})
+    r = put(studio, "mine", {"eyes": {"iris09": "#ff0000", "9": "#00ff00", "Sclera": "#fff", "row0": "#eee", "Amber": "#ffb300"}})
+    assert r["notes"] == [
+        'Eyes: "iris09" and "9" both name the Sky eye, and Apply uses "9", the later in the file: remove the other',
+        'Eyes: "Sclera" and "row0" both name the eye white, and Apply uses "row0", the later in the file: remove the other']
 
 
 def test_without_the_game_or_its_files_the_eye_names_wait_for_apply(studio, fake_game):

@@ -5,8 +5,10 @@
 //
 // The page's state: { eyes: {row: {mode: "single"|"grad", colors: ["#RRGGBB", ...]}}, fur|pattern|marking:
 // {slot: "#RRGGBB"}, kept: the file's other parts, as they were, notes: {part: {"_key": value}}, unread: [{section,
-// key, value, why}] }. unread holds what the page can't show (a misspelt eye, a coat past the game's, a part a palette
-// hasn't got): each is written back as it was until its Remove button takes it out, so nothing goes unsaid.
+// key, value, why, slot?}] }. unread holds what the page can't show (a misspelt eye, a coat past the game's, a part a
+// palette hasn't got): each is written back as it was until its Remove button takes it out, or until the page sets the
+// colour it names (slot: that eye row or colour number), whose own then takes its place (replaced()), so nothing goes
+// unsaid.
 import { color } from "./colour.js";
 
 export const PARTS = ["fur", "pattern", "marking"];       // the game's colour tables, by slot number
@@ -17,6 +19,9 @@ export const KEPT = new Set(["iris_ui", "coats", "name", "description"]);
 export const HELP = "Written by Clan Mod Studio. Eye keys are the game's eye colour names; coat, pattern and marking keys " +
   "are colour numbers, counted from 0. See docs/formats.md, palette.json.";
 const WORD = { eyes: "Eyes", fur: "Coat", pattern: "Pattern", marking: "Markings" };
+const NOUN = { fur: "coat", pattern: "pattern", marking: "marking" };
+// A _help this page wrote is written afresh; one written by hand is kept, as every "_" key is.
+const ownHelp = v => typeof v === "string" && v.startsWith("Written by Clan Mod Studio");
 
 export function blank(kept = {}) {
   return { eyes: {}, fur: {}, pattern: {}, marking: {}, kept, notes: {}, unread: [] };
@@ -24,6 +29,17 @@ export function blank(kept = {}) {
 const isObject = v => v !== null && typeof v === "object" && !Array.isArray(v);
 // A list whose first value isn't a number is a gradient; [r, g, b] is one colour (as palettes.load tells them apart).
 const isGradient = v => Array.isArray(v) && v.length > 0 && typeof v[0] !== "number" && typeof v[0] !== "boolean";
+// A key the browser puts first in an object, in number order, wherever the file had it ("3" or "9", not "03" or
+// "iris9"): beside another key for the same colour, which of the two is later in the file can't be told.
+const numberFirst = k => /^(0|[1-9][0-9]{0,8})$/.test(k);
+
+// An eye row in the page's words: row 0 is the eye white and the "Dlc" rows are extra eyes from a game add-on;
+// the rest go by the game's names. lower: as it reads inside a sentence ("the eye white").
+export function eyeWord(labels, row, lower = false) {
+  const m = /^dlc([0-9]*)$/i.exec((labels && labels[row]) || "");   // as eyeGroups tells them
+  const word = row === 0 ? "Eye white" : m ? `Extra eye ${m[1]}`.trim() : (labels && labels[row]) || `Eye ${row}`;
+  return !lower ? word : row === 0 ? "the eye white" : m ? `extra eye ${m[1]}`.trim() : word;
+}
 
 // The row an eye key means, as wcmods/eyeatlas.resolve finds it: one of the game's names in any case, then
 // "irisN", "rowN" or a number that's one of the rows. null for anything else.
@@ -38,12 +54,31 @@ export function eyeRow(labels, key) {
 // A palette.json (an object, or null for none) as the page's state. labels: the game's eye names, or null while
 // they can't be read (the file's eyes are then kept as they are). gameSlots: how many colours each of the game's
 // tables has (palettes.GAME_SLOTS).
+//
+// Two keys for one colour ("Amber" and "iris2", "03" and "003"): the build takes the later in the file, and so does
+// the page; the earlier is listed, and Save puts the page's in its place. Where one of the two is a plain number
+// ("9" and "iris09", "3" and "03") the page can't tell which is later (a plain number comes first in what the
+// browser reads, wherever it is in the file), so neither is the page's: both are listed and written back as they
+// are, until one is removed or the colour is set here. The Editing mod bar's notes say which one Apply uses.
 export function fromPalette(p, { labels = null, gameSlots = 25 } = {}) {
   const s = blank();
   const src = isObject(p) ? p : {};
-  const skip = (section, key, value, why) => s.unread.push({ section, key, value, why });
+  // slot: the eye row or colour number an entry names, where the page can set it too (see replaced()).
+  const skip = (section, key, value, why, slot = null) => s.unread.push({ section, key, value, why, ...(slot !== null ? { slot } : {}) });
+  // found: the entries the page could read for one colour, in the order it reads them.
+  const settle = (sec, slot, found, what) => {
+    const last = found[found.length - 1];
+    if (found.length > 1 && found.some(f => numberFirst(f.key))) {
+      const keys = found.map(f => `"${f.key}"`).join(" and ");
+      for (const f of found) skip(sec, f.key, f.value, `${keys} both name ${what}, and which one the game uses depends on their order in the file, which this page can't see: remove one`, slot);
+      return;
+    }
+    for (const f of found.slice(0, -1)) skip(sec, f.key, f.value, `"${last.key}", later in the file, also names ${what}: the game uses that one`, slot);
+    s[sec][slot] = last.read;
+  };
   for (const [k, v] of Object.entries(src)) {
-    if (k === "_help" || k === "eyes" || PARTS.includes(k)) continue;
+    if (k === "eyes" || PARTS.includes(k)) continue;
+    if (k === "_help" && ownHelp(v)) continue;   // the page's own help line, written afresh
     if (KEPT.has(k) || k.startsWith("_")) s.kept[k] = v;
     else skip(k, null, v, "not something a palette has");
   }
@@ -51,54 +86,65 @@ export function fromPalette(p, { labels = null, gameSlots = 25 } = {}) {
     if (!labels) s.kept.eyes = src.eyes;
     else if (!isObject(src.eyes)) skip("eyes", null, src.eyes, "not a list of eye colours by name");
     else {
+      const byRow = new Map();
       for (const [key, val] of Object.entries(src.eyes)) {
         if (key.startsWith("_")) { (s.notes.eyes ||= {})[key] = val; continue; }
         const row = eyeRow(labels, key);
         const colors = isGradient(val) ? val.map(color.parse) : [color.parse(val)];
         if (row === null) skip("eyes", key, val, "not one of the game's eye colours");
-        else if (!colors.length || colors.some(c => !c)) skip("eyes", key, val, "not a colour this page reads");
+        else if (!colors.length || colors.some(c => !c)) skip("eyes", key, val, "not a colour this page reads", row);
         else {
-          // Two keys for one eye: the later wins, in the build too; the earlier is kept as written.
-          if (s.eyes[row]) skip("eyes", s.eyes[row].key, s.eyes[row].value, "another entry names the same eye");
           // A list of one colour is that colour flat, pupil to rim: as a gradient of two the same, it draws, builds
           // and edits the same (One colour would keep the game's shading, a different look).
-          const ov = isGradient(val) ? { mode: "grad", colors: colors.length > 1 ? colors : [colors[0], colors[0]] }
+          const read = isGradient(val) ? { mode: "grad", colors: colors.length > 1 ? colors : [colors[0], colors[0]] }
             : { mode: "single", colors };
-          s.eyes[row] = { ...ov, key, value: val };
+          if (!byRow.has(row)) byRow.set(row, []);
+          byRow.get(row).push({ key, value: val, read });
         }
       }
-      for (const ov of Object.values(s.eyes)) { delete ov.key; delete ov.value; }
+      const eye = row => (eyeWord(labels, row) === labels[row] ? `the ${labels[row]} eye` : eyeWord(labels, row, true));
+      for (const [row, found] of byRow) settle("eyes", row, found, eye(row));
     }
   }
   for (const sec of PARTS) {
     if (!(sec in src)) continue;
     if (!isObject(src[sec])) { skip(sec, null, src[sec], "not a list of colours by number"); continue; }
-    const seen = {};
+    const byNumber = new Map();
     for (const [key, val] of Object.entries(src[sec])) {
       if (key.startsWith("_")) { (s.notes[sec] ||= {})[key] = val; continue; }
       if (!/^[0-9]+$/.test(key)) { skip(sec, key, val, "not a colour number"); continue; }
       const i = Number(key);
       const c = isGradient(val) ? null : color.parse(val);
       if (sec === "fur" && i >= gameSlots) skip(sec, key, val, `the game has coats 0-${gameSlots - 1} only`);
-      else if (isGradient(val)) skip(sec, key, val, "only eyes take more than one colour");
-      else if (!c) skip(sec, key, val, "not a colour this page reads");
+      else if (isGradient(val)) skip(sec, key, val, "only eyes take more than one colour", i);
+      else if (!c) skip(sec, key, val, "not a colour this page reads", i);
       else {
-        if (i in seen) skip(sec, seen[i], src[sec][seen[i]], "another entry names the same colour");
-        seen[i] = key;
-        s[sec][i] = c;
+        if (!byNumber.has(i)) byNumber.set(i, []);
+        byNumber.get(i).push({ key, value: val, read: c });
       }
     }
+    for (const [i, found] of byNumber) settle(sec, i, found, `${NOUN[sec]} colour ${i}`);
   }
   return s;
 }
 
-// The state as a palette.json: what the page can't show first (so the page's own choice is the one the build
-// takes where both name one colour), then the page's colours in order, then the file's other parts as they were.
+// Whether Save leaves out an entry the page can't show because the page's own takes its place: the page sets the
+// eye or colour it names, or (for a whole part that isn't a list of colours) has colours of its own in that part.
+export function replaced(state, u) {
+  if (u.section !== "eyes" && !PARTS.includes(u.section)) return false;
+  if (u.key === null) return Object.keys(state[u.section]).length > 0;
+  return u.slot !== undefined && state[u.section][u.slot] !== undefined;
+}
+
+// The state as a palette.json: what the page can't show first, then the page's colours in order, then the file's
+// other parts as they were. An entry the page's own replaces (replaced()) is left out, so the build takes the
+// page's: one entry for each colour.
 export function toPalette(state, labels) {
   const out = { _help: HELP };
+  const unread = state.unread.filter(u => !replaced(state, u));
   for (const sec of ["eyes", ...PARTS]) {
     const entries = {};
-    for (const u of state.unread) if (u.section === sec && u.key !== null) entries[u.key] = u.value;
+    for (const u of unread) if (u.section === sec && u.key !== null) entries[u.key] = u.value;
     Object.assign(entries, state.notes[sec] || {});
     if (sec === "eyes") {
       for (const r of Object.keys(state.eyes).map(Number).sort((a, b) => a - b)) {
@@ -110,14 +156,17 @@ export function toPalette(state, labels) {
     }
     if (Object.keys(entries).length) out[sec] = entries;
   }
-  for (const u of state.unread) if (u.key === null) out[u.section] = u.value;
+  for (const u of unread) if (u.key === null) out[u.section] = u.value;
   return Object.assign(out, state.kept);
 }
 
-// How an entry the page can't show reads in its list: where it is, what it says, and why.
-export function describeUnread(u) {
+// How an entry the page can't show reads in its list: where it is, what it says, and why; with the state, also
+// when Save puts the page's own in its place.
+export function describeUnread(u, state = null) {
   const where = WORD[u.section] || `"${u.section}"`;
-  return `${where}${u.key !== null ? ` "${u.key}"` : ""}: ${JSON.stringify(u.value)} (${u.why})`;
+  const instead = isObject(state) && replaced(state, u)   // (not when it's map()'s index)
+    ? (u.key === null ? "; Save puts your colours on this tab in its place" : "; Save puts the colour set here in its place") : "";
+  return `${where}${u.key !== null ? ` "${u.key}"` : ""}: ${JSON.stringify(u.value)} (${u.why}${instead})`;
 }
 
 // The number a new pattern or marking colour takes: past the game's, past this palette's own new colours and past
@@ -138,21 +187,34 @@ export function eyeGroups(labels) {
 const copy = state => JSON.parse(JSON.stringify(state));
 const newOnly = (entries, gameSlots) => Object.fromEntries(Object.entries(entries).filter(([i]) => Number(i) >= gameSlots));
 
+// While the game's eye names can't be read, the file's eyes are kept as written (kept.eyes), out of sight: Start from
+// and Game colours change them as a whole all the same, so each does what it says. `eyes` (another palette's, as
+// written, or null for none) takes their place; the file's own notes ("_" keys) in them stay.
+function keptEyes(s, eyes) {
+  const notes = isObject(s.kept.eyes) ? Object.entries(s.kept.eyes).filter(([k]) => k.startsWith("_")) : [];
+  const theirs = isObject(eyes) ? Object.entries(eyes).filter(([k]) => !k.startsWith("_")) : [];
+  if (notes.length || theirs.length) s.kept.eyes = Object.fromEntries([...theirs, ...notes]);
+  else delete s.kept.eyes;
+}
+
 // Start from another palette: its eyes and its changes to the game's colours. This palette's new colours, coat
 // presets, other parts and what the page can't show stay: new colours keep their numbers, which cats may wear.
 export function startFrom(state, other, { labels, gameSlots = 25 }) {
   const theirs = fromPalette(other, { labels, gameSlots });
   const s = copy(state);
-  s.eyes = labels ? theirs.eyes : s.eyes;
+  if (labels) s.eyes = theirs.eyes;
+  else keptEyes(s, theirs.kept.eyes);
   for (const sec of PARTS) {
     s[sec] = { ...Object.fromEntries(Object.entries(theirs[sec]).filter(([i]) => Number(i) < gameSlots)), ...newOnly(s[sec], gameSlots) };
   }
   return s;
 }
-// The game's colours: every change to the game's own colours and eyes goes; new colours and the rest stay.
+// The game's colours: every change to the game's own colours and eyes goes (the file's eyes too while the page
+// can't show them); new colours and the rest stay.
 export function gameColours(state, gameSlots = 25) {
   const s = copy(state);
   s.eyes = {};
+  if ("eyes" in s.kept) keptEyes(s, null);
   for (const sec of PARTS) s[sec] = newOnly(s[sec], gameSlots);
   return s;
 }

@@ -287,6 +287,62 @@ test("coming back to the window re-reads a file changed outside the page, only w
   assert.ok([...dom.byId.toasts.querySelectorAll("span")].some(s => s.textContent.includes("was changed outside this page")));
 });
 
+test("onSaved hears whether the page changed while it saved, and coming back doesn't take the saved file for changed outside", async () => {
+  const state = fresh();
+  dom.routes = routes(state);
+  for (const type of Object.keys(dom.windowListeners)) delete dom.windowListeners[type];
+  localStorage.clear();
+  localStorage.setItem("wc-target", "a");
+  // The studio writes the text as it's sent, with a newline at its end, and reads it back as it is on disk.
+  let disk = JSON.stringify(state.files["a/names.json"], null, 2) + "\n", release = null;
+  dom.routes["GET /mods/a/file/names.json"] = () => ({ exists: true, text: disk });
+  dom.routes["PUT /mods/a/file/names.json"] = async b => {
+    if (release) await new Promise(ok => { release = ok; });
+    disk = b.text.endsWith("\n") ? b.text : b.text + "\n";
+    return { saved: "names.json", requires: [], problems: [], notes: [] };
+  };
+  const wc = await import(dom.studio("lib/wc.js") + "?" + Math.random());
+  const loads = [], heard = [];
+  let value = { prefixes: { remove: ["Moon", "Sun"] } };
+  const target = wc.modTarget({ file: "names.json", share: false, onLoad: obj => loads.push(obj), getValue: () => value,
+    onSaved: (v, how) => heard.push([v, how]) });
+  dom.byId.main.append(target.element);
+  await target.refresh();
+  // Nothing changed while it saved: changed is false, and the page is clean.
+  target.markDirty();
+  assert.equal(await target.save(), true);
+  assert.deepEqual(heard, [[{ prefixes: { remove: ["Moon", "Sun"] } }, { changed: false }]]);
+  assert.equal(target.dirty, false);
+  // Back in the window: the file is as this page saved it, so it isn't read again, and nothing says it changed.
+  const outside = () => [...dom.byId.toasts.querySelectorAll("span")].filter(s => s.textContent.includes("was changed outside this page")).length;
+  const said = outside();
+  wc.bus.emit("focus");
+  await tick(20);
+  assert.equal(loads.length, 1, "not read again over the page");
+  assert.equal(outside(), said);
+  // A change while the PUT is under way: changed is true (the page keeps its state), and it's still to be saved.
+  release = () => {};
+  target.markDirty();
+  const saving = target.save();
+  while (release.length === 0) await tick(5);   // the PUT is waiting
+  value = { prefixes: { remove: ["Moon", "Sun", "Leaf"] } };
+  target.markDirty();
+  release();
+  assert.equal(await saving, true);
+  assert.deepEqual(heard.at(-1)[1], { changed: true });
+  assert.equal(target.dirty, true);
+  assert.equal(loads.length, 1);
+  // An Apply that finishes while it saves isn't a change on the page: the save settles it.
+  release = () => {};
+  const again = target.save();
+  while (release.length === 0) await tick(5);
+  wc.bus.emit("installed", {});
+  release();
+  assert.equal(await again, true);
+  assert.deepEqual(heard.at(-1), [{ prefixes: { remove: ["Moon", "Sun", "Leaf"] } }, { changed: false }]);
+  assert.equal(target.dirty, false);
+});
+
 test("a change made while the file is read again (after an Apply) stays on the page", async () => {
   const t = await setUp();
   const read = dom.routes["GET /mods/a/file/names.json"];

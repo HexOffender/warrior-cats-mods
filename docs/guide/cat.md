@@ -42,7 +42,10 @@ You can:
   eye colour, a different shape and size, and scars (or none);
 - pick a new pattern or marking colour a palette adds, which only the cats set to it wear;
 - change colours of its own while you play: the mod menu in the game (Insert) has a Colours page with
-  sliders, and its Save writes them back into the mod.
+  sliders, and its Save writes them back into the mod. It writes the cats.json of your last Apply with
+  the new colours in it, so apply again first, or edits saved on this page since then are overwritten.
+  Nobody has watched that Save in the game yet: the [list of what's been checked](../verified.md) has
+  it under "Not yet confirmed in game".
 
 You can't:
 
@@ -86,7 +89,8 @@ Good to know:
 - **A new colour from a palette that's off.** The cat shows no colour there until that palette is on.
 - **A cats.json written by hand.** Anything the page can't change (a part it doesn't know, a number past
   the game's) is listed under "Things this page can't change" on its card, kept as written until you
-  press **Remove**.
+  press **Remove**. A cat written as something other than a look (`"player": "none"`) is listed under
+  Whose look; once you choose a look for that cat here, Save writes it in its place, and the list says so.
 - **"Your save couldn't be read".** The game was probably writing it. Wait a moment and come back to
   the window; colours of its own work all the same.
 

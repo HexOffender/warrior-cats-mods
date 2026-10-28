@@ -35,7 +35,7 @@ export default {
     const origRow = r => (EYE_LIN ? EYE_LIN[r] : P.plainRow(64, r === 0));
     const rimOf = ramp => color.linearToHex(ramp[ramp.length - 1]);
     const vanillaRim = r => rimOf(origRow(r));
-    const eyeName = r => (LABELS ? LABELS[r] : `eye ${r}`);
+    const eyeName = r => P.eyeWord(LABELS, r);   // "Eye white", "Extra eye 1", else the game's name
 
     let state = P.blank();
     let undo = null;   // { label, state }: the last whole-tab change, for its Undo button
@@ -46,10 +46,23 @@ export default {
       file: "palette.json",
       onLoad: obj => { state = P.fromPalette(obj, { labels: LABELS, gameSlots: GAME }); undo = null; renderAll(); otherSlotsReady = loadOtherSlots(); },
       getValue: () => P.toPalette(state, LABELS),
-      // A save keeps what's on the page (it isn't read back); the last whole-tab change can't be undone past it.
-      onSaved: () => { undo = null; renderStyleRow(); },
+      // Saved: the last whole-tab change can't be undone past it, and the page reads what it wrote as it reads any
+      // file (a save doesn't read the file back), so what Save left out leaves the lists. Not when something changed
+      // while it saved: that stays on the page, still to be saved.
+      onSaved: (saved, { changed }) => {
+        undo = null;
+        if (changed) { renderStyleRow(); return; }
+        state = P.fromPalette(saved, { labels: LABELS, gameSlots: GAME }); renderAll();
+      },
     });
-    const edited = () => target.markDirty();
+    // A change on the page: unsaved now, and the list of what the page can't show redrawn when an entry there is
+    // now (or no longer) one the page's own takes the place of at Save.
+    let replacedSeen = "";
+    const edited = () => {
+      target.markDirty();
+      if (state.unread.length && replacedNow() !== replacedSeen) renderUnread();
+    };
+    const replacedNow = () => state.unread.map(u => (P.replaced(state, u) ? 1 : 0)).join("");
     // curHex: the colour a slot shows with this palette: its own, else the game's, else another palette's new one.
     const curHex = (sec, i) => state[sec][i] || TABLE(sec)[i] || otherHex(sec, i);
 
@@ -97,17 +110,50 @@ export default {
     // Mods that hold only a palette work as presets: Apply turns the ticked ones on, the other
     // palette-only mods off, and installs. Mods with anything besides a palette aren't touched, and
     // neither are palettes that only add new colours (cats may be wearing them).
-    let quickPick = null;   // ids ticked here; null means "start from what's on"
-    let quickData = [];     // [{mod, palette (null if its file can't be read)}]
+    let quickPick = null;     // ids ticked here; null means "start from what's on"
+    let quickData = [];       // [{mod, palette (null if its file can't be read)}]
+    let quickOn = new Map();  // each one's on or off when the list was last read
     const quickButtons = el("div", { class: "row" });
-    async function renderQuick() {
+    // The list is read again after an Apply (fresh: the ticks start from what's on) and whenever a mod is made or
+    // changed (a Save to mod makes My mods, or turns its mod on): a palette switched on or off since the last read
+    // is ticked or unticked to match, and the creator's other ticks stay. One read after another, so an earlier one
+    // never draws over a later one.
+    let quickQueue = Promise.resolve();
+    const renderQuick = (fresh = false) => (quickQueue = quickQueue.catch(() => {}).then(() => readQuick(fresh)));
+    async function readQuick(fresh) {
       const list = (await api.get("/mods")).filter(m => m.preset);
       quickData = await Promise.all(list.map(async m => {
         try { return { mod: m, palette: JSON.parse((await api.get(`/mods/${encodeURIComponent(m.id)}/file/palette.json`)).text) || {} }; }
         catch (e) { return { mod: m, palette: null }; }
       }));
-      if (quickPick === null) quickPick = new Set(list.filter(m => m.enabled).map(m => m.id));
+      if (fresh || quickPick === null) quickPick = new Set(list.filter(m => m.enabled).map(m => m.id));
+      else {
+        for (const m of list) {
+          const was = quickOn.get(m.id);
+          if (m.enabled && was !== true) quickPick.add(m.id);
+          else if (!m.enabled && was === true) quickPick.delete(m.id);
+        }
+        for (const id of [...quickPick]) if (!list.some(m => m.id === id)) quickPick.delete(id);   // not a quick palette now
+      }
+      quickOn = new Map(list.map(m => [m.id, m.enabled]));
       drawQuick();
+    }
+    // Apply: unsaved colours on this page go in too, saved first (nothing is installed if that fails). The palette
+    // just saved is ticked, whatever the list said before: Apply turns an unticked quick palette off, and with it
+    // the colours just saved (a first Save makes My mods, which the list hadn't got).
+    async function applyQuick() {
+      if (target.dirty) {
+        const before = new Set(quickPick || []);
+        if (!await target.save()) return;
+        await renderQuick();
+        const saved = quickData.find(d => d.mod.id === target.current && d.palette !== null);
+        if (saved && !before.has(saved.mod.id)) {
+          quickPick.add(saved.mod.id);
+          drawQuick();
+          toast(`Ticked ${saved.mod.name} too, so the colours you just saved go in.`);
+        }
+      }
+      wc.bus.emit("run-task", { path: "/palettes/apply", title: "Apply palettes", body: { ids: [...(quickPick || [])], install: true } });
     }
     // Why Apply waits, in the shell's words (app.js greys its own Apply for the same reasons).
     const applyWait = () => (!info ? "" : !info.game_dir ? "Find the game first: Get set up, on the Mods page"
@@ -152,15 +198,12 @@ export default {
       const n = quickPick ? quickPick.size : 0, why = applyWait();
       put(quickButtons,
         el("button", { class: "btn primary", text: n ? `Apply ${n} and install` : "Use the game's colours and install", disabled: !!why,
-          title: why || "Turns the ticked palettes on and the other palette-only mods off, then puts them in the game", onclick: async () => {
-            // Unsaved colours on this page go in too: saved first, and nothing is installed if that fails.
-            if (target.dirty && !await target.save()) return;
-            wc.bus.emit("run-task", { path: "/palettes/apply", title: "Apply palettes", body: { ids: [...quickPick], install: true } });
-          } }),
-        el("button", { class: "btn ghost", text: "Untick all", onclick: () => { quickPick.clear(); drawQuick(); } }),
+          title: why || "Turns the ticked palettes on and the other palette-only mods off, then puts them in the game", onclick: applyQuick }),
+        el("button", { class: "btn ghost", text: "Untick all", onclick: () => { quickPick?.clear(); drawQuick(); } }),
         why ? el("span", { class: "muted", text: why }) : null);
     }
     function drawQuick() {
+      if (quickPick === null) return;   // not read yet
       const dot = (hex, round) => el("span", { class: "swatch", title: hex, style: { display: "inline-block", width: "13px", height: "13px",
         background: hex, borderRadius: round ? "50%" : "3px", boxShadow: "inset 0 0 0 1px rgba(0,0,0,.18)" } });
       const eyeRim = (p, r) => {
@@ -213,7 +256,11 @@ export default {
       put(startRow, el("span", { class: "eyebrow", text: "Start from" }),
         el("button", { class: "chip", "data-focus": "pal:from:game", text: "Game colours",
           title: "Every change to the game's own colours and eyes goes; your new colours stay",
-          onclick: () => wholeTab("Game colours", P.gameColours(state, GAME)) }),
+          onclick: () => {
+            const eyesOutOfSight = !LABELS && state.kept.eyes !== undefined;
+            wholeTab("Game colours", P.gameColours(state, GAME));
+            if (eyesOutOfSight) toast("The file's eye colours went too, though this page can't show them until it finds the game's. Undo puts them back.");
+          } }),
         ...mods.filter(m => m.kinds.includes("palette") && m.id !== target.current).map(m => el("button", {
           class: "chip", "data-focus": `pal:from:${m.id}`, text: m.name,
           title: `${m.name}'s eyes and its changes to the game's colours; your new colours stay`, onclick: async () => {
@@ -244,6 +291,7 @@ export default {
     // ---------- what the page can't show ----------
     let unreadOpen = false;   // the list stays open (or folded) through a redraw, as it was left
     function renderUnread() {
+      replacedSeen = replacedNow();
       clear(unreadBox);
       const n = state.unread.length;
       unreadBox.hidden = !n;
@@ -252,7 +300,7 @@ export default {
         el("summary", {}, el("strong", { text: `${n} ${n === 1 ? "entry" : "entries"} this page can't show` }),
           el("span", { class: "muted", text: "kept in the file as written until you remove them" })),
         el("ul", { class: "notes" }, ...state.unread.map((u, i) => el("li", { class: "row" },
-          el("span", { text: P.describeUnread(u) }),
+          el("span", { text: P.describeUnread(u, state) }),
           el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove ${P.describeUnread(u)}`,
             onclick: () => { state.unread.splice(i, 1); edited(); renderUnread(); } })))));
       box.addEventListener("toggle", () => { unreadOpen = box.open; });
@@ -286,7 +334,7 @@ export default {
           ...theirs.map(o => [o.slot, `${o.slot} (new, from ${o.name}) · ${o.hex}`])], sec.id);
       }
       if (LABELS) {
-        const eyeOpts = LABELS.slice(1).map((l, i) => [i + 1, `${l}${state.eyes[i + 1] ? " (changed)" : ""}`]);
+        const eyeOpts = LABELS.slice(1).map((l, i) => [i + 1, `${eyeName(i + 1)}${GROUPS.extra.includes(i + 1) ? " (from a game add-on)" : ""}${state.eyes[i + 1] ? " (changed)" : ""}`]);
         sel("pal-pick-eyeL", "Left eye", eyeOpts, "eyeL");
         sel("pal-pick-eyeR", "Right eye", eyeOpts, "eyeR");
       }
@@ -517,13 +565,14 @@ export default {
     function refreshCards() { panel.querySelectorAll(".card").forEach(c => c._update && c._update()); }
     function renderAll() { renderTabs(); renderPanel(); renderPicks(); drawCat(); renderPresets(); renderStyleRow(); renderUnread(); }
 
-    // After an Apply or Play: the quick palettes and the status are read again, and the file too, unless there are
-    // unsaved changes here (installedEvent), which stay, the bar saying they aren't in the game yet.
+    // After an Apply or Play: the quick palettes (their ticks afresh) and the status are read again, and the file too,
+    // unless there are unsaved changes here (installedEvent), which stay, the bar saying they aren't in the game yet.
+    // A mod made or changed anywhere (a Save here makes My mods) reads the quick palettes again too.
     const offs = [
       wc.installedEvent(target, () => target.refresh()),
-      wc.bus.on("installed", () => { quickPick = null; renderQuick().catch(() => {}); readInfo(); }),
+      wc.bus.on("installed", () => { renderQuick(true).catch(() => {}); readInfo(); }),
       wc.bus.on("focus", readInfo),
-      wc.bus.on("mods-changed", () => { renderPresets(); renderStrip(); otherSlotsReady = loadOtherSlots(); }),
+      wc.bus.on("mods-changed", () => { renderPresets(); renderStrip(); otherSlotsReady = loadOtherSlots(); renderQuick().catch(() => {}); }),
     ];
     await Promise.all([target.refresh(), renderQuick(), renderStrip()]);
     return { unmount() { for (const off of offs) off(); narrow.removeEventListener("change", applyNarrow); } };

@@ -63,6 +63,9 @@ export default {
       file: "cats.json",
       onLoad: obj => { ({ looks, fileExtra } = C.load(obj, known())); if (!looks[who]) who = "player"; render(); },
       getValue: () => C.toJson(looks, fileExtra, known()),
+      // Saved: the page reads what it wrote as it reads any file (a save doesn't read the file back), on the same
+      // cat. Not when something changed while it saved: that stays on the page, still to be saved.
+      onSaved: (saved, { changed }) => { if (changed) return; ({ looks, fileExtra } = C.load(saved, known())); render(); },
     });
     const saveLine = el("div", { class: "banner", role: "status", hidden: true });
     const whoCard = el("div", { class: "card" }), lookCard = el("div", { class: "card" }),
@@ -92,7 +95,13 @@ export default {
         el("summary", {}, el("h3", { text: "For people who edit the file by hand" }), el("span", { class: "muted", text: "this page's cats.json, as Save writes it" })),
         out.element));
 
-    function changed() { target.markDirty(); out.set(C.toJson(looks, fileExtra, known())); drawCat(); }
+    function changed() {
+      target.markDirty();
+      out.set(C.toJson(looks, fileExtra, known()));
+      drawCat();
+      // A cat's entry kept as written ("player": "none") says beside it once a look set here takes its place.
+      if (Object.keys(fileExtra).some(k => k === "player" || (k.startsWith("cats.") && !k.startsWith("cats._")))) renderWho();
+    }
 
     // What the page can't change, under the card it belongs to: each kept as written until its Remove.
     function cantChange(entries) {
@@ -102,6 +111,8 @@ export default {
         el("p", { class: "note", text: "They're in the file as written, and Save says whether they keep it out of the game. Remove takes one out." }),
         el("ul", { class: "notes" }, ...entries.map(e => el("li", { class: "row" },
           el("span", { class: "mono", text: `${e.where}: ${JSON.stringify(e.value)}` }),
+          // A cat's entry that isn't a look ("player": "none"): the look set here takes its place at Save.
+          C.lookFor(looks, e.where, known()) ? el("span", { class: "muted", text: "the look set on this page takes its place when you save" }) : null,
           el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove ${e.where}`, onclick: () => { e.remove(); changed(); render(); } })))));
     }
     const rawOf = key => C.cantChange(look()).filter(e => e.where.startsWith(key + "."));
@@ -191,7 +202,11 @@ export default {
       put(whoCard, el("h2", { text: "Whose look" }),
         el("div", { class: "row" }, find, sel),
         el("p", { class: "note", text: note }));
-      const raw = C.cantChange(look(), mine() ? fileExtra : null).filter(e => !/^(colours|slots|scars|look)\./.test(e.where));
+      // Yours lists the file's own keys too; another cat's, its own entry when the file has it as something else.
+      const theirs = !mine() && `cats.${who}` in fileExtra ? { [`cats.${who}`]: fileExtra[`cats.${who}`] } : null;
+      const raw = [...C.cantChange(look(), mine() ? fileExtra : null), ...(theirs ? C.cantChange(C.blank(), theirs) : [])]
+        .filter(e => !/^(colours|slots|scars|look)\./.test(e.where))
+        .map(e => (theirs && e.where in theirs ? { ...e, remove: () => { delete fileExtra[e.where]; } } : e));
       const block = cantChange(raw);
       if (block) whoCard.append(block);
     }
