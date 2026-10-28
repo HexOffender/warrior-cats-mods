@@ -6,9 +6,14 @@
 <meta name="wc-token" content="{{WC_TOKEN}}">
 <meta name="color-scheme" content="light dark">
 <title>Clan Mod Studio</title>
+<!-- The brand's paw as the tab's icon (ThunderClan russet), so the browser doesn't ask for a favicon.ico that isn't there. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%238a4616'%3E%3Cellipse cx='8' cy='11.2' rx='4.2' ry='3.3'/%3E%3Ccircle cx='3' cy='7.4' r='1.7'/%3E%3Ccircle cx='6.1' cy='4.3' r='1.8'/%3E%3Ccircle cx='9.9' cy='4.3' r='1.8'/%3E%3Ccircle cx='13' cy='7.4' r='1.7'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700;800&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<!-- Day or night before the stylesheet, so the page never flashes the wrong one: the choice the toggle saved,
+     or ?theme=dark|light in the address (for a screenshot or a link; it isn't saved). Nothing stored: the system's choice. -->
+<script>try{var t=new URLSearchParams(location.search).get("theme")||localStorage.getItem("wc-theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700;800&family=Alegreya+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/studio/styles.css">
 </head>
 <body>
@@ -21,6 +26,7 @@
     </div>
     <div class="status" id="status" role="group" aria-label="Status"></div>
     <div class="actions">
+      <button class="btn ghost icon" id="themeBtn" type="button" aria-pressed="false" aria-label="Night theme"></button>
       <a class="btn ghost" id="helpLink" href="https://github.com/HexOffender/warrior-cats-mods/blob/main/docs/README.md" target="_blank" rel="noopener">Help</a>
       <button class="btn" id="installBtn">Apply to game</button>
       <button class="btn primary" id="playBtn">Play</button>

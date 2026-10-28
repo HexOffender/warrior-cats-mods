@@ -1,0 +1,37 @@
+/* The Mods page: drop a .zip on the leaf, the list of mods, and Get set up. Linked by app.js when the page
+   opens; the rules shared with other pages (.notes, .details, the switch, .fold) are in styles.css. */
+.dropzone { border: 2px dashed var(--field); border-radius: 14px; padding: 22px 16px 24px; display: grid; justify-items: center; gap: 6px; text-align: center; cursor: pointer; background: var(--raised); }
+.dropzone::before { content: ""; width: 30px; height: 30px; background: var(--accent); opacity: .7; -webkit-mask: var(--leaf) center / contain no-repeat; mask: var(--leaf) center / contain no-repeat; }   /* a leaf to drop the .zip on */
+.dropzone:hover, .dropzone.over { border-color: var(--accent); border-style: solid; background: var(--accent-soft); }
+.dropzone strong { font-family: var(--display); font-size: 1.08rem; }
+.mod { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 12px; align-items: start; border-top: 1px dashed var(--line); padding-top: 12px; }
+.mod.preview { grid-template-columns: auto minmax(0, 1fr); }
+.mod-body > label strong { font-family: var(--display); font-size: 1.08rem; }
+.mod.off .mod-body > label strong { color: var(--muted); }
+.mod-body { display: grid; gap: 4px; min-width: 0; grid-column: 2; }
+.mod.preview .mod-body:first-child { grid-column: 1 / -1; }
+.mod-actions { display: flex; gap: 6px; }
+.mod-wide { grid-column: 2 / -1; }
+@media (max-width: 560px) { .mod { grid-template-columns: auto minmax(0, 1fr); } .mod-actions { grid-column: 2; } }
+h3.group { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.ok-line { color: var(--good); font-weight: 600; }
+
+/* Get set up: birch with a fern edge (the first thing to do), and the paw as the done tick. */
+.card.setup { background: var(--raised); border-color: var(--accent); border-left-width: 5px; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.step { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; align-items: start; }
+.step .tick { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--field); background: var(--raised); display: grid; place-items: center; font-weight: 700; color: var(--accent-ink); position: relative; }
+.step.done .tick { background: var(--good); border-color: var(--good); }
+@supports (-webkit-mask-image: url("")) or (mask-image: url("")) {
+  .step.done .tick { font-size: 0; }      /* hides the "\2713" mods.js puts in (it's aria-hidden anyway); forced colours bring it back (styles.css) */
+  .step.done .tick::after { content: ""; position: absolute; inset: 4px; background: currentColor; -webkit-mask: var(--paw) center / contain no-repeat; mask: var(--paw) center / contain no-repeat; }
+}
+.step.done .step-body > strong { color: var(--muted); }
+.step-body { display: grid; gap: 6px; min-width: 0; }
+
+/* Windows' high contrast themes: the leaf keeps drawing, and the done tick shows its "\2713" text again. */
+@media (forced-colors: active) {
+  .dropzone::before { forced-color-adjust: none; background: CanvasText; opacity: 1; }
+  .step.done .tick::after { display: none; }
+  .step.done .tick { font-size: inherit; forced-color-adjust: none; }
+}
