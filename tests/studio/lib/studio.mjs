@@ -140,6 +140,8 @@ export async function removeFolders(folders) {
   if (!folders) return;
   await remove(folders.root);
   if (folders.app && fs.existsSync(folders.app)) await remove(folders.app);   // a copy made outside root
+}
+
 // The made-up game with a few of the game's tables (tests/studio/fixtures/game.py) and, with saves, the tests'
 // save (your cat in slot 1, level 5, 62 in the fresh-kill pile, two herbs and four moss).
 export function fixtureGame({ game, saves }) {
