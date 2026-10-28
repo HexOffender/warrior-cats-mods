@@ -1296,7 +1296,7 @@ class Studio:
             try:
                 reply = Bridge(cfg).run(WHERE_LUA, timeout=10)
             except BridgeError as e:
-                raise RuntimeError(where_problem(e)) from None
+                raise RuntimeError(where_problem(cfg, e)) from None
             spot = (reply.get("result") or [None])[0]
             if not reply.get("ok") or not isinstance(spot, dict):
                 raise RuntimeError("Your cat isn't in the forest yet: go into the forest, stand where you want the cat "
@@ -2318,24 +2318,19 @@ def sentence(e):
     return None
 
 
-# What the studio says when it can't talk to the running game (the game bridge), in the order to press things:
-# the same words wherever the studio asks the game something.
-BRIDGE_CLOSED = "The game is closed: press Play"
-BRIDGE_MISSING = ("The game is running without the studio's connection to it: close the game, press Apply to game, "
-                  "then Play")
-BRIDGE_QUIET = "The game is running but not answering: it may be loading, or held still behind another window"
-# "Use where my cat is standing": the same, with what to do once the game is up.
+# "Use where my cat is standing": what the studio says when it can't talk to the running game (BRIDGE_SAID and
+# BRIDGE_FAILED, the same words wherever the studio asks the game something), with what to do once the game is up.
 WHERE_THEN = ", stand where you want the cat and press this again"
 WHERE_NO_CODE = ("This needs mods that run code: allow them on Settings and repair, then Apply to game and Play"
                  + WHERE_THEN)
 
 
-def where_problem(e):
-    """A BridgeError from reading where your cat is, as the sentence the page shows: what to press next."""
-    text = str(e)
-    if "no reply within" in text or "another wcmods command" in text:
-        return BRIDGE_QUIET + ": press this again in a moment"
-    return (BRIDGE_MISSING if game_running() else BRIDGE_CLOSED) + WHERE_THEN
+def where_problem(cfg, e):
+    """A BridgeError from reading where your cat is, as the sentence the page shows (bridge_failed's), with what
+    to press next: once the game is up, stand there and press again; else press again in a moment."""
+    said = bridge_failed(cfg, e, 10)
+    return said + (WHERE_THEN if said in (BRIDGE_SAID["closed"], BRIDGE_SAID["no-bridge"]) else
+                   "; press this again in a moment")
 
 
 # Where your cat is, through the game bridge: a place and level for a cat or a quest's step.

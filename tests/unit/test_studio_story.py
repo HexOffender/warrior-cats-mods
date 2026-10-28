@@ -222,10 +222,13 @@ def test_where_says_what_to_press_when_the_game_is_closed(studio, monkeypatch, s
                                            r"press Apply to game, then Play, stand where"):
         call(studio, "POST", "game/where")
 
+    # No answer in time (the bridge's "withdrawn"), or another command talking to it: in the words the studio
+    # uses wherever it asks the game something (studio.BRIDGE_FAILED), then press again.
     def busy(self, code, timeout=15):
-        raise bridge.BridgeError("no reply within 10 s (the game may be loading, or the code is still running)")
+        raise bridge.BridgeError("no reply within 10 s (the game may be loading, or held still)", "withdrawn")
     monkeypatch.setattr(studio_mod.Bridge, "run", busy)
-    with pytest.raises(RuntimeError, match="not answering: it may be loading"):
+    with pytest.raises(RuntimeError, match=r"^The game didn't answer within 10 seconds \(it may be loading.*; press this "
+                                           r"again in a moment$"):
         call(studio, "POST", "game/where")
 
 
