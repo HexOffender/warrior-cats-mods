@@ -1412,10 +1412,11 @@ affecting the others.
 
 | Export | What it gives you |
 |---|---|
-| `api.get/post/put/patch/del(path)` | The studio API (token handled). Routes are listed below |
+| `api.get/post/put/patch/del(path)` | The studio API (token handled: a request refused for the token, after the studio restarted, takes up the new one and is made again). Routes are listed below |
+| `reconnect()`, `anyDirty()`, `dirtyTargets()` | Whether the studio answers (taking up its token); whether any page, and which Editing mod bars, have unsaved changes. The shell never reloads the page or restarts the studio over them |
 | `el(tag, attrs, ...children)`, `$`, `clear` | Small DOM helpers |
 | `toast(msg, "bad"?)`, `confirmButton(label, armedLabel, fn)` | Feedback, and two-step confirm |
-| `modTarget({file, onLoad, getValue, share})` | The "Editing mod: … Save to mod" bar the built-in pages use. It keeps unsaved work (the browser asks before the page closes, switching mods asks first, `refresh()` re-reads the mod list without reloading the file), and shows under itself what would keep a saved file out of the game (`problems` from the PUT) until a save that's fine. `target.dirty` says whether there's unsaved work |
+| `modTarget({file, onLoad, getValue, share})` | The "Editing mod: … Save to mod" bar the built-in pages use. It keeps unsaved work (the browser asks before the page closes, switching mods and importing a file ask first, `refresh()` re-reads the mod list without reloading the file), and shows under itself what would keep a saved file out of the game (`problems` from the PUT) until a save that's fine. `target.dirty` says whether there's unsaved work |
 | `installedEvent(target, fn)` | `bus.on("installed", fn)` that skips `fn` while `target` has unsaved changes: for a page that reloads its file after an Apply |
 | `openHelp(page)`, `pageHead({eyebrow, title, lede, help})` | The help panel: `openHelp("studio")` opens `docs/guide/studio.md` in it (no page: the guide's index); `pageHead`'s `help: "help:<page>"` puts a "How this works" button in the page's head that does the same |
 | `codePanel(title)` | A copyable JSON preview |
@@ -1427,9 +1428,11 @@ affecting the others.
 API routes: `GET /info`, `GET|POST /mods`, `PATCH /mods/<id>`,
 `GET|PUT|DELETE /mods/<id>/file/<name>` (the built-in files plus the mod's `studio_files`; a PUT answers
 with `problems`, what would keep the file out of the game, from the build section that owns it),
-`POST /build`, `/install`, `/uninstall`, `/palettes/apply` (a build that some mods didn't make it
-through answers 409 with `blocked`, the facts behind Apply the rest anyway), `GET /progress` (what the
-task under way has logged so far), `GET /last-apply` (`last-apply.log`), `POST /restart`,
+`POST /build`, `/install`, `/uninstall`, `/palettes/apply`, `/play` (each takes a `task` id of the
+page's own and answers its `log`, `result` and `summary`, the sentence at the top of the log; a build that
+some mods didn't make it through answers 409 with `blocked`, the facts behind Apply the rest anyway),
+`GET /progress` (the `id` and `title` of the task under way, or waiting for the lock, and what it has
+logged so far), `GET /last-apply` (`last-apply.log`), `POST /restart`,
 `GET /help/<page>` (a page of the guide, rendered), `GET /backups`, `POST /backup`,
 `/restore`, `GET|PATCH /ingame` (the game console, cheats at start, the mod menu's key and size),
 `GET /game/bridge` (whether the game runs with the bridge), `POST /game/lua` `{code}` and
@@ -1443,4 +1446,7 @@ for the player; the traceback behind an unexpected one goes to the console windo
 `studio.log` in the player's folder. The studio runs the wcmods code it started with: if wcmods is
 updated while it's open, it refuses to build or install until it's restarted, and the "Restart the
 studio" chip at the top of the page is a button that does that (`POST /restart`: a fresh studio
-starts in its own window, this one stops, and the page reloads once the new one answers).
+starts in its own window, this one stops, and the page reloads once the new one answers; the page
+won't restart over unsaved changes, and says the studio is gone if the new one hasn't answered in 30
+seconds). A page whose studio was closed and opened again keeps going without reloading while it has
+unsaved changes: it reads the new studio's token from its page (`reconnect()`).
