@@ -68,6 +68,23 @@ def test_no_module_reads_the_players_folder_as_it_is_imported():
     assert culprits == []
 
 
+def test_the_command_line_loads_no_windows_dll_until_an_agent_command_runs(tmp_path):
+    """The agent's window.py loads user32 as it's imported; the command line registers the agent's commands on
+    every run, on Linux too, so it imports none of that until one of them runs. Here WinDLL refuses, as off
+    Windows, and every command's help still prints."""
+    code = ("import ctypes, sys\n"
+            "def refuse(*a, **k):\n"
+            "    raise OSError('no Windows DLLs here')\n"
+            "ctypes.WinDLL = refuse\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "from wcmods.cli import main\n"
+            "main(sys.argv[2], ['--help'])\n")
+    (tmp_path / "root").mkdir()
+    r = subprocess.run([sys.executable, "-I", "-c", code, REPO, str(tmp_path / "root")], capture_output=True, text=True,
+                       timeout=120, env={**os.environ, "WCMODS_DATA": str(tmp_path / "data")})
+    assert r.returncode == 0 and "agent" in r.stdout, r.stdout + r.stderr
+
+
 def test_pytest_collects_nothing_under_tests_game():
     r = subprocess.run([sys.executable, "-m", "pytest", os.path.join("tests", "game"), "--co", "-p", "no:cacheprovider"],
                        cwd=REPO, capture_output=True, text=True, timeout=120)

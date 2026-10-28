@@ -688,7 +688,7 @@ def test_installing_with_stale_code_is_refused(studio, fake_game, monkeypatch):
 
 
 def test_uninstalling_from_a_game_with_nothing_in_it_removes_nothing(studio, fake_game, sandbox):
-    assert post(studio, "uninstall") == {"log": [], "result": {"removed": []}}
+    assert post(studio, "uninstall") == {"log": [], "result": {"removed": []}, "summary": None}
     sandbox.running = True
     with pytest.raises(RuntimeError, match="running"):
         post(studio, "uninstall")
@@ -705,7 +705,8 @@ def test_palettes_are_switched_as_presets_without_installing(studio, fake_game):
         post(studio, "palettes/apply", {"ids": ["more"]})
     with pytest.raises(ValueError, match="only add new colours"):
         post(studio, "palettes/apply", {"ids": ["adds"]})
-    assert post(studio, "palettes/apply", {"ids": ["warm"]}) == {"log": [], "result": {"on": ["warm"], "off": ["cool"]}}
+    assert post(studio, "palettes/apply", {"ids": ["warm"]}) == {"log": [], "result": {"on": ["warm"], "off": ["cool"]},
+                                                               "summary": None}
     assert {m["id"]: m["enabled"] for m in get(studio, "mods")} == {"adds": True, "cool": False, "more": True, "warm": True}
 
 

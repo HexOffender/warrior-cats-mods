@@ -1,7 +1,7 @@
 # The guide
 
 Help for Clan Mod Studio, a page at a time. The Help button at the top of the studio opens these in a
-panel; a page's own help (the ? beside its title) opens the one about it.
+panel.
 
 - [How Clan Mod Studio works](studio.md): your mods folder, the Editing mod bar and My mods, Save to
   mod, Apply to game and Play, the log, what Undo means here, and where your files are. Start here.
