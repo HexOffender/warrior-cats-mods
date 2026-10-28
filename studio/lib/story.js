@@ -173,7 +173,7 @@ export function stripWords(s, uses = []) {
 // what to press), and under it the whole way to see them in the game, with the guide's page. refresh()
 // asks the studio again; update(uses) says which of Sandbox mode's newer fields the page's cats use.
 export function sandboxStrip({ help, route }) {
-  const line = el("div", { class: "banner", role: "status" });
+  const line = el("div", { class: "banner", role: "status", hidden: true });   // until the studio has said
   const routeLine = el("p", { class: "note" }, el("span", { text: route + " " }),
     el("button", { class: "btn link", type: "button", text: "How this works", onclick: () => openHelp(help) }));
   const element = el("div", { class: "stack sandbox-strip" }, line, routeLine);
