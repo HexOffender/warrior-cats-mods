@@ -32,7 +32,11 @@ The game's colours stay as they are, and only cats set to a new slot wear it (th
 `cats.json` picks it for your cat). Slot numbers are fixed, so several palettes can each add colours,
 and your cat keeps its colour whatever else you turn on. Quick palettes leave alone a palette that
 only adds slots. The game checks these indexes against the colour list's real size, so a new slot
-nobody adds just shows no colour, never a crash.
+nobody adds just shows no colour, never a crash. The cat maker doesn't offer new slots by itself: the
+[Creator palettes](https://github.com/HexOffender/wcmods-creator-palettes) mod puts them in its colour
+pickers, a palette at a time, from the shared module `WCModsPalettes`, which every install writes: each
+palette's new pattern and marking slots, by mod. The themed palettes in wcmods-examples add theirs in a
+range each (100-124, 125-149...), so they can all be on together.
 
 Coat colours can't take new slots. The game pairs each of its coat colours with paw, ear, nose and
 whisker colours it keeps in its code, and a coat slot past 24 has none, which crashes it. To give

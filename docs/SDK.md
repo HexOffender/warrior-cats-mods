@@ -15,7 +15,7 @@ places:
 |---|---|---|---|
 | Build step | `section.py` | `wcmods build` / `install` | `wcmods.sdk` (Python) |
 | Studio page | `studio/section.js` | `wcmods studio`, in your browser | `studio/lib/wc.js` |
-| In-game script | `scripts/main.lua` (no Python), or written by its `section.py` | the game, through UE4SS | UE4SS Lua, plus the six shared modules below: `WCModsGame`, `WCModsDraw`, `WCModsMenu`, `WCModsView`, `WCModsWorld`, `WCModsNames` |
+| In-game script | `scripts/main.lua` (no Python), or written by its `section.py` | the game, through UE4SS | UE4SS Lua, plus the seven shared modules below: `WCModsGame`, `WCModsDraw`, `WCModsMenu`, `WCModsView`, `WCModsWorld`, `WCModsNames`, `WCModsPalettes` |
 | C++ mod | `cpp/` (source), built into `dlls/main.dll` | the game, through UE4SS | UE4SS's C++ API, plus `WCMods.hpp` (see [C++ mods](#c-mods)) |
 
 All of them only run when `"allow_code_mods": true` is set in `wcmods.json`, because they are
@@ -573,7 +573,7 @@ The simplest in-game script is a mod's `scripts/main.lua`, with no Python at all
 ([scripting.md](scripting.md#script-mods)). A mod's `section.py` can also ship a UE4SS Lua script with
 `ctx.add_ue4ss_mod`, for scripts written from the mod's settings at build time. wcmods installs either
 into `ue4ss/Mods/<name>/` when UE4SS is present, registers it, and removes it on uninstall or when the
-mod is turned off. Next to it, every install puts six shared modules in `ue4ss/Mods/shared/`. Any
+mod is turned off. Next to it, every install puts seven shared modules in `ue4ss/Mods/shared/`. Any
 UE4SS script can `require` them, wcmods' or one written by hand:
 
 | Module | What it does |
@@ -583,6 +583,7 @@ UE4SS script can `require` them, wcmods' or one written by hand:
 | `WCModsMenu` | Pages in the mod menu (Insert): buttons, switches, sliders, drop-downs, text boxes, colours, images |
 | `WCModsView` | What the camera sees: its matrices, and world-to-screen positions |
 | `WCModsWorld` | Finds things in the world (pickups, interactables, quest objectives, cats, creatures) and the game's managers |
+| `WCModsPalettes` | The new colour slots each enabled palette adds (`palette.json`, 25 and up): `{ { id, name, pattern = {slots}, marking = {slots} } }` in priority order, a slot two palettes set listed under the one that wins it. The Creator palettes mod shows them a palette at a time |
 | `WCModsNames` | Cats' names: every name part's text after your name mods, and `name(prefix id, suffix id)`, which falls back on the game's own text; items', areas' and quests' names: `item(tag)`, `area(code)` (`"R-05"` is `"Willow-Weep"`), `quest(tag, rank)` (a quest's title for a rank: `"Apprentice"`, `"Warrior"`, `"Deputy"` or `"Leader"`, or another rank's). Written on each install from the game's tables; `WCModsGame` and `WCModsWorld` use it |
 
 ### Shipping a script
