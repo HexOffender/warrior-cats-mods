@@ -41,8 +41,8 @@ The strip under the Editing mod bar (on Questlines too) says where Sandbox mode 
 - "Sandbox mode is in, but mods that run code aren't allowed, so it can't run": press
   **Open Settings and repair**, tick **Allow mods that run code**, then apply.
 - "Your fixed looks need Sandbox mode 0.5": a fixed look is **Same look every time**. Your cats go in,
-  but until you have 0.5 the game makes their look up each time. 0.5 isn't out yet
-  ([Which versions are out](companion-mods.md#which-versions-are-out)). When it is,
+  but until you have 0.5 the game makes their look up each time
+  ([Which versions are out](companion-mods.md#which-versions-are-out)). With an older one,
   **Check for newer versions** on the Mods page shows "Newer one out: 0.5", and **Get the latest** brings
   it.
 
@@ -58,7 +58,7 @@ You can:
   with one) or **New look each time**, as the game does with its own cats. With the same look,
   **Fine-tune** sets each part of its shape and the colour [slot](README.md#slot) each colour comes from
   (pattern and markings can wear new ones your palettes add), and **Roll a new look** picks them all
-  again. The same look needs Sandbox mode 0.5, which isn't out yet
+  again. The same look needs Sandbox mode 0.5
   ([Getting Sandbox mode](#getting-sandbox-mode));
 - tick a colour of its own for **Coat**, **Pattern**, **Markings**, **Nose**, **Paw pads**,
   **Inside the ears** or **Whiskers**, over the look's;
@@ -89,7 +89,8 @@ You can't, yet:
   "Bring Mossfoot here" button for each cat that stands beside you.
 - A line under the Editing mod bar that starts "Saved, but it can't go in the game yet" says what to fix.
 - A cat with **Same look every time** that looks different each time means your Sandbox mode is older than
-  0.5, which isn't out yet. The strip says so, and so does the build log after Apply.
+  0.5: press **Get the latest** on its row on the Mods page. The strip says so, and so does the build
+  log after Apply.
 
 ## Common mistakes
 

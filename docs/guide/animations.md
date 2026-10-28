@@ -62,8 +62,8 @@ You can:
   rigged the game's way, and **A file I made in Blender** takes the .glb file you export, up to 60
   seconds long;
 - show your emotes on a wheel too, with the Emote wheel, one of the
-  [mods that go with Clan Mod Studio](companion-mods.md). It has no release yet, and the page says so;
-  once it has a release, the page has an **Add the Emote wheel** button until you have it.
+  [mods that go with Clan Mod Studio](companion-mods.md): the page has an **Add the Emote wheel**
+  button until you have it.
 
 You can't, yet:
 
