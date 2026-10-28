@@ -54,6 +54,7 @@ export class Element {
   appendChild(k) { this.append(k); return k; }
   after(...nodes) { if (!this.parent) return; const i = this.parent.children.indexOf(this); this.parent.children.splice(i + 1, 0, ...nodes); for (const n of nodes) if (typeof n !== "string") n.parent = this.parent; }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this); this.parent = null; this.isConnected = false; }
+  replaceWith(...nodes) { if (!this.parent) return; this.after(...nodes); this.remove(); }
   contains(n) { for (let x = n; x; x = x.parent) if (x === this) return true; return false; }
   // <select>: its <option>s and the chosen value; an <option>: its value attribute or its text.
   get options() { return this.all().filter(c => c.tagName === "OPTION"); }
@@ -136,7 +137,8 @@ export function install() {
   globalThis.removeEventListener = (type, fn) => { windowListeners[type] = (windowListeners[type] || []).filter(f => f !== fn); };
   globalThis.dispatchEvent = evt => { for (const fn of windowListeners[evt.type] || []) fn(evt); return !evt.defaultPrevented; };
   // fetch: a scripted API. routes maps "GET /mods" to a handler(body, headers) whose return is the answer;
-  // a handler may throw {status, error} for an error answer. Every call is noted in `calls`.
+  // a handler may throw {status, error, ...more} for an error answer (more: the answer's other fields, such as
+  // no_release). Every call is noted in `calls`.
   const dom = {
     document, body, byId, routes: {}, calls: [], windowListeners,
     studio: rel => pathToFileURL(path.join(STUDIO, rel)).href,
@@ -152,7 +154,10 @@ export function install() {
       const out = await handler(body, init.headers || {});
       return { ok: true, status: 200, statusText: "OK", headers: new Map(), json: async () => out };
     } catch (e) {
-      if (e && e.status) return { ok: false, status: e.status, statusText: "error", headers: new Map(), json: async () => ({ error: e.error }) };
+      if (e && e.status) {
+        const { status, ...answer } = e;
+        return { ok: false, status, statusText: "error", headers: new Map(), json: async () => answer };
+      }
       throw e;
     }
   };

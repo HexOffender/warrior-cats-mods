@@ -33,7 +33,10 @@ export default {
         const setCode = async on => {
           try {
             settings = await api.patch("/settings", { allow_code_mods: on });
-            toast(on ? "Allowed. Press Apply to game (top right) to put them in." : "Mods that run code are off. Apply to game takes them out of the game.");
+            // Apply to game only says something to a game that has mods in it already.
+            const info = await api.get("/info").catch(() => ({}));
+            toast(on ? (info.installed ? "Allowed. Press Apply to game (top right) to put them in." : "Allowed. Play puts them in the game with your mods.")
+              : info.installed ? "Mods that run code are off. Apply to game takes them out of the game." : "Mods that run code are off.");
             await refresh();
             // The side bar's pages change (the Console, mods' own pages): the shell redraws it, without reloading
             // the page, so what's unsaved on other pages stays.

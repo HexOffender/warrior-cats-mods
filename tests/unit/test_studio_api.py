@@ -90,8 +90,8 @@ def test_settings_change_code_mods_and_refuse_anything_but_true_or_false(studio)
 
 
 def test_changes_name_the_mods_waiting_to_go_in(studio, sandbox):
-    assert get(studio, "changes") == {"installed": False, "on": [], "off": [], "changed": [], "left_out": {}, "redo": [],
-                                      "any": False, "names": {}, "recheck_due": False, "game_running": False}
+    assert get(studio, "changes") == {"installed": False, "on": [], "off": [], "changed": [], "left_out": {}, "still_in": [],
+                                      "redo": [], "any": False, "names": {}, "recheck_due": False, "game_running": False}
     make_mod(studio, "tweaks", {"name": "Tweaks"})
     sandbox.running = True
     r = get(studio, "changes")

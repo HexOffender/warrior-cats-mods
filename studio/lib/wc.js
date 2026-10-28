@@ -34,7 +34,7 @@
 //                  side bar's pages may have changed), "focus" (the window came back).
 //   el, clear, toast, announce, confirmButton, codePanel, copy, color, input, getPath, saveFile, docLink.
 
-import { addonToast } from "./modlist.js";
+import { addonToast, sentence } from "./modlist.js";
 
 // The page's token: from its <meta> at first, then whatever the studio's page says after a restart (reconnect).
 let token = document.querySelector('meta[name="wc-token"]')?.content || "";
@@ -379,7 +379,8 @@ export function crashCard(c, { dismiss = null } = {}) {
 }
 
 // A button that adds one of the mods that go with Clan Mod Studio (wcmods/addons.py) from its latest GitHub
-// release, then says what came of it and tells every page (mods-changed). `name` is said while it works.
+// release, then says what came of it and tells every page (mods-changed). `name` is said while it works. When
+// it turns out to have no release yet, the button gives way to a line saying so, as there's nothing to press.
 export function addonButton(id, { label = "Add it", name = "", cls = "btn small" } = {}) {
   const b = el("button", { class: cls, type: "button", text: label, "data-addon": id });
   b.addEventListener("click", async () => {
@@ -390,7 +391,16 @@ export function addonButton(id, { label = "Add it", name = "", cls = "btn small"
       const [r, settings] = await Promise.all([api.post(`/addons/${encodeURIComponent(id)}`, {}), api.get("/settings").catch(() => ({}))]);
       toast(addonToast(r.result, settings.allow_code_mods));
       bus.emit("mods-changed", { from: "addon" });
-    } catch (e) { toast(e.message, "bad"); }
+    } catch (e) {
+      if (e.data && e.data.no_release) {
+        const who = name ? name.charAt(0).toUpperCase() + name.slice(1) : "It";
+        const said = el("span", { class: "muted", "data-addon": id, text: `${who} has no release yet: the owner of that mod has to publish one first.` });
+        b.replaceWith(said);
+        announce(said.textContent);
+        return;
+      }
+      toast(e.data && e.data.offline ? "No internet connection; try again when you're online." : sentence(e.message), "bad");
+    }
     b.disabled = false;
     b.textContent = label;
   });
