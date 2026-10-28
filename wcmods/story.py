@@ -78,6 +78,9 @@ MAX_LINE, MAX_LINES, MAX_STEPS, MAX_COUNT = 400, 30, 40, 99
 # A fixed look's colour slots: the coat's (the game's 25, which also pick its nose, paws, ears and whiskers) and
 # the pattern's and markings' (any slot: new ones a palette adds too).
 SLOTS = ("fur", "pattern", "marking")
+# A cat's size when npcs.json leaves it out: a grown cat, as the Characters page shows it. The game's own
+# default for a spawned cat is 0.4, a kit's.
+DEFAULT_SIZE = 0.85
 NPC_KEYS = {"id", "name", "title", "colours", "eyes", "size", "look", "slots", "at", "yaw", "level", "lines"}
 QUEST_KEYS = {"id", "title", "description", "giver", "after", "steps", "reward"}
 STEP_KEYS = {"do", "objective", "npc", "lines", "item", "count", "at", "level", "place", "radius"}
@@ -201,6 +204,7 @@ def npcs(raw):
             v = _number(npc, key, where, lo, hi, whole)
             if v is not None:
                 cat[key] = v
+        cat.setdefault("size", DEFAULT_SIZE)
         for key in ("look", "slots"):
             parts = _parts(npc, key, where)
             if parts:

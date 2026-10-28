@@ -34,6 +34,8 @@ def test_cats_and_quests_read_as_the_game_gets_them():
     moss, sparrow = data["npcs"]
     assert moss["colours"] == {"fur": "#7a6a58"} and "yaw" not in moss and moss["lines"] == ["Hello."]
     assert sparrow["at"] == [-60040, -200, 813] and sparrow["yaw"] == 90 and sparrow["lines"] == []
+    # A size left out is a grown cat's, as the Characters page shows it, not the game's kit-sized 0.4.
+    assert moss["size"] == 0.8 and sparrow["size"] == story.DEFAULT_SIZE == 0.85
     first, second = data["quests"]
     assert first["steps"][0]["npc"] == "mossfoot"                       # the giver, when the step names nobody
     assert first["steps"][2] == {"do": "visit", "place": "medicine-cat", "class": "BP_Quest_Giver_Bartering_C", "radius": 400}
