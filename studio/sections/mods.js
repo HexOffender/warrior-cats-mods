@@ -471,6 +471,9 @@ export default {
       const inputs = [];   // [row, input] for the number boxes, checked before a save
       box.append(el("p", { class: "note", text: "The script reads these when the game starts. While you play, change them on its page in the mod menu (Insert)." }));
       if (gameRunning) box.append(el("p", { class: "note warn", text: "The game is running, and read these when it started; a Save on the script's page in the mod menu will write over what you save here." }));
+      for (const key of s.data.twice || []) {
+        box.append(el("p", { class: "note warn", text: `settings.json has "${key}" twice: the last one counts, as the script reads it, and Save settings keeps only that one.` }));
+      }
       scriptSettings.rows(data).forEach((row, i) => {
         const fieldId = `set-${id}-${i}`;
         if (row.kind === "note") { box.append(el("p", { class: "note", text: row.value })); return; }
@@ -479,8 +482,8 @@ export default {
           input = el("input", { type: "checkbox", role: "switch", class: "switch", id: fieldId, checked: row.value });
           input.addEventListener("change", () => change(row.key, input.checked));
         } else if (row.kind === "number") {
-          // A number with a point keeps it in the box too (12.0, not 12).
-          const shown = !row.whole && Number.isInteger(row.value) ? row.value.toFixed(1) : String(row.value);
+          // A number with a point keeps it in the box too (12.0, not 12); one past 2^53 shows as the file has it.
+          const shown = row.text ?? (!row.whole && Number.isInteger(row.value) ? row.value.toFixed(1) : String(row.value));
           input = el("input", { type: "number", id: fieldId, value: shown, step: String(row.step), min: row.min, max: row.max, style: { width: "8rem" } });
           input.addEventListener("input", () => { if (!scriptSettings.problem(row, input.value)) change(row.key, Number(input.value)); });
           inputs.push([row, input]);
@@ -511,7 +514,7 @@ export default {
           delete drafts[id];
           markUnsaved(id, false);
           if (r.problems && r.problems.length) toast(`Saved, but it can't go in the game yet: ${r.problems[0]}`, "bad");
-          else toast(`Saved ${m.name}'s settings. The script reads them when the game starts.`);
+          else toast(`Saved the settings of ${m.name}. The script reads them when the game starts.`);
           await refresh();
         } catch (e) { toast(e.message, "bad"); }
       };

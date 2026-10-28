@@ -105,6 +105,39 @@ def test_a_timers_error_counts_whatever_it_says_and_a_scripts_own_words_dont(stu
     assert tweaks["lines"][1] == "09:14:00  key pressed: F5, every cat healed"
 
 
+def test_two_script_mods_with_one_name_keep_only_what_they_said_as_they_started(studio, game_log):
+    # A copy of Game Tweaks (its own id, the same name) in the game too: a line after they've started carries the
+    # name only, so neither card takes it; each keeps what was said while its own script started, and says why.
+    make_mod(studio, "tweaks-copy", {"name": "Game Tweaks"}, {"scripts/main.lua": "-- copy"})
+    cfg = studio.ctx.cfg
+    cfg.data["installed"]["mods"].append("tweaks-copy")
+    cfg.data["installed_ue4ss"].append("WCModsScript_tweaks_copy")
+    cfg.save()
+    noisy = "[2026-10-28 09:12:04.2523795] Starting Lua mod 'WCModsScript_noisy_script'"
+    game_log(LOG.replace(noisy, "[2026-10-28 09:12:04.2300000] Starting Lua mod 'WCModsScript_tweaks_copy'\n"
+                                "[2026-10-28 09:12:04.2400000] [Lua] [Game Tweaks] can't load: scripts/main.lua:1: "
+                                "unexpected symbol near '-'\n" + noisy))
+    note = "; two script mods are called \"Game Tweaks\", and the log can't tell them apart after they start"
+    r = report(studio)["mods"]
+    tweaks, copy = r["game-tweaks"], r["tweaks-copy"]
+    assert (tweaks["state"], tweaks["said"]) == ("loaded", "Loaded when the game last started" + note)
+    assert tweaks["lines"] == ["09:12:04  loaded"]   # not "healed Fawnstar", which either of them could have said
+    assert copy["state"] == "failed" and copy["errors"] == ["scripts/main.lua:1: unexpected symbol near '-'"]
+    assert copy["said"] == "Didn't load when the game last started: scripts/main.lua:1: unexpected symbol near '-'" + note
+    assert copy["lines"] == ["09:12:04  can't load: scripts/main.lua:1: unexpected symbol near '-'"]
+    # The card, and its More (which asks about one mod), know the other one is there.
+    cards = {m["id"]: m for m in studio.api("GET", ["mods"], {})}
+    assert cards["game-tweaks"]["script_run"]["said"].endswith(note)
+    said = studio.api("GET", ["mods", "game-tweaks", "log"], {})
+    assert said["lines"] == ["09:12:04  loaded"] and said["said"].endswith(note)
+    # A mod of that name the last install left out (and the game didn't start) shares nothing with it.
+    cfg.data["installed_ue4ss"].remove("WCModsScript_tweaks_copy")
+    cfg.save()
+    game_log()
+    tweaks = report(studio)["mods"]["game-tweaks"]
+    assert tweaks["said"] == "Loaded when the game last started" and tweaks["lines"][0] == "09:13:41  healed Fawnstar"
+
+
 def test_ue4ss_boot_dump_is_not_an_error(studio, game_log):
     # ArIsError, bKismetScriptError and UE4SS's own "Error:" line belong to no mod.
     game_log()

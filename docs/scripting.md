@@ -75,15 +75,19 @@ Game.on("combatStart", function(fight) MOD.log("%d enemies", #fight:enemies()) e
 ```
 
 Errors in a script go to `UE4SS.log` with the mod's name: the script's own, and `WCModsGame`'s about it (a
-timer's, a key's, a hook's), once, then once a minute with how many more times it happened. The script keeps
-running, and a broken script doesn't stop the others. The files are loaded by their names in the mod, so an
+timer's, a key's, a hook's), once, then once a minute with how many more times it happened. An error whose
+numbers change each time (`... 3 cats`, `... 4 cats`) counts as one, and each kind of call says at most five
+new errors a minute, then how many more it didn't say. The script keeps running, and a broken script doesn't
+stop the others. The files are loaded by their names in the mod, so an
 error says `scripts/main.lua:12: ...`.
 
 **Where a script's words and errors show:**
 - **In Clan Mod Studio:** before any Apply, the mod's card on the Mods page says what would stop its Lua from
   loading at all (a `function` with no `end`, a string left open, by file and line) and what's wrong with its
   `settings.json`. After the game has run, the card says whether the script loaded when the game last started
-  (or why not), and under More, What it said has its lines, newest first.
+  (or why not), and under More, What it said has its lines, newest first. The log knows a script's lines by
+  its mod's name, so give each mod its own: of two script mods with one name, each card has only what was said
+  as its script started, and says why.
 - **In the game:** a script that didn't start is named at the top of the screen for ten seconds once your cat
   is in the world, and in red on the mod menu's Overview; the mod menu's Log page (Tools) shows the scripts'
   lines, a plain `print` too.
@@ -130,7 +134,7 @@ local Game = require("WCModsGame")   -- a script mod has it as Game already
 | `Game.get(o, "A.B.C", default)` | A property path, or `default` when any step is missing. Numbers index arrays (from 1) |
 | `Game.set(o, "A.B", value)` | Set one; true, or false and why |
 | `Game.call(o, "Function", ...)` | Call a function safely: `true, results...` or `false, error` |
-| `Game.find("Class")`, `Game.findAll("Class")` | One object of a class (kept while it lasts; never one on its way out, like the last level's HUD) or all of them; short class names, e.g. `"WrcRoamingEnemy"` |
+| `Game.find("Class")`, `Game.findAll("Class")` | One object of a class (kept while it lasts; never one on its way out, like the last level's HUD after a load: nil then, for a second, and asked again after) or all of them; short class names, e.g. `"WrcRoamingEnemy"` |
 | `Game.object(path)`, `Game.load(path)` | An object by its path; load an asset, a mod's own too (`/Game/WCMods/<mod>/...`, which UE4SS's `LoadAsset` can't find) |
 | `Game.enumNames(path)` | One of the game's enums by its path (`"/Script/SwtEngine.ECommands"`): `{name = number}` and its names in order, or nil (see *JSON and enums*) |
 | `Game.library(name)` | A function library for static calls: `GameplayStatics`, `KismetSystemLibrary`, `KismetMathLibrary`, `BFLSwtQuest`, `QuestManager`, `SaveManager`, … (`Game.libraries`) |
@@ -482,6 +486,9 @@ request at a time.
   never runs later. One the game took and is still running says so instead.
 - **A line that runs on is stopped** after about a hundred million steps of Lua (a second or so), with the
   error "this line ran too long and was stopped". A call that hangs inside the game's own code isn't counted.
+  The count goes on inside a function UE4SS calls back from its own C++ (`array:ForEach(function ... end)`),
+  so the stop can come out of there, through UE4SS's own code: that hasn't been tried in the game yet, so keep
+  a long loop out of a `ForEach` in a line you try.
 - **Allowing code mods asks for an Apply:** until the bridge is in the game, the studio counts "mods that run
   code are allowed now" as a change to apply, so Play applies first.
 

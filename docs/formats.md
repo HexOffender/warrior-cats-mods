@@ -214,17 +214,26 @@ Known issues:
 ```
 Small changes while you play, ticked on the studio's Tweaks page. Every key is optional, and a missing one is off:
 - `keep_stamina_full`: your cat's stamina topped up twice a second;
-- `heal_key`: a key, `F1` to `F12` but `F10` and `F11` (the game's own) and the mod menu's key, that fills your
-  cat's health and stamina, heard in the game's own input (while the game is in front); `""` for none;
+- `heal_key`: a key from `F1` to `F9` that fills your cat's health and stamina, heard in the game's own input
+  (while the game is in front); `""` for none. `F10` and `F11` are the game's own, and `F12` is Steam's for a
+  screenshot. The Tweaks page doesn't offer a key your mods already have you press: the mod menu's, mouse look's
+  on and off key (`toggle_key`, F6 unless a `mouselook.json` says otherwise), a key a `controls.json` remap puts
+  an action or another key on. A file that has one anyway is warned about at Apply, by what else uses it; on the
+  mod menu's key, the heal is left out (the menu keeps its key);
 - `hold_time` and `time_of_day`: the clock held at that hour (0 to 24, `6.5` is 06:30);
 - `min_fresh_kill`: the camp's fresh-kill pile kept at least this full (0 to 100, the pile's own count);
-- `skip_scenes`: each of the story's scenes skipped as it starts, with the game's own hold-to-skip (as Sandbox
-  mode skips them for its cats).
+- `skip_scenes`: not available yet, and refused with `true` ("it hasn't been checked that skipping keeps the
+  story's steps"): each of the story's scenes skipped as it starts, with the game's own hold-to-skip, as Sandbox
+  mode skips them for its cats. It was only seen working in sandbox games; whether a skipped scene still does
+  what it does at its end (a quest step, a ceremony's rank) is the check it waits for. Even then, a cat Sandbox
+  mode has in the forest is left to Sandbox mode.
 
 Keys starting with `_` are notes. With several mods, each tweak comes from the one with the highest priority that
 sets it. They go in as `WCModsTweaks`, wcmods' own UE4SS script (no mod's code runs, so no "Allow mods that run
 code"), which also adds a Tweaks page to the mod menu: its Save writes the top mod's `tweaks.json`, keeping its
 notes. The script carries the tweaks it was installed with, so a change saved in the game is a change to apply.
+With no tweak on (a `tweaks.json` of `{}`, or every box unticked), nothing goes in the game, and the mod menu has
+no Tweaks page.
 The tweaks are Game Tweaks' (the example script in wcmods-examples), with no code to write.
 
 ### `data.json`
@@ -479,7 +488,10 @@ page, and ignore the bounds.
 The game's Save writes the file again, from what the script has now: the notes first, then the settings in the
 order of their names, two spaces in, an empty list as `[]`, and every number as it was read (`12.0` stays
 `12.0`, `0.1234567` stays `0.1234567`); the page says under the button whether it saved. The studio's Save
-settings keeps the file's own order and writes back what it didn't change as it was. The script reads the file
+settings keeps the file's own order and writes back what it didn't change as it was. A key written twice counts
+as the last one, as the script reads it: the card says so, and its Save writes that one only. A whole number
+past 2^53 (9007199254740991) shows as the file has it and is written back so, but can't be changed on the card
+(the studio's numbers would lose its last digits). The script reads the file
 afresh each time the game starts, so what was saved is there next time, and a change made by hand counts once
 the game starts again: a script already in the game doesn't need an Apply for it, and the studio doesn't count
 it as a change to apply.

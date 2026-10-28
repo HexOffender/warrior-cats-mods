@@ -6,8 +6,11 @@ with WCModsGame), so it needs no "Allow mods that run code":
       "min_fresh_kill": 20, "skip_scenes": false }
 
 Every key is optional, and a missing one is off. The tweaks and what they do are Game Tweaks' (the example script
-in wcmods-examples), and its way of skipping the story's scenes is Sandbox mode's.
+in wcmods-examples), and its way of skipping the story's scenes is Sandbox mode's. Skipping the story's scenes is
+refused for now (UNCHECKED). With no tweak on, nothing goes in the game (sections/tweaks.py).
 """
+import os
+
 from .lua import source as lua_source
 
 UE4SS_MOD_NAME = "WCModsTweaks"
@@ -20,14 +23,25 @@ DEFAULTS = {
     "min_fresh_kill": 0,          # the camp's fresh-kill pile kept at least this full (0 to 100); 0 is off
     "skip_scenes": False,         # each of the story's scenes skipped as it starts, with the game's own skip
 }
-# Keys a heal can go on: F1 to F12, but F10 (the game's own command window opens on it when that's on) and F11
-# (full screen); the mod menu's own key is refused too (validate).
-HEAL_KEYS = tuple(f"F{n}" for n in range(1, 13) if n not in (10, 11))
+# Keys a heal can go on: F1 to F9. F10 opens the game's own command window (when that's on), F11 is full screen,
+# and F12 is Steam's screenshot key. A key something else in the build has you press (the mod menu's, mouse look's
+# on and off key, a remap) isn't offered either, and the build warns about one a file has (sections/tweaks.py).
+HEAL_KEYS = tuple(f"F{n}" for n in range(1, 10))
+# Tweaks refused until someone has checked them in the game, and why. Skipping the story's scenes was only seen
+# working for Sandbox mode's cats: whether the skip still does what a story scene does at its end (a quest step,
+# a ceremony's new rank) hasn't been checked. WCMODS_UNCHECKED_TWEAKS=1, set where an install runs, lets them
+# through for that check (tests/game/test_tweaks.py says how).
+UNCHECKED = {"skip_scenes": "it hasn't been checked that skipping keeps the story's steps"}
 
 
-def validate(raw, menu_key=None):
+def unchecked():
+    """The tweaks refused for now, {key: why}: none with WCMODS_UNCHECKED_TWEAKS=1 (for checking them in the game)."""
+    return {} if os.environ.get("WCMODS_UNCHECKED_TWEAKS") == "1" else dict(UNCHECKED)
+
+
+def validate(raw):
     """Check a tweaks.json and return the tweaks it sets ("_" keys are notes, left out); a ValueError says what's
-    wrong in a sentence. menu_key: the mod menu's key (wcmods.json), which a heal key can't share."""
+    wrong in a sentence. A heal key that another part of the build uses is the build's to warn about."""
     if not isinstance(raw, dict):
         raise ValueError(f'{FILE} should be an object, like {{"keep_stamina_full": true}}')
     out = {}
@@ -40,11 +54,13 @@ def validate(raw, menu_key=None):
         if isinstance(default, bool):
             if not isinstance(value, bool):
                 raise ValueError(f"{FILE}: '{key}' should be true or false")
+            why = unchecked().get(key)
+            if value and why:
+                raise ValueError(f"{FILE}: '{key}' is not available yet: {why}")
         elif key == "heal_key":
             if value != "" and value not in HEAL_KEYS:
-                raise ValueError(f"{FILE}: 'heal_key' should be one of {', '.join(HEAL_KEYS)}, or \"\" for none")
-            if value and value == menu_key:
-                raise ValueError(f"{FILE}: 'heal_key' is {value}, the mod menu's own key: pick another")
+                raise ValueError(f"{FILE}: 'heal_key' should be one of {', '.join(HEAL_KEYS)}, or \"\" for none (F10 and "
+                                 "F11 are the game's own keys, F12 Steam's for a screenshot)")
         else:
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise ValueError(f"{FILE}: '{key}' should be a number")
@@ -68,18 +84,35 @@ def merge(items):
     return settings
 
 
-def heal_keys(menu_key=None):
-    """The keys a heal can go on, without the mod menu's own."""
-    return [k for k in HEAL_KEYS if k != menu_key]
+def active(settings):
+    """The tweaks merged settings turn on, {key: value} ({} when none is, and then nothing goes in the game)."""
+    on = {}
+    if settings["keep_stamina_full"]:
+        on["keep_stamina_full"] = True
+    if settings["heal_key"]:
+        on["heal_key"] = settings["heal_key"]
+    if settings["hold_time"]:
+        on["hold_time"], on["time_of_day"] = True, settings["time_of_day"]
+    if settings["min_fresh_kill"] > 0:
+        on["min_fresh_kill"] = settings["min_fresh_kill"]
+    if settings["skip_scenes"]:
+        on["skip_scenes"] = True
+    return on
 
 
-def script(settings, save=None, menu_key=None):
+def heal_keys(taken=()):
+    """The keys a heal can go on, without those something else has you press (`taken`, keys)."""
+    return [k for k in HEAL_KEYS if k not in taken]
+
+
+def script(settings, save=None, taken=()):
     """The in-game script with the settings in. save: where its page in the mod menu saves them, {"path": the
     top mod's tweaks.json, "file": how to name it to the player, "keep": that file's own notes}, or None.
-    menu_key: the mod menu's key, which its page doesn't offer for the heal."""
+    taken: keys something else has you press, which its page doesn't offer for the heal (but the one it has)."""
     from .sdk import lua_value
+    keys = [k for k in HEAL_KEYS if k not in taken or k == settings["heal_key"]]
     return (LUA.replace("@SETTINGS@", lua_value({k: settings[k] for k in DEFAULTS})).replace("@SAVE@", lua_value(save))
-            .replace("@HEAL_KEYS@", lua_value(heal_keys(menu_key))))
+            .replace("@HEAL_KEYS@", lua_value(keys)))
 
 
 LUA = lua_source("tweaks.lua")

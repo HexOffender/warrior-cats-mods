@@ -3,7 +3,18 @@ heal key, and the mod menu's Tweaks page with its Save. The throwaway mod goes i
 
     python wcmods.py agent install --with tests/game/mods/all-tweaks
 
-The tests skip without it. The story's scenes skip is checked by hand, on a fresh story cat (not a sandbox one)."""
+The tests skip without it.
+
+Skipping the story's scenes is refused (wcmods/tweaks.py, UNCHECKED) until it's checked by hand, on a fresh story
+cat (not a sandbox one, whose scenes Sandbox mode skips itself): set WCMODS_UNCHECKED_TWEAKS=1 where the install
+runs, then
+
+    python wcmods.py agent install --with tests/game/mods/all-tweaks --with tests/game/mods/skip-scenes
+
+start a new story cat, and watch each opening scene skip ("[Tweaks] skipping the story's ..." in the log) and the
+story go on: the first quest step comes, and the apprentice ceremony gives the rank. Then a story step that a later
+scene ends (a ceremony, a quest's last scene) on a saved story cat. If all of that holds, take skip_scenes out of
+UNCHECKED; test_skip_scenes_is_on_for_the_hand_check checks the install is the right one."""
 import os
 import time
 
@@ -47,6 +58,17 @@ def test_heal_key(agent):
     agent.lua("local c = Game.cat() c:setHealth(c:maxHealth() / 2)")
     agent.key("F7")
     agent.wait(lambda: agent.lua("local c = Game.cat() return c:health() >= c:maxHealth() - 0.01"), 3, "F7 to heal")
+
+
+def test_skip_scenes_is_on_for_the_hand_check(agent):
+    """Only with the hand check's install (above): the log says the skip is on, and the mod menu's Tweaks page has
+    its switch. Whether a skipped scene keeps the story's steps is the hand check's to see."""
+    on = [line for line in agent.log_since(0) if "[Tweaks] on:" in line]
+    if not on or "the story's scenes skipped" not in on[-1]:
+        skip("skipping the story's scenes isn't in the game (WCMODS_UNCHECKED_TWEAKS=1, then agent install --with "
+             "tests/game/mods/skip-scenes)")
+    page = agent.menu.open("Tweaks")
+    assert page.find("Skip the story's scenes"), page.text()
 
 
 def test_the_tweaks_page_saves(agent):

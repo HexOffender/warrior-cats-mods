@@ -51,11 +51,21 @@ Game.onFrame(function()
     if max then cat:setStamina(max) end
 end)
 
+-- Whether Sandbox mode has a cat of its own in the forest: it skips that cat's scenes itself, with the same hold,
+-- so the tweak leaves them to it (two holds on one skip haven't been tried). Sandbox mode says so through UE4SS's
+-- shared variables, as its sandbox_api.lua reads them.
+local function sandboxCat()
+    local ok, v = pcall(function() return ModRef:GetSharedVariable("Sandbox.active") end)
+    return ok and v == true
+end
+
 -- The story's scenes: while one plays and the game offers its skip, hold the skip (the game's own hold-to-skip,
--- as Sandbox mode does for its cats).
+-- as Sandbox mode does for its cats). Not offered yet: whether the skip keeps what a scene does at its end (a quest
+-- step, a ceremony's rank) hasn't been checked on a story cat (tweaks.UNCHECKED), so only an install made for that
+-- check turns it on.
 local holding
 Game.every(0.25, function()
-    if not S.skip_scenes and not holding then return end
+    if not holding and (not S.skip_scenes or sandboxCat()) then return end
     local story
     pcall(function()
         local active = Game.get(Game.manager("sequencer"), "ActiveSequences")
@@ -115,7 +125,8 @@ if okMenu then pcall(function()
         S.time_of_day = ui.slider("At", S.time_of_day, 0, 24, { step = 0.25, format = "%.2f h" })
         S.min_fresh_kill = math.floor(ui.slider("Keep the fresh-kill pile at least", S.min_fresh_kill, 0, 100,
                                                 { step = 1, format = "%.0f" }) + 0.5)
-        S.skip_scenes = ui.switch("Skip the story's scenes", S.skip_scenes)
+        -- (Only when the install turned it on: it isn't available yet, tweaks.UNCHECKED.)
+        if installed.skip_scenes then S.skip_scenes = ui.switch("Skip the story's scenes", S.skip_scenes) end
         ui.space(6)
         local hit = ui.buttons(SAVE and { "Save", "Back to installed" } or { "Back to installed" }, { kinds = { "primary" } })
         if hit and SAVE and hit == 1 then

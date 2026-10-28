@@ -13,7 +13,8 @@ export function label(key) {
 // The file's top-level keys in the order it has them, which of its numbers are written with a point or an
 // exponent (12.0, 1.5, 1e3: those stay numbers with a fraction, for the game too, when they're written back), and
 // each value's text as the file has it (a value left as it was is written back the same). JSON.parse keeps none
-// of these (it puts keys that look like whole numbers first, and reads 12.0 as 12).
+// of these (it puts keys that look like whole numbers first, and reads 12.0 as 12). A key written twice is in
+// `keys` twice; its float and its text are the last one's, the value JSON.parse keeps.
 export function scan(text) {
   const keys = [], floats = new Set(), raw = {};
   let depth = 0, i = 0, open = null;   // open: the key whose value is being read, and where it starts
@@ -34,6 +35,7 @@ export function scan(text) {
           k = space(k + 1);
           const m = /^-?\d+(\.\d+)?([eE][+-]?\d+)?/.exec(text.slice(k, k + 40));
           if (m && (m[1] || m[2])) floats.add(key);
+          else floats.delete(key);
           open = { key, start: k };
           i = k;
         }
@@ -48,16 +50,27 @@ export function scan(text) {
   return { keys, floats, raw };
 }
 
-// settings.json's text as { values, order, floats, raw, original }; an Error saying what's wrong when it isn't
-// JSON holding an object. Change `values` (a copy), never `original`.
+// settings.json's text as { values, order, floats, raw, original, twice }; an Error saying what's wrong when it
+// isn't JSON holding an object. Change `values` (a copy), never `original`. A key the file has twice counts as
+// its last one, as JSON.parse and the game read it: `twice` names it, and `order` has it once, where the last one
+// is, so a Save writes it once.
 export function read(text) {
   let values;
   try { values = JSON.parse(text.replace(/^﻿/, "")); } catch (e) { throw new Error(`settings.json isn't valid JSON (${e.message})`); }
   if (!values || typeof values !== "object" || Array.isArray(values)) throw new Error('settings.json should hold an object: {"name": value, ...}');
   const { keys, floats, raw } = scan(text);
-  const order = keys.filter(k => k in values);
+  const order = [], twice = [];
+  for (const k of keys) {
+    if (!Object.hasOwn(values, k)) continue;
+    const at = order.indexOf(k);
+    if (at >= 0) {
+      order.splice(at, 1);
+      if (!twice.includes(k)) twice.push(k);
+    }
+    order.push(k);
+  }
   for (const k of Object.keys(values)) if (!order.includes(k)) order.push(k);
-  return { values: { ...values }, order, floats, raw, original: values };
+  return { values: { ...values }, order, floats, raw, original: values, twice };
 }
 
 const isColour = v => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
@@ -68,8 +81,9 @@ function partOf(key, values) {
 }
 
 // The rows to draw, in the file's order: { key, kind: "switch" | "number" | "colour" | "text" | "note" | "nested",
-// label, value, help, and for a number whole, step, min, max }.
-export function rows({ values, order, floats }) {
+// label, value, help, and for a number whole, step, min, max, and `text`, the file's own, for a whole number
+// past 2^53 (JavaScript's numbers lose its last digits: the box shows the file's, and it can't be changed here).
+export function rows({ values, order, floats, raw = {} }) {
   const out = [];
   for (const key of order) {
     if (partOf(key, values)) continue;
@@ -85,6 +99,7 @@ export function rows({ values, order, floats }) {
       Object.assign(row, { kind: "number", whole, step: whole ? 1 : 0.1 });
       if (typeof values[`_min_${key}`] === "number") row.min = values[`_min_${key}`];
       if (typeof values[`_max_${key}`] === "number") row.max = values[`_max_${key}`];
+      if (Number.isInteger(value) && !Number.isSafeInteger(value) && typeof raw[key] === "string") row.text = raw[key];
     } else if (isColour(value)) row.kind = "colour";
     else if (typeof value === "string") row.kind = "text";
     else row.kind = "nested";
@@ -112,11 +127,16 @@ export function write({ values, order, floats, raw = {}, original = {} }) {
   return parts.length ? `{\n${parts.join(",\n")}\n}\n` : "{}\n";
 }
 
-// What's wrong with a value typed into a row, in words, or null: a number that isn't one, or out of its bounds.
+// What's wrong with a value typed into a row, in words, or null: a number that isn't one, or out of its bounds,
+// or past 2^53 (one the file has that big is fine left as it is).
 export function problem(row, typed) {
   if (row.kind !== "number") return null;
+  if (row.text !== undefined && String(typed).trim() === row.text) return null;
   const n = Number(typed);
   if (typed === "" || !Number.isFinite(n)) return `${row.label} should be a number`;
+  if (Math.abs(n) > Number.MAX_SAFE_INTEGER) {
+    return `${row.label} can't be changed here to a number that big (past ${Number.MAX_SAFE_INTEGER} it loses its last digits): change it in the file itself`;
+  }
   if (row.whole && !Number.isInteger(n)) return `${row.label} should be a whole number`;
   if (row.min !== undefined && n < row.min) return `${row.label} should be at least ${row.min}`;
   if (row.max !== undefined && n > row.max) return `${row.label} should be at most ${row.max}`;
