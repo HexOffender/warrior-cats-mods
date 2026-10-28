@@ -356,18 +356,21 @@ of this. Names are matched by their English text (any case) or ID.
 - **`cats`:** renames cats in your save on install, after a backup. Each key picks a cat: `player`,
   its current name, or its place from `names --cats` (`RiverClan/Warrior/3`), with `"was"` for the
   name it has there (`{ "name": "Mothheart", "was": "Woodheart" }`), so the entry stops counting if
-  another cat takes that place. A cat whose name only a mod that's off gives is also found by that
-  name, or by its current IDs (`STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART`, as an older Names page wrote
-  such a cat). A save holds a game
-  per cat slot you've started; a key means the game you're playing, and a slot first (`1/player`,
-  `1/Blaze`, `1/RiverClan/Warrior/3`) picks a cat in another one. The Names page lists each game's
-  cats under its own heading, the one you're playing first.
+  another cat takes that place. A cat whose name only a mod gives is also found by the name made
+  from its IDs while that mod is off, or by its current IDs (`STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART`,
+  or `STR_CAT_NAME53` for a rogue called Otter, as an older Names page wrote such a cat); never by
+  the prefix's ID alone for a clan cat (`STR_CAT_NAME53` isn't Otterheart). When two entries pick
+  one cat, the last one renames it and the build warns about the other. A save holds a game per cat
+  slot you've started; a key means the game you're playing, and a slot first (`1/player`, `1/Blaze`,
+  `1/RiverClan/Warrior/3`) picks a cat in another one (slot 1 is the Names page's "Your 2nd game").
+  The Names page lists each game's cats under its own heading, the one you're playing first.
   - A plain name that's a prefix + suffix the game can make (new ones included) grows with rank like
     any clan cat's. Any other plain name is used as a fixed name, a rogue name too (Storm on a clan
     cat); only a rogue or loner given a rogue name takes that rogue's own name.
   - `{ "prefix": "Glimmer" }` gives the cat its own prefix that grows with rank: Glimmerkit, then
     Glimmerpaw. One of the game's prefixes (`{ "prefix": "Otter" }`) keeps the cat's suffix; a rogue
-    or loner, who has no suffix, is then called Otter.
+    or loner, who has no suffix, is then called Otter, a text the mod adds (the game has none for a
+    prefix alone), so that rogue needs the mod on like any name of your own.
   - `{ "fixed": "Sparkle" }` never changes.
   - A rename the game would have no text for (a prefix kept with a suffix from a mod that's off) is
     left out, with a warning, and the cat keeps its name.
@@ -384,13 +387,15 @@ of this. Names are matched by their English text (any case) or ID.
   menu's Overview says. Turn the mod back on or check the game folder in Get set up, then Apply
   again, or put the save back from Backups and repair (the Settings and repair page). The Names page
   lists such a cat by its name, says it would show as `<MISSING STRING TABLE ENTRY>`, and offers it a
-  game name. "Take all mods out of the game" says first which cats in your save have names only your
-  mods give.
+  game name; when the mod it's editing is the one that's off, it says so ("This mod is off") for the
+  cats only that mod names. "Take all mods out of the game" says first which cats in your save have
+  names only your mods give.
 
 The build refuses a `names.json` whose values are the wrong kind (a rename to nothing, a weight that
-isn't a number, a name in a list that isn't text), saying where in the file; Save to mod says it under
-the Editing mod bar. Shapes that only do nothing (a `cats` entry with both `name` and `fixed`) are
-warnings instead.
+isn't a number, a name in a list that isn't text, a `names` or `text` entry whose new text is empty or
+not in quotes), saying where in the file; Save to mod says it under the Editing mod bar. Shapes that
+only do nothing are warnings instead: a `cats` entry with both `name` and `fixed` uses the name, and
+says so.
 
 Renames change the English text only. The other languages translate names, and those translations
 stay. Added names and parts appear in every language with their English text. Added parts get IDs

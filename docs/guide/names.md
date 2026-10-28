@@ -62,9 +62,10 @@ on. Keep the mod on, and keep it on when you share the mod with friends.
 
 - **A cat shows as Cat 1** (or as `<MISSING STRING TABLE ENTRY>`). The save has the cat's new name, but
   the game has no words for it, because the mod that named it is off. The page says so on the cat's
-  row ("name from a mod that's off") and in a box above the list. Turn that mod back on and Apply, or
-  press **Give it a game name** on the cat's row (it offers the name the cat had), Save to mod and
-  Apply.
+  row ("name from a mod that's off") and in a box above the list. If the mod you're editing is that
+  mod, the box says "This mod is off": press Save to mod (which turns it on), then Apply. Or turn the
+  mod back on on the Mods page and Apply, or press **Give it a game name** on the cat's row (it offers
+  the name the cat had), Save to mod and Apply.
 - **A typo in a name.** Mothhart isn't Moth + heart, so it becomes a name of its own that never
   changes. The line under the box says which: "Moth + heart: grows with rank", or "Mothhart at every
   rank".

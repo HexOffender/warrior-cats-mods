@@ -30,22 +30,26 @@ const CATS = () => [
   cat("RiverClan/Warrior/1", "Sparkle", "Warrior", { mod_named: true, name_known: false, was: "STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART", before: "Rippleheart" }),
 ];
 
-// The studio behind the page. A cats entry is found by the cat's place or name, as the planner finds it; what the
-// rename works out as is "fixed", or "own-prefix" with "grows with rank", unless the test says (state.how).
+// The studio behind the page. A cats entry is found by the cat's place, name or IDs (c.ids), as the planner finds
+// it, the last of them winning; what the rename works out as is "fixed", or "own-prefix" with "grows with rank",
+// unless the test says (state.how). state.offNamed: the cats only the page's mod names, while it's off.
 function fresh(extra = {}) {
   return { file: null, cats: CATS(), how: {}, notes: [], losing: () => [], previews: [], delays: [], names: null, saveProblem: null, final: FINAL,
-           puts: [], ...extra };
+           puts: [], offNamed: null, ...extra };
 }
 function answer(state, spec) {
   const entries = spec.cats || {};
+  const off = new Set((state.offNamed || []).map(x => x.target));
   const cats = state.cats.map(c => {
-    const key = Object.keys(entries).find(k => k === c.target || (c.name_known && k.toLowerCase() === c.name.toLowerCase()));
-    if (!key) return { ...c };
+    const key = Object.keys(entries).filter(k => k === c.target || (c.name_known && k.toLowerCase() === c.name.toLowerCase())
+      || (c.ids && k === c.ids)).at(-1);
+    if (!key) return { ...c, named_by_off_mod: off.has(c.target) };
     const v = entries[key], { text, grows } = logic.entryText(v);
     const how = state.how[text] || (grows ? "own-prefix" : "fixed");
-    return { ...c, how, with_mods: how === "none" ? c.name : grows ? `${text}paw` : text };
+    return { ...c, how, with_mods: how === "none" ? c.name : grows ? `${text}paw` : text, named_by_off_mod: off.has(c.target) };
   });
   return { ...GAME, final: state.final, cats, current_slot: "0", save_problem: state.saveProblem, renames: [], losing_text: state.losing(spec),
+           mod_off: !!state.offNamed, off_named: state.offNamed || [],
            names_hits: state.hits || {}, warnings: state.notes.map(n => n.text), notes: state.notes, changed_names: state.changedNames || 0,
            changed_texts: state.changedTexts || 0 };
 }
@@ -268,6 +272,41 @@ test("a cat a mod named says so, and Give it a game name offers the name it had"
   assert.deepEqual(p.json().cats["RiverClan/Warrior/1"], { name: "Rippleheart", was: "STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART" });
 });
 
+test("an entry an older page wrote by a cat's IDs is that cat's: its box shows the later one, says the earlier is left out, and typing replaces both", async () => {
+  const cats = CATS();
+  cats[3] = { ...cats[3], name_known: true, was: "Sparkle", ids: "STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART" };   // its mod is on now
+  const said = "Sparkle is renamed twice; only the later rename, to 'Wrenheart', is used";
+  const p = await open(fresh({ cats, file: { cats: { STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART: "Storm", Sparkle: "Wrenheart" } },
+                               notes: [{ where: "cats.STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART", text: said }] }));
+  assert.equal(p.box("Sparkle").value, "Wrenheart", "the box shows the entry the build uses: the last");
+  assert.equal(afterOf(p, "RiverClan/Warrior/1"), "Wrenheart");
+  assert.ok(p.row("RiverClan/Warrior/1").textContent.includes(said), "the row says the earlier one is left out");
+  assert.doesNotMatch(p.q(".names-earlier").textContent, /STR_/, "not an earlier rename of some other cat");
+  await p.type(p.box("Sparkle"), "Mossheart");
+  assert.deepEqual(p.json().cats, { Sparkle: "Mossheart" });
+  // With only the old entry, the box shows it, and typing replaces it.
+  const q = await open(fresh({ cats, file: { cats: { STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART: "Storm" } } }));
+  assert.equal(q.box("Sparkle").value, "Storm");
+  await q.type(q.box("Sparkle"), "Stormy");
+  assert.deepEqual(q.json().cats, { Sparkle: "Stormy" });
+});
+
+test("with the mod being edited off, the cats only it names are said to show as missing text until it's on and applied", async () => {
+  const cats = CATS();
+  cats[3] = { ...cats[3], name_known: true, was: "Sparkle", ids: "STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART" };   // named by this page's file
+  const p = await open(fresh({ cats, offNamed: [{ target: "RiverClan/Warrior/1", name: "Sparkle", key: "STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART" }] }));
+  assert.match(p.row("RiverClan/Warrior/1").textContent, /name from a mod that's off/);
+  const off = p.q(".names-off");
+  assert.equal(off.hidden, false);
+  assert.equal(off.textContent, "This mod is off: this cat shows as <MISSING STRING TABLE ENTRY> until it's on and applied" +
+    "Sparkle. Save to mod turns it on; then press Apply to game.");
+  assert.equal(p.q(".names-losing").hidden, true, "nothing is lost at the next Apply: saving turns the mod on");
+  // With the mod on, the chip says a mod names it, and there's no box.
+  const q = await open(fresh({ cats }));
+  assert.match(q.row("RiverClan/Warrior/1").textContent, /name from a mod(?! that's off)/);
+  assert.equal(q.q(".names-off").hidden, true);
+});
+
 test("after an Apply the cats are read again, even with changes not saved", async () => {
   const p = await open();
   await p.type(p.box("Otterpaw"), "Sparkle");
@@ -322,6 +361,16 @@ test("catKey names a cat by its name only when that's safe, else by its place", 
   assert.equal(logic.entryKeyFor(cats[2], { woodheart: "X" }, count), "woodheart");
   assert.equal(logic.entryKeyFor(cats[3], { "RiverClan/Warrior/1": { name: "X", was: "Y" } }, count), "RiverClan/Warrior/1");
   assert.equal(logic.entryKeyFor(cats[3], { Sparkle: "X" }, count), null, "a name made up from IDs never finds an entry by name");
+  // The IDs an older page wrote for a cat whose name had no text: that cat's, unless another cat has the same IDs.
+  const ids = "STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART";
+  const sparkle = cat("RiverClan/Warrior/1", "Sparkle", "Warrior", { mod_named: true, ids });
+  const both = { [ids]: "Storm", Sparkle: "Wrenheart" };
+  assert.deepEqual(logic.entryKeysFor(sparkle, both, logic.countNames([sparkle])), [ids, "Sparkle"]);
+  assert.equal(logic.entryKeyFor(sparkle, both, logic.countNames([sparkle])), "Sparkle", "the last, which the build uses");
+  assert.equal(logic.entryKeyFor(sparkle, { [ids]: "Storm" }, logic.countNames([sparkle])), ids);
+  const twin = { ...sparkle, target: "RiverClan/Warrior/2", name: "Sparkle" };
+  assert.equal(logic.entryKeyFor(sparkle, { [ids]: "Storm" }, logic.countNames([sparkle, twin])), null);
+  assert.equal(logic.entryKeyFor(cats[2], { STR_CAT_NAME1_HEART: "X" }, count), null, "a cat with a game name has no IDs to go by");
 });
 
 test("catEntry writes a plain name, a prefix, or a place with what the cat is called now", () => {
@@ -387,6 +436,9 @@ test("ranks, story roles and games read as words", () => {
   assert.equal(logic.rankWords("MedicineCat"), "Medicine cat");
   assert.equal(logic.roleWords("TheAgingLeader"), "the aging leader");
   assert.equal(logic.roleWords("ThunderClanDeputy"), "ThunderClan deputy");
+  assert.equal(logic.roleWords("Brightheart"), "Brightheart", "a cameo cat's role is its name, as it's written");
+  assert.equal(logic.whereWords(cat("RiverClan/Warrior/0", "Woodheart", "Warrior", { roles: ["Tallstar", "TheLoner"] })),
+    "RiverClan · Warrior · 0 · story role: Tallstar, the loner");
   assert.deepEqual([1, 2, 3, 4, 11, 12, 13, 21, 22].map(logic.ordinal), ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd"]);
   assert.equal(logic.slotHeading("1", [cat("1/player", "Duskfang", "Warrior", { player: true })]), "Your 2nd game (Duskfang's)");
   assert.equal(logic.whereWords(cat("RiverClan/Leader/0", "Guststar", "Leader", { roles: ["TheAgingLeader"] })),

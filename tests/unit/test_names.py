@@ -139,15 +139,67 @@ def test_a_mod_named_cat_with_its_mod_on_is_listed_by_its_name():
     assert (one["name"], one["mod_named"], one["name_known"], one["was"]) == ("Sparkle", True, True, "Sparkle")
 
 
-@pytest.mark.parametrize("key", ["STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART", "STR_CAT_NAME_WCM_FIXED_SPARKLE", "Sparkle"])
+@pytest.mark.parametrize("key", ["STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART", "Sparkle"])
 def test_id_key_still_finds_the_cat(key):
     """A cats key or "was" an older page wrote as the cat's IDs (its name had no text then), or the name its IDs
     were made from, finds the cat, so a second rename of it reaches the save."""
     sparkle = cat("Warrior", "STR_CAT_NAME_WCM_FIXED_SPARKLE", "_HEART")
-    _, ops, _ = rename({"cats": {key: "Otterheart"}}, save(warriors=[sparkle]))
+    _, ops, listed = rename({"cats": {key: "Otterheart"}}, save(warriors=[sparkle, WARRIOR]))
     assert [o["set"] for o in ops] == [{"PrefixNameId": "STR_CAT_NAME53", "SuffixNameId": "_HEART"}]
     _, ops, _ = rename({"cats": {"RiverClan/Warrior/0": {"name": "Otterheart", "was": key}}}, save(warriors=[sparkle]))
     assert len(ops) == 1
+    # The page finds such an entry by the IDs the list gives a mod-named cat; a cat with a game name has none.
+    assert listed["RiverClan/Warrior/0"]["ids"] == "STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART"
+    assert listed["RiverClan/Warrior/1"]["ids"] == ""
+
+
+def test_a_prefix_id_alone_finds_the_rogue_an_older_page_named_by_it_and_no_clan_cat_with_that_prefix():
+    """An older page wrote {"STR_CAT_NAME53": "Storm"} for a rogue called Otter while its name had no text. That
+    key is the rogue's IDs, not every Otter: Otterheart, Otterpelt and an Otter apprentice (no suffix in its save
+    text) keep their names."""
+    otter = cat("RogueCat", "STR_CAT_NAME53")
+    data = save(warriors=[cat("Warrior", "STR_CAT_NAME53", "_HEART"), cat("Warrior", "STR_CAT_NAME53", "_PELT"),
+                          cat("Apprentice", "STR_CAT_NAME53")], outsiders=[otter])
+    p, ops, listed = rename({"cats": {"STR_CAT_NAME53": "Storm"}}, data)
+    assert [o["path"] for o in ops] == ["0/NPCData/Outsiders/0"] and ops[0]["to"] == "Storm"
+    assert listed["Outsiders/0"]["ids"] == "STR_CAT_NAME53" and listed["RiverClan/Warrior/0"]["ids"] == ""
+    # cats.json's other cats find cats the same way.
+    assert [c["paths"][0] for c in p.cats_called("STR_CAT_NAME53", cats_of(data))] == ["0/NPCData/Outsiders/0"]
+    assert p.cats_called("Otterheart", cats_of(data))[0]["paths"] == ["0/NPCData/RiverClan/Warrior/0"]
+
+
+def test_two_entries_for_one_cat_rename_it_by_the_later_and_say_the_earlier_is_left_out():
+    """An entry an older page wrote by a cat's IDs and one the page writes by its name now: the save gets the
+    later, as the page shows it, even when the later needs nothing (the cat has that name already)."""
+    sparkle = cat("Warrior", "STR_CAT_NAME_WCM_FIXED_SPARKLE", "_HEART")
+    p, ops, listed = rename({"cats": {"STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART": "Otterheart", "Sparkle": "Wrenheart"}},
+                            save(warriors=[sparkle]))
+    assert [(o["path"], o["to"]) for o in ops] == [("0/NPCData/RiverClan/Warrior/0", "Wrenheart")]
+    assert listed["RiverClan/Warrior/0"]["with_mods"] == "Wrenheart" and p.cat_renames == [("Sparkle", "Wrenheart")]
+    assert p.notes == [("cats.STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART",
+                        "Sparkle is renamed twice; only the later rename, to 'Wrenheart', is used")]
+    p, ops, _ = rename({"cats": {"RiverClan/Warrior/0": {"name": "Otterheart", "was": "Woodheart"}, "Woodheart": "Woodheart"}},
+                       save(warriors=[WARRIOR]))
+    assert ops == [] and [w for w, _ in p.notes] == ["cats.RiverClan/Warrior/0"]
+
+
+def test_a_rogue_given_a_game_prefix_has_a_name_only_the_mod_gives():
+    """The text under a rogue's bare prefix ID (STR_CAT_NAME53, Otter) is the mod's, not the game's: with the mod
+    off the cat is listed as named by a mod that's off, and it's among the cats that lose their names, with the
+    game's text or (without it) by its IDs alone."""
+    data = save(outsiders=[cat("RogueCat", "STR_CAT_NAME53")], warriors=[WARRIOR])
+    _, ops, listed = rename({}, data)   # the mod that named it is off
+    rogue = listed["Outsiders/0"]
+    assert (rogue["name"], rogue["mod_named"], rogue["name_known"]) == ("Otter", True, False)
+    assert listed["RiverClan/Warrior/0"]["mod_named"] is False
+    p = plan({})
+    assert names.without_text(cats_of(data), ops, p.final.__contains__, GAME.text) == [("Outsiders/0", "STR_CAT_NAME53")]
+    assert names.without_text(cats_of(data), ops, lambda key: False) == [("Outsiders/0", "STR_CAT_NAME53")]
+    on, ops, listed = rename({"cats": {"Nobody": {"prefix": "Otter"}}}, data)   # the mod is on: its text is there
+    assert names.without_text(cats_of(data), ops, on.final.__contains__, GAME.text) == []
+    assert (listed["Outsiders/0"]["mod_named"], listed["Outsiders/0"]["name_known"]) == (True, True)
+    assert names.mod_given("STR_CAT_NAME53") and not names.mod_given("STR_CAT_NAME53_HEART")
+    assert not names.mod_given("STR_CAT_NAME53_HEART", GAME.text) and names.mod_given("STR_CAT_NAME53", GAME.text)
 
 
 def test_losing_text_finds_the_key_the_game_looks_up():
@@ -202,8 +254,13 @@ LEAF_MISTAKES = [
     ({"banned": {"remove": [7]}}, "names.json: banned.remove should be a list of names in quotes"),
     ({"cats": {"RiverClan/Warrior/0": {"name": "Moth", "was": 3}}},
      "names.json: cats.RiverClan/Warrior/0.was should be the name the cat had, in quotes"),
-    ({"names": {"Rock": ["Pebble"]}}, "names.json: names.Rock should be the new text"),
-    ({"text": {"STR_BOT_NAME_1": {"to": "X"}}}, "names.json: text.STR_BOT_NAME_1 should be the new text"),
+    ({"names": {"Rock": ["Pebble"]}}, "names.json: names.Rock should be the new text, in quotes"),
+    ({"text": {"STR_BOT_NAME_1": {"to": "X"}}}, "names.json: text.STR_BOT_NAME_1 should be the new text, in quotes"),
+    # null would be "None" in the game, a number its digits, and nothing a blank name
+    ({"names": {"Rock": None}}, "names.json: names.Rock should be the new text, not empty"),
+    ({"names": {"Rock": "  "}}, "names.json: names.Rock should be the new text, not empty"),
+    ({"names": {"Rock": 5}}, "names.json: names.Rock should be the new text, in quotes"),
+    ({"text": {"STR_BOT_NAME_1": ""}}, "names.json: text.STR_BOT_NAME_1 should be the new text, not empty"),
 ]
 
 
@@ -240,12 +297,18 @@ def test_validate_accepts_every_documented_shape():
 
 def test_validate_keeps_todays_tolerant_shapes():
     """Shapes that apply today still do: an add that isn't an object (the average part), a weight in quotes,
-    a cats entry with two kinds of name (the first that counts wins), a number as a name's new text."""
+    a cats entry with two kinds of name (the first that counts wins, with a warning, as formats.md says)."""
     p = plan({"prefixes": {"add": {"Sparrow": True}, "weights": {"Otter": {"ThunderClan": "0.07"}}},
-              "cats": {"player": {"name": "Otterheart", "fixed": "Sparkle"}}, "names": {"Rock": 5}})
+              "cats": {"player": {"name": "Otterheart", "fixed": "Sparkle"}}})
     assert any(a["Preffix"] == "Sparrow" for a in p.edits[names.PREFIXES]["+"])
     assert p.edits[names.PREFIXES]["3"]["ThunderClan"] == 0.07
-    assert p.final["STR_CRAFT_MATERIAL_NAME_20"] == "5"
+    assert p.notes == [("cats.player", "The rename of your cat gives a name ('Otterheart') and a fixed name ('Sparkle'); "
+                                       "only the name is used")]
+    _, ops, _ = rename({"cats": {"player": {"name": "Otterheart", "fixed": "Sparkle"}}}, save(player=WARRIOR))
+    assert [o["to"] for o in ops] == ["Otterheart"]
+    three = plan({"cats": {"Woodheart": {"fixed": "Sparkle", "prefix": "Glimmer", "name": "Otterheart"}}})
+    assert three.warnings == ["The rename of Woodheart gives a name ('Otterheart'), a prefix ('Glimmer') and a fixed name "
+                              "('Sparkle'); only the name is used"]
 
 
 def test_warnings_have_rows():
@@ -403,5 +466,12 @@ def test_names_entries_say_what_else_they_rename():
 
 
 def test_describe_target_says_a_cats_key_in_words():
+    """Another game is numbered as the page heads it: slot 1 is "your 2nd game"."""
     assert [names.describe_target(t) for t in ("player", "2/player", "Blaze", "1/Blaze", "RiverClan/Warrior/3")] == [
-        "your cat", "your cat in cat slot 2", "Blaze", "Blaze in cat slot 1", "the cat at RiverClan · Warrior · 3"]
+        "your cat", "your cat in your 3rd game", "Blaze", "Blaze in your 2nd game", "the cat at RiverClan · Warrior · 3"]
+    assert [names.game_words(s) for s in ("0", "10", "11", "20")] == [
+        "your 1st game", "your 11th game", "your 12th game", "your 21st game"]
+    p = plan({"cats": {"1/player": "Otterheart", "1/Nobody": "Otterheart", "1/RiverClan/Warrior/9": "Otterheart"}})
+    p.plan_cats(cats_of(save(player=WARRIOR)))
+    assert p.warnings == ["Your cat isn't in your 2nd game yet", "No cat in your 2nd game is called 'Nobody'",
+                          "There's no cat at RiverClan · Warrior · 9 in your 2nd game"]

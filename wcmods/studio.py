@@ -921,7 +921,10 @@ class Studio:
         ENTRY> if Apply ran now (their names are text a mod gives, and no mod in it gives that text). Each
         warning is also in "notes" with the part of names.json it's about, for the page to put by its row. A cat a
         mod named has "before", the name it had as any mod's file says (for Give it a game name). A save that can't
-        be read leaves the list empty, with save_problem saying why."""
+        be read leaves the list empty, with save_problem saying why.
+
+        With mod_id's mod off ("mod_off"), "off_named" lists the cats whose names only its file gives: they show as
+        <MISSING STRING TABLE ENTRY> until it's on and applied (each such cat has "named_by_off_mod")."""
         game = self.name_tables()
         own = names.Plan(game, names.merge([spec]))
         specs, left_out = self.names_specs(spec, mod_id)
@@ -958,12 +961,26 @@ class Studio:
                  + [n for n in every.notes if n[0].startswith("cats.") and n[0][len("cats."):] in mine])
         shown = {c["target"]: c["name"] for c in listed}
         losing = [{"target": names.target_of(c), "name": shown.get(names.target_of(c), ""), "key": key}
-                  for c, _, key in names.losing_text(cats, ops, every.final.__contains__)]
+                  for c, _, key in names.losing_text(cats, ops, every.final.__contains__, game.text)]
+        # This page's mod is off: the cats whose names only it gives show as <MISSING STRING TABLE ENTRY> now,
+        # though the list names them (its file counts here, as saving turns it on).
+        mod = next((m for m in self.mods() if m.id == mod_id), None) if mod_id is not None else None
+        mod_off, off_named = bool(mod and not mod.enabled), []
+        if mod_off and cats:
+            on = names.Plan(game, names.merge(self.names_specs()[0]))   # the mods that are on, without this one
+            gone = {x["target"] for x in losing}
+            for c, _, key in names.losing_text(cats, (), on.final.__contains__, game.text):
+                if names.target_of(c) not in gone:
+                    off_named.append({"target": names.target_of(c), "name": shown.get(names.target_of(c), ""), "key": key})
+        off = {x["target"] for x in off_named}
+        for c in listed:
+            c["named_by_off_mod"] = c["target"] in off
         return {**game.summary(), "final": {"prefixes": [p["final"] for p in own.prefixes],
                                             "suffixes": [s["final"] for s in own.suffixes],
                                             "rogues": [r["final"] for r in own.rogues]},
                 "cats": listed, "current_slot": slot, "save_problem": problem,
-                "renames": renames, "losing_text": losing, "names_hits": own.names_hits,
+                "renames": renames, "losing_text": losing, "mod_off": mod_off, "off_named": off_named,
+                "names_hits": own.names_hits,
                 "warnings": left_out + [text for _, text in notes],
                 "notes": [{"where": where, "text": text} for where, text in notes],
                 "changed_names": own.changed + len(renames),

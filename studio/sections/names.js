@@ -3,7 +3,7 @@
 // parts with no page in them. What each row will do comes from the studio's preview of the file as it is on the
 // page (POST /names/preview), which names the cats as the next Apply would.
 import {
-  KEEP, readNames, writeNames, splitName, catNames, catKey, countNames, entryKeyFor, entryText, catEntry,
+  KEEP, readNames, writeNames, splitName, catNames, catKey, countNames, entryKeyFor, entryKeysFor, entryText, catEntry,
   canGrow, outcomeLine, gameNameFor, rankWords, slotHeading, whereWords, clansWords, ranksWords, summary, notesAt,
   textOf,
 } from "./names-logic.js";
@@ -22,7 +22,7 @@ export default {
     const filters = { prefixes: "", suffixes: "" };           // what's typed in each card's Find box, kept through Add
     // What's drawn, for updating in place after a preview.
     let rows = new Map();          // a cat's target -> its row: { c, tr, box, grows, growsLabel, line, after, said, mod, key }
-    let earlierBox = null, banner = null, ask = null;
+    let earlierBox = null, banner = null, offBanner = null, ask = null;
     let partRows = { prefixes: [], suffixes: [], rogues: [] };   // [{ x, tr, rename, remove, reset, said }]
     let nameRows = [];   // [{ name, also }]
     let banChips = [];   // [{ b, chip }]
@@ -127,7 +127,7 @@ export default {
       const box = cards.cats;
       rows = new Map();
       drawnProblem = view.save_problem || null;
-      earlierBox = banner = ask = null;
+      earlierBox = banner = offBanner = ask = null;
       nameCount = countNames(cats);
       const intro = el("p", { class: "note", text: `Type a new name. A prefix + suffix the game has (Mothheart) grows with rank, like any clan cat's; any other name stays the same at every rank, unless you tick "grows with rank". Story roles show the cat cast in them.` });
       if (view.save_problem) {
@@ -175,9 +175,10 @@ export default {
       };
       find.addEventListener("input", applyFilter);
       banner = el("div", { class: "banner warn names-losing", role: "status", hidden: true });
+      offBanner = el("div", { class: "banner warn names-off", role: "status", hidden: true });
       ask = el("div", { class: "banner warn", role: "group", "aria-label": "Forget this rename?", hidden: true });
       earlierBox = el("div", { class: "row names-earlier", style: { flexWrap: "wrap" } });
-      clear(box).append(...[el("h2", { text: "Cats in your save" }), intro, banner,
+      clear(box).append(...[el("h2", { text: "Cats in your save" }), intro, banner, offBanner,
         el("div", { class: "row" }, find, count),
         !cats.some(c => c.current) && view.current_slot != null
           ? el("p", { class: "note", text: `The game you're playing has no named cats yet, so "your cat" means no one until it does; the games below are your others.` }) : null,
@@ -216,7 +217,8 @@ export default {
     function write(r) {
       const key = catKey(r.c, nameCount);
       const value = catEntry(r.box.value, r.grows.checked && canGrow(r.c, r.box.value, game, view.final), key, r.c);
-      if (r.key && r.key !== key) delete spec.cats[r.key];
+      // The box replaces every entry for this cat: one an older page wrote by its IDs too, not only the one it showed.
+      for (const k of new Set([r.key, ...entryKeysFor(r.c, spec.cats, nameCount)])) if (k && k !== key) delete spec.cats[k];
       if (value === undefined) delete spec.cats[key]; else spec.cats[key] = value;
       r.key = value === undefined ? null : key;
       changed();
@@ -232,14 +234,16 @@ export default {
         r.name.textContent = c.name;
         r.tr.setAttribute("data-find", `${c.name} ${c.with_mods} ${rankWords(c.role)} ${whereWords(c)}`.toLowerCase());
         const key = r.key || catKey(c, nameCount);
-        const said = notesAt(view, `cats.${key}`);
+        // What the planner says about this cat's entry, then about any other entry for it (renamed twice).
+        const others = entryKeysFor(c, spec.cats, nameCount).filter(k => k !== key);
+        const said = [key, ...others].flatMap(k => notesAt(view, `cats.${k}`));
         r.line.textContent = outcomeLine(c, r.box.value, game, view.final, said[0]);
         r.line.className = `names-line${c.how === "none" ? " names-bad" : " muted"}`;
         clear(r.said).append(...said.filter(t => t !== r.line.textContent).map(t => el("div", { class: "names-note", text: t })));
         showGrows(r);
         clear(r.mod);
         if (c.mod_named) {
-          r.mod.append(el("span", { class: "chip", text: c.name_known ? "name from a mod" : "name from a mod that's off" }), " ",
+          r.mod.append(el("span", { class: "chip", text: c.name_known && !c.named_by_off_mod ? "name from a mod" : "name from a mod that's off" }), " ",
             el("button", { class: "btn link small", type: "button", text: "Give it a game name", "aria-label": `Give ${c.name} a game name`,
               onclick: () => giveGameName(r) }));
         }
@@ -265,6 +269,17 @@ export default {
             })));
         }
       }
+      if (offBanner) {
+        // The mod being edited is off: the cats only it names show as the missing-text line now, though the list
+        // names them (its file counts here, since Save to mod turns it on).
+        const off = view.mod_off ? view.off_named || [] : [];
+        offBanner.hidden = !off.length;
+        clear(offBanner);
+        if (off.length) {
+          offBanner.append(el("strong", { text: `This mod is off: ${off.length === 1 ? "this cat shows" : "these cats show"} as ${MISSING} until it's on and applied` }),
+            el("span", { text: `${off.map(x => x.name || "a cat").join(", ")}. Save to mod turns it on; then press Apply to game.` }));
+        }
+      }
       renderEarlier();
     }
     function giveGameName(r) {
@@ -283,7 +298,8 @@ export default {
     // cat would lose its name for it.
     function renderEarlier() {
       if (!earlierBox) return;
-      const used = new Set([...rows.values()].map(r => r.key).filter(Boolean));
+      // A row's own entries: the one its box shows, and any other for the same cat (its row says it's renamed twice).
+      const used = new Set([...rows.values()].flatMap(r => [r.key, ...entryKeysFor(r.c, spec.cats, nameCount)]).filter(Boolean));
       const keys = Object.keys(spec.cats).filter(k => !used.has(k));
       clear(earlierBox);
       if (!keys.length) return;

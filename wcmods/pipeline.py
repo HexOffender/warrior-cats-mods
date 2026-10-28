@@ -102,19 +102,21 @@ def remove_paks(folder):
 
 
 def names_without_text(cfg, ctx, game):
-    """Build warnings for cats in your save named with a mod's own text (an ID with _WCM_ in it) that this
-    build doesn't give the game, once the sections' CSV edits are in: the mod that named them is off or left
-    out, so the game would show <MISSING STRING TABLE ENTRY>. The game's text is only read when a cat has
-    such a name."""
+    """Build warnings for cats in your save named with a mod's own text (names.mod_given by their IDs: an ID
+    with _WCM_ in it, or one of the game's prefix IDs alone, as a rogue given that prefix has) that this build
+    doesn't give the game, once the sections' CSV edits are in: the mod that named them is off or left out, so
+    the game would show <MISSING STRING TABLE ENTRY>. The game's text is only read when a cat has such a
+    name."""
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     try:
         text = SaveGame.load(sav).json_text if os.path.isfile(sav) else ""
-        if "_WCM_" not in text:
+        cats = names.cats_in_save(SaveDoc(text).data) if "PrefixNameId=" in text else []
+        if not any(names.mod_given(key) for _, _, key in names.named_keys(cats, ctx.save_ops)):
             return []
         path = BuildContext.data_path(names.strings_path("EN"))
         strings = ctx.files[path][0].decode("utf-8") if path in ctx.files else game.read_text(path)
         keys = {r.fields[0] for r in Table(strings).rows if r.fields}
-        missing = names.losing_text(names.cats_in_save(SaveDoc(text).data), ctx.save_ops, keys.__contains__)
+        missing = names.losing_text(cats, ctx.save_ops, keys.__contains__)
     except Exception as e:   # said, so the check isn't skipped unseen
         return [f"couldn't check your cats' names against the game's text ({e})"]
     if not missing:
@@ -143,7 +145,7 @@ def say_cats(cats, most=5):
     words = []
     for c in cats[:most]:
         if c["player"]:
-            mine = "your cat" if c["current"] else f"your cat in cat slot {c['target'].split('/', 1)[0]}"
+            mine = "your cat" if c["current"] else f"your cat in {names.game_words(c['target'].split('/', 1)[0])}"
             words.append(f"{mine} ({c['name']})" if c["name"] else mine)
         else:
             words.append(c["name"] or names.describe_target(c["target"]))
@@ -153,16 +155,19 @@ def say_cats(cats, most=5):
 
 
 def cats_losing_text(cfg, plan=None):
-    """The cats in your save whose names are text only a mod gives (an ID with _WCM_ in it): with every mod
-    taken out of the game they show as <MISSING STRING TABLE ENTRY> (your cat as Cat 1), until the mods go
-    back in or the save does. Your cat first. Needs no game: the game's own texts never have such a key; `plan`
-    (names.Plan, the enabled mods') only names them better. [] with no save, or one that can't be read."""
+    """The cats in your save whose names are text only a mod gives (names.mod_given: an ID with _WCM_ in it, or a
+    key the game's own text doesn't have, such as the prefix ID alone a rogue given one of the game's prefixes
+    has): with every mod taken out of the game they show as <MISSING STRING TABLE ENTRY> (your cat as Cat 1),
+    until the mods go back in or the save does. Your cat first. `plan` (names.Plan, the enabled mods') brings the
+    game's own text to check against and names them better; without it, the IDs alone say. [] with no save, or
+    one that can't be read."""
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     try:
         text = SaveGame.load(sav).json_text if os.path.isfile(sav) else ""
-        if "_WCM_" not in text:
+        if "PrefixNameId=" not in text:
             return []
-        cats = names.losing_text(names.cats_in_save(SaveDoc(text).data), (), lambda key: False)
+        cats = names.losing_text(names.cats_in_save(SaveDoc(text).data), (), lambda key: False,
+                                 plan.game.text if plan is not None else None)
     except (OSError, ValueError, KeyError, TypeError):
         return []
     out = [_losing_cat(c, ids, plan) for c, ids, _ in cats]

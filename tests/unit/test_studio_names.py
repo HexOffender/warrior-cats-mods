@@ -9,11 +9,11 @@ import re
 
 import pytest
 
-from wcmods import guide, pipeline
+from wcmods import guide, names, pipeline
 from wcmods.formats.save import SAV_NAME
 
 from unit_helpers import REPO, make_mod, write_save
-from tiny_names import cat, save, tiny_game
+from tiny_names import cat, save, strings, tiny_game
 
 SPARKLE = cat("Warrior", "STR_CAT_NAME_WCM_FIXED_SPARKLE", "_HEART")   # named Sparkle by a mod
 WOOD = cat("Warrior", "STR_CAT_NAME1", "_HEART")                       # Woodheart, the game's own name
@@ -69,9 +69,27 @@ def test_preview_counts_the_pages_mod_while_it_is_off(names_studio):
     make_mod(names_studio, "mine", {"enabled": False}, files={"names.json": NAMED})
     r = call(names_studio, "POST", "names/preview", {"spec": NAMED, "mod": "mine"})
     assert r["losing_text"] == [] and listed(r)["RiverClan/Warrior/0"]["name_known"] is True
-    # A mod not made yet (My mods before its first save) counts too.
+    # But the cat it named shows as <MISSING STRING TABLE ENTRY> now, while it's off (the commonest Cat 1): said.
+    assert r["mod_off"] is True and r["off_named"] == [
+        {"target": "RiverClan/Warrior/0", "name": "Sparkle", "key": "STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART"}]
+    assert listed(r)["RiverClan/Warrior/0"]["named_by_off_mod"] is True
+    assert listed(r)["RiverClan/Warrior/1"]["named_by_off_mod"] is False
+    # A mod not made yet (My mods before its first save) counts too, and isn't off.
     r = call(names_studio, "POST", "names/preview", {"spec": NAMED, "mod": "my-mods"})
-    assert r["losing_text"] == []
+    assert r["losing_text"] == [] and r["mod_off"] is False and r["off_named"] == []
+
+
+def test_preview_with_the_pages_mod_on_says_nothing_is_off(names_studio):
+    make_mod(names_studio, "mine", files={"names.json": NAMED})
+    r = call(names_studio, "POST", "names/preview", {"spec": NAMED, "mod": "mine"})
+    assert r["mod_off"] is False and r["off_named"] == [] and not listed(r)["RiverClan/Warrior/0"]["named_by_off_mod"]
+
+
+def test_preview_with_the_pages_mod_off_leaves_a_cat_another_mod_names(names_studio):
+    make_mod(names_studio, "mine", {"enabled": False})
+    make_mod(names_studio, "sparkle", files={"names.json": NAMED})
+    r = call(names_studio, "POST", "names/preview", {"spec": {}, "mod": "mine"})
+    assert r["mod_off"] is True and r["off_named"] == [] and r["losing_text"] == []
 
 
 def test_second_rename_of_a_mod_named_cat_reaches_the_save(names_studio):
@@ -151,6 +169,32 @@ def test_cats_losing_text_lists_mod_named_cats_your_cat_first(studio):
     assert [(c["target"], c["name"], c["player"]) for c in losing] == [
         ("player", "Fawnstar", True), ("RiverClan/Warrior/1", "Sparkle", False)]
     assert pipeline.say_cats(losing) == "your cat (Fawnstar) and Sparkle"
+
+
+def test_a_rogue_given_a_game_prefix_is_said_to_lose_its_name(studio):
+    """A rogue renamed Otter has the game's prefix ID alone, whose text only the mod gives: taking the mods out
+    (or a build with that mod off) says so, as for a cat with a _WCM_ name."""
+    rogue = cat("RogueCat", "STR_CAT_NAME53")
+    write_save(studio.ctx.cfg.save_dir, {"acct": save(warriors=[WOOD], outsiders=[rogue])})
+    assert [c["target"] for c in pipeline.cats_losing_text(studio.ctx.cfg)] == ["Outsiders/0"]
+    studio._names = tiny_game()
+    plan = names.Plan(studio._names, names.merge([]))
+    assert [(c["target"], c["name"]) for c in pipeline.cats_losing_text(studio.ctx.cfg, plan)] == [("Outsiders/0", "Otter")]
+
+    class Build:   # what the build's warning reads of a build: the files made so far and the save edits
+        files, save_ops = {}, []
+
+    class Game:
+        def read_text(self, path):
+            return strings("EN")
+
+    warned = pipeline.names_without_text(studio.ctx.cfg, Build(), Game())
+    assert len(warned) == 1 and warned[0].startswith("a cat in your save has a name a mod made") and \
+        "the cat at Outsiders · 0" in warned[0]
+    r = call(studio, "POST", "names/preview", {"spec": {}})
+    assert [x["target"] for x in r["losing_text"]] == ["Outsiders/0"] and listed(r)["Outsiders/0"]["mod_named"] is True
+    r = call(studio, "POST", "names/preview", {"spec": {"cats": {"Nobody": {"prefix": "Otter"}}}, "mod": "mine"})
+    assert r["losing_text"] == []
 
 
 def test_cats_losing_text_without_a_save(studio):
