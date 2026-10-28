@@ -66,7 +66,12 @@ export default {
         el("span", { text: "Colours of its own go onto the cat while you play (they need the script loader), so any colour works, even for paws, ears and nose. The game's colours, scars and shape pick from the game's own, plus new pattern and marking colours your palettes add; they go into your save on Apply, after a backup." })),
       saveLine, target.element, whoCard, lookCard, coloursCard, slotsCard, scarsCard, out.element);
 
-    function changed() { target.markDirty(); out.set(C.toJson(looks, fileExtra, known())); }
+    function changed() {
+      target.markDirty();
+      out.set(C.toJson(looks, fileExtra, known()));
+      // A cat's entry kept as written ("player": "none") says beside it once a look set here takes its place.
+      if (Object.keys(fileExtra).some(k => k === "player" || (k.startsWith("cats.") && !k.startsWith("cats._")))) renderWho();
+    }
 
     // What the page can't change, under the card it belongs to: each kept as written until its Remove.
     function cantChange(entries) {
@@ -76,6 +81,8 @@ export default {
         el("p", { class: "note", text: "They're in the file as written, and Save says whether they keep it out of the game. Remove takes one out." }),
         el("ul", { class: "notes" }, ...entries.map(e => el("li", { class: "row" },
           el("span", { class: "mono", text: `${e.where}: ${JSON.stringify(e.value)}` }),
+          // A cat's entry that isn't a look ("player": "none"): the look set here takes its place at Save.
+          C.lookFor(looks, e.where, known()) ? el("span", { class: "muted", text: "the look set on this page takes its place when you save" }) : null,
           el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove ${e.where}`, onclick: () => { e.remove(); changed(); render(); } })))));
     }
     const rawOf = key => C.cantChange(look()).filter(e => e.where.startsWith(key + "."));
@@ -110,7 +117,11 @@ export default {
         el("div", { class: "row" }, sel),
         el("p", { class: "note", text: mine() ? "Your cat, in the game you're playing. Choose another cat to change its look the same way: it's found by its name (or its place, when two share a name), and only it changes."
           : `${whoName()} is changed by ${/\//.test(who) ? "its place" : "its name"} (${who}). Its colours go on by its name, so a cat with the same name gets them too; a rank-up changes a cat's name: apply again after one to keep its colours on it.` }));
-      const raw = C.cantChange(look(), mine() ? fileExtra : null).filter(e => !/^(colours|slots|scars|look)\./.test(e.where));
+      // Yours lists the file's own keys too; another cat's, its own entry when the file has it as something else.
+      const theirs = !mine() && `cats.${who}` in fileExtra ? { [`cats.${who}`]: fileExtra[`cats.${who}`] } : null;
+      const raw = [...C.cantChange(look(), mine() ? fileExtra : null), ...(theirs ? C.cantChange(C.blank(), theirs) : [])]
+        .filter(e => !/^(colours|slots|scars|look)\./.test(e.where))
+        .map(e => (theirs && e.where in theirs ? { ...e, remove: () => { delete fileExtra[e.where]; } } : e));
       const block = cantChange(raw);
       if (block) whoCard.append(block);
     }

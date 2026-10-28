@@ -123,29 +123,43 @@ export function oneJson(l, known) {
   return o;
 }
 
-// The whole file: every cat's look (by its key; "player" for yours) and the file's own other keys.
+// The whole file: every cat's look (by its key; "player" for yours) and the file's own other keys. A cat's entry that
+// isn't an object ("player": "none", "cats": {"X": null}) is one of those, kept as written (fileExtra "player" or
+// "cats.X") and listed, until the page sets a look for that cat (lookFor()), which then takes its place.
 export function load(obj, known) {
   const src = isObject(obj) ? obj : {};
   const looks = { player: parseOne(src.player, known) }, fileExtra = {};
-  if (isObject(src.cats)) {
-    for (const [t, v] of Object.entries(src.cats)) {
-      if (t.startsWith("_")) fileExtra[`cats.${t}`] = v;
-      else looks[t] = parseOne(v, known);
-    }
-  } else if ("cats" in src) fileExtra.cats = src.cats;
-  for (const [k, v] of Object.entries(src)) if (k !== "player" && k !== "cats" && k !== "_help") fileExtra[k] = v;
+  for (const [k, v] of Object.entries(src)) {   // in the file's order, so the lists follow it
+    if (k === "cats" && isObject(v)) {
+      for (const [t, c] of Object.entries(v)) {
+        if (t.startsWith("_") || !isObject(c)) fileExtra[`cats.${t}`] = c;
+        else looks[t] = parseOne(c, known);
+      }
+    } else if (!(k === "player" && isObject(v)) && !(k === "_help" && ownHelp(v))) fileExtra[k] = v;   // a hand-written _help too
+  }
   return { looks, fileExtra };
 }
 export const HELP = "Written by Clan Mod Studio. See docs/formats.md, cats.json.";
+// A _help this page wrote is written afresh; one written by hand is kept.
+const ownHelp = v => typeof v === "string" && v.startsWith("Written by Clan Mod Studio");
+// Whether the page sets a look of its own for the cat a fileExtra key is about ("player", "cats.X", or "cats" written
+// as something other than a list of cats: any other cat): Save writes the page's in its place.
+export function lookFor(looks, where, known) {
+  const has = t => !!looks[t] && Object.keys(oneJson(looks[t], known)).length > 0;
+  if (where === "cats") return Object.keys(looks).some(t => t !== "player" && has(t));
+  const t = where === "player" ? "player" : where.startsWith("cats.") && !where.startsWith("cats._") ? where.slice(5) : null;
+  return t !== null && has(t);
+}
 export function toJson(looks, fileExtra, known) {
   const player = oneJson(looks.player || blank(), known), cats = {};
   for (const [k, v] of Object.entries(fileExtra)) if (k.startsWith("cats.")) cats[k.slice(5)] = v;
   for (const [t, l] of Object.entries(looks)) {
     if (t === "player") continue;
     const o = oneJson(l, known);
-    if (Object.keys(o).length) cats[t] = o;
+    if (Object.keys(o).length) cats[t] = o;   // over a "cats.X" written as something else
   }
-  const rest = Object.fromEntries(Object.entries(fileExtra).filter(([k]) => !k.startsWith("cats.")));
+  const rest = Object.fromEntries(Object.entries(fileExtra).filter(([k]) => !k.startsWith("cats.")
+    && !((k === "player" || k === "cats") && lookFor(looks, k, known))));
   return { _help: HELP, ...(Object.keys(player).length ? { player } : {}), ...(Object.keys(cats).length ? { cats } : {}), ...rest };
 }
 
