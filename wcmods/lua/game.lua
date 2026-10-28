@@ -1452,6 +1452,7 @@ end
 -- pick up the usual way: Game.items.drop("Gameplay.Inventory.Materials.Moss", 5). Returns the actor.
 -- A mod's herb or material with a model of its own lies there as that model (items.json "model").
 function Game.items.drop(tag, count, where)
+    if type(tag) ~= "string" or tag == "" then return nil, "drop needs an item tag like Gameplay.Inventory.Materials.Moss" end
     count = count or 1
     local look = groundLook(tag)
     local cls = pickupClass(tag:match("%.([%w]+)$") or "SmallHealingHerb", false)
@@ -1651,7 +1652,8 @@ local NPC_LOOK_MAX = { pattern = 20, marking = 20 }
 local NPC_SLOTS = { fur = "FurColorIdx", pattern = "Pattern01ColorIdx", marking = "Pattern02ColorIdx" }
 local NPC_SLOTS_MAX = { fur = 19, pattern = 24, marking = 24 }
 local NPC_MESHES = { "SkeletalMeshComponent", "Fur", "Tail", "Ears" }
-local npcs = {}
+local npcs = {}         -- every cat this script spawned, removed ones too (Game.npcs.all)
+local live = {}         -- the ones not removed, which the keeper and the prompts walk: a removed cat is let go
 local Npc = {}
 Npc.__index = Npc
 local npcWatch          -- the timer that keeps them in the world, started by the first spawn
@@ -1984,7 +1986,7 @@ local function updatePrompt()
     -- The nearest cat in reach that you can see; one out of view only when there's none in view.
     local best, bestX, bestY, bestScore
     if view then
-        for _, n in ipairs(npcs) do
+        for _, n in ipairs(live) do
             if n.promptText and not n.removed then
                 local away = n:valid() and n:distance()
                 if away and away <= (n.reach or REACH) then
@@ -2016,12 +2018,30 @@ local function updatePrompt()
     end
 end
 
+-- Whether any cat still in the world wants a prompt.
+local function anyPrompt()
+    for _, n in ipairs(live) do
+        if n.promptText and not n.removed then return true end
+    end
+    return false
+end
+
+-- Each frame, while there's something to watch: a cat with a prompt, or an onInteract to tell. With
+-- neither, it stops (and its prompt goes); npc:prompt and onInteract start it again. Each different error
+-- is logged once.
+local promptErrors = {}
 function Game.npcs.watchPrompts()
     promptWatch = promptWatch or Game.onFrame(function()
+        if #interactFns == 0 and not anyPrompt() then
+            Game.cancel(promptWatch)
+            promptWatch, prompt.at = nil, nil
+            if valid(prompt.widget) then pcall(function() prompt.widget:SetVisibility(COLLAPSED) end) end
+            return
+        end
         if not Game.player() then return end
         local ok, err = pcall(updatePrompt)
-        if not ok and not prompt.failed then
-            prompt.failed = true
+        if not ok and not promptErrors[tostring(err)] then
+            promptErrors[tostring(err)] = true
             log("npc prompts: %s", tostring(err))
         end
     end)
@@ -2068,13 +2088,18 @@ function Game.npcs.spawn(opts)
         n.paint["IndexIrisColorCurveLeft"] = opts.eyes + 1      -- row 0 of the eye atlas is the eye's white
         n.paint["IndexIrisColorCurveRight"] = opts.eyes + 1
     end
+    if opts.at == nil then log("Game.npcs.spawn: spawned at 0, 0, 0: give it an `at` ({x, y, z})") end
     npcs[#npcs + 1] = n
+    live[#live + 1] = n
     if Game.player() then pcall(spawnNpc, n) end
-    -- Keep every cat in the world, with its colours.
+    -- Keep every cat in the world, with its colours. A removed cat is let go of here, so a script that
+    -- removes and spawns its cats again (every game day, say) doesn't leave the keeper a growing list.
     npcWatch = npcWatch or Game.every(0.5, function()
         if not Game.player() then return end
-        for _, c in ipairs(npcs) do
+        local kept = {}
+        for _, c in ipairs(live) do
             if not c.removed then
+                kept[#kept + 1] = c
                 if alive(c.actor) then
                     pcall(paintNpc, c)
                     if c.labelSpec then showLabel(c) end
@@ -2085,6 +2110,7 @@ function Game.npcs.spawn(opts)
                 end
             end
         end
+        live = kept
     end)
     return n
 end
@@ -2561,8 +2587,11 @@ end
 -- Quests of a mod's own, for the mod menu's Quests page. Each UE4SS mod has a Lua state of its own, so
 -- they go through UE4SS's shared variables: one per quest, and a list of their ids.
 --   Game.quests.report("moonlit-path", { title = "The Moonlit Path", status = "active",
---                                        objective = "Gather moss", progress = "1 / 2" })
--- status: "available", "active" or "done". Report again whenever it changes; nil takes it off the page.
+--                                        objective = "Gather moss", progress = "1 / 2",
+--                                        description = "Moss for the elders' den." })
+-- status: "available", "active" or "done"; description (optional) is a sentence about the quest. Report
+-- again whenever it changes; nil takes it off the page. Each is one line of tab-separated fields: title,
+-- status, objective, progress, by, description (a reader that knows the first five ignores the sixth).
 local QUEST_PREFIX = "WCModsQuests."
 local function shared(name) local ok, v = pcall(function() return ModRef:GetSharedVariable(name) end) return ok and v or nil end
 local function share(name, v) pcall(function() ModRef:SetSharedVariable(name, v) end) end
@@ -2577,9 +2606,10 @@ function Game.quests.report(id, q)
     if q and not have then ids[#ids + 1] = id end
     share(QUEST_PREFIX .. "ids", table.concat(ids, "\n"))
     share(QUEST_PREFIX .. id, q and table.concat({ clean(q.title or id), clean(q.status or "active"), clean(q.objective),
-                                                   clean(q.progress), clean(q.by) }, "\t") or "")
+                                                   clean(q.progress), clean(q.by), clean(q.description) }, "\t") or "")
 end
--- The quests mods have reported: { {id, title, status, objective, progress, by}, ... }.
+-- The quests mods have reported: { {id, title, status, objective, progress, by, description}, ... }
+-- (description "" for a quest reported without one, or by a script from before it was a field).
 function Game.quests.reported()
     local out = {}
     for id in tostring(shared(QUEST_PREFIX .. "ids") or ""):gmatch("[^\n]+") do
@@ -2587,7 +2617,8 @@ function Game.quests.reported()
         local f = {}
         for part in (line .. "\t"):gmatch("([^\t]*)\t") do f[#f + 1] = part end
         if f[1] and f[1] ~= "" then
-            out[#out + 1] = { id = id, title = f[1], status = f[2], objective = f[3], progress = f[4], by = f[5] }
+            out[#out + 1] = { id = id, title = f[1], status = f[2], objective = f[3], progress = f[4], by = f[5],
+                              description = f[6] or "" }
         end
     end
     return out
