@@ -131,6 +131,7 @@ def build(cfg, mods, out_dir, log=print):
     # the report says why, so installing stops until that's sorted (or --force leaves it out).
     unmet = modlib.unmet(mods, left_out)
     enabled = [m for m in mods if m.enabled and m.id not in unmet and m.id not in left_out]
+    titles = {m.id: m.name for m in mods}
     game = GameFiles(cfg)
     sections, skipped = load_sections(cfg, [m for m in mods if m.id not in unmet and m.id not in left_out], log)
     ctx = BuildContext(cfg, game, out_dir, log)
@@ -174,8 +175,9 @@ def build(cfg, mods, out_dir, log=print):
         ctx.end()
 
     for mod_id in skipped:
-        ctx.warnings.append(f"{mod_id}: ships its own section.py (Python code); set \"allow_code_mods\": true "
-                            "in wcmods.json to let it run")
+        ctx.warnings.append(f"{titles.get(mod_id, mod_id)} brings code of its own (section.py), which only runs with mods "
+                            "that run code allowed (Options, on the Settings and repair page; \"allow_code_mods\" in "
+                            "wcmods.json); left out")
 
     csv_changes, csv_failures = ctx.resolve_csv_edits()
     for path, section_ids, error in csv_failures:
@@ -212,7 +214,6 @@ def build(cfg, mods, out_dir, log=print):
     if steam:
         ctx.warnings.append(steam_elsewhere_text(steam, cfg.game_dir))
 
-    titles = {m.id: m.name for m in mods}
     manifest = {"mods": [m.id for m in enabled], "names": titles, "sections": report, "outputs": [], "ue4ss_mods": [],
                 "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
                 "csv_changes": csv_changes, "table_rows": table_changes, "files": sorted(ctx.files),
@@ -510,7 +511,7 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
         if manifest.get("menu"):
             skipped.append("the mod menu")
         if skipped:
-            log(f"  NOTE: {' and '.join(skipped)} need UE4SS, which isn't installed; skipped.")
+            log(f"  NOTE: {' and '.join(skipped)} need the script loader (UE4SS), which isn't installed; skipped.")
 
     if manifest["save_ops"]:
         apply_save_ops(cfg, manifest["save_ops"], backups_root, log)

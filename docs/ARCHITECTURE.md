@@ -14,8 +14,9 @@ A map of the code for anyone changing it. What each part does for a player is in
 | `wcmods/agent/` | The agent controller that drives the running game ([agent.md](agent.md)) |
 | `wcmods/cpp_sdk/` | `WCMods.hpp` and its headers for C++ mods, and the build files `cpp ide` makes |
 | `wcmods/templates/` | What `wcmods new --kind ...` copies |
-| `studio/` | Clan Mod Studio's front end: `index.html`, `app.js` (the shell: side bar, Apply and Play, the log drawer), `lib/wc.js` (the helpers every page uses), `sections/*.js` (one module per page) |
-| *(not in the repository)* | The player's own files: `mods/`, `wcmods.json` and `backups/`, in `%LOCALAPPDATA%\WCMods` (`config.data_dir()`, `WCMODS_DATA` to move it), so `git pull` or a new download never touches them. Older versions kept them here; `userdata.migrate` moves them out on the first start |
+| `studio/` | Clan Mod Studio's front end: `index.html`, `app.js` (the shell: side bar, Apply and Play, the log drawer with the task's progress and a plain summary, Last apply, the help panel, the Restart the studio button, and what the page does when its server is gone), `lib/wc.js` (the helpers every page uses: `modTarget`, the Editing mod bar that keeps unsaved work, among them), `sections/*.js` (one module per page) |
+| `docs/guide/` | The guide inside the studio: one Markdown page per topic, rendered by `wcmods/guide.py` into the help panel (and at `/help/<page>` on its own) |
+| *(not in the repository)* | The player's own files: `mods/`, `wcmods.json` and `backups/`, in `%LOCALAPPDATA%\WCMods` (`config.data_dir()`, `WCMODS_DATA` to move it), so `git pull` or a new download never touches them; beside them `last-apply.log` (what the last Apply or Play logged, the page's Last apply) and `studio.log` (the tracebacks behind the studio's "Something went wrong"), and a damaged `wcmods.json` set aside as `wcmods.json.broken-<stamp>`. Older versions kept them here; `userdata.migrate` moves them out on the first start |
 | `tests/` | `unit/` (pytest, no game), `game/` (in-game, run by `agent test`), `cpp-sdk/` (a C++ test mod), `kraken/` (fixtures for the decoder) |
 | `tools/` | Generators (`make_palettes.py` for wcmods-examples, `make_kraken_fixtures.py`) and `re/`, the reverse-engineering scripts behind [reverse-engineering.md](reverse-engineering.md) |
 | `docs/` | The documentation ([docs/README.md](README.md) lists it) |
@@ -30,7 +31,7 @@ DLL from another game is an optional speed-up a player points `wcmods.json` at.
 
 | Group | Modules | Notes |
 |---|---|---|
-| **The mod manager** | `cli` (the commands), `config` (`wcmods.json`, finding the game and the player's own folder), `userdata` (that folder: moving an old install's files into it, and an old `mods/mod-menu`'s settings into `wcmods.json`), `mods` (mod folders and `mod.json`), `modzip` (adding and packing .zips, what's refused), `pipeline` (build and install), `sdk` (`Section`, `BuildContext`, `lua_value`), `onboarding` (Get set up, Play), `studio` (the local web server behind Clan Mod Studio), `ue4ss` (the script loader), `menusettings` (the mod menu's key, button and size in `wcmods.json`, and the game's console), `menupages` (the Menu pages mod: adding and updating it from its GitHub releases), `cppmods` (building C++ mods), `crashes` (reading the game's crash reports), `luacheck` (a bracket check on generated Lua) | `cli` imports the heavy parts lazily so `status` starts fast |
+| **The mod manager** | `cli` (the commands), `config` (`wcmods.json`, finding the game and the player's own folder), `userdata` (that folder: moving an old install's files into it, and an old `mods/mod-menu`'s settings into `wcmods.json`), `mods` (mod folders and `mod.json`), `modzip` (adding and packing .zips, what's refused), `pipeline` (build and install), `sdk` (`Section`, `BuildContext`, `lua_value`), `onboarding` (Get set up, Play), `studio` (the local web server behind Clan Mod Studio), `ue4ss` (the script loader), `menusettings` (the mod menu's key, button and size in `wcmods.json`, and the game's console), `menupages` (the Menu pages mod: adding and updating it from its GitHub releases), `cppmods` (building C++ mods), `crashes` (reading the game's crash reports), `luacheck` (a bracket check on generated Lua), `guide` (the Markdown renderer behind the studio's help panel) | `cli` imports the heavy parts lazily so `status` starts fast |
 | **`formats/`** | `pak`, `iostore` (the `.utoc`/`.ucas` containers), `kraken` and `oodle` (decompression), `cooked` (cooked packages and DataTables), `csvdata` (format-preserving CSV), `texture`, `skelmesh` (skeletal meshes: accessories and the cat), `anim` (animation sequences and skeletons), `acl` (ACL streams, decoded), `png`, `bcn` (DXT), `save` and `savejson` (the save file and its JSON), `blake3`, `cityhash`, `binio` | Layered: `gamefiles → iostore/pak → oodle → kraken`, `texture → bcn/png/cooked`, `skelmesh → cooked`, `anim → cooked/acl`. Shims at the old top-level names keep `wcmods.csvdata`, `savejson`, `cooked`, `texture`, `png` and `bcn` importable, as SDK.md documents them for mods' `section.py` |
 | **`exe/`** | `pe` (reading the exe), `x64` (decoding its code), `signatures` (finding the hidden members again after a game update; `signatures.json`), `gamebuild` (which build Steam installed, mods made for older ones) | Nothing here runs the game ([updating.md](updating.md)) |
 | **Game content helpers** | `gamefiles` (the reader every section uses), `names`, `palettes`, `eyeatlas`, `colors`, `recolor`, `accessories`, `models` (a mod's own models for accessories: OBJ and glTF, tied to the cat's body), `animations` (a mod's own animations: glTF onto the game's skeletons, start kits), `catcolours` (your cat's colours and scars), `controls`, `keymap` (both remap plans), `mouselook`, `playstate` | Each knows one of the game's tables or files and the mod file that edits it |
@@ -46,7 +47,16 @@ loads the built-in ones and any `section.py` a mod brings, when code mods are al
 `BuildContext`: files for the mod pak, CSV edits merged across mods, patched cooked assets, UE4SS
 scripts and shared modules, save edits. A section that fails is rolled back and reported; the others
 still build. `pipeline.install` then writes the build into the game (`Paks\~mods\zzz_WCMods_*`,
-`ue4ss\Mods\WCMods*`, `ue4ss\Mods\shared\WCMods*`) and records what it installed in `wcmods.json`.
+`ue4ss\Mods\WCMods*`, `ue4ss\Mods\shared\WCMods*`) and records what it installed in `wcmods.json`. When a
+section didn't go right it raises `InstallBlocked` with the facts (section, mod, what went wrong), and
+each surface words the way past them: the command line says `--force`, the studio says Apply the rest
+anyway. The studio runs the same `collect()` on one mod's file when a page saves it (`Studio.check_file`),
+so a mistake is said at save time, under the Editing mod bar, not first at Apply.
+
+While a build or install runs under the studio's lock, what it logs is kept for `GET /api/progress`,
+which the page polls to show the lines as they come; afterwards `last-apply.log` in the player's folder
+keeps them, headed by a plain summary from the manifest (`studio.plain_summary`), for the page's Last
+apply button.
 
 The mod menu is wcmods' own and goes in with every build: `menu.host_script` writes the window's
 script with the build's manifest, its key, button and size (`wcmods.json`, `menusettings`) and its own

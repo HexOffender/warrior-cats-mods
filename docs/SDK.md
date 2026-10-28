@@ -1412,7 +1412,9 @@ affecting the others.
 | `api.get/post/put/patch/del(path)` | The studio API (token handled). Routes are listed below |
 | `el(tag, attrs, ...children)`, `$`, `clear` | Small DOM helpers |
 | `toast(msg, "bad"?)`, `confirmButton(label, armedLabel, fn)` | Feedback, and two-step confirm |
-| `modTarget({file, defaultId, defaultName, onLoad, getValue})` | The "Editing mod: … Save to mod" bar the built-in pages use |
+| `modTarget({file, onLoad, getValue, share})` | The "Editing mod: … Save to mod" bar the built-in pages use. It keeps unsaved work (the browser asks before the page closes, switching mods asks first, `refresh()` re-reads the mod list without reloading the file), and shows under itself what would keep a saved file out of the game (`problems` from the PUT) until a save that's fine. `target.dirty` says whether there's unsaved work |
+| `installedEvent(target, fn)` | `bus.on("installed", fn)` that skips `fn` while `target` has unsaved changes: for a page that reloads its file after an Apply |
+| `openHelp(page)`, `pageHead({eyebrow, title, lede, help})` | The help panel: `openHelp("studio")` opens `docs/guide/studio.md` in it (no page: the guide's index); `pageHead`'s `help: "help:<page>"` puts a "How this works" button in the page's head that does the same |
 | `codePanel(title)` | A copyable JSON preview |
 | `color` | sRGB/linear conversion, HSL, `mood(hex, "vivid"\|"pastel"\|"moonlit"\|"ember")` |
 | `input` | Browser key/mouse/gamepad to Unreal key names, plus Xbox/PlayStation/Switch labels |
@@ -1420,8 +1422,12 @@ affecting the others.
 | `getPath(obj, "a/b/c")` | Read a save path |
 
 API routes: `GET /info`, `GET|POST /mods`, `PATCH /mods/<id>`,
-`GET|PUT|DELETE /mods/<id>/file/<name>` (the built-in files plus the mod's `studio_files`),
-`POST /build`, `/install`, `/uninstall`, `/palettes/apply`, `GET /backups`, `POST /backup`,
+`GET|PUT|DELETE /mods/<id>/file/<name>` (the built-in files plus the mod's `studio_files`; a PUT answers
+with `problems`, what would keep the file out of the game, from the build section that owns it),
+`POST /build`, `/install`, `/uninstall`, `/palettes/apply` (a build that some mods didn't make it
+through answers 409 with `blocked`, the facts behind Apply the rest anyway), `GET /progress` (what the
+task under way has logged so far), `GET /last-apply` (`last-apply.log`), `POST /restart`,
+`GET /help/<page>` (a page of the guide, rendered), `GET /backups`, `POST /backup`,
 `/restore`, `GET|PATCH /ingame` (the game console, cheats at start, the mod menu's key and size),
 `GET /game/bridge` (whether the game runs with the bridge), `POST /game/lua` `{code}` and
 `/game/inspect` `{expr}` (run Lua in the game, or describe an object; code mods only),
@@ -1429,6 +1435,9 @@ API routes: `GET /info`, `GET|POST /mods`, `PATCH /mods/<id>`,
 `/game/bindings`, `/game/data`, `/game/data/<table>`, `/save`.
 
 The server listens on 127.0.0.1 only, and every API call needs the per-run token that the page
-gets when it loads. Other websites therefore can't drive it. The studio runs the wcmods code it
-started with: if wcmods is updated while it's open, it refuses to build or install (and says
-"Restart the studio") until it's opened again.
+gets when it loads. Other websites therefore can't drive it. An error is answered with a sentence
+for the player; the traceback behind an unexpected one goes to the console window and to
+`studio.log` in the player's folder. The studio runs the wcmods code it started with: if wcmods is
+updated while it's open, it refuses to build or install until it's restarted, and the "Restart the
+studio" chip at the top of the page is a button that does that (`POST /restart`: a fresh studio
+starts in its own window, this one stops, and the page reloads once the new one answers).

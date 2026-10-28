@@ -379,7 +379,9 @@ Not a mod file: wcmods' own settings, made on the first run and edited by Clan M
 commands. Every key is optional. It's in your files' folder, `%LOCALAPPDATA%\WCMods`, with `mods\` and
 `backups\` (`WCMODS_DATA` moves the folder; `python wcmods.py status` shows where it is), so updating
 wcmods never touches it. Older versions kept all three in the wcmods folder; the first start after
-updating moves them out (`wcmods/userdata.py`).
+updating moves them out (`wcmods/userdata.py`). A damaged one (not JSON) is set aside as
+`wcmods.json.broken-<date>-<time>` and the settings start afresh: the studio says so at the top of its
+page and the commands print it, and Get set up finds the game again.
 
 | Key | What it is |
 |---|---|
