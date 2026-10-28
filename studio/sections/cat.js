@@ -4,7 +4,7 @@
 // wcmods/catcolours.py); reading and writing it is lib/catlook.js, and the drawn cat lib/cat.js (the Palettes page's).
 import * as C from "../lib/catlook.js";
 import { catSvg, paintCat } from "../lib/cat.js";
-import { eyeRamp, plainRow } from "../lib/palette.js";
+import { eyeRamp, eyeWord, plainRow } from "../lib/palette.js";
 
 const PARTS = [
   { id: "fur", name: "Coat", note: "Replaces the coat colour, whichever of the game's coats it has." },
@@ -57,7 +57,8 @@ export default {
       return hex ? eyeRamp(plainRow(64), { mode: "single", colors: [hex] }) : plainRow(64);
     }
     const rimOf = ramp => color.linearToHex(ramp[ramp.length - 1]);
-    const eyeName = slot => (eyesRes ? eyesRes.labels[slot + 1] : null);
+    // In the Palettes page's words: "Extra eye 1" for the game's "Dlc1", else the game's name.
+    const eyeName = slot => (eyesRes ? eyeWord(eyesRes.labels, slot + 1) : null);
 
     const target = wc.modTarget({
       file: "cats.json",

@@ -110,8 +110,8 @@ export function paintCat(svg, { coat = "#9A8F84", pattern, marking, eyeWhite = "
   svg.querySelector('[data-part="marking"]').setAttribute("fill", marking || coat);
   svg.querySelectorAll('[data-part="sclera"]').forEach(n => n.setAttribute("fill", eyeWhite));
   svg.querySelectorAll('[data-part="lid"], [data-part="mouth"], [data-part="shut"]').forEach(n => n.setAttribute("stroke", outline));
-  // Whiskers in a light tone of the coat (the game takes them from the coat too), unless a colour is given.
-  svg.querySelector('[data-part="whiskers"]').setAttribute("stroke", whiskers || color.shade(coat, 1.6));
+  // Whiskers in the coat's outline colour (the game takes them from the coat too), unless a colour is given.
+  svg.querySelector('[data-part="whiskers"]').setAttribute("stroke", whiskers || outline);
   svg.querySelector('[data-part="nose"]').setAttribute("fill", nose || "var(--nose)");
   svg.querySelectorAll('[data-part="ear"]').forEach(n => n.setAttribute("fill", ears || "var(--ear)"));
   if (rightEye) setIris(svg, "irisL", rightEye);   // the gradients are named by the drawing's side
