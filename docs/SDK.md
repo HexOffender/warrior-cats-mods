@@ -349,8 +349,9 @@ Unreal Engine is needed:
 - **How it's made:** at install, a copy of the accessory's mesh (`SK_DogCollar`) with the model in
   every LOD, under `/Game/WCMods/<mod>/SK_<id>` (`formats/skelmesh.py`, `models.py`). The game's own
   mesh for an accessory is the same for all its looks, so a small script, `WCModsModels`, puts the
-  model on any cat wearing that look, in the forest, in menus and in portraits; it needs the script
-  loader (UE4SS), which Get set up installs. Without it, the look shows on the game's shape.
+  model on any cat wearing that look, in the forest, in menus and in the HUD's portrait (the cat
+  choice's small pictures show the game's shape); it needs the script loader (UE4SS), which Get set
+  up installs. Without it, the look shows on the game's shape.
 - **Limits:** up to 65,535 vertices; the game's accessories have a few hundred to a few thousand.
   Neck, body and paw accessories, as for looks. Models made for one accessory can be used as another
   (a collar shape as a bracelet's look), but they're worn where they're placed.

@@ -2,21 +2,29 @@
 -- Do not edit; edit items.json (or the Items page in Clan Mod Studio) and install again.
 -- The game puts an accessory's own mesh on a cat and the look's picture on it; when the look is one of
 -- these, this puts the look's own mesh in its place (a copy of the accessory's, made at install), and for
--- a see-through one the cats' eye glass in its colour, on every cat that wears it: yours in the forest,
--- the copies in menus and portraits, other cats. It checks twice a second, because the game sets a cat's
--- accessories again whenever it sets the cat up.
+-- a see-through one the cats' eye glass in its colour, on every cat that wears it: yours in the forest and
+-- the HUD's picture of it, the cats in menus, other cats (the cat choice's small pictures keep the game's).
+-- It checks twice a second, because the game sets a cat's accessories again whenever it sets the cat up.
 -- { slot = { accessory = { ["look number"] = { mesh = path, opacity = 0..1, glass = { r, g, b } } } } }
 local MODELS = @MODELS@
 -- The cat's accessory slots: CustomData's Accesory<slot>Id and Accesory<slot>Var, and the slot's mesh.
 local SLOTS = { Neck = "AccSkelNeckComp", Paw = "AccSkelPawComp", Body = "AccSkelBodyComp", Head = "AccSkelHeadComp" }
--- Actors that show a copy of a cat in menus and portraits, whose pictures are taken again after a change.
-local MENU_ACTORS = { "CatCustomActor", "MainMenu", "Customization_Player" }
+-- The menus' pictures of cats are taken by actors every cat they show shares. The cat choice takes each save's
+-- small picture with one, one cat after another, natively, as they load, and shows the cat it's on with another
+-- (its CatRef), live; an actor's picture target can belong to another cat than the one it holds. So out of the
+-- forest a picture actor wears ours only as the cat choice's own cat, and in the forest only the HUD's picture
+-- is taken again.
+local PICTURE_ACTOR = "BP_UI_CatCustomActor_C"
+local CAT_CHOICE = "WBP_GuiScreenSelectYourCat_C"
+local HUD_PICTURE = "RT_UI_Portrait_Exploration"
+local RETAKE_TICKS = 4   -- take the HUD's picture again at most every 2 seconds
 -- The only see-through material the game has made for cats: their eyes' glass. It has no picture.
 local GLASS = "/Game/Art/Characters/CatMaster/Materials/MI_Cat_Cornea.MI_Cat_Cornea"
 
 local function log(fmt, ...) print(string.format("[WCModsModels] " .. fmt .. "\n", ...)) end
 local function valid(o) return o ~= nil and o:IsValid() end
 local function str(v) local ok, s = pcall(function() return v:ToString() end) return ok and s or tostring(v) end
+local function className(o) return o:GetClass():GetFName():ToString() end
 
 local OURS = {}
 for _, byName in pairs(MODELS) do
@@ -49,6 +57,14 @@ local function load(path)
     log("couldn't load %s (%s)", path, ok and "not found" or tostring(obj))
 end
 
+-- A slot's mesh with its model in: while the game sets a cat up (the cat choice loading its cats) a slot can
+-- be without one for a moment, and asking it for a material then crashes the game.
+local function ready(c)
+    if not valid(c) then return false end
+    local ok, asset = pcall(function() return c.SkinnedAsset end)
+    return ok and valid(asset)
+end
+
 local function meshOf(c)
     local ok, m = pcall(function() return c:GetSkeletalMeshAsset() end)
     if ok and valid(m) then return m, str(m:GetFullName()):match("^%S+ (.+)$") end
@@ -63,6 +79,7 @@ end
 -- The look's opacity: every material slot in glass of its colour, or the game's materials back.
 local function setGlass(c, key, look)
     local mine = glassOn[key]
+    if not (look and look.opacity) and not mine then return 0 end
     local first = c:GetMaterial(0)
     local wearing = mine and valid(mine.mid) and valid(first) and first:GetAddress() == mine.mid:GetAddress()
     if look and look.opacity then
@@ -95,18 +112,19 @@ end
 
 -- One cat: each slot whose look has a mesh of its own gets it; a slot that has one of ours on a look
 -- without one gets the game's mesh back (when the game changed the look but not the mesh). Then its glass.
+-- A cat that's off (an actor taking another cat's picture) wears none of ours: they come off.
 local seen = {}   -- the slots looked at this tick, so what's kept for ones that are gone is let go
-local function apply(comp)
+local function apply(comp, off)
     local changed = 0
     local data = comp.CustomData
     for slot, field in pairs(SLOTS) do
         local ok, c = nil, nil
         if MODELS[slot] then ok, c = pcall(function() return comp[field] end) end   -- no mod's look is for it
-        if ok and valid(c) then
-            seen[c:GetAddress()] = true
+        if ok and valid(c) then seen[c:GetAddress()] = true end   -- kept while the cat is being set up
+        if ok and ready(c) then
             local look = nil
             local byName = MODELS[slot]
-            if byName then
+            if byName and not off then
                 local byVar = byName[str(data["Accesory" .. slot .. "Id"])]
                 if byVar then
                     local var = data["Accesory" .. slot .. "Var"]
@@ -124,8 +142,9 @@ local function apply(comp)
                     changed = changed + 1
                 end
             elseif not want and path and OURS[path] then
-                -- The game sets the mesh again on every change of look; this is for when it hasn't. Taken
-                -- off, the slot is hidden and the mesh left as it is.
+                -- The game sets the mesh again on every change of look; this is for when it hasn't (a menu's
+                -- actor moving on to a cat with the same accessory). Taken off, the slot is hidden and the mesh
+                -- left as it is.
                 if valid(original[key]) then
                     setMesh(c, original[key])
                     changed = changed + 1
@@ -138,22 +157,46 @@ local function apply(comp)
     return changed
 end
 
-local function isMenuActor(owner)
-    local cls = owner:GetClass():GetFName():ToString()
-    for _, part in ipairs(MENU_ACTORS) do
-        if cls:find(part, 1, true) then return true end
+-- Whether you're in the forest: the player's pawn is a cat.
+local function inForest(comps)
+    for _, pc in ipairs(FindAllOf("PlayerController") or {}) do
+        if valid(pc) and valid(pc.Player) and valid(pc.Pawn) then
+            local at = pc.Pawn:GetAddress()
+            for _, comp in ipairs(comps) do
+                local ok, owner = pcall(function() return comp:GetOwner() end)
+                if ok and valid(owner) and owner:GetAddress() == at then return true end
+            end
+        end
     end
     return false
 end
 
--- Portraits and thumbnails are pictures the game takes of a copy of the cat: take them again.
-local function retake(owner)
-    for _, field in ipairs({ "CaptureComponent", "CaptureComponentInventory" }) do
-        pcall(function()
-            local cap = owner[field]
-            if valid(cap) then cap:CaptureScene() end
-        end)
+-- The cat choice's own cat (the big one), while that screen shows.
+local function choiceCat()
+    for _, s in ipairs(FindAllOf(CAT_CHOICE) or {}) do
+        if valid(s) and s:IsVisible() then
+            local ok, cat = pcall(function() return s.CatRef end)
+            if ok and valid(cat) then return cat end
+        end
     end
+end
+
+-- The HUD's picture of your cat is taken once, as you reach the forest: take it again once its actor wears
+-- ours. Only that one: another picture actor's target can belong to another cat. A retake that has to wait
+-- out the 2 seconds is due, and taken then.
+local ticks, retaken, due = 0, {}, {}
+local function retakeHud(owner)
+    local cap = owner.CaptureComponent
+    if not valid(cap) then return end
+    local target = cap.TextureTarget
+    if not (valid(target) and target:GetFName():ToString() == HUD_PICTURE) then return end
+    local at = owner:GetAddress()
+    if retaken[at] and ticks - retaken[at] < RETAKE_TICKS then
+        due[at] = true
+        return
+    end
+    retaken[at], due[at] = ticks, nil
+    cap:CaptureScene()
 end
 
 local function forget(t)
@@ -164,16 +207,27 @@ end
 
 local said = false
 local function tick()
+    ticks = ticks + 1
     local total = 0
     seen = {}
-    for _, comp in ipairs(FindAllOf("SwtAdventureCustomizableMeshComponent") or {}) do
+    local comps = FindAllOf("SwtAdventureCustomizableMeshComponent") or {}
+    local forest = inForest(comps)
+    if not forest then retaken, due = {}, {} end
+    local choice = not forest and choiceCat() or nil
+    local choiceAt = choice and choice:GetAddress()
+    for _, comp in ipairs(comps) do
         if valid(comp) then
-            local ok, n = pcall(apply, comp)
-            if ok and n > 0 then
+            local owner = nil
+            pcall(function() owner = comp:GetOwner() end)
+            local picture = valid(owner) and className(owner) == PICTURE_ACTOR
+            -- Out of the forest a picture actor other than the cat choice's own cat is taking another cat's
+            -- picture: it wears none of ours.
+            local off = picture and not forest and owner:GetAddress() ~= choiceAt
+            local ok, n = pcall(apply, comp, off)
+            if ok then
                 total = total + n
-                local okOwner, owner = pcall(function() return comp:GetOwner() end)
-                if okOwner and valid(owner) and isMenuActor(owner) then retake(owner) end
-            elseif not ok then
+                if picture and forest and (n > 0 or due[owner:GetAddress()]) then pcall(retakeHud, owner) end
+            else
                 log("error: %s", tostring(n))
             end
         end
