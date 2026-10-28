@@ -186,6 +186,11 @@ def build(cfg, mods, out_dir, log=print):
         ctx.warnings.append(f"{titles.get(mod_id, mod_id)} brings code of its own (section.py), which only runs with mods "
                             "that run code allowed (Options, on the Settings and repair page; \"allow_code_mods\" in "
                             "wcmods.json); left out")
+    # A mod whose mod.json can't be read counts as off (mods.Mod, Mod.broken), so nothing above mentions it: said
+    # here, for `wcmods build` and install and for the studio's Apply log, rather than left out without a word.
+    for m in mods:
+        if getattr(m, "problem", None):
+            ctx.warnings.append(f"{m.id} is left out: {m.problem}")
 
     csv_changes, csv_failures = ctx.resolve_csv_edits()
     for path, section_ids, error in csv_failures:

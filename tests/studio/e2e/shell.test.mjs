@@ -1,6 +1,7 @@
 // Clan Mod Studio in a real browser: `python wcmods.py studio --no-browser --port 0` on a folder of its own
 // (WCMODS_DATA, with a made-up game folder named in its wcmods.json), driven headless over the DevTools
-// protocol (lib/browser.mjs). Skipped, with a reason, when no Chromium is found: set WC_BROWSER to one.
+// protocol (lib/browser.mjs). Skipped, with a reason, when no Chromium is found: set WC_BROWSER to one, or
+// WC_REQUIRE_BROWSER=1 (as CI does) to fail instead of skipping.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -12,14 +13,21 @@ import { REPO } from "../lib/dom.mjs";
 
 const EXE = "Wrc-Win64-ShippingDRM.exe";   // config.EXE_NAME: what makes a folder the game's
 const browserPath = findBrowser();
-const skip = browserPath ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
+const required = process.env.WC_REQUIRE_BROWSER === "1";
+const skip = browserPath || required ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// A studio started on a free port over `data`; its URL is on the first line it prints.
-async function startStudio(data, env = {}) {
+// A studio started on a free port over the test's folders; its URL is on the first line it prints. The game
+// counts as closed (WCMODS_FAKE_RUNNING=0) unless `env` says otherwise, whether or not the real one is running
+// on this machine; its temp folder (the inbox a dropped mod waits in) is the test's, not the one a studio of
+// the player's would share.
+async function startStudio(folders, env = {}) {
   const python = process.env.PYTHON || "python";
+  const own = { ...process.env, WCMODS_DATA: folders.data, WCMODS_FAKE_RUNNING: "0", TEMP: folders.temp, TMP: folders.temp,
+    TMPDIR: folders.temp, ...env };
+  delete own.WCMODS_GAME_BUILD;   // a build number a developer set to try an update
   const proc = spawn(python, ["-I", "wcmods.py", "studio", "--no-browser", "--port", "0"],
-    { cwd: REPO, env: { ...process.env, WCMODS_DATA: data, ...env }, stdio: ["ignore", "pipe", "pipe"] });
+    { cwd: REPO, env: own, stdio: ["ignore", "pipe", "pipe"] });
   let out = "", err = "";
   proc.stdout.on("data", d => { out += d; });
   proc.stderr.on("data", d => { err += d; });
@@ -40,13 +48,16 @@ async function startStudio(data, env = {}) {
 }
 
 // A folder of the player's own, with wcmods.json naming a game folder (empty: not the game yet) and a saves
-// folder, both made up, so neither Steam's game nor the real save is ever looked at.
+// folder, both made up, so the real game folder and the real save are never used, and a temp folder. Steam
+// is still read (its registry key and library list, read only): once the made-up folder holds the game,
+// Get set up and the Mods page say whether Steam starts another copy, and nothing here depends on the answer.
 function dataFolder() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "wc-e2e-"));
   const game = path.join(root, "Game"), saves = path.join(root, "Saves"), data = path.join(root, "data");
-  for (const d of [game, saves, data]) fs.mkdirSync(d, { recursive: true });
+  const temp = path.join(root, "temp");
+  for (const d of [game, saves, data, temp]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(data, "wcmods.json"), JSON.stringify({ game_dir: game, save_dir: saves }));
-  return { root, game, saves, data };
+  return { root, game, saves, data, temp };
 }
 
 function makeGame(game) {
@@ -60,10 +71,17 @@ let browser, studio, folders;
 
 before(async () => {
   if (skip) return;
+  if (!browserPath) throw new Error("WC_REQUIRE_BROWSER=1, and no Chromium was found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)");
   folders = dataFolder();
   // One after the other, each kept as soon as it's up, so `after` can end whatever started if the other fails.
-  studio = await startStudio(folders.data);
+  studio = await startStudio(folders);
   browser = await launch({ browser: browserPath });
+  // A first load, with time to spare: a cold browser and studio have taken 15 s on CI, and every test's own
+  // waits are 10 s.
+  const page = await browser.page();
+  await page.goto(studio.url, { timeout: 60000 });
+  await page.waitFor("#nav button", 60000);
+  await page.close();
 });
 
 after(async () => {
@@ -89,6 +107,22 @@ test("the studio opens with no console errors, its status chips and its pages", 
     "Animations", "Characters", "Questlines", "Game data", "Save"]);
   assert.equal(await page.evaluate(() => document.querySelector("#nav button[aria-current]").textContent), "Mods");
   assert.equal(await page.text("#playBtn"), "Play");
+  await page.close();
+});
+
+test("the console record counts a page file that fails to load, and not the API saying no", { skip }, async () => {
+  const page = await browser.page();
+  await page.goto(studio.url);
+  await page.waitFor("#nav button");
+  assert.equal(await page.evaluate(() => fetch("/api/info").then(r => r.status)), 403);   // no token: refused
+  await page.evaluate(() => new Promise(ok => {
+    const s = Object.assign(document.createElement("script"), { src: "/studio/not-there.js", onerror: ok, onload: ok });
+    document.head.append(s);
+  }));
+  const missing = () => page.consoleErrors().some(e => /status of 404 .*\/studio\/not-there\.js/.test(e));
+  for (let i = 0; i < 100 && !missing(); i++) await sleep(50);   // the browser's log comes on its own
+  assert.ok(missing(), page.consoleErrors().join("\n"));
+  assert.ok(!page.consoleErrors().some(e => e.includes("/api/info")), page.consoleErrors().join("\n"));
   await page.close();
 });
 
@@ -133,7 +167,7 @@ test("a mod made from a Make page's Editing-mod bar shows on the Mods page", { s
 
 test("Apply and Play wait while the game is running", { skip }, async () => {
   makeGame(folders.game);   // with the game found, only the running game holds Apply back
-  const running = await startStudio(folders.data, { WCMODS_FAKE_RUNNING: "1" });
+  const running = await startStudio(folders, { WCMODS_FAKE_RUNNING: "1" });
   try {
     const page = await browser.page();
     await page.goto(running.url);
@@ -146,7 +180,8 @@ test("Apply and Play wait while the game is running", { skip }, async () => {
   } finally {
     running.stop();
   }
-  // And not otherwise: the first studio, with the same game folder, offers to apply.
+  // And not otherwise: the first studio (the game closed, whatever this machine runs), with the same game
+  // folder, offers to apply.
   const page = await browser.page();
   await page.goto(studio.url);
   await page.waitFor(() => [...document.querySelectorAll("#status .chip")].some(c => c.dataset.said === "Game closed"));
