@@ -1,202 +1,383 @@
-// Controls: rebind keyboard, mouse and controller actions. Writes controls.json in a mod.
-const ACTIONS = [
-  { id: "Player_Movement_Up", name: "Move back", axis: true },
-  { id: "key:W", name: "Move forward", raw: "W" },
-  { id: "Player_Movement_Right", name: "Move left", axis: true },
-  { id: "key:D", name: "Move right", raw: "D" },
-  { id: "Player_Camera_Up", name: "Camera down", axis: true },
-  { id: "key:Up", name: "Camera up", raw: "Up" },
-  { id: "Player_Camera_Right", name: "Camera left", axis: true },
-  { id: "key:Right", name: "Camera right", raw: "Right" },
-  { id: "Player_Pounce", name: "Pounce" },
-  { id: "Player_Interact", name: "Interact" },
-  { id: "Player_Run", name: "Run" },
-  { id: "Player_Crouch", name: "Crouch" },
-  { id: "Player_Scent_Tracking", name: "Scent tracking" },
-  { id: "Player_Drop", name: "Drop" },
-  { id: "Player_Friend_Talk", name: "Talk to friend" },
-  { id: "Player_Den_Place", name: "Place den decoration" },
-  { id: "Player_ReturnToCamp", name: "Return to camp" },
-  { id: "Player_Camera_Reset", name: "Reset camera" },
-  { id: "Player_Pause", name: "Pause menu" },
-];
-// The game's own bindings, from a fresh save. Its axis actions list one direction; the other keys
-// (rows with `raw`) are built in, so their remaps go in controls.json's "keys" section.
-const DEFAULTS = {
-  keyboard: { Player_Movement_Up: "S", Player_Movement_Right: "A", Player_Camera_Up: "Down", Player_Camera_Right: "Left",
-    "key:W": "W", "key:D": "D", "key:Up": "Up", "key:Right": "Right",
-    Player_Pounce: "SpaceBar", Player_Drop: "C", Player_Den_Place: "X", Player_Interact: "E", Player_ReturnToCamp: "X",
-    Player_Friend_Talk: "C", Player_Crouch: "LeftControl", Player_Scent_Tracking: "Q", Player_Camera_Reset: "R",
-    Player_Run: "LeftShift", Player_Pause: "Enter" },
-  gamepad: { Player_Movement_Up: "Gamepad_LeftY", Player_Movement_Right: "Gamepad_LeftX", Player_Camera_Up: "Gamepad_RightY",
-    Player_Camera_Right: "Gamepad_RightX", Player_Pounce: "Gamepad_FaceButton_Top", Player_Drop: "Gamepad_FaceButton_Right",
-    Player_Den_Place: "Gamepad_FaceButton_Top", Player_Interact: "Gamepad_FaceButton_Bottom", Player_ReturnToCamp: "Gamepad_FaceButton_Top",
-    Player_Friend_Talk: "Gamepad_FaceButton_Right", Player_Crouch: "Gamepad_LeftTrigger", Player_Scent_Tracking: "Gamepad_FaceButton_Left",
-    Player_Camera_Reset: "Gamepad_LeftShoulder", Player_Run: "Gamepad_RightShoulder", Player_Pause: "Gamepad_Special_Right" },
-};
-const ALIASES = { a: "Gamepad_FaceButton_Bottom", b: "Gamepad_FaceButton_Right", x: "Gamepad_FaceButton_Left", y: "Gamepad_FaceButton_Top",
-  lb: "Gamepad_LeftShoulder", rb: "Gamepad_RightShoulder", lt: "Gamepad_LeftTrigger", rt: "Gamepad_RightTrigger",
-  ls: "Gamepad_LeftThumbstick", rs: "Gamepad_RightThumbstick", l3: "Gamepad_LeftThumbstick", r3: "Gamepad_RightThumbstick",
-  start: "Gamepad_Special_Right", back: "Gamepad_Special_Left", menu: "Gamepad_Special_Right", view: "Gamepad_Special_Left" };
-const SWAPS = {
-  nintendo: { name: "Nintendo layout", desc: "Swap A/B and X/Y",
-    map: { Gamepad_FaceButton_Bottom: "Gamepad_FaceButton_Right", Gamepad_FaceButton_Right: "Gamepad_FaceButton_Bottom",
-      Gamepad_FaceButton_Left: "Gamepad_FaceButton_Top", Gamepad_FaceButton_Top: "Gamepad_FaceButton_Left" } },
-  shoulders: { name: "Swap bumpers and triggers", desc: "LB↔LT, RB↔RT",
-    map: { Gamepad_LeftShoulder: "Gamepad_LeftTrigger", Gamepad_LeftTrigger: "Gamepad_LeftShoulder",
-      Gamepad_RightShoulder: "Gamepad_RightTrigger", Gamepad_RightTrigger: "Gamepad_RightShoulder" } },
-  sticks: { name: "Swap sticks", desc: "Move with the right stick",
-    map: { Gamepad_LeftX: "Gamepad_RightX", Gamepad_RightX: "Gamepad_LeftX", Gamepad_LeftY: "Gamepad_RightY", Gamepad_RightY: "Gamepad_LeftY" } },
+// Controls: which key, mouse button or controller button does what in the game. Writes controls.json in a mod.
+// What each row shows and writes is studio/lib/controls.js (the model); the game's keys come from the build
+// (GET /game/keys), and what Apply will do with the file, in words, from the build too (POST /controls/check),
+// so the page and Apply can't disagree. Mouse look is its own card, saved straight into the Mouse Look mod.
+import * as M from "../lib/controls.js";
+
+const LAUNCHER = "Play with key remaps.bat";
+const MARKS = {
+  launcher: { cls: "warn", text: `needs ${LAUNCHER}` },
+  cannot: { cls: "bad", text: "won't reach the game" },
+  overridden: { cls: "warn", text: "another mod wins" },
+  untried: { cls: "", text: "not tried in the game yet" },
 };
 
 export default {
   title: "Controls",
   async mount(root, wc) {
-    const { el, docLink, api, clear, toast, input } = wc;
-    let saved = { keyboard: {}, gamepad: {} };
-    let overrides = { keyboard: {}, gamepad: {} };
-    let otherKeys = {};   // "keys" entries that aren't one of the built-in rows: extra keys while playing
-    let menuKeys = {};    // "menus": {"keys": {...}}, used only while a menu is open
+    const { el, api, clear, toast, input } = wc;
     let style = "xbox";
     try { style = localStorage.getItem("wc-pad-style") || "xbox"; } catch (e) { /* storage blocked */ }
+    const L = k => input.keyLabel(k, style);
+
+    let game;
+    try { game = await api.get("/game/keys"); }
+    catch (e) {
+      root.append(el("div", { class: "error-card" }, el("h2", { text: "Controls couldn't load" }), el("p", { text: e.message })));
+      return {};
+    }
+    const names = game.names;
+    const nameOf = action => (names[action] || [null])[0] || `the entry "${action}"`;
+    let state = M.normalize(null, game);
+    let check = null;          // the last /controls/check answer: lines per row, keys in use, other mods
+    let checkFailed = "";
+    let ue4ss = !!game.ue4ss;
 
     const target = wc.modTarget({
       file: "controls.json",
-      onLoad: obj => { overrides = normalize(obj); render(); },
-      getValue: () => toJson(),
+      onLoad: obj => { state = M.normalize(obj, game); render(); recheck(0); },
+      getValue: () => M.toJson(state),
     });
-    const table = el("div", { class: "card" });
+    const lower = () => (check && check.lower) || [];
+    // Every change: unsaved until Save to mod, drawn now, and checked against the build a moment later.
+    const edited = () => { target.markDirty(); render(); recheck(); };
+
+    // ---------- the build's word on the file ----------
+    let timer = null, asked = 0;
+    function recheck(delay = 250) {
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        const n = ++asked;
+        try {
+          const r = await api.post("/controls/check", { mod: target.current || "my-mods", controls: M.toJson(state) });
+          if (n !== asked) return;   // a newer change was checked after this one
+          check = r; checkFailed = ""; ue4ss = !!r.ue4ss;
+        } catch (e) {
+          if (n !== asked) return;
+          checkFailed = e.message;
+        }
+        render();
+      }, delay);
+    }
+
+    // ---------- the page's parts ----------
+    const banner = el("div", { class: "banner", role: "note" });
+    const playCard = el("div", { class: "card", "data-key": "play" });
+    const also = el("div", { class: "card controls-also", "data-key": "also" });
+    const moveFold = el("details", { class: "card fold", "data-key": "moving" });
+    const menuCard = el("div", { class: "card", "data-key": "menus" });
+    const freeFold = el("details", { class: "card fold", "data-key": "free" });
+    const mouse = el("div", { class: "card", "data-key": "mouse" });
+    const makerFold = el("details", { class: "card fold", "data-key": "makers" });
     const out = wc.codePanel("controls.json");
-    const live = el("div", { class: "card" });
-    const extraCard = el("div", { class: "card" });
-    const menuCard = el("div", { class: "card" });
-    const mouse = el("div", { class: "card" });
-
-    try { saved = (await api.get("/game/bindings")).bindings; }
-    catch (e) { root.append(el("div", { class: "banner" }, el("strong", { text: "No save found" }), el("span", { text: e.message }))); }
-
-    const styleSel = el("select", { id: "pad-style", "aria-label": "Controller button names" },
-      el("option", { value: "xbox", text: "Xbox names" }), el("option", { value: "playstation", text: "PlayStation names" }),
-      el("option", { value: "switch", text: "Switch names" }));
+    const styleSel = el("select", { id: "pad-style", "aria-label": "Show controller buttons as" },
+      el("option", { value: "xbox", text: "Xbox" }), el("option", { value: "playstation", text: "PlayStation" }),
+      el("option", { value: "switch", text: "Switch" }));
     styleSel.value = style;
-    styleSel.addEventListener("change", () => { style = styleSel.value; try { localStorage.setItem("wc-pad-style", style); } catch (e) { /* ignore */ } render(); });
-
+    styleSel.addEventListener("change", () => {
+      style = styleSel.value;
+      try { localStorage.setItem("wc-pad-style", style); } catch (e) { /* storage blocked */ }
+      render();
+    });
     root.append(
-      el("div", { class: "section-head" },
-        el("span", { class: "eyebrow", text: "Button remapper" }),
-        el("h1", { text: "Controls" }),
-        el("p", { class: "note", text: "Click Change, then press the key, mouse button, wheel or controller button you want, and save to a mod." })),
-      el("div", { class: "banner" }, el("strong", { text: "Remaps work inside the game." }),
-        el("span", { text: " The game ignores edited bindings, so wcmods moves its actions (Interact, Run, Pounce and the rest) while it runs, with a small script installed with your mods: on keys, mouse buttons and controller buttons, however you start the game. Menu keys too (the \"In menus\" list). Movement and the camera are out of a script's reach: only the old key remapper, which is deprecated, does those (start the game with Play with key remaps.bat). Controller sticks: use Steam Input. More in the README, " }), docLink("README.md#remapping-keys", "Remapping keys"), el("span", { text: "." })),
-      target.element,
-      el("div", { class: "row" },
-        el("span", { class: "eyebrow", text: "Controller presets" }),
-        ...Object.entries(SWAPS).map(([id, s]) => el("button", { class: "chip", title: s.desc, onclick: () => swap(s.map), text: s.name })),
-        el("button", { class: "chip", onclick: () => resetDevice("gamepad"), text: "Controller defaults" }),
-        el("button", { class: "chip", onclick: () => resetDevice("keyboard"), text: "Keyboard defaults" }),
-        el("span", { style: { flex: "1" } }),
-        el("label", { for: "pad-style", class: "lbl", text: "Show buttons as" }), styleSel),
-      mouse, table, extraCard, menuCard, live, out.element);
+      wc.pageHead({ eyebrow: "Keys and buttons", title: "Controls",
+        lede: "Change which key does what. Save to a mod, Apply to game, then play as usual.", help: "help:controls" }),
+      banner, target.element, playCard, also, moveFold, menuCard, freeFold, mouse, makerFold);
 
-    // ---------- model ----------
-    const RAW = Object.fromEntries(ACTIONS.filter(a => a.raw).map(a => [a.raw, a.id]));
-    const padActions = ACTIONS.filter(a => !a.raw);
-    function normalize(obj) {
-      const o = { keyboard: {}, gamepad: {} };
-      for (const dev of ["keyboard", "gamepad"]) {
-        for (const [a, k] of Object.entries((obj && obj[dev]) || {})) {
-          if (a.startsWith("_")) continue;
-          const key = k && typeof k === "object" ? k.key : k;   // {key, ...} from older versions of this page
-          o[dev][a] = dev === "gamepad" ? (ALIASES[String(key).toLowerCase()] || key) : key;
+    // ---------- small parts ----------
+    const keyChip = (k, what) => el("span", { class: "chip key", title: what ? `${what}: ${L(k)}` : L(k) },
+      what ? el("span", { class: "sr-only", text: `${what}: ` }) : null, L(k));
+    const mark = (kind, extra = "") => el("span", { class: `chip mark ${MARKS[kind].cls}` }, el("i", { "aria-hidden": "true" }), MARKS[kind].text + extra);
+    // What the build says about one entry: the line, then its warnings; and the marker for its status.
+    function said(section, name, dev = section) {
+      const row = M.checkRow(check, section, name);
+      if (!row) return { marks: [], lines: [] };
+      const marks = [];
+      if (MARKS[row.status] && row.status !== "untried") marks.push(mark(row.status));
+      if (row.status === "game" && (dev === "gamepad" || M.UNTRIED.includes(row.key))) marks.push(mark("untried"));
+      const lines = [];
+      if (row.line) lines.push(el("p", { class: "said", text: row.line }));
+      for (const n of row.notes) lines.push(el("p", { class: "said warn", text: n.endsWith(".") ? n : n + "." }));
+      return { marks, lines, warn: row.notes.length > 0 || row.status === "cannot" };
+    }
+
+    // ---------- capture: press the key you want ----------
+    // opts: { title, dev ("keyboard" or "gamepad"), where ("play" or "menus") }. onPick(key) gets the key.
+    function capture(opts, onPick) {
+      const pad = opts.dev === "gamepad", where = opts.where || "play";
+      const back = wc.keepPlace();
+      const msg = el("p", { id: "capture-msg", text: pad
+        ? "Press a button on your controller, or pick one below. Escape cancels."
+        : "Press the key you want. Escape cancels; to use Escape, Tab, Enter, Space or Backspace themselves, press its button below." });
+      const why = el("p", { class: "said warn", role: "alert", hidden: true });
+      const padNote = el("p", { class: "muted" });
+      const use = k => el("button", { class: "chip", type: "button", text: L(k), "aria-label": `Use ${L(k)}`, onclick: () => pick(k) });
+      const extra = pad ? input.PAD_BUTTONS
+        : ["Escape", "Tab", "Enter", "SpaceBar", "BackSpace", ...(where === "menus" ? [] : ["MiddleMouseButton", ...M.UNTRIED])];
+      const zone = pad || where === "menus" ? null
+        : el("div", { class: "capture-zone", text: "Or click a mouse button, or turn the wheel, here" });
+      const box = el("div", { class: "card capture", role: "dialog", "aria-modal": "true", "aria-labelledby": "capture-title",
+        "aria-describedby": "capture-msg", tabindex: "-1" },
+        el("h2", { id: "capture-title", text: opts.title }), msg, zone, why, padNote,
+        el("div", { class: "row" }, ...extra.map(use)),
+        el("div", { class: "row" }, el("button", { class: "btn", type: "button", text: "Cancel", onclick: () => finish(null) })));
+      const overlay = el("div", { class: "capture-overlay" }, box);
+      document.body.append(overlay);
+      let raf = 0, done = false;
+      const buttons = () => [...box.querySelectorAll("button")];
+      function move(backwards) {
+        const bs = buttons(), at = bs.indexOf(document.activeElement);
+        bs[at < 0 ? (backwards ? bs.length - 1 : 0) : (at + (backwards ? -1 : 1) + bs.length) % bs.length].focus();
+      }
+      function pick(k) {
+        const no = M.whyNot(k, check && check.in_use, where, L);
+        if (no && no.refuse) { why.hidden = false; why.textContent = no.refuse; wc.announce(no.refuse, "bad"); return; }
+        finish(k, no && no.warn);
+      }
+      const onKey = e => {
+        const onButton = document.activeElement && document.activeElement.tagName === "BUTTON" && box.contains(document.activeElement);
+        const act = M.captureKey(e, onButton, input.keyFromEvent);
+        if (act.do === "press") return;   // the button that has focus does its own job
+        e.preventDefault(); e.stopPropagation();
+        if (act.do === "cancel") return finish(null);
+        if (act.do === "move") return move(act.back);
+        if (pad) return;   // a controller's button is pressed on the controller
+        if (act.do === "unknown") { msg.textContent = "That key isn't one the game knows. Try a letter, a number, an F key or an arrow."; return; }
+        pick(act.key);
+      };
+      zone?.addEventListener("mousedown", e => { e.preventDefault(); if (input.MOUSE[e.button]) pick(input.MOUSE[e.button]); });
+      zone?.addEventListener("contextmenu", e => e.preventDefault());
+      zone?.addEventListener("wheel", e => {
+        e.preventDefault();
+        if (e.deltaY !== 0) pick(e.deltaY < 0 ? "MouseScrollUp" : "MouseScrollDown");   // a sideways wheel: nothing
+      }, { passive: false });
+      window.addEventListener("keydown", onKey, true);
+      if (pad) {
+        let base = null;
+        const poll = () => {
+          if (done) return;
+          let pads = [];
+          try { pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); }
+          catch (e) { padNote.textContent = "This browser window can't read controllers; pick a button above."; return; }
+          padNote.textContent = pads.length ? `Listening to ${pads[0].id.replace(/\s*\(.*\)$/, "")}`
+            : "No controller found yet. Press any button on it once, or pick a button above.";
+          const now = pads.map(p => p.buttons.map(b => b.pressed || b.value > 0.6));
+          if (base === null) base = now;
+          for (let i = 0; i < now.length; i++) {
+            for (let b = 0; b < Math.min(16, now[i].length); b++) if (now[i][b] && !(base[i] && base[i][b])) return pick(input.PAD_BUTTONS[b]);
+          }
+          raf = requestAnimationFrame(poll);
+        };
+        raf = requestAnimationFrame(poll);
+      }
+      box.focus();
+      function finish(k, warning) {
+        if (done) return;
+        done = true;
+        cancelAnimationFrame(raf);
+        window.removeEventListener("keydown", onKey, true);
+        overlay.remove();
+        back();
+        if (k) {
+          onPick(k);
+          if (warning) toast(warning);
         }
       }
-      // "keys" maps a key you press to the game key it stands for.
-      otherKeys = {};
-      for (const [pressed, gameKey] of Object.entries((obj && obj.keys) || {})) {
-        if (pressed.startsWith("_")) continue;
-        // A built-in key's row holds one key; a second key for the same job is kept as it is.
-        if (RAW[gameKey] && !(RAW[gameKey] in o.keyboard)) o.keyboard[RAW[gameKey]] = pressed;
-        else otherKeys[pressed] = gameKey;
-      }
-      menuKeys = {};
-      for (const [pressed, gameKey] of Object.entries((obj && obj.menus && obj.menus.keys) || {})) {
-        if (!pressed.startsWith("_")) menuKeys[pressed] = gameKey;
-      }
-      return o;
-    }
-    const effective = (dev, a) => overrides[dev][a] ?? saved[dev]?.[a] ?? DEFAULTS[dev][a];
-    function setKey(dev, a, key) {
-      if (key === (saved[dev]?.[a] ?? DEFAULTS[dev][a]) && !(a in overrides[dev])) return;
-      overrides[dev][a] = key;
-      target.markDirty();
-      render();
-    }
-    function toJson() {
-      const o = { _help: "Written by Clan Mod Studio. Keys are Unreal key names. \"keys\" maps a key you press to the game key it stands for." };
-      const keyboard = {}, keys = { ...otherKeys };
-      for (const [a, k] of Object.entries(overrides.keyboard)) {
-        const raw = ACTIONS.find(x => x.id === a)?.raw;
-        if (!raw) keyboard[a] = k;
-        else if (k !== raw) keys[k] = raw;
-      }
-      if (Object.keys(keyboard).length) o.keyboard = keyboard;
-      if (Object.keys(overrides.gamepad).length) o.gamepad = { ...overrides.gamepad };
-      if (Object.keys(keys).length) o.keys = keys;
-      if (Object.keys(menuKeys).length) o.menus = { keys: { ...menuKeys } };
-      return o;
-    }
-    function swap(map) {
-      for (const { id } of padActions) { const k = effective("gamepad", id); if (map[k]) overrides.gamepad[id] = map[k]; }
-      target.markDirty(); render();
-    }
-    function resetDevice(dev) {
-      for (const { id } of dev === "gamepad" ? padActions : ACTIONS) overrides[dev][id] = DEFAULTS[dev][id];
-      target.markDirty(); render();
-    }
-    function conflicts(dev) {
-      const rows = dev === "gamepad" ? padActions : ACTIONS;
-      const byKey = {};
-      for (const { id } of rows) (byKey[effective(dev, id)] ||= []).push(id);
-      const designed = {};
-      for (const { id } of rows) (designed[DEFAULTS[dev][id]] ||= []).push(id);
-      const out = {};
-      for (const [k, ids] of Object.entries(byKey)) {
-        if (ids.length < 2) continue;
-        const byGame = (designed[k] || []).length === ids.length && ids.every(i => designed[k].includes(i));
-        for (const i of ids) out[i] = { others: ids.filter(x => x !== i), byGame };
-      }
-      return out;
     }
 
-    // ---------- view ----------
-    const nameOf = id => ACTIONS.find(a => a.id === id)?.name || id;
-    function cell(dev, action) {
-      if (dev === "gamepad" && action.raw) return el("span", { class: "muted", text: "same stick as the row above" });
-      const key = effective(dev, action.id);
-      const gameKey = saved[dev]?.[action.id] ?? DEFAULTS[dev][action.id];
-      const changed = action.id in overrides[dev] && overrides[dev][action.id] !== gameKey;
-      const conflict = conflicts(dev)[action.id];
-      const cap = el("span", { class: "chip", style: { fontWeight: "700", fontSize: "0.95rem" }, title: key },
-        el("span", { class: "sr-only", text: `${action.name}, ${dev === "gamepad" ? "controller" : "keyboard"}: ` }), input.keyLabel(key, style));
-      const box = el("div", { style: { display: "grid", gap: "4px" } },
-        el("div", { class: "row" }, cap,
-          changed ? el("span", { class: "chip warn", title: `The game's key: ${input.keyLabel(gameKey, style)}` }, el("i", { "aria-hidden": "true" }), "changed",
-            el("span", { class: "sr-only", text: ` from ${input.keyLabel(gameKey, style)}` })) : null,
-          el("button", { class: "btn small", text: "Change", "aria-label": `Change ${dev} binding for ${action.name}`, onclick: () => capture(dev, action) }),
-          key !== DEFAULTS[dev][action.id] ? el("button", { class: "btn ghost small", text: "Default", title: `Game default: ${input.keyLabel(DEFAULTS[dev][action.id], style)}`,
-            "aria-label": `${action.name}: back to the game's default, ${input.keyLabel(DEFAULTS[dev][action.id], style)}`, onclick: () => setKey(dev, action.id, DEFAULTS[dev][action.id]) }) : null,
-          action.id in overrides[dev] ? el("button", { class: "btn ghost small", text: "Undo", "aria-label": `Undo the ${dev === "gamepad" ? "controller" : "keyboard"} change to ${action.name}`,
-            onclick: () => { delete overrides[dev][action.id]; target.markDirty(); render(); } }) : null));
-      if (conflict) {
-        box.append(el("span", { class: conflict.byGame ? "muted" : "", style: { fontSize: "0.82rem", color: conflict.byGame ? "" : "var(--changed)" },
-          text: conflict.byGame ? `Shared with ${conflict.others.map(nameOf).join(", ")} by the game (used in different places)` : `Also bound to ${conflict.others.map(nameOf).join(", ")}` }));
+    // ---------- keys while you play ----------
+    function playCell(dev, action) {
+      const name = nameOf(action);
+      const gk = M.gameKey(game, dev, action);
+      const devName = dev === "gamepad" ? "controller" : "keyboard";
+      if (!gk) return el("td", { class: "cell" }, el("span", { class: "muted", text: "No controller button for this in the game" }));
+      const key = M.effective(state, game, dev, action);
+      const isChanged = M.changed(state, game, dev, action);
+      const s = action in state[dev] ? said(dev, action) : { marks: [], lines: [] };
+      // Still on the game's key, but another change took that key: the build's sentence says so here.
+      const lost = check && check.lost && check.lost[dev] && check.lost[dev][action];
+      if (lost) { s.lines.push(el("p", { class: "said warn", text: lost })); s.warn = true; }
+      const top = el("div", { class: "row" }, keyChip(key, `${name}, ${devName}`),
+        isChanged ? el("span", { class: "chip warn was-key", title: `The game's key: ${L(gk)}` }, el("i", { "aria-hidden": "true" }), `was ${L(gk)}`) : null,
+        ...s.marks,
+        el("button", { class: "btn small", type: "button", text: "Change", "aria-label": `Change the ${devName} key for ${name}`,
+          onclick: () => capture({ title: `${name}: ${dev === "gamepad" ? "controller button" : "key or mouse button"}`, dev },
+            k => { if (M.set(state, game, dev, action, k, lower())) edited(); }) }),
+        action in state[dev] ? el("button", { class: "btn ghost small", type: "button", text: "Undo",
+          "aria-label": `Undo the ${devName} change to ${name}, back to ${L(gk)}`,
+          onclick: () => { M.undo(state, game, dev, action, lower()); edited(); } }) : null);
+      const td = el("td", { class: `cell${s.warn ? " warned" : isChanged ? " edited" : ""}` }, top, ...s.lines);
+      if (dev === "keyboard") td.append(seconds("keys", gk, name, "while you explore"));
+      return td;
+    }
+    // Second keys for a row: each "also on" with its line and a Remove, and Add another key.
+    function seconds(section, gk, name, when) {
+      const box = el("div", { class: "seconds" });
+      for (const p of M.secondKeys(state, section, gk)) {
+        const s = said(section, p, "keyboard");
+        box.append(el("div", { class: "row" }, el("span", { class: "muted", text: "also on" }), keyChip(p, `${name}, also`), ...s.marks,
+          el("button", { class: "btn ghost small", type: "button", text: "Remove", "aria-label": `Remove ${L(p)}, the second key for ${name}`,
+            onclick: () => { M.remove(state, section, p); edited(); } })), ...s.lines);
       }
-      if (dev === "keyboard" && action.kbNote) box.append(el("span", { class: "muted", style: { fontSize: "0.8rem" }, text: action.kbNote }));
+      box.append(el("button", { class: "btn ghost small", type: "button", text: "Add another key", "aria-label": `Add another key for ${name}`,
+        onclick: () => capture({ title: `${name}: another key (${when})`, dev: "keyboard", where: section === "menus" ? "menus" : "play" },
+          k => { if (M.addSecond(state, section, gk, k)) edited(); }) }));
       return box;
     }
+    function renderPlay() {
+      const resetBtn = dev => wc.confirmButton(`Back to the game's keys`, `Press again to put every ${dev === "gamepad" ? "button" : "key"} back`,
+        () => { M.resetDevice(state, game, dev, lower()); edited(); toast(dev === "gamepad" ? "The controller's buttons are the game's again" : "The keys are the game's again"); },
+        "btn ghost small");
+      const kbReset = resetBtn("keyboard"), padReset = resetBtn("gamepad");
+      kbReset.setAttribute("aria-label", "Back to the game's keys for the keyboard and mouse");
+      padReset.setAttribute("aria-label", "Back to the game's buttons for the controller");
+      clear(playCard).append(
+        el("div", { class: "row spread" }, el("h2", { text: "Keys while you play" }),
+          el("label", { class: "row lbl", for: "pad-style" }, "Show controller buttons as", styleSel)),
+        el("div", { class: "table-wrap", style: { maxHeight: "none" } },
+          el("table", { class: "grid-table controls-table" },
+            el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Action" }),
+              el("th", { scope: "col" }, el("div", { class: "row spread" }, "Keyboard and mouse", kbReset)),
+              el("th", { scope: "col" }, el("div", { class: "row spread" }, "Controller", padReset)))),
+            el("tbody", {}, ...M.PLAY_ROWS.map(a => el("tr", { "data-key": `row:${a}` },
+              el("th", { scope: "row" }, el("strong", { text: nameOf(a) })), playCell("keyboard", a), playCell("gamepad", a)))))),
+        el("div", { class: "row" }, el("span", { class: "lbl", text: "Controller presets" }),
+          ...Object.values(M.SWAPS).map(sw => el("button", { class: "chip", type: "button", title: sw.desc, text: sw.name,
+            onclick: () => { if (M.swap(state, game, sw.map, lower())) edited(); } })),
+          mark("untried")),
+        el("p", { class: "note", text: "A second key does what the game's key does while you explore, and nothing in menus. " +
+          "Controller buttons, Mouse 4, Mouse 5 and the wheel haven't been tried in the game yet." }));
+    }
+
+    // ---------- what the build says that no row shows ----------
+    function renderAlso() {
+      const lines = [...((check && check.others) || []), ...((check && check.lines) || [])];
+      clear(also);
+      also.hidden = !lines.length && !checkFailed;
+      if (checkFailed) also.append(el("p", { class: "said warn", text: `What Apply would do couldn't be worked out: ${checkFailed}` }));
+      if (lines.length) also.append(el("h3", { text: "Also in this build" }), el("ul", { class: "notes" }, ...lines.map(t => el("li", { text: t }))));
+    }
+
+    // ---------- moving and the camera ----------
+    function moveKey(k, i) {
+      const sub = k.raw ? `key:${k.raw}` : k.action;
+      const name = nameOf(sub);
+      const gk = k.raw || M.gameKey(game, "keyboard", k.action);
+      const now = k.raw ? M.rawKey(state, k.raw) : M.effective(state, game, "keyboard", k.action);
+      const s = k.raw ? (M.rowPair(state, k.raw) ? said("keys", M.rowPair(state, k.raw)) : { marks: [], lines: [] })
+        : (k.action in state.keyboard ? said("keyboard", k.action) : { marks: [], lines: [] });
+      const pickIt = key => { if (k.raw ? M.setRaw(state, k.raw, key) : M.set(state, game, "keyboard", k.action, key, lower())) edited(); };
+      return el("div", { class: "move-key" },
+        el("div", { class: "row" }, el("span", { class: "lbl", text: name }), keyChip(now, name),
+          now !== gk ? el("span", { class: "chip warn was-key" }, el("i", { "aria-hidden": "true" }), `was ${L(gk)}`) : null,
+          now !== gk && !s.marks.length ? mark("launcher") : null, ...s.marks,
+          el("button", { class: "btn small", type: "button", text: "Change", "aria-label": `Change the key for ${name}`,
+            onclick: () => capture({ title: `${name}: key`, dev: "keyboard" }, pickIt) }),
+          now !== gk ? el("button", { class: "btn ghost small", type: "button", text: "Undo", "aria-label": `Undo the change to ${name}, back to ${L(gk)}`,
+            onclick: () => pickIt(gk) }) : null),
+        ...s.lines);
+    }
+    function stickCell(action) {
+      const loaded = state.gamepad[action];
+      const s = loaded ? said("gamepad", action) : null;
+      if (!loaded || (s && M.checkRow(check, "gamepad", action)?.status === "same")) {
+        return el("span", { class: "muted", text: action.startsWith("Player_Movement") ? "The left stick" : "The right stick" });
+      }
+      return el("div", {}, el("div", { class: "row" }, keyChip(loaded, "In this file"), mark("cannot"),
+        el("button", { class: "btn ghost small", type: "button", text: "Remove", "aria-label": `Remove the stick change for ${nameOf(action)}`,
+          onclick: () => { M.remove(state, "gamepad", action); edited(); } })), ...(s ? s.lines : []));
+    }
+    function renderMoving() {
+      const open = moveFold.open;
+      clear(moveFold).append(
+        el("summary", {}, el("h2", { text: "Moving and the camera" }), el("span", { class: "muted", text: "Only with Play with key remaps.bat, or Steam for the sticks" })),
+        el("p", { class: "note", text: "The game reads these keys itself, so Apply can't change them. For the keyboard, start the game " +
+          `with ${LAUNCHER} after Apply. For the sticks, use Steam's controller settings (right-click the game in Steam, then ` +
+          "Properties, Controller); stick speed and inverting are in the game's own Settings, Player Configuration." }),
+        el("div", { class: "table-wrap", style: { maxHeight: "none" } }, el("table", { class: "grid-table controls-table" },
+          el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Moving" }), el("th", { scope: "col", text: "Keyboard" }),
+            el("th", { scope: "col", text: "Controller" }))),
+          el("tbody", {}, ...M.MOVE_ROWS.map(r => el("tr", { "data-key": `move:${r.name}` }, el("th", { scope: "row" }, el("strong", { text: r.name })),
+            el("td", { class: "cell" }, ...r.keys.map(moveKey)), el("td", { class: "cell" }, stickCell(r.stick))))))));
+      moveFold.open = open;
+    }
+
+    // ---------- in menus ----------
+    function renderMenus() {
+      clear(menuCard).append(el("h2", { text: "In menus" }),
+        el("p", { class: "note", text: "The game's own keys keep working in menus; a key you add here works too. A letter still types on the name screen." }),
+        el("div", { class: "table-wrap", style: { maxHeight: "none" } }, el("table", { class: "grid-table controls-table" },
+          el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "In menus" }), el("th", { scope: "col", text: "The game's key" }),
+            el("th", { scope: "col", text: "Also on" }))),
+          el("tbody", {}, ...M.MENU_ROWS.map(r => el("tr", { "data-key": `menu:${r.key}` },
+            el("th", { scope: "row" }, el("strong", { text: nameOf(r.command) })),
+            el("td", { class: "cell" }, keyChip(r.key)),
+            el("td", { class: "cell" }, seconds("menus", r.key, `${nameOf(r.command)} in menus`, "in menus"))))))));
+    }
+
+    // ---------- which keys are free ----------
+    function renderFree() {
+      const open = freeFold.open;
+      const inUse = (check && check.in_use) || [];
+      // wcmods' own and mods' keys first, then the keyboard's, the mouse's and the controller's.
+      const kind = k => (k.startsWith("Gamepad_") ? 2 : M.MOUSE_KEYS.includes(k) ? 1 : 0);
+      const rank = e => (e.taken === "refuse" ? 0 : e.taken === "warn" ? 1 : 2) * 3 + kind(e.key);
+      const sorted = [...inUse].sort((a, b) => rank(a) - rank(b) || L(a.key).localeCompare(L(b.key)));
+      const keyCell = k => k.startsWith("Gamepad_") ? el("span", { class: "row" }, keyChip(k), el("span", { class: "muted", text: "controller" })) : keyChip(k);
+      clear(freeFold).append(
+        el("summary", {}, el("h2", { text: "Which keys are free?" }), el("span", { class: "muted", text: "What each key does before your changes" })),
+        el("p", { class: "note", text: "Keys not listed here do nothing in the game, so they're free. The mod menu's key, mouse look's key and " +
+          "F11 can't take an action; a mod's key can, but then does both. Keys that mods' own scripts listen on are only known in the " +
+          "game: the mod menu's Overview lists them." }),
+        sorted.length ? el("div", { class: "table-wrap" }, el("table", { class: "grid-table" },
+          el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Key" }), el("th", { scope: "col", text: "What it does" }),
+            el("th", { scope: "col", text: "Where from" }))),
+          el("tbody", {}, ...sorted.map(e => el("tr", {}, el("td", {}, keyCell(e.key)), el("td", { text: e.does }),
+            el("td", { text: e.taken === "refuse" ? `${e.from} (taken)` : e.from }))))))
+          : el("p", { class: "muted", text: "Working it out…" }));
+      freeFold.open = open;
+    }
+
+    // ---------- for mod makers ----------
+    function describeEntry({ section, name }) {
+      const to = state[section][name];
+      if (section === "keyboard") return `${nameOf(name)} on ${L(to)}`;
+      if (section === "gamepad") return `${nameOf(name)} on ${L(to)} (controller)`;
+      return `${L(name)} standing for ${L(to)}${section === "menus" ? " in menus" : " while you explore"}`;
+    }
+    function addPair(section) {
+      const where = section === "menus" ? "menus" : "play";
+      capture({ title: "The key you'll press", dev: "keyboard", where }, k => setTimeout(() =>
+        capture({ title: `The game's key ${L(k)} stands for`, dev: "keyboard", where }, g => {
+          if (M.addSecond(state, section, M.norm(g), k)) edited();
+        }), 0));
+    }
+    function renderMakers() {
+      const open = makerFold.open;
+      const others = M.unshown(state, game);
+      out.set(M.toJson(state));
+      clear(makerFold).append(
+        el("summary", {}, el("h2", { text: "For mod makers" }), el("span", { class: "muted", text: "The file itself, and what no row shows" })),
+        el("h3", { text: "Other changes in this file" }),
+        others.length ? el("div", { class: "stack" }, ...others.map(o => {
+          const s = said(o.section, o.name, o.section);
+          return el("div", { class: "other", "data-key": `other:${o.section}:${o.name}` },
+            el("div", { class: "row" }, el("span", { text: describeEntry(o) }), ...s.marks,
+              el("button", { class: "btn ghost small", type: "button", text: "Remove", "aria-label": `Remove ${describeEntry(o)}`,
+                onclick: () => { M.remove(state, o.section, o.name); edited(); } })), ...s.lines);
+        })) : el("p", { class: "muted", text: "None: every change in this file is on a row above." }),
+        el("div", { class: "row" },
+          el("button", { class: "btn small", type: "button", text: "Add a key that stands for another while you explore", onclick: () => addPair("keys") }),
+          el("button", { class: "btn small", type: "button", text: "Add a key that stands for another in menus", onclick: () => addPair("menus") })),
+        el("p", { class: "note", text: "A key standing for another does that key's jobs instead of its own: T for W, or H as a second Interact. " +
+          "How the file is written is in the guide's last part and in the file formats, on GitHub." }),
+        out.element);
+      makerFold.open = open;
+    }
+
     // ---------- mouse look ----------
-    // Not a binding: the game never reads the mouse, so this is a UE4SS script with its own settings
-    // file in the Mouse Look mod. Changes here save straight to that mod.
+    // Not a binding: the game never reads the mouse, so this is a script with its own settings file in the Mouse
+    // Look mod. Changes here save straight to that mod.
     const ML = { id: "mouse-look", file: "mouselook.json" };
     let look = { exists: false, enabled: false, settings: { sensitivity: 1, invert: false } };
     async function loadMouseLook() {
@@ -213,7 +394,7 @@ export default {
       try {
         if (!look.exists) {
           await api.post("/mods", { id: ML.id, name: "Mouse Look", priority: 5, enabled: false,
-            description: "Turn and tilt the camera with the mouse while exploring. Needs UE4SS." });
+            description: "Turn and tilt the camera with the mouse while exploring. Needs the script loader." });
           look.exists = true;
         }
         await api.put(`/mods/${ML.id}/file/${ML.file}`, { text: JSON.stringify(look.settings, null, 2) });
@@ -221,12 +402,13 @@ export default {
         look.enabled = enabled;
         wc.bus.emit("mods-changed");
         toast(`Mouse look ${enabled ? "on" : "off"}. Apply to game to use it.`);
+        recheck(0);   // its key is one the Controls page keeps free
       } catch (e) { toast(e.message, "bad"); }
       renderMouse();
     }
     function renderMouse() {
       const s = look.settings;
-      const toggle = el("input", { type: "checkbox", id: "ml-on", checked: look.enabled });
+      const toggle = el("input", { type: "checkbox", class: "switch", id: "ml-on", checked: look.enabled, disabled: !ue4ss && !look.enabled });
       toggle.addEventListener("change", () => saveMouseLook(toggle.checked));
       const sensVal = el("strong", { text: `×${Number(s.sensitivity).toFixed(2)}` });
       // The slider stretches to fit a value set by hand in mouselook.json (0.05-10), so it never clamps it.
@@ -246,164 +428,45 @@ export default {
       smooth.addEventListener("input", () => { s.smoothing = Number(smooth.value); smoothVal.textContent = smoothText(s.smoothing); });
       smooth.addEventListener("change", () => saveMouseLook(look.enabled));
       const toggleKey = s.toggle_key ?? "F6";
-      clear(mouse).append(
-        el("h2", { text: "Mouse look" }),
+      clear(mouse).append(...[
+        el("div", { class: "row spread" }, el("h2", { text: "Mouse look" }),
+          el("span", { class: "muted", text: "Saves by itself into the Mouse Look mod; needs the script loader." })),
         el("label", { class: "row", for: "ml-on" }, toggle, el("strong", { text: "Turn and tilt the camera with the mouse" })),
+        !ue4ss ? el("p", { class: "said warn", text: "Mouse look needs the script loader: Get set up, on the Mods page, installs it." }) : null,
         el("div", { class: "row" }, el("label", { for: "ml-sens", class: "lbl" }, "Sensitivity ", sensVal), sens,
           el("label", { class: "row", for: "ml-invert" }, inv, "Invert up/down")),
         el("div", { class: "row" }, el("label", { for: "ml-smooth", class: "lbl" }, "Smoothing ", smoothVal), smooth,
           el("span", { class: "muted", text: "How long the camera takes to catch up with the mouse. Off is the most direct; the game eases the arrow keys over about 200 ms." })),
         el("p", { class: "note", text: "While you explore, the mouse turns the camera and the cursor stays hidden. Menus get the cursor back. " +
-          (toggleKey ? `Press ${toggleKey} in game to switch it off and on. ` : "") +
-          "The arrow keys and the right stick still work. Saved in the Mouse Look mod; needs UE4SS." }));
+          (toggleKey ? `Press ${toggleKey} in the game to switch it off and on. ` : "") + "The arrow keys and the right stick still work." }),
+      ].filter(Boolean));
     }
 
+    // ---------- the whole page ----------
+    function renderBanner() {
+      clear(banner).append(el("strong", { text: "Key changes need the script loader." }),
+        el("span", { text: ` Get set up, on the Mods page, installs it. Until then, start the game with ${LAUNCHER} (keyboard and mouse only).` }),
+        el("a", { href: "#mods", text: "Open the Mods page" }));
+      banner.hidden = ue4ss;
+    }
     function render() {
+      renderBanner();
+      renderPlay();
+      renderAlso();
+      renderMoving();
+      renderMenus();
+      renderFree();
       renderMouse();
-      clear(table).append(el("div", { class: "table-wrap", style: { maxHeight: "none" } },
-        el("table", { class: "grid-table" },
-          el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Action" }), el("th", { scope: "col", text: "Keyboard & mouse" }), el("th", { scope: "col", text: "Controller" }))),
-          el("tbody", {}, ...ACTIONS.map(a => el("tr", {},
-            el("th", { scope: "row" }, el("strong", { text: a.name }), el("div", { class: "muted mono", style: { fontSize: "0.75rem" }, text: a.raw ? `built-in key ${a.raw}` : a.id })),
-            el("td", {}, cell("keyboard", a)), el("td", {}, cell("gamepad", a))))))));
-      // A built-in row's key (Move forward on T, say) wins over an extra pair for the same key.
-      const rowKeys = Object.fromEntries(ACTIONS.filter(a => a.raw && overrides.keyboard[a.id] && overrides.keyboard[a.id] !== a.raw)
-        .map(a => [overrides.keyboard[a.id], a.name]));
-      renderPairs(extraCard, "Extra keys while playing", "Any key can stand for any game key while you play, " +
-        "e.g. Escape for the key that opens the pause menu. The game key then stops working on its own, unless an action above still uses it.", otherKeys, rowKeys);
-      renderPairs(menuCard, "In menus", "Used only in the game's menus (every screen but the HUD, a fight's menu too), e.g. Escape for the key that closes a menu, " +
-        "or I and K for Up and Down. Done inside the game; the game's own keys keep working too. A letter used here still types on the name " +
-        "screen and does the other key's job there too. Mouse buttons here need the old key remapper (deprecated).", menuKeys, {});
-      out.set(toJson());
+      renderMakers();
     }
 
-    // ---------- key pairs: extra keys while playing, keys in menus ----------
-    // pairs is {key you press: game key}; changes go straight into it. taken: {key: row name} for keys
-    // a built-in row already uses, which win over a pair here.
-    function renderPairs(box, title, note, pairs, taken) {
-      box.dataset.key = `pairs:${title}`;   // its buttons are told from the other list's with the same labels
-      const changed = () => { target.markDirty(); render(); };
-      const chip = k => el("span", { class: "chip", style: { fontWeight: "700" }, title: k }, input.keyLabel(k, style));
-      const pick = (label, then) => capture("keyboard", { name: `${title}: ${label}` }, then);
-      const free = (k, except) => {
-        if (k !== except && k in pairs) { toast(`${input.keyLabel(k, style)} is already in this list; change or remove that one first`, "bad"); return false; }
-        return true;
-      };
-      const rows = Object.entries(pairs).map(([pressed, gameKey]) => el("div", { style: { display: "grid", gap: "2px" } },
-        el("div", { class: "row" },
-          el("span", { class: "muted", text: "Pressing" }), chip(pressed),
-          el("button", { class: "btn ghost small", text: "Change", "aria-label": `Change ${input.keyLabel(pressed, style)}, the key you press for ${input.keyLabel(gameKey, style)}`,
-            onclick: () => pick("the key you press", k => { if (k !== pressed && free(k, pressed)) { delete pairs[pressed]; pairs[k] = gameKey; changed(); } }) }),
-          el("span", { class: "muted", text: "sends the game" }), chip(gameKey),
-          el("button", { class: "btn ghost small", text: "Change", "aria-label": `Change the game key ${pressed} sends`,
-            onclick: () => pick("the game's key", k => { pairs[pressed] = k; changed(); }) }),
-          el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove ${input.keyLabel(pressed, style)} for ${input.keyLabel(gameKey, style)}`, onclick: () => { delete pairs[pressed]; changed(); } })),
-        taken[pressed] ? el("span", { style: { fontSize: "0.82rem", color: "var(--changed)" },
-          text: `${input.keyLabel(pressed, style)} is also ${taken[pressed]}'s key above, which wins; pick another key` }) : null));
-      clear(box).append(el("h2", { text: title }), el("p", { class: "note", text: note }), ...rows,
-        el("div", { class: "row" }, el("button", { class: "btn small", text: "Add a key", onclick: () =>
-          pick("press the key you want to use", k => free(k) && setTimeout(() =>
-            pick(`press the game's key for ${input.keyLabel(k, style)}`, g => { pairs[k] = g; changed(); }), 0)) })));
-    }
-
-    // ---------- capture ----------
-    // onPick(key) receives the key instead of it being set on an action row (the key-pair lists).
-    function capture(dev, action, onPick) {
-      const pad = dev === "gamepad";
-      const choices = pad ? (action.axis ? input.PAD_AXES : input.PAD_BUTTONS) : [];
-      const back = wc.keepPlace();
-      const msg = el("p", { id: "capture-msg", "aria-live": "polite", text: pad
-        ? (action.axis ? "Move a stick on your controller, or pick one below." : "Press a button on your controller, or pick one below.")
-        : "Press a key, click a mouse button here, or scroll. Escape cancels; to use Escape itself, click the Escape button." });
-      const padNote = el("p", { class: "muted", style: { fontSize: "0.9rem" } });
-      const overlay = el("div", {
-        role: "dialog", "aria-modal": "true", "aria-label": `Rebind ${action.name}`, "aria-describedby": "capture-msg",
-        style: { position: "fixed", inset: "0", background: "rgba(10,16,13,.55)", display: "grid", placeItems: "center", zIndex: "40", padding: "16px" },
-      }, el("div", { class: "card", style: { width: "min(560px, 100%)" } },
-        el("h2", { text: `${action.name} · ${pad ? "controller" : "keyboard & mouse"}` }), msg, padNote,
-        pad ? el("div", { class: "row" }, ...choices.map(k => el("button", { class: "chip", type: "button", text: input.keyLabel(k, style), title: k, onclick: () => finish(k) }))) : null,
-        el("div", { class: "row" }, el("button", { class: "btn", type: "button", text: "Cancel", onclick: () => finish(null) }),
-          // Escape is a key worth binding (closing menus), but pressing it here cancels.
-          pad ? null : el("button", { class: "btn ghost", type: "button", text: "Escape", title: "Use the Escape key", onclick: () => finish("Escape") }))));
-      document.body.append(overlay);
-      let raf = 0, done = false;
-      const onKey = e => {
-        if (pad) {
-          if (e.key === "Escape") finish(null);
-          // Tab stays in the dialog.
-          if (e.key === "Tab") {
-            const bs = [...overlay.querySelectorAll("button")];
-            const at = bs.indexOf(document.activeElement);
-            e.preventDefault();
-            bs[(at + (e.shiftKey ? -1 : 1) + bs.length) % bs.length].focus();
-          }
-          return;
-        }
-        e.preventDefault(); e.stopPropagation();
-        if (e.code === "Escape") return finish(null);
-        const k = input.keyFromEvent(e);
-        if (k) finish(k); else msg.textContent = `That key (${e.code}) isn't one the game understands. Try another.`;
-      };
-      const onMouse = e => {
-        if (pad || e.target.closest("button")) return;
-        e.preventDefault();
-        if (input.MOUSE[e.button]) finish(input.MOUSE[e.button]);
-      };
-      const onWheel = e => { if (!pad) { e.preventDefault(); finish(e.deltaY < 0 ? "MouseScrollUp" : "MouseScrollDown"); } };
-      window.addEventListener("keydown", onKey, true);
-      overlay.addEventListener("mousedown", onMouse);
-      overlay.addEventListener("contextmenu", e => e.preventDefault());
-      overlay.addEventListener("wheel", onWheel, { passive: false });
-      if (pad) {
-        let base = null;
-        const poll = () => {
-          if (done) return;
-          let pads = [];
-          try { pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); }
-          catch (e) { padNote.textContent = "This browser window can't read controllers; pick a button above."; return; }
-          if (!pads.length) padNote.textContent = "No controller detected yet. Press any button on it once, or pick a button above.";
-          else padNote.textContent = `Listening to ${pads[0].id.replace(/\s*\(.*\)$/, "")}`;
-          const now = pads.map(p => ({ b: p.buttons.map(b => b.pressed || b.value > 0.6), a: [...p.axes] }));
-          if (base === null) base = now;
-          for (let i = 0; i < now.length; i++) {
-            if (action.axis) {
-              for (let x = 0; x < Math.min(4, now[i].a.length); x++) if (Math.abs(now[i].a[x]) > 0.7) return finish(input.PAD_AXES[x]);
-            } else {
-              for (let b = 0; b < Math.min(16, now[i].b.length); b++) {
-                if (now[i].b[b] && !(base[i] && base[i].b[b])) return finish(input.PAD_BUTTONS[b]);
-              }
-            }
-          }
-          raf = requestAnimationFrame(poll);
-        };
-        raf = requestAnimationFrame(poll);
-      }
-      overlay.querySelector("button").focus();
-      function finish(key) {
-        if (done) return;
-        done = true;
-        cancelAnimationFrame(raf);
-        window.removeEventListener("keydown", onKey, true);
-        overlay.remove();
-        if (key && onPick) onPick(key);
-        else if (key) { setKey(dev, action.id, key); toast(`${action.name}: ${input.keyLabel(key, style)}`); }
-        back();
-      }
-    }
-
-    // ---------- using the remaps ----------
-    function renderLive() {
-      clear(live).append(el("h2", { text: "Using your remaps" }),
-        el("ol", { style: { margin: "0", paddingLeft: "1.3em", display: "grid", gap: "6px" } },
-          el("li", { text: "Save to a mod (top of this page)." }),
-          el("li", { text: "Apply to game (top right, game closed). Moved actions then work inside the game, from Steam too: the new key does the action, and the old key stops doing it but keeps its other jobs. The game's prompts and its Controls screen still show its own keys." }),
-          el("li", { text: "Movement and the camera (and mouse buttons in the \"In menus\" list) only work with the old key remapper, which is deprecated: start the game with Play with key remaps.bat (or python wcmods.py play). It runs until the game closes; python wcmods.py remap starts it when the game is already open." }),
-          el("li", { text: "Controller sticks: in Steam, right-click the game, then Properties, Controller, and remap them with Steam Input." })),
-        el("p", { class: "note", text: "Add --dry-run to see what the old key remapper would do without changing anything. The game ignores edited bindings in its save and its rebinding screen is unfinished on PC, which is why wcmods remaps while it runs. Mouse look above doesn't depend on any of this." }));
-    }
-
+    // After an Apply (or Get set up), what the build says may have changed: read the file again and ask again.
+    const offInstalled = wc.installedEvent(target, () => { target.refresh().then(() => recheck(0)).catch(() => {}); });
+    const offFocus = wc.bus.on("focus", () => recheck(0));
+    const offMods = wc.bus.on("mods-changed", () => recheck());
     await Promise.all([target.refresh(), loadMouseLook()]);
     render();
-    renderLive();
+    recheck(0);
+    return { unmount() { offInstalled(); offFocus(); offMods(); clearTimeout(timer); } };
   },
 };

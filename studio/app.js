@@ -211,7 +211,7 @@ async function open(id, asked = false) {
 // A page's own stylesheet, studio/sections/<id>.css, linked once when the page first opens and ready before it
 // draws. Only the pages that have one are listed: the server answers a missing file with a 404, which the
 // browser would log as an error.
-const PAGE_STYLES = new Set(["mods", "items", "npcs", "quests"]);
+const PAGE_STYLES = new Set(["mods", "items", "npcs", "quests", "controls"]);
 const styled = {};   // section id -> Promise that settles when its stylesheet has loaded
 function pageStyles(id) {
   if (!PAGE_STYLES.has(id)) return Promise.resolve();

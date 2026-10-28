@@ -626,7 +626,7 @@ function keyFromEvent(e) {
   if (/^Key[A-Z]$/.test(c)) return c.slice(3);
   if (/^Digit\d$/.test(c)) return DIGITS[+c.slice(5)];
   if (/^Numpad\d$/.test(c)) return "NumPad" + DIGITS[+c.slice(6)];
-  if (/^F\d{1,2}$/.test(c)) return c;
+  if (/^F([1-9]|1[0-2])$/.test(c)) return c;   // F13 and above: the game has no key for them
   return CODE_TO_KEY[c] || null;
 }
 const MOUSE = ["LeftMouseButton", "MiddleMouseButton", "RightMouseButton", "ThumbMouseButton", "ThumbMouseButton2"];

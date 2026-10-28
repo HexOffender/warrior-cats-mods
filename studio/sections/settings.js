@@ -132,7 +132,7 @@ export default {
             el("span", { class: "muted", text: "Builds them without installing, to see what each one does and any problems." })),
           el("div", { class: "row" },
             confirmButton("Take all mods out of the game", "Press again to take them out", () => bus.emit("run-task", { path: "/uninstall", title: "Take mods out" }), "btn small danger"),
-            el("span", { class: "muted", text: "Your mods stay here. Control remaps and save edits stay in your save; restore a save backup to undo those." }))));
+            el("span", { class: "muted", text: "Your mods stay here, and key changes come out with them. Save edits stay in your save; restore a save backup to undo those." }))));
     }
 
     // ---------- making your own ----------

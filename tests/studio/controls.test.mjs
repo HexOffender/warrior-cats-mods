@@ -1,0 +1,245 @@
+// The Controls page's model (studio/lib/controls.js) over the game's keys as GET /game/keys serves them
+// (fixtures/game-keys.json, which tests/unit/test_repo.py keeps in step with wcmods/keymap.py): what a row shows,
+// what each button writes into controls.json, the keys a creator can't or shouldn't pick, and the capture
+// dialog's keys. The input names come from studio/lib/wc.js, through the DOM shim.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { install, REPO } from "./lib/dom.mjs";
+
+const dom = install();
+const wc = await import(dom.studio("lib/wc.js"));
+const M = await import(dom.studio("lib/controls.js"));
+const game = JSON.parse(fs.readFileSync(path.join(REPO, "tests", "studio", "fixtures", "game-keys.json"), "utf8"));
+const fresh = (obj = null) => M.normalize(obj, game);
+const json = s => M.toJson(s);
+
+// ---------- the game's keys, and what a reset writes ----------
+test("the Pause row's game key is Escape, and setting it to Escape is not a change", () => {
+  const s = fresh();
+  assert.equal(M.effective(s, game, "keyboard", "Player_Pause"), "Escape");
+  assert.equal(M.set(s, game, "keyboard", "Player_Pause", "Escape"), false);
+  assert.deepEqual(json(s), {});
+});
+
+test("keyboard reset writes nothing", () => {
+  const s = fresh({ keyboard: { Player_Interact: "F", Player_Pause: "Enter", Player_Movement_Up: "K" }, keys: { T: "W", H: "E" } });
+  assert.equal(M.resetDevice(s, game, "keyboard"), true);
+  assert.deepEqual(json(s), {});
+});
+
+test("controller reset writes nothing, and leaves a stick entry for its own Remove", () => {
+  const s = fresh({ gamepad: { Player_Run: "LT", Player_Interact: "y" } });
+  M.resetDevice(s, game, "gamepad");
+  assert.deepEqual(json(s), {});
+  const sticks = fresh({ gamepad: { Player_Movement_Up: "Gamepad_RightY" } });
+  M.resetDevice(sticks, game, "gamepad");
+  assert.deepEqual(json(sticks), { gamepad: { Player_Movement_Up: "Gamepad_RightY" } });
+});
+
+test("undo removes the override and nothing else", () => {
+  const s = fresh({ keyboard: { Player_Interact: "F", Player_Run: "G" }, menus: { keys: { U: "Enter" } } });
+  M.undo(s, game, "keyboard", "Player_Interact");
+  assert.deepEqual(json(s), { keyboard: { Player_Run: "G" }, menus: { keys: { U: "Enter" } } });
+});
+
+test("a change to the game's key removes the entry", () => {
+  const s = fresh({ keyboard: { Player_Interact: "F" } });
+  assert.equal(M.set(s, game, "keyboard", "Player_Interact", "e"), true);
+  assert.deepEqual(json(s), {});
+});
+
+test("undo writes the game's key when a lower mod sets the action", () => {
+  // Another mod, earlier in the list, puts Interact on G: this mod's "back to E" has to be written to win.
+  const s = fresh({ keyboard: { Player_Interact: "F" } });
+  M.undo(s, game, "keyboard", "Player_Interact", [["keyboard", "Player_Interact"]]);
+  assert.deepEqual(json(s), { keyboard: { Player_Interact: "E" } });
+  assert.equal(M.changed(s, game, "keyboard", "Player_Interact"), false);
+});
+
+test("a loaded entry equal to the game's key is kept", () => {
+  const s = fresh({ keyboard: { Player_Interact: "E" } });
+  assert.equal(M.changed(s, game, "keyboard", "Player_Interact"), false);
+  assert.deepEqual(json(s), { keyboard: { Player_Interact: "E" } });
+});
+
+test("a file of the old Keyboard defaults shows one change, Pause on Enter", () => {
+  const old = { keyboard: { ...game.keyboard, Player_Pause: "Enter" } };
+  for (const a of ["Player_Show_Inventory", "Player_Show_Quest", "Player_Show_Map", "Player_Growl"]) delete old.keyboard[a];
+  const s = fresh(old);
+  const changed = M.PLAY_ROWS.concat(game.axes).filter(a => M.changed(s, game, "keyboard", a));
+  assert.deepEqual(changed, ["Player_Pause"]);
+  assert.equal(M.gameKey(game, "keyboard", "Player_Pause"), "Escape");
+  M.undo(s, game, "keyboard", "Player_Pause");
+  assert.ok(!("Player_Pause" in json(s).keyboard));
+});
+
+test("Interact on Enter leaves the Pause row alone", () => {
+  const s = fresh();
+  M.set(s, game, "keyboard", "Player_Interact", "Enter");
+  assert.equal(M.effective(s, game, "keyboard", "Player_Pause"), "Escape");
+  assert.equal(M.changed(s, game, "keyboard", "Player_Pause"), false);
+});
+
+// ---------- reading files ----------
+test("normalize accepts L2 and {key: F}, drops null, and keeps notes", () => {
+  const s = fresh({ _help: "mine", keyboard: { Player_Interact: { key: "f" }, Player_Run: null, Player_Crouch: ["C"] },
+    gamepad: { Player_Run: "L2", Player_Drop: "circle" }, keys: { _x: "y", t: "W" }, menus: { keys: { u: "Enter" } } });
+  assert.deepEqual(json(s), { _help: "mine", keyboard: { Player_Interact: "F" },
+    gamepad: { Player_Run: "Gamepad_LeftTrigger", Player_Drop: "Gamepad_FaceButton_Right" }, keys: { T: "W" }, menus: { keys: { U: "Enter" } } });
+  assert.deepEqual(json(fresh(["not", "an", "object"])), {});
+});
+
+test("keys T:W and Y:W round-trip (row T, extra pair Y)", () => {
+  const file = { keys: { T: "W", Y: "W" } };
+  const s = fresh(file);
+  assert.equal(M.rawKey(s, "W"), "T");
+  assert.deepEqual(M.unshown(s, game), [{ section: "keys", name: "Y" }]);
+  assert.deepEqual(json(s), file);
+  M.setRaw(s, "W", "W");   // the row back on W: its pair goes, the extra stays
+  assert.deepEqual(json(s), { keys: { Y: "W" } });
+  assert.equal(M.rawKey(s, "W"), "Y");
+});
+
+test("pairs and entries without a row round-trip under For mod makers", () => {
+  const file = { keyboard: { Button_Skip: "G", Player_Play: "N" }, gamepad: { Player_Show_Map: "Gamepad_DPad_Up" },
+    keys: { J: "Enter", Gamepad_DPad_Left: "M" }, menus: { keys: { I: "Up" } } };
+  const s = fresh(file);
+  assert.deepEqual(M.unshown(s, game).map(o => `${o.section}:${o.name}`).sort(),
+    ["gamepad:Player_Show_Map", "keyboard:Button_Skip", "keyboard:Player_Play", "keys:Gamepad_DPad_Left", "keys:J", "menus:I"]);
+  assert.deepEqual(json(s), file);
+  M.remove(s, "keys", "J");
+  assert.ok(!("J" in json(s).keys));
+});
+
+// ---------- the controller ----------
+test("swap(nintendo) maps A/B and X/Y and leaves the sticks", () => {
+  const s = fresh();
+  M.swap(s, game, M.SWAPS.nintendo.map);
+  assert.equal(M.effective(s, game, "gamepad", "Player_Interact"), "Gamepad_FaceButton_Right");
+  assert.equal(M.effective(s, game, "gamepad", "Player_Drop"), "Gamepad_FaceButton_Bottom");
+  assert.equal(M.effective(s, game, "gamepad", "Player_Pounce"), "Gamepad_FaceButton_Left");
+  assert.equal(M.effective(s, game, "gamepad", "Player_Scent_Tracking"), "Gamepad_FaceButton_Top");
+  for (const a of game.axes) assert.ok(!(a in s.gamepad), a);
+  M.swap(s, game, M.SWAPS.nintendo.map);   // twice is the game's layout again: nothing written
+  assert.deepEqual(json(s), {});
+});
+
+test("swap never touches an axis row, and a stick can't be set", () => {
+  const s = fresh();
+  M.swap(s, game, { Gamepad_LeftY: "Gamepad_RightY", Gamepad_RightY: "Gamepad_LeftY" });
+  assert.deepEqual(json(s), {});
+  assert.equal(M.set(s, game, "gamepad", "Player_Movement_Up", "Gamepad_RightY"), false);
+  assert.deepEqual(json(s), {});
+});
+
+test("a loaded stick entry is kept until Remove", () => {
+  const s = fresh({ gamepad: { Player_Camera_Up: "Gamepad_LeftY" } });
+  M.swap(s, game, M.SWAPS.shoulders.map);
+  M.resetDevice(s, game, "gamepad");
+  assert.deepEqual(json(s), { gamepad: { Player_Camera_Up: "Gamepad_LeftY" } });
+  M.undo(s, game, "gamepad", "Player_Camera_Up");
+  assert.deepEqual(json(s), {});
+});
+
+test("a cannot item is never written: no controller button for Inventory", () => {
+  const s = fresh();
+  assert.equal(M.gameKey(game, "gamepad", "Player_Show_Inventory"), null);
+  assert.equal(M.set(s, game, "gamepad", "Player_Show_Inventory", "Gamepad_DPad_Up"), false);
+  assert.deepEqual(json(s), {});
+});
+
+// ---------- more rows and second keys ----------
+test("inventory row writes keyboard Player_Show_Inventory", () => {
+  const s = fresh();
+  assert.ok(M.PLAY_ROWS.includes("Player_Show_Inventory"));
+  M.set(s, game, "keyboard", "Player_Show_Inventory", "O");
+  assert.deepEqual(json(s), { keyboard: { Player_Show_Inventory: "O" } });
+});
+
+test("second key writes keys H:E even when the action moved to F", () => {
+  const s = fresh({ keyboard: { Player_Interact: "F" } });
+  M.addSecond(s, "keys", M.gameKey(game, "keyboard", "Player_Interact"), "h");
+  assert.deepEqual(json(s), { keyboard: { Player_Interact: "F" }, keys: { H: "E" } });
+  assert.deepEqual(M.secondKeys(s, "keys", "E"), ["H"]);
+  assert.deepEqual(M.unshown(s, game), []);
+});
+
+test("removing a second key removes only the pair", () => {
+  const s = fresh({ keyboard: { Player_Interact: "F" }, keys: { H: "E", T: "W" } });
+  M.remove(s, "keys", "H");
+  assert.deepEqual(json(s), { keyboard: { Player_Interact: "F" }, keys: { T: "W" } });
+});
+
+test("a second key for Drop shows on Talk to a friend too, since C does both", () => {
+  const s = fresh();
+  M.addSecond(s, "keys", M.gameKey(game, "keyboard", "Player_Drop"), "V");
+  assert.deepEqual(M.secondKeys(s, "keys", M.gameKey(game, "keyboard", "Player_Friend_Talk")), ["V"]);
+});
+
+test("confirm also on U writes a menus pair", () => {
+  const s = fresh();
+  const confirm = M.MENU_ROWS.find(r => r.command === "Button_Confirm");
+  M.addSecond(s, "menus", confirm.key, "U");
+  assert.deepEqual(json(s), { menus: { keys: { U: "Enter" } } });
+  assert.equal(M.addSecond(s, "menus", confirm.key, "Enter"), false, "the game's own key is no second key");
+});
+
+// ---------- keys that are taken ----------
+const inUse = [
+  { key: "Insert", does: "opens the mod menu", from: "wcmods", taken: "refuse" },
+  { key: "Gamepad_Special_Left", does: "opens the mod menu", from: "wcmods", taken: "refuse" },
+  { key: "F11", does: "switches between a window and full screen", from: "the game", taken: "refuse" },
+  { key: "T", does: "opens the emote wheel", from: "Emote wheel", taken: "warn" },
+  { key: "E", does: "Interact", from: "the game", taken: null },
+];
+
+test("whyNot(key) refuses the menu key, its pad button and F11 with a sentence", () => {
+  assert.deepEqual(M.whyNot("Insert", inUse), { refuse: "Insert opens the mod menu (wcmods); pick another key." });
+  assert.ok(M.whyNot("Gamepad_Special_Left", inUse, "play", k => wc.input.keyLabel(k)).refuse.startsWith("View opens the mod menu"));
+  assert.ok(M.whyNot("F11", inUse).refuse.startsWith("F11 switches between a window and full screen"));
+});
+
+test("whyNot allows T with a warning, and the game's own keys freely", () => {
+  assert.deepEqual(M.whyNot("T", inUse), { warn: "T also opens the emote wheel (Emote wheel), and will do both while that mod is on." });
+  assert.equal(M.whyNot("E", inUse), null);
+  assert.equal(M.whyNot("G", inUse), null);
+});
+
+test("a mouse button is refused in menus with a sentence, and allowed for an action", () => {
+  assert.match(M.whyNot("ThumbMouseButton", inUse, "menus").refuse, /^In menus a click goes to the button under the cursor/);
+  assert.equal(M.whyNot("ThumbMouseButton", inUse, "play"), null);
+});
+
+// ---------- the capture dialog's keys ----------
+test("in the capture dialog Escape cancels, Tab moves, and Enter presses a focused button or is the key", () => {
+  const k = wc.input.keyFromEvent;
+  assert.deepEqual(M.captureKey({ code: "Escape", key: "Escape" }, true, k), { do: "cancel" });
+  assert.deepEqual(M.captureKey({ code: "Tab", key: "Tab", shiftKey: true }, false, k), { do: "move", back: true });
+  assert.deepEqual(M.captureKey({ code: "Enter", key: "Enter" }, true, k), { do: "press" });
+  assert.deepEqual(M.captureKey({ code: "Enter", key: "Enter" }, false, k), { do: "bind", key: "Enter" });
+  assert.deepEqual(M.captureKey({ code: "Space", key: " " }, false, k), { do: "bind", key: "SpaceBar" });
+  assert.deepEqual(M.captureKey({ code: "KeyF", key: "f" }, true, k), { do: "bind", key: "F" });
+  assert.deepEqual(M.captureKey({ code: "F13", key: "F13" }, false, k), { do: "unknown" });
+});
+
+test("keyFromEvent: F12 is F12, F13 and F24 are null", () => {
+  assert.equal(wc.input.keyFromEvent({ code: "F12" }), "F12");
+  assert.equal(wc.input.keyFromEvent({ code: "F13" }), null);
+  assert.equal(wc.input.keyFromEvent({ code: "F24" }), null);
+});
+
+// ---------- the build's word, on its rows ----------
+test("check lines land on their rows", () => {
+  const check = { rows: { keyboard: { Player_Interact: { key: "F", status: "game", line: "F does Interact.", notes: [] } } } };
+  assert.equal(M.checkRow(check, "keyboard", "Player_Interact").line, "F does Interact.");
+  assert.equal(M.checkRow(check, "keys", "H"), null);
+  assert.equal(M.checkRow(null, "keyboard", "Player_Interact"), null);
+});
+
+test("every play row has a name from the game's names, and none shows a raw id", () => {
+  for (const a of M.PLAY_ROWS) assert.ok(game.names[a] && !/_/.test(game.names[a][0]), a);
+  for (const r of M.MENU_ROWS) assert.ok(game.names[r.command], r.command);
+  for (const r of M.MOVE_ROWS) for (const k of r.keys) assert.ok(game.names[k.raw ? `key:${k.raw}` : k.action], r.name);
+});

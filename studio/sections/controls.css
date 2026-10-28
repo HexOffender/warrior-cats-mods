@@ -1,0 +1,20 @@
+/* The Controls page: its key chips, what the build says under a cell, the markers, and the "press a key" dialog.
+   Linked by app.js when the page opens; .chip, .grid-table, .banner and .fold are in styles.css. */
+.controls-table td.cell { min-width: 15rem; }
+.controls-table td.cell > * + * { margin-top: 6px; }
+.controls-table td.warned { background: var(--tint-warn); box-shadow: inset 3px 0 0 var(--changed); }
+.chip.key { font-weight: 700; font-size: .95rem; min-width: 2.2em; justify-content: center; }
+.chip.was-key { color: var(--muted); }
+.chip.mark { font-size: .8rem; }
+.said { font-size: .88rem; color: var(--muted); max-width: 62ch; }
+.said.warn { color: var(--ink); padding-left: 10px; border-left: 3px solid var(--changed); }
+.seconds { display: grid; gap: 4px; justify-items: start; }
+.move-key + .move-key { margin-top: 10px; }
+.other { display: grid; gap: 4px; padding-top: 8px; border-top: 1px solid var(--line); }
+.controls-also .notes { margin: 0; }
+.capture-overlay { position: fixed; inset: 0; background: rgba(10, 16, 13, .55); display: grid; place-items: center; z-index: 40; padding: 16px; }
+.capture { width: min(560px, 100%); }
+.capture:focus { outline: 3px solid var(--accent); outline-offset: 2px; }
+.capture-zone { border: 2px dashed var(--field); border-radius: 12px; padding: 18px; text-align: center; color: var(--muted); user-select: none; cursor: crosshair; }
+.capture-zone:hover { border-color: var(--accent); }
+@media (forced-colors: active) { .said.warn, .controls-table td.warned { border-left: 3px solid CanvasText; } }
