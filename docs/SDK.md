@@ -187,8 +187,8 @@ never changed, and uninstall deletes everything starting with `zzz_WCMods_`.
 | File | What wcmods puts in it |
 |---|---|
 | `zzz_WCMods_P.pak` | Every replacement loose file (`files/`) and every edited table and text file (`data.json`, `names.json`, section CSV edits, merged across mods), plus `Wrc/WCMods/BuildInfo.json` naming the mods built. Pak version 12, uncompressed, mount point `../../../`. File names in its directory index are UTF-8 with no terminator, as the game's own pak stores them; written the older way, the engine never finds them |
-| `zzz_WCMods_P.utoc` / `.ucas` | Patched copies of existing cooked packages (the eye colour atlas, the item table, and anything a section passes to `ctx.patch_package`). Each keeps the game's chunk ID and its container header entry (imports, shader maps), with BLAKE3-160 chunk hashes, so the engine loads ours instead of the game's. New packages (`ctx.add_texture`) go in beside them under `/Game/WCMods/`, with chunk IDs worked out from their names the way the engine does |
-| `zzz_WCMods_<mod>_<name>_P.*` | Cooked content a mod ships itself (`paks/`, below), copied as it is |
+| `zzz_WCMods_P.utoc` / `.ucas` | Always beside the pak: the game reads a pak in `~mods` only with a container of the same name next to it (seen on build 26184573), so a build with no cooked package writes an empty one. Otherwise, patched copies of existing cooked packages (the eye colour atlas, the item table, and anything a section passes to `ctx.patch_package`). Each keeps the game's chunk ID and its container header entry (imports, shader maps), with BLAKE3-160 chunk hashes, so the engine loads ours instead of the game's. New packages (`ctx.add_texture`) go in beside them under `/Game/WCMods/`, with chunk IDs worked out from their names the way the engine does |
+| `zzz_WCMods_<mod>_<name>_P.*` | Cooked content a mod ships itself (`paks/`, below), copied as it is; a `.pak` alone gets an empty container beside it, as wcmods' own does |
 
 Next to these, UE4SS scripts go into `Binaries\Win64\ue4ss\Mods\WCMods*`, and the shared modules
 into `ue4ss\Mods\shared\WCMods*`.
@@ -530,7 +530,8 @@ makes this possible.
 4. **Package for Windows.** From the output, take `pakchunk100-Windows.pak`, `.utoc` and `.ucas`
    and put all three in `mods/<your mod>/paks/`. Install, and they go into `~mods` as
    `zzz_WCMods_<your mod>_pakchunk100-Windows_P.*`. A `.utoc` and `.ucas` need the `.pak` of the
-   same name beside them, or the game won't mount them.
+   same name beside them, or the game won't mount them. The game reads a `.pak` only with a
+   container beside it too, so a `.pak` alone gets an empty one.
 5. **Make the game use it**, in one of two ways:
    - **Replace one of the game's assets:** give yours exactly the same path and name; find them with
      `wcmods files "*SK_*"` or FModel. For a skeletal model, keep the game's skeleton (its

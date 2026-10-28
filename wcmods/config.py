@@ -129,7 +129,7 @@ def _steam_library_dirs():
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as k:
             roots.append(winreg.QueryValueEx(k, "SteamPath")[0].replace("/", "\\"))
-    except OSError:
+    except (OSError, ImportError):   # ImportError: not Windows
         pass
     roots += [r"C:\Program Files (x86)\Steam"]
     libs = []
@@ -171,6 +171,44 @@ def _find_game_dir():
         if os.path.isdir(d):
             return d
     return None
+
+
+def is_game_dir(folder):
+    """Whether `folder` is the game's: the one with Wrc in it, and the game's exe there."""
+    return bool(folder) and os.path.isfile(os.path.join(folder, "Wrc", "Binaries", "Win64", EXE_NAME))
+
+
+def steam_game_dir():
+    """The copy of the game Steam starts (Play, steam://rungameid): the folder under steamapps/common that its
+    appmanifest names, in the Steam library that has one; None when Steam hasn't got the game, or not whole
+    (no exe there: being installed or moved)."""
+    for lib in _steam_library_dirs():
+        try:
+            with open(os.path.join(lib, "steamapps", f"appmanifest_{STEAM_APP_ID}.acf"), encoding="utf-8",
+                      errors="replace") as f:
+                m = re.search(r'"installdir"\s+"([^"]+)"', f.read())
+        except OSError:
+            continue
+        d = os.path.join(lib, "steamapps", "common", m.group(1) if m else GAME_FOLDER)
+        if is_game_dir(d):
+            return d
+    return None
+
+
+def steam_elsewhere(cfg):
+    """Steam's copy of the game when it isn't the one wcmods installs into (game_dir), else None. Mods then go
+    into a game nobody starts, while the save both use still gets their edits."""
+    steam = steam_game_dir()
+    return steam if steam and cfg.game_dir and not same_folder(steam, cfg.game_dir) else None
+
+
+def steam_elsewhere_text(steam, game_dir, fix=True):
+    """What that means, for every place that says so (the build, `status`, Play, the studio's Mods page), and
+    with `fix` what to do (the Mods page has its own button instead)."""
+    text = (f"Steam starts the game from {steam}, but wcmods puts your mods into {game_dir}, so the game you play "
+            "has none of them, and a cat renamed to a mod's own name shows as Cat 1 or <MISSING STRING TABLE ENTRY>")
+    return text + (". Switch to Steam's copy (Use Steam's copy, on Clan Mod Studio's Mods page, or game_dir in "
+                   "wcmods.json), then apply again" if fix else "")
 
 
 def game_running():

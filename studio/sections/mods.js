@@ -91,6 +91,15 @@ export default {
       }
       if (s.inbox && !inboxShown) showInbox();
       clear(setupBox);
+      // Steam starts another copy of the game than the one mods go into: shown whether or not setup is done.
+      if (s.game.steam) {
+        setupBox.append(el("div", { class: "banner" }, el("strong", { text: "Your mods go into another copy of the game" }),
+          el("span", { text: `${s.game.steam_text}.` }),
+          el("div", { class: "row" }, el("button", { class: "btn primary", text: "Use Steam's copy", onclick: async () => {
+            try { await api.post("/setup/game", { dir: s.game.steam }); toast("Using Steam's copy of the game. Play or Apply to game puts your mods in it."); location.reload(); }
+            catch (e) { toast(e.message, "bad"); }
+          } }))));
+      }
       if (s.done) return;
       const step = (ok, title, ...body) => el("li", { class: "step" + (ok ? " done" : "") },
         el("span", { class: "tick", "aria-hidden": "true", text: ok ? "\u2713" : "" }),

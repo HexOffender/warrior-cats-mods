@@ -315,9 +315,12 @@ of this. Names are matched by their English text (any case) or ID.
 
   A name the game doesn't have (a new prefix, a fixed name) is text wcmods adds to the game, so the
   game shows it only while the mod is installed. If a renamed cat shows as `<MISSING STRING TABLE
-  ENTRY>` (dialogue and the den call it "Cat 1"), the save has its new name but the game isn't
-  loading wcmods' pak: check the game folder in Get set up, then Apply again, or put the save back
-  from Backups and repair (the Settings and repair page). The mod menu's Overview says so too.
+  ENTRY>` (dialogue and the den call it "Cat 1"), the save has its new name but the game hasn't got
+  its text. A build warns when the mod that named a cat is off or left out (the save keeps the name
+  either way), and when Steam starts another copy of the game than the one wcmods installs into (the
+  Mods page offers to switch to Steam's). Otherwise the game isn't loading wcmods' pak, which the mod
+  menu's Overview says. Turn the mod back on or check the game folder in Get set up, then Apply
+  again, or put the save back from Backups and repair (the Settings and repair page).
 
 Renames change the English text only. The other languages translate names, and those translations
 stay. Added names and parts appear in every language with their English text. Added parts get IDs
@@ -334,7 +337,7 @@ updating moves them out (`wcmods/userdata.py`).
 
 | Key | What it is |
 |---|---|
-| `game_dir` | The game's folder (the one with `Wrc` in it). Found through Steam; set it when it isn't, or Get set up asks for it |
+| `game_dir` | The game's folder (the one with `Wrc` in it). Found through Steam; set it when it isn't, or Get set up asks for it. When it isn't the copy Steam starts, builds, `status` and Play say so, and the Mods page offers to switch |
 | `save_dir` | Where the game keeps its saves, when it isn't `%LOCALAPPDATA%\Wrc\Saved\SaveGames` |
 | `oodle_dll` | An `oo2core_*_win64.dll` from another installed game, for faster decoding of the game's files (wcmods decodes them itself without one) |
 | `allow_code_mods` | `true` lets mods that carry code run it (build steps, in-game scripts, studio pages, C++): only for mods from people you trust. Options on the Settings and repair page |
