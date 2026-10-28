@@ -16,6 +16,7 @@ of a list (remove_problem).
 import os
 import re
 
+from .. import names
 from ..formats.save import SAV_NAME, SaveGame
 from ..formats.savejson import SaveDoc
 from ..sdk import Section
@@ -34,8 +35,8 @@ RANGES = [
 ]
 
 # A change's path in words, for the log, the record and the Save page (which gets these too): {cat} is the
-# cat in the path's slot ("Fawnstar", "your cat", "cat slot 0"), {item} an item's name, {name} the last part
-# of the path in words.
+# cat in the path's slot ("Fawnstar", "your cat", "your 1st game's cat"), {item} an item's name, {name} the last
+# part of the path in words.
 WORDS = [
     {"match": r"^(\d+)/GameplayProgression/Level$", "say": "{cat}'s level"},
     {"match": r"^(\d+)/GameplayProgression/Experience$", "say": "{cat}'s experience"},
@@ -80,7 +81,7 @@ def remove_problem(path, doc=None):
     if not parts:
         return f"an empty path takes out nothing; {tail}"
     if len(parts) == 1:
-        what = (f"a whole cat (cat slot {parts[0]})" if parts[0].isdigit() else
+        what = (f"a whole game ({names.game_words(parts[0])})" if parts[0].isdigit() else
                 "the game's settings and controls" if parts[0] == "Shared" else "a whole part of the save")
         return f"'{path}' is {what}; {tail}"
     if len(parts) == 2 and parts[0].isdigit() and parts[1] == "GameplayProgression":
@@ -118,7 +119,7 @@ def label(path, cat_name=None, item_name=None, current_slot=None):
         if "{cat}" in w["say"]:
             slot = m.group(1)
             said["cat"] = (cat_name(slot) if cat_name else None) or \
-                ("your cat" if slot == current_slot else f"cat slot {slot}")
+                ("your cat" if slot == current_slot else f"{names.game_words(slot)}'s cat")
         if "{item}" in w["say"]:
             said["item"] = (item_name(m.group(2)) if item_name else None) or item_words(m.group(2))
         return w["say"].format(**said)

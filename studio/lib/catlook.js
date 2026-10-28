@@ -171,20 +171,33 @@ export function toJson(looks, fileExtra, known, last = []) {
 }
 
 // Which cats a cats.json key means, the way the build finds them (names.Plan._targets): a key with a "/" by its
-// places, as written; any other by its names, ignoring case. `cats` are GET /cat's, each with its aliases. A key
-// with a game's slot first ("2/Duskfang") means that game's cat: the one being played (`slot`, GET /cat's
-// current_slot) goes without it, and another game's cats aren't on the page. "player" is your cat, never another.
+// places, as written; any other by its names, ignoring case. `cats` are GET /cat's, each with its aliases and its
+// game's slot. A key with a game's slot first ("2/Duskfang") means that game's cats; a key without one, the cats of
+// the game being played (`slot`, GET /cat's current_slot; a cat with no slot of its own is in that game). "player",
+// with a slot first or without, is your cat, never another (yourGame says which game's).
 // (tests/unit/test_studio_cat.py checks this rule against the build's for every shape of key.)
 export function catsFor(key, cats, slot = null) {
   let k = String(key).trim();
+  const playing = slot === null || slot === undefined ? null : String(slot);
+  let game = playing;
   const m = /^(\d+)\/(.*)$/.exec(k);
   if (m) {
-    if (slot === null || slot === undefined || m[1] !== String(slot)) return [];
-    k = m[2];
+    if (playing === null) return [];   // no save read: no game is known
+    [, game, k] = m;
   }
   if (k.toLowerCase() === "player") return [];
-  return cats.filter(c => (k.includes("/") ? (c.aliases?.places || []).includes(k) : (c.aliases?.names || []).includes(k.toLowerCase())));
+  const gameOf = c => (c.slot === undefined || c.slot === null ? playing : String(c.slot));
+  return cats.filter(c => gameOf(c) === game
+    && (k.includes("/") ? (c.aliases?.places || []).includes(k) : (c.aliases?.names || []).includes(k.toLowerCase())));
 }
+// The game a key means your cat in: "4" for "4/player", null for "player" (the game being played at Apply) and for
+// any other key.
+export function yourGame(key) {
+  const m = /^(\d+)\/player$/i.exec(String(key).trim());
+  return m ? m[1] : null;
+}
+// Whether a key means your cat: "player", or "<slot>/player" for one game's.
+export const isYours = key => String(key).trim().toLowerCase() === "player" || yourGame(key) !== null;
 // The key a cat's look is kept under: a key of the file's that means this cat alone (its own target first), else its
 // target, for a new entry. A key that means other cats too is never it: a change there would reach them as well.
 export function keyFor(cat, keys, cats, slot = null) {

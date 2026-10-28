@@ -22,6 +22,37 @@ SAVE = {"acct": {
                "InputGamepad": {"Player_Jump": "0,Player_Jump,Gamepad_FaceButton_Bottom,1.000000.1"}}}}
 
 
+def player_cat(clan, role, prefix, suffix, fields="FurColorIdx=3"):
+    """A cat's record as the save keeps it, in a clan, with its rank and name IDs."""
+    return f'(ClanType={clan},Role={role},PrefixNameId="{prefix}",SuffixNameId="{suffix}",{fields})'
+
+
+def games_save(current=4):
+    """A save with several games, as the owner's has: your 1st game (slot 0) and your 5th (slot 4) each have a
+    ThunderClan apprentice with the very same name IDs (two Sharppaws), your 3rd (slot 2) a RiverClan medicine cat,
+    slot 1 clan cats but no cat of yours (not a game a page can pick), and slot 3 nothing. `current` is the game
+    played last."""
+    def game(cat, level, npc=None):
+        out = {"GameplayProgression": {"Level": level, "Experience": 10 * level,
+                                       "Gameplay.Combat.Character.Cat.Player": {"Customization": cat}}}
+        if npc:
+            out["NPCData"] = {"Clans": {"ThunderClan": {"Warrior": [npc]}}}
+        return out
+    sharp = player_cat("ThunderClan", "Apprentice", "STR_CAT_NAME6", "_PAW", "FurColorIdx=3,TailIdx=1")
+    return {"acct": {
+        "0": game(sharp, 3, player_cat("ThunderClan", "Warrior", "STR_CAT_NAME7", "_HEART")),
+        "1": {"NPCData": {"Clans": {"WindClan": {"Warrior": [player_cat("WindClan", "Warrior", "STR_CAT_NAME8", "_LEAF")]}}}},
+        "2": game(player_cat("RiverClan", "MedicineCat", "STR_CAT_NAME9", "_WING", "FurColorIdx=5"), 7),
+        "4": game(sharp.replace("FurColorIdx=3,TailIdx=1", "FurColorIdx=8,TailIdx=2"), 1,
+                  player_cat("ThunderClan", "Warrior", "STR_CAT_NAME10", "_FUR")),
+        "Shared": {"General": {"CurrentCatSlot": current}, "SettingsData": {"MasterVolume": 1}}}}
+
+
+# The names games_save's cats show, by their prefix IDs, for a stand-in of the studio's cat namer.
+GAMES_NAMES = {"STR_CAT_NAME6": "Sharppaw", "STR_CAT_NAME7": "Lionheart", "STR_CAT_NAME8": "Gorseleaf",
+               "STR_CAT_NAME9": "Mothwing", "STR_CAT_NAME10": "Dustfur"}
+
+
 def write_save(folder, data=SAVE):
     """WrcGame.sav holding `data` in folder, laid out as the game lays out its saves."""
     from wcmods.selftest import _small_save

@@ -99,6 +99,12 @@ def slot_of(target):
     return _parse_target(target)[0]
 
 
+def player_slot(target):
+    """The game a cats key means your cat in ("4" for "4/player"), or None for any other key."""
+    slot, want = _parse_target(target)
+    return slot if slot is not None and want.strip().lower() == "player" else None
+
+
 def by_place(target):
     """Whether a cats key picks a cat by its place (Clans/RiverClan/Warrior/3) rather than its name."""
     return "/" in _parse_target(target)[1]

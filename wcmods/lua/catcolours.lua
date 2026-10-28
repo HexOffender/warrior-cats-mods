@@ -11,6 +11,12 @@ local COLOURS = {
 local OTHERS = {
 @OTHERS@
 }
+-- Your cat's colours in a game cats.json names by its slot ("4/player"), by that cat's name IDs: that game's own
+-- choices only. They go on your cat over COLOURS while it's that cat, so the menu's Colours page still changes
+-- the parts they leave alone (never on another cat that shares its name: OTHERS are those).
+local YOURS = {
+@YOURS@
+}
 -- How your cat is found: your character in the world, plus menu and portrait copies with the name IDs your
 -- character last had (remembered in KEY_FILE), or else your save's from when the mods were installed. Before
 -- the world, the main menu's cat and the cat choice's own cat need only the same prefix (a rank-up changes
@@ -160,6 +166,14 @@ local function unpaint(comp)
     return n
 end
 
+-- COLOURS with a game's own colours over them, made as it's painted: the menu's Colours page changes COLOURS live.
+local function over(own)
+    local out = {}
+    for pn, c in pairs(COLOURS) do out[pn] = c end
+    for pn, c in pairs(own) do out[pn] = c end
+    return out
+end
+
 -- Put colours on a cat ({ [parameter] = { r, g, b } }), remembering the game's first; how many had to change.
 local function paint(comp, colours, who)
     local at = comp:GetAddress()
@@ -246,16 +260,21 @@ local function tick()
                 local loose = not inForest and (cls == MAIN_MENU_ACTOR or ownerAt == choiceAt)
                 yours = key == known or (loose and prefixOf(key) ~= "" and prefixOf(key) == prefixOf(known))
             end
-            -- Another cat cats.json names: its full name IDs, in the world or a menu (never your own cat).
-            local cols = nil
-            if not yours and others and not isMine and not off and key then cols = OTHERS[key] end
+            -- Another cat cats.json names: its full name IDs, in the world or a menu (never your own cat). Your own
+            -- cat, when cats.json gives the game it's in colours of their own: those over COLOURS, by its name IDs.
+            local cols, who = nil, nil
+            if yours then
+                if key and YOURS[key] then cols, who = over(YOURS[key]), "yours:" .. key end
+            elseif others and not isMine and not off and key then
+                cols, who = OTHERS[key], key
+            end
             if DEBUG and not seen[at] then
                 seen[at] = true
                 log("cat %s on %s: %s", key or "?", cls, yours and "yours" or "not yours")
             end
             local n = 0
             if yours or cols then
-                n = paint(comp, cols or COLOURS, yours or key)
+                n = paint(comp, cols or COLOURS, who or true)
                 if yours then total = total + n else theirs = theirs + n end
             elseif painted[at] then
                 n = unpaint(comp)
@@ -302,6 +321,10 @@ if okMenu then pcall(function()
         ui.heading("Your cat's colours")
         ui.note("Only your cat wears these. Changes show within half a second." ..
                 (SAVE and (" Save writes them to " .. SAVE.file .. ", so installing again keeps them.") or ""))
+        if YOURS[known] then
+            ui.note("Your cat in this game has colours of its own in cats.json too, and those win where both " ..
+                    "choose a part.")
+        end
         for _, p in ipairs(PARTS) do
             local on = ui.switch(p.label, p.hex ~= nil)
             if on and not p.hex then

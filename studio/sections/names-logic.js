@@ -1,7 +1,11 @@
 // The Names page's plain logic, with no page in it: reading a names.json into what the page edits and back, how
 // a cat is named in "cats", what the line under a cat's box says, and the words for ranks, story roles and games.
 // studio/sections/names.js draws the page with these; tests/studio/unit/names.test.mjs checks them. The answers
-// they read are the studio's GET /names and POST /names/preview (wcmods/studio.py, names_preview).
+// they read are the studio's GET /names and POST /names/preview (wcmods/studio.py, names_preview). A game's words are
+// lib/games.js's, the same on every page.
+import { gameTitle, ordinal } from "../lib/games.js";
+
+export { ordinal };
 
 // What the page edits; the rest of a names.json (weights, banned.clear) is kept as written.
 export const EMPTY = () => ({
@@ -232,15 +236,10 @@ export function roleWords(role) {
   const words = String(role || "").match(/(?:Thunder|River|Shadow|Wind|Star)Clan|[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+/g) || [];
   return words.map(w => /Clan$/.test(w) ? w : w.toLowerCase()).join(" ");
 }
-export function ordinal(n) {
-  const s = ["th", "st", "nd", "rd"], v = n % 100;
-  return n + (s[(v - 20) % 10] || s[v] || s[0]);
-}
-// A game's heading in the cats list: "Your 2nd game (Duskfang's)", the one being played said so.
+// A game's heading in the cats list: "Your 2nd game: Duskfang", as the Save and Your cat pages head a game.
 export function slotHeading(slot, cats) {
   const you = cats.find(c => c.player);
-  const n = /^\d+$/.test(String(slot)) ? ordinal(Number(slot) + 1) : String(slot);
-  return `Your ${n} game${you ? ` (${you.name}'s)` : ""}`;
+  return gameTitle({ slot: String(slot), name: you ? you.name : null });
 }
 // Where a cat is, in words: "RiverClan · Warrior · 3", "you", with its story roles.
 export function whereWords(c) {

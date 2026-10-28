@@ -35,7 +35,7 @@ test("a range clamp refuses -5 and 999999 for Level", () => {
   assert.deepEqual(S.rangeFor(`${P}/Level`, RANGES).max, 20);
 });
 
-test("a preset expands to the right paths and values", () => {
+test("a preset expands to the right paths and values", async () => {
   const list = S.emptyList();
   S.preset("max-level", list, DATA, "1");
   assert.deepEqual(list.set, { [`${P}/Level`]: 20 });   // no Experience in this save: only what it has
@@ -59,13 +59,16 @@ test("a preset expands to the right paths and values", () => {
     "Horsetail Stalks, Marigold Petal, Comfrey Poultice and Lamb's Ear Leaves");
   assert.equal(S.andList(["Moss"]), "Moss");
   assert.equal(S.andList(["Moss", "Fern"]), "Moss and Fern");
+  // One home for it: lib/games.js's, which the Save page's game words use too.
+  const G = await import(dom.studio("lib/games.js"));
+  assert.equal(S.andList, G.andList);
 });
 
 test("describe turns a path into words", () => {
   assert.equal(S.describe(`${P}/Level`, SAY), "Fawnstar's level");
   assert.equal(S.describe(`${INV}/Gameplay.Inventory.Materials.Moss`, SAY), "Fawnstar's Moss");
   assert.equal(S.describe(`${INV}/Gameplay.Inventory.Consumable.SmallHealingHerb`, SAY), "Fawnstar's Small Healing Herb");
-  assert.equal(S.describe("0/GameplayProgression/Level", SAY), "cat slot 0's level");
+  assert.equal(S.describe("0/GameplayProgression/Level", SAY), "your 1st game's cat's level");
   assert.equal(S.describe(`${P}/Level`, { ...SAY, cats: {} }), "your cat's level");
   assert.equal(S.describe("Shared/SettingsData/MasterVolume", SAY), "the game's setting master volume");
   assert.equal(S.describe(`${P}/QuestProgression`, SAY), "Fawnstar's quest progression");

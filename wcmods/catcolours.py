@@ -247,18 +247,24 @@ def _colour_lines(colours, indent):
     return out
 
 
-def script(colours, save_key="", key_file="", debug=False, save=None, others=None):
+def script(colours, save_key="", key_file="", debug=False, save=None, others=None, yours=None):
     """The UE4SS script for colours: {part: (r, g, b) sRGB 0-1}. save_key is your cat's name IDs in the
     save ("STR_CAT_NAME53|_PAW"), how it finds your cat before you're in the world (the main menu);
     key_file is where it remembers the IDs your character last had, which win once known. save is where
     the in-game menu's Save writes: {"path": the mod's cats.json, "file": its name for the player,
     "doc": that file's contents, whose player colours Save replaces}. others: {name key: colours} for
-    other cats, found by their name IDs wherever they are (the world, the clan's menus, portraits)."""
+    other cats, found by their name IDs wherever they are (the world, the clan's menus, portraits). yours:
+    {name key: colours} for your cat in a game cats.json names by its slot ("4/player"): that game's own colours
+    only, laid over `colours` as the script paints while your cat has those name IDs (so the in-game Colours page,
+    which changes `colours`, still changes the parts they leave alone)."""
     from .sdk import lua_value
-    lines = _colour_lines(colours, "    ")
-    other_lines = []
-    for key, cols in sorted((others or {}).items()):
-        other_lines += [f"    [{lua_value(key)}] = {{"] + _colour_lines(cols, "        ") + ["    },"]
+
+    def keyed(table):
+        out = []
+        for key, cols in sorted((table or {}).items()):
+            out += [f"    [{lua_value(key)}] = {{"] + _colour_lines(cols, "        ") + ["    },"]
+        return out
+    lines, other_lines, your_lines = _colour_lines(colours, "    "), keyed(others), keyed(yours)
     parts = [{"id": p, "param": PARTS[p], "label": LABELS[p],
               "hex": "#%02x%02x%02x" % tuple(round(c * 255) for c in colours[p]) if p in colours else None}
              for p in PARTS]
@@ -266,6 +272,7 @@ def script(colours, save_key="", key_file="", debug=False, save=None, others=Non
     def lua_str(s):
         return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
     return (LUA_TEMPLATE.replace("@COLOURS@", "\n".join(lines)).replace("@OTHERS@", "\n".join(other_lines))
+            .replace("@YOURS@", "\n".join(your_lines))
             .replace("@SAVE_KEY@", lua_str(save_key)).replace("@KEY_FILE@", lua_str(key_file))
             .replace("@DEBUG@", "true" if debug else "false")
             .replace("@PARTS@", lua_value(parts)).replace("@SAVE@", lua_value(save)))

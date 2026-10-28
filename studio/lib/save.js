@@ -1,7 +1,9 @@
 // The Save page's logic, without the page (studio/sections/save.js draws it): the list of changes to make, in
 // save.json's shape ({ set, add, remove }), checked against the save and against the ranges the game takes;
 // a save path in words; which values are only shown, not changed; and the presets. The words and the ranges
-// come from the server (GET /api/save: wcmods/sections/savedit.py WORDS and RANGES), one home for both.
+// come from the server (GET /api/save: wcmods/sections/savedit.py WORDS and RANGES), one home for both. A game's
+// words are lib/games.js's.
+import { andList, gameWords } from "./games.js";
 
 export const ITEM_ROOT = "Gameplay.Inventory.";
 // What Give herbs gives. Their tags aren't their names: the game's item table calls them Horsetail Stalks,
@@ -9,10 +11,8 @@ export const ITEM_ROOT = "Gameplay.Inventory.";
 export const HERBS = ["Consumable.SmallHealingHerb", "Consumable.MediumHealingHerb", "Consumable.BigHealingHerb", "Consumable.SmallCatnip"]
   .map(t => ITEM_ROOT + t);
 
-// Names in a sentence: "A", "A and B", "A, B and C".
-export function andList(names) {
-  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}
+// Names in a sentence: "A", "A and B", "A, B and C" (lib/games.js's, one home for it).
+export { andList };
 
 export function getPath(obj, path) {
   let node = obj;
@@ -35,15 +35,15 @@ export function itemWords(tag) {
   const parts = rest.split(".");
   return words((parts.length > 1 ? parts.slice(1) : parts).join(" "));
 }
-// A save path in words, as savedit.label says it: "Fawnstar's level". say: { words, cats: {slot: name},
-// current: the slot being played, items: {tag: name} }.
+// A save path in words, as savedit.label says it: "Fawnstar's level", "your 2nd game's cat's level". say: { words,
+// cats: {slot: name}, current: the slot being played, items: {tag: name} }.
 export function describe(path, say = {}) {
   const last = words(String(path).replace(/\/$/, "").split("/").pop());
   for (const w of say.words || []) {
     const m = new RegExp(w.match).exec(path);
     if (!m) continue;
     const said = { name: last.toLowerCase() };
-    if (w.say.includes("{cat}")) said.cat = say.cats?.[m[1]] || (m[1] === String(say.current) ? "your cat" : `cat slot ${m[1]}`);
+    if (w.say.includes("{cat}")) said.cat = say.cats?.[m[1]] || (m[1] === String(say.current) ? "your cat" : `${gameWords(m[1])}'s cat`);
     if (w.say.includes("{item}")) said.item = say.items?.[m[2]] || itemWords(m[2]);
     return w.say.replace(/\{(\w+)\}/g, (_, k) => said[k] ?? "");
   }
