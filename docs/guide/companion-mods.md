@@ -2,78 +2,117 @@
 
 ## What it changes in the game
 
-Four mods come with Clan Mod Studio. Each is a mod of its own, made by the studio's makers, and each brings
-something into the game that the studio's pages make or need:
+Four mods go with Clan Mod Studio. Each is a mod of its own, made by the people who make the studio,
+and each brings something into the game that the studio's pages make or need:
 
-- **Menu pages**: your cat, the world, quests, fights and cheats in the in-game mod menu (Insert).
-- **Sandbox mode**: a Sandbox Mode on the game's main menu, where the cats and questlines you make on the
-  Characters and Questlines pages turn up.
-- **Creator palettes**: your new colours and coat presets as choices in the cat maker's colour pickers.
-  It comes with ten themed palettes, which go in switched off, and Coat presets, which goes in on. A
-  palette of yours with the same folder name (from wcmods-examples, say) is left as it is: the toast says
-  which.
-- **Emote wheel**: hold a key for a wheel of your emotes and the game's own poses (its description on the
-  Mods page says which key).
+- [Menu pages](README.md#menu-pages): pages in the in-game [mod menu](README.md#mod-menu) (Insert) about
+  your cat, the world, quests, fights and cheats.
+- [Sandbox mode](README.md#sandbox-mode): *Sandbox Mode* on the game's main menu, a cat in any Clan with
+  no story. The cats and quests you make on the Characters and Questlines pages come into the game there,
+  and only there.
+- Creator palettes: the new colours your palettes add, and their coat presets, as choices in the cat
+  maker's colour pickers, in a row under the game's. It comes with ten themed palettes, which go in
+  switched off, and Coat presets, which goes in on. A palette of yours with the same folder name as one
+  of those is left as it is, and the message after adding says so.
+- Emote wheel: hold its key for a wheel of your emotes and the game's own poses.
 
-How they get there: each is a small program that runs inside the game, through the script loader. So each
-needs the script loader, and mods that run code allowed (Get set up asks once). Clan Mod Studio fetches
-them from their pages on GitHub.
+How they get there: each one runs inside the game, so each needs the
+[script loader](README.md#script-loader) and [mods that run code](README.md#code-mods) allowed. Clan
+Mod Studio downloads them from their own pages on GitHub, so adding one needs the internet. They're a
+card on the Mods page, **Mods that go with Clan Mod Studio**, not a page of their own; its
+**What they do** opens this page.
 
 ## A five-minute first try
 
-1. On the Mods page, find the card **Mods that go with Clan Mod Studio**.
-2. Press **Add** on Sandbox mode.
-3. If its chip says **Needs scripts allowed**, press **Allow** on **Let mods run their own scripts** in Get
-   set up (or tick **Allow mods that run code** under Options, on the Settings and repair page).
-4. Press **Play**.
-5. On the game's main menu, there's Sandbox Mode.
+You need the script loader first: **Install it**, in **Get set up** on the Mods page.
+
+1. Open the Mods page and find the card **Mods that go with Clan Mod Studio**.
+2. Press **Add** on the Sandbox mode row. Its chip changes to "In, 0.4", or to **Needs scripts allowed**.
+3. If it says **Needs scripts allowed**: open Settings and repair, tick **Allow mods that run code**
+   under Options, read the warning, and press **Allow mods that run code**.
+4. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait).
+5. On the game's main menu, choose *Sandbox Mode*.
 
 ## What you can and can't do
 
 You can:
 
-- Add all four at once with **Add all four** in Get set up, or one at a time with **Add** on its row.
-- See where each one stands from its chip: **Not added**, **In, 0.4**, **Off**, **Needs scripts
-  allowed**, **Newer one out: 0.5**, **Needs a newer Clan Mod Studio** or **No release yet**.
-- Press **Check for newer versions** to ask GitHub, and **Get the latest** to update one. An update keeps
-  whether it's on and your own settings (the Emote wheel's key, Menu pages' cheats). The older copy is kept
-  with your removed mods.
-- Add one from a .zip you downloaded yourself: drop it on **Add a mod**, as any mod. That keeps your
-  settings too.
-- Switch any of them off on its card under Your mods, like any mod.
+- Add all four at once with **Add all four** in **Get set up**, or one at a time with **Add** on its row.
+  While Sandbox mode is missing, the Characters and Questlines pages have **Add Sandbox mode** in the
+  strip at their top too, and Animations will have **Add the Emote wheel** once that one is out.
+- See where each one stands from its chip: **Not added**, "In, 0.4" (in your mods, on, and the newest
+  the studio knows of), **Off**, **Needs scripts allowed**, "Newer one out: 0.5",
+  **Needs a newer Clan Mod Studio** or **No release yet**. When all four are in, on and up to date, the
+  card folds to one line, and **Show them** opens it.
+- Ask GitHub with **Check for newer versions**, then update one with **Get the latest** (on its row, or
+  under its card's **More**). An update keeps whether it's on and your own settings (Menu pages'
+  cheats, the Emote wheel's key), and the older copy is kept with your removed mods.
+- Add one from a .zip you downloaded yourself: drop it on **Drop a mod's .zip here**, like any mod. Your
+  settings are kept that way too.
+- Switch any of them off on its card under **Your mods**, like any mod.
+- Keep Menu pages, Creator palettes and the Emote wheel as they are while you play a
+  [mod pack](packs.md) on its own: they're your own tools, so **Play only this pack** leaves them alone.
 
 You can't:
 
-- Add one that has no release yet. Its row says **No release yet**: the owner of that mod has to publish
-  one on GitHub first. Until then, nothing is wrong on your side.
-- Use one that needs a newer Clan Mod Studio than yours: get the newer Clan Mod Studio first.
-- Have them in the game with mods that run code off: they're all programs that run in the game.
+- Add one that has no release yet. Its row says **No release yet**, with a link to its releases: the
+  owner of that mod has to publish one first. Nothing is wrong on your side.
+- Choose an older version: **Add** and **Get the latest** always take the newest release. For another
+  one, download its .zip from its releases page and drop it on **Drop a mod's .zip here**.
+- Put one in the game that needs a newer Clan Mod Studio than yours. Its row says
+  **Needs a newer Clan Mod Studio**: get the newer studio first (unzip a new download over the old
+  folder; your mods stay where they are).
+- Have them in the game while mods that run code aren't allowed: they all run inside the game.
+
+### Which versions are out
+
+- Menu pages 1.0 is out, and works with this Clan Mod Studio.
+- Sandbox mode 0.4 is out, and works with this Clan Mod Studio: your cats and questlines come into the
+  game with it. Sandbox mode 0.5 isn't out yet. It's the one a cat set to **Same look every time** needs
+  (with 0.4 that cat gets a new look each time), and the one that starts a quest over when you change
+  its steps. When it's out, **Check for newer versions** shows "Newer one out: 0.5".
+- Creator palettes and the Emote wheel have no release yet, so there's nothing to add. The copies being
+  made are for this Clan Mod Studio, but neither has been tried with it in the game.
 
 ## Did it reach the game?
 
-- On the card, the chip says **In** with its version, in green.
-- Under Get set up, "Not in the game yet" lists it until you press **Play** or **Apply to game**.
-- In the game: Insert opens the mod menu with its pages (Menu pages); Sandbox Mode is on the main menu
-  (Sandbox mode); the cat maker's colour pickers have a row of your colours (Creator palettes); holding the
-  Emote wheel's key shows the wheel.
+- On the card, "In, 0.4" in green means it's in your mods and on. It reaches the game at your next
+  **Play** or **Apply to game**; until then, "Not in the game yet", near the top of the Mods page, lists
+  it ("Sandbox mode on").
+- Menu pages: Insert opens the mod menu, with Your cat, World, Story, Fight and Cheats in its side bar.
+- Sandbox mode: *Sandbox Mode* is on the game's main menu.
+- Creator palettes: the cat maker's colour pickers have a row of your new colours under the game's.
+- Emote wheel: holding its key shows the wheel.
+- The mod menu's Installed mods page lists each one that went in.
+- Not tried in the game yet: **Add all four** on a fresh install, then allowing mods that run code and
+  pressing **Play**. If something doesn't show, the mistakes below are the first things to check.
 
 ## Common mistakes
 
-- **The chip says Needs scripts allowed.** Allow mods that run code (Get set up, or Options on the Settings
-  and repair page), then **Play**.
-- **The chip says Off.** Press **Switch on**.
-- **"GitHub is turning requests away for now."** GitHub answers only so many questions an hour. Wait an
-  hour, or download the .zip from its page and drop it on **Add a mod**.
-- **"No internet connection."** Clan Mod Studio couldn't reach GitHub. Nothing was added, and Get set up's
-  step stays open: press **Add all four** (or **Check for newer versions**) again once you're online.
-- **"No release yet."** Nothing to fix here: that mod's owner hasn't published it yet. Its row has a link
-  to its releases.
+- The chip says "Needs scripts allowed". Allow mods that run code (**Options**, on Settings and repair),
+  then press **Play**.
+- The chip says "Off". Press **Switch on** on its row, then **Play**.
+- A message says "GitHub is turning requests away for now". GitHub answers only so many questions an
+  hour. Wait an hour, or download the .zip from its releases page and drop it on
+  **Drop a mod's .zip here**.
+- A message says "No internet connection". Clan Mod Studio couldn't reach GitHub, so nothing was added,
+  and the step in **Get set up** stays open. Press **Add all four** (or **Add**, or
+  **Check for newer versions**) again once you're online.
+- The chip says "No release yet". Nothing to fix: that mod's owner hasn't published it yet.
+- The Characters page says your fixed looks need Sandbox mode 0.5. 0.5 isn't out yet: those cats get a
+  new look each time until it is, and only their looks wait for it. Everything else comes into the game
+  with 0.4, the newest release.
 
 ## Undo
 
-- Before Play: switch it off on its card, or **Remove** it (under its **More**).
-- After Play: switch it off and press **Play** again; it comes out of the game.
-- After **Get the latest**: the older copy is kept; remove the new one, then **Put it back** on the
-  Settings and repair page.
-- What one of them wrote into your save (a sandbox cat's progress, say) stays in your save: put back a save
-  backup to undo that ([Settings and repair](settings.md)).
+- Before **Play**: switch it off on its card, or **Remove** it (under its **More**; press it twice).
+- After **Play**: switch it off and press **Play** again: it comes out of the game.
+- After **Get the latest**: the older copy is kept. **Remove** the new one, then press **Put it back**
+  beside the old copy, under Removed and replaced mods on the Settings and repair page. It comes back
+  switched off: switch it on.
+- What you did in the game with them is part of your game, as anything you play is: a sandbox cat stays
+  among your saved games. A save backup from before puts your save back
+  ([Settings and repair](settings.md)).
+- How far your questlines have got is kept by Sandbox mode beside your saves:
+  **Start every questline over**, on the Questlines page, starts them all again.

@@ -417,15 +417,16 @@ def needs_of(data):
     return out
 
 
-def sandbox(found, allow_code, held_back=None):
+def sandbox(found, allow_code, held_back=None, released=None):
     """What Sandbox mode can show of the mods' cats and questlines, for the story pages and the build:
     {"state": "on" | "off" | "held-back" | "no-code" | "missing", "version": its version ("" when it has none,
-    None when it isn't there), "name", "needs": SANDBOX_NEEDS, "newest": the newest version they ask for (the
-    one to get), "older": the fields of SANDBOX_NEEDS it's too old for, "releases": where to download it,
-    "code_allowed", "held": why it's left out, when it's held back (else None)}. found: the mods folder's mods
-    (mods.discover); allow_code: whether mods that run code are allowed, which Sandbox mode, a script, needs;
-    held_back: gamebuild.held_back's {mod id: why}, the mods a build leaves out after a game update until
-    they're used anyway (Sandbox mode among them is on, but nothing of it goes in)."""
+    None when it isn't there), "name", "needs": SANDBOX_NEEDS, "newest": the newest version they ask for (which
+    may not be released yet), "older": the fields of SANDBOX_NEEDS it's too old for, "releases": where to
+    download it, "released": its newest release as far as the studio knows (`released`, or None when it
+    doesn't), "code_allowed", "held": why it's left out, when it's held back (else None)}. found: the mods
+    folder's mods (mods.discover); allow_code: whether mods that run code are allowed, which Sandbox mode, a
+    script, needs; held_back: gamebuild.held_back's {mod id: why}, the mods a build leaves out after a game
+    update until they're used anyway (Sandbox mode among them is on, but nothing of it goes in)."""
     m = next((x for x in found if x.id == SANDBOX_ID), None)
     held = (held_back or {}).get(SANDBOX_ID) if m is not None and m.enabled else None
     if m is None:
@@ -444,8 +445,8 @@ def sandbox(found, allow_code, held_back=None):
     older = sorted(k for k, need in needs.items() if m is not None and need is not None and (have is None or have < need))
     newest = max((v for v in SANDBOX_NEEDS.values() if version_key(v) is not None), key=version_key, default=None)
     return {"state": state, "version": version, "name": m.name if m else SANDBOX_NAME, "needs": dict(SANDBOX_NEEDS),
-            "newest": newest, "older": older, "releases": SANDBOX_RELEASES, "code_allowed": bool(allow_code),
-            "held": held}
+            "newest": newest, "older": older, "releases": SANDBOX_RELEASES, "released": released or None,
+            "code_allowed": bool(allow_code), "held": held}
 
 
 def held_words(held):

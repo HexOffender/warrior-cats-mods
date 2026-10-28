@@ -23,10 +23,40 @@ test("each state of Sandbox mode has its own words", () => {
   assert.equal(noCode.settings, true);
   const missing = story.stripWords(answer({ state: "missing", version: null, code_allowed: false }));
   assert.equal(missing.title, "You'll need Sandbox mode");
-  assert.match(missing.text, /download sandbox-0\.5\.zip from its releases page and drop it on the Mods page\./);
+  // The studio hasn't heard of a release: no file named, as the version the fields need may not be out.
+  assert.match(missing.text, /download its newest \.zip from its releases page and drop it on the Mods page\./);
+  assert.doesNotMatch(missing.text, /sandbox-0\.5/);
   assert.match(missing.text, /allow mods that run code on Settings and repair too/);
   assert.equal(missing.link, "https://github.com/HexOffender/wcmods-sandbox/releases");
   assert.doesNotMatch(story.stripWords(answer({ state: "missing", version: null })).text, /run code/);
+  // GitHub said 0.4 is the newest (Check for newer versions, or an add): that's the file to download.
+  assert.match(story.stripWords(answer({ state: "missing", version: null, released: "0.4" })).text,
+    /download sandbox-0\.4\.zip from its releases page/);
+});
+
+test("fixed looks that need a Sandbox mode that isn't released yet say so, and never name its .zip", () => {
+  // 0.4 in your mods, 0.4 the newest release, and the cats' fixed looks need 0.5.
+  const notOut = story.stripWords(answer({ version: "0.4", older: ["look", "slots"], released: "0.4" }), ["look", "slots"]);
+  assert.equal(notOut.title, "Your fixed looks need Sandbox mode 0.5, which isn't out yet; you have 0.4");
+  assert.equal(notOut.text, "Until it's out the game makes their look up each time. Your cats go in all the same.");
+  assert.doesNotMatch(notOut.title + notOut.text, /\.zip|Get the latest/);
+  assert.equal(notOut.link, "https://github.com/HexOffender/wcmods-sandbox/releases");
+  // Older still: the same.
+  assert.match(story.stripWords(answer({ version: "0.3", older: ["look"], released: "0.4" }), ["look"]).title, /^Your fixed looks need Sandbox mode 0\.5, which isn't out yet; you have 0\.3$/);
+  // Once 0.5 is out (or something newer), it's named, with Get the latest.
+  for (const released of ["0.5", "0.5.0", "0.6"]) {
+    const out = story.stripWords(answer({ version: "0.4", older: ["look"], released }), ["look"]);
+    assert.equal(out.title, "Your fixed looks need Sandbox mode 0.5 or newer; you have 0.4", released);
+    assert.match(out.text, new RegExp(`Sandbox mode ${released.replace(/\./g, "\\.")} is out: press Get the latest on its row on the Mods page, or download sandbox-${released.replace(/\./g, "\\.")}\\.zip`));
+    assert.equal(out.mods, true);
+  }
+  // Nothing heard from GitHub: no file name, and the way to find out.
+  const unknown = story.stripWords(answer({ version: "0.4", older: ["look"] }), ["look"]);
+  assert.equal(unknown.title, "Your fixed looks need Sandbox mode 0.5 or newer; you have 0.4");
+  assert.equal(unknown.text, "Until then the game makes their look up each time. To see whether 0.5 is out, press Check for newer versions on the Mods page; Get the latest then brings it.");
+  assert.equal(unknown.mods, true);
+  // A release that isn't a plain version can't be compared: named as it is, never said to be too old.
+  assert.match(story.stripWords(answer({ version: "0.4", older: ["look"], released: "beta" }), ["look"]).title, /or newer/);
 });
 
 test("a Sandbox mode too old for the fixed looks the cats use says so; one the cats don't need doesn't", () => {
@@ -41,7 +71,7 @@ test("a Sandbox mode too old for the fixed looks the cats use says so; one the c
   const later = answer({ version: "0.4", needs: { look: "0.5", slots: "0.6" }, newest: "0.6", older: ["look", "slots"] });
   assert.equal(story.stripWords(later, ["look"]).title, "Your fixed looks need Sandbox mode 0.5 or newer; you have 0.4");
   assert.equal(story.stripWords(later, ["look", "slots"]).title, "Your fixed looks need Sandbox mode 0.6 or newer; you have 0.4");
-  assert.match(story.stripWords(later, ["look"]).text, /Download sandbox-0\.6\.zip/, "the newest is still the one to get");
+  assert.match(story.stripWords({ ...later, released: "0.6" }, ["look"]).text, /download sandbox-0\.6\.zip/, "the newest release is the one to get");
 });
 
 test("a Sandbox mode a game update holds back says Use it anyway on the Mods page", () => {

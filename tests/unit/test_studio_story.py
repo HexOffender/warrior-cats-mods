@@ -138,6 +138,17 @@ def test_story_sandbox_says_each_state(studio):
     assert state()["older"] == ["look", "slots"]
 
 
+def test_story_sandbox_names_the_newest_release_only_once_github_has_said_it(studio):
+    # GitHub isn't asked for the strip: until Check for newer versions (or an add) has asked it, no release is
+    # known, so the strip names no .zip (the 0.5 fixed looks need may not be out).
+    assert call(studio, "GET", "story/sandbox")["released"] is None
+    studio.releases["sandbox"] = {"no_release": True, "error": "Sandbox mode has no release yet"}
+    assert call(studio, "GET", "story/sandbox")["released"] is None
+    studio.releases["sandbox"] = {"version": "0.4", "name": "sandbox-0.4.zip"}
+    s = call(studio, "GET", "story/sandbox")
+    assert s["released"] == "0.4" and s["newest"] == "0.5"   # what the fields need, which isn't out
+
+
 def test_story_sandbox_says_a_sandbox_held_back_after_a_game_update(studio, monkeypatch):
     studio.ctx.cfg.data["allow_code_mods"] = True
     studio.ctx.cfg.save()   # kept through "Use it anyway", which reads wcmods.json again

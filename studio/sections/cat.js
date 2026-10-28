@@ -45,11 +45,19 @@ export default {
     // looks: each cat's choices, "player" for yours and the others by their cats.json key (lib/catlook.js says
     // what each holds); fileExtra: the file's other keys, kept as they are.
     let looks = { player: C.blank() }, fileExtra = {}, who = "player";
+    // The title, and a line while the page waits: the first GET /cat on a real save takes a couple of seconds (it
+    // reads the whole save), and until it answers there'd be nothing on the page at all.
+    const head = wc.pageHead({ eyebrow: "Your cat", title: "Your cat",
+      lede: "Your cat's look, or any other cat's in your save: colours only that cat wears, which of the game's colours it uses, its scars and its shape. Save to a mod, then Apply to game.",
+      help: "help:cat" });
+    const reading = el("p", { class: "muted reading", role: "status", text: "Reading your save…" });
+    root.append(head, reading);
     // GET /cat, the game's colour tables and eye colours (either may not be readable yet), the studio's status (the
     // script loader, the last Apply) and the mods (which one the in-game Colours page saves into).
     const [firstInfo, tablesRes, eyesRes, firstStatus, firstMods] = await Promise.all([api.get("/cat"),
       api.get("/game/tables").catch(() => ({ tables: null })), api.get("/game/eyes").catch(() => null), api.get("/info").catch(() => null),
       api.get("/mods").catch(() => [])]);
+    reading.remove();
     let info = firstInfo, status = firstStatus, mods = firstMods;
     const TABLES = tablesRes.tables || {};
     const EYE_LIN = eyesRes ? eyesRes.rows.map(r => r.map(h => color.hexToLinear("#" + h))) : null;
@@ -88,9 +96,6 @@ export default {
     const svg = stage.querySelector("svg");
     const nowCard = el("div", { class: "card" });
     root.append(
-      wc.pageHead({ eyebrow: "Your cat", title: "Your cat",
-        lede: "Your cat's look, or any other cat's in your save: colours only that cat wears, which of the game's colours it uses, its scars and its shape. Save to a mod, then Apply to game.",
-        help: "help:cat" }),
       el("div", { class: "banner info" }, el("strong", { text: "Two ways to colour a cat" }),
         el("span", { text: "Colours of its own go onto the cat while you play (they need the script loader), so any colour works, even for paws, ears and nose. The game's colours, scars and shape pick from the game's own, plus new pattern and marking colours your palettes add; they go into your save on Apply, after a backup." })),
       saveLine, target.element, whoCard,
