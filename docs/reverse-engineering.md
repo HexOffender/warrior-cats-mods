@@ -35,8 +35,9 @@ question from *Open questions* when it's answered.
 ## How we find things
 
 The first place to look is the class index, `vanilla/sdk/api-index.txt` (not committed, like the
-rest of `vanilla/`). It has a `## [Module] Class : Parent` line per class and struct of the game's
-own modules (SwtCore, SwtEngine, SwtAdventure, SwtQuest, SwtNativeAudio, SwtOnlineCloud and Wrc).
+rest of `vanilla/`). It has a `## [Module] Class : Parent` line per class, and a `## [Module]
+struct FName : Parent` line per struct (without ` : Parent` when it has none), of the game's own
+modules (SwtCore, SwtEngine, SwtAdventure, SwtQuest, SwtNativeAudio, SwtOnlineCloud and Wrc).
 Under each is a `P` line per property and an `F` line per function, with the function's Blueprint
 flags. Each module's enums are (nearly all) together in its block, one `enum E...: names` line each
 (`grep -n "^enum ECharacterTrait"`). That is 971 classes, 188 structs, 4,620 properties, 1,050
@@ -44,9 +45,11 @@ functions and 198 enums in 7,027 lines; going by its file date (2026-10-24) it w
 24847281, before patch 1.1. One search answers most first questions: is it reflected, what is the
 manager's class, what does a function take, which class holds a property of this type (`grep -n
 "Tuning" vanilla/sdk/api-index.txt`). It has no offsets (they're in the dump's
-`CXXHeaderDump/<Module>.hpp`, as `// 0x0460 (size: 0x8)`), no engine classes and no Blueprints
-(the dump has those, the Blueprints in `CXXHeaderDump-world/`). What isn't reflected isn't in it or
-the dump; then the exe is where to look, with the
+`CXXHeaderDump/<Module>.hpp`, as `// 0x0460 (size: 0x8)`), no engine classes and no Blueprints.
+The dump has those. Counting headers whose classes are all Blueprint (`_C`) classes,
+`CXXHeaderDump/` has 401 and `CXXHeaderDump-world/` 1,222: all but two of the first folder's and
+823 more, so most Blueprints are in `CXXHeaderDump-world/` (by its name, dumped with a world
+loaded). What isn't reflected isn't in it or the dump; then the exe is where to look, with the
 tools below. For example, `USwtTuningManager` reflects no function, so the code that reads tuning
 keys is found with xrefs.
 
@@ -55,11 +58,20 @@ keys is found with xrefs.
   and call `find(image, texts)`. Tuning keys (`Gameplay.Exploration.Camera.TurnRate.Yaw`) lead to
   the code that loads them. Each key is read into a member, so a loader reveals a struct's layout
   (`tools/re/tunemap.py` maps each key to its offset from a dumpbin listing of the loader).
-  - `lea` passes the string's address on; `mov` copies its first eight bytes (90 places in the exe).
+  - `lea` passes the string's address on; `mov` copies its first eight bytes, and is rare. The
+    counts below are from a survey of the exe (build 26184573, 2026-10-28): every `lea` and `mov`
+    xrefs finds whose target starts a whole string of 4 or more characters (printable ASCII, tab,
+    CR or LF) in a data section. That is 230,329 `lea`s and 105 `mov`s (125 `mov`s counting
+    shorter strings), pointing at 104,041 distinct strings.
   - Only whole strings count: the text followed by its terminator, and UTF-16 only at even
-    addresses. A terminator in front isn't required: 1,485 of the 104,035 strings the code points at
-    have none (they follow other data, or are UTF-16 right after a narrow string's last character).
-    So the "Turn" at the end of "EndTurn" is listed only when code points at it.
+    addresses. A terminator in front isn't required: 1,485 of those 104,041 strings have none (they
+    follow other data, or are UTF-16 right after a narrow string's last character). None of the
+    76,858 UTF-16 ones is at an odd address. So the "Turn" at the end of "EndTurn" is listed only
+    when code points at it.
+  - `--prefix` (`find(image, texts, prefix=True)`) lists the strings that start with the text
+    instead, shown whole. `Gameplay.Exploration.Level.` isn't a whole string, but
+    `L"Gameplay.Exploration.Level.%d"` starts with it and one `lea` points at that (0x141658d2a),
+    the pattern the level keys are built from.
   - Before 2026-10-28 the whole-string filter was switched off (`or True`) and the pattern had no
     `mov`. "Turn" reported 16 strings with code pointing at them, 15 of them longer ones
     ("TurnBasedCombatComponent", "TurnRate", "Turn on to enable caching"), and the 6 `mov`s that
@@ -80,21 +92,24 @@ keys is found with xrefs.
 - **Not every tuning key is in the exe.** 221 of `TuningData`'s 441 keys are whole strings in the
   exe, and code points at every one of those 221 (xrefs on build 26184573, 2026-10-28). The other 220
   aren't in it at all, as ASCII or UTF-16: some are built from parts
-  (`Gameplay.Exploration.Detection.%s`), others are presumably read by Blueprints. A key the code
-  asks for that the table lacks, though, is a real bug (see *What traits do*).
+  (`Gameplay.Exploration.Detection.%s`, found with `xrefs.py --prefix`), others are presumably read
+  by Blueprints. A key the code asks for that the table lacks, though, is a real bug (see *What
+  traits do*).
 - **Data tables:** `tools/re/mechanics_tables.py` fills the generated tables in `mechanics/` from
   the extracted CSVs, with names from `Strings_EN.csv`.
 - **Crash dumps:** `cdb -z <crash folder>\UEMinidump.dmp -c ".ecxr; r; u @rip-0x30 L20; kn 12; q"`.
 - **Live game:** UE4SS Lua probes (see *UE4SS in this game*). For reading memory from outside,
-  `tools/re/memscan.py` uses ReadProcessMemory. Before 2026-10-28 it never searched a region
-  followed by unreadable memory. It read each chunk 64 bytes past its end, and Windows fails such a
-  read and reports only whole 56 KB blocks as copied, nothing for anything shorter. The script then
-  threw the read away. On a test Python process (not the game), 85 chunks over its 395 readable
-  regions came back empty, and the old scan found 0 of 4 markers planted next to unreadable pages.
-  Now it reads up to each region's end, carries the last bytes into a region that touches it, and
-  finds all 4, with a chunk of 16 MB or 4 KB. A "no other hits" found with memscan before then is
-  worth repeating. Never stop a debugger attached to the game without detaching (`qd`): exiting
-  kills the game.
+  `tools/re/memscan.py` uses ReadProcessMemory. Before 2026-10-28 it never searched the last chunk
+  of a region followed by unreadable memory (up to 16 MB, so all of any region of 16 MB or less).
+  It read each chunk 64 bytes past its end, and Windows fails such a read and reports only whole
+  56 KB blocks as copied, nothing for anything shorter. The script then threw the read away. On a
+  test Python process (not the game), 85 chunks over its 395 readable regions came back empty, and
+  the old scan found 0 of 4 markers planted next to unreadable pages. Now it reads up to each
+  region's end, carries the last bytes into a region that touches it, and finds all 4, with a chunk
+  of 16 MB or 4 KB. A "no other hits" found with memscan before then is worth repeating; `--old`
+  runs the old scan beside the new one and marks each hit it missed. The unit tests run it on their
+  own process too (Windows only). Never stop a debugger attached to the game without detaching
+  (`qd`): exiting kills the game.
 - **The game bridge:** with code mods allowed, `python wcmods.py lua "<code>"`, `inspect` and `find`
   run Lua in the running game and print what comes back ([scripting.md](scripting.md#the-game-bridge)).
   It's the quickest way to try a property, a function or an offset.
