@@ -33,6 +33,23 @@ def need_pages(agent):
     skip("the Menu pages mod isn't in the game (agent install --with ../wcmods-menu-pages/menu-pages)")
 
 
+def tweaks_clock_off(agent):
+    """The Tweaks in the same test install (tests/game/mods/all-tweaks) hold the clock, setting it back twice a
+    second: switch that off on their mod menu page while a test moves the clock. Returns what puts it back."""
+    there = any("Tweaks" in (p["id"], p["title"]) for p in agent.menu.pages())
+    if not there or not agent.menu.open("Tweaks").get("Hold the clock"):
+        agent.menu.close()
+        return lambda: None
+    agent.menu.set("Hold the clock", False)
+    agent.menu.close()
+
+    def back():
+        agent.menu.open("Tweaks")
+        agent.menu.set("Hold the clock", True)
+        agent.menu.close()
+    return back
+
+
 def test_every_page_draws(agent):
     """Each page opens without an error and shows something; a picture of each goes in the report."""
     pages = agent.menu.pages()
@@ -88,6 +105,14 @@ def test_health_slider_and_heal(agent):
 def test_hold_the_time(agent):
     """World's "Hold this time" keeps the clock where it is while it's on."""
     need_pages(agent)
+    hold_again = tweaks_clock_off(agent)
+    try:
+        _hold_the_time(agent)
+    finally:
+        hold_again()
+
+
+def _hold_the_time(agent):
     agent.menu.open("World")
     agent.menu.press("Noon")
     agent.menu.set("Hold this time", True)

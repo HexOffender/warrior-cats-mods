@@ -35,6 +35,28 @@ def test_agent_controller_parts():
     assert selftest._agent_parts()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="the agent's controller loads user32 as it's imported")
+def test_agent_install_builds_the_with_mods_whatever_game_they_name(studio, monkeypatch, tmp_path):
+    """`agent install --with` a test's own mod, whose mod.json names no version of the game (as tests/game/mods'
+    don't): it's built as chosen, not left out as made for an older version of the game."""
+    from wcmods.agent import controller
+    monkeypatch.setenv("WCMODS_DATA", studio.ctx.cfg.data_dir)
+    mod = tmp_path / "extra-mod"
+    mod.mkdir()
+    (mod / "mod.json").write_text(json.dumps({"name": "Extra", "enabled": True}), encoding="utf-8")
+    seen = {}
+
+    def build(cfg, mods, out_dir, log=print, trusted=()):
+        seen.update(mods=[m.id for m in mods], trusted=list(trusted))
+        return {}
+
+    monkeypatch.setattr(controller.window, "game_pid", lambda: None)
+    monkeypatch.setattr(controller.pipeline, "build", build)
+    monkeypatch.setattr(controller.pipeline, "install", lambda *a, **k: None)
+    controller.Agent(studio.ctx.root).install(extra=[str(mod)])
+    assert "extra-mod" in seen["mods"] and seen["trusted"] == ["extra-mod"], seen
+
+
 def test_getting_set_up_finds_the_game_from_any_of_its_folders():
     assert selftest._onboarding()
 

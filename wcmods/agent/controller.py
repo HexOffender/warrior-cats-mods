@@ -281,21 +281,23 @@ class Agent:
     def install(self, extra=(), code_mods=True, force=False):
         """Build and install your enabled mods for a test: code mods allowed for this build (so the bridge
         goes in, and every enabled mod's code runs, downloaded ones too), plus the mod folders in `extra`
-        (e.g. ../wcmods-examples/game-tweaks), on for this build. wcmods.json keeps its settings; the install updates
-        its record of what's installed. The game must be closed. Returns the build's manifest."""
+        (e.g. ../wcmods-examples/game-tweaks), on for this build, and used even when their mod.json doesn't name
+        this version of the game (the tests' own mods name none). wcmods.json keeps its settings; the install
+        updates its record of what's installed. The game must be closed. Returns the build's manifest."""
         if window.game_pid():
             raise AgentError("the game is running; agent.quit() first (installing replaces files it has open)")
         cfg = Config(self.root, self.cfg.data_dir)
         if code_mods:
             cfg.data["allow_code_mods"] = True
-        found = modlib.discover(cfg.mods_root)
+        found, chosen = modlib.discover(cfg.mods_root), []
         for path in extra:
             m = modlib.Mod(os.path.abspath(os.path.join(self.root, path)))
             m.enabled = True
             found = [x for x in found if x.id != m.id] + [m]
+            chosen.append(m.id)
         found.sort(key=lambda m: (m.priority, m.id))
         build_dir = os.path.join(self.root, "build", "agent-install")
-        manifest = pipeline.build(cfg, found, build_dir, log=lambda m: None)
+        manifest = pipeline.build(cfg, found, build_dir, log=lambda m: None, trusted=chosen)
         pipeline.install(cfg, build_dir, cfg.backups_dir, log=lambda m: None, force=force)
         return manifest
 
