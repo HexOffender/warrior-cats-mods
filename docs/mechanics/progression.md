@@ -22,9 +22,15 @@ experience for each level:
 | 10 | 680 | 2625 | 20 | 10000 | 41875 |
 | 11 | 890 | 3515 | | | |
 
-The save keeps `Experience` next to `Level`. A level 20 save has `Experience: 0`, which fits a
-counter that starts again at each level, so the table is most likely the XP needed for each
-level, not a running total.
+The save keeps `Experience` next to `Level`. The table is the XP needed for each level, not a running
+total, and the counter starts again at each level (read from the code on build 26184573,
+[reverse-engineering.md](../reverse-engineering.md#the-games-live-state), "The level component's
+code"):
+- **The bar:** at level n, the XP bar is `Level.<n+1>` (`0x141658D20`).
+- **Levelling up:** XP that reaches the bar, below the cap, makes the cat a level higher, and what's
+  over carries into the next level's bar (`0x141658A90`), so one big reward can give several levels.
+- **At the cap** (`MaxLevel`, which the level component keeps at +0x124), XP stops levelling, and
+  setting the level shows the bar full (`0x141658870`).
 
 **Where XP comes from:**
 - **Fights:** each enemy's `BaseExperience` (see [combat.md](combat.md#after-the-fight)).
@@ -90,10 +96,15 @@ Strength 199, Resilience 189, Instinct 199, Agility 180 and Stamina 100.
 - Brave adds 20 × 0.95 = 19 Strength and 10 × 0.95 = 9.5 Instinct.
 - That makes 199 and 198.5, which rounds to 199. Every number matches.
 
-The function above doesn't add the trait part, and the trait keys aren't in the exe as whole
-strings, so they're added somewhere else: a Blueprint, or code that builds the key from the trait's
-name. `MaxNatureGrowth.Strength/Resilience/Instinct` (30 each) is probably the cap on a trait's
-bonus. That's a guess: no trait comes near it.
+The function above doesn't add the trait part. Your cat's level component does, building the key from
+the trait's name (read from the code on build 26184573: `0x1417C6410`, which recomputes the stats
+whenever the level is set). For each of the cat's traits that is Brave, Ambitious or Wise
+(`ECharacterTrait` 1–3), it reads `Gameplay.Combat.` + the trait's name + `.Strength`, `.Resilience`
+and `.Instinct`, multiplies each by (level − 1) × 0.05 and adds it to the stat; then it rounds all six
+stats to whole numbers (`FMath::RoundToInt`, halves up). So the trait keys never appear as whole
+strings. Whether the fight's copy of your stats gets the trait part too isn't traced.
+`MaxNatureGrowth.Strength/Resilience/Instinct` (30 each) is probably the cap on a trait's bonus.
+That's a guess: no trait comes near it, and `0x1417C6410` doesn't read it.
 
 **Level 20 stats by clan**, before traits:
 

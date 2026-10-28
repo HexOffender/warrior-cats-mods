@@ -355,8 +355,8 @@ def build(cfg, mods, out_dir, log=print, trusted=()):
                         "layout": gamebuild.layout_key(cfg)}
     if fit["lost"]:
         manifest["warnings"].append(
-            "the game updated, and these values couldn't be found again, so what uses them is off until wcmods "
-            "is updated: " + ", ".join(gamebuild.describe(k) for k in fit["lost"]))
+            f"the game updated, and wcmods couldn't find {gamebuild.describe(fit['lost'])} again, so they're "
+            "off in the mod menu and scripts until wcmods is updated; everything else works")
 
     if ctx.files or ctx.packages:
         pak = PakWriter()

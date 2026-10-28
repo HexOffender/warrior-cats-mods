@@ -10,10 +10,13 @@ a rebuild that adds a member to a class does. For each class this keeps:
   offsets marked as captures.
 
 "The class's own code" is what's certainly its: the virtual functions it overrides (its vtable, found
-through the constructor its registration passes), and its native UFunctions (its StaticRegisterNatives
-table). A pattern only has to be unique among those, so it stays short and survives the code around it
-changing. On another build, check() finds the class again the same way, compares its size, and reads
-each member's offset out of the matching code; several sites must agree.
+through the constructor its registration passes), its native UFunctions (its StaticRegisterNatives
+table), the functions those call directly (a parent's code among them: the level component's start-up
+calls its parent's level setter), and the functions that ask for the class (Finder.class_code), each
+read whole (pe.Image.function_at). A pattern only has to be unique among those, so it stays short and
+survives the code around it changing. On another build, check() finds the class again the same way,
+compares its size, and reads each member's offset out of the matching code; to follow a move, two
+separate instructions must agree (overlapping sites that capture the same instruction are one vote).
 
     python wcmods.py game signatures make     # on the build wcmods was verified on: wcmods/exe/signatures.json
     python wcmods.py game signatures check    # on the installed game: what moved, and where to
@@ -33,31 +36,41 @@ RSP = 4
 WINDOW = 40          # bytes of code either side of an access, at most
 MIN_PATTERN = 12     # bytes; shorter patterns match too easily
 MIN_FUNCTION_PATTERN = 20
+WIDTH = {"ByteProperty": 1, "IntProperty": 4, "FloatProperty": 4}   # a member's size in bytes, by its kind
 
 # Functions the reverse-engineering notes tie to a class whose members its own code hardly touches
-# (docs/mechanics/combat.md, progression.md): RVAs on build 26184573, each 0x260 past where it was on
-# 24847281. Each is found again in another build by a pattern of its first instructions that's unique in
-# the whole exe, then read like the class's own code.
+# (docs/mechanics/combat.md, progression.md, docs/reverse-engineering.md): the starts of whole functions
+# (pe.Image.function_at), as RVAs on build 26184573 (the combat, status and detection ones each 0x260 past
+# where they were on 24847281). Each is found again in another build by a pattern of its first
+# instructions that's unique in the whole exe, then read like the class's own code.
 ANCHORS = {
     "/Script/SwtAdventure.TurnBasedCombatComponent": [
         (0x17D8270, "builds a fighter's stats from its level"),
         (0x17D8A00, "a fighter's Prowess with its buffs"),
         (0x17D9A60, "a fighter's speed, from Agility and stamina"),
-        (0x17D716A, "setting up a fighter: health and fight stamina from its stats"),
+        (0x17D70C0, "setting up a fighter: health and fight stamina from its stats"),
         (0x17D6A30, "dynamic difficulty: an enemy's level, its AI tier and its moves"),
-        (0x17DB5DE, "hitting and missing: the defender's team looked up for a forced miss"),
+        (0x17DB3E0, "hitting and missing: the defender's team looked up for a forced miss"),
     ],
     "/Script/SwtAdventure.SwtAdventureStatusComponent": [
         (0x17CE150, "the end of a round: the self-cure roll, and poison queued on the director"),
-        (0x17CDC86, "loads the status tuning"),
+        (0x17CDB40, "loads the status tuning"),
     ],
     "/Script/SwtAdventure.SwtAdventureDetectionComponent": [
         (0x17B8DB0, "loads the senses from the tuning for the size class"),
         (0x17B80C0, "reads the senses"),
     ],
+    # Its own code already reaches the level and the cap, which are its parent's (USwtQuestLevelComponent's)
+    # members: its start-up override (0x17C6210) stores the cap and calls the parent's level setter, which
+    # class_code() takes in as a direct callee. make() without these anchors signs all eight members too
+    # (on 26184573). They're kept for redundancy: the XP setter adds a fourth separate instruction on the
+    # level and a third on the cap, and the level setter is still searched if a rebuild stops 0x17C6210
+    # calling it. The parent's start-up (0x1658C00) isn't one: its only access, the cap's store, is the
+    # same bytes as 0x17C6210's as far as a signature reaches, so with both searched neither is unique,
+    # and make() loses the cap's signature in 0x17C6210 (the cap in 2 instructions instead of 3).
     "/Script/SwtAdventure.SwtAdventureLevelComponent": [
-        (0x17D8270, "builds a fighter's stats from its level"),
-        (0x17D716A, "setting up a fighter: health and fight stamina from its stats"),
+        (0x1658A90, "setting the XP: levels up while it reaches the next level's, below the cap"),
+        (0x1658870, "setting the level: the XP bar's size from the XP table, full at the cap"),
     ],
 }
 
@@ -386,16 +399,159 @@ class Finder:
 
 
 # ---------- making patterns ----------
-def _bytes(finder, insns, lo, hi, offsets):
+VOLATILE = (0, 1, 2, 8, 9, 10, 11)   # rax, rcx, rdx, r8-r11: a call leaves anything in them
+# Opcodes whose ModRM reg field is a general register they write (mov/lea are followed more closely).
+WRITES_REG = {0x03, 0x0B, 0x13, 0x1B, 0x23, 0x2B, 0x33, 0x63, 0x69, 0x6B, 0x8A}
+WRITES_REG_0F = {0xAF, 0xB6, 0xB7, 0xBE, 0xBF, 0x2C, 0x2D} | set(range(0x40, 0x50))   # imul, movzx/sx, cvt*2si, cmov
+# Opcodes that write their ModRM r/m operand, when it's a register.
+WRITES_RM = {0x01, 0x09, 0x11, 0x19, 0x21, 0x29, 0x31, 0x88, 0xC1, 0xC7, 0xD1, 0xD3}
+
+
+def _foreign(finder, insns):
+    """The indices of the instructions in `insns` (one function, in order) whose memory operand can't be a
+    member of the class: its base register holds a stack address (rbp as a frame pointer, lea reg,[rsp+...])
+    or a pointer read from a global (mov reg,[rip+...], lea reg,[rip+...]). A class's code reads other
+    objects too, its locals and a singleton behind a global among them, at offsets that can equal a
+    member's (the level component's code reads +0x154 of the object at 0x14A8A6E08, not its Prowess).
+    It's a straight read of the function, branches ignored: a register's kind is set by the last
+    instruction before that writes it, and one it can't follow is taken as anything (as before)."""
+    tdata, base = finder.tdata, finder.text.rva
+    kind = {RSP: "stack"}   # register -> "stack" or "global"; anything else isn't in it
+    out = set()
+    for i, (r, ins) in enumerate(insns):
+        if ins.memory() and ins.base is not None and ins.base in kind:
+            out.add(i)
+        if ins.vex or ins.evex or ins.opmap != 1:
+            continue
+        p = r - base
+        while tdata[p] in x64.LEGACY_PREFIXES:
+            p += 1
+        rex = tdata[p] if 0x40 <= tdata[p] <= 0x4F else 0
+        op = tdata[p + (1 if rex else 0)]
+        wide = bool(rex & 8)
+        reg = ins.reg + (8 if rex & 4 else 0) if ins.reg is not None else None
+        if op == 0x0F:
+            if ins.opcode in WRITES_REG_0F:
+                kind.pop(reg, None)
+            continue
+        if op in (0x8B, 0x8D):                    # mov reg, r/m and lea reg, [m]
+            if ins.mod == 3:
+                was = kind.get(ins.base) if wide and op == 0x8B else None
+            elif ins.rip:
+                was = "global" if wide else None
+            else:
+                was = "stack" if op == 0x8D and kind.get(ins.base) == "stack" else None
+            kind.pop(reg, None)
+            if was:
+                kind[reg] = was
+        elif op == 0x89 and ins.mod == 3:          # mov r/m, reg between registers
+            was = kind.get(reg) if wide else None
+            kind.pop(ins.base, None)
+            if was:
+                kind[ins.base] = was
+        elif op in WRITES_REG:
+            kind.pop(reg, None)
+        elif ins.mod == 3 and _writes_rm(op, ins.reg):
+            # Adding to or subtracting from a stack address leaves one (add rsp/sub rbp, imm).
+            if not (op in (0x81, 0x83) and ins.reg in (0, 5) and kind.get(ins.base) == "stack"):
+                kind.pop(ins.base, None)
+        elif 0xB8 <= op <= 0xBF or 0x58 <= op <= 0x5F:   # mov reg, imm and pop reg
+            kind.pop((op & 7) + (8 if rex & 1 else 0), None)
+        if op == 0xE8 or (op == 0xFF and ins.reg in (2, 3)) or (op == 0xF7 and ins.reg >= 4) or op == 0x99:
+            for v in (VOLATILE if op in (0xE8, 0xFF) else (0, 2)):   # a call; mul/div and cdq write rax, rdx
+                kind.pop(v, None)
+    return out
+
+
+def _writes_rm(op, sub):
+    """Whether an instruction with this opcode (and ModRM reg field, for the groups) writes its r/m operand."""
+    if op in WRITES_RM:
+        return True
+    if op in (0x81, 0x83):
+        return sub != 7   # cmp writes nothing
+    if op == 0xF7:
+        return sub in (2, 3)   # not, neg
+    if op == 0xFF:
+        return sub in (0, 1)   # inc, dec
+    return False
+
+
+# Opcodes (one-byte map) whose memory operand is a byte, and the general-purpose ones that are 4 bytes
+# (8 with REX.W, 2 with 0x66).
+BYTE_OPS = {0x00, 0x02, 0x08, 0x0A, 0x10, 0x12, 0x18, 0x1A, 0x20, 0x22, 0x28, 0x2A, 0x30, 0x32, 0x38, 0x3A,
+            0x80, 0x84, 0x86, 0x88, 0x8A, 0xC0, 0xC6, 0xD0, 0xD2, 0xF6, 0xFE}
+INT_OPS = {0x01, 0x03, 0x09, 0x0B, 0x11, 0x13, 0x19, 0x1B, 0x21, 0x23, 0x29, 0x2B, 0x31, 0x33, 0x39, 0x3B, 0x63,
+           0x69, 0x6B, 0x81, 0x83, 0x85, 0x87, 0x89, 0x8B, 0xC1, 0xC7, 0xD1, 0xD3, 0xF7, 0xFF}
+SSE_SCALAR = {0x10, 0x11, 0x2A, 0x2C, 0x2D, 0x51, 0x58, 0x59, 0x5A, 0x5C, 0x5D, 0x5E, 0x5F}
+
+
+def _width(finder, rva, ins):
+    """How many bytes the instruction at rva reads or writes through its memory operand: 0 for lea (it only
+    takes the address), None when this doesn't know the instruction."""
+    tdata = finder.tdata
+    p = rva - finder.text.rva
+    prefixes = set()
+    while tdata[p] in x64.LEGACY_PREFIXES:
+        prefixes.add(tdata[p])
+        p += 1
+    rex = tdata[p] if 0x40 <= tdata[p] <= 0x4F else 0
+    op = tdata[p + (1 if rex else 0)]
+    if ins.vex or ins.evex:
+        return None
+    if op != 0x0F:
+        if op == 0x8D:
+            return 0
+        if op in BYTE_OPS:
+            return 1
+        if op == 0xFF and ins.reg in (2, 3, 4, 5, 6):   # call/jmp through memory (a vtable slot), push
+            return 8
+        if op in INT_OPS:
+            return 8 if rex & 8 else 2 if 0x66 in prefixes else 4
+        return None
+    op2 = ins.opcode
+    if ins.opmap != 1:
+        return None
+    if op2 in (0xB6, 0xBE) or 0x90 <= op2 <= 0x9F:
+        return 1
+    if op2 in (0xB7, 0xBF):
+        return 2
+    if op2 == 0xAF or 0x40 <= op2 <= 0x4F:
+        return 8 if rex & 8 else 2 if 0x66 in prefixes else 4
+    if op2 in SSE_SCALAR:
+        return 4 if 0xF3 in prefixes else 8 if 0xF2 in prefixes else 16
+    if op2 in (0x2E, 0x2F):
+        return 8 if 0x66 in prefixes else 4
+    if op2 in (0x6E, 0x7E):
+        return 8 if rex & 8 or 0xF3 in prefixes else 4
+    if op2 == 0xD6:
+        return 8
+    if op2 in (0x28, 0x29, 0x6F, 0x7F, 0x54, 0x55, 0x56, 0x57, 0x14, 0x15, 0xC6):
+        return 16
+    return None
+
+
+def _access(finder, rva, ins, offsets):
+    """Whether the instruction at rva reads or writes one of `offsets` ({offset: the member's size}) the way
+    a member is: [reg+disp32] (not through rsp), at most as wide as the member, or a lea of it. A wider
+    access at the same offset is another object's field (a pointer, or a vtable slot: call [rax+0x1C8])."""
+    if not (ins.memory() and ins.base not in (RSP, None) and ins.disp in offsets and ins.disp_size == 4):
+        return False
+    width = _width(finder, rva, ins)
+    return width is None or width <= offsets[ins.disp]
+
+
+def _bytes(finder, insns, lo, hi, offsets, foreign=()):
+    """A pattern of insns[lo..hi] with what a rebuild changes left out, and its captures: {position:
+    offset} of the accesses to `offsets` ({offset: size}; _access) but the `foreign` indices' (_foreign)."""
     tdata, base = finder.tdata, finder.text.rva
     out, captures = [], {}
-    for r, ins in insns[lo:hi + 1]:
+    for n, (r, ins) in enumerate(insns[lo:hi + 1], lo):
         p = r - base
         raw = list(tdata[p:p + ins.length])
         wild = set()
         if ins.disp_at is not None and ins.disp_size:
             wild.update(range(ins.disp_at, ins.disp_at + ins.disp_size))
-            if ins.memory() and ins.base not in (RSP, None) and ins.disp in offsets and ins.disp_size == 4:
+            if offsets and n not in foreign and _access(finder, r, ins, offsets):
                 captures[len(out) + ins.disp_at] = ins.disp
         if ins.rel_at is not None:
             wild.update(range(ins.rel_at, ins.rel_at + ins.rel_size))
@@ -456,40 +612,71 @@ def _search(finder, found, cls, anchors):
 
 
 def _sites(finder, search, offsets, per_field=3):
-    """Patterns for the accesses to `offsets` in the `search` functions, each the shortest around its
-    access that matches once in them: [{"from", "pattern", "captures"}]."""
-    sites, count = [], {}
+    """Patterns for the accesses to `offsets` ({offset: the member's size in bytes}) in the `search`
+    functions, each the shortest around its access that matches once in them: [{"from": its function,
+    "at": where it starts, "pattern", "captures"}]. Only accesses a member could be count (_access), and
+    none through a stack address or a global's pointer (_foreign). A member gets sites until `per_field`
+    separate instructions are captured: sites around neighbouring instructions overlap and capture the
+    same one, which is one piece of evidence however many patterns hold it, so an instruction a site
+    already captures gets none of its own."""
+    sites, seen = [], {}   # offset -> the RVAs of the displacements captured for it
     for begin, end in search:
         insns = finder.insns(begin, end)
+        foreign = _foreign(finder, insns)
         for i, (r, ins) in enumerate(insns):
-            if not (ins.memory() and ins.base not in (RSP, None) and ins.disp in offsets and ins.disp_size == 4):
+            if i in foreign or not _access(finder, r, ins, offsets):
                 continue
-            if count.get(ins.disp, 0) >= per_field:
+            held = seen.get(ins.disp, set())
+            if len(held) >= per_field or r + ins.disp_at in held:   # enough, or a site has it already
                 continue
             for width in range(1, 12):
                 a, b = max(0, i - width), min(len(insns) - 1, i + width)
                 if insns[i][0] - insns[a][0] > WINDOW or insns[b][0] - insns[i][0] > WINDOW:
                     break
-                pat, caps = _bytes(finder, insns, a, b, offsets)
+                pat, caps = _bytes(finder, insns, a, b, offsets, foreign)
                 if sum(x is not None for x in pat) < MIN_PATTERN:
                     continue
                 if len(_matches(finder, search, _regex(pat))) == 1:
-                    sites.append({"from": f"0x{begin:X}", "pattern": _hex(pat),
+                    at = insns[a][0]
+                    sites.append({"from": f"0x{begin:X}", "at": f"0x{at:X}", "pattern": _hex(pat),
                                   "captures": {str(k): v for k, v in caps.items()}})
-                    for v in caps.values():
-                        count[v] = count.get(v, 0) + 1
+                    for k, v in caps.items():
+                        seen.setdefault(v, set()).add(at + k)
                     break
     return sites
 
 
+def instructions(entry):
+    """{offset: how many separate instructions a class's sites capture it in}, on the build they were made
+    on (each site's "at" plus the capture's position: overlapping sites count an instruction once)."""
+    out = {}
+    for site in entry["sites"]:
+        for k, was in site["captures"].items():
+            out.setdefault(was, set()).add(int(site["at"], 16) + int(k))
+    return {o: len(v) for o, v in out.items()}
+
+
+class Unsigned(ValueError):
+    """make() found no signature at all for some classes: on any other build check() could find none of
+    their members, so a game update would switch every one of them off even when nothing moved."""
+
+    def __init__(self, classes, result):
+        super().__init__(f"no signatures for {', '.join(classes)}: give each anchors in signatures.ANCHORS, "
+                         "functions that read its members (docs/reverse-engineering.md, \"Game updates\")")
+        self.classes, self.result = classes, result
+
+
 def make(image_path, log=print):
     """Signatures for every class in game.HIDDEN, from this exe (the build HIDDEN was found on):
-    {"made_on": the exe's fingerprint, "classes": {class: {"fields", "size", "parent", "anchors", "sites"}}}."""
+    {"made_on": the exe's fingerprint, "classes": {class: {"fields", "size", "parent", "anchors", "sites"}}}.
+    Raises Unsigned when a class isn't found or gets no signature at all (a member with none of its own is
+    fine: check() keeps it while its classmates are found where they were)."""
     img = pe.Image(image_path)
     finder = Finder(img)
     result = {"made_on": img.fingerprint(), "classes": {}}
     found = {cls: finder.find_class(cls.rsplit(".", 1)[-1]) for cls, _ in game.HIDDEN}
     finder.class_code(found.values())
+    unsigned = []
     for cls, fields in game.HIDDEN:
         short = cls.rsplit(".", 1)[-1]
         info = found[cls]
@@ -497,6 +684,7 @@ def make(image_path, log=print):
         result["classes"][cls] = entry
         if not info:
             log(f"  {short}: not found")
+            unsigned.append(short)
             continue
         entry.update(info.summary())
         parent = _parent(found, info)
@@ -510,12 +698,20 @@ def make(image_path, log=print):
             if pat:
                 anchors.append(span[0])
         search = _search(finder, found, cls, anchors)
-        entry["sites"] = _sites(finder, search, {o for _, o, _ in fields})
-        got = {v for site in entry["sites"] for v in site["captures"].values()}
+        entry["sites"] = _sites(finder, search, {o: WIDTH.get(kind, 4) for _, o, kind in fields})
+        got = instructions(entry)
         missing = [n for n, o, _ in fields if o not in got]
+        # A move is followed on the word of MIN_MOVE_VOTES separate instructions: with fewer, check() can
+        # tell the member is where it was, but not where it went.
+        alone = [n for n, o, _ in fields if 0 < got.get(o, 0) < MIN_MOVE_VOTES]
         log(f"  {short}: size 0x{info.size:X}{f' (a {parent.name})' if parent else ''}, {len(search)} functions "
             f"({len(anchors)} anchors), {len(entry['sites'])} signatures"
-            + (f"; none for {', '.join(missing)}" if missing else ""))
+            + (f"; none for {', '.join(missing)}" if missing else "")
+            + (f"; one instruction only for {', '.join(alone)}" if alone else ""))
+        if not entry["sites"]:
+            unsigned.append(short)
+    if unsigned:
+        raise Unsigned(unsigned, result)
     return result
 
 
@@ -531,21 +727,21 @@ def load(path=DATA):
 
 
 # ---------- checking another build ----------
-MIN_MOVE_VOTES = 2   # a member is followed to a new offset on the word of two sites or more
-WIDTH = {"ByteProperty": 1, "IntProperty": 4, "FloatProperty": 4}
+MIN_MOVE_VOTES = 2   # a member is followed to a new offset on the word of two separate instructions or more
 
 
 def check(image_path, sigs=None, log=print):
     """What the signatures find in this exe: {"same", "classes": {class: {"found", "size", "size_was",
     "anchors", "fields": {name: {"was", "now", "votes", "status"}}}}, "offsets": {"class:name": offset or
-    None}}. A member's status:
-    - "same": its signatures agree it's where it was;
+    None}}. Each instruction the matching sites capture a member in is one vote ("votes"), however many
+    overlapping sites hold it. A member's status:
+    - "same": its votes agree it's where it was;
     - "moved": two or more agree on a new offset, which fits in the class;
     - "kept": none matched, but the exe is the one the signatures were made on, or its class is the same
       size, another member of it was found where it was, and none moved or disagreed: taken as where it
       was. A class with no member found gets none kept;
-    - "unsure": a single site says it moved; "conflict": they disagree, or two members land on the same
-      offset, or the offset can't be one (outside the class, misaligned); "lost": none matched and it
+    - "unsure": a single instruction says it moved; "conflict": they disagree, or two members land on the
+      same offset, or the offset can't be one (outside the class, misaligned); "lost": none matched and it
       can't be kept. These mean its offset is None, so it's left out.
     """
     from ..game import HIDDEN
@@ -564,7 +760,7 @@ def check(image_path, sigs=None, log=print):
         rep = {"found": bool(info), "size": info.size if info else None, "size_was": entry.get("size"),
                "anchors": 0, "fields": {}}
         out["classes"][cls] = rep
-        votes = {}
+        votes = {}   # offset it was -> {where in .text the displacement is: what it says now}
         if info:
             anchors = [finder.find_function(_unhex(a["pattern"])) for a in entry.get("anchors", []) if a.get("pattern")]
             rep["anchors"] = sum(1 for a in anchors if a)
@@ -575,11 +771,13 @@ def check(image_path, sigs=None, log=print):
                     continue
                 at = hits[0][1] - finder.text.rva
                 for k, was in site["captures"].items():
-                    votes.setdefault(was, []).append(struct.unpack_from("<i", finder.tdata, at + int(k))[0])
+                    # Overlapping sites capture the same instruction: it's one vote, not one per site.
+                    p = at + int(k)
+                    votes.setdefault(was, {})[p] = struct.unpack_from("<i", finder.tdata, p)[0]
         same_size = info is not None and info.size == entry.get("size")
         size = info.size if info else entry.get("size") or 0
         for name, was in entry["fields"].items():
-            got = votes.get(was, [])
+            got = list(votes.get(was, {}).values())
             width = widths.get(f"{cls}:{name}", 4)
             if got and all(v == got[0] for v in got):
                 now = got[0]
