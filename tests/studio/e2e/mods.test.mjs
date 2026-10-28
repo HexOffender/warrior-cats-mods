@@ -223,3 +223,18 @@ test("the preview's Add sends only the ticked mods, each on or off as its box sa
   assert.deepEqual(p.consoleErrors(), []);
   await p.close();
 });
+
+test("one mod with Switch it on unticked goes in switched off, named without its version", { skip }, async () => {
+  const zip = makeZip(path.join(pageFolders.root, "Quiet Mod v2.zip"), { "mod.json": { name: "Quiet mod", version: "2" } });
+  const p = await browser.page();
+  await p.goto(page.url + "#mods");
+  await p.waitFor("#mod-file");
+  await p.setFiles("#mod-file", [zip]);
+  await p.waitFor("#add-on");
+  assert.equal(await p.evaluate(() => document.getElementById("add-on").checked), true, "on, as it ships");
+  await p.click("#add-on");
+  await p.click({ text: "Add to my mods" });
+  await p.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.startsWith("Added Quiet mod.")));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(pageFolders.data, "mods", "quiet-mod", "mod.json"), "utf8")).enabled, false);
+  await p.close();
+});

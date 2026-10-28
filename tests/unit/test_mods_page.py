@@ -265,6 +265,9 @@ def test_a_multi_mod_zip_keeps_each_mods_shipped_state(studio, tmp_path):
     # The old way, one answer for all, still works.
     post(studio, "mods/add", query={"step": "add", "ids": "palette-pastel-kits", "enable": "1"}, upload=z)
     assert card(studio, "palette-pastel-kits")["enabled"] is True
+    # Nothing ticked on: the page's "on=" is an empty value, which doesn't reach the API; its enable=0 does.
+    post(studio, "mods/add", query={"step": "add", "ids": "creator-palettes", "enable": "0"}, upload=z)
+    assert card(studio, "creator-palettes")["enabled"] is False
 
 
 def test_the_inboxs_add_takes_each_mods_on_state(studio, tmp_path):

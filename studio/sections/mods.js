@@ -370,7 +370,9 @@ export default {
         const r = await api.upload(`/mods/add?step=preview&name=${encodeURIComponent(file.name)}`, file);
         clear(addBox);
         renderPreview(r, file.name,
-          (ids, on) => api.upload(`/mods/add?step=add&ids=${encodeURIComponent(ids.join(","))}&on=${encodeURIComponent(on.join(","))}&name=${encodeURIComponent(file.name)}`, file),
+          // on: the ticked mods that go in switched on. With none, "on=" is an empty value the server can't tell
+          // from no value at all, so enable=0 says it: every one goes in off.
+          (ids, on) => api.upload(`/mods/add?step=add&ids=${encodeURIComponent(ids.join(","))}&on=${encodeURIComponent(on.join(","))}&enable=0&name=${encodeURIComponent(file.name)}`, file),
           () => renderAdd());
       } catch (e) { toast(e.message, "bad"); renderAdd(); }
     }
