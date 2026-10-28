@@ -325,6 +325,14 @@ body.help-page .help-body { padding: 0; }
 @media (prefers-reduced-motion: no-preference) { .toast { animation: rise 160ms ease-out; } @keyframes rise { from { transform: translateY(6px); opacity: 0; } } }
 
 /* ---------- parts shared by pages ---------- */
+/* The drawn cat (lib/cat.js) on Palettes and Your cat: the clearing it sits in, in the page's own colours. */
+.cat-stage { background: radial-gradient(120% 90% at 50% 30%, var(--stage), var(--stage-2)); border-radius: 12px; }
+.cat-stage svg { width: 100%; height: auto; display: block; }
+/* A line a page puts in front of something that waits on the game or the script loader. */
+.note.heads-up { border-left: 3px solid var(--changed); padding-left: 10px; }
+/* Your cat's drawn cat beside "In your save now"; one under the other on a narrow window. */
+.cat-top { display: grid; grid-template-columns: minmax(240px, 340px) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 820px) { .cat-top { grid-template-columns: minmax(0, 1fr); } }
 .notes { margin: 2px 0 0; padding-left: 18px; font-size: 0.93rem; display: grid; gap: 2px; }
 .notes .warn { color: var(--changed); }
 .notes .bad { color: var(--bad); }

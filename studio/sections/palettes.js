@@ -3,53 +3,7 @@
 // lib/palette.js. The page opens without the game's files: the eyes wait for the game folder, and the game's coat,
 // pattern and marking colours show as numbered cards until the game has run once with the script loader.
 import * as P from "../lib/palette.js";
-
-const CAT_SVG = `
-<svg viewBox="0 0 360 330" role="img" aria-label="Preview cat with the selected colours">
-  <defs>
-    <radialGradient id="irisL" cx="50%" cy="50%" r="50%"></radialGradient>
-    <radialGradient id="irisR" cx="50%" cy="50%" r="50%"></radialGradient>
-    <clipPath id="almondL"><path d="M88 184 Q124 146 162 180 Q124 214 88 184 Z"/></clipPath>
-    <clipPath id="almondR"><path d="M272 184 Q236 146 198 180 Q236 214 272 184 Z"/></clipPath>
-    <clipPath id="headClip"><path d="M180 80 C252 80 318 120 322 196 C326 262 262 306 180 306 C98 306 34 262 38 196 C42 120 108 80 180 80 Z"/></clipPath>
-  </defs>
-  <g data-part="outline" stroke-width="3" stroke-linejoin="round">
-    <path data-part="coat" d="M70 152 L90 36 Q96 26 106 33 L172 100 Z"/>
-    <path data-part="coat" d="M290 152 L270 36 Q264 26 254 33 L188 100 Z"/>
-    <path data-part="coat" d="M180 80 C252 80 318 120 322 196 C326 262 262 306 180 306 C98 306 34 262 38 196 C42 120 108 80 180 80 Z"/>
-  </g>
-  <path d="M92 128 L103 58 L150 106 Z" fill="var(--ear)" opacity="0.85"/>
-  <path d="M268 128 L257 58 L210 106 Z" fill="var(--ear)" opacity="0.85"/>
-  <g clip-path="url(#headClip)">
-    <g data-part="pattern" fill="none" stroke-width="9" stroke-linecap="round">
-      <path d="M180 92 L180 134"/><path d="M158 98 Q163 118 168 136"/><path d="M202 98 Q197 118 192 136"/>
-      <path d="M136 108 Q147 124 154 142"/><path d="M224 108 Q213 124 206 142"/>
-      <path d="M36 190 Q72 184 102 196"/><path d="M38 216 Q74 208 104 220"/><path d="M46 244 Q78 236 108 244"/>
-      <path d="M324 190 Q288 184 258 196"/><path d="M322 216 Q286 208 256 220"/><path d="M314 244 Q282 236 252 244"/>
-    </g>
-    <g data-part="marking">
-      <path d="M180 144 C170 172 166 198 168 218 L192 218 C194 198 190 172 180 144 Z"/>
-      <ellipse cx="180" cy="258" rx="66" ry="50"/><ellipse cx="180" cy="318" rx="90" ry="40"/>
-    </g>
-  </g>
-  <g>
-    <path data-part="sclera" d="M88 184 Q124 146 162 180 Q124 214 88 184 Z"/>
-    <circle clip-path="url(#almondL)" cx="125" cy="181" r="27" fill="url(#irisL)"/>
-    <ellipse cx="125" cy="181" rx="5.5" ry="18" fill="#0b0b0c"/><circle cx="133" cy="171" r="4" fill="#ffffff" opacity="0.85"/>
-    <path data-part="lid" d="M88 184 Q124 146 162 180 Q124 214 88 184 Z" fill="none" stroke-width="3"/>
-  </g>
-  <g>
-    <path data-part="sclera" d="M272 184 Q236 146 198 180 Q236 214 272 184 Z"/>
-    <circle clip-path="url(#almondR)" cx="235" cy="181" r="27" fill="url(#irisR)"/>
-    <ellipse cx="235" cy="181" rx="5.5" ry="18" fill="#0b0b0c"/><circle cx="243" cy="171" r="4" fill="#ffffff" opacity="0.85"/>
-    <path data-part="lid" d="M272 184 Q236 146 198 180 Q236 214 272 184 Z" fill="none" stroke-width="3"/>
-  </g>
-  <path d="M168 236 L192 236 Q195 238 190 245 L183 252 Q180 255 177 252 L170 245 Q165 238 168 236 Z" fill="var(--nose)"/>
-  <path data-part="mouth" d="M180 254 L180 262 M180 262 Q170 272 160 266 M180 262 Q190 272 200 266" fill="none" stroke-width="2.5" stroke-linecap="round"/>
-  <g data-part="whiskers" stroke-width="1.6" stroke-linecap="round" opacity="0.75">
-    <path d="M148 252 L62 238 M148 259 L58 262 M150 266 L66 286"/><path d="M212 252 L298 238 M212 259 L302 262 M210 266 L294 286"/>
-  </g>
-</svg>`;
+import { catSvg, paintCat } from "../lib/cat.js";
 
 const SECTIONS = [
   { id: "eyes", title: "Eyes" },
@@ -97,20 +51,30 @@ export default {
     // curHex: the colour a slot shows with this palette: its own, else the game's, else another palette's new one.
     const curHex = (sec, i) => state[sec][i] || TABLE(sec)[i] || otherHex(sec, i);
 
-    const stage = el("div", { style: { background: "radial-gradient(120% 90% at 50% 30%, var(--stage), var(--stage-2))", borderRadius: "12px" } });
-    stage.innerHTML = CAT_SVG;
+    const stage = el("div", { class: "cat-stage" });
+    stage.innerHTML = catSvg("pal", "The drawn cat, in the colours chosen below");
     const svg = stage.querySelector("svg");
-    svg.style.width = "100%"; svg.style.height = "auto"; svg.style.display = "block";
     const picks = el("div", { style: { display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: "8px 12px", alignItems: "center" } });
-    const vanillaBox = el("input", { type: "checkbox", id: "pal-vanilla" });
-    vanillaBox.addEventListener("change", () => { view.vanilla = vanillaBox.checked; drawCat(); });
+    // Which colours the drawn cat shows: this palette's, or the game's own (to compare).
+    const shows = el("div", { class: "row", role: "group", "aria-label": "Cat shows" }, el("span", { class: "muted", text: "Cat shows:" }));
+    for (const [vanilla, text] of [[false, "my colours"], [true, "the game's"]]) {
+      shows.append(el("button", { class: "chip", type: "button", text, "aria-pressed": String(view.vanilla === vanilla), onclick: () => {
+        view.vanilla = vanilla;
+        shows.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.textContent === text)));
+        drawCat();
+      } }));
+    }
     const tabs = el("div", { class: "row", role: "tablist", "aria-label": "Palette sections" });
     const panel = el("div", { role: "tabpanel", id: "pal-panel", style: { display: "grid", gap: "16px" } });
     const startRow = el("div", { class: "row pal-row" });
     const styleRow = el("div", { class: "row pal-row" });
-    const tablesLine = el("p", { class: "note pal-tables", hidden: true });
+    const tablesLine = el("p", { class: "note heads-up pal-tables", hidden: true });
     const unreadBox = el("div", { hidden: true });
-    const quick = el("div", { class: "card" });
+    const strip = el("div", { class: "card pal-strip" });
+    // Switching between ready-made palettes: folded, and left open or folded as it was through a redraw.
+    const quick = el("details", { class: "card fold pal-quick" });
+    let quickOpen = false;
+    quick.addEventListener("toggle", () => { quickOpen = quick.open; });
 
     root.append(
       wc.pageHead({ eyebrow: "Appearance only", title: "Palettes",
@@ -118,10 +82,10 @@ export default {
           "A cat keeps the colour it has (coat 3 stays coat 3), so its traits don't change. Eye colours go in through the " +
           "game's files; the rest need the script loader.",
         help: "help:palettes" }),
-      quick, target.element, startRow, styleRow,
+      strip, quick, target.element, startRow, styleRow,
       el("div", { style: { display: "grid", gridTemplateColumns: "minmax(260px, 360px) minmax(0, 1fr)", gap: "24px", alignItems: "start" }, class: "pal-grid" },
-        el("div", { class: "card", style: { position: "sticky", top: "84px" } }, stage, picks,
-          el("label", { class: "row muted", for: "pal-vanilla" }, vanillaBox, "Show the game's original colours")),
+        el("div", { class: "card", style: { position: "sticky", top: "84px" } }, stage, shows, picks,
+          el("p", { class: "note", text: "In the game, paws, ears, nose and whiskers follow the coat; this drawing can't show them, nor the game's real pattern shapes." })),
         el("div", { style: { display: "grid", gap: "12px", minWidth: "0" } }, tabs, tablesLine, unreadBox, panel)));
     const narrow = window.matchMedia("(max-width: 900px)");
     const applyNarrow = () => { root.querySelector(".pal-grid").style.gridTemplateColumns = narrow.matches ? "minmax(0,1fr)" : "minmax(260px, 360px) minmax(0, 1fr)"; };
@@ -149,6 +113,38 @@ export default {
     async function readInfo() {
       try { info = await api.get("/info"); } catch (e) { /* keep the last answer */ }
       drawQuickButtons();
+      renderStrip();
+    }
+
+    // ---------- what reaches the game ----------
+    // Each kind of colour and what it needs: eyes go in through the game's files; coat, pattern and marking colours
+    // through the script loader; new colours and coat presets reach the cat maker only with the Creator palettes mod
+    // (which runs code). Read again after an Apply, a change to the mods, and on coming back to the window.
+    const CREATOR = { id: "creator-palettes", url: "https://github.com/HexOffender/wcmods-creator-palettes" };
+    async function renderStrip() {
+      let mods = [];
+      try { mods = await api.get("/mods"); } catch (e) { /* the bar says what's wrong */ }
+      const creator = mods.find(m => m.id === CREATOR.id);
+      const link = () => el("a", { href: CREATOR.url, target: "_blank", rel: "noopener", text: "the Creator palettes mod" });
+      const line = (what, ready, ...said) => el("li", { class: "row" },
+        el("span", { class: `chip ${ready ? "good" : "warn"}`, "data-said": ready ? "ready" : "not yet" },
+          el("i", { "aria-hidden": "true" }), ready ? "ready" : "not yet"),
+        el("strong", { text: what }), el("span", { class: "muted" }, ...said));
+      const loader = !!(info && info.ue4ss), code = !!(info && info.allow_code_mods);
+      const built = info && info.installed && info.installed.built;
+      put(strip, el("h2", { text: "What reaches the game" }),
+        el("ul", { class: "pal-strip-lines" },
+          line("Eye colours", true, "through the game's own files"),
+          line("Coat, pattern and marking colours", loader,
+            loader ? "through the script loader" : "need the script loader: Get set up, on the Mods page, installs it"),
+          line("New colours and coat presets in the cat maker", !!(creator && creator.enabled && loader && code),
+            ...(!creator ? ["need ", link(), ", added on the Mods page"]
+              : !creator.enabled ? ["Creator palettes is in your mods but off: switch it on, on the Mods page"]
+              : !code ? ["Creator palettes is on, but mods that run code aren't allowed (Settings and repair)"]
+              : !loader ? ["Creator palettes needs the script loader too"]
+              : ["with Creator palettes"]))),
+        el("p", { class: "note", text: built ? `Your mods last went in the game ${new Date(built).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.`
+          : "Nothing has gone in the game yet: Apply to game, at the top, puts your mods in." }));
     }
     function drawQuickButtons() {
       const n = quickPick ? quickPick.size : 0, why = applyWait();
@@ -173,11 +169,11 @@ export default {
         const broken = p === null;
         if (broken) quickPick.delete(m.id);
         const box = el("input", { type: "checkbox", id: `quick-${m.id}`, checked: quickPick.has(m.id), disabled: broken });
-        box.addEventListener("change", () => { if (box.checked) quickPick.add(m.id); else quickPick.delete(m.id); drawQuickButtons(); });
+        box.addEventListener("change", () => { if (box.checked) quickPick.add(m.id); else quickPick.delete(m.id); drawQuick(); });
         const swatches = broken ? [el("span", { class: "chip warn", text: "Its palette can't be read: the Mods page says why" })] : [
-          el("div", { style: { display: "flex", gap: "2px", flexWrap: "wrap" }, title: "Coats 0-14" },
+          el("div", { class: "row pal-dots", title: "Coats 0-14" }, el("span", { class: "muted", text: "coats" }),
             ...[...Array(15).keys()].map(s => dot(color.parse(p.fur?.[String(s)]) || TABLE("fur")[s] || "#888888"))),
-          LABELS ? el("div", { style: { display: "flex", gap: "2px", flexWrap: "wrap" }, title: "Eyes" },
+          LABELS ? el("div", { class: "row pal-dots", title: "Eyes" }, el("span", { class: "muted", text: "eyes" }),
             ...GROUPS.standard.map(r => dot(eyeRim(p, r), true))) : null];
         return el("label", { for: `quick-${m.id}`, style: { display: "grid", gap: "6px", padding: "10px 12px", borderRadius: "10px",
             border: "1px solid var(--line, rgba(0,0,0,.12))", cursor: broken ? "default" : "pointer" } },
@@ -186,13 +182,19 @@ export default {
           el("span", { class: "muted", style: { fontSize: "0.8rem" }, text: m.description || m.id }), ...swatches);
       });
       drawQuickButtons();
-      put(quick, el("div", { class: "stack" },
-        el("h2", { text: "Quick palettes" }),
-        el("p", { class: "note", text: "Tick the palettes to use and apply them: it turns those on, turns the other palette mods off, and installs. " +
-          "Pick one full theme; eyes-only or coats-only palettes (Gemstone Eyes, Richer Coats, StarClan Glow Eyes) go on top of it. To change one, pick it under Editing mod below." }),
+      // Two ticked palettes that both change the coats, or both the eyes: only the later one's show.
+      const ticked = quickData.filter(d => d.palette && quickPick.has(d.mod.id));
+      const twice = part => ticked.filter(d => Object.keys(d.palette[part] || {}).some(k => !k.startsWith("_"))).length > 1;
+      put(quick, el("summary", {}, el("h2", { text: "Switch between ready-made palettes" }),
+          el("span", { class: "muted", text: quickData.length ? `${quickData.length} palette mod${quickData.length === 1 ? "" : "s"}` : "none yet" })),
+        el("p", { class: "note", text: "Tick the palettes to use, then Apply: it switches the ticked ones on and the other palettes that hold nothing else off, and puts them in the game. Mods with more than a palette in them, and palettes that only add new colours, aren't touched." }),
+        el("p", { class: "note", text: "Pick one full theme; a palette that changes only the eyes or only the coats goes on top of it. To change one, choose it under Editing mod below." }),
         tiles.length ? null : el("p", { class: "empty", text: "No palette mods yet. Ten themed palettes, and palettes for eyes and coats, are in wcmods-examples (Add a mod, on the Mods page, says where)." }),
         el("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: "10px" } }, ...tiles),
-        quickButtons));
+        twice("fur") || twice("eyes") ? el("p", { class: "note heads-up", role: "status",
+          text: `Two of the ticked palettes change the ${twice("fur") ? "coats" : "eyes"}: only the one later in the Mods list shows. Untick one.` }) : null,
+        quickButtons);
+      quick.open = quickOpen;
     }
 
     // ---------- Start from, Restyle this tab, Undo ----------
@@ -256,28 +258,11 @@ export default {
     }
 
     // ---------- cat ----------
-    function setIris(id, row) {
-      const g = svg.querySelector("#" + id);
-      const ramp = P.eyeRamp(origRow(row), view.vanilla ? null : state.eyes[row]);
-      g.textContent = "";
-      for (let k = 0; k <= 8; k++) {
-        const st = document.createElementNS("http://www.w3.org/2000/svg", "stop");
-        st.setAttribute("offset", `${18 + k * 10.25}%`);
-        st.setAttribute("stop-color", color.linearToHex(ramp[Math.round(k * (ramp.length - 1) / 8)]));
-        g.append(st);
-      }
-    }
     function drawCat() {
       const pick = sec => (view.vanilla ? TABLE(sec)[view[sec]] : curHex(sec, view[sec])) || NEUTRAL;
-      const coat = pick("fur"), pat = pick("pattern"), mark = pick("marking"), outline = color.shade(coat, 0.55);
-      const scl = view.vanilla || !state.eyes[0] ? vanillaRim(0) : rimOf(P.eyeRamp(origRow(0), state.eyes[0]));
-      svg.querySelectorAll('[data-part="coat"]').forEach(n => { n.setAttribute("fill", coat); n.setAttribute("stroke", outline); });
-      svg.querySelector('[data-part="pattern"]').setAttribute("stroke", pat);
-      svg.querySelector('[data-part="marking"]').setAttribute("fill", mark);
-      svg.querySelectorAll('[data-part="sclera"]').forEach(n => n.setAttribute("fill", scl));
-      svg.querySelectorAll('[data-part="lid"], [data-part="mouth"]').forEach(n => n.setAttribute("stroke", outline));
-      svg.querySelector('[data-part="whiskers"]').setAttribute("stroke", mark);
-      setIris("irisL", view.eyeL); setIris("irisR", view.eyeR);
+      const eye = row => P.eyeRamp(origRow(row), view.vanilla ? null : state.eyes[row]);
+      paintCat(svg, { coat: pick("fur"), pattern: pick("pattern"), marking: pick("marking"), eyeWhite: rimOf(eye(0)),
+        rightEye: eye(view.eyeR), leftEye: eye(view.eyeL) });
     }
     function renderPicks() {
       clear(picks);
@@ -404,6 +389,29 @@ export default {
     }
     const otherHex = (sec, i) => (slotsElsewhere[sec] || []).find(o => o.slot === i)?.hex;
     const cardBox = () => el("div", { class: "card", style: { padding: "10px", gap: "8px" } });
+    // A colour's code as text, beside its picker: it shows the colour now, takes any colour a palette.json may
+    // hold (a code someone shared, a name like "orange", "255, 136, 0") on Enter or when it's left, and selects
+    // itself when clicked, ready to copy. sync() shows the colour again (not while it's being typed in).
+    function codeBox(label, current, take) {
+      const box = el("input", { type: "text", class: "code-box", spellcheck: "false", autocomplete: "off", size: "9", "aria-label": label });
+      box.addEventListener("focus", () => box.select());
+      const commit = () => {
+        const text = box.value.trim();
+        if (text === (current() || "")) return;   // nothing new (Enter, then leaving the box)
+        const c = color.parse(/^\d+\s*,\s*\d+\s*,\s*\d+$/.test(text) ? text.split(",").map(Number) : text);
+        if (!c) {
+          toast(`"${text}" isn't a colour: try a code like #FF8800, or a name like orange`, "bad");
+          box.value = current() || "";
+          return;
+        }
+        take(c);
+        box.value = c;
+      };
+      box.addEventListener("change", commit);
+      box.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); commit(); } });
+      box.sync = () => { if (document.activeElement !== box) box.value = current() || ""; };
+      return box;
+    }
     function tableCard(sec, i) {
       const isNew = i >= GAME;
       const orig = isNew ? null : TABLE(sec.id)[i] || null;   // the game's colour, once it's known
@@ -414,10 +422,12 @@ export default {
       const pair = el("button", { class: "btn swatch", style: { padding: "0", height: "38px", display: "grid", gridTemplateColumns: "1fr 1fr", overflow: "hidden" },
         "aria-label": `Show ${sec.noun} colour ${i} on the cat`, onclick: () => { view[sec.id] = i; renderPicks(); drawCat(); refreshCards(); } },
         before, newSw);
-      const name = el("strong"), hex = el("span", { class: "hex muted" });
+      const name = el("strong");
       const inp = el("input", { type: "color", id: `pal-${sec.id}-${i}`, "aria-label": `New colour for ${sec.noun} colour ${i}` });
       inp.addEventListener("input", () => { state[sec.id][i] = color.normHex(inp.value); edited(); card._update(); drawCat(); });
       inp.addEventListener("change", () => { renderTabs(); renderPicks(); });
+      const code = codeBox(`Colour code for ${sec.noun} colour ${i}`, () => curHex(sec.id, i),
+        c => { state[sec.id][i] = c; edited(); card._update(); drawCat(); renderTabs(); renderPicks(); });
       const reset = el("button", { class: "btn ghost small", text: isNew ? "Remove" : "Reset", "aria-label": `${isNew ? "Remove" : "Reset"} ${sec.noun} colour ${i}`, onclick: () => {
         delete state[sec.id][i];
         edited();
@@ -429,15 +439,16 @@ export default {
         }
         card._update(); drawCat(); renderTabs(); renderPicks();
       } });
-      card.append(pair, el("div", { class: "row spread" }, name, hex), el("div", { class: "row" }, inp, reset));
+      card.append(pair, name, el("div", { class: "row" }, inp, code, reset));
       card._update = () => {
         const cur = curHex(sec.id, i), changed = !!state[sec.id][i];
         newSw.style.background = cur || "";
         newSw.className = cur ? "" : "pal-unknown";
         name.textContent = isNew ? `New ${sec.noun} colour ${i}` : `${changed ? "● " : ""}${sec.noun[0].toUpperCase()}${sec.noun.slice(1)} ${i}`;
         name.style.color = changed && !isNew ? "var(--changed)" : "";
-        hex.textContent = changed && orig ? `${orig} → ${cur}` : cur || "shows after one Play";
-        hex.className = cur ? "hex muted" : "muted";
+        code.sync();
+        code.placeholder = cur ? "" : "after one Play";
+        code.title = changed && orig ? `The game's: ${orig}` : "";
         inp.value = (cur || "#888888").toLowerCase(); reset.disabled = !changed;
         card.style.boxShadow = view[sec.id] === i ? "0 0 0 2px var(--accent)" : "";
         pair.setAttribute("aria-pressed", String(view[sec.id] === i));
@@ -451,7 +462,7 @@ export default {
       const pick = el("button", { class: "btn swatch", style: { padding: "4px", display: "grid", gap: "3px" }, "aria-label": `Show ${eyeName(row)} on the cat`,
         onclick: () => { if (row > 0) { view.eyeL = view.eyeR = row; renderPicks(); } drawCat(); refreshCards(); } },
         el("span", { style: { height: "18px", borderRadius: "5px", border: "1px solid var(--line)", background: rampCss(origRow(row)) } }), newRamp);
-      const name = el("strong"), hex = el("span", { class: "hex muted" });
+      const name = el("strong"), hex = el("span", { class: "muted" });
       const one = el("button", { class: "chip", "data-focus": `pal:eye:${row}:one`, text: "One colour", onclick: () => setMode("single") });
       const grad = el("button", { class: "chip", "data-focus": `pal:eye:${row}:grad`, text: "Gradient", onclick: () => setMode("grad") });
       const inputs = el("div", { class: "row" });
@@ -469,9 +480,13 @@ export default {
         const o = state.eyes[row];
         (o ? o.colors : [vanillaRim(row)]).forEach((c, k) => {
           const inp = el("input", { type: "color", id: `pal-eye-${row}-${k}`, value: c.toLowerCase(), "aria-label": `${eyeName(row)} colour ${k + 1}` });
-          inp.addEventListener("input", () => { ensure().colors[k] = color.normHex(inp.value); edited(); card._update(); drawCat(); });
+          const code = codeBox(`Colour code for ${eyeName(row)}${o && o.mode === "grad" ? `, colour ${k + 1}` : ""}`,
+            () => (state.eyes[row] ? state.eyes[row].colors[k] : vanillaRim(row)),
+            c2 => { ensure().colors[k] = c2; inp.value = c2.toLowerCase(); edited(); card._update(); drawCat(); renderTabs(); renderPicks(); });
+          inp.addEventListener("input", () => { ensure().colors[k] = color.normHex(inp.value); code.sync(); edited(); card._update(); drawCat(); });
           inp.addEventListener("change", () => { renderTabs(); renderPicks(); });
-          inputs.append(inp);
+          code.sync();
+          inputs.append(el("span", { class: "row pal-stop" }, inp, code));
         });
         if (o && o.mode === "grad") {
           if (o.colors.length < 4) inputs.append(el("button", { class: "btn small", "data-focus": `pal:eye:${row}:add-stop`, text: "+ stop", "aria-label": `Add a colour to ${eyeName(row)}'s gradient`, onclick: () => { o.colors.push(o.colors[o.colors.length - 1]); edited(); rebuild(); card._update(); drawCat(); } }));
@@ -483,7 +498,7 @@ export default {
         newRamp.style.background = rampCss(P.eyeRamp(origRow(row), o));
         name.textContent = `${o ? "● " : ""}${eyeName(row)}`;
         name.style.color = o ? "var(--changed)" : "";
-        hex.textContent = o ? (o.mode === "grad" ? `${o.colors.length}-colour gradient` : `${vanillaRim(row)} → ${o.colors[0]}`) : vanillaRim(row);
+        hex.textContent = o ? (o.mode === "grad" ? `${o.colors.length}-colour gradient` : `the game's ${vanillaRim(row)}`) : "the game's colour";
         one.setAttribute("aria-pressed", String(!o || o.mode === "single"));
         grad.setAttribute("aria-pressed", String(!!o && o.mode === "grad"));
         reset.disabled = !o;
@@ -506,9 +521,9 @@ export default {
       wc.installedEvent(target, () => target.refresh()),
       wc.bus.on("installed", () => { quickPick = null; renderQuick().catch(() => {}); readInfo(); }),
       wc.bus.on("focus", readInfo),
-      wc.bus.on("mods-changed", () => { renderPresets(); otherSlotsReady = loadOtherSlots(); }),
+      wc.bus.on("mods-changed", () => { renderPresets(); renderStrip(); otherSlotsReady = loadOtherSlots(); }),
     ];
-    await Promise.all([target.refresh(), renderQuick()]);
+    await Promise.all([target.refresh(), renderQuick(), renderStrip()]);
     return { unmount() { for (const off of offs) off(); narrow.removeEventListener("change", applyNarrow); } };
   },
 };
