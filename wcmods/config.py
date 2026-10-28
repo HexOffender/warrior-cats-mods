@@ -212,10 +212,14 @@ def steam_elsewhere_text(steam, game_dir, fix=True):
 
 
 def game_running():
-    """Whether the game's process is running. WCMODS_FAKE_RUNNING (1 or 0) stands in for the answer, only
-    with WCMODS_DATA set: the studio's tests, in a folder of their own, never a player's."""
+    """Whether the game's process is running.
+
+    WCMODS_FAKE_RUNNING stands in for the answer: exactly "1" (running) or "0" (not); any other value is
+    ignored. It's a switch for testing (the studio's end-to-end tests set it), honoured only while WCMODS_DATA
+    is set too. That doesn't make it test-only: a player may set WCMODS_DATA to keep their files elsewhere,
+    and then WCMODS_FAKE_RUNNING would work for them as well. wcmods never sets it, and it has no use in play."""
     fake = os.environ.get("WCMODS_FAKE_RUNNING")
-    if fake in ("0", "1") and os.environ.get(DATA_ENV):
+    if fake in ("0", "1") and os.environ.get(DATA_ENV):   # in (...): "1 " or "true" don't count
         return fake == "1"
     try:
         out = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {EXE_NAME}", "/NH"],

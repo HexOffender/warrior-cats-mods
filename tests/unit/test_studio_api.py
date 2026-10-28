@@ -11,12 +11,12 @@ import zipfile
 import pytest
 
 from wcmods import gamefiles, onboarding, palettes, studio as studio_mod
-from wcmods.config import EXE_NAME
+from wcmods.config import EXE_NAME, game_running as REAL_GAME_RUNNING   # taken before the sandbox patches it
 from wcmods.formats import png
 from wcmods.formats.save import SAV_NAME
 from wcmods.studio import BUILTIN_SECTIONS, NO_GAME, Download
 
-from conftest import make_mod, write_save
+from unit_helpers import make_mod, write_save
 
 
 def call(st, method, path, body=None, query=None, upload=None):
@@ -52,6 +52,20 @@ def test_info_with_the_fake_game_a_save_and_the_game_running(studio, fake_game, 
     sandbox.running = True
     r = get(studio, "info")
     assert r["game_dir"] == fake_game and r["save_found"] and r["ue4ss"] and r["game_running"]
+
+
+def test_fake_running_is_exactly_0_or_1_and_only_with_wcmods_data(monkeypatch):
+    # The real config.game_running (the sandbox stands in for it everywhere else), with tasklist saying the
+    # game runs: WCMODS_FAKE_RUNNING decides only as "0" or "1", and only with WCMODS_DATA set.
+    from types import SimpleNamespace
+    from wcmods import config
+    monkeypatch.setattr(config.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout=f"{EXE_NAME}  1234 Console"))
+    for value, running in (("0", False), ("1", True), ("true", True), (" 0", True), ("00", True), ("", True)):
+        monkeypatch.setenv("WCMODS_FAKE_RUNNING", value)
+        assert REAL_GAME_RUNNING() is running, value
+    monkeypatch.setenv("WCMODS_FAKE_RUNNING", "0")
+    monkeypatch.delenv("WCMODS_DATA")
+    assert REAL_GAME_RUNNING() is True
 
 
 def test_info_adds_the_console_and_mods_own_pages_only_with_code_mods_allowed(studio):
@@ -235,6 +249,48 @@ def test_a_mod_whose_mod_json_cant_be_read_is_listed_off_with_the_problem_on_its
         post(studio, "mods/listed/switch", {"on": True})
     with open(os.path.join(broken, "mod.json"), encoding="utf-8") as f:
         assert f.read() == "{not json"   # never written over
+
+
+def test_status_and_the_build_say_why_a_mod_whose_mod_json_cant_be_read_is_left_out(studio, fake_game, capsys):
+    from types import SimpleNamespace
+    from wcmods import cli
+    make_mod(studio, "fine")
+    make_mod(studio, "broken", files={"mod.json": "{not json"})
+    cli.cmd_status(studio.ctx, SimpleNamespace())
+    lines = capsys.readouterr().out.splitlines()
+    i = next(n for n, line in enumerate(lines) if line.lstrip().startswith("[ ] broken"))
+    assert lines[i + 1].strip().startswith("left out: mod.json can't be read (") and "fix it in a text editor" in lines[i + 1]
+    assert not any(line.strip().startswith("left out:") for line in lines[:i] + lines[i + 2:])   # fine says nothing
+    # The build (`wcmods build`, install, the studio's Apply) says it among its warnings, which Apply's log lists.
+    r = post(studio, "build")
+    assert r["result"]["mods"] == ["fine"]
+    (said,) = [w for w in r["result"]["warnings"] if w.startswith("broken ")]
+    assert said.startswith("broken is left out: mod.json can't be read (") and "fix it in a text editor" in said
+    assert not any(w.startswith("fine ") for w in r["result"]["warnings"])
+    cli.cmd_build(studio.ctx, SimpleNamespace())
+    assert f"  warning: {said}" in capsys.readouterr().out.splitlines()
+
+
+def test_a_mod_made_for_an_older_game_is_used_anyway_on_this_build_only(studio, monkeypatch):
+    make_mod(studio, "old")   # no "game_builds": made for the build every mod before them was made on
+    with pytest.raises(RuntimeError, match="couldn't tell which build"):   # no game, no build to allow it on
+        post(studio, "mods/old/allow-outdated")
+    monkeypatch.setenv("WCMODS_GAME_BUILD", "99999999")   # as if Steam had installed a newer build
+    (m,) = get(studio, "mods")
+    assert m["outdated"] == {"made_for": [24847281], "allowed": False} and m["game_builds"] == [24847281]
+    assert post(studio, "mods/old/allow-outdated") == {"build": 99999999, "allowed": True}
+    with open(studio.ctx.cfg.path, encoding="utf-8") as f:
+        assert json.load(f)["allow_outdated"] == {"old": [99999999]}
+    assert get(studio, "mods")[0]["outdated"] == {"made_for": [24847281], "allowed": True}
+    monkeypatch.setenv("WCMODS_GAME_BUILD", "99999998")   # another update: the choice was for that build only
+    assert get(studio, "mods")[0]["outdated"]["allowed"] is False
+    monkeypatch.setenv("WCMODS_GAME_BUILD", "99999999")
+    assert post(studio, "mods/old/allow-outdated", {"on": False}) == {"build": 99999999, "allowed": False}
+    assert get(studio, "mods")[0]["outdated"]["allowed"] is False
+    with open(studio.ctx.cfg.path, encoding="utf-8") as f:
+        assert json.load(f)["allow_outdated"] == {}
+    with pytest.raises(LookupError, match="no mod named nope"):
+        post(studio, "mods/nope/allow-outdated")
 
 
 def test_a_palette_json_that_isnt_a_palette_is_a_problem_on_the_card_not_a_blank_page(studio):

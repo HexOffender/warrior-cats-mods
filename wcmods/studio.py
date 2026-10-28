@@ -1105,7 +1105,7 @@ def make_handler(studio, port):
                     return self._send(404, {"error": str(e)})
                 except PermissionError as e:
                     return self._send(403, {"error": str(e)})
-                except (ValueError, KeyError, RuntimeError, FileNotFoundError) as e:
+                except (ValueError, RuntimeError, FileNotFoundError) as e:
                     return self._send(400, {"error": str(e)})
                 except Exception as e:
                     traceback.print_exc()

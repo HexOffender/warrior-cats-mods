@@ -13,7 +13,7 @@ import pytest
 from wcmods import studio as studio_mod
 from wcmods.studio import MAX_UPLOAD, NO_GAME
 
-from conftest import REPO, make_mod
+from unit_helpers import REPO, make_mod
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def test_exceptions_become_statuses_without_a_traceback_in_the_answer(server, st
                "exit": SystemExit("Couldn't find the game"), "key": KeyError("game file not found: x.csv"),
                "zip": zipfile.BadZipFile("bad"), "other": ZeroDivisionError("division by zero")}[parts[0]]
     studio.api = api
-    assert server("/api/lookup") == (404, {"error": "no such thing"}, server("/api/lookup")[2])
+    assert server("/api/lookup")[:2] == (404, {"error": "no such thing"})
     assert server("/api/forbidden")[:2] == (403, {"error": "not allowed"})
     assert server("/api/value")[:2] == (400, {"error": "that's wrong"})
     assert server("/api/runtime")[:2] == (400, {"error": "close the game"})

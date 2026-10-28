@@ -73,6 +73,8 @@ def cmd_status(ctx, args):
         if m.id in old:
             note = "  [made for an older version: " + ("used anyway]" if old[m.id]["allowed"] else "left out]")
         print(f"  [{'x' if m.enabled else ' '}] {m.id:28s} {', '.join(m.kinds()) or '(empty)':24s} {m.description}{note}")
+        if m.problem:   # a mod.json that can't be read: off, and said why, rather than an unexplained [ ]
+            print(f"      left out: {m.problem}")
     cfg.save()
 
 
