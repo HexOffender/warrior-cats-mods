@@ -103,7 +103,7 @@ def test_remove_takes_out_only_an_item_or_a_list_element(studio, tmp_path):
         "1/GameplayProgression/Scars/1", "1/GameplayProgression/FreshKill/1", item]}))
     assert [o["path"] for o in ctx.save_ops] == ["1/GameplayProgression/Scars/1", item]
     w = ctx.warnings
-    assert "save: mine: remove: '2' is a whole cat (cat slot 2); save.json can only take out an item carried, or " \
+    assert "save: mine: remove: '2' is a whole game (your 3rd game); save.json can only take out an item carried, or " \
            "one element of a list; skipped" in w
     assert any("'Shared' is the game's settings and controls" in x for x in w)
     assert any("'1/GameplayProgression' is a cat's whole progress" in x for x in w)
@@ -113,7 +113,7 @@ def test_remove_takes_out_only_an_item_or_a_list_element(studio, tmp_path):
     assert len(w) == 6
     # Without the save, a list element can't be told from a key that's a number: it waits for the install's check.
     assert savedit.remove_problem("1/GameplayProgression/Scars/1") is None
-    assert savedit.remove_problem("2").startswith("'2' is a whole cat")
+    assert savedit.remove_problem("2").startswith("'2' is a whole game")
 
 
 def test_a_remove_of_a_whole_cat_is_refused_at_install_too(studio, tmp_path):
@@ -124,9 +124,9 @@ def test_a_remove_of_a_whole_cat_is_refused_at_install_too(studio, tmp_path):
     lines = []
     out = pipeline.apply_save_ops(studio.ctx.cfg, [{"op": "remove", "path": "2", "section": "save", "source": "old",
                                                     "once": True}], studio.ctx.backups, lines.append)
-    assert out["changed"] == [] and any("'2' is a whole cat" in x for x in lines)
+    assert out["changed"] == [] and any("'2' is a whole game" in x for x in lines)
     # The Save page's Change my save now refuses it in words.
-    with pytest.raises(ValueError, match="is a whole cat"):
+    with pytest.raises(ValueError, match="is a whole game"):
         studio.api("POST", ["save", "apply"], {"changes": [{"remove": "2"}]}, None)
 
 
@@ -139,6 +139,6 @@ def test_ops_carry_a_label_in_words(studio, tmp_path):
                                                   "your cat's Small Healing Herb"]
     # With the cats' names: the cat by name; another slot by its number.
     assert savedit.label("1/GameplayProgression/Level", {"1": "Fawnstar"}.get) == "Fawnstar's level"
-    assert savedit.label("0/GameplayProgression/FreshKill/Value", {}.get, None, "1") == "cat slot 0's fresh-kill pile"
+    assert savedit.label("0/GameplayProgression/FreshKill/Value", {}.get, None, "1") == "your 1st game's cat's fresh-kill pile"
     assert savedit.label("Shared/General/CurrentCatSlot") == "Current Cat Slot"
     assert savedit.item_words("Gameplay.Inventory.Cosmetic.Neck.DogCollar.1") == "Neck Dog Collar 1"

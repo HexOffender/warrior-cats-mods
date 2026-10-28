@@ -2,7 +2,12 @@
 // (new pattern and marking colours from palettes included), its scars and its shape (body, ears, tail, pattern...),
 // for your cat and for any cat in your save (cats.json's "cats", by name or place). Writes cats.json (see
 // wcmods/catcolours.py); reading and writing it is lib/catlook.js, and the drawn cat lib/cat.js (the Palettes page's).
+//
+// "Your cat" is the cat in the game being played when you Apply ("player", the default, and what a shared mod wants),
+// or your cat in one game of your save, chosen in Which game ("4/player" under "cats": that game's cat only). The
+// other cats are every game's, each listed under its game (lib/games.js says the games the same way on every page).
 import * as C from "../lib/catlook.js";
+import * as G from "../lib/games.js";
 import { catSvg, paintCat } from "../lib/cat.js";
 import { eyeRamp, eyeWord, plainRow } from "../lib/palette.js";
 
@@ -77,7 +82,7 @@ export default {
 
     const target = wc.modTarget({
       file: "cats.json",
-      onLoad: obj => { ({ looks, fileExtra } = C.load(obj, known())); if (!looks[who]) who = "player"; render(); },
+      onLoad: obj => { ({ looks, fileExtra } = C.load(obj, known())); if (!looks[who] && !mine()) who = "player"; render(); },
       getValue: () => json(),
       // Saved: the page reads what it wrote as it reads any file (a save doesn't read the file back), on the same
       // cat. Not when something changed while it saved: that stays on the page, still to be saved.
@@ -132,7 +137,12 @@ export default {
 
     // ---------- whose look ----------
     const look = () => (looks[who] = looks[who] || C.blank());
-    const mine = () => who === "player";
+    // Your cat: in the game being played at Apply ("player"), or in one game ("4/player": yourGame() is "4").
+    const mine = () => C.isYours(who);
+    const yourGame = () => C.yourGame(who);
+    const games = () => info.games || [];
+    const gameNow = () => G.gameOf(games(), info.current_slot ?? "0");   // the game played last
+    let lastMine = "player";   // the game Your cat was last on, for coming back to it from another cat
     // The cats a key means, as the build finds them, with the game being played's slot first or without it.
     const slot = () => info.current_slot ?? null;
     const hitsOf = k => C.catsFor(k, others(), slot());
@@ -144,6 +154,7 @@ export default {
     const changedLook = t => looks[t] && Object.keys(C.oneJson(looks[t], known())).length > 0;
     // The cat in a sentence: a place that means cats in several clans is "each of these cats".
     const whoName = () => {
+      if (yourGame() !== null) return `your cat in ${G.gameWords(yourGame())}`;
       if (mine()) return "your cat";
       const cs = whoCats();
       return cs.length === 1 ? cs[0].name : cs.length > 1 && !byPlace(who) ? cs[0].name : cs.length > 1 ? "each of these cats" : `"${who}"`;
@@ -163,6 +174,7 @@ export default {
     const saveRead = () => !info.save_problem;
     const now = () => {
       if (!saveRead()) return null;
+      if (yourGame() !== null) return games().find(g => g.slot === yourGame())?.look_now || null;
       if (mine()) return Object.keys(info.current || {}).length ? { slots: info.current, scars: scars().current, look: (info.look || {}).current || {} } : null;
       const cs = whoCats();
       return cs.length === 1 ? cs[0].current || null : cs.length ? C.common(cs.map(c => c.current)) : null;
@@ -176,10 +188,12 @@ export default {
       if (!saveRead()) saveLine.append(el("strong", { text: "What your cat wears now isn't shown" }), el("span", { text: `${info.save_problem}. Colours of its own work all the same.` }));
     }
 
-    // The cats to choose from, by clan (yours first), each by its name and role, with the file's keys that mean no
-    // single cat (a name two cats share, a cat not in the save) after them. The filter box narrows the list.
+    // The cats to choose from, by game (the one played last first) and clan (yours first), each by its name and role,
+    // with the file's keys that mean no single cat (a name two cats share, a cat not in the save) after them. The
+    // filter box narrows the list.
     let filter = "";
     const GROUP_WORDS = { NarrativeRoles: "Story roles" };
+    const gameOfCat = c => String(c.slot ?? slot());
     function whoOptions() {
       const cats = others(), keys = fileKeys(), f = filter.trim().toLowerCase(), chosen = whoValue();
       // The chosen cat stays in the list whatever the filter says, so the box never shows another one.
@@ -191,21 +205,28 @@ export default {
           + (on.some(changedLook) ? ", changed" : "") + (alone.length ? ` (in the file as ${alone.map(k => `"${k}"`).join(" and ")})` : "");
         return el("option", { value: `cat:${c.target}`, text: label, title: c.where });
       };
-      const clans = [...new Set(cats.map(c => c.clan || ""))]
-        .sort((a, b) => (b === info.your_clan) - (a === info.your_clan) || (b.endsWith("Clan") - a.endsWith("Clan")) || a.localeCompare(b));
-      const groups = clans.map(clan => {
-        const inIt = cats.filter(c => (c.clan || "") === clan && shown(c));
-        return inIt.length ? el("optgroup", { label: GROUP_WORDS[clan] || clan || "Other cats" }, ...inIt.map(optionFor)) : null;
+      // Each game's cats under it, the game being played first (GET /cat lists it first); a save with one game, by
+      // clan alone.
+      const slots = [...new Set(cats.map(gameOfCat))];
+      const groups = slots.flatMap(at => {
+        const inGame = cats.filter(c => gameOfCat(c) === at);
+        const clans = [...new Set(inGame.map(c => c.clan || ""))]
+          .sort((a, b) => (b === info.your_clan) - (a === info.your_clan) || (b.endsWith("Clan") - a.endsWith("Clan")) || a.localeCompare(b));
+        return clans.map(clan => {
+          const inIt = inGame.filter(c => (c.clan || "") === clan && shown(c));
+          const name = GROUP_WORDS[clan] || clan || "Other cats";
+          return inIt.length ? el("optgroup", { label: slots.length > 1 ? `${name}, ${G.gameWords(at)}` : name }, ...inIt.map(optionFor)) : null;
+        });
       });
-      // Keys that mean two or more cats, or none the page lists.
+      // Keys that mean two or more cats, or none the page lists (your cat's are in Which game, not here).
       const anyNames = cats.some(c => (c.aliases?.names || []).length);
-      const otherGame = k => { const m = /^(\d+)\//.exec(String(k).trim()); return !!m && m[1] !== String(slot()); };
-      const loose = keys.filter(k => hitsOf(k).length !== 1).map(k => {
+      const elsewhere = k => !/^\d+\//.test(String(k).trim()) && cats.some(c => gameOfCat(c) !== String(slot()) && C.catsFor(`${gameOfCat(c)}/${k}`, [c], slot()).length);
+      const loose = keys.filter(k => !C.isYours(k) && hitsOf(k).length !== 1).map(k => {
         const hits = hitsOf(k);
         const why = hits.length > 1 ? (byPlace(k) ? `changes ${hits.length} cats: ${hits.map(c => c.where).join(", ")}`
             : `changes ${hits.length} cats called ${hits[0].name}`)
           : !saveRead() ? "your save can't be read now"
-          : otherGame(k) ? "a cat in another game"
+          : elsewhere(k) ? "not in the game you're playing: choose the cat in its game above"
           : !byPlace(k) && !anyNames ? "found by its name once the game's files can be read"
           : "not in your save";
         return el("option", { value: `key:${k}`, text: `"${k}" (${why})` });
@@ -213,11 +234,41 @@ export default {
       return [el("option", { value: "player", text: "Your cat" }), ...groups,
         loose.length ? el("optgroup", { label: "In the file" }, ...loose) : null];
     }
-    // The option that stands for `who`: your cat, the cat a key that means it alone stands for, else the key itself.
+    // The option that stands for `who`: your cat (in whichever game), the cat a key that means it alone stands for,
+    // else the key itself.
     function whoValue() {
       if (mine()) return "player";
       const cs = whoCats();
       return cs.length === 1 ? `cat:${cs[0].target}` : `key:${who}`;
+    }
+    // Which game for your cat: the game being played at Apply ("player"), or one game of the save ("4/player"); a
+    // game the file names that isn't in the save is listed too, so its entry can be seen and removed.
+    function gameOptions() {
+      const keyed = fileKeys().map(C.yourGame).filter(s => s !== null);
+      const slots = [...new Set([...games().map(g => g.slot), ...keyed])].sort((a, b) => Number(a) - Number(b));
+      return [el("option", { value: "player", text: `The cat in the game you're playing (whichever it is when you Apply)${changedLook("player") ? ", changed" : ""}` }),
+        ...slots.map(at => {
+          const g = games().find(x => x.slot === at);
+          const facts = g ? [g.name || "Your cat", G.gameWords(at), g.sandbox ? "Sandbox mode" : null, g.current ? "played last" : null]
+            : [`"${at}/player"`, G.gameWords(at), "not in your save"];
+          return el("option", { value: `${at}/player`, text: facts.filter(Boolean).join(", ") + (changedLook(`${at}/player`) ? ", changed" : "") });
+        })];
+    }
+    // The header: whose look, and in which game.
+    function whoTitle() {
+      if (yourGame() !== null) return G.catInGame(G.gameOf(games(), yourGame())).replace(/^y/, "Y");
+      if (mine()) return "Your cat, in the game you're playing";
+      const cs = whoCats();
+      return cs.length === 1 && games().length > 1 ? `${cs[0].name}, in ${G.gameWords(gameOfCat(cs[0]))}` : "Whose look";
+    }
+    // What choosing your cat's game means, in words.
+    function yourNote() {
+      const playing = gameNow(), at = yourGame();
+      if (at === null) {
+        return `Your cat in the game you're playing when you Apply${games().length ? ` (now ${G.gameTitle(playing).replace(/^Y/, "y")}, the game you played last)` : ""}. It's what a mod to share wants: it changes the cat of whoever adds it. Choose a game to change only that game's cat, or another cat below to change its look the same way: it's found by its name (or its place, when two share a name), and only it changes.`;
+      }
+      const g = G.gameOf(games(), at), twins = G.sameName(games(), g);
+      return `Only your cat in ${G.gameWords(at)} changes, whichever game you're playing: its scars, its shape and the game's colours it wears go into that game in your save at Apply. Its colours of its own go on by its name while you play${twins.length ? `, so your cat in ${G.andList(twins.map(t => G.gameWords(t.slot)))}, which has the same name, gets them too` : ""}; a rank-up changes its name, so apply again after one. For someone you share the mod with, it's the cat in their ${G.ordinal(G.numberOf(at))} game.`;
     }
     function renderWho() {
       const sel = el("select", { "aria-label": "Whose look" }, ...whoOptions());
@@ -225,9 +276,12 @@ export default {
       sel.addEventListener("change", () => {
         const v = sel.value;
         const cat = v.startsWith("cat:") && others().find(c => c.target === v.slice(4));
-        who = v === "player" ? "player" : cat ? C.keyFor(cat, fileKeys(), others(), slot()) : v.slice(4);
+        who = v === "player" ? lastMine : cat ? C.keyFor(cat, fileKeys(), others(), slot()) : v.slice(4);
         render();
       });
+      const pick = el("select", { "aria-label": "Which game", id: "cat-game" }, ...gameOptions());
+      pick.value = who;
+      pick.addEventListener("change", () => { who = lastMine = pick.value; render(); });
       const find = el("input", { type: "search", value: filter, placeholder: "Find a cat", "aria-label": "Find a cat by name, place or role" });
       find.addEventListener("input", () => {
         filter = find.value;
@@ -236,16 +290,18 @@ export default {
         sel.value = keep;
       });
       const hits = whoCats(), places = hits.map(c => c.where).join(", ");
-      const note = mine() ? "Your cat, in the game you're playing. Choose another cat to change its look the same way: it's found by its name (or its place, when two share a name), and only it changes."
+      const note = mine() ? yourNote()
         : hits.length > 1 && byPlace(who) ? `"${who}" changes ${hits.length} cats: ${places}. A place without its clan means that place in every clan. Choose one of them above to change just it.`
         : hits.length > 1 ? `"${who}" changes ${hits.length} cats called ${hits[0].name} (${places}). Choose one of them above to change just it.`
+        : hits.length === 1 && gameOfCat(hits[0]) !== String(slot()) ? `${whoName()} is in ${G.gameWords(gameOfCat(hits[0]))}, not the one you played last: its scars, its shape and the game's colours it wears go into that game at Apply, but its colours of its own go on only while its game is the one you're playing when you Apply.`
         : `${whoName()} is changed by ${byPlace(who) ? "its place" : "its name"} (${who}). Its colours go on by its name, so a cat with the same name gets them too; a rank-up changes a cat's name: apply again after one to keep its colours on it.`;
       // Other keys of the file that reach this cat too: the build applies them as well. Save writes this cat's own
       // entry after them (lastKeys), so where both choose a part, this page's choice wins.
       const also = hits.length === 1 ? C.keysOn(hits[0], fileKeys(), others(), slot()).filter(k => k !== who && changedLook(k)) : [];
-      put(whoCard, el("h2", { text: "Whose look" }),
+      put(whoCard, el("h2", { id: "cat-who-title", text: whoTitle() }),
         el("div", { class: "row" }, find, sel),
-        el("p", { class: "note", text: note }),
+        mine() ? el("div", { class: "row" }, el("label", { for: "cat-game", class: "lbl", text: "Which game" }), pick) : null,
+        el("p", { class: "note", id: "cat-who-note", text: note }),
         also.length ? el("div", { class: "stack cat-also" },
           el("strong", { text: "Other entries in the file for this cat" }),
           el("p", { class: "note", text: "The build applies them too. Where this page chooses the same thing, this page's choice wins: Save writes it after them. Remove takes one out of the file." }),
@@ -256,9 +312,10 @@ export default {
               el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove "${k}"`,
                 onclick: () => { delete looks[k]; changed(); render(); } }));
           }))) : null);
-      // Yours lists the file's own keys too; another cat's, its own entry when the file has it as something else.
-      const theirs = !mine() && `cats.${who}` in fileExtra ? { [`cats.${who}`]: fileExtra[`cats.${who}`] } : null;
-      const raw = [...C.cantChange(look(), mine() ? fileExtra : null), ...(theirs ? C.cantChange(C.blank(), theirs) : [])]
+      // Yours (in the game being played) lists the file's own keys too; another cat's, its own entry when the file
+      // has it as something else.
+      const theirs = who !== "player" && `cats.${who}` in fileExtra ? { [`cats.${who}`]: fileExtra[`cats.${who}`] } : null;
+      const raw = [...C.cantChange(look(), who === "player" ? fileExtra : null), ...(theirs ? C.cantChange(C.blank(), theirs) : [])]
         .filter(e => !/^(colours|slots|scars|look)\./.test(e.where))
         .map(e => (theirs && e.where in theirs ? { ...e, remove: () => { delete fileExtra[e.where]; } } : e));
       const block = cantChange(raw);
@@ -306,13 +363,18 @@ export default {
           line("Scars", scarText.length ? scarText.join("; ") : "none"),
           line("Shape", shape.join(", ") + (l.size != null ? `, size ${l.size}` : "")));
       };
-      put(nowCard, el("h2", { text: "In your save now" }),
+      // Which game it's read from: the game played last for "player", the chosen game, or the cat's own.
+      const fromGame = yourGame() ?? (mine() ? String(slot() ?? "") : cats.length === 1 ? gameOfCat(cats[0]) : null);
+      const gameSaid = !saveRead() || !fromGame || (!games().length && !yourGame()) ? ""
+        : `: ${G.gameWords(fromGame)}${who === "player" ? ", the game you played last" : ""}`;
+      put(nowCard, el("h2", { id: "cat-now-title", text: `In your save now${gameSaid}` }),
         !saveRead() ? el("p", { class: "note", text: `Unknown: ${info.save_problem}.` })
+          : yourGame() !== null && !cur ? el("p", { class: "note", text: `Your save has no cat of yours in ${G.gameWords(yourGame())}: the build changes nothing until it has one. Choose another game above, or the game you're playing.` })
           : mine() && !cur ? el("p", { class: "note", text: "There's no cat of yours in the game being played yet: start one in the game, then come back here." })
           : cats.length > 1 ? el("div", { class: "stack" },
             el("p", { class: "note", text: `"${who}" changes ${cats.length} cats, each with its own:` }),
             ...cats.map(c => el("div", {}, el("strong", { text: `${c.name}${c.name !== c.where ? `, ${c.where}` : ""}` }), list(c.current || {}))))
-          : !cur ? el("p", { class: "note", text: `${name[0].toUpperCase()}${name.slice(1)} isn't in the game you're playing, so the save has nothing for it.` })
+          : !cur ? el("p", { class: "note", text: `${name[0].toUpperCase()}${name.slice(1)} isn't in your save, so it has nothing for it.` })
           : list(cur),
         el("p", { class: "note", text: `${when ? `Last applied ${when}. ` : ""}It's read again after every Apply. Switching the mod off doesn't undo the game's colours, the shape or the scars: they stay in your save. To put them back, choose the old ones here and apply again, or put back the copy of your save the studio made (Backups and repair, on the Settings and repair page).` }));
     }
@@ -379,7 +441,7 @@ export default {
         : `${top.name}, the one later in the Mods list, not in this mod`;
       put(coloursCard, el("h2", { text: "Colours of its own" }),
         el("p", { class: "note", text: `Tick a part to give ${whoName()} its own colour; unticked parts keep the game's. They show while you play, in menus and portraits, and go away if you turn the mod off.` }),
-        mine() ? el("p", { class: "note cat-insert", text: `In the game, Insert opens the mod menu: its Colours page changes your cat's colours while you play, and its Save keeps them in ${saves}.` }) : null,
+        who === "player" ? el("p", { class: "note cat-insert", text: `In the game, Insert opens the mod menu: its Colours page changes your cat's colours while you play, and its Save keeps them in ${saves}.` }) : null,
         noLoader ? el("p", { class: "note heads-up", text: "They need the script loader, which isn't installed yet: Get set up, on the Mods page, installs it." }) : null,
         ...rows);
       const block = cantChange(rawOf("colours"));

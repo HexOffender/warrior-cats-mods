@@ -1,16 +1,23 @@
 // Save: changes to your cat's save (its level, the fresh-kill pile, what it carries), each made once, with a
 // copy of the save kept first, and each one can be put back. A list of changes to make, then Change my save
 // now; or kept as a mod's save.json to share. The logic is studio/lib/save.js.
+//
+// A save holds a game for each cat started. The page changes one game at a time, the one chosen in Which game
+// (GET /save's "games", lib/games.js), starting on the game played last; the list of changes to make can hold
+// changes to several games, each under its game, so choosing another game never loses one.
 import * as S from "../lib/save.js";
+import * as G from "../lib/games.js";
 
 const STORE = "wc-save-changes";   // sessionStorage: the list of changes to make, kept across page switches
+const GAME = "wc-save-game";       // sessionStorage: the game chosen, and the game played last when it was chosen
 const SHOW = 200;                  // a group in the tree shows this many keys, then "Show more"
 
 export default {
   title: "Save",
   async mount(root, wc) {
     const { el, api, clear, toast } = wc;
-    let save = null, data = null, slot = "0", say = {}, list = S.emptyList();
+    // slot: the game the page changes (chosen in Which game); current: the game played last, as the save says.
+    let save = null, data = null, slot = null, current = "0", games = [], say = {}, list = S.emptyList();
     let items = { names: {}, kinds: {}, list: [], problem: null };
     let modFile = null;   // the share fold's mod: its save.json, as a list
     let uid = 0;
@@ -18,6 +25,9 @@ export default {
 
     const status = el("p", { class: "banner", role: "status", hidden: true });
     const errorBox = el("div", { hidden: true });
+    const gameCard = el("div", { class: "card", id: "save-game" });
+    const gamePick = el("select", { id: "save-game-pick" });
+    gamePick.addEventListener("change", () => chooseGame(gamePick.value));
     const catCard = el("div", { class: "card", id: "save-cat" });
     const carryCard = el("div", { class: "card", id: "save-carry" });
     const pendingCard = el("div", { class: "card", id: "save-pending" });
@@ -43,6 +53,7 @@ export default {
       el("summary", {}, el("h3", { text: "Keep it as a mod to share" }), el("span", { class: "muted", text: "The list above, as a mod's save.json" })),
       el("p", { class: "note", text: "Save to mod puts the list above in the mod's save.json, in place of what it had. Whoever installs the mod gets each change once, in their own save, after a copy of it is kept; playing on past a change is never undone." }),
       el("p", { class: "note", text: "A mod made here starts off, and saving doesn't turn it on, so your own save isn't changed by it. If you turn it on, the next Apply makes these changes in your own save too, once." }),
+      el("p", { class: "note", id: "save-share-games", text: "Each change is for one game, by its number: in whoever adds the mod, it goes into their game with the same number (a change to your 5th game goes into their 5th game), whichever cat that is. A change to the game's settings goes to every game." }),
       target.element, modWords);
     const treeBox = el("div", { class: "stack" });
     const statsBox = el("div");
@@ -53,7 +64,7 @@ export default {
     root.append(
       wc.pageHead({ eyebrow: "Your save", title: "Save", help: "help:save",
         lede: "Change what your cat has: its level, the fresh-kill pile, what it carries. Each change is made once, with a copy of your save kept first, and you can put any of them back." }),
-      status, errorBox, catCard, carryCard, pendingCard, doneCard, advanced);
+      status, errorBox, gameCard, catCard, carryCard, pendingCard, doneCard, advanced);
 
     // ---------- reading the save ----------
     async function load() {
@@ -68,19 +79,54 @@ export default {
           none ? null : el("p", { class: "note", text: "Your save is kept as it is. Settings and repair has the copies of it the studio kept, to put one back." }),
           el("button", { class: "btn", type: "button", text: "Try again", onclick: () => start() })));
         errorBox.hidden = false;
-        for (const card of [catCard, carryCard, pendingCard, doneCard, advanced]) card.hidden = true;
+        for (const card of [gameCard, catCard, carryCard, pendingCard, doneCard, advanced]) card.hidden = true;
         return false;
       }
       errorBox.hidden = true;
-      for (const card of [catCard, carryCard, pendingCard, doneCard, advanced]) card.hidden = false;
+      for (const card of [gameCard, catCard, carryCard, pendingCard, doneCard, advanced]) card.hidden = false;
       data = save.data;
-      slot = String(save.current_cat?.slot ?? getSlot());
-      say = { words: save.words, cats: save.cats || {}, current: slot, items: items.names };
+      const before = slot === null ? keptGame() : { slot, last: current };
+      current = String(save.current_cat?.slot ?? getSlot());
+      games = G.pickable(save.games || [], current);
+      // The game kept from before while the game played last is the same; after another game was played, that one.
+      slot = G.startSlot(games, current, before) ?? current;
+      say = { words: save.words, cats: save.cats || {}, current, items: items.names };
       running(save.game_running);
+      drawGames();
       return true;
     }
     const getSlot = () => String(S.getPath(data, "Shared/General/CurrentCatSlot") ?? 0);
-    const catName = () => save?.current_cat?.name || null;
+    const game = () => G.gameOf(games, slot);
+    const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+
+    // ---------- Which game ----------
+    const gameKey = () => `${GAME}:${save?.account || ""}`;
+    function keptGame() {
+      try { return JSON.parse(sessionStorage.getItem(gameKey()) || "null"); } catch (e) { return null; }
+    }
+    function keepGame() {
+      try { sessionStorage.setItem(gameKey(), JSON.stringify({ slot, last: current })); } catch (e) { /* the choice lasts as long as the page */ }
+    }
+    function drawGames() {
+      clear(gamePick).append(...games.map(g => el("option", { value: g.slot, text: G.gameLabel(g) })));
+      gamePick.value = slot;
+      const twins = G.sameName(games, game());
+      clear(gameCard).append(...[el("h2", { text: "Which game" }),
+        games.length > 1
+          ? el("div", { class: "field" }, el("label", { for: "save-game-pick", class: "lbl", text: "The game to change" }), gamePick)
+          : el("p", { id: "save-game-only", text: `Your save has one game: ${G.gameLabel(game())}.` }),
+        el("p", { class: "note", text: "Your save keeps a game for each cat you've started, numbered as the game's cat choice numbers them. This page starts on the game you played last; what's below is for the game chosen here." }),
+        twins.length ? el("p", { class: "note heads-up", id: "save-game-twins", text: `${game().name}, the cat in ${G.gameWords(slot)}, has the same name as the cat in ${S.andList(twins.map(g => G.gameWords(g.slot)))}: the games' numbers tell them apart.` }) : null].filter(Boolean));
+    }
+    // Another game chosen: everything below is for it. The list of changes keeps every game's, each under its game.
+    function chooseGame(to) {
+      if (!games.some(g => g.slot === to) || to === slot) return;
+      slot = to;
+      keepGame();
+      drawGames();
+      drawAll();
+      wc.announce(`Changing ${G.catInGame(game())}.`);
+    }
     function running(on) {
       status.hidden = !on;
       status.textContent = on ? "The game is running: close it before changing your save." : "";
@@ -129,7 +175,7 @@ export default {
     function drawCat() {
       catFields.length = 0;
       const P = `${slot}/GameplayProgression`;
-      clear(catCard).append(el("h2", { text: catName() ? `Your cat: ${catName()}` : "Your cat" }));
+      clear(catCard).append(el("h2", { text: cap(G.catInGame(game())) }));
       if (!S.getPath(data, P)) {
         catCard.append(el("p", { class: "note", text: "This cat hasn't started yet: play once, then come back." }));
         return;
@@ -262,20 +308,29 @@ export default {
     }
 
     // ---------- Changes to make ----------
+    // A list's heading for a game's changes: "Your 5th game: Sharppaw", the one chosen above said so; the game's
+    // settings are every game's.
+    const gameHead = (at, chosen = true) => at === null ? "The game's settings, for every game"
+      : `${G.gameTitle(G.gameOf(games, at))}${chosen && at === slot ? " (the game chosen above)" : ""}`;
+    // A button's words name the game too while the save has more than one (two may have a cat called Sharppaw).
+    const inGame = at => (games.length > 1 && at !== null ? ` in ${G.gameWords(at)}` : "");
     function drawPending() {
       const changes = S.entries(list, data, say);
       clear(pendingCard).append(el("h2", { text: "Changes to make" }));
       if (!changes.length) {
         pendingCard.append(el("p", { class: "muted", text: "Nothing yet. Change a number above, press a quick button, or add something your cat carries." }));
       } else {
-        const ul = el("ul", { class: "changes" });
-        for (const c of changes) {
-          const words = `${c.label}: ${S.said(c.was)} -> ${c.kind === "remove" ? "taken out" : S.said(c.now)}`;
-          ul.append(el("li", { class: "row" }, el("span", { text: words }),
-            el("button", { class: "btn ghost small", type: "button", text: "Remove", "aria-label": `Remove ${c.label} from the list`,
-              onclick: () => { S.forget(list, c); listChanged(); } })));
+        // Each game's changes under its name, so changes to two games (two cats called Sharppaw) are told apart.
+        for (const [at, inIt] of G.byGame(changes)) {
+          const ul = el("ul", { class: "changes", "data-slot": at ?? "every" });
+          for (const c of inIt) {
+            const words = `${c.label}: ${S.said(c.was)} -> ${c.kind === "remove" ? "taken out" : S.said(c.now)}`;
+            ul.append(el("li", { class: "row" }, el("span", { text: words }),
+              el("button", { class: "btn ghost small", type: "button", text: "Remove", "aria-label": `Remove ${c.label}${inGame(at)} from the list`,
+                onclick: () => { S.forget(list, c); listChanged(); } })));
+          }
+          pendingCard.append(el("h3", { class: "game-head", text: gameHead(at) }), ul);
         }
-        pendingCard.append(ul);
       }
       const go = el("button", { class: "btn primary", id: "save-now", type: "button", text: "Change my save now", disabled: !changes.length || !!save?.game_running });
       go.addEventListener("click", changeNow);
@@ -287,11 +342,12 @@ export default {
       const go = pendingCard.querySelector("#save-now");
       if (go) go.disabled = true;
       try {
+        const where = G.byGame(S.entries(list, data, say)).map(([at]) => (at === null ? "the game's settings" : G.gameWords(at)));
         const r = await api.post("/save/apply", { changes: S.toChanges(list) });
         list = S.emptyList();
         keep();
         const when = new Date().toTimeString().slice(0, 5);
-        toast(`Done at ${when}: ${r.applied.length} change${r.applied.length === 1 ? "" : "s"} made. A copy of your save from before is in Settings and repair.`);
+        toast(`Done at ${when}: ${r.applied.length} change${r.applied.length === 1 ? "" : "s"} made, in ${S.andList(where)}. A copy of your save from before is in Settings and repair.`);
         wc.announce(`Done at ${when}.`);
         await reload();
       } catch (e) {
@@ -309,8 +365,10 @@ export default {
       }
       if (!modFile || S.isEmpty(modFile)) { modWords.append(el("p", { class: "muted", text: "This mod has no save changes yet." })); return; }
       modWords.append(el("p", { class: "lbl", text: "In this mod's save.json now:" }),
-        el("ul", { class: "changes" }, ...S.entries(modFile, data || {}, say).map(c =>
-          el("li", { text: `${c.label}: ${c.kind === "remove" ? "taken out" : S.said(c.now)}` }))),
+        el("ul", { class: "changes" }, ...S.entries(modFile, data || {}, say).map(c => {
+          const at = G.slotOfPath(c.path), game = at === null ? "Every game" : cap(G.gameWords(at));
+          return el("li", { text: `${game}: ${c.label}: ${c.kind === "remove" ? "taken out" : S.said(c.now)}` });
+        })),
         el("button", { class: "btn small", type: "button", text: "Copy these into my list", onclick: () => {
           for (const c of S.entries(modFile, data || {}, say)) {
             if (c.kind === "remove") S.removeKey(list, data, c.path);
@@ -331,33 +389,35 @@ export default {
         doneCard.append(el("p", { class: "muted", text: "Nothing changed in this save yet, by this page or by a mod." }));
         return;
       }
-      const ul = el("ul", { class: "changes done" });
-      for (const c of changes) {
-        const when = (c.when || "").replace("T", " ").slice(0, 16);
-        const line = el("li", { class: "stack", "data-key": `done:${c.source}:${c.path}` });
-        const what = c.before ? `${c.label}: ${S.said(c.value)}` : `${c.label}: ${S.said(c.was)} -> ${c.op === "remove" ? "taken out" : S.said(c.value)}`;
-        const tail = c.undone ? `put back ${c.undone.replace("T", " ").slice(0, 16)}` : c.before ? "made before this version kept a record, so it can't be put back here" : when;
-        const head = el("div", { class: "row" }, el("span", { text: what }), el("span", { class: "muted", text: `(${modName(c.source)}, ${tail})` }));
-        line.append(head);
-        if (c.can_undo) {
-          const ask = el("div", { class: "row", hidden: true });
-          const back = el("button", { class: "btn small", type: "button", text: "Put it back", "aria-label": `Put back ${c.label}` });
-          const moved = !(c.op === "remove" ? c.current === null : JSON.stringify(c.current) === JSON.stringify(c.value));
-          back.addEventListener("click", () => {
-            if (!moved) return putBack(c, back);
-            clear(ask).append(el("span", { text: `${c.label} is ${S.said(c.current)} now; putting it back makes it ${S.said(c.was)}.` }),
-              el("button", { class: "btn small danger", type: "button", text: "Put it back anyway", onclick: () => putBack(c, back) }),
-              el("button", { class: "btn small ghost", type: "button", text: "Keep it", onclick: () => { ask.hidden = true; back.focus(); } }));
-            ask.hidden = false;
-            wc.announce(ask.textContent);
-            ask.querySelector("button").focus();
-          });
-          head.append(back);
-          line.append(ask);
+      for (const [at, inIt] of G.byGame(changes)) {
+        const ul = el("ul", { class: "changes done", "data-slot": at ?? "every" });
+        for (const c of inIt) {
+          const when = (c.when || "").replace("T", " ").slice(0, 16);
+          const line = el("li", { class: "stack", "data-key": `done:${c.source}:${c.path}` });
+          const what = c.before ? `${c.label}: ${S.said(c.value)}` : `${c.label}: ${S.said(c.was)} -> ${c.op === "remove" ? "taken out" : S.said(c.value)}`;
+          const tail = c.undone ? `put back ${c.undone.replace("T", " ").slice(0, 16)}` : c.before ? "made before this version kept a record, so it can't be put back here" : when;
+          const head = el("div", { class: "row" }, el("span", { text: what }), el("span", { class: "muted", text: `(${modName(c.source)}, ${tail})` }));
+          line.append(head);
+          if (c.can_undo) {
+            const ask = el("div", { class: "row", hidden: true });
+            const back = el("button", { class: "btn small", type: "button", text: "Put it back", "aria-label": `Put back ${c.label}${inGame(at)}` });
+            const moved = !(c.op === "remove" ? c.current === null : JSON.stringify(c.current) === JSON.stringify(c.value));
+            back.addEventListener("click", () => {
+              if (!moved) return putBack(c, back);
+              clear(ask).append(el("span", { text: `${c.label} is ${S.said(c.current)} now; putting it back makes it ${S.said(c.was)}.` }),
+                el("button", { class: "btn small danger", type: "button", text: "Put it back anyway", onclick: () => putBack(c, back) }),
+                el("button", { class: "btn small ghost", type: "button", text: "Keep it", onclick: () => { ask.hidden = true; back.focus(); } }));
+              ask.hidden = false;
+              wc.announce(ask.textContent);
+              ask.querySelector("button").focus();
+            });
+            head.append(back);
+            line.append(ask);
+          }
+          ul.append(line);
         }
-        ul.append(line);
+        doneCard.append(el("h3", { class: "game-head", text: gameHead(at, false) }), ul);
       }
-      doneCard.append(ul);
     }
     async function putBack(c, button) {
       button.disabled = true;
@@ -414,7 +474,9 @@ export default {
     }
     function group(value, path, label) {
       const keys = Object.keys(value);
-      const d = el("details", { "data-path": path }, el("summary", {}, el("span", { class: "mono", text: label }),
+      // A game's own group (the save's "4") says which game it is: "your 5th game: Sharppaw".
+      const whose = /^\d+$/.test(path) ? el("span", { class: "game-of", text: `  ${G.gameTitle(G.gameOf(games, path))}${path === slot ? ", the game chosen above" : ""}` }) : null;
+      const d = el("details", { "data-path": path }, el("summary", {}, el("span", { class: "mono", text: label }), whose,
         el("span", { class: "muted", text: `  ${Array.isArray(value) ? "list" : "group"} · ${keys.length}` })));
       let shown = 0;
       const box = el("div", { class: "tree-kids" });
@@ -477,7 +539,7 @@ export default {
         });
         return el("div", { class: "field" }, el("label", { for: id, text: k }), inp);
       });
-      statsBox.append(el("div", { class: "card inner" }, el("h3", { text: "Combat stats" }),
+      statsBox.append(el("div", { class: "card inner" }, el("h3", { text: `Combat stats, ${G.gameWords(slot)}` }),
         el("p", { class: "note", text: "When a fight starts the game works out stats from your cat's level, so a change here may not last." }),
         el("div", { class: "row" }, ...fields)));
     }

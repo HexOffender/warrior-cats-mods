@@ -21,10 +21,32 @@ The **Shape** card changes the cat itself: its body, fur shape, tail, ears, eyes
 pattern, markings and **Size**. The **Scars** card chooses its scars. The game's colours, the shape and
 the scars are written into your save when you apply, after the studio makes a copy of your save.
 
-**Whose look**, at the top, picks the cat: **Your cat**, or any cat in the game you're playing, listed
-by clan (yours first) with its role. Type in **Find a cat** to narrow the list. The drawn cat shows the
-look as you've chosen it, and **In your save now** says what the cat has in your save: its colours,
-eyes, scars and shape.
+The card at the top picks the cat: **Your cat**, or any cat in your save, listed by game (the one you played
+last first) and clan (yours first), with its role. Type in **Find a cat** to narrow the list. The card's
+heading names the cat and its game. The drawn cat shows the look as you've chosen it, and
+**In your save now** says what the cat has in your save, and from which game: its colours, eyes, scars
+and shape.
+
+### Which game is "your cat"
+
+Your save holds a game for each cat you've started, each said by its number as the game's cat choice
+numbers them (the first is your 1st game). With **Your cat** chosen, **Which game** says whose look it is:
+
+- **The cat in the game you're playing (whichever it is when you Apply)**, the first choice. It changes
+  the cat of the game you're playing when you apply, whichever that is then. It's the one to use for a mod
+  you'll share: it changes the cat of whoever adds it. **In your save now** shows the game you played last.
+- One of your games ("Sharppaw, your 5th game"). Only that game's cat changes, whichever game you're
+  playing: its scars, its shape and the game's colours it wears go into that game in your save when you
+  apply. Its colours of its own go on your cat while you play it, found by its name, so another of your
+  games whose cat has the very same name gets them too: the page says which. For someone you share the
+  mod with, it's the cat in their game with that number.
+
+Each choice has a look of its own in the file, so you can give the game you're playing one look and your
+5th game another. A choice with a look already says "changed" in the list. Two cats called Sharppaw in
+two games are told apart by their games' numbers, never by the name.
+
+Another cat in a game other than the one you played last gets its scars, shape and the game's colours in
+that game, but its colours of its own go on only while its game is the one you're playing when you apply.
 
 ## A five-minute first try
 
@@ -63,8 +85,9 @@ You can't:
 
 Good to know:
 
-- Colours of its own go on the cat you're playing, whichever save slot it's in. The game's colours, the
-  shape and the scars go into the game you were playing when you applied.
+- With **The cat in the game you're playing**, colours of its own go on the cat you're playing, whichever
+  game it's in, and the game's colours, the shape and the scars go into the game you were playing when you
+  applied. With one game chosen, they go into that game's cat only.
 - Another cat's colours of its own go on by its name, only in the game you're playing. A rank-up
   changes a cat's name (Gustpaw becomes Gust-something), so apply again after one.
 - Coats 20 to 24 belong to the game's Feral Edition; a game without it gives those cats another coat.
@@ -92,7 +115,10 @@ Good to know:
   couldn't be read" usually means the game was writing it: wait a moment and come back to the window.
   Colours of its own work all the same.
 - Scars that don't show. Switch on the game's *Injury system* (its Gameplay settings).
-- A name two cats share. Choosing one of them in **Whose look** changes just that cat's game colours,
+- The wrong game. **Which game** starts on **The cat in the game you're playing**: that's whichever game
+  you play when you apply, not always the one you played last. Choose a game there to change only that
+  game's cat.
+- A name two cats share. Choosing one of them in the list changes just that cat's game colours,
   shape and scars. Its colours of its own still go on every cat with its name, because the game tells
   them apart only by name.
 - A new colour from a palette that's off. The cat shows no colour there until that palette is on again.

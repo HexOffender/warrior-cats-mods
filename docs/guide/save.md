@@ -6,8 +6,9 @@ carries. Each change is made once, with a copy of your save kept first, and you 
 ## What it changes in the game
 
 Your save is the game's record of everything you've played: one game for each cat you've started, and
-the game's settings. The page reads it, shows the cat you play now under **Your cat**, and changes only
-the values you ask it to. Nothing else in the save moves.
+the game's settings. The page reads it, shows the cat of the game chosen in **Which game** under
+**Your cat in your 5th game** (or whichever game it is), and changes only the values you ask it to.
+Nothing else in the save moves.
 
 You make a list of changes first, under **Changes to make**. **Change my save now** makes them all, after
 it keeps a copy of your save in [Settings and repair](settings.md). The game has to be closed: it writes
@@ -15,6 +16,25 @@ its save as you play, and would write over the change.
 
 Your save carries a number the game makes again each time it saves, and doesn't check. The studio leaves
 it as it was, and the game has accepted saves changed this way so far.
+
+### Which game
+
+**Which game**, at the top of the page, says which of your games the page changes. Each game is said by
+its number, the way the game's own cat choice numbers them (the first cat there is your 1st game), with
+its cat's name, clan and level: "5th game: Sharppaw, ThunderClan, level 1, Sandbox mode, played last".
+**Sandbox mode** marks a game the [Sandbox mode](README.md#sandbox-mode) mod made, and **played last**
+the one the game opens on.
+
+- The page starts on the game you played last. Choose another, and everything below it (**Your cat**,
+  the quick buttons, **What it carries**, **Combat stats** and **Advanced**) is for that game.
+- The studio remembers your choice while the tab is open. If you play another game in the meantime, the
+  page opens on that one instead.
+- Two games can have cats with the same name: three Sharppaws are three games, and their numbers tell them
+  apart. The page says so under **Which game**.
+- **Changes to make** keeps every game's changes, each under its game's name ("Your 1st game",
+  "Your 5th game"), so choosing another game never loses one. **Change my save now** makes them all, each
+  in its own game. **Done so far** lists the changes under their games too.
+- A game with no cat of yours (one never started) isn't in the list, unless it's the one you played last.
 
 ## A five-minute first try
 
@@ -45,7 +65,9 @@ You can:
 - keep the list as a mod to share, under **Keep it as a mod to share**.
 
 Under **Keep it as a mod to share**, **Save to mod** puts the list in a mod. Whoever installs that mod
-gets each change once, in their own save, after a copy of it is kept. A mod made there with **New mod…**
+gets each change once, in their own save, after a copy of it is kept. Each change goes into their game with
+the same number: a change you made to your 5th game goes into their 5th game, whichever cat that is, and a
+change to the game's settings goes to every game. A mod made there with **New mod…**
 starts off, and saving doesn't turn it on, so your own save isn't changed by it. A mod that's on makes the
 changes in your own save too at the next apply, once, and the fold says so. To send it to someone, use
 **Save as .zip**, under the mod's **More** on the Mods page.
@@ -87,8 +109,9 @@ You can't, here:
   save too. For a mod only to share, press **New mod…** there first, or turn the mod off on the Mods page.
 - Expecting a mod's change to come back. A mod makes each change once. If you play on past it (level 10,
   then 14 in play), the next apply leaves 14 alone. To make it again, use this page.
-- The wrong cat. The page changes the cat you play now. To change another, play that cat once, then come
-  back.
+- The wrong game. The page changes the game chosen in **Which game**, which starts on the game you played
+  last. Check its number (and the name in **Your cat in your ... game**) before **Change my save now**,
+  more so when two of your cats have the same name.
 - A new cat where an old one was. A mod's change is made once for each cat's place in your save, not for
   each cat: start a new cat over an old one, and the new cat doesn't get it. Make it here, with
   **Change my save now**.

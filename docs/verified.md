@@ -279,6 +279,11 @@ wcmods-sandbox#4; the test save's sandbox cat Sharppaw, a level 1 ThunderClan ap
 
 ## Not yet confirmed in game
 
+- **Choosing a game (2026-10-28):** the Save page's changes to a game other than the one played last, made
+  with Change my save now, then that game loaded from the cat choice; cats.json's `"<slot>/player"` (the Your
+  cat page's Which game) writing that game's slots, scars and shape while another game is played; and its
+  colours of its own going on in game through `WCModsCatLook`'s `YOURS` table, by the cat's name IDs, in
+  place of `player`'s. Checked only by the unit and end-to-end tests over temp saves.
 - **Animations:** on the clans' cats in the forest and on quest givers (they run the same AnimBlueprint
   and mesh, but only your cat was watched); the rats', rabbits', squirrels', foxes', badgers', dogs' and
   snakes' (made the same way as the mice's and birds'); an emote's key on a controller button.

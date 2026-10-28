@@ -150,13 +150,41 @@ test("a cat's entry that isn't a look is kept as written and listed, until the p
   assert.deepEqual(C.toJson(l3, f3, K), { _help: C.HELP, cats: { Hawkleaf: { slots: { fur: 1 } } } });
 });
 
-test("a key with the game being played's slot first means that game's cat; another game's isn't on the page", () => {
+test("a key with the game being played's slot first means that game's cat; another game's slot, none of these", () => {
   assert.deepEqual(C.catsFor("0/Clans/WindClan/Warrior/1", CATS, "0"), [CATS[1]]);
   assert.deepEqual(C.catsFor("0/Hawkleaf", CATS, "0"), [CATS[0], CATS[1]]);
   assert.deepEqual(C.catsFor("2/Hawkleaf", CATS, "0"), []);
   assert.deepEqual(C.catsFor("0/Warrior/1", CATS), [], "without the save's slot, no slot is the one being played");
   assert.deepEqual(C.catsFor("player", CATS, "0"), [], "your cat is never one of the others");
   assert.deepEqual(C.catsFor("0/player", CATS, "0"), []);
+});
+
+test("every game's cats are on the page: a key with a slot first finds them in that game only", () => {
+  // Game 0 is being played; game 2 has a Hawkleaf of its own at the same place as one of game 0's.
+  const other = { name: "Hawkleaf", where: "Clans/WindClan/Warrior/1", slot: "2",
+    aliases: { names: ["hawkleaf"], places: ["Clans/WindClan/Warrior/1", "WindClan/Warrior/1", "Warrior/1"] } };
+  const cats = [...CATS.map(c => ({ ...c, slot: "0" })), other];
+  assert.deepEqual(C.catsFor("2/Hawkleaf", cats, "0"), [other]);
+  assert.deepEqual(C.catsFor("2/Warrior/1", cats, "0"), [other]);
+  assert.deepEqual(C.catsFor("Warrior/1", cats, "0"), [cats[1]], "without a slot: the game being played's");
+  assert.deepEqual(C.catsFor("hawkleaf", cats, "0"), [cats[0], cats[1]]);
+  assert.deepEqual(C.catsFor("3/Hawkleaf", cats, "0"), [], "a game the save hasn't got");
+  // Your cat in one game: its own key, never another cat.
+  assert.equal(C.yourGame("4/player"), "4");
+  assert.equal(C.yourGame(" 4/Player "), "4");
+  assert.equal(C.yourGame("player"), null);
+  assert.equal(C.yourGame("4/Hawkleaf"), null);
+  assert.equal(C.isYours("player") && C.isYours("4/player") && !C.isYours("Hawkleaf"), true);
+  assert.deepEqual(C.catsFor("4/player", cats, "0"), []);
+});
+
+test("your cat in one game is written under cats by its slot, beside the player's own look", () => {
+  const { looks, fileExtra } = C.load({ player: { slots: { fur: 2 } }, cats: { "4/player": { look: { tail: 3 } } } }, K);
+  assert.deepEqual(Object.keys(looks), ["player", "4/player"]);
+  looks["2/player"] = C.parseOne({ colours: { nose: "#ff0000" } }, K);
+  assert.deepEqual(C.toJson(looks, fileExtra, K), { _help: C.HELP, player: { slots: { fur: 2 } },
+    cats: { "4/player": { look: { tail: 3 } }, "2/player": { colours: { nose: "#FF0000" } } } });
+  assert.deepEqual(C.ownLast(looks, CATS, "0"), [], "no other cat's key reaches your cat");
 });
 
 test("every key that reaches a cat, and the cat's own entry written after the others so the page's choices win", () => {

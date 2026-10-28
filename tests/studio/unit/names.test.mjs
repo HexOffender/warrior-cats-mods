@@ -519,7 +519,7 @@ test("ranks, story roles and games read as words", () => {
   assert.equal(logic.whereWords(cat("RiverClan/Warrior/0", "Woodheart", "Warrior", { roles: ["Tallstar", "TheLoner"] })),
     "RiverClan · Warrior · 0 · story role: Tallstar, the loner");
   assert.deepEqual([1, 2, 3, 4, 11, 12, 13, 21, 22].map(logic.ordinal), ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd"]);
-  assert.equal(logic.slotHeading("1", [cat("1/player", "Duskfang", "Warrior", { player: true })]), "Your 2nd game (Duskfang's)");
+  assert.equal(logic.slotHeading("1", [cat("1/player", "Duskfang", "Warrior", { player: true })]), "Your 2nd game: Duskfang");
   assert.equal(logic.whereWords(cat("RiverClan/Leader/0", "Guststar", "Leader", { roles: ["TheAgingLeader"] })),
     "RiverClan · Leader · 0 · story role: the aging leader");
   assert.equal(logic.summary({ changed_names: 1, changed_texts: 1, renames: [{ from: "A", to: "B" }] }),

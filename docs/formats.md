@@ -118,7 +118,8 @@ palette you've added is your own copy, so add it again to get the new one.
               "scars": { "ear": "notch-left", "eye": "claws-right", "back": "none" },
               "look": { "body": 6, "ears": 2, "tail": 7, "pattern": 12, "size": 0.9 } },
   "cats": { "Duskfang": { "look": { "fur": 0, "tail": 9 }, "slots": { "fur": 0 }, "colours": { "nose": "#202020" } },
-            "WindClan/Warrior/3": { "scars": "none" } } }
+            "WindClan/Warrior/3": { "scars": "none" },
+            "4/player": { "look": { "tail": 2 }, "colours": { "ears": "#ffd0e0" } } } }
 ```
 `player` is your cat: its `slots`, `scars` and `look` go into the game you were playing when you
 applied, and its `colours` go on whichever cat you play, in any save slot. **`cats`** changes other cats in your save the same
@@ -132,6 +133,17 @@ Every cat called the name changes, with a warning when that's more than one. Mod
 order, and within one file a later key wins, part by part, over an earlier one that finds the same cat,
 so a later choice wins even when it names the cat another way (the Your cat page writes a cat's own
 entry after the others that reach it).
+
+**Your cat in one game.** A save holds a game for each cat you've started, numbered from 0 in the file
+and from 1 in the game's cat choice (`4` is your 5th game). `player` is your cat in whichever game you're
+playing when you apply, which is what a mod to share wants. To change only one game's cat, write
+`"<slot>/player"` under `cats` (`"4/player"`, your 5th game's): its `slots`, `scars` and `look` go into
+that game whichever one you're playing, after `player`'s when it's the game being played (its own win, part
+by part). Its `colours` go on your cat while it has that cat's name, in place of `player`'s (with
+`player`'s under them), so another game whose cat has the very same name gets them too, with a warning;
+a rank-up changes the name, so apply again after one. In someone else's save it's the cat in their game
+with that number. The Your cat page writes it when you choose a game in **Which game**. A `"<slot>/player"`
+for a game with no cat of yours changes nothing, with a warning.
 - **`colours`** go onto the cat's own materials while you play. That covers menus and the HUD's
   portrait (the cat choice's small pictures show the saved colours), and every part is optional. No other cat changes, and any colour works, including paws, ears,
   nose and whiskers, which have no slots at all. The game sets a cat's colours again whenever it
@@ -609,14 +621,17 @@ Changes to the player's own save (`WrcGame.sav`), made when the mod is applied, 
 a copy of the save kept first. The Save page writes it (Keep it as a mod to share); its own Change my save
 now makes the same changes straight away, without a mod.
 - **Paths** start inside the save's account object and are split by `/` (a key with a `/` in it can't be
-  named). `Shared/...` is the game's settings and controls; `0/`, `1/` ... is a cat slot, one game each,
-  and `Shared/General/CurrentCatSlot` says which slot is being played. The Save page's Advanced part shows
-  the whole save.
+  named). `Shared/...` is the game's settings and controls; `0/`, `1/` ... is a game each, one for every
+  cat started, numbered from 0 (`4/` is the game the cat choice shows 5th, the Save page's "your 5th
+  game"), and `Shared/General/CurrentCatSlot` says which was played last. A change is for the game its
+  path names: in whoever installs the mod, it goes into their game with that number, whichever cat that
+  is. The Save page writes the paths of the game chosen in its **Which game**; its Advanced part shows the
+  whole save.
 - **`set`** changes a value the save has (a path it hasn't got is skipped, with a warning). **`add`** adds
   keys to an object, or sets them when the object has them already: an item to the inventory, by its tag.
   **`remove`** takes out an item carried (`<slot>/GameplayProgression/State/Inventory/<tag>`) or one
   element of a list (a path ending in its number). Anything else is left out with a warning: never a
-  whole cat slot (`"2"`), `Shared` (the game's settings and controls) or a cat's
+  whole game (`"2"`), `Shared` (the game's settings and controls) or a cat's
   `<slot>/GameplayProgression`. Removals go after the sets and adds.
 - **Each change is made once per save.** What was made is kept in [`save-changes.json`](#save-changesjson),
   so the next Apply doesn't make it again over what the player has played since: a level set to 10 and

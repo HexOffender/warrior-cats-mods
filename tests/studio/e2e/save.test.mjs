@@ -58,7 +58,7 @@ function play(path, value) {
 
 test("a preset adds to the list in words, and nothing is written until Change my save now", { skip }, async () => {
   const page = await open();
-  assert.equal(await page.text("#save-cat h2"), "Your cat");
+  assert.equal(await page.text("#save-cat h2"), "Your cat in your 2nd game");
   await page.click({ text: "Fill the fresh-kill pile" });
   await page.waitFor(() => document.querySelectorAll("#save-pending .changes li").length === 1);
   assert.deepEqual(await pending(page), ["your cat's fresh-kill pile: 62 -> 100"]);

@@ -37,8 +37,8 @@ class CatsSection(Section):
         per_mod = [data.get("cats", {}) for _, data in items if data.get("cats")] if not unreadable else []
         plan = self._plan(ctx) if per_mod and cats else None
         others = self._others(ctx, plan, per_mod, cats, os.path.isfile(sav))
-        coloured = self._coloured(ctx, plan, others, cats)
-        if player["colours"] or coloured:
+        coloured, yours = self._coloured(ctx, plan, others, cats, player["colours"])
+        if player["colours"] or coloured or yours:
             if ctx.cfg.ue4ss_mods_dir:
                 key_file = os.path.join(ctx.cfg.ue4ss_mods_dir, catcolours.UE4SS_MOD_NAME, "yourcat.txt")
                 # The in-game menu saves into the mod whose colours win: the one with the highest priority.
@@ -46,7 +46,8 @@ class CatsSection(Section):
                 save = {"path": os.path.abspath(os.path.join(top.folder, "cats.json")),
                         "file": f"mods/{top.id}/cats.json", "doc": self.read_json(top, "cats.json")}
                 script = catcolours.script(player["colours"], catcolours.save_key(cats), key_file,
-                                           debug=bool(ctx.cfg.data.get("debug_cat_look")), save=save, others=coloured)
+                                           debug=bool(ctx.cfg.data.get("debug_cat_look")), save=save, others=coloured,
+                                           yours=yours)
                 ctx.add_ue4ss_mod(catcolours.UE4SS_MOD_NAME, {"Scripts/main.lua": script, "enabled.txt": ""})
             else:
                 ctx.warn("cats' own colours need UE4SS, which isn't installed")
@@ -60,12 +61,20 @@ class CatsSection(Section):
             else:
                 mine = [c for c in cats if c["player"] and c["current"]]   # the game being played, not every slot's cat
                 for cat in mine:
-                    self._write(ctx, cat, player, source, "your cat")
+                    # That game named by its slot too ("4/player" while game 4 is played): one change, below.
+                    if not any(c is cat for _, c, _ in others):
+                        self._write(ctx, cat, player, source, "your cat")
                 if not mine:
                     ctx.warn("your cat's slots, scars or look: your save has no player cat yet")
         for target, cat, one in others:
-            who = f"{target} ({names.place(cat['paths'][0])})" if "/" not in target else target
+            if cat["player"]:
+                who = names.describe_target(target)   # "your cat in your 5th game"
+            else:
+                who = f"{target} ({names.place(cat['paths'][0])})" if "/" not in target else target
             self._check(ctx, who, one, added)
+            if cat["player"] and cat["current"] and not unreadable:
+                # Your cat in the game being played: "player"'s choices go in too, under this entry's own.
+                one = {k: {**player[k], **one[k]} for k in EMPTY}
             if any(one[k] for k in ("slots", "scars", "look")):
                 self._write(ctx, cat, one, source, who)
         ctx.note("cat", {"colours": sorted(player["colours"]), "slots": player["slots"], "scars": sorted(player["scars"]),
@@ -86,7 +95,8 @@ class CatsSection(Section):
     def _others(ctx, plan, per_mod, cats, have_save):
         """[(targets, cat, look)] for cats.json's "cats" (each mod's, lowest priority first): each name or place
         found in the save (every cat called that, as names.json's "cats" finds them). Without a slot first, a
-        name or place means the game being played."""
+        name or place means the game being played. "<slot>/player" is your cat in that game (never another cat's
+        name: your cat is found by "player" alone)."""
         if not per_mod:
             return []
         if not have_save:
@@ -96,14 +106,20 @@ class CatsSection(Section):
         found, said = {}, set()   # a cat's first path -> (the targets that found it, the cat, its look): one edit a cat
         for wanted in per_mod:
             for target, one in wanted.items():
-                hits = [c for c in plan.cats_called(target, cats) if not c["player"]]
+                yours = names.player_slot(target) is not None
+                hits = [c for c in plan.cats_called(target, cats) if c["player"] == yours]
+                if yours and not hits and target not in said:
+                    said.add(target)
+                    ctx.warn(f"cats: {names.describe_target(target)} ('{target}'): your save has no cat of yours in "
+                             "that game")
+                    continue
                 if names.slot_of(target) is None:
                     elsewhere = sorted({c["slot"] for c in hits if not c["current"]})
                     hits = [c for c in hits if c["current"]]
                     if not hits and elsewhere and target not in said:
                         said.add(target)
-                        ctx.warn(f"cats: '{target}' isn't in the game you're playing; for game {elsewhere[0]}'s, put "
-                                 f"its slot first ('{elsewhere[0]}/{target}')")
+                        ctx.warn(f"cats: '{target}' isn't in the game you're playing; for the one in "
+                                 f"{names.game_words(elsewhere[0])}, write '{elsewhere[0]}/{target}'")
                         continue
                 if not hits:
                     if target not in said:
@@ -125,11 +141,13 @@ class CatsSection(Section):
         return [(" and ".join(targets), cat, look) for targets, cat, look in found.values()]
 
     @staticmethod
-    def _coloured(ctx, plan, others, cats):
-        """{name key: colours} for the script: the cats found in the game being played (the script tells cats
-        apart by their name IDs only, whatever the game), by the IDs they'll have after this install's renames."""
+    def _coloured(ctx, plan, others, cats, player_colours=None):
+        """({name key: colours}, {name key: colours}) for the script: the other cats found in the game being played
+        (the script tells cats apart by their name IDs only, whatever the game), and your cat in each game cats.json
+        names by its slot ("4/player"), which the script tells apart from your cats in other games by its name IDs
+        too, each with the player colours under its own; by the IDs they'll have after this install's renames."""
         renamed = {}
-        if plan is not None and plan.renames:
+        if plan is not None and getattr(plan, "renames", None):
             for op in plan.plan_cats(cats):
                 if op.get("op") == "name":
                     renamed[op["path"]] = op["set"]
@@ -138,20 +156,29 @@ class CatsSection(Section):
         for cat in cats:
             if cat["current"] and not cat["player"]:
                 sharing.setdefault(key(cat), []).append(cat)
-        out = {}
+        out, yours = {}, {}
         for targets, cat, one in others:
             if not one["colours"]:
                 continue
+            if cat["player"]:
+                k = key(cat)
+                same = sorted({c["slot"] for c in cats if c["player"] and c is not cat and key(c) == k}, key=int)
+                if same:
+                    ctx.warn(f"cats: {names.describe_target(targets)}: its colours go on your cat in "
+                             f"{' and '.join(names.game_words(s) for s in same)} too, which has the very same name: "
+                             "the game tells cats apart only by their names")
+                yours[k] = {**(player_colours or {}), **one["colours"]}
+                continue
             if not cat["current"]:
-                ctx.warn(f"cats: {targets}: colours go on only in the game being played, so game {cat['slot']}'s "
-                         "cat gets its slots, scars and shape but not its colours")
+                ctx.warn(f"cats: {targets}: colours go on only in the game being played, so the cat in "
+                         f"{names.game_words(cat['slot'])} gets its slots, scars and shape but not its colours")
                 continue
             k = key(cat)
             if len(sharing.get(k, [])) > 1:
                 ctx.warn(f"cats: {targets}: its colours go on every cat with its name ({len(sharing[k])} in this game): "
                          "the game tells them apart only by their names")
             out[k] = one["colours"]
-        return out
+        return out, yours
 
     @staticmethod
     def _check(ctx, who, one, added):

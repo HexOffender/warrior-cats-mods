@@ -25,7 +25,7 @@ import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (addons, animations, bridge, catcolours, colors, controls, eyeatlas, guide, keymap, menupages,
+from . import (addons, animations, bridge, catcolours, colors, controls, eyeatlas, games, guide, keymap, menupages,
                menusettings, models, mods, modzip, mouselook, names, onboarding, packs, palettes, pipeline, recolor,
                saverecord, scriptlog, story, tweaks, ue4ss, world)
 from .formats import cooked, csvdata, png, save, texture
@@ -581,7 +581,8 @@ class Studio:
                 spec = names.merge([])
             plan = names.Plan(self._names, spec)
             found = _Notes()
-            CatsSection._others(found, plan, [data["cats"]], cats, True)
+            # And what Apply says about their colours: another game's cat gets none, a name two games share.
+            CatsSection._coloured(found, plan, CatsSection._others(found, plan, [data["cats"]], cats, True), cats)
         except (Unreadable, OSError, LookupError):
             return   # the game's names can't be read now: Apply finds the cats
         notes.warnings += found.warnings
@@ -1417,13 +1418,16 @@ class Studio:
         raise LookupError("unknown API route")
 
     def cat_info(self):
-        """Your cat's colour slots, scars and look in the save, the other cats of the game being played with
-        theirs (for cats.json's "cats"), the colours each slot has with the enabled palettes (the game's
-        tables, recoloured slots, and new slots palettes add), what each scar place can be, and the look's
-        parts with the highest each takes, and the slot of the game being played (current_slot: a key with it first
-        means that game's cat). A save that isn't there or can't be read leaves the cats out and says why in
-        save_problem (None when it reads), so the page still opens."""
+        """Your cat's colour slots, scars and look in the save, the other cats of every game with theirs (for
+        cats.json's "cats"; each with its game's slot, and "playing" for the game being played, whose cats' keys go
+        without it), the colours each slot has with the enabled palettes (the game's tables, recoloured slots, and
+        new slots palettes add), what each scar place can be, and the look's parts with the highest each takes,
+        the slot of the game being played (current_slot: a key with it first means that game's cat), and the
+        save's games (games.in_save, each with what your cat in it has now: look_now), for "your cat"'s game
+        picker. A save that isn't there or can't be read leaves the cats out and says why in save_problem (None
+        when it reads), so the page still opens."""
         current, scars, looks, others, save_problem, your_clan, slot = {}, {}, {}, [], None, None, None
+        game_list = []
 
         def read(raw):
             """(slots, scars, look) a cat's save text has; a field it leaves out is at its default, 0."""
@@ -1448,9 +1452,9 @@ class Studio:
         try:
             if doc is None:
                 raise LookupError(save_problem)
-            cats = [c for c in names.cats_in_save(doc.data) if c["current"]]
+            cats = names.cats_in_save(doc.data)   # every game's: the game being played first
             slot = names.current_slot(doc.data)   # a key with it first ("0/Warrior/1") means this game's cat
-            mine = [c for c in cats if c["player"]]
+            mine = [c for c in cats if c["player"] and c["current"]]
             if mine:
                 raw = doc.get(mine[0]["paths"][0])
                 current, scars, looks = read(raw)
@@ -1459,20 +1463,30 @@ class Studio:
             # The cats' names as they show with the enabled names mods, and every name the build finds each by;
             # without the game's name tables the cats are named by their places (cat_namers).
             shown, called_as = self.cat_namers()
-            called = {}
+            # Each game with your cat in it, and what that cat has now: the page's game picker for "your cat".
+            game_list = self.save_games(doc, shown)
+            for g in game_list:
+                you = next(c for c in cats if c["player"] and c["slot"] == g["slot"])
+                slots_now, scars_now, look_now = read(doc.get(you["paths"][0]))
+                g["look_now"] = {"slots": slots_now, "scars": scars_now, "look": look_now}
+            called = {}   # (game, name) -> how many cats of that game are called that
             for c in cats:
                 if not c["player"] and shown(c):
-                    called[shown(c).lower()] = called.get(shown(c).lower(), 0) + 1
+                    called[c["slot"], shown(c).lower()] = called.get((c["slot"], shown(c).lower()), 0) + 1
             for c in cats:
                 if c["player"]:
                     continue
                 name, where = shown(c), names.place(c["paths"][0])
                 slots_now, scars_now, look_now = read(doc.get(c["paths"][0]))
-                # A name picks the cat while it's the only one called that; else its place does.
+                # A name picks the cat while it's the only one in its game called that; else its place does, with
+                # the game's slot first for a game other than the one being played ("2/Hawkleaf").
                 # Every key the build would find it by (names.Plan._targets): its names, matched ignoring case, and
-                # its places, matched as written, so the page puts a file's key on the cat it changes.
-                others.append({"target": name if name and called[name.lower()] == 1 else where, "name": name or where,
+                # its places, matched as written, so the page puts a file's key on the cat it changes; a key with a
+                # slot first matches them in that game.
+                own = name if name and called[c["slot"], name.lower()] == 1 else where
+                others.append({"target": own if c["current"] else f"{c['slot']}/{own}", "name": name or where,
                                "where": where, "role": c["ids"].get("Role", ""), "clan": _clan_of(where),
+                               "slot": c["slot"], "playing": c["current"],
                                "aliases": {"names": called_as(c), "places": names.place_keys(c["paths"])},
                                "current": {"slots": slots_now, "scars": scars_now, "look": look_now}})
         except LookupError:
@@ -1483,7 +1497,7 @@ class Studio:
                 "feral_slots": options["feral_slots"], "parts": catcolours.PARTS,
                 "scars": {"current": scars, "types": catcolours.SCAR_TYPES},
                 "look": {"current": looks, "parts": options["parts"], "size": list(catcolours.SIZE[1:])},
-                "cats": others, "your_clan": your_clan, "current_slot": slot}
+                "cats": others, "your_clan": your_clan, "current_slot": slot, "games": game_list}
 
     def cat_namers(self):
         """(shown, called_as) for cats of names.cats_in_save: shown(cat) is its name as it shows with the enabled
@@ -1511,8 +1525,9 @@ class Studio:
 
     def save_info(self):
         """Your save for the Save page: its account and data, the cat being played and the cats of the other
-        slots by name (your cat in each; None where the game's names can't be read), whether the game runs,
-        and what the page words and checks values with (savedit.WORDS and RANGES, one home for both)."""
+        slots by name (your cat in each; None where the game's names can't be read), its games (games.in_save:
+        the page's game picker), whether the game runs, and what the page words and checks values with
+        (savedit.WORDS and RANGES, one home for both)."""
         text, mtime = self.save_text()
         doc = SaveDoc(text)
         slot = names.current_slot(doc.data)
@@ -1520,7 +1535,14 @@ class Studio:
         cats = {c["slot"]: shown(c) or None for c in names.cats_in_save(doc.data) if c["player"]}
         return {"account": doc.account, "data": doc.data, "save_time": mtime,
                 "current_cat": {"slot": slot, "name": cats.get(slot)}, "cats": cats,
+                "games": self.save_games(doc, shown),
                 "game_running": game_running(), "words": savedit.WORDS, "ranges": savedit.RANGES}
+
+    def save_games(self, doc, shown):
+        """The games in a save (games.in_save), with your cat in each named by shown(cat) and Sandbox mode's
+        games from its sandbox.json, which is read only."""
+        folder = pipeline.saved_folder(self.ctx.cfg) if self.ctx.cfg.save_dir else None
+        return games.in_save(doc.data, shown, games.sandbox_entries(folder))
 
     def _save_words(self, doc, cats):
         """savedit.label for this save, with the cats' names and the game's item names where they can be read."""

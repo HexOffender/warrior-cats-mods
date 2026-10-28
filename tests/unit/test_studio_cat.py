@@ -63,11 +63,17 @@ def test_a_save_that_reads_has_no_problem_and_your_cats_slots_scars_and_shape(st
     assert r["save_problem"] is None and r["current_slot"] == "5"
     assert r["current"]["fur"] == 11 and r["scars"]["current"]["ear"] == 4
     assert r["look"]["current"]["body"] == 6 and r["look"]["current"]["size"] == 0.45
-    # Only the game being played: slot 2's cat is left out.
-    assert [c["where"] for c in r["cats"]] == ["WindClan/Warrior/0"]
-    (other,) = r["cats"]
+    # Every game's cats, the game being played first; another game's by a key with its slot first.
+    assert [(c["slot"], c["where"], c["target"], c["playing"]) for c in r["cats"]] == [
+        ("5", "WindClan/Warrior/0", "WindClan/Warrior/0", True), ("2", "WindClan/Warrior/0", "2/WindClan/Warrior/0", False)]
+    other, elsewhere = r["cats"]
     assert other["current"]["slots"]["fur"] == 7 and other["current"]["look"]["tail"] == 3
     assert other["current"]["look"]["size"] is None, "a cat without CatSize has no size, not 0"
+    assert elsewhere["current"]["slots"]["fur"] == 1
+    # The games with a cat of yours: slot 2 has none, so it isn't one; game 5's cat has what it has now.
+    (game,) = r["games"]
+    assert game["slot"] == "5" and game["n"] == 6 and game["current"] and game["clan"] == "WindClan"
+    assert game["look_now"]["slots"]["fur"] == 11 and game["look_now"]["scars"]["ear"] == 4
 
 
 # ---------- the keys a file may name a cat by ----------
@@ -150,18 +156,17 @@ MANY = {"acct": {
 
 
 def page_finds(key, cats, slot):
-    """lib/catlook.js's catsFor, written out: a key with the game being played's slot first goes without it (another
-    game's isn't on the page), "player" is no other cat, a place matches the cat's places as written, a name its
-    names in any case."""
-    k = key.strip()
+    """lib/catlook.js's catsFor, written out: a key with a slot first means that game's cats, one without the game
+    being played's, "player" is no other cat, a place matches the cat's places as written, a name its names in any
+    case."""
+    k, game = key.strip(), slot
     m = re.match(r"^(\d+)/(.*)$", k)
     if m:
-        if m.group(1) != slot:
-            return []
-        k = m.group(2)
+        game, k = m.group(1), m.group(2)
     if k.lower() == "player":
         return []
-    return [c for c in cats if (k in c["aliases"]["places"] if "/" in k else k.lower() in c["aliases"]["names"])]
+    return [c for c in cats if c["slot"] == game
+            and (k in c["aliases"]["places"] if "/" in k else k.lower() in c["aliases"]["names"])]
 
 
 def test_the_page_finds_every_key_shape_on_the_cats_the_build_changes(studio, fake_game, monkeypatch):
@@ -180,16 +185,18 @@ def test_the_page_finds_every_key_shape_on_the_cats_the_build_changes(studio, fa
             "hawkleaf", "HAWKLEAF", "0/Hawkleaf", "2/Hawkleaf", "duskfang", "Mothfang", "Brackenfur", "Nobody",
             "player", "0/player"]
     for key in keys:
-        # What the build changes (sections/cats.py's _others), in the game being played: the page lists only its cats.
+        # What the build changes (sections/cats.py's _others), in every game: the page lists every game's cats.
         target = key.strip()
         hits = [c for c in plan.cats_called(target, every) if not c["player"]]
         if studio_mod.names.slot_of(target) is None:
             hits = [c for c in hits if c["current"]]
-        build = sorted(studio_mod.names.place(c["paths"][0]) for c in hits if c["current"])
-        assert sorted(c["where"] for c in page_finds(key, r["cats"], r["current_slot"])) == build, key
+        build = sorted((c["slot"], studio_mod.names.place(c["paths"][0])) for c in hits)
+        assert sorted((c["slot"], c["where"]) for c in page_finds(key, r["cats"], r["current_slot"])) == build, key
     # And the shapes do find what they should: a place without its clan in every clan, a shared name on both.
     assert len(page_finds("Warrior/0", r["cats"], "0")) == 2 and len(page_finds("hawkleaf", r["cats"], "0")) == 2
     assert [c["where"] for c in page_finds("0/Warrior/1", r["cats"], "0")] == ["Clans/WindClan/Warrior/1"]
+    # Game 2's Hawkleaf is its own there, by its name with the slot first; a name without one never reaches it.
+    assert [c["target"] for c in page_finds("2/Hawkleaf", r["cats"], "0")] == ["2/Hawkleaf"]
 
 
 def test_the_eye_colours_palettes_give_are_served_by_row_the_later_palette_winning(studio, fake_game, monkeypatch):

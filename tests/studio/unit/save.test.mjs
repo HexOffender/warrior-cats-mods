@@ -65,7 +65,7 @@ test("describe turns a path into words", () => {
   assert.equal(S.describe(`${P}/Level`, SAY), "Fawnstar's level");
   assert.equal(S.describe(`${INV}/Gameplay.Inventory.Materials.Moss`, SAY), "Fawnstar's Moss");
   assert.equal(S.describe(`${INV}/Gameplay.Inventory.Consumable.SmallHealingHerb`, SAY), "Fawnstar's Small Healing Herb");
-  assert.equal(S.describe("0/GameplayProgression/Level", SAY), "cat slot 0's level");
+  assert.equal(S.describe("0/GameplayProgression/Level", SAY), "your 1st game's cat's level");
   assert.equal(S.describe(`${P}/Level`, { ...SAY, cats: {} }), "your cat's level");
   assert.equal(S.describe("Shared/SettingsData/MasterVolume", SAY), "the game's setting master volume");
   assert.equal(S.describe(`${P}/QuestProgression`, SAY), "Fawnstar's quest progression");
