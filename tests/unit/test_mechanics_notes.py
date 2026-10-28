@@ -52,6 +52,15 @@ def test_a_pattern_key_keeps_its_placeholder():
     assert found["Gameplay.Exploration.MaxLevel"][0]["text"] == "The level cap is 20 (Gameplay.Exploration.MaxLevel)."
 
 
+def test_a_key_made_only_of_placeholders_names_no_row():
+    # How a doc says a row's name is made ("the row `<tag>.<SubTag>`") isn't a row: the page's patterns would
+    # put its line on every dotted row of every table.
+    found = notes.notes_from({"quests-and-bonding.md": "## Lines\n\n- Each line is the row `<tag>.<SubTag>` (story) or "
+                                                      "`<quest>.<AutoFillSuffix>` (quest), from `StoryDialogues.csv`.\n"})
+    assert "<tag>.<SubTag>" not in found and "<quest>.<AutoFillSuffix>" not in found and "StoryDialogues.csv" in found
+    assert notes.is_token("Gameplay.Exploration.Level.<n>") and notes.is_token("<Clan>NpcGenerator.csv")
+
+
 def test_a_table_name_maps_to_its_heading():
     found = notes.notes_from({"npcs.md": DOC})
     assert found["CatSize.csv"] == [{"doc": "npcs.md", "heading": "Size", "anchor": "#size",

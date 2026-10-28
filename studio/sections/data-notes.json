@@ -8,22 +8,6 @@
    "text": "<Clan>NpcGenerator.csv sets how many cats of each role to make."
   }
  ],
- "<quest>.<AutoFillSuffix>": [
-  {
-   "doc": "quests-and-bonding.md",
-   "heading": "Dialogue answers and their scores",
-   "anchor": "#dialogue-answers-and-their-scores",
-   "text": "Each line is the row <tag>.<SubTag> (story) or <quest>.<AutoFillSuffix> (quest)."
-  }
- ],
- "<tag>.<SubTag>": [
-  {
-   "doc": "quests-and-bonding.md",
-   "heading": "Dialogue answers and their scores",
-   "anchor": "#dialogue-answers-and-their-scores",
-   "text": "Each line is the row <tag>.<SubTag> (story) or <quest>.<AutoFillSuffix> (quest)."
-  }
- ],
  "AICombatChances.csv": [
   {
    "doc": "combat.md",

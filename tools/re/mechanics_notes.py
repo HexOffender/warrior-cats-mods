@@ -27,13 +27,17 @@ PER_TOKEN = 3   # notes kept for one token: the first lines that mention it
 TICKED = re.compile(r"`([^`]+)`")
 TABLE = re.compile(r"^[A-Za-z0-9_]+(/[A-Za-z0-9_]+)*\.csv$")
 KEY = re.compile(r"^[A-Za-z0-9_<>]+(\.[A-Za-z0-9_<>]+)+$")
+PLACEHOLDER = re.compile(r"<[^>]*>")
 
 
 def is_token(text):
-    """A table's file name, or a key: dotted, with a capital letter, no spaces."""
+    """A table's file name, or a key: dotted, with a capital letter outside its placeholders, no spaces. A key
+    that's only placeholders (`<tag>.<SubTag>`, how a doc says a row's name is made) names no row: the Game data
+    page would take it for every dotted row of every table."""
     if TABLE.match(text):
         return True
-    return bool(KEY.match(text)) and any(c.isupper() for c in text) and not text.endswith(".md")
+    literal = PLACEHOLDER.sub("", text)
+    return bool(KEY.match(text)) and any(c.isupper() for c in literal) and not text.endswith(".md")
 
 
 def anchor(heading):
