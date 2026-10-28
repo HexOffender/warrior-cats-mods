@@ -47,8 +47,8 @@ try one, drop the repository's .zip on the studio's Mods page and tick it (or `p
 mods/my-mod/
   mod.json            {"name", "description", "enabled", "priority", "version", "author",
                        "requires" (mods it can't work without), "uses" (mods it works with),
-                       "game_builds", "wcmods", "settings_page", "studio_title", "studio_files":
-                       below}
+                       "game_builds", "wcmods", "tool", "settings_page", "studio_title",
+                       "studio_files": below}
   files/Wrc/...       replacement game files            -> section "files"
   paks/<name>.pak     cooked content made with Unreal   -> installed as is, with its .utoc/.ucas
                       Engine 5.7 (see "New content")
@@ -92,6 +92,9 @@ Only `mod.json`'s `name` is needed; the rest is what Clan Mod Studio shows and h
   at Apply; nothing is refused, so the rest go in. Set it when the mod uses something a release added
   (a palette's `coats` needs 0.4.0). A .zip whose value isn't digits and dots is refused when it's added.
   wcmods before 0.4.0 doesn't read it, so it protects players from 0.4.0 on.
+- **`tool`:** `true` for a mod that is the player's own tool rather than part of a story (a key remap, a
+  helper overlay): it stays on when a mod pack is played on its own, as Menu pages, Creator palettes and the
+  Emote wheel do, and the Mod packs page doesn't tick it for a new pack.
 - **`priority`:** mods are applied in priority order, then by folder name, and the higher one wins
   when two set the same thing.
 - **`settings_page`:** for a script mod with a `settings.json`: `false` keeps it off the mod menu's

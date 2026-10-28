@@ -318,7 +318,12 @@ wcmods checks both files at install and puts every enabled mod's together into o
 A mod pack is a mod.json and nothing else: a set of mods that go together as one experience. Its mods
 are its `"requires"`, so turning it on turns them on. Its .zip (Save as .zip, or `wcmods pack`) carries
 every mod in it. Clan Mod Studio's Mod packs page makes them, plays one on its own (every other mod
-off, but Menu pages) and goes back to your own mods (`"pack_before"` in `wcmods.json` remembers them).
+off, but your own tools and the mods its mods `"uses"` that were on) and goes back to your own mods
+(`"pack_before"` in `wcmods.json` remembers them, and the pack's name, so going back works even after the
+pack is removed). A mod is one of your own tools when its mod.json says `"tool": true`, or it's Menu pages,
+Creator palettes or the Emote wheel. In a pack's .zip, My mods (`my-mods`) goes in as `<pack>-mods`, named
+"<pack name>: its own content", with every `requires` and `uses` naming it rewritten, so whoever adds it
+keeps their own My mods; the folders on your side are unchanged.
 
 ### `names.json`
 ```json
@@ -397,7 +402,7 @@ keeps the last .zip of each of the mods that go with Clan Mod Studio fetched fro
 | `allow_code_mods` | `true` lets mods that carry code run it (build steps, in-game scripts, studio pages, C++): only for mods from people you trust. Options on the Settings and repair page |
 | `allow_outdated` | `{ "<mod>": [<build>, ...] }`: mods used anyway on game builds they weren't made for ("Use it anyway", `wcmods allow-outdated`) |
 | `rechecked` | `{ "build": <build>, "when": "<date and time>", "results": { "<mod>": "ok" or why it didn't build } }`: what the check after a game update found, for the installed build (`wcmods/exe/gamebuild.py`, `recheck`). A mod that passed is also marked in its own mod.json's `game_builds`; one marked "couldn't check" is tried again |
-| `pack_before` | `{ "pack": "<pack>", "on": ["<mod>", ...] }`: while a mod pack is played on its own, the mods that were on before it (the Mod packs page's Back to my mods) |
+| `pack_before` | `{ "pack": "<pack>", "name": "<its name>", "on": ["<mod>", ...] }`: while a mod pack is played on its own, the mods that were on before it (the Mod packs page's Back to my mods) |
 | `console` | Whether the game's `~` console (UE4SS's console enabler) is on |
 | `debug_cat_look` | `true` makes your cat's colours script log every cat it sees |
 | `installed`, `installed_ue4ss`, `installed_ue4ss_shared` | What the last install put in the game: the mods, when they were built, the game build, the mods folder they came from, the UE4SS mods and shared modules. The studio compares them with your mods; leave them alone |

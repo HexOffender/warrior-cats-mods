@@ -542,7 +542,8 @@ class Studio:
                      "checkable": gamebuild.checkable(m),
                      "rechecked": results.get(m.id), "rechecked_since_apply": since and m.id in results,
                      "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id),
-                     "menu_pages": m.id == menupages.ID, "addon": bool(addons.find(m.id))} for m in found]
+                     "menu_pages": m.id == menupages.ID, "addon": bool(addons.find(m.id)),
+                     "tool": packs.is_tool(m)} for m in found]
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "allow-outdated" and method == "POST":
             # Use a mod made for an older version of the game anyway, on this build only (the page warns first).
             build = gamebuild.current(cfg)["build"]
@@ -600,8 +601,12 @@ class Studio:
                 need = mods.needing(found, m.id)
                 if need and not body.get("cascade"):
                     return {"blocked_by": [{"id": i, "name": titles.get(i, i)} for i in need]}
-                return {"moved_to": modzip.remove(m, self.ctx.backups, found, cascade=True),
-                        "turned_off": [titles.get(i, i) for i in need], "blocked_by": []}
+                # The pack being played on its own: your own mods come back first, as Back to my mods does.
+                before = cfg.data.get("pack_before") if isinstance(cfg.data.get("pack_before"), dict) else {}
+                back = packs.stop(cfg, found) if before.get("pack") == m.id else None
+                return {"moved_to": modzip.remove(m, self.ctx.backups, self.mods() if back else found, cascade=True),
+                        "turned_off": [titles.get(i, i) for i in need], "blocked_by": [],
+                        "back_to_my_mods": back is not None}
         if parts == ["mods", "removed"] and method == "GET":
             return modzip.removed(self.ctx.backups)
         if parts == ["mods", "restore"] and method == "POST":

@@ -27,15 +27,17 @@ You can:
 - Play a pack on its own (**Play only this pack**), or with your own mods (**Turn on with my mods**).
 - Share it with **Save as .zip**: the .zip carries every mod in it. Whoever gets it drops it on their Mods
   page, where the preview shows the pack and its mods.
-- Change it (**Change it**) or remove it (**Remove the pack**); removing a pack keeps its mods.
+- Change it (**Change it**) or remove it (**Remove the pack**); removing a pack keeps its mods, and
+  removing the pack you're playing brings your own mods back.
+- See on its card what would keep one of its mods out of the game: a mod that runs code while that isn't
+  allowed, one made for an older version of the game, one that needs a newer Clan Mod Studio.
 
 You can't:
 
 - Put a pack inside another pack: choose its mods instead.
 - Share a pack while one of its mods is missing from your mods folder: its card says which.
-- Keep the other mods that go with Clan Mod Studio on while a pack plays on its own: only Menu pages stays
-  on. Creator palettes and the Emote wheel go off until **Back to my mods**, and a cat wearing a coat preset
-  shows its saved coat until then.
+- Turn your own tools off by playing a pack: Menu pages, Creator palettes and the Emote wheel (and any mod
+  made as a tool) stay as they were while a pack plays on its own, so a pack needn't carry them.
 
 ## Did it reach the game?
 
@@ -46,7 +48,10 @@ You can't:
 ## Common mistakes
 
 - **"Play only this pack is greyed out."** One of its mods isn't in your mods folder; the card says which.
-  Add the pack's .zip again, or the mod on its own.
+  Add the pack's .zip again, or the mod on its own, or **Change it**: a missing mod is dropped from the pack
+  when you save it.
+- **"My friend's pack has a mod with the same name as mine."** The preview says "You have a different mod
+  with this name". It's ticked when the pack's copy is newer; untick it to keep yours.
 - **"My own mods are gone."** They're only switched off while a pack plays on its own: **Back to my mods**
   puts them back as they were.
 - **"The story's cats don't turn up for my friend."** Characters and questlines need Sandbox mode, and it

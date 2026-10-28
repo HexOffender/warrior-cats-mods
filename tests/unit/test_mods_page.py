@@ -211,7 +211,7 @@ def test_a_version_in_the_zips_name_does_not_become_part_of_the_id(studio, tmp_p
     post(studio, "mods/add", query={"step": "add", "name": "Cool Mod v1.2.zip"}, upload=first)
     second = zip_of(tmp_path / "Cool Mod v1.3.zip", {"mod.json": {"name": "Cool Mod", "version": "1.3"}})
     (m,) = post(studio, "mods/add", query={"step": "preview", "name": "Cool Mod v1.3.zip"}, upload=second)["mods"]
-    assert m["id"] == "cool-mod" and m["existing"] == {"name": "Cool Mod", "version": "1.2"}
+    assert m["id"] == "cool-mod" and (m["existing"]["name"], m["existing"]["version"]) == ("Cool Mod", "1.2")
     post(studio, "mods/add", query={"step": "add", "name": "Cool Mod v1.3.zip"}, upload=second)
     assert [(x["id"], x["version"]) for x in get(studio, "mods")] == [("cool-mod", "1.3")]
     # A name that's nothing but a number stays as it is; a mod folder's name is the maker's, kept whole.
@@ -223,7 +223,7 @@ def test_a_mod_added_by_an_older_studio_is_replaced_by_name(studio, tmp_path):
     make_mod(studio, "cool-mod-v1.2", {"name": "Cool Mod", "version": "1.2"})
     z = zip_of(tmp_path / "Cool Mod v1.3.zip", {"mod.json": {"name": "Cool Mod", "version": "1.3"}})
     (m,) = post(studio, "mods/add", query={"step": "preview", "name": "Cool Mod v1.3.zip"}, upload=z)["mods"]
-    assert m["id"] == "cool-mod-v1.2" and m["existing"] == {"name": "Cool Mod", "version": "1.2"}
+    assert m["id"] == "cool-mod-v1.2" and (m["existing"]["name"], m["existing"]["version"]) == ("Cool Mod", "1.2")
     post(studio, "mods/add", query={"step": "add", "name": "Cool Mod v1.3.zip"}, upload=z)
     assert [(x["id"], x["version"]) for x in get(studio, "mods")] == [("cool-mod-v1.2", "1.3")]
     # Two mods with that name: no telling which, so it goes in under its own id.

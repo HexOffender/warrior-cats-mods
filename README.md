@@ -125,8 +125,15 @@ closes.
 - **The rest:** each mod's More has its priority, its folder, Save as .zip (to share it) and Remove.
 - **Mod packs**, the next page: a set of mods shared and played together as one experience (a story
   with its cats, quests and items, the colours and names that suit it). Make one from your mods; its
-  Save as .zip carries every mod in it. **Play only this pack** turns its mods on and the rest off, and
-  **Back to my mods** puts yours back. A pack someone sent you is added like any mod, on the Mods page.
+  Save as .zip carries every mod in it (a pack made from My mods carries it as "<pack>: its own content",
+  so whoever adds it keeps their own My mods). **Play only this pack** turns its mods on and the rest off,
+  but your own tools (Menu pages, Creator palettes, the Emote wheel, and any mod whose mod.json says
+  `"tool": true`) and the mods its mods work with stay as they were; **Back to my mods** puts yours back,
+  and removing the pack while it plays does the same. A pack's card says what would keep one of its mods out
+  of the game (a story pack's cats need Sandbox mode, which runs code, so mods that run code allowed). A
+  pack someone sent you is added like any mod, on the Mods page: a mod you already have is ticked only when
+  the pack's copy is different and newer, and a pack never puts in an older copy of one of the mods that go
+  with Clan Mod Studio than yours.
 - **Settings and repair**, the other page under Your mods: the game's console, allowing mods that run
   code, your save backups, removed mods (a removed or replaced mod is kept in `backups/mods/`, and
   Put it back does that), "Take all mods out of the game", and starting an empty mod of your own.

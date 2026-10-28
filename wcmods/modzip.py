@@ -186,16 +186,55 @@ def _kinds(names):
     return kinds
 
 
-def _found(mods_root, mod_id, meta, names, size, root):
-    kinds = _kinds(names)
-    existing = None
+def _signature(files):
+    """What a mod holds, as its files' names (folded as Windows sees them) and sizes, mod.json left out (it
+    differs by whether the mod is on)."""
+    return sorted((n, size) for n, size in files.items() if n != "mod.json")
+
+
+def _folder_files(folder):
+    """{name, folded as _fold does, with /: size} for the files in a mod's folder, as a .zip of it would hold them."""
+    out = {}
+    for d, dirs, names in os.walk(folder):
+        dirs[:] = [x for x in dirs if x not in IGNORED]
+        for fn in names:
+            if fn in IGNORED or fn.endswith(".pyc"):
+                continue
+            full = os.path.join(d, fn)
+            out["/".join(_fold(os.path.relpath(full, folder).split(os.sep)))] = os.path.getsize(full)
+    return out
+
+
+def _existing(mods_root, mod_id, meta, files):
+    """The copy of a mod you have, beside the one being added: {"name", "version", "different" (it holds other
+    files than the new one), "take" (tick the new copy in a pack's preview: it's different and newer, or
+    neither says a version), "keep" (a sentence when the new copy is an older one of the mods that go with Clan
+    Mod Studio: a pack never downgrades one)}, or None."""
     folder = os.path.join(mods_root, mod_id)
-    if os.path.isfile(os.path.join(folder, "mod.json")):
-        try:
-            old = Mod(folder)
-            existing = {"name": old.name, "version": old.version}
-        except (OSError, ValueError):
-            existing = {"name": mod_id, "version": ""}
+    if not os.path.isfile(os.path.join(folder, "mod.json")):
+        return None
+    try:
+        old = Mod(folder)
+        name, have = old.name, old.version
+    except (OSError, ValueError):
+        name, have = mod_id, ""
+    different = _signature(_folder_files(folder)) != _signature(files)
+    new = str(meta.get("version") or "")
+    kn, kh = modlib.version_key(new), modlib.version_key(have)
+    newer = (kn > kh) if kn and kh else (bool(new) and not have)
+    from . import addons
+    keep = None
+    if addons.find(mod_id) and different and kn and kh and kh >= kn:
+        keep = f"You have {name} {have}; this carries {new}: keeping yours"
+    return {"name": name, "version": have, "different": different, "keep": keep,
+            "take": different and not keep and (newer or (not new and not have))}
+
+
+def _found(mods_root, mod_id, meta, files, root):
+    names = list(files)
+    size = sum(files.values())
+    kinds = _kinds(names)
+    existing = _existing(mods_root, mod_id, meta, files)
     req = meta.get("requires")
     uses = meta.get("uses")
     ids = lambda v: [x for x in ([v] if isinstance(v, str) else v if isinstance(v, list) else []) if isinstance(x, str)]
@@ -251,8 +290,7 @@ def _inspect(z, mods_root, name):
         if not isinstance(meta, dict):
             raise ValueError(f"{label}: mod.json should hold an object")
         mod_id = _identify(meta, r[-1] if r else os.path.splitext(name)[0], label, ids, mods_root, top=not r)
-        out.append(_found(mods_root, mod_id, meta, ["/".join(_fold(p)) for p, _ in files],
-                          sum(i.file_size for _, i in files), "/".join(r)))
+        out.append(_found(mods_root, mod_id, meta, {"/".join(_fold(p)): i.file_size for p, i in files}, "/".join(r)))
     return out
 
 
@@ -400,14 +438,7 @@ def inspect_folder(path, mods_root):
     """As inspect(), for a folder that is a mod or holds mod folders."""
     out = []
     for folder, mod_id, meta in _folder_plan(path, mods_root):
-        names, size = [], 0
-        for d, dirs, files in os.walk(folder):
-            dirs[:] = [x for x in dirs if x not in IGNORED]
-            for fn in files:
-                full = os.path.join(d, fn)
-                names.append(os.path.relpath(full, folder).replace(os.sep, "/"))
-                size += os.path.getsize(full)
-        out.append(_found(mods_root, mod_id, meta, names, size, ""))
+        out.append(_found(mods_root, mod_id, meta, _folder_files(folder), ""))
     return out
 
 
@@ -499,25 +530,54 @@ def restore(backups_root, name, mods_root):
     return entry["id"]
 
 
+DEFAULT_ID = "my-mods"   # the mod the studio's Make pages save into first (wc.modTarget's My mods)
+
+
 def pack(mod, found=()):
     """The mod as a .zip (its folder inside, named as it is), to share. Returns the bytes. A mod pack
-    (packs.py) carries the mods in it too, each in its own folder, from `found` (the mods folder's mods)."""
+    (packs.py) carries the mods in it too, each in its own folder, from `found` (the mods folder's mods).
+    In a pack's .zip, My mods (DEFAULT_ID, which every player has one of) goes in as "<pack id>-mods", named
+    "<pack name>: its own content", with every requires and uses naming it rewritten, so whoever adds the
+    pack keeps their own My mods and plays the pack's; the folders here are left as they are."""
     import io
     folders = [mod]
+    rename = {}
     if mod.meta.get("pack"):
         by_id = {m.id: m for m in found}
         missing = [i for i in modlib.needed(list(found), mod.id) if i not in by_id]
         if missing:
             raise ValueError(f"{mod.name} needs {', '.join(missing)}, which isn't in your mods, so the pack can't carry it")
         folders += [by_id[i] for i in modlib.needed(list(found), mod.id)]
+        if any(m.id == DEFAULT_ID for m in folders):
+            rename[DEFAULT_ID] = safe_id(f"{mod.id}-mods")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for m in folders:
+            top = rename.get(m.id, m.id)
             for folder, dirs, files in os.walk(m.folder):
                 dirs[:] = sorted(d for d in dirs if d not in IGNORED)
                 for f in sorted(files):
                     if f in IGNORED or f.endswith(".pyc"):
                         continue
                     full = os.path.join(folder, f)
-                    z.write(full, os.path.join(m.id, os.path.relpath(full, m.folder)).replace(os.sep, "/"))
+                    arc = os.path.join(top, os.path.relpath(full, m.folder)).replace(os.sep, "/")
+                    if rename and os.path.normcase(full) == os.path.normcase(os.path.join(m.folder, "mod.json")):
+                        z.writestr(arc, _renamed_meta(m, rename, mod))
+                    else:
+                        z.write(full, arc)
     return buf.getvalue()
+
+
+def _renamed_meta(m, rename, pack_mod):
+    """A mod's mod.json as a pack's .zip carries it, with the mods in `rename` under their new ids."""
+    with open(os.path.join(m.folder, "mod.json"), encoding="utf-8-sig") as f:
+        meta = json.load(f)
+    for key in ("requires", "uses"):
+        v = meta.get(key)
+        if isinstance(v, str):
+            meta[key] = rename.get(v, v)
+        elif isinstance(v, list):
+            meta[key] = [rename.get(x, x) if isinstance(x, str) else x for x in v]
+    if m.id in rename:
+        meta["name"] = f"{pack_mod.name}: its own content"
+    return json.dumps(meta, indent=2) + "\n"

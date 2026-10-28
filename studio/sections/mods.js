@@ -453,12 +453,18 @@ export default {
       for (const m of r.mods) {
         // One mod is simply added; out of several (a collection like wcmods-examples) the player picks. A mod
         // pack's are ticked, except mods the player has already. Each goes in on or off as it ships, unless changed.
-        const pick = el("input", { type: "checkbox", checked: !many || (!!pack && !m.existing), id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
+        // In a pack, a mod you have already is ticked only when the pack's copy is different and newer (or neither
+        // says a version), and never when it's an older copy of one of the mods that go with Clan Mod Studio.
+        const pick = el("input", { type: "checkbox", checked: !many || (!!pack && (!m.existing || !!m.existing.take)), id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
         const on = el("input", { type: "checkbox", checked: m.enabled !== false, id: `on-${m.id}`, "aria-label": `${m.name} switched on` });
         picks.set(m.id, pick);
         ons.set(m.id, on);
         const notes = [];
-        if (m.existing) notes.push(el("li", { text: `Replaces the ${m.existing.name}${m.existing.version ? " " + m.existing.version : ""} you have${m.version ? " with " + m.version : ""}. The old copy is kept in backups.` }));
+        const had = m.existing;
+        if (had && had.keep) notes.push(el("li", { text: `${had.keep}.` }));
+        else if (had && pack && !had.different) notes.push(el("li", { class: "muted", text: "You have this one already, the same." }));
+        else if (had && pack) notes.push(el("li", { text: "You have a different mod with this name; tick it to use the pack's copy (yours is kept in backups)." }));
+        else if (had) notes.push(el("li", { text: `Replaces the ${had.name}${had.version ? " " + had.version : ""} you have${m.version ? " with " + m.version : ""}. The old copy is kept in backups.` }));
         if (m.too_new) notes.push(el("li", { class: "warn", text: `${sentence(m.too_new)} Until then it's left out of the game.` }));
         if (m.code) notes.push(el("li", { class: r.code_allowed ? "" : "warn", text: r.code_allowed
           ? "Runs code on your computer and in the game. Only add mods like this from people you trust."
