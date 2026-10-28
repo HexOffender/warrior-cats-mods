@@ -68,22 +68,31 @@ def test_claws_out_on_a_game_animation(agent):
 
 
 def test_the_trot_can_be_another_game_animation(agent):
-    """With W held the cat trots, and the trot is now the game's sleep loop: its head stays low while it moves at
-    the trot's speed. (Standing isn't compared: the game's idle has the head anywhere from about 7 to 14 cm up as
-    it shifts and sits, seen in game on 2026-10-28.)"""
+    """With S held the cat trots (towards the camera, the way that's usually open, as test_cat's walk), and the trot
+    is now the game's sleep loop: its head stays low while it moves at the trot's speed. (Standing isn't compared:
+    the game's idle has the head anywhere from about 7 to 14 cm up as it shifts and sits, seen in game on
+    2026-10-28.)"""
     agent.wait(lambda: not agent.lua("return " + PLAYING), timeout=5, what="no emote to be playing")
     start = agent.location()
-    samples = []   # (head above the root, speed in cm/s)
+    trotting = []
     try:
-        walking = threading.Thread(target=agent.key, args=("W",), kwargs={"hold": 2.5})
-        walking.start()
-        time.sleep(0.8)
-        for _ in range(10):
-            samples.append(agent.lua(HEAD_AND_SPEED))
-            time.sleep(0.12)
-        walking.join()
+        # A cat that has to turn round first can walk into what's beside it and stand there pushing (seen at a
+        # travel tunnel: 120 cm/s, then 1, with S still down); the next try starts facing the camera.
+        for _ in range(3):
+            agent.teleport(*start)
+            time.sleep(0.5)
+            samples = []   # (head above the root, speed in cm/s)
+            walking = threading.Thread(target=agent.key, args=("S",), kwargs={"hold": 2.5})
+            walking.start()
+            time.sleep(0.8)
+            for _ in range(10):
+                samples.append(agent.lua(HEAD_AND_SPEED))
+                time.sleep(0.12)
+            walking.join()
+            trotting = [h for h, speed in samples if speed > 120]   # the walk's top speed is 175 cm/s
+            if len(trotting) >= 4:
+                break
     finally:
         agent.teleport(*start)
-    trotting = [h for h, speed in samples if speed > 120]   # the walk's top speed is 175 cm/s
-    assert len(trotting) >= 4, f"the cat didn't trot with W held: {samples}"
+    assert len(trotting) >= 4, f"the cat didn't trot with S held: {samples}"
     assert max(trotting) < 3.5 + 1.5, f"trotting, the head is {min(trotting):.1f} to {max(trotting):.1f} cm above the root"
