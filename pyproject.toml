@@ -7,5 +7,7 @@
 # tests/game/ needs the game running and is run by `python wcmods.py agent test` instead, never by pytest.
 [tool.pytest.ini_options]
 testpaths = ["tests/unit"]
-pythonpath = ["."]
+# "." for wcmods; tests/unit for its unit_helpers module, so `from unit_helpers import ...` works in any
+# --import-mode (prepend, the default, puts that folder on the path itself; importlib doesn't).
+pythonpath = [".", "tests/unit"]
 addopts = "-q"
