@@ -59,6 +59,7 @@ def test_coat_presets_load_with_the_game_coat_they_save_as(tmp_path):
     ({"Ash": {"fur": "#9a9590", "tail": "#000000", "like": 1}}, "unknown key"),
     ({"Ash": {"fur": "not a colour", "like": 1}}, "coats.Ash.fur"),
     ({"A/B": {"fur": "#9a9590", "like": 1}}, "without /"),
+    ({"Ash ": {"fur": "#9a9590", "like": 1}}, "spaces at its ends"),
     ({"Ash": "#9a9590"}, "should be an object"),
     (["Ash"], "object of presets"),
 ])
@@ -74,3 +75,28 @@ def test_coat_presets_are_listed_by_palette_with_their_ids(tmp_path):
                        "coats": [{"id": "coats/Blue fox", "name": "Blue fox", "like": 3, "fur": "#3050ff",
                                   "nose": "#00ff00"}]}]
     assert not luacheck.check(P.groups_module(groups))
+
+
+class Ctx:
+    """Just enough of the build context for the palettes section."""
+    def __init__(self):
+        self.shared, self.notes, self.mods = {}, {}, {}
+
+    def add_ue4ss_mod(self, name, files): self.mods[name] = files
+    def add_ue4ss_shared(self, name, text): self.shared[name] = text
+    def note(self, key, value): self.notes[key] = value
+    def log(self, *a): pass
+    def warn(self, *a): pass
+
+
+def test_a_coats_only_palette_installs(tmp_path):
+    from wcmods.sections.palettes import PaletteSection
+    pal = load(tmp_path, {"coats": {"Ash": {"fur": "#8f8a85", "like": 11}}})
+    other = {"pattern": {"100": (1, 0, 0)}, "fur": {"3": (0, 0, 0)}}
+    assert "coats" not in P.merge([pal, other])
+    ctx = Ctx()
+    PaletteSection().build(ctx, [(Mod("coats", "Coat presets"), pal), (Mod("dark", "Dark Forest"), other)])
+    assert ctx.notes["new_colours"] == {"coats": {"coats": 1}, "dark": {"pattern": 1}}
+    lua = ctx.shared[P.GROUPS_LUA]
+    assert '["id"] = "coats/Ash"' in lua and not luacheck.check(lua)
+    assert not luacheck.check(ctx.mods[next(iter(ctx.mods))]["Scripts/main.lua"])

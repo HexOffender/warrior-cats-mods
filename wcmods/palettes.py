@@ -82,8 +82,8 @@ def _coats(entries, path):
         if str(name).startswith("_"):
             continue
         where = f"{path}: coats.{name}"
-        if not str(name).strip() or len(str(name)) > 40 or "/" in str(name):
-            raise ValueError(f"{where}: a preset's name is up to 40 characters, without /")
+        if not str(name).strip() or str(name) != str(name).strip() or len(str(name)) > 40 or "/" in str(name):
+            raise ValueError(f"{where}: a preset's name is up to 40 characters, without / or spaces at its ends")
         if not isinstance(spec, dict):
             raise ValueError(f'{where} should be an object: {{"fur": "#9a9590", "like": 12}}')
         unknown = sorted(k for k in spec if k not in COAT_PARTS + ("like",) and not str(k).startswith("_"))
@@ -154,10 +154,13 @@ def groups_module(groups):
 
 
 def merge(palettes):
-    merged = {s: {} for s in SECTIONS}
+    """The colours every palette sets, the later one's where two set the same. Coat presets aren't colours of the
+    game's: slot_groups() lists them, each under its own palette."""
+    merged = {s: {} for s in SECTIONS if s != "coats"}
     for pal in palettes:
         for section, entries in pal.items():
-            merged[section].update(entries)
+            if section != "coats":
+                merged[section].update(entries)
     return {s: e for s, e in merged.items() if e}
 
 

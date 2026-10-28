@@ -49,7 +49,8 @@ A palette can offer **coat presets** instead: painted on, not new slots.
 ```
 Each has a name (up to 40 characters, no `/`), its coat colour (`fur`), the `nose`, `paws`,
 `whiskers` and `ears` colours it wants (the rest stay the game's), and `like`: the game's coat (0–24)
-a cat wearing it is saved with. The save only ever holds that game coat, so turning the mod off
+a cat wearing it is saved with. Use 0–19: 20–24 are the Feral Edition's, which a game without it
+swaps for another coat. The save only ever holds that game coat, so turning the mod off
 leaves the cat on it. wcmods doesn't paint presets itself: it lists them in `WCModsPalettes`, and
 [Creator palettes](https://github.com/HexOffender/wcmods-creator-palettes) 1.2 offers them in the
 cat maker's Fur picker and paints them on the cats that chose them.
