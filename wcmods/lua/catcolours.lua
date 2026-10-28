@@ -188,15 +188,20 @@ local function paint(comp, colours, who)
 end
 
 -- The HUD's picture of your cat is taken once, as you reach the forest: take it again once its actor has your
--- colours. Only that one: another picture actor's target can belong to another cat.
+-- colours. Only that one: another picture actor's target can belong to another cat. A retake that has to wait
+-- out the 2 seconds is due, and taken then.
+local due = {}
 local function retakeHud(owner)
     local cap = owner.CaptureComponent
     if not valid(cap) then return end
     local target = cap.TextureTarget
     if not (valid(target) and target:GetFName():ToString() == HUD_PICTURE) then return end
     local at = owner:GetAddress()
-    if retaken[at] and ticks - retaken[at] < RETAKE_TICKS then return end
-    retaken[at] = ticks
+    if retaken[at] and ticks - retaken[at] < RETAKE_TICKS then
+        due[at] = true
+        return
+    end
+    retaken[at], due[at] = ticks, nil
     cap:CaptureScene()
 end
 
@@ -214,6 +219,7 @@ local function tick()
     local others = next(OTHERS) ~= nil
     if known == "" and not others then return end
     local inForest = pawn ~= nil
+    if not inForest then retaken, due = {}, {} end
     local choice = not inForest and choiceCat() or nil
     local choiceAt = choice and choice:GetAddress()
     local total, theirs, here = 0, 0, {}
@@ -254,7 +260,7 @@ local function tick()
             elseif painted[at] then
                 n = unpaint(comp)
             end
-            if n > 0 and inForest and cls == PICTURE_ACTOR then pcall(retakeHud, owner) end
+            if inForest and cls == PICTURE_ACTOR and (n > 0 or due[ownerAt]) then pcall(retakeHud, owner) end
         end
     end
     for at in pairs(painted) do
