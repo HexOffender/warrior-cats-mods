@@ -1,5 +1,7 @@
 {
-  "_help": "This script's settings: MOD.settings in scripts/main.lua. The mod menu (Insert) has a page to change them live; Save writes them back here.",
+  "_help": "This script's settings: MOD.settings in scripts/main.lua. Change them on the mod's card in Clan Mod Studio (More, Settings) or on its page in the mod menu (Insert), whose Save writes them back here.",
   "enabled": true,
-  "message": "Hello from my script"
+  "_help_enabled": "Say hello when your cat comes into the world.",
+  "message": "Hello from my script",
+  "_help_message": "What it says, in the game's log (the mod menu's Log page)."
 }

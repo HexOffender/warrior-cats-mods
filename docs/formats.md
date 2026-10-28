@@ -435,7 +435,8 @@ studio saves `settings.json`):
   fixed, since the script would start without its settings.
 
 Keys starting with `_` are notes. A script with a `settings.json` and no page of its own gets one in the mod
-menu (`"settings_page": false` in `mod.json` turns it off), with a row for each key, by its value:
+menu (`"settings_page": false` in `mod.json` turns it off), and the same rows under More on its card on Clan Mod
+Studio's Mods page (Settings, with Save settings), a row for each key, by its value:
 - `true` or `false`: a switch;
 - a number: a number box. A whole number (`3`) stays whole; one written with a point (`12.0`, `1.5`) moves in
   steps of 0.1 and is saved with its point, so the script still gets a number with a fraction;
@@ -444,8 +445,21 @@ menu (`"settings_page": false` in `mod.json` turns it off), with a row for each 
 - a list or an object: shown as it is, to change in the file;
 - a `_` key with text: a note.
 
-Its Save writes the file again, from what the script has now: the notes first, then the settings in the order
-of their names, two spaces in, an empty list as `[]`, and every number as it was read (`12.0` stays `12.0`,
-`0.1234567` stays `0.1234567`). The page says under the button whether it saved. The script reads the file
+Three kinds of note go with a setting, by its name: `"_help_<key>"` shows under that setting's row,
+`"_min_<key>"` and `"_max_<key>"` are the lowest and highest a number takes (the studio refuses a Save outside
+them; the game's number box stops there).
+```json
+{ "_help": "Game Tweaks' settings: change them on the mod's card in Clan Mod Studio, or on its page in the mod menu (Insert).",
+  "heal_key": "F5", "_help_heal_key": "A key UE4SS knows: F1 to F12, a letter, SPACE. Empty for none.",
+  "time_of_day": 12.0, "_min_time_of_day": 0, "_max_time_of_day": 24 }
+```
+A file without them reads as before. Older versions of wcmods show a `_help_<key>` as a note at the top of the
+page, and ignore the bounds.
+
+The game's Save writes the file again, from what the script has now: the notes first, then the settings in the
+order of their names, two spaces in, an empty list as `[]`, and every number as it was read (`12.0` stays
+`12.0`, `0.1234567` stays `0.1234567`); the page says under the button whether it saved. The studio's Save
+settings keeps the file's own order and writes back what it didn't change as it was. The script reads the file
 afresh each time the game starts, so what was saved is there next time, and a change made by hand counts once
-the game starts again.
+the game starts again: a script already in the game doesn't need an Apply for it, and the studio doesn't count
+it as a change to apply.

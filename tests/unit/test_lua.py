@@ -336,6 +336,21 @@ def test_json_decode_skips_a_bom():
     assert 'if pos == 1 and type(text) == "string" and text:sub(1, 3) == BOM then pos = 4 end' in lua
 
 
+def test_json_decode_keeps_a_number_written_with_a_point_a_float():
+    # 12.0 stays 12.0 (a setting's page keeps steps of 0.1 for it, and its Save writes it back with the point).
+    lua = game.lua()
+    assert 'if num:find("[%.eE]") then return tonumber(num) or fail("bad number " .. num) end' in lua
+
+
+def test_the_automatic_settings_page_shows_help_under_a_row_and_bounds_a_number():
+    from wcmods.sections import scripts
+    page = body(scripts.BOOTSTRAP, "local function partOf(k)", 'end, { order = 40')
+    assert 'k:match("^_help_(.+)$") or k:match("^_min_(.+)$") or k:match("^_max_(.+)$")' in page
+    assert 'local lo, hi = MOD.settings["_min_" .. tostring(k)], MOD.settings["_max_" .. tostring(k)]' in page
+    assert 'min = type(lo) == "number" and lo or nil' in page and 'max = type(hi) == "number" and hi or nil' in page
+    assert 'local help = type(k) == "string" and k:sub(1, 1) ~= "_" and MOD.settings["_help_" .. k]' in page
+
+
 def test_bootstrap_names_the_mod_for_game_log():
     from wcmods.sections import scripts
     start = body(scripts.BOOTSTRAP, 'local okGame, game = pcall(require, "WCModsGame")', "\nelse")

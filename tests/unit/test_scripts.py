@@ -213,6 +213,24 @@ def test_the_mods_page_has_a_scripts_problems_and_they_clear_when_fixed(studio):
     assert studio.api("GET", ["mods"], {})[0]["script_problems"] == []
 
 
+def test_the_card_has_settings_for_a_script_whose_page_is_the_automatic_one(studio):
+    # Menu pages and Sandbox mode keep their settings on pages of their own ("settings_page": false); a script with
+    # no settings.json has none to show.
+    make_mod(studio, "tweaks", files={"scripts/main.lua": MAIN, "settings.json": {"on": True}})
+    make_mod(studio, "own-pages", {"settings_page": False}, {"scripts/main.lua": MAIN, "settings.json": {"on": True}})
+    make_mod(studio, "plain-script", files={"scripts/main.lua": MAIN})
+    make_mod(studio, "no-script", files={"settings.json": {"on": True}})
+    cards = {m["id"]: m["settings_card"] for m in studio.api("GET", ["mods"], {})}
+    assert cards == {"tweaks": True, "own-pages": False, "plain-script": False, "no-script": False}
+
+
+def test_the_template_shows_help_under_a_setting():
+    from unit_helpers import REPO
+    with open(os.path.join(REPO, "wcmods", "templates", "script", "settings.json"), encoding="utf-8") as f:
+        settings = json.load(f)
+    assert all(f"_help_{k}" in settings for k in settings if not k.startswith("_"))
+
+
 def test_a_settings_json_saved_from_the_studio_is_checked_at_once(studio):
     # The studio's PUT refuses text that isn't JSON; JSON that isn't an object saves, and says why it can't go in.
     make_mod(studio, "tweaks", files={"scripts/main.lua": MAIN})

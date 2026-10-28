@@ -7,6 +7,7 @@
 .strip.not-answering, .strip.no-bridge { border-left-color: var(--changed); background: var(--tint-warn); }
 .strip.not-answering i, .strip.no-bridge i { background: var(--changed); }
 .con-out { margin: 0; padding: 12px 14px; font: 400 0.82rem/1.55 var(--mono); white-space: pre-wrap; display: grid; gap: 2px; min-height: 3em; }
+.section[data-page="console"] .note.bad { color: var(--bad); }   /* what Inspect couldn't do */
 .con-out:empty::before { content: "What the game sends back shows here."; color: var(--muted); font-family: var(--body); }
 .con-out .bad { color: var(--bad); }
 .con-out .con-ms { color: var(--muted); font: 500 0.75rem/1.4 var(--body); }

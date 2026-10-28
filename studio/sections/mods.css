@@ -20,6 +20,9 @@ h3.group { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line)
 .said { display: grid; gap: 6px; }
 .said .code { max-height: 240px; }
 .said pre.log { white-space: pre-wrap; }
+.said .note.warn { color: var(--changed); }
+.said .note.bad { color: var(--bad); }
+.said .dirty { color: var(--changed); font-weight: 500; }
 
 /* Get set up: birch with a fern edge (the first thing to do), and the paw as the done tick. */
 .card.setup { background: var(--raised); border-color: var(--accent); border-left-width: 5px; }

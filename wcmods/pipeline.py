@@ -381,13 +381,26 @@ def build(cfg, mods, out_dir, log=print):
     return manifest
 
 
-def _newest(folder):
+def _newest(folder, skip=()):
+    """When the newest file in a mod's folder changed, leaving out the files (paths in the folder) in `skip`."""
     newest = 0.0
     for d, dirs, files in os.walk(folder):
         dirs[:] = [x for x in dirs if x != "__pycache__"]
         for f in files:
-            newest = max(newest, os.path.getmtime(os.path.join(d, f)))
+            path = os.path.join(d, f)
+            if os.path.relpath(path, folder).replace(os.sep, "/") not in skip:
+                newest = max(newest, os.path.getmtime(path))
     return newest
+
+
+def _reread(mod, installed_ue4ss):
+    """The files of a mod the game reads afresh each time it starts, so a change to them needs no install: a
+    script mod's settings.json, once its script is in the game (an in-game Save, or the studio's "Cheats on when
+    the game starts", writes it)."""
+    from .sections import scripts
+    if scripts.has_scripts(mod) and scripts.ue4ss_name(mod.id) in installed_ue4ss:
+        return (scripts.SETTINGS,)
+    return ()
 
 
 def code_installed(data):
@@ -423,7 +436,9 @@ def pending(cfg, mods):
         built = datetime.datetime.fromisoformat(inst.get("built", "")).timestamp()
     except ValueError:
         built = 0.0
-    changed = sorted(m.id for m in mods if m.enabled and m.id in was and _newest(m.folder) > built + 1)
+    in_game = set(data.get("installed_ue4ss") or [])
+    changed = sorted(m.id for m in mods if m.enabled and m.id in was
+                     and _newest(m.folder, _reread(m, in_game)) > built + 1)
     redo = []
     if inst.get("ue4ss") is False and cfg.ue4ss_mods_dir:   # the mod menu at least goes in now
         redo.append("the script loader (UE4SS) is in now")

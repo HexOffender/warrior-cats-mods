@@ -41,6 +41,14 @@ def has_scripts(mod):
     return os.path.isdir(os.path.join(mod.folder, FOLDER))
 
 
+def settings_card(mod):
+    """Whether the studio shows a script's settings on its mod's card: a script mod with a settings.json whose
+    page in the mod menu is the one wcmods makes for it (not "settings_page": false, as Menu pages and Sandbox
+    mode have, which keep their settings on pages of their own)."""
+    return (has_scripts(mod) and os.path.isfile(os.path.join(mod.folder, SETTINGS))
+            and mod.meta.get("settings_page", True) is not False)
+
+
 def read_settings(mod):
     """A script mod's settings.json as a dict ({} without one), and its path (or None). A file that isn't JSON,
     or isn't an object, is a ValueError saying so in the creator's words."""

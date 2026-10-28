@@ -553,6 +553,7 @@ class Studio:
                      "requires_names": [titles.get(i, i) for i in m.requires if i != mods.MENU_ID],
                      "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id),
                      "menu_pages": m.id == menupages.ID, "script_problems": scripts.problems(m),
+                     "settings_card": scripts.settings_card(m),
                      "script_run": ({"state": ran[m.id]["state"], "said": ran[m.id]["said"]}
                                     if m.id in ran and ran[m.id]["state"] else None)} for m in found]
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "log" and method == "GET":

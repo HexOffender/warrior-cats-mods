@@ -1,6 +1,8 @@
 // Mods: get set up (the first time), add mods you've downloaded, switch them on and off, and apply them
 // to the game. Mods say in mod.json what they need ("requires") or work with ("uses"). Options (the mod
 // menu's key among them), backups and repairs are on the Settings and repair page.
+import * as scriptSettings from "../lib/scriptsettings.js";
+
 export default {
   title: "Mods",
   async mount(root, wc) {
@@ -18,6 +20,9 @@ export default {
     // A script's line about the game's last start, by its state (scriptlog.py): green, amber, red, or grey.
     const RUN_CLASS = { loaded: "ok", errors: "warn", failed: "bad", "not-started": "bad", waiting: "muted" };
     const said = {};          // mod id -> what its script said when the game last started (More's What it said)
+    const settingsOf = {};    // mod id -> its settings.json as read ({ text, data } or { error }), null while asking
+    const drafts = {};        // mod id -> its settings as changed on the card and not saved yet ({ values, order, floats })
+    let gameRunning = false;  // as /changes last said: a script's settings then were read when the game started
 
     const setupBox = el("div");
     const updateBox = el("div");
@@ -199,6 +204,7 @@ export default {
     async function renderChanges() {
       let c;
       try { c = await api.get("/changes"); } catch (e) { clear(changesBox); return; }
+      gameRunning = !!c.game_running;
       clear(changesBox);
       if (!c.any) {
         if (c.installed) changesBox.append(el("p", { class: "note ok-line", text: "✓ The game has your mods as they are here." }));
@@ -431,6 +437,80 @@ export default {
       }
     }
 
+    // A script's settings.json as rows (studio/lib/scriptsettings.js, the same rules as its page in the mod menu),
+    // for a script whose page there is the one wcmods makes. Read when More opens; what's changed and not saved
+    // stays through a redraw, until Save or Put back.
+    function settingsBlock(m) {
+      const id = m.id, s = settingsOf[id];
+      if (s === undefined) {
+        settingsOf[id] = null;   // asking
+        api.get(`/mods/${encodeURIComponent(id)}/file/settings.json`).then(r => {
+          try { settingsOf[id] = r.exists ? { text: r.text, data: scriptSettings.read(r.text) } : { error: "It has no settings.json any more." }; }
+          catch (e) { settingsOf[id] = { error: `${e.message}. Fix it in the file (Open its folder), then look again.` }; }
+        }, e => { settingsOf[id] = { error: e.message }; }).then(() => { if (open.has(id)) renderList(); });
+      }
+      const box = el("div", { class: "said settings", "data-key": `settings:${id}` }, el("strong", { text: "Settings" }));
+      if (!s) return box.append(el("p", { class: "muted", role: "status", text: "Reading its settings.json…" })), box;
+      if (s.error) return box.append(el("p", { class: "note bad", text: s.error })), box;
+      const data = drafts[id] || s.data;
+      const unsaved = el("span", { class: "dirty", text: drafts[id] ? "Unsaved changes" : "" });
+      const change = (key, value) => {
+        drafts[id] ||= { ...s.data, values: { ...s.data.values } };
+        drafts[id].values[key] = value;
+        unsaved.textContent = "Unsaved changes";
+      };
+      const inputs = [];   // [row, input] for the number boxes, checked before a save
+      box.append(el("p", { class: "note", text: "The script reads these when the game starts. While you play, change them on its page in the mod menu (Insert)." }));
+      if (gameRunning) box.append(el("p", { class: "note warn", text: "The game is running, and read these when it started; a Save on the script's page in the mod menu will write over what you save here." }));
+      scriptSettings.rows(data).forEach((row, i) => {
+        const fieldId = `set-${id}-${i}`;
+        if (row.kind === "note") { box.append(el("p", { class: "note", text: row.value })); return; }
+        let input;
+        if (row.kind === "switch") {
+          input = el("input", { type: "checkbox", role: "switch", class: "switch", id: fieldId, checked: row.value });
+          input.addEventListener("change", () => change(row.key, input.checked));
+        } else if (row.kind === "number") {
+          input = el("input", { type: "number", id: fieldId, value: String(row.value), step: String(row.step), min: row.min, max: row.max, style: { width: "8rem" } });
+          input.addEventListener("input", () => { if (!scriptSettings.problem(row, input.value)) change(row.key, Number(input.value)); });
+          inputs.push([row, input]);
+        } else if (row.kind === "colour") {
+          input = el("input", { type: "color", id: fieldId, value: row.value });
+          input.addEventListener("input", () => change(row.key, input.value));
+        } else if (row.kind === "text") {
+          input = el("input", { type: "text", id: fieldId, value: row.value, style: { minWidth: "14rem" } });
+          input.addEventListener("input", () => change(row.key, input.value));
+        }
+        const line = row.kind === "nested"
+          ? el("div", { class: "field" }, el("span", { class: "lbl", text: row.label }),
+            el("div", { class: "code" }, el("pre", { class: "log", text: JSON.stringify(row.value, null, 2) })),
+            el("span", { class: "muted", text: "Change this one in the file itself (Open its folder)." }))
+          : el("div", { class: "row" }, row.kind === "switch" ? input : null, el("label", { for: fieldId, class: "lbl", text: row.label }),
+            row.kind === "switch" ? null : input,
+            row.kind === "number" && (row.min !== undefined || row.max !== undefined)
+              ? el("span", { class: "muted", text: `from ${row.min ?? "any"} to ${row.max ?? "any"}` }) : null);
+        box.append(line);
+        if (row.help) box.append(el("p", { class: "note", text: row.help }));
+      });
+      const save = async () => {
+        const wrong = inputs.map(([row, input]) => scriptSettings.problem(row, input.value)).find(Boolean);
+        if (wrong) { toast(wrong + ".", "bad"); return; }
+        const text = scriptSettings.write(drafts[id] || s.data);
+        try {
+          const r = await api.put(`/mods/${encodeURIComponent(id)}/file/settings.json`, { text });
+          delete drafts[id];
+          if (r.problems && r.problems.length) toast(`Saved, but it can't go in the game yet: ${r.problems[0]}`, "bad");
+          else toast(`Saved ${m.name}'s settings. The script reads them when the game starts.`);
+          await refresh();
+        } catch (e) { toast(e.message, "bad"); }
+      };
+      box.append(el("div", { class: "row" },
+        el("button", { class: "btn primary small", type: "button", text: "Save settings", onclick: save }),
+        el("button", { class: "btn ghost small", type: "button", text: "Put back", disabled: !drafts[id],
+          onclick: () => { delete drafts[id]; renderList(); } }),
+        unsaved));
+      return box;
+    }
+
     // What a mod's script said when the game last started, newest first, from UE4SS's log; asked for when More
     // opens, and again after an Apply or when the game closes.
     function whatItSaid(m) {
@@ -467,6 +547,7 @@ export default {
         catch (e) { toast(e.message, "bad"); }
       });
       return el("div", { class: "mod-wide details" },
+        m.settings_card ? settingsBlock(m) : null,
         m.kinds.includes("in-game script") ? whatItSaid(m) : null,
         el("div", { class: "row" },
           el("label", { for: `mod-prio-${m.id}`, class: "lbl", text: "Priority" }), prio,
@@ -543,6 +624,7 @@ export default {
         [mods, settings] = await Promise.all([api.get("/mods"), api.get("/settings")]);
       } catch (e) { toast(e.message, "bad"); }
       for (const id of Object.keys(said)) delete said[id];   // the game may have run since: asked again
+      for (const id of Object.keys(settingsOf)) delete settingsOf[id];   // and saved its settings (what's changed here stays)
       renderList();
       await Promise.all([renderSetup(), renderUpdate(), renderChanges()]);
       if (notify) bus.emit("mods-changed", { from: "mods" });

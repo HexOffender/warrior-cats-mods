@@ -279,7 +279,7 @@ def test_noon(agent):
 - **Clean up:** tests should put back what they change, as the ones here do: health, the clock,
   where your cat stands, a saved travel spot.
 
-The suite here has 66 tests:
+The suite here has 68 tests:
 
 - **The bridge, Lua and pictures:** `test_bridge.py`.
 - **Your cat and moving it:** `test_cat.py`.
@@ -295,9 +295,10 @@ The suite here has 66 tests:
   menu.
 - **Scripts and the runtime:** `test_scripts.py`. A script's errors carry its mod's name and are said once,
   a misspelt key doesn't stop it, another cat's level isn't yours, a task can cancel itself and add another,
-  a script that doesn't start is named, and a script's settings page saves and says so. Most need two
-  throwaway mods in the test install (`agent install --with tests/game/mods/noisy-script --with
-  tests/game/mods/broken-script`) and skip without them.
+  a script that doesn't start is named, a script's settings page saves and says so (with a setting's help
+  under its row), and a page made from a timer is the only one. Most need three throwaway mods in the test
+  install (`agent install --with tests/game/mods/noisy-script --with tests/game/mods/broken-script --with
+  tests/game/mods/late-page`) and skip without them.
 - **The studio's Try Lua in the game:** `test_studio_console.py`, its routes against the running game.
 
 ## What it changes, and what it won't do

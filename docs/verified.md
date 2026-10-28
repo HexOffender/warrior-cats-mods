@@ -242,7 +242,9 @@ Fawnstar, as a player reported it showing "Cat 1"):
   running only a request it took; the script bootstrap loading the mod's files by their names (and
   `require` through them), naming a script that didn't start on the Overview and at the top of the screen, and
   its Save saying so; a page made from a timer replacing the automatic one; an empty list and a float saved as
-  they were; the Log page's Mods and Errors filters; the Inspector's Find refusing the widest classes.
+  they were; the Log page's Mods and Errors filters; the Inspector's Find refusing the widest classes; a
+  setting's `_help_<key>` under its row and `_min_`/`_max_` bounding its number on the automatic page; a number
+  written `12.0` read back by `Game.json.decode` as `12.0`.
 - **UE4SS's log format** that `scriptlog.py` (a script's card) and the Log page read: `Starting Lua mod '<name>'`
   and `[Lua] [<mod name>] ...`, as UE4SS 3.0.1 (Git SHA 83330635) writes them, read from the installed game's
   log on 2026-10-28. Other UE4SS versions are unchecked; a line the reader doesn't recognise is left out.

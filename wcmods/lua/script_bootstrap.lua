@@ -151,7 +151,8 @@ if not ok then
 end
 
 -- Without a page of its own, a script with settings gets one: a row for each setting, and Save, which says
--- under it whether the file was written.
+-- under it whether the file was written. "_help_<key>" shows under that key's row, and "_min_<key>" and
+-- "_max_<key>" bound its number (the studio's Settings on the mod's card reads them the same way).
 if not pageMade and @AUTO_PAGE@ and next(MOD.settings) ~= nil then
     local okMenu, Menu = pcall(require, "WCModsMenu")
     if okMenu then
@@ -162,18 +163,28 @@ if not pageMade and @AUTO_PAGE@ and next(MOD.settings) ~= nil then
             local s = tostring(k):gsub("_", " "):gsub("(%l)(%u)", "%1 %2"):lower()
             return (s:gsub("^%l", string.upper))
         end
+        -- A key that goes with another's row: its help, or a bound of its number.
+        local function partOf(k)
+            local target = type(k) == "string" and (k:match("^_help_(.+)$") or k:match("^_min_(.+)$") or k:match("^_max_(.+)$"))
+            return target and MOD.settings[target] ~= nil
+        end
         local status = nil   -- what the last Save did: "Saved to settings.json." or "Couldn't save: <why>"
         Menu.page(MOD.name, function(ui)
             ui.heading(MOD.name)
             for _, k in ipairs(keys) do
                 local v = MOD.settings[k]
-                if type(k) == "string" and k:sub(1, 1) == "_" then
+                if partOf(k) then
+                    -- shown with its row, or used by it
+                elseif type(k) == "string" and k:sub(1, 1) == "_" then
                     if type(v) == "string" then ui.note(v) end
                 elseif type(v) == "boolean" then
                     MOD.settings[k] = ui.switch(label(k), v)
                 elseif type(v) == "number" then
                     local whole = math.type(v) == "integer"
-                    local n = ui.number(label(k), v, { step = whole and 1 or 0.1, whole = whole })
+                    local lo, hi = MOD.settings["_min_" .. tostring(k)], MOD.settings["_max_" .. tostring(k)]
+                    local n = ui.number(label(k), v, { step = whole and 1 or 0.1, whole = whole,
+                                                       min = type(lo) == "number" and lo or nil,
+                                                       max = type(hi) == "number" and hi or nil })
                     MOD.settings[k] = whole and math.floor(n + 0.5) or n
                 elseif type(v) == "string" and v:match("^#%x%x%x%x%x%x$") then
                     MOD.settings[k] = ui.color(label(k), v)
@@ -182,6 +193,8 @@ if not pageMade and @AUTO_PAGE@ and next(MOD.settings) ~= nil then
                 else
                     ui.field(label(k), Menu.json(v))
                 end
+                local help = type(k) == "string" and k:sub(1, 1) ~= "_" and MOD.settings["_help_" .. k]
+                if type(help) == "string" then ui.note(help) end
             end
             if ui.button("Save", { kind = "primary" }) then
                 local saved, why = MOD.save()

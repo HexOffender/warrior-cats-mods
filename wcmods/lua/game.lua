@@ -548,6 +548,9 @@ function Game.json.decode(text)
             local num = text:match("^-?%d+%.?%d*[eE]?[-+]?%d*", pos)
             if not num or num == "" then fail("unexpected '" .. c .. "'") end
             pos = pos + #num
+            -- A number written with a point or an exponent stays one with a fraction (12.0 is 12.0, not 12), as
+            -- Lua's own tonumber has it; one written whole is a whole number.
+            if num:find("[%.eE]") then return tonumber(num) or fail("bad number " .. num) end
             return math.tointeger(tonumber(num)) or tonumber(num)
         end
     end

@@ -112,7 +112,8 @@ closes.
 - **A script mod's card** says, before any Apply, what would stop its script from loading (a `function`
   with no `end`, by file and line, or a `settings.json` that isn't right), and after the game has run,
   whether the script loaded when the game last started; its More has **What it said**, the script's lines
-  from the game's log, newest first.
+  from the game's log, newest first, and **Settings**, the rows of its page in the mod menu (switches, numbers,
+  colours, text), to change before the game starts.
 - **Try Lua in the game**, under **Advanced** (last in the side bar, with mods that run code allowed): for
   people who write scripts, a box that runs a line of Lua in the running game and an inspector for its
   objects. Nothing there is saved into a mod; a line at its top says whether the game can hear the studio.

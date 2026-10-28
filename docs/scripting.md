@@ -47,10 +47,11 @@ sets up two globals, then runs yours:
 
 **A settings page for free:** a mod with a `settings.json` and no page of its own gets one. It has a row
 per setting (on/off, number, text, `"#rrggbb"` colours) and a Save button, which says under it whether it saved;
-keys starting with `_` show as notes ([formats.md](formats.md#scripts-and-settingsjson) has which value makes
-which row, and what Save writes). `"settings_page": false` in `mod.json` turns that off. The page is in the mod
-menu, which goes in with every install; say `"uses": ["mod-menu"]` in `mod.json` so Clan Mod Studio shows that
-the mod has one.
+keys starting with `_` show as notes, `"_help_<key>"` under its setting, and `"_min_<key>"`/`"_max_<key>"` bound a
+number ([formats.md](formats.md#scripts-and-settingsjson) has which value makes which row, and what Save writes).
+The same rows are on the mod's card in Clan Mod Studio, under More, to change before the game starts.
+`"settings_page": false` in `mod.json` turns both off. The page is in the mod menu, which goes in with every
+install; say `"uses": ["mod-menu"]` in `mod.json` so Clan Mod Studio shows that the mod has one.
 
 `python wcmods.py new my-script --kind script` makes a new one to start from.
 [game-tweaks](https://github.com/HexOffender/wcmods-examples/tree/main/game-tweaks), in wcmods-examples, is a complete one: it
@@ -434,7 +435,9 @@ others, so try each one.
 
 ### JSON and enums
 
-- **JSON:** `Game.json.encode(v)`, `Game.json.decode(text)` (null is `Game.json.null`), and
+- **JSON:** `Game.json.encode(v)`, `Game.json.decode(text)` (null is `Game.json.null`; a number written with a
+  point or an exponent, `12.0`, stays a number with a fraction, as Lua's `tonumber` has it; a list comes back
+  marked as one, so it's written `[]` again when empty; a byte order mark at the start is passed over), and
   `Game.json.list(t)` to write an empty table as `[]`.
 - **Enums:** `Game.enums.<name>` maps each way, name to number and number to name (`Game.enums.status.Poisoned
   == 3`). The enums are `clan`, `rank`, `trait`, `stance`, `status`, `stat`, `resource`, `questStatus`,

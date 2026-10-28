@@ -1,8 +1,9 @@
 """The script runtime in the game: a script's errors carry its mod's name and are said once, a misspelt key doesn't
 stop a script, another cat's level isn't yours, a task can cancel itself and add another, a script that doesn't
-start is named, and a script's settings page saves and says so. The throwaway mods go in with a test install:
+start is named, a script's settings page saves and says so, and a page made from a timer is the only one. The
+throwaway mods (tests/game/mods/noisy-script, broken-script and late-page) go in with a test install:
 
-    python wcmods.py agent install --with tests/game/mods/noisy-script --with tests/game/mods/broken-script
+    python wcmods.py agent install --with tests/game/mods/noisy-script --with tests/game/mods/broken-script --with tests/game/mods/late-page
 
 The tests that need one skip without it; the bridge's own tests need nothing more."""
 import json
@@ -140,6 +141,27 @@ def test_save_on_the_settings_page_says_so_and_keeps_an_empty_list(agent):
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(before)
         agent.menu.close()
+
+
+def test_a_page_made_from_a_timer_is_the_only_one(agent):
+    """late-page makes its own page two seconds after it starts, after wcmods made it the automatic settings page:
+    one page with the id script:late-page, drawing the script's own rows."""
+    need(agent, "late-page")
+    pages = [p for p in agent.menu.pages() if p["id"].startswith("script:late-page")]
+    assert len(pages) == 1, pages
+    page = agent.menu.open("script:late-page")
+    assert page.has("Made from a timer") and not page.find("On"), page.text()
+    agent.menu.close()
+
+
+def test_the_settings_page_shows_help_under_its_row_and_bounds_a_number(agent):
+    """Noisy script's settings.json has "_help_speed" and "_min_speed"/"_max_speed": the help is under Speed (not a
+    note at the top), and the bounds aren't rows of their own."""
+    need(agent, "noisy-script")
+    page = agent.menu.open("script:noisy-script")
+    text = page.text()
+    assert "How fast it goes" in text and "Min speed" not in text and "Max speed" not in text, text
+    agent.menu.close()
 
 
 def _mods(agent):
