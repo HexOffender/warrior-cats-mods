@@ -1336,13 +1336,14 @@ class _Server(ThreadingHTTPServer):
 
 LAUNCHER = "Clan Mod Studio.bat"   # beside wcmods.py: what a player double-clicks
 PORT_TRIES = 10                     # ports tried from the one asked for, when it's taken by another program
+PROBE_TIMEOUT = 3                   # seconds to wait for whatever holds a port to answer
 
 
 def other_studio(port):
     """Whether what holds a port is a Clan Mod Studio: asked for /api/info with no token, ours answers 403
     with its JSON saying so."""
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/info", timeout=3):
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/info", timeout=PROBE_TIMEOUT):
             return False   # answered without a token: something else
     except urllib.error.HTTPError as e:
         try:
@@ -1369,6 +1370,22 @@ def start_again(root, port):
     return "python"
 
 
+def find_port(port):
+    """A server bound to `port`, or to the next free one when another program holds it: (server, tried,
+    other), `tried` the ports found in use and `other` the port of a Clan Mod Studio already open, which ends
+    the search with no server (that studio is opened instead). Port 0 takes any free port (the tests)."""
+    tried = []
+    for attempt in range(PORT_TRIES if port else 1):
+        want = port + attempt if port else 0
+        try:
+            return _Server(("127.0.0.1", want), None), tried, None
+        except OSError:
+            tried.append(want)
+            if other_studio(want):
+                return None, tried, want
+    return None, tried, None
+
+
 def serve(ctx, port=DEFAULT_PORT, open_browser=True, add=None):
     """Run the studio; `add` is a mod's .zip or folder (dropped on the launcher) for it to offer to add,
     which a studio already running picks up too. When the port is held by another studio, that one is opened
@@ -1377,23 +1394,15 @@ def serve(ctx, port=DEFAULT_PORT, open_browser=True, add=None):
         onboarding.put_inbox(add)
     studio = Studio(ctx)
     open_browser = open_browser and not os.environ.get("WCMODS_NO_BROWSER")
-    server, tried = None, []
-    for attempt in range(PORT_TRIES if port else 1):
-        want = port + attempt if port else 0
-        try:
-            server = _Server(("127.0.0.1", want), None)
-            break
-        except OSError:
-            tried.append(want)
-            if other_studio(want):
-                # Most likely a studio started earlier (a second double-click): open that one instead.
-                url = f"http://127.0.0.1:{want}/"
-                print(f"Clan Mod Studio is already open, at {url}")
-                print("(after an update, press Restart the studio at the top of its page, or close its window and "
-                      "open it again)")
-                if open_browser:
-                    webbrowser.open(url)
-                return
+    server, tried, other = find_port(port)
+    if other:
+        # Most likely a studio started earlier (a second double-click): open that one instead.
+        url = f"http://127.0.0.1:{other}/"
+        print(f"Clan Mod Studio is already open, at {url}")
+        print("(after an update, press Restart the studio at the top of its page, or close its window and open it again)")
+        if open_browser:
+            webbrowser.open(url)
+        return
     if server is None:
         sys.exit(f"Couldn't open Clan Mod Studio: ports {tried[0]} to {tried[-1]} are all in use by other programs. "
                  "Close some, or start it with --port and a free one.")

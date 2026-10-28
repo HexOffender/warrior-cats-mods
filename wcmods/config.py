@@ -31,6 +31,9 @@ def data_dir():
         os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "WCMods"))
 
 
+_set_aside = {}   # wcmods.json path -> the warning from setting a damaged one aside, for the Configs made after
+
+
 def same_folder(a, b):
     """Whether two paths are one folder, however each is spelled (a junction, a subst drive, a short name)."""
     try:
@@ -67,6 +70,9 @@ class Config:
 
         A damaged file (not JSON, not an object) is set aside as wcmods.json.broken-<stamp> and the
         settings start afresh, with `warning` saying so: the studio still opens, on Get set up."""
+        # A Config made earlier in this run (userdata.prepare's) may have set the file aside: its warning is this
+        # one's to show, for the run.
+        self.warning = self.warning or _set_aside.get(os.path.normcase(self.path))
         if not os.path.exists(self.path):
             return
         try:
@@ -83,6 +89,7 @@ class Config:
             self.data = {}
             self.warning = (f"Your settings file was damaged; it was set aside as {os.path.basename(aside)} and the "
                             "studio starts afresh: check Get set up")
+            _set_aside[os.path.normcase(self.path)] = self.warning
 
     def save(self):
         """Write wcmods.json, with a _help line first saying what it is (docs/formats.md lists every key). It's
