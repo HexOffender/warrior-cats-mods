@@ -316,7 +316,7 @@ class Agent:
         of save edits it kept, as the studio's and `wcmods restore` do."""
         if window.game_pid():
             raise AgentError("the game is running; agent.quit() first")
-        return saverecord.restore(self.cfg, self.cfg.backups_dir, name)
+        return saverecord.restore(self.cfg, self.cfg.backups_dir, name)[0]
 
     # ---------- Lua ----------
     def lua(self, code, timeout=15):

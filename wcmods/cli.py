@@ -542,8 +542,8 @@ def cmd_restore(ctx, args):
     name = names[-1] if args.name == "latest" else args.name
     from . import saverecord
     # After a backup of the save as it is ("before-restore"); the record of save edits comes back with the save.
-    restored = saverecord.restore(ctx.cfg, ctx.backups, name)
-    print(f"restored {', '.join(restored)} from {name}")
+    restored, before = saverecord.restore(ctx.cfg, ctx.backups, name)
+    print(f"restored {', '.join(restored)} from {name}" + (f" (the save you had is kept as {before})" if before else ""))
 
 
 def cmd_tables(ctx, args):

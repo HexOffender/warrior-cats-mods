@@ -114,12 +114,17 @@ def _account_of(save_dir):
 
 def restore(cfg, backups_root, name):
     """Put a backed-up save back, after a backup of the save as it is now ("before-restore", which keeps the
-    record as it is now, so restoring that undoes this), and the record with it (put_back). Returns the files
-    put back."""
-    backup(cfg, backups_root, "before-restore")
+    record as it is now, so restoring that undoes this; none while there's no save, as savefile.backup never
+    makes an empty one), and the record with it (put_back). Only a backup list_backups() lists (LookupError
+    before anything is made). Returns (the files put back, the before-restore backup's name or None)."""
+    if name not in savefile.list_backups(backups_root):
+        raise LookupError(f"there's no backup called {name}")
+    before = None
+    if savefile.has_save(cfg.save_dir):
+        before = os.path.basename(backup(cfg, backups_root, "before-restore")[0])
     restored = savefile.restore(backups_root, name, cfg.save_dir)
     put_back(cfg, os.path.join(backups_root, name))
-    return restored
+    return restored, before
 
 
 def put_back(cfg, folder):

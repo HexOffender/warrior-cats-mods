@@ -1085,16 +1085,10 @@ class Studio:
             if game_running():
                 raise RuntimeError("close the game before restoring a save")
             name = field(body, "name")
+            # Only a listed backup; the save you have is kept first. The record of save edits comes back with the
+            # save: the next Apply makes again only the mods' changes that save hasn't got.
             with self.lock:
-                if name not in save.list_backups(self.ctx.backups):   # only a backup: nothing else is put back
-                    raise LookupError(f"there's no backup called {name}")
-                before = None
-                if save.has_save(cfg.save_dir):   # the save you have, kept first, with the record as it is now
-                    before = os.path.basename(saverecord.backup(cfg, self.ctx.backups, "before-restore")[0])
-                restored = save.restore(self.ctx.backups, name, cfg.save_dir)
-                # The record of save edits comes back with the save: the next Apply makes again only the mods'
-                # changes that save hasn't got.
-                saverecord.put_back(cfg, os.path.join(self.ctx.backups, name))
+                restored, before = saverecord.restore(cfg, self.ctx.backups, name)
             return {"restored": restored, "before": before, "before_label": save.backup_label(before) if before else None}
         if parts == ["crash"] and method == "GET":
             # The game's last crash since the last Apply, and which C++ mod it was in when one is on its stack.

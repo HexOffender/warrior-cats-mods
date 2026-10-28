@@ -215,6 +215,20 @@ def test_restoring_a_backup_puts_its_record_back(studio, cfg):
     assert doc(cfg).get(LEVEL) == 10
 
 
+def test_a_restore_without_a_save_makes_no_empty_backup_and_a_wrong_name_makes_none(studio, cfg):
+    first, _ = apply(studio, [level_op(10)])
+    have = backups(studio)
+    with pytest.raises(LookupError):
+        saverecord.restore(cfg, studio.ctx.backups, "20000101-000000-nothing")
+    assert backups(studio) == have, "a name that's no backup leaves nothing behind"
+    os.remove(os.path.join(cfg.save_dir, SAV_NAME))   # the save gone: restoring a backup is how it comes back
+    restored, before = saverecord.restore(cfg, studio.ctx.backups, first["backup"])
+    assert SAV_NAME in restored and before is None and backups(studio) == have
+    assert doc(cfg).get(LEVEL) == 5
+    said = studio.api("POST", ["restore"], {"name": first["backup"]}, None)   # a save now: it's kept first
+    assert said["before"] and "-before-restore" in said["before"] and said["before_label"]
+
+
 def test_undoing_a_restore_with_the_before_restore_backup_keeps_the_save_as_played(studio, cfg):
     first, _ = apply(studio, [level_op(10)])
     play(cfg, LEVEL, 14)
