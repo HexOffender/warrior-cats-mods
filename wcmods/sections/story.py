@@ -4,8 +4,8 @@ UE4SS mod, WCModsStory, which hands them to the game's other scripts as the shar
 (JSON text). The Sandbox mode mod reads it and puts the cats in the forest with a sandbox cat.
 
 At Apply the build fills in each step's objective that its maker left empty, with the names the cats and
-items have then, and says what Sandbox mode can show of them (story.sandbox): missing, off, kept out by
-"Allow mods that run code", or too old for a fixed look.
+items have then, and says what Sandbox mode can show of them (story.sandbox): missing, off, left out after
+a game update (until "Use it anyway"), kept out by "Allow mods that run code", or too old for a fixed look.
 """
 import os
 
@@ -53,6 +53,8 @@ def _sandbox_words(state):
                 f"it from {story.SANDBOX_RELEASES} and drop it on the Mods page)")
     if state["state"] == "off":
         return "cats and questlines go in, but nothing shows them until Sandbox mode is on (the Mods page switches it on)"
+    if state["state"] == "held-back":
+        return f"cats and questlines go in, but nothing shows them: {story.held_words(state['held'])}"
     if state["state"] == "no-code":
         return ("cats and questlines go in, but nothing shows them: Sandbox mode is a script, and mods that run code "
                 "aren't allowed (allow them on Settings and repair)")
@@ -73,7 +75,7 @@ class StorySection(Section):
     def build(self, ctx, items):
         if not items:
             return
-        state = story.sandbox(ctx.found or ctx.mods, bool(ctx.cfg.data.get("allow_code_mods")))
+        state = story.sandbox(ctx.found or ctx.mods, bool(ctx.cfg.data.get("allow_code_mods")), ctx.held_back)
         said = _sandbox_words(state)
         if said:
             ctx.warn(said)
@@ -118,7 +120,8 @@ class StorySection(Section):
                 ctx.warn(f"{mod.id}: {cat['name']} wears {words[part]} colour {slot}, which no palette that's on adds, "
                          "so it shows no colour there")
         older = [f for f in state["older"] if cat.get(f)]
-        if older and state["state"] != "missing":
-            need = max((story.SANDBOX_NEEDS[f] for f in older), key=version_key)
+        wanted = [story.SANDBOX_NEEDS[f] for f in older if version_key(story.SANDBOX_NEEDS[f]) is not None]
+        if wanted and state["state"] != "missing":
+            need = max(wanted, key=version_key)
             ctx.warn(f"{mod.id}: {cat['name']} has a fixed look, which needs Sandbox mode {need} or newer; you have "
                      f"{state['version'] or 'an older one'}, so the game makes the look up each time")

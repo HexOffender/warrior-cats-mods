@@ -413,26 +413,46 @@ def needs_of(data):
     return out
 
 
-def sandbox(found, allow_code):
+def sandbox(found, allow_code, held_back=None):
     """What Sandbox mode can show of the mods' cats and questlines, for the story pages and the build:
-    {"state": "on" | "off" | "no-code" | "missing", "version": its version ("" when it has none, None when it
-    isn't there), "name", "needs": SANDBOX_NEEDS, "newest": the newest version they ask for (the one to get),
-    "older": the fields of SANDBOX_NEEDS it's too old for, "releases": where to download it, "code_allowed"}. found: the mods folder's mods (mods.discover);
-    allow_code: whether mods that run code are allowed, which Sandbox mode, a script, needs."""
+    {"state": "on" | "off" | "held-back" | "no-code" | "missing", "version": its version ("" when it has none,
+    None when it isn't there), "name", "needs": SANDBOX_NEEDS, "newest": the newest version they ask for (the
+    one to get), "older": the fields of SANDBOX_NEEDS it's too old for, "releases": where to download it,
+    "code_allowed", "held": why it's left out, when it's held back (else None)}. found: the mods folder's mods
+    (mods.discover); allow_code: whether mods that run code are allowed, which Sandbox mode, a script, needs;
+    held_back: gamebuild.held_back's {mod id: why}, the mods a build leaves out after a game update until
+    they're used anyway (Sandbox mode among them is on, but nothing of it goes in)."""
     m = next((x for x in found if x.id == SANDBOX_ID), None)
+    held = (held_back or {}).get(SANDBOX_ID) if m is not None and m.enabled else None
     if m is None:
         state = "missing"
     elif not m.enabled:
         state = "off"
+    elif held:
+        state = "held-back"
     elif not allow_code:
         state = "no-code"
     else:
         state = "on"
     version = m.version if m else None
-    older = sorted(k for k, v in SANDBOX_NEEDS.items() if m is not None and version_key(version) < version_key(v))
+    have = version_key(version)   # None: no version, or not one that reads as a number (older than any)
+    needs = {k: version_key(v) for k, v in SANDBOX_NEEDS.items()}
+    older = sorted(k for k, need in needs.items() if m is not None and need is not None and (have is None or have < need))
+    newest = max((v for v in SANDBOX_NEEDS.values() if version_key(v) is not None), key=version_key, default=None)
     return {"state": state, "version": version, "name": m.name if m else SANDBOX_NAME, "needs": dict(SANDBOX_NEEDS),
-            "newest": max(SANDBOX_NEEDS.values(), key=version_key), "older": older, "releases": SANDBOX_RELEASES,
-            "code_allowed": bool(allow_code)}
+            "newest": newest, "older": older, "releases": SANDBOX_RELEASES, "code_allowed": bool(allow_code),
+            "held": held}
+
+
+def held_words(held):
+    """Why a Sandbox mode that's on goes into no build after a game update, and the way to put it back:
+    `held` is gamebuild.held_back's why for it ("made for an older version of the game", or "needs X, made
+    for ..."). The studio's strip says the same (story.js stripWords)."""
+    if not held or held.startswith("made for"):
+        return ("Sandbox mode is left out since the game's update, as it was made for an older version of the game "
+                "(on the Mods page, its card has Use it anyway…)")
+    return (f"Sandbox mode is left out since the game's update: it {held} (on the Mods page, that mod's card has "
+            "Use it anyway…)")
 
 
 def start_over(folder):

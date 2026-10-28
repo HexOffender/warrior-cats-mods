@@ -153,6 +153,7 @@ def build(cfg, mods, out_dir, log=print):
     ctx = BuildContext(cfg, game, out_dir, log)
     ctx.mods = enabled   # the enabled mods, for sections that check another kind of file (cats.json and palettes)
     ctx.found = list(mods)   # and every mod, on or off (the story section says whether Sandbox mode is there)
+    ctx.held_back = dict(left_out)   # and the ones a game update leaves out (Sandbox mode can be one)
     report = {}
     if unmet:
         report["requirements"] = {"title": "Mods that need other mods", "status": "failed", "mods": [],

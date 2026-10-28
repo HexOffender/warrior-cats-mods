@@ -271,9 +271,9 @@ class Studio:
         it's never left out for want of it), and Sandbox mode, when it's in the mods folder but off, is turned
         on. A "requires" an older studio wrote moves to "uses", unless the mod has code of its own (a script
         calling Sandbox mode's API really needs it). Returns the names of the mods it turned on."""
-        meta_uses = [i for i in mod.meta.get("uses", []) if isinstance(i, str)] \
-            if isinstance(mod.meta.get("uses"), list) else list(mod.uses)
-        requires, uses = list(mod.requires), list(meta_uses)
+        # What mod.json itself says (Mod reads an older studio's "sandbox" in "requires" as a use already).
+        meta_requires, meta_uses = mod.written("requires"), mod.written("uses")
+        requires, uses = list(meta_requires), list(meta_uses)
         sid = story.SANDBOX_ID
         if sid in requires and not mod.has_code():
             requires.remove(sid)
@@ -282,7 +282,7 @@ class Studio:
         has_any = story.has_any(mod.folder)   # a file emptied of them leaves "uses" as it is: it blocks nothing
         if has_any and sid not in uses and sid not in requires:
             uses.append(sid)
-        changes = {k: v for k, v, was in (("requires", requires, mod.requires), ("uses", uses, meta_uses)) if v != was}
+        changes = {k: v for k, v, was in (("requires", requires, meta_requires), ("uses", uses, meta_uses)) if v != was}
         if changes:
             mod.update(**changes)
         if not has_any:
@@ -761,8 +761,10 @@ class Studio:
                                    "and press this again")
             return spot
         if parts == ["story", "sandbox"] and method == "GET":
-            # What Sandbox mode can show of the cats and questlines, for the Characters and Questlines pages.
-            return story.sandbox(self.mods(), bool(cfg.data.get("allow_code_mods")))
+            # What Sandbox mode can show of the cats and questlines, for the Characters and Questlines pages: a
+            # Sandbox mode held back after a game update (until "Use it anyway") shows nothing either.
+            found = self.mods()
+            return story.sandbox(found, bool(cfg.data.get("allow_code_mods")), gamebuild.held_back(cfg, found))
         if parts == ["story", "progress"] and method == "DELETE":
             # Every sandbox cat's questlines back to the start (Sandbox mode keeps them beside the game's saves).
             if game_running():

@@ -24,9 +24,10 @@ TEXTS = {"STR_ITEM_MOSS": "Moss", "STR_ITEM_HERB": "Small Healing Herb"}
 class Ctx(BuildContext):
     """A build context whose game is a few rows and strings: nothing is read from disk but the mods."""
 
-    def __init__(self, tmp_path, found, allow_code=True, rows=GAME_ROWS, texts=TEXTS):
+    def __init__(self, tmp_path, found, allow_code=True, rows=GAME_ROWS, texts=TEXTS, held_back=None):
         super().__init__(SimpleNamespace(data={"allow_code_mods": allow_code}), None, str(tmp_path / "out"), log=lambda m: None)
-        self.found, self.mods = list(found), [m for m in found if m.enabled]
+        self.found, self.mods = list(found), [m for m in found if m.enabled and m.id not in (held_back or {})]
+        self.held_back = dict(held_back or {})
         self.rows, self.texts = list(rows), dict(texts)
         self.begin("story")
 
@@ -164,6 +165,7 @@ def test_broken_json_names_the_line_and_column(tmp_path):
     (lambda t: [sandbox(t)], False, {"state": "no-code", "version": "0.5", "older": []}),
     (lambda t: [], True, {"state": "missing", "version": None, "older": []}),
     (lambda t: [sandbox(t, version="0.4")], True, {"state": "on", "version": "0.4", "older": ["look", "slots"]}),
+    (lambda t: [sandbox(t, version="beta")], True, {"state": "on", "version": "beta", "older": ["look", "slots"]}),
 ])
 def test_the_note_says_the_sandbox_state(tmp_path, found, allow, state):
     ctx = build(tmp_path, [mod(tmp_path, "mine", {"npcs.json": CATS})] + found(tmp_path), allow_code=allow)
@@ -190,6 +192,55 @@ def test_build_warns_when_the_sandbox_is_missing(tmp_path):
     assert "mods that run code aren't allowed" in kept.warnings[0]
     # The cats go in all the same.
     assert UE4SS_NAME in ctx.ue4ss_mods
+
+
+def test_a_sandbox_held_back_after_a_game_update_shows_nothing_and_says_use_it_anyway(tmp_path):
+    # On, but made for the game's build before the update: the build leaves it out until "Use it anyway".
+    held = {"sandbox": "made for an older version of the game"}
+    ctx = build(tmp_path, [mod(tmp_path, "mine", {"npcs.json": CATS}), sandbox(tmp_path)], held_back=held)
+    assert ctx.notes["story"]["sandbox"] == {"state": "held-back", "version": "0.5", "older": []}
+    assert ctx.warnings == ["story: cats and questlines go in, but nothing shows them: Sandbox mode is left out since "
+                            "the game's update, as it was made for an older version of the game (on the Mods page, its "
+                            "card has Use it anyway…)"]
+    # Left out with a mod it needs: that mod's card has the button.
+    need = {"sandbox": "needs Mod menu pages, made for an older version of the game"}
+    other = build(tmp_path / "b", [mod(tmp_path / "b", "mine", {"npcs.json": CATS}), sandbox(tmp_path / "b")], held_back=need)
+    assert other.warnings[0].endswith("Sandbox mode is left out since the game's update: it needs Mod menu pages, made for "
+                                      "an older version of the game (on the Mods page, that mod's card has Use it anyway…)")
+    # Off wins: turning it on comes first.
+    off = build(tmp_path / "c", [mod(tmp_path / "c", "mine", {"npcs.json": CATS}), sandbox(tmp_path / "c", enabled=False)],
+                held_back=held)
+    assert off.notes["story"]["sandbox"]["state"] == "off"
+
+
+def test_the_pipeline_tells_the_sections_what_a_game_update_holds_back(tmp_path, monkeypatch):
+    from wcmods import pipeline
+    from wcmods.cli import Ctx as CliCtx
+    cli = CliCtx(str(tmp_path / "root"), str(tmp_path / "data"))
+    seen = {}
+
+    class Spy:   # stands in for the story section: what the build context says is held back
+        id, title, owner = "story", "Characters and questlines", None
+
+        def claims(self, mod):
+            return True
+
+        def collect(self, mod, c):
+            return {}
+
+        def build(self, c, items):
+            seen.update(c.held_back)
+    held = {"sandbox": "made for an older version of the game"}
+    monkeypatch.setattr(pipeline, "load_sections", lambda cfg, mods, log: ([Spy()], []))
+    monkeypatch.setattr(pipeline.gamebuild, "current", lambda cfg: {"build": None})
+    monkeypatch.setattr(pipeline.gamebuild, "held_back", lambda cfg, mods, build=None: dict(held))
+    monkeypatch.setattr(pipeline.gamebuild, "layout", lambda cfg, log=None: {"status": "verified", "moved": [], "lost": [], "offsets": {}})
+    found = [mod(tmp_path, "mine", {"npcs.json": CATS}), sandbox(tmp_path)]
+    try:
+        pipeline.build(cli.cfg, found, str(tmp_path / "build"), log=lambda m: None)
+    except Exception:   # noqa: BLE001 - past the sections, the build reads the game's files, which aren't here
+        pass
+    assert seen == held
 
 
 def test_build_fills_in_objectives_from_todays_names(tmp_path):
