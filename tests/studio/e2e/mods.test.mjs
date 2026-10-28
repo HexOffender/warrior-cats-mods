@@ -58,7 +58,7 @@ before(async () => {
 after(async () => {
   for (const s of [fresh, page]) if (s) s.stop();
   if (browser) await browser.close();
-  for (const f of [freshFolders, pageFolders]) if (f) await removeFolder(f.root);
+  for (const f of [freshFolders, pageFolders]) if (f) { await removeFolder(f.root); await removeFolder(f.app); }
 });
 
 const stepTitles = p => p.evaluate(() => [...document.querySelectorAll(".setup .step strong")].map(s => s.textContent.replace(/^(Done|To do): /, "")));

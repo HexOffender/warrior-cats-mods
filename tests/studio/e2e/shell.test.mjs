@@ -33,7 +33,10 @@ before(async () => {
 after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
-  if (folders) await removeFolder(folders.root);
+  if (folders) {
+    await removeFolder(folders.root);
+    await removeFolder(folders.app);
+  }
 });
 
 test("the studio opens with no console errors, its status chips and its pages", { skip }, async () => {
@@ -97,8 +100,8 @@ test("a mod made from a Make page's Editing-mod bar shows on the Mods page", { s
   await page.waitFor(() => { const i = document.querySelector('input[aria-label="New mod folder name"]'); return i && i.getClientRects().length > 0; });
   await page.type('input[aria-label="New mod folder name"]', "e2e-mod");
   await page.click({ text: "Create" });
+  // The new mod is listed first (the bar reads the list again for "mods-changed"), then chosen.
   await page.waitFor(() => [...document.querySelectorAll(".target select option")].some(o => o.value === "e2e-mod"));
-  // The option shows as soon as the list is read again; the bar moves to it once the new mod is opened.
   await page.waitFor(() => document.querySelector(".target select").value === "e2e-mod");
   await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes("Created mod e2e-mod")));
   assert.ok(fs.existsSync(path.join(folders.data, "mods", "e2e-mod", "mod.json")), "the mod's folder is there");
@@ -149,6 +152,10 @@ test("Help opens the guide in a panel, its links move between its pages, and Esc
   assert.ok(headings.includes("The log") && headings.includes("What Undo means here"), headings.join(", "));
   assert.equal(await page.count("#helpBody script, #helpBody iframe, #helpBody style"), 0, "only the renderer's tags");
   assert.equal(await page.evaluate(() => document.getElementById("helpOpen").getAttribute("href")), "/help/studio");
+  // A link to a heading of another page (studio.md#the-log) opens the panel there.
+  await page.evaluate(async () => (await import("/studio/lib/wc.js")).openHelp("studio#the-log"));
+  await page.waitFor(() => document.getElementById("helpOpen").getAttribute("href") === "/help/studio#the-log");
+  await page.waitFor(() => document.getElementById("helpBody").scrollTop > 0);
   await page.press("Escape");
   await page.waitFor(() => document.getElementById("help").hidden);
   assert.equal(await page.evaluate(() => document.activeElement.id), "helpBtn", "focus goes back where it was");
@@ -183,4 +190,103 @@ test("Apply with the game's files unreadable: a sentence at the top of the log, 
   const chips = await page.evaluate(() => [...document.querySelectorAll("#status .chip")].map(c => c.dataset.said));
   assert.ok(!chips.includes("Restart the studio") && chips.includes("Not applied yet"), chips.join(", "));
   await page.close();
+});
+
+// The Characters page with a cat added and not saved: a Make page that opens without the game's files.
+async function unsavedCat(page, url) {
+  await page.goto(url + "#npcs");
+  await page.waitFor(() => document.querySelector('.target select[aria-label="Mod that stores npcs.json"]')?.options.length > 0, 20000);
+  await page.click({ text: "Add a cat" });
+  await page.waitFor(() => document.querySelector(".target .dirty")?.textContent === "Unsaved changes");
+  await page.evaluate("window.__notReloaded = true");   // a reload takes it away
+}
+// eslint-disable-next-line no-new-func -- waitFor runs a function's source in the page, so the pattern goes in it
+const toastSays = (page, re) => page.waitFor(new Function(`return [...document.querySelectorAll("#toasts .toast")].some(t => ${re}.test(t.textContent))`));
+
+test("unsaved changes outlast the studio's window closing: the page keeps them, finds it again and saves to it", { skip }, async () => {
+  const d = dataFolder();
+  const first = await startStudio(d);
+  const port = Number(new URL(first.url).port);
+  const page = await browser.page();
+  let second = null;
+  try {
+    await unsavedCat(page, first.url);
+    const mod = await page.evaluate(() => document.querySelector(".target select").value);
+    first.stop();
+    // A save that can't reach it, and the studio still not there a few seconds later: the card, not a reload.
+    await page.click({ text: "Save to mod" });
+    await toastSays(page, /window was closed/);
+    await page.waitFor(() => /black window was closed/.test(document.querySelector(".error-card h2")?.textContent || ""), 15000);
+    assert.match(await page.text(".error-card p"), /unsaved changes stay on this page/);
+    assert.equal(await page.evaluate("window.__notReloaded"), true);
+    // Opened again (on the same port, with a new token): the page carries on as it was, and saves.
+    second = await startStudio(d, {}, { port });
+    assert.equal(Number(new URL(second.url).port), port, `the studio came back on port ${port}`);
+    await page.waitFor(() => !document.querySelector(".error-card"), 15000);
+    await toastSays(page, /open again\. Your unsaved changes are still here/);
+    assert.equal(await page.evaluate("window.__notReloaded"), true, "the page wasn't reloaded");
+    assert.equal(await page.text(".target .dirty"), "Unsaved changes");
+    await page.click({ text: "Save to mod" });
+    await page.waitFor(() => document.querySelector(".target .dirty")?.textContent === "", 10000);
+    const saved = JSON.parse(fs.readFileSync(path.join(d.data, "mods", mod, "npcs.json"), "utf8"));
+    assert.deepEqual(saved.npcs.map(c => c.name), ["New cat"]);
+    // Saved, the cat keeps its id when it's renamed (quests may name it now), though the file wasn't read back.
+    const nameBox = '.section[data-page="npcs"] input[maxlength="40"]';
+    await page.evaluate(`(i => { i.focus(); i.setSelectionRange(i.value.length, i.value.length); })(document.querySelector(${JSON.stringify(nameBox)}))`);
+    await page.type(nameBox, " the Second");
+    const preview = JSON.parse(await page.evaluate(() => [...document.querySelectorAll('.section[data-page="npcs"] pre')].at(-1).textContent));
+    assert.deepEqual(preview.npcs.map(c => [c.id, c.name]), [[saved.npcs[0].id, "New cat the Second"]]);
+    assert.equal(await page.text(".target .dirty"), "Unsaved changes");
+    // Nothing went wrong but the requests that found the studio closed, which the browser logs itself.
+    assert.deepEqual(page.consoleErrors().filter(e => !/ERR_CONNECTION_REFUSED/.test(e)), []);
+  } finally {
+    first.stop();
+    if (second) second.stop();
+    await page.close();
+    await removeFolder(d.root);
+    await removeFolder(d.app);
+  }
+});
+
+test("Restart the studio waits for unsaved changes to be saved, and a new studio that never answers is said after 30 s", { skip, timeout: 120000 }, async () => {
+  const d = dataFolder();   // a copy of wcmods of its own: it's "updated" here
+  const s = await startStudio(d, { WCMODS_NO_RESTART: "1" });   // answers, but never restarts
+  const page = await browser.page();
+  try {
+    await unsavedCat(page, s.url);
+    // wcmods updated under the running studio: Restart the studio shows.
+    const later = new Date(Date.now() + 60000);
+    fs.utimesSync(path.join(d.app, "wcmods", "guide.py"), later, later);
+    // Coming back to the window looks again (the page may still be starting up the first time: until it does).
+    const restartShows = () => [...document.querySelectorAll("#status button.chip")].some(c => c.dataset.said === "Restart the studio");
+    for (let i = 0; !await page.evaluate(restartShows); i++) {
+      assert.ok(i < 15, "Restart the studio shows once the window comes back to the front");
+      await page.evaluate("window.dispatchEvent(new Event('focus'))");
+      await sleep(1000);
+    }
+    await page.click("#status button.chip");   // Restart the studio
+    await toastSays(page, /^Save your changes first \(Characters\), then press Restart the studio/);
+    assert.equal(await page.evaluate("window.__notReloaded"), true);
+    await page.click({ text: "Save to mod" });
+    await page.waitFor(() => document.querySelector(".target .dirty")?.textContent === "", 10000);
+    // Saved: it restarts. The new studio never answers here (its page can't be had), so after 30 s the page
+    // says what to do, and goes on waiting.
+    await page.evaluate(() => {
+      window.__fetch = window.fetch;
+      window.fetch = (url, init) => (url === "/" ? Promise.reject(new TypeError("Failed to fetch")) : window.__fetch(url, init));
+    });
+    await page.click("#status button.chip");   // Restart the studio
+    await page.waitFor(() => [...document.querySelectorAll("#status .chip")].some(c => c.dataset.said === "Restarting…"));
+    const started = Date.now();
+    await page.waitFor(() => /black window was closed/.test(document.querySelector(".error-card h2")?.textContent || ""), 40000);
+    assert.ok(Date.now() - started > 25000, `said after ${Date.now() - started} ms`);
+    // It answers again: with nothing unsaved, the page reloads to be the new studio's own.
+    await page.evaluate("window.fetch = window.__fetch");
+    await page.waitFor(() => document.readyState === "complete" && window.__notReloaded === undefined && document.querySelector("#nav button"), 15000);
+  } finally {
+    s.stop();
+    await page.close();
+    await removeFolder(d.root);
+    await removeFolder(d.app);
+  }
 });
