@@ -21,7 +21,13 @@
 local Menu = {}
 
 local function valid(o) return o ~= nil and o:IsValid() end
-local function log(fmt, ...) print(string.format("[WCModsMenu] " .. fmt .. "\n", ...)) end
+-- Lines go to UE4SS.log under the name of the mod whose page it is (WCModsGame's, set by the script bootstrap, in
+-- this Lua state), so a page's error says whose it is; "[WCModsMenu]" for the window's own.
+local function log(fmt, ...)
+    local G = package.loaded.WCModsGame
+    local who = type(G) == "table" and type(G.modName) == "string" and G.modName ~= "" and G.modName
+    print((who and ("[" .. who .. "] mod menu: ") or "[WCModsMenu] ") .. string.format(fmt, ...) .. "\n")
+end
 
 local reported, nreported = {}, 0
 local function report(where, err)
@@ -963,8 +969,16 @@ Menu.groups = @GROUPS@
 -- the renamed one isn't known until the next frame, and Menu.open(title) opens the first of them.
 function Menu.page(title, fn, opts)
     opts = opts or {}
-    local p = { id = opts.id or title, title = title, fn = fn, order = opts.order or 50,
+    local p = { id = opts.id or title, asked = opts.id or title, title = title, fn = fn, order = opts.order or 50,
                 group = (tostring(opts.group or "mods"):gsub("[\t\n]", " ")), owner = caller(2) }
+    -- The same page made again by the same script takes the first one's place (and keeps its tab): a script's
+    -- own page made later, from a timer, in the place of the one wcmods made for its settings ("script:<id>").
+    for _, q in ipairs(pages) do
+        if q.asked == p.asked and q.owner == p.owner then
+            q.title, q.fn, q.order = p.title, p.fn, p.order
+            return q.id
+        end
+    end
     pages[#pages + 1] = p
     ExecuteInGameThread(function() register(p) end)
     if not started then
@@ -1010,6 +1024,16 @@ function Menu.list(t)
     return setmetatable(t or {}, LIST)
 end
 
+-- Whether a table is a list to write as [...] even when it's empty: one of Menu.list's, or WCModsGame's (what
+-- Game.json.decode makes of a list in a file, as a script's settings.json is read when the game starts).
+local function listy(v)
+    local mt = getmetatable(v)
+    if mt == nil then return false end
+    if mt == LIST then return true end
+    local G = package.loaded.WCModsGame
+    return type(G) == "table" and type(G.json) == "table" and mt == G.json.listMeta
+end
+
 local function encode(v, indent)
     local t = type(v)
     if t == "nil" then return "null" end
@@ -1017,9 +1041,11 @@ local function encode(v, indent)
     if t == "number" then
         if v ~= v or v == math.huge or v == -math.huge then return "null" end
         if math.type(v) == "integer" then return tostring(v) end
-        -- %g writes 12.0 as "12", which comes back as a whole number (and a setting then only takes whole
-        -- numbers); keep it a float.
-        local s = string.format("%.6g", v)
+        -- The shortest form that reads back as the same number, so a Save never changes a value it didn't
+        -- touch. %g writes 12.0 as "12", which comes back as a whole number (and a setting then only takes
+        -- whole numbers); keep it a float.
+        local s = string.format("%.15g", v)
+        if tonumber(s) ~= v then s = string.format("%.17g", v) end
         if not s:find("[%.eE]") then s = s .. ".0" end
         return s
     end
@@ -1031,7 +1057,7 @@ local function encode(v, indent)
     end
     if t ~= "table" then error("can't save a " .. t .. " as JSON") end
     local pad, inner = string.rep("  ", indent), string.rep("  ", indent + 1)
-    if getmetatable(v) == LIST and #v == 0 then return "[]" end
+    if listy(v) and #v == 0 then return "[]" end
     if #v > 0 or next(v) == nil then
         local parts = {}
         for i, x in ipairs(v) do parts[i] = encode(x, indent + 1) end

@@ -613,16 +613,64 @@ def test_anim_kinds_list_the_animals_an_animation_can_be_for(studio):
 
 def test_the_bridge_is_never_or_alive_or_stale(studio):
     from wcmods import bridge
-    assert get(studio, "game/bridge") == {"alive": False, "never": True}
+    assert get(studio, "game/bridge") == {"alive": False, "never": True, "game_running": False, "bridge_installed": False,
+                                          "state": "closed", "said": "The game is closed: press Play"}
     folder = bridge.folder(studio.ctx.cfg)
     os.makedirs(folder)
     with open(os.path.join(folder, "status.json"), "w", encoding="utf-8") as f:
-        json.dump({"level": "L_Forest"}, f)
+        json.dump({"level": "L_Forest", "world": "L_WorldMap_01_P"}, f)
     r = get(studio, "game/bridge")
     assert r["alive"] is True and r["level"] == "L_Forest" and r["age"] < bridge.ALIVE
+    assert r["state"] == "listening" and r["said"] == "The game is running and listening (in the forest)"
     old = time.time() - bridge.ALIVE - 5
     os.utime(os.path.join(folder, "status.json"), (old, old))
     assert get(studio, "game/bridge")["alive"] is False
+
+
+def test_game_bridge_says_whether_the_game_can_hear_the_studio(studio, sandbox):
+    # The four states of the Console's strip: listening (a fresh status), not answering (the game runs, the last
+    # install put the bridge in, and its status is old), without the connection (the game runs, and the last
+    # install had no bridge: Apply first), closed.
+    from wcmods import bridge
+    cfg = studio.ctx.cfg
+    sandbox.running = True
+    r = get(studio, "game/bridge")
+    assert (r["state"], r["game_running"], r["bridge_installed"]) == ("no-bridge", True, False)
+    assert r["said"] == ("The game is running without the studio's connection to it: close the game, press Apply to "
+                         "game, then Play")
+    cfg.data["installed_ue4ss"] = ["WCModsMenuHost", bridge.NAME]
+    cfg.save()
+    r = get(studio, "game/bridge")
+    assert (r["state"], r["bridge_installed"]) == ("not-answering", True)
+    assert r["said"].startswith("The game is running but not answering: it may be loading")
+    folder = bridge.folder(cfg)
+    os.makedirs(folder)
+    with open(os.path.join(folder, "status.json"), "w", encoding="utf-8") as f:
+        json.dump({"time": 1, "player": False}, f)   # no world yet: between levels
+    assert get(studio, "game/bridge")["said"] == "The game is running and listening (loading)"
+    with open(os.path.join(folder, "status.json"), "w", encoding="utf-8") as f:
+        json.dump({"world": "L_MainMenu_P"}, f)
+    assert get(studio, "game/bridge")["said"] == "The game is running and listening (in the main menu)"
+    os.remove(os.path.join(folder, "status.json"))
+    sandbox.running = False
+    assert get(studio, "game/bridge")["state"] == "closed"
+
+
+def test_running_lua_says_why_it_cant_in_the_strips_words(studio, sandbox):
+    # The Console's own requests refused for the same reasons as the strip's states, in its words; and never
+    # without code mods allowed, a blank line, or a blank object to look at.
+    with pytest.raises(PermissionError, match="allow mods that run code first"):
+        post(studio, "game/lua", {"code": "return 1"})
+    call(studio, "PATCH", "settings", {"allow_code_mods": True})
+    with pytest.raises(RuntimeError, match=r"^The game is closed: press Play$"):
+        post(studio, "game/lua", {"code": "return 1"})
+    sandbox.running = True
+    with pytest.raises(RuntimeError, match="without the studio's connection to it"):
+        post(studio, "game/inspect", {"expr": "Game.player()"})
+    with pytest.raises(ValueError, match="type a line of Lua"):
+        post(studio, "game/lua", {"code": "   "})
+    with pytest.raises(ValueError, match=r"type an object to look at, e\.g\. Game\.player\(\)"):
+        post(studio, "game/inspect", {"expr": ""})
 
 
 def test_the_game_is_started_only_with_a_game_and_while_it_isnt_running(studio, fake_game, sandbox):

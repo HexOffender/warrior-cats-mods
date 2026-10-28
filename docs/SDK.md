@@ -920,10 +920,10 @@ local quests = World.manager("quests")                    -- the game's quest ma
 | `World.nearby(kind, radius?, from?)` | What's within `radius` cm of `from` (an actor or `{X, Y, Z}`; your cat by default), nearest first, as `{actor, location, distance, name, label, class}`. Your cat itself is left out |
 | `World.find(kind)` | Every actor of a kind, or of a class given by name (e.g. `"BP_Pickup_Herb_1_C"`) |
 | `World.player()` | Your cat (the player's pawn), or nil in menus |
-| `World.location(actor)`, `World.distance(a, b)` | `{X, Y, Z}`; centimetres between two actors or locations |
+| `World.location(actor)`, `World.distance(a, b)` | `{X, Y, Z}`; centimetres between two actors or locations. nil for an actor that isn't there any more (one kept from an earlier `nearby` may be gone: these check first, since asking a gone actor anything crashes the game) |
 | `World.label(actor, kind?)` | A readable name: from its class (`BP_Pickup_SmallHealingHerb_C` is "Small Healing Herb", `BP_Interactable_Claw_Bush_C` "Bush (claw)"); with kind `cats` or `questGivers`, the cat's own name ("Otterpaw (Deputy)"); with `creatures`, its model ("Mouse") |
 | `World.kindOrder()`, `World.kindLabel(kind)`, `World.kindColor(kind)` | The kinds in the menu's order, their names ("Quest givers") and colours (`World.kindInfo` holds them; scripts can change them) |
-| `World.describe(actor)`, `World.parents(class)` | Its name, label, class, the classes that's made from, and location |
+| `World.describe(actor)`, `World.parents(class)` | Its name, label, class, the classes that's made from, and location (nil for an actor that isn't there any more) |
 | `World.manager(name)` | One of the game's managers: `quests`, `npcs`, `tracer`, `gui`, `storage`, `paths`, `tutorial`, `combat`, `tuning`, or a class name |
 | `World.addKind(kind, classes)`, `World.rescan()` | Add or change a kind; look again at the next query |
 

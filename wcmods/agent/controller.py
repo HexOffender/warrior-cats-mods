@@ -20,15 +20,14 @@ import time
 
 from .. import mods as modlib, pipeline
 from ..formats import save
-from ..bridge import Bridge, BridgeError
+from ..bridge import FOREST, Bridge, BridgeError
 from ..config import STEAM_APP_ID, Config
+from ..scriptlog import ERROR_LINE   # a line in UE4SS.log that says a script went wrong
 from ..sdk import lua_value
 from . import window
 from .menu import MenuDriver
 
-WORLD = "L_WorldMap_01_P"
-# A line in UE4SS.log that says a script went wrong.
-ERROR_LINE = re.compile(r"\berror\b|stack traceback|attempt to (call|index|perform|compare|concatenate)", re.I)
+WORLD = FOREST
 
 
 class AgentError(RuntimeError):

@@ -20,6 +20,7 @@ import re
 from .. import ue4ss
 from ..exe import pe
 from ..cppmods import BUILD_INFO, DLLS, SOURCE
+from ..mods import safe_name, same_install
 from ..sdk import Section
 
 PREFIX = "WCModsCpp_"
@@ -30,7 +31,7 @@ VARIANT = re.compile(r"^[0-9a-fA-F]{7,40}$")   # dlls/<UE4SS commit>/: a build f
 
 def ue4ss_name(mod_id):
     """The UE4SS mod a mod's C++ is installed as."""
-    return PREFIX + re.sub(r"[^A-Za-z0-9]+", "_", mod_id).strip("_")
+    return PREFIX + safe_name(mod_id)
 
 
 def source_time(folder):
@@ -83,6 +84,13 @@ class CppSection(Section):
     files = (DLLS, SOURCE)
 
     def collect(self, mod, ctx):
+        # Two mods whose ids differ only in punctuation or case would go in as one UE4SS mod, the second
+        # replacing the first: both are kept out, by name (here, not in build, so the other C++ mods still go in).
+        others = sorted(m.id for m in ctx.mods if m.enabled and same_install(m.id, mod.id) and self.claims(m))
+        if others:
+            ids = sorted([mod.id] + others)
+            raise ValueError(f"{', '.join(ids[:-1])} and {ids[-1]} would both go in as {ue4ss_name(ids[0])}: rename "
+                             "one of them (their names differ only in punctuation or capitals)")
         folder = os.path.join(mod.folder, DLLS)
         # A mod can carry builds for several UE4SS versions as dlls/<commit>/ (`cpp build --keep`): when
         # dlls/main.dll isn't for the game's UE4SS (its build.json says), the main.dll and build.json kept for
@@ -157,11 +165,7 @@ class CppSection(Section):
                 ctx.warn(f"{mod.id}: cpp/ changed after dlls/main.dll was built; `python wcmods.py cpp build "
                          f"{mod.id}` builds it again")
             name = ue4ss_name(mod.id)
-            if name in ctx.ue4ss_mods:
-                ctx.warn(f"{mod.id}: left out: another mod's C++ goes in as {name} too (their names differ only in "
-                         "punctuation); rename one")
-                continue
-            info = {"id": mod.id, "name": mod.name, "version": mod.version, "author": mod.author,
+            info ={"id": mod.id, "name": mod.name, "version": mod.version, "author": mod.author,
                     "description": mod.description, "folder": os.path.abspath(mod.folder),
                     "settings_file": data["settings_file"], "settings": data["settings"]}
             files = {"dlls/" + rel: blob for rel, blob in data["files"].items()}

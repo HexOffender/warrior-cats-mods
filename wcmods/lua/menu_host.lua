@@ -560,6 +560,9 @@ end)
 
 -- The window's own pages are in menu_host_pages.lua, pasted in here by menu.host_script:
 @PAGES@
+-- The menu's key, for scripts that point at the menu ("<name> didn't start: ... The mod menu (Insert), Tools, Log
+-- says more", the script bootstrap's).
+Menu.share("key_name", SETTINGS.key_name)
 log("ready: %s opens the mod menu", SETTINGS.key_name)
 syncCpp()
 

@@ -26,7 +26,13 @@ local ALIGN_X = { left = 0, center = 0.5, right = 1 }
 local ALIGN_Y = { top = 0, middle = 0.5, bottom = 1 }
 
 local function valid(o) return o ~= nil and o:IsValid() end
-local function log(fmt, ...) print(string.format("[WCModsDraw] " .. fmt .. "\n", ...)) end
+-- Lines go to UE4SS.log under the name of the mod whose script draws (WCModsGame's, set by the script bootstrap,
+-- in this Lua state), so a painter's error says whose it is; "[WCModsDraw]" when there's none.
+local function log(fmt, ...)
+    local G = package.loaded.WCModsGame
+    local who = type(G) == "table" and type(G.modName) == "string" and G.modName ~= "" and G.modName
+    print((who and ("[" .. who .. "] drawing: ") or "[WCModsDraw] ") .. string.format(fmt, ...) .. "\n")
+end
 
 local reported, nreported = {}, 0
 local function report(where, err)

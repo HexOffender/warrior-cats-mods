@@ -432,6 +432,12 @@ def pending(cfg, mods):
     # takes it out again.
     if not data.get("allow_code_mods") and code_installed(data):
         redo.append("the game has code from a test install, and mods that run code are off")
+    # And the other way: code mods allowed since the last install, which left out the bridge (the studio's
+    # Console) and every mod's code. The bridge goes in with every install while they're allowed, so its
+    # absence says so, for an install recorded by any version, with or without a code mod on.
+    elif (data.get("allow_code_mods") and cfg.ue4ss_mods_dir and inst.get("ue4ss") is not False
+          and bridge.NAME not in data.get("installed_ue4ss", [])):
+        redo.append("mods that run code are allowed now, and the game doesn't have them yet")
     out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed, "redo": redo}
     out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo)
     return out

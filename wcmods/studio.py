@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (animations, bridge, catcolours, colors, controls, eyeatlas, guide, menupages, menusettings, models, mods,
-               modzip, names, onboarding, packs, palettes, pipeline, recolor, story, ue4ss)
+               modzip, names, onboarding, packs, palettes, pipeline, recolor, scriptlog, story, ue4ss)
 from .formats import cooked, csvdata, png, save, texture
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
@@ -33,6 +33,7 @@ from .config import game_running
 from .gamefiles import NONASSET, Unreadable
 from .formats.savejson import SaveDoc
 from .sdk import BuildContext
+from .sections import scripts
 from .sections.files import classify
 
 NO_GAME = "Clan Mod Studio hasn't found the game yet: Get set up, on the Mods page, asks where it is"
@@ -68,10 +69,59 @@ BUILTIN_SECTIONS = [
     {"id": "data", "title": "Game data", "module": "/studio/sections/data.js", "group": "make"},
     {"id": "save", "title": "Save", "module": "/studio/sections/save.js", "group": "make"},
 ]
-# Pages for code mods: only with "allow_code_mods" (the console runs Lua in the game).
+# Pages for code mods: only with "allow_code_mods" (the console runs Lua in the game), last in the side bar,
+# under Advanced.
 CODE_SECTIONS = [
-    {"id": "console", "title": "Console", "module": "/studio/sections/console.js", "group": "make"},
+    {"id": "console", "title": "Try Lua in the game", "module": "/studio/sections/console.js", "group": "advanced"},
 ]
+
+# Whether the game can hear the studio (its bridge, wcmods/bridge.py), in one sentence per state: the Console's
+# status strip, and what a request it can't send says.
+BRIDGE_SAID = {
+    "listening": "The game is running and listening ({where})",
+    "not-answering": "The game is running but not answering: it may be loading, or held still behind another window",
+    "no-bridge": "The game is running without the studio's connection to it: close the game, press Apply to game, "
+                 "then Play",
+    "closed": "The game is closed: press Play",
+}
+# A request that went but didn't come back (BridgeError's kinds besides "down").
+BRIDGE_FAILED = {
+    "busy": "Something else is talking to the game this moment (another studio page, or a command); try again in a "
+            "moment",
+    "withdrawn": "The game didn't answer within {timeout:g} seconds (it may be loading, or held still behind another "
+                 "window), so the line was taken back: it won't run later",
+    "running": "The game took the line but hasn't finished it after {timeout:g} seconds; it's still running it",
+}
+
+
+def bridge_state(cfg, status=None, running=None):
+    """How the game and its bridge stand: (state, sentence), a state of BRIDGE_SAID's. `status` is
+    Bridge.status() (read here when None); `running` whether the game's process runs (asked when None)."""
+    st = Bridge(cfg).status() if status is None else status
+    if st and st.get("alive"):
+        return "listening", BRIDGE_SAID["listening"].format(where=bridge.where(st))
+    if not (game_running() if running is None else running):
+        return "closed", BRIDGE_SAID["closed"]
+    state = "not-answering" if bridge_installed(cfg) else "no-bridge"
+    return state, BRIDGE_SAID[state]
+
+
+def bridge_installed(cfg):
+    """Whether the last install put the bridge in the game (wcmods.json read afresh: an install from the command
+    line counts at once)."""
+    try:
+        data = cfg.peek()
+    except (OSError, ValueError):
+        data = cfg.data
+    return bridge.NAME in (data.get("installed_ue4ss") or [])
+
+
+def bridge_failed(cfg, e, timeout=15):
+    """A BridgeError as the sentence the page shows."""
+    if e.kind in BRIDGE_FAILED:
+        return BRIDGE_FAILED[e.kind].format(timeout=timeout)
+    state, said = bridge_state(cfg)
+    return BRIDGE_SAID["not-answering"] if state == "listening" else said
 
 
 class Download:
@@ -152,6 +202,11 @@ def plain_summary(manifest):
     warnings = len(manifest.get("warnings", []))
     said = (f"Put {len(ids)} mod{'s' if len(ids) != 1 else ''} in the game: {', '.join(names.get(i, i) for i in ids)}."
             if ids else "Put the mod menu in the game, with no mods on.")
+    # A script that went in but won't load (its Lua isn't whole) is said by name: the game would only show it
+    # as nothing happening.
+    for mod, note in (manifest.get("notes", {}).get("scripts") or {}).items():
+        if isinstance(note, dict) and note.get("problems"):
+            said += f" {names.get(mod, mod)}: {note['problems'][0]}."
     return said + (f" {warnings} warning{'s' if warnings != 1 else ''}." if warnings else "")
 
 
@@ -420,8 +475,14 @@ class Studio:
                                                     size=body.get("size"), pad=body.get("pad"), cheats=body.get("cheats"))
             return menusettings.options(cfg)
         if parts == ["game", "bridge"] and method == "GET":
-            # Whether the game runs with the bridge (wcmods/bridge.py), for the console's status line.
-            return Bridge(cfg).status() or {"alive": False, "never": True}
+            # Whether the game runs with the bridge (wcmods/bridge.py), for the Console's status strip: the
+            # bridge's own status, whether the game's process runs, whether the last install put the bridge in,
+            # and the state that makes in a sentence (bridge_state).
+            st = Bridge(cfg).status()
+            running = game_running()
+            state, said = bridge_state(cfg, st or {}, running)
+            return {**(st or {"alive": False, "never": True}), "game_running": running,
+                    "bridge_installed": bridge_installed(cfg), "state": state, "said": said}
         if parts == ["cpp"] and method == "GET":
             return self.cpp_status()
         if len(parts) == 3 and parts[:2] == ["cpp", "build"] and method == "POST":
@@ -431,10 +492,13 @@ class Studio:
                 raise PermissionError("the Console runs code in the game: allow mods that run code first (Options, on "
                                       "the Settings and repair page)")
             code = body.get("code", "") if parts[1] == "lua" else bridge.inspect_code(body.get("expr", ""), bool(body.get("all")))
+            if not str(code).strip():
+                raise ValueError("type a line of Lua to run, e.g. Game.cat():name()")
+            timeout = float(body.get("timeout", 15))
             try:
-                return Bridge(cfg).run(code, timeout=float(body.get("timeout", 15)))
+                return Bridge(cfg).run(code, timeout=timeout)
             except BridgeError as e:
-                raise RuntimeError(str(e)) from None
+                raise RuntimeError(bridge_failed(cfg, e, timeout)) from None
         if parts == ["mods"] and method == "GET":
             found = self.mods()
             old = gamebuild.outdated(cfg, found)
@@ -448,11 +512,26 @@ class Studio:
                 for problem in (m.problem, mods.palette_problem(m)):
                     if problem:
                         unmet.setdefault(m.id, []).append(problem)
+            # Script mods: two that would go in as one, what's wrong with a script's files now (before any Apply),
+            # and how its script did when the game last started (UE4SS.log, scriptlog.py).
+            for i, said in scripts.clashes(found).items():
+                unmet.setdefault(i, []).append(said)
+            ran = scriptlog.report(cfg, found)["mods"]
             return [{**m.to_dict(), "problems": unmet.get(m.id, []),
                      "needed_by": [titles[i] for i in mods.needing(found, m.id)],
                      "requires_names": [titles.get(i, i) for i in m.requires if i != mods.MENU_ID],
                      "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id),
-                     "menu_pages": m.id == menupages.ID} for m in found]
+                     "menu_pages": m.id == menupages.ID, "script_problems": scripts.problems(m),
+                     "script_run": ({"state": ran[m.id]["state"], "said": ran[m.id]["said"]}
+                                    if m.id in ran and ran[m.id]["state"] else None)} for m in found]
+        if len(parts) == 3 and parts[0] == "mods" and parts[2] == "log" and method == "GET":
+            # What a script mod's script said when the game last started (UE4SS.log): the card's More.
+            m = self.mod(parts[1])
+            rep = scriptlog.report(cfg, [m])
+            if m.id not in rep["mods"]:
+                raise LookupError(f"{m.name} has no in-game script, so the game's log says nothing about it")
+            return {**rep["mods"][m.id], "log": rep["log"], "session": rep["session"],
+                    "run_since_apply": rep["run_since_apply"]}
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "allow-outdated" and method == "POST":
             # Use a mod made for an older version of the game anyway, on this build only (the page warns first).
             build = gamebuild.current(cfg)["build"]
@@ -509,6 +588,15 @@ class Studio:
             m = self.mod(parts[1])
             return Download(modzip.pack(m, found), modzip.zip_name(m))
         if parts == ["open"] and method == "POST":
+            # The game's log (UE4SS.log) in the program that opens text files, for a script's What it said.
+            if body.get("what") == "log":
+                path = scriptlog.log_path(cfg)
+                if not path or not os.path.isfile(path):
+                    raise LookupError("There's no log yet: it's made when the game starts with the script loader")
+                if not hasattr(os, "startfile"):
+                    raise RuntimeError(f"open {path} yourself (this only works on Windows)")
+                os.startfile(path)
+                return {"opened": path}
             # Show a folder in Explorer: the mods folder, the folder with all your files, or one mod's.
             folder = ({"mods": self.ctx.mods_root, "data": cfg.data_dir}.get(body.get("what"))
                       or self.mod(body.get("id", "")).folder)
@@ -669,7 +757,7 @@ class Studio:
             try:
                 reply = Bridge(cfg).run(WHERE_LUA, timeout=10)
             except BridgeError as e:
-                raise RuntimeError(str(e)) from None
+                raise RuntimeError(bridge_failed(cfg, e, 10)) from None
             spot = (reply.get("result") or [None])[0]
             if not reply.get("ok") or not isinstance(spot, dict):
                 raise RuntimeError(reply.get("error") or "your cat isn't in the world: go into the forest first")

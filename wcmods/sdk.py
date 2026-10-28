@@ -348,16 +348,25 @@ class BuildContext:
         self.patch_package(path, built["data"], source=source, imports=built["imports"])
         return package + "." + package.rsplit("/", 1)[-1], built["seconds"]
 
-    def add_ue4ss_mod(self, name, files):
+    def add_ue4ss_mod(self, name, files, check=True):
         """files: {"Scripts/main.lua": text, ...}. Installed only when UE4SS is present.
 
-        Lua files get a structure check (balanced blocks and brackets); problems become build warnings.
+        Lua files get a structure check (balanced blocks and brackets); problems become build warnings
+        (check=False for files a section has checked and said itself). A name goes in once per build: one
+        that's taken already, in any case (Windows' folders don't tell case apart), is a ValueError, since
+        the second would silently replace the first.
         """
-        for rel, data in files.items():
-            if rel.endswith(".lua"):
-                text = data if isinstance(data, str) else data.decode("utf-8", "replace")
-                for problem in luacheck.check(text)[:3]:
-                    self.warn(f"{name}/{rel}: {problem}")
+        taken = next((n for n in self.ue4ss_mods if n.lower() == name.lower()), None)
+        if taken is not None:
+            by = self.ue4ss_mods[taken][1]
+            raise ValueError(f"two mods would go in as the UE4SS mod {name}"
+                             + (f" ({by} has it already)" if by and by != self.current else ""))
+        if check:
+            for rel, data in files.items():
+                if rel.endswith(".lua"):
+                    text = data if isinstance(data, str) else data.decode("utf-8", "replace")
+                    for problem in luacheck.check(text)[:3]:
+                        self.warn(f"{name}/{rel}: {problem}")
         self.ue4ss_mods[name] = ({k: v.encode() if isinstance(v, str) else v for k, v in files.items()}, self.current)
 
     def add_ue4ss_shared(self, name, text):
