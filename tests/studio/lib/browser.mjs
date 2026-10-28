@@ -230,15 +230,32 @@ export class Page {
   async count(selector) {
     return this.evaluate(`document.querySelectorAll(${JSON.stringify(selector)}).length`);
   }
-  // Where an element is, scrolled into view: {x, y} of its middle in the viewport.
-  async middle(target) {
-    const box = await this.evaluate(`(n => { if (!n) return null; n.scrollIntoView({ block: "center" }); const r = n.getBoundingClientRect();
-      return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height }; })(${locator(target)})`);
-    if (!box) throw new Error(`nothing on the page matches ${JSON.stringify(target)}`);
-    if (!box.w || !box.h) throw new Error(`${JSON.stringify(target)} has no size (hidden?)`);
-    return box;
+  // Where an element is, scrolled into view: {x, y} of its middle in the viewport, once it's ready for a click
+  // there: it has a size, it's in the same place 50 ms apart (a layout still settling moves it: a neighbour's
+  // label growing pushes it aside), and it, not something over it, is what that point hits. Waits up to
+  // `timeout` ms for that, then says what's wrong.
+  async middle(target, timeout = 10000) {
+    const probe = `(async n => {
+      if (!n) return { why: "nothing on the page matches it" };
+      n.scrollIntoView({ block: "center" });
+      const box = () => { const r = n.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; };
+      const before = box();
+      await new Promise(r => setTimeout(r, 50));
+      const [x, y, w, h] = box();
+      if (!w || !h) return { why: "it has no size (hidden?)" };
+      if ([x, y, w, h].join() !== before.join()) return { why: "it keeps moving" };
+      const at = document.elementFromPoint(x + w / 2, y + h / 2);
+      if (!at || !(at === n || n.contains(at))) return { why: "something else is over its middle: " + (at ? at.outerHTML.slice(0, 80) : "nothing") };
+      return { x: x + w / 2, y: y + h / 2, w, h };
+    })(${locator(target)})`;
+    const end = Date.now() + timeout;
+    for (;;) {
+      const box = await this.evaluate(probe);
+      if (!box.why) return box;
+      if (Date.now() > end) throw new Error(`can't click ${JSON.stringify(target)}: ${box.why}`);
+    }
   }
-  // A real click: the mouse moves there, presses and releases.
+  // A real click: the mouse moves to the element's middle (once middle() says it's ready), presses and releases.
   async click(target) {
     const { x, y } = await this.middle(target);
     await this.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
