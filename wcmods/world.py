@@ -22,52 +22,73 @@ NAMES_NAME = "WCModsNames"
 NAME_FN = lua_source("world_names.lua")
 
 
-def item_names(ctx):
+def item_names(ctx, text=None):
     """{item tag: its English name} from the game's item table and the rows mods add to it ("Marigold",
-    not the "Medium Healing Herb" of its pickup's class)."""
+    not the "Medium Healing Herb" of its pickup's class). text(key): the English text to read the names from
+    (the build's own Strings_EN, with its renames); the game's, ctx.text, without one."""
+    text = text or ctx.text
     rows = [v for _, v in ctx.cooked_table("DT_QuestObjectsInfo")]
     rows += [v for _, v, _, _ in ctx.table_rows.get("DT_QuestObjectsInfo", [])]   # later rows win
     out = {}
     for v in rows:
         name, tag = v.get("Name") or {}, v.get("itemTag")
-        text = name.get("text") if "text" in name else ctx.text(name["key"]) if "key" in name else None
-        if tag and text and text != name.get("key"):
-            out[tag] = text
+        said = name.get("text") if "text" in name else text(name["key"]) if "key" in name else None
+        if tag and said and said != name.get("key"):
+            out[tag] = said
     return out
 
 
 QUEST_RANKS = ("Apprentice", "Warrior", "Deputy", "Leader")   # a quest title's rank segment, when it has one
+STRINGS_EN = "Wrc/Content/Gameplay/Strings/NonAsset/Strings_EN.csv"
+TABLES = "Wrc/Content/Gameplay/DataTables/NonAsset/"
 
 
-def place_names(read_text):
-    """The game's area names and quest titles, from its text tables: ({area code: name} ("R-05" ->
-    "Willow-Weep"), {quest tag: {rank: title}}), the rank being Apprentice, Warrior, Deputy or Leader (a
-    quest's title can change with your cat's rank), or "" for a title with no rank segment
-    (Quest.Procedural.Progression.RankUp.Title is RankUp's own title, whatever the rank). A table that can't
-    be read leaves its names out."""
+def place_texts(read_text):
+    """The game's areas and quest titles with the text key each is shown from (which names.json's "text"
+    renames): {"areas": [{"key", "code", "text"}] ("STR_RIVERCLAN_ZONE_5", "R-05", "Willow-Weep"), "quests":
+    [{"key", "tag", "quest", "rank", "text"}]}. A quest title's tag ends in its rank (Apprentice, Warrior,
+    Deputy or Leader: its title can change with your cat's rank), or has none (rank "": RankUp's title is
+    under Quest.Procedural.Progression.RankUp.Title whatever the rank); "quest" is the tag's last part
+    ("Gather"). Only .Title rows are titles (.Title2 is a line of the quest's). A title with no text in
+    Strings_EN (the Escort quests') is left out, so nothing shows its key; so is a row too short to say its
+    name, and a table that can't be read leaves its names out."""
     from .formats import csvdata
-    areas, quests = {}, {}
+    areas, quests = [], []
     try:
-        strings = csvdata.Table(read_text("Wrc/Content/Gameplay/Strings/NonAsset/Strings_EN.csv"))
+        strings = csvdata.Table(read_text(STRINGS_EN))
         en = {r.fields[0]: r.fields[1] for r in strings.rows if len(r.fields) > 1}
-        base = "Wrc/Content/Gameplay/DataTables/NonAsset/"
-        locations = csvdata.Table(read_text(base + "LocationsData.csv"))
+        locations = csvdata.Table(read_text(TABLES + "LocationsData.csv"))
         code, name = locations.column("Code"), locations.column("IdStrName")
         for r in locations.rows:
             if len(r.fields) > max(code, name):
-                areas[r.fields[code]] = en.get(r.fields[name], r.fields[code])
-        dialogues = csvdata.Table(read_text(base + "QuestDialogues.csv"))
-        key = dialogues.column("StringKey")
+                key = r.fields[name]
+                areas.append({"key": key, "code": r.fields[code], "text": en.get(key, r.fields[code])})
+        dialogues = csvdata.Table(read_text(TABLES + "QuestDialogues.csv"))
+        column = dialogues.column("StringKey")
         for r in dialogues.rows:
             tag = r.fields[0] if r.fields else ""
-            if tag.endswith(".Title") and len(r.fields) > key:
+            if tag.endswith(".Title") and len(r.fields) > column:
                 quest, _, rank = tag[:-len(".Title")].rpartition(".")
                 if rank not in QUEST_RANKS:
                     quest, rank = tag[:-len(".Title")], ""
-                quests.setdefault(quest, {})[rank] = en.get(r.fields[key], r.fields[key])
+                key = r.fields[column]
+                if key in en:
+                    quests.append({"key": key, "tag": quest, "quest": quest.rsplit(".", 1)[-1], "rank": rank,
+                                   "text": en[key]})
     except Exception:   # no game data, or a table laid out differently: those names are left out
         pass
-    return areas, quests
+    return {"areas": areas, "quests": quests}
+
+
+def place_names(read_text):
+    """The game's area names and quest titles, from its text tables (place_texts), in the shapes WCModsNames
+    uses: ({area code: name} ("R-05" -> "Willow-Weep"), {quest tag: {rank: title}}), the rank "" for a title
+    with no rank segment."""
+    texts = place_texts(read_text)
+    quests = {}
+    for q in texts["quests"]:
+        quests.setdefault(q["tag"], {})[q["rank"]] = q["text"]
+    return {a["code"]: a["text"] for a in texts["areas"]}, quests
 
 
 def names_data(plan=None, items=None, places=None):

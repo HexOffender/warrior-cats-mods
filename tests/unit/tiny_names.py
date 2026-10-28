@@ -94,3 +94,42 @@ def save(player=None, warriors=(), outsiders=(), roles=None, slot="0"):
     if roles:
         game["NPCData"]["NarrativeRoles"] = dict(roles)
     return {slot: game}
+
+
+# The areas and quest titles (world.place_texts), as small copies of the game's text tables.
+STRINGS = "Wrc/Content/Gameplay/Strings/NonAsset/Strings_EN.csv"
+BASE = "Wrc/Content/Gameplay/DataTables/NonAsset/"
+EN = """Key,SourceString
+STR_RIVERCLAN_ZONE_5,Willow-Weep
+QST_Gather.Apprentice.Title,Feathering the Nests
+QST_Gather.Apprentice.Title2,Feathering the Nests (again)
+QST_Gather.Warrior.Title,Preparation is Readiness!
+QST_RankUp.Apprentice.Title,The Proving Grounds
+QST_Rest1.Title,A Time to Rest
+STR_ITEM_CONSUMABLE_NAME_7,Marigold
+"""
+LOCATIONS = """---,Code,LocationType,IdStrName
+1,R-05,Riverclan,STR_RIVERCLAN_ZONE_5
+2,R-06
+"""
+HEAD = "---,Score,ClanBonding,Talker,Trait,VoiceOver,StringKey,DebugText"
+QUESTS = "\n".join([
+    HEAD,
+    "Quest.Procedural.Survival.Gather.Apprentice.Title,0,0,NPC,None,vo,QST_Gather.Apprentice.Title,x",
+    "Quest.Procedural.Survival.Gather.Apprentice.Title2,0,0,NPC,None,vo,QST_Gather.Apprentice.Title2,x",
+    "Quest.Procedural.Survival.Gather.Warrior.Title,0,0,NPC,None,vo,QST_Gather.Warrior.Title,x",
+    "Quest.Procedural.Progression.RankUp.Title,0,0,NPC,None,vo,QST_RankUp.Apprentice.Title,x",
+    "Quest.Procedural.Sleep.Rest1.Title,0,0,NPC,None,vo,QST_Rest1.Title,x",
+    "Quest.Procedural.Progression.Escort.Warrior.Title,0,0,NPC,None,vo,QST_Escort.Warrior.Title,x",
+]) + "\n"
+
+
+def reader(files):
+    def read(path):
+        if path not in files:
+            raise KeyError(f"game file {path}")
+        return files[path]
+    return read
+
+
+PLACES = {STRINGS: EN, BASE + "LocationsData.csv": LOCATIONS, BASE + "QuestDialogues.csv": QUESTS}

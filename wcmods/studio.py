@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (animations, bridge, catcolours, colors, controls, eyeatlas, guide, menupages, menusettings, models, mods,
-               modzip, names, onboarding, packs, palettes, pipeline, recolor, story, ue4ss)
+               modzip, names, onboarding, packs, palettes, pipeline, recolor, story, ue4ss, world)
 from .formats import cooked, csvdata, png, save, texture
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
@@ -51,6 +51,7 @@ MODELS = "models"            # a mod's own models (an accessory's shape), added 
 ANIMATIONS = "animations"    # a mod's own animations (glTF), added on the Animations page
 MAX_PICTURE = 8 * 1024 ** 2
 ITEM_ROOT = "Gameplay.Inventory."
+ITEM_KINDS = {"Consumable": "consumable", "Materials": "material", "Cosmetic": "accessory"}   # a tag's third part, in words
 MAX_UPLOAD = modzip.MAX_BYTES   # a downloaded mod's .zip
 # The side bar: "play" is installing and managing mods, "make" the pages for making your own.
 BUILTIN_SECTIONS = [
@@ -171,6 +172,7 @@ class Studio:
         self.cpp_tools = None   # cppmods.status() as it was when that build started, for the page's polls
         self._eyes = None
         self._names = None   # the game's name tables, read once
+        self._name_texts = None   # the game's areas, quest titles and items' names with their text keys, read once
         self._items = None   # the game's items, read once
         self._icons = {}     # (item tag or texture, tint) -> PNG bytes
         self._skin = None    # the cat's skin, to say how far a model reaches from it
@@ -745,6 +747,8 @@ class Studio:
         if parts == ["names", "preview"] and method == "POST":
             mod_id = body.get("mod")
             return self.names_preview(names.validate(body.get("spec") or {}), mod_id if isinstance(mod_id, str) else None)
+        if parts == ["names", "texts"] and method == "GET":
+            return self.names_texts()
         if parts == ["names", "losing"] and method == "GET":
             return {"losing": self.names_losing()}
         raise LookupError("unknown API route")
@@ -921,6 +925,32 @@ class Studio:
                 "changed_names": own.changed + len(renames),
                 "changed_texts": _changed_texts(own.edits.get(names.strings_path("EN"), {}))}
 
+    def names_texts(self):
+        """What the Names page's Places, quests and items card lists, each with the text key names.json's "text"
+        renames it by: the areas and quest titles (world.place_texts), and the items' names from the game's item
+        table, by kind. An item whose name is written in the table itself rather than under a key has no key
+        (the game's own items all have one; a row a mod adds may not): the page says it can't be renamed here."""
+        if self._name_texts is None:
+            b = self._reader()
+            places = world.place_texts(lambda path: self.ctx.game.read_text(path))
+            items, seen = [], set()
+            for _, v in b.cooked_table("DT_QuestObjectsInfo"):
+                tag, name = v.get("itemTag") or "", v.get("Name") or {}
+                if not tag.startswith(ITEM_ROOT) or tag.count(".") < 3:
+                    continue
+                kind = ITEM_KINDS.get(tag.split(".")[2], tag.split(".")[2].lower())
+                if name.get("key"):
+                    text = b.text(name["key"])
+                    if text == name["key"] or name["key"] in seen:   # no text, or listed already (one name, two items)
+                        continue
+                    seen.add(name["key"])
+                    items.append({"key": name["key"], "tag": tag, "kind": kind, "text": text})
+                elif name.get("text"):
+                    items.append({"key": None, "tag": tag, "kind": kind, "text": name["text"]})
+            items.sort(key=lambda i: (i["kind"], i["text"].lower()))
+            self._name_texts = {**places, "items": items}
+        return self._name_texts
+
     def names_losing(self):
         """The cats in the save whose names are text only a mod gives (pipeline.cats_losing_text): what taking every
         mod out of the game would leave as <MISSING STRING TABLE ENTRY>. Named with the enabled mods' names when
@@ -962,8 +992,7 @@ class Studio:
                     continue
                 kind = tag.split(".")[2]
                 u = use.get(tag, {})
-                item = {"tag": tag, "kind": {"Consumable": "consumable", "Materials": "material",
-                                             "Cosmetic": "accessory"}.get(kind, kind.lower()),
+                item = {"tag": tag, "kind": ITEM_KINDS.get(kind, kind.lower()),
                         "short": tag[len(ITEM_ROOT):] if kind == "Cosmetic" else tag.split(".", 3)[3],
                         "name": name, "description": text(v.get("Description")),
                         "effect": u.get("EffectOnUse"), "type": u.get("Type"), "recipe": tag in recipes,

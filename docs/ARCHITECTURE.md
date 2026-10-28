@@ -65,8 +65,9 @@ shared `WCModsMenu` module is what other scripts add pages through. The pages ab
 of their own, Menu pages, in its own repository
 ([HexOffender/wcmods-menu-pages](https://github.com/HexOffender/wcmods-menu-pages)); `menupages`
 fetches it into the player's mods and tells the Overview what to say while a build hasn't got it. It
-uses nothing a mod can't: `WCModsMenu`, `WCModsGame` and `WCModsNames` (whose area names and quest
-titles `world.place_names` reads from the game's tables at install).
+uses nothing a mod can't: `WCModsMenu`, `WCModsGame` and `WCModsNames` (whose area names, quest titles
+and items' names `world.place_names` and `world.item_names` read at install from the build's own text,
+with names.json's renames in it, `pipeline.built_text`).
 
 ## Where things are named
 

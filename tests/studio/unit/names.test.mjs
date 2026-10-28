@@ -310,6 +310,40 @@ test("the prefix row a new part copies says the clans it's given out in", async 
   assert.deepEqual(p.json().prefixes.add, { Sparrow: { like: "Otter" } });
 });
 
+test("renaming an area, a quest title or an item writes text by key, from a list read when the card opens", async () => {
+  const state = fresh({ file: { text: { STR_BOT_NAME_1: "Hi" } } });
+  const p = await open(state);
+  let asked = 0;
+  dom.routes["GET /names/texts"] = () => {
+    asked++;
+    return {
+      areas: [{ key: "STR_RIVERCLAN_ZONE_5", code: "R-05", text: "Willow-Weep" }],
+      quests: [{ key: "QST_Gather.Apprentice.Title", tag: "Quest.Procedural.Survival.Gather", quest: "Gather", rank: "Apprentice", text: "Feathering the Nests" },
+               { key: "QST_RankUp.Apprentice.Title", tag: "Quest.Procedural.Progression.RankUp", quest: "RankUp", rank: "", text: "The Proving Grounds" }],
+      items: [{ key: "STR_ITEM_CONSUMABLE_NAME_7", tag: "Gameplay.Inventory.Consumable.MediumHealingHerb", kind: "consumable", text: "Marigold" },
+              { key: null, tag: "Gameplay.Inventory.Cosmetic.Head.Odd.1", kind: "accessory", text: "Odd Hat" }],
+    };
+  };
+  const fold = p.q('[data-key="names:places"]');
+  assert.equal(asked, 0, "folded at first, and nothing read for it");
+  assert.match(fold.querySelector("summary").textContent, /Places, quests and items1 renamed/);
+  fold.open = true;
+  fold.dispatch("toggle");
+  await tick(20);
+  assert.equal(asked, 1);
+  await p.type(p.q('input[aria-label="New text for Willow-Weep"]'), "Willow Hollow");
+  await p.type(p.q('input[aria-label="New text for Feathering the Nests"]'), "Gather for the elders");
+  assert.deepEqual(p.json().text, { STR_BOT_NAME_1: "Hi", STR_RIVERCLAN_ZONE_5: "Willow Hollow", "QST_Gather.Apprentice.Title": "Gather for the elders" });
+  assert.match(fold.querySelector("summary").textContent, /3 renamed/);
+  const rows = fold.querySelectorAll("tr").map(tr => tr.textContent);
+  assert.ok(rows.some(t => t.startsWith("The Proving GroundsRank Up quest · any rank")), rows.join(" | "));
+  assert.ok(rows.some(t => t.startsWith("Odd Hat") && t.includes("can't be renamed here")));
+  assert.ok(rows.some(t => t.startsWith("STR_BOT_NAME_1a text this file renames by its key")), "a key no list has stays, with its key");
+  // Back to the game's own: the entry goes.
+  await p.type(p.q('input[aria-label="New text for Willow-Weep"]'), "Willow-Weep");
+  assert.equal(p.json().text.STR_RIVERCLAN_ZONE_5, undefined);
+});
+
 // ---------- the logic ----------
 test("catKey names a cat by its name only when that's safe, else by its place", () => {
   const cats = CATS();

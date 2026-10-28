@@ -15,6 +15,8 @@ cats, and renames words the game shows. Everything you change is saved in your m
 - **Rogue and loner names.** Cats outside the clans have one whole name, from their own list.
 - **The ban list.** Names the game never gives a new cat, mostly the books' characters.
 - **Any other name.** The cameo cats (Brightheart, Rock...) and any text that's exactly a name.
+- **Places, quests and items.** The areas' names (the one that pops up as you walk into it), the
+  quests' titles and the items' names, each picked from a list.
 
 Renames change the English text. The other languages keep their own translations. Names you add show
 in every language, in English.
@@ -36,14 +38,18 @@ You can:
   own (Sparkle), or a prefix of your own that grows with rank;
 - give a rogue or loner a rogue name, or any name of your own;
 - rename, add and remove prefixes, suffixes and rogue names, and ban or allow names;
-- rename a cameo cat, or any name the game shows.
+- rename a cameo cat, or any name the game shows;
+- rename an area, a quest's title (each rank's, for a quest whose title changes as your cat ranks up)
+  or an item, from **Places, quests and items** at the bottom of the page. Open it, find the one you
+  want, and type its new name.
 
 You can't (yet):
 - make the game hand out a whole name of your own to new clan cats (Luna for a new kit). The game
   builds clan cats' names from the two lists, so a new name for new cats has to be a new prefix or
   suffix;
 - rename a cat while the game is open: close it, Apply, and play again;
-- change names in other languages.
+- change names in other languages;
+- add a line for a cat to say, or change a quest itself (only its title).
 
 **A name of your own is text your mod adds to the game.** The game shows it only while that mod is
 on. Keep the mod on, and keep it on when you share the mod with friends.
@@ -57,6 +63,9 @@ on. Keep the mod on, and keep it on when you share the mod with friends.
   anything worth checking.
 - After Apply to game, the list shows your cats' new names straight away.
 - In the game, your cat's name shows on screen while you play and on the Select Your Cat screen.
+- A renamed area, quest or item shows in the mod menu's pages. The game's own screens (the area's name
+  as you walk in, the quest log, your inventory) haven't all been checked yet: if one still shows the
+  old name, the mod menu's pages still show yours.
 
 ## Common mistakes
 

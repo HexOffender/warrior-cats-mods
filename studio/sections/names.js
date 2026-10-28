@@ -5,7 +5,7 @@
 import {
   KEEP, readNames, writeNames, splitName, catNames, catKey, countNames, entryKeyFor, entryText, catEntry,
   canGrow, outcomeLine, gameNameFor, rankWords, slotHeading, whereWords, clansWords, ranksWords, summary, notesAt,
-  textOf,
+  textOf, questGroups, otherTexts, KIND_WORDS,
 } from "./names-logic.js";
 
 const LEDE = "Rename your cats, the names new cats get, and the words the game shows.";
@@ -26,12 +26,15 @@ export default {
     let partRows = { prefixes: [], suffixes: [], rogues: [] };   // [{ x, tr, rename, remove, reset, said }]
     let nameRows = [];   // [{ name, also }]
     let banChips = [];   // [{ b, chip }]
+    let texts = null, placeRows = [];   // the Places card's lists (GET /names/texts), once opened, and its rows
     let drawnProblem = null;   // the save problem the cats card says, if any
     // Whether the cats card has to be drawn again for the latest preview: other cats, or another save problem.
     const listChanged = () => [...rows.keys()].join("|") !== (view.cats || []).map(c => c.target).join("|")
       || (view.save_problem || null) !== drawnProblem;
     const cards = { cats: card("cats"), prefixes: card("prefixes"), suffixes: card("suffixes"), rogues: card("rogues"),
-                    names: card("names"), banned: card("banned") };
+                    names: card("names"), banned: card("banned"),
+                    places: el("details", { class: "card fold names-places", "data-key": "names:places" }) };
+    cards.places.addEventListener("toggle", () => openPlaces());
     const notes = el("div", { class: "card names-summary" });
     const out = wc.codePanel("names.json");
     const loading = el("p", { class: "note", role: "status", text: "Reading the game's names…" });
@@ -55,7 +58,7 @@ export default {
       onLoad: obj => { load(obj); render(); preview(); },
       getValue: () => writeNames(spec, extra),
     });
-    root.append(target.element, notes, cards.cats, cards.prefixes, cards.suffixes, cards.rogues, cards.names, cards.banned, out.element);
+    root.append(target.element, notes, cards.cats, cards.prefixes, cards.suffixes, cards.rogues, cards.names, cards.banned, cards.places, out.element);
     // After an Apply the save has the new names: the cats are read again even with changes not saved (the file
     // isn't touched), and the file itself only while there are none (wc.installedEvent).
     const off = [
@@ -104,7 +107,7 @@ export default {
       renderCats();
       renderAffixes("prefixes", "Prefixes", "The first part of a clan cat's name. Renaming changes every name with it (Otterpaw, Otterheart…).", game.prefixes, p => clansWords(p.weights));
       renderAffixes("suffixes", "Suffixes", "The second part, which changes with rank: kits are -kit, apprentices -paw, leaders -star. Those three can be renamed but not removed.", game.suffixes, s => ranksWords(s.weights));
-      renderRogues(); renderNames(); renderBanned(); renderNotes();
+      renderRogues(); renderNames(); renderBanned(); renderPlaces(); renderNotes();
       updateParts();
       out.set(writeNames(spec, extra));
     }
@@ -450,6 +453,7 @@ export default {
       }
       updateNames();
       updateBanned();
+      updatePlaces();
     }
 
     // ---------- cameo cats and any name ----------
@@ -516,6 +520,80 @@ export default {
     // A banned name shows as it will read after this page's renames (Lionstar, once Tiger is renamed Lion).
     function updateBanned() {
       for (const { b, chip } of banChips) chip.textContent = textOf(game, b.prefix, b.suffix, view.final) || b.name;
+    }
+
+    // ---------- places, quests and items ----------
+    // Folded at first: the lists are read from the game (GET /names/texts) the first time it's opened. Each
+    // Rename box writes names.json's "text" by the key the game shows that text from.
+    function renderPlaces() {
+      const s = spec.text;
+      const count = Object.keys(s).length;
+      const fold = cards.places;
+      const wasOpen = fold.open;
+      clear(fold).append(el("summary", {}, el("h2", { text: "Places, quests and items" }),
+        el("span", { class: "muted", text: count ? `${count} renamed` : "Rename an area, a quest's title or an item" })));
+      fold.open = wasOpen;
+      if (!texts) {
+        fold.append(el("p", { class: "note", role: "status", text: "Opens with the game's areas, quest titles and items." }));
+        return;
+      }
+      placeRows = [];
+      const filter = el("input", { type: "search", placeholder: "Find a place, quest or item", "aria-label": "Find a place, quest or item", style: { minWidth: "16rem" } });
+      const row = (item, detail) => {
+        const said = el("div", { class: "names-said" });
+        const box = item.key ? el("input", { type: "text", value: s[item.key] || "", placeholder: item.text, "aria-label": `New text for ${item.text}`, spellcheck: "false",
+          onchange: e => { const v = e.target.value.trim(); if (!v || v === item.text) delete s[item.key]; else s[item.key] = v; changed(); renderPlacesCount(); } })
+          : el("span", { class: "muted", text: "written into the game's item table, so it can't be renamed here" });
+        const tr = el("tr", { "data-find": `${item.text} ${detail}`.toLowerCase() },
+          el("td", {}, el("strong", { text: item.text }), el("div", { class: "muted names-where", text: detail }), said), el("td", {}, box));
+        placeRows.push({ key: item.key, tr, said });
+        return tr;
+      };
+      const table = trs => el("div", { class: "table-wrap" }, el("table", { class: "grid-table" },
+        el("thead", {}, el("tr", {}, el("th", { text: "In the game" }), el("th", { text: "Rename to" }))), el("tbody", {}, ...trs)));
+      const part = (title, trs) => el("details", { class: "fold", "data-key": `names:places:${title}` },
+        el("summary", {}, el("strong", { text: title }), el("span", { class: "muted", text: `${trs.length}` })), table(trs));
+      const areas = texts.areas.map(a => row(a, `area ${a.code}`));
+      const quests = questGroups(texts.quests).flatMap(g => g.titles.map(q => row(q, `${g.quest} quest · ${q.rank ? `as ${q.rank.toLowerCase()}` : "any rank"}`)));
+      const kinds = [...new Set(texts.items.map(i => i.kind))];
+      const items = kinds.map(k => part(KIND_WORDS[k] || k, texts.items.filter(i => i.kind === k).map(i => row(i, k === "consumable" ? "herb" : k))));
+      const others = otherTexts(s, texts).map(key => row({ key, text: key }, "a text this file renames by its key"));
+      filter.addEventListener("input", () => {
+        const q = filter.value.trim().toLowerCase();
+        for (const r of placeRows) r.tr.hidden = !!q && !r.tr.dataset.find.includes(q);
+        // While searching, a list with a match is unfolded and one without any is out of the way.
+        for (const d of fold.querySelectorAll("details")) {
+          const hits = [...d.querySelectorAll("tr")].filter(tr => tr.dataset.find && !tr.hidden).length;
+          d.hidden = !!q && !hits;
+          if (q) d.open = hits > 0;
+        }
+      });
+      fold.append(
+        el("p", { class: "note", text: "Each is a text the game shows. Renaming it changes it in English wherever the game uses it, and in the mod menu's pages. Not every game screen has been checked yet: if one still shows the old name, the mod menu shows yours." }),
+        el("div", { class: "row" }, filter),
+        part("Areas", areas), part("Quest titles", quests), ...items,
+        others.length ? part("Other text", others) : null);
+      updatePlaces();
+    }
+    function renderPlacesCount() {
+      const n = Object.keys(spec.text).length;
+      const said = cards.places.querySelector("summary")?.querySelector("span");
+      if (said) said.textContent = n ? `${n} renamed` : "Rename an area, a quest's title or an item";
+    }
+    async function openPlaces() {
+      if (texts || !cards.places.open) return;
+      clear(cards.places).append(el("summary", {}, el("h2", { text: "Places, quests and items" })),
+        el("p", { class: "note", role: "status", text: "Reading the game's areas, quests and items…" }));
+      cards.places.open = true;
+      try { texts = await api.get("/names/texts"); }
+      catch (e) {
+        cards.places.append(el("p", { class: "names-bad", role: "alert", text: `Couldn't read them: ${e.message}` }));
+        return;
+      }
+      renderPlaces();
+    }
+    function updatePlaces() {
+      for (const r of placeRows) clear(r.said).append(...(r.key ? notesAt(view, `text.${r.key}`) : []).map(t => el("div", { class: "names-note", text: t })));
     }
 
     // ---------- what this does ----------

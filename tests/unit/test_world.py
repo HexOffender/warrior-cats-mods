@@ -1,45 +1,14 @@
-"""world.place_names: the game's area names and quest titles, which WCModsNames gives the mod menu's pages
-(N.area, N.quest), read from small copies of the game's text tables."""
-from wcmods import luacheck, world
+"""world.place_texts and place_names: the game's area names and quest titles with the text keys they're
+shown from, which the Names page lists and WCModsNames gives the mod menu's pages (N.area, N.quest); and
+the build reading them, with items' names, from its own edited Strings_EN. All from small copies of the
+game's text tables."""
+from wcmods import luacheck, pipeline, world
 
-STRINGS = "Wrc/Content/Gameplay/Strings/NonAsset/Strings_EN.csv"
-BASE = "Wrc/Content/Gameplay/DataTables/NonAsset/"
-EN = """Key,SourceString
-STR_RIVERCLAN_ZONE_5,Willow-Weep
-QST_Gather.Apprentice.Title,Feathering the Nests
-QST_Gather.Apprentice.Title2,Feathering the Nests (again)
-QST_Gather.Warrior.Title,Preparation is Readiness!
-QST_RankUp.Apprentice.Title,The Proving Grounds
-QST_Rest1.Title,A Time to Rest
-"""
-LOCATIONS = """---,Code,LocationType,IdStrName
-1,R-05,Riverclan,STR_RIVERCLAN_ZONE_5
-2,R-06
-"""
-HEAD = "---,Score,ClanBonding,Talker,Trait,VoiceOver,StringKey,DebugText"
-QUESTS = "\n".join([
-    HEAD,
-    "Quest.Procedural.Survival.Gather.Apprentice.Title,0,0,NPC,None,vo,QST_Gather.Apprentice.Title,x",
-    "Quest.Procedural.Survival.Gather.Apprentice.Title2,0,0,NPC,None,vo,QST_Gather.Apprentice.Title2,x",
-    "Quest.Procedural.Survival.Gather.Warrior.Title,0,0,NPC,None,vo,QST_Gather.Warrior.Title,x",
-    "Quest.Procedural.Progression.RankUp.Title,0,0,NPC,None,vo,QST_RankUp.Apprentice.Title,x",
-    "Quest.Procedural.Sleep.Rest1.Title,0,0,NPC,None,vo,QST_Rest1.Title,x",
-]) + "\n"
-
-
-def reader(files):
-    def read(path):
-        if path not in files:
-            raise KeyError(f"game file {path}")
-        return files[path]
-    return read
-
-
-GAME = {STRINGS: EN, BASE + "LocationsData.csv": LOCATIONS, BASE + "QuestDialogues.csv": QUESTS}
+from tiny_names import EN, PLACES, STRINGS, reader
 
 
 def test_place_names_reads_areas_and_ranked_quest_titles():
-    areas, quests = world.place_names(reader(GAME))
+    areas, quests = world.place_names(reader(PLACES))
     assert areas == {"R-05": "Willow-Weep"}   # a short row (no name key) is left out
     assert quests["Quest.Procedural.Survival.Gather"] == {"Apprentice": "Feathering the Nests",
                                                           "Warrior": "Preparation is Readiness!"}   # .Title2 rows aren't titles
@@ -48,17 +17,63 @@ def test_place_names_reads_areas_and_ranked_quest_titles():
 def test_place_names_rankup_titles():
     """A title with no rank segment is its quest's own, under its whole tag, not a quest cut short with the last
     segment as its rank (RankUp's title was filed under Progression, as rank "RankUp")."""
-    _, quests = world.place_names(reader(GAME))
+    _, quests = world.place_names(reader(PLACES))
     assert quests["Quest.Procedural.Progression.RankUp"] == {"": "The Proving Grounds"}
     assert quests["Quest.Procedural.Sleep.Rest1"] == {"": "A Time to Rest"}
     assert "Quest.Procedural.Progression" not in quests and "Quest.Procedural.Sleep" not in quests
+
+
+def test_a_quest_title_with_no_text_is_left_out_rather_than_shown_as_its_key():
+    _, quests = world.place_names(reader(PLACES))
+    assert "Quest.Procedural.Progression.Escort" not in quests
 
 
 def test_place_names_without_the_text_table_gives_nothing():
     assert world.place_names(reader({})) == ({}, {})
 
 
+def test_place_texts_keeps_the_key_each_is_shown_from():
+    texts = world.place_texts(reader(PLACES))
+    assert texts["areas"] == [{"key": "STR_RIVERCLAN_ZONE_5", "code": "R-05", "text": "Willow-Weep"}]
+    assert texts["quests"][0] == {"key": "QST_Gather.Apprentice.Title", "tag": "Quest.Procedural.Survival.Gather",
+                                  "quest": "Gather", "rank": "Apprentice", "text": "Feathering the Nests"}
+    assert [q["quest"] for q in texts["quests"]] == ["Gather", "Gather", "RankUp", "Rest1"]
+
+
 def test_names_lua_takes_a_title_with_no_rank():
-    lua = world.names_lua(places=world.place_names(reader(GAME)))
+    lua = world.names_lua(places=world.place_names(reader(PLACES)))
     assert '["Quest.Procedural.Progression.RankUp"] = { [""] = "The Proving Grounds" }' in lua
     assert not luacheck.check(lua)
+
+
+class Build:
+    """What the build's text reader looks at: the files the build made (names.json's "text" edits a copy of
+    Strings_EN), and the game's item table with the rows mods add."""
+
+    def __init__(self, files):
+        self.files = {path: (text.encode("utf-8"), "names", "csv edits") for path, text in files.items()}
+        self.table_rows = {}
+
+    def cooked_table(self, name):
+        return [("Marigold", {"itemTag": "Gameplay.Inventory.Consumable.MediumHealingHerb",
+                              "Name": {"table": "SwtStrings", "key": "STR_ITEM_CONSUMABLE_NAME_7"}})]
+
+    def text(self, key):
+        raise AssertionError("the game's own text: the build's edited copy should be read")
+
+
+class Game:
+    def read_text(self, path):
+        return reader(PLACES)(path)
+
+
+def test_build_names_lua_uses_the_edited_strings():
+    edited = EN.replace("Willow-Weep", "Willow Hollow").replace(",Marigold", ",Sunpetal")
+    build = Build({STRINGS: edited})
+    read = pipeline.built_text(build, Game())
+    lua = world.names_lua(None, world.item_names(build, pipeline.english(read)), world.place_names(read))
+    assert '["R-05"] = "Willow Hollow"' in lua and '"Sunpetal"' in lua
+    # Without an edited copy, the game's own.
+    read = pipeline.built_text(Build({}), Game())
+    assert world.place_names(read)[0] == {"R-05": "Willow-Weep"}
+    assert pipeline.english(read)("STR_ITEM_CONSUMABLE_NAME_7") == "Marigold" and pipeline.english(read)("NOPE") == "NOPE"

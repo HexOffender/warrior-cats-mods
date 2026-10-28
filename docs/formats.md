@@ -351,8 +351,13 @@ of this. Names are matched by their English text (any case) or ID.
 - **`names`:** changes every text that's exactly this name, including the nine canon cameo cats.
   Some cameo names are also clan names (Brightheart is Bright + heart), so both change, and some are
   something else in the game too (Rock is a cameo cat and a crafting material, Fox a rogue and an
-  animal): the Names page says under each entry what else it renames. `text` sets any of the game's
-  text by key: `{ "STR_BOT_NAME_1": "..." }`.
+  animal): the Names page says under each entry what else it renames.
+- **`text`:** sets any of the game's texts by its key, in English, for anything that isn't a cat's
+  name: an area, a quest's title, an item's name. `{ "STR_RIVERCLAN_ZONE_5": "Willow Hollow",
+  "QST_Gather.Apprentice.Title": "Gather for the elders", "STR_ITEM_CONSUMABLE_NAME_7": "Sunpetal" }`. The
+  Names page's Places, quests and items card lists them with their keys and writes this. The mod
+  menu's pages read the build's renamed texts, so they show the new names. A key the game hasn't got is
+  added, with a warning.
 - **`cats`:** renames cats in your save on install, after a backup. Each key picks a cat: `player`,
   its current name, or its place from `names --cats` (`RiverClan/Warrior/3`), with `"was"` for the
   name it has there (`{ "name": "Mothheart", "was": "Woodheart" }`), so the entry stops counting if

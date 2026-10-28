@@ -95,8 +95,7 @@ def names_without_text(cfg, ctx, game):
         text = SaveGame.load(sav).json_text if os.path.isfile(sav) else ""
         if "_WCM_" not in text:
             return []
-        path = BuildContext.data_path(names.strings_path("EN"))
-        strings = ctx.files[path][0].decode("utf-8") if path in ctx.files else game.read_text(path)
+        strings = built_text(ctx, game)(BuildContext.data_path(names.strings_path("EN")))
         keys = {r.fields[0] for r in Table(strings).rows if r.fields}
         missing = names.losing_text(names.cats_in_save(SaveDoc(text).data), ctx.save_ops, keys.__contains__)
     except Exception as e:   # said, so the check isn't skipped unseen
@@ -111,6 +110,26 @@ def names_without_text(cfg, ctx, game):
             f"Turn the mod that named {them} back on (or, if it's left out as made for an older version of the game, "
             f"use it anyway), or rename {them} on the Names page; Backups and repair puts your save back as it was "
             "before"]
+
+
+def built_text(ctx, game):
+    """read_text(path) for the game's text files as this build leaves them: the build's own copy when a
+    section edited it (after ctx.resolve_csv_edits), else the game's."""
+    def read(path):
+        return ctx.files[path][0].decode("utf-8") if path in ctx.files else game.read_text(path)
+    return read
+
+
+def english(read_text):
+    """text(key): the English text under a key in Strings_EN as read_text reads it, the key itself when there's
+    none (as BuildContext.text). Read once."""
+    table = {}
+
+    def text(key):
+        if not table:
+            table.update({r.fields[0]: r.fields[1] for r in Table(read_text(world.STRINGS_EN)).rows if len(r.fields) > 1})
+        return table.get(key, key)
+    return text
 
 
 def _losing_cat(cat, ids, plan=None):
@@ -371,13 +390,16 @@ def build(cfg, mods, out_dir, log=print):
                           names.merge(names.mod_specs(enabled)))
     except Exception as e:   # no game data (no Oodle DLL) or a broken names.json, which the names section reports
         log(f"  (cat names for the mod menu left out: {e})")
+    # Items' names, areas' names and quests' titles as this build leaves them: names.json's "text" renames them
+    # in the build's own Strings_EN, so the mod menu's pages follow the game.
+    read = built_text(ctx, game)
     item_labels = {}
     try:   # items' own names, for the Nearby page's labels
-        item_labels = world.item_names(ctx)
+        item_labels = world.item_names(ctx, english(read))
     except Exception as e:   # no game data (no Oodle DLL)
         log(f"  (item names for the mod menu left out: {e})")
     # Areas' names and quests' titles, for the menu's pages (WCModsNames' N.area and N.quest).
-    places = world.place_names(lambda path: game.read_text(path))
+    places = world.place_names(read)
     shared_files[world.NAMES_NAME] = world.names_lua(plan, item_labels, places)
     for name, (text, section) in ctx.ue4ss_shared.items():   # the sections' own (items: WCModsItems)
         if name.lower() in {n.lower() for n in shared_files}:   # folders on Windows don't mind the case

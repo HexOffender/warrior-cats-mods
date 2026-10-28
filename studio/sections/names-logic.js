@@ -3,10 +3,10 @@
 // studio/sections/names.js draws the page with these; tests/studio/unit/names.test.mjs checks them. The answers
 // they read are the studio's GET /names and POST /names/preview (wcmods/studio.py, names_preview).
 
-// What the page edits; the rest of a names.json (weights, banned.clear, text) is kept as written.
+// What the page edits; the rest of a names.json (weights, banned.clear) is kept as written.
 export const EMPTY = () => ({
   prefixes: { rename: {}, add: {}, remove: [] }, suffixes: { rename: {}, add: {}, remove: [] },
-  rogues: { rename: {}, add: [], remove: [] }, banned: { add: [], remove: [] }, names: {}, cats: {},
+  rogues: { rename: {}, add: [], remove: [] }, banned: { add: [], remove: [] }, names: {}, cats: {}, text: {},
 });
 // Kits, apprentices and leaders have one suffix each; the build keeps them even if asked to remove them.
 export const KEEP = ["kit", "paw", "star"];
@@ -45,7 +45,7 @@ export function readNames(obj, game) {
     if (k.startsWith("_")) continue;
     if (!(k in spec) || !v || typeof v !== "object" || Array.isArray(v)) { extra[k] = v; continue; }
     for (const [op, val] of Object.entries(v)) {
-      if (k === "names" || k === "cats") { spec[k][op] = val; continue; }
+      if (k === "names" || k === "cats" || k === "text") { spec[k][op] = val; continue; }
       const want = spec[k][op];
       if (want === undefined || Array.isArray(want) !== Array.isArray(val) || !val || typeof val !== "object") {
         (extra[k] ||= {})[op] = val;   // weights, banned.clear, or a shape this page doesn't edit: kept as written
@@ -72,7 +72,7 @@ export function writeNames(spec, extra = {}) {
   const o = { _help: "Written by Clan Mod Studio. See docs/formats.md, names.json." };
   for (const [k, v] of Object.entries(spec)) {
     const part = {};
-    if (k === "names" || k === "cats") Object.assign(part, v);
+    if (k === "names" || k === "cats" || k === "text") Object.assign(part, v);
     else for (const [op, val] of Object.entries(v)) if (Array.isArray(val) ? val.length : Object.keys(val).length) part[op] = val;
     if (extra[k] && typeof extra[k] === "object" && !Array.isArray(extra[k])) Object.assign(part, extra[k]);
     if (Object.keys(part).length) o[k] = part;
@@ -246,6 +246,27 @@ export function summary(view) {
   if (n || t) said.push(`${plural(n, "name")} and ${plural(t, "text")} in the game change or are added`);
   if (r.length) said.push(`${plural(r.length, "cat")} renamed in your save: ${r.map(x => `${x.from} → ${x.to}`).join(", ")}`);
   return said.length ? said.join("; ") + "." : "Nothing changes yet: rename something below.";
+}
+
+// ---------- places, quests and items ----------
+// A quest's name from its tag's last part: "RankUp" is "Rank Up", "Rest1" "Rest 1".
+export function questWords(quest) {
+  return String(quest || "").replace(/([a-z])([A-Z0-9])/g, "$1 $2");
+}
+// The quest titles of GET /names/texts grouped by quest, in the order they come: [{ quest, tag, titles: [...] }].
+export function questGroups(quests) {
+  const groups = new Map();
+  for (const q of quests || []) {
+    if (!groups.has(q.tag)) groups.set(q.tag, { quest: questWords(q.quest), tag: q.tag, titles: [] });
+    groups.get(q.tag).titles.push(q);
+  }
+  return [...groups.values()];
+}
+export const KIND_WORDS = { consumable: "Herbs", material: "Materials", accessory: "Accessories", decoration: "Decorations" };
+// The "text" entries none of the lists has: kept, and shown with their key so they can be changed or taken out.
+export function otherTexts(entries, texts) {
+  const known = new Set([...(texts?.areas || []), ...(texts?.quests || []), ...(texts?.items || [])].map(x => x.key).filter(Boolean));
+  return Object.keys(entries || {}).filter(k => !known.has(k));
 }
 
 // The planner's notes about one part of names.json ("prefixes.rename.Otter", "cats.player").

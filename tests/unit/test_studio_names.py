@@ -13,7 +13,7 @@ from wcmods import guide, pipeline
 from wcmods.formats.save import SAV_NAME
 
 from unit_helpers import REPO, make_mod, write_save
-from tiny_names import cat, save, tiny_game
+from tiny_names import PLACES, cat, reader, save, tiny_game
 
 SPARKLE = cat("Warrior", "STR_CAT_NAME_WCM_FIXED_SPARKLE", "_HEART")   # named Sparkle by a mod
 WOOD = cat("Warrior", "STR_CAT_NAME1", "_HEART")                       # Woodheart, the game's own name
@@ -175,6 +175,55 @@ def test_a_mod_named_cat_says_the_name_it_had_as_its_mods_file_says(names_studio
     by_place = {"cats": {"RiverClan/Warrior/0": {"fixed": "Sparkle", "was": "Wrenheart"}}}
     r = call(names_studio, "POST", "names/preview", {"spec": by_place, "mod": "mine"})
     assert listed(r)["RiverClan/Warrior/0"]["before"] == "Wrenheart"   # the page's file counts too, and says last
+
+
+# ---------- places, quests and items ----------
+class Reader:
+    """The studio's reader of the game's tables (Studio._reader), with a small item table."""
+    TEXT = {"STR_ITEM_CONSUMABLE_NAME_7": "Marigold", "STR_CRAFT_MATERIAL_NAME_20": "Rock", "STR_CAT_ACCESSORY_HEAD_12": "Big Leaf"}
+
+    def cooked_table(self, name):
+        rows = [("1", {"itemTag": "Gameplay.Inventory.Consumable.MediumHealingHerb", "Name": {"key": "STR_ITEM_CONSUMABLE_NAME_7"}}),
+                ("2", {"itemTag": "Gameplay.Inventory.Materials.Rock", "Name": {"key": "STR_CRAFT_MATERIAL_NAME_20"}}),
+                ("3", {"itemTag": "Gameplay.Inventory.Materials.Rock2", "Name": {"key": "STR_CRAFT_MATERIAL_NAME_20"}}),   # one name, two items
+                ("4", {"itemTag": "Gameplay.Inventory.Cosmetic.Head.BigLeaf.1", "Name": {"key": "STR_CAT_ACCESSORY_HEAD_12"}}),
+                ("5", {"itemTag": "Gameplay.Inventory.Cosmetic.Head.Odd.1", "Name": {"text": "Odd Hat"}}),
+                ("6", {"itemTag": "Gameplay.Inventory.Cosmetic.Head.None.1", "Name": {"key": "STR_NO_TEXT"}}),
+                ("7", {"itemTag": "Gameplay.Quest.NPC.Giver.Kit", "Name": {"key": "STR_GIVER_ROLE_KIT"}})]
+        assert name == "DT_QuestObjectsInfo"
+        return rows
+
+    def text(self, key):
+        return self.TEXT.get(key, key)
+
+
+def test_texts_lists_areas_quests_and_items(studio, fake_game):
+    class Game:
+        def read_text(self, path):
+            return reader(PLACES)(path)
+    studio.ctx._game = Game()
+    studio._reader = lambda: Reader()
+    r = call(studio, "GET", "names/texts")
+    assert r["areas"] == [{"key": "STR_RIVERCLAN_ZONE_5", "code": "R-05", "text": "Willow-Weep"}]
+    assert [(q["quest"], q["rank"], q["text"]) for q in r["quests"]] == [
+        ("Gather", "Apprentice", "Feathering the Nests"), ("Gather", "Warrior", "Preparation is Readiness!"),
+        ("RankUp", "", "The Proving Grounds"), ("Rest1", "", "A Time to Rest")]
+    assert [(i["kind"], i["text"], i["key"]) for i in r["items"]] == [
+        ("accessory", "Big Leaf", "STR_CAT_ACCESSORY_HEAD_12"), ("accessory", "Odd Hat", None),
+        ("consumable", "Marigold", "STR_ITEM_CONSUMABLE_NAME_7"), ("material", "Rock", "STR_CRAFT_MATERIAL_NAME_20")]
+
+
+def test_items_with_inline_text_have_no_key_to_rename_them_by(studio, fake_game):
+    studio.ctx._game = type("Game", (), {"read_text": lambda self, path: (_ for _ in ()).throw(KeyError(path))})()
+    studio._reader = lambda: Reader()
+    items = call(studio, "GET", "names/texts")["items"]
+    assert [i for i in items if i["key"] is None] == [{"key": None, "tag": "Gameplay.Inventory.Cosmetic.Head.Odd.1",
+                                                        "kind": "accessory", "text": "Odd Hat"}]
+
+
+def test_texts_without_a_game_ends_as_names_does(studio):
+    with pytest.raises(SystemExit):
+        call(studio, "GET", "names/texts")
 
 
 # ---------- the page's guide ----------

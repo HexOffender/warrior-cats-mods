@@ -254,6 +254,9 @@ Fawnstar, as a player reported it showing "Cat 1"):
   unchecked (2026-10-28, the planner's fixes, tested without the game): a rogue name given to a clan
   cat showing as that fixed name (Storm), one of the game's prefixes given to a rogue or loner showing
   alone (Otter, from a text under the prefix's ID), and the mod menu's pages titling rank-less quests
-  (Rank Up, the Sleep quests) by their own titles.
+  (Rank Up, the Sleep quests) by their own titles. And names.json's `text` for an area, a quest's title
+  or an item: the build writes the renamed text and the mod menu's pages read it, but whether the
+  game's own screens follow (the area's name as you walk in, the quest log, the inventory) hasn't been
+  looked at.
 
 After a game update, run `selftest` before installing again ([updating.md](updating.md)).
