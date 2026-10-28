@@ -642,7 +642,8 @@ def test_installing_with_stale_code_is_refused(studio, fake_game, monkeypatch):
 
 
 def test_uninstalling_from_a_game_with_nothing_in_it_removes_nothing(studio, fake_game, sandbox):
-    assert post(studio, "uninstall") == {"log": [], "result": {"removed": []}, "summary": None}
+    assert post(studio, "uninstall") == {"log": [], "result": {"removed": [], "losing": []},
+                                         "summary": "Took every mod out of the game. Your mods are still here."}
     sandbox.running = True
     with pytest.raises(RuntimeError, match="running"):
         post(studio, "uninstall")

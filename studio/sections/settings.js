@@ -130,9 +130,49 @@ export default {
           el("div", { class: "row" },
             el("button", { class: "btn small", text: "Check my mods", onclick: () => bus.emit("run-task", { path: "/build", title: "Check mods" }) }),
             el("span", { class: "muted", text: "Builds them without installing, to see what each one does and any problems." })),
-          el("div", { class: "row" },
-            confirmButton("Take all mods out of the game", "Press again to take them out", () => bus.emit("run-task", { path: "/uninstall", title: "Take mods out" }), "btn small danger"),
-            el("span", { class: "muted", text: "Your mods stay here, and key changes come out with them. Save edits stay in your save; restore a save backup to undo those." }))));
+          ...takeOut()));
+    }
+
+    // "Take all mods out of the game": first, the cats in the save whose names only the mods give (they'd show as
+    // <MISSING STRING TABLE ENTRY>). With none, two presses take the mods out, as with any button that can't be
+    // undone here; with some, the page says which and offers the Names page instead.
+    function takeOut() {
+      const label = "Take all mods out of the game", armedLabel = "Press again to take them out";
+      const b = el("button", { class: "btn small danger", type: "button", text: label });
+      const ask = el("div", { class: "banner", role: "group", "aria-label": "Cats that would lose their names", hidden: true });
+      let armed = null;
+      const disarm = () => { clearTimeout(armed); armed = null; b.textContent = label; b.classList.remove("armed"); };
+      const run = () => { ask.hidden = true; bus.emit("run-task", { path: "/uninstall", title: "Take mods out" }); };
+      b.addEventListener("click", async () => {
+        if (armed) { disarm(); run(); return; }
+        let losing = [];
+        try { losing = (await api.get("/names/losing")).losing || []; } catch (e) { /* asked as before */ }
+        if (losing.length) {
+          const n = losing.length, one = n === 1;
+          const said = `${one ? "A cat" : `${n} cats`} in your save ${one ? "has a name" : "have names"} only your mods give (${catsInWords(losing)}). After this ${one ? "it shows" : "they show"} as <MISSING STRING TABLE ENTRY> until you put a backup of your save back, or give ${one ? "it a game name" : "them game names"} on the Names page and Apply first.`;
+          clear(ask).append(el("span", { text: said }), el("div", { class: "row" },
+            el("button", { class: "btn danger small", type: "button", text: "Take them out anyway", onclick: run }),
+            el("a", { class: "btn small", href: "#names", text: "Open Names" })));
+          ask.hidden = false;
+          announce(said);
+          ask.querySelector("button").focus();
+          return;
+        }
+        b.textContent = armedLabel;
+        b.classList.add("armed");
+        announce(armedLabel);
+        armed = setTimeout(disarm, 6000);
+      });
+      b.addEventListener("blur", () => { if (armed) disarm(); });
+      return [el("div", { class: "row" }, b,
+        el("span", { class: "muted", text: "Your mods stay here, and key changes come out with them. Save edits stay in your save; restore a save backup to undo those." })), ask];
+    }
+    // "your cat (Sparkle), Wrenheart, the cat at RiverClan · Warrior · 3 and 2 more", from GET /names/losing.
+    function catsInWords(cats) {
+      const words = cats.slice(0, 3).map(c => c.player ? (c.name ? `your cat (${c.name})` : "your cat")
+        : c.name || `the cat at ${String(c.where || "").split("/").join(" · ")}`);
+      if (cats.length > 3) words.push(`${cats.length - 3} more`);
+      return words.length === 1 ? words[0] : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
     }
 
     // ---------- making your own ----------

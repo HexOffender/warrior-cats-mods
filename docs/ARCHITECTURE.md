@@ -14,7 +14,7 @@ A map of the code for anyone changing it. What each part does for a player is in
 | `wcmods/agent/` | The agent controller that drives the running game ([agent.md](agent.md)) |
 | `wcmods/cpp_sdk/` | `WCMods.hpp` and its headers for C++ mods, and the build files `cpp ide` makes |
 | `wcmods/templates/` | What `wcmods new --kind ...` copies |
-| `studio/` | Clan Mod Studio's front end: `index.html`, `app.js` (the shell: side bar, Apply and Play, the log drawer with the task's progress and a plain summary, Last apply, the help panel, the Restart the studio button, and what the page does when its server is gone), `lib/wc.js` (the helpers every page uses: `modTarget`, the Editing mod bar that keeps unsaved work, among them), `lib/*.js` (a page's own logic with no page in it, so node:test can load it: `story.js`, `shape.js`, `controls.js`), `sections/*.js` (one module per page, and its `.css` when it has one) |
+| `studio/` | Clan Mod Studio's front end: `index.html`, `app.js` (the shell: side bar, Apply and Play, the log drawer with the task's progress and a plain summary, Last apply, the help panel, the Restart the studio button, and what the page does when its server is gone), `lib/wc.js` (the helpers every page uses: `modTarget`, the Editing mod bar that keeps unsaved work, among them), `lib/*.js` (a page's own logic with no page in it, so node:test can load it: `story.js`, `shape.js`, `controls.js`), `sections/*.js` (one module per page, with its own `<page>.css` when it has one, and its plain logic beside it when that's tested on its own: `names-logic.js`) |
 | `docs/guide/` | The guide inside the studio: one Markdown page per topic, rendered by `wcmods/guide.py` into the help panel (and at `/help/<page>` on its own) |
 | *(not in the repository)* | The player's own files: `mods/`, `wcmods.json` and `backups/`, in `%LOCALAPPDATA%\WCMods` (`config.data_dir()`, `WCMODS_DATA` to move it), so `git pull` or a new download never touches them; beside them `last-apply.log` (what the last Apply or Play logged, the page's Last apply) and `studio.log` (the tracebacks behind the studio's "Something went wrong"), and a damaged `wcmods.json` set aside as `wcmods.json.broken-<stamp>`. Older versions kept them here; `userdata.migrate` moves them out on the first start |
 | `tests/` | `unit/` (pytest, no game: the formats, the Lua, mods, and the studio's API and HTTP handler over temporary folders), `studio/` (`node --test`: the studio's JavaScript helpers under a DOM shim, and `e2e/`, the studio in a headless Chromium driven over the DevTools protocol by `lib/browser.mjs`, started on a throwaway folder by `lib/studio.mjs`), `game/` (in-game, run by `agent test`), `cpp-sdk/` (a C++ test mod), `kraken/` (fixtures for the decoder) |
@@ -67,8 +67,9 @@ shared `WCModsMenu` module is what other scripts add pages through. The pages ab
 of their own, Menu pages, in its own repository
 ([HexOffender/wcmods-menu-pages](https://github.com/HexOffender/wcmods-menu-pages)); `menupages`
 fetches it into the player's mods and tells the Overview what to say while a build hasn't got it. It
-uses nothing a mod can't: `WCModsMenu`, `WCModsGame` and `WCModsNames` (whose area names and quest
-titles `world.place_names` reads from the game's tables at install).
+uses nothing a mod can't: `WCModsMenu`, `WCModsGame` and `WCModsNames` (whose area names, quest titles
+and items' names `world.place_names` and `world.item_names` read at install from the build's own text,
+with names.json's renames in it, `pipeline.built_text`).
 
 ## Where things are named
 

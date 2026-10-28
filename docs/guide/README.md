@@ -7,6 +7,8 @@ panel.
   mod, Apply to game and Play, the log, what Undo means here, and where your files are. Start here.
 - [Controls](controls.md): which key, mouse button or controller button does what, a second key for an
   action, keys in menus, and what the page says before you apply.
+- [Names](names.md): renaming the cats in your save, the parts of clan names, rogue names, the ban list
+  and any name the game shows; what to do when a cat shows as Cat 1.
 
 The rest of what wcmods can do is written up in the repository's docs, which open on GitHub:
 the [README](../../README.md) (getting set up, the mod menu in game, remapping keys), the

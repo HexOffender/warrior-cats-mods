@@ -122,13 +122,18 @@ mods, import a file over your changes or close it with unsaved changes.
 | **Your cat** | colours only your cat wears (coat, paws, ears, nose, whiskers); which colour slots it wears; its scars | `cats.json` | UE4SS script (colours); your save, on install (slots, scars) |
 | **Controls** | which key, mouse button or controller button does each action, second keys, keys in menus, controller presets; says what each change will do before you apply | `controls.json` | the game itself, through a small helper installed with your mods; moving and the camera only with `Play with key remaps.bat` (deprecated); see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert, smoothing | `mouselook.json` | UE4SS script |
-| **Names** | rename, add and remove name prefixes, suffixes and rogue names; the ban list; cameo cats and any shown name; the cats in your save | `names.json` | edited tables and text in the mod pak; cat renames in your save, on install |
+| **Names** | the cats in your save (a name of your own, or one that grows with rank, each row saying how it works out); rename, add and remove name prefixes, suffixes and rogue names; the ban list; cameo cats and any shown name, with what else each renames; areas, quest titles and items' names, from a list | `names.json` | edited tables and text in the mod pak; cat renames in your save, on install |
 | **Items** | herbs, materials and accessories of your own: name, description, icon (the game's, recoloured, or your own picture), what a herb does, an accessory's look (recoloured or your own picture), shape (your own model, OBJ or glTF from Blender), where it sits (moved, turned, sized) and opacity (see-through glass), how a herb or material lies on the ground to be picked up (your own model and picture), the medicine cat's recipe, some to start with | `items.json`, with the pictures and models it names | new rows, textures and meshes in the mod pak; a UE4SS script that puts models on the cats wearing them, and a list of models on the ground for `Game.items.drop`; starting ones in your save |
 | **Animations** | animations of your own, made in Blender from a start kit (the cat, or an animal, rigged to the game's own skeleton) and saved as glTF: emotes your cat plays from a key or the mod menu's Emotes page, or anything a script plays on a cat or an animal; loop, speed, claws out | `animations.json`, with the .glb files it names | new animation sequences in the mod pak; a list of them for `Game.anims`, and a UE4SS script that puts the emotes on keys and a menu page |
 | **Characters** | cats of your own: name, title, a random or fixed look, colours, eyes, size, where they stand, what they say | `npcs.json` | the [Sandbox mode](https://github.com/HexOffender/wcmods-sandbox) mod, in its sandbox games |
 | **Questlines** | quests with those cats, step by step (talk, pick things up, go somewhere), one after another, with rewards | `quests.json` | the Sandbox mode mod |
 | **Game data** | XP, costs, rewards, speeds and ~440 tuning values, in any runtime table | `data.json` | edited tables in the mod pak |
 | **Save** | level, XP, health, stamina, fresh-kill pile, stats, inventory, settings, anything else | `save.json` | your save, on install |
+
+**If a cat shows as Cat 1** (or as `<MISSING STRING TABLE ENTRY>`): its name is text only a mod gives,
+and that mod is off, or the game isn't reading your mods. The Names page lists such cats and offers
+each a game name; turning the mod back on and applying works too, and Settings and repair puts a save
+backup back. The guide's Names page ([docs/guide/names.md](docs/guide/names.md)) has more.
 
 **Scripting the game:** a mod's `scripts/main.lua` runs in the game with no Python, and its
 `settings.json` gets a page in the mod menu. The shared `WCModsGame` module covers a lot of the game:

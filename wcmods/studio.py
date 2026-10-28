@@ -24,7 +24,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (animations, bridge, catcolours, colors, controls, eyeatlas, guide, keymap, menupages, menusettings,
-               models, mods, modzip, mouselook, names, onboarding, packs, palettes, pipeline, recolor, story, ue4ss)
+               models, mods, modzip, mouselook, names, onboarding, packs, palettes, pipeline, recolor, story, ue4ss,
+               world)
 from .formats import cooked, csvdata, png, save, texture
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
@@ -53,6 +54,7 @@ MODELS = "models"            # a mod's own models (an accessory's shape), added 
 ANIMATIONS = "animations"    # a mod's own animations (glTF), added on the Animations page
 MAX_PICTURE = 8 * 1024 ** 2
 ITEM_ROOT = "Gameplay.Inventory."
+ITEM_KINDS = {"Consumable": "consumable", "Materials": "material", "Cosmetic": "accessory"}   # a tag's third part, in words
 MAX_UPLOAD = modzip.MAX_BYTES   # a downloaded mod's .zip
 # The side bar: "play" is installing and managing mods, "make" the pages for making your own.
 BUILTIN_SECTIONS = [
@@ -164,14 +166,22 @@ def manifest_of(result):
 
 def task_summary(title, result, lines, checked=False):
     """The sentence at the top of a task's log (the page's drawer, last-apply.log): what its build did
-    (plain_summary), or for a Play with nothing to apply, that the game started and how many warnings its log
-    has. None for a task with neither (the page words those itself)."""
+    (plain_summary); for a Play with nothing to apply, that the game started and how many warnings its log
+    has; for Take mods out, that the mods are out and how many cats' names now show as <MISSING STRING TABLE
+    ENTRY> (its result's "losing"). None for any other task (the page words those itself)."""
     manifest = manifest_of(result)
     if manifest:
         return plain_summary(manifest, checked)
     if title == "Play":
         n = sum(1 for line in lines if line.startswith("warning: "))
         return "Started the game; nothing needed applying first." + (f" {n} warning{'s' if n != 1 else ''}." if n else "")
+    if title == "Take mods out":
+        said = "Took every mod out of the game. Your mods are still here."
+        n = len(result.get("losing") or []) if isinstance(result, dict) else 0
+        if n:
+            who = "A cat's name shows" if n == 1 else f"{n} cats' names show"
+            said += f" {who} as <MISSING STRING TABLE ENTRY> until they're back (the log says which)."
+        return said
     return None
 
 
@@ -192,6 +202,7 @@ class Studio:
         self.cpp_tools = None   # cppmods.status() as it was when that build started, for the page's polls
         self._eyes = None
         self._names = None   # the game's name tables, read once
+        self._name_texts = None   # the game's areas, quest titles and items' names with their text keys, read once
         self._items = None   # the game's items, read once
         self._icons = {}     # (item tag or texture, tint) -> PNG bytes
         self._skin = None    # the cat's skin, to say how far a model reaches from it
@@ -630,8 +641,10 @@ class Studio:
                 return pipeline.install(cfg, self.ctx.build_dir, self.ctx.backups, log, force=bool(body.get("force")))
             return self.run(go, "Apply to game", keep=True, task=body.get("task"))
         if parts == ["uninstall"] and method == "POST":
-            return self.run(lambda log: {"removed": pipeline.uninstall(cfg, log)}, "Take mods out", keep=True,
-                            task=body.get("task"))
+            def take_out(log):
+                losing = self.names_losing()   # read before: the names come from the mods going out
+                return {"removed": pipeline.uninstall(cfg, log, losing=losing), "losing": losing}
+            return self.run(take_out, "Take mods out", keep=True, task=body.get("task"))
         if parts == ["backups"]:
             return save.list_backups(self.ctx.backups)[::-1]
         if parts == ["backup"] and method == "POST":
@@ -798,7 +811,12 @@ class Studio:
         if parts == ["names"] and method == "GET":
             return self.names_preview({})
         if parts == ["names", "preview"] and method == "POST":
-            return self.names_preview(names.validate(body.get("spec") or {}))
+            mod_id = body.get("mod")
+            return self.names_preview(names.validate(body.get("spec") or {}), mod_id if isinstance(mod_id, str) else None)
+        if parts == ["names", "texts"] and method == "GET":
+            return self.names_texts()
+        if parts == ["names", "losing"] and method == "GET":
+            return {"losing": self.names_losing()}
         raise LookupError("unknown API route")
 
     def cat_info(self):
@@ -882,25 +900,159 @@ class Studio:
         return {"palette": slots, "game_slots": palettes.GAME_SLOTS, "feral_slots": list(catcolours.FERAL_SLOTS),
                 "parts": {p: catcolours.LOOK_MAX.get(p, 9) for p in catcolours.LOOK}}
 
-    def names_preview(self, spec):
-        """The game's names, what a names.json (not yet saved) does to them, and the cats in the save."""
+    def name_tables(self):
+        """The game's name tables (names.GameNames), read once. Without a game folder this ends as the command
+        line would (SystemExit), which the handler says as NO_GAME; with one it can't read, Unreadable."""
         if self._names is None:
             self._names = names.GameNames(lambda path: self.ctx.game.read_text(BuildContext.data_path(path)))
-        plan = names.Plan(self._names, names.merge([spec]))
-        cats, slot = [], None
+        return self._names
+
+    def names_specs(self, spec=None, mod_id=None):
+        """The names.json of every enabled mod, in priority order, as the next Apply merges them, with `spec` (the
+        Names page's file, not saved yet) standing in for mod_id's own: that mod counts even while it's off, since
+        saving turns it on, and one not made yet (My mods before its first save) goes last. A file that can't be
+        used is left out, with a sentence for each in the second list."""
+        specs, left_out, placed = [], [], False
+        for m in self.mods():
+            if mod_id is not None and m.id == mod_id:
+                specs.append(spec or {})
+                placed = True
+                continue
+            if not m.enabled:
+                continue
+            try:
+                theirs = names.read_spec(m)
+            except (OSError, ValueError) as e:
+                left_out.append(f"{m.name}'s names.json is left out here, because it can't be used: {e}")
+                continue
+            if theirs is not None:
+                specs.append(theirs)
+        if mod_id is not None and not placed:
+            specs.append(spec or {})
+        return specs, left_out
+
+    def names_preview(self, spec, mod_id=None):
+        """The game's names, what a names.json not yet saved (`spec`, the Names page's, for mod `mod_id`) does to
+        them, and the cats in the save.
+
+        Two plans. The page's own, from `spec` alone, says what this file does: the cards' renamed parts ("final"),
+        "What this does" (changed_names, changed_texts, warnings) and what each "names" entry renames
+        (names_hits). The cats come from every enabled mod's names.json with `spec` in its mod's place
+        (names_specs), named as the next Apply would name them: the list, the renames this file makes, the
+        warnings about its own cats entries, and losing_text, the cats that would show as <MISSING STRING TABLE
+        ENTRY> if Apply ran now (their names are text a mod gives, and no mod in it gives that text). Each
+        warning is also in "notes" with the part of names.json it's about, for the page to put by its row. A cat a
+        mod named has "before", the name it had as any mod's file says (for Give it a game name). A save that can't
+        be read leaves the list empty, with save_problem saying why.
+
+        With mod_id's mod off ("mod_off"), "off_named" lists the cats whose names only its file gives: they show as
+        <MISSING STRING TABLE ENTRY> until it's on and applied (each such cat has "named_by_off_mod")."""
+        game = self.name_tables()
+        own = names.Plan(game, names.merge([spec]))
+        specs, left_out = self.names_specs(spec, mod_id)
+        every = names.Plan(game, names.merge(specs))
+        cats, slot, problem = [], None, None
         try:
             text, _ = self.save_text()
             doc = SaveDoc(text)
             cats, slot = names.cats_in_save(doc.data), names.current_slot(doc.data)
         except LookupError:
-            pass
-        ops = plan.plan_cats(cats)
-        return {**self._names.summary(), "final": {"prefixes": [p["final"] for p in plan.prefixes],
-                                                   "suffixes": [s["final"] for s in plan.suffixes],
-                                                   "rogues": [r["final"] for r in plan.rogues]},
-                "cats": names.cat_list(plan, cats, ops), "current_slot": slot,
-                "renames": [{"from": a, "to": b} for a, b in plan.cat_renames],
-                "warnings": plan.warnings, "changed_texts": _changed_texts(plan.edits.get(names.strings_path("EN"), {}))}
+            pass   # no save yet: the page says so
+        except ValueError:   # cut short: the game may be writing it
+            problem = ("Couldn't read your save: it's cut short, or not laid out the way wcmods expects (the game may "
+                       "be writing it just now). The cats list is empty until it can be read")
+        except OSError as e:   # locked, or gone between looking and reading
+            problem = f"Couldn't open your save ({e.strerror or e}). The cats list is empty until it can be read"
+        ops = every.plan_cats(cats)
+        listed = names.cat_list(every, cats, ops)
+        # For "Give it a game name": the name a mod-named cat had, as any mod's file says (one that's off too).
+        every_file = []
+        if any(c["mod_named"] for c in listed):
+            for m in self.mods():
+                try:
+                    every_file.append(names.read_spec(m) or {})
+                except (OSError, ValueError):
+                    continue
+            every_file.append(spec)
+        for c, cat in zip(listed, cats):
+            c["before"] = names.name_before(cat["ids"], every_file) if c["mod_named"] else ""
+        mine, merged = spec.get("cats", {}), every.spec.get("cats", {})
+        renames = [{"target": t, "from": a, "to": b} for (a, b), t in zip(every.cat_renames, every.rename_targets)
+                   if t in mine and merged.get(t) == mine[t]]
+        notes = ([n for n in own.notes if not n[0].startswith("cats.")]
+                 + [n for n in every.notes if n[0].startswith("cats.") and n[0][len("cats."):] in mine])
+        shown = {c["target"]: c["name"] for c in listed}
+        losing = [{"target": names.target_of(c), "name": shown.get(names.target_of(c), ""), "key": key}
+                  for c, _, key in names.losing_text(cats, ops, every.final.__contains__, game.text)]
+        # This page's mod is off: the cats whose names only it gives show as <MISSING STRING TABLE ENTRY> now,
+        # though the list names them (its file counts here, as saving turns it on).
+        mod = next((m for m in self.mods() if m.id == mod_id), None) if mod_id is not None else None
+        mod_off, off_named = bool(mod and not mod.enabled), []
+        if mod_off and cats:
+            on = names.Plan(game, names.merge(self.names_specs()[0]))   # the mods that are on, without this one
+            gone = {x["target"] for x in losing}
+            for c, _, key in names.losing_text(cats, (), on.final.__contains__, game.text):
+                if names.target_of(c) not in gone:
+                    off_named.append({"target": names.target_of(c), "name": shown.get(names.target_of(c), ""), "key": key})
+        off = {x["target"] for x in off_named}
+        for c in listed:
+            c["named_by_off_mod"] = c["target"] in off
+        return {**game.summary(), "final": {"prefixes": [p["final"] for p in own.prefixes],
+                                            "suffixes": [s["final"] for s in own.suffixes],
+                                            "rogues": [r["final"] for r in own.rogues]},
+                "cats": listed, "current_slot": slot, "save_problem": problem,
+                "renames": renames, "losing_text": losing, "mod_off": mod_off, "off_named": off_named,
+                # The game's own text under each key this file's "text" renames ("" for one the game hasn't),
+                # for the rows the page's lists don't have.
+                "text_now": {k: game.text.get(k, "") for k in spec.get("text", {})},
+                "names_hits": own.names_hits,
+                "warnings": left_out + [text for _, text in notes],
+                "notes": [{"where": where, "text": text} for where, text in notes],
+                "changed_names": own.changed + len(renames),
+                "changed_texts": _changed_texts(own.edits.get(names.strings_path("EN"), {}))}
+
+    def names_texts(self):
+        """What the Names page's Places, quests and items card lists, each with the text key names.json's "text"
+        renames it by: the areas and quest titles (world.place_texts), and the items' names from the game's item
+        table, by kind. One row per text key, with every item it names ("tags": Rock and Rock2 share one name, so
+        renaming it renames both), as place_texts has one per quest title. An item whose name is written in the
+        table itself rather than under a key has no key (the game's own items all have one; a row a mod adds may
+        not): the page says it can't be renamed here."""
+        if self._name_texts is None:
+            b = self._reader()
+            places = world.place_texts(lambda path: self.ctx.game.read_text(path))
+            items, by_key = [], {}
+            for _, v in b.cooked_table("DT_QuestObjectsInfo"):
+                tag, name = v.get("itemTag") or "", v.get("Name") or {}
+                if not tag.startswith(ITEM_ROOT) or tag.count(".") < 3:
+                    continue
+                kind = ITEM_KINDS.get(tag.split(".")[2], tag.split(".")[2].lower())
+                if name.get("key"):
+                    if name["key"] in by_key:   # one name, two items
+                        by_key[name["key"]]["tags"].append(tag)
+                        continue
+                    text = b.text(name["key"])
+                    if text == name["key"]:   # no text: nothing to show
+                        continue
+                    by_key[name["key"]] = {"key": name["key"], "tags": [tag], "kind": kind, "text": text}
+                    items.append(by_key[name["key"]])
+                elif name.get("text"):
+                    items.append({"key": None, "tags": [tag], "kind": kind, "text": name["text"]})
+            items.sort(key=lambda i: (i["kind"], i["text"].lower()))
+            self._name_texts = {**places, "items": items}
+        return self._name_texts
+
+    def names_losing(self):
+        """The cats in the save whose names are text only a mod gives (pipeline.cats_losing_text): what taking every
+        mod out of the game would leave as <MISSING STRING TABLE ENTRY>. Named with the enabled mods' names when
+        the game's tables can be read, else from their IDs."""
+        plan = None
+        try:
+            if self.ctx.cfg.game_dir:   # not ctx.game, which ends the command line (SystemExit)
+                plan = names.Plan(self.name_tables(), names.merge(self.names_specs()[0]))
+        except Exception:   # noqa: BLE001 - the names then come from the cats' IDs
+            plan = None
+        return pipeline.cats_losing_text(self.ctx.cfg, plan)
 
     def _reader(self):
         """A build context only for reading the game's tables (it never builds)."""
@@ -931,8 +1083,7 @@ class Studio:
                     continue
                 kind = tag.split(".")[2]
                 u = use.get(tag, {})
-                item = {"tag": tag, "kind": {"Consumable": "consumable", "Materials": "material",
-                                             "Cosmetic": "accessory"}.get(kind, kind.lower()),
+                item = {"tag": tag, "kind": ITEM_KINDS.get(kind, kind.lower()),
                         "short": tag[len(ITEM_ROOT):] if kind == "Cosmetic" else tag.split(".", 3)[3],
                         "name": name, "description": text(v.get("Description")),
                         "effect": u.get("EffectOnUse"), "type": u.get("Type"), "recipe": tag in recipes,
