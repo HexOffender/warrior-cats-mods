@@ -11,14 +11,14 @@ from wcmods import accessories
 from wcmods import studio as studio_mod
 from wcmods.formats import png
 
-from conftest import make_mod
+from unit_helpers import make_mod
 
 HERB = {"id": "MoonHerb", "like": "MediumHealingHerb", "name": "Moon Herb", "description": "Heals under the full moon."}
 TRIANGLE = "v 0 0 0\nv 0.1 0 0\nv 0 0.1 0\nf 1 2 3\n"
 
 
 def call(st, method, path, body=None, query=None, upload=None):
-    return st.api(method, [p for p in path.split("/") if p], studio_mod.Body(body or {}), query, upload)
+    return st.api(method, [p for p in path.split("/") if p], {} if body is None else body, query, upload)
 
 
 def picture(path, rgb=(200, 100, 50)):

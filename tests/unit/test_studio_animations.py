@@ -11,12 +11,12 @@ from wcmods import animations as A
 from wcmods import studio as studio_mod
 from wcmods.formats import anim
 
-from conftest import make_mod
+from unit_helpers import make_mod
 from test_animations import Mesh, Skel, column, gltf_file, motion
 
 
 def call(st, method, path, body=None, query=None, upload=None):
-    return st.api(method, [p for p in path.split("/") if p], studio_mod.Body(body or {}), query, upload)
+    return st.api(method, [p for p in path.split("/") if p], {} if body is None else body, query, upload)
 
 
 @pytest.fixture
