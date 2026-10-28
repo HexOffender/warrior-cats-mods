@@ -299,11 +299,11 @@ export default {
         if (go) go.disabled = false;
       }
     }
-    // The share fold's mod: what its save.json changes, in words.
-    function drawModFile() {
+    // The share fold's mod: what its save.json changes, in words. mods: the mod list, when read afresh.
+    function drawModFile(mods = target.mods) {
       clear(modWords);
       // Whether the mod is on: if it is, its changes go in your own save too at the next Apply.
-      const mod = target.mods.find(m => m.id === target.current);
+      const mod = mods.find(m => m.id === target.current);
       if (mod?.enabled && modFile && !S.isEmpty(modFile)) {
         modWords.append(el("p", { class: "banner", id: "save-share-on", text: `${mod.name} is on: the next Apply makes its changes in your own save too, once. Turn it off on the Mods page if it's only to share.` }));
       }
@@ -508,7 +508,11 @@ export default {
     const offFocus = wc.bus.on("focus", async () => {
       try { running((await api.get("/changes")).game_running); } catch (e) { /* the shell says */ }
     });
-    const offMods = wc.bus.on("mods-changed", () => drawModFile());   // turned on or off: the share fold says so
+    // Turned on or off (on the Mods page, say): the share fold says so, from the list as it is now (the bar reads
+    // it again too, but after this hears the news).
+    const offMods = wc.bus.on("mods-changed", async () => {
+      try { drawModFile(await api.get("/mods")); } catch (e) { /* the bar says */ }
+    });
     // Leaving the studio with changes still in the list: the browser asks first.
     const beforeUnload = e => { if (!S.isEmpty(list)) { e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", beforeUnload);
