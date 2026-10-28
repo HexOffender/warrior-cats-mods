@@ -56,15 +56,49 @@ class NoRelease(RuntimeError):
     """GitHub has no release of it (yet): its project hasn't published one."""
 
 
+class Offline(RuntimeError):
+    """GitHub couldn't be reached at all: no connection, or it took too long. (GitHub answering with a
+    refusal, too many questions say, is a plain RuntimeError.)"""
+
+
+def _https_only():
+    """An opener that follows redirects (GitHub serves a release's .zip from another host) only to https
+    addresses: a download is never read over plain http."""
+    import urllib.parse
+    import urllib.request
+
+    class HttpsOnly(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            where = urllib.parse.urlsplit(newurl)
+            if where.scheme.lower() != "https":
+                raise RuntimeError(f"GitHub sent the download on to an address that isn't https ({where.netloc or newurl}); "
+                                   "not following it")
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+    return urllib.request.build_opener(HttpsOnly)
+
+
+def _open(req, timeout):
+    """What GitHub answers to `req`: https only, redirects included. A file: address is opened only while
+    WCMODS_RELEASES stands in for GitHub (addons.py, for the tests)."""
+    import urllib.parse
+    import urllib.request
+    scheme = urllib.parse.urlsplit(req.full_url).scheme.lower()
+    if scheme == "file" and os.environ.get("WCMODS_RELEASES"):
+        return urllib.request.urlopen(req, timeout=timeout)
+    if scheme != "https":
+        raise RuntimeError(f"{req.full_url} isn't an https address; not downloading from it")
+    return _https_only().open(req, timeout=timeout)
+
+
 def github_release(api, what, page, timeout=20):
     """A GitHub release, as its API gives it (its "tag_name" and "assets"), from its API address. Trouble
-    reaching GitHub is a RuntimeError saying so, with `page` for downloading `what` by hand; no release at
-    all is NoRelease, one of those."""
+    reaching GitHub is a RuntimeError saying so, with `page` for downloading `what` by hand (Offline when it
+    couldn't be reached at all); no release at all is NoRelease, one of those."""
     import urllib.error
     import urllib.request
     req = urllib.request.Request(api, headers={"User-Agent": "wcmods", "Accept": "application/vnd.github+json"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with _open(req, timeout) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
         if e.code == 404:
@@ -73,9 +107,12 @@ def github_release(api, what, page, timeout=20):
             raise RuntimeError(f"GitHub is turning requests away for now (too many); try again in an hour, or "
                                f"download {what} from {page} and give the .zip to Clan Mod Studio") from None
         raise RuntimeError(f"GitHub answered {e.code} for {what}; try again later, or download it from {page}") from None
-    except (OSError, ValueError) as e:   # no connection, a timeout, a page that isn't JSON
-        raise RuntimeError(f"couldn't reach GitHub for {what} ({getattr(e, 'reason', None) or e}); try again, "
-                           f"or download it from {page} and give the .zip to Clan Mod Studio") from None
+    except ValueError:   # a page that isn't JSON
+        raise RuntimeError(f"GitHub's answer for {what} wasn't readable; try again later, or download it from "
+                           f"{page} and give the .zip to Clan Mod Studio") from None
+    except OSError as e:   # no connection, a timeout
+        raise Offline(f"couldn't reach GitHub for {what} ({getattr(e, 'reason', None) or e}); try again, "
+                      f"or download it from {page} and give the .zip to Clan Mod Studio") from None
 
 
 def find_release(timeout=20):
@@ -89,24 +126,34 @@ def find_release(timeout=20):
 
 
 def download(asset, folder, timeout=60, limit=MAX_ZIP, what="UE4SS"):
-    """Download a release asset (UE4SS's, or `what` else's, at most `limit` bytes) into folder; returns
-    the file's path."""
+    """Download a release asset (UE4SS's, or `what` else's, at most `limit` bytes) into folder over https
+    (_open); returns the file's path. The connection failing is Offline."""
+    import urllib.error
     import urllib.request
     path = os.path.join(folder, os.path.basename(asset["name"]))
     req = urllib.request.Request(asset["url"], headers={"User-Agent": "wcmods"})
     got = 0
+
+    def dropped(e):
+        return Offline(f"the {what} download failed ({getattr(e, 'reason', None) or e}); try again")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r, open(path, "wb") as f:
-            while True:
+        r = _open(req, timeout)
+    except urllib.error.HTTPError as e:   # GitHub turned the download away
+        raise RuntimeError(f"GitHub turned the {what} download away ({e.code}); try again later") from None
+    except OSError as e:
+        raise dropped(e) from None
+    with r, open(path, "wb") as f:
+        while True:
+            try:
                 chunk = r.read(1024 * 1024)
-                if not chunk:
-                    break
-                got += len(chunk)
-                if got > limit:
-                    raise RuntimeError(f"the {what} download is far bigger than it should be; stopped")
-                f.write(chunk)
-    except OSError as e:   # the connection dropped, or GitHub turned the download away
-        raise RuntimeError(f"the {what} download failed ({getattr(e, 'reason', None) or e}); try again") from None
+            except OSError as e:   # the connection dropped
+                raise dropped(e) from None
+            if not chunk:
+                break
+            got += len(chunk)
+            if got > limit:
+                raise RuntimeError(f"the {what} download is far bigger than it should be; stopped")
+            f.write(chunk)
     if asset.get("size") and got != asset["size"]:
         raise RuntimeError(f"the {what} download stopped early ({got} of {asset['size']} bytes); try again")
     return path

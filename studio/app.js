@@ -1,4 +1,5 @@
 import * as wc from "./lib/wc.js";
+import { changeCount } from "./lib/modlist.js";
 
 const { el, api, clear, toast, bus } = wc;
 const nav = document.getElementById("nav");
@@ -62,7 +63,7 @@ async function refreshStatusNow() {
   }
   if (restarting) return null;   // asked before Restart was pressed: the status says it's restarting now
   if (gone) { back(); return null; }   // it answers again: this page is from before it went
-  const waiting = changes ? changes.on.length + changes.off.length + changes.changed.length + (changes.redo || []).length : 0;
+  const waiting = changes ? changeCount(changes) : 0;
   setStatus([
     chip(info.game_running ? "Game running" : "Game closed", info.game_running ? "warn" : "good",
       info.game_running ? "Close the game to apply mods" : ""),

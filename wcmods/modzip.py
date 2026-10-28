@@ -10,9 +10,10 @@ ships it, unless the one adding it says otherwise (`enable`: one answer for all,
 
 A mod is named (its folder in mods/) the same way from a .zip and from a folder (_identify): mod.json's
 "id", else its folder's name, else, for a mod.json at the top of a .zip, the download's file name with a
-version at its end dropped ("Cool Mod v1.3.zip" is cool-mod), so an update zipped the same way replaces
-the mod rather than going in beside it. A mod an older wcmods named with the version in it is found by
-its name and replaced.
+version at its end dropped ("Cool Mod v1.3.zip" is cool-mod; "Moonlit Cats 2.zip" keeps its 2), so an
+update zipped the same way replaces the mod rather than going in beside it. A mod an older wcmods named
+with the version in it (cool-mod-v1.2) is found by its name and replaced; a mod that only shares the name
+is left alone.
 
 A .zip is checked before anything is written: no file may land outside its mod's folder (absolute
 paths, "..", drive letters), no two files may be one file on Windows (names that differ only in case,
@@ -138,29 +139,35 @@ def _check_meta(meta, label):
         v = meta.get(key, [])
         if not (isinstance(v, str) or (isinstance(v, list) and all(isinstance(x, str) for x in v))):
             bad(key, "a list of mod folder names")
-    if "wcmods" in meta and not modlib.version_key(meta["wcmods"]):
+    if "wcmods" in meta and not modlib.is_version(meta["wcmods"]):
         bad("wcmods", 'a version like "0.4.0"')
 
 
 def _without_version(base):
-    """A download's file name without the version at its end: "Cool Mod v1.3" -> "Cool Mod". One that's
-    nothing but a version ("2048") is kept as it is."""
-    stripped = re.sub(r"[\s_-]*v?\d+(\.\d+)*$", "", base)
+    """A download's file name without the version at its end: "Cool Mod v1.3" or "cool-mod-1.3" -> "Cool Mod"
+    or "cool-mod". A version is a "v" and a number, or numbers with dots, after a space, "-" or "_": a plain
+    number is part of the name ("Moonlit Cats 2"), and one that's nothing but a version ("2048") is kept."""
+    stripped = re.sub(r"[\s_-]+(?:[vV]\d+(?:\.\d+)*|\d+(?:\.\d+)+)$", "", base)
     return stripped if stripped.strip(" -_.") else base
 
 
-def _same_name(mods_root, name):
-    """The id of the one mod in mods/ called `name` (its mod.json's "name"), or None."""
+def _same_name(mods_root, name, mod_id):
+    """The id of the one mod in mods/ called `name` (its mod.json's "name") that an older wcmods named after
+    the same download, version and all (cool-mod-v1.2 for cool-mod), or None. Another mod that only has the
+    same name (your own "My mods", say) is never it."""
     found = [m.id for m in modlib.discover(mods_root) if not m.problem and m.name == name]
-    return found[0] if len(found) == 1 else None
+    if len(found) == 1 and found[0] != mod_id and safe_id(_without_version(found[0])) == mod_id:
+        return found[0]
+    return None
 
 
 def _identify(meta, base, label, taken, mods_root=None, top=False):
     """The id a mod goes in under: mod.json's "id", else `base` (its folder's name; for a mod.json at the
     top of a .zip, the download's name without its version), with "-2" added while another mod in the same
     .zip or folder has it. A mod.json at the top with no "id", whose id isn't in mods/ yet, takes the id of
-    the mod there with its name, if there's one: an older wcmods named it after its file name, version and
-    all, so the update replaces it. mod.json is checked first (_check_meta)."""
+    the mod there with its name whose id is this one with a version after it (_same_name): an older wcmods
+    named it after its file name, version and all, so the update replaces it. mod.json is checked first
+    (_check_meta)."""
     _check_meta(meta, label)
     if meta.get("id"):
         mod_id = safe_id(meta["id"])
@@ -168,7 +175,7 @@ def _identify(meta, base, label, taken, mods_root=None, top=False):
         mod_id = safe_id(_without_version(base) if top else base)
         if top and mods_root and isinstance(meta.get("name"), str) \
                 and not os.path.isfile(os.path.join(mods_root, mod_id, "mod.json")):
-            mod_id = _same_name(mods_root, meta["name"]) or mod_id
+            mod_id = _same_name(mods_root, meta["name"], mod_id) or mod_id
     while mod_id in taken:
         mod_id = safe_id(mod_id + "-2")
     taken.add(mod_id)
@@ -202,7 +209,7 @@ def _found(mods_root, mod_id, meta, names, size, root):
     if meta.get("pack"):
         kinds = ["mod pack"] + kinds
     name = str(meta.get("name") or mod_id)
-    wanted = meta.get("wcmods").strip() if modlib.version_key(meta.get("wcmods")) else None
+    wanted = meta.get("wcmods").strip() if modlib.is_version(meta.get("wcmods")) else None
     too_new = modlib.needs_newer(wanted) if wanted else None
     return {"id": mod_id, "name": name, "description": str(meta.get("description") or ""),
             "version": str(meta.get("version") or ""), "author": str(meta.get("author") or ""),

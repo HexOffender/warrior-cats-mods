@@ -309,12 +309,16 @@ class Studio:
     # ---------- API ----------
     # ---- the mods that go with Clan Mod Studio (wcmods/addons.py) ----
     def ask_releases(self):
-        """What GitHub has of each add-on, asked at most once an hour (self.releases)."""
-        if time.time() - self.releases_at < RELEASES_FOR and len(self.releases) == len(addons.ADDONS):
+        """What GitHub has of each add-on (self.releases), asked at most once an hour. Only answers are kept
+        for the hour (addons.answered): when GitHub couldn't be reached, or turned the question away, the card
+        shows why, and the next press asks again."""
+        fresh = time.time() - self.releases_at < RELEASES_FOR
+        if fresh and all(addons.answered(self.releases.get(a.id)) for a in addons.ADDONS):
             return
         found = {a.id: addons.latest(a) for a in addons.ADDONS}
         with self.lock:
-            self.releases, self.releases_at = found, time.time()
+            self.releases = found
+            self.releases_at = time.time() if all(addons.answered(r) for r in found.values()) else 0.0
 
     def noting_release(self, addon, fn):
         """fn(), noting what it found out about the add-on's release: none yet (ue4ss.NoRelease), so the
@@ -508,12 +512,15 @@ class Studio:
             else:
                 enable = bool(body.get("enable", True))
             with self.lock:
+                # An add-on updated from its own .zip keeps your values in its settings, as its Add does.
+                mine = addons.remember(self.ctx.mods_root)
                 if os.path.isdir(waiting):
                     added = modzip.add_folder(waiting, self.ctx.mods_root, self.ctx.backups, ids=body.get("ids") or None,
                                               enable=enable)
                 else:
                     added = modzip.add_zip(waiting, self.ctx.mods_root, self.ctx.backups, ids=body.get("ids") or None,
                                            enable=enable, name=os.path.basename(waiting))
+                addons.put_back(self.ctx.mods_root, mine, added)
             onboarding.clear_inbox()
             return {"added": added}
         if parts == ["mods", "inbox", "clear"] and method == "POST":
@@ -568,7 +575,7 @@ class Studio:
             since = str(rec.get("when", "")) > str((cfg.data.get("installed") or {}).get("built", ""))
             return [{**m.to_dict(), "problems": unmet.get(m.id, []),
                      "needed_by": [titles[i] for i in mods.needing(found, m.id)],
-                     "requires_names": [titles.get(i, i) for i in m.requires if i != mods.MENU_ID],
+                     "requires_names": [titles.get(i) or mods.missing_name(i) for i in m.requires if i != mods.MENU_ID],
                      "warnings": [w for w in [gamebuild.builds_problem(m)] if w],
                      "checkable": gamebuild.checkable(m),
                      "rechecked": results.get(m.id), "rechecked_since_apply": since and m.id in results,
@@ -619,8 +626,12 @@ class Studio:
             else:
                 enable = query.get("enable", "1") == "1"
             with self.lock:
-                return {"added": modzip.add_zip(upload, self.ctx.mods_root, self.ctx.backups, ids=ids,
-                                                enable=enable, name=name)}
+                # An add-on updated from its own .zip keeps your values in its settings (the Emote wheel's key,
+                # Menu pages' cheats), as its Add on the add-ons card does.
+                mine = addons.remember(self.ctx.mods_root)
+                added = modzip.add_zip(upload, self.ctx.mods_root, self.ctx.backups, ids=ids, enable=enable, name=name)
+                addons.put_back(self.ctx.mods_root, mine, added)
+                return {"added": added}
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "remove" and method == "POST":
             # As with switching it off: while mods that are on need it, nothing changes and they're
             # returned, unless cascade, which turns them off too.
@@ -1465,7 +1476,10 @@ def make_handler(studio, port):
                     return self._send(404, {"error": str(e)})
                 except (ValueError, RuntimeError) as e:
                     if str(e).strip():
-                        return self._send(400, {"error": str(e)})
+                        # GitHub out of reach, or a mod with no release yet: said for the page to tell apart.
+                        flags = {"offline": True} if isinstance(e, ue4ss.Offline) else \
+                            {"no_release": True} if isinstance(e, ue4ss.NoRelease) else {}
+                        return self._send(400, {"error": str(e), **flags})
                     studio.log_error(where, e)   # nothing to say: the details are all there is
                     return self._send(400, {"error": f"Something went wrong, with the details in {STUDIO_LOG}"})
                 except Exception as e:   # noqa: BLE001 - whatever it is, the page gets a sentence and the log the rest

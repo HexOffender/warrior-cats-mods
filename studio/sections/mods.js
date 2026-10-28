@@ -3,8 +3,8 @@
 // ("uses"). Options (the mod menu's key among them), backups and repairs are on the Settings and repair page.
 // What the page says and chooses without the page (search, requirements, the add-ons' states, toasts) is in
 // ../lib/modlist.js.
-import { ADDON_NAMES, addedToast, addonState, addonToast, allSet, changeParts, matches, needs, needsLine, recheckSentence,
-  recheckSorted, sentence, worksWith } from "../lib/modlist.js";
+import { ADDON_NAMES, addAllToast, addedToast, addonState, addonToast, allSet, changeParts, checkTrouble, matches,
+  needs, needsLine, recheckSentence, recheckSorted, sentence, worksWith } from "../lib/modlist.js";
 
 export default {
   title: "Mods",
@@ -135,7 +135,8 @@ export default {
       } catch (e) { toast(e.message, "bad"); }
     }
 
-    // Add all four, one after the other, each row on the add-ons card saying "Adding …" while it goes.
+    // Add all four, one after the other, each row on the add-ons card saying "Adding …" while it goes. The
+    // step counts as done once something went in, or only "no release yet" kept them out (addAllToast).
     async function addAll() {
       const todo = addons.filter(a => !a.installed);
       const went = [], unreleased = [], failed = [];
@@ -147,17 +148,17 @@ export default {
         try {
           const r = await api.post(`/addons/${encodeURIComponent(a.id)}`, {});
           went.push(`${r.result.name} ${r.result.version || ""}`.trim());
-        } catch (e) { (/no release yet/.test(e.message) ? unreleased : failed).push(/no release yet/.test(e.message) ? a.name : e.message); }
+        } catch (e) {
+          if (e.data?.no_release || /no release yet/.test(e.message)) unreleased.push(a.name);
+          else failed.push({ message: e.message, offline: !!e.data?.offline });
+        }
       }
       adding = null;
-      try { await api.post("/setup/addons", { choice: "added" }); } catch (e) { toast(e.message, "bad"); }
-      const code = settings && settings.allow_code_mods;
-      const and = list => list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : list[0];
-      toast((went.length ? `Added ${and(went)}.` : "Nothing was added.")
-        + (unreleased.length ? ` ${and(unreleased)} ${unreleased.length > 1 ? "have" : "has"} no release yet: the owner of that mod has to publish one, and its row below says so until then.` : "")
-        + (failed.length ? ` ${failed.join(" ")}` : "")
-        + (went.length && !code ? " They run their own scripts, so Let mods run their own scripts is the next step." : went.length ? " Press Play to put them in the game." : ""),
-        failed.length && !went.length ? "bad" : "info");
+      const said = addAllToast(went, unreleased, failed, settings && settings.allow_code_mods);
+      if (said.done) {
+        try { await api.post("/setup/addons", { choice: "added" }); } catch (e) { toast(e.message, "bad"); }
+      }
+      toast(said.text, said.kind);
       await refresh();
     }
 
@@ -305,7 +306,7 @@ export default {
           const r = await api.post(`/addons/${encodeURIComponent(a.id)}`, {});
           toast(addonToast(r.result, settings && settings.allow_code_mods));
         }
-      } catch (e) { toast(e.message, "bad"); }
+      } catch (e) { toast(e.data?.offline ? "No internet connection; try again when you're online." : sentence(e.message), "bad"); }
       adding = null;
       await refresh();
     }
@@ -315,7 +316,10 @@ export default {
       try {
         const r = await api.get(latest ? "/addons?latest=1" : "/addons");
         addons = r.addons;
-      } catch (e) { if (latest) toast(e.message, "bad"); }
+        // GitHub had no answer: said at once, and on the card until it answers.
+        const trouble = latest ? checkTrouble(addons) : null;
+        if (trouble) toast(trouble.all || "GitHub didn't answer for some of them; their rows say why.", "bad");
+      } catch (e) { if (latest) toast(sentence(e.message), "bad"); }
       checking = false;
       drawAddons();
     }
@@ -324,10 +328,12 @@ export default {
       if (!addons.length) return;
       const head = el("div", { class: "row spread" }, el("h2", { text: "Mods that go with Clan Mod Studio" }),
         el("button", { class: "btn link", type: "button", text: "What they do", onclick: () => wc.openHelp("companion-mods") }));
+      const trouble = checkTrouble(addons);
       if (allSet(addons) && !showAddons) {
         addonsBox.append(head, el("div", { class: "row spread" },
           el("span", { class: "ok-line", text: "\u2713 All four are in, on and up to date as far as the studio knows." }),
           el("button", { class: "btn link", type: "button", "aria-expanded": "false", text: "Show them", onclick: () => { showAddons = true; drawAddons(); } })));
+        if (trouble) addonsBox.append(el("p", { class: "warn-text", text: trouble.all || "GitHub didn't answer for some of them: Show them says why." }));
         return;
       }
       addonsBox.append(head, el("p", { class: "note", text: "Four mods of their own that bring what you make on the Make pages into the game. Each one runs its own scripts." }));
@@ -341,11 +347,13 @@ export default {
             el("span", { class: "muted", text: a.about }),
             a.no_release && !a.installed ? el("span", { class: "muted" }, "The owner of that mod has to publish a release before Clan Mod Studio can add it (",
               el("a", { href: a.page, target: "_blank", rel: "noopener", text: "its releases" }), ").") : null,
+            trouble && trouble.each[a.id] ? el("span", { class: "warn-text", text: `Couldn't check for a newer version: ${trouble.each[a.id]}` }) : null,
             a.too_new ? el("span", { class: "warn-text", text: sentence(a.too_new) }) : null),
           el("span", { class: `chip ${st.kind}` }, el("i"), busy ? `Adding ${a.name}…` : st.chip),
           label && !busy ? el("button", { class: "btn small", type: "button", "aria-label": `${label}: ${a.name}`, text: label,
             disabled: !!adding, onclick: () => addonAction(a, st.action) }) : el("span")));
       }
+      if (trouble && trouble.all) addonsBox.append(el("p", { class: "warn-text", role: "status", text: trouble.all }));
       addonsBox.append(el("div", { class: "row" },
         el("button", { class: "btn small ghost", type: "button", text: checking ? "Asking GitHub…" : "Check for newer versions", disabled: checking,
           onclick: () => renderAddons(true) }),
