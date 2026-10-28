@@ -1096,6 +1096,9 @@ class Studio:
                 # changes that save hasn't got.
                 saverecord.put_back(cfg, os.path.join(self.ctx.backups, name))
             return {"restored": restored, "before": before, "before_label": save.backup_label(before) if before else None}
+        if parts == ["crash"] and method == "GET":
+            # The game's last crash since the last Apply, and which C++ mod it was in when one is on its stack.
+            return self.last_crash()
         if parts == ["game", "eyes"]:
             return self.eyes()
         if parts == ["game", "tables"]:
