@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (animations, bridge, catcolours, colors, controls, eyeatlas, guide, keymap, menupages, menusettings,
-               models, mods, modzip, names, onboarding, packs, palettes, pipeline, recolor, story, ue4ss)
+               models, mods, modzip, mouselook, names, onboarding, packs, palettes, pipeline, recolor, story, ue4ss)
 from .formats import cooked, csvdata, png, save, texture
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
@@ -621,8 +621,10 @@ class Studio:
             text, mtime = self.save_text()
             return {"bindings": controls.read_bindings(text), "save_time": mtime}
         if parts == ["game", "keys"] and method == "GET":
-            # The game's own keys as the build knows them (keymap.game_keys), with no save needed.
-            return {**keymap.game_keys(), "ue4ss": bool(cfg.ue4ss_mods_dir)}
+            # The game's own keys as the build knows them (keymap.game_keys), with no save needed, and mouse look's
+            # settings as the build reads them (its defaults, and the keys that can switch it off and on).
+            return {**keymap.game_keys(), "ue4ss": bool(cfg.ue4ss_mods_dir),
+                    "mouselook": {"defaults": mouselook.DEFAULTS, "toggle_keys": list(mouselook.TOGGLE_KEYS)}}
         if parts == ["controls", "check"] and method == "POST":
             # What Apply would do with the Controls page's controls.json for a mod, merged with the other mods'
             # (sections/controls.check): a sentence per entry, the keys in use, who else changes the same.

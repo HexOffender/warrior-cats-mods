@@ -210,7 +210,9 @@ tilt. `pitch_min`/`pitch_max` limit the tilt (default -20/23, the game's own). `
 long the camera takes to catch up with the mouse, in milliseconds: 0 (the default) follows it at
 once, and the game eases the arrow keys and stick over about 200. `"debug": true` logs what it
 does to `ue4ss\UE4SS.log`, including whether each turn stayed and how even the frames were. The
-`mouse-look` mod and the Mouse look card on the Controls page both edit this file.
+Mouse look card on the Controls page sets every one of these (the tilt limits in its Tilt limits fold,
+`debug` under For mod makers) and saves them by itself into the `mouse-look` mod, keeping any other keys
+the file has; the in-game page edits the same file.
 
 How it turns the camera, and how the game's own camera works (`SwtAdventureCameraActor`, its
 tuning keys, splines and the lean while the cat moves), is in

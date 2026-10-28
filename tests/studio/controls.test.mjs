@@ -243,3 +243,64 @@ test("every play row has a name from the game's names, and none shows a raw id",
   for (const r of M.MENU_ROWS) assert.ok(game.names[r.command], r.command);
   for (const r of M.MOVE_ROWS) for (const k of r.keys) assert.ok(game.names[k.raw ? `key:${k.raw}` : k.action], r.name);
 });
+
+// ---------- mouse look ----------
+// Timers the test moves on by hand: run() fires what's due.
+function handTimers() {
+  let next = 1;
+  const due = new Map();
+  return { set: (f) => { const id = next++; due.set(id, f); return id; }, clear: id => due.delete(id),
+    run() { const fs = [...due.values()]; due.clear(); for (const f of fs) f(); }, get waiting() { return due.size; } };
+}
+
+test("mouse look saves are queued and debounced: three quick changes are one save, the last one", async () => {
+  const saved = [], timers = handTimers();
+  const q = M.saveQueue(async job => { saved.push(job); }, 300, timers);
+  q.push({ settings: { sensitivity: 1.1 }, enabled: true });
+  q.push({ settings: { sensitivity: 1.2 }, enabled: true });
+  q.push({ settings: { sensitivity: 1.3 }, enabled: true });
+  assert.equal(timers.waiting, 1);
+  timers.run();
+  await q.flush();
+  assert.deepEqual(saved, [{ settings: { sensitivity: 1.3 }, enabled: true, switched: false }]);
+});
+
+test("a mouse look save never starts while another is under way", async () => {
+  const order = [], timers = handTimers();
+  let release;
+  const q = M.saveQueue(job => new Promise(ok => {
+    order.push(`start ${job.settings.n}`);
+    if (job.settings.n === 1) release = () => { order.push("end 1"); ok(); }; else { order.push(`end ${job.settings.n}`); ok(); }
+  }), 300, timers);
+  q.push({ settings: { n: 1 } });
+  timers.run();
+  q.push({ settings: { n: 2 } });
+  timers.run();
+  await new Promise(r => setTimeout(r, 0));
+  assert.deepEqual(order, ["start 1"]);
+  release();
+  await q.flush();
+  assert.deepEqual(order, ["start 1", "end 1", "start 2", "end 2"]);
+});
+
+test("only a switch change toasts: the switch stays said when a slider moves right after it", async () => {
+  const saved = [], timers = handTimers();
+  const q = M.saveQueue(async job => { saved.push(job.switched); }, 300, timers);
+  q.push({ settings: {}, enabled: true, switched: true });
+  q.push({ settings: { smoothing: 50 }, enabled: true });
+  timers.run();
+  q.push({ settings: { smoothing: 60 }, enabled: true });
+  timers.run();
+  await q.flush();
+  assert.deepEqual(saved, [true, false]);
+});
+
+test("tilt sliders keep the lowest under the highest, in whole degrees from -89 to 89", () => {
+  assert.deepEqual(M.tilt(-20, 23), [-20, 23]);
+  assert.deepEqual(M.tilt(30, 23, "min"), [22, 23], "the lowest moved up past the highest: it stops a degree under");
+  assert.deepEqual(M.tilt(-20, -30, "max"), [-20, -19], "the highest moved down past the lowest: it stops a degree over");
+  assert.deepEqual(M.tilt(89, 89, "min"), [88, 89]);
+  assert.deepEqual(M.tilt(-89, -89, "max"), [-89, -88]);
+  assert.deepEqual(M.tilt(-100, 100.4), [-89, 89]);
+  assert.deepEqual(M.tilt("-20.4", "23.6"), [-20, 24]);
+});

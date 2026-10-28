@@ -43,6 +43,61 @@ def test_mouse_look_script():
     assert "sensitivity = 1.5" in lua and "invert = true" in lua and "smoothing = 50.0" in lua
 
 
+@pytest.mark.parametrize("raw, said", [
+    ({"sensitivity": "1.5"}, "'sensitivity' should be a number"),
+    ({"sensitivity": True}, "'sensitivity' should be a number"),
+    ({"sensitivity": 0}, "between 0.05 and 10"),
+    ({"sensitivity": 11}, "between 0.05 and 10"),
+    ({"toggle_key": "f6"}, "'toggle_key' should be one of F1"),
+    ({"toggle_key": None}, "'toggle_key' should be one of F1"),
+    ({"toggle_key": "F11"}, "'toggle_key' should be one of F1"),
+    ({"smoothing": 1500}, "between 0 and 1000 milliseconds"),
+    ({"sensitvity": 1}, "unknown setting 'sensitvity' (known: sensitivity, invert, toggle_key"),
+    ({"pitch_min": -90}, "between -89 and 89 degrees"),
+    (["sensitivity"], "should be an object"),
+])
+def test_mouse_look_validate_rejects_bad_values(raw, said):
+    with pytest.raises(ValueError) as e:
+        mouselook.validate(raw)
+    assert said in str(e.value)
+
+
+def test_mouse_look_validate_keeps_what_the_studio_writes_and_ignores_notes():
+    page = {"_help": "mine", "sensitivity": 1.25, "invert": True, "smoothing": 40, "toggle_key": "", "pitch_min": -30,
+            "pitch_max": 40, "debug": True}
+    assert mouselook.validate(page) == {k: v for k, v in page.items() if not k.startswith("_")}
+
+
+def test_mouse_look_merge_names_both_mods_for_crossed_tilt_limits():
+    with pytest.raises(ValueError) as e:
+        mouselook.merge([{"pitch_min": 10.0}, {"pitch_max": 5.0}], ["low-mod", "high-mod"])
+    assert str(e.value) == "mouse look: pitch_min 10 (from low-mod) must be below pitch_max 5 (from high-mod)"
+    assert mouselook.merge([{"toggle_key": "F7"}, {"sensitivity": 2.0}])["toggle_key"] == "F7"   # later wins per key
+
+
+def test_mouse_look_build_saves_into_the_top_priority_mod_and_keeps_its_help(tmp_path):
+    # The in-game page's Save writes into the mod whose settings win, keeping that file's own notes.
+    import os
+    from types import SimpleNamespace
+    from wcmods.sdk import BuildContext
+    from wcmods.sections.mouselook import MouseLookSection
+    mods = []
+    for mod_id, data in (("low", {"sensitivity": 2.0}), ("top", {"_help": "my notes", "invert": True})):
+        folder = tmp_path / mod_id
+        folder.mkdir()
+        (folder / "mouselook.json").write_text(__import__("json").dumps(data), encoding="utf-8")
+        mods.append((SimpleNamespace(id=mod_id, folder=str(folder)), mouselook.validate(data)))
+    ctx = BuildContext(SimpleNamespace(ue4ss_mods_dir=str(tmp_path)), None, str(tmp_path / "out"), lambda m: None)
+    MouseLookSection().build(ctx, mods)
+    lua = ctx.ue4ss_mods[mouselook.UE4SS_MOD_NAME][0]["Scripts/main.lua"]
+    lua = lua.decode("utf-8") if isinstance(lua, bytes) else lua
+    assert not problems(lua)
+    assert "sensitivity = 2.0" in lua and "invert = true" in lua
+    assert os.path.abspath(str(tmp_path / "top" / "mouselook.json")).replace("\\", "\\\\") in lua
+    assert '"mods/top/mouselook.json"' in lua and '"my notes"' in lua
+    assert ctx.notes[None]["mouselook"]["sensitivity"] == 2.0
+
+
 def test_mouse_look_script_with_its_menu_page():
     lua = mouselook.script(mouselook.merge([{}]), {"path": r"C:\mods\m\mouselook.json", "file": "mods/m/mouselook.json",
                                                   "keep": {"_help": 'say "hi"'}})

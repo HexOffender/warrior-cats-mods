@@ -210,5 +210,44 @@ export function captureKey(e, onButton, keyFromEvent) {
   return key ? { do: "bind", key } : { do: "unknown" };
 }
 
+// ---------- mouse look ----------
+// Its saves, one at a time: changes made within `delay` ms of each other are one save (a slider dragged with the
+// arrow keys is one), a save never starts while another is under way, and the last change wins. Each change is
+// { settings, enabled, switched }: switched when the on/off switch was what changed, which the save says (a
+// toast); the sliders and pickers save without one. save(job) returns a promise. timers: for the tests.
+export function saveQueue(save, delay = 300, timers = { set: (f, ms) => setTimeout(f, ms), clear: t => clearTimeout(t) }) {
+  let timer = null, pending = null, chain = Promise.resolve();
+  const run = () => {
+    const job = pending;
+    pending = null;
+    timer = null;
+    chain = chain.then(() => save(job), () => save(job));
+    return chain;
+  };
+  return {
+    push(change) {
+      pending = { ...change, switched: !!(change.switched || (pending && pending.switched)) };
+      timers.clear(timer);
+      timer = timers.set(run, delay);
+    },
+    // Save what's waiting now (the page is going away), and the promise of every save so far.
+    flush() {
+      if (timer !== null) { timers.clear(timer); return run(); }
+      return chain;
+    },
+  };
+}
+// The tilt limits as mouselook.json takes them: whole degrees from -89 to 89, the lowest at least a degree under
+// the highest (as the in-game page keeps them). The slider that moved gives way: moved is "min" or "max".
+export function tilt(min, max, moved = "min") {
+  const deg = v => Math.max(-89, Math.min(89, Math.round(Number(v))));
+  let lo = deg(min), hi = deg(max);
+  if (lo > hi - 1) {
+    if (moved === "max") hi = Math.min(89, Math.max(hi, lo + 1)), lo = Math.min(lo, hi - 1);
+    else lo = Math.max(-89, hi - 1), hi = Math.max(hi, lo + 1);
+  }
+  return [lo, hi];
+}
+
 // What /controls/check said about one entry of the file: { key, status, line, notes }, or null.
 export const checkRow = (check, section, name) => (check && check.rows && check.rows[section] && check.rows[section][name]) || null;

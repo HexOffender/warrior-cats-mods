@@ -41,7 +41,9 @@ the game doesn't use. **Which keys are free?**, lower on the page, lists every k
   the game in Steam, then Properties, Controller. Stick speed and inverting are in the game's own Settings,
   Player Configuration.
 - **Controller presets** (Nintendo layout, Swap bumpers and triggers) swap the buttons for you.
-- **Mouse look** turns the camera with the mouse. Its card saves by itself into the Mouse Look mod.
+- **Mouse look** turns the camera with the mouse. Its card saves by itself into the Mouse Look mod: the
+  switch, how fast it turns, the key that switches it off and on in the game, and (in **Tilt limits**) how far
+  down and up the camera tilts.
 
 Not tried in the game yet: controller buttons, Mouse 4, Mouse 5 and the wheel. They are made the same way as
 the keys that were tried, but nobody has checked them on a real controller or mouse yet. The page marks them

@@ -178,3 +178,36 @@ test("the sticks have no Change button, the moving keys say they need the launch
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });
+
+test("Mouse look saves by itself: the switch, its key and the tilt limits, and its key is kept free", { skip }, async () => {
+  const page = await browser.page();
+  await open(page);
+  const lookFile = () => {
+    const p = path.join(folders.data, "mods", "mouse-look", "mouselook.json");
+    return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null;
+  };
+  await page.click("#ml-on");
+  await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => /Mouse look on/.test(t.textContent)));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(folders.data, "mods", "mouse-look", "mod.json"), "utf8")).enabled, true);
+  // The picker and a tilt slider, changed as a person would (a change, then input events): saved, with no toast.
+  const toasts = await page.count("#toasts .toast");
+  await page.evaluate(() => { const s = document.getElementById("ml-key"); s.value = "F7"; s.dispatchEvent(new Event("change")); });
+  await page.evaluate(() => {
+    document.querySelector('details[data-key="tilt"]').open = true;
+    const lo = document.getElementById("ml-lo");
+    for (const v of [10, 20, 30]) { lo.value = v; lo.dispatchEvent(new Event("input")); }
+  });
+  await page.waitFor(() => document.getElementById("ml-lo").value === "22");   // a degree under the highest, 23
+  const end = Date.now() + 5000;
+  while (!(lookFile() && lookFile().pitch_min === 22) && Date.now() < end) await new Promise(r => setTimeout(r, 100));
+  assert.deepEqual(lookFile(), { toggle_key: "F7", pitch_min: 22, pitch_max: 23 });
+  assert.equal(await page.count("#toasts .toast"), toasts, "only the switch says it saved");
+  // Its key is kept free: listed, and refused for an action.
+  await page.waitFor(() => /F7switches mouse look off and onMouse look \(taken\)/.test(document.querySelector('details[data-key="free"] table').textContent));
+  await page.click('button[aria-label="Change the keyboard key for Meow"]');
+  await page.press("F7", { code: "F7" });
+  assert.equal(await page.text(".capture [role=alert]"), "F7 switches mouse look off and on (Mouse look); pick another key.");
+  await page.press("Escape");
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});

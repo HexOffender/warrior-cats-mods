@@ -371,63 +371,96 @@ export default {
           el("button", { class: "btn small", type: "button", text: "Add a key that stands for another in menus", onclick: () => addPair("menus") })),
         el("p", { class: "note", text: "A key standing for another does that key's jobs instead of its own: T for W, or H as a second Interact. " +
           "How the file is written is in the guide's last part and in the file formats, on GitHub." }),
+        el("h3", { text: "Mouse look" }), lookDebug(),
         out.element);
       makerFold.open = open;
     }
 
     // ---------- mouse look ----------
     // Not a binding: the game never reads the mouse, so this is a script with its own settings file in the Mouse
-    // Look mod. Changes here save straight to that mod.
+    // Look mod. Changes here save straight to that mod, one at a time (M.saveQueue): a slider is saved once it
+    // has stopped moving, and only the on/off switch says so.
     const ML = { id: "mouse-look", file: "mouselook.json" };
-    let look = { exists: false, enabled: false, settings: { sensitivity: 1, invert: false } };
+    const LOOK = game.mouselook;   // its defaults and the keys that can switch it off and on (wcmods/mouselook.py)
+    let look = { exists: false, enabled: false, settings: {} };
+    let tiltOpen = false, mouseFor = null;
+    const setting = k => look.settings[k] ?? LOOK.defaults[k];
     async function loadMouseLook() {
       try {
         const m = (await api.get("/mods")).find(x => x.id === ML.id);
-        look = { exists: !!m, enabled: !!m?.enabled, settings: { sensitivity: 1, invert: false } };
+        look = { exists: !!m, enabled: !!m?.enabled, settings: {} };
         if (m) {
           const r = await api.get(`/mods/${ML.id}/file/${ML.file}`);
-          if (r.exists) Object.assign(look.settings, JSON.parse(r.text));
+          if (r.exists) look.settings = JSON.parse(r.text);   // every key it had stays (its _help too)
         }
       } catch (e) { toast(`Mouse look: ${e.message}`, "bad"); }
     }
-    async function saveMouseLook(enabled) {
+    const looks = M.saveQueue(async job => {
       try {
         if (!look.exists) {
           await api.post("/mods", { id: ML.id, name: "Mouse Look", priority: 5, enabled: false,
             description: "Turn and tilt the camera with the mouse while exploring. Needs the script loader." });
           look.exists = true;
         }
-        await api.put(`/mods/${ML.id}/file/${ML.file}`, { text: JSON.stringify(look.settings, null, 2) });
-        await api.patch(`/mods/${ML.id}`, { enabled });
-        look.enabled = enabled;
+        await api.put(`/mods/${ML.id}/file/${ML.file}`, { text: JSON.stringify(job.settings, null, 2) });
+        if (job.switched) await api.patch(`/mods/${ML.id}`, { enabled: job.enabled });
         wc.bus.emit("mods-changed");
-        toast(`Mouse look ${enabled ? "on" : "off"}. Apply to game to use it.`);
+        if (job.switched) toast(`Mouse look ${job.enabled ? "on" : "off"}. Apply to game to use it.`);
         recheck(0);   // its key is one the Controls page keeps free
-      } catch (e) { toast(e.message, "bad"); }
-      renderMouse();
-    }
+      } catch (e) {
+        toast(e.message, "bad");
+        await loadMouseLook();   // the card shows what's saved
+        renderMouse();
+      }
+    });
+    const saveLook = (switched = false) => looks.push({ settings: { ...look.settings }, enabled: look.enabled, switched });
     function renderMouse() {
-      const s = look.settings;
+      mouseFor = ue4ss;
       const toggle = el("input", { type: "checkbox", class: "switch", id: "ml-on", checked: look.enabled, disabled: !ue4ss && !look.enabled });
-      toggle.addEventListener("change", () => saveMouseLook(toggle.checked));
-      const sensVal = el("strong", { text: `×${Number(s.sensitivity).toFixed(2)}` });
+      toggle.addEventListener("change", () => { look.enabled = toggle.checked; saveLook(true); });
+      const sensitivity = Number(setting("sensitivity"));
+      const sensVal = el("strong", { text: `×${sensitivity.toFixed(2)}` });
       // The slider stretches to fit a value set by hand in mouselook.json (0.05-10), so it never clamps it.
       // min and max come before value: a range input clamps its value to the range it has at the time.
-      const sens = el("input", { type: "range", id: "ml-sens", min: String(Math.min(0.2, s.sensitivity)),
-        max: String(Math.max(3, s.sensitivity)), step: "0.05", value: s.sensitivity });
-      sens.addEventListener("input", () => { s.sensitivity = Number(sens.value); sensVal.textContent = `×${s.sensitivity.toFixed(2)}`; });
-      sens.addEventListener("change", () => saveMouseLook(look.enabled));
-      const inv = el("input", { type: "checkbox", id: "ml-invert", checked: !!s.invert });
-      inv.addEventListener("change", () => { s.invert = inv.checked; saveMouseLook(look.enabled); });
+      const sens = el("input", { type: "range", id: "ml-sens", min: String(Math.min(0.2, sensitivity)),
+        max: String(Math.max(3, sensitivity)), step: "0.05", value: sensitivity });
+      sens.addEventListener("input", () => { look.settings.sensitivity = Number(sens.value); sensVal.textContent = `×${look.settings.sensitivity.toFixed(2)}`; saveLook(); });
+      const inv = el("input", { type: "checkbox", id: "ml-invert", checked: !!setting("invert") });
+      inv.addEventListener("change", () => { look.settings.invert = inv.checked; saveLook(); });
       // How long the camera takes to catch up with the mouse (0-1000 ms; the game eases its own over ~200).
       const smoothText = v => v > 0 ? `${Math.round(v)} ms` : "off";
-      const smoothing = Number(s.smoothing ?? 0);
+      const smoothing = Number(setting("smoothing"));
       const smoothVal = el("strong", { text: smoothText(smoothing) });
       const smooth = el("input", { type: "range", id: "ml-smooth", min: "0", max: String(Math.max(300, smoothing)),
         step: "10", value: smoothing });
-      smooth.addEventListener("input", () => { s.smoothing = Number(smooth.value); smoothVal.textContent = smoothText(s.smoothing); });
-      smooth.addEventListener("change", () => saveMouseLook(look.enabled));
-      const toggleKey = s.toggle_key ?? "F6";
+      smooth.addEventListener("input", () => { look.settings.smoothing = Number(smooth.value); smoothVal.textContent = smoothText(look.settings.smoothing); saveLook(); });
+      // Switches off and on with: an F key wcmods leaves free (the mod menu's key can be one), or none.
+      const keySel = lookKeys = el("select", { id: "ml-key", "aria-label": "Mouse look switches off and on with" },
+        el("option", { value: "", text: "no key" }), ...LOOK.toggle_keys.map(k => el("option", { value: k, text: k })));
+      keySel.value = setting("toggle_key");
+      keySel.addEventListener("change", () => { look.settings.toggle_key = keySel.value; saveLook(); });
+      markLookKeys();
+      // Tilt limits, in a fold: few need them. The slider that moves gives way to the other (M.tilt).
+      const [lo, hi] = M.tilt(setting("pitch_min"), setting("pitch_max"));
+      const deg = v => `${v}°`;
+      const loVal = el("strong", { text: deg(lo) }), hiVal = el("strong", { text: deg(hi) });
+      const loIn = el("input", { type: "range", id: "ml-lo", min: "-89", max: "89", step: "1", value: lo });
+      const hiIn = el("input", { type: "range", id: "ml-hi", min: "-89", max: "89", step: "1", value: hi });
+      const moved = which => {
+        const [a, b] = M.tilt(loIn.value, hiIn.value, which);
+        loIn.value = a; hiIn.value = b; loVal.textContent = deg(a); hiVal.textContent = deg(b);
+        look.settings.pitch_min = a; look.settings.pitch_max = b;
+        saveLook();
+      };
+      loIn.addEventListener("input", () => moved("min"));
+      hiIn.addEventListener("input", () => moved("max"));
+      const tiltFold = el("details", { class: "fold", "data-key": "tilt" },
+        el("summary", {}, el("h3", { text: "Tilt limits" }), el("span", { class: "muted", text: "How far down and up the camera tilts" })),
+        el("div", { class: "row" }, el("label", { for: "ml-lo", class: "lbl" }, "Lowest tilt ", loVal), loIn),
+        el("div", { class: "row" }, el("label", { for: "ml-hi", class: "lbl" }, "Highest tilt ", hiVal), hiIn),
+        el("p", { class: "note", text: `The game's own: ${deg(LOOK.defaults.pitch_min)} and ${deg(LOOK.defaults.pitch_max)}.` }));
+      tiltFold.open = tiltOpen;
+      tiltFold.addEventListener("toggle", () => { tiltOpen = tiltFold.open; });
       clear(mouse).append(...[
         el("div", { class: "row spread" }, el("h2", { text: "Mouse look" }),
           el("span", { class: "muted", text: "Saves by itself into the Mouse Look mod; needs the script loader." })),
@@ -437,9 +470,32 @@ export default {
           el("label", { class: "row", for: "ml-invert" }, inv, "Invert up/down")),
         el("div", { class: "row" }, el("label", { for: "ml-smooth", class: "lbl" }, "Smoothing ", smoothVal), smooth,
           el("span", { class: "muted", text: "How long the camera takes to catch up with the mouse. Off is the most direct; the game eases the arrow keys over about 200 ms." })),
+        el("div", { class: "row" }, el("label", { for: "ml-key", class: "lbl", text: "Switches off and on with" }), keySel,
+          el("span", { class: "muted", text: "Press it in the game while you explore." })),
+        tiltFold,
         el("p", { class: "note", text: "While you explore, the mouse turns the camera and the cursor stays hidden. Menus get the cursor back. " +
-          (toggleKey ? `Press ${toggleKey} in the game to switch it off and on. ` : "") + "The arrow keys and the right stick still work." }),
+          "The arrow keys and the right stick still work." }),
       ].filter(Boolean));
+    }
+    // The picker's F keys that wcmods takes for something else (the mod menu's key), from the last check: shown
+    // with what they do, and not offered. Done in place, so the card isn't drawn again under the pointer.
+    let lookKeys = null;
+    function markLookKeys() {
+      if (!lookKeys) return;
+      const busy = Object.fromEntries(((check && check.in_use) || [])
+        .filter(e => e.taken === "refuse" && e.from !== "Mouse look").map(e => [e.key, e.does]));
+      for (const o of lookKeys.options) {
+        const taken = o.value && busy[o.value] && o.value !== lookKeys.value;
+        o.disabled = !!taken;
+        o.textContent = taken ? `${o.value} (${busy[o.value]})` : (o.value || "no key");
+      }
+    }
+    // Under For mod makers: mouse look's log, for finding out why it does what it does.
+    function lookDebug() {
+      const box = el("input", { type: "checkbox", id: "ml-debug", checked: !!setting("debug") });
+      box.addEventListener("change", () => { look.settings.debug = box.checked; saveLook(); });
+      return el("label", { class: "row", for: "ml-debug" }, box,
+        el("span", { text: "Mouse look: log what it does (in the script loader's log, UE4SS.log)" }));
     }
 
     // ---------- the whole page ----------
@@ -456,7 +512,7 @@ export default {
       renderMoving();
       renderMenus();
       renderFree();
-      renderMouse();
+      if (mouseFor !== ue4ss) renderMouse(); else markLookKeys();
       renderMakers();
     }
 
@@ -466,7 +522,8 @@ export default {
     const offMods = wc.bus.on("mods-changed", () => recheck());
     await Promise.all([target.refresh(), loadMouseLook()]);
     render();
+    renderMouse();   // with mouse look's file read
     recheck(0);
-    return { unmount() { offInstalled(); offFocus(); offMods(); clearTimeout(timer); } };
+    return { unmount() { offInstalled(); offFocus(); offMods(); clearTimeout(timer); looks.flush(); } };
   },
 };
