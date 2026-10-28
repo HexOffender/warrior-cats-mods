@@ -15,6 +15,7 @@ const KIND_INFO = {
   online: ["bad", "Online", "Online: the den-visit server may ignore changes here"],
   traits: ["warn", "Traits", "Traits: changes which personality new cats get"],
   appearance: ["good", "Looks", "Appearance only"],
+  story: ["warn", "Story", "Quests and talk: a wrong value can stop a quest"],
   gameplay: ["", "", ""],
 };
 const QUICK_TABLES = () => [...new Set(quickRows().map(q => q.table))];
@@ -33,7 +34,7 @@ export default {
   title: "Game data",
   async mount(root, wc) {
     const { el, api, clear, toast } = wc;
-    let edits = {}, rowOps = {};
+    let edits = {}, rowOps = {}, notes = { top: {}, tables: {} };   // notes: the file's own "_" keys, kept
     let names = [], kinds = {}, hidden = [], titles = {}, index = null, indexing = null;
     const cache = {}, loading = {};   // table -> its rows (GET /game/data/<table>); the request on its way
     const views = {};                 // table -> what the grid had: its filter, the multiply choices, its scroll
@@ -45,12 +46,12 @@ export default {
       onLoad: obj => {
         // A file the page didn't write may hold anything: what isn't a table's changes is said and left out.
         const c = D.clean(obj);
-        edits = c.edits; rowOps = c.rowOps;
+        edits = c.edits; rowOps = c.rowOps; notes = c.notes;
         baseline = snapshot();
         if (c.skipped.length) toast(`data.json has ${c.skipped.join(", ")}, which isn't a table's changes; it's left out when you save`, "bad");
         changed(false);
       },
-      getValue: () => D.toJson(edits, rowOps, headers()),
+      getValue: () => D.toJson(edits, rowOps, headers(), notes),
     });
     const out = wc.codePanel("data.json");
     const problem = el("div", { hidden: true });
@@ -81,10 +82,10 @@ export default {
     let tableHook = null;   // the open table's parts that follow a change without a rebuild (Put this table back)
     // What the page holds, to tell a change from a change undone (Normal after a drag): back to the file is clean.
     let baseline = "";
-    const snapshot = () => JSON.stringify(D.toJson(edits, rowOps));
+    const snapshot = () => JSON.stringify(D.toJson(edits, rowOps, {}, notes));
     function changed(dirty = true, rebuild = true) {
       if (dirty) { if (snapshot() === baseline) target.markClean(); else target.markDirty(); }
-      out.set(D.toJson(edits, rowOps, headers()));
+      out.set(D.toJson(edits, rowOps, headers(), notes));
       renderList();
       refreshQuick();
       if (rebuild && current && cache[current]) renderTable();
@@ -158,10 +159,13 @@ export default {
       const normalBtn = el("button", { class: "btn small ghost", type: "button", text: "Normal", "aria-label": `Put ${q.label} back to normal` });
       const now = el("span", { class: "quick-now" });
       const preview = el("p", { class: "muted quick-preview" });
+      // A change over the file's own edit of these cells asks first (quickHand): never replaced without a word.
+      const ask = el("div", { class: "row quick-ask", role: "group", "aria-label": `${q.label}: replace the value set by hand?`, hidden: true });
       const short = q.row && q.row !== "*" ? q.row.split(".").slice(-2).join(".") : q.row === "*" ? "every row" : `${(q.rows || []).length} rows`;
       box.append(
         el("div", { class: "quick-head" }, el("label", { for: id, class: "lbl", text: q.label }), now),
         el("div", { class: "row quick-controls" }, slider, num, el("span", { class: "muted", text: q.unit || "" }), normalBtn),
+        ask,
         el("p", { class: "note", text: q.what }),
         preview,
         el("p", { class: "muted where" }, `Where: ${title(q.table)}, ${short}${(q.columns || [q.column]).length > 1 ? ` (${q.columns.join(", ")})` : ""}. `,
@@ -181,23 +185,35 @@ export default {
         }
         num.disabled = slider.disabled = false;
         const normal = D.quickNormal(q, t), value = D.quickCurrent(q, t, edits[q.table]);
-        const edited = D.quickEdited(q, t, edits[q.table]);
+        const edited = D.quickEdited(q, t, edits[q.table]), hand = D.quickHand(q, t, edits[q.table]);
         if (document.activeElement !== num) num.value = String(value);
         slider.value = String(value);
         normalBtn.disabled = !edited;
         box.classList.toggle("edited", edited);
-        now.textContent = edited ? `${q.kind === "factor" ? "×1" : normal} -> ${q.kind === "factor" ? "×" + value : value}` : `Normal: ${q.kind === "factor" ? "×1" : normal}`;
-        preview.textContent = q.kind === "factor" ? D.quickPreview(q, t, value, q.names || {}) : "";
+        // The file's own edit, said as it is (the box can't hold "0.08" as a factor), not as a change of the row's.
+        now.textContent = hand ? `This row is ${hand}, in data.json` : edited ? `${q.kind === "factor" ? "×1" : normal} -> ${q.kind === "factor" ? "×" + value : value}` : `Normal: ${q.kind === "factor" ? "×1" : normal}`;
+        preview.textContent = q.kind === "factor" && !hand ? D.quickPreview(q, t, value, q.names || {}, edits[q.table]) : "";
         preview.hidden = !preview.textContent;
       };
-      const write = raw => {
+      const hideAsk = () => { ask.hidden = true; clear(ask); };
+      const write = (raw, replace = false) => {
         const t = table();
         if (!t) return;
-        const r = D.quickWrite(q, t, edits, raw);
+        hideAsk();
+        const r = D.quickWrite(q, t, edits, raw, { replace });
         if (r.error) { toast(r.error, "bad"); draw(); return; }
+        if (r.hand) {
+          const to = q.kind === "factor" ? `×${D.readNumber(raw)}` : String(D.readNumber(raw));
+          ask.append(el("span", { text: `This row is ${r.hand} in data.json. Replace that with ${to}?` }),
+            el("button", { class: "btn small", type: "button", text: "Replace it", onclick: () => { write(raw, true); num.focus(); } }),
+            el("button", { class: "btn small ghost", type: "button", text: "Keep it", onclick: () => { hideAsk(); draw(); num.focus(); } }));
+          ask.hidden = false;
+          wc.announce(ask.firstChild.textContent);
+          return;
+        }
         changed(true, current === q.table);
       };
-      slider.addEventListener("input", () => { num.value = slider.value; const t = table(); if (t && q.kind === "factor") preview.textContent = D.quickPreview(q, t, Number(slider.value), q.names || {}); });
+      slider.addEventListener("input", () => { num.value = slider.value; const t = table(); if (t && q.kind === "factor" && !D.quickHand(q, t, edits[q.table])) preview.textContent = D.quickPreview(q, t, Number(slider.value), q.names || {}, edits[q.table]); });
       slider.addEventListener("change", () => write(slider.value));
       num.addEventListener("change", () => write(num.value));
       num.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); write(num.value); } });
@@ -234,7 +250,7 @@ export default {
         const why = inGame(n) ? "map data this page doesn't list" : "a table the game doesn't have";
         listBox.append(el("p", { class: "note also" }, `This mod also changes ${why}: `, el("span", { class: "mono", text: n }), " ",
           el("button", { class: "btn small ghost", type: "button", text: "Remove", "aria-label": `Remove the changes to ${n}`,
-            onclick: () => { delete edits[n]; delete rowOps[n]; changed(); } })));
+            onclick: () => { delete edits[n]; delete rowOps[n]; delete notes.tables[n]; changed(); } })));
       }
     }
 
@@ -261,7 +277,7 @@ export default {
       if (!t) return;
       const n = current, view = views[n];
       const { header, rows } = t, texts = t.texts || {};
-      const colKinds = header.map((_, i) => D.columnKind(header, rows, i));
+      const colKinds = header.map((_, i) => D.columnKind(header, rows, i, n));
       const tEdits = () => edits[n] || {};
       const [kindCls, , kindSaid] = KIND_INFO[kinds[n] || "gameplay"] || KIND_INFO.gameplay;
       const label = i => i === 1 && titles[n]?.value ? titles[n].value : D.headerLabel(header[i], i);
@@ -293,10 +309,12 @@ export default {
         mulCol.addEventListener("change", say); mulBy.addEventListener("input", say); say();
         go.addEventListener("click", () => {
           const col = header.indexOf(mulCol.value), f = Number(mulBy.value);
-          const why = D.multiplyProblem(colKinds[col], header, rows, col, f);
+          const why = D.multiplyProblem(colKinds[col], header, rows, col, f, texts);
           if (why) return toast(why, "bad");
           D.setCell(edits, n, header, "*", mulCol.value, `x${f}`);
           changed();
+          const warn = D.multiplyWarning(colKinds[col], header, rows, col, f, texts);
+          if (warn) toast(warn);
         });
         card.append(el("div", { class: "row" }, el("span", { class: "lbl", text: "Multiply" }), mulCol, el("span", { text: "by" }), mulBy, go));
       }
@@ -311,7 +329,7 @@ export default {
         })));
       }
       const putBack = wc.confirmButton("Put this table back", "Press again: every change to this table goes", () => {
-        delete edits[n]; delete rowOps[n]; changed();
+        delete edits[n]; delete rowOps[n]; delete notes.tables[n]; changed();
       }, "btn small ghost");
       tableHook = () => { putBack.disabled = !D.countEdits(edits, rowOps, n); };
       tableHook();
@@ -374,6 +392,7 @@ export default {
               done = true;
               box.removeEventListener("blur", onBlur);
               commitValue(row, i, r.value);
+              if (r.warn) toast(`${D.rowLabel(header, row, texts)}'s ${label(i)}: ${r.warn}`);
               td.focus();
               return true;
             }
@@ -387,11 +406,18 @@ export default {
         // Leaving the box keeps what's typed; a value that can't go in goes back to what it was.
         const onBlur = () => { if (!finish(true)) { done = true; show(td, row, i); } };
         box.addEventListener("blur", onBlur);
+        // A dropdown changes with every arrow key: those only choose, and Enter or leaving the box keeps the
+        // choice. A pick with the mouse keeps it straight away.
+        let byKey = false;
         box.addEventListener("keydown", e => {
+          byKey = e.key !== "Enter" && e.key !== "Escape";
           if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); finish(true); }
           else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
         });
-        if (kind.kind === "choice") box.addEventListener("change", () => finish(true));
+        if (kind.kind === "choice") {
+          box.addEventListener("pointerdown", () => { byKey = false; });
+          box.addEventListener("change", () => { if (!byKey) finish(true); });
+        }
       }
       function fill() {
         const q = filterBox.value.trim().toLowerCase();

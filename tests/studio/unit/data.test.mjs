@@ -45,7 +45,19 @@ test("clean skips a null table with its name", () => {
   const c = D.clean({ "TuningData.csv": null, "Nope.csv": [1], "CombatBaseExperience.csv": { Mice: 30 } });
   assert.deepEqual(c.skipped, ["TuningData.csv", "Nope.csv"]);
   assert.deepEqual(c.edits, { "CombatBaseExperience.csv": { Mice: { __first__: 30 } } });
-  assert.deepEqual(D.clean(null), { edits: {}, rowOps: {}, skipped: [] });
+  assert.deepEqual(D.clean(null), { edits: {}, rowOps: {}, skipped: [], notes: { top: {}, tables: {} } });
+});
+
+test("the file's own _help and _note keys are kept, at the top and in a table", () => {
+  const file = { _help: "Mine", _note: "for the speed run", "TuningData.csv": { _note: "faster", "Run.Speed": { MaxValue: 450 } },
+    "NPC/Scars.csv": { _note: "only a note" } };
+  const c = D.clean(file);
+  assert.deepEqual(c.notes, { top: { _help: "Mine", _note: "for the speed run" }, tables: { "TuningData.csv": { _note: "faster" }, "NPC/Scars.csv": { _note: "only a note" } } });
+  assert.deepEqual(D.toJson(c.edits, c.rowOps, {}, c.notes), file);
+  // A table whose last change goes keeps no note of its own; a file with no _help gets the page's.
+  delete c.edits["TuningData.csv"];
+  assert.deepEqual(Object.keys(D.toJson(c.edits, c.rowOps, {}, c.notes)), ["_help", "_note", "NPC/Scars.csv"]);
+  assert.equal(D.toJson({}, {}, {}, D.clean({}).notes)._help, D.HELP);
 });
 
 test("shorthand expands to the second column once the table is cached", () => {
@@ -122,9 +134,36 @@ test("a column of TRUE/FALSE is a checkbox and a five-word column a dropdown", (
   assert.deepEqual(D.columnKind(header, rows, 4), { kind: "text" }, "every word once: names, not a choice");
   assert.deepEqual(D.columnKind(header, rows, 5), { kind: "number", chance: false });
   assert.deepEqual(D.columnKind(header, rows, 6), { kind: "note" });
-  assert.equal(D.multiplyProblem({ kind: "number", chance: true }, header, rows, 3, 3), "b would be 1.5, and a chance can't go over 1");
+  // A row is named by its Name (or Role) column in a message, not its key.
+  assert.equal(D.multiplyProblem({ kind: "number", chance: true }, header, rows, 3, 3), "Fern would be 1.5, and a chance can't go over 1");
   assert.equal(D.multiplyProblem({ kind: "number" }, header, rows, 5, 0), "Use a number above 0");
   assert.equal(D.multiplyProblem({ kind: "number" }, header, rows, 5, 2), null);
+});
+
+test("a chance is a column named so, or listed: other 0-to-1 columns only ask", () => {
+  // CatSize's scales are 0 to 1 with decimals, and aren't chances: a Leader's 1.2 goes in, with a word.
+  const header = ["--", "Role", "MinScale", "MaxScale"];
+  const rows = [["3", "Elder", "0.65", "0.75"], ["8", "Leader", "0.9", "1"]];
+  const scale = D.columnKind(header, rows, 3, "NPC/CatSize.csv");
+  assert.deepEqual(scale, { kind: "number", chance: false, unit: true });
+  assert.deepEqual(D.readCell(scale, "1.2"), { value: 1.2, warn: "Every other value in this column is from 0 to 1; 1.2 goes in, if that's what you meant" });
+  assert.deepEqual(D.readCell(scale, "0.8"), { value: 0.8 });
+  assert.equal(D.multiplyProblem(scale, header, rows, 3, 1.5), null, "Every MaxScale × 1.5 isn't refused");
+  assert.equal(D.multiplyWarning(scale, header, rows, 3, 1.5),
+    "Elder's MaxScale is 1.125 now (and 1 more over 1); every value here was from 0 to 1, so check that's what you meant");
+  assert.equal(D.multiplyWarning(scale, header, rows, 3, 1), null);
+  // Scars' EarChance is a chance by its name; AICombatChances' columns and AttackMove's Accuracy by the list.
+  const scars = { header: ["", "Role", "Group", "EarChance"], rows: [["7", "Leader", "All", "0.85"], ["3", "Warrior", "All", "0.10"]] };
+  const ear = D.columnKind(scars.header, scars.rows, 3, "NPC/Scars.csv");
+  assert.deepEqual(ear, { kind: "number", chance: true });
+  assert.equal(D.multiplyProblem(ear, scars.header, scars.rows, 3, 2), "Leader would be 1.7, and a chance can't go over 1");
+  assert.equal(D.columnKind(["Key", "Support"], [["a", "0.1"], ["b", "0.3"]], 1, "AICombatChances.csv").chance, true);
+  assert.equal(D.columnKind(["Key", "Accuracy"], [["a", "0.9"], ["b", "1"]], 1, "AttackMove.csv").chance, true);
+  assert.deepEqual(D.columnKind(["Key", "Duration"], [["a", "0.19"], ["b", "0.3"]], 1, "GameSharedForceFeedback.csv"), { kind: "number", chance: false, unit: true });
+  // A column named Chance whose numbers go past 1 is a number like any other.
+  assert.deepEqual(D.columnKind(["Key", "Chance"], [["a", "15"], ["b", "40"]], 1, "X.csv"), { kind: "number", chance: false });
+  // Rows in words: the English for a STR_ key.
+  assert.equal(D.rowLabel(["Key", "Value"], ["STR_FISH", "1"], { STR_FISH: "Fish" }), "Fish");
 });
 
 test("setCell and unsetCell say whether anything was there to take away", () => {
@@ -193,6 +232,37 @@ test("a factor entry writes xN on \"*\" or on each row", () => {
   D.quickWrite(size, sizes, edits, 1.2);
   assert.deepEqual(edits, { "NPC/CatSize.csv": { "8": { MinScale: "x1.2", MaxScale: "x1.2" } } });
   assert.equal(D.quickPreview(size, sizes, 1.2), "MinScale 0.9 -> 1.08, MaxScale 1 -> 1.2");
+});
+
+test("a quick row over the file's own edit says it, and only replaces it when told", () => {
+  // A factor row over a plain value: no "×1 -> ×1", and no silent replace.
+  const xp = quick("xp-fights");
+  const plain = { "CombatBaseExperience.csv": { "*": { BaseExperience: 30 } } };
+  assert.equal(D.quickHand(xp, XP, plain["CombatBaseExperience.csv"]), "set by hand to 30");
+  assert.deepEqual(D.quickWrite(xp, XP, plain, 2), { hand: "set by hand to 30" });
+  assert.deepEqual(plain["CombatBaseExperience.csv"]["*"], { BaseExperience: 30 }, "nothing replaced yet");
+  assert.deepEqual(D.quickWrite(xp, XP, plain, 2, { replace: true }), { ok: true });
+  assert.deepEqual(plain["CombatBaseExperience.csv"]["*"], { BaseExperience: "x2" });
+  assert.equal(D.quickHand(xp, XP, plain["CombatBaseExperience.csv"]), null);
+  // A value row over an "xN": the box shows what the game gets, and the row says it's set by hand.
+  const run = quick("run-speed"), row = "Gameplay.Exploration.Player.MoveAndRun.Run.Speed";
+  const times = { "TuningData.csv": { [row]: { MaxValue: "x1.5" } } };
+  assert.equal(D.quickHand(run, TUNING, times["TuningData.csv"]), "set by hand to ×1.5");
+  assert.equal(D.quickCurrent(run, TUNING, times["TuningData.csv"]), 585);
+  assert.deepEqual(D.quickWrite(run, TUNING, times, 600), { hand: "set by hand to ×1.5" });
+  // Its own kind of value is the row's own: no question.
+  assert.equal(D.quickHand(run, TUNING, { [row]: { MaxValue: 450 } }), null);
+  // A factor row's cells set to different factors (MinScale × 1.2, MaxScale × 2) are a hand edit too.
+  const size = quick("size-leader"), sizes = { header: HEADERS["NPC/CatSize.csv"], rows: [["8", "Leader", "0.9", "1"]] };
+  assert.equal(D.quickHand(size, sizes, { "8": { MinScale: "x1.2", MaxScale: "x2" } }), "set by hand to ×1.2 and ×2");
+  assert.equal(D.quickHand(size, sizes, { "8": { MinScale: "x1.2" } }), "set by hand to ×1.2", "only one of its cells");
+});
+
+test("a factor row's preview is what the game gets with the mod's other edits", () => {
+  const xp = quick("xp-fights");
+  // Mice has a value of its own: under "*" × 2 it stays 25.
+  assert.equal(D.quickPreview(xp, XP, 2, {}, { Mice: { BaseExperience: 25 } }), "Fish 10 -> 20, Mice 25 -> 25 (its own value), Rat 60 -> 120");
+  assert.equal(D.quickPreview(xp, XP, 1, {}, {}), "Fish 10 -> 10, Mice 25 -> 25, Rat 60 -> 60");
 });
 
 test("a chance factor over 1 is refused", () => {

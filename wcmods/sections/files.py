@@ -15,16 +15,21 @@ APPEARANCE_FILES = {NPC_DIR + f for f in (
 # Traits (with gameplay bonuses) are rolled from body, ear and face shape (TraitsFilters.csv).
 TRAIT_FILES = {NPC_DIR + "BodyType.csv", NPC_DIR + "EarType.csv", NPC_DIR + "FaceType.csv",
                NONASSET + "TraitsFilters.csv"}
+# Quests and what cats say: a wrong value (a tag, a step's order) can stop a quest.
+STORY_FILES = {NONASSET + f for f in ("QuestDialogues.csv", "StoryDialogues.csv", "QuestObjectives.csv",
+                                      "QuestDynamicObjectives.csv", "NarrativeRole.csv")}
 
 
 def classify(path):
-    """'online', 'traits', 'appearance' or 'gameplay' for a game file path."""
+    """'online', 'traits', 'appearance', 'story' or 'gameplay' for a game file path."""
     if path.endswith(ONLINE_FILES):
         return "online"
     if path in TRAIT_FILES:
         return "traits"
     if path in APPEARANCE_FILES:
         return "appearance"
+    if path in STORY_FILES:
+        return "story"
     return "gameplay"
 
 
@@ -57,6 +62,8 @@ class FilesSection(Section):
                 elif kind == "traits":
                     ctx.warn(f"{mod.id}: {rel} changes which traits cats get, and traits have gameplay effects "
                              "(not appearance-only)")
+                elif kind == "story":
+                    ctx.warn(f"{mod.id}: {rel} is quests and talk; a wrong value can stop a quest")
                 elif kind == "gameplay":
                     ctx.warn(f"{mod.id}: {rel} isn't on the known appearance-only list; it may change gameplay")
                 if rel in owner:
