@@ -237,8 +237,8 @@ Fawnstar, as a player reported it showing "Cat 1"):
 - **The runtime fixes of 2026-10-28** (written and checked by their shape and by luacheck, not yet run in the
   game; `tests/game/test_scripts.py` has the in-game tests for them): a script's errors with its mod's name,
   once then once a minute; a task that cancels itself and adds another; `Game.onKey` with a misspelt name
-  returning false, and its id cancelling the key; another cat's `level()` being nil; `Game.find` passing over
-  the last level's HUD; the dialogue claim renewed while the box is up; the bridge stopping a runaway line and
+  returning false, and its id cancelling the key; another cat's `level()` being nil; `Game.find` not handing back
+  the last level's HUD (nil until the new one comes first); the dialogue claim renewed while the box is up; the bridge stopping a runaway line and
   running only a request it took; the script bootstrap loading the mod's files by their names (and
   `require` through them), naming a script that didn't start on the Overview and at the top of the screen, and
   its Save saying so; a page made from a timer replacing the automatic one; an empty list and a float saved as

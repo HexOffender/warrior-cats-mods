@@ -78,12 +78,17 @@ _PLAIN = {"string never closed": "a piece of text in quotes is never closed (its
           "long comment never closed": "a --[[ comment ]] is never closed with ]]"}
 
 
+def _a(word):
+    """The article before a word: "an" for one said with a vowel (an "if", an "end"), else "a"."""
+    return "an" if word and word[0].lower() in "aeiou" else "a"
+
+
 def explain(problem):
     """One of check()'s problems in a creator's words: "line 4: a "function" is never closed with "end""."""
     m = _NEVER_CLOSED.match(problem)
     if m:
         line, opened = m.groups()
-        return f'line {line}: a "{opened}" is never closed with "{_OPENS[opened]}"'
+        return f'line {line}: {_a(opened)} "{opened}" is never closed with "{_OPENS[opened]}"'
     m = _CLOSES.match(problem)
     if m:
         line, closer, opened, at = m.groups()
@@ -91,7 +96,7 @@ def explain(problem):
     m = _NOTHING_OPEN.match(problem)
     if m:
         line, closer = m.groups()
-        return f'line {line}: an "{closer}" with nothing before it to close (one too many, or its start is missing)'
+        return f'line {line}: {_a(closer)} "{closer}" with nothing before it to close (one too many, or its start is missing)'
     line, _, rest = problem.partition(": ")
     if rest in _PLAIN:
         return f"{line}: {_PLAIN[rest]}"

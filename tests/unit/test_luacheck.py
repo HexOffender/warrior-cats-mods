@@ -37,9 +37,12 @@ def test_explain_says_each_problem_in_a_creators_words():
     said = {p: luacheck.explain(p) for p in (
         "line 1: 'function' is never closed", "line 3: 'repeat' is never closed", "line 2: '{' is never closed",
         "line 3: 'end' closes 'repeat' from line 1", "line 2: 'end' with nothing open", "line 1: string never closed",
-        "line 2: long comment never closed", "line 1: long string never closed", "line 4: unexpected character '“'")}
+        "line 2: long comment never closed", "line 1: long string never closed", "line 4: unexpected character '“'",
+        "line 5: 'if' is never closed", "line 6: ')' with nothing open")}
     assert said == {
         "line 1: 'function' is never closed": 'line 1: a "function" is never closed with "end"',
+        "line 5: 'if' is never closed": 'line 5: an "if" is never closed with "end"',
+        "line 6: ')' with nothing open": 'line 6: a ")" with nothing before it to close (one too many, or its start is missing)',
         "line 3: 'repeat' is never closed": 'line 3: a "repeat" is never closed with "until"',
         "line 2: '{' is never closed": 'line 2: a "{" is never closed with "}"',
         "line 3: 'end' closes 'repeat' from line 1":
