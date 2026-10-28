@@ -163,8 +163,11 @@ def test_uninstall_answers_losing_and_says_it_first(studio, fake_game):
     assert [c["name"] for c in call(studio, "GET", "names/losing")["losing"]] == ["Sparkle"]
     r = call(studio, "POST", "uninstall")
     assert [c["name"] for c in r["result"]["losing"]] == ["Sparkle"] and r["result"]["removed"] == []
-    assert r["log"][0].startswith("  warning: a cat in your save has a name only your mods give: Sparkle. With the mods "
+    # "warning: " at the start of the line, as the page's drawer and Play count warnings
+    assert r["log"][0].startswith("warning: a cat in your save has a name only your mods give: Sparkle. With the mods "
                                   "out, it shows as <MISSING STRING TABLE ENTRY>")
+    assert r["summary"] == ("Took every mod out of the game. Your mods are still here. A cat's name shows as "
+                            "<MISSING STRING TABLE ENTRY> until they're back (the log says which).")
 
 
 def test_a_mod_named_cat_says_the_name_it_had_as_its_mods_file_says(names_studio):
