@@ -50,3 +50,14 @@ def make_mod(studio, mod_id, meta=None, files=None):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content if isinstance(content, str) else json.dumps(content))
     return folder
+
+
+def fixture_game():
+    """tests/studio/fixtures/game.py, the made-up game with a few of the game's data tables that the e2e tests
+    use too, as a module: write_game(folder), write_save(folder, data), TABLES."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "wcmods_fixture_game", os.path.join(REPO, "tests", "studio", "fixtures", "game.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module

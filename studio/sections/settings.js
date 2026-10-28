@@ -111,7 +111,7 @@ export default {
       for (const n of backups.slice(0, 10)) {
         saves.append(el("div", { class: "row spread line" }, el("span", { class: "mono", text: n }),
           confirmButton("Restore", "Press again to restore", async () => {
-            try { const r = await api.post("/restore", { name: n }); toast(`Restored ${r.restored.join(", ")}`); renderRepair(); }
+            try { const r = await api.post("/restore", { name: n }); toast(`Restored ${r.restored.join(", ")}. The changes your mods made to your save since that copy are made again at the next Apply, if they're still on.`); renderRepair(); }
             catch (e) { toast(e.message, "bad"); }
           }, "btn small")));
       }
@@ -165,7 +165,7 @@ export default {
       });
       b.addEventListener("blur", () => { if (armed) disarm(); });
       return [el("div", { class: "row" }, b,
-        el("span", { class: "muted", text: "Your mods stay here, and key changes come out with them. Save edits stay in your save; restore a save backup to undo those." })), ask];
+        el("span", { class: "muted", text: "Your mods stay here, and key changes come out with them. Save edits stay in your save: the Save page's Done so far puts a save edit back, and a save backup puts the whole save back." })), ask];
     }
     // "your cat (Sparkle), Wrenheart, the cat at RiverClan · Warrior · 3 and 2 more", from GET /names/losing.
     function catsInWords(cats) {

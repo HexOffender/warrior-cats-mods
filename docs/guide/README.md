@@ -12,6 +12,10 @@ panel.
 - [Characters](characters.md): cats of your own for Sandbox mode, their looks, where they stand and what
   they say, and getting Sandbox mode.
 - [Questlines](questlines.md): quests with those cats, step by step, with rewards, and starting them over.
+- [Game data](data.md): the numbers the game plays by, from running speed to scars; Quick changes, the
+  search, and every table.
+- [Save](save.md): your own save, your cat's level, the fresh-kill pile and what it carries; each change
+  made once, and put back.
 
 The rest of what wcmods can do is written up in the repository's docs, which open on GitHub:
 the [README](../../README.md) (getting set up, the mod menu in game, remapping keys), the

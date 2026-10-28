@@ -22,6 +22,9 @@ ARCHIVE_TAG = b"\xc1\x83\x2a\x9e\x22\x22\x22\x22"
 BLOCK = 0x20000   # LOADING_COMPRESSION_CHUNK_SIZE: the proxy's buffer, so the most one archive holds
 ZLIB = 3          # the compressor byte for zlib
 SAV_NAME, JSON_NAME = "WrcGame.sav", "WrcGame.json"
+# wcmods' record of the save edits made to the save, as it was when a backup was made (saverecord.py): kept in
+# the backup's folder beside the save files, never copied into the saves folder or out of it as a save file.
+RECORD_NAME = "wcmods-save-changes.json"
 
 
 class SaveGame:
@@ -135,7 +138,7 @@ def backup(save_dir, backups_root, reason="manual"):
     copied = []
     for fn in os.listdir(save_dir):
         src = os.path.join(save_dir, fn)
-        if os.path.isfile(src):
+        if os.path.isfile(src) and fn != RECORD_NAME:
             shutil.copy2(src, os.path.join(dest, fn))
             copied.append(fn)
     return dest, copied
@@ -156,6 +159,8 @@ def restore(backups_root, name, save_dir):
         raise FileNotFoundError(f"no backup named {name}")
     restored = []
     for fn in os.listdir(src):
+        if fn == RECORD_NAME or not os.path.isfile(os.path.join(src, fn)):
+            continue
         shutil.copy2(os.path.join(src, fn), os.path.join(save_dir, fn))
         restored.append(fn)
     return restored

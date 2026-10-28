@@ -18,8 +18,7 @@ import os
 import re
 import time
 
-from .. import mods as modlib, pipeline
-from ..formats import save
+from .. import mods as modlib, pipeline, saverecord
 from ..bridge import Bridge, BridgeError
 from ..config import STEAM_APP_ID, Config
 from ..sdk import lua_value
@@ -309,16 +308,15 @@ class Agent:
 
     def backup_save(self, reason="agent"):
         """Copy the save aside (backups/<time>-<reason>); returns the backup's name for restore_save."""
-        dest, _ = save.backup(self.cfg.save_dir, self.cfg.backups_dir, reason)
+        dest, _ = saverecord.backup(self.cfg, self.cfg.backups_dir, reason)   # with the record of save edits
         return os.path.basename(dest)
 
     def restore_save(self, name):
-        """Put a backed-up save back (the game must be closed: it rewrites the save as it plays)."""
+        """Put a backed-up save back (the game must be closed: it rewrites the save as it plays), with the record
+        of save edits it kept, as the studio's and `wcmods restore` do."""
         if window.game_pid():
             raise AgentError("the game is running; agent.quit() first")
-        backups = self.cfg.backups_dir
-        save.backup(self.cfg.save_dir, backups, "before-restore")
-        return save.restore(backups, name, self.cfg.save_dir)
+        return saverecord.restore(self.cfg, self.cfg.backups_dir, name)
 
     # ---------- Lua ----------
     def lua(self, code, timeout=15):

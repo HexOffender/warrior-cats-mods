@@ -17,6 +17,25 @@ engine-level findings (files, objects, the camera, cheats, UE4SS) are in
 
 All of it was made on build 24847281 and rechecked on 26184573, patch 1.1 ([reverse-engineering.md, Game updates](../reverse-engineering.md#game-updates)).
 
+## By goal
+
+The table and row to change for what people ask for most. Clan Mod Studio's Game data page has each of
+these as a Quick change, and quotes these pages beside the rows they name (`tools/re/mechanics_notes.py`
+makes `studio/sections/data-notes.json` from them; run it again after changing a page).
+
+| To change | Table | Row and column |
+|---|---|---|
+| Running and walking speed | `TuningData.csv` | `Gameplay.Exploration.Player.MoveAndRun.Run.Speed`, `.Walk.Speed` ([exploration.md](exploration.md#moving)) |
+| Stamina used and stamina back | `TuningData.csv` | `Gameplay.Exploration.Player.MoveAndRun.Stamina.DrainRate` (negative), `Gameplay.Exploration.Stamina.RegenRate` ([exploration.md](exploration.md#stamina)) |
+| XP from fights | `CombatBaseExperience.csv` | `BaseExperience`, one row per animal; `"*"` for all of them ([combat.md](combat.md#after-the-fight)) |
+| XP each level needs | `TuningData.csv` | `Gameplay.Exploration.Level.2` to `.20` ([progression.md](progression.md#levels-and-experience)) |
+| Inventory space | `TuningData.csv` | `Gameplay.Inventory.Capacity.<Rank>` ([progression.md](progression.md#ranks)) |
+| What prey is worth to the pile, and how fast it goes down | `TuningData.csv` | `Gameplay.Exploration.FreshKillPile.<Prey>`, `.Decay.Time` ([clan-life.md](clan-life.md#the-fresh-kill-pile)) |
+| Day length | `TuningData.csv` | `Gameplay.Exploration.DayNight.ClockSpeed` (what the number means in minutes isn't checked) ([exploration.md](exploration.md#time-of-day)) |
+| Den build times | `HousingCost.csv` | `BuildTime`, one row per decoration ([clan-life.md](clan-life.md#dens)) |
+| The Clan cats' sizes | `NPC/CatSize.csv` | `MinScale` and `MaxScale`, one row per role ([npcs.md](npcs.md#size)) |
+| The Clan cats' scars | `NPC/Scars.csv` | `EarChance`, `BodyChance`, `EyeChance`, one row per role ([npcs.md](npcs.md#scars)) |
+
 ## The main findings
 
 - **Damage** is a Pokémon-style formula:

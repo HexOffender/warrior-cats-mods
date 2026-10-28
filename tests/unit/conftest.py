@@ -18,7 +18,7 @@ os.environ.pop("WCMODS_FAKE_RUNNING", None)    # the e2e tests' stand-in for the
 
 import pytest  # noqa: E402
 
-from unit_helpers import REPO, SAVE, write_save  # noqa: E402 - plain helpers; tests import them from there too
+from unit_helpers import REPO, SAVE, fixture_game, write_save  # noqa: E402 - plain helpers; tests import them from there too
 
 
 # A player's files may be in the repository's folder (WCMODS_DATA pointing there, or from before they moved out of
@@ -122,6 +122,18 @@ def fake_game(tmp_path, studio):
     cfg.data["game_dir"] = str(game)
     cfg.save()
     return str(game)
+
+
+@pytest.fixture
+def data_game(tmp_path, studio):
+    """The fake game with its base pak: a few of the game's data tables (fixture_game().TABLES) and its English
+    text, so the Game data routes and data.json's check read them. Returns the fixture module."""
+    game = fixture_game()
+    game.write_game(str(tmp_path / "Game"))
+    cfg = studio.ctx.cfg
+    cfg.data["game_dir"] = str(tmp_path / "Game")
+    cfg.save()
+    return game
 
 
 @pytest.fixture

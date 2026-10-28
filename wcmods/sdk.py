@@ -415,11 +415,27 @@ class BuildContext:
             try:
                 text = self.files[path][0].decode("utf-8") if path in self.files else self.game.read_text(path)
                 changes, warnings = [], []
+                table = path.rsplit('/', 1)[-1]
+                touched = {}   # (row, column) -> the source that changed it last
+                over = {}      # (column, earlier source, later source) -> the rows the later one set over it
                 for edits, section, source in queue:
-                    text, applied, problems = csvdata.apply_edits(text, edits)
-                    warnings += [f"{section}: {path.rsplit('/', 1)[-1]}: {p}" for p in problems]
-                    changes += [{"row": r, "column": c, "from": a, "to": b, "by": source or section}
-                                for r, c, a, b in applied]
+                    who = source or section
+                    how = {}
+                    text, applied, problems = csvdata.apply_edits(text, edits, how)
+                    warnings += [f"{who}: {table}: {p}" for p in problems]
+                    changes += [{"row": r, "column": c, "from": a, "to": b, "by": who} for r, c, a, b in applied]
+                    for r, c, _, _ in applied:
+                        if c == "(row)":
+                            continue
+                        # Two mods (or a page and a mod) on one cell: multipliers stack, as documented; a plain
+                        # value from the later one replaces what the earlier one made, which is said.
+                        if touched.get((r, c), who) != who and not how.get((r, c)):
+                            over.setdefault((c, touched[(r, c)], who), []).append(r)
+                        touched[(r, c)] = who
+                for (c, before, who), rows in over.items():   # one line per column and pair of mods
+                    named = ", ".join(rows[:3]) + (f" and {len(rows) - 3} more" if len(rows) > 3 else "")
+                    warnings.append(f"{who} sets {c} in {table} where {before} changed it too ({named}): the "
+                                    f"game gets {who}'s value{'s' if len(rows) > 1 else ''} there")
             except Exception as e:
                 failures.append((path, sorted({s for _, s, _ in queue}), f"{type(e).__name__}: {e}"))
                 continue

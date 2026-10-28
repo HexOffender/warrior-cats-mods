@@ -16,7 +16,7 @@ function fresh() {
 }
 function routes(state) {
   const file = id => () => state.files[`${id}/names.json`] ? { exists: true, text: JSON.stringify(state.files[`${id}/names.json`]) } : { exists: false, text: null };
-  const put = id => b => { state.files[`${id}/names.json`] = JSON.parse(b.text); state.puts.push(id); return { saved: "names.json", requires: [], problems: state.problems }; };
+  const put = id => b => { state.files[`${id}/names.json`] = JSON.parse(b.text); state.puts.push(id); return { saved: "names.json", requires: [], problems: state.problems, notes: state.notes || [] }; };
   const patch = id => b => { state.patches.push({ id, body: b }); return {}; };
   const out = {
     "GET /mods": () => state.mods.map(x => ({ ...x })),
@@ -30,7 +30,7 @@ function routes(state) {
   return out;
 }
 
-async function setUp(state = fresh()) {
+async function setUp(state = fresh(), opts = {}) {
   dom.routes = routes(state);
   dom.calls.length = 0;
   for (const type of Object.keys(dom.windowListeners)) delete dom.windowListeners[type];   // the last test's bars
@@ -38,7 +38,7 @@ async function setUp(state = fresh()) {
   const wc = await import(dom.studio("lib/wc.js") + "?" + Math.random());   // a fresh module per test (its bus is module state)
   const loads = [];
   let value = { prefixes: { remove: ["Moon"] } };
-  const target = wc.modTarget({ file: "names.json", share: false, onLoad: (obj, id) => loads.push({ obj, id }), getValue: () => value });
+  const target = wc.modTarget({ file: "names.json", share: false, onLoad: (obj, id) => loads.push({ obj, id }), getValue: () => value, ...opts });
   dom.byId.main.append(target.element);
   localStorage.setItem("wc-target", "a");
   await target.refresh();
@@ -198,6 +198,23 @@ test("what keeps the saved file out of the game stays under the bar until a save
   assert.equal(t.problems.textContent, "");
 });
 
+test("a part of the file the game won't get is said under the bar, and the mod is still turned on", async () => {
+  const t = await setUp();
+  t.state.notes = ["the game has no table 'Nope.csv', so its edits are left out (the Game data page lists the tables the game has)"];
+  t.state.mods[0].enabled = false;
+  await t.target.save();
+  assert.equal(t.problems.hidden, false);
+  assert.equal(t.problems.textContent, `Saved; this part will be left out: ${t.state.notes[0]}`);
+  assert.deepEqual(t.state.patches, [{ id: "a", body: { enabled: true } }], "the rest of the file goes in");
+  t.state.notes = [];
+  await t.target.save();
+  assert.equal(t.problems.hidden, true);
+  // markClean: a change undone on the page leaves nothing to save.
+  t.target.markDirty();
+  t.target.markClean();
+  assert.equal(t.target.dirty, false);
+});
+
 test("whether to turn the mod on after a save is read afresh, and a broken mod is left alone", async () => {
   const t = await setUp();
   // The bar's list says "a" is on; by the time of the save another page switched it off.
@@ -209,6 +226,27 @@ test("whether to turn the mod on after a save is read afresh, and a broken mod i
   t.state.mods[0].problem = "mod.json isn't valid";
   await t.target.save();
   assert.deepEqual(t.state.patches, []);
+});
+
+test("with turnOn false a mod is made off, one that's off stays off, and the toast says which it is", async () => {
+  const said = m => `${m.name} is ${m.enabled ? "on" : "off"}`;
+  const t = await setUp(fresh(), { turnOn: false, savedSays: said });
+  const toasts = () => dom.byId.toasts.children.filter(n => typeof n !== "string").map(n => n.textContent);
+  t.state.mods[0].enabled = false;
+  await t.target.save();
+  assert.deepEqual(t.state.patches, [], "the mod isn't turned on");
+  assert.ok(toasts().includes("Mod A is off"), toasts().join(" | "));
+  // A new mod (Save to mod on "my-mods", which isn't there yet) is made off.
+  await t.change("my-mods");
+  t.target.markDirty();
+  await t.target.save();
+  assert.equal(t.state.mods.find(m => m.id === "my-mods").enabled, false);
+  assert.deepEqual(t.state.patches, []);
+  // One that's on is said to be on.
+  t.state.mods[0].enabled = true;
+  await t.change("a");
+  await t.target.save();
+  assert.ok(toasts().includes("Mod A is on"), toasts().join(" | "));
 });
 
 test("closing the page with unsaved changes is asked about; installedEvent waits for a save", async () => {

@@ -256,7 +256,7 @@ async function open(id, asked = false) {
 // A page's own stylesheet, studio/sections/<id>.css, linked once when the page first opens and ready before it
 // draws. Only the pages that have one are listed: the server answers a missing file with a 404, which the
 // browser would log as an error.
-const PAGE_STYLES = new Set(["mods", "items", "npcs", "quests", "controls", "names"]);
+const PAGE_STYLES = new Set(["mods", "items", "npcs", "quests", "controls", "names", "data", "save"]);
 const styled = {};   // section id -> Promise that settles when its stylesheet has loaded
 function pageStyles(id) {
   if (!PAGE_STYLES.has(id)) return Promise.resolve();
@@ -298,6 +298,9 @@ function summarize(manifest) {
     lines.push(`[${rep.status}] ${rep.title}: ${rep.mods.map(i => nameIn(manifest, i)).join(", ") || "no mods"}`);
     for (const e of rep.errors) lines.push(`    ${e}`);
   }
+  // The game's numbers it changes, one line a cell, in words (the server's studio.table_lines).
+  const cells = manifest.cells_in_words || [];
+  if (cells.length) lines.push("The game's numbers it changes:", ...cells.map(c => `    ${c}`));
   for (const w of manifest.warnings || []) lines.push(`warning: ${w}`);
   return lines;
 }

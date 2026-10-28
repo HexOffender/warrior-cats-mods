@@ -40,8 +40,11 @@ class NamesSection(Section):
         if plan.renames:
             sav = os.path.join(ctx.cfg.save_dir, SAV_NAME)
             if os.path.isfile(sav):
-                doc = SaveDoc(SaveGame.load(sav).json_text)
-                ops = plan.plan_cats(names.cats_in_save(doc.data))
+                try:
+                    doc = SaveDoc(SaveGame.load(sav).json_text)
+                    ops = plan.plan_cats(names.cats_in_save(doc.data))
+                except (ValueError, OSError):   # a save wcmods can't read: the names still change, in the tables
+                    ctx.warn("cats: your save couldn't be read, so the cats in it weren't renamed this time")
             else:
                 ctx.warn("No save yet, so no cats are renamed: start the game once, then apply again")
         for w in plan.warnings:

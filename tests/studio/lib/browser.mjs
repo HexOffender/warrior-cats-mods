@@ -15,6 +15,10 @@ import os from "node:os";
 import path from "node:path";
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Windows' key codes for the keys a test presses by name, which the browser needs to act on them.
+const KEY_CODES = { Enter: 13, Escape: 27, Tab: 9, Backspace: 8, Delete: 46, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39,
+  ArrowDown: 40, Home: 36, End: 35, " ": 32 };
+const KEY_NAMES = { " ": "Space" };
 // p, or a rejection with `why` after ms; the timer never outlives it (an open timer keeps node running).
 function within(p, ms, why) {
   let timer;
@@ -268,16 +272,18 @@ export class Page {
     if (!ok) throw new Error(`couldn't focus ${JSON.stringify(target)}`);
     await this.send("Input.insertText", { text });
   }
-  // Press a key: its `key` ("Escape", "f"); code is the key's place on the keyboard ("KeyF", "Insert"), which
-  // a page reading KeyboardEvent.code needs (the usual one for Enter, Escape, Tab, Space and a letter is
-  // filled in); shift holds Shift.
+  // A key pressed and let go: a character, or a key's name (Enter, Escape, Tab, Space, the arrows...), which the
+  // browser then acts on as it would on a real press (Tab moves focus, Enter's text presses a focused button).
+  // `code` is the key's place on the keyboard ("KeyF", "Insert"), which a page reading KeyboardEvent.code needs
+  // (a named key's own and a letter's are filled in); `shift` holds Shift.
   async press(key, { code, shift = false } = {}) {
-    const text = key.length === 1 ? key : key === "Enter" ? "\r" : undefined;   // Enter's text presses a focused button
-    const vk = { Enter: 13, Escape: 27, Tab: 9, " ": 32 }[key] || (/^[a-z]$/i.test(key) ? key.toUpperCase().charCodeAt(0) : 0);
-    code ||= { Enter: "Enter", Escape: "Escape", Tab: "Tab", " ": "Space" }[key] || (/^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : undefined);
-    const modifiers = shift ? 8 : 0;
-    await this.send("Input.dispatchKeyEvent", { type: "keyDown", key, code, text, modifiers, windowsVirtualKeyCode: vk });
-    await this.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, modifiers, windowsVirtualKeyCode: vk });
+    const text = key.length === 1 ? key : key === "Enter" ? "\r" : undefined;
+    const letter = /^[a-z]$/i.test(key);
+    const vk = KEY_CODES[key] || (letter ? key.toUpperCase().charCodeAt(0) : 0);
+    code ||= KEY_NAMES[key] || (letter ? `Key${key.toUpperCase()}` : key);
+    const fields = { key, code, modifiers: shift ? 8 : 0, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk };
+    await this.send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", text, ...fields });
+    await this.send("Input.dispatchKeyEvent", { type: "keyUp", ...fields });
   }
   // Give a file input files from disk, as choosing them would.
   async setFiles(selector, paths) {

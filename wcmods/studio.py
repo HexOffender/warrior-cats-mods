@@ -24,8 +24,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (animations, bridge, catcolours, colors, controls, eyeatlas, guide, keymap, menupages, menusettings,
-               models, mods, modzip, mouselook, names, onboarding, packs, palettes, pipeline, recolor, story, ue4ss,
-               world)
+               models, mods, modzip, mouselook, names, onboarding, packs, palettes, pipeline, recolor, saverecord, story,
+               ue4ss, world)
 from .formats import cooked, csvdata, png, save, texture
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
@@ -35,6 +35,7 @@ from .gamefiles import NONASSET, Unreadable
 from .formats.savejson import SaveDoc
 from .sdk import BuildContext
 from .sections import controls as controls_section
+from .sections import savedit
 from .sections.files import classify
 
 NO_GAME = "Clan Mod Studio hasn't found the game yet: Get set up, on the Mods page, asks where it is"
@@ -55,6 +56,8 @@ ANIMATIONS = "animations"    # a mod's own animations (glTF), added on the Anima
 MAX_PICTURE = 8 * 1024 ** 2
 ITEM_ROOT = "Gameplay.Inventory."
 ITEM_KINDS = {"Consumable": "consumable", "Materials": "material", "Cosmetic": "accessory"}   # a tag's third part, in words
+STRINGS_EN = "Wrc/Content/Gameplay/Strings/NonAsset/Strings_EN.csv"   # the game's English text
+HIDDEN_TABLES = ("HeightMap/", "UniqueIds/")   # map data the Game data page doesn't list (GET /game/data says which)
 MAX_UPLOAD = modzip.MAX_BYTES   # a downloaded mod's .zip
 # The side bar: "play" is installing and managing mods, "make" the pages for making your own.
 BUILTIN_SECTIONS = [
@@ -181,9 +184,57 @@ def manifest_of(result):
     which has one only when it applied first); else None."""
     if isinstance(result, dict) and "sections" in result:
         return result
-    if isinstance(result, dict) and isinstance(result.get("manifest"), dict):
+    if isinstance(result, dict) and isinstance(result.get("manifest"), dict) and "sections" in result["manifest"]:
         return result["manifest"]
     return None
+
+
+MAX_CELL_LINES = 20
+
+
+def table_words(table):
+    """A table's file name in words when data-titles.json hasn't one ("QuestObjectives.csv" -> "Quest
+    objectives", "NPC/EarType.csv" -> "NPC ear type"), as the Game data page says it (studio/lib/data.js)."""
+    stem = re.sub(r"\.csv$", "", table, flags=re.I)
+    spaced = re.sub(r"(?<=[a-z])(?=[A-Z0-9])|(?<=[0-9])(?=[A-Za-z])", " ", re.sub(r"[/_]+", " ", stem)).split()
+    return " ".join(w if re.fullmatch(r"[A-Z0-9]{2,}", w) else (w[:1].upper() + w[1:].lower()) if i == 0 else w.lower()
+                    for i, w in enumerate(spaced))
+
+
+def table_lines(manifest, words=None):
+    """The game's numbers a build changes, one line per cell, net of every source (the first value and the last;
+    a cell that ends where it began isn't listed): "Tuning: Running speed 390 -> 450 (My mods)". The data
+    tables only (the text tables names change are words, not numbers). Rows the Game data page's Quick changes
+    name get its words, tables its titles (words: {"quick": [...], "titles": {...}}); at most
+    MAX_CELL_LINES, then how many more."""
+    words = words or {}
+    titles, quick = words.get("titles") or {}, words.get("quick") or []
+    names = manifest.get("names") or {}
+    who = lambda by: ", ".join(names.get(part.strip(), part.strip()) for part in str(by).split(","))   # noqa: E731
+    out = []
+    for path, changes in (manifest.get("csv_changes") or {}).items():
+        if not path.startswith(NONASSET):
+            continue
+        table = path[len(NONASSET):]
+        cells = {}   # (row, column) -> [first value, last value, last source]
+        for c in changes:
+            if c.get("column") == "(row)":
+                continue
+            cell = cells.setdefault((c["row"], c["column"]), [c["from"], None, None])
+            cell[1], cell[2] = c["to"], c["by"]
+        title = (titles.get(table) or {}).get("title") or table_words(table)
+        for (row, column), (was, now, by) in cells.items():
+            if was == now:
+                continue
+            label = next((q["label"] for q in quick if q.get("table") == table and q.get("kind") == "value"
+                          and row in ([q["row"]] if q.get("row") else q.get("rows", []))
+                          and column.lower() in [c.lower() for c in q.get("columns") or [q.get("column", "")]]), None)
+            if label is None:
+                label = row if (titles.get(table) or {}).get("value") else f"{row}, {column}"
+            out.append(f"{title}: {label} {was} -> {now} ({who(by)})")
+    if len(out) > MAX_CELL_LINES:
+        out = out[:MAX_CELL_LINES] + [f"and {len(out) - MAX_CELL_LINES} more numbers"]
+    return out
 
 
 def task_summary(title, result, lines, checked=False):
@@ -232,6 +283,8 @@ class Studio:
         self._pictures = {}  # texture -> its full-size PNG, to paint over (the last few)
         self._anims = None   # the game's skeletons, read once for the Animations page
         self._sequences = {}  # kind -> the game's sequences an animation can replace, read once
+        self._english = None  # the game's English text by key, read once
+        self._data_index = None   # every data table's row names and descriptions, read once (data_index)
 
     # ---------- helpers ----------
     def mods(self):
@@ -267,15 +320,17 @@ class Studio:
                                "version. Press Restart the studio (at the top of the page), then apply.")
 
     def check_file(self, mod, file):
-        """What would keep a file the studio just saved out of the game: the first part of the check Apply makes
-        (the build section that owns the file reads it, collect()), on this mod alone, as sentences. [] when
-        it's fine. What Apply checks with every mod together (a table's rows and columns, models and pictures,
-        two mods changing the same thing) is still said only then. While the
-        game's files can't be read (no game folder yet, Steam updating it), one line says the check waits for
-        Apply, since some files are checked against the game's tables."""
+        """What would keep a file the studio just saved out of the game, or part of it: the first part of the
+        check Apply makes (the build section that owns the file reads it, collect()), on this mod alone, as
+        sentences. Returns (problems, notes): problems keep the file out ([] when it's fine); notes are what the
+        check warned about, a part it leaves out (data.json's table the game hasn't got). What Apply checks with
+        every mod together (a table's rows and columns, models and pictures, two mods changing the same thing)
+        is still said only then. While the game's files can't be read (no game folder yet, Steam updating it),
+        one line says the check waits for Apply, since some files are checked against the game's tables."""
         sec = owner(file)
         if sec is None or not sec.claims(mod):
-            return []
+            return [], []
+        ctx = None
         try:
             # Most files are checked without the game's files; one that needs them (data.json's table names)
             # gets CHECK_LATER while they can't be read.
@@ -288,17 +343,19 @@ class Studio:
             # A key a file lacks (str is the key in quotes), or a game file the reader hasn't got.
             what = e.args[0] if len(e.args) == 1 else str(e)
             return [f"{file}: {what} is missing" if isinstance(what, str) and not str(what).startswith("game file")
-                    else CHECK_LATER]
+                    else CHECK_LATER], []
         except ValueError as e:
-            return [str(e)]
+            return [str(e)], []
         except (OSError, Unreadable):   # the game's pak isn't there, or won't open
-            return [CHECK_LATER]
+            return [CHECK_LATER], []
         except (AttributeError, TypeError):   # a list where an object goes, a number where text does: not a Python name
-            return [f"{file} isn't shaped the way the page writes it (docs/formats.md shows how it's laid out)"]
+            return [f"{file} isn't shaped the way the page writes it (docs/formats.md shows how it's laid out)"], []
         except Exception as e:   # noqa: BLE001 - said, not hidden, and never as a Python name
             said = str(e).strip()
-            return [f"{file} couldn't be checked{': ' + said if said else ''}"]
-        return []
+            return [f"{file} couldn't be checked{': ' + said if said else ''}"], []
+        # The warnings name the mod for the build's log; under the page's bar the mod is the one in view.
+        lead = f"{mod.id}: "
+        return [], [w[len(lead):] if w.startswith(lead) else w for w in ctx.warnings]
 
     def story_saved(self, mod):
         """After a save of npcs.json or quests.json: a mod with cats or quests says it uses Sandbox mode (soft:
@@ -678,8 +735,10 @@ class Studio:
                             turned_on = []
                             noted.append("The mod can't note that it works with the Sandbox mode mod, and stays off, "
                                          f"until its mod.json is fixed: {m.problem or e}")
-                # A file half made still saves; what would keep it out of the game is said now, not at Apply.
-                said = {"saved": name, "requires": m.requires, "problems": noted + self.check_file(m, name)}
+                # A file half made still saves; what would keep it, or part of it, out of the game is said now,
+                # not at Apply.
+                problems, notes = self.check_file(m, name)
+                said = {"saved": name, "requires": m.requires, "problems": noted + problems, "notes": notes}
                 if turned_on is not None:   # cats and quests: the mods they work with, and what came on for them
                     said.update(uses=m.uses, turned_on=turned_on)
                 return said
@@ -718,14 +777,14 @@ class Studio:
             # safety copy, which only happens while there's none).
             if not os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)):
                 raise ValueError("there's no save to back up yet; start the game once, and get into the forest")
-            where, files = save.backup(cfg.save_dir, self.ctx.backups, "studio")
+            where, files = saverecord.backup(cfg, self.ctx.backups, "studio")
             return {"name": os.path.basename(where), "files": files}
         if parts == ["restore"] and method == "POST":
             if game_running():
                 raise RuntimeError("close the game before restoring a save")
-            name = field(body, "name")
-            save.backup(cfg.save_dir, self.ctx.backups, "before-restore")
-            return {"restored": save.restore(self.ctx.backups, name, cfg.save_dir)}
+            # The record of save edits comes back with the save: the next Apply makes again only the mods'
+            # changes that save hasn't got.
+            return {"restored": saverecord.restore(cfg, self.ctx.backups, field(body, "name"))}
         if parts == ["game", "eyes"]:
             return self.eyes()
         if parts == ["game", "tables"]:
@@ -756,15 +815,37 @@ class Studio:
             return controls_section.check(body["controls"], mod_id, self.mods(), cfg)
         if parts == ["game", "data"]:
             tables = self.ctx.game.data_tables()
-            return {"tables": tables, "kinds": {t: classify(NONASSET + t) for t in tables}}
+            return {"tables": tables, "kinds": {t: classify(NONASSET + t) for t in tables},
+                    "hidden": [t for t in tables if t.startswith(HIDDEN_TABLES)]}
+        if parts == ["game", "data", "index"] and method == "GET":
+            # Every table's row names and descriptions, for the Game data page's search (before the table route).
+            return {"tables": self.data_index()}
         if len(parts) >= 3 and parts[:2] == ["game", "data"]:
             name = "/".join(parts[2:])
+            if not self.ctx.game.exists(NONASSET + name):
+                raise ValueError(f"the game has no table '{name}'; the Game data page lists the ones it has")
             table = csvdata.Table(self.ctx.game.read_text(NONASSET + name))
-            return {"name": name, **table.as_dict()}
+            # The English for the game's text keys in it (STR_...), so the page never shows a key alone.
+            try:
+                english = self.english()
+            except KeyError:   # no English text in this game's files: the keys show as they are
+                english = {}
+            texts = {v: english[v] for r in table.rows for v in r.fields if v.startswith("STR_") and v in english}
+            return {"name": name, **table.as_dict(), "texts": texts}
         if parts == ["save"]:
-            text, mtime = self.save_text()
-            doc = SaveDoc(text)
-            return {"account": doc.account, "data": doc.data, "save_time": mtime}
+            return self.save_info()
+        if parts == ["save", "apply"] and method == "POST":
+            return self.save_apply(body.get("changes"))
+        if parts == ["save", "undo"] and method == "POST":
+            # Put it back, on the Save page: the value a recorded change replaced, after a backup.
+            if game_running():
+                raise RuntimeError("close the game before changing your save: it would write over the change")
+            source, path = field(body, "source"), field(body, "path")
+            done = self.run(lambda log: pipeline.undo_save_change(cfg, source, path, self.ctx.backups, log),
+                            "Put a change back")
+            return {"log": done["log"], **done["result"]}
+        if parts == ["save", "applied"] and method == "GET":
+            return self.save_applied()
         if parts == ["cat"] and method == "GET":
             return self.cat_info()
         if parts == ["cat", "options"] and method == "GET":
@@ -922,22 +1003,7 @@ class Studio:
             mine = [c for c in cats if c["player"]]
             if mine:
                 current, scars, looks = read(doc.get(mine[0]["paths"][0]))
-            # The cats' names as they show with the enabled names mods; without the game's name tables (no game
-            # folder, a pak that won't read) the cats are named by their places.
-            shown = lambda c: ""     # noqa: E731
-            try:
-                if self._names is None:
-                    if not self.ctx.cfg.game_dir:   # not ctx.game, which ends the command line (SystemExit)
-                        raise LookupError(NO_GAME)
-                    self._names = names.GameNames(lambda path: self.ctx.game.read_text(BuildContext.data_path(path)))
-                try:
-                    spec = names.merge(names.mod_specs([m for m in self.mods() if m.enabled]))
-                except ValueError:
-                    spec = names.merge([])
-                plan = names.Plan(self._names, spec)
-                shown = lambda c: plan.display(c["ids"]) or plan.display(c["ids"], final=False)   # noqa: E731
-            except Exception:       # noqa: BLE001 - the page still opens, with places for names
-                pass
+            shown = self.cat_namer()
             called = {}
             for c in cats:
                 if not c["player"] and shown(c):
@@ -959,6 +1025,105 @@ class Studio:
                 "scars": {"current": scars, "types": catcolours.SCAR_TYPES},
                 "look": {"current": looks, "parts": options["parts"], "size": list(catcolours.SIZE[1:])},
                 "cats": others}
+
+    def cat_namer(self):
+        """name(cat) for a cat of names.cats_in_save: its name as it shows with the enabled names mods, or "" without
+        the game's name tables (no game folder, a pak that won't read), where pages name cats by their places."""
+        try:
+            if self._names is None:
+                if not self.ctx.cfg.game_dir:   # not ctx.game, which ends the command line (SystemExit)
+                    raise LookupError(NO_GAME)
+                self._names = names.GameNames(lambda path: self.ctx.game.read_text(BuildContext.data_path(path)))
+            try:
+                spec = names.merge(names.mod_specs([m for m in self.mods() if m.enabled]))
+            except ValueError:
+                spec = names.merge([])
+            plan = names.Plan(self._names, spec)
+            return lambda c: plan.display(c["ids"]) or plan.display(c["ids"], final=False)
+        except Exception:       # noqa: BLE001 - the page still opens, with places for names
+            return lambda c: ""
+
+    def save_info(self):
+        """Your save for the Save page: its account and data, the cat being played and the cats of the other
+        slots by name (your cat in each; None where the game's names can't be read), whether the game runs,
+        and what the page words and checks values with (savedit.WORDS and RANGES, one home for both)."""
+        text, mtime = self.save_text()
+        doc = SaveDoc(text)
+        slot = names.current_slot(doc.data)
+        shown = self.cat_namer()
+        cats = {c["slot"]: shown(c) or None for c in names.cats_in_save(doc.data) if c["player"]}
+        return {"account": doc.account, "data": doc.data, "save_time": mtime,
+                "current_cat": {"slot": slot, "name": cats.get(slot)}, "cats": cats,
+                "game_running": game_running(), "words": savedit.WORDS, "ranges": savedit.RANGES}
+
+    def _save_words(self, doc, cats):
+        """savedit.label for this save, with the cats' names and the game's item names where they can be read."""
+        try:
+            items = {i["tag"]: i["name"] for i in self.game_items()["items"]} if self.ctx.cfg.game_dir else {}
+        except Exception:   # noqa: BLE001 - no item table: the tags in words
+            items = {}
+        current = names.current_slot(doc.data)
+        return lambda path: savedit.label(path, cats.get, items.get, current)
+
+    def save_apply(self, changes):
+        """The Save page's Change my save now: each change made in your save after a backup, and recorded (a
+        change to make is {"path", "value"}, {"add": object path, "key", "value"} or {"remove": path})."""
+        if game_running():
+            raise RuntimeError("close the game before changing your save: it would write over the change")
+        if not isinstance(changes, list) or not changes:
+            raise ValueError("there are no changes to make")
+        info = self.save_info()
+        doc = SaveDoc(self.save_text()[0])
+        say = self._save_words(doc, info["cats"])
+        ops = []
+        for c in changes:
+            if not isinstance(c, dict):
+                raise ValueError("a change should be an object")
+            if "add" in c:
+                full = f"{c['add']}/{c.get('key')}"
+                if not isinstance(c.get("key"), str) or not isinstance(doc.get(c["add"]) if doc.exists(c["add"]) else None, dict):
+                    raise ValueError(f"{say(full)}: your save has nowhere to add it")
+                op = {"op": "insert", "path": c["add"], "key": c["key"], "value": c.get("value")}
+            elif "remove" in c:
+                full = c["remove"]
+                if not isinstance(full, str):
+                    raise ValueError("a remove should be a path")
+                problem = savedit.remove_problem(full, doc)
+                if problem:
+                    raise ValueError(problem[:1].upper() + problem[1:])
+                if not doc.exists(full):
+                    raise ValueError(f"{say(full)}: your save hasn't got it any more")
+                op = {"op": "remove", "path": full}
+            elif "path" in c and "value" in c:
+                full = c["path"]
+                if not doc.exists(full):
+                    raise ValueError(f"{say(full)}: your save has no value there")
+                op = {"op": "set", "path": full, "value": c["value"]}
+            else:
+                raise ValueError("a change needs a path and a value, an add or a remove")
+            if op["op"] != "remove":
+                problem = savedit.range_problem(full, op["value"])
+                if problem:
+                    raise ValueError(f"{say(full)}: {problem}")
+            ops.append({**op, "source": saverecord.STUDIO, "section": "save", "record": True, "label": say(full)})
+        done = self.run(lambda log: pipeline.apply_save_ops(self.ctx.cfg, ops, self.ctx.backups, log), "Change my save")
+        return {"log": done["log"], "applied": done["result"]["applied"], "backup": done["result"]["backup"]}
+
+    def save_applied(self):
+        """The changes made to this save (by mods and by the Save page), newest first, each with what the save
+        holds there now and whether it can be put back."""
+        record = saverecord.load(self.ctx.cfg) or {}
+        try:
+            doc = SaveDoc(self.save_text()[0])
+        except LookupError:
+            return {"changes": []}
+        out = []
+        for e in saverecord.listing(record, doc.account):
+            if e.get("lost_to"):   # another mod's change there went in: nothing of this one was done
+                continue
+            out.append({**e, "path": e["key"], "current": doc.get(e["key"]) if doc.exists(e["key"]) else None,
+                        "can_undo": not e.get("before") and not e.get("undone")})
+        return {"changes": out}
 
     def look_options(self):
         """What a cat's look can be, with no save needed: the colours each slot has with the enabled palettes
@@ -1135,6 +1300,32 @@ class Studio:
     def _reader(self):
         """A build context only for reading the game's tables (it never builds)."""
         return BuildContext(self.ctx.cfg, self.ctx.game, os.path.join(tempfile.gettempdir(), "wcmods-studio"))
+
+    def english(self):
+        """The game's English text by its key (STR_...), read once."""
+        if self._english is None:
+            table = csvdata.Table(self.ctx.game.read_text(STRINGS_EN))
+            self._english = {r.fields[0]: r.fields[1] for r in table.rows if len(r.fields) > 1}
+        return self._english
+
+    def data_index(self):
+        """Every data table the Game data page lists, as {table: {"rows": [row names], "descriptions":
+        {row: text}}}, for its search across tables; read once. The map tables (HeightMap/, UniqueIds/) aren't
+        listed there, so they're left out here too."""
+        if self._data_index is None:
+            index = {}
+            for name in self.ctx.game.data_tables():
+                if name.startswith(HIDDEN_TABLES):
+                    continue
+                table = csvdata.Table(self.ctx.game.read_text(NONASSET + name))
+                low = [h.lower() for h in table.header]
+                desc = low.index("description") if "description" in low else None
+                rows = [r.fields[0] for r in table.rows if r.fields and r.fields[0]]
+                index[name] = {"rows": rows, "descriptions": {
+                    r.fields[0]: r.fields[desc] for r in table.rows
+                    if desc is not None and len(r.fields) > desc and r.fields[desc].strip()}}
+            self._data_index = index
+        return self._data_index
 
     def game_items(self):
         """The game's items for the Items and Questlines pages: tag, kind, name, description, and for herbs
@@ -1419,7 +1610,8 @@ class Studio:
         this task (with no lines yet) from the moment it's asked for, not the last one's log. With `keep`, the
         log goes to last-apply.log in your files' folder afterwards, headed by the task, when it ran and what it
         did in plain words, for the page's Last apply button. `checked`: the task only checks the mods (Check my
-        mods), which the summary says. The answer has the log, the result and that summary."""
+        mods), which the summary says. A build's manifest gets `cells_in_words`, the game's numbers it changes
+        (table_lines), for the log's drawer. The answer has the log, the result and that summary."""
         mine = {"id": str(task or secrets.token_hex(6)), "title": title, "lines": [], "running": True}
         if not self.progress["running"]:
             self.progress = mine
@@ -1434,13 +1626,29 @@ class Studio:
                 raise
             finally:
                 mine["running"] = False
+        manifest = manifest_of(result)
+        if manifest is not None:
+            manifest["cells_in_words"] = table_lines(manifest, self._data_words())
         summary = task_summary(title, result, lines, checked)
         if keep:
             self.keep_log(title, lines, result, None, summary)
         return {"log": list(lines), "result": result, "summary": summary}
 
+    def _data_words(self):
+        """The Game data page's own names for rows and tables (data-quick.json, data-titles.json), for
+        table_lines; {} where one can't be read."""
+        words = {}
+        for name in ("data-quick.json", "data-titles.json"):
+            try:
+                with open(os.path.join(self.static, "sections", name), encoding="utf-8-sig") as f:
+                    words[name] = json.load(f)
+            except (OSError, ValueError):
+                words[name] = {}
+        return {"quick": words["data-quick.json"].get("rows", []), "titles": words["data-titles.json"]}
+
     def keep_log(self, title, lines, result, error, summary=None):
-        """last-apply.log: "<title> · <when>", a plain summary, the warnings, then the log."""
+        """last-apply.log: "<title> · <when>", a plain summary, the game's numbers it changed, the warnings,
+        then the log."""
         manifest = manifest_of(result)
         head = [f"{title} · {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"]
         if error is not None:
@@ -1448,6 +1656,7 @@ class Studio:
                         if isinstance(error, pipeline.InstallBlocked) else f"Couldn't finish: {sentence(error) or error}")
         elif summary:
             head.append(summary)
+            head += (manifest or {}).get("cells_in_words", [])
             head += [f"warning: {w}" for w in (manifest or {}).get("warnings", [])]
         try:
             os.makedirs(self.ctx.cfg.data_dir, exist_ok=True)

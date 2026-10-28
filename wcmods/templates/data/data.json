@@ -1,5 +1,5 @@
 {
-  "_help": "Table names are under Gameplay/DataTables/NonAsset. Rows are matched by their first column; \"*\" is every row. Numbers can be set outright or multiplied with \"x1.5\". Open the Game data page in `python wcmods.py studio` to browse every table.",
+  "_help": "Changes to the tables the game plays by. The Game data page in Clan Mod Studio writes this file for you: its Quick changes, a search for any number, and every table. By hand: a table's name (under Gameplay/DataTables/NonAsset), then its rows by their first column; \"*\" is every row. A value is a number, text, true/false, or \"x1.5\" to multiply the game's number. Inside one file \"*\" goes first and a named row wins over it. docs/formats.md has the rest.",
   "TuningData.csv": {
     "Gameplay.Exploration.Player.MoveAndRun.Run.Speed": 450
   },

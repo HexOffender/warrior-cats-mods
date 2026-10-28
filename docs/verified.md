@@ -235,7 +235,11 @@ Fawnstar, as a player reported it showing "Cat 1"):
   - whether the game obeys each of its developer switches.
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
 - **Game data tables in play.** They load from the same pak as the text, but no gameplay change has
-  been checked on screen yet.
+  been checked on screen yet (the Game data page's Quick changes say so).
+- **The Save page's Change my save now and Put it back** (2026-10-28). They write through the same codec
+  as save edits on install, which the game accepts (above), but a save changed from the page and then
+  loaded hasn't been checked in game; nor has a `save.json` made once per save, then played on past and
+  applied again.
 - **New pattern and marking slots on a cat.** The lists grow in game (slot 25 read back with its new
   colour), and the game's code checks those indexes against the real list size, but no cat has been
   seen wearing a new slot yet.

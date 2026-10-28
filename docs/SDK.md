@@ -132,7 +132,7 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.tuning(key)` / `ctx.tuning()` | A `TuningData.csv` value as a number, or all of them |
 | `ctx.tune({key: value}, source=mod.id)` | Change `TuningData` values (numbers or `"x1.5"`), merged with other mods' edits; warns about keys the table doesn't have |
 | `ctx.text("STR_ATTACK_QUICK_CLAW")` | A line of the game's English text (or `language="FR"`, …) |
-| `ctx.edit_csv(name, edits, source=mod.id)` | Queue cell edits (and row removals `"-"` / additions `"+"`, see `csvdata.py`); they merge with every other section's edits to the same table |
+| `ctx.edit_csv(name, edits, source=mod.id)` | Queue cell edits (and row removals `"-"` / additions `"+"`, see `csvdata.py`); they merge with every other section's edits to the same table. Inside one call the order is fixed: removals, `"*"`, the named rows (a row's own value wins over `"*"`), additions; calls apply in priority order, each on what the one before left (multipliers stack; a plain value over another source's change is warned about once per table, column and pair of sources) |
 | `ctx.add_file(path, data, source=mod.id)` | Add or replace a loose file in the mod pak |
 | `ctx.patch_package(path, data)` | Replace a cooked `.uasset` with patched bytes (goes into the IoStore mod container) |
 | `ctx.cooked_table("DT_QuestObjectsInfo")` | The rows of a cooked table wcmods can read (`cooked.TABLES`), as `[(row name, {field: value})]`, as the game ships them |
@@ -144,13 +144,15 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.add_package(path, data, chunk_id, imports, shaders, bulk=None)` | Add a cooked package the game hasn't got, with its chunk ID, container header entry and `.ubulk`; `add_texture` is the easy way |
 | `ctx.cache_dir` | A folder for work an install can reuse (wcmods' `cache/`; the selftest's stays in its temp folder) |
 | `ctx.add_ue4ss_mod(name, {"Scripts/main.lua": text})` | Ship a UE4SS Lua mod; installed and registered only when UE4SS is present. `.lua` files get a structure check (balanced blocks and brackets) and problems become build warnings |
-| `ctx.edit_save(path, value)` | Set an existing save value on install, e.g. `"0/GameplayProgression/Level"` |
-| `ctx.add_save_key(object_path, key, value, only_new=False)` | Add a key to a save object, e.g. a new inventory item. With `only_new`, a key the save already has keeps its value |
+| `ctx.edit_save(path, value)` | Set an existing save value on install, e.g. `"0/GameplayProgression/Level"`, at every install (a `save.json`'s changes are made once per save instead: `ctx.save_op({..., "once": True})`, as `sections/savedit.py` queues them). A section's save ops are dropped when its table edits fail |
+| `ctx.add_save_key(object_path, key, value, only_new=False)` | Add a key to a save object, e.g. a new inventory item, at every install. With `only_new`, a key the save already has keeps its value (a mod's starting items, given once). A section's save ops are dropped when its table edits fail |
+| `ctx.save_op(op)` | Queue any save op: `{"op": "set", "path", "value"}`, `{"op": "insert", "path", "key", "value"}` or `{"op": "remove", "path"}`, with `"source": mod.id`, `"label"` (the change in words, for the log: "Fawnstar's level") and `"once": True` to make it once per save and record it in `save-changes.json` ([formats.md](formats.md#save-changesjson)). A remove of anything but an item carried or one element of a list is skipped (`savedit.remove_problem`) |
 | `ctx.warn(msg)` / `ctx.log(msg)` / `ctx.note(key, value)` | Report to the user / the build log / the build manifest (notes show on the mod menu's first page) |
 | `ctx.game`, `ctx.cfg`, `ctx.mods` | The game reader (`find`, `exists`, `data_tables`), the tool's configuration, and the enabled mods |
 
 CSV edits use `{row: {column: value}}`. `"*"` means every row, `"x1.5"` multiplies the game's
-number, and key/value tables like `TuningData.csv` accept `{row: value}`. Save paths use `/`,
+number, and key/value tables like `TuningData.csv` accept `{row: value}`
+([formats.md, `data.json`](formats.md#datajson) has the rules). Save paths use `/`,
 because the game's keys contain dots. They start inside the save's account object: `Shared/...`
 for shared data, and `0/...` for cat slot 0.
 

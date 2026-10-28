@@ -230,11 +230,40 @@ Known issues:
 
 ### `data.json`
 ```json
-{ "CombatBaseExperience.csv": { "*": { "BaseExperience": "x2" } },
+{ "CombatBaseExperience.csv": { "*": { "BaseExperience": "x2" }, "Mice": { "BaseExperience": 25 } },
   "TuningData.csv": { "Gameplay.Exploration.Player.MoveAndRun.Run.Speed": 450 } }
 ```
-Rows are matched by their first column. `"-": ["53"]` removes rows and `"+": [{ "#": "91", ... }]`
-adds them (missing columns stay empty).
+Changes to the game's tables (`Gameplay/DataTables/NonAsset`): the Game data page writes it. A key is a
+table's name (`NPC/Scars.csv` for one in a subfolder, or a full `Wrc/...` path), then its rows by their
+first column, then the columns to change:
+- **Values** are numbers, text, `true`/`false` (written `TRUE`/`FALSE`) or `"xN"`, which multiplies the
+  number in the cell (`"x0.5"` halves it). A number is written with at most six decimals. A text that
+  reads as a number (`"0.08"`) is a number. A cell that holds a number keeps it when the value isn't one
+  (`"abc"`, `"1,5"`), and the build says so.
+- **Columns** match without regard to case. `{ "row": value }` changes the table's second column (its
+  value column, in TuningData).
+- **Every row** is `"*"`. `"-": ["53"]` removes rows (`"-": "53"` is one row) and `"+": [{ "#": "91", ... }]`
+  adds them, missing columns left empty.
+- **The order inside one file is fixed**, whatever order the keys are in: removals, then `"*"`, then the
+  named rows, then additions. A named row's own value wins over `"*"`, so the file above doubles every
+  animal's XP except mice, which stay at 25. A named row's own `"xN"` multiplies the cell as it was
+  before this file's `"*"`, so the two never compound.
+- **Between mods**, each mod's file goes in priority order on what the one before left, so multipliers
+  stack: two mods' `"*"` `"x2"` make x4, and nothing is said about it. When a later mod sets a plain value
+  in a cell an earlier one changed, the later one's value is what the game gets, and the build says so
+  once per table, column and pair of mods ("my-tweaks sets BaseExperience in CombatBaseExperience.csv
+  where double-xp changed it too (Mice): the game gets my-tweaks's value there").
+- **A table the game hasn't got** is left out with a warning, and the file's other tables still go in;
+  so is a row it hasn't got.
+- **Keys starting with `_`** (`"_help"`, `"_note"`) are notes, at the top, in a table or in a row: the
+  build skips them and the Game data page keeps them as they are.
+- **Quests and talk** (QuestDialogues, StoryDialogues, QuestObjectives, QuestDynamicObjectives,
+  NarrativeRole) can be changed like any table, with a warning: a wrong value can stop a quest.
+
+In wcmods 0.3 and before the keys' order decided: a row written before `"*"` was multiplied by it too, which
+the Game data page never showed (it writes numbered rows before `"*"`). Such a file now builds to the row's
+own value, and for a release the build says so, cell by cell ("this file's own value now wins over its
+`"*"`").
 
 ### `items.json`
 ```json
@@ -479,7 +508,7 @@ page and the commands print it, and Get set up finds the game again.
 | `pack_before` | `{ "pack": "<pack>", "on": ["<mod>", ...] }`: while a mod pack is played on its own, the mods that were on before it (the Mod packs page's Back to my mods) |
 | `console` | Whether the game's `~` console (UE4SS's console enabler) is on |
 | `debug_cat_look` | `true` makes your cat's colours script log every cat it sees |
-| `installed`, `installed_ue4ss`, `installed_ue4ss_shared` | What the last install put in the game: the mods, when they were built, the game build, the mods folder they came from, the UE4SS mods and shared modules. The studio compares them with your mods; leave them alone |
+| `installed`, `installed_ue4ss`, `installed_ue4ss_shared` | What the last install put in the game: the mods, when they were built, the game build, the mods folder they came from, the UE4SS mods and shared modules, and `save_pending` when it had save edits but no save to make them in. The studio compares them with your mods; leave them alone |
 | `menu_key`, `menu_pad`, `menu_scale` | The mod menu's key (`INS`, `HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN`, `F1`-`F12` but F11), the controller button that opens it too (an Unreal key name, `""` for none) and its size (0.6 to 2.2). Options on the Settings and repair page; an install puts them in the game ([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)) |
 | `skip_menu_pages` | `true` once Get set up was told "Not now" for the Menu pages mod |
 | `cheats` | From when the mod menu was a mod of its own: whether its cheats started on. Adding the Menu pages mod takes it into that mod's `settings.json` |
@@ -488,6 +517,64 @@ The file starts with a `_help` line saying the same.
 
 ### `save.json`
 ```json
-{ "set": { "0/GameplayProgression/Level": 5 },
-  "add": { "0/GameplayProgression/State/Inventory": { "Gameplay.Inventory.Consumable.SmallCatnip": 5 } } }
+{ "set": { "1/GameplayProgression/Level": 20 },
+  "add": { "1/GameplayProgression/State/Inventory": { "Gameplay.Inventory.Consumable.SmallCatnip": 5 } },
+  "remove": [ "1/GameplayProgression/State/Inventory/Gameplay.Inventory.Materials.Cobweb" ] }
 ```
+Changes to the player's own save (`WrcGame.sav`), made when the mod is applied, with the game closed and
+a copy of the save kept first. The Save page writes it (Keep it as a mod to share); its own Change my save
+now makes the same changes straight away, without a mod.
+- **Paths** start inside the save's account object and are split by `/` (a key with a `/` in it can't be
+  named). `Shared/...` is the game's settings and controls; `0/`, `1/` ... is a cat slot, one game each,
+  and `Shared/General/CurrentCatSlot` says which slot is being played. The Save page's Advanced part shows
+  the whole save.
+- **`set`** changes a value the save has (a path it hasn't got is skipped, with a warning). **`add`** adds
+  keys to an object, or sets them when the object has them already: an item to the inventory, by its tag.
+  **`remove`** takes out an item carried (`<slot>/GameplayProgression/State/Inventory/<tag>`) or one
+  element of a list (a path ending in its number). Anything else is left out with a warning: never a
+  whole cat slot (`"2"`), `Shared` (the game's settings and controls) or a cat's
+  `<slot>/GameplayProgression`. Removals go after the sets and adds.
+- **Each change is made once per save.** What was made is kept in [`save-changes.json`](#save-changesjson),
+  so the next Apply doesn't make it again over what the player has played since: a level set to 10 and
+  played on to 14 stays 14. A mod whose value changes (Level 20 becomes 18) makes it again.
+  `"always": true` makes every change at every install instead, as before.
+- **Once per slot, not per cat.** The record is by the save's account and the path, and a path names a
+  slot: a new cat started in a slot where a change was made doesn't get it. The Save page's Change my
+  save now makes it for that cat.
+- **Two mods changing one path:** the one with the higher priority is what the save gets. The other is
+  recorded as not made (`lost_to`), so it isn't made later in the winner's place either.
+- **Ranges:** a value outside what the game takes is left out with a warning: Level 1 to 20; Experience,
+  health, stamina and counts of things carried 0 or more (whole numbers for Level, Experience and counts);
+  the fresh-kill pile 0 to 100; a volume 0 to 1.
+- **Restoring a backup** (Settings and repair, or `wcmods restore`) puts back the record that backup kept
+  with the save (every save backup has it, as `wcmods-save-changes.json` beside the save files), so the
+  next Apply makes again only what that save hasn't got. Restoring keeps a backup of the save you had
+  first ("before-restore"), with its record: restoring that undoes the restore. A backup made before
+  the record was kept (by wcmods 0.3) has none: the changes recorded since it are forgotten (made
+  again), the ones put back since count as made, and the ones made before the record was kept stay.
+- **A save that can't be read**, or no save yet, leaves the save edits out and the rest of the install goes
+  in. Made before there was a save, they wait: once the game has made one, the studio's status says
+  "save edits are waiting for a save" until the next Apply.
+
+Before wcmods 0.4 every `set` and `add` was made again at every install. The first install with this
+version makes no change for the mods that were in the last install: their changes are recorded as made
+already (unless a mod changed since that install), so nobody's progress is put back one last time. When
+there was no save at that install (no backup of one from then, and the save file made since), nothing
+was made then, so the changes are made now. Turning a mod off leaves its changes in the save; the Save
+page's Done so far puts each one back. An older wcmods ignores `remove` and `always`.
+
+### `save-changes.json`
+
+Not a mod file: the record of the save edits made to your save, beside `wcmods.json` in your files'
+folder (`wcmods/saverecord.py`). By the save's account, then by who made the change (a mod's id, or
+`studio` for the Save page), then by path:
+```json
+{ "acct": { "my-mod": { "1/GameplayProgression/Level": { "op": "set", "value": 20, "was": 5,
+    "label": "Fawnstar's level", "when": "2026-10-28T15:30:12", "backup": "20261028-153012-before-save-edits" } } } }
+```
+`was` is what Put it back writes; `undone` says when it was put back, and keeps the record so a mod still
+on doesn't make the change again; `before` marks a change made before wcmods kept this record, which can't
+be put back from here; `lost_to` marks a change another mod's change to the same path won over, which
+wasn't made. Every save backup keeps a copy of this file as it was then (`wcmods-save-changes.json`,
+`null` when there was none yet), which a restore puts back. Delete the file and the next Apply treats
+the last install's mods as made, as on the first install with this version.
