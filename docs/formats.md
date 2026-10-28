@@ -265,7 +265,7 @@ sandbox cat, so a mod with them needs it (`"requires": ["sandbox"]`, which the s
   the name) show over its head.
 - `colours`: any of `fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears`; the rest are the
   game's. `eyes` is an iris colour slot (0 to 24), `size` the cat's size (0.3 to 1.5; the game's are about
-  0.4 to 1.1).
+  0.4 to 1.1). Left out, it's 0.85, a grown cat, as the Characters page shows it.
 - Its look: with no `look` or `slots`, the game makes it up each time the cat appears, as it does for its
   own clan cats (its shape, pattern and colour slots; `colours` go on top). `look` fixes the shape, as
   `cats.json`'s does: `body`, `fur`, `tail`, `ears`, `eyes` (their shape), `whiskers` and `face` each one
