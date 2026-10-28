@@ -134,8 +134,9 @@ def test_allowing_code_after_an_install_without_it_is_a_change_to_apply(studio, 
     cfg.data["allow_code_mods"] = True
     cfg.save()
     p = pipeline.pending(cfg, discover(studio.ctx.mods_root))
-    assert p["redo"] == ["mods that run code are allowed now"] and p["any"] is True
-    assert get(studio, "changes")["redo"] == ["mods that run code are allowed now"]
+    said = "mods that run code are allowed now, and the game doesn't have them yet"
+    assert p["redo"] == [said] and p["any"] is True
+    assert get(studio, "changes")["redo"] == [said]
     # Once an install with code allowed put the bridge in, it's done.
     cfg.data["installed_ue4ss"] = ["WCModsMenuHost", bridge.NAME, "WCModsScript_menu-pages"]
     cfg.save()

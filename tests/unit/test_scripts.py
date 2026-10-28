@@ -68,7 +68,8 @@ def test_settings_with_a_trailing_comma_name_the_line(studio, tmp_path):
         ScriptsSection().collect(studio.mod("comma"), ctx_for(tmp_path))
     # Said the same way on the card, and when the studio saves the file (check_file runs collect).
     assert [p for p in scripts.problems(studio.mod("comma")) if p.startswith("settings.json isn't valid")]
-    assert studio.check_file(studio.mod("comma"), "settings.json")[0].startswith("settings.json isn't valid: ")
+    problems, _notes, _left = studio.check_file(studio.mod("comma"), "settings.json")
+    assert problems[0].startswith("settings.json isn't valid: ")
 
 
 def test_bootstrap_fills_every_token_and_compiles(studio, tmp_path):

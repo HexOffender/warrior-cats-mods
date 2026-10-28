@@ -22,7 +22,8 @@ def test_pending_counts_code_mods_newly_allowed(studio, fake_game):
     assert p["redo"] == ["mods that run code are allowed now, and the game doesn't have them yet"] and p["any"]
     cfg.reload()
     installed(cfg, ["WCModsMenuHost", bridge.NAME])
-    assert pipeline.pending(cfg, []) == {"installed": True, "on": [], "off": [], "changed": [], "redo": [], "any": False}
+    assert pipeline.pending(cfg, []) == {"installed": True, "on": [], "off": [], "changed": [], "left_out": {},
+                                         "still_in": [], "redo": [], "any": False}
 
 
 def test_pending_says_the_script_loader_once_when_it_came_after_the_install(studio, fake_game):
