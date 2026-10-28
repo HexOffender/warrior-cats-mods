@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { launch } from "../lib/browser.mjs";
-import { NO_BROWSER, browserChoice, dataFolder, makeGame, removeFolder, startStudio, warmUp, writeSave } from "../lib/studio.mjs";
+import { NO_BROWSER, browserChoice, dataFolder, makeGame, removeFolders, startStudio, warmUp, writeSave } from "../lib/studio.mjs";
 
 const { browserPath, skip } = browserChoice();
 // The save's bindings, as tests/unit/conftest.py's `save` fixture has them, with the game's own Pause on Enter.
@@ -31,7 +31,7 @@ before(async () => {
 after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
-  if (folders) await removeFolder(folders.root);
+  if (folders) await removeFolders(folders);
 });
 
 const file = () => {

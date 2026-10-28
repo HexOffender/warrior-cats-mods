@@ -51,6 +51,7 @@ export default {
       file: "npcs.json",
       onLoad: obj => { load(obj); draw(); },
       getValue: () => toJson(),
+      onSaved: saved => wc.settleNew(cats, saved.npcs),   // saved cats keep their ids from now on
     });
     const out = wc.codePanel("npcs.json");
     const editor = listEditor({
