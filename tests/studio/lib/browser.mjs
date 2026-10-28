@@ -140,21 +140,21 @@ export class Page {
     await this.send("Runtime.enable");
     await this.send("DOM.enable");
   }
-  // Load a URL and wait for its load event (10 s); a change of #fragment alone waits for the hashchange.
-  async goto(url) {
-    const loaded = this.nextLoad(`${url} didn't load in 10 s`);
+  // Load a URL and wait for its load event (10 s, or `timeout` ms); a change of #fragment alone waits for the hashchange.
+  async goto(url, timeout = 10000) {
+    const loaded = this.nextLoad(`${url} didn't load in ${timeout / 1000} s`, timeout);
     const r = await this.send("Page.navigate", { url });
     if (r.errorText) throw new Error(`${url}: ${r.errorText}`);
     await loaded;
   }
   // Load the page again, as F5 would.
-  async reload() {
-    const loaded = this.nextLoad("the page didn't load again in 10 s");
+  async reload(timeout = 10000) {
+    const loaded = this.nextLoad(`the page didn't load again in ${timeout / 1000} s`, timeout);
     await this.send("Page.reload");
     await loaded;
   }
-  nextLoad(why) {
-    return new Promise((ok, bad) => { this.loads.push(ok); setTimeout(() => bad(new Error(why)), 10000); });
+  nextLoad(why, timeout = 10000) {
+    return new Promise((ok, bad) => { this.loads.push(ok); setTimeout(() => bad(new Error(why)), timeout); });
   }
   // The value of an expression (or a function, called) in the page; a promise is awaited.
   async evaluate(expr) {

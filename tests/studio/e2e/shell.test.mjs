@@ -3,58 +3,13 @@
 // protocol (lib/browser.mjs). Skipped, with a reason, when no Chromium is found: set WC_BROWSER to one.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { findBrowser, launch } from "../lib/browser.mjs";
-import { REPO } from "../lib/dom.mjs";
+import { dataFolder, makeGame, removeFolder, startStudio } from "../lib/studio.mjs";
 
-const EXE = "Wrc-Win64-ShippingDRM.exe";   // config.EXE_NAME: what makes a folder the game's
 const browserPath = findBrowser();
 const skip = browserPath ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-// A studio started on a free port over `data`; its URL is on the first line it prints.
-async function startStudio(data, env = {}) {
-  const python = process.env.PYTHON || "python";
-  const proc = spawn(python, ["-I", "wcmods.py", "studio", "--no-browser", "--port", "0"],
-    { cwd: REPO, env: { ...process.env, WCMODS_DATA: data, ...env }, stdio: ["ignore", "pipe", "pipe"] });
-  let out = "", err = "";
-  proc.stdout.on("data", d => { out += d; });
-  proc.stderr.on("data", d => { err += d; });
-  // On Windows `python` may be a launcher with the real interpreter under it: the whole tree goes.
-  const stop = () => {
-    if (proc.exitCode !== null) return;
-    if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(proc.pid), "/T", "/F"], { stdio: "ignore" });
-    else proc.kill();
-  };
-  const end = Date.now() + 30000;
-  for (;;) {
-    const m = /running at (http:\/\/127\.0\.0\.1:\d+\/)/.exec(out);
-    if (m) return { url: m[1], proc, stop, output: () => out + err };
-    if (proc.exitCode !== null) throw new Error(`the studio ended (${proc.exitCode}): ${out}${err}`);
-    if (Date.now() > end) { stop(); throw new Error(`the studio didn't say where it runs in 30 s: ${out}${err}`); }
-    await sleep(50);
-  }
-}
-
-// A folder of the player's own, with wcmods.json naming a game folder (empty: not the game yet) and a saves
-// folder, both made up, so neither Steam's game nor the real save is ever looked at.
-function dataFolder() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wc-e2e-"));
-  const game = path.join(root, "Game"), saves = path.join(root, "Saves"), data = path.join(root, "data");
-  for (const d of [game, saves, data]) fs.mkdirSync(d, { recursive: true });
-  fs.writeFileSync(path.join(data, "wcmods.json"), JSON.stringify({ game_dir: game, save_dir: saves }));
-  return { root, game, saves, data };
-}
-
-function makeGame(game) {
-  const win64 = path.join(game, "Wrc", "Binaries", "Win64");
-  fs.mkdirSync(path.join(win64, "ue4ss", "Mods"), { recursive: true });
-  fs.mkdirSync(path.join(game, "Wrc", "Content", "Paks"), { recursive: true });
-  fs.writeFileSync(path.join(win64, EXE), "");
-}
 
 let browser, studio, folders;
 
@@ -69,9 +24,7 @@ before(async () => {
 after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
-  if (folders) for (let i = 0; i < 5; i++) {
-    try { fs.rmSync(folders.root, { recursive: true, force: true }); break; } catch (e) { await sleep(300); }
-  }
+  if (folders) await removeFolder(folders.root);
 });
 
 test("the studio opens with no console errors, its status chips and its pages", { skip }, async () => {
@@ -117,8 +70,9 @@ test("a mod made from a Make page's Editing-mod bar shows on the Mods page", { s
   await page.waitFor(() => { const i = document.querySelector('input[aria-label="New mod folder name"]'); return i && i.getClientRects().length > 0; });
   await page.type('input[aria-label="New mod folder name"]', "e2e-mod");
   await page.click({ text: "Create" });
-  await page.waitFor(() => [...document.querySelectorAll(".target select option")].some(o => o.value === "e2e-mod"));
-  assert.equal(await page.evaluate(() => document.querySelector(".target select").value), "e2e-mod");
+  // The new mod is listed as soon as the list is read again (mods-changed), and chosen a moment later, once its
+  // file is opened: under load the two can be seen apart.
+  await page.waitFor(() => document.querySelector(".target select").value === "e2e-mod");
   await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes("Created mod e2e-mod")));
   assert.ok(fs.existsSync(path.join(folders.data, "mods", "e2e-mod", "mod.json")), "the mod's folder is there");
   await page.goto(studio.url + "#mods");
@@ -197,7 +151,8 @@ test("Apply with the game's files unreadable: a sentence at the top of the log, 
   await page.waitFor(() => !document.getElementById("drawer").hidden);
   assert.match(await page.text("#drawerTitle"), /^Apply to game \(\d{4}-\d\d-\d\d \d\d:\d\d\)$/);
   assert.match(await page.text("#drawerSummary"), /can't be read/);
-  // The code hasn't changed: no Restart the studio; and nothing is installed.
+  // The code hasn't changed: no Restart the studio; and nothing is installed (once the status after the Apply is in).
+  await page.waitFor(() => [...document.querySelectorAll("#status .chip")].some(c => c.dataset.said === "Not applied yet"));
   const chips = await page.evaluate(() => [...document.querySelectorAll("#status .chip")].map(c => c.dataset.said));
   assert.ok(!chips.includes("Restart the studio") && chips.includes("Not applied yet"), chips.join(", "));
   await page.close();
