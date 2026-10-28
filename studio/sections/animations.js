@@ -33,6 +33,18 @@ export default {
     try { kinds = (await api.get("/game/anim-kinds")).kinds; }
     catch (e) { root.append(el("div", { class: "error-card" }, el("strong", { text: "Couldn't read the game's animals" }), el("span", { text: e.message }))); return {}; }
     const kindLabel = k => (kinds.find(x => x.id === k) || {}).label || k;
+    // The Emote wheel, one of the mods that go with Clan Mod Studio: a note with its Add button while it isn't
+    // in your mods.
+    const wheelNote = el("div");
+    async function drawWheelNote() {
+      let found = [];
+      try { found = await api.get("/mods"); } catch (e) { /* no note */ }
+      clear(wheelNote);
+      if (found.some(m => m.id === "emote-wheel")) return;
+      wheelNote.append(el("p", { class: "note row" }, "The Emote wheel shows your emotes on a wheel in the game, with the game's own poses. ",
+        wc.addonButton("emote-wheel", { label: "Add the Emote wheel", name: "the Emote wheel" })));
+    }
+    const offWheel = wc.bus.on("mods-changed", () => drawWheelNote());
 
     const target = wc.modTarget({
       file: "animations.json",
@@ -55,8 +67,9 @@ export default {
         el("span", { class: "eyebrow", text: "Animations" }),
         el("h1", { text: "Animations" }),
         el("p", { class: "note", text: "Animations of your own, made in Blender and saved as glTF: emotes for your cat, played from a key or the mod menu's Emotes page, or for a script to play on any cat or animal. They play over what the cat is doing, where it stands; they don't move it. Start from a start kit: the cat (or an animal) rigged to the game's own skeleton." })),
-      target.element, editor.element, out.element);
+      wheelNote, target.element, editor.element, out.element);
     await target.refresh();
+    drawWheelNote();
 
     function load(obj) {
       extra = {};
@@ -248,6 +261,6 @@ export default {
         wc.confirmButton(`Remove ${a.name || "this animation"}`, "Press again to remove", () => { anims.splice(anims.indexOf(a), 1); changed(true); }, "btn danger")));
       box.append(...cards);
     }
-    return {};
+    return { unmount() { offWheel(); } };
   },
 };

@@ -1,6 +1,11 @@
-// Mods: get set up (the first time), add mods you've downloaded, switch them on and off, and apply them
-// to the game. Mods say in mod.json what they need ("requires") or work with ("uses"). Options (the mod
-// menu's key among them), backups and repairs are on the Settings and repair page.
+// Mods: get set up (the first time), the mods that go with Clan Mod Studio, add mods you've downloaded, switch
+// them on and off, and apply them to the game. Mods say in mod.json what they need ("requires") or work with
+// ("uses"). Options (the mod menu's key among them), backups and repairs are on the Settings and repair page.
+// What the page says and chooses without the page (search, requirements, the add-ons' states, toasts) is in
+// ../lib/modlist.js.
+import { ADDON_NAMES, addedToast, addonState, addonToast, allSet, changeParts, matches, needs, needsLine, sentence,
+  worksWith } from "../lib/modlist.js";
+
 export default {
   title: "Mods",
   async mount(root, wc) {
@@ -13,23 +18,20 @@ export default {
       "C++ mod": "C++ mod", "C++ source": "C++ source", code: "Build step (code)", "studio page": "Studio page",
       "mod pack": "Mod pack",
     };
-    let mods = [], filter = "all", search = "", settings = null;
+    let mods = [], filter = "all", search = "", settings = null, addons = [];
     const open = new Set();   // mod cards with "More" open
 
     const setupBox = el("div");
-    const updateBox = el("div");
     const changesBox = el("div");
+    const addonsBox = el("div", { class: "card addons", "data-key": "addons" });
     const addBox = el("div", { class: "card" });
+    const updateBox = el("div");
     const listBox = el("div", { class: "card" });
 
     root.append(
-      el("div", { class: "section-head" },
-        el("span", { class: "eyebrow", text: "Your mods" }),
-        el("h1", { text: "Mods" }),
-        el("p", { class: "note", text: "Add mods you've downloaded, switch them on or off, then press Play (top right)." })),
-      setupBox, updateBox, changesBox, addBox, listBox);
-
-    const nameOf = id => (mods.find(m => m.id === id) || {}).name || id;
+      wc.pageHead({ eyebrow: "Your mods", title: "Mods", help: "help:mods",
+        lede: "Add mods you've downloaded, switch them on or off, then press Play (top right)." }),
+      setupBox, changesBox, addonsBox, addBox, updateBox, listBox);
 
     // ---------- after a game update (wcmods/exe/gamebuild.py) ----------
     let update = null;   // what wcmods found the update changed, once asked (it takes a while the first time)
@@ -76,8 +78,48 @@ export default {
       } catch (e) { toast(e.message, "bad"); }
     }
 
-    // ---------- getting set up (wcmods/onboarding.py): shown until every step is done ----------
-    let loaderNote = "", pagesNote = "";
+    // ---------- getting set up (wcmods/onboarding.py): every step, then one line once they're all done ----------
+    let loaderNote = "", showSetup = false, asked = false, adding = null;
+    const step = (ok, title, ...body) => el("li", { class: "step" + (ok ? " done" : "") },
+      el("span", { class: "tick", "aria-hidden": "true", text: ok ? "\u2713" : "" }),
+      el("div", { class: "step-body" }, el("strong", {}, el("span", { class: "sr-only", text: ok ? "Done: " : "To do: " }), title), ...body));
+
+    async function allowCode() {
+      try {
+        settings = await api.patch("/settings", { allow_code_mods: true });
+        const info = await api.get("/info").catch(() => ({}));
+        toast(info.installed ? "Allowed. Press Apply to game (top right) to put them in." : "Allowed. Play puts them in the game with your mods.");
+        asked = false;
+        // The side bar's pages change (the Console, mods' own pages): the shell redraws it without a reload.
+        bus.emit("sections-changed");
+        await refresh();
+      } catch (e) { toast(e.message, "bad"); }
+    }
+
+    // Add all four, one after the other, each row on the add-ons card saying "Adding …" while it goes.
+    async function addAll() {
+      const todo = addons.filter(a => !a.installed);
+      const went = [], missed = [];
+      adding = todo.length ? todo[0].id : null;
+      renderSetup();
+      for (const a of todo) {
+        adding = a.id;
+        renderAddons();
+        try {
+          const r = await api.post(`/addons/${encodeURIComponent(a.id)}`, {});
+          went.push(`${r.result.name} ${r.result.version || ""}`.trim());
+        } catch (e) { missed.push(e.message); }
+      }
+      adding = null;
+      try { await api.post("/setup/addons", { choice: "added" }); } catch (e) { toast(e.message, "bad"); }
+      const code = settings && settings.allow_code_mods;
+      toast((went.length ? `Added ${went.join(", ")}.` : "Nothing was added.")
+        + (missed.length ? ` Not now: ${missed.join(" ")}` : "")
+        + (went.length && !code ? " They run their own scripts: Let mods run their own scripts is the next step." : went.length ? " Press Play to put them in the game." : ""),
+        missed.length && !went.length ? "bad" : "info");
+      await refresh();
+    }
+
     async function renderSetup() {
       let s;
       try { s = await api.get("/setup"); } catch (e) { clear(setupBox); return; }
@@ -100,10 +142,13 @@ export default {
             catch (e) { toast(e.message, "bad"); }
           } }))));
       }
-      if (s.done) return;
-      const step = (ok, title, ...body) => el("li", { class: "step" + (ok ? " done" : "") },
-        el("span", { class: "tick", "aria-hidden": "true", text: ok ? "\u2713" : "" }),
-        el("div", { class: "step-body" }, el("strong", {}, el("span", { class: "sr-only", text: ok ? "Done: " : "To do: " }), title), ...body));
+      if (s.done && !showSetup) {
+        setupBox.append(el("div", { class: "card setup folded row spread" },
+          el("strong", {}, "Set up ", el("span", { class: "ok-line", text: "\u2713" })),
+          el("button", { class: "btn link", type: "button", "aria-expanded": "false", text: "Show the steps",
+            onclick: () => { showSetup = true; renderSetup(); } })));
+        return;
+      }
       const steps = el("ol", { class: "steps" });
 
       if (s.game.ok) {
@@ -127,12 +172,12 @@ export default {
       }
 
       if (s.loader.ok) {
-        steps.append(step(true, "The script loader is installed", el("span", { class: "muted", text: "UE4SS: the mod menu and most mods run on it." })));
+        steps.append(step(true, "The script loader is installed", el("span", { class: "muted", text: "The mod menu and most mods run on it." })));
       } else {
         const blocked = !s.game.ok ? "Find the game first." : s.running ? "Close the game first." : "";
         const input = el("input", { type: "file", accept: ".zip,application/zip", hidden: true });
         const install = async file => {
-          loaderNote = file ? `Installing ${file.name}…` : "Downloading UE4SS from GitHub and installing it…";
+          loaderNote = file ? `Installing ${file.name}…` : "Downloading the script loader from GitHub and installing it…";
           renderSetup();
           try {
             const r = file ? await api.upload("/setup/loader", file) : await api.post("/setup/loader");
@@ -150,46 +195,118 @@ export default {
               el("button", { class: "btn primary", text: "Install it", disabled: !!blocked, onclick: () => install(null) }),
               el("button", { class: "btn small", text: "Use a .zip I downloaded…", disabled: !!blocked, onclick: () => input.click() }),
               blocked ? el("span", { class: "muted", text: blocked }) : null, input),
-          el("a", { href: s.loader.page, target: "_blank", rel: "noopener", class: "muted", text: "UE4SS on GitHub" })));
+          el("a", { href: s.loader.page, target: "_blank", rel: "noopener", class: "muted", text: "The script loader on GitHub" })));
       }
 
-      // The menu's pages about the game: a mod of their own (wcmods/menupages.py), from its GitHub releases.
-      if (s.pages.ok) {
-        steps.append(step(true, s.pages.installed ? "The menu's pages are in your mods" : "The menu's pages: skipped",
-          s.pages.installed
-            ? el("span", { class: "muted", text: `Menu pages ${s.pages.version || ""}: your cat, the world, quests, fights and cheats in the in-game menu.` })
-            : el("span", { class: "muted" }, "Skipped for now. To add it later, download its .zip from ",
-              el("a", { href: s.pages.page, target: "_blank", rel: "noopener", text: "its GitHub page" }),
-              " and drop it on this page, or run python wcmods.py menu-pages.")));
+      // Mods that run their own scripts: the same switch as Options on Settings and repair, asked once here.
+      const scripts = `${ADDON_NAMES} are small programs that run inside the game. Only add mods like these from people you trust; the four that come with Clan Mod Studio are fine.`;
+      if (s.code.allowed) {
+        steps.append(step(true, "Mods can run their own scripts", el("span", { class: "muted", text: "Options, on the Settings and repair page, can turn it off again." })));
+      } else if (s.code.ok && !asked) {
+        steps.append(step(true, "Mods' own scripts: not now",
+          el("span", { class: "muted", text: `${ADDON_NAMES} stay out of the game until you allow it.` }),
+          el("div", { class: "row" }, el("button", { class: "btn small", text: "Allow…", onclick: () => { asked = true; renderSetup(); } }))));
       } else {
-        const input = el("input", { type: "file", accept: ".zip,application/zip", hidden: true });
-        const addPages = async (file, skip = false) => {
-          pagesNote = skip ? "" : file ? `Adding ${file.name}…` : "Downloading Menu pages from GitHub…";
-          renderSetup();
-          try {
-            const r = file ? await api.upload("/setup/pages", file) : await api.post("/setup/pages", skip ? { skip: true } : {});
-            if (!skip) toast(`Menu pages ${r.result.version || ""} is in your mods.` + (settings && settings.allow_code_mods ? " Press Play to put it in the game."
-              : " It runs code, so allow mods that run code (Options, on the Settings and repair page) for the game to get it."));
-            pagesNote = "";
-            await refresh();
-          } catch (e) { pagesNote = ""; toast(e.message, "bad"); renderSetup(); }
-        };
-        input.addEventListener("change", () => input.files[0] && addPages(input.files[0]));
-        steps.append(step(false, "Add the menu's pages",
-          el("span", { class: "muted", text: "The in-game menu (Insert) lists your mods and their pages. Its pages about your cat, the world, travel, quests, fights and cheats are a mod of their own, Menu pages. It's a script, so it needs mods that run code allowed (Options, on the Settings and repair page). Clan Mod Studio downloads it from its GitHub page (under 100 KB)." }),
-          pagesNote ? el("span", { class: "muted", role: "status", text: pagesNote })
+        const warning = asked ? wc.codeWarning(mods) : null;
+        steps.append(step(false, "Let mods run their own scripts",
+          el("span", { class: "muted", text: scripts }),
+          warning,
+          asked
+            ? el("div", { class: "row", role: "group", "aria-label": "Allow mods that run code?" },
+              el("button", { class: "btn danger", text: "Allow mods that run code", onclick: () => allowCode() }),
+              el("button", { class: "btn ghost", text: "Cancel", onclick: () => { asked = false; renderSetup(); } }))
             : el("div", { class: "row" },
-              el("button", { class: "btn primary", text: "Add it", onclick: () => addPages(null) }),
-              el("button", { class: "btn small", text: "Use a .zip I downloaded…", onclick: () => input.click() }),
-              el("button", { class: "btn ghost small", text: "Not now", onclick: () => addPages(null, true) }), input),
-          el("a", { href: s.pages.page, target: "_blank", rel: "noopener", class: "muted", text: "Menu pages on GitHub" })));
+              el("button", { class: "btn primary", text: "Allow", onclick: () => {
+                asked = true;
+                renderSetup().then(() => announce(`Only for mods from people you trust. ${wc.CODE_WARNING}`));
+              } }),
+              el("button", { class: "btn ghost small", text: "Not now", onclick: async () => {
+                try { await api.post("/setup/code", { skip: true }); } catch (e) { toast(e.message, "bad"); }
+                renderSetup();
+              } }))));
+      }
+
+      // The mods that go with Clan Mod Studio: listed on their card below, not a second time here.
+      if (s.addons.ok) {
+        steps.append(step(true, s.addons.choice === "not now" ? "The mods that go with Clan Mod Studio: not now" : "The mods that go with Clan Mod Studio",
+          el("span", { class: "muted", text: s.addons.missing.length ? "Their card below adds any of them, one at a time." : "All four are in your mods." })));
+      } else {
+        steps.append(step(false, "Get the mods that go with Clan Mod Studio",
+          el("span", { class: "muted", text: "They bring what you make on the Make pages into the game: their card below says what each one does. Clan Mod Studio downloads them from GitHub." }),
+          adding ? el("span", { class: "muted", role: "status", text: "Adding them…" })
+            : el("div", { class: "row" },
+              el("button", { class: "btn primary", text: "Add all four", onclick: () => addAll() }),
+              el("button", { class: "btn ghost small", text: "Not now", onclick: async () => {
+                try { await api.post("/setup/addons", { choice: "not now" }); } catch (e) { toast(e.message, "bad"); }
+                renderSetup();
+              } }))));
       }
 
       setupBox.append(el("div", { class: "card setup" },
-        el("h2", { text: "Get set up" }),
+        el("div", { class: "row spread" }, el("h2", { text: "Get set up" }),
+          s.done ? el("button", { class: "btn link", type: "button", "aria-expanded": "true", text: "Fold it away", onclick: () => { showSetup = false; renderSetup(); } }) : null),
         el("p", { class: "note", text: "A few things before your first mod; each is done once." }),
         steps,
         el("p", { class: "note", text: "Then add a mod below and press Play." })));
+    }
+
+    // ---------- the mods that go with Clan Mod Studio (wcmods/addons.py) ----------
+    let showAddons = false, checking = false;
+    async function addonAction(a, action) {
+      try {
+        if (action === "on") {
+          await api.post(`/mods/${encodeURIComponent(a.id)}/switch`, { on: true });
+          toast(`${a.name} on. Press Play to put it in the game.`);
+        } else {
+          adding = a.id;
+          renderAddons();
+          const r = await api.post(`/addons/${encodeURIComponent(a.id)}`, {});
+          toast(addonToast(r.result, settings && settings.allow_code_mods));
+        }
+      } catch (e) { toast(e.message, "bad"); }
+      adding = null;
+      await refresh();
+    }
+
+    async function renderAddons(latest = false) {
+      if (latest) { checking = true; drawAddons(); }
+      try {
+        const r = await api.get(latest ? "/addons?latest=1" : "/addons");
+        addons = r.addons;
+      } catch (e) { if (latest) toast(e.message, "bad"); }
+      checking = false;
+      drawAddons();
+    }
+    function drawAddons() {
+      clear(addonsBox);
+      if (!addons.length) return;
+      const head = el("div", { class: "row spread" }, el("h2", { text: "Mods that go with Clan Mod Studio" }),
+        el("button", { class: "btn link", type: "button", text: "What they do", onclick: () => wc.openHelp("companion-mods") }));
+      if (allSet(addons) && !showAddons) {
+        addonsBox.append(head, el("div", { class: "row spread" },
+          el("span", { class: "ok-line", text: "\u2713 All four are in, on and up to date as far as the studio knows." }),
+          el("button", { class: "btn link", type: "button", "aria-expanded": "false", text: "Show them", onclick: () => { showAddons = true; drawAddons(); } })));
+        return;
+      }
+      addonsBox.append(head, el("p", { class: "note", text: "Four mods of their own that bring what you make on the Make pages into the game. Each one runs its own scripts." }));
+      for (const a of addons) {
+        const st = addonState(a);
+        const busy = adding === a.id;
+        const label = { add: "Add", on: "Switch on", latest: "Get the latest" }[st.action];
+        addonsBox.append(el("div", { class: "addon", "data-key": `addon:${a.id}` },
+          el("div", { class: "addon-body" },
+            el("strong", { text: a.name }),
+            el("span", { class: "muted", text: a.about }),
+            a.no_release && !a.installed ? el("span", { class: "muted", text: "The owner of that mod has to publish a release before Clan Mod Studio can add it." }) : null,
+            a.too_new ? el("span", { class: "warn-text", text: sentence(a.too_new) }) : null),
+          el("span", { class: `chip ${st.kind}` }, el("i"), busy ? `Adding ${a.name}…` : st.chip),
+          label && !busy ? el("button", { class: "btn small", type: "button", "aria-label": `${label}: ${a.name}`, text: label,
+            disabled: !!adding, onclick: () => addonAction(a, st.action) }) : el("span")));
+      }
+      addonsBox.append(el("div", { class: "row" },
+        el("button", { class: "btn small ghost", type: "button", text: checking ? "Asking GitHub…" : "Check for newer versions", disabled: checking,
+          onclick: () => renderAddons(true) }),
+        allSet(addons) ? el("button", { class: "btn link", type: "button", text: "Fold it away", onclick: () => { showAddons = false; drawAddons(); } }) : null));
     }
 
     // ---------- what's not in the game yet ----------
@@ -198,15 +315,10 @@ export default {
       try { c = await api.get("/changes"); } catch (e) { clear(changesBox); return; }
       clear(changesBox);
       if (!c.any) {
-        if (c.installed) changesBox.append(el("p", { class: "note ok-line", text: "✓ The game has your mods as they are here." }));
+        if (c.installed) changesBox.append(el("p", { class: "note ok-line", text: "\u2713 The game has your mods as they are here." }));
         return;
       }
-      const parts = [
-        ...c.on.map(i => `${c.names[i] || i} on`),
-        ...c.off.map(i => `${c.names[i] || i} off`),
-        ...c.changed.map(i => `${c.names[i] || i} changed`),
-        ...(c.redo || []).map(r => `apply again: ${r}`),
-      ];
+      const parts = changeParts(c);
       changesBox.append(el("div", { class: "banner" },
         el("div", { class: "row spread" },
           el("div", { style: { display: "grid", gap: "2px" } },
@@ -254,7 +366,7 @@ export default {
         const r = await api.upload(`/mods/add?step=preview&name=${encodeURIComponent(file.name)}`, file);
         clear(addBox);
         renderPreview(r, file.name,
-          (ids, enable) => api.upload(`/mods/add?step=add&enable=${enable ? 1 : 0}&ids=${encodeURIComponent(ids.join(","))}&name=${encodeURIComponent(file.name)}`, file),
+          (ids, on) => api.upload(`/mods/add?step=add&ids=${encodeURIComponent(ids.join(","))}&on=${encodeURIComponent(on.join(","))}&name=${encodeURIComponent(file.name)}`, file),
           () => renderAdd());
       } catch (e) { toast(e.message, "bad"); renderAdd(); }
     }
@@ -268,59 +380,69 @@ export default {
       inboxShown = true;
       clear(addBox);
       renderPreview(r, r.name,
-        (ids, enable) => api.post("/mods/inbox/add", { ids, enable }),
+        (ids, on) => api.post("/mods/inbox/add", { ids, on }),
         async () => { await api.post("/mods/inbox/clear").catch(() => null); inboxShown = false; renderAdd(); });
       addBox.scrollIntoView({ block: "start" });
     }
 
-    // What's in a .zip (or folder) before adding it; add(ids, enable) and cancel() do the rest.
+    // What's in a .zip (or folder) before adding it; add(ids, on) adds the ticked ones (`on`: those that go in
+    // switched on) and cancel() goes back.
     function renderPreview(r, name, add, cancel) {
-      const picks = new Map();
+      const picks = new Map(), ons = new Map();
+      const many = r.mods.length > 1;
       const pack = r.mods.find(m => m.kinds.includes("mod pack"));
-      addBox.append(el("div", { class: "row spread" }, el("h2", { text: pack ? `Add the mod pack ${pack.name}?` : r.mods.length > 1 ? `${r.mods.length} mods in ${name}` : `Add ${r.mods[0].name}?` }),
+      addBox.append(el("div", { class: "row spread" }, el("h2", { text: pack ? `Add the mod pack ${pack.name}?` : many ? `${r.mods.length} mods in ${name}` : `Add ${r.mods[0].name}?` }),
         el("span", { class: "muted mono", text: name })),
         pack ? el("p", { class: "note", text: "A mod pack: its mods go together. Mods you already have aren't ticked, so yours stay as they are; tick one to use the pack's copy instead." })
-          : r.mods.length > 1 ? el("p", { class: "note", text: "Tick the ones you want. With palettes, pick one theme at a time." }) : null);
+          : many ? el("p", { class: "note", text: "Tick the ones you want, and whether each goes in switched on. With palettes, pick one theme at a time." }) : null);
       for (const m of r.mods) {
         // One mod is simply added; out of several (a collection like wcmods-examples) the player picks. A mod
-        // pack's are ticked, except mods the player has already.
-        const pick = el("input", { type: "checkbox", checked: r.mods.length === 1 || (!!pack && !m.existing), id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
+        // pack's are ticked, except mods the player has already. Each goes in on or off as it ships, unless changed.
+        const pick = el("input", { type: "checkbox", checked: !many || (!!pack && !m.existing), id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
+        const on = el("input", { type: "checkbox", checked: m.enabled !== false, id: `on-${m.id}`, "aria-label": `${m.name} switched on` });
         picks.set(m.id, pick);
+        ons.set(m.id, on);
         const notes = [];
         if (m.existing) notes.push(el("li", { text: `Replaces the ${m.existing.name}${m.existing.version ? " " + m.existing.version : ""} you have${m.version ? " with " + m.version : ""}. The old copy is kept in backups.` }));
+        if (m.too_new) notes.push(el("li", { class: "warn", text: `${sentence(m.too_new)} Until then it's left out of the game.` }));
         if (m.code) notes.push(el("li", { class: r.code_allowed ? "" : "warn", text: r.code_allowed
           ? "Runs code on your computer and in the game. Only add mods like this from people you trust."
-          : "Runs code, so it stays off until you allow mods that run code (Options, on the Settings and repair page). Only do that for mods from people you trust." }));
-        const needs = m.requires.filter(i => !mods.some(x => x.id === i));
-        if (m.requires.length) notes.push(el("li", { class: needs.length ? "warn" : "", text: `Needs ${m.requires.map(nameOf).join(", ")}${needs.length ? ", which you don't have: add it too" : " (turned on with it)"}.` }));
+          : "Runs code, so it stays out of the game until you allow mods that run code (Get set up, or Options on the Settings and repair page). Only do that for mods from people you trust." }));
+        const need = needs(m, r.mods, mods, addons);
+        const line = needsLine(need);
+        if (line) {
+          notes.push(el("li", { class: line[1] }, line[0],
+            ...need.filter(n => n.where === "missing" && n.addon).map(n => [" ", wc.addonButton(n.id, { label: `Add ${n.name}`, name: n.name })])));
+        }
+        for (const a of worksWith(m, r.mods, mods, addons)) {
+          notes.push(el("li", {}, `Works with ${a.name}, which you don't have. `, wc.addonButton(a.id, { label: `Add ${a.name}`, name: a.name })));
+        }
         if (m.menu_page) notes.push(el("li", { text: "Adds a page to the in-game mod menu." }));
         addBox.append(el("div", { class: "mod preview" },
-          r.mods.length > 1 ? pick : null,
+          many ? pick : null,
           el("div", { class: "mod-body" },
             el("label", { for: `pick-${m.id}` }, el("strong", { text: m.name }), m.version ? el("span", { class: "muted", text: ` ${m.version}` }) : null,
               m.author ? el("span", { class: "muted", text: ` · by ${m.author}` }) : null),
             m.description ? el("span", { class: "muted", text: m.description }) : null,
             el("div", { class: "row" }, ...m.kinds.map(k => el("span", { class: "chip", text: KIND[k] || k }))),
-            notes.length ? el("ul", { class: "notes" }, ...notes) : null)));
+            notes.length ? el("ul", { class: "notes" }, ...notes) : null,
+            many ? el("label", { class: "row small-on", for: `on-${m.id}` }, on, "Switched on") : null)));
       }
-      const on = el("input", { type: "checkbox", id: "add-on", checked: true });
+      const single = !many ? ons.get(r.mods[0].id) : null;
+      if (single) single.id = "add-on";
       addBox.append(el("div", { class: "row" },
-        el("button", { class: "btn primary", text: r.mods.length > 1 ? "Add these" : "Add to my mods", onclick: async () => {
+        el("button", { class: "btn primary", text: many ? "Add these" : "Add to my mods", onclick: async () => {
           const ids = [...picks].filter(([, p]) => p.checked).map(([id]) => id);
           if (!ids.length) { toast("Pick at least one.", "bad"); return; }
           try {
-            const res = await add(ids, on.checked);
-            const added = res.added;
-            const also = [...new Set(added.flatMap(a => a.also_on || []))];
-            toast(`Added ${added.map(a => a.name).join(", ")}.`
-              + (also.length ? ` Also on, because ${added.length > 1 ? "they need" : "it needs"} them: ${also.join(", ")}.` : "")
-              + (on.checked ? " Press Play to play with it." : ""));
+            const res = await add(ids, ids.filter(id => ons.get(id).checked));
+            toast(addedToast(res.added, addons));
             inboxShown = false;
             renderAdd();
             await refresh();
           } catch (e) { toast(e.message, "bad"); }
         } }),
-        el("label", { class: "row", for: "add-on" }, on, "Switch it on"),
+        single ? el("label", { class: "row", for: "add-on" }, single, "Switch it on") : null,
         el("button", { class: "btn ghost", text: "Cancel", onclick: () => cancel() })));
     }
 
@@ -337,6 +459,7 @@ export default {
 
     function modCard(m, state) {
       // A mod whose mod.json can't be read is listed, off, with what's wrong; it can't be switched on until that's fixed.
+      // The switch carries the mod's name for screen readers; the name itself is text, so clicking it changes nothing.
       const toggle = el("input", { type: "checkbox", role: "switch", class: "switch", id: `mod-on-${m.id}`, checked: m.enabled, "aria-label": m.name, disabled: !!m.problem });
       toggle.addEventListener("change", () => switchMod(m, toggle.checked));
       const flags = [];
@@ -344,8 +467,8 @@ export default {
       for (const k of m.kinds) flags.push(el("span", { class: "chip", text: KIND[k] || k }));
       const lines = [];
       if (m.requires.length) lines.push(el("li", { text: `Needs ${m.requires_names.join(", ")}.` }));
-      for (const p of m.problems) lines.push(el("li", { class: "bad", text: p.replace(/^needs/, "Needs") + "." }));
-      if (m.code && !(settings && settings.allow_code_mods)) lines.push(el("li", { class: "warn", text: "Runs code, so the game won't get it until you allow mods that run code (Options, on the Settings and repair page)." }));
+      for (const p of m.problems) lines.push(el("li", { class: "bad", text: sentence(p) }));
+      if (m.code && !(settings && settings.allow_code_mods)) lines.push(el("li", { class: "warn", text: "Runs code, so the game won't get it until you allow mods that run code (Get set up, or Options on the Settings and repair page)." }));
       if (m.enabled && m.needed_by.length) lines.push(el("li", { class: "muted", text: `${m.needed_by.join(", ")} ${m.needed_by.length > 1 ? "need" : "needs"} it.` }));
       // Made for an older build of the game (gamebuild.py): left out unless the player uses it anyway.
       const old = m.outdated;
@@ -359,7 +482,7 @@ export default {
       const card = el("div", { class: "mod" + (m.enabled ? "" : " off"), "data-key": `mod:${m.id}` },
         toggle,
         el("div", { class: "mod-body" },
-          el("label", { for: `mod-on-${m.id}` }, el("strong", { text: m.name }),
+          el("div", { class: "mod-name" }, el("strong", { text: m.name }),
             m.version ? el("span", { class: "muted", text: ` ${m.version}` }) : null,
             m.author ? el("span", { class: "muted", text: ` · by ${m.author}` }) : null),
           m.description ? el("span", { class: "muted", text: m.description }) : null,
@@ -411,7 +534,7 @@ export default {
       try {
         await api.post(`/cpp/build/${encodeURIComponent(m.id)}`, {});
       } catch (e) { toast(e.message, "bad"); return; }
-      toast(`Building ${m.name}... (the first build compiles UE4SS too: a few minutes)`);
+      toast(`Building ${m.name}... (the first build compiles the script loader too: a few minutes)`);
       for (;;) {
         await new Promise(r => setTimeout(r, 1500));
         let st;
@@ -441,12 +564,12 @@ export default {
             try { toast(`Saved ${await api.download(`/mods/${encodeURIComponent(m.id)}/zip`)}`); } catch (e) { toast(e.message, "bad"); }
           } }),
           m.kinds.includes("C++ source") ? el("button", { class: "btn small", text: "Build C++", onclick: () => buildCpp(m) }) : null,
-          m.menu_pages ? el("button", { class: "btn small", text: "Get the latest", onclick: async () => {
-            toast("Looking for a newer Menu pages on GitHub…");
+          // One of the mods that go with Clan Mod Studio: its latest release from GitHub, your settings kept.
+          m.addon ? el("button", { class: "btn small", text: "Get the latest", onclick: async () => {
+            toast(`Looking for a newer ${m.name} on GitHub…`);
             try {
-              const r = await api.post("/setup/pages", {});
-              toast(r.result.unchanged ? `Menu pages ${r.result.version} is the latest already.`
-                : `Menu pages ${r.result.version || ""} is in your mods, with your settings kept. Apply to game to use it.`);
+              const r = await api.post(`/addons/${encodeURIComponent(m.id)}`, {});
+              toast(addonToast(r.result, settings && settings.allow_code_mods));
               await refresh();
             } catch (e) { toast(e.message, "bad"); }
           } }) : null,
@@ -466,32 +589,35 @@ export default {
       } catch (e) { toast(e.message, "bad"); }
     }
 
+    // The list's head (its count, Find a mod and the All, On, Off chips) is made once, so the search box keeps
+    // what's typed, the caret and the focus while the cards under it are drawn again.
+    const count = el("span", { class: "muted" });
+    const searchBox = el("input", { type: "search", id: "mod-search", placeholder: "Find a mod", "aria-label": "Find a mod" });
+    searchBox.addEventListener("input", () => { search = searchBox.value; renderList(); });
+    const chips = ["all", "on", "off"].map(f => el("button", { class: "chip", id: `mod-show-${f}`, "aria-pressed": String(filter === f), text: { all: "All", on: "On", off: "Off" }[f],
+      onclick: () => { filter = f; renderList(); } }));
+    const cards = el("div", { class: "mod-cards", "aria-live": "off" });
+    listBox.append(
+      el("div", { class: "row spread" }, el("h2", { text: "Your mods" }), count),
+      el("div", { class: "row" }, searchBox, el("div", { class: "row", role: "group", "aria-label": "Show" }, ...chips)),
+      cards);
+
     function renderList(state = null) {
-      const shown = mods.filter(m => (filter === "all" || (filter === "on") === m.enabled)
-        && (!search || `${m.name} ${m.id} ${m.description} ${m.author}`.toLowerCase().includes(search)));
+      const shown = mods.filter(m => (filter === "all" || (filter === "on") === m.enabled) && matches(m, search));
       const presets = shown.filter(m => m.preset);
       // String(): a name that isn't text (a mistake in a mod.json) mustn't stop the list from showing.
       const byName = (a, b) => String(a.name).localeCompare(String(b.name));
       const rest = shown.filter(m => !m.preset).sort(byName);
-      const searchBox = el("input", { type: "search", id: "mod-search", placeholder: "Find a mod", value: search, "aria-label": "Find a mod" });
-      searchBox.addEventListener("input", () => { search = searchBox.value.trim().toLowerCase(); renderList(); searchAgain(); });
-      const chips = ["all", "on", "off"].map(f => el("button", { class: "chip", id: `mod-show-${f}`, "aria-pressed": String(filter === f), text: { all: "All", on: "On", off: "Off" }[f],
-        onclick: () => { filter = f; renderList(); } }));
-      clear(listBox).append(
-        el("div", { class: "row spread" }, el("h2", { text: `Your mods` }),
-          el("span", { class: "muted", text: `${mods.filter(m => m.enabled).length} of ${mods.length} on` })),
-        el("div", { class: "row" }, searchBox, el("div", { class: "row", role: "group", "aria-label": "Show" }, ...chips)));
-      if (!mods.length) listBox.append(el("p", { class: "empty", text: "No mods yet. Add one above." }));
-      else if (!shown.length) listBox.append(el("p", { class: "empty", text: "No mods match." }));
-      for (const m of rest) listBox.append(modCard(m, state));
+      count.textContent = `${mods.filter(m => m.enabled).length} of ${mods.length} on`;
+      for (const c of chips) c.setAttribute("aria-pressed", String(c.id === `mod-show-${filter}`));
+      clear(cards);
+      if (!mods.length) cards.append(el("p", { class: "empty", text: "No mods yet. Add one above." }));
+      else if (!shown.length) cards.append(el("p", { class: "empty", text: "No mods match." }));
+      for (const m of rest) cards.append(modCard(m, state));
       if (presets.length) {
-        listBox.append(el("h3", { class: "group", text: `Colour palettes (${presets.length})` }),
+        cards.append(el("h3", { class: "group", text: `Colour palettes (${presets.length})` }),
           el("p", { class: "note", text: "Each recolours your cats' coats. The Palettes page shows them side by side and switches between them in one go." }));
-        for (const m of presets.sort(byName)) listBox.append(modCard(m, state));
-      }
-      function searchAgain() {   // keep typing in the box after it's redrawn
-        const box = listBox.querySelector('input[type="search"]');
-        if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+        for (const m of presets.sort(byName)) cards.append(modCard(m, state));
       }
     }
 
@@ -506,7 +632,7 @@ export default {
         [mods, settings] = await Promise.all([api.get("/mods"), api.get("/settings")]);
       } catch (e) { toast(e.message, "bad"); }
       renderList();
-      await Promise.all([renderSetup(), renderUpdate(), renderChanges()]);
+      await Promise.all([renderSetup(), renderAddons(), renderUpdate(), renderChanges()]);
       if (notify) bus.emit("mods-changed", { from: "mods" });
     }
 
@@ -514,7 +640,8 @@ export default {
     const off = [
       bus.on("installed", () => renderChanges()),
       bus.on("mods-changed", d => { if (!d || d.from !== "mods") refresh({ notify: false }); }),
-      bus.on("focus", () => renderSetup()),
+      // Coming back to the window: the steps and the add-ons as they are now (GitHub isn't asked).
+      bus.on("focus", () => { renderSetup(); renderAddons(); }),
     ];
     await refresh();
     return { unmount() { off.forEach(f => f()); } };

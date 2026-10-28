@@ -17,10 +17,16 @@
 //   installedEvent(target, fn)   bus.on("installed", fn) that skips fn while target has unsaved changes: for
 //                  a page that reloads its file after an Apply (wc.bus.on("installed", ...) runs regardless).
 //   openHelp(page) opens a page of the guide (docs/guide/<page>.md) in the help panel; no page, the index.
+//   codeWarning(mods)   the one warning before allowing mods that run code (Get set up, Settings and repair),
+//                  naming the mods in the player's folder that do.
+//   addonButton(id)     a button that adds one of the mods that go with Clan Mod Studio (GET /addons lists
+//                  them) from its GitHub release, for a page that needs it (Characters needs Sandbox mode).
 //   bus            events between pages: "mods-changed" (a mod was made, changed, switched or removed),
 //                  "installed" (an Apply, Play or Check finished; the manifest), "sections-changed" (the
 //                  side bar's pages may have changed), "focus" (the window came back).
 //   el, clear, toast, announce, confirmButton, codePanel, copy, color, input, getPath, saveFile, docLink.
+
+import { addonToast } from "./modlist.js";
 
 const TOKEN = document.querySelector('meta[name="wc-token"]')?.content || "";
 
@@ -291,6 +297,43 @@ export function installedEvent(target, fn) {
 // Open a page of the guide (docs/guide/<page>.md) in the help panel; with no page, the guide's index.
 export function openHelp(page = "") {
   bus.emit("help", page);
+}
+
+// ---------- mods that run code, and the mods that go with Clan Mod Studio ----------
+// The warning before allowing mods that run code, the same wherever it's asked: what code can do, and which
+// of your mods (GET /mods, each with `about` when the page knows what it's for) run some, with their authors.
+export const CODE_WARNING = "Some mods carry code: small programs that run inside the game, or steps that run on " +
+  "your computer when your mods are applied. Code can do anything your account can, so allow it only if you " +
+  "trust every such mod you've added. The four that come with Clan Mod Studio are fine.";
+const CODE_KINDS = { "in-game script": "an in-game script", "C++ mod": "a C++ mod", "C++ source": "a C++ mod",
+  code: "a build step", "studio page": "a studio page" };
+export function codeWarning(mods = []) {
+  const code = mods.filter(m => m.code);
+  const what = m => m.about || (m.kinds || []).map(k => CODE_KINDS[k]).filter(Boolean)[0] || "it runs code";
+  return el("div", { class: "banner code-warning" },
+    el("strong", { text: "Only for mods from people you trust" }),
+    el("span", { text: CODE_WARNING }),
+    code.length ? el("span", { text: code.length > 1 ? "These of your mods run code:" : "This one of your mods runs code:" }) : null,
+    code.length ? el("ul", { class: "notes" }, ...code.map(m => el("li", { text: `${m.name}${m.author ? `, by ${m.author}` : ""}: ${what(m)}` }))) : null);
+}
+
+// A button that adds one of the mods that go with Clan Mod Studio (wcmods/addons.py) from its latest GitHub
+// release, then says what came of it and tells every page (mods-changed). `name` is said while it works.
+export function addonButton(id, { label = "Add it", name = "", cls = "btn small" } = {}) {
+  const b = el("button", { class: cls, type: "button", text: label, "data-addon": id });
+  b.addEventListener("click", async () => {
+    b.disabled = true;
+    b.textContent = name ? `Adding ${name}…` : "Adding…";
+    announce(b.textContent);
+    try {
+      const [r, settings] = await Promise.all([api.post(`/addons/${encodeURIComponent(id)}`, {}), api.get("/settings").catch(() => ({}))]);
+      toast(addonToast(r.result, settings.allow_code_mods));
+      bus.emit("mods-changed", { from: "addon" });
+    } catch (e) { toast(e.message, "bad"); }
+    b.disabled = false;
+    b.textContent = label;
+  });
+  return b;
 }
 
 // ---------- colours (sRGB hex in files, linear floats in the engine) ----------

@@ -5,16 +5,14 @@ export default {
   title: "Settings and repair",
   async mount(root, wc) {
     const { el, api, clear, toast, bus, confirmButton, announce } = wc;
-    let options = null, settings = null;
+    let options = null, settings = null, codeMods = [];
     const optionsBox = el("div", { class: "card" });
     const repairBox = el("div", { class: "card" });
     const makeBox = el("div", { class: "card" });
 
     root.append(
-      el("div", { class: "section-head" },
-        el("span", { class: "eyebrow", text: "Your mods" }),
-        el("h1", { text: "Settings and repair" }),
-        el("p", { class: "note", text: "The mod menu, the game's console and mods that run code, your save backups, mods you removed, and a mod of your own to start from." })),
+      wc.pageHead({ eyebrow: "Your mods", title: "Settings and repair", help: "help:settings",
+        lede: "The mod menu, the game's console and mods that run code, your save backups, mods you removed, and a mod of your own to start from." }),
       optionsBox, repairBox, makeBox);
 
     function renderOptions() {
@@ -26,14 +24,14 @@ export default {
           renderOptions();
         });
         optionsBox.append(el("label", { class: "row", for: "ig-console" }, consoleBox, el("strong", { text: "Game console" }),
-          el("span", { class: "muted", text: options.console_available ? "~ or F10 opens it, from the next time the game starts." : "Needs UE4SS." })));
+          el("span", { class: "muted", text: options.console_available ? "~ or F10 opens it, from the next time the game starts." : "Needs the script loader (Get set up, on the Mods page)." })));
       }
       if (settings) {
         const code = el("input", { type: "checkbox", id: "allow-code", checked: settings.allow_code_mods });
         const setCode = async on => {
           try {
             settings = await api.patch("/settings", { allow_code_mods: on });
-            toast(on ? "Mods that run code are allowed. Apply to game to use them." : "Mods that run code are off.");
+            toast(on ? "Allowed. Press Apply to game (top right) to put them in." : "Mods that run code are off. Apply to game takes them out of the game.");
             await refresh();
             // The side bar's pages change (the Console, mods' own pages): the shell redraws it, without reloading
             // the page, so what's unsaved on other pages stays.
@@ -42,14 +40,14 @@ export default {
           }
           catch (e) { toast(e.message, "bad"); }
         };
-        const warn = el("div", { class: "banner", hidden: true },
-          el("strong", { text: "Only for mods from people you trust" }),
-          el("span", { text: "Some mods carry code: Python that runs on your computer when you apply mods, or scripts that run in the game. Code can do anything your account can, so allow it only if you trust every such mod you've added." }),
-          el("div", { class: "row" },
-            el("button", { class: "btn danger", text: "Allow mods that run code", onclick: () => setCode(true) }),
-            el("button", { class: "btn ghost", text: "Cancel", onclick: () => { code.checked = false; warn.hidden = true; code.focus(); } })));
+        // The same warning Get set up shows (wc.codeWarning), naming your mods that run code.
+        const warn = wc.codeWarning(codeMods);
+        warn.hidden = true;
+        warn.append(el("div", { class: "row" },
+          el("button", { class: "btn danger", text: "Allow mods that run code", onclick: () => setCode(true) }),
+          el("button", { class: "btn ghost", text: "Cancel", onclick: () => { code.checked = false; warn.hidden = true; code.focus(); } })));
         code.addEventListener("change", () => {
-          if (code.checked) { warn.hidden = false; code.checked = false; announce(`${warn.children[0].textContent}. ${warn.children[1].textContent}`); } else setCode(false);
+          if (code.checked) { warn.hidden = false; code.checked = false; announce(`Only for mods from people you trust. ${wc.CODE_WARNING}`); } else setCode(false);
         });
         optionsBox.append(el("label", { class: "row", for: "allow-code" }, code, el("strong", { text: "Allow mods that run code" }),
           el("span", { class: "muted", text: "In-game scripts, build steps and studio pages that mods bring. Off unless you turn it on." })), warn);
@@ -84,7 +82,7 @@ export default {
             el("label", { for: "ig-size", class: "lbl", text: "Size" }), size),
           cheats ? el("label", { class: "row", for: "ig-cheats" }, cheats, el("strong", { text: "Cheats on when the game starts" }),
             el("span", { class: "muted", text: "Menu pages' Cheats page switches them on and off while you play." })) : null,
-          el("p", { class: "note", text: "The in-game menu lists your mods, and mods add their pages to it; Menu pages (Get set up, on the Mods page) adds your cat, the world, quests, fights and cheats. In game, A- and A+ in its top bar change its size until the game closes. Opened from a controller, the game pauses while it's open, and the same button or B closes it. Needs UE4SS." }));
+          el("p", { class: "note", text: "The in-game menu lists your mods, and mods add their pages to it; Menu pages adds your cat, the world, quests, fights and cheats (the Mods page's card of the mods that go with Clan Mod Studio adds it). In game, A- and A+ in its top bar change its size until the game closes. Opened from a controller, the game pauses while it's open, and the same button or B closes it. Needs the script loader." }));
       }
     }
 
@@ -162,8 +160,14 @@ export default {
 
     async function refresh() {
       let shell = null;
-      try { [options, settings, shell] = await Promise.all([api.get("/ingame").catch(() => null), api.get("/settings"), api.get("/info").catch(() => null)]); }
+      let found = [], extra = { addons: [] };
+      try {
+        [options, settings, shell, found, extra] = await Promise.all([api.get("/ingame").catch(() => null), api.get("/settings"),
+          api.get("/info").catch(() => null), api.get("/mods").catch(() => []), api.get("/addons").catch(() => ({ addons: [] }))]);
+      }
       catch (e) { toast(e.message, "bad"); }
+      // Your mods that run code, for the warning; one that goes with Clan Mod Studio says what it's for.
+      codeMods = found.filter(m => m.code).map(m => ({ ...m, about: (extra.addons.find(a => a.id === m.id) || {}).about }));
       if (shell) {
         const titles = shell.sections.filter(s => (s.group || "make") === "make" && !s.from_mod && s.id !== "console").map(s => s.title);
         if (titles.join("|") !== makePages.join("|")) { makePages = titles; renderMake(); }

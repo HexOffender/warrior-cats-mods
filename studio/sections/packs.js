@@ -11,10 +11,8 @@ export default {
     let editing = null;   // the pack being changed, or null for a new one
 
     root.append(
-      el("div", { class: "section-head" },
-        el("span", { class: "eyebrow", text: "Your mods" }),
-        el("h1", { text: "Mod packs" }),
-        el("p", { class: "note", text: "A mod pack is a set of mods that go together as one experience: a story with its cats, quests and items, the colours and names that suit it, new controls. Its .zip carries every mod in it, so whoever adds it on their Mods page gets them all. Play a pack on its own to have just its mods, then go back to yours." })),
+      wc.pageHead({ eyebrow: "Your mods", title: "Mod packs", help: "help:packs",
+        lede: "A mod pack is a set of mods that go together as one experience: a story with its cats, quests and items, the colours and names that suit it, new controls. Its .zip carries every mod in it, so whoever adds it on their Mods page gets them all. Play a pack on its own to have just its mods, then go back to yours." }),
       playingBox, list, form);
 
     async function draw() {

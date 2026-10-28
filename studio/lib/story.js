@@ -1,7 +1,7 @@
 // Parts the Items, Characters and Questlines pages share: a list of things beside the one being edited, a
 // box of lines to say, a place in the game (typed, or read from where your cat stands), an item picker, and
 // a drawing of a cat in its colours. See wcmods/story.py for npcs.json and quests.json.
-import { el, api, clear, toast } from "./wc.js";
+import { el, api, clear, toast, addonButton } from "./wc.js";
 
 export const SANDBOX = "sandbox";
 export const SANDBOX_URL = "https://github.com/HexOffender/wcmods-sandbox/releases";
@@ -123,13 +123,14 @@ export async function sandboxNote() {
   try { mods = await api.get("/mods"); } catch (e) { /* the target says */ }
   const s = mods.find(m => m.id === SANDBOX);
   if (s && s.enabled) return null;
+  // Without it, one press adds it from its GitHub release (wc.addonButton), as the Mods page's card does.
   return el("div", { class: "banner" },
     el("strong", { text: s ? "Sandbox mode is off" : "You'll need the Sandbox mode mod" }),
     el("span", {}, s
       ? "Characters and questlines show up in Sandbox mode. Saving here turns it on with your mod."
-      : "Characters and questlines show up in Sandbox mode, a mod of its own: download sandbox.zip from ",
-      s ? null : el("a", { href: SANDBOX_URL, target: "_blank", rel: "noopener", text: "its releases" }),
-      s ? null : " and drop it on the Mods page. It runs a script, so it needs mods that run code allowed (Settings and repair)."));
+      : "Characters and questlines show up in Sandbox mode, one of the mods that go with Clan Mod Studio. It runs its own scripts, so it needs mods that run code allowed (Get set up, or Options on Settings and repair)."),
+    s ? null : el("div", { class: "row" }, addonButton(SANDBOX, { label: "Add Sandbox mode", name: "Sandbox mode" }),
+      el("a", { href: SANDBOX_URL, target: "_blank", rel: "noopener", class: "muted", text: "Sandbox mode on GitHub" })));
 }
 
 // A drawing of a cat's face in its colours (fur, pattern, markings, nose, eyes).

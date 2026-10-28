@@ -97,12 +97,14 @@ test("Get set up asks where the game is, and finds it once the folder holds the 
   await page.goto(studio.url + "#mods");
   await page.waitFor(".setup .steps li");
   const steps = async () => page.evaluate(() => [...document.querySelectorAll(".setup .step strong")].map(s => s.textContent.replace(/^(Done|To do): /, "")));
-  assert.deepEqual(await steps(), ["Where's the game?", "Start the game once", "Install the script loader", "Add the menu's pages"]);
+  assert.deepEqual(await steps(), ["Where's the game?", "Start the game once", "Install the script loader", "Let mods run their own scripts",
+    "Get the mods that go with Clan Mod Studio"]);
   assert.equal(await page.evaluate(() => document.querySelector(".setup .step.done")), null);
   makeGame(folders.game);
   await page.reload();
   await page.waitFor(".setup .steps li");
-  assert.deepEqual(await steps(), ["Found the game", "Start the game once", "Install the script loader", "Add the menu's pages"]);
+  assert.deepEqual(await steps(), ["Found the game", "Start the game once", "Install the script loader", "Let mods run their own scripts",
+    "Get the mods that go with Clan Mod Studio"]);
   assert.equal(await page.text(".setup .step.done .mono"), folders.game);
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
@@ -123,7 +125,7 @@ test("a mod made from a Make page's Editing-mod bar shows on the Mods page", { s
   assert.ok(fs.existsSync(path.join(folders.data, "mods", "e2e-mod", "mod.json")), "the mod's folder is there");
   await page.goto(studio.url + "#mods");
   await page.waitFor('[data-key="mod:e2e-mod"]');
-  assert.equal(await page.text('[data-key="mod:e2e-mod"] label strong'), "E2E Mod");
+  assert.equal(await page.text('[data-key="mod:e2e-mod"] .mod-name strong'), "E2E Mod");
   assert.equal(await page.evaluate(() => document.querySelector("#mod-on-e2e-mod").checked), true);
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
