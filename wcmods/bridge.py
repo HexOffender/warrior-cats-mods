@@ -135,20 +135,17 @@ class Bridge:
             os.replace(tmp, request)
             end = time.time() + timeout
             while time.time() < end:
-                if os.path.exists(reply_path):
-                    try:
-                        with open(reply_path, encoding="utf-8") as f:
-                            reply = json.load(f)
-                    except (OSError, ValueError):
-                        time.sleep(0.05)
-                        continue
-                    if reply.get("id") == rid:
-                        os.remove(reply_path)
-                        return reply
+                reply = self._reply(reply_path, rid)
+                if reply is not None:
+                    return reply
                 time.sleep(0.05)
             if self._withdraw(request, rid):
                 raise BridgeError(f"no reply within {timeout:g} s (the game may be loading, or held still behind "
                                   "another window); the request was withdrawn, so it won't run later", "withdrawn")
+            # Taken: its reply may have come this moment, after the last look.
+            reply = self._reply(reply_path, rid)
+            if reply is not None:
+                return reply
             raise BridgeError(f"no reply within {timeout:g} s: the game took the request and is still running it",
                               "running")
         finally:
@@ -156,6 +153,24 @@ class Bridge:
                 os.remove(lock)
             except OSError:
                 pass
+
+    @staticmethod
+    def _reply(path, rid):
+        """The reply to request `rid`, taken (removed), or None while there's none (or it's half there)."""
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, encoding="utf-8") as f:
+                reply = json.load(f)
+        except (OSError, ValueError):
+            return None
+        if not isinstance(reply, dict) or reply.get("id") != rid:
+            return None
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return reply
 
     @staticmethod
     def _withdraw(request, rid):

@@ -11,7 +11,7 @@ import re
 _TOKEN = re.compile(r"""
     (?P<long>\[(?P<eq>=*)\[)                  # long string or, after --, long comment
   | (?P<comment>--)
-  | (?P<string>"(?:\\[\s\S]|[^"\\\n])*"|'(?:\\[\s\S]|[^'\\\n])*')   # a \ before a line end continues it
+  | (?P<string>"(?:\\(?:\r\n|[\s\S])|[^"\\\n])*"|'(?:\\(?:\r\n|[\s\S])|[^'\\\n])*')   # a \ before a line end continues it
   | (?P<number>0[xX][0-9a-fA-F.]+(?:[pP][+-]?\d+)?|\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)
   | (?P<name>[A-Za-z_]\w*)
   | (?P<symbol>\.\.\.|\.\.|==|~=|<=|>=|<<|>>|//|::|[-+*/%^#&~|<>=(){}\[\];:,.])

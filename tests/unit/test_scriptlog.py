@@ -28,10 +28,10 @@ LOG = """\
 [2026-10-28 09:12:04.2600000] [Lua] hello from a plain print
 [2026-10-28 09:12:04.4195790] Starting mods (from enabled.txt (D:\\Game\\ue4ss\\Mods), no defined load order)...
 [2026-10-28 09:12:04.4199433] Event loop start
-[2026-10-28 09:12:36.2840828] [Lua] [Noisy script] onFrame: scripts/main.lua:2: attempt to index a nil value (global 'cat')
+[2026-10-28 09:12:36.2840828] [Lua] [Noisy script] error in onFrame: scripts/main.lua:2: attempt to index a nil value (global 'cat')
 stack traceback:
 \t[C]: in ?
-[2026-10-28 09:13:36.2840828] [Lua] [Noisy script] onFrame: scripts/main.lua:2: attempt to index a nil value (global 'cat') (3600 more)
+[2026-10-28 09:13:36.2840828] [Lua] [Noisy script] error in onFrame: scripts/main.lua:2: attempt to index a nil value (global 'cat') (3600 more)
 [2026-10-28 09:13:40.0819344] Error: [Lua::Registry::get_function_ref] Ref was not function
 [2026-10-28 09:13:41.0000000] [Lua] [Game Tweaks] healed Fawnstar
 """
@@ -92,7 +92,17 @@ def test_runtime_error_carries_the_mods_name(studio, game_log):
     assert noisy["said"] == ("Loaded when the game last started, then hit an error: onFrame: scripts/main.lua:2: attempt "
                              "to index a nil value (global 'cat')")
     assert noisy["lines"][-1] == "09:12:04  hello from a plain print"
-    assert noisy["lines"][1].startswith("09:12:36  onFrame:") and "stack traceback:" in noisy["lines"][1]
+    assert noisy["lines"][1].startswith("09:12:36  error in onFrame:") and "stack traceback:" in noisy["lines"][1]
+
+
+def test_a_timers_error_counts_whatever_it_says_and_a_scripts_own_words_dont(studio, game_log):
+    # WCModsGame starts a timer's, key's or hook's error with "error in", so one raised with error("no cat yet")
+    # counts too; a script's own line that happens to say "key" or "every" doesn't.
+    game_log(LOG + "[2026-10-28 09:14:00.0000000] [Lua] [Game Tweaks] key pressed: F5, every cat healed\n"
+                   "[2026-10-28 09:14:01.0000000] [Lua] [Game Tweaks] error in every: scripts/main.lua:9: no cat yet\n")
+    tweaks = report(studio)["mods"]["game-tweaks"]
+    assert tweaks["errors"] == ["every: scripts/main.lua:9: no cat yet"] and tweaks["state"] == "errors"
+    assert tweaks["lines"][1] == "09:14:00  key pressed: F5, every cat healed"
 
 
 def test_ue4ss_boot_dump_is_not_an_error(studio, game_log):
@@ -163,7 +173,7 @@ def test_the_card_says_how_the_script_did_and_more_shows_what_it_said(studio, ga
     assert cards["game-tweaks"]["script_run"] == {"state": "loaded", "said": "Loaded when the game last started"}
     assert cards["broken-script"]["script_run"]["state"] == "failed"
     said = studio.api("GET", ["mods", "noisy-script", "log"], {})
-    assert said["log"] == path and said["run_since_apply"] and said["lines"][0].startswith("09:13:36  onFrame:")
+    assert said["log"] == path and said["run_since_apply"] and said["lines"][0].startswith("09:13:36  error in onFrame:")
     make_mod(studio, "no-script")
     with pytest.raises(LookupError, match="has no in-game script"):
         studio.api("GET", ["mods", "no-script", "log"], {})

@@ -22,6 +22,7 @@ CASES = [
     ("CRLF line ends count once", "local a = 1\r\nlocal b = 2\r\nfunction f()\r\n", ["line 3: 'function' is never closed"]),
     ("an if ... elseif left open", "if a then\n  x()\nelseif b then\n  y()\n", ["line 1: 'if' is never closed"]),
     ("a string going on past a line end with a backslash", 's = "one \\\ntwo"\nfunction f() end', []),
+    ("the same with a CRLF line end", 's = "one \\\r\ntwo"\r\nfunction f() end', []),
     ("a table left open", "local t = {\n  a = 1,\n", ["line 1: '{' is never closed"]),
     ("a closing bracket of the wrong kind", "f(a]", ["line 1: ']' closes '(' from line 1"]),
 ]

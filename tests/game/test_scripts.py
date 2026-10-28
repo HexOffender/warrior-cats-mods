@@ -32,14 +32,14 @@ def test_frame_error_is_logged_once_with_the_mods_name(agent):
     """A frame function that fails every frame: one line with the mod's name, then at most one a minute with a
     count, never one a frame."""
     need(agent, "noisy-script")
-    said = lines_with(agent, "[Noisy script] onFrame:")
+    said = lines_with(agent, "[Noisy script] error in onFrame:")
     assert said, "the frame function's error isn't in the log with the mod's name"
     assert "attempt to index a nil value (local 'cat')" in said[0] and "scripts/main.lua:" in said[0], said[0]
     assert not said[0].rstrip().endswith("more)"), said[0]
     assert all(line.rstrip().endswith("more)") for line in said[1:]), said[1:]
     mark = agent.log_mark()
     time.sleep(2)
-    assert len(lines_with(agent, "[Noisy script] onFrame:", mark)) <= 1, "said again within two seconds"
+    assert len(lines_with(agent, "[Noisy script] error in onFrame:", mark)) <= 1, "said again within two seconds"
 
 
 def test_bad_key_does_not_stop_the_script(agent):

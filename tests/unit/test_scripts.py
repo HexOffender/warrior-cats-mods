@@ -192,6 +192,14 @@ def test_problems_name_the_file_and_line_in_words(studio, tmp_path):
     assert scripts.problems(m) == []
 
 
+def test_a_byte_order_mark_or_a_shell_line_is_no_problem(studio):
+    # Notepad's "UTF-8 with BOM", and a first line for a shell: the script bootstrap passes over both, so the
+    # card doesn't say the script won't run.
+    make_mod(studio, "notepad", files={"scripts/main.lua": b"\xef\xbb\xbfMOD.log(\"hi\")\r\n",
+                                       "scripts/tool.lua": "#!/usr/bin/env lua\nreturn {}\n"})
+    assert scripts.problems(studio.mod("notepad")) == []
+
+
 def test_the_mods_page_has_a_scripts_problems_and_they_clear_when_fixed(studio):
     folder = make_mod(studio, "game-tweaks", {"name": "Game Tweaks"},
                       {"scripts/main.lua": "function heal(\n", "settings.json": {"heal_key": "F5"}})

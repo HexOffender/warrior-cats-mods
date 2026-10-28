@@ -36,6 +36,7 @@ NAMED = re.compile(r"^\[([^\]\n]+)\] (.*)$", re.S)       # "[Mod name] text"
 # main.lua stopped with an error.
 LOAD_FAILED = re.compile(r"^(?:can't load(?: scripts/main\.lua)?|error): (.*)$", re.S)
 MORE = re.compile(r" \(\d+ more\)$")   # "... (1812 more)": an error said again (game.lua's failed())
+RUNTIME = re.compile(r"^error in ")    # how WCModsGame starts a timer's, key's or hook's error (failed())
 
 # What the card says, by state.
 SAID = {
@@ -98,8 +99,9 @@ def read(path):
     except (OSError, TypeError):
         return None
     key = (path, st.st_size, st.st_mtime_ns)
-    if key in _cache:
-        return _cache[key]
+    hit = _cache.get(key)   # (the studio answers on several threads: one may be clearing it)
+    if hit is not None:
+        return hit
     try:
         head, tail = _text(path)
     except OSError:
@@ -168,7 +170,7 @@ def mod_report(found, mod, ue4ss_name, installed, run_since_apply):
         if m:
             failed.append(m.group(1).strip())
         elif ERROR_LINE.search(first):
-            errors.append(first)
+            errors.append(RUNTIME.sub("", first))
     errors = failed + [e for e in errors if e not in failed]
     out = {"installed": installed, "started": started, "loaded": started and not failed,
            "errors": list(dict.fromkeys(errors))[:10],

@@ -944,16 +944,34 @@ local function register(p)
     end
 end
 
+-- A page made again by its script: its line in the shared list says its title, order and group now.
+local function relist(p)
+    local out = {}
+    for line in (Menu.shared("pages") or ""):gmatch("[^\n]+") do
+        if line:match("^([^\t]*)\t") == p.id and ownerOf(line, p.id) == p.owner then
+            line = p.id .. "\t" .. p.title .. "\t" .. tostring(p.order) .. "\t" .. p.group .. "\t" .. p.owner
+        end
+        out[#out + 1] = line .. "\n"
+    end
+    Menu.share("pages", table.concat(out))
+end
+
 -- The mod a page comes from: the folder under Mods/ its script runs from (UE4SS names a chunk by its
--- path), else the chunk's name; "" when Lua can't say.
+-- path), else the chunk's name; "" when Lua can't say. A script mod's own files are loaded by the script
+-- bootstrap under their names in the mod ("@scripts/main.lua"), and the bootstrap says its folder (MOD.ue4ss).
 local SLASH = string.char(92)
 local function caller(level)
     local info = debug and debug.getinfo and debug.getinfo(level + 1, "S")
     local src = info and tostring(info.source or "") or ""
     src = src:gsub(SLASH, "/")
+    local folder = src:match("/Mods/([^/]+)/")
+    if folder then return folder end
+    if src:match("^@scripts/") and type(MOD) == "table" and type(MOD.ue4ss) == "string" and MOD.ue4ss ~= "" then
+        return MOD.ue4ss
+    end
     -- A chunk loaded from a string has the string itself as its source: one line of it, no tabs (the
     -- page list is tab-separated lines), and not too long.
-    return src:match("/Mods/([^/]+)/") or (src:gsub("[\t\r\n].*", ""):sub(1, 60))
+    return (src:gsub("[\t\r\n].*", ""):sub(1, 60))
 end
 
 -- The groups the menu's side bar shows, in order (menu.GROUPS in wcmods/menu.py, written in here): id and
@@ -971,11 +989,13 @@ function Menu.page(title, fn, opts)
     opts = opts or {}
     local p = { id = opts.id or title, asked = opts.id or title, title = title, fn = fn, order = opts.order or 50,
                 group = (tostring(opts.group or "mods"):gsub("[\t\n]", " ")), owner = caller(2) }
-    -- The same page made again by the same script takes the first one's place (and keeps its tab): a script's
-    -- own page made later, from a timer, in the place of the one wcmods made for its settings ("script:<id>").
+    -- The same page made again by the same script takes the first one's place (its tab, with the title, order
+    -- and group it has now): a script's own page made later, from a timer, in the place of the one wcmods made
+    -- for its settings ("script:<id>").
     for _, q in ipairs(pages) do
         if q.asked == p.asked and q.owner == p.owner then
-            q.title, q.fn, q.order = p.title, p.fn, p.order
+            q.title, q.fn, q.order, q.group = p.title, p.fn, p.order, p.group
+            ExecuteInGameThread(function() relist(q) end)
             return q.id
         end
     end

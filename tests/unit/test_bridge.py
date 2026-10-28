@@ -135,6 +135,23 @@ def test_timeout_leaves_a_request_the_game_took(br):
     assert not os.path.exists(os.path.join(br.dir, "request.lua")) and not os.path.exists(os.path.join(br.dir, "lock"))
 
 
+def test_a_reply_that_comes_as_the_time_runs_out_is_kept(br, monkeypatch):
+    # The game took the request, and its reply landed between the last look and the timeout: it's the answer,
+    # not "still running" (and not a reply left for the next request to throw away).
+    write_status(br)
+    real = Bridge._withdraw
+
+    def withdraw_after_the_reply(request, rid):
+        os.remove(request)   # the game takes it ...
+        with open(os.path.join(br.dir, "reply.json"), "w", encoding="utf-8") as f:
+            json.dump({"id": rid, "ok": True, "result": [7]}, f)   # ... and answers, just too late for the loop
+        return real(request, rid)
+
+    monkeypatch.setattr(Bridge, "_withdraw", staticmethod(withdraw_after_the_reply))
+    assert br.run("return 7", timeout=0.2)["result"] == [7]
+    assert os.listdir(br.dir) == ["status.json"]
+
+
 def test_lock_held_by_another_client(br):
     write_status(br)
     open(os.path.join(br.dir, "lock"), "w").close()

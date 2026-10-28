@@ -142,7 +142,7 @@ local function fromAScript(line)
     return line:find("[Lua] ", 1, true) ~= nil and not line:find("[Lua] Exposing size of", 1, true)
            and not line:find("[Lua] Failed to expose size of", 1, true)
 end
-local ERRORS = { "error:", "attempt to ", "can't load", "stack traceback", "didn't start" }
+local ERRORS = { "error:", "error in ", "attempt to ", "can't load", "stack traceback", "didn't start" }
 local function anError(line)
     local l = line:lower()
     for _, e in ipairs(ERRORS) do
@@ -234,15 +234,16 @@ local function members(o)
 end
 -- Classes so wide that finding them means reading thousands of objects, which has crashed the game (above all
 -- just after a level loads): Find asks for a narrower one instead.
-local TOO_WIDE = { Object = true, Actor = true, Pawn = true, Character = true, ActorComponent = true,
-                   SceneComponent = true, PrimitiveComponent = true, MeshComponent = true, Widget = true,
-                   UserWidget = true, PanelWidget = true, TextBlock = true, Image = true, Button = true,
-                   Texture2D = true, Material = true, MaterialInstanceDynamic = true, StaticMesh = true }
+-- (In small letters: class names match whatever their case.)
+local TOO_WIDE = { object = true, actor = true, pawn = true, character = true, actorcomponent = true,
+                   scenecomponent = true, primitivecomponent = true, meshcomponent = true, widget = true,
+                   userwidget = true, panelwidget = true, textblock = true, image = true, button = true,
+                   texture2d = true, material = true, materialinstancedynamic = true, staticmesh = true }
 local FOUND_SHOWN = 30
 local function find(class)
     class = class:gsub("^%s+", ""):gsub("%s+$", "")
     insp.found, insp.foundCount, insp.findNote = {}, 0, nil
-    if TOO_WIDE[class] then
+    if TOO_WIDE[class:lower()] then
         insp.findNote = class .. " is the start of thousands of the game's objects, and reading them all can crash the " ..
                         "game. Find a narrower class, e.g. WrcRoamingEnemy."
         return

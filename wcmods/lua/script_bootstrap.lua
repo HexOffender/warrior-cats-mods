@@ -9,6 +9,7 @@ MOD = {
     folder = @FOLDER_LUA@,           -- the mod's folder in mods/
     settings = @SETTINGS@,           -- settings.json (an empty table without one; read again below)
     settingsFile = @SETTINGS_FILE@,  -- where MOD.save() writes them, or nil
+    ue4ss = here:match("/Mods/([^/]+)/") or "",   -- this UE4SS mod's folder (the mod menu tells pages apart by it)
 }
 
 function MOD.log(fmt, ...)
@@ -110,21 +111,23 @@ local function didntStart(err)
     MOD.failed = first
     pcall(function()
         local list = ModRef:GetSharedVariable("WCModsMenu.failed")
-        local line = (MOD.name:gsub("[\t\n]", " ")) .. "\t" .. (first:gsub("[\t\n]", " ")) .. "\n"
-        ModRef:SetSharedVariable("WCModsMenu.failed", (type(list) == "string" and list or "") .. line)
+        list = type(list) == "string" and list or ""
+        local entry = (MOD.name:gsub("[\t\n]", " ")) .. "\t" .. (first:gsub("[\t\n]", " ")) .. "\n"
+        if not list:find(entry, 1, true) then ModRef:SetSharedVariable("WCModsMenu.failed", list .. entry) end
     end)
     if not okGame then return end
     local okDraw, Draw = pcall(require, "WCModsDraw")
     if not okDraw then return end
     local file, line = first:match("(scripts/[^:]+):(%d+):")
-    local okKey, key = pcall(function() return ModRef:GetSharedVariable("WCModsMenu.key_name") end)
-    if not (okKey and type(key) == "string" and key ~= "") then key = "Insert" end
-    local said = MOD.name .. " didn't start: " .. (file and (file .. ", line " .. line) or first:sub(1, 80)) ..
-                 ". The mod menu (" .. key .. "), Tools, Log says more."
     local waiting
     waiting = Game.every(0.5, function()
         if not Game.player() then return end
         Game.cancel(waiting)
+        -- The menu's key, as its window shares it (by now: the window has started long before your cat is in).
+        local okKey, key = pcall(function() return ModRef:GetSharedVariable("WCModsMenu.key_name") end)
+        if not (okKey and type(key) == "string" and key ~= "") then key = "Insert" end
+        local said = MOD.name .. " didn't start: " .. (file and (file .. ", line " .. line) or first:sub(1, 80)) ..
+                     ". The mod menu (" .. key .. "), Tools, Log says more."
         local painter = Draw.onFrame(function(d)
             local w = d.width > 0 and d.width or 1920
             local tw, th = d.measure(said, 20)

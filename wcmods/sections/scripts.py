@@ -67,6 +67,11 @@ def lua_problems(files, most=1):
         if not rel.endswith(".lua"):
             continue
         text = blob if isinstance(blob, str) else blob.decode("utf-8", "replace")
+        # As the script bootstrap loads it (loadOwn): a byte order mark (Notepad's) and a first line for a shell
+        # ("#!...") are passed over.
+        text = text.lstrip("﻿")
+        if text.startswith("#"):
+            text = "--" + text
         out += [f"{FOLDER}/{rel}, {luacheck.explain(p)}, {WONT_RUN}" for p in luacheck.check(text)[:most]]
     return out
 

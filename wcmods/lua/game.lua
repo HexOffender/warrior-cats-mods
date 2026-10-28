@@ -21,7 +21,9 @@ Game.log = log
 
 -- A script's error, said once, then at most once a minute with how many more times it happened: a frame function
 -- with a mistake in it fails every frame, and the log would get one line a frame for the whole session. What
--- fails keeps running (a timer may only fail while a level loads).
+-- fails keeps running (a timer may only fail while a level loads). The line starts "error in", which the Log
+-- page's Errors and the studio's reader of the log (scriptlog.py) know it by: "[Game Tweaks] error in every:
+-- scripts/main.lua:5: attempt to index a nil value (1812 more)".
 local failures, nfailures = {}, 0
 local SAY_AGAIN = 60   -- seconds between lines about the same failure
 local function failed(what, err)
@@ -30,11 +32,11 @@ local function failed(what, err)
     if not f then
         if nfailures >= 200 then failures, nfailures = {}, 0 end   -- errors whose text keeps changing
         failures[key], nfailures = { more = 0, at = now }, nfailures + 1
-        log("%s", key)
+        log("error in %s", key)
     else
         f.more = f.more + 1
         if now - f.at >= SAY_AGAIN then
-            log("%s (%d more)", key, f.more)
+            log("error in %s (%d more)", key, f.more)
             f.more, f.at = 0, now
         end
     end

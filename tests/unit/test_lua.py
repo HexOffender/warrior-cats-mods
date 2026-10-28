@@ -255,7 +255,8 @@ def test_log_names_the_script_when_it_has_a_name():
 def test_runtime_errors_are_said_once_then_once_a_minute():
     lua = game.lua()
     said = body(lua, "local function failed(what, err)", "\nend\n")
-    assert 'log("%s", key)' in said and 'log("%s (%d more)", key, f.more)' in said and "now - f.at >= SAY_AGAIN" in said
+    assert 'log("error in %s", key)' in said and 'log("error in %s (%d more)", key, f.more)' in said
+    assert "now - f.at >= SAY_AGAIN" in said
     assert "local SAY_AGAIN = 60" in lua
     # Every place a script's code is called from goes through it: timers and frame functions, keys, hooks, events.
     assert 'failed(t.what or "task", err)' in lua and 'failed("key " .. name, err)' in lua
@@ -377,6 +378,15 @@ def test_menu_keeps_one_page_per_id_and_writes_settings_back_as_they_were():
     lua = menu.lua()
     page = body(lua, "function Menu.page(title, fn, opts)", "\nfunction Menu.isOpen")
     assert "if q.asked == p.asked and q.owner == p.owner then" in page and "return q.id" in page
+    assert "q.title, q.fn, q.order, q.group = p.title, p.fn, p.order, p.group" in page
+    assert "ExecuteInGameThread(function() relist(q) end)" in page
+    assert lua.index("local function relist(p)") < lua.index("function Menu.page(")
+    # A script's own files are loaded as "@scripts/...": its pages are still its UE4SS mod's, by the folder the
+    # script bootstrap says.
+    caller = body(lua, "local function caller(level)", "\nend\n")
+    assert 'if src:match("^@scripts/") and type(MOD) == "table" and type(MOD.ue4ss) == "string"' in caller
+    from wcmods.sections import scripts
+    assert 'ue4ss = here:match("/Mods/([^/]+)/") or "",' in scripts.BOOTSTRAP
     assert 'return type(G) == "table" and type(G.json) == "table" and mt == G.json.listMeta' in lua
     assert 'if listy(v) and #v == 0 then return "[]" end' in lua
     assert 'string.format("%.15g", v)' in lua and 'if tonumber(s) ~= v then s = string.format("%.17g", v) end' in lua
@@ -386,7 +396,8 @@ def test_menu_keeps_one_page_per_id_and_writes_settings_back_as_they_were():
 def test_mod_menu_pages_say_a_left_out_script_and_filter_the_log_for_scripts():
     host = menu.host_script(MANIFEST, [], dev=True)
     assert 'ui.text(id .. ": left out, " .. tostring(note["left out"]), { color = THEME.danger })' in host
-    assert "local ERRORS = { \"error:\", \"attempt to \", \"can't load\", \"stack traceback\", \"didn't start\" }" in host
+    assert ("local ERRORS = { \"error:\", \"error in \", \"attempt to \", \"can't load\", \"stack traceback\", "
+            "\"didn't start\" }") in host
     assert 'line:find("[Lua] ", 1, true) ~= nil and not line:find("[Lua] Exposing size of", 1, true)' in host
     assert 'line:lower():find("error", 1, true)' not in host and 'line:find("[Lua] [", 1, true)' not in host
 
@@ -394,8 +405,8 @@ def test_mod_menu_pages_say_a_left_out_script_and_filter_the_log_for_scripts():
 def test_inspector_find_refuses_the_widest_classes_and_reads_names_once():
     host = menu.host_script(MANIFEST, [], dev=True)
     find = body(host, "local function find(class)", "\nend\n")
-    assert "if TOO_WIDE[class] then" in find and "if not Game.player() then" in find
+    assert "if TOO_WIDE[class:lower()] then" in find and "if not Game.player() then" in find
     assert "if i > FOUND_SHOWN then break end" in find and "label = string.format(" in find
-    assert "Actor = true" in host and "UserWidget = true" in host
+    assert "actor = true" in host and "userwidget = true" in host   # in small letters, as it's asked
     page = body(host, 'Menu.page("Inspector"', "end, { order = 90")
     assert "for _, e in ipairs(insp.found) do" in page and "Game.name(o)" not in page
