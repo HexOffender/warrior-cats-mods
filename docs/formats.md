@@ -1,6 +1,7 @@
 # The files a mod is made of
 
-A mod is a folder under `mods/` in your files' folder ([`wcmods.json`](#wcmodsjson) says where) with a `mod.json` (its name and what it needs; [SDK.md](SDK.md#mod-folder)
+A mod is a folder under `mods/` in your files' folder ([`wcmods.json`](#wcmodsjson) says where) with a `mod.json` (its name, what it needs, and
+optionally the oldest Clan Mod Studio that can build it, `"wcmods": "0.4.0"`; [SDK.md](SDK.md#mod-folder)
 lists every key) and any of the files below. Clan Mod Studio's Make pages write them; you can also write
 them by hand, and `python wcmods.py new <name> --kind <palette|controls|...>` starts one from a template.
 A mod that only holds these files runs no code. The game's rules behind the numbers are in
@@ -53,7 +54,10 @@ a cat wearing it is saved with. Use 0–19: 20–24 are the Feral Edition's, whi
 swaps for another coat. The save only ever holds that game coat, so turning the mod off
 leaves the cat on it. wcmods doesn't paint presets itself: it lists them in `WCModsPalettes`, and
 [Creator palettes](https://github.com/HexOffender/wcmods-creator-palettes) 1.2 offers them in the
-cat maker's Fur picker and paints them on the cats that chose them.
+cat maker's Fur picker and paints them on the cats that chose them. A palette with `coats` needs wcmods
+0.4.0 or newer (an older one stops at "unknown palette section coats"), so it says `"wcmods": "0.4.0"` in its
+mod.json, and an older Clan Mod Studio leaves it out instead. The Mods page's card of the mods that go with
+Clan Mod Studio adds Creator palettes from its GitHub release, once it has one.
 
 #### Ready-made palettes
 
@@ -381,7 +385,9 @@ commands. Every key is optional. It's in your files' folder, `%LOCALAPPDATA%\WCM
 wcmods never touches it. Older versions kept all three in the wcmods folder; the first start after
 updating moves them out (`wcmods/userdata.py`). A damaged one (not JSON) is set aside as
 `wcmods.json.broken-<date>-<time>` and the settings start afresh: the studio says so at the top of its
-page and the commands print it, and Get set up finds the game again.
+page and the commands print it, and Get set up finds the game again. Beside them, `cache\downloads\`
+keeps the last .zip of each of the mods that go with Clan Mod Studio fetched from GitHub
+(`wcmods/addons.py`); it can be deleted at any time.
 
 | Key | What it is |
 |---|---|
@@ -395,7 +401,9 @@ page and the commands print it, and Get set up finds the game again.
 | `debug_cat_look` | `true` makes your cat's colours script log every cat it sees |
 | `installed`, `installed_ue4ss`, `installed_ue4ss_shared` | What the last install put in the game: the mods, when they were built, the game build, the mods folder they came from, the UE4SS mods and shared modules. The studio compares them with your mods; leave them alone |
 | `menu_key`, `menu_pad`, `menu_scale` | The mod menu's key (`INS`, `HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN`, `F1`-`F12` but F11), the controller button that opens it too (an Unreal key name, `""` for none) and its size (0.6 to 2.2). Options on the Settings and repair page; an install puts them in the game ([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)) |
-| `skip_menu_pages` | `true` once Get set up was told "Not now" for the Menu pages mod |
+| `skip_code` | `true` once Get set up's "Let mods run their own scripts" was told "Not now" (or mods that run code were turned off on the Settings and repair page): the step counts as done, and `allow_code_mods` stays as it is |
+| `setup_addons` | `"added"` once Get set up's "Add all four" has run (whatever came of each one; the Mods page's card of the mods that go with Clan Mod Studio says), or `"not now"` |
+| `skip_menu_pages` | `true` once an older Get set up was told "Not now" for the Menu pages mod; read as `setup_addons: "not now"`, and adding Menu pages clears it |
 | `cheats` | From when the mod menu was a mod of its own: whether its cheats started on. Adding the Menu pages mod takes it into that mod's `settings.json` |
 
 The file starts with a `_help` line saying the same.

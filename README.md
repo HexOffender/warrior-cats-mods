@@ -13,8 +13,16 @@ on wcmods itself, at [CONTRIBUTING.md](CONTRIBUTING.md).
    say yes, then double-click it again.
 3. **Follow "Get set up"**, the card at the top of the Mods page while anything is left to do. It
    finds the game, makes a safety copy of your save, and installs the script loader most mods need
-   (UE4SS) with one click. If you've never played,
-   start the game once first so it makes a save.
+   (UE4SS) with one click. If you've never played, start the game once first so it makes a save.
+   - **"Let mods run their own scripts":** press **Allow**. The mods that come with Clan Mod Studio, and
+     many others, are small programs that run inside the game; only allow it for mods from people you
+     trust (the warning names the ones you have). **Not now** leaves it for later (Options, on the
+     Settings and repair page).
+   - **"Get the mods that go with Clan Mod Studio":** press **Add all four**. Menu pages (the mod menu's
+     pages about your cat and the game), Sandbox mode (where the cats and questlines you make turn up),
+     Creator palettes (your new colours and coat presets in the cat maker) and the Emote wheel come from
+     their GitHub pages; one with no release yet says so on its row. Once everything is done, the card
+     folds to one line.
 4. **Add a mod:** drop the mod's .zip on the page, or onto `Clan Mod Studio` itself, and press **Add
    to my mods**. To try some, [wcmods-examples](https://github.com/HexOffender/wcmods-examples) has palettes, mouse look and more:
    download it (**Code**, then **Download ZIP**) and drop that .zip on the page.
@@ -40,7 +48,8 @@ are in your `wcmods.json`, so they stay as well.
   `mods` (to your desktop, say), pull again, then move it back into `mods`. The next start takes its
   settings into `wcmods.json`.
 - **The menu's pages about the game** are a mod of their own now, Menu pages (below). Get set up
-  offers it after an update; until it's in, the menu has the Overview, your mods' pages and the Tools.
+  offers it with the other mods that go with Clan Mod Studio; until it's in, the menu has the Overview,
+  your mods' pages and the Tools.
 
 ## Requirements
 
@@ -80,9 +89,19 @@ closes.
 
 **Clan Mod Studio** puts your mods in the game. Its **Mods** page is where you start:
 - **Add a mod:** drop a downloaded mod's .zip on the page. It shows what's in it (what the mod
-  changes, whether it runs code, what else it needs) before you add it.
-- **The menu's pages:** "Add the menu's pages" puts in Menu pages, the mod with the mod menu's
-  pages about your cat and the game (below).
+  changes, whether it runs code, what else it needs, by name) before you add it, and whether each one goes
+  in switched on, as it ships unless you change it. A mod whose requirement you don't have is added
+  switched off, and says what it needs; for one of the mods that go with Clan Mod Studio, the preview has
+  its Add button. A .zip with `mod.json` at its top and no `"id"` is named after its file name with a
+  version at the end dropped ("Cool Mod v1.3.zip" goes in as cool-mod), so the next version replaces it
+  rather than going in beside it; one an older Clan Mod Studio named with the version in it is found by
+  its name and replaced. A mod made for a newer Clan Mod Studio (its mod.json's `"wcmods"`) is left out,
+  and says to update.
+- **The mods that go with Clan Mod Studio:** their card lists Menu pages, Sandbox mode, Creator palettes
+  and the Emote wheel, each with a sentence, a state (Not added, In, Off, Needs scripts allowed, Newer one
+  out, Needs a newer Clan Mod Studio, No release yet) and one button: Add, Switch on or Get the latest.
+  Check for newer versions asks GitHub (nothing else does). `python wcmods.py addons` lists them, and
+  `addons add <id>` adds one.
 - **Example mods:** wcmods comes with no mods of its own. Example mods are in their own
   repository, [wcmods-examples](https://github.com/HexOffender/wcmods-examples): themed palettes, eye and coat colours, mouse look,
   controls, game tweaks and more. Drop its .zip on the page and tick the ones you want.
@@ -147,7 +166,9 @@ goes through the game bridge, so it needs mods that run code allowed).
 
 **Sharing what you make:** every page under Make mods has a **Share** part: the mod's name, author,
 version and description, **Save as .zip** for others to add on their Mods page, and **Export** and
-**Import** for just that page's file.
+**Import** for just that page's file. The .zip is named after the mod's folder and version
+(`moonlit-cats-1.2.zip`); the mod goes in under its folder name on the other side, whatever the file is
+called, so a newer version replaces the older one there.
 
 Mods can also ship whole replacement files (`files/Wrc/...`), and their own pages and build
 steps written with the shared library (see [docs/SDK.md](docs/SDK.md)). UE4SS scripts can draw
@@ -181,9 +202,10 @@ and Save writes the change back to the mod, so the next install keeps it.
 ([HexOffender/wcmods-menu-pages](https://github.com/HexOffender/wcmods-menu-pages)): At a glance,
 your cat's Stats, World, Travel, Nearby, Items, Quests, Fight, Cheats and Game switches, and the line
 under the menu's title saying how your cat is doing.
-- **Getting it:** Get set up, on the Mods page, has "Add the menu's pages", which downloads its latest
-  release and adds it to your mods; "Get the latest" on its card updates it, keeping its settings.
-  `python wcmods.py menu-pages` does the same, and its `.zip` can be added like any mod.
+- **Getting it:** it's one of the mods that go with Clan Mod Studio: Add all four in Get set up, or Add
+  on its row of their card, downloads its latest release and adds it to your mods; Get the latest updates
+  it, keeping its settings. `python wcmods.py addons add menu-pages` (or `menu-pages`) does the same, and
+  its `.zip` can be added like any mod.
 - **It's an in-game script,** so like any script it runs only with mods that run code allowed
   (Options, on the Settings and repair page). Without it, or with it off, the menu's Overview says
   what's missing.
@@ -335,8 +357,9 @@ Also: `new <name> --kind palette|controls|files|data|items|names|save|script`, `
 `texture <item|accessory|/Game/...>` (one of the game's textures as a PNG), `model <accessory>` (an
 accessory and the cat as OBJ files, to make a model of your own on), `animation <cat|mouse|...>` (the cat or
 an animal rigged to the game's skeleton as a .glb to animate in Blender; `--check FILE` says what a file holds),
-`build`, `backup`, `restore [name|latest]`, `menu-pages [--zip file]` (add or update the Menu pages
-mod), `cheats [on|off]` (whether Menu pages' cheats start on), `console [on|off]` (the game's `~`
+`build`, `backup`, `restore [name|latest]`, `addons` (the mods that go with Clan Mod Studio, and GitHub's
+latest of each) and `addons add <id> [--zip file]` (add or update one), `menu-pages [--zip file]` (the
+same for the Menu pages mod), `cheats [on|off]` (whether Menu pages' cheats start on), `console [on|off]` (the game's `~`
 console). With code mods allowed and the game running:
 `lua <code>` or `lua -f file.lua` (run Lua in the game), `inspect <expr>` (an object's properties and
 functions), `find <class>`, `game` (is the bridge up?) and `game types` (Lua type files for your

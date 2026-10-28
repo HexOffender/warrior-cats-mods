@@ -47,7 +47,8 @@ try one, drop the repository's .zip on the studio's Mods page and tick it (or `p
 mods/my-mod/
   mod.json            {"name", "description", "enabled", "priority", "version", "author",
                        "requires" (mods it can't work without), "uses" (mods it works with),
-                       "game_builds", "settings_page", "studio_title", "studio_files": below}
+                       "game_builds", "wcmods", "settings_page", "studio_title", "studio_files":
+                       below}
   files/Wrc/...       replacement game files            -> section "files"
   paks/<name>.pak     cooked content made with Unreal   -> installed as is, with its .utoc/.ucas
                       Engine 5.7 (see "New content")
@@ -85,6 +86,12 @@ Only `mod.json`'s `name` is needed; the rest is what Clan Mod Studio shows and h
 - **`game_builds`:** the builds of the game it was made for (a mod without it was made for
   24847281). After a game update, a mod that doesn't list the new build is left out until it's
   updated, or you choose "Use it anyway" for that build. See [updating.md](updating.md).
+- **`wcmods`:** the oldest wcmods (Clan Mod Studio) that can build it, as a version: `"0.4.0"` (`"0.4"`
+  is the same). A wcmods older than that leaves the mod out, and the mods that need it, with a warning
+  ("needs Clan Mod Studio 0.4.0 or newer; you have 0.3.0: update it") on its card, in the add preview and
+  at Apply; nothing is refused, so the rest go in. Set it when the mod uses something a release added
+  (a palette's `coats` needs 0.4.0). A .zip whose value isn't digits and dots is refused when it's added.
+  wcmods before 0.4.0 doesn't read it, so it protects players from 0.4.0 on.
 - **`priority`:** mods are applied in priority order, then by folder name, and the higher one wins
   when two set the same thing.
 - **`settings_page`:** for a script mod with a `settings.json`: `false` keeps it off the mod menu's
@@ -776,10 +783,25 @@ it:
 The pages about the game are a mod of their own, **Menu pages** (`mods/menu-pages`), from
 [HexOffender/wcmods-menu-pages](https://github.com/HexOffender/wcmods-menu-pages). It's an in-game
 script (`scripts/`), so it runs only with mods that run code allowed, like any script.
-- **Getting it:** Get set up in Clan Mod Studio ("Add the menu's pages") downloads its latest
-  release's `menu-pages-*.zip` and adds it, as `python wcmods.py menu-pages` does (`--zip file` for one
-  you downloaded). Its card's "Get the latest" updates it, keeping whether it's on and its
-  `settings.json` (`wcmods/menupages.py`). Its `.zip` can be added like any mod's too.
+- **Getting it:** it's one of the four mods that go with Clan Mod Studio (`wcmods/addons.py`, with
+  Sandbox mode, Creator palettes and the Emote wheel). Get set up's "Add all four", or Add on its row of
+  the Mods page's card of them, downloads its latest release's `menu-pages-*.zip` and adds it, as
+  `python wcmods.py addons add menu-pages` (or `menu-pages`) does (`--zip file` for one you downloaded).
+  "Get the latest" updates it, keeping whether it's on and its `settings.json`. Its `.zip` can be added
+  like any mod's too.
+
+### The mods that go with Clan Mod Studio
+
+`wcmods/addons.py` lists four mods, each in its own repository and fetched from its latest GitHub release:
+Menu pages, Sandbox mode (`sandbox-<version>.zip`, not the example mods beside it), Creator palettes and
+the Emote wheel. The list holds each one's id, name, repository, the pattern of its release's .zip, a
+sentence for the card, the studio pages it serves and the files whose values an update keeps; what wcmods
+each needs and whether it runs code come from its own `mod.json`. Adding one adds every mod in its .zip, each
+on or off as it ships (Creator palettes' ten themed palettes off, Coat presets on); updating one keeps
+whether each is on and your values in its `settings.json`. A repository with no release yet is said as
+"no release yet; the owner of that mod has to publish one" on its row and in `python wcmods.py addons`.
+A page offers one with `wc.addonButton(id)` (below). `WCMODS_RELEASES`, set to a folder, stands in for
+GitHub with the .zips in it: it's for the tests.
 - **Its settings:** `settings.json`'s `"cheats"`, whether the Cheats page starts with cheats on (its
   "Start with cheats on" switch, or `python wcmods.py cheats on|off`).
 - **After a game update:** like any mod, it lists the builds it was made for (`"game_builds"`), and a
@@ -1415,6 +1437,8 @@ affecting the others.
 | `modTarget({file, onLoad, getValue, share})` | The "Editing mod: … Save to mod" bar the built-in pages use. It keeps unsaved work (the browser asks before the page closes, switching mods asks first, `refresh()` re-reads the mod list without reloading the file), and shows under itself what would keep a saved file out of the game (`problems` from the PUT) until a save that's fine. `target.dirty` says whether there's unsaved work |
 | `installedEvent(target, fn)` | `bus.on("installed", fn)` that skips `fn` while `target` has unsaved changes: for a page that reloads its file after an Apply |
 | `openHelp(page)`, `pageHead({eyebrow, title, lede, help})` | The help panel: `openHelp("studio")` opens `docs/guide/studio.md` in it (no page: the guide's index); `pageHead`'s `help: "help:<page>"` puts a "How this works" button in the page's head that does the same |
+| `codeWarning(mods)`, `CODE_WARNING` | The one warning before allowing mods that run code (Get set up and Settings and repair use it), naming the mods given (`GET /mods`) that run code, by name and author, with each one's `about` when the page has it |
+| `addonButton(id, {label, name})` | A button that adds one of the mods that go with Clan Mod Studio from its GitHub release (`POST /addons/<id>`), says what came of it, and emits `mods-changed` |
 | `codePanel(title)` | A copyable JSON preview |
 | `color` | sRGB/linear conversion, HSL, `mood(hex, "vivid"\|"pastel"\|"moonlit"\|"ember")` |
 | `input` | Browser key/mouse/gamepad to Unreal key names, plus Xbox/PlayStation/Switch labels |
@@ -1432,7 +1456,14 @@ task under way has logged so far), `GET /last-apply` (`last-apply.log`), `POST /
 `GET /game/bridge` (whether the game runs with the bridge), `POST /game/lua` `{code}` and
 `/game/inspect` `{expr}` (run Lua in the game, or describe an object; code mods only),
 `GET /names`, `POST /names/preview`, `GET /cat`, `GET /game/eyes`, `/game/tables`,
-`/game/bindings`, `/game/data`, `/game/data/<table>`, `/save`.
+`/game/bindings`, `/game/data`, `/game/data/<table>`, `/save`, and for getting set up and the mods that
+go with Clan Mod Studio: `GET /setup` (each step's state, `code` and `addons` among them),
+`POST /setup/game` `{dir}`, `/setup/backup`, `/setup/loader`, `/setup/code` `{skip: true}`,
+`/setup/addons` `{choice: "added" | "not now"}`, `GET /addons` (each one's state; `?latest=1` also asks
+GitHub, at most once an hour), `POST /addons/<id>` `{on?}` or a .zip as the body (add or update it),
+`POST /addons/<id>/preview` (what adding it would add, as a dropped .zip's preview), and
+`POST /mods/add?step=preview|add&ids=a,b&on=a` (a .zip as the body; `on` lists the ticked mods that go in
+switched on, the others off; `enable=1|0` still says it for all).
 
 The server listens on 127.0.0.1 only, and every API call needs the per-run token that the page
 gets when it loads. Other websites therefore can't drive it. An error is answered with a sentence

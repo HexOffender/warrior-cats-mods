@@ -38,6 +38,18 @@ After the game updates, try your mod on the new build. If it works, add the buil
 (`python wcmods.py game build` shows it) and share the new version. A mod without `game_builds` was
 made for build 24847281, like every mod made before the list existed.
 
+Beside it, `"wcmods"` says the oldest wcmods that can build the mod, when it uses something a wcmods
+release added (a palette's coat presets need 0.4.0):
+
+```json
+{ "name": "Coat presets", "game_builds": [26184573], "wcmods": "0.4.0" }
+```
+
+An older wcmods leaves the mod out with "needs Clan Mod Studio 0.4.0 or newer; you have 0.3.0: update it",
+and so the mods that need it; the rest still go in. It's a different question from `game_builds`: that
+one is about the game Steam installed, this one about the wcmods the player has. wcmods reads it from
+0.4.0 on, so a mod that needs 0.4.0 should only be released once 0.4.0 is out.
+
 ## For wcmods: the signatures
 
 `game.HIDDEN` lists members the game doesn't reflect, found by reverse-engineering build 24847281:
