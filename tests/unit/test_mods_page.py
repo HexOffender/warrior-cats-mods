@@ -111,6 +111,8 @@ def test_pending_lists_held_back_mods_as_left_out_not_off(studio, fake_game, mon
     assert p["off"] == [] and p["on"] == [] and p["any"] is True   # still in the game: the next install takes it out
     changes = get(studio, "changes")
     assert changes["names"]["unpinned"] == "Unpinned" and changes["left_out"] == p["left_out"]
+    # One answer: held_back (the Controls page's line) is the same mods, and still_in is what counts as a change.
+    assert changes["held_back"] == ["unpinned"] and changes["still_in"] == ["unpinned"] and changes["any"] is True
     # Once it's out of the game (an install without it), it's left out with nothing to apply.
     cfg.data["installed"]["mods"] = []
     cfg.save()

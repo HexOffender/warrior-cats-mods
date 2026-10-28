@@ -61,7 +61,7 @@ test("each add-on's row gets one chip and at most one button", () => {
 
 test("the toast after adding says what went in, what went on with it, and what's off and why", () => {
   assert.equal(list.addedToast([{ id: "a", name: "A", on: true, also_on: ["Helper"] }]),
-    "Added A. Also on, because it needs them: Helper. Press Play to play with it.");
+    "Added A. Also on with it: Helper. Press Play to play with it.");
   assert.equal(list.addedToast([{ id: "m", name: "Moonlit cats", on: false, off_because: "needs Sandbox mode, which you don't have", missing: ["sandbox"] }], ADDONS),
     "Added Moonlit cats, switched off: it needs Sandbox mode. Add it from the add-ons card, then switch it on.");
   assert.equal(list.addedToast([{ id: "m", name: "M", on: false, off_because: "x", missing: ["ghost"] }], ADDONS),

@@ -57,13 +57,17 @@ export default {
       let changes;
       try { changes = await api.get("/changes"); } catch (e) { whereLine.hidden = true; return; }
       if (n !== whereAsked || target.dirty) return;
-      // Left out by Apply (made for an older version of the game): not in the game, whatever Apply does. Waiting:
-      // the mod is new or changed since the last Apply, or that Apply has to be made again (changes.redo: the
-      // game updated, the script loader came in), which the Apply button counts too.
-      const held = (changes.held_back || []).includes(id);
+      // Left out by Apply (changes.left_out, {id: why}, and held_back, their ids: made for an older version of the
+      // game, needing a newer Clan Mod Studio, or needing one of those): not in the game, whatever Apply does.
+      // Waiting: the mod is new or changed since the last Apply, or that Apply has to be made again
+      // (changes.redo: the game updated, the script loader came in), which the Apply button counts too.
+      const why = (changes.left_out || {})[id];
+      const held = !!why || (changes.held_back || []).includes(id);
       const waiting = held || changes.on.includes(id) || changes.changed.includes(id) || (changes.redo || []).length > 0;
-      whereLine.textContent = held ? "Not in the game: this mod was made for an older version of the game. The Mods page says how to use it anyway."
-        : waiting ? "Saved, not in the game yet: Apply to game." : "In the game since your last Apply.";
+      whereLine.textContent = !held ? (waiting ? "Saved, not in the game yet: Apply to game." : "In the game since your last Apply.")
+        : !why || /^made for an older version/.test(why)
+          ? "Not in the game: this mod was made for an older version of the game. The Mods page says how to use it anyway."
+          : `Not in the game: Apply leaves this mod out, as it ${why}. The Mods page says more.`;
       whereLine.classList.toggle("waiting", waiting);
       whereLine.hidden = false;
     }

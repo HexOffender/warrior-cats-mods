@@ -77,7 +77,8 @@ export function addedToast(added, addons = []) {
   const fine = added.filter(a => !a.off_because);
   if (fine.length) parts.push(`Added ${fine.map(a => a.name).join(", ")}.`);
   const also = [...new Set(fine.flatMap(a => a.also_on || []))];
-  if (also.length) parts.push(`Also on, because ${fine.length > 1 ? "they need" : "it needs"} them: ${also.join(", ")}.`);
+  // Turned on with it: the mods it needs, and the mods it works with that are here (mods.switch).
+  if (also.length) parts.push(`Also on with ${fine.length > 1 ? "them" : "it"}: ${also.join(", ")}.`);
   for (const a of added.filter(x => x.off_because)) {
     const missing = a.missing || [];
     const known = missing.length && missing.every(id => addons.some(x => x.id === id));
