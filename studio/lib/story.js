@@ -179,8 +179,11 @@ export function laterVersion(a, b) {
 // The words of the strip for the studio's answer about Sandbox mode (GET /story/sandbox: its state, version
 // and the fields it's too old for, worked out there) and the fields the page's cats use (["look", "slots"]):
 // {kind, title, text, link?, button?, settings?, mods?}. kind is "good" when nothing waits.
+// A .zip is named only from s.released, the newest release GitHub last told the studio of: the version a field
+// needs (s.needs, s.newest) may not be out yet, and then the strip says so rather than naming a file that
+// doesn't exist. Without s.released it says what to do without a file name.
 export function stripWords(s, uses = []) {
-  const zip = `sandbox-${s.newest || "0.5"}.zip`;
+  const zip = s.released ? `sandbox-${s.released}.zip` : "its newest .zip";
   const codeStep = s.code_allowed ? "" : " It runs a script, so allow mods that run code on Settings and repair too.";
   if (s.state === "missing") {
     // Add Sandbox mode gets it from its GitHub release in one press (wc.addonButton), as the Mods page's card does.
@@ -193,8 +196,18 @@ export function stripWords(s, uses = []) {
     const [what, without] = FIELDS[tooOld[0]];
     // What the fields the cats use need (the newest of them), not the newest any field needs.
     const need = tooOld.map(f => (s.needs || {})[f]).reduce(laterVersion, null) || s.newest;
-    return { kind: "warn", title: `Your ${what} need Sandbox mode ${need} or newer; you have ${s.version || "an older one"}`,
-      text: `Until then ${without}. Download ${zip} from its releases page and drop it on the Mods page.`, link: s.releases };
+    const have = s.version || "an older one";
+    // The newest release is older than what they need: that version isn't out yet.
+    const notOut = versionParts(s.released) && versionParts(need) && laterVersion(s.released, need) !== s.released;
+    if (notOut) {
+      return { kind: "warn", title: `Your ${what} need Sandbox mode ${need}, which isn't out yet; you have ${have}`,
+        text: `Until it's out ${without}. Your cats go in all the same.`, link: s.releases };
+    }
+    return { kind: "warn", title: `Your ${what} need Sandbox mode ${need} or newer; you have ${have}`,
+      text: s.released
+        ? `Until then ${without}. Sandbox mode ${s.released} is out: press Get the latest on its row on the Mods page, or download ${zip} from its releases page and drop it on the Mods page.`
+        : `Until then ${without}. To see whether ${need} is out, press Check for newer versions on the Mods page; Get the latest then brings it.`,
+      link: s.releases, mods: true };
   }
   if (s.state === "off") {
     return { kind: "warn", title: "Sandbox mode is off", text: "Your cats and questlines go in, but nothing shows them until it's on.",

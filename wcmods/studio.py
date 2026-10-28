@@ -1304,9 +1304,13 @@ class Studio:
             return spot
         if parts == ["story", "sandbox"] and method == "GET":
             # What Sandbox mode can show of the cats and questlines, for the Characters and Questlines pages: a
-            # Sandbox mode held back after a game update (until "Use it anyway") shows nothing either.
+            # Sandbox mode held back after a game update (until "Use it anyway") shows nothing either. Its newest
+            # release is what GitHub last told the studio (Check for newer versions, or an add), if it has; GitHub
+            # isn't asked here (RELEASES_FOR), so the strip never names a release nobody has seen.
             found = self.mods()
-            return story.sandbox(found, bool(cfg.data.get("allow_code_mods")), gamebuild.held_back(cfg, found))
+            released = (self.releases.get(story.SANDBOX_ID) or {}).get("version")
+            return story.sandbox(found, bool(cfg.data.get("allow_code_mods")), gamebuild.held_back(cfg, found),
+                                 released=released)
         if parts == ["story", "progress"] and method == "DELETE":
             # Every sandbox cat's questlines back to the start (Sandbox mode keeps them beside the game's saves).
             if game_running():
