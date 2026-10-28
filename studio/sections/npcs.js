@@ -36,6 +36,7 @@ export default {
       file: "npcs.json",
       onLoad: (obj, id) => { ({ cats, extra } = model.load(obj)); draw(); readQuests(id); },
       getValue: () => toJson(),
+      onSaved: saved => wc.settleNew(cats, saved.npcs),   // saved cats keep their ids from now on
     });
     const out = wc.codePanel("npcs.json");
     const idLine = el("p", { class: "note" });

@@ -31,6 +31,7 @@ export default {
         loading = (async () => { await loadMod(id); ({ quests, extra } = model.load(obj, names)); draw(); })();
       },
       getValue: () => model.toJson(quests, extra),
+      onSaved: saved => wc.settleNew(quests, saved.quests),   // saved quests keep their ids from now on
     });
     const catsNote = el("div", { class: "banner", hidden: true });
     const out = wc.codePanel("quests.json");
