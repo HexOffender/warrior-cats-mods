@@ -12,6 +12,11 @@ was made for. This module tells which build is installed (Steam's appmanifest) a
   player chooses to use it anyway on this build (wcmods.json "allow_outdated"), with a warning that it
   may not work or may behave unpredictably. So do the mods that need it. A mod that says nothing was
   made for build 24847281, as every mod before this was.
+- the re-check (recheck): a held-back mod that is only data (no code, no paks/ or files/, not a pack) is
+  built on the new game instead of being held back on trust. One that builds is stamped with the new build
+  in its mod.json and goes in; one that fails stays held back with the reason. What came of it is kept in
+  wcmods.json "rechecked", so each mod is checked once per build; while the game's files can't be read,
+  nothing is checked and it's tried again next time.
 """
 import hashlib
 import json
@@ -54,11 +59,34 @@ def current(cfg):
     return {"build": build, "verified": verified, "label": VERIFIED_LABEL if verified else None}
 
 
+def _build(v):
+    """One build number: a whole number, a whole float (26184573.0) or digits as text ("26184573"); else None."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return v
+    if isinstance(v, float) and v.is_integer():
+        return int(v)
+    if isinstance(v, str) and v.strip().isdigit():
+        return int(v.strip())
+    return None
+
+
 def _builds(v):
-    """A list of build numbers from mod.json or wcmods.json: a number, or a list of them."""
-    if isinstance(v, int) and not isinstance(v, bool):
-        v = [v]
-    return [b for b in v if isinstance(b, int) and not isinstance(b, bool)] if isinstance(v, list) else []
+    """A list of build numbers from mod.json or wcmods.json: a number, or a list of them (as _build reads each)."""
+    v = v if isinstance(v, list) else [v]
+    return [b for b in (_build(x) for x in v) if b is not None]
+
+
+BUILDS_PROBLEM = "mod.json's game_builds should be a list of build numbers like [26184573]"
+
+
+def builds_problem(mod):
+    """What's wrong with a mod's "game_builds" when it's there but holds no build number, or None."""
+    for key in ("game_builds", "game_build"):
+        if key in mod.meta:
+            return None if _builds(mod.meta[key]) else BUILDS_PROBLEM
+    return None
 
 
 def made_for(mod):
@@ -106,12 +134,122 @@ def outdated(cfg, mods, build=None):
     return out
 
 
-def held_back(cfg, mods, build=None):
+def held_back(cfg, mods, build=None, trusted=()):
     """{mod id: why} for the mods a build leaves out on this version of the game: the ones made for an
-    older version (unless used anyway), and the ones that need them, which can't work without them."""
+    older version (unless used anyway, or `trusted`: the re-check's own build), and the ones that need them,
+    which can't work without them. One the re-check built and saw fail says why."""
     from .. import mods as modlib
-    base = {i: "made for an older version of the game" for i, o in outdated(cfg, mods, build).items() if not o["allowed"]}
+    build = build if build is not None else steam_build(cfg)
+    found = checked(cfg, build) if build is not None else {}
+    base = {}
+    for i, o in outdated(cfg, mods, build).items():
+        if o["allowed"] or i in trusted:
+            continue
+        why = found.get(i)
+        base[i] = (f"made for an older version of the game, and checked on this one: {why}"
+                   if why and why != "ok" and not str(why).startswith(COULDNT) else "made for an older version of the game")
     return modlib.with_dependents(mods, base, "made for an older version of the game")
+
+
+# ---------- the re-check: data mods built on the new game instead of held back on trust ----------
+COULDNT = "couldn't check"
+COULDNT_READ = f"{COULDNT}: the game's files can't be read right now"
+
+
+def checkable(mod):
+    """Whether building a mod on the new game says whether it still works: it's only data. Code (scripts,
+    C++, build steps) can't be judged by a build; neither can cooked content (paks/) or replaced game
+    files (files/), which the build copies as they are; a pack has nothing of its own."""
+    kinds = set(mod.kinds())
+    return not (mod.problem or mod.has_code() or mod.meta.get("pack") or kinds & {"files", "cooked content"})
+
+
+def checked(cfg, build):
+    """What the re-check found on `build` (wcmods.json "rechecked"): {mod id: "ok", or why it didn't build},
+    {} when it hasn't run on that build."""
+    rec = cfg.data.get("rechecked")
+    if isinstance(rec, dict) and rec.get("build") == build and isinstance(rec.get("results"), dict):
+        return rec["results"]
+    return {}
+
+
+def candidates(cfg, mods, build=None):
+    """The held-back mods a re-check can judge (checkable), on `build` (the installed one unless given)."""
+    build = build if build is not None else steam_build(cfg)
+    by_id = {m.id: m for m in mods}
+    return [i for i, o in outdated(cfg, mods, build).items() if not o["allowed"] and checkable(by_id[i])]
+
+
+def recheck_due(cfg, mods, build=None):
+    """Whether a re-check has something to do: a candidate it hasn't checked on this build, or one it
+    couldn't (the game's files couldn't be read)."""
+    build = build if build is not None else steam_build(cfg)
+    if build is None:
+        return False
+    found = checked(cfg, build)
+    return any(i not in found or str(found[i]).startswith(COULDNT) for i in candidates(cfg, mods, build))
+
+
+def _failures(manifest, ids):
+    """{mod id: what went wrong} for the mods in `ids` that a build's manifest says didn't make it: named in
+    a section's failures, or in a section whose table edits or rows couldn't go in."""
+    out = {}
+    for rep in manifest.get("sections", {}).values():
+        for mod, text in rep.get("failed") or []:
+            if mod in ids:
+                out.setdefault(mod, text)
+        lost = [e for e in rep.get("errors", []) if "edits not applied" in e or "rows not added" in e]
+        for mod in rep.get("mods", []) if lost else []:
+            if mod in ids:
+                out.setdefault(mod, lost[0])
+    return out
+
+
+def recheck(cfg, mods, build_dir, log=print):
+    """Build the held-back data mods (candidates) on the installed game, in a folder beside the real build
+    (`build_dir`-check, removed after), counting them as allowed for that build alone. One that builds gets
+    the build added to its mod.json "game_builds" and goes in from now on; one that doesn't stays held back,
+    with what went wrong. While the game's files can't be read, nothing is built: each gets COULDNT_READ and
+    is tried again next time. Each mod is checked once per build; the answers are kept in wcmods.json
+    "rechecked" ({"build", "when", "results"}). Returns the results."""
+    import datetime
+    import shutil
+    from .. import gamefiles, pipeline
+    build = steam_build(cfg)
+    if build is None:
+        return {}
+    cfg.reload()
+    found = dict(checked(cfg, build))
+    todo = [i for i in candidates(cfg, mods, build) if i not in found or str(found[i]).startswith(COULDNT)]
+    if not todo:
+        return found
+    names = {m.id: m.name for m in mods}
+    why = gamefiles.unreadable(cfg)
+    if why:
+        log(f"couldn't check {', '.join(names[i] for i in todo)} on build {build}: {why}")
+        found.update({i: COULDNT_READ for i in todo})
+    else:
+        log(f"checking {', '.join(names[i] for i in todo)} on build {build}")
+        out = os.path.normpath(build_dir) + "-check"
+        try:
+            manifest = pipeline.build(cfg, mods, out, log=lambda m: log("  " + m), trusted=todo)
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
+        failed = _failures(manifest, todo)
+        by_id = {m.id: m for m in mods}
+        for i in todo:
+            if i in failed:
+                found[i] = failed[i]
+                log(f"{names[i]}: didn't build on build {build}: {failed[i]}")
+            else:
+                by_id[i].update(game_builds=made_for(by_id[i]) + [build])
+                found[i] = "ok"
+                log(f"{names[i]}: checked on build {build}: fine")
+    cfg.reload()
+    cfg.data["rechecked"] = {"build": build, "when": datetime.datetime.now().isoformat(timespec="seconds"),
+                             "results": found}
+    cfg.save()
+    return found
 
 
 # ---------- wcmods' own parts on a new build ----------

@@ -79,6 +79,10 @@ You can't:
 - **"Your mods go into another copy of the game."** Steam starts a different copy than the one your mods
   go into. Press **Use Steam's copy**.
 - **"Close the game, then apply."** The game was still running. Close it and press **Apply to game**.
+- **"The game updated", and a mod is left out.** A mod made for an older version of the game that is only
+  data is checked on the new one when the page opens ("Checking your mods on the new version…"); the ones
+  that build go in with the next **Play**. One that doesn't build says why: **Turn it off**, and wait for
+  its maker. One that runs code waits for its maker too, or **Use it anyway…** after its warning.
 
 ## Undo
 

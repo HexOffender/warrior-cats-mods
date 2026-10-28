@@ -103,6 +103,33 @@ export function addonToast(r, codeAllowed) {
   return said;
 }
 
+// After a game update: the mods made for an older version, sorted by what the re-check (POST /mods/recheck)
+// made of them, from GET /mods. fine: built on the new version, not applied since; failed: didn't build, with
+// why (m.rechecked); couldnt: not checked, as the game's files couldn't be read; maker: code or the game's own
+// kind of files, which only its maker can vouch for; unchecked: not checked yet.
+export function recheckSorted(mods) {
+  const left = mods.filter(m => m.enabled && m.outdated && !m.outdated.allowed);
+  const couldnt = r => String(r || "").startsWith("couldn't check");
+  return {
+    fine: mods.filter(m => m.rechecked === "ok" && m.rechecked_since_apply),
+    failed: left.filter(m => m.checkable && m.rechecked && m.rechecked !== "ok" && !couldnt(m.rechecked)),
+    couldnt: left.filter(m => m.checkable && couldnt(m.rechecked)),
+    maker: left.filter(m => !m.checkable),
+    unchecked: left.filter(m => m.checkable && !m.rechecked),
+  };
+}
+
+// The update banner's first sentence: "3 of your mods were checked on the new version and are fine. 1
+// couldn't go in:" (the ones that couldn't follow, each with its reason), or "" when nothing was checked.
+export function recheckSentence(sorted) {
+  const { fine, failed } = sorted;
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  const parts = [];
+  if (fine.length) parts.push(`${n(fine.length, "of your mods was", "of your mods were")} checked on the new version and ${fine.length === 1 ? "is" : "are"} fine.`);
+  if (failed.length) parts.push(`${fine.length ? failed.length : n(failed.length, "of your mods", "of your mods")} couldn't go in:`);
+  return parts.join(" ");
+}
+
 // The "Not in the game yet" banner's list, from GET /changes.
 export function changeParts(c) {
   const name = i => (c.names || {})[i] || i;

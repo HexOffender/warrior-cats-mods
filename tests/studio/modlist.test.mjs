@@ -100,6 +100,27 @@ test("the code warning names your mods that run code, with their authors, and no
   assert.equal(wc.codeWarning([]).querySelectorAll("li").length, 0);
 });
 
+test("after a game update, mods are sorted by what the re-check made of them, and the banner says it", () => {
+  const old = { allowed: false };
+  const mods = [
+    { name: "Dark Forest", enabled: true, rechecked: "ok", rechecked_since_apply: true },
+    { name: "Pastel", enabled: true, rechecked: "ok", rechecked_since_apply: false },
+    { name: "Old tweaks", enabled: true, outdated: old, checkable: true, rechecked: "data.json names a value the game no longer has" },
+    { name: "Blocked", enabled: true, outdated: old, checkable: true, rechecked: "couldn't check: the game's files can't be read right now" },
+    { name: "Script", enabled: true, outdated: old, checkable: false },
+    { name: "New one", enabled: true, outdated: old, checkable: true },
+    { name: "Used anyway", enabled: true, outdated: { allowed: true }, checkable: false },
+  ];
+  const s = list.recheckSorted(mods);
+  const names = k => s[k].map(m => m.name);
+  assert.deepEqual([names("fine"), names("failed"), names("couldnt"), names("maker"), names("unchecked")],
+    [["Dark Forest"], ["Old tweaks"], ["Blocked"], ["Script"], ["New one"]]);
+  assert.equal(list.recheckSentence(s), "1 of your mods was checked on the new version and is fine. 1 couldn't go in:");
+  assert.equal(list.recheckSentence({ fine: [1, 2, 3], failed: [] }), "3 of your mods were checked on the new version and are fine.");
+  assert.equal(list.recheckSentence({ fine: [], failed: [1, 2] }), "2 of your mods couldn't go in:");
+  assert.equal(list.recheckSentence({ fine: [], failed: [] }), "");
+});
+
 test("an add-on button adds it, says so, and tells the other pages", async () => {
   dom.calls.length = 0;
   dom.routes = {

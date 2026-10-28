@@ -529,9 +529,18 @@ class Studio:
                 for problem in (m.problem, mods.palette_problem(m)):
                     if problem:
                         unmet.setdefault(m.id, []).append(problem)
+            # What the re-check after a game update found (gamebuild.recheck): "ok" or why, for this build; a
+            # mod it passed says so on its card until the next Apply.
+            build = gamebuild.steam_build(cfg)
+            results = gamebuild.checked(cfg, build) if build is not None else {}
+            rec = cfg.data.get("rechecked") if isinstance(cfg.data.get("rechecked"), dict) else {}
+            since = str(rec.get("when", "")) > str((cfg.data.get("installed") or {}).get("built", ""))
             return [{**m.to_dict(), "problems": unmet.get(m.id, []),
                      "needed_by": [titles[i] for i in mods.needing(found, m.id)],
                      "requires_names": [titles.get(i, i) for i in m.requires if i != mods.MENU_ID],
+                     "warnings": [w for w in [gamebuild.builds_problem(m)] if w],
+                     "checkable": gamebuild.checkable(m),
+                     "rechecked": results.get(m.id), "rechecked_since_apply": since and m.id in results,
                      "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id),
                      "menu_pages": m.id == menupages.ID, "addon": bool(addons.find(m.id))} for m in found]
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "allow-outdated" and method == "POST":
@@ -543,11 +552,18 @@ class Studio:
             with self.lock:
                 gamebuild.allow(cfg, parts[1], build, on=bool(body.get("on", True)))
             return {"build": build, "allowed": bool(body.get("on", True))}
+        if parts == ["mods", "recheck"] and method == "POST":
+            # After a game update: build the held-back data mods on the new game; those that build go in.
+            return self.run(lambda log: gamebuild.recheck(cfg, self.mods(), self.ctx.build_dir, log),
+                            "Check mods on the new version")
         if parts == ["changes"] and method == "GET":
             found = self.mods()
             p = pipeline.pending(cfg, found)
             titles = {m.id: m.name for m in found}
             return {**p, "names": {i: titles.get(i, i) for i in p["on"] + p["off"] + p["changed"] + list(p["left_out"])},
+                    # The re-check after a game update has mods to build (the page starts it: POST /mods/recheck);
+                    # nothing is built here, which four pages ask on every focus.
+                    "recheck_due": gamebuild.recheck_due(cfg, found),
                     "game_running": game_running()}
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "switch" and method == "POST":
             # On: with the mods it requires. Off: refused while mods that are on need it, unless cascade.

@@ -25,7 +25,10 @@ on wcmods itself, at [CONTRIBUTING.md](CONTRIBUTING.md).
      folds to one line.
 4. **Add a mod:** drop the mod's .zip on the page, or onto `Clan Mod Studio` itself, and press **Add
    to my mods**. To try some, [wcmods-examples](https://github.com/HexOffender/wcmods-examples) has palettes, mouse look and more:
-   download it (**Code**, then **Download ZIP**) and drop that .zip on the page.
+   download it (**Code**, then **Download ZIP**) and drop that .zip on the page. Most of them were made
+   for an older version of the game: the Mods page checks the ones that are only data (palettes, names,
+   tweaks) on yours by itself and puts in the ones that build; a script waits for its maker, or **Use it
+   anyway…**.
 5. **Press Play** (top right). It puts your mods in the game and starts it. Close the game before you
    change mods; press Play again after.
 

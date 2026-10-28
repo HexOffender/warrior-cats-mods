@@ -3,8 +3,8 @@
 // ("uses"). Options (the mod menu's key among them), backups and repairs are on the Settings and repair page.
 // What the page says and chooses without the page (search, requirements, the add-ons' states, toasts) is in
 // ../lib/modlist.js.
-import { ADDON_NAMES, addedToast, addonState, addonToast, allSet, changeParts, matches, needs, needsLine, sentence,
-  worksWith } from "../lib/modlist.js";
+import { ADDON_NAMES, addedToast, addonState, addonToast, allSet, changeParts, matches, needs, needsLine, recheckSentence,
+  recheckSorted, sentence, worksWith } from "../lib/modlist.js";
 
 export default {
   title: "Mods",
@@ -37,16 +37,58 @@ export default {
     let update = null;   // what wcmods found the update changed, once asked (it takes a while the first time)
     let asking = null;   // that question, asked once however often the page redraws
     let drawing = 0;     // the latest redraw: an older one that finishes later draws nothing
+    // The re-check: the held-back data mods built on the new version (POST /mods/recheck), started once per
+    // visit to the page when GET /changes says it has something to do.
+    let rechecking = false, recheckTried = false;
+    async function maybeRecheck(c) {
+      if (!c || !c.recheck_due || rechecking || recheckTried) return;
+      recheckTried = true;
+      rechecking = true;
+      if (lastInfo) drawUpdate(lastInfo);   // said before it starts, however quick the check is
+      try { await api.post("/mods/recheck"); } catch (e) { toast(e.message, "bad"); }
+      rechecking = false;
+      await refresh();
+    }
+
+    let lastInfo = null;   // the last GET /info, for drawing the banner again without asking
     async function renderUpdate() {
       const mine = ++drawing;
       let info;
       try { info = await api.get("/info"); } catch (e) { return; }
       if (mine !== drawing) return;
+      lastInfo = info;
+      drawUpdate(info);
+    }
+    function drawUpdate(info) {
       clear(updateBox);
       const b = info.game_build || {};
-      if (!b.build || b.verified) return;
-      const left = mods.filter(m => m.enabled && m.outdated && !m.outdated.allowed);
+      const updated = b.build && !b.verified;
+      const sorted = recheckSorted(mods);
+      // Shown whenever a mod is left out for the game's version, or was just checked on it: on the build wcmods
+      // was checked on too.
+      if (!updated && !rechecking && !Object.values(sorted).some(list => list.length)) return;
       const lines = [];
+      if (rechecking) lines.push(el("span", { class: "muted", role: "status", text: "Checking your mods on the new version…" }));
+      const said = recheckSentence(sorted);
+      if (said) lines.push(el("span", { text: said }));
+      if (sorted.failed.length) {
+        lines.push(el("ul", { class: "notes" }, ...sorted.failed.map(m => el("li", { class: "row" },
+          el("span", { text: `${m.name}: ${m.rechecked}` }),
+          m.enabled ? el("button", { class: "btn small", type: "button", "aria-label": `Turn ${m.name} off`, text: "Turn it off", onclick: () => switchMod(m, false) }) : null))));
+      }
+      if (sorted.couldnt.length) {
+        lines.push(el("span", { text: `${sorted.couldnt.map(m => m.name).join(", ")} couldn't be checked on the new version: the game's files can't be read right now (is Steam updating it?). They're left out, and checked again the next time this page opens.` }));
+      }
+      if (sorted.maker.length) {
+        lines.push(el("span", { text: `${sorted.maker.map(m => m.name).join(", ")} ${sorted.maker.length > 1 ? "were" : "was"} made for the older version and can't be checked here (code, or the game's own kind of files): ${sorted.maker.length > 1 ? "their makers have" : "its maker has"} to update ${sorted.maker.length > 1 ? "them" : "it"}. Each card has "Use it anyway…".` }));
+      }
+      if (sorted.unchecked.length && !rechecking) {
+        lines.push(el("span", { text: `${sorted.unchecked.map(m => m.name).join(", ")} ${sorted.unchecked.length > 1 ? "are" : "is"} left out until checked on the new version.` }));
+      }
+      if (!updated) {
+        updateBox.append(el("div", { class: "banner" }, el("strong", { text: "Some mods are left out on this version of the game" }), ...lines));
+        return;
+      }
       if (!update) {
         lines.push(el("span", { class: "muted", text: "Checking what the update changed in the values wcmods reads (under a minute, once)…" }));
         asking ||= api.get("/game/update").then(u => { update = u; }, e => { update = { status: "failed", error: e.message }; })
@@ -61,9 +103,6 @@ export default {
           : "Nothing wcmods reads moved, so its own parts and the mod menu keep working." }));
       } else if (update.status === "partial") {
         lines.push(el("span", { text: `These values couldn't be found again, so what uses them is off until wcmods is updated: ${update.lost.join(", ")}.` }));
-      }
-      if (left.length) {
-        lines.push(el("span", { text: `${left.length} of your mods ${left.length > 1 ? "were" : "was"} made for the older version, so ${left.length > 1 ? "they're" : "it's"} left out until updated: ${left.map(m => m.name).join(", ")}. Each one's card has "Use it anyway…".` }));
       }
       updateBox.append(el("div", { class: "banner" }, el("strong", { text: `The game updated (build ${b.build})` }), ...lines));
     }
@@ -316,11 +355,11 @@ export default {
     // ---------- what's not in the game yet ----------
     async function renderChanges() {
       let c;
-      try { c = await api.get("/changes"); } catch (e) { clear(changesBox); return; }
+      try { c = await api.get("/changes"); } catch (e) { clear(changesBox); return null; }
       clear(changesBox);
       if (!c.any) {
         if (c.installed) changesBox.append(el("p", { class: "note ok-line", text: "\u2713 The game has your mods as they are here." }));
-        return;
+        return c;
       }
       const parts = changeParts(c);
       changesBox.append(el("div", { class: "banner" },
@@ -331,6 +370,7 @@ export default {
           c.game_running
             ? el("span", { class: "muted", text: "Close the game, then apply." })
             : el("button", { class: "btn primary", text: "Apply to game", onclick: () => bus.emit("apply") }))));
+      return c;
     }
 
     // ---------- adding a downloaded mod ----------
@@ -485,13 +525,18 @@ export default {
       for (const p of m.problems) lines.push(el("li", { class: "bad", text: sentence(p) }));
       if (m.code && !(settings && settings.allow_code_mods)) lines.push(el("li", { class: "warn", text: "Runs code, so the game won't get it until you allow mods that run code (Get set up, or Options on the Settings and repair page)." }));
       if (m.enabled && m.needed_by.length) lines.push(el("li", { class: "muted", text: `${m.needed_by.join(", ")} ${m.needed_by.length > 1 ? "need" : "needs"} it.` }));
-      // Made for an older build of the game (gamebuild.py): left out unless the player uses it anyway.
+      for (const w of m.warnings || []) lines.push(el("li", { class: "warn", text: sentence(w) }));
+      // Made for an older build of the game (gamebuild.py): left out unless the player uses it anyway. A data
+      // mod is checked on the new version first (the re-check): one that didn't build says why.
       const old = m.outdated;
+      const failedCheck = old && !old.allowed && m.checkable && m.rechecked && m.rechecked !== "ok" && !m.rechecked.startsWith("couldn't check");
       if (old) {
         lines.push(el("li", { class: old.allowed ? "warn" : "bad", text: old.allowed
           ? "Made for an older version of the game, and used anyway: it may not work, or may behave unpredictably."
-          : "Made for an older version of the game, so it's left out until it's updated." }));
+          : failedCheck ? `Made for an older version of the game, and checked on this one: ${m.rechecked}. It's left out until its maker updates it.`
+            : "Made for an older version of the game, so it's left out until it's updated." }));
       }
+      if (m.rechecked === "ok" && m.rechecked_since_apply) lines.push(el("li", { class: "muted", text: "Checked after the game update: it builds on this version." }));
 
       const more = open.has(m.id);
       const card = el("div", { class: "mod" + (m.enabled ? "" : " off"), "data-key": `mod:${m.id}` },
@@ -518,7 +563,12 @@ export default {
               : el("button", { class: "btn", text: `Turn ${state.by.length > 1 ? "all" : "both"} off`, onclick: () => switchMod(m, false, true) }),
             el("button", { class: "btn ghost", text: state.remove ? `Keep ${m.name}` : `Keep ${m.name} on`, onclick: () => renderList() }))));
       }
-      if (old && m.enabled) {
+      if (failedCheck && m.enabled) {
+        // The build has just shown it fails on this version: no "Use it anyway", which would stop the Apply.
+        card.append(el("div", { class: "row mod-wide" },
+          el("button", { class: "btn small", "aria-label": `Turn ${m.name} off`, text: "Turn it off", onclick: () => switchMod(m, false) }),
+          el("span", { class: "muted", text: "Its maker has to update it for this version." })));
+      } else if (old && m.enabled) {
         // One focus key for the button that asks and the warning's "Leave it out" (not "Use it anyway",
         // which a second press would confirm), so focus moves between them as the card changes.
         const key = `allow:${m.id}`;
@@ -537,7 +587,7 @@ export default {
                 el("button", { class: "btn ghost", "data-focus": key, text: "Leave it out", onclick: () => renderList() })))
             : el("div", { class: "row mod-wide" },
               el("button", { class: "btn small", "data-focus": key, text: "Use it anyway…", "aria-label": `Use ${m.name} anyway…`, onclick: () => renderList({ allow: m.id }) }),
-              el("span", { class: "muted", text: "Or wait for its maker to update it." })));
+              el("span", { class: "muted", text: m.checkable ? "Or wait for its maker to update it." : "It can't be checked here (code, or the game's own kind of files): its maker has to update it." })));
       }
       if (more) card.append(details(m));
       return card;
@@ -647,8 +697,9 @@ export default {
         [mods, settings] = await Promise.all([api.get("/mods"), api.get("/settings")]);
       } catch (e) { toast(e.message, "bad"); }
       renderList();
-      await Promise.all([renderSetup(), renderAddons(), renderUpdate(), renderChanges()]);
+      const [, , , changes] = await Promise.all([renderSetup(), renderAddons(), renderUpdate(), renderChanges()]);
       if (notify) bus.emit("mods-changed", { from: "mods" });
+      maybeRecheck(changes);
     }
 
     renderAdd();

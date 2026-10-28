@@ -15,10 +15,22 @@ Mods page says what that means:
   that moved is followed, and anything it can't find again, or can't vouch for, is switched off
   instead of guessed: the mod menu shows those values as not available. This takes under a minute,
   once per update, and the next Play or Apply puts the result in.
-- **Your mods:** a mod made for an older version of the game is left out until its maker updates
-  it, and so is a mod that needs it. Its card says so. **Use it anyway…** puts it back in, for this version only, after a warning:
-  it may not work, or may behave unpredictably (a broken page, odd values, a crash). Back up your save
-  first. After the next update it's left out again.
+- **Your mods that are only data** (colours, names, game data, items, animations, controls: no code,
+  no cooked content in `paks/`, no replaced files in `files/`): when the Mods page opens, it builds each
+  one made for an older version on the new game, without putting anything in the game ("Checking your
+  mods on the new version…"). One that builds is marked as made for the new build too, in its own
+  mod.json, and goes in with the next Play; one that doesn't stays out, and its card and the banner say
+  why, with **Turn it off**. Each mod is checked once per game version. While the game's files can't be
+  read (Steam updating or checking the game), nothing is checked, and it's tried again the next time the
+  page opens. `python wcmods.py game build` runs the same check.
+- **Your other mods** (anything that runs code, cooked content, replaced game files): a mod made for an
+  older version of the game is left out until its maker updates it, and so is a mod that needs it. Its
+  card says so. **Use it anyway…** puts it back in, for this version only, after a warning: it may not
+  work, or may behave unpredictably (a broken page, odd values, a crash). Back up your save first. After
+  the next update it's left out again.
+
+The Mods page's banner says all of this whenever a mod is left out for the game's version, on the build
+wcmods was checked on as well as a newer one.
 
 `python wcmods.py game build` says the same on the command line. `python wcmods.py allow-outdated
 <mod>` uses a mod anyway (`--off` stops), and `python wcmods.py status` marks such mods.
@@ -36,7 +48,14 @@ Properties, Updates) to "Only update this game when I launch it".
 
 After the game updates, try your mod on the new build. If it works, add the build's number
 (`python wcmods.py game build` shows it) and share the new version. A mod without `game_builds` was
-made for build 24847281, like every mod made before the list existed.
+made for build 24847281, like every mod made before the list existed. Each build is a whole number;
+`"26184573"` and `26184573.0` are read as that number too, and a `game_builds` with no build number in
+it is said on the mod's card ("mod.json's game_builds should be a list of build numbers like [26184573]").
+
+A mod that is only data is checked on the new build by each player's Clan Mod Studio (above), which adds
+the build to its `game_builds` when it builds, so for those, listing the new build is a courtesy. A mod
+with code, cooked content or replaced files is only trusted on the builds it lists: list the new one once
+you've tried it.
 
 Beside it, `"wcmods"` says the oldest wcmods that can build the mod, when it uses something a wcmods
 release added (a palette's coat presets need 0.4.0):

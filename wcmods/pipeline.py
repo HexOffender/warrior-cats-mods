@@ -117,14 +117,16 @@ def names_without_text(cfg, ctx, game):
 SHARED_LUA = (view, draw, world, menu, game_lua)
 
 
-def leave_out(cfg, mods, build=None):
+def leave_out(cfg, mods, build=None, trusted=()):
     """{mod id: why} for the mods that are on but that an install leaves out, with a warning instead of
-    stopping: made for an older version of the game (gamebuild.held_back), or needing a newer Clan Mod Studio
-    than this one (mods.too_new), and the mods that need those."""
-    return {**modlib.too_new(mods), **gamebuild.held_back(cfg, mods, build)}
+    stopping: made for an older version of the game (gamebuild.held_back; `trusted` ones count as used anyway),
+    or needing a newer Clan Mod Studio than this one (mods.too_new), and the mods that need those."""
+    return {**modlib.too_new(mods), **gamebuild.held_back(cfg, mods, build, trusted)}
 
 
-def build(cfg, mods, out_dir, log=print):
+def build(cfg, mods, out_dir, log=print, trusted=()):
+    """Build every enabled mod into out_dir and return the manifest. `trusted`: mods made for an older version
+    of the game to build all the same, as if used anyway (the re-check after a game update, gamebuild.recheck)."""
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
     os.makedirs(out_dir)
@@ -134,7 +136,7 @@ def build(cfg, mods, out_dir, log=print):
     old = gamebuild.outdated(cfg, mods, build)
     # Those mods, and the ones that need them, and the mods that need a newer wcmods than this one (mod.json
     # "wcmods"): left out with a warning, so neither a game update nor an older wcmods stops installing.
-    left_out = leave_out(cfg, mods, build)
+    left_out = leave_out(cfg, mods, build, trusted)
     # A mod that needs another mod ("requires" in mod.json) which is missing or off is left out, and
     # the report says why, so installing stops until that's sorted (or --force leaves it out).
     unmet = modlib.unmet(mods, left_out)
@@ -231,8 +233,11 @@ def build(cfg, mods, out_dir, log=print):
                 "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
                 "csv_changes": csv_changes, "table_rows": table_changes, "files": sorted(ctx.files),
                 "built": datetime.datetime.now().isoformat(timespec="seconds"), "left_out": left_out}
-    manifest["outdated"] = [{"id": i, "name": titles[i], "made_for": o["made_for"], "used": o["allowed"]}
+    manifest["outdated"] = [{"id": i, "name": titles[i], "made_for": o["made_for"], "used": o["allowed"] or i in trusted}
                             for i, o in old.items()]
+    for m in mods:   # a game_builds that holds no build number: it counts as made for the oldest build
+        if m.enabled and gamebuild.builds_problem(m):
+            manifest["warnings"].append(f"{m.name}: {gamebuild.builds_problem(m)}")
     for o in manifest["outdated"]:
         manifest["warnings"].append(
             f"{o['name']} was made for an older version of the game, so it may not work or may behave "

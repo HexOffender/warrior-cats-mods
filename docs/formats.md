@@ -396,6 +396,7 @@ keeps the last .zip of each of the mods that go with Clan Mod Studio fetched fro
 | `oodle_dll` | An `oo2core_*_win64.dll` from another installed game, for faster decoding of the game's files (wcmods decodes them itself without one) |
 | `allow_code_mods` | `true` lets mods that carry code run it (build steps, in-game scripts, studio pages, C++): only for mods from people you trust. Options on the Settings and repair page |
 | `allow_outdated` | `{ "<mod>": [<build>, ...] }`: mods used anyway on game builds they weren't made for ("Use it anyway", `wcmods allow-outdated`) |
+| `rechecked` | `{ "build": <build>, "when": "<date and time>", "results": { "<mod>": "ok" or why it didn't build } }`: what the check after a game update found, for the installed build (`wcmods/exe/gamebuild.py`, `recheck`). A mod that passed is also marked in its own mod.json's `game_builds`; one marked "couldn't check" is tried again |
 | `pack_before` | `{ "pack": "<pack>", "on": ["<mod>", ...] }`: while a mod pack is played on its own, the mods that were on before it (the Mod packs page's Back to my mods) |
 | `console` | Whether the game's `~` console (UE4SS's console enabler) is on |
 | `debug_cat_look` | `true` makes your cat's colours script log every cat it sees |

@@ -24,8 +24,8 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 export async function startStudio(folders, env = {}) {
   const own = { ...process.env, WCMODS_DATA: folders.data, WCMODS_FAKE_RUNNING: "0", TEMP: folders.temp, TMP: folders.temp,
     TMPDIR: folders.temp, ...env };
-  delete own.WCMODS_GAME_BUILD;   // a build number a developer set to try an update
-  if (!env.WCMODS_RELEASES) delete own.WCMODS_RELEASES;
+  // A build number a developer set to try an update, and a folder standing in for GitHub: only a test's own.
+  for (const k of ["WCMODS_GAME_BUILD", "WCMODS_RELEASES"]) if (!(k in env)) delete own[k];
   const proc = spawn(PYTHON, ["-I", "wcmods.py", "studio", "--no-browser", "--port", "0"],
     { cwd: REPO, env: own, stdio: ["ignore", "pipe", "pipe"] });
   let out = "", err = "";

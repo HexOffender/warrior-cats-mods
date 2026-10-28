@@ -17,6 +17,21 @@ class Unreadable(RuntimeError):
     or verifying the game, or game_dir pointing at the wrong folder), or can't be read."""
 
 
+def unreadable(cfg):
+    """Why the game's files can't be read right now (no game folder; its pak or container missing, being
+    updated, or locked), or None when both open."""
+    if not cfg.game_dir:
+        return "the game hasn't been found"
+    try:
+        game = GameFiles(cfg)
+        game.pak, game.io
+    except Unreadable as e:
+        return str(e)
+    except (OSError, ValueError) as e:   # there, but not a pak or container wcmods can read
+        return f"the game's files can't be read: {e}"
+    return None
+
+
 class GameFiles:
     def __init__(self, cfg):
         self.cfg = cfg

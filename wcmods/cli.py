@@ -719,9 +719,16 @@ def _game_build(ctx, args):
         if fit["moved"]:
             print("moved, and followed: " + ", ".join(gamebuild.describe(k) for k in fit["moved"]))
     found = mods.discover(ctx.mods_root)
+    # Data mods made for an older build are built on this one first: the ones that build go in from now on.
+    if gamebuild.recheck_due(ctx.cfg, found, now["build"]):
+        gamebuild.recheck(ctx.cfg, found, ctx.build_dir, log=lambda m: print("  " + m))
+        found = mods.discover(ctx.mods_root)
+    checked = gamebuild.checked(ctx.cfg, now["build"]) if now["build"] else {}
     for mod_id, o in gamebuild.outdated(ctx.cfg, found, now["build"]).items():
+        why = checked.get(mod_id)
         print(f"  {mod_id}: made for build {', '.join(map(str, o['made_for']))}; " +
-              ("used anyway" if o["allowed"] else "left out (`wcmods allow-outdated " + mod_id + "` uses it anyway)"))
+              ("used anyway" if o["allowed"] else "left out (`wcmods allow-outdated " + mod_id + "` uses it anyway)") +
+              (f"; checked on this build: {why}" if why and why != "ok" else ""))
 
 
 def _game_signatures(ctx, args):
