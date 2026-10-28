@@ -31,14 +31,16 @@ def test_the_save_check_says_an_item_without_a_description_is_left_out(studio):
     folder = make_mod(studio, "mine")
     half = dict(HERB, id="NewHerb", name="New herb", description="")
     r = call(studio, "PUT", "mods/mine/file/items.json", {"text": json.dumps({"items": [half, HERB]})})
-    assert r["problems"] == ["NewHerb: it has no description, so it's left out of the game"]
+    # Not a problem: the rest of the file goes in without it, so it's said as a note, by name.
+    assert r["problems"] == []
+    assert r["left_out"] == [{"id": "NewHerb", "name": "New herb", "why": "no description"}]
     assert json.loads(open(os.path.join(folder, "items.json"), encoding="utf-8").read())["items"][0] == half, "saved all the same"
     # Once it has one, the line goes.
     r = call(studio, "PUT", "mods/mine/file/items.json", {"text": json.dumps({"items": [dict(half, description="x"), HERB]})})
-    assert r["problems"] == []
+    assert r["problems"] == [] and r["left_out"] == []
     # The check is the build's: a mistake in the file is said the same way it always was.
     r = call(studio, "PUT", "mods/mine/file/items.json", {"text": json.dumps({"items": [dict(HERB, id="Moon Herb")]})})
-    assert len(r["problems"]) == 1 and "letters and digits" in r["problems"][0]
+    assert len(r["problems"]) == 1 and "letters and digits" in r["problems"][0] and r["left_out"] == []
 
 
 def test_uploads_never_overwrite_another_items_picture(studio, tmp_path):

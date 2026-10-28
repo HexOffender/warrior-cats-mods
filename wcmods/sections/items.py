@@ -148,14 +148,15 @@ class ItemsSection(Section):
                 if item.get(key) is not None and not isinstance(item[key], str):
                     raise ValueError(f"{what} ({item['id']}): \"{key}\" should be text")
             # One the Items page saved half made: the others still go in, and the save says so.
+            name = (item.get("name") or "").strip()
             blank = next((key for key in ("name", "description") if not (item.get(key) or "").strip()), None)
             if blank:
                 if ctx is not None:
-                    ctx.warn(f"{mod.id}: {item['id']}: it has no {blank}, so it's left out of the game")
+                    ctx.leave_out(mod.id, item["id"], name, f"no {blank}", f"it has no {blank}")
                 continue
             if _accessory(item) and item.get("like") and all(item.get(k) is None for k in OWN_LOOK):
                 if ctx is not None:
-                    ctx.warn(f"{mod.id}: {item['id']}: {NOTHING_OWN}, so it's left out of the game")
+                    ctx.leave_out(mod.id, item["id"], name, "nothing of its own yet", NOTHING_OWN)
                 continue
             for key in TEXT_KEYS:
                 if item.get(key) is not None and not isinstance(item[key], str):
@@ -195,6 +196,10 @@ class ItemsSection(Section):
     def build(self, ctx, items):
         game = Game(ctx)
         slot = _current_slot(ctx)
+        # The items collect left out until they're finished: a recipe that asks for one says so.
+        for x in getattr(ctx, "left_out", []):
+            if x.get("section") in (self.id, None):
+                game.left[(x["mod"], x["id"])] = (x["name"], x["why"])
         made = {}                      # tag -> mod id
         who = {}                       # "<mod>/<id>" -> tag: the build's note, for the Items page
         looks = []                     # new accessory looks, for the GUI manager's lists
@@ -206,7 +211,7 @@ class ItemsSection(Section):
                          key=lambda mi: game.kind(mi[1]) != "material")
         for mod, item in ordered:
             try:
-                tag, rows = game.item(item, made)
+                tag, rows = game.item(item, made, mod.id)
                 look = rows.get("look")
                 icon = rows["info"]["Icon"]
                 if isinstance(icon, (Picture, Recolour)):        # a new texture for the icon
@@ -249,6 +254,8 @@ class ItemsSection(Section):
                     ground[tag] = entry
             except ValueError as e:
                 ctx.warn(f"{mod.id}: {item['id']}: {e}")
+                if game.kind(item) == "material":    # made before the herbs: their recipes say why it's missing
+                    game.left[(mod.id, item["id"])] = (item.get("name") or item["id"], str(e))
                 continue
             made[tag] = mod.id
             key = f"{mod.id}/{item['id']}"     # a herb and a material may share an id: then both, in a list
@@ -276,7 +283,7 @@ class ItemsSection(Section):
                              "e.g. Cosmetic.Head.MossPatch.1)")
                     continue
                 try:
-                    cost = game.cost(recipe, made)
+                    cost = game.cost(recipe, made, mod.id)
                 except ValueError as e:
                     ctx.warn(f"{mod.id}: recipes: {name}: {e}")
                     continue
@@ -348,6 +355,7 @@ class Game:
         self.targets = sorted({r["Target"] for r in self.use.values()})
         self.materials = {t for t in self.info if t.startswith(TAG_ROOT + "Materials.")}
         self.added = {}                # accessory name -> new looks given out so far
+        self.left = {}                 # (mod id, item id) -> (name, why) for a mod's item left out of this build
         self._looks = None
         self._meshes = None
         self._pickups = None
@@ -377,8 +385,9 @@ class Game:
                                     "material" if like and ".Materials." in like else
                                     "accessory" if like and ".Cosmetic." in like else None)
 
-    def item(self, item, made):
-        """(tag, {"info": row values, "use": Consumables row, "recipe": BarteringCost row}) for an item."""
+    def item(self, item, made, mod_id=None):
+        """(tag, {"info": row values, "use": Consumables row, "recipe": BarteringCost row}) for an item (of
+        the mod mod_id, for what its recipe says about that mod's materials)."""
         like = None
         if item.get("like"):
             like = self.full(item["like"])
@@ -425,7 +434,7 @@ class Game:
         if item.get("recipe"):
             if kind == "material":
                 raise ValueError("the medicine cat's bartering only makes herbs and accessories, not materials")
-            rows["recipe"] = {"---": tag, "Cost": self.cost(item["recipe"], made), "bIsHidden": "FALSE"}
+            rows["recipe"] = {"---": tag, "Cost": self.cost(item["recipe"], made, mod_id), "bIsHidden": "FALSE"}
         give = item.get("give")
         if give is not None and (not isinstance(give, int) or isinstance(give, bool) or not 0 < give <= 999):
             raise ValueError('"give" should be a whole number from 1 to 999')
@@ -588,7 +597,9 @@ class Game:
         return {"---": tag, "EffectOnUse": effect, "bCombat": flags["bCombat"], "bExploration": flags["bExploration"],
                 "Target": target, "bRemoveAfterCombat": flags["bRemoveAfterCombat"], "Type": kind}
 
-    def cost(self, recipe, made):
+    def cost(self, recipe, made, mod_id=None):
+        """A BarteringCost "Cost": the game's materials, or ones the build made (`made`). One of mod_id's own
+        materials left out of the build (self.left: not finished yet, or refused) is said as such."""
         if not isinstance(recipe, dict):
             raise ValueError('"recipe" should map materials to how many, e.g. {"Dandelion": 2}')
         parts = []
@@ -598,6 +609,9 @@ class Game:
                 tag = f"{TAG_ROOT}Materials.{name}"
             # Only materials: the game's recipes never ask for a herb.
             if tag is None or not (tag in self.materials or (tag in made and tag.startswith(TAG_ROOT + "Materials."))):
+                if (mod_id, name) in self.left:
+                    what, why = self.left[(mod_id, name)]
+                    raise ValueError(f"\"recipe\": {what} is one of this mod's, left out: {why}")
                 raise ValueError(f"\"recipe\": there's no material {name} (the game's are "
                                  f"{', '.join(sorted(t.rsplit('.', 1)[-1] for t in self.materials))})")
             if not isinstance(n, int) or isinstance(n, bool) or not 0 < n <= 99:

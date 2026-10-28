@@ -74,24 +74,32 @@ class AnimationsSection(Section):
         if not isinstance(raw, dict) or not isinstance(raw.get("animations", []), list):
             raise ValueError('animations.json should be an object: {"animations": [...]}')
         found, seen = [], set()
+        files = _game_files(ctx)
         for i, a in enumerate(raw.get("animations", [])):
             what = f"animations.json: animation {i + 1}"
             if not isinstance(a, dict):
                 raise ValueError(f"{what} should be an object")
+            name = a.get("name").strip() if isinstance(a.get("name"), str) else ""
             # One the Animations page saved half made: the others still install, and the save says so.
             if isinstance(a.get("id"), str) and not a.get("file") and not a.get("game"):
                 if ctx is not None:
-                    ctx.warn(f"{mod.id}: {a['id']}: nothing chosen for it to play yet, so it's left out")
+                    ctx.leave_out(mod.id, a["id"], name, "nothing chosen to play yet",
+                                  "nothing chosen for it to play yet")
                 continue
-            if isinstance(a.get("id"), str) and (a.get("name") is None or isinstance(a["name"], str)
-                                                 and not a["name"].strip()):
+            if isinstance(a.get("id"), str) and not name and (a.get("name") is None or isinstance(a["name"], str)):
                 if ctx is not None:
-                    ctx.warn(f"{mod.id}: {a['id']}: it has no name, so it's left out")
+                    ctx.leave_out(mod.id, a["id"], name, "no name", "it has no name")
                 continue
             check(a, what)
             if a["id"].lower() in seen:     # the game's package names are any case
                 raise ValueError(f"{what}: another animation is called {a['id']} too (ids differ in more than case)")
             seen.add(a["id"].lower())
+            # A game sequence it names that isn't there (misspelled, or a game update moved it): left out now, so
+            # the save says so, when the game's files can be read; else the build says it.
+            missing = _missing_sequence(files, a)
+            if missing:
+                ctx.leave_out(mod.id, a["id"], name, missing)
+                continue
             found.append(a)
         return found or None
 
@@ -164,6 +172,31 @@ class AnimationsSection(Section):
         if emotes:
             ctx.add_ue4ss_mod(EMOTES_SCRIPT, {"Scripts/main.lua": animations.emotes_script(emotes), "enabled.txt": ""})
             ctx.note("emotes", [e["id"] for e in emotes])
+
+
+def _game_files(ctx):
+    """The game's file list, or None while it can't be read (no ctx, the studio's save check with no game
+    folder, a pak Steam is updating): then the sequences an animation names are checked by the build."""
+    from ..gamefiles import Unreadable
+    try:
+        return ctx.game.io.files if ctx is not None else None
+    except (AttributeError, OSError, Unreadable):
+        return None
+
+
+def _missing_sequence(files, a):
+    """Why the game's sequence an animation names ("game", "replaces") can't be found in `files` (find_sequence's
+    sentence, "the game has no sequence A_CatMaster_Yawm_1 for cats ..."), or None when they're there or the
+    game's files can't be read."""
+    if files is None:
+        return None
+    for key in ("game", "replaces"):
+        if a.get(key):
+            try:
+                animations.find_sequence(files, a.get("for", "cat"), a[key])
+            except ValueError as e:
+                return str(e)
+    return None
 
 
 def check(a, what):

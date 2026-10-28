@@ -16,6 +16,7 @@ from wcmods import luacheck
 from wcmods.formats import anim
 from wcmods.formats.cooked import NAME_HASH_VERSION, write_header
 from wcmods.formats.cityhash import name_hash
+from wcmods.sdk import BuildContext
 from wcmods.lua import source
 from wcmods.sections.animations import AnimationsSection, check
 
@@ -508,7 +509,8 @@ def test_animations_json_is_read_and_checked(tmp_path):
     ctx = FakeCtx()
     (tmp_path / "animations.json").write_text(json.dumps({"animations": [{"id": "New", "name": "New"}, wave]}))
     assert AnimationsSection().collect(mod, ctx) == [wave]
-    assert ctx.warnings == ["m: New: nothing chosen for it to play yet, so it's left out"]
+    assert ctx.warnings == ["m: New: nothing chosen for it to play yet, so it's left out of the game"]
+    assert [(x["id"], x["name"], x["why"]) for x in ctx.left_out] == [("New", "New", "nothing chosen to play yet")]
 
 
 class FakeCtx:
@@ -516,6 +518,9 @@ class FakeCtx:
         self.cfg = type("Cfg", (), {"ue4ss_mods_dir": "x"})()
         self.made, self.shared, self.scripts, self.warnings, self.notes, self.replaced = [], {}, {}, [], {}, []
         self.copied = []         # add_animation_from_game's
+        self.left_out, self.current = [], None
+
+    leave_out = BuildContext.leave_out
 
     def add_animation(self, name, read, kind="cat", clip=None, claws=False, source="", key=None):
         if "Broken" in name:
@@ -634,7 +639,30 @@ def test_an_animation_without_a_name_is_left_out_with_a_warning(tmp_path):
         (tmp_path / "animations.json").write_text(json.dumps({"animations": [good, nameless]}))
         ctx = FakeCtx()
         assert AnimationsSection().collect(mod, ctx) == [good]
-        assert ctx.warnings == ["m: New: it has no name, so it's left out"]
+        assert ctx.warnings == ["m: New: it has no name, so it's left out of the game"]
+        assert [(x["name"], x["why"]) for x in ctx.left_out] == [("New", "no name")]
+
+
+CAT_ANIMS = "Wrc/Content/Art/Characters/CatMaster/Animations/"
+
+
+def test_a_game_sequence_that_isnt_there_is_left_out_when_the_games_files_can_be_read(tmp_path):
+    """A misspelled "game" or "replaces" is left out at collect, so the studio's save says so, not only the build."""
+    from types import SimpleNamespace
+    mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()
+    good = {"id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "emote": True}
+    typo = {"id": "Stretch", "name": "Big stretch", "game": "A_CatMaster_Strech_1"}
+    swap = {"id": "RunTrot", "name": "Run as the trot", "game": "A_CatMaster_Run_1", "replaces": "A_CatMaster_Trott_1"}
+    (tmp_path / "animations.json").write_text(json.dumps({"animations": [good, typo, swap]}))
+    ctx = FakeCtx()
+    ctx.game = SimpleNamespace(io=SimpleNamespace(files=[CAT_ANIMS + f"A_CatMaster_{n}_1.uasset" for n in ("Yawn", "Run", "Trot")]))
+    assert AnimationsSection().collect(mod, ctx) == [good]
+    assert [(x["name"], x["why"]) for x in ctx.left_out] == [
+        ("Big stretch", "the game has no sequence A_CatMaster_Strech_1 for cats"),
+        ("Run as the trot", "the game has no sequence A_CatMaster_Trott_1 for cats")]
+    assert ctx.warnings[0] == "m: Stretch: the game has no sequence A_CatMaster_Strech_1 for cats, so it's left out of the game"
+    # While the game's files can't be read, they go on to the build, which says it there.
+    assert AnimationsSection().collect(mod, FakeCtx()) == [good, typo, swap]
 
 
 def test_describe_marks_clips_over_the_limit():

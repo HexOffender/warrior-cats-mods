@@ -25,6 +25,19 @@ export function itemId(name, taken = [], avoid = []) {
   return id;
 }
 
+// Give an item another id (a new one's follows its name until it's saved): the mod's other items that ask
+// for it in their recipe (one of "Your materials", by its id) ask for it by the new one, in the same place.
+export function renameItem(items, it, id) {
+  const old = it.id;
+  it.id = id;
+  if (!old || old === id) return it;
+  for (const x of items) {
+    if (x === it || !x.recipe || typeof x.recipe !== "object" || !(old in x.recipe)) continue;
+    x.recipe = Object.fromEntries(Object.entries(x.recipe).map(([k, n]) => [k === old ? id : k, n]));
+  }
+  return it;
+}
+
 // A picture of the mod's own (a path in its folder), not one of the game's items or textures.
 export const isPicture = v => typeof v === "string" && (v.startsWith("pictures/") || v.toLowerCase().endsWith(".png"));
 
@@ -113,16 +126,49 @@ export function effectName(effect, herbs) {
   const who = herbs.filter(x => x.effect === effect).map(x => x.name);
   return who.length ? `${who.slice(0, 2).join(", ")}'s` : effect.replace("Gameplay.Effect.Consumable.", "").replace(/\./g, " ");
 }
+// The herbs with an effect, the ones for you first (a stable sort: otherwise in the game's order).
+const herbsOf = (effect, herbs) => herbs.filter(h => h.effect === effect)
+  .sort((a, b) => (a.target === "OwnerTeam") - (b.target === "OwnerTeam"));
+// The choices for "What it does": one for each of the game's herbs that does something, in the order of
+// `effects` (/game/items' list) and, for one effect, the herb for you first: Marigold Petal ("Heals 50 health")
+// and Wintergreen Berries ("Heals the whole team 50 health") share an effect and are two choices. An effect no
+// herb has (a game update's) is a choice of its own, by its name. [{value: the herb's short id, or the
+// effect, text}]
+export function effectChoices(herbs, effects = []) {
+  const order = [...effects, ...herbs.map(h => h.effect).filter(e => e && !effects.includes(e))];
+  const out = [];
+  for (const effect of [...new Set(order)]) {
+    const who = herbsOf(effect, herbs);
+    if (!who.length) out.push({ value: effect, text: effectName(effect, herbs) });
+    for (const h of who) out.push({ value: h.short, text: h.words ? `${h.words} (${h.name})` : `${h.name}'s` });
+  }
+  return out;
+}
+// Which of effectChoices an item's keys are: "" for none (it does what the herb it starts from does), else
+// the herb whose effect, who for and when match the item's (the one chooseEffect copied), else the first
+// herb with its effect, else the effect itself (written by hand: the page offers it as it is).
+const WHO_WHEN = ["target", "combat", "exploring", "fight_only"];
+export function effectChoice(it, herbs) {
+  if (!it.effect) return "";
+  const who = herbsOf(it.effect, herbs);
+  const same = who.find(h => WHO_WHEN.every(k => it[k] === undefined || h[k] === undefined || it[k] === h[k]));
+  return (same || who[0] || { short: it.effect }).short;
+}
 // The keys an effect's herb brings with it: choosing "Whole team +50% Strength for the fight" makes the herb
-// work as that one does (who for, and when), so what the list said is what it does.
-export const EFFECT_KEYS = ["effect", "type", "target", "combat", "exploring", "fight_only"];
-export function chooseEffect(it, effect, herbs) {
+// work as that one does (who for, and when), so what the list said is what it does. `choice`: one of
+// effectChoices' values (a herb's short id, or an effect, which takes the herb it's named by), "" for none.
+export const EFFECT_KEYS = ["effect", "type", ...WHO_WHEN];
+export function chooseEffect(it, choice, herbs) {
   for (const k of EFFECT_KEYS) delete it[k];
-  const h = effect ? effectHerb(effect, herbs) : null;
-  if (!h) return it;
-  it.effect = effect;
+  if (!choice) return it;
+  const h = herbs.find(x => x.short === choice && x.effect) || effectHerb(choice, herbs);
+  if (!h) {
+    it.effect = choice;   // an effect no herb has: as it is
+    return it;
+  }
+  it.effect = h.effect;
   if (h.type) it.type = h.type;
-  for (const k of ["target", "combat", "exploring", "fight_only"]) if (h[k] !== undefined) it[k] = h[k];
+  for (const k of WHO_WHEN) if (h[k] !== undefined) it[k] = h[k];
   return it;
 }
 

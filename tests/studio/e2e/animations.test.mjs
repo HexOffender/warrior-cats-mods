@@ -172,7 +172,7 @@ test("game emote flow: one of the game's animations on a key, and another in a g
   await page.waitFor(() => /Run: 0\.63 s\./.test(document.querySelector('[data-key="editor:animation"]').textContent));
   await page.click('input[aria-label="Plays where the game plays one of its own"]');
   await choose(page, "The game's animation it plays in place of", "A_CatMaster_Trot_1");
-  await page.waitFor(() => /plays Run where the game played Trot \(0\.47 s; fitted to its 15 keys\)/.test(document.querySelector('[data-key="editor:animation"]').textContent));
+  await page.waitFor(() => /plays Run where the game played Trot \(0\.47 s; fitted to its 15 frames\)/.test(document.querySelector('[data-key="editor:animation"]').textContent));
   assert.deepEqual((await json(page)).animations.at(-1), { id: "RunAsTheTrot", name: "Run as the trot", game: "A_CatMaster_Run_1", replaces: "A_CatMaster_Trot_1" });
   assert.equal(await page.evaluate(() => [...document.querySelectorAll('[data-key="editor:animation"] h3')].some(h => h.textContent === "How it plays")), false,
     "it plays as the game played the one it replaces");

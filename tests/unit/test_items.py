@@ -8,6 +8,7 @@ import re
 
 import pytest
 
+from wcmods.sdk import BuildContext
 from wcmods.sections import items as items_mod
 from wcmods.sections.items import EFFECT_WORDS, NOTHING_OWN, Game, ItemsSection
 
@@ -17,10 +18,10 @@ HERB = {"id": "MoonHerb", "like": "MediumHealingHerb", "name": "Moon Herb", "des
 
 class Ctx:
     def __init__(self):
-        self.warnings = []
+        self.warnings, self.left_out, self.current = [], [], None
 
-    def warn(self, text):
-        self.warnings.append(text)
+    warn = BuildContext.warn
+    leave_out = BuildContext.leave_out
 
 
 def collect(tmp_path, data, ctx=None):
@@ -39,6 +40,9 @@ def test_an_item_without_a_name_or_description_is_left_out_with_a_warning(tmp_pa
     got = collect(tmp_path, {"items": [half, HERB]}, ctx)
     assert got == {"items": [HERB], "recipes": {}}, "the other item still goes in"
     assert ctx.warnings == [f"mine: NewHerb: it has no {key}, so it's left out of the game"]
+    # Listed for the studio's save too, by name (its id when it has none), with why in a few words.
+    name = "NewHerb" if key == "name" else "Moon Herb"
+    assert ctx.left_out == [{"section": None, "mod": "mine", "id": "NewHerb", "name": name, "why": f"no {key}"}]
     # Alone, it leaves nothing to build.
     assert collect(tmp_path, {"items": [half]}) is None
     # A name or description that isn't text is a mistake in the file, not a half-made item.
@@ -51,6 +55,7 @@ def test_an_accessory_with_nothing_of_its_own_is_warned(tmp_path):
     ctx = Ctx()
     assert collect(tmp_path, {"items": [bare, HERB]}, ctx) == {"items": [HERB], "recipes": {}}
     assert ctx.warnings == [f"mine: Collar: {NOTHING_OWN}, so it's left out of the game"]
+    assert [(x["name"], x["why"]) for x in ctx.left_out] == [("Collar", "nothing of its own yet")]
     for own in ({"texture": {"tint": "#a8c4ff"}}, {"model": "models/c.glb"}, {"place": {"up": 1}}, {"opacity": 0.5}):
         assert collect(tmp_path, {"items": [dict(bare, **own)]})["items"][0]["id"] == "Collar", own
     # One the build gets anyway (its kind given, with a look the game has) is refused there in the same words.
@@ -187,7 +192,7 @@ def game_of(ctx):
     game.recipes = {}
     game.effects, game.types, game.targets = ["Gameplay.Effect.Consumable.Health.2"], ["Health"], ["Owner", "OwnerTeam"]
     game.materials = {ROOT + "Materials.Dandelion", ROOT + "Materials.Moss"}
-    game.added, game._looks, game._meshes, game._pickups, game._plain = {}, {}, {}, set(), {}
+    game.added, game._looks, game._meshes, game._pickups, game._plain, game.left = {}, {}, {}, set(), {}, {}
     return game
 
 
@@ -254,3 +259,15 @@ def test_a_herb_and_a_material_with_one_id_have_their_own_icons(tmp_path, monkey
     assert sorted(ctx.textures) == ["mine/T_Consumable_Gem_Icon", "mine/T_Materials_Gem_Icon"]
     # Both are in the note under their mod and id: the material (made first) and the herb.
     assert ctx.notes["items"] == {"mine/Gem": [ROOT + "Materials.Gem", ROOT + "Consumable.Gem"]}
+def test_a_recipe_asking_for_a_material_of_the_mods_that_was_left_out_says_so():
+    """The herb's recipe names its mod's own material by id; when that material was left out (no description
+    yet, or refused by the build), the recipe says that rather than that there's no such material."""
+    game = object.__new__(Game)
+    game.info, game.materials = {}, {"Gameplay.Inventory.Materials.Dandelion"}
+    game.left = {("mine", "Moonstone"): ("Moonstone", "no description")}
+    with pytest.raises(ValueError, match="Moonstone is one of this mod's, left out: no description"):
+        game.cost({"Moonstone": 1}, {}, "mine")
+    with pytest.raises(ValueError, match="there's no material Moonstone"):
+        game.cost({"Moonstone": 1}, {}, "other")
+    assert game.cost({"Moonstone": 2}, {"Gameplay.Inventory.Materials.Moonstone": "mine"}, "mine") == \
+        "Gameplay.Inventory.Materials.Moonstone,2"

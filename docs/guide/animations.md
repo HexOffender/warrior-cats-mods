@@ -72,7 +72,10 @@ game plays the one it replaced.
 ## Common mistakes
 
 - **Nothing chosen yet.** An animation needs one of the game's, or a file. Until it has one, the list says
-  "needs an animation" and it's left out of the game; the rest of the mod still goes in.
+  "needs an animation" and it's left out of the game; the rest of the mod still goes in. The save says so
+  under the Editing mod bar: "Saved. Left out of the game until finished: Wave (nothing chosen to play
+  yet)." It says the same about one of the game's animations the game hasn't got (a name typed in by
+  hand, with a mistake in it).
 - **A key something else uses.** F6 turns mouse look on and off unless you changed its key, F11 is the
   game's full screen, and Insert opens the mod menu. Two emotes on one key: only one of them would play.
   The key dialog says so when you press a key another emote has.
@@ -85,7 +88,8 @@ game plays the one it replaced.
   aside; change it back before you save or leave the page and it comes back. Changing **Where it comes
   from** or **What it does** puts aside what the other choice used, the same way.
 - **Sharing a mod with one of the game's animations.** Whoever adds it needs this version of Clan Mod
-  Studio or newer (0.4.0); an older one leaves that mod's animations out.
+  Studio or newer (0.4.0). An older one leaves each of the game's animations out (its log says "no file
+  chosen yet") and installs the mod's others.
 
 ## Undo
 

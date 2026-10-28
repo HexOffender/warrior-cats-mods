@@ -69,8 +69,9 @@ export default {
       el("div", { class: "row" }, ...kinds.map(kitButton)));
     root.append(head, target.element, lastBox, kits, editor.element, out.element);
     // After an Apply, what the build said about this mod's animations (wc.installedEvent: not over unsaved
-    // changes); after the studio started again, the last build's, when it's the one in the game.
-    wc.installedEvent(target, result => { lastResult = result; asOf = null; draw(); });
+    // changes); after the studio started again, the last build's, when it's the one in the game. Not after
+    // Check my mods, which put nothing in the game.
+    wc.installedEvent(target, result => { if (wc.onlyChecked(result)) return; lastResult = result; asOf = null; draw(); });
     await target.refresh();
     api.get("/build/last").then(r => {
       if (lastResult || !r.installed || !r.manifest) return;
@@ -160,7 +161,7 @@ export default {
         for (const [group, members] of sequenceGroups(list)) {
           sel.append(el("optgroup", { label: group }, ...members.flatMap(s => sequenceOptions(s).map(o => el("option", { value: o.value, text: o.text })))));
         }
-        if (value && ![...sel.options].some(o => o.value === value)) sel.append(el("option", { value, text: `${value} (as items.json names it)` }));
+        if (value && ![...sel.options].some(o => o.value === value)) sel.append(el("option", { value, text: `${value} (set by hand)` }));
         sel.value = value || "";
         sel.disabled = false;
         status.textContent = "";
@@ -339,7 +340,7 @@ export default {
         facts.textContent = known[kind] ? `${who} plays this where the game played ${plain(kind, a.replaces)}.` : "Reading the game's animations…";
         sequenceFacts(kind, a.replaces).then(f => {
           const what = source === "game" && a.game ? plain(kind, a.game) : "this";
-          facts.textContent = `${who} plays ${what} where the game played ${plain(kind, a.replaces)} (${f.seconds.toFixed(2)} s; fitted to its ${f.keys} keys).` +
+          facts.textContent = `${who} plays ${what} where the game played ${plain(kind, a.replaces)} (${f.seconds.toFixed(2)} s; fitted to its ${f.keys} frames).` +
             (source === "file" ? " Make yours that long to see it at the speed you made it." : "") + " Its footsteps and other cues stay where they were." +
             (f.root_motion ? " The game moves the animal with it in some places (attacks, jumps), so keep the root's path close to the game's." : "");
         }).catch(e => { facts.textContent = e.message; });

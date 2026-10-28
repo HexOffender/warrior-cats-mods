@@ -235,15 +235,17 @@ class Studio:
 
     def check_file(self, mod, file):
         """What would keep a file the studio just saved out of the game: the first part of the check Apply makes
-        (the build section that owns the file reads it, collect()), on this mod alone, as sentences. [] when
-        it's fine. What Apply checks with every mod together (a table's rows and columns, models and pictures,
-        two mods changing the same thing) is still said only then. While the
-        game's files can't be read (no game folder yet, Steam updating it), one line says the check waits for
-        Apply, since some files are checked against the game's tables. A part of the file the check leaves out
-        with a warning (an item or an animation not finished yet) is said too, without the mod's id."""
+        (the build section that owns the file reads it, collect()), on this mod alone. Returns (problems,
+        left_out). problems: sentences, [] when it's fine. What Apply checks with every mod together (a table's
+        rows and columns, models and pictures, two mods changing the same thing) is still said only then. While
+        the game's files can't be read (no game folder yet, Steam updating it), one line says the check waits
+        for Apply, since some files are checked against the game's tables. left_out: the parts of the file
+        collect leaves out because they aren't finished yet (ctx.leave_out: an item with no description, an
+        animation with nothing chosen to play), as {"id", "name", "why"}; the rest of the file goes in without
+        them, so they're not problems: the page says them as a note."""
         sec = owner(file)
         if sec is None or not sec.claims(mod):
-            return []
+            return [], []
         try:
             # Most files are checked without the game's files; one that needs them (data.json's table names)
             # gets CHECK_LATER while they can't be read.
@@ -255,18 +257,23 @@ class Studio:
             # A key a file lacks (str is the key in quotes), or a game file the reader hasn't got.
             what = e.args[0] if len(e.args) == 1 else str(e)
             return [f"{file}: {what} is missing" if isinstance(what, str) and not str(what).startswith("game file")
-                    else CHECK_LATER]
+                    else CHECK_LATER], []
         except ValueError as e:
-            return [str(e)]
+            return [str(e)], []
         except (OSError, Unreadable):   # the game's pak isn't there, or won't open
-            return [CHECK_LATER]
+            return [CHECK_LATER], []
         except (AttributeError, TypeError):   # a list where an object goes, a number where text does: not a Python name
-            return [f"{file} isn't shaped the way the page writes it (docs/formats.md shows how it's laid out)"]
+            return [f"{file} isn't shaped the way the page writes it (docs/formats.md shows how it's laid out)"], []
         except Exception as e:   # noqa: BLE001 - said, not hidden, and never as a Python name
             said = str(e).strip()
-            return [f"{file} couldn't be checked{': ' + said if said else ''}"]
-        # What collect left out with a warning (an item with no name yet): the rest goes in, this doesn't.
-        return [w[len(mod.id) + 2:] if w.startswith(mod.id + ": ") else w for w in ctx.warnings]
+            return [f"{file} couldn't be checked{': ' + said if said else ''}"], []
+        # What collect left out because it isn't finished yet (an item with no description): the rest goes in.
+        left = [{k: x[k] for k in ("id", "name", "why")} for x in ctx.left_out if x["mod"] == mod.id]
+        said = tuple(f"{mod.id}: {x['id']}: " for x in left)
+        # Any other warning collect gives is said as before, without the mod's id.
+        problems = [w[len(mod.id) + 2:] if w.startswith(mod.id + ": ") else w
+                    for w in ctx.warnings if not (said and w.startswith(said))]
+        return problems, left
 
     def restart(self):
         """Start a fresh Clan Mod Studio (in its own window) and stop this one, for the page's Restart the
@@ -605,7 +612,8 @@ class Studio:
                             noted.append("The mod can't note that it needs the Sandbox mode mod, and stays off, until "
                                          f"its mod.json is fixed: {m.problem or e}")
                 # A file half made still saves; what would keep it out of the game is said now, not at Apply.
-                return {"saved": name, "requires": m.requires, "problems": noted + self.check_file(m, name)}
+                problems, left = self.check_file(m, name)
+                return {"saved": name, "requires": m.requires, "problems": noted + problems, "left_out": left}
             if method == "DELETE":
                 if os.path.isfile(path):
                     os.remove(path)

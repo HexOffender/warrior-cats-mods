@@ -125,7 +125,7 @@ test("lastApply reads what the build said about one mod's things", () => {
     "items: mine: MoonHerb: the game already has an item called that; give yours another name",
     "items: mine: recipes: the medicine cat has no recipe for X",
     "items: other: Stone: it has no description, so it's left out of the game",
-    "animations: mine: Yawn: nothing chosen for it to play yet, so it's left out"] };
+    "animations: mine: Yawn: nothing chosen for it to play yet, so it's left out of the game"] };
   assert.deepEqual(story.lastApply(manifest, "items", "mine"), { on: true, said: [
     { id: "MoonHerb", why: "the game already has an item called that; give yours another name" },
     { id: "recipes", why: "the medicine cat has no recipe for X" }] });

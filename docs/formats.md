@@ -244,7 +244,7 @@ drops it for the cat to pick up; without one it lies there as the game's pickup 
 ```
 Animations for cats or one kind of animal (`"for"`: mouse, rat, rabbit, squirrel, bird, fox, badger,
 dog, snake): one of the game's own (`"game"`, by its name, no Blender needed; needs wcmods 0.4.0 or
-newer) or the mod's own, made in Blender and saved as glTF (`"file"`, a `.glb`). A cat's can be an emote:
+newer: an older one leaves each such animation out, "no file chosen yet", and installs the others) or the mod's own, made in Blender and saved as glTF (`"file"`, a `.glb`). A cat's can be an emote:
 a button on the mod menu's Emotes page, and a key. Scripts play any of them (`Game.anims.play`). The
 Animations page's start kit saves the animal rigged to the game's skeleton to animate. They play over
 what the animal is doing, where it stands, and need the script loader (UE4SS). One with `"replaces":

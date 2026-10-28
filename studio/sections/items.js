@@ -6,8 +6,8 @@
 // page's pure parts are in lib/items-model.js.
 import { listEditor, field, itemChoices, itemSelect, lastApply } from "../lib/story.js";
 import { shapeDrawing, asPng, placeMesh } from "../lib/shape.js";
-import { KIND, SLOTS, START_HERB, itemId, isPicture, toJson, fullTag, kindOf, giveOwn, switchKind, effectName,
-  chooseEffect, whoAndWhen, badgeWords, NEW_LOOK, itemStatus, itemsSummary } from "../lib/items-model.js";
+import { KIND, SLOTS, START_HERB, itemId, renameItem, isPicture, toJson, fullTag, kindOf, giveOwn, switchKind,
+  effectName, effectChoices, effectChoice, chooseEffect, whoAndWhen, badgeWords, NEW_LOOK, itemStatus, itemsSummary } from "../lib/items-model.js";
 
 // The keys the page has controls for; others an item has are listed as kept as they are (rarity among them:
 // what it changes in the game hasn't been seen, so there's no control for it). target, combat, exploring and
@@ -84,8 +84,9 @@ export default {
     });
     root.append(head, target.element, lastBox, editor.element, out.element);
     // After an Apply, what the build said about this mod's items (wc.installedEvent: not over unsaved changes);
-    // after the studio started again, the last build's, when it's the one in the game.
-    wc.installedEvent(target, result => { lastResult = result; asOf = null; draw(); });
+    // after the studio started again, the last build's, when it's the one in the game. Not after Check my mods,
+    // which put nothing in the game.
+    wc.installedEvent(target, result => { if (wc.onlyChecked(result)) return; lastResult = result; asOf = null; draw(); });
     await target.refresh();
     api.get("/build/last").then(r => {
       if (lastResult || !r.installed || !r.manifest) return;
@@ -184,7 +185,7 @@ export default {
       const name = el("input", { type: "text", value: it.name || "", maxlength: "40", "aria-label": "Name", placeholder: `For example: ${example.name}`,
         oninput: () => {
           it.name = name.value;
-          if (it._new && it.name.trim()) it.id = itemId(it.name, others(it), gameIds(kind));
+          if (it._new && it.name.trim()) renameItem(items, it, itemId(it.name, others(it), gameIds(kind)));
           techNote.textContent = tagOf(it);
           nameProblem.hidden = !!it.name.trim();
           editor.relabel(i);
@@ -212,7 +213,7 @@ export default {
 
       const kindSel = el("select", { "aria-label": "Kind", onchange: () => {
         switchKind(it, kindSel.value, stash, start, kind);
-        if (it._new) it.id = itemId(it.name, others(it), gameIds(it.kind));
+        if (it._new) renameItem(items, it, itemId(it.name, others(it), gameIds(it.kind)));
         changed(true);
       } }, el("option", { value: "consumable", text: "Herb (it can be used)" }), el("option", { value: "material", text: "Material (for quests and recipes)" }),
         el("option", { value: "accessory", text: "Accessory (something to wear)" }));
@@ -236,7 +237,7 @@ export default {
         el("p", { class: "note", text: "What the game calls it. You don't need it, unless a script or another mod names this item." }), techNote,
         taken ? el("p", { class: "field-problem", text: "The game already has one called that, so this one is left out." }) : null,
         taken ? el("button", { class: "btn small", text: "Give it a name of its own", onclick: () => {
-          it.id = itemId(it.name || it.id, others(it), gameIds(kind));
+          renameItem(items, it, itemId(it.name || it.id, others(it), gameIds(kind)));
           changed(true);
         } }) : null);
       const whatItIs = el("div", { class: "card" }, el("h3", { text: "What it is" }), statusLine(it),
@@ -307,8 +308,11 @@ export default {
       if (kind === "consumable") {
         const effect = el("select", { "aria-label": "What it does", onchange: () => { chooseEffect(it, effect.value, herbs); redraw(); } },
           el("option", { value: "", text: `The same as ${like ? like.name : "the herb it starts from"}${like && like.words ? `: ${like.words}` : ""}` }),
-          ...game.effects.map(e => el("option", { value: e, text: effectName(e, herbs) })));
-        effect.value = it.effect || "";
+          ...effectChoices(herbs, game.effects).map(c => el("option", { value: c.value, text: c.text })));
+        // One herb per choice (two herbs with one effect, for you and for the team, are two choices).
+        const chosen = effectChoice(it, herbs);
+        if (chosen && ![...effect.options].some(o => o.value === chosen)) effect.append(el("option", { value: chosen, text: `${effectName(chosen, herbs)} (set by hand)` }));
+        effect.value = chosen;
         const group = el("select", { "aria-label": "Badge on its icon", onchange: () => { it.group = group.value || undefined; changed(); } },
           el("option", { value: "", text: `The same as ${like ? `${like.name}'s${like.group && like.group !== "None" ? `: ${like.group}` : ""}` : "the herb it starts from"}` }),
           ...game.groups.map(g => el("option", { value: g, text: badgeWords(g, herbs) })));
@@ -326,10 +330,10 @@ export default {
         el("p", { class: "note", text: "Given once, to the cat you're playing, when you Apply. It needs a save to put them in: start the game once first." })));
       if (accessory && like) cards.push(lookCard(it, like, kind));
 
-      // ---------- advanced: a 3D model of your own ----------
+      // ---------- advanced: its shape (a 3D model of your own) and where it sits ----------
       if (!accessory || like) {
         const adv = el("details", { class: "card fold", "data-key": "items:advanced", open: !!(it.model || it.place) || opened.has(it) },
-          el("summary", {}, el("h3", { text: "Advanced: a 3D model of your own (needs Blender)" }),
+          el("summary", {}, el("h3", { text: "Advanced: shape and place (a model of your own needs Blender)" }),
             el("span", { class: "muted", text: "In the game it needs the script loader, which Get set up installs" })));
         let filled = false;
         const fill = () => {

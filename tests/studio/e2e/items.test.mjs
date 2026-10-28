@@ -103,6 +103,12 @@ test("tab from Name lands on Description, and the list's label follows the name 
   await page.evaluate(() => { const n = document.querySelector('input[aria-label="Name"]'); n.value = ""; n.dispatchEvent(new Event("input")); n.focus(); });
   await page.press("Tab");
   assert.equal(await page.evaluate(() => document.querySelector('input[aria-label="Name"]').value), "TeaLeaf");
+  // Saved without a description: a plain note under the bar, by name; nothing in red, and the mod is on.
+  await page.click({ text: "Save to mod" });
+  await page.waitFor(() => !document.querySelector(".left-out").hidden);
+  assert.equal(await page.text(".left-out"), "Saved. Left out of the game until finished: TeaLeaf (no description).");
+  assert.equal(await page.evaluate(() => document.querySelector(".problems").hidden), true);
+  assert.equal(await page.evaluate(() => document.querySelector(".target select").selectedOptions[0].textContent.includes("· off")), false);
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });
@@ -140,15 +146,17 @@ test("card order: everyday cards first, the 3D fold closed, and what a herb does
   await page.waitFor('select[aria-label="What it does"]');
   const titles = () => page.evaluate(() => [...document.querySelectorAll('[data-key="editor:item"] h3')].map(h => h.textContent));
   assert.deepEqual(await titles(), ["What it is", "Icon", "Using it", "The medicine cat's recipe", "Starting with some",
-    "Advanced: a 3D model of your own (needs Blender)"]);
+    "Advanced: shape and place (a model of your own needs Blender)"]);
   assert.equal(await page.evaluate(() => document.querySelector('[data-key="items:advanced"]').open), false);
   assert.doesNotMatch(await page.text('[data-key="editor:item"]'), /\bnull\b|undefined/, "nothing left out shows as a word");
   const effects = await page.evaluate(() => [...document.querySelector('select[aria-label="What it does"]').options].map(o => o.textContent));
+  // One choice a herb: Marigold Petal and the team's Wintergreen Berries share an effect, and both are there.
   assert.deepEqual(effects, ["The same as Marigold Petal: Heals 50 health", "Cures Poisoned (Yarrow Leaves)",
-    "Whole team +50% Strength for the fight (Juniper Poultice)", "Heals 25 health (Horsetail Stalks)", "Heals 50 health (Marigold Petal)"]);
+    "Whole team +50% Strength for the fight (Juniper Poultice)", "Heals 25 health (Horsetail Stalks)", "Heals 50 health (Marigold Petal)",
+    "Heals the whole team 50 health (Wintergreen Berries)"]);
   assert.match(await page.text('[data-key="editor:item"] .card p.muted'), /^Used anywhere, for you$/);
   // Choosing a team's effect makes it that herb's: who it's for and when.
-  await setSelect(page, "What it does", "Gameplay.Effect.Consumable.Buff.Strength.1");
+  await setSelect(page, "What it does", "ThistlePouch");
   await page.waitFor(() => /for your whole team/.test(document.querySelector('[data-key="editor:item"] .card p.muted').textContent));
   const herb = (await json(page)).items.at(-1);
   assert.deepEqual([herb.target, herb.combat, herb.exploring, herb.fight_only], ["OwnerTeam", true, false, true]);
@@ -157,7 +165,7 @@ test("card order: everyday cards first, the 3D fold closed, and what a herb does
   await setSelect(page, "Kind", "accessory");
   await page.waitFor(() => document.querySelector('select[aria-label="A new look of"]'));
   assert.deepEqual(await titles(), ["What it is", "Icon", "The medicine cat's recipe", "Starting with some", "Look",
-    "Advanced: a 3D model of your own (needs Blender)"]);
+    "Advanced: shape and place (a model of your own needs Blender)"]);
   const looks = await page.evaluate(() => [...document.querySelector('select[aria-label="A new look of"]').options].map(o => o.textContent));
   assert.deepEqual(looks, ["Black BloodClan Collar", "Red BloodClan Collar"], "every look of a neck accessory, no head ones");
   assert.deepEqual(page.consoleErrors(), []);
@@ -176,6 +184,16 @@ test("a recipe can ask for a material the same mod adds", { skip }, async () => 
     .map(g => [g.label, [...g.querySelectorAll("option")].map(o => o.textContent)]));
   assert.equal(groups[0][0], "The game's materials");
   assert.deepEqual(groups[1], ["Your materials", ["New herb"]], "the material made just now, by its name");
+  // The herb asks for it; renaming the material (still new, so its id follows its name) keeps the recipe on it.
+  await setSelect(page, "Add a material to the recipe", "NewHerb");
+  await page.waitFor(() => /"NewHerb": 1/.test(document.querySelector('[aria-label="items.json"] pre').textContent));
+  const picks = await page.evaluate(() => document.querySelectorAll(".pick").length);   // the mod's saved items come first
+  await page.click(`[data-focus="pick:${picks - 2}"]`);
+  await page.waitFor(() => !document.querySelector('select[aria-label="Add a material to the recipe"]'));
+  await page.evaluate(() => { document.querySelector('input[aria-label="Name"]').value = ""; });
+  await page.type('input[aria-label="Name"]', "Moonstone");
+  const [stone, herb] = (await json(page)).items.slice(-2);
+  assert.deepEqual([stone.id, herb.recipe], ["Moonstone", { Moonstone: 1 }]);
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });
