@@ -311,8 +311,11 @@ async function runTask(path, title, body = {}) {
       : path === "/play" ? "Started the game; nothing needed applying first."
       : path === "/uninstall" ? "Took every mod out of the game. Your mods are still here." : "Done.";
     toast(path === "/play" ? "Starting the game…" : `${title}: done`);
+    // Some key changes work only with the old key remapper, which Play doesn't start: said where it stays.
+    const launcher = path === "/play" && r.result && r.result.remaps;
+    if (launcher) toast("Some of your key changes only work when you start the game with Play with key remaps.bat.");
     // After Play the log gets out of the way, unless it has something to say.
-    if (path === "/play" && !trouble) hideLater = setTimeout(hideDrawer, 4000);
+    if (path === "/play" && !trouble && !launcher) hideLater = setTimeout(hideDrawer, 4000);
     bus.emit("installed", r.result);
     if (path === "/palettes/apply") bus.emit("mods-changed");   // it turned mods on and off
   } catch (e) {

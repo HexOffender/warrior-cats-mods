@@ -211,3 +211,36 @@ test("Mouse look saves by itself: the switch, its key and the tilt limits, and i
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });
+
+test("the status line says not in the game yet after a save, and nothing while there are unsaved changes", { skip }, async () => {
+  const page = await browser.page();
+  await open(page);   // My mods, saved by the tests above and never applied
+  await page.waitFor(() => { const w = document.querySelector(".controls-where"); return w && !w.hidden; }, 20000);
+  assert.equal(await page.text(".controls-where"), "Saved, not in the game yet: Apply to game.");
+  await page.click('button[aria-label="Change the keyboard key for Meow"]');
+  await page.press("n");
+  await page.waitFor(() => document.querySelector(".controls-where").hidden);
+  await page.click({ text: "Save to mod" });
+  await page.waitFor(() => { const w = document.querySelector(".controls-where"); return !w.hidden && /not in the game yet/.test(w.textContent); });
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
+test("the Play drawer stays open when remaps need the launcher, and says so", { skip }, async () => {
+  const page = await browser.page();
+  await open(page);
+  // Play answered as the studio does when some changes need Play with key remaps.bat; a real Play would start Steam.
+  await page.evaluate(() => {
+    const real = window.fetch;
+    window.fetch = (url, init) => String(url).endsWith("/api/play")
+      ? Promise.resolve(new Response(JSON.stringify({ result: { applied: false, remaps: true }, log: ["starting the game through Steam"] }),
+        { status: 200, headers: { "Content-Type": "application/json" } }))
+      : real(url, init);
+  });
+  await page.waitFor(() => !document.getElementById("playBtn").disabled, 20000);
+  await page.click("#playBtn");
+  await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => /only work when you start the game with Play with key remaps\.bat/.test(t.textContent)));
+  await new Promise(r => setTimeout(r, 4500));   // after a Play with nothing to say, the drawer goes in 4 s
+  assert.equal(await page.evaluate(() => document.getElementById("drawer").hidden), false);
+  await page.close();
+});

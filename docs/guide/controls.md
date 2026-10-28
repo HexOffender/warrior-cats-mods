@@ -60,8 +60,10 @@ keys when no button in the box is lit.
 
 ## Did it reach the game?
 
-The page shows what Apply will do before you apply: the line under each changed row comes from the same check
-Apply runs. After **Apply to game**, the log at the bottom right lists anything about your keys that needs a
+Under the Editing mod bar, one line says whether your saved keys are in the game: "In the game since your last
+Apply", or "Saved, not in the game yet: Apply to game". The page shows what Apply will do before you apply: the
+line under each changed row comes from the same check Apply runs. If you press Play and some changes need Play
+with key remaps.bat, the log stays open and says so. After **Apply to game**, the log at the bottom right lists anything about your keys that needs a
 second look, in the same words. If a row says "needs Play with key remaps.bat", that change works only when
 you start the game with that file. Without the script loader, a banner at the top of the page says so: Get
 set up, on the Mods page, installs it.

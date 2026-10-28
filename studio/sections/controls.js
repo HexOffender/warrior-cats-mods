@@ -35,12 +35,30 @@ export default {
 
     const target = wc.modTarget({
       file: "controls.json",
-      onLoad: obj => { state = M.normalize(obj, game); render(); recheck(0); },
+      onLoad: obj => { state = M.normalize(obj, game); render(); recheck(0); refreshWhere(); },
       getValue: () => M.toJson(state),
     });
     const lower = () => (check && check.lower) || [];
     // Every change: unsaved until Save to mod, drawn now, and checked against the build a moment later.
-    const edited = () => { target.markDirty(); render(); recheck(); };
+    const edited = () => { target.markDirty(); render(); recheck(); refreshWhere(); };
+
+    // ---------- in the game yet? ----------
+    // One line under the Editing mod bar, for a mod that's on and has nothing unsaved (the bar says the rest):
+    // whether what's saved went in with the last Apply (GET /changes, what the Apply button counts).
+    const whereLine = el("p", { class: "controls-where", role: "status", hidden: true });
+    let whereAsked = 0;
+    async function refreshWhere() {
+      const n = ++whereAsked, id = target.current;
+      const mod = (target.mods || []).find(m => m.id === id);
+      if (target.dirty || !mod || !mod.enabled) { whereLine.hidden = true; return; }
+      let changes;
+      try { changes = await api.get("/changes"); } catch (e) { whereLine.hidden = true; return; }
+      if (n !== whereAsked || target.dirty) return;
+      const waiting = changes.on.includes(id) || changes.changed.includes(id);
+      whereLine.textContent = waiting ? "Saved, not in the game yet: Apply to game." : "In the game since your last Apply.";
+      whereLine.classList.toggle("waiting", waiting);
+      whereLine.hidden = false;
+    }
 
     // ---------- the build's word on the file ----------
     let timer = null, asked = 0;
@@ -82,7 +100,7 @@ export default {
     root.append(
       wc.pageHead({ eyebrow: "Keys and buttons", title: "Controls",
         lede: "Change which key does what. Save to a mod, Apply to game, then play as usual.", help: "help:controls" }),
-      banner, target.element, playCard, also, moveFold, menuCard, freeFold, mouse, makerFold);
+      banner, target.element, whereLine, playCard, also, moveFold, menuCard, freeFold, mouse, makerFold);
 
     // ---------- small parts ----------
     const keyChip = (k, what) => el("span", { class: "chip key", title: what ? `${what}: ${L(k)}` : L(k) },
@@ -519,7 +537,8 @@ export default {
     // After an Apply (or Get set up), what the build says may have changed: read the file again and ask again.
     const offInstalled = wc.installedEvent(target, () => { target.refresh().then(() => recheck(0)).catch(() => {}); });
     const offFocus = wc.bus.on("focus", () => recheck(0));
-    const offMods = wc.bus.on("mods-changed", () => recheck());
+    // A mod turned on or off elsewhere; and an Apply (above) changes what's in the game.
+    const offMods = wc.bus.on("mods-changed", () => { recheck(); setTimeout(refreshWhere, 0); });
     await Promise.all([target.refresh(), loadMouseLook()]);
     render();
     renderMouse();   // with mouse look's file read
