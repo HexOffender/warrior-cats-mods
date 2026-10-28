@@ -260,7 +260,7 @@ def choose_palettes(mods, ids):
     adders = sorted(i for i in ids if i not in found and any(m.id == i and m.kinds() == ["palette"] for m in mods))
     if adders:
         raise ValueError(f"{', '.join(adders)} only add new colours, so they aren't switched with the presets; "
-                         "turn them on or off with `wcmods enable/disable`")
+                         "turn them on or off by themselves, on the Mods page")
     unknown = [i for i in ids if i not in found]
     if unknown:
         raise ValueError(f"not a palette mod: {', '.join(unknown)} (palette mods: {', '.join(sorted(found))})")

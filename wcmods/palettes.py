@@ -5,9 +5,16 @@ palette.json sections (all optional):
   "fur":     {"0": "#f2e6d0", "3": "#ff7a1a"}
   "pattern": {...}   "marking": {...}   "iris_ui": {...}
 
-Eyes are baked into the eye atlas asset (works offline). Keys are the game's slot labels
-(see `wcmods eyes`), "iris1".."iris25" or "row0".."row25". One colour keeps the game's
-shading ramp; a list of colours is spread evenly from the pupil to the rim.
+Eyes are baked into the eye atlas asset (works offline). Keys are the game's slot labels in any
+case (see `wcmods eyes`), "iris1".."iris25", "row0".."row25" or a plain row number
+(eyeatlas.resolve). One colour keeps the game's shading ramp; a list of colours is spread evenly
+from the pupil to the rim, so a list of one is that colour flat. Where several palettes set one eye
+row, the later in priority order wins whatever each calls it: the build resolves the keys to rows
+before merge().
+
+Colours are anything colors.parse takes: "#RGB", "#RRGGBB", "#RRGGBBAA" (the alpha is dropped), a
+name from colors.NAMED or [r, g, b] (0-255). Keys starting with "_", and "name" and "description",
+are notes and ignored.
 
 fur / pattern / marking / iris_ui are indexes (0-based) into the game's built-in colour tables
 (FurColors, PatternMaskColors, MarkingMaskColors, IrisColors). Those tables live in game code,
@@ -29,6 +36,7 @@ Creator palettes mod offers them in the cat maker and paints them on the cats th
 """
 import json
 import os
+import re
 
 from . import colors
 from .lua import source as lua_source
@@ -71,8 +79,10 @@ def load(path):
         for key, spec in entries.items():
             if str(key).startswith("_"):
                 continue
-            if section != "eyes" and not str(key).isdigit():
+            if section != "eyes" and not re.fullmatch(r"[0-9]+", str(key)):
                 raise ValueError(f"{name}: {section} keys are slot numbers starting at 0, got '{key}'")
+            if section != "eyes":
+                key = str(int(key))   # "03" is colour 3, as the game counts
             if section != "eyes" and int(key) >= GAME_SLOTS and section not in GROWABLE:
                 raise ValueError(f"{name}: {section} has slots 0-{GAME_SLOTS - 1}; only pattern and marking colours "
                                  "take new slots (to colour just your cat's coat, use cats.json)")
@@ -172,8 +182,10 @@ def groups_module(groups):
 
 
 def merge(palettes):
-    """The colours every palette sets, the later one's where two set the same. Coat presets aren't colours of the
-    game's: slot_groups() lists them, each under its own palette."""
+    """The colours every palette sets, the later one's where two set the same key. Coat presets aren't colours of
+    the game's: slot_groups() lists them, each under its own palette. Eye keys are merged as they're spelt, so a
+    caller with the atlas resolves them to rows first (sections/palettes.py does) for the later palette to win
+    an eye however each names it."""
     merged = {s: {} for s in SECTIONS if s != "coats"}
     for pal in palettes:
         for section, entries in pal.items():

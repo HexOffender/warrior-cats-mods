@@ -305,7 +305,8 @@ def test_a_mods_file_is_written_read_back_and_deleted(studio):
     make_mod(studio, "mine")
     assert get(studio, "mods/mine/file/palette.json") == {"exists": False, "text": None}
     text = json.dumps({"fur": {"3": "#ff0000"}})
-    assert call(studio, "PUT", "mods/mine/file/palette.json", {"text": text}) == {"saved": "palette.json", "requires": [], "problems": []}
+    assert call(studio, "PUT", "mods/mine/file/palette.json", {"text": text}) == {"saved": "palette.json", "requires": [],
+                                                                                   "problems": [], "notes": []}
     with open(os.path.join(studio.ctx.mods_root, "mine", "palette.json"), encoding="utf-8") as f:
         assert f.read() == text + "\n"
     assert get(studio, "mods/mine/file/palette.json") == {"exists": True, "text": text + "\n"}
@@ -543,10 +544,11 @@ def test_a_game_folder_without_its_paks_says_its_files_cant_be_read(studio, fake
 
 
 def test_game_tables_come_from_the_games_log_or_the_tables_file_or_neither(studio, fake_game):
-    assert get(studio, "game/tables") == {"tables": None, "source": None}
+    assert get(studio, "game/tables") == {"tables": None, "source": None, "game_slots": 25}
     with open(os.path.join(studio.root, "colour_tables.json"), "w", encoding="utf-8") as f:
         json.dump({"FurColors": ["#111111"]}, f)
-    assert get(studio, "game/tables") == {"tables": {"FurColors": ["#111111"]}, "source": "colour_tables.json"}
+    assert get(studio, "game/tables") == {"tables": {"FurColors": ["#111111"]}, "source": "colour_tables.json",
+                                          "game_slots": 25}
 
 
 def test_anim_kinds_list_the_animals_an_animation_can_be_for(studio):
