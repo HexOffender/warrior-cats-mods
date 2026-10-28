@@ -200,15 +200,18 @@ test("what keeps the saved file out of the game stays under the bar until a save
 
 test("a part of the file the game won't get is said under the bar, and the mod is still turned on", async () => {
   const t = await setUp();
+  const notes = t.target.element.querySelector(".save-notes");
   t.state.notes = ["the game has no table 'Nope.csv', so its edits are left out (the Game data page lists the tables the game has)"];
   t.state.mods[0].enabled = false;
   await t.target.save();
-  assert.equal(t.problems.hidden, false);
-  assert.equal(t.problems.textContent, `Saved; this part will be left out: ${t.state.notes[0]}`);
+  // A note, not a problem: in the notes under the bar, as a palette's are, and the rest of the file goes in.
+  assert.equal(t.problems.hidden, true);
+  assert.equal(notes.hidden, false);
+  assert.deepEqual(notes.querySelectorAll("li").map(li => li.textContent), t.state.notes);
   assert.deepEqual(t.state.patches, [{ id: "a", body: { enabled: true } }], "the rest of the file goes in");
   t.state.notes = [];
   await t.target.save();
-  assert.equal(t.problems.hidden, true);
+  assert.equal(notes.hidden, true);
   // markClean: a change undone on the page leaves nothing to save.
   t.target.markDirty();
   t.target.markClean();

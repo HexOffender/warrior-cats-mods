@@ -219,8 +219,9 @@ test("a file's own row removals and additions, and a table the game hasn't got, 
   assert.match(await page.text(".data-table .chip.warn"), /^1 row removed, 1 row added by hand$/);
   // Saved as they were: "-" and "+" are lists still.
   await page.click({ text: "Save to mod" });
-  await page.waitFor(() => document.querySelector(".problems:not([hidden])"));
-  assert.match(await page.text(".problems"), /Saved; this part will be left out: the game has no table 'Nope.csv'/);
+  await page.waitFor(() => document.querySelector(".save-notes:not([hidden])"));
+  assert.match(await page.text(".save-notes li"), /the game has no table 'Nope.csv'/);
+  assert.equal(await page.evaluate(() => document.querySelector(".problems").hidden), true, "a note, not a problem");
   const saved = JSON.parse(fs.readFileSync(path.join(folders.data, "mods", "by-hand", "data.json"), "utf8"));
   assert.deepEqual(saved["NPC/Scars.csv"]["-"], ["12"]);
   assert.deepEqual(saved["NPC/Scars.csv"]["+"], hand["NPC/Scars.csv"]["+"]);
