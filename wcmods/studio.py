@@ -315,6 +315,7 @@ class Studio:
         self._sequences = {}  # kind -> the game's sequences an animation can replace, read once
         self._english = None  # the game's English text by key, read once
         self._data_index = None   # every data table's row names and descriptions, read once (data_index)
+        self._model_views = {}  # (mod, path, mtime, on_cat) -> a model's drawing, the last few
 
     # ---------- helpers ----------
     def mods(self):
@@ -351,16 +352,19 @@ class Studio:
 
     def check_file(self, mod, file):
         """What would keep a file the studio just saved out of the game, or part of it: the first part of the
-        check Apply makes (the build section that owns the file reads it, collect()), on this mod alone, as
-        sentences. Returns (problems, notes): problems keep the file out ([] when it's fine); notes are what the
-        check warned about, a part it leaves out (data.json's table the game hasn't got). What Apply checks with
-        every mod together (a table's rows and columns, models and pictures, two mods changing the same thing)
-        is still said only then. While the game's files can't be read (no game folder yet, Steam updating it),
-        one line says the check waits for Apply, since some files are checked against the game's tables."""
+        check Apply makes (the build section that owns the file reads it, collect()), on this mod alone. Returns
+        (problems, notes, left_out). problems: sentences that keep the file out, [] when it's fine. notes: what
+        the check warned about, as sentences: a part it leaves out (data.json's table the game hasn't got); the
+        file goes in. left_out: the parts of the file collect leaves out because they aren't finished yet
+        (ctx.leave_out: an item with no description, an animation with nothing chosen to play), as {"id",
+        "name", "why"}; the rest of the file goes in without them, and the page says them as a note. What Apply
+        checks with every mod together (a table's rows and columns, models and pictures, two mods changing the
+        same thing) is still said only then. While the game's files can't be read (no game folder yet, Steam
+        updating it), one line says the check waits for Apply, since some files are checked against the game's
+        tables."""
         sec = owner(file)
         if sec is None or not sec.claims(mod):
-            return [], []
-        ctx = None
+            return [], [], []
         try:
             # Most files are checked without the game's files; one that needs them (data.json's table names)
             # gets CHECK_LATER while they can't be read.
@@ -373,19 +377,24 @@ class Studio:
             # A key a file lacks (str is the key in quotes), or a game file the reader hasn't got.
             what = e.args[0] if len(e.args) == 1 else str(e)
             return [f"{file}: {what} is missing" if isinstance(what, str) and not str(what).startswith("game file")
-                    else CHECK_LATER], []
+                    else CHECK_LATER], [], []
         except ValueError as e:
-            return [str(e)], []
+            return [str(e)], [], []
         except (OSError, Unreadable):   # the game's pak isn't there, or won't open
-            return [CHECK_LATER], []
+            return [CHECK_LATER], [], []
         except (AttributeError, TypeError):   # a list where an object goes, a number where text does: not a Python name
-            return [f"{file} isn't shaped the way the page writes it (docs/formats.md shows how it's laid out)"], []
+            return [f"{file} isn't shaped the way the page writes it (docs/formats.md shows how it's laid out)"], [], []
         except Exception as e:   # noqa: BLE001 - said, not hidden, and never as a Python name
             said = str(e).strip()
-            return [f"{file} couldn't be checked{': ' + said if said else ''}"], []
-        # The warnings name the mod for the build's log; under the page's bar the mod is the one in view.
+            return [f"{file} couldn't be checked{': ' + said if said else ''}"], [], []
+        # What collect left out because it isn't finished yet (an item with no description): the rest goes in.
+        left = [{k: x[k] for k in ("id", "name", "why")} for x in ctx.left_out if x["mod"] == mod.id]
+        said = tuple(f"{mod.id}: {x['id']}: " for x in left)
+        # Any other warning collect gives is a note. The warnings name the mod for the build's log; under the
+        # page's bar the mod is the one in view.
         lead = f"{mod.id}: "
-        return [], [w[len(lead):] if w.startswith(lead) else w for w in ctx.warnings]
+        notes = [w[len(lead):] if w.startswith(lead) else w for w in ctx.warnings if not (said and w.startswith(said))]
+        return [], notes, left
 
     def story_saved(self, mod):
         """After a save of npcs.json or quests.json: a mod with cats or quests says it uses Sandbox mode (soft:
@@ -864,12 +873,12 @@ class Studio:
                                          f"until its mod.json is fixed: {m.problem or e}")
                 # A file half made still saves; what would keep it, or part of it, out of the game is said now,
                 # not at Apply, and so is what Apply would leave out of a file that's fine (notes: the check's own
-                # warnings, then file_notes').
-                problems, notes = self.check_file(m, name)
+                # warnings, then file_notes'), and what's left out until it's finished (left_out).
+                problems, notes, left = self.check_file(m, name)
                 problems = noted + problems
                 if not problems:
                     notes = notes + [n for n in self.file_notes(m, name) if n not in notes]
-                said = {"saved": name, "requires": m.requires, "problems": problems, "notes": notes}
+                said = {"saved": name, "requires": m.requires, "problems": problems, "notes": notes, "left_out": left}
                 if turned_on is not None:   # cats and quests: the mods they work with, and what came on for them
                     said.update(uses=m.uses, turned_on=turned_on)
                 return said
@@ -1038,13 +1047,16 @@ class Studio:
                                    "how far each cat has got while it runs")
             return story.start_over(pipeline.saved_folder(cfg))
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "picture" and method == "POST":
-            # A picture for the mod (an item's icon), sent as the body: kept in the mod's pictures/ folder.
-            return self.add_picture(self.mod(parts[1]), (query or {}).get("name", ""), upload)
+            # A picture for the mod (an item's icon), sent as the body: kept in the mod's pictures/ folder, never
+            # over another item's (?current= is the one this item names now, which it may replace).
+            q = query or {}
+            return self.add_picture(self.mod(parts[1]), q.get("name", ""), upload, current=q.get("current", ""))
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "model" and method == "POST":
             # A model for an accessory or for a herb on the ground (?ground=1), OBJ or glTF, sent as the body:
-            # kept in the mod's models/ folder.
-            return self.add_model(self.mod(parts[1]), (query or {}).get("name", ""), (query or {}).get("file", ""), upload,
-                                  on_cat=(query or {}).get("ground") != "1")
+            # kept in the mod's models/ folder, as a picture is.
+            q = query or {}
+            return self.add_model(self.mod(parts[1]), q.get("name", ""), q.get("file", ""), upload,
+                                  on_cat=q.get("ground") != "1", current=q.get("current", ""))
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "model-view" and method == "GET":
             # A model in the mod's folder, in the game's space, for the Items page's drawing of it on the cat
             # (or on the ground, ?ground=1).
@@ -1072,14 +1084,24 @@ class Studio:
             # One of them: where it is, how long it plays and how many keys it has (a replacement is fitted to them).
             q = query or {}
             return self.anim_sequence(q.get("for", "cat"), q.get("name", ""))
+        if parts == ["build", "last"] and method == "GET":
+            # The last build's notes and warnings, and whether it's the one in the game: the Items and
+            # Animations pages' "in the game" chips after the studio was started again.
+            return self.last_build()
+        if parts == ["game", "try-anim"] and method == "POST":
+            # One of the game's animations played on your cat in the running game (through the game bridge), to
+            # see it before choosing it on the Animations page.
+            return self.try_anim(cfg, field(body, "path"))
         if parts == ["game", "anim-kit"] and method == "GET":
             # A cat or an animal rigged to its skeleton as a .glb, to animate in Blender (animations.py).
             data, filename = animations.start_kit(self.ctx.game, (query or {}).get("for", "cat"))
             return Download(data, filename)
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "animation" and method == "POST":
-            # A glTF animation, sent as the body: kept in the mod's animations/ folder once it reads.
+            # A glTF animation, sent as the body: kept in the mod's animations/ folder once it reads, never over
+            # another animation's file (?current= as for a picture).
             q = query or {}
-            return self.add_animation(self.mod(parts[1]), q.get("name", ""), q.get("file", ""), q.get("for", "cat"), upload)
+            return self.add_animation(self.mod(parts[1]), q.get("name", ""), q.get("file", ""), q.get("for", "cat"), upload,
+                                      current=q.get("current", ""))
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "animation-info" and method == "GET":
             # What an animation file in the mod holds: its animations, and the game's bones it moves.
             q = query or {}
@@ -1098,6 +1120,18 @@ class Studio:
             path = os.path.join(m.folder, PICTURES, os.path.basename(parts[3]))
             if not os.path.isfile(path):
                 raise LookupError(f"{m.id} has no picture {parts[3]}")
+            with open(path, "rb") as f:
+                return Download(f.read(), os.path.basename(path), "image/png")
+        if len(parts) == 3 and parts[0] == "mods" and parts[2] == "picture" and method == "GET":
+            # A PNG anywhere in the mod's folder, by its path in the mod (?path=icons/moon.png: one items.json
+            # names that the page didn't put in pictures/), for the Items page's preview.
+            m = self.mod(parts[1])
+            rel = (query or {}).get("path", "")
+            folder = os.path.realpath(m.folder)
+            path = os.path.realpath(os.path.join(folder, rel))
+            if (not rel.lower().endswith(".png") or os.path.commonpath([folder, path]) != folder
+                    or not os.path.isfile(path)):
+                raise LookupError(f"{m.id} has no picture {rel}")
             with open(path, "rb") as f:
                 return Download(f.read(), os.path.basename(path), "image/png")
         if parts == ["names"] and method == "GET":
@@ -1513,12 +1547,16 @@ class Studio:
         return self._data_index
 
     def game_items(self):
-        """The game's items for the Items and Questlines pages: tag, kind, name, description, and for herbs
-        what using them does; and the choices an item has (effects, badges, rarities, colours)."""
+        """The game's items for the Items and Questlines pages: tag, kind, name, description, badge (group), and
+        for herbs what using them does (the effect, and in words: sections/items.EFFECT_WORDS), who for (target)
+        and when (combat, exploring, fight_only); and the choices an item has (effects, badges, rarities,
+        colours)."""
         if self._items is None:
+            from .sections.items import EFFECT_WORDS
             b = self._reader()
             use = {r["key"]: r for r in b.table("Consumables.csv")}
             recipes = {r["key"] for r in b.table("BarteringCost.csv")}
+            badges = {v: k for k, v in cooked.ITEM_GROUP_ICON.items()}
 
             def text(v):
                 if isinstance(v, dict) and v.get("key"):
@@ -1541,7 +1579,14 @@ class Studio:
                         "short": tag[len(ITEM_ROOT):] if kind == "Cosmetic" else tag.split(".", 3)[3],
                         "name": name, "description": text(v.get("Description")),
                         "effect": u.get("EffectOnUse"), "type": u.get("Type"), "recipe": tag in recipes,
-                        "pickup": tag.rsplit(".", 1)[-1] in pickups}    # the game has a pickup of its own for it
+                        "pickup": tag.rsplit(".", 1)[-1] in pickups,    # the game has a pickup of its own for it
+                        "group": badges.get(v.get("ItemGroupIcon"), "None")}
+                if u:
+                    item.update({"target": u.get("Target"), "combat": u.get("bCombat") == "TRUE",
+                                 "exploring": u.get("bExploration") == "TRUE",
+                                 "fight_only": u.get("bRemoveAfterCombat") == "TRUE"})
+                    if item["short"] in EFFECT_WORDS:
+                        item["words"] = EFFECT_WORDS[item["short"]]
                 parts = tag.split(".")
                 if kind == "Cosmetic" and len(parts) == 6 and parts[5].isdigit():
                     # An accessory's look: its slot, the accessory, which look, and the look's picture.
@@ -1580,8 +1625,9 @@ class Studio:
             self._icons[key] = png.write(w, h, rgba)
         return self._icons[key]
 
-    def add_picture(self, mod, name, upload):
-        """Keep a PNG sent from the Items page in the mod's pictures/ folder; returns its path in the mod."""
+    def add_picture(self, mod, name, upload, current=""):
+        """Keep a PNG sent from the Items page in the mod's pictures/ folder; returns its path in the mod.
+        `current` is the picture the item names now, which this one may replace (_free_stem)."""
         if not upload:
             raise ValueError("send the picture as the request's body")
         if os.path.getsize(upload) > MAX_PICTURE:
@@ -1597,14 +1643,15 @@ class Studio:
             raise ValueError(f"the picture is {w} x {h}; it should be 16 to 4096 pixels each way")
         folder = os.path.join(mod.folder, PICTURES)
         os.makedirs(folder, exist_ok=True)
-        with open(os.path.join(folder, stem + ".png"), "wb") as f:
+        name = _free_stem(folder, stem, ".png", current)
+        with open(os.path.join(folder, name), "wb") as f:
             f.write(data)
-        return {"path": f"{PICTURES}/{stem}.png", "width": w, "height": h}
+        return {"path": f"{PICTURES}/{name}", "width": w, "height": h}
 
-    def add_model(self, mod, name, filename, upload, on_cat=True):
+    def add_model(self, mod, name, filename, upload, on_cat=True, current=""):
         """Keep a model sent from the Items page in the mod's models/ folder, once it reads; returns its path
         in the mod, what it is (vertices, triangles, size) and, for one worn on the cat, how far it reaches
-        from the cat."""
+        from the cat. `current` is the model the item names now, which this one may replace (_free_stem)."""
         if not upload:
             raise ValueError("send the model as the request's body")
         ext = os.path.splitext(filename)[1].lower()
@@ -1613,15 +1660,16 @@ class Studio:
                              "or glTF 2.0)")
         with open(upload, "rb") as f:
             data = f.read()
-        model = models.read(filename, data)          # a .gltf whose data is in another file is refused here
+        _one_file(filename, data, "model")
+        model = models.read(filename, data)
         stem = re.sub(r"[^A-Za-z0-9_-]+", "-", os.path.splitext(os.path.basename(name or filename))[0]).strip("-")[:40] \
             or "model"
         folder = os.path.join(mod.folder, MODELS)
         os.makedirs(folder, exist_ok=True)
-        # The last one stays: the saved items.json names it until the page is saved again.
-        with open(os.path.join(folder, stem + ext), "wb") as f:
+        name = _free_stem(folder, stem, ext, current)
+        with open(os.path.join(folder, name), "wb") as f:
             f.write(data)
-        out = {"path": f"{MODELS}/{stem}{ext}", **model.summary()}
+        out = {"path": f"{MODELS}/{name}", **model.summary()}
         if on_cat:
             out["farthest_cm"] = round(self._skin_distance(model), 1)
         return out
@@ -1633,9 +1681,11 @@ class Studio:
             self._anims = animations.Game(self.ctx.game.read)
         return self._anims.skeleton(kind)
 
-    def add_animation(self, mod, name, filename, kind, upload):
+    def add_animation(self, mod, name, filename, kind, upload, current=""):
         """Keep a glTF animation sent from the Animations page in the mod's animations/ folder, once it reads
-        and has an animation; returns its path in the mod and what it holds (animations.describe)."""
+        and has an animation the game can take; returns its path in the mod and what it holds
+        (animations.describe). `current` is the file the animation names now, which this one may replace
+        (_free_stem)."""
         if not upload:
             raise ValueError("send the animation as the request's body")
         ext = os.path.splitext(filename)[1].lower()
@@ -1643,18 +1693,24 @@ class Studio:
             raise ValueError("animations are glTF files: in Blender, File > Export > glTF 2.0, as glTF Binary (.glb)")
         with open(upload, "rb") as f:
             data = f.read()
-        info = animations.describe(filename, data, kind, self._skeleton(kind))   # a .gltf with its data elsewhere is refused
+        _one_file(filename, data, "animation")
+        info = animations.describe(filename, data, kind, self._skeleton(kind))
         if not info["clips"]:
             raise ValueError("the file has no animation: in Blender, export with Animation on")
         if not info["matched"]:
             raise ValueError("none of the file's bones has the name of one of the game's: animate the start kit's armature")
+        if all(c["too_long"] for c in info["clips"]):
+            c = info["clips"][0]
+            raise ValueError(f"{c['name']} is {c['seconds']:.1f} s long; an animation can be up to "
+                             f"{info['max_seconds']} s: shorten it in Blender")
         stem = (re.sub(r"[^A-Za-z0-9_-]+", "-", os.path.splitext(os.path.basename(name or filename))[0]).strip("-")[:40]
                 or "animation")
         folder = os.path.join(mod.folder, ANIMATIONS)
         os.makedirs(folder, exist_ok=True)
-        with open(os.path.join(folder, stem + ext), "wb") as f:
+        name = _free_stem(folder, stem, ext, current)
+        with open(os.path.join(folder, name), "wb") as f:
             f.write(data)
-        return {"path": f"{ANIMATIONS}/{stem}{ext}", **info}
+        return {"path": f"{ANIMATIONS}/{name}", **info}
 
     def animation_info(self, mod, rel, kind):
         folder = os.path.realpath(mod.folder)
@@ -1673,22 +1729,72 @@ class Studio:
         return animations.describe(rel, data, kind, self._skeleton(kind), sibling)
 
     def anim_sequences(self, kind):
-        """[{"name", "paths", "additive"}] for a kind's sequences, by name."""
+        """[{"name", "paths", "additive", "label", "group"}] for a kind's sequences, by name: label is its plain
+        name where one is known (animations.label: "Yawn"; a photo pose by the game's own name for it), group
+        "everyday", "poses" or None."""
         from .formats import anim, texture
         if kind not in animations.KINDS:
             raise ValueError(f"there's no animal {kind!r}")
         if kind not in self._sequences:
             out = []
+            reader = None
+
+            def text(key):                # the photo poses' names, from the game's text
+                nonlocal reader
+                try:
+                    reader = reader or self._reader()
+                    return reader.text(key)
+                except Exception:   # noqa: BLE001 - no name then: the pose is listed by its own
+                    return key
             for name, paths in animations.game_sequences(self.ctx.game.io.files, kind).items():
                 additive = False
                 for path in paths:
                     try:
                         additive = additive or anim.AnimSequence(self.ctx.game.read(texture.content_path(path))).additive()
-                    except (anim.FormatError, ValueError, KeyError):
-                        pass        # not one wcmods reads: the install says so if it's chosen
-                out.append({"name": name, "paths": paths, "additive": additive})
+                    except Exception:   # noqa: BLE001 - one asset wcmods can't read leaves the rest listed
+                        pass        # the install says so if it's chosen
+                label, group = animations.label(name, text)
+                out.append({"name": name, "paths": paths, "additive": additive, "label": label, "group": group})
             self._sequences[kind] = sorted(out, key=lambda s: s["name"].lower())
         return self._sequences[kind]
+
+    def last_build(self):
+        """{"manifest": the build folder's manifest.json as the pages read it (built, mods, names, notes, warnings,
+        sections), or None without one; "installed": whether that build is the one in the game (wcmods.json's
+        "installed" names the same build), not only a check of the mods}."""
+        try:
+            with open(os.path.join(self.ctx.build_dir, "manifest.json"), encoding="utf-8-sig") as f:
+                m = json.load(f)
+        except (OSError, ValueError):
+            return {"manifest": None, "installed": False}
+        if not isinstance(m, dict):
+            return {"manifest": None, "installed": False}
+        installed = (self.ctx.cfg.data.get("installed") or {}).get("built")
+        return {"manifest": {k: m.get(k) for k in ("built", "mods", "names", "notes", "warnings", "sections")},
+                "installed": bool(installed) and installed == m.get("built")}
+
+    def try_anim(self, cfg, path):
+        """Play one of the game's sequences (`path`, /Game/...) on your cat in the running game, through the
+        game bridge, for the Animations page's Try it on my cat. Returns {"played": its asset path}."""
+        if not cfg.data.get("allow_code_mods"):
+            raise PermissionError("trying an animation in the game goes through the game bridge, which runs code: "
+                                  "allow mods that run code first (Options, on the Settings and repair page)")
+        if not isinstance(path, str) or not GAME_SEQUENCE.match(path):
+            raise ValueError("only one of the game's own animations can be tried here")
+        full = path if "." in path else f"{path}.{path.rsplit('/', 1)[-1]}"
+        bridge = Bridge(cfg)
+        status = bridge.status()
+        if not status or not status.get("alive"):
+            raise RuntimeError("the game isn't running with mods that run code: press Play, go into the forest, "
+                               "then try it again")
+        try:
+            reply = bridge.run(TRY_ANIM_LUA.replace("@PATH@", json.dumps(full)), timeout=10)
+        except BridgeError as e:
+            raise RuntimeError(str(e)) from None
+        said = (reply.get("result") or [None])[0]
+        if not reply.get("ok") or said is not True:
+            raise RuntimeError(f"it didn't play: {reply.get('error') or said or 'your cat may not be in the world yet'}")
+        return {"played": full}
 
     def anim_sequence(self, kind, name):
         """One of the game's sequences an animation can replace: {"path", "seconds", "keys", "root_motion"}."""
@@ -1717,10 +1823,21 @@ class Studio:
         return max(self._skin.nearest(p, 1)[0][0] for p in model.positions[::step])
 
     def model_view(self, mod, rel, on_cat=True):
+        """A model in the mod's folder for the Items page's drawing: its triangles and facts, and how far it
+        reaches from the cat. Kept by (mod, path, when it changed, on the cat or not), so the place sliders'
+        redraws don't read and measure a big model again."""
         folder = os.path.realpath(mod.folder)
         path = os.path.realpath(os.path.join(folder, rel))
         if os.path.commonpath([folder, path]) != folder or not os.path.isfile(path):
             raise LookupError(f"{mod.id} has no model {rel}")
+        key = (mod.id, path, os.path.getmtime(path), on_cat)
+        if key not in self._model_views:
+            if len(self._model_views) >= 8:
+                self._model_views.pop(next(iter(self._model_views)))
+            self._model_views[key] = self._model_view(mod, folder, path, rel, on_cat)
+        return self._model_views[key]
+
+    def _model_view(self, mod, folder, path, rel, on_cat):
         with open(path, "rb") as f:
             data = f.read()
 
@@ -1868,6 +1985,37 @@ def _accessory_look(of):
     raise ValueError(f"{of!r}: give an accessory's look, e.g. Neck.DogCollar.1")
 
 
+def _free_stem(folder, stem, ext, current=""):
+    """The name an upload is kept under in `folder` (a mod's pictures/, models/ or animations/): stem + ext when
+    no file has that name, or when the file there is `current` (the mod-relative path of the file the item or
+    animation names now, which this one replaces); else the first free one of stem-2, stem-3... So an upload
+    never writes over a file another item or animation names. Names are told apart without case, as Windows
+    and the game's package names tell them."""
+    taken = {n.lower() for n in os.listdir(folder)} if os.path.isdir(folder) else set()
+    mine = os.path.normcase(os.path.normpath(os.path.join(os.path.dirname(folder), current))) if current else None
+    n = 1
+    while True:
+        name = stem + ext if n == 1 else f"{stem}-{n}{ext}"
+        if name.lower() not in taken or os.path.normcase(os.path.join(folder, name)) == mine:
+            return name
+        n += 1
+
+
+def _one_file(filename, data, what):
+    """ValueError for a .gltf that keeps its data in another file (glTF Separate): the studio's upload takes one
+    file, so the Blender step that makes one is said."""
+    if not filename.lower().endswith(".gltf"):
+        return
+    try:
+        buffers = json.loads(data.decode("utf-8-sig")).get("buffers", [])
+        apart = next((b.get("uri") for b in buffers if b.get("uri") and not str(b["uri"]).startswith("data:")), None)
+    except (ValueError, AttributeError, TypeError):
+        return                                   # the reader says what's wrong with it
+    if apart:
+        raise ValueError(f"that .gltf keeps its {what} in {apart}: in Blender, export it again as glTF Binary (.glb); "
+                         "the page takes one file")
+
+
 VIEW_TRIANGLES = 30000   # a model drawn on the Items page: enough triangles to see its shape
 
 
@@ -1932,6 +2080,17 @@ local yaw = 0
 pcall(function() yaw = Game.player():K2_GetActorRotation().Yaw end)
 return { at = { math.floor(l.X), math.floor(l.Y), math.floor(l.Z) }, yaw = math.floor(yaw), level = Game.levelName() }
 """
+
+
+# One of the game's sequences played once on your cat (the Animations page's Try it on my cat): its asset path,
+# "/Game/.../A_CatMaster_Yawn_1.A_CatMaster_Yawn_1", goes in for @PATH@. True, or why it didn't play.
+TRY_ANIM_LUA = """
+if not Game then return "wcmods' game module isn't loaded" end
+local played, why = Game.anims.play(nil, @PATH@)
+if not played then return why or "the game didn't play it" end
+return true
+"""
+GAME_SEQUENCE = re.compile(r"/Game/[A-Za-z0-9_/]+/A_[A-Za-z0-9_]+(\.A_[A-Za-z0-9_]+)?$")   # a path TRY_ANIM_LUA takes
 
 
 def _changed_texts(edits):

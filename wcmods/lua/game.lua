@@ -177,9 +177,9 @@ function Game.object(path)
     return nil
 end
 
--- Load an asset by path ("/Game/WCMods/my_mod/T_Moon_Icon.T_Moon_Icon"), or nil and why. A mod's own
--- assets aren't in the game's asset registry, which UE4SS's LoadAsset looks them up in, so those load
--- the way the game loads a soft reference.
+-- Load an asset by path ("/Game/WCMods/my_mod/T_Consumable_MoonHerb_Icon.T_Consumable_MoonHerb_Icon": a
+-- mod's herb's icon), or nil and why. A mod's own assets aren't in the game's asset registry, which UE4SS's
+-- LoadAsset looks them up in, so those load the way the game loads a soft reference.
 function Game.load(path)
     local ok, o = pcall(LoadAsset, path)
     if ok and valid(o) then return o end
@@ -1496,6 +1496,35 @@ local animLoaded = {}         -- asset path -> its sequence
 local animPlaying = {}        -- actor address -> { id, montage, anim }
 local animLib
 
+-- What any script's Game.anims.play started on an actor, shared between the scripts (each has a Lua state of its
+-- own: the emotes script and the Emote wheel among them), so one's key stops what another started:
+-- "WCModsAnims.playing.<actor address>" holds "<id>|<sequence path>|<montage address>", "" once it's stopped.
+-- Another script's counts only while the actor's current montage is still that montage, playing that
+-- sequence (sharedMontage): one that has ended never stands for the game's own montage.
+local function sharedKey(actor) return "WCModsAnims.playing." .. tostring(actor:GetAddress()) end
+local function sharedPlaying(actor)
+    local ok, v = pcall(function() return ModRef:GetSharedVariable(sharedKey(actor)) end)
+    if not ok or type(v) ~= "string" or v == "" then return nil end
+    local id, path, montage = v:match("^([^|]+)|([^|]*)|([^|]*)$")
+    if not id then return nil end
+    return { id = id, path = path, montage = montage }
+end
+local function sharePlaying(actor, id, path, montage)
+    local v = ""
+    if id then
+        local ok, address = pcall(function() return montage:GetAddress() end)
+        v = id .. "|" .. (path or "") .. "|" .. (ok and tostring(address) or "")
+    end
+    pcall(function() ModRef:SetSharedVariable(sharedKey(actor), v) end)
+end
+-- Clear the shared state when it's the montage this script started (another script may have started a newer one).
+local function unshare(actor, montage)
+    local s = sharedPlaying(actor)
+    if not s then return end
+    local ok, address = pcall(function() return montage:GetAddress() end)
+    if ok and tostring(address) == s.montage then sharePlaying(actor, nil) end
+end
+
 local function anims()
     if animModule == nil then
         local ok, m = pcall(require, "WCModsAnims")
@@ -1562,6 +1591,38 @@ local function loadSequence(path)
     return nil
 end
 
+-- The sequence a montage plays (its first slot's first segment), as "AnimSequence /Game/...", or nil when it
+-- can't be read.
+local function montageSequence(m)
+    local ok, full = pcall(function() return m.SlotAnimTracks[1].AnimTrack.AnimSegments[1].AnimReference:GetFullName() end)
+    if ok and type(full) == "string" then return full end
+    return nil
+end
+
+-- What another script's Game.anims.play started on the actor, while it still plays: (anim instance, montage,
+-- {id, path, montage}), or nil. Only while the AnimBlueprint's current montage is the one that script started
+-- (the same object) and plays its sequence (when that can be read); otherwise it has ended, or the game's own
+-- montage took its place, and the shared state is cleared, so the game's is never stopped for it.
+local function sharedMontage(actor)
+    local s = sharedPlaying(actor)
+    if not s then return nil end
+    local mesh = animMesh(actor)
+    local ok, ai, m = pcall(function()
+        local inst = mesh:GetAnimInstance()
+        return inst, inst:GetCurrentActiveMontage()
+    end)
+    if ok and valid(ai) and valid(m) and s.montage ~= "" then
+        local okA, address = pcall(function() return m:GetAddress() end)
+        local seq = montageSequence(m)
+        if okA and tostring(address) == s.montage and (seq == nil or s.path == "" or seq == "AnimSequence " .. s.path) then
+            local okP, on = pcall(function() return ai:Montage_IsPlaying(m) end)
+            if okP and on then return ai, m, s end
+        end
+    end
+    sharePlaying(actor, nil)
+    return nil
+end
+
 -- Play an animation on a cat or an animal (yours when `who` is nil): a mod's by its id ("my-mod/Wave"),
 -- or one of the game's sequences by its path. opts: loop (until stopped), speed, blend (seconds in and
 -- out); a mod's animation brings its own. Returns the montage playing it, or nil and why.
@@ -1592,36 +1653,50 @@ function Game.anims.play(who, id, opts)
     end)
     if not ok or not valid(m) then return nil, ok and "the game didn't play it" or tostring(m) end
     animPlaying[actor:GetAddress()] = { id = id, montage = m, anim = ai }
+    sharePlaying(actor, id, path, m)
     return m
 end
 
--- The animation Game.anims.play started on a cat or an animal that's still playing (its id), or nil.
+-- The animation Game.anims.play started on a cat or an animal that's still playing (its id), or nil: this
+-- script's, or another's (shared) while the actor's current montage is still the one that script started.
 function Game.anims.playing(who)
     local actor = animActor(who)
     if not valid(actor) then return nil end
     local key = actor:GetAddress()
     local p = animPlaying[key]
-    if not p then return nil end
-    if valid(p.anim) and valid(p.montage) then
-        local ok, on = pcall(function() return p.anim:Montage_IsPlaying(p.montage) end)
-        if ok and on then return p.id end
+    if p then
+        if valid(p.anim) and valid(p.montage) then
+            local ok, on = pcall(function() return p.anim:Montage_IsPlaying(p.montage) end)
+            if ok and on then return p.id end
+        end
+        animPlaying[key] = nil
+        unshare(actor, p.montage)
     end
-    animPlaying[key] = nil
-    return nil
+    local _, _, s = sharedMontage(actor)
+    return s and s.id or nil
 end
 
--- Stop what Game.anims.play started on it, blending out over `blend` seconds (the animation's own by
--- default). Returns whether something stopped.
+-- Stop what Game.anims.play started on it, here or in another script, blending out over `blend` seconds (the
+-- animation's own by default). Returns whether something stopped. Another script's is stopped only while the
+-- actor's current montage is still the one it started (sharedMontage): never the game's own.
 function Game.anims.stop(who, blend)
     local actor = animActor(who)
     if not valid(actor) then return false end
     local key = actor:GetAddress()
     local p = animPlaying[key]
     animPlaying[key] = nil
-    if not (p and valid(p.anim) and valid(p.montage)) then return false end
-    local info = Game.anims.list()[p.id]
+    if p and valid(p.anim) and valid(p.montage) then
+        unshare(actor, p.montage)
+        local info = Game.anims.list()[p.id]
+        local out = blend or (info and info.blend) or ANIM_BLEND
+        return (pcall(function() p.anim:Montage_Stop(out, p.montage) end))
+    end
+    local ai, m, s = sharedMontage(actor)
+    if not ai then return false end
+    sharePlaying(actor, nil)
+    local info = Game.anims.list()[s.id]
     local out = blend or (info and info.blend) or ANIM_BLEND
-    return (pcall(function() p.anim:Montage_Stop(out, p.montage) end))
+    return (pcall(function() ai:Montage_Stop(out, m) end))
 end
 
 -- The same on a cat: Game.cat():animate("my-mod/Wave"), Game.cat(npc):stopAnimation().

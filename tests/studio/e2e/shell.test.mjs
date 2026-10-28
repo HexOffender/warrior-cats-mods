@@ -7,15 +7,16 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { launch } from "../lib/browser.mjs";
-import { NO_BROWSER, browserChoice, dataFolder, makeGame, removeFolders, sleep, startStudio, warmUp } from "../lib/studio.mjs";
+import { browserChoice, dataFolder, makeGame, removeFolders, requireBrowser, sleep, startStudio, takeTurn, warmUp } from "../lib/studio.mjs";
 
 const { browserPath, skip } = browserChoice();
 
-let browser, studio, folders;
+let browser, studio, folders, release;
 
 before(async () => {
   if (skip) return;
-  if (!browserPath) throw new Error(NO_BROWSER);
+  requireBrowser(browserPath);
+  release = await takeTurn();   // one end-to-end file at a time
   folders = dataFolder();
   // One after the other, each kept as soon as it's up, so `after` can end whatever started if the other fails.
   studio = await startStudio(folders);
@@ -27,6 +28,7 @@ after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
   if (folders) await removeFolders(folders);
+  if (release) release();
 });
 
 test("the studio opens with no console errors, its status chips and its pages", { skip }, async () => {

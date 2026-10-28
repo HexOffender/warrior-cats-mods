@@ -18,11 +18,12 @@ export function slug(text, taken = [], fallback = "thing") {
 }
 
 // A list on the left (pick one to edit, add one), the editor on the right. render() draws both again;
-// relabel(i) redraws one list button in place (a name being typed), so nothing loses focus; ready(false)
-// holds the Add button back while the page is still reading its file.
+// relabel(i) redraws one list button in place (a name being typed; the chosen one by default), so nothing loses
+// focus and the editor isn't drawn again; ready(false) holds the Add button back while the page is still reading
+// its file. The editor's pane is data-key "editor:<noun>", so focus finds its way back after a redraw.
 export function listEditor({ noun, label, add, empty }) {
   const list = el("div", { class: "pick-list", role: "list", "aria-label": `${noun}s` });
-  const editor = el("div", { class: "stack" });
+  const editor = el("div", { class: "stack", "data-key": `editor:${noun}` });
   const addBtn = el("button", { class: "btn", text: `Add ${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun}`, onclick: () => add() });
   const element = el("div", { class: "split" }, el("div", { class: "stack" }, list, addBtn), editor);
   let things = [], chosen = 0, draw = null;
@@ -43,7 +44,7 @@ export function listEditor({ noun, label, add, empty }) {
     if (!things.length) editor.append(el("div", { class: "empty", text: empty }));
     else draw(editor, things[chosen], chosen);
   }
-  function relabel(i) {
+  function relabel(i = chosen) {
     const b = buttons[i];
     if (b && things[i]) b.replaceChildren(...[].concat(label(things[i], i)).filter(x => x != null && x !== false));
   }
@@ -51,9 +52,27 @@ export function listEditor({ noun, label, add, empty }) {
            ready(on) { addBtn.disabled = !on; } };
 }
 
-// A labelled field.
-export function field(label, input, hint) {
-  return el("label", { class: "field" }, el("span", { class: "lbl", text: label }), input,
+// What the last Apply said about one mod's part of a page, from the "installed" event's result (the build's
+// manifest, or {manifest}): {on: whether the mod went in at all, said: [{id, why}]}, the warnings the build
+// section `section` gave about that mod's things ("items: my-mod: MoonHerb: ..." is {id: "MoonHerb", why: ...};
+// one about the mod as a whole has id null). null for a result without a manifest.
+export function lastApply(result, section, modId) {
+  const m = result && (result.sections ? result : result.manifest && result.manifest.sections ? result.manifest : null);
+  if (!m) return null;
+  const prefix = `${section}: ${modId}: `;
+  const said = (m.warnings || []).filter(w => w.startsWith(prefix)).map(w => {
+    const rest = w.slice(prefix.length), at = rest.indexOf(": ");
+    return at > 0 && /^[A-Za-z][A-Za-z0-9]*$/.test(rest.slice(0, at)) ? { id: rest.slice(0, at), why: rest.slice(at + 2) } : { id: null, why: rest };
+  });
+  return { on: (m.mods || []).includes(modId), said };
+}
+
+// A labelled field. required: it's needed for the thing to go in the game; the label says so, and so does
+// aria-required for a screen reader.
+export function field(label, input, hint, { required = false } = {}) {
+  if (required) input.setAttribute("aria-required", "true");
+  return el("label", { class: "field" },
+    el("span", { class: "lbl", text: label }, required ? el("span", { class: "needed", text: " (needed)" }) : null), input,
     hint ? el("span", { class: "muted", style: { fontSize: "0.85rem" }, text: hint }) : null);
 }
 

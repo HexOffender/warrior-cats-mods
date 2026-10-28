@@ -355,7 +355,9 @@ async function runTask(path, title, body = {}) {
     if (launcher) toast("Some of your key changes only work when you start the game with Play with key remaps.bat.");
     // After Play the log gets out of the way, unless it has something to say.
     if (path === "/play" && !trouble && !launcher) hideLater = setTimeout(hideDrawer, 4000);
-    bus.emit("installed", r.result);
+    // With the task's path: a check of the mods (/build) put nothing in the game, and the pages that say what's
+    // in the game (Items, Animations) leave it out (wc.onlyChecked).
+    bus.emit("installed", r.result && typeof r.result === "object" && !Array.isArray(r.result) ? { ...r.result, task: path } : r.result);
     if (path === "/palettes/apply") bus.emit("mods-changed");   // it turned mods on and off
   } catch (e) {
     stopPolling();

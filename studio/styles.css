@@ -255,6 +255,8 @@ button.chip[aria-pressed="true"], button.chip[aria-selected="true"] { border-col
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px 12px 15px 11px / 12px 15px 11px 14px; box-shadow: var(--shadow); padding: 16px 18px; display: grid; gap: 12px; min-width: 0; }
 .field { display: grid; gap: 4px; }
 .field label, .lbl { font-weight: 500; font-size: 0.92rem; }
+.field .needed { font-weight: 400; color: var(--muted); }                  /* story.js field(..., { required }) */
+.field-problem { color: var(--bad); font-size: 0.88rem; }                  /* what a needed field is missing */
 input[type="text"], input[type="number"], input[type="search"], select, textarea {
   border: 1px solid var(--field); background: var(--raised); color: var(--ink); border-radius: 8px; padding: 7px 10px; min-width: 0; box-shadow: inset 0 1px 2px rgba(42,32,23,.06);
 }
@@ -316,6 +318,11 @@ body.help-page .help-body { padding: 0; }
 .problems { border: 1px solid var(--edge-bad); background: color-mix(in srgb, var(--bad) 8%, var(--surface)); border-radius: 12px; padding: 10px 14px; }
 .save-notes { border: 1px solid var(--line); background: var(--raised); border-radius: 12px; padding: 10px 14px; }   /* what Apply would leave out of a file that's fine */
 .switch-ask { gap: 8px; }
+/* wc.captureKey's dialog: why a key can't be used, and the box where a click or the wheel picks a mouse button. */
+.capture-why { color: var(--ink); padding-left: 10px; border-left: 3px solid var(--changed); margin: 0; }
+.capture-zone { border: 2px dashed var(--field); border-radius: 12px; padding: 18px; text-align: center; color: var(--muted); user-select: none; cursor: crosshair; }
+.capture-zone:hover { border-color: var(--accent); }
+@media (forced-colors: active) { .capture-why { border-left: 3px solid CanvasText; } }
 .topbar button.chip:hover { border-color: var(--accent); }
 .toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 8px; z-index: 30; }
 .toast { background: var(--ink); color: var(--bg); border-left: 4px solid var(--accent); padding: 8px 14px; border-radius: 10px; font-size: 0.95rem; box-shadow: 0 8px 24px rgba(0,0,0,.25); max-width: min(560px, calc(100vw - 32px)); display: flex; gap: 10px; align-items: start; }

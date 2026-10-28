@@ -1,0 +1,7 @@
+{
+  "name": "Animations test",
+  "description": "The game's own animations without a file (animations.json's \"game\"), for tests/game/test_animations.py: Yawn as an emote on F7, Stretch with the claws out on F8, and the sleep loop in the trot's place.",
+  "version": "1.0",
+  "author": "wcmods",
+  "enabled": true
+}

@@ -8,6 +8,7 @@
 //   await page.waitFor("#nav button");
 //   await page.click({ text: "New mod…" });
 //   await page.type('input[aria-label="New mod folder name"]', "my-mod");
+//   await page.route("/api/game/items", fixture);   // answer the studio's route from a fixture (no game)
 //   await browser.close();
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -138,12 +139,15 @@ export class Page {
     this.targetId = targetId;
     this.errors = [];
     this.loads = [];
+    this.routes = [];
   }
   send(method, params) { return this.c.send(method, params, this.sessionId); }
   async init() {
     this.off = this.c.on(msg => {
       if (msg.sessionId !== this.sessionId) return;
-      if (msg.method === "Runtime.consoleAPICalled" && ["error", "assert"].includes(msg.params.type)) {
+      if (msg.method === "Fetch.requestPaused") {
+        this.answer(msg.params).catch(() => { /* the page went away mid-request */ });
+      } else if (msg.method === "Runtime.consoleAPICalled" && ["error", "assert"].includes(msg.params.type)) {
         this.errors.push(msg.params.args.map(a => a.description || String(a.value)).join(" "));
       } else if (msg.method === "Runtime.exceptionThrown") {
         const d = msg.params.exceptionDetails;
@@ -161,6 +165,22 @@ export class Page {
     await this.send("Runtime.enable");
     await this.send("Log.enable");
     await this.send("DOM.enable");
+  }
+  // Answer the page's requests to a URL containing `urlPart` (its path, before any ?query) with `json`, in place
+  // of the server: an object, or a function of the full URL giving one (null to let the request go through).
+  // For the routes that read the game's files, in tests without the game. Set before the page loads them.
+  async route(urlPart, json) {
+    this.routes.push({ urlPart, json });
+    await this.send("Fetch.enable", { patterns: this.routes.map(r => ({ urlPattern: `*${r.urlPart}*`, requestStage: "Request" })) });
+  }
+  async answer({ requestId, request }) {
+    const path = request.url.split("?")[0];
+    const r = this.routes.find(x => path.includes(x.urlPart));
+    const body = r ? (typeof r.json === "function" ? r.json(request.url) : r.json) : null;
+    if (body == null) return this.send("Fetch.continueRequest", { requestId });
+    return this.send("Fetch.fulfillRequest", { requestId, responseCode: 200,
+      responseHeaders: [{ name: "Content-Type", value: "application/json; charset=utf-8" }],
+      body: Buffer.from(JSON.stringify(body)).toString("base64") });
   }
   // Load a URL and wait for its load event (10 s, or `timeout` ms); a change of #fragment alone waits for the
   // hashchange.
@@ -272,14 +292,14 @@ export class Page {
     if (!ok) throw new Error(`couldn't focus ${JSON.stringify(target)}`);
     await this.send("Input.insertText", { text });
   }
-  // A key pressed and let go: a character, or a key's name (Enter, Escape, Tab, Space, the arrows...), which the
-  // browser then acts on as it would on a real press (Tab moves focus, Enter's text presses a focused button).
+  // A key pressed and let go: a character, or a key's name (Enter, Escape, Tab, Space, the arrows, F7...), which
+  // the browser then acts on as it would on a real press (Tab moves focus, Enter's text presses a focused button).
   // `code` is the key's place on the keyboard ("KeyF", "Insert"), which a page reading KeyboardEvent.code needs
-  // (a named key's own and a letter's are filled in); `shift` holds Shift.
+  // (a named key's own, an F key's and a letter's are filled in); `shift` holds Shift.
   async press(key, { code, shift = false } = {}) {
     const text = key.length === 1 ? key : key === "Enter" ? "\r" : undefined;
-    const letter = /^[a-z]$/i.test(key);
-    const vk = KEY_CODES[key] || (letter ? key.toUpperCase().charCodeAt(0) : 0);
+    const letter = /^[a-z]$/i.test(key), fKey = /^F\d{1,2}$/.test(key);
+    const vk = KEY_CODES[key] || (fKey ? 111 + Number(key.slice(1)) : letter ? key.toUpperCase().charCodeAt(0) : 0);
     code ||= KEY_NAMES[key] || (letter ? `Key${key.toUpperCase()}` : key);
     const fields = { key, code, modifiers: shift ? 8 : 0, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk };
     await this.send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", text, ...fields });

@@ -1,23 +1,26 @@
 // What the end-to-end tests (e2e/*.test.mjs) share: a Clan Mod Studio, `python wcmods.py studio --no-browser
 // --port 0`, started over folders of the test's own (WCMODS_DATA, with a made-up game folder and saves folder named
-// in its wcmods.json, and a temp folder), so the real game folder and the real save are never used, run from a
-// copy of wcmods of its own, and the browser that drives it (lib/browser.mjs).
+// in its wcmods.json, and a temp folder), so the real game folder, the real save and the repository's own folder
+// are never used, run from a copy of wcmods of its own, and the browser that drives it (lib/browser.mjs).
 //
+//   const { browserPath, skip } = browserChoice();
+//   requireBrowser(browserPath);                   // in `before`: no Chromium fails here when it's required
+//   const release = await takeTurn();              // in `before`: one end-to-end file at a time
 //   const folders = dataFolder();                  // root, game, saves, data, temp, app (a copy of wcmods)
 //   const studio = await startStudio(folders);    // studio.url, studio.stop()
 //   makeGame(folders.game);                        // the folder holds "the game" now (no paks), or
 //   fixtureGame(folders);                          // the made-up game with a few tables, and the tests' save
 //   writeMod(folders, "my-mod", { name: "My mod" }, { "npcs.json": {...} });
 //   await writeSave(folders.saves, {...});         // WrcGame.sav holding that JSON
-//   await removeFolders(folders);                  // at the end (removeFolder(folders.root) does as well)
+//   await removeFolders(folders); release();       // in `after`
 //
-// Each e2e file is skipped, with a reason, when no Chromium is found (browserChoice, or e2eSkip): set WC_BROWSER
-// to one, or WC_REQUIRE_BROWSER=1 (as CI does) to fail instead of skipping (NO_BROWSER, or requireBrowser, in the
-// file's `before`).
+// Each e2e file is skipped, with a reason, when no Chromium is found: set WC_BROWSER to one, or
+// WC_REQUIRE_BROWSER=1 (as CI does) to fail instead of skipping.
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import zlib from "node:zlib";
 import { findBrowser } from "./browser.mjs";
 import { REPO } from "./dom.mjs";
 
@@ -40,6 +43,43 @@ export const e2eSkip = browserPath => (browserPath || required ? false
   : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)");
 export function requireBrowser(browserPath) {
   if (!browserPath) throw new Error(NO_BROWSER);
+}
+export const e2eBrowser = browserChoice, needBrowser = requireBrowser;
+
+// The end-to-end files take turns: node --test runs files side by side, and two studios with a Chromium each
+// make a small machine slow enough for the tests' waits to run out. Each file holds this lock from its `before`
+// to its `after` (takeTurn() resolves to the release); the holder touches it every few seconds while it holds
+// it. A lock that's stale is taken over: its process is gone, it's empty (written by a run that died before it
+// said who it was), or nobody has touched it for STALE_MS (a run that hangs). One that stays held longer than
+// `wait` ms (WC_E2E_LOCK_WAIT_MIN minutes, 20 by default) gives up with an error that names the lock.
+export const LOCK = path.join(os.tmpdir(), "wc-studio-e2e.lock");
+const STALE_MS = 10 * 60 * 1000, TOUCH_MS = 10 * 1000, EMPTY_MS = 5 * 1000;
+export async function takeTurn({ lock = LOCK, wait = Number(process.env.WC_E2E_LOCK_WAIT_MIN || 20) * 60 * 1000 } = {}) {
+  const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+  const end = Date.now() + wait;
+  for (;;) {
+    try {
+      fs.writeFileSync(lock, String(process.pid), { flag: "wx" });
+      const touch = setInterval(() => { try { const now = new Date(); fs.utimesSync(lock, now, now); } catch (e) { /* gone */ } }, TOUCH_MS);
+      touch.unref();
+      return () => {
+        clearInterval(touch);
+        try { if (fs.readFileSync(lock, "utf8") === String(process.pid)) fs.rmSync(lock); } catch (e) { /* gone */ }
+      };
+    } catch (e) {
+      if (e.code !== "EEXIST") throw e;
+      let text = null, age = 0;
+      try { text = fs.readFileSync(lock, "utf8").trim(); age = Date.now() - fs.statSync(lock).mtimeMs; } catch (e2) { continue; /* just removed */ }
+      const pid = Number(text);
+      const stale = (text === "" && age > EMPTY_MS) || (pid > 0 && !alive(pid)) || (text !== "" && !(pid > 0)) || age > STALE_MS;
+      if (stale) { try { fs.rmSync(lock); } catch (e2) { /* another took it over */ } continue; }
+      if (Date.now() > end) {
+        throw new Error(`waited ${wait >= 60000 ? `${Math.round(wait / 60000)} minutes` : `${Math.round(wait / 1000)} s`} for the end-to-end tests' lock ${lock}, held by process ${text || "(none written)"}; ` +
+          "if no other test run is going, delete that file");
+      }
+      await sleep(200);
+    }
+  }
 }
 
 // wcmods as the studio runs it (wcmods.py, wcmods/, studio/ and docs/), copied into `root`/app (a folder of its
@@ -188,4 +228,23 @@ export function readSave(saves) {
   const r = spawnSync(python(), ["-I", "-c", code, REPO, path.join(saves, "WrcGame.sav")], { encoding: "utf8" });
   if (r.status !== 0) throw new Error(r.stderr);
   return JSON.parse(r.stdout);
+}
+
+// A small PNG of one colour, w x h, to choose as a picture.
+export function pngFile(file, w = 32, h = 32, rgba = [200, 60, 160, 255]) {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(zlib.crc32(body), 8 + data.length);
+    return out;
+  };
+  const head = Buffer.alloc(13);
+  head.writeUInt32BE(w, 0); head.writeUInt32BE(h, 4); head[8] = 8; head[9] = 6;
+  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: w }, () => rgba).flat())]);
+  const raw = Buffer.concat(Array.from({ length: h }, () => row));
+  fs.writeFileSync(file, Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", head),
+    chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]));
+  return file;
 }

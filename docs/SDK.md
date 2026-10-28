@@ -140,6 +140,9 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.add_texture(name, image, like, source=mod.id, key=None)` | A new texture `/Game/WCMods/<name>`, a copy of the game's texture `like` (same size, format and mips) with the pixels of `image`: `(width, height, RGBA bytes)` as `png.read` gives, or a function that makes them. With `key` (text that changes when the picture does), an install reuses the texture it made last time. Returns the new asset path, for an icon or a look |
 | `ctx.add_mesh(name, model, like, source=mod.id, key=None, on_cat=True)` | A new skeletal mesh `/Game/WCMods/<name>`, a copy of the game's accessory mesh `like` (its skeleton, material, LODs and body-shape morphs) with a model's shape tied to the cat's body: `model` is a `models.Model` (`models.read(name, bytes)` reads OBJ and glTF) or a function that reads one. With `on_cat=False` the model stays as it is, on the skeleton's root bone, for a mesh shown on its own (a pickup's). With `key`, an install reuses the mesh it made last time. Returns the new asset path. Showing it on a cat takes a script (the items section's `WCModsModels`) |
 | `ctx.add_animation(name, read, kind="cat", clip=None, claws=False, source=mod.id, key=None)` | A new animation `/Game/WCMods/<name>` from a glTF file: `read()` gives its `(file name, bytes, sibling)` (`sibling(name)` the bytes of a file a `.gltf` names, or None), `clip` names the animation in it (the first by default), `kind` says whose skeleton (`animations.KINDS`: `"cat"`, `"mouse"`, `"bird"`...). It's a copy of one of the game's sequences on that skeleton with the file's keys in it ([Animations](#animations-animationsjson)); for a cat, `claws` out. With `key` (text that changes whenever the file does), an install reuses the sequence it made last time; without it, it's made each install. An animation whose package another has already (mod names or ids that differ only in case, or in `-` and `_`) is refused. Returns `(asset path, seconds)`; scripts play it with `Game.anims.play` |
+| `ctx.replace_animation(sequence, read=None, kind="cat", clip=None, source=mod.id, key=None, from_game=None)` | One of the game's sequences for `kind`, by name (`"A_CatMaster_Trot_1"`) or path, played with other keys wherever the game plays it, fitted to its length (its notifies and curves stay): a glTF file's (`read`, `clip` and `key` as `add_animation`'s), or, with `from_game`, another of the game's sequences for that kind (`"A_CatMaster_Run_1"`), whose keys are fitted to its keys. Refused: an additive sequence, one with a single key, or a sequence in its own place. `from_game` is new in wcmods 0.4.0. Returns `(asset path, seconds)` |
+| `ctx.game_sequence(name, kind="cat")` | One of the game's sequences for `kind`, by name or path, to play as it is: `{"path", "seconds", "additive", "root_motion"}` (`path` without the object's name; `Game.anims.play` takes `path + "." + short name`). An additive one can't play on its own. New in wcmods 0.4.0 |
+| `ctx.add_animation_from_game(name, sequence, kind="cat", claws=False, source=mod.id)` | A new animation `/Game/WCMods/<name>`, as `add_animation`'s, that is a copy of one of the game's sequences for `kind` with its own keys and length, for what only a copy can have: the cats' claws out. Its face curves aren't copied. New in wcmods 0.4.0. Returns `(asset path, seconds)` |
 | `ctx.add_ue4ss_shared(name, text)` | A Lua module any UE4SS script can `require(name)`, installed beside `WCModsGame` (with UE4SS): data a section gives the shared scripts, as the items section's `WCModsItems` tells `Game.items.drop` how mod items look on the ground |
 | `ctx.add_package(path, data, chunk_id, imports, shaders, bulk=None)` | Add a cooked package the game hasn't got, with its chunk ID, container header entry and `.ubulk`; `add_texture` is the easy way |
 | `ctx.cache_dir` | A folder for work an install can reuse (wcmods' `cache/`; the selftest's stays in its temp folder) |
@@ -148,6 +151,7 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.add_save_key(object_path, key, value, only_new=False)` | Add a key to a save object, e.g. a new inventory item, at every install. With `only_new`, a key the save already has keeps its value (a mod's starting items, given once). A section's save ops are dropped when its table edits fail |
 | `ctx.save_op(op)` | Queue any save op: `{"op": "set", "path", "value"}`, `{"op": "insert", "path", "key", "value"}` or `{"op": "remove", "path"}`, with `"source": mod.id`, `"label"` (the change in words, for the log: "Fawnstar's level") and `"once": True` to make it once per save and record it in `save-changes.json` ([formats.md](formats.md#save-changesjson)). A remove of anything but an item carried or one element of a list is skipped (`savedit.remove_problem`) |
 | `ctx.warn(msg)` / `ctx.log(msg)` / `ctx.note(key, value)` | Report to the user / the build log / the build manifest (notes show on the mod menu's first page) |
+| `ctx.leave_out(mod_id, part_id, name, why, said=None)` | In `collect`: leave one part of a mod's file out because it isn't finished yet (an item with no description), while the rest goes in. Warns `"<mod>: <part>: <said>, so it's left out of the game"` and lists it in `ctx.left_out`; the studio's save says it as a note by name ("Moon Herb (no description)"), not as a problem. New in wcmods 0.4.0 |
 | `ctx.game`, `ctx.cfg`, `ctx.mods` | The game reader (`find`, `exists`, `data_tables`), the tool's configuration, and the enabled mods |
 
 CSV edits use `{row: {column: value}}`. `"*"` means every row, `"x1.5"` multiplies the game's
@@ -292,7 +296,7 @@ everything the game needs for a new item:
 | Key | |
 |---|---|
 | `id` | Letters and digits. The item's tag is `Gameplay.Inventory.Consumable.<id>` for a herb or `Gameplay.Inventory.Materials.<id>`, and an accessory's is its accessory's next look (below). It can't be one the game or another mod already has; the build says if it is |
-| `name`, `description` | What the inventory and bartering show, the same in every language |
+| `name`, `description` | What the inventory and bartering show, the same in every language. Both are needed: an item without one (empty, or only spaces) is left out of the game with a warning, and the mod's other items still go in (the Items page marks the empty one, and its save says so) |
 | `like` | A game item to start from, by its short name (`"MediumHealingHerb"`) or whole tag: its kind, effect, when it can be used, icon, icon group, rarity and colour. An accessory's is the look it's a copy of, `"Neck.DogCollar.1"`. The item's other keys override those |
 | `kind` | `"consumable"` (a herb or pouch), `"material"` or `"accessory"`, when there's no `like` |
 | `icon` | An item to borrow the icon of (`"Rock"`), a texture of the game's, e.g. `"/Game/Art/UXD/Textures/gui_icons/gui_icons_inventory/T_UI_Icon_Flower_Marigold_D"` (`wcmods files "*gui_icons_inventory*"` lists them), a PNG in the mod's folder (`"icons/moon-herb.png"`), or a recolour (below) |
@@ -300,7 +304,7 @@ everything the game needs for a new item:
 | `model` | Accessories: a shape of its own for this look, an OBJ or glTF file in the mod's folder (`"models/bell-collar.glb"`; below). Herbs and materials: how it lies on the ground for the cat to pick up (On the ground, below) |
 | `place` | Accessories: where its shape sits, moved, turned and scaled from where it was made (below): `forward`, `up` and `left` in cm, `yaw`, `pitch` and `roll` in degrees, and `scale`, one number or `{"forward", "up", "left"}`. Without a `model`, it places the accessory's own shape. Herbs and materials: where their `model` lies, the same way, `up` being above the ground |
 | `opacity`, `glass` | Accessories: from 0 to 1, how much of it shows (1 by default). Below 1 the cat shows through it, and it's worn as glass of the `glass` colour (`"#bfe6ff"`, white by default) instead of its look (below) |
-| `effect` | Herbs: what using one does, one of the game's herb effects, such as `Gameplay.Effect.Consumable.Health.2` (+50 health). [items.md](mechanics/items.md) lists them |
+| `effect` | Herbs: what using one does, one of the game's herb effects, such as `Gameplay.Effect.Consumable.Health.2` (+50 health). [items.md](mechanics/items.md) lists them. The Items page names them in words (`sections/items.py`'s `EFFECT_WORDS`) with the herb that has each, and choosing one sets `type`, `target`, `combat`, `exploring` and `fight_only` as that herb has them |
 | `type`, `target` | Herbs: the effect's kind (`Health`, `Stamina`, `BuffStrength`, …), and who it's for: `Owner`, or `OwnerTeam` for your whole team |
 | `combat`, `exploring`, `fight_only` | Herbs: `true` or `false` for usable in fights, usable while exploring, and whether its effect ends with the fight |
 | `group`, `rarity`, `color` | The badge by its icon (`Health`, `Stamina`, `Stats`, `Status`, `Damage`, `Experience`, `Free`, or `None`), the rarity (`Common`, `Uncommon`, `Rare`, `Mythic`, `None`) and the category colour (`Consumable`, `Quest`, `Den`, `None`) |
@@ -326,8 +330,8 @@ files, so a mod ships no picture of the game's:
 | `hue` | Degrees to turn its colours round the colour wheel, e.g. `180` |
 | `saturation`, `brightness` | Multipliers: `0.5` is half as colourful, `1.2` a fifth lighter |
 
-For a picture of your own, `python wcmods.py texture <what>` saves one of the game's as a PNG to
-paint over: an item's icon (`SmallHealingHerb`), an accessory's look (`Neck.DogCollar.1`) or any
+For a picture of your own, the Items page's "Save the game's icon to paint over" (and "…look…") or
+`python wcmods.py texture <what>` saves one of the game's as a PNG to paint over: an item's icon (`SmallHealingHerb`), an accessory's look (`Neck.DogCollar.1`) or any
 texture (`/Game/...`). Keep the size, or wcmods scales it; inventory icons are 512 x 512 with a
 transparent background, accessories' icons 256 x 256 and their looks 2048 x 2048. Making a big look
 takes about 15 seconds the first time; installs after that reuse it from `cache/`.
@@ -338,7 +342,10 @@ next one, `Gameplay.Inventory.Cosmetic.Neck.DogCollar.3`, and wcmods adds its te
 list. Neck, body and paw accessories can take new looks; the game always shows a head accessory's
 first look, so those can't. The number depends on the other enabled mods that add looks to the same
 accessory, so switching one of those on or off can change which look an accessory you already have
-is. Bartering shows accessories you already have as an empty slot, the game's and a mod's alike.
+is. Bartering shows accessories you already have as an empty slot, the game's and a mod's alike. A new
+look needs something of its own, a `texture`, `model`, `place` or `opacity`: one with none would be the
+look it's `like` again, so it's left out with a warning. Any look can be the one it's `like`, not only the
+first (the Items page lists every look of the neck, body and paw accessories).
 
 **Models.** A new look can have a shape of its own: a model made in Blender or any 3D program,
 saved as Wavefront OBJ (`.obj`) or glTF (`.glb`, or a `.gltf` with its data inside or beside it). No
@@ -414,37 +421,51 @@ What it can't do (yet):
 
 ### Animations (`animations.json`)
 
-Animations of a mod's own, made in Blender (or anything that writes glTF), for cats or for one kind of
-animal: emotes your cat plays from a key or the mod menu, or anything a script plays on a cat or an
-animal (a swim for RiverClan cats, say, once a mod makes them swim). Or one of the game's own
-animations replaced: a trot of your own for every cat, say. The Animations page in Clan Mod Studio
-writes the file and saves the start kits.
+Animations for cats or for one kind of animal: one of the game's own (no Blender needed), or a mod's own
+made in Blender (or anything that writes glTF). Each is an emote your cat plays from a key or the mod
+menu, or anything a script plays on a cat or an animal (a swim for RiverClan cats, say, once a mod makes
+them swim), or it takes the place of one of the game's: a trot of your own for every cat, say. The
+Animations page in Clan Mod Studio writes the file and saves the start kits.
 
 ```json
 {
   "animations": [
-    { "id": "Wave", "name": "Wave", "file": "animations/wave.glb", "emote": true, "key": "F6" },
+    { "id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "emote": true, "key": "F7" },
+    { "id": "Wave", "name": "Wave", "file": "animations/wave.glb", "emote": true, "key": "F8" },
     { "id": "Swim", "name": "Swim", "file": "animations/swim.glb", "loop": true },
     { "id": "Spin", "name": "Spin", "file": "animations/spin.glb", "for": "mouse", "clip": "Spin" },
-    { "id": "Trot", "name": "My trot", "file": "animations/trot.glb", "replaces": "A_CatMaster_Trot_1" }
+    { "id": "Trot", "name": "My trot", "file": "animations/trot.glb", "replaces": "A_CatMaster_Trot_1" },
+    { "id": "RunTrot", "name": "Run as the trot", "game": "A_CatMaster_Run_1", "replaces": "A_CatMaster_Trot_1" }
   ]
 }
 ```
 
 | Key | |
 |---|---|
-| `id` | Letters and digits, starting with a letter. Scripts know it as `"<mod id>/<id>"`; in the game it's `/Game/WCMods/<mod id>/A_<id>` |
-| `name` | What the Emotes page calls it |
-| `file` | A glTF file in the mod's folder: `.glb`, or a `.gltf` with its data inside or beside it |
+| `id` | Letters and digits, starting with a letter. Scripts know it as `"<mod id>/<id>"`; in the game it's `/Game/WCMods/<mod id>/A_<id>`, with any `-` in the mod's id as `_` (`/Game/WCMods/my_mod/A_Wave`) |
+| `name` | What the Emotes page calls it. Needed: one without a name is left out of the game with a warning, and the mod's other animations still go in |
+| `file` | A glTF file in the mod's folder: `.glb`, or a `.gltf` with its data inside it. A `.gltf` with its data in a `.bin` beside it works when both are placed in the mod's folder by hand; the Animations page takes one file, so it asks for a `.glb`. Up to 64 MB, and each animation in it up to 60 s: a longer one is left out with a warning (the page refuses a file with none shorter) |
+| `game` | In place of `file`: one of the game's own sequences for that skeleton, by its name (`"A_CatMaster_Yawn_1"`) or its path (for a name in more than one folder), played as the game has it (below). Not an additive one (keys added to another pose, like `A_CatMaster_Meow_1`). **Needs wcmods 0.4.0 or newer**: an older one leaves each such animation out with a warning ("no file chosen yet") and installs the mod's others. One with neither `file` nor `game` is left out with a warning |
 | `for` | Whose skeleton: `cat` (the default: every cat in the forest, yours and the clans'), `mouse`, `rat`, `rabbit`, `squirrel`, `bird`, `fox`, `badger`, `dog` or `snake` |
-| `clip` | Which animation in the file (Blender's action name); the first by default |
+| `clip` | Which animation in the `file` (Blender's action name); the first by default. One of the game's (`game`) takes none |
 | `replaces` | One of the game's sequences for that skeleton, by its name (`"A_CatMaster_Trot_1"`) or its path (`"/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1"`, for a name in more than one folder): this plays in its place instead (below). It takes no `loop`, `speed`, `blend`, `emote`, `key` or `claws` |
 | `loop` | Play it over and over until it's stopped (a script's `Game.anims.stop`, or an emote's key again) |
 | `speed` | How fast, 0.1 to 10 (1 as it was made) |
 | `blend` | Seconds it takes to blend in from what the animal was doing, and back out at the end, 0 to 2 (0.25) |
 | `emote` | Cats only: an emote, a button on the mod menu's Emotes page (Your cat) |
-| `key` | With `emote`: a key that plays it (and stops it), by the game's own name for it (`"F6"`, `"T"`, `"Gamepad_DPad_Up"`; the Animations page captures one) |
-| `claws` | Cats only: claws out while it plays (the game's own animations keep them in) |
+| `key` | With `emote`: a key or controller button that plays it (and stops it), by the game's own name for it (`"F7"`, `"T"`, `"Gamepad_DPad_Up"`; the Animations page's dialog takes one). Some are taken: Insert opens the mod menu (unless its key was changed), F6 turns mouse look on and off (its default `toggle_key`), F11 is the game's full screen, and the game's own keys (E, Space...) do their own thing too. Two emotes on one key: only one of them plays |
+| `claws` | Cats only: claws out while it plays (the game's own animations keep them in). With `game`, it makes a copy of the game's sequence with the claws out, without the sequence's face curves |
+
+**Without Blender (`game`):** one of the game's own animations, as it is. An emote or one for scripts
+plays the game's own sequence by its path (`Game.anims.play` loads it as the game would; nothing is
+made at install), so it's as long as the game's and moves as the game's does; `claws` out makes a copy
+with the claws' curves at 0 (`ctx.add_animation_from_game`). With `replaces`, its keys go in the other
+sequence's place, fitted to that one's keys (below). The Animations page lists the game's sequences
+for each animal: the everyday ones by plain names (`animations.FRIENDLY`: Yawn, Stretch, Shake, Sniff,
+Play, Sleep, Meow, Get up, Walk, Trot, Run, Idle, and each animal's start-kit examples), the cats' photo
+poses by the game's own names for them (`STR_PHOTOMODE_POSE_<n>`), then all of them by their names. Its
+Try it on my cat plays one on your cat in the running game through the game bridge (mods that run code
+allowed).
 
 **Making one:**
 - **The start kit:** `python wcmods.py animation cat` (or `mouse`, `bird`...), or the Animations page's
@@ -488,7 +509,10 @@ body during the animation, not the animal. The install lists every animation in 
 `WCModsAnims`, which `Game.anims` plays them from ([scripting.md](scripting.md#animations)); with
 emotes, the `WCModsEmotes` script adds the mod menu's Emotes page and their keys. A key works while the
 game has the focus. An emote's key or button again stops it, and so does walking off (the game's walk is
-under it). It all needs the script loader (UE4SS).
+under it). The [Emote wheel](https://github.com/HexOffender/wcmods-emote-wheel) mod is the second place
+emotes show: it plays the same ones through `Game.anims`, and the scripts share what plays
+(`Game.anims.playing`), so an emote's key stops what the wheel started.
+It all needs the script loader (UE4SS).
 
 **Replacing one of the game's (`replaces`):** the game's sequence itself is written again with the
 file's keys in place of its own, in wcmods' container under the same name, so every cat (or every
@@ -507,6 +531,12 @@ Additive sequences (their keys are added to another pose: the cats' `A_CatMaster
 recovery and aim offsets) can't be replaced, and are refused. Some of the game's have root motion
 (`bEnableRootMotion`: the walk, the attacks): where the game uses it, as it does for attacks and
 jumps, the root bone's movement moves the animal itself, so keep your root's path close to the game's.
+With `game` in place of `file` (`{"game": "A_CatMaster_Run_1", "replaces": "A_CatMaster_Trot_1"}`),
+another of the game's sequences for that animal plays there: its keys, resampled to the replaced one's
+keys over the same time (positions in a line, rotations the short way round), in place of its own
+(`ctx.replace_animation(..., from_game=...)`). Not the same sequence, not an additive one, and not one
+with a single key. Two folders' sequences with the same name are told apart by their paths: replacing
+both is two replacements, not one replacing the other.
 
 **What it can't do (yet):** move an animal (swimming, flying, new ways to walk are animations only);
 play on part of the body (the game's slot is the whole body); play on the named characters with models
@@ -514,6 +544,11 @@ of their own (Brightheart, Tallstar...), whose skeletons are their own; replace 
 animations for one cat only (every cat shares the AnimBlueprint and its sequences). Animals far off or
 out of view don't move their bones until they're seen, the engine's way, so a script's animation on one
 shows when it comes into view.
+
+**Not confirmed in game yet** ([verified.md](verified.md)): animations on the clans' cats and on quest
+givers (only your cat was watched), the rats', rabbits', squirrels', foxes', badgers', dogs' and snakes'
+(made as the mice's and birds' are), an emote on a controller button, the game's own animations without
+a file (`game`), and a key stopping what the Emote wheel started.
 
 ### New content: models, textures, sounds
 
@@ -1420,12 +1455,13 @@ affecting the others.
 | `reconnect()`, `anyDirty()`, `dirtyTargets()` | Whether the studio answers (taking up its token); whether any page, and which Editing mod bars, have unsaved changes. The shell never reloads the page or restarts the studio over them |
 | `el(tag, attrs, ...children)`, `$`, `clear` | Small DOM helpers |
 | `toast(msg, "bad"?)`, `confirmButton(label, armedLabel, fn)` | Feedback, and two-step confirm |
-| `modTarget({file, onLoad, getValue, onSaved, share})` | The "Editing mod: … Save to mod" bar the built-in pages use. A save doesn't read the file back (the page holds what it saved; a change made while it saved stays, unsaved); `onSaved(value, {changed})` hears what was saved (`changed`: the page was edited while it saved, so its state is left as it is), and `settleNew(list, saved)` there keeps the ids of new entries that were saved. It keeps unsaved work (the browser asks before the page closes, switching mods and importing a file ask first, `refresh()` re-reads the mod list without reloading the file), and shows under itself what would keep a saved file out of the game (`problems` from the PUT) until a save that's fine. `target.dirty` says whether there's unsaved work |
+| `modTarget({file, onLoad, getValue, onSaved, share, turnOn, savedSays})` | The "Editing mod: … Save to mod" bar the built-in pages use. A save doesn't read the file back (the page holds what it saved; a change made while it saved stays, unsaved); `onSaved(value, {changed})` hears what was saved (`changed`: the page was edited while it saved, so its state is left as it is), and `settleNew(list, saved)` there keeps the ids of new entries that were saved. It keeps unsaved work (the browser asks before the page closes, switching mods and importing a file ask first, `refresh()` re-reads the mod list without reloading the file), and shows under itself what would keep a saved file out of the game (`problems` from the PUT) until a save that's fine; what Apply would warn about in a file that goes in (`notes`) is listed there as good to know, and what the save left out until it's finished (`left_out`, `[{id, name, why}]`) is a plain note (`leftSaid`); either way the mod is still turned on. `turnOn: false` keeps a new mod, or one that's off, off (the Save page's), and `savedSays(mod)` words the toast after a save. `target.dirty` says whether there's unsaved work |
 | `installedEvent(target, fn)` | `bus.on("installed", fn)` that skips `fn` while `target` has unsaved changes: for a page that reloads its file after an Apply |
 | `openHelp(page)`, `pageHead({eyebrow, title, lede, help})` | The help panel: `openHelp("studio")` opens `docs/guide/studio.md` in it (no page: the guide's index); `pageHead`'s `help: "help:<page>"` puts a "How this works" button in the page's head that does the same |
 | `codePanel(title)` | A copyable JSON preview |
 | `color` | sRGB/linear conversion, HSL, `mood(hex, "vivid"\|"pastel"\|"moonlit"\|"ember")` |
-| `input` | Browser key/mouse/gamepad to Unreal key names, plus Xbox/PlayStation/Switch labels |
+| `input` | Browser key/mouse/gamepad to Unreal key names, plus Xbox/PlayStation/Switch labels (`studio/lib/keys.js`, which imports nothing, so node:test can use it as it is) |
+| `captureKey({title, message, pad, axis, mouse, zone, chips, reserved, why, where})` | The dialog that asks for a key, a mouse button (`mouse`: anywhere in it; `zone`: only in a box of its own) or a controller button (`pad`; a stick with `axis`): resolves to its Unreal name, or `null` when cancelled (Escape, Cancel, a click outside it, leaving the page). `reserved` is `{key: why}`: such a key is said, and a second press takes it (a controller's too). `why(key)` returns `null`, a sentence or `{refuse}` (said in the dialog's alert line; it stays open) or `{warn}` (the key goes through, and the warning is a toast). `where: "menus"` refuses mouse buttons. One is open at a time |
 | `bus.on/emit` | Page-to-page events: `mods-changed`, `installed`, `run-task` |
 | `getPath(obj, "a/b/c")` | Read a save path |
 
@@ -1447,7 +1483,12 @@ the game pauses on Escape), `GET /game/keys` (the game's own keys as the build k
 commands, and whether the script loader is there; no save needed), `POST /controls/check` `{mod, controls}`
 (what Apply would do with a `controls.json` for that mod, merged with the other mods': a sentence per entry,
 the keys wcmods and mods listen on, and which other mod wins where both change the same),
-`/game/data`, `/game/data/<table>`, `/save`.
+`/game/data`, `/game/data/<table>`, `/save`; for the Items and Animations pages `GET /game/items`
+(the game's items, with each herb's effect in words, who it's for and when), `POST /mods/<id>/picture`, `/model`
+and `/animation` (a file sent as the body; `?current=` names the file it may replace, else it never lands on
+another's), `GET /mods/<id>/picture?path=`, `GET /game/anim-sequences?for=` (the game's sequences, with their
+plain names), `GET /game/anim-sequence?for=&name=`, `POST /game/try-anim` `{path}` (one of the game's played on
+your cat; code mods only).
 
 The server listens on 127.0.0.1 only, and every API call needs the per-run token that the page
 gets when it loads. Other websites therefore can't drive it. An error is answered with a sentence

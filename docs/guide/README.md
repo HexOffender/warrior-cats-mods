@@ -13,6 +13,10 @@ panel.
   action, keys in menus, and what the page says before you apply.
 - [Names](names.md): renaming the cats in your save, the parts of clan names, rogue names, the ban list
   and any name the game shows; what to do when a cat shows as Cat 1.
+- [Items](items.md): herbs, materials and accessories of your own, with their icons, what they do and the
+  medicine cat's recipe.
+- [Animations](animations.md): the game's own animations as emotes on a key, or in another's place, and
+  your own from Blender.
 - [Characters](characters.md): cats of your own for Sandbox mode, their looks, where they stand and what
   they say, and getting Sandbox mode.
 - [Questlines](questlines.md): quests with those cats, step by step, with rewards, and starting them over.
