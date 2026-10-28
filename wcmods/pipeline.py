@@ -48,6 +48,22 @@ class InstallBlocked(RuntimeError):
         return list(dict.fromkeys(mod for _, mod, _ in self.problems if mod))
 
 
+def section_problems(rep):
+    """What went wrong in one section of a build's report, [(mod id or None, text)]; [] when its status is
+    "ok". Its "failed" lines up with its "errors", one for one; a report where it doesn't (an older wcmods
+    wrote only the errors' text, or added one without the other) is read from the errors, so nothing that
+    went wrong is ever missed. A section that isn't "ok" always has at least one."""
+    if rep.get("status") == "ok":
+        return []
+    errors = list(rep.get("errors") or [])
+    failed = rep.get("failed")
+    if isinstance(failed, list) and failed and len(failed) >= len(errors):
+        found = [(mod, text) for mod, text in failed]
+    else:
+        found = [(None, e) for e in errors]
+    return found or [(None, "it didn't build fully")]
+
+
 def user_paks(mod):
     """Cooked content a mod ships itself: {stem: {ext: path}} for mods/<id>/paks/<stem>.pak and the
     .utoc/.ucas/.sig beside it (made with Unreal Engine 5.7, see docs/SDK.md, "New content")."""
@@ -179,23 +195,26 @@ def build(cfg, mods, out_dir, log=print):
                             "that run code allowed (Options, on the Settings and repair page; \"allow_code_mods\" in "
                             "wcmods.json); left out")
 
+    # What goes wrong after the sections ran goes in "failed" as well as "errors": install reads "failed", and a
+    # problem missing from it would let an install go ahead and remove what the section put in before.
+    def fail(sid, text):
+        rep = report[sid]
+        rep["errors"].append(text)
+        rep["failed"].append((None, text))
+        if rep["status"] == "ok":
+            rep["status"] = "partial"
+
     csv_changes, csv_failures = ctx.resolve_csv_edits()
     for path, section_ids, error in csv_failures:
         for sid in section_ids:
-            rep = report.get(sid)
-            if rep is not None:
-                rep["errors"].append(f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})")
-                if rep["status"] == "ok":
-                    rep["status"] = "partial"
+            if sid in report:
+                fail(sid, f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})")
 
     table_changes, table_failures = ctx.resolve_table_rows()
     for name, section_ids, error in table_failures:
         for sid in section_ids:
-            rep = report.get(sid)
-            if rep is not None:
-                rep["errors"].append(f"{name}: rows not added ({error})")
-                if rep["status"] == "ok":
-                    rep["status"] = "partial"
+            if sid in report:
+                fail(sid, f"{name}: rows not added ({error})")
     # A section's save edits go with its table edits: a cat's new name is an ID whose text the pak adds, and
     # a new item's inventory entry needs its rows. With a table of theirs left out, the save would point at
     # text or items the game hasn't got (the cat shows as "<MISSING STRING TABLE ENTRY>"), so they stay out too.
@@ -205,8 +224,7 @@ def build(cfg, mods, out_dir, log=print):
         ctx.save_ops = kept
         for sid in broken:
             if sid in report:
-                report[sid]["errors"].append("its save edits were left out too: they'd point at text or items "
-                                             "the game wouldn't have")
+                fail(sid, "its save edits were left out too: they'd point at text or items the game wouldn't have")
     # What else leaves a renamed cat without its text: a mod that named one is off now, or the mods go into a
     # copy of the game Steam doesn't start.
     ctx.warnings += names_without_text(cfg, ctx, game)
@@ -463,13 +481,8 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
     cfg.reload()
     # Installing replaces what's installed now, so a section that failed or skipped a mod would
     # silently remove that mod's previously installed changes.
-    problems = []
-    for rep in manifest["sections"].values():
-        if rep["status"] == "ok":
-            continue
-        failed = rep.get("failed")   # a manifest an older wcmods wrote has only the errors' text
-        problems += [(rep["title"], mod, text) for mod, text in failed] if failed is not None \
-            else [(rep["title"], None, err) for err in rep["errors"]]
+    problems = [(rep.get("title", sid), mod, text) for sid, rep in manifest["sections"].items()
+                for mod, text in section_problems(rep)]
     if problems and not force:
         raise InstallBlocked(problems)
     dest = cfg.mods_install_dir
