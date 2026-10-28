@@ -111,7 +111,7 @@ export default {
       for (const n of backups.slice(0, 10)) {
         saves.append(el("div", { class: "row spread line" }, el("span", { class: "mono", text: n }),
           confirmButton("Restore", "Press again to restore", async () => {
-            try { const r = await api.post("/restore", { name: n }); toast(`Restored ${r.restored.join(", ")}`); renderRepair(); }
+            try { const r = await api.post("/restore", { name: n }); toast(`Restored ${r.restored.join(", ")}. Any change your mods make to your save is made again at the next Apply.`); renderRepair(); }
             catch (e) { toast(e.message, "bad"); }
           }, "btn small")));
       }
@@ -132,7 +132,7 @@ export default {
             el("span", { class: "muted", text: "Builds them without installing, to see what each one does and any problems." })),
           el("div", { class: "row" },
             confirmButton("Take all mods out of the game", "Press again to take them out", () => bus.emit("run-task", { path: "/uninstall", title: "Take mods out" }), "btn small danger"),
-            el("span", { class: "muted", text: "Your mods stay here. Control remaps and save edits stay in your save; restore a save backup to undo those." }))));
+            el("span", { class: "muted", text: "Your mods stay here. Control remaps and save edits stay in your save: the Save page's Done so far puts a save edit back, and a save backup puts the whole save back." }))));
     }
 
     // ---------- making your own ----------

@@ -16,7 +16,7 @@ function fresh() {
 }
 function routes(state) {
   const file = id => () => state.files[`${id}/names.json`] ? { exists: true, text: JSON.stringify(state.files[`${id}/names.json`]) } : { exists: false, text: null };
-  const put = id => b => { state.files[`${id}/names.json`] = JSON.parse(b.text); state.puts.push(id); return { saved: "names.json", requires: [], problems: state.problems }; };
+  const put = id => b => { state.files[`${id}/names.json`] = JSON.parse(b.text); state.puts.push(id); return { saved: "names.json", requires: [], problems: state.problems, notes: state.notes || [] }; };
   const patch = id => b => { state.patches.push({ id, body: b }); return {}; };
   const out = {
     "GET /mods": () => state.mods.map(x => ({ ...x })),
@@ -162,6 +162,23 @@ test("what keeps the saved file out of the game stays under the bar until a save
   await t.target.save();
   assert.equal(t.problems.hidden, true);
   assert.equal(t.problems.textContent, "");
+});
+
+test("a part of the file the game won't get is said under the bar, and the mod is still turned on", async () => {
+  const t = await setUp();
+  t.state.notes = ["the game has no table 'Nope.csv', so its edits are left out (the Game data page lists the tables the game has)"];
+  t.state.mods[0].enabled = false;
+  await t.target.save();
+  assert.equal(t.problems.hidden, false);
+  assert.equal(t.problems.textContent, `Saved; this part will be left out: ${t.state.notes[0]}`);
+  assert.deepEqual(t.state.patches, [{ id: "a", body: { enabled: true } }], "the rest of the file goes in");
+  t.state.notes = [];
+  await t.target.save();
+  assert.equal(t.problems.hidden, true);
+  // markClean: a change undone on the page leaves nothing to save.
+  t.target.markDirty();
+  t.target.markClean();
+  assert.equal(t.target.dirty, false);
 });
 
 test("whether to turn the mod on after a save is read afresh, and a broken mod is left alone", async () => {

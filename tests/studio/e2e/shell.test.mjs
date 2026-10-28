@@ -3,58 +3,13 @@
 // protocol (lib/browser.mjs). Skipped, with a reason, when no Chromium is found: set WC_BROWSER to one.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { findBrowser, launch } from "../lib/browser.mjs";
-import { REPO } from "../lib/dom.mjs";
+import { dataFolder, makeGame, removeFolder, startStudio } from "../lib/studio.mjs";
 
-const EXE = "Wrc-Win64-ShippingDRM.exe";   // config.EXE_NAME: what makes a folder the game's
 const browserPath = findBrowser();
 const skip = browserPath ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-// A studio started on a free port over `data`; its URL is on the first line it prints.
-async function startStudio(data, env = {}) {
-  const python = process.env.PYTHON || "python";
-  const proc = spawn(python, ["-I", "wcmods.py", "studio", "--no-browser", "--port", "0"],
-    { cwd: REPO, env: { ...process.env, WCMODS_DATA: data, ...env }, stdio: ["ignore", "pipe", "pipe"] });
-  let out = "", err = "";
-  proc.stdout.on("data", d => { out += d; });
-  proc.stderr.on("data", d => { err += d; });
-  // On Windows `python` may be a launcher with the real interpreter under it: the whole tree goes.
-  const stop = () => {
-    if (proc.exitCode !== null) return;
-    if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(proc.pid), "/T", "/F"], { stdio: "ignore" });
-    else proc.kill();
-  };
-  const end = Date.now() + 30000;
-  for (;;) {
-    const m = /running at (http:\/\/127\.0\.0\.1:\d+\/)/.exec(out);
-    if (m) return { url: m[1], proc, stop, output: () => out + err };
-    if (proc.exitCode !== null) throw new Error(`the studio ended (${proc.exitCode}): ${out}${err}`);
-    if (Date.now() > end) { stop(); throw new Error(`the studio didn't say where it runs in 30 s: ${out}${err}`); }
-    await sleep(50);
-  }
-}
-
-// A folder of the player's own, with wcmods.json naming a game folder (empty: not the game yet) and a saves
-// folder, both made up, so neither Steam's game nor the real save is ever looked at.
-function dataFolder() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wc-e2e-"));
-  const game = path.join(root, "Game"), saves = path.join(root, "Saves"), data = path.join(root, "data");
-  for (const d of [game, saves, data]) fs.mkdirSync(d, { recursive: true });
-  fs.writeFileSync(path.join(data, "wcmods.json"), JSON.stringify({ game_dir: game, save_dir: saves }));
-  return { root, game, saves, data };
-}
-
-function makeGame(game) {
-  const win64 = path.join(game, "Wrc", "Binaries", "Win64");
-  fs.mkdirSync(path.join(win64, "ue4ss", "Mods"), { recursive: true });
-  fs.mkdirSync(path.join(game, "Wrc", "Content", "Paks"), { recursive: true });
-  fs.writeFileSync(path.join(win64, EXE), "");
-}
 
 let browser, studio, folders;
 
@@ -69,9 +24,7 @@ before(async () => {
 after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
-  if (folders) for (let i = 0; i < 5; i++) {
-    try { fs.rmSync(folders.root, { recursive: true, force: true }); break; } catch (e) { await sleep(300); }
-  }
+  if (folders) await removeFolder(folders.root);
 });
 
 test("the studio opens with no console errors, its status chips and its pages", { skip }, async () => {

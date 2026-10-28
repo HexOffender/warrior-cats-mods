@@ -239,10 +239,10 @@ function findKey(key) {
 const focusable = n => n && n.isConnected && !n.disabled && n.getClientRects().length > 0 && !n.closest('[aria-hidden="true"]');
 // The element that had focus, and when it was found gone: a redraw puts its replacement in within a
 // moment (after its data comes back); after that, the key is forgotten, so it can't pull focus later.
-let lastKey = null, lostAt = 0;
+let lastKey = null, lastNode = null, lostAt = 0;
 const WAIT = 3000;
 export function keepFocus() {
-  document.addEventListener("focusin", e => { lastKey = focusKey(e.target); lostAt = 0; });
+  document.addEventListener("focusin", e => { lastKey = focusKey(e.target); lastNode = e.target; lostAt = 0; });
   document.addEventListener("focusout", e => {
     // Focus moved off on purpose (a click on the page): forget it. A redraw takes the element out first.
     const t = e.target, key = lastKey;
@@ -250,6 +250,9 @@ export function keepFocus() {
   });
   new MutationObserver(() => {
     if (!lastKey || (document.activeElement && document.activeElement !== document.body)) return;
+    // The element that had focus is still there: focus left it on purpose (Tab on its way to the next box, while
+    // a change it made shows a message), so it isn't pulled back. Only one a redraw took away is replaced.
+    if (lastNode && lastNode.isConnected) return;
     lostAt ||= Date.now();
     if (Date.now() - lostAt > WAIT) { lastKey = null; return; }
     const n = findKey(lastKey);
@@ -447,10 +450,12 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
     } catch (e) { toast(e.message, "bad"); }
   }
   function setDirty(v) { dirty = v; status.textContent = v ? "Unsaved changes" : ""; }
-  function showProblems(list) {
+  // notes: what the check warned about, a part of the file the game won't get (a table it hasn't got).
+  function showProblems(list, notes = []) {
     clear(problems);
-    problems.hidden = !list.length;
-    if (list.length) problems.append(el("strong", { text: "Saved, but it can't go in the game yet: " }), el("span", { text: list.join(" ") }));
+    problems.hidden = !list.length && !notes.length;
+    if (list.length) problems.append(el("p", {}, el("strong", { text: "Saved, but it can't go in the game yet: " }), el("span", { text: list.join(" ") })));
+    if (notes.length) problems.append(el("p", {}, el("strong", { text: "Saved; this part will be left out: " }), el("span", { text: notes.join(" ") })));
   }
   // Writes the page's file into the mod; true when it's saved. quiet: no toast (Save as .zip says what it did).
   async function save(quiet = false) {
@@ -461,17 +466,19 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
       const r = await api.put(`/mods/${encodeURIComponent(current)}/file/${file}`, { text: JSON.stringify(value, null, 2) });
       setDirty(false);
       const found = (r && r.problems) || (r && r.problem ? [r.problem] : []);
-      showProblems(found);
+      const notes = (r && r.notes) || [];
+      showProblems(found, notes);
       // Whether the mod is on is read afresh: another page may have switched it since this list was made.
       mods = await api.get("/mods");
       const now = mods.find(m => m.id === current);
       if (found.length) {
         toast(`Saved, but it can't go in the game yet: ${found[0]}`, "bad");
-      } else if (now && !now.enabled && !now.problem) {
-        await api.patch(`/mods/${encodeURIComponent(current)}`, { enabled: true });
-        if (!quiet) toast(`Saved and turned on ${now.name}. Apply to game to use it.`);
-      } else if (!quiet) {
-        toast(`Saved ${file} in ${current}. Apply to game to use it.`);
+      } else {
+        // A part left out (notes) still lets the rest go in: the mod is turned on all the same.
+        const on = now && !now.enabled && !now.problem;
+        if (on) await api.patch(`/mods/${encodeURIComponent(current)}`, { enabled: true });
+        if (notes.length) toast(`Saved; this part will be left out: ${notes[0]}`, "bad");
+        else if (!quiet) toast(on ? `Saved and turned on ${now.name}. Apply to game to use it.` : `Saved ${file} in ${current}. Apply to game to use it.`);
       }
       bus.emit("mods-changed");
       await refresh(current);
@@ -590,7 +597,8 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
     }
     return { element, show };
   }
-  return { element: box, refresh, markDirty: () => setDirty(true), save: () => save(), get current() { return current; },
+  // markClean: the page is back to what the file holds (a change and its undo), so nothing is left to save.
+  return { element: box, refresh, markDirty: () => setDirty(true), markClean: () => setDirty(false), save: () => save(), get current() { return current; },
            get mods() { return mods; }, get dirty() { return dirty; } };
 }
 

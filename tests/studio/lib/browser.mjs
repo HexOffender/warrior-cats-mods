@@ -15,6 +15,10 @@ import os from "node:os";
 import path from "node:path";
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Windows' key codes for the keys a test presses by name, which the browser needs to act on them.
+const KEY_CODES = { Enter: 13, Escape: 27, Tab: 9, Backspace: 8, Delete: 46, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39,
+  ArrowDown: 40, Home: 36, End: 35, " ": 32 };
+const KEY_NAMES = { " ": "Space" };
 
 // The browser to use: WC_BROWSER names one (an exe's path); else Edge, then Chrome, where they're installed;
 // on Linux and macOS, what the PATH or the Applications folder has. null when there's none.
@@ -205,10 +209,14 @@ export class Page {
     if (!ok) throw new Error(`couldn't focus ${JSON.stringify(target)}`);
     await this.send("Input.insertText", { text });
   }
+  // A key pressed and let go: a character, or a key's name (Enter, Escape, Tab, the arrows...), which the
+  // browser then acts on as it would on a real press (Tab moves focus).
   async press(key) {
-    const text = key.length === 1 ? key : undefined;
-    await this.send("Input.dispatchKeyEvent", { type: "keyDown", key, text, windowsVirtualKeyCode: key === "Enter" ? 13 : key === "Escape" ? 27 : 0 });
-    await this.send("Input.dispatchKeyEvent", { type: "keyUp", key, windowsVirtualKeyCode: key === "Enter" ? 13 : key === "Escape" ? 27 : 0 });
+    const text = key.length === 1 ? key : key === "Enter" ? "\r" : undefined;
+    const code = KEY_CODES[key] || 0;
+    const fields = { key, code: KEY_NAMES[key] || key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code };
+    await this.send("Input.dispatchKeyEvent", { type: text ? "keyDown" : "rawKeyDown", text, ...fields });
+    await this.send("Input.dispatchKeyEvent", { type: "keyUp", ...fields });
   }
   // Give a file input files from disk, as choosing them would.
   async setFiles(selector, paths) {

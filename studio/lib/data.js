@@ -1,0 +1,301 @@
+// The Game data page's logic, without the page (studio/sections/data.js draws it): data.json read and written
+// back with the file's own row removals and additions kept as they are, what a cell shows (the rule the build
+// follows, wcmods/formats/csvdata.py: "*" first, a named row wins over it, a row's own "xN" multiplies the
+// value from before "*"), the number check, what kind of column a column is, the Quick changes rows
+// (data-quick.json) and the search across every table. Plain data in, plain data out: tested under node.
+
+export const NUM = /^-?\d+(\.\d+)?$/;
+const MULT = /^\s*[x*]\s*(-?\d+(\.\d+)?)\s*$/i;
+export const HELP = "Written by Clan Mod Studio. Rows are matched by their first column; \"*\" is every row; \"x2\" multiplies the game's value. Inside one file \"*\" goes first and a named row wins over it.";
+
+export const isNumber = s => typeof s === "string" && NUM.test(s.trim());
+// N for an "xN" value, else null.
+export function multiplier(v) {
+  const m = typeof v === "string" ? MULT.exec(v) : null;
+  return m ? Number(m[1]) : null;
+}
+// A number as the file writes it: whole when it's whole and the cell had no decimals, else at most six decimals.
+export function numberText(v, original = "") {
+  if (Number.isInteger(v) && !String(original).includes(".")) return String(v);
+  const s = v.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+  return s === "" || s === "-0" ? "0" : s;
+}
+// A typed number, trimmed and rounded to six decimals; null when it isn't one ("1,5", "abc", "").
+export function readNumber(raw) {
+  const s = String(raw ?? "").trim();
+  return NUM.test(s) ? Number(Number(s).toFixed(6)) : null;
+}
+const shown = (v, original = "") => typeof v === "boolean" ? (v ? "TRUE" : "FALSE") : typeof v === "number" ? numberText(v, original) : String(v);
+
+// ---------- data.json in and out ----------
+// The page's model of a data.json: edits[table][row][column] = value ("__first__" for a {row: value} edit whose
+// column isn't known until the table is read), rowOps[table] = the file's own "-" and "+" (kept as they are),
+// and the entries skipped because they aren't a table's edits (named, so the page can say so).
+export function clean(obj) {
+  const edits = {}, rowOps = {}, skipped = [];
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return { edits, rowOps, skipped };
+  for (const [t, e] of Object.entries(obj)) {
+    if (t.startsWith("_")) continue;
+    if (!e || typeof e !== "object" || Array.isArray(e)) { skipped.push(t); continue; }
+    edits[t] = {};
+    for (const [row, spec] of Object.entries(e)) {
+      if (row.startsWith("_")) continue;
+      if (row === "-" || row === "+") { (rowOps[t] ||= {})[row] = spec; continue; }
+      edits[t][row] = spec && typeof spec === "object" && !Array.isArray(spec) ? { ...spec } : { __first__: spec };
+    }
+  }
+  return { edits, rowOps, skipped };
+}
+// Back to data.json: "-" first, then "*", the rows and "+" (the build's order; a reader sees it too). headers:
+// {table: its header}, for the tables read, so a {row: value} edit gets its column's name.
+export function toJson(edits, rowOps = {}, headers = {}) {
+  const o = { _help: HELP };
+  for (const t of new Set([...Object.keys(edits), ...Object.keys(rowOps)])) {
+    const r = {}, ops = rowOps[t] || {};
+    if ("-" in ops) r["-"] = ops["-"];
+    const rows = edits[t] || {};
+    for (const row of ["*", ...Object.keys(rows).filter(k => k !== "*")]) {
+      if (!(row in rows)) continue;
+      const c = { ...rows[row] };
+      if ("__first__" in c) {
+        const h = headers[t]?.[1];
+        if (!h) { r[row] = c.__first__; continue; }
+        if (!(h in c)) c[h] = c.__first__;
+        delete c.__first__;
+      }
+      if (Object.keys(c).length) r[row] = c;
+    }
+    if ("+" in ops) r["+"] = ops["+"];
+    if (Object.keys(r).length) o[t] = r;
+  }
+  return o;
+}
+// How many changes a table has: a cell each, "*" once per column, and a row removed or added each.
+export function countEdits(edits, rowOps, t) {
+  let n = Object.values(edits[t] || {}).reduce((sum, c) => sum + Object.keys(c).length, 0);
+  for (const op of Object.values(rowOps?.[t] || {})) n += Array.isArray(op) ? op.length : 1;
+  return n;
+}
+// The file's own row removals and additions, in words: "1 row removed, 1 row added by hand".
+export function rowOpsWords(ops) {
+  if (!ops) return "";
+  const n = v => Array.isArray(v) ? v.length : typeof v === "string" ? 1 : 0;
+  const parts = [];
+  if ("-" in ops) parts.push(`${n(ops["-"])} row${n(ops["-"]) === 1 ? "" : "s"} removed`);
+  if ("+" in ops) parts.push(`${n(ops["+"])} row${n(ops["+"]) === 1 ? "" : "s"} added`);
+  return parts.length ? `${parts.join(", ")} by hand` : "";
+}
+
+// An edit's value for a column, the column's name matched without regard to case as the build matches it; the
+// second column also takes a {row: value} edit.
+function pick(spec, name, col) {
+  if (!spec) return undefined;
+  if (name in spec) return spec[name];
+  const low = String(name).toLowerCase();
+  const k = Object.keys(spec).find(x => x.toLowerCase() === low);
+  if (k !== undefined) return spec[k];
+  return col === 1 && "__first__" in spec ? spec.__first__ : undefined;
+}
+// What a cell shows: { value, how: "set" | "×N" | "all rows" | "unchanged (not a number)", bad } or null for
+// the game's own. The build's rule (csvdata.apply_edits), so the page shows what the game gets.
+export function valueFor(tableEdits, header, row, col) {
+  const t = tableEdits || {};
+  const name = header[col], original = row[col] ?? "";
+  const times = (n, own) => isNumber(original)
+    ? { value: numberText(Number(original) * n, original), how: `×${n}`, own }
+    : { value: original, how: "unchanged (not a number)", own, bad: true };
+  const own = pick(t[row[0]], name, col);
+  if (own !== undefined) {
+    const n = multiplier(own);
+    return n !== null ? times(n, true) : { value: shown(own, original), how: "set", own: true };
+  }
+  const all = pick(t["*"], name, col);
+  if (all !== undefined) {
+    const n = multiplier(all);
+    return n !== null ? times(n, false) : { value: shown(all, original), how: "all rows" };
+  }
+  return null;
+}
+// Set one cell's edit. Returns true.
+export function setCell(edits, table, header, rowKey, colName, value) {
+  const r = ((edits[table] ||= {})[rowKey] ||= {});
+  if ("__first__" in r) { if (!(header[1] in r)) r[header[1]] = r.__first__; delete r.__first__; }
+  for (const k of Object.keys(r)) if (k !== colName && k.toLowerCase() === colName.toLowerCase()) delete r[k];
+  r[colName] = value;
+  return true;
+}
+// Take one cell's edit away. Returns whether there was one.
+export function unsetCell(edits, table, header, rowKey, colName) {
+  const r = edits[table]?.[rowKey];
+  if (!r) return false;
+  let gone = false;
+  for (const k of Object.keys(r)) if (k.toLowerCase() === colName.toLowerCase()) { delete r[k]; gone = true; }
+  if (header && colName === header[1] && "__first__" in r) { delete r.__first__; gone = true; }
+  if (!Object.keys(r).length) delete edits[table][rowKey];
+  if (!Object.keys(edits[table]).length) delete edits[table];
+  return gone;
+}
+
+// ---------- columns ----------
+// A first header that's empty or punctuation ("", "---", "#") is the row's name: "Row".
+export function headerLabel(h, i) {
+  return i === 0 && /^[\s\p{P}\p{S}]*$/u.test(h || "") ? "Row" : h;
+}
+// What a column holds, so the page offers the right box: "key" (the first), "note" (a Description), "bool"
+// (TRUE/FALSE: a checkbox), "number" (with chance: every value from 0 to 1, with decimals), "choice" (at most
+// eight words, which repeat: a dropdown of them) or "text".
+export function columnKind(header, rows, i) {
+  if (i === 0) return { kind: "key" };
+  if (/^description$/i.test(header[i] || "")) return { kind: "note" };
+  const values = rows.map(r => (r[i] ?? "").trim()).filter(Boolean);
+  if (!values.length) return { kind: "text" };
+  if (values.every(v => /^(true|false)$/i.test(v))) return { kind: "bool" };
+  if (values.every(v => NUM.test(v))) {
+    const nums = values.map(Number);
+    return { kind: "number", chance: nums.every(n => n >= 0 && n <= 1) && values.some(v => v.includes(".")) };
+  }
+  const words = [...new Set(values)];
+  if (words.length >= 2 && words.length <= 8 && words.length < values.length && values.every(v => /^[A-Za-z][A-Za-z ]*$/.test(v))) {
+    return { kind: "choice", options: words.sort() };
+  }
+  return { kind: "text" };
+}
+// What a typed value becomes in a column of that kind: { value } or { error } in words.
+export function readCell(kind, raw) {
+  if (kind.kind === "number") {
+    const n = readNumber(raw);
+    if (n === null) return { error: "Use a number like 1.5" };
+    if (kind.chance && (n < 0 || n > 1)) return { error: "This is a chance: use a number from 0 to 1" };
+    return { value: n };
+  }
+  if (kind.kind === "bool") return { value: raw === true || /^true$/i.test(String(raw)) };
+  return { value: String(raw) };
+}
+// Multiplying a column by f: refused with the first row it would break, for a chance column (over 1).
+export function multiplyProblem(kind, header, rows, col, f) {
+  if (!(f > 0)) return "Use a number above 0";
+  if (!kind.chance) return null;
+  const over = rows.find(r => isNumber(r[col] ?? "") && Number(r[col]) * f > 1);
+  return over ? `${over[0]} would be ${numberText(Number(over[col]) * f, over[col])}, and a chance can't go over 1` : null;
+}
+
+// ---------- Quick changes ----------
+// An entry of data-quick.json names a table, a row ("*" for every row) or rows, and a column or columns: its
+// cells. kind "value" writes a number into each (negate: the table keeps it negative, the page shows it
+// positive); "factor" writes "xN" (chance: no cell may go over 1).
+export function quickCells(entry, table) {
+  if (!table) return [];
+  const cols = entry.columns || [entry.column];
+  const keys = entry.row === "*" ? table.rows.map(r => r[0]) : entry.rows || [entry.row];
+  const out = [];
+  for (const key of keys) {
+    const row = table.rows.find(r => r[0] === key);
+    if (!row) continue;
+    for (const col of cols) {
+      const i = table.header.findIndex(h => h.toLowerCase() === String(col).toLowerCase());
+      if (i > 0) out.push({ row: key, column: table.header[i], index: i, original: row[i] ?? "" });
+    }
+  }
+  return out;
+}
+// The game's own value for the row: a number for a value entry (null when the table hasn't it), 1 for a factor.
+export function quickNormal(entry, table) {
+  if (entry.kind === "factor") return 1;
+  const first = quickCells(entry, table)[0];
+  if (!first || !isNumber(first.original)) return null;
+  const n = Number(first.original);
+  return entry.negate ? -n : n;
+}
+// The value the row has now, with this mod's edits.
+export function quickCurrent(entry, table, tableEdits) {
+  const first = quickCells(entry, table)[0];
+  if (!first) return null;
+  const spec = pick(tableEdits?.[entry.row === "*" ? "*" : first.row], first.column, first.index);
+  if (entry.kind === "factor") return spec !== undefined && multiplier(spec) !== null ? multiplier(spec) : 1;
+  if (spec === undefined || multiplier(spec) !== null) return quickNormal(entry, table);
+  const n = typeof spec === "number" ? spec : readNumber(spec);
+  return n === null ? quickNormal(entry, table) : entry.negate ? -n : n;
+}
+// Whether this mod has an edit on any of the row's cells.
+export function quickEdited(entry, table, tableEdits) {
+  return quickCells(entry, table).some(c => pick(tableEdits?.[entry.row === "*" ? "*" : c.row], c.column, c.index) !== undefined);
+}
+// Write the row's value into edits (the game's own value takes its edits away). { ok } or { error } in words.
+export function quickWrite(entry, table, edits, value) {
+  const n = typeof value === "number" ? value : readNumber(value);
+  if (n === null || !Number.isFinite(n)) return { error: "Use a number like 1.5" };
+  if (entry.min !== undefined && n < entry.min || entry.max !== undefined && n > entry.max) {
+    return { error: `${entry.label} goes from ${entry.min} to ${entry.max}` };
+  }
+  const cells = quickCells(entry, table);
+  if (!cells.length) return { error: `The game's ${entry.table} hasn't got this row` };
+  const t = entry.table, header = table.header;
+  if (entry.kind === "factor") {
+    if (entry.chance) {
+      const over = cells.find(c => isNumber(c.original) && Number(c.original) * n > 1);
+      if (over) return { error: `That makes ${over.column} ${numberText(Number(over.original) * n, over.original)}, and a chance can't go over 1` };
+    }
+    // "*" once per column; else each row's own cells.
+    const targets = entry.row === "*" ? [...new Set(cells.map(c => c.column))].map(col => ["*", col]) : cells.map(c => [c.row, c.column]);
+    for (const [row, col] of targets) {
+      if (n === 1) unsetCell(edits, t, header, row, col);
+      else setCell(edits, t, header, row, col, `x${Number(n.toFixed(6))}`);
+    }
+    return { ok: true };
+  }
+  const normal = quickNormal(entry, table);
+  for (const c of cells) {
+    if (n === normal) unsetCell(edits, t, header, c.row, c.column);
+    else setCell(edits, t, header, c.row, c.column, entry.negate ? -n : n);
+  }
+  return { ok: true };
+}
+// A factor row's first cells, before and after: "Mice 25 -> 50, Fish 10 -> 20, ..."
+export function quickPreview(entry, table, value, rowNames = {}) {
+  const cells = quickCells(entry, table).filter(c => isNumber(c.original));
+  const many = new Set(cells.map(c => c.row)).size > 1;
+  const said = cells.slice(0, 3).map(c => `${many ? rowNames[c.row] || c.row : c.column} ${c.original.trim()} -> ${numberText(Number(c.original) * value, c.original)}`);
+  return said.join(", ") + (cells.length > 3 ? ", ..." : "");
+}
+
+// A table's name in words: its title (data-titles.json), else its file's name split into words
+// ("QuestObjectives.csv" -> "Quest objectives", "NPC/EarType.csv" -> "NPC ear type").
+export function tableTitle(name, titles = {}) {
+  if (titles[name]?.title) return titles[name].title;
+  const words = name.replace(/\.csv$/i, "").replace(/[/_]+/g, " ").replace(/(?<=[a-z])(?=[A-Z0-9])|(?<=[0-9])(?=[A-Za-z])/g, " ").trim().split(/\s+/);
+  const said = words.map((w, i) => /^[A-Z0-9]{2,}$/.test(w) ? w : i === 0 ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase());
+  return said.join(" ");
+}
+
+// ---------- the search across tables ----------
+// Every word of the query, in any order, somewhere in the text.
+const has = (text, words) => { const low = text.toLowerCase(); return words.every(w => low.includes(w)); };
+// Hits for a query: the quick rows (by their labels, words people use and what they do), the tables (by their
+// titles), then any row of any table (by its name and its description). Each { kind: "quick" | "table" | "row",
+// text, table, row, id }; at most `limit`.
+export function search(query, { quick = [], titles = {}, index = {}, limit = 30 } = {}) {
+  const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const out = [];
+  const title = t => tableTitle(t, titles);
+  for (const q of quick) {
+    if (has([q.label, q.group, q.what, ...(q.synonyms || [])].join(" "), words)) {
+      out.push({ kind: "quick", id: q.id, text: q.label, where: `${q.group}, in Quick changes`, table: q.table });
+    }
+  }
+  for (const [t, info] of Object.entries(titles)) {
+    if (has([t, info.title, info.what].join(" "), words)) out.push({ kind: "table", text: info.title, where: info.what, table: t });
+  }
+  for (const [t, info] of Object.entries(index)) {
+    for (const row of info.rows || []) {
+      const desc = info.descriptions?.[row] || "";
+      if (has(`${row} ${desc}`, words)) {
+        out.push({ kind: "row", text: row, where: `${desc ? desc + " " : ""}(${title(t)})`, table: t, row });
+        if (out.length >= limit * 2) break;
+      }
+    }
+  }
+  const seen = new Set();
+  return out.filter(h => { const k = `${h.kind}:${h.table}:${h.row || h.id || ""}`; if (seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, limit);
+}
