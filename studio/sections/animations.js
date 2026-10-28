@@ -50,6 +50,7 @@ export default {
       file: "animations.json",
       onLoad: obj => { load(obj); draw(); },
       getValue: () => toJson(),
+      onSaved: saved => wc.settleNew(anims, saved.animations),   // saved animations keep their ids from now on
     });
     const out = wc.codePanel("animations.json");
     const editor = listEditor({
