@@ -35,15 +35,15 @@ Every quick change is an ordinary change to a cell: it shows in All tables too, 
 2. Drag its slider to 600, or type 600 in its box. The row says "390 -> 600", and the Editing mod bar
    says "Unsaved changes".
 3. Press **Save to mod**. It goes in **My mods**, unless you picked another mod in the bar.
-4. Press **Apply and play** at the top right (it says **Play** when there's nothing new to apply). It puts
-   your mod in the game, then starts it.
-5. [The log](README.md#build-log), at the bottom right, lists "Tuning: Running speed 390 -> 600 (My
-   mods)". It closes by itself a few seconds later, unless there's a warning; **Last apply**, at the
+4. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait). It puts your mod in the game, then starts it.
+5. The [build log](README.md#build-log), at the bottom right, lists "Tuning: Running speed 390 -> 600
+   (My mods)". It closes by itself a few seconds later, unless there's a warning; **Last apply**, at the
    top, opens it again.
-6. In the forest, run.
+6. In the forest, run: your cat runs faster than before.
 
-Nobody has watched a change from this page in play yet, so look closely: you may be the first. The log
-shows the number went in either way.
+A faster run has been seen in play. Most other numbers on this page haven't been watched in play yet, so
+look closely: you may be the first. The build log shows the number went in either way.
 
 ## What you can and can't do
 
@@ -53,7 +53,7 @@ You can:
   the Clan cats' sizes and scars, herbs;
 - multiply a whole column with **Multiply**, above a table (every animal's XP times 2, say), and keep one
   row out of it by typing that row's own value back in;
-- tick a TRUE/FALSE column, and pick a word from a list where a column has only a few;
+- tick a yes-or-no column, and pick a word from a list where a column has only a few;
 - find a number by what it does, and open its table on that row.
 
 You can't, here:
@@ -76,14 +76,14 @@ and talk: a wrong value there can stop a quest.
 
 - The game gets a change only when it's saved (**Save to mod**) and applied (**Apply to game**, or
   **Play**, which applies first).
-- After an apply, the log lists the numbers your mods changed under "The game's numbers it changes:",
-  one a line, up to twenty (**Last apply** shows it again). A warning there names a change that didn't go
-  in, and its mod.
+- After an apply, the build log lists the numbers your mods changed under "The game's numbers it
+  changes:", one a line, up to twenty (**Last apply** shows it again). A warning there names a change
+  that didn't go in, and its mod.
 - If the page is open when you apply, each change is marked "in the game since" the time of that apply,
   and one made since says "not in the game yet".
-- In play, nothing from this page has been checked yet. The tables go in the same way as the game's text,
-  which does change in the game, but no change to these numbers has been watched in play. Quick changes
-  says so at its top. The rows that say "Read by the game's code" are ones the game is known to
+- In play, the running speed has been seen to change: set higher, the cat ran faster than the game lets
+  it. The other tables go in the same way, but no other change has been watched in play yet. Quick
+  changes says so at its top. The rows that say "Read by the game's code" are ones the game is known to
   ask for; for most other rows, nobody knows yet whether the game uses them.
 
 ## Common mistakes
@@ -96,12 +96,12 @@ and talk: a wrong value there can stop a quest.
   says so, in case it was a slip.
 - Two mods changing the same number. Multipliers stack: two mods that both double XP make it four times,
   and nothing is said. A number set outright by the mod with the higher **Priority** (under its **More**
-  on the Mods page) wins, and the log says so.
+  on the Mods page) wins, and the build log says so.
 - A quick change over a number set by hand. A file written by hand may have set the row another way, say
   XP from fights set to 30 instead of multiplied. The row says "This row is set by hand to 30, in
   data.json", and moving its slider asks first: **Replace it** or **Keep it**.
 - A table the game doesn't have. A file written by hand, or made for an older
-  [version of the game](README.md#game-build), can name one. The page shows it under the list of tables
+  [game build](README.md#game-build), can name one. The page shows it under the list of tables
   with a **Remove**, and the rest of the file still goes in.
 - "The game's tables can't be read". The studio hasn't found the game. **Get set up**, on the Mods page,
   finds it.

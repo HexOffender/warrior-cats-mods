@@ -23,7 +23,8 @@ files' folder.
    use it."
 3. Under **Save backups**, press **Back up now**. A copy of your save appears in the list, named with
    today's time and "backed up by you".
-4. Press **Play** (top right; **Apply and play** when there's something to apply).
+4. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait).
 5. In the forest, press Home: the mod menu opens. (It needs the [script loader](README.md#script-loader).)
 
 ## What you can and can't do
@@ -34,11 +35,11 @@ You can:
   (**or on a controller**), and its **Size**. In the game, A- and A+ in the menu's top bar change its size
   until the game closes.
 - Say whether Menu pages starts with cheats on (**Cheats on when the game starts**), while Menu pages is in
-  your mods. Its *Cheats* page in the mod menu switches them on and off while you play.
+  your mods. Its Cheats page in the mod menu switches them on and off while you play.
 - Switch on **The game's own command window**: ~ or F10 opens it in the game, for people who know the game
   engine's own commands.
 - Allow mods that run code (**Allow mods that run code**). A warning first names your mods that do; press
-  **Allow mods that run code** in it to say yes. Get set up, on the Mods page, asks the same thing once.
+  **Allow mods that run code** in it to say yes. **Get set up**, on the Mods page, asks the same thing once.
 - Back up your save at any time (**Back up now**), and put a backup back (**Restore**, pressed twice). The
   ten newest are listed, each named in words: when, and why ("backed up by you", "before Apply (save
   edits)", "First safety copy"). Restoring backs up the save you have first.
@@ -62,7 +63,7 @@ You can't:
 - Back up a save that isn't there yet: **Back up now** is greyed out until you've started the game once
   and got into the forest.
 - Open the mod menu, or use the game's own command window, without the script loader. If the page says
-  the script loader has no console mod in it, install the script loader again (Get set up, on the Mods
+  the script loader has no console mod in it, install the script loader again (**Get set up**, on the Mods
   page).
 - Give the mod menu just any key: it's Insert, Home, End, Delete, Page Up, Page Down, or F1 to F12 but F11
   (the game's full-screen key).

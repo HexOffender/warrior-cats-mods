@@ -31,8 +31,8 @@ which **Get set up**, on the Mods page, installs.
 4. Under **The medicine cat's recipe**, pick Dandelion in **Add a material…**, and make its number 2.
 5. Under **Starting with some**, type 3.
 6. Press **Save to mod**.
-7. Close the game if it's open, then press **Play** (it says **Apply and play** when there's something
-   to apply).
+7. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait).
 8. In the game, open your inventory: three Moon Herbs, with Marigold Petal's icon. At the medicine cat's
    bartering, one more costs two Dandelions.
 

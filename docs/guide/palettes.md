@@ -18,7 +18,7 @@ colours. A cat doesn't store a colour. It stores a number, a [slot](README.md#sl
   in the game's cat maker with the [Creator palettes](companion-mods.md) mod.
 - Eye colours go in through the game's own files, so they work on their own. Coat, pattern and marking
   colours, and the cat maker's eye buttons, are changed while the game runs by the
-  [script loader](README.md#script-loader) (Get set up, on the Mods page, installs it).
+  [script loader](README.md#script-loader) (**Get set up**, on the Mods page, installs it).
 
 ## A five-minute first try
 
@@ -28,12 +28,13 @@ colours. A cat doesn't store a colour. It stores a number, a [slot](README.md#sl
 3. Press the colour box on that card and pick a bright colour your cat's eyes aren't. The strip on the
    card shows it.
 4. Press **Save to mod**. The first time, the studio makes **My mods** for you and switches it on.
-5. Press **Play** (**Apply and play** when there's something to apply).
+5. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait).
 6. In the forest, your cat's eyes are the new colour, and so are the eyes of every cat with that eye
    colour.
 
 With no save yet, pick any eye: every cat with it changes. If the Eyes tab asks you to find the game
-first, Get set up, on the Mods page, does that. Coat, pattern and marking colours work the same way on
+first, **Get set up**, on the Mods page, does that. Coat, pattern and marking colours work the same way on
 their tabs, through the script loader.
 
 ## What you can and can't do

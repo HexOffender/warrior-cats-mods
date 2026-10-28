@@ -20,10 +20,11 @@ a file of its own beside the game's saves. The studio writes nothing into your s
 3. In that step's **What they say**, type two lines, one line each.
 4. Beside **Add a step**, press **Pick up**. In the new step, set the number to 2 and choose Moss.
 5. Press **Talk** again and type a thank-you line. Under **Reward**, choose an item in the **Add** list.
-6. Press **Save to mod**, then **Apply and play** at the top right.
+6. Press **Save to mod**. Close the game if it's open, then press **Play** (top right; it reads
+   **Apply and play** while changes wait).
 7. On the game's main menu choose *Sandbox Mode*, then make a new cat.
-8. Walk up to Mossfoot and use the *Talk* prompt (E, or A on a controller); Interact or Enter shows the
-   next line. The objective panel says "Find 2 Moss". Pick up two, talk to Mossfoot again, and the
+8. Walk up to Mossfoot and use the *Talk* prompt (E, or A on a controller); press it again, or Enter, for
+   the next line. The objective panel says "Find 2 Moss". Pick up two, talk to Mossfoot again, and the
    reward drops at your paws.
 
 Sandbox mode has to be in your mods and on. The strip under the Editing mod bar says what to do, as
@@ -41,8 +42,8 @@ You can:
 - give a reward of items, your own herbs and materials from the Items page included;
 - write your own words for a step's **Objective**, or leave it empty for the words shown, which take the
   names your cats and items have when you apply;
-- say what the quest is about in **About it**, shown under its title on the mod menu's Questlines page
-  (with Sandbox mode 0.5 or newer).
+- say what the quest is about in **About it**, shown under its title on the
+  [mod menu](README.md#mod-menu)'s Questlines page (with Sandbox mode 0.5, which isn't out yet).
 
 You can't, yet:
 
@@ -60,13 +61,13 @@ watched them in it yet.
 
 ## Did it reach the game?
 
-- After Apply, the top line of the [log](README.md#build-log) counts them: "1 cat and 1 questline from My
-  mods; Sandbox mode 0.5 will show them." The log also warns about a quest that names an item the game
-  hasn't got and no mod adds.
+- After Apply, the top line of the [build log](README.md#build-log) counts them: "1 cat and 1 questline
+  from My mods; Sandbox mode 0.4 will show them." The build log also warns about a quest that names an
+  item the game hasn't got and no mod adds.
 - In the game, a cat with a quest for you wears the game's quest mark, and the objective panel shows the
   step you're on.
-- The [mod menu](README.md#mod-menu) (Insert) has Sandbox mode's Questlines page, listing every quest with
-  how far you've got: "Not started yet", the step you're on, or "Done".
+- The mod menu (Insert) has Sandbox mode's Questlines page, listing every quest with how far you've got:
+  "Not started yet", the step you're on, or "Done".
 - A line under the Editing mod bar that starts "Saved, but it can't go in the game yet" says what keeps
   the quests out, such as quests that wait for each other in a circle. The **Not ready yet** note at the
   top of the quest says it as you work, and marks the step.
@@ -89,13 +90,13 @@ watched them in it yet.
 - After Apply: switch the mod off on the Mods page and apply again. What a reward gave your cat stays in
   its inventory, like anything it picks up.
 - One quest again: the mod menu's Questlines page has a "Start Moss for Mossfoot over" button for a quest
-  you've begun or finished. With Sandbox mode 0.5 and more than one quest, it also has "Start every
-  questline over", for the cat you're playing.
+  you've begun or finished. Once Sandbox mode 0.5 is out, with more than one quest it also has "Start
+  every questline over", for the cat you're playing.
 - Every quest again: **Start every questline over**, under **Starting over** on this page (press it
   twice), starts every mod's questlines over, not only this mod's, for all your sandbox cats. Close the
   game first. Where their cats stand is kept.
-- With Sandbox mode 0.5 or newer, a quest a cat hasn't finished starts over by itself when you add or take
-  out a step, change a step's kind (moving steps can do that), or change what or how many a **Pick up**
+- With Sandbox mode 0.5 (not out yet), a quest a cat hasn't finished starts over by itself when you add or
+  take out a step, change a step's kind (moving steps can do that), or change what or how many a **Pick up**
   step wants. New lines, objectives or a new title don't restart it, and a finished quest stays finished.
 
 For the file this page writes, see [quests.json](../formats.md#questsjson).

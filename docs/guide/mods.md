@@ -22,16 +22,18 @@ their own, so the game's own files are never changed.
 ## A five-minute first try
 
 1. Open Clan Mod Studio. The Mods page opens first, with **Get set up** at the top.
-2. It finds the game and makes a safety copy of your save by itself. If it asks **Where's the game?**, copy
-   the game's folder in (in Steam: right-click the game, Manage, Browse local files) and press
-   **Use this folder**. If it says **Start the game once**, do that first, then come back.
+2. It finds the game and makes a safety copy of your save by itself. If it asks **Where's the game?**, in
+   Steam right-click the game, then Manage, Browse local files. Click the bar at the top of the window
+   Steam opens, copy the address, paste it in the box and press **Use this folder**. If it says
+   **Start the game once**, do that first, then come back.
 3. Close the game if it's open, and press **Install it** to put in the
    [script loader](README.md#script-loader).
 4. Press **Allow** on **Let mods run their own scripts**, read the warning about
    [mods that run code](README.md#code-mods), and press **Allow mods that run code**.
 5. Press **Add all four**. Clan Mod Studio downloads them from GitHub.
-6. Press **Play** (**Apply and play** when there's something to apply). In the forest, press Insert: the
-   [mod menu](README.md#mod-menu) opens, with Menu pages' pages about your cat.
+6. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait). In the forest, press Insert: the [mod menu](README.md#mod-menu) opens, with Menu pages' pages
+   about your cat.
 7. Back in the studio, drop a mod's .zip on **Drop a mod's .zip here**, press **Add to my mods**, then
    **Play** again.
 
@@ -69,18 +71,18 @@ You can't:
 
 ## Did it reach the game?
 
-- Under Get set up, "Not in the game yet" lists what's waiting (a mod on, a mod off, a mod changed, a mod
-  left out and why, or a reason to apply again, such as mods that run code being allowed since the last
-  time), with **Apply to game**. Before your first Apply it says "Nothing is installed yet". When nothing
+- Under **Get set up**, "Not in the game yet" lists what's waiting (a mod on, a mod off, a mod changed, a
+  mod left out and why, or a reason to apply again, such as mods that run code being allowed since the
+  last time), with **Apply to game**. Before your first Apply it says "Nothing is installed yet". When nothing
   is waiting, it says "The game has your mods as they are here".
 - The chip at the top says "Game up to date" once the game has everything.
 - **Last apply** (top) opens the [build log](README.md#build-log) of the last Apply or Play: which mods
   went in, by name, or what kept one out.
 - A mod's card says in red why that mod isn't in the game: it needs a mod that's off or missing, it was
-  made for an older version of the game, or it needs a newer Clan Mod Studio.
+  made for an older [game build](README.md#game-build), or it needs a newer Clan Mod Studio.
 - A mod with a script in the game has a line on its card saying how the script did when the game last
   started. **What it said**, under its **More**, shows what the script wrote.
-- In the game, the mod menu's *Installed mods* page lists what went in.
+- In the game, the mod menu's Installed mods page lists what went in.
 
 ## Common mistakes
 
@@ -95,7 +97,7 @@ You can't:
 - "Your mods go into another copy of the game." Steam starts a different copy of the game than the one
   your mods go into. Press **Use Steam's copy**.
 - "Close the game, then apply." The game is still running. Close it, then press **Apply to game**.
-- A mod is left out after Steam updated the game to a new [game build](README.md#game-build). A mod with no
+- A mod is left out after Steam updated the game to a new game build. A mod with no
   code in it, like a palette or names, is checked on the new version when the page opens ("Checking your
   mods on the new version…"), and the ones that work go in with the next **Play**. One that doesn't says
   why: **Turn it off** and wait for its maker (it's checked again when it changes), or
@@ -110,8 +112,8 @@ You can't:
 - After adding: switch the mod off, or **Remove** it (under its **More**; press it twice). A mod you
   remove or replace is kept: **Put it back**, on the Settings and repair page, brings it back, switched
   off.
-- A step of Get set up you said **Not now** to: **Show the steps** opens the card again. The scripts step
-  has **Allow…**, and the card of the mods that go with Clan Mod Studio adds those one at a time.
+- A step of **Get set up** you said **Not now** to: **Show the steps** opens the card again. The scripts
+  step has **Allow…**, and the card of the mods that go with Clan Mod Studio adds those one at a time.
   Allowing mods that run code can also be changed at any time under **Options**, on the Settings and
   repair page.
 - After Play: switch the mod off and press **Play** again; it comes out of the game. What a mod wrote into

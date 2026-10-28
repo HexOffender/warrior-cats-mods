@@ -19,11 +19,12 @@ the file is described in [Mod packs](../formats.md#mod-packs).)
 3. Under **Make a mod pack**, give it a **Name**. Under **Mods in it**, the mods you have on are ticked
    already: leave My mods ticked.
 4. Press **Make the pack**.
-5. On the pack's card, press **Play only this pack**, then **Play** (top right; **Apply and play** when
-   there's something to apply).
-6. In the forest, press Insert: the [mod menu](README.md#mod-menu)'s *Installed mods* page lists the mods
+5. On the pack's card, press **Play only this pack**.
+6. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait).
+7. In the forest, press Insert: the [mod menu](README.md#mod-menu)'s Installed mods page lists the mods
    that went in.
-7. When you're done, close the game, press **Back to my mods** (at the top of the Mod packs page), then
+8. When you're done, close the game, press **Back to my mods** (at the top of the Mod packs page), then
    **Play** or **Apply to game**.
 
 ## What you can and can't do
@@ -42,7 +43,8 @@ You can:
 - Change it (**Change it**, then **Save the pack**) or remove it (**Remove the pack**, pressed twice).
   Removing a pack keeps its mods, and removing the pack you're playing brings your own mods back.
 - See on its card what would keep one of its mods out of the game: a mod that runs code while that isn't
-  allowed, one made for an older version of the game, one that needs a newer Clan Mod Studio.
+  allowed, one made for an older [game build](README.md#game-build), one that needs a newer Clan Mod
+  Studio.
 
 You can't:
 
@@ -63,7 +65,7 @@ You can't:
   mod that came along with the ones you chose.
 - After **Play**, **Last apply** (top) opens the [build log](README.md#build-log), which names the mods
   that went in.
-- In the game, the mod menu's *Installed mods* page lists them.
+- In the game, the mod menu's Installed mods page lists them.
 
 ## Common mistakes
 

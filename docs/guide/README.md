@@ -13,11 +13,11 @@ the order of the side bar.
 
 ## Your mods
 
-- [The Mods page](mods.md): which mods are in the game. Get set up once, add mods, switch them on and
+- [The Mods page](mods.md): which mods are in the game. **Get set up** once, add mods, switch them on and
   off, and see whether they got there.
-- [Mods that go with Clan Mod Studio](companion-mods.md): four mods that bring what you make into the
-  game: pages in the mod menu, *Sandbox Mode* on the main menu, your new colours in the cat maker, and
-  an emote wheel. Which versions are out, and how to get them.
+- [Mods that go with Clan Mod Studio](companion-mods.md) (a card on the Mods page): four mods that bring
+  what you make into the game: pages in the mod menu, *Sandbox Mode* on the main menu, your new colours in
+  the cat maker, and an emote wheel. Which versions are out, and how to get them.
 - [Mod packs](packs.md): mods that play together as one experience, on their own or with yours.
 - [Settings and repair](settings.md): the mod menu's key and size, the game's own command window,
   whether mods may run code, putting back your save or a mod you removed, and taking every mod out of
@@ -66,17 +66,18 @@ started: those are save slots.
 
 ### Script loader
 
-A free add-on for the game (its name is UE4SS) that lets mods run inside the game while you play. Get
-set up, on the [Mods page](mods.md), installs it when you press **Install it**. The mod menu, your
-cat's own colours, the coat, pattern and marking colours from Palettes, Tweaks and the mods that go with
-Clan Mod Studio all need it. Until it's in, the top of the studio says **No script loader**.
+A free add-on for the game (its name is UE4SS) that lets mods run inside the game while you play.
+**Get set up**, on the [Mods page](mods.md), installs it when you press **Install it**. These all need
+it: the mod menu; key changes from Controls, and mouse look; emotes on keys; models on cats; your cat's
+own colours; the coat, pattern and marking colours from Palettes; Tweaks; mods with scripts; and the
+mods that go with Clan Mod Studio. Until it's in, the top of the studio says **No script loader**.
 **Take all mods out of the game** leaves it installed.
 
 ### Code mods
 
 Mods that run code: small programs that run inside the game, or steps that run on your computer when
 your mods are applied. The studio calls them mods that run code. They stay out of the game until you
-allow them with **Allow mods that run code**: Get set up asks once, and Options, on
+allow them with **Allow mods that run code**: **Get set up** asks once, and Options, on
 [Settings and repair](settings.md), has the same switch. Code can do anything your account can, so
 allow it only if you trust every such mod you've added. The four mods that go with Clan Mod Studio are
 code mods, and they're fine.

@@ -20,28 +20,31 @@ Sandbox mode runs inside the game, so it needs the [script loader](README.md#scr
 4. Type a line or two in **What they say**, one line each.
 5. Press **Save to mod**. The strip under the Editing mod bar says whether Sandbox mode is ready. If
    Sandbox mode is in your mods but off, saving turns it on and says so.
-6. Press **Apply and play** at the top right.
+6. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait).
 7. On the game's main menu choose *Sandbox Mode*, then make a new cat or choose one of your sandbox cats.
-8. Mossfoot stands beside your cat. Walk up and use the *Talk* prompt (E, or A on a controller);
-   Interact or Enter shows the next line.
+8. Mossfoot stands beside your cat. Walk up and use the *Talk* prompt (E, or A on a controller); press
+   it again, or Enter, for the next line.
 
 ### Getting Sandbox mode
 
 The strip under the Editing mod bar (on Questlines too) says where Sandbox mode stands, and what to press:
 
-- "Sandbox mode 0.5 is on" (with the version you have): nothing to do.
+- "Sandbox mode 0.4 is on" (with the version you have): nothing to do.
 - "Sandbox mode is off": press **Turn it on**, then apply.
-- "You'll need Sandbox mode": press **Add Sandbox mode**, which fetches it from its releases page on
-  GitHub. Or download `sandbox-0.5.zip` from that page (the strip links it) and drop it on the Mods page.
-  If mods that run code aren't allowed yet, the strip says to allow them too.
+- "You'll need Sandbox mode": press **Add Sandbox mode**, which fetches the newest release (0.4) from its
+  releases page on GitHub. Or download the newest .zip from that page (the strip links it) and drop it on
+  the Mods page. If mods that run code aren't allowed yet, the strip says to allow them too.
 - "Sandbox mode is left out since the game's update": it was made for an older
-  [game version](README.md#game-build), so Apply leaves it out. **Open the Mods page**: its card has
+  [game build](README.md#game-build), so Apply leaves it out. **Open the Mods page**: its card has
   **Use it anyway…**. Then apply.
 - "Sandbox mode is in, but mods that run code aren't allowed, so it can't run": press
   **Open Settings and repair**, tick **Allow mods that run code**, then apply.
-- "Your fixed looks need Sandbox mode 0.5 or newer": a fixed look is **Same look every time**. Your cats
-  go in, but until you have 0.5 the game makes their look up each time. On the Mods page, press
-  **Get the latest** on Sandbox mode, or download the .zip from its releases page and drop it there.
+- "Your fixed looks need Sandbox mode 0.5": a fixed look is **Same look every time**. Your cats go in,
+  but until you have 0.5 the game makes their look up each time. 0.5 isn't out yet
+  ([Which versions are out](companion-mods.md#which-versions-are-out)). When it is,
+  **Check for newer versions** on the Mods page shows "Newer one out: 0.5", and **Get the latest** brings
+  it.
 
 Your mod goes in the game without Sandbox mode all the same (its items, palettes and names with it); only
 the cats wait for it.
@@ -54,7 +57,9 @@ You can:
 - choose **Same look every time** (its shape, pattern and colours chosen once and kept; a new cat starts
   with one) or **New look each time**, as the game does with its own cats. With the same look,
   **Fine-tune** sets each part of its shape and the colour [slot](README.md#slot) each colour comes from
-  (pattern and markings can wear new ones your palettes add), and **Roll a new look** picks them all again;
+  (pattern and markings can wear new ones your palettes add), and **Roll a new look** picks them all
+  again. The same look needs Sandbox mode 0.5, which isn't out yet
+  ([Getting Sandbox mode](#getting-sandbox-mode));
 - tick a colour of its own for **Coat**, **Pattern**, **Markings**, **Nose**, **Paw pads**,
   **Inside the ears** or **Whiskers**, over the look's;
 - choose its eye colour under **Eyes** (the first one, **Game's choice**, is made up each time) and its
@@ -75,16 +80,16 @@ You can't, yet:
 
 ## Did it reach the game?
 
-- After Apply, the top line of the [log](README.md#build-log) counts your cats: "1 cat from My mods;
-  Sandbox mode 0.5 will show them." If it says "they're waiting for Sandbox mode", a warning in the log
-  says what's missing and what to do.
+- After Apply, the top line of the [build log](README.md#build-log) counts your cats: "1 cat from My
+  mods; Sandbox mode 0.4 will show them." If it says "they're waiting for Sandbox mode", a warning in the
+  build log says what's missing and what to do.
 - In the game, your cats are there (beside your cat, or at their spot) a moment after a sandbox cat
   comes into the forest.
 - The [mod menu](README.md#mod-menu) (Insert) has Sandbox mode's Questlines page. It has a
   "Bring Mossfoot here" button for each cat that stands beside you.
 - A line under the Editing mod bar that starts "Saved, but it can't go in the game yet" says what to fix.
 - A cat with **Same look every time** that looks different each time means your Sandbox mode is older than
-  0.5. The strip says so, and so does the log after Apply.
+  0.5, which isn't out yet. The strip says so, and so does the build log after Apply.
 
 ## Common mistakes
 

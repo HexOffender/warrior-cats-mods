@@ -22,11 +22,13 @@ does something.
    press F.
 2. The cell reads F, with "was E" beside it, and under it: "F does Interact. E still shows the map's
    legend."
-3. Press **Save to mod**, then **Apply to game** (with the game closed), then **Play**.
-4. In the game, walk up to a tunnel: F opens the travel map, and the prompt shows F.
-5. Back on the page, press **Add another key** under Interact, then press H. The line says "H does what E
+3. Press **Save to mod**.
+4. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait).
+5. In the game, walk up to a tunnel: F opens the travel map, and the prompt shows F.
+6. Back on the page, press **Add another key** under Interact, then press H. The line says "H does what E
    does while you explore (Interact)". Save and apply again, and both F and H interact.
-6. Now press **Change** on Interact and press I. The **Inventory** row warns that I no longer opens the
+7. Now press **Change** on Interact and press I. The **Inventory** row warns that I no longer opens the
    inventory. Press **Undo** to put Interact back on F, as saved.
 
 ## What you can and can't do
@@ -54,8 +56,8 @@ You can't:
 - move the moving and camera keys (W, A, S, D and the arrows) with Apply: the game reads those keys
   itself. You can still change them under **Moving and the camera**, but they work only when you start
   the game by double-clicking Play with key remaps.bat, in the studio's folder (keyboard and mouse only).
-  That file starts the old key remapper, a helper outside the game that's on its way out: the log calls it
-  deprecated. Those rows say "needs Play with key remaps.bat";
+  That file starts the old key remapper, a helper outside the game that's on its way out: the
+  [build log](README.md#build-log) calls it deprecated. Those rows say "needs Play with key remaps.bat";
 - change the controller's sticks with a mod. Use Steam's controller settings (right-click the game in
   Steam, then Properties, Controller). Stick speed and inverting are in the game's own *Settings*,
   *Player Configuration*;
@@ -81,11 +83,12 @@ the box. For a mouse button, click in the box's mouse area, or turn the wheel th
 - A mod made for an older version of the game (an older [game build](README.md#game-build)) is left out by
   Apply, and the line says so; the Mods page says how to use it anyway.
 - Before you apply, the line under each changed row says what Apply will do: it comes from the same check
-  Apply runs. After **Apply to game**, the [build log](README.md#build-log) lists anything about your keys
-  that needs a second look, in the same words.
-- If you press **Play** with changes that need Play with key remaps.bat, the log stays open and says so.
+  Apply runs. After **Apply to game**, the build log lists anything about your keys that needs a second
+  look, in the same words.
+- If you press **Play** with changes that need Play with key remaps.bat, the build log stays open and
+  says so.
 - Without the script loader, a banner at the top of the page says "Key changes need the script loader."
-  Get set up, on the Mods page, installs it.
+  **Get set up**, on the Mods page, installs it.
 - If a key still does the old thing in the game, check that the mod is on (the Mods page) and that you
   applied after saving. If another mod changes the same action, **Also in this build**, under the table,
   says which mod wins: the one that comes later in the list.

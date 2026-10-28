@@ -13,8 +13,8 @@ You make a list of changes first, under **Changes to make**. **Change my save no
 it keeps a copy of your save in [Settings and repair](settings.md). The game has to be closed: it writes
 its save as you play, and would write over the change.
 
-Your save carries a check number, and nobody knows how the game works it out. The studio leaves it as it
-was, and the game has accepted saves changed this way so far.
+Your save carries a number the game makes again each time it saves, and doesn't check. The studio leaves
+it as it was, and the game has accepted saves changed this way so far.
 
 ## A five-minute first try
 
@@ -24,7 +24,8 @@ was, and the game has accepted saves changed this way so far.
 3. Press **Change my save now**. The page says when it was done, and that a copy of your save from before
    is in Settings and repair.
 4. **Done so far** shows each change, with **Put it back**.
-5. Press **Play** at the top right (it says **Apply and play** if a mod's change is waiting too).
+5. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait).
 6. In the forest, open your inventory: five more of each herb.
 
 Nobody has yet loaded a save changed from this page in the game and looked. Saves changed the same way by
@@ -67,7 +68,7 @@ You can't, here:
   one, the Mods page's **Not in the game yet** banner says "apply again: save edits are waiting for a
   save". Apply, and they're made.
 - In the game: your level, the fresh-kill pile and your inventory. With [Menu pages](README.md#menu-pages)
-  on, the [mod menu](README.md#mod-menu)'s *At a glance* page shows your level and the fresh-kill pile.
+  on, the [mod menu](README.md#mod-menu)'s At a glance page shows your level and the fresh-kill pile.
 - Not watched in the game yet: a save changed by **Change my save now** or **Put it back** and then
   loaded, and a mod's change made once, played past and applied again. Changes a mod makes when it's
   applied are written the same way, and the game loads those and keeps them when it saves.
@@ -106,5 +107,5 @@ You can't, here:
   again at the next apply if those mods are still on, so turn them off first to keep them out. The save
   you had is kept as a copy too, so restoring that one undoes it.
 
-[How Clan Mod Studio works](studio.md) has Apply and [the log](README.md#build-log). The file a mod
+[How Clan Mod Studio works](studio.md) has Apply and the [build log](README.md#build-log). The file a mod
 shares is in [the file formats](../formats.md#savejson).

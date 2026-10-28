@@ -11,8 +11,8 @@ number; your heal key fills your cat's health and stamina. The [mod menu](README
 Tweaks page, to change them while you play.
 
 How it gets there: the tweaks are saved as `tweaks.json` in your mod, and **Apply to game** or **Play**
-puts them in. The helper runs with the [script loader](README.md#script-loader), which Get set up, on the
-Mods page, installs. The helper is the studio's own, so nothing has to be allowed under
+puts them in. The helper runs with the [script loader](README.md#script-loader), which **Get set up**, on
+the Mods page, installs. The helper is the studio's own, so nothing has to be allowed under
 [mods that run code](README.md#code-mods). With nothing ticked, nothing goes in the game.
 
 ## A five-minute first try
@@ -21,8 +21,9 @@ Mods page, installs. The helper is the studio's own, so nothing has to be allowe
 2. Tick **Heal my cat with a key** and choose a key in the list beside it (F5, say).
 3. Tick **Keep my cat's stamina full**.
 4. Press **Save to mod**.
-5. Press **Apply and play** at the top right, and go into the forest.
-6. Run for a while: the stamina bar stays full.
+5. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait).
+6. In the forest, run for a while: the stamina bar stays full.
 7. After a fight has cost your cat some health, press F5 in the forest: its health is full again.
 8. Open the mod menu (Insert): its Tweaks page has the same rows, to change while you play.
 
@@ -52,9 +53,8 @@ You can't:
   comes with [Menu pages](README.md#menu-pages). With Menu pages in your mods, the Settings and repair page
   also has **Cheats on when the game starts**.
 
-Not checked in the game yet: Tweaks are made from an example script, Game Tweaks, whose stamina, clock and
-fresh-kill pile were seen working, but they haven't been run in the game as Tweaks. Least sure are the
-heal key and the mod menu's Tweaks page with its "Save".
+Seen working in the game: stamina kept full, the clock held, the fresh-kill pile kept up, the heal key,
+and the mod menu's Tweaks page, switching a tweak off and on, with its "Save" writing your mod.
 
 ## Did it reach the game?
 
@@ -68,11 +68,12 @@ heal key and the mod menu's Tweaks page with its "Save".
 
 ## Common mistakes
 
-- No script loader: the page says "Needs the script loader". Get set up, on the Mods page, installs it.
+- No script loader: the page says "Needs the script loader". **Get set up**, on the Mods page, installs it.
 - The heal key does nothing: the game's window wasn't in front, or the key is the mod menu's (then Apply
-  leaves the heal out, and the [log](README.md#build-log) says so). Pick another key, save, and apply.
-- The heal key does something else too: another of your mods uses that key, and the log after Apply
-  says which. An emote's key from the Animations page isn't checked, so give the heal a key no emote has.
+  leaves the heal out, and the [build log](README.md#build-log) says so). Pick another key, save, and
+  apply.
+- The heal key does something else too: another of your mods uses that key, and the build log after
+  Apply says which. An emote's key from the Animations page isn't checked, so give the heal a key no emote has.
 - The clock jumps: it's put back to your hour twice a second, not stopped, so anything in the game that
   sets another time (a scene, say) shows for a moment.
 - The story doesn't go on: with the clock held, the day never turns, so a story step that waits for

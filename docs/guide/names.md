@@ -30,8 +30,8 @@ them in place of its own. Cats' new names are written into your save at the same
 3. Tick **grows with rank**. The line now gives your cat's name for its rank ("Sparklepaw now; the end
    changes with each rank" for an apprentice): Sparkle is your cat's own prefix.
 4. Press **Save to mod**.
-5. Close the game if it's open, then press **Play** (it says **Apply and play** when there's something
-   to apply).
+5. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait).
 6. Your cat's new name shows on screen while you play, and on the *Select Your Cat* screen.
 
 ## What you can and can't do

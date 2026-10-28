@@ -20,7 +20,8 @@ minute, the page says so.
 - **Help** opens this guide. On every page, **How this works**, under the title, opens the guide's page
   about it.
 - The small coloured labels (chips) say how things stand: **Game closed** or **Game running**;
-  **No script loader** and **No save yet** while Get set up has something left to do; **Game updated**
+  **No script loader** (the [script loader](README.md#script-loader) isn't in yet) and **No save yet**
+  while **Get set up** has something left to do; **Game updated**
   after a Steam update ([game build](README.md#game-build)); and whether the game has your mods:
   "2 changes to apply", **Not applied yet**, **Apply again** or **Game up to date**. Point at a chip to
   read what it means.
@@ -65,6 +66,10 @@ import a file over them, the studio asks first: **Save and switch** (or **Save a
 **Switch without saving** (or **Load without saving**), or **Stay**. If you close the page, the browser
 asks too.
 
+When you come back to the studio's window (from the game, say, whose [mod menu](README.md#mod-menu) saves
+some files), a page with nothing unsaved reads its file again if something else changed it, and a
+message says so. So the next **Save to mod** doesn't write over that change.
+
 Saving checks the file the way Apply does first. If something in it would keep it out of the game (a
 colour that isn't one, a quest naming a cat the mod hasn't got), a line under the bar starts "Saved, but
 it can't go in the game yet" and says what. The file is saved all the same: fix it when you like, and
@@ -81,8 +86,9 @@ own save at the next Apply.
 
 Saving puts your work in the mod. **Apply to game** (top right) puts your mods in the game: it reads
 every mod that's on, makes the files the game needs, and copies them into the game's folder. It works
-once Get set up has found the game, and only while the game is closed: while it runs, Apply to game and
-Play wait. The chip at the top says when there's something to apply ("2 changes to apply",
+once **Get set up** has found the game, and only while the game is closed: while it runs,
+**Apply to game** and **Play** are greyed out (Play reads Playing). The chip at the top says when there's
+something to apply ("2 changes to apply",
 **Not applied yet**), and **Game up to date** once there isn't.
 
 **Play** does the same, then starts the game through Steam. While changes are waiting it reads
@@ -91,7 +97,7 @@ something, **Save to mod**, **Play**.
 
 The game's own files are never changed: what goes in sits beside them, under names of its own, and
 **Take all mods out of the game** (Settings and repair) takes it out again. Two things stay: the
-[script loader](README.md#script-loader), and what an Apply wrote into your save
+script loader, and what an Apply wrote into your save
 ([What Undo means here](#what-undo-means-here) says what that is).
 
 ## The log
@@ -127,10 +133,10 @@ rarely need one: nothing happens until you save, and nothing reaches the game un
   and scars from Your cat, cats renamed on Names, items from **Starting with some** on Items, and the
   changes in a mod's `save.json`. On Your cat, choose the old ones and apply again. On Save,
   **Put it back** under **Done so far** undoes one change, the page's own or a mod's. Any of them goes
-  back with a save backup made before that apply (**Restore**, under Save backups on the Settings and
-  repair page), but you lose what you played since.
-- Your save game: the studio makes a copy of your save before anything changes it. **Restore**, on the
-  Settings and repair page, puts one back.
+  back with a save backup made before that apply (**Restore**, under **Save backups** on the Settings
+  and repair page; press it twice), but you lose what you played since.
+- Your save game: the studio makes a copy of your save before anything changes it. **Restore**, under
+  **Save backups** on the Settings and repair page, puts one back (press it twice).
 - A mod you removed or replaced is kept too: **Put it back**, under Removed and replaced mods on the
   same page, brings it back switched off.
 
@@ -141,7 +147,7 @@ computers):
 
 - `mods\`: your mods, one folder each.
 - `wcmods.json`: the studio's settings (where the game is, what's installed). If it's ever damaged, the
-  studio sets it aside, starts afresh and says so at the top (**Settings were reset**); Get set up, on
+  studio sets it aside, starts afresh and says so at the top (**Settings were reset**); **Get set up**, on
   the Mods page, finds the game again.
 - `backups\`: copies of your save, and mods you removed or replaced.
 - `save-changes.json`: the changes already made in your save by the Save page and by mods' `save.json`,

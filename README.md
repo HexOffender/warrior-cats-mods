@@ -4,8 +4,9 @@ Clan Mod Studio makes mods for the Steam game *Warrior Cats: Clans of the Forest
 the cats, rename them, make herbs and accessories of your own, write quests for cats you made, or change
 how the game plays. It also adds mods other people made, and shares yours with them.
 
-It runs on Windows and opens in your web browser. It never changes the game's own files: everything it
-puts in the game's folder comes out again with one button.
+It runs on Windows and opens in your web browser. It never changes the game's own files: everything your
+mods put in the game's folder comes out again with one button. The script loader, a free add-on it
+installs, stays until you remove it.
 
 This page has four parts:
 - [Make your own mods](#start-here): start here if you've never modded anything.
@@ -50,14 +51,14 @@ shortcut)*. Double-clicking it while it's open brings back the one that's open.
 
 ## Make your first mod
 
-Five minutes: give your cat a pink nose. It needs the script loader from Get set up.
+Five minutes: give your cat a pink nose. It needs the script loader from **Get set up**.
 
 1. Open **Your cat**, in the side bar under Make mods.
 2. Under **Colours of its own**, tick **Nose** and pick a bright pink.
 3. Press **Save to mod**. The first time, the studio makes a mod called **My mods** for you and switches
    it on.
-4. Close the game if it's open, then press **Play** (top right). While there's something new to put in
-   the game it says **Apply and play**: it puts your mods in, then starts the game.
+4. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait). It puts your mods in, then starts the game.
 5. In the forest your cat has a pink nose, and on the main menu and in its picture too. No other cat
    has.
 
@@ -70,10 +71,10 @@ are.
 
 **Help**, at the top, opens [the guide](docs/guide/README.md), and each page's **How this works** opens
 its own part of it. The side bar has three groups of pages. **Your mods** is for the mods you have:
-- [The Mods page](docs/guide/mods.md): Get set up, adding mods, switching them on and off, and telling
+- [The Mods page](docs/guide/mods.md): **Get set up**, adding mods, switching them on and off, and telling
   whether they reached the game.
-- [Mods that go with Clan Mod Studio](docs/guide/companion-mods.md): Menu pages, Sandbox mode, Creator
-  palettes and the Emote wheel, and how to get them.
+- [Mods that go with Clan Mod Studio](docs/guide/companion-mods.md) (a card on the Mods page): Menu
+  pages, Sandbox mode, Creator palettes and the Emote wheel, and how to get them.
 - [Mod packs](docs/guide/packs.md): mods shared and played together as one experience.
 - [Settings and repair](docs/guide/settings.md): the options, your save backups, mods you removed, and
   taking every mod out of the game.
@@ -89,16 +90,16 @@ guide. How a change reaches the game:
 |---|---|---|---|
 | [**Palettes**](docs/guide/palettes.md) | the game's eye, coat, pattern and marking colours, which every cat picks from by number (its [slot](docs/guide/README.md#slot)); new pattern and marking colours | `palette.json` | the mod pak (eye colours); the script loader (the rest) |
 | [**Your cat**](docs/guide/cat.md) | your cat, or any cat in your save: colours of its own (coat, paw pads, inner ears, nose, whiskers); which of the game's colours it wears; its shape and size; its scars | `cats.json` | the script loader (colours of its own); your save (the game's colours, shape, size, scars) |
-| [**Controls**](docs/guide/controls.md) | which key, mouse button or controller button does each action; second keys; keys in menus; controller presets. The page says what each change will do before you apply | `controls.json` | a small helper that comes with your mods, through the script loader; moving and the camera only with `Play with key remaps.bat` (deprecated): see [Remapping keys](#remapping-keys) |
+| [**Controls**](docs/guide/controls.md) | which key, mouse button or controller button does each action; second keys; keys in menus; controller presets. The page says what each change will do before you apply | `controls.json` | a small helper that comes with your mods, through the script loader; moving and the camera only with `Play with key remaps.bat`, the old key remapper, which is on its way out (deprecated): see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert, smoothing, tilt limits and its on and off key | `mouselook.json` | the script loader |
 | [**Names**](docs/guide/names.md) | the cats in your save (a name of your own, or one that grows with rank); the parts of clan names and rogue names (renamed, added, removed); the ban list; cameo cats and any other name the game shows; areas, quest titles and item names | `names.json` | the mod pak (the game's names and text); your save (renamed cats) |
 | [**Items**](docs/guide/items.md) | herbs, materials and accessories of your own: name, description, icon, what a herb does, an accessory's look, a model of your own from Blender, how it lies on the ground, the medicine cat's recipe, some to start with | `items.json`, with the pictures and models it names | the mod pak (the items, pictures and models); the script loader (models on cats and on the ground, see-through accessories); your save (**Starting with some**) |
-| [**Animations**](docs/guide/animations.md) | the game's own animations as emotes, or in another's place, with no Blender; your own, made in Blender from a start kit: emotes on a key, or animations for scripts and stories | `animations.json`, with the .glb files it names | the mod pak (the animations); the script loader (emotes on keys, and the mod menu's **Emotes** page) |
+| [**Animations**](docs/guide/animations.md) | the game's own animations as emotes, or in another's place, with no Blender; your own, made in Blender from a start kit: emotes on a key, or animations for scripts and stories | `animations.json`, with the .glb files it names | the mod pak (the animations); the script loader (emotes on keys, and the mod menu's Emotes page) |
 | [**Characters**](docs/guide/characters.md) | cats of your own: name, title, a new look each time or the same look every time, colours, eyes, size, where they stand, what they say | `npcs.json` | Sandbox mode, in its sandbox games |
 | [**Questlines**](docs/guide/questlines.md) | quests with those cats, step by step (talk, pick things up, go somewhere), one after another, with rewards | `quests.json` | Sandbox mode |
 | [**Game data**](docs/guide/data.md) | the numbers the game plays by: **Quick changes** in words (running speed, XP from fights, what prey is worth, cat sizes, scars...), **Find a number**, and **All tables**, cell by cell | `data.json` | the mod pak |
 | [**Save**](docs/guide/save.md) | your own save: your cat's level and experience, the fresh-kill pile, what your cat carries, and anything else in it; each change made once, after a backup, and each one can be put back | nothing, with **Change my save now**, which changes your save at once; or `save.json`, kept as a mod to share | your save |
-| [**Tweaks**](docs/guide/tweaks.md) | small changes while you play: stamina kept full, a heal key, the clock held, the fresh-kill pile kept up | `tweaks.json` | the script loader (a helper that comes with Clan Mod Studio, so mods that run code needn't be allowed), with a **Tweaks** page in the mod menu |
+| [**Tweaks**](docs/guide/tweaks.md) | small changes while you play: stamina kept full, a heal key, the clock held, the fresh-kill pile kept up | `tweaks.json` | the script loader (a helper that comes with Clan Mod Studio, so mods that run code needn't be allowed), with a Tweaks page in the mod menu |
 
 **Advanced** shows once mods that run code are allowed. Its page,
 [Try Lua in the game](docs/guide/console.md), is for people who write scripts.
@@ -107,13 +108,14 @@ guide. How a change reaches the game:
 would keep it out of the game, and what Apply would leave out. What only shows once your mods are put
 together (a table's rows, a model or a picture, two mods changing the same thing) is found when you
 apply. The page asks before you switch mods, import a file over your changes, or close it with changes
-unsaved.
+unsaved. When you come back to the studio's window, a page with nothing unsaved reads its file again if
+something else changed it (the game's mod menu saves some files), and says so.
 
 ### Stories with cats of your own
 
 **Items**, **Characters** and **Questlines** make a whole story with no code. Your cats and quests come
 into the game through the Sandbox mode mod ([its page](https://github.com/HexOffender/wcmods-sandbox)):
-- **Getting it:** **Add all four** in Get set up, or **Add Sandbox mode** in the strip at the top of the
+- **Getting it:** **Add all four** in **Get set up**, or **Add Sandbox mode** in the strip at the top of the
   Characters and Questlines pages, or download `sandbox-<version>.zip` from its releases and drop it on
   the Mods page. It runs a script, so mods that run code must be allowed.
 - **In the game:** *Sandbox Mode* on the game's main menu starts a cat with no story, and your cats are
@@ -132,11 +134,11 @@ and a first quest.
 
 ### Sharing what you make
 
-Every page under Make mods but Save has a **Share** part at its foot: the mod's **Name**, **Author**,
-**Version** and **Description**, **Save as .zip** for others to add on their Mods page, and **Export**
-and **Import** for just that page's file (**Export palette.json**, say). The .zip is named after the mod's
-folder and version (`moonlit-cats-1.2.zip`). On the other side the mod goes in under its folder name,
-whatever the file is called, so a newer version replaces the older one.
+Every page under Make mods but Save has a **Share** fold under its Editing mod bar: the mod's **Name**,
+**Author**, **Version** and **Description**, **Save as .zip** for others to add on their Mods page, and
+**Export** and **Import** for just that page's file (**Export palette.json**, say). The .zip is named
+after the mod's folder and version (`moonlit-cats-1.2.zip`). On the other side the mod goes in under its
+folder name, whatever the file is called, so a newer version replaces the older one.
 - **Save page changes** are shared as a whole mod: **Keep it as a mod to share** on the Save page, then
   **Save as .zip** under that mod's **More** on the Mods page.
 - **Whoever gets it** drops the .zip on their Mods page. A mod that runs code needs them to allow mods
@@ -147,16 +149,23 @@ whatever the file is called, so a newer version replaces the older one.
 These are built and tested without the game, but nobody has watched them in it yet
 ([docs/verified.md](docs/verified.md) has the whole list, by date):
 - **Palettes:** coat colours on screen, and a cat wearing a new pattern or marking colour.
-- **Game data:** a changed number seen in play (the tables load, but no change has been watched yet).
+- **Game data:** changes other than the running speed (a faster run was seen in play; the other tables
+  load the same way, but no other change has been watched).
 - **Save:** a save changed with **Change my save now**, then loaded; **Put it back**.
-- **Tweaks:** none of them has run in the game as Tweaks yet. Skipping the story's scenes is refused for
-  now.
-- **Animations:** the game's own animations as emotes or in another's place; animations on the clans'
-  cats, and on animals other than mice and birds.
+- **Tweaks:** skipping the story's scenes, which is refused for now. The others, and the mod menu's
+  Tweaks page with its Save, have run in the game.
+- **Animations:** the run in the trot's place, and **Try it on my cat**; animations on the clans' cats,
+  and on animals other than mice and birds. The game's own animations as emotes, and in another's place,
+  have been seen working.
 - **Names:** new cats getting added or removed name parts, and the ban list; renamed areas, quests and
   items on the game's own screens.
 - **Items:** accessory models on other cats; models dropped on the ground by a questline's reward.
 - **Controls:** controller buttons, the side mouse buttons and the wheel.
+- **Questlines:** a quest starting over by itself after you change its steps (with Sandbox mode 0.5,
+  which isn't out yet), and **Start every questline over**.
+- **Mods that go with Clan Mod Studio:** **Add all four** on a fresh install.
+- **Try Lua in the game:** the page itself with the game running (what it asks the game has been tried
+  against it).
 - **The mod menu:** parts of some pages
   ([docs/mod-menu.md](docs/mod-menu.md#not-checked-in-the-game-yet)).
 
@@ -176,15 +185,16 @@ First set up as in [Start here](#start-here). Then, on the **Mods** page
 - **Mods to try:** Clan Mod Studio comes with no mods of its own.
   [wcmods-examples](https://github.com/HexOffender/wcmods-examples) has themed palettes, eye and coat
   colours, mouse look, controls, game tweaks and more. Download it (**Code**, then **Download ZIP**) and
-  drop that .zip on the page. Some were made for an older version of the game: the Mods page checks the
-  ones that are only data on your version by itself, and the ones that build go in with the next
-  **Play**. One with a script waits for its maker to update it, or **Use it anyway…**.
+  drop that .zip on the page. Some were made for an older [game build](docs/guide/README.md#game-build),
+  the version of the game before an update: the Mods page checks the ones that are only data on your
+  version by itself, and the ones that build go in with the next **Play**. One with a script waits for
+  its maker to update it, or **Use it anyway…**.
 - **Switch mods on and off** on their cards under **Your mods**. A mod that needs another switches that
   one on too, and switching off a mod that others need asks first. A mod's **More** has its
   **Priority** (when two mods change the same thing, the higher number wins), **Open its folder**,
   **Save as .zip** and **Remove**.
 - **Play** (top right) puts what changed in the game, then starts it. **Apply to game** does only the
-  first part. Both need the game closed. Until then, **Not in the game yet**, under Get set up, lists
+  first part. Both need the game closed. Until then, **Not in the game yet**, under **Get set up**, lists
   what's waiting. While they work, the build log at the bottom right shows what happens and ends with a
   sentence: which mods went in, or what kept one out. After **Play** it closes by itself unless there's
   a warning. **Last apply** opens the last one again. If some mods can't be made ready, nothing goes in
@@ -207,7 +217,7 @@ First set up as in [Start here](#start-here). Then, on the **Mods** page
 ### The mod menu in the game
 
 With the script loader in, press Insert in the game for the [mod menu](docs/guide/README.md#mod-menu)
-(View on a controller). Its **Overview** lists the keys and what's where, and **Installed mods** lists
+(View on a controller). Its Overview page lists the keys and what's where, and Installed mods lists
 what went in. Its pages about your cat, the world, quests, fights and cheats come with the Menu pages
 mod, which **Add all four** adds; Menu pages runs code, so it needs mods that run code allowed. The
 menu's key, controller button and size are under **Options**, on Settings and repair.
@@ -218,14 +228,15 @@ menu's key, controller button and size are under **Options**, on Settings and re
 Change keys on the **Controls** page ([its guide](docs/guide/controls.md)), **Save to mod**, then
 **Play** or **Apply to game**. From then on the new keys work however you start the game, from Steam too.
 - The new key does the action. The old key stops doing it but keeps its other jobs. The game's prompts
-  and its Controls tab show the new key, and the mod menu's **Overview** lists it.
+  and its Controls tab show the new key, and the mod menu's Overview lists it.
 - If a key already does something, the page says what it will stop doing before you save, and so does
   Apply. The mod menu's key and button (Insert and View, unless you changed them), mouse look's key (F6,
   while mouse look is on) and F11 are taken. **Which keys are free?** lists every key that already does
   something; any key it doesn't list is free.
 - Moving the cat and the camera can't be changed this way, because the game reads those keys itself.
-  For the keyboard, start the game with `Play with key remaps.bat`, the old key remapper (deprecated; it
-  stops by itself when the game closes). For the sticks, use Steam's controller settings.
+  For the keyboard, start the game with `Play with key remaps.bat`, the old key remapper, which is on its
+  way out (deprecated). It stops by itself when the game closes. For the sticks, use Steam's controller
+  settings.
 - A second key for an action works while you explore: it does what the game's key does there. A second
   key for Confirm, Back or the tabs in menus gives up its own job in menus, and letters still type on the
   name screen.
@@ -247,21 +258,21 @@ game name** on the cat's row, **Save to mod**, and apply. Or put back a save bac
 ### Backups, crashes and taking mods out
 
 All on the **Settings and repair** page ([its guide](docs/guide/settings.md)):
-- **Save backups**, listed by when and why. **Back up now** makes one; **Restore** puts one back, and
-  keeps the save you had as another backup. The next Apply makes your mods' save changes again where
-  the restored save hasn't got them: switch those mods off first to keep them out.
+- **Save backups**, listed by when and why. **Back up now** makes one; **Restore** (press it twice) puts
+  one back, and keeps the save you had as another backup. The next Apply makes your mods' save changes
+  again where the restored save hasn't got them: switch those mods off first to keep them out.
 - **Removed and replaced mods** are kept (in `backups\mods` in your files' folder), and **Put it back**
   brings one back.
-- **Take all mods out of the game** takes out everything Clan Mod Studio put in the game. Your mods stay
-  switched on here, so **Play** puts them back: to play without mods, start the game from Steam. What an
-  apply wrote into your save stays there; a save backup puts the save back.
+- **Take all mods out of the game** takes out everything your mods put in the game; the script loader
+  stays. Your mods stay switched on here, so **Play** puts them back: to play without mods, start the
+  game from Steam. What an apply wrote into your save stays there; a save backup puts the save back.
 - **Check my mods** builds your mods without putting them in the game, to see what each does and any
   problems.
 - **Make your own mod** starts an empty mod from a name, for the Make pages to save into.
 - **The game crashed last time** shows at the top of Backups and repair and on the Mods page, until you
   close it, when the game crashed since the last Apply (or Take all mods out; before the first Apply it
-  shows none). It names the C++ mod that was running, if one was, with **Copy the report** and a button
-  to turn that mod off.
+  shows none). It names the mod it was in, when the report can tell, with **Copy the report** and a
+  button to turn that mod off.
 
 ### Is it safe?
 
@@ -335,8 +346,8 @@ menu. The shared `WCModsGame` module covers a lot of the game:
 - timers, keys, events and hooks;
 - an inspector for any of the game's objects.
 
-With mods that run code allowed, the studio's **Try Lua in the game** page, the mod menu's **Lua
-(advanced)** page and the command line's `lua` run Lua in the game while it's open. The studio's page
+With mods that run code allowed, the studio's **Try Lua in the game** page, the mod menu's Lua
+(advanced) page and the command line's `lua` run Lua in the game while it's open. The studio's page
 has a box that runs a line of Lua and an inspector for the game's objects; nothing there is saved into a
 mod, and a line at its top says whether the game can hear the studio. See
 [docs/scripting.md](docs/scripting.md); the example is
@@ -347,7 +358,7 @@ On the Mods page, a script mod's card says, before any Apply, what would stop it
 run, it says whether the script loaded when the game last started. Its **More** has **What it said**, the
 script's lines from the game's log, newest first, and **Settings**, the rows of its page in the mod menu,
 to change before the game starts. A script's errors carry its mod's name: they show on its card, on the
-mod menu's **Log** page, and, for a script that didn't start, at the top of the screen once your cat is in
+mod menu's Log page, and, for a script that didn't start, at the top of the screen once your cat is in
 the world ([Script mods](docs/scripting.md#script-mods)). The mod's name on its errors, and the line at
 the top of the screen, haven't been watched in the game yet.
 

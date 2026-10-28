@@ -10,7 +10,7 @@ There are two ways to colour a cat, and the page has a card for each:
 
 - **Colours of its own** go onto the cat while you play: its coat, paw pads, inner ears, nose and
   whiskers, any colour at all. No other cat gets them, and they show in menus and portraits too. They go
-  on through the [script loader](README.md#script-loader) (Get set up, on the Mods page, installs it),
+  on through the [script loader](README.md#script-loader) (**Get set up**, on the Mods page, installs it),
   and they go away when you switch the mod off.
 - **Colours from the game's picker** choose which of the game's own numbered colours
   ([slots](README.md#slot)) the cat wears: its coat, pattern, markings and each eye, as the cat maker
@@ -31,8 +31,8 @@ eyes, scars and shape.
 1. Open **Your cat**. Under **Colours of its own**, tick **Nose** and pick a bright pink.
 2. Under **Colours from the game's picker**, press a different square in the **Coat colour** row.
 3. Press **Save to mod**. The first time, the studio makes **My mods** for you and switches it on.
-4. Close the game if it's open, then press **Play** (**Apply and play** when there's something to
-   apply).
+4. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait).
 5. In the forest, your cat has the pink nose and the new coat, and so does its picture on screen.
 
 The pink nose needs the script loader; the new coat doesn't.
@@ -87,7 +87,7 @@ Good to know:
 ## Common mistakes
 
 - No script loader. Colours of its own need it. The status at the top of the studio says "No script
-  loader" until Get set up, on the Mods page, installs it.
+  loader" until **Get set up**, on the Mods page, installs it.
 - No save, or a save that can't be read. With no save yet, start the game once and come back. "Your save
   couldn't be read" usually means the game was writing it: wait a moment and come back to the window.
   Colours of its own work all the same.
@@ -108,6 +108,6 @@ Good to know:
 - Colours of its own, after you apply: switch the mod off on the Mods page and apply again, and they go.
 - The game's colours, the shape and the scars, after you apply: they stay in your save even with the mod
   off. Choose the old ones on this page and apply again. Or switch the mod off, then put back the copy of
-  your save the studio made before: **Restore** beside it, under **Backups and repair** on the Settings
-  and repair page (press it twice). You lose what you played since that copy. Switch the mod off first:
+  your save the studio made before: **Restore** beside it, under **Save backups** on the Settings and
+  repair page (press it twice). You lose what you played since that copy. Switch the mod off first:
   while it's on, the next Apply writes its changes again.

@@ -1,6 +1,6 @@
 {
   "_help": "The Game data page's Quick changes: one entry per row of the card. Each names a table, a row (\"*\" for every row) or rows, and a column or columns, taken from the game's tables. kind \"value\" writes the number typed; \"factor\" writes \"xN\". negate: the table keeps the number negative and the page shows it positive. chance: no cell may go over 1. names: a row's name in words, for the preview. Every entry is an ordinary cell edit in data.json.",
-  "checked": "Not checked in game yet: the tables load from the same place as the game's text, which does change in game, but no change to these numbers has been seen in play.",
+  "checked": "Seen in play: a higher Running speed made the cat run faster. The other numbers load from the same place, but no change to them has been watched in play yet.",
   "groups": ["Moving", "Levelling", "Food", "Dens", "Clan cats", "Day and night"],
   "rows": [
     { "id": "run-speed", "group": "Moving", "label": "Running speed", "table": "TuningData.csv",

@@ -28,18 +28,18 @@ on the Mods page, installs. Nothing goes into your save.
    choose Yawn (under Everyday).
 3. Under **What it does**, keep **An emote on my cat**. Press **Press a key…**, then F7.
 4. Press **Save to mod**.
-5. Close the game if it's open, then press **Play** (it says **Apply and play** when there's something
-   to apply).
+5. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait).
 6. In the forest, press F7: your cat yawns. Press it again while it plays to stop it. The mod menu
    (Insert opens it, unless you changed its key) has an Emotes page with a Yawn button too.
 
-Emotes from a file made in Blender have been seen working in the game. One of the game's own, as here,
-hasn't been watched in the game yet: if F7 does nothing, the [build log](README.md#build-log) says why.
+This has been seen working in the game: F7 played the game's Yawn, and F7 again stopped it. If F7 does
+nothing for you, the [build log](README.md#build-log) says why.
 
 A second try, every cat trotting with the run: add another animation, choose Run in **The game's
 animation**, then **Plays where the game plays one of its own**, and choose Trot in **In place of**.
-Save, and press **Play**. (An animation from a file has been seen in the trot's place; the run hasn't
-yet.)
+Save, and press **Play**. (An animation from a file, and the game's own sleep loop, have been seen in the
+trot's place; the run hasn't yet.)
 
 ## What you can and can't do
 
@@ -62,8 +62,8 @@ You can:
   rigged the game's way, and **A file I made in Blender** takes the .glb file you export, up to 60
   seconds long;
 - show your emotes on a wheel too, with the Emote wheel, one of the
-  [mods that go with Clan Mod Studio](companion-mods.md). The page has its **Add the Emote wheel**
-  button until you have it.
+  [mods that go with Clan Mod Studio](companion-mods.md). It has no release yet, and the page says so;
+  once it has a release, the page has an **Add the Emote wheel** button until you have it.
 
 You can't, yet:
 
@@ -88,11 +88,12 @@ In the game, press the emote's key, or open the mod menu's Emotes page. A replac
 game plays the one it replaced.
 
 Seen working in the game: emotes from files made in Blender (on a key and on the Emotes page, with
-claws out, stopped by the key again and by walking off), an animation from a file in the trot's place,
-and mice's and birds' animations played by a script. Not checked yet: the game's own animations as emotes,
-with claws out or in another's place, and **Try it on my cat**; an emote on a controller button;
-animations on the clans' cats; the rats', rabbits', squirrels', foxes', badgers', dogs' and snakes';
-and an emote's key stopping what the Emote wheel started.
+claws out, stopped by the key again and by walking off); the game's own animations as emotes (the Yawn,
+and a Stretch with claws out); an animation from a file, and the game's own sleep loop, in the trot's
+place; and mice's and birds' animations played by a script. Not checked yet: the run in the trot's
+place, and **Try it on my cat**; an emote on a controller button; animations on the clans' cats; the
+rats', rabbits', squirrels', foxes', badgers', dogs' and snakes'; and an emote's key stopping what the
+Emote wheel started.
 
 ## Common mistakes
 

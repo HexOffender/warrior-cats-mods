@@ -21,7 +21,8 @@ that run code are allowed, and it needs the [script loader](README.md#script-loa
 
 1. On the [Settings and repair](settings.md) page, under **Options**, tick **Allow mods that run code**,
    and press **Allow mods that run code** again to say yes.
-2. Press **Apply and play** at the top right. It puts the connection in the game first, then starts it.
+2. Close the game if it's open, then press **Play** (top right; it reads **Apply and play** while changes
+   wait). It puts the connection in the game first, then starts it.
 3. Play until your cat is in the forest.
 4. Back in the studio, open **Try Lua in the game**. The line at the top says "The game is running and
    listening (in the forest)".
@@ -31,8 +32,8 @@ that run code are allowed, and it needs the [script loader](README.md#script-loa
 7. Under **Look inside an object**, leave `Game.player()` in the **Object** box and press **Inspect**:
    the properties your cat's object holds, with their values, and its functions.
 
-The connection has run Lua in the game before, but this page itself hasn't been tried against the
-running game yet.
+What this page asks the game has been tried against the running game: the "listening" line, a line run,
+and your cat's properties and functions. Nobody has used the page itself with the game running yet.
 
 ## What you can and can't do
 
@@ -76,7 +77,7 @@ it took. An error shows in red, with the number of the line it was on.
 
 For a script in a mod, its card on the Mods page says whether it loaded when the game last started, and
 under **More**, **What it said** shows its lines, newest first (**Open the log file** opens the whole log).
-In the game, the [mod menu](README.md#mod-menu)'s *Log* page (under *Tools*) shows them too.
+In the game, the [mod menu](README.md#mod-menu)'s Log page (under Tools) shows them too.
 
 ## Common mistakes
 
