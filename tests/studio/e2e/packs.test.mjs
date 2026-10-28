@@ -5,7 +5,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, makeGame, makeMod, removeFolder, startStudio } from "../lib/studio.mjs";
+import { dataFolder, makeGame, makeMod, removeFolders, startStudio } from "../lib/studio.mjs";
 
 const browserPath = findBrowser();
 const required = process.env.WC_REQUIRE_BROWSER === "1";
@@ -32,7 +32,7 @@ before(async () => {
 after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
-  if (folders) await removeFolder(folders.root);
+  if (folders) await removeFolders(folders);
 });
 
 const ticked = p => p.evaluate(() => [...document.querySelectorAll('[data-key="pack-form"] input[type="checkbox"]')].filter(b => b.checked).map(b => b.getAttribute("aria-label")));
