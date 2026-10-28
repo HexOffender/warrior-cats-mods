@@ -101,8 +101,8 @@ and the Your cat page show it (`"WindClan/Warrior/3"`, for one of two cats with 
 game you're playing, or with the game's slot first for another (`"2/Duskfang"`), as `names.json`'s
 `cats` picks them. Every cat called the name changes, with a warning when that's more than one. Mods
 apply in priority order, so a later mod's choice wins even when it names the cat another way.
-- **`colours`** go onto the cat's own materials while you play. That covers menus and portraits,
-  and every part is optional. No other cat changes, and any colour works, including paws, ears,
+- **`colours`** go onto the cat's own materials while you play. That covers menus and the HUD's
+  portrait (the cat choice's small pictures show the saved colours), and every part is optional. No other cat changes, and any colour works, including paws, ears,
   nose and whiskers, which have no slots at all. The game sets a cat's colours again whenever it
   sets the cat up, so the UE4SS script (`WCModsCatLook`) puts them back twice a second. Another cat's
   are found by its name, so they go on only in the game you're playing, and a cat with the same name
