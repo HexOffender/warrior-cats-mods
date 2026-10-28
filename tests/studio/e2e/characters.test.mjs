@@ -1,7 +1,8 @@
 // The Characters page in a real browser (lib/browser.mjs), against a studio over a folder of its own with a
 // made-up game folder and a Sandbox mode mod that's off: the strip, adding a cat while the page loads, typing
 // a name without losing your place, "At one spot" with no spot, saving (which turns Sandbox mode on), the
-// strip's own button, and removing a cat that a quest names. Skipped, with a reason, when no Chromium is found.
+// strip's own button, removing a cat that a quest names, the strip following the Editing mod, and a mod whose
+// cats can't be read. Skipped, with a reason, when no Chromium is found.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -54,7 +55,8 @@ test("Add a cat pressed while the page is still loading waits, and nothing goes 
     }, 1);
   }));
   await page.waitFor(() => [...document.querySelectorAll("button")].some(b => b.textContent === "Add a cat" && !b.disabled), SLOW);
-  assert.equal(typeof wasHeld, "boolean");
+  assert.equal(wasHeld, true, "Add is held back until the mod's file is read");
+  assert.equal(await page.evaluate(() => document.querySelectorAll(".pick").length), 0, "the press while it was held added nothing");
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });
@@ -148,5 +150,40 @@ test("removing a cat a quest names says which quest to change", { skip }, async 
   await toastSaid(page, "Removed Mossfoot. Moss for Mossfoot names them: choose another cat there before Apply.");
   assert.equal(await page.text(".dirty"), "Unsaved changes");
   assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
+// The tests below choose other mods: the page opens on the last one chosen, so they come last.
+async function chooseMod(page, id, catName) {
+  await page.evaluate(`(() => { const s = document.querySelector(".target select"); s.value = ${JSON.stringify(id)}; s.dispatchEvent(new Event("change")); })()`);
+  await page.waitFor(new Function(`return document.querySelector(".target select").value === ${JSON.stringify(id)}
+    && document.querySelector(".pick strong")?.textContent === ${JSON.stringify(catName)}`), SLOW);
+}
+
+test("the strip follows the Editing mod: fixed looks say Sandbox mode is too old, a mod without them doesn't", { skip }, async () => {
+  fs.writeFileSync(sandboxMeta(), JSON.stringify({ name: "Sandbox mode", version: "0.4", enabled: true }));
+  writeMod(folders, "fixed-looks", { name: "Fixed looks", uses: ["sandbox"] },
+    { "npcs.json": { npcs: [{ id: "fern", name: "Fern", look: { body: 2 }, slots: { fur: 3 } }] } });
+  writeMod(folders, "random-looks", { name: "Random looks", uses: ["sandbox"] }, { "npcs.json": { npcs: [{ id: "ash", name: "Ash" }] } });
+  const page = await openCharacters();
+  await chooseMod(page, "random-looks", "Ash");
+  assert.match(await stripLine(page), /^Sandbox mode 0\.4 is on/);
+  await chooseMod(page, "fixed-looks", "Fern");
+  assert.match(await stripLine(page), /^Your fixed looks need Sandbox mode 0\.5 or newer; you have 0\.4/);
+  await chooseMod(page, "random-looks", "Ash");
+  assert.match(await stripLine(page), /^Sandbox mode 0\.4 is on/, "the words for the other mod's cats go with it");
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
+test("a mod whose cats can't be read says so, and Add comes back all the same", { skip }, async () => {
+  writeMod(folders, "unreadable", { name: "Unreadable" });
+  fs.writeFileSync(path.join(folders.data, "mods", "unreadable", "npcs.json"), Buffer.from([0xff, 0xfe, 0x7b, 0x7d]));   // not UTF-8
+  const page = await openCharacters();
+  await page.evaluate(() => localStorage.setItem("wc-target", "unreadable"));
+  await page.reload();
+  await toastSaid(page, "The mod's cats couldn't be read");
+  await page.waitFor(() => [...document.querySelectorAll("button")].some(b => b.textContent === "Add a cat" && !b.disabled), SLOW);
+  await page.evaluate(() => localStorage.setItem("wc-target", "my-mods"));
   await page.close();
 });

@@ -37,6 +37,33 @@ test("a Sandbox mode too old for the fixed looks the cats use says so; one the c
   assert.equal(story.stripWords(old, []).title, "Sandbox mode 0.4 is on");
   // Off and too old: the version first (turning it on wouldn't be enough).
   assert.match(story.stripWords({ ...old, state: "off" }, ["look"]).title, /^Your fixed looks need/);
+  // The version is what the fields the cats use need, not the newest any field needs.
+  const later = answer({ version: "0.4", needs: { look: "0.5", slots: "0.6" }, newest: "0.6", older: ["look", "slots"] });
+  assert.equal(story.stripWords(later, ["look"]).title, "Your fixed looks need Sandbox mode 0.5 or newer; you have 0.4");
+  assert.equal(story.stripWords(later, ["look", "slots"]).title, "Your fixed looks need Sandbox mode 0.6 or newer; you have 0.4");
+  assert.match(story.stripWords(later, ["look"]).text, /Download sandbox-0\.6\.zip/, "the newest is still the one to get");
+});
+
+test("a Sandbox mode a game update holds back says Use it anyway on the Mods page", () => {
+  const own = story.stripWords(answer({ state: "held-back", held: "made for an older version of the game" }));
+  assert.equal(own.kind, "warn");
+  assert.equal(own.title, "Sandbox mode is left out since the game's update");
+  assert.match(own.text, /made for an older version of the game.*on the Mods page, its card has Use it anyway…, then Apply to game\./);
+  assert.equal(own.mods, true);
+  const other = story.stripWords(answer({ state: "held-back", held: "needs Menu pages, made for an older version of the game" }));
+  assert.match(other.text, /^It needs Menu pages, made for an older version of the game, so nothing shows your cats and questlines until you use that one anyway/);
+  // Too old as well: the version first, as with off.
+  assert.match(story.stripWords(answer({ state: "held-back", held: "made for an older version of the game", version: "0.4", older: ["look"] }), ["look"]).title,
+    /^Your fixed looks need Sandbox mode 0\.5/);
+});
+
+test("laterVersion compares versions as numbers", () => {
+  assert.equal(story.laterVersion("0.9", "0.10"), "0.10");
+  assert.equal(story.laterVersion("0.5.0", "0.5"), "0.5.0");
+  assert.equal(story.laterVersion("v1.0", "0.9"), "v1.0");
+  assert.equal(story.laterVersion(null, "0.5"), "0.5");
+  assert.equal(story.laterVersion("beta", "0.4"), "0.4");
+  assert.equal(story.laterVersion("beta", undefined), null);
 });
 
 test("the strip asks the studio, draws the line and the way to see them, and opens the guide's page", async () => {
@@ -60,6 +87,16 @@ test("the strip asks the studio, draws the line and the way to see them, and ope
   dom.routes = {};
   await strip.refresh();
   assert.equal(line.hidden, true);
+});
+
+test("the held-back line links the Mods page", async () => {
+  dom.routes = { "GET /story/sandbox": () => answer({ state: "held-back", held: "made for an older version of the game" }) };
+  const strip = story.sandboxStrip({ help: "characters", route: "" });
+  await strip.refresh();
+  const line = strip.element.children[0];
+  assert.match(line.textContent, /^Sandbox mode is left out since the game's update/);
+  assert.equal(line.querySelector("a").getAttribute("href"), "#mods");
+  assert.equal(line.querySelector("a").textContent, "Open the Mods page");
 });
 
 test("Turn it on switches Sandbox mode on, says so and asks again", async () => {

@@ -9,7 +9,7 @@ export const SANDBOX = "sandbox";
 // "Mossfoot" -> "mossfoot", unique among `taken`.
 export function slug(text, taken = [], fallback = "thing") {
   // NFKD splits an accented letter into the letter and its accent, which then goes ("é" -> "e").
-  let base = (text || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-")
+  let base = (text || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "").slice(0, 40) || fallback;
   if (!/^[a-z0-9]/.test(base)) base = fallback;
   let id = base, n = 2;
@@ -141,9 +141,25 @@ export function ownItems(itemsJson) {
 // What each of Sandbox mode's newer fields is called on the pages, and what happens without it.
 const FIELDS = { look: ["fixed looks", "the game makes their look up each time"], slots: ["fixed looks", "the game makes their look up each time"] };
 
+// A version's numbers ("v0.10" -> [0, 10]), or null for text that isn't a plain dotted number; and the later
+// of two versions (one that isn't a version gives way to one that is).
+const versionParts = v => {
+  const s = String(v || "").trim().replace(/^[vV]/, "");
+  return /^\d+(\.\d+)*$/.test(s) ? s.split(".").map(Number) : null;
+};
+export function laterVersion(a, b) {
+  const x = versionParts(a), y = versionParts(b);
+  if (!x || !y) return x ? a : y ? b : null;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] || 0) - (y[i] || 0);
+    if (d) return d > 0 ? a : b;
+  }
+  return a;
+}
+
 // The words of the strip for the studio's answer about Sandbox mode (GET /story/sandbox: its state, version
 // and the fields it's too old for, worked out there) and the fields the page's cats use (["look", "slots"]):
-// {kind, title, text, link?, button?, settings?}. kind is "good" when nothing waits.
+// {kind, title, text, link?, button?, settings?, mods?}. kind is "good" when nothing waits.
 export function stripWords(s, uses = []) {
   const zip = `sandbox-${s.newest || "0.5"}.zip`;
   const codeStep = s.code_allowed ? "" : " It runs a script, so allow mods that run code on Settings and repair too.";
@@ -155,12 +171,23 @@ export function stripWords(s, uses = []) {
   const tooOld = uses.filter(f => (s.older || []).includes(f) && FIELDS[f]);
   if (tooOld.length) {
     const [what, without] = FIELDS[tooOld[0]];
-    return { kind: "warn", title: `Your ${what} need Sandbox mode ${s.newest} or newer; you have ${s.version || "an older one"}`,
+    // What the fields the cats use need (the newest of them), not the newest any field needs.
+    const need = tooOld.map(f => (s.needs || {})[f]).reduce(laterVersion, null) || s.newest;
+    return { kind: "warn", title: `Your ${what} need Sandbox mode ${need} or newer; you have ${s.version || "an older one"}`,
       text: `Until then ${without}. Download ${zip} from its releases page and drop it on the Mods page.`, link: s.releases };
   }
   if (s.state === "off") {
     return { kind: "warn", title: "Sandbox mode is off", text: "Your cats and questlines go in, but nothing shows them until it's on.",
       button: "Turn it on" };
+  }
+  if (s.state === "held-back") {
+    // On, but a game update leaves it out of Apply until it's used anyway (its card on the Mods page, or the
+    // card of the mod it needs that was made for the older version).
+    const own = !s.held || /^made for/.test(s.held);
+    return { kind: "warn", title: "Sandbox mode is left out since the game's update",
+      text: own ? "It was made for an older version of the game, so nothing shows your cats and questlines until you use it anyway: on the Mods page, its card has Use it anyway…, then Apply to game."
+        : `It ${s.held}, so nothing shows your cats and questlines until you use that one anyway: on the Mods page, its card has Use it anyway…, then Apply to game.`,
+      mods: true };
   }
   if (s.state === "no-code") {
     return { kind: "warn", title: "Sandbox mode is in, but mods that run code aren't allowed, so it can't run",
@@ -187,6 +214,7 @@ export function sandboxStrip({ help, route }) {
     line.replaceChildren(...[el("strong", { text: w.title }), el("span", { text: w.text }),
       w.link ? el("a", { href: w.link, target: "_blank", rel: "noopener", text: "Sandbox mode's releases page" }) : null,
       w.settings ? el("a", { href: "#settings", text: "Open Settings and repair" }) : null,
+      w.mods ? el("a", { href: "#mods", text: "Open the Mods page" }) : null,
       w.button ? el("div", { class: "row" }, el("button", { class: "btn small", type: "button", text: w.button, onclick: turnOn })) : null]
       .filter(Boolean));
   }

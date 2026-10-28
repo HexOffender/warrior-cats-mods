@@ -20,6 +20,14 @@ test("slug makes an id from a name, unique among the ids taken", () => {
   assert.equal(story.slug("🐱"), "thing");
 });
 
+test("story.js spells the accents slug() drops as escapes, not as the characters themselves", async () => {
+  // An accent on its own is invisible in an editor, and a tool can turn the escapes into them unseen:\u0300-\u036f stays written so.
+  const { readFileSync } = await import("node:fs");
+  const text = readFileSync(new URL("../../studio/lib/story.js", import.meta.url), "utf8");
+  assert.doesNotMatch(text, /[\u0300-\u036f]/);
+  assert.ok(text.includes(String.raw`/[\u0300-\u036f]/g`));
+});
+
 test("ownItems gives a mod's items.json the tags the game gives them", () => {
   const items = { items: [
     { id: "moss", kind: "material", name: "Moss" },

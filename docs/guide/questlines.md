@@ -20,7 +20,7 @@ them for each sandbox cat and remembers how far it has got. Nothing in your save
 5. Press **Talk** again and type a thank-you line; under **Reward**, add an item.
 6. Press **Save to mod**, then **Play** (**Apply and play** when there's something to apply).
 7. On the game's main menu choose *Sandbox Mode*, then a new cat.
-8. Walk up to Mossfoot and use the *Talk* prompt; Enter shows the next line. The objective panel says
+8. Walk up to Mossfoot and use the *Talk* prompt; Interact or Enter shows the next line. The objective panel says
    "Find 2 Moss"; pick them up, talk to Mossfoot again, and the reward drops at your paws.
 
 Sandbox mode has to be in your mods and on: the strip at the top of the page says what to do, as on
@@ -72,7 +72,10 @@ You can't, yet:
 - Before saving: switch to another mod in the Editing mod bar and back (the page asks first).
 - After saving: change the quest and save again, or **Remove** it and save.
 - After Apply: switch the mod off on the Mods page and Apply again.
-- How far each sandbox cat has got is Sandbox mode's, kept beside the game's saves. The mod menu's
-  Questlines page starts one quest over; **Start every questline over**, under **Starting over** on this
-  page, starts them all over for every sandbox cat while the game is closed. With Sandbox mode 0.5 or
-  newer, a quest whose steps you change starts over by itself.
+- How far each sandbox cat has got is kept in the sandbox's progress file, beside the game's saves. The
+  mod menu's Questlines page starts one quest over; **Start every questline over**, under **Starting
+  over** on this page, starts every mod's questlines over (not only this mod's) for every sandbox cat,
+  while the game is closed. With Sandbox mode 0.5 or newer, a quest a cat hasn't finished starts over by
+  itself when you add or take out a step, change a step's kind (moving steps can do that), or change what
+  or how many a **Pick up** step wants. New lines, objectives or a new title don't restart it, and a quest
+  a cat has finished stays finished.
