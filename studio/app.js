@@ -35,6 +35,7 @@ const installBtn = document.getElementById("installBtn");
 const playBtn = document.getElementById("playBtn");
 let busy = false;   // a build, install or Play is running: the buttons wait for it
 let gone = false;   // the studio's server stopped answering: the page waits for it and reloads
+let wasRunning = null;   // whether the game ran at the last look, for the "game" event
 
 async function refreshStatus() {
   let changes = null;
@@ -47,7 +48,10 @@ async function refreshStatus() {
     return null;
   }
   if (gone) { location.reload(); return null; }   // it's back: this page is from before
-  const waiting = changes ? changes.on.length + changes.off.length + changes.changed.length + (changes.redo || []).length : 0;
+  // The game started or closed: pages that show what it did last time (a script's card) look again.
+  if (wasRunning !== null && wasRunning !== info.game_running) bus.emit("game", { running: info.game_running });
+  wasRunning = info.game_running;
+  const waiting =changes ? changes.on.length + changes.off.length + changes.changed.length + (changes.redo || []).length : 0;
   setStatus([
     chip(info.game_running ? "Game running" : "Game closed", info.game_running ? "warn" : "good",
       info.game_running ? "Close the game to apply mods" : ""),
@@ -136,10 +140,11 @@ async function restartStudio() {
   }
 }
 
-// The side bar: managing mods first, then the pages for making them. Made again only when the pages
-// change (a mod with a page of its own turned on or off); opening a page moves aria-current, so the
-// button you pressed keeps focus.
-const GROUPS = { play: "Your mods", make: "Make mods" };
+// The side bar: managing mods first, then the pages for making them, then the page for people who write
+// scripts (Try Lua in the game, with mods that run code allowed). Made again only when the pages change (a mod
+// with a page of its own turned on or off); opening a page moves aria-current, so the button you pressed keeps
+// focus.
+const GROUPS = { play: "Your mods", make: "Make mods", advanced: "Advanced" };
 let navMade = "";
 function renderNav() {
   const pages = info.sections.map(s => `${s.id}|${s.title}|${s.group || ""}|${s.from_mod || ""}`).join("\n");
@@ -211,7 +216,7 @@ async function open(id, asked = false) {
 // A page's own stylesheet, studio/sections/<id>.css, linked once when the page first opens and ready before it
 // draws. Only the pages that have one are listed: the server answers a missing file with a 404, which the
 // browser would log as an error.
-const PAGE_STYLES = new Set(["mods", "items", "npcs", "quests"]);
+const PAGE_STYLES = new Set(["mods", "items", "npcs", "quests", "console"]);
 const styled = {};   // section id -> Promise that settles when its stylesheet has loaded
 function pageStyles(id) {
   if (!PAGE_STYLES.has(id)) return Promise.resolve();
@@ -269,8 +274,12 @@ function plainSummary(manifest) {
     return `Couldn't put ${bad[0][0]} in: ${bad[0][1]}${more}`;
   }
   const ids = manifest.mods || [], warnings = (manifest.warnings || []).length;
-  const said = ids.length ? `Put ${ids.length} mod${ids.length === 1 ? "" : "s"} in the game: ${ids.map(i => nameIn(manifest, i)).join(", ")}.`
+  let said = ids.length ? `Put ${ids.length} mod${ids.length === 1 ? "" : "s"} in the game: ${ids.map(i => nameIn(manifest, i)).join(", ")}.`
     : "Put the mod menu in the game, with no mods on.";
+  // A script that went in but won't load is said by name (studio.plain_summary says the same for Last apply).
+  for (const [mod, note] of Object.entries((manifest.notes || {}).scripts || {})) {
+    if (note && note.problems && note.problems.length) said += ` ${nameIn(manifest, mod)}: ${note.problems[0]}.`;
+  }
   return said + (warnings ? ` ${warnings} warning${warnings === 1 ? "" : "s"}.` : "");
 }
 const manifestOf = r => r && r.result && (r.result.sections ? r.result : r.result.manifest && r.result.manifest.sections ? r.result.manifest : null);

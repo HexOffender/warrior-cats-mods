@@ -14,7 +14,7 @@ export default {
       el("div", { class: "section-head" },
         el("span", { class: "eyebrow", text: "Your mods" }),
         el("h1", { text: "Settings and repair" }),
-        el("p", { class: "note", text: "The mod menu, the game's console and mods that run code, your save backups, mods you removed, and a mod of your own to start from." })),
+        el("p", { class: "note", text: "The mod menu, the game's own command window and mods that run code, your save backups, mods you removed, and a mod of your own to start from." })),
       optionsBox, repairBox, makeBox);
 
     function renderOptions() {
@@ -25,8 +25,12 @@ export default {
           try { options = await api.patch("/ingame", { console: consoleBox.checked }); toast("Saved."); } catch (e) { toast(e.message, "bad"); }
           renderOptions();
         });
-        optionsBox.append(el("label", { class: "row", for: "ig-console" }, consoleBox, el("strong", { text: "Game console" }),
-          el("span", { class: "muted", text: options.console_available ? "~ or F10 opens it, from the next time the game starts." : "Needs UE4SS." })));
+        // The game's own command window (UE4SS's console enabler), not the studio's Try Lua in the game or the mod
+        // menu's Lua (advanced) page: three things, three names.
+        optionsBox.append(el("label", { class: "row", for: "ig-console" }, consoleBox, el("strong", { text: "The game's own command window" }),
+          el("span", { class: "muted", text: options.console_available
+            ? "~ or F10 opens it from the next time the game starts, for engine commands like god and slomo with cheats on."
+            : "Needs the script loader (Get set up, on the Mods page, installs it)." })));
       }
       if (settings) {
         const code = el("input", { type: "checkbox", id: "allow-code", checked: settings.allow_code_mods });
@@ -165,7 +169,7 @@ export default {
       try { [options, settings, shell] = await Promise.all([api.get("/ingame").catch(() => null), api.get("/settings"), api.get("/info").catch(() => null)]); }
       catch (e) { toast(e.message, "bad"); }
       if (shell) {
-        const titles = shell.sections.filter(s => (s.group || "make") === "make" && !s.from_mod && s.id !== "console").map(s => s.title);
+        const titles = shell.sections.filter(s => (s.group || "make") === "make" && !s.from_mod).map(s => s.title);
         if (titles.join("|") !== makePages.join("|")) { makePages = titles; renderMake(); }
       }
       renderOptions();

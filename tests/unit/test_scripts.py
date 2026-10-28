@@ -172,10 +172,10 @@ def test_subfolders_land_under_mod(studio, tmp_path):
 def test_problems_name_the_file_and_line_in_words(studio, tmp_path):
     make_mod(studio, "broken", {"name": "Broken"}, {"scripts/main.lua": "Game.every(1, function()\n  x()\n",
                                                     "scripts/helper.lua": 'return "unclosed\n'})
+    # The first problem in each file: the missing end leaves the bracket around it open too, said once.
     said = ['scripts/helper.lua, line 1: a piece of text in quotes is never closed (its closing quote is missing), so '
             "the script won't run",
-            'scripts/main.lua, line 1: a "function" is never closed with "end", so the script won\'t run',
-            'scripts/main.lua, line 1: a "(" is never closed with ")", so the script won\'t run']
+            'scripts/main.lua, line 1: a "function" is never closed with "end", so the script won\'t run']
     m = studio.mod("broken")
     assert scripts.problems(m) == said
     # The build still puts it in (only that script fails in the game; the rest of the install is fine), and says the
@@ -197,9 +197,8 @@ def test_the_mods_page_has_a_scripts_problems_and_they_clear_when_fixed(studio):
                       {"scripts/main.lua": "function heal(\n", "settings.json": {"heal_key": "F5"}})
     make_mod(studio, "palette-only", files={"palette.json": {"fur": {"3": "#ff0000"}}})
     cards = {m["id"]: m for m in studio.api("GET", ["mods"], {})}
-    assert cards["game-tweaks"]["script_problems"] == [   # the innermost first
-        'scripts/main.lua, line 1: a "(" is never closed with ")", so the script won\'t run',
-        'scripts/main.lua, line 1: a "function" is never closed with "end", so the script won\'t run']
+    assert cards["game-tweaks"]["script_problems"] == [   # the innermost of what's left open
+        'scripts/main.lua, line 1: a "(" is never closed with ")", so the script won\'t run']
     assert cards["palette-only"]["script_problems"] == [] and cards["palette-only"]["script_run"] is None
     with open(os.path.join(folder, "scripts", "main.lua"), "w", encoding="utf-8") as f:
         f.write("function heal() end\n")

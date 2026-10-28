@@ -19,7 +19,8 @@
 //   openHelp(page) opens a page of the guide (docs/guide/<page>.md) in the help panel; no page, the index.
 //   bus            events between pages: "mods-changed" (a mod was made, changed, switched or removed),
 //                  "installed" (an Apply, Play or Check finished; the manifest), "sections-changed" (the
-//                  side bar's pages may have changed), "focus" (the window came back).
+//                  side bar's pages may have changed), "focus" (the window came back), "game" (the game started or
+//                  closed: { running }).
 //   el, clear, toast, announce, confirmButton, codePanel, copy, color, input, getPath, saveFile, docLink.
 
 const TOKEN = document.querySelector('meta[name="wc-token"]')?.content || "";

@@ -15,6 +15,9 @@ export default {
     };
     let mods = [], filter = "all", search = "", settings = null;
     const open = new Set();   // mod cards with "More" open
+    // A script's line about the game's last start, by its state (scriptlog.py): green, amber, red, or grey.
+    const RUN_CLASS = { loaded: "ok", errors: "warn", failed: "bad", "not-started": "bad", waiting: "muted" };
+    const said = {};          // mod id -> what its script said when the game last started (More's What it said)
 
     const setupBox = el("div");
     const updateBox = el("div");
@@ -345,6 +348,10 @@ export default {
       const lines = [];
       if (m.requires.length) lines.push(el("li", { text: `Needs ${m.requires_names.join(", ")}.` }));
       for (const p of m.problems) lines.push(el("li", { class: "bad", text: p.replace(/^needs/, "Needs") + "." }));
+      // An in-game script: what's wrong with its files now (before any Apply), then how it did when the game last
+      // started (UE4SS's log, read by the studio).
+      for (const p of m.script_problems || []) lines.push(el("li", { class: "bad", text: p + "." }));
+      if (m.script_run) lines.push(el("li", { class: RUN_CLASS[m.script_run.state] || "muted", "data-run": m.script_run.state, text: m.script_run.said + "." }));
       if (m.code && !(settings && settings.allow_code_mods)) lines.push(el("li", { class: "warn", text: "Runs code, so the game won't get it until you allow mods that run code (Options, on the Settings and repair page)." }));
       if (m.enabled && m.needed_by.length) lines.push(el("li", { class: "muted", text: `${m.needed_by.join(", ")} ${m.needed_by.length > 1 ? "need" : "needs"} it.` }));
       // Made for an older build of the game (gamebuild.py): left out unless the player uses it anyway.
@@ -424,6 +431,35 @@ export default {
       }
     }
 
+    // What a mod's script said when the game last started, newest first, from UE4SS's log; asked for when More
+    // opens, and again after an Apply or when the game closes.
+    function whatItSaid(m) {
+      const r = said[m.id];
+      if (r === undefined) {
+        said[m.id] = null;   // asking
+        api.get(`/mods/${encodeURIComponent(m.id)}/log`).then(x => { said[m.id] = x; }, e => { said[m.id] = { error: e.message }; })
+          .then(() => { if (open.has(m.id)) renderList(); });
+      }
+      const box = el("div", { class: "said", "data-key": `said:${m.id}` }, el("strong", { text: "What it said" }));
+      if (!r) {
+        box.append(el("p", { class: "muted", role: "status", text: "Reading the game's log…" }));
+      } else if (r.error) {
+        box.append(el("p", { class: "note", text: r.error }));
+      } else if (!r.log) {
+        box.append(el("p", { class: "note", text: "Nothing yet: the game makes its log when it starts with the script loader." }));
+      } else {
+        box.append(el("p", { class: "note", text: r.run_since_apply
+          ? `Newest first, from when the game last started (${r.session}). In the game, the mod menu's Log page (Tools) shows the same.`
+          : `Newest first, from the game's start before your last Apply (${r.session}).` }));
+        box.append(r.lines.length
+          ? el("div", { class: "code", tabindex: "0", role: "region", "aria-label": `What ${m.name} said` }, el("pre", { class: "log", text: r.lines.join("\n") }))
+          : el("p", { class: "muted", text: "It said nothing." }));
+      }
+      box.append(el("div", { class: "row" }, el("button", { class: "btn small", type: "button", text: "Open the log file",
+        onclick: async () => { try { await api.post("/open", { what: "log" }); } catch (e) { toast(e.message, "bad"); } } })));
+      return box;
+    }
+
     function details(m) {
       const prio = el("input", { type: "number", id: `mod-prio-${m.id}`, value: m.priority, style: { width: "5.5rem" } });
       prio.addEventListener("change", async () => {
@@ -431,6 +467,7 @@ export default {
         catch (e) { toast(e.message, "bad"); }
       });
       return el("div", { class: "mod-wide details" },
+        m.kinds.includes("in-game script") ? whatItSaid(m) : null,
         el("div", { class: "row" },
           el("label", { for: `mod-prio-${m.id}`, class: "lbl", text: "Priority" }), prio,
           el("span", { class: "muted", text: "When two mods change the same thing, the higher number wins." })),
@@ -505,6 +542,7 @@ export default {
       try {
         [mods, settings] = await Promise.all([api.get("/mods"), api.get("/settings")]);
       } catch (e) { toast(e.message, "bad"); }
+      for (const id of Object.keys(said)) delete said[id];   // the game may have run since: asked again
       renderList();
       await Promise.all([renderSetup(), renderUpdate(), renderChanges()]);
       if (notify) bus.emit("mods-changed", { from: "mods" });
@@ -512,7 +550,9 @@ export default {
 
     renderAdd();
     const off = [
-      bus.on("installed", () => renderChanges()),
+      // After an Apply, and when the game starts or closes, the cards say again how each script did.
+      bus.on("installed", () => refresh({ notify: false })),
+      bus.on("game", () => refresh({ notify: false })),
       bus.on("mods-changed", d => { if (!d || d.from !== "mods") refresh({ notify: false }); }),
       bus.on("focus", () => renderSetup()),
     ];

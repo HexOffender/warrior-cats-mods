@@ -57,10 +57,11 @@ def read_settings(mod):
     return settings, os.path.abspath(path)
 
 
-def lua_problems(files, most=3):
+def lua_problems(files, most=1):
     """What would stop the Lua in a script's files ({"main.lua": bytes, ...}, as read_tree gives) from loading,
     as sentences naming the file and line: "scripts/main.lua, line 1: a "function" is never closed with "end",
-    so the script won't run". At most `most` for each file."""
+    so the script won't run". The first `most` of each file's: one missing end leaves the brackets around it
+    open too, so the first is the one to fix."""
     out = []
     for rel, blob in sorted(files.items()):
         if not rel.endswith(".lua"):

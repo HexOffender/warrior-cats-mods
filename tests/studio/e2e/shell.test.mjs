@@ -237,3 +237,33 @@ test("Apply with the game's files unreadable: a sentence at the top of the log, 
   assert.ok(!chips.includes("Restart the studio") && chips.includes("Not applied yet"), chips.join(", "));
   await page.close();
 });
+
+test("Try Lua in the game sits last, under Advanced, and says when the game runs without the studio's connection to it", { skip }, async () => {
+  // A folder of its own with mods that run code allowed (the page is only listed then), and the game "running"
+  // with nothing installed: no bridge in it, so the page can't reach it and says what to do.
+  const own = dataFolder();
+  makeGame(own.game);
+  fs.writeFileSync(path.join(own.data, "wcmods.json"), JSON.stringify({ game_dir: own.game, save_dir: own.saves, allow_code_mods: true }));
+  const running = await startStudio(own, { WCMODS_FAKE_RUNNING: "1" });
+  try {
+    const page = await browser.page();
+    await page.goto(running.url + "#console");
+    await page.waitFor(() => /^The game is running without/.test(document.querySelector(".strip")?.textContent || ""));
+    assert.equal(await page.text(".strip"), "The game is running without the studio's connection to it: close the game, press Apply to game, then Play");
+    const nav = await page.evaluate(() => [...document.querySelectorAll("#nav > *")].map(n => n.textContent));
+    assert.deepEqual(nav.slice(-2), ["Advanced", "Try Lua in the game"]);
+    assert.equal(await page.text("#main .section:not([hidden]) h1"), "Try Lua in the game");
+    const run = await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => x.textContent === "Run"); return { off: b.disabled, title: b.title }; });
+    assert.deepEqual(run, { off: true, title: "The game is running without the studio's connection to it: close the game, press Apply to game, then Play" });
+    // Its help is the guide's page about it, in the panel.
+    await page.click({ text: "How this works" });
+    await page.waitFor(() => !document.getElementById("help").hidden && document.getElementById("helpTitle").textContent === "Try Lua in the game");
+    assert.deepEqual(page.consoleErrors(), []);
+    await page.close();
+  } finally {
+    running.stop();
+    for (let i = 0; i < 5; i++) {
+      try { fs.rmSync(own.root, { recursive: true, force: true }); break; } catch (e) { await sleep(300); }
+    }
+  }
+});
