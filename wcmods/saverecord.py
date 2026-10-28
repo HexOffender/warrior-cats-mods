@@ -9,18 +9,24 @@ folder, beside wcmods.json. It's about your save, not a setting, so it isn't in 
 account's save starts clean. <source> is a mod's id, or "studio" for the Save page's Change my save now.
 The key is the path the change is at (an inventory item's path for an add). "was" is what Put it back
 writes; "undone" (when it was put back) keeps the record, so a mod that is still on doesn't make the change
-again; "before" marks a change made before this version, whose "was" isn't known.
+again; "before" marks a change made before this version, whose "was" isn't known; "lost_to" marks a mod's
+change another mod's change to the same path won over (not made, and not made later either).
 
-pipeline.apply_save_ops reads and writes it; restoring a backup forgets what was made after it
-(forget_since), because the restored save hasn't got those changes.
+pipeline.apply_save_ops reads and writes it. Every save backup keeps the record as it was then, beside the save
+files (backup(), save.RECORD_NAME), and restoring a backup puts that record back with the save (restore()), so
+the record always says what the save in the folder has had made: the next Apply makes again only what that
+save hasn't got.
 """
 import datetime
 import json
 import os
 import re
 
+from .formats import save as savefile
+
 FILE = "save-changes.json"
 STUDIO = "studio"   # the source of the Save page's own changes
+_NONE = object()    # a backup that keeps no record (made by wcmods 0.3 or before)
 
 
 def path(cfg):
@@ -72,28 +78,88 @@ def _stamp(text):
     return "".join(m.groups()[:3]) + "-" + "".join(m.groups()[3:]) if m else ""
 
 
-def forget_since(cfg, backup_name):
-    """Drop every change made at or after the backup's time: a save put back from that backup hasn't got
-    them, so the next Apply makes the mods' ones again. Returns how many were dropped."""
-    record = load(cfg)
-    since = _stamp(backup_name)
-    if not record or not since:
-        return 0
-    dropped = 0
-    for account in list(record):
-        for source in list(record[account]):
-            changes = record[account][source]
-            for key in list(changes):
-                if _stamp(changes[key].get("when")) >= since:
-                    del changes[key]
-                    dropped += 1
-            if not changes:
-                del record[account][source]
-        if not record[account]:
-            del record[account]
-    if dropped:
+def backup(cfg, backups_root, reason="manual"):
+    """A backup of the saves folder (formats.save.backup) with the record as it is now kept in it
+    (save.RECORD_NAME: null while there's no record yet), for restore() to put back with the save. Returns
+    (the backup's folder, the save files copied)."""
+    where, copied = savefile.backup(cfg.save_dir, backups_root, reason)
+    with open(os.path.join(where, savefile.RECORD_NAME), "w", encoding="utf-8", newline="\n") as f:
+        json.dump(load(cfg), f, indent=1, ensure_ascii=False)
+        f.write("\n")
+    return where, copied
+
+
+def kept(folder):
+    """The record a backup keeps: a dict, None (there was no record yet when it was made), or _NONE when the
+    backup keeps none (wcmods 0.3 or before made it) or it can't be read."""
+    p = os.path.join(folder, savefile.RECORD_NAME)
+    if not os.path.isfile(p):
+        return _NONE
+    try:
+        with open(p, encoding="utf-8-sig") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return _NONE
+    return data if data is None or isinstance(data, dict) else _NONE
+
+
+def _account_of(save_dir):
+    """The account of the save in a folder, or None when there's none or it can't be read."""
+    from .formats.savejson import SaveDoc
+    try:
+        return SaveDoc(savefile.SaveGame.load(os.path.join(save_dir, savefile.SAV_NAME)).json_text).account
+    except Exception:   # noqa: BLE001 - no save, or one that can't be read: every account's record is put back
+        return None
+
+
+def restore(cfg, backups_root, name):
+    """Put a backed-up save back, after a backup of the save as it is now ("before-restore", which keeps the
+    record as it is now, so restoring that undoes this), and the record with it (put_back). Returns the files
+    put back."""
+    backup(cfg, backups_root, "before-restore")
+    restored = savefile.restore(backups_root, name, cfg.save_dir)
+    put_back(cfg, os.path.join(backups_root, name))
+    return restored
+
+
+def put_back(cfg, folder):
+    """The record after the save in `folder` (a backup) has been put back: for the save's account, the record
+    that backup keeps, so the next Apply makes again exactly what that save hasn't got. A backup that keeps
+    none (made by wcmods 0.3 or before, or before the first install with a record) is older than every change
+    recorded since: those are forgotten, a change put back since counts as made again (the backup's save has
+    it), and the changes made before wcmods kept a record ("before") stay, since that save had them too."""
+    record, snap = load(cfg), kept(folder)
+    account = _account_of(cfg.save_dir)
+    if isinstance(snap, dict):
+        record = record or {}
+        for acc in ([account] if account else sorted(set(record) | set(snap))):
+            if acc in snap:
+                record[acc] = snap[acc]
+            else:
+                record.pop(acc, None)
         store(cfg, record)
-    return dropped
+        return
+    if not record:
+        return
+    since = _stamp(os.path.basename(folder))
+    for acc in ([account] if account else list(record)):
+        sources = record.get(acc) or {}
+        for source in list(sources):
+            changes = sources[source]
+            for key in list(changes):
+                e = changes[key]
+                if e.get("before"):
+                    continue
+                if not since or _stamp(e.get("when")) >= since:
+                    del changes[key]
+                elif e.get("undone") and _stamp(e["undone"]) >= since:
+                    e.pop("undone", None)
+                    e.pop("undone_backup", None)
+            if not changes:
+                del sources[source]
+        if acc in record and not record[acc]:
+            del record[acc]
+    store(cfg, record)
 
 
 def listing(record, account=None):

@@ -19,10 +19,10 @@ from .formats.csvdata import Table
 from .gamefiles import GameFiles
 from .formats.iostore import ModContainerWriter
 from .formats.pak import PakReader, PakWriter
-from .formats.save import SAV_NAME, SaveGame, backup, write_save
+from .formats.save import SAV_NAME, SaveGame, list_backups, write_save
 from .formats.savejson import SaveDoc
 from .sdk import BuildContext
-from .sections import load_sections
+from .sections import load_sections, savedit
 from . import saverecord
 
 MARKER = "Wrc/WCMods/BuildInfo.json"
@@ -560,6 +560,27 @@ def _said(value):
     return "none" if value is None else json.dumps(value, ensure_ascii=False)
 
 
+def _made_at(path):
+    """When a file was made (its creation time), or None where the system doesn't keep one (Linux)."""
+    st = os.stat(path)
+    born = getattr(st, "st_birthtime", None)
+    if born is None and os.name == "nt":
+        born = st.st_ctime   # creation time on Windows before Python 3.12's st_birthtime
+    return born
+
+
+def _had_save(cfg, backups_root, when):
+    """Whether there was a save at `when` (a timestamp: the last install's): a backup of one made by then, or
+    the save file itself made by then. Unknown (no creation time, and no backup that old) counts as yes, as
+    before this was asked."""
+    stamp = datetime.datetime.fromtimestamp(when).strftime("%Y%m%d-%H%M%S")
+    if any(name[:15] <= stamp and os.path.isfile(os.path.join(backups_root, name, SAV_NAME))
+           for name in list_backups(backups_root)):
+        return True
+    made = _made_at(os.path.join(cfg.save_dir, SAV_NAME))
+    return made is None or made <= when + 1
+
+
 def apply_save_ops(cfg, ops, backups_root, log=print):
     """Make the build's save edits in WrcGame.sav, after a backup when anything changes. An op with "once"
     (a save.json's, unless it says "always") is made once per save: saverecord keeps what was made, and an op
@@ -578,7 +599,8 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
     changed = result["changed"]
     # The record of what's been made. With none yet (the first install since edits were made once), the mods
     # of the last install have had theirs made at every install: they're recorded as made, without writing,
-    # so a save that has played on past them keeps what it has.
+    # so a save that has played on past them keeps what it has. Not when that install had no save to make them
+    # in (wcmods 0.3 didn't say so; the save made since does): they're still to be made.
     record = saverecord.load(cfg)
     first = record is None
     record = record or {}
@@ -590,9 +612,10 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
         except ValueError:
             built = 0.0
         # A mod changed since that install may have a new value, which that install never made: not counted.
-        made_before = {i for i in last.get("mods", [])
-                       if not _newest(os.path.join(cfg.mods_root, i)) > built + 1}
-    records = []   # (op, key, value, was): what to record once the save is written
+        if built and _had_save(cfg, backups_root, built):
+            made_before = {i for i in last.get("mods", [])
+                           if not _newest(os.path.join(cfg.mods_root, i)) > built + 1}
+    records = []   # (op, key, value, was, lost_to): what to record once the save is written
     write_record = first
 
     def source(op):
@@ -619,7 +642,9 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
     pending = {}
     labels = {}   # path -> how a name change reads in the log ("Otterpaw -> Mothpaw")
     said = {}     # path -> a set op's path in words ("Fawnstar's level")
-    owners = {}   # path -> the recorded ops that set it, the winner last
+    owners = {}   # path -> the recorded ops that set it
+    winner = {}   # path -> the op whose value it gets (the last to set it, recorded or not)
+    inserted = {}  # an added key's path -> its record's place in records (a later add of it wins)
     removes = []  # remove ops, made after the sets and inserts
 
     def flush():
@@ -644,9 +669,13 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
         for p, v in done:
             changed.append(labels.get(p) or f"{said.get(p) or p}: {_said(olds[p])} -> {_said(v)}")
         for p in settled | {p for p, _ in done}:
-            for op in owners.pop(p, []):   # every op that set it, so a lower mod's isn't made next time instead
-                records.append((op, p, op["value"], olds[p]))
+            # Every op that set it, so a lower mod's isn't made next time instead; the ones another op won over
+            # are recorded as not made.
+            for op in owners.pop(p, []):
+                won = winner.get(p)
+                records.append((op, p, op["value"], olds[p], None if won is op else source(won) if won else "?"))
         owners.clear()
+        winner.clear()
 
     for op in ops:
         if op["op"] == "set":
@@ -660,6 +689,7 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
             pending[op["path"]] = op["value"]
             labels.pop(op["path"], None)
             said[op["path"]] = op.get("label")
+            winner[op["path"]] = op
             if op.get("once") or op.get("record"):
                 owners.setdefault(op["path"], []).append(op)
             continue
@@ -680,6 +710,7 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                 log(f"  name skipped ({op.get('from')}): that cat's name changed since the build; install again")
             elif new != current:
                 pending[op["path"]] = new
+                winner[op["path"]] = op
                 labels[op["path"]] = f"name: {op.get('from')} -> {op.get('to')} ({op.get('where', op['path'])})"
             continue
         if op["op"] == "fields":
@@ -693,6 +724,7 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                 new = catcolours.set_fields(current, op["set"])
                 if new != current:
                     pending[op["path"]] = new
+                    winner[op["path"]] = op
                     labels[op["path"]] = f"{op.get('who', 'your cat')}: {op.get('label', op['set'])}"
             continue
         flush()
@@ -714,7 +746,12 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                     doc.insert(op["path"], op["key"], op["value"])
                     changed.append(f"{op.get('label') or full}: {_said(old)} -> {_said(op['value'])}")
                 if op.get("once") or op.get("record"):
-                    records.append((op, full, op["value"], old))
+                    if full in inserted:   # added by another op before, this install: this one's value went in
+                        i = inserted[full]
+                        o, k, v, old, _ = records[i]   # what was there before either
+                        records[i] = (o, k, v, old, source(op))
+                    inserted[full] = len(records)
+                    records.append((op, full, op["value"], old, None))
         except (KeyError, IndexError, ValueError, TypeError) as e:
             log(f"  save edit skipped ({op.get('section')}): {e}")
     flush()
@@ -723,18 +760,23 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
         last_part = op["path"].rstrip("/").rsplit("/", 1)[-1]
         return (op["path"].rstrip("/").rsplit("/", 1)[0], -int(last_part) if last_part.isdigit() else 0)
     for op in sorted(removes, key=order):
+        problem = savedit.remove_problem(op["path"], doc)
+        if problem:   # a whole cat, the game's settings, a cat's progress: never taken out
+            log(f"  save edit skipped ({source(op)}): {problem}")
+            continue
         if not doc.exists(op["path"]):
-            records.append((op, op["path"], None, None))   # already gone: nothing to do, ever
+            records.append((op, op["path"], None, None, None))   # already gone: nothing to do, ever
             continue
         try:
             old = doc.get(op["path"])
             doc.delete(op["path"])
             changed.append(f"{op.get('label') or op['path']}: {_said(old)} -> removed")
-            records.append((op, op["path"], None, old))
+            records.append((op, op["path"], None, old, None))
         except (KeyError, IndexError, ValueError, TypeError) as e:
             log(f"  save edit skipped ({op.get('section')}): {e}")
     if changed:
-        where, _ = backup(cfg.save_dir, backups_root, "before-save-edits")
+        # The backup keeps the record as it is before these changes, for a restore to put back with it.
+        where, _ = saverecord.backup(cfg, backups_root, "before-save-edits")
         log(f"  backed up saves -> {where}")
         save.json_text = doc.text
         write_save(cfg.save_dir, save)
@@ -743,14 +785,17 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
             log(f"  save: {c}")
     else:
         log("  save already matches; nothing to change")
-    when = saverecord.now()   # after the backup, so restoring it forgets these (saverecord.forget_since)
-    for op, key, value, was in records:
-        made = was != value
+    when = saverecord.now()
+    for op, key, value, was, lost_to in records:
+        made = was != value and not lost_to
         if made:
             result["applied"].append({"source": source(op), "path": key, "label": op.get("label") or key,
                                       "was": was, "now": value, "op": op["op"]})
-        saverecord.note(record, doc.account, source(op), key, op=op["op"], value=value, was=was,
-                        label=op.get("label") or key, when=when, backup=result["backup"] if made else None)
+        fields = {"op": op["op"], "value": value, "was": was, "label": op.get("label") or key, "when": when,
+                  "backup": result["backup"] if made else None}
+        if lost_to:   # another op's value went in: not made, and not made later instead of that one
+            fields["lost_to"] = lost_to
+        saverecord.note(record, doc.account, source(op), key, **fields)
         write_record = True
     if write_record:
         saverecord.store(cfg, record)
@@ -775,6 +820,8 @@ def undo_save_change(cfg, source, key, backups_root, log=print):
                          "Settings and repair puts a whole backup back")
     if entry.get("undone"):
         raise ValueError("that change was put back already")
+    if entry.get("lost_to"):
+        raise ValueError(f"that change wasn't made: {entry['lost_to']}'s change there went in instead")
     before = doc.get(key) if doc.exists(key) else None
     was = entry.get("was")
     parent, _, last = key.rstrip("/").rpartition("/")
@@ -786,7 +833,7 @@ def undo_save_change(cfg, source, key, backups_root, log=print):
     elif was is not None:   # removed since (or by the change): it comes back
         doc.insert(parent, last, was)
     if doc.text != save.json_text:
-        where, _ = backup(cfg.save_dir, backups_root, "before-put-back")
+        where, _ = saverecord.backup(cfg, backups_root, "before-put-back")   # the record before it's undone
         log(f"  backed up saves -> {where}")
         save.json_text = doc.text
         write_save(cfg.save_dir, save)

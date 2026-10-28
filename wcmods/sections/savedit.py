@@ -10,7 +10,8 @@
 Paths start inside the save's account object; see savejson.py. Each change is made once per save and recorded
 (saverecord.py), so playing on past it isn't undone by the next install; a mod whose value changes makes it
 again, and "always": true makes every change at every install, as before. A value outside what the game
-takes (RANGES) is left out with a warning.
+takes (RANGES) is left out with a warning, and so is a remove of anything but an item carried or one element
+of a list (remove_problem).
 """
 import os
 import re
@@ -63,6 +64,34 @@ def range_problem(path, value):
             return f"{r['what']} goes from {r['min']}{top}, not {value}"
         return None
     return None
+
+
+INVENTORY_ITEM = r"^\d+/GameplayProgression/State/Inventory/[^/]+$"
+
+
+def remove_problem(path, doc=None):
+    """Why a path can't be taken out of the save, in words; None when it can. Only an item carried and one
+    element of a list can (with `doc`, the save, the path's parent must be a list there): never a whole cat
+    slot, the game's settings and controls, or a cat's progress, which a two-part path like "2" would be."""
+    parts = [p for p in str(path).split("/") if p]
+    if re.match(INVENTORY_ITEM, "/".join(parts)):
+        return None
+    tail = "save.json can only take out an item carried, or one element of a list"
+    if not parts:
+        return f"an empty path takes out nothing; {tail}"
+    if len(parts) == 1:
+        what = (f"a whole cat (cat slot {parts[0]})" if parts[0].isdigit() else
+                "the game's settings and controls" if parts[0] == "Shared" else "a whole part of the save")
+        return f"'{path}' is {what}; {tail}"
+    if len(parts) == 2 and parts[0].isdigit() and parts[1] == "GameplayProgression":
+        return f"'{path}' is a cat's whole progress; {tail}"
+    if parts[-1].isdigit():
+        if doc is None:
+            return None
+        parent = _get(doc, "/".join(parts[:-1]))
+        if isinstance(parent, list):
+            return None
+    return f"'{path}' isn't an item carried or one element of a list, which is all save.json can take out"
 
 
 def words(name):
@@ -163,6 +192,10 @@ class SaveSection(Section):
                                  "label": say(full), **flags})
                     count += 1
             for path in data["remove"]:
+                problem = remove_problem(path, doc)
+                if problem:
+                    ctx.warn(f"{mod.id}: remove: {problem}; skipped")
+                    continue
                 ctx.save_op({"op": "remove", "path": path, "source": mod.id, "label": say(path), **flags})
                 count += 1
         if count:

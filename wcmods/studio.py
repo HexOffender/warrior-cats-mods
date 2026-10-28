@@ -647,17 +647,14 @@ class Studio:
             # safety copy, which only happens while there's none).
             if not os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)):
                 raise ValueError("there's no save to back up yet; start the game once, and get into the forest")
-            where, files = save.backup(cfg.save_dir, self.ctx.backups, "studio")
+            where, files = saverecord.backup(cfg, self.ctx.backups, "studio")
             return {"name": os.path.basename(where), "files": files}
         if parts == ["restore"] and method == "POST":
             if game_running():
                 raise RuntimeError("close the game before restoring a save")
-            name = field(body, "name")
-            save.backup(cfg.save_dir, self.ctx.backups, "before-restore")
-            restored = save.restore(self.ctx.backups, name, cfg.save_dir)
-            # The save put back hasn't got the changes made since: the next Apply makes the mods' ones again.
-            saverecord.forget_since(cfg, name)
-            return {"restored": restored}
+            # The record of save edits comes back with the save: the next Apply makes again only the mods'
+            # changes that save hasn't got.
+            return {"restored": saverecord.restore(cfg, self.ctx.backups, field(body, "name"))}
         if parts == ["game", "eyes"]:
             return self.eyes()
         if parts == ["game", "tables"]:
@@ -928,6 +925,11 @@ class Studio:
                 op = {"op": "insert", "path": c["add"], "key": c["key"], "value": c.get("value")}
             elif "remove" in c:
                 full = c["remove"]
+                if not isinstance(full, str):
+                    raise ValueError("a remove should be a path")
+                problem = savedit.remove_problem(full, doc)
+                if problem:
+                    raise ValueError(problem[:1].upper() + problem[1:])
                 if not doc.exists(full):
                     raise ValueError(f"{say(full)}: your save hasn't got it any more")
                 op = {"op": "remove", "path": full}
@@ -956,6 +958,8 @@ class Studio:
             return {"changes": []}
         out = []
         for e in saverecord.listing(record, doc.account):
+            if e.get("lost_to"):   # another mod's change there went in: nothing of this one was done
+                continue
             out.append({**e, "path": e["key"], "current": doc.get(e["key"]) if doc.exists(e["key"]) else None,
                         "can_undo": not e.get("before") and not e.get("undone")})
         return {"changes": out}
