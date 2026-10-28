@@ -24,6 +24,7 @@ const WATCH = `
   window.fetch = (url, init) => { window.calls.push(\`\${(init && init.method) || "GET"} \${url}\`); return real(url, init); };
   new MutationObserver(() => {
     if (document.body && document.body.textContent.includes("Checking your mods on the new version")) window.sawChecking = true;
+    if (document.getElementById("status")?.textContent.includes("Checking your mods on the new version")) window.sawChip = true;
   }).observe(document, { childList: true, subtree: true, characterData: true });`;
 
 before(async () => {
@@ -76,6 +77,7 @@ test("a recheck_due page starts the check once and shows its progress", { skip }
   await p.goto(newer.url + "#mods");
   await p.waitFor(() => document.body.textContent.includes("Dark Forest couldn't be checked on the new version"), 30000);
   assert.equal(await p.evaluate(() => window.sawChecking === true), true, "the banner said it was checking");
+  assert.equal(await p.evaluate(() => window.sawChip === true), true, "the status at the top said so too");
   const config = JSON.parse(fs.readFileSync(path.join(newerFolders.data, "wcmods.json"), "utf8"));
   assert.equal(config.rechecked.build, 99999999);
   assert.match(config.rechecked.results["dark-forest"], /^couldn't check: the game's files can't be read right now/);

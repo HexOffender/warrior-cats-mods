@@ -123,13 +123,21 @@ export function recheckSorted(mods) {
 
 // The update banner's first sentence: "3 of your mods were checked on the new version and are fine. 1
 // couldn't go in:" (the ones that couldn't follow, each with its reason), or "" when nothing was checked.
-export function recheckSentence(sorted) {
+// `updated`: the game is on a build wcmods wasn't checked on ("the new version"); on the one it was checked on,
+// a mod made for an older build is checked on "this version of the game".
+export function recheckSentence(sorted, updated = true) {
   const { fine, failed } = sorted;
   const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
   const parts = [];
-  if (fine.length) parts.push(`${n(fine.length, "of your mods was", "of your mods were")} checked on the new version and ${fine.length === 1 ? "is" : "are"} fine.`);
+  if (fine.length) parts.push(`${n(fine.length, "of your mods was", "of your mods were")} checked on ${updated ? "the new version" : "this version of the game"} and ${fine.length === 1 ? "is" : "are"} fine.`);
   if (failed.length) parts.push(`${fine.length ? failed.length : n(failed.length, "of your mods", "of your mods")} couldn't go in:`);
   return parts.join(" ");
+}
+
+// The update banner's heading on the build wcmods was checked on: what's left out, or only what was checked.
+export function recheckHeading(sorted) {
+  const left = ["failed", "couldnt", "maker", "unchecked"].some(k => sorted[k].length);
+  return left ? "Some mods are left out on this version of the game" : "Your mods were checked on this version of the game";
 }
 
 // The sentence for "No internet connection": what GitHub's trouble comes to when it couldn't be reached at all.
