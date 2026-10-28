@@ -43,7 +43,7 @@ class CatsSection(Section):
                 ctx.warn("cats' own colours need UE4SS, which isn't installed")
             if player["colours"] and not cats:
                 ctx.warn("your cat's colours: no save yet, so they show only once you're in the world")
-        added = _new_slots(ctx.mods)
+        added = palettes.added_slots(ctx.mods)
         self._check(ctx, "your cat", player, added)
         if any(player[k] for k in ("slots", "scars", "look")):
             if not os.path.isfile(sav):
@@ -174,17 +174,3 @@ class CatsSection(Section):
         for path in cat["paths"]:
             ctx.save_op({"op": "fields", "path": path, "set": catcolours.fields_of(one), "source": source,
                          "label": ", ".join(label), "who": who})
-
-
-def _new_slots(mods):
-    """{part: {slot, ...}} for the new colour slots the enabled palettes add."""
-    out = {}
-    for mod in mods:
-        path = os.path.join(mod.folder, "palette.json")
-        if os.path.isfile(path):
-            try:
-                for part, found in palettes.new_slots(palettes.load(path)).items():
-                    out.setdefault(part, set()).update(found)
-            except ValueError:
-                continue   # the palette section reports a broken palette.json
-    return out

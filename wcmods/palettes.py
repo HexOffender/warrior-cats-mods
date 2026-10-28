@@ -130,6 +130,22 @@ def new_slots(palette):
             if any(int(k) >= GAME_SLOTS for k in palette.get(s, {}))}
 
 
+def added_slots(mods):
+    """{part: {slot, ...}} for the new colour slots the palettes of `mods` (the enabled ones) add: a cat
+    wearing a pattern or markings slot past the game's shows its colour only while one of them is on (the
+    Your cat and Characters sections warn otherwise)."""
+    out = {}
+    for mod in mods:
+        path = os.path.join(mod.folder, "palette.json")
+        if os.path.isfile(path):
+            try:
+                for part, found in new_slots(load(path)).items():
+                    out.setdefault(part, set()).update(found)
+            except ValueError:
+                continue   # the palette section reports a broken palette.json
+    return out
+
+
 def adds_only(palette):
     """True for a palette that only adds new slots or coat presets: it changes no colour the game already has."""
     return bool(new_slots(palette) or palette.get("coats")) and not palette.get("eyes") and all(

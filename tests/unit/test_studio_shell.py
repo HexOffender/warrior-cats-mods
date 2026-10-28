@@ -86,10 +86,10 @@ def test_a_file_checked_against_the_game_waits_for_apply_while_the_game_cant_be_
     assert r["problems"] == [studio_mod.CHECK_LATER]
 
 
-def test_cats_and_quests_are_checked_together_and_need_the_sandbox_mod(studio):
+def test_cats_and_quests_are_checked_together_and_use_the_sandbox_mod(studio):
     make_mod(studio, "story")
     r = call(studio, "PUT", "mods/story/file/npcs.json", {"text": json.dumps(NPCS)})
-    assert r["problems"] == [] and r["requires"] == ["sandbox"]
+    assert r["problems"] == [] and r["requires"] == [] and r["uses"] == ["sandbox"]
     r = call(studio, "PUT", "mods/story/file/quests.json", {"text": json.dumps(QUEST)})
     assert r["problems"] == []
     # The cat the quest's giver names goes: the quest's file is what's wrong now.

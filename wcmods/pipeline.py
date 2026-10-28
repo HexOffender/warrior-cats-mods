@@ -136,6 +136,7 @@ def build(cfg, mods, out_dir, log=print):
     sections, skipped = load_sections(cfg, [m for m in mods if m.id not in unmet and m.id not in left_out], log)
     ctx = BuildContext(cfg, game, out_dir, log)
     ctx.mods = enabled   # the enabled mods, for sections that check another kind of file (cats.json and palettes)
+    ctx.found = list(mods)   # and every mod, on or off (the story section says whether Sandbox mode is there)
     report = {}
     if unmet:
         report["requirements"] = {"title": "Mods that need other mods", "status": "failed", "mods": [],

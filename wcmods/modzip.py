@@ -440,15 +440,17 @@ def restore(backups_root, name, mods_root):
 
 def pack(mod, found=()):
     """The mod as a .zip (its folder inside, named as it is), to share. Returns the bytes. A mod pack
-    (packs.py) carries the mods in it too, each in its own folder, from `found` (the mods folder's mods)."""
+    (packs.py) carries the mods in it too, each in its own folder, from `found` (the mods folder's mods), with
+    the mods they use (mods.carried)."""
     import io
     folders = [mod]
     if mod.meta.get("pack"):
         by_id = {m.id: m for m in found}
-        missing = [i for i in modlib.needed(list(found), mod.id) if i not in by_id]
+        inside = modlib.carried(list(found), mod.id)
+        missing = [i for i in inside if i not in by_id]
         if missing:
             raise ValueError(f"{mod.name} needs {', '.join(missing)}, which isn't in your mods, so the pack can't carry it")
-        folders += [by_id[i] for i in modlib.needed(list(found), mod.id)]
+        folders += [by_id[i] for i in inside]
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for m in folders:

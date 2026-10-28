@@ -3,9 +3,12 @@
 A mod is a folder under mods/ (in your own folder, config.data_dir(); not wcmods') with a mod.json:
   {"name": "Game Tweaks", "description": "...", "enabled": true, "priority": 0,
    "version": "1.2", "author": "...",          what the studio shows about it
-   "requires": ["menu-pages"],                  mods it can't work without: turned on with it
-   "uses": ["mod-menu"],                        mods it works with when they're on ("mod-menu", the in-game
-                                                menu's window, for a page: wcmods' own, so always there)
+   "requires": ["menu-pages"],                  mods it can't work without: turned on with it, and it's left
+                                                out while one is missing or off
+   "uses": ["sandbox", "mod-menu"],             mods it works with when they're on: turned on with it when
+                                                they're in the mods folder, never a reason to leave it out
+                                                ("mod-menu", the in-game menu's window, for a page: wcmods'
+                                                own, so always there)
    "pack": true}                                a mod pack: nothing of its own, its "requires" are its mods
                                                 (packs.py)
 and any of:
@@ -168,9 +171,42 @@ def needed(mods, mod_id):
     return out
 
 
+def used(mods, mod_id):
+    """The mods that `mod_id`, and the mods it requires, say they work with ("uses") and that are in the mods
+    folder (ids): turned on with it, but never needed. The mod menu isn't one, and nor is a mod it requires."""
+    by_id = {m.id: m for m in mods}
+    inside = [mod_id] + needed(mods, mod_id)
+    out = []
+    for i in inside:
+        for u in by_id[i].uses if i in by_id else []:
+            if u in by_id and u != MENU_ID and u not in inside and u not in out:
+                out.append(u)
+    return out
+
+
+def carried(mods, mod_id):
+    """What goes along with a mod pack (packs.py): the mods it requires and what they require (ids, missing
+    ones too), then the mods those use that are in the mods folder (a story's Sandbox mode), so the pack's
+    .zip has them and playing it keeps them on."""
+    inside = needed(mods, mod_id)
+    return inside + [u for u in used(mods, mod_id) if u not in inside]
+
+
 def needing(mods, mod_id):
-    """The mods that are on and require `mod_id`, directly or through another mod."""
+    """The mods that are on and require `mod_id`, directly or through another mod. A mod that only uses it
+    isn't one: it works without it."""
     return [m.id for m in mods if m.enabled and m.id != mod_id and mod_id in needed(mods, m.id)]
+
+
+def version_key(version):
+    """A version as something to compare: "0.5" is "0.5.0", "0.4" < "0.5" < "0.10", and anything that isn't a
+    version ("", "beta", None) comes before every version."""
+    parts = str(version or "").strip().lstrip("vV").split(".")
+    try:
+        numbers = [int(p) for p in parts]
+    except ValueError:
+        return (0, ())
+    return (1, tuple(numbers + [0] * (3 - len(numbers))))
 
 
 def unmet(mods, left_out=None):
@@ -196,8 +232,9 @@ def unmet(mods, left_out=None):
 
 
 def switch(mods, mod_id, on, cascade=False):
-    """Turn a mod on (and the mods it requires) or off. Turning off a mod that others on need only
-    happens with cascade=True, which turns them off too; otherwise nothing changes and they're returned.
+    """Turn a mod on (with the mods it requires, and the mods it uses that are in the mods folder) or off.
+    Turning off a mod that others on need only happens with cascade=True, which turns them off too;
+    otherwise nothing changes and they're returned. A mod that's only used is never in the way.
 
     Returns (changed, blocked): [(id, now on)] and the ids of mods that need it."""
     by_id = {m.id: m for m in mods}
@@ -208,7 +245,13 @@ def switch(mods, mod_id, on, cascade=False):
         missing = [i for i in needed(mods, mod_id) if i not in by_id]
         if missing:
             raise ValueError(f"{by_id[mod_id].name} needs {', '.join(missing)}, which isn't in your mods; add it first")
-        for i in [mod_id] + needed(mods, mod_id):
+        turn = [mod_id] + needed(mods, mod_id)
+        for u in used(mods, mod_id):
+            # A used mod comes on only when it can: never one whose mod.json can't be read, or that needs a
+            # mod that isn't there (turning this one on doesn't fail for it).
+            if not by_id[u].problem and all(i in by_id and not by_id[i].problem for i in needed(mods, u)):
+                turn += [u] + needed(mods, u)
+        for i in dict.fromkeys(turn):
             if not by_id[i].enabled:
                 by_id[i].set_enabled(True)
                 changed.append((i, True))
