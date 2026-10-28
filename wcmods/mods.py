@@ -78,7 +78,7 @@ class Mod:
         self.uses = [i for i in _ids(meta.get("uses")) if i not in self.requires]
         # The oldest wcmods that can build it ("wcmods": "0.4.0"); one that isn't a version is as good as none.
         wanted = meta.get("wcmods")
-        self.wcmods_min = wanted.strip() if isinstance(wanted, str) and version_key(wanted) else None
+        self.wcmods_min = wanted.strip() if is_version(wanted) else None
 
     @classmethod
     def broken(cls, folder, problem):
@@ -158,19 +158,25 @@ def _ids(value):
     return [v.strip() for v in value if isinstance(v, str) and v.strip()] if isinstance(value, list) else []
 
 
-VERSION = re.compile(r"^\d+(\.\d+)*$")
-
-
 def version_key(text):
-    """A dotted version ("0.4.0") as a tuple to compare, or None when it isn't digits and dots. Trailing
-    zeros don't count, so "0.4" and "0.4.0" are the same version, and "0.10" is above "0.9"."""
-    s = text.strip() if isinstance(text, str) else ""
-    if not VERSION.match(s):
+    """A version as a tuple to compare ("0.10" after "0.9", "0.4" equal to "0.4.0"), or None when the text isn't a
+    plain dotted number (a leading "v" is allowed)."""
+    s = str(text or "").strip()
+    if s[:1] in ("v", "V"):
+        s = s[1:]
+    parts = s.split(".")
+    if not s or not all(p.isdigit() for p in parts):
         return None
-    parts = [int(p) for p in s.split(".")]
-    while len(parts) > 1 and parts[-1] == 0:
-        parts.pop()
-    return tuple(parts)
+    nums = [int(p) for p in parts]
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums)
+
+
+def is_version(value):
+    """Whether a mod.json value is a version wcmods can compare: text that version_key reads (a number, a list
+    or true isn't one, even when its text would be)."""
+    return isinstance(value, str) and version_key(value) is not None
 
 
 def missing_name(mod_id):
@@ -198,10 +204,12 @@ def with_dependents(mods, base, why):
 
 def needs_newer(wanted, have=None):
     """Why a mod whose mod.json says "wcmods": `wanted` can't be built by this Clan Mod Studio (__version__,
-    or `have`), or None when it can (or it says nothing, or nothing that's a version)."""
+    or `have`), or None when it can (or it says nothing, or nothing that's a version). A `have` that isn't
+    a plain version ("0.5.0-beta") can't be compared, so nothing is said."""
     from . import __version__
     have = have or __version__
-    if not version_key(wanted) or version_key(wanted) <= version_key(have):
+    want, mine = version_key(wanted), version_key(have)
+    if want is None or mine is None or want <= mine:
         return None
     return f"needs Clan Mod Studio {wanted.strip()} or newer; you have {have}: update it"
 

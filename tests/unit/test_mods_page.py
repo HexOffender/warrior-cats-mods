@@ -9,7 +9,7 @@ import zipfile
 
 import pytest
 
-from wcmods import __version__, mods, modzip, onboarding, pipeline
+from wcmods import __version__, bridge, mods, modzip, onboarding, pipeline
 from wcmods.mods import discover
 from wcmods.pipeline import InstallBlocked
 from wcmods.studio import NO_GAME
@@ -43,10 +43,17 @@ def card(st, mod_id):
 # ---------- the "wcmods" minimum ----------
 def test_versions_compare_as_numbers_and_trailing_zeros_dont_count():
     assert __version__ == "0.4.0"
-    assert mods.version_key("0.4") == mods.version_key("0.4.0") == (0, 4)
-    assert mods.version_key("0.10") > mods.version_key("0.9") and mods.version_key("1") == (1,)
-    for bad in ("banana", "", "0.4-beta", "v0.4", None, 0.4, True, "1..2"):
-        assert mods.version_key(bad) is None
+    assert mods.version_key("0.4") == mods.version_key("0.4.0") == (0, 4, 0)
+    assert mods.version_key("0.10") > mods.version_key("0.9") and mods.version_key("1") == (1, 0, 0)
+    assert mods.version_key("v0.5") == mods.version_key("0.5.0") == mods.version_key(" V0.5 ")
+    for bad in ("banana", "", "0.4-beta", "v", "vv0.4", None, True, "1..2", "0.4."):
+        assert mods.version_key(bad) is None, bad
+    # In mod.json only text is a version: 0.4 (a number) or ["0.4"] isn't one.
+    assert mods.is_version("0.4") and not mods.is_version(0.4) and not mods.is_version(["0.4"]) and not mods.is_version("banana")
+    # A Clan Mod Studio whose own version isn't plain ("0.5.0-beta") can't tell: nothing is said, nothing raised.
+    assert mods.needs_newer("9.0", have="0.5.0-beta") is None
+    assert mods.needs_newer("9.0", have="0.5.0") == "needs Clan Mod Studio 9.0 or newer; you have 0.5.0: update it"
+    assert mods.needs_newer("v0.5", have="0.5.0") is None and mods.needs_newer("banana", have="0.5.0") is None
 
 
 def test_a_mod_can_say_the_wcmods_it_needs(studio, fake_game, tmp_path):
@@ -80,6 +87,9 @@ def test_a_zip_whose_wcmods_isnt_a_version_is_refused_and_a_newer_one_is_said(st
     bad = zip_of(tmp_path / "bad.zip", {"bad/mod.json": {"name": "Bad", "wcmods": "banana"}})
     with pytest.raises(ValueError, match='mod.json\'s "wcmods" should be a version like "0.4.0"'):
         post(studio, "mods/add", query={"step": "preview"}, upload=bad)
+    (v,) = post(studio, "mods/add", query={"step": "preview"},
+                upload=zip_of(tmp_path / "v.zip", {"v/mod.json": {"name": "V", "wcmods": "v0.4"}}))["mods"]
+    assert v["wcmods"] == "v0.4" and v["too_new"] is None
     for value in (0.4, ["0.4"]):
         with pytest.raises(ValueError, match='"wcmods" should be a version'):
             post(studio, "mods/add", query={"step": "preview"},
@@ -106,6 +116,44 @@ def test_pending_lists_held_back_mods_as_left_out_not_off(studio, fake_game, mon
     cfg.save()
     p = pipeline.pending(cfg, discover(studio.ctx.mods_root))
     assert p["left_out"] and p["any"] is False
+
+
+def test_allowing_code_after_an_install_without_it_is_a_change_to_apply(studio, fake_game):
+    make_mod(studio, "menu-pages", {"name": "Menu pages"}, {"scripts/main.lua": "-- pages"})
+    cfg = studio.ctx.cfg
+    built = (datetime.datetime.now() + datetime.timedelta(minutes=1)).isoformat(timespec="seconds")
+    # Installed with code off: the mod is in installed["mods"], its scripts aren't (no bridge, no scripts).
+    cfg.data["installed"] = {"mods": ["menu-pages"], "built": built, "mods_root": studio.ctx.mods_root,
+                             "game_dir": fake_game}
+    cfg.data["installed_ue4ss"] = ["WCModsMenuHost"]
+    cfg.save()
+    p = pipeline.pending(cfg, discover(studio.ctx.mods_root))
+    assert p["any"] is False and p["redo"] == []
+    cfg.data["allow_code_mods"] = True
+    cfg.save()
+    p = pipeline.pending(cfg, discover(studio.ctx.mods_root))
+    assert p["redo"] == ["mods that run code are allowed now"] and p["any"] is True
+    assert get(studio, "changes")["redo"] == ["mods that run code are allowed now"]
+    # Once an install with code allowed put the bridge in, it's done.
+    cfg.data["installed_ue4ss"] = ["WCModsMenuHost", bridge.NAME, "WCModsScript_menu-pages"]
+    cfg.save()
+    assert pipeline.pending(cfg, discover(studio.ctx.mods_root))["redo"] == []
+
+
+def test_a_left_out_mod_still_in_the_game_is_counted_as_a_change(studio, fake_game, monkeypatch):
+    make_mod(studio, "unpinned", {"name": "Unpinned"})
+    cfg = studio.ctx.cfg
+    built = (datetime.datetime.now() + datetime.timedelta(minutes=1)).isoformat(timespec="seconds")
+    cfg.data["installed"] = {"mods": ["unpinned"], "built": built, "game_build": 99999999}
+    cfg.save()
+    monkeypatch.setenv("WCMODS_GAME_BUILD", "99999999")
+    p = pipeline.pending(cfg, discover(studio.ctx.mods_root))
+    assert p["still_in"] == ["unpinned"] and p["on"] == p["off"] == p["changed"] == [] and p["any"]
+
+
+def test_a_missing_requirement_on_a_card_is_named_by_its_name(studio):
+    make_mod(studio, "moonlit", {"name": "Moonlit cats", "requires": ["sandbox", "ghost-mod"], "enabled": False})
+    assert card(studio, "moonlit")["requires_names"] == ["Sandbox mode", "ghost-mod"]
 
 
 def test_requirements_are_named_by_name_and_a_missing_addon_by_its_name(studio):
@@ -216,6 +264,12 @@ def test_a_version_in_the_zips_name_does_not_become_part_of_the_id(studio, tmp_p
     assert [(x["id"], x["version"]) for x in get(studio, "mods")] == [("cool-mod", "1.3")]
     # A name that's nothing but a number stays as it is; a mod folder's name is the maker's, kept whole.
     assert modzip.inspect(zip_of(tmp_path / "2048.zip", {"mod.json": {"name": "Tiles"}}), studio.ctx.mods_root)[0]["id"] == "2048"
+    # A number at the end without a "v" or dots is part of the name; with one, it's a version.
+    for name, want in (("Moonlit Cats 2.zip", "moonlit-cats-2"), ("Moonlit Cats v2.zip", "moonlit-cats"),
+                       ("moonlit-cats-2.1.zip", "moonlit-cats"), ("Moonlit Cats_V3.zip", "moonlit-cats"),
+                       ("Season 3 cats.zip", "season-3-cats")):
+        found = modzip.inspect(zip_of(tmp_path / name, {"mod.json": {"name": "Moonlit"}}), studio.ctx.mods_root, name)
+        assert found[0]["id"] == want, name
     assert modzip.inspect(zip_of(tmp_path / "x.zip", {"kit-2/mod.json": {}}), studio.ctx.mods_root)[0]["id"] == "kit-2"
 
 
@@ -230,6 +284,19 @@ def test_a_mod_added_by_an_older_studio_is_replaced_by_name(studio, tmp_path):
     make_mod(studio, "other-cool", {"name": "Cool Mod"})
     (m,) = modzip.inspect(z, studio.ctx.mods_root, "Cool Mod v1.3.zip")
     assert m["id"] == "cool-mod" and m["existing"] is None
+
+
+def test_a_mod_that_only_shares_a_name_with_yours_never_replaces_it(studio, tmp_path):
+    # Your own My mods, and a friend's hand-zipped story whose mod.json (at the top, no id) says "My mods" too.
+    make_mod(studio, "my-mods", {"name": "My mods"}, {"names.json": {"prefixes": ["Mine"]}})
+    z = zip_of(tmp_path / "Friends story.zip", {"mod.json": {"name": "My mods"}, "names.json": {"prefixes": ["Theirs"]}})
+    (m,) = post(studio, "mods/add", query={"step": "preview", "name": "Friends story.zip"}, upload=z)["mods"]
+    assert m["id"] == "friends-story" and m["existing"] is None
+    post(studio, "mods/add", query={"step": "add", "name": "Friends story.zip"}, upload=z)
+    assert sorted(x["id"] for x in get(studio, "mods")) == ["friends-story", "my-mods"]
+    with open(os.path.join(studio.ctx.mods_root, "my-mods", "names.json"), encoding="utf-8") as f:
+        assert json.load(f) == {"prefixes": ["Mine"]}
+    assert modzip.removed(studio.ctx.backups) == []
 
 
 def test_adding_a_mod_whose_requirement_is_missing_leaves_it_off_and_says_why(studio, tmp_path):

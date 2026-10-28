@@ -34,15 +34,19 @@ export default {
     catch (e) { root.append(el("div", { class: "error-card" }, el("strong", { text: "Couldn't read the game's animals" }), el("span", { text: e.message }))); return {}; }
     const kindLabel = k => (kinds.find(x => x.id === k) || {}).label || k;
     // The Emote wheel, one of the mods that go with Clan Mod Studio: a note with its Add button while it isn't
-    // in your mods.
+    // in your mods, or, once the studio knows it has no release yet, a note saying so (the button says so too
+    // when it finds out).
     const wheelNote = el("div");
     async function drawWheelNote() {
-      let found = [];
-      try { found = await api.get("/mods"); } catch (e) { /* no note */ }
+      let wheel = null;
+      try { wheel = (await api.get("/addons")).addons.find(a => a.id === "emote-wheel"); } catch (e) { /* no note */ }
       clear(wheelNote);
-      if (found.some(m => m.id === "emote-wheel")) return;
+      if (!wheel || wheel.installed) return;
       wheelNote.append(el("p", { class: "note row" }, "The Emote wheel shows your emotes on a wheel in the game, with the game's own poses. ",
-        wc.addonButton("emote-wheel", { label: "Add the Emote wheel", name: "the Emote wheel" })));
+        wheel.no_release
+          ? el("span", { class: "muted" }, "It has no release yet: the owner of that mod has to publish one first (",
+            el("a", { href: wheel.page, target: "_blank", rel: "noopener", text: "its releases" }), ").")
+          : wc.addonButton("emote-wheel", { label: "Add the Emote wheel", name: "the Emote wheel" })));
     }
     const offWheel = wc.bus.on("mods-changed", () => drawWheelNote());
 
