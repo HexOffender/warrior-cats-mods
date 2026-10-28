@@ -67,17 +67,17 @@ You can't:
 
 ### Which versions are out
 
-- Menu pages 1.0 is out, and works with this Clan Mod Studio.
-- Sandbox mode 0.4 is out, and works with this Clan Mod Studio: your cats and questlines come into the
-  game with it. Sandbox mode 0.5 isn't out yet. It's the one a cat set to **Same look every time** needs
-  (with 0.4 that cat gets a new look each time), and the one that starts a quest over when you change
-  its steps. When it's out, **Check for newer versions** shows "Newer one out: 0.5".
-- Creator palettes and the Emote wheel have no release yet, so there's nothing to add. The copies being
-  made are for this Clan Mod Studio, but neither has been tried with it in the game.
+- Menu pages 1.0 works with this Clan Mod Studio.
+- Sandbox mode 0.5 is the newest. It's the one a cat set to **Same look every time** needs (with 0.4
+  that cat gets a new look each time), and the one that starts a quest over when you change its steps.
+  If you have 0.4, **Check for newer versions** shows "Newer one out: 0.5": press **Get the latest**.
+- Creator palettes 1.2.0 and the Emote wheel 1.0 are out. Creator palettes' coat presets need this
+  Clan Mod Studio (0.4.0 or newer). The Emote wheel opens on G. Neither has been tried in the game in
+  this version yet.
 
 ## Did it reach the game?
 
-- On the card, "In, 0.4" in green means it's in your mods and on. It reaches the game at your next
+- On the card, "In, 0.5" in green means it's in your mods and on. It reaches the game at your next
   **Play** or **Apply to game**; until then, "Not in the game yet", near the top of the Mods page, lists
   it ("Sandbox mode on").
 - Menu pages: Insert opens the mod menu, with Your cat, World, Story, Fight and Cheats in its side bar.
@@ -100,9 +100,9 @@ You can't:
   and the step in **Get set up** stays open. Press **Add all four** (or **Add**, or
   **Check for newer versions**) again once you're online.
 - The chip says "No release yet". Nothing to fix: that mod's owner hasn't published it yet.
-- The Characters page says your fixed looks need Sandbox mode 0.5. 0.5 isn't out yet: those cats get a
-  new look each time until it is, and only their looks wait for it. Everything else comes into the game
-  with 0.4, the newest release.
+- The Characters page says your fixed looks need Sandbox mode 0.5. Press **Check for newer versions**
+  on the Mods page, then **Get the latest** on Sandbox mode's row. Until then those cats get a new look
+  each time, and only their looks wait for it: everything else comes into the game with 0.4.
 
 ## Undo
 

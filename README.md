@@ -161,8 +161,8 @@ These are built and tested without the game, but nobody has watched them in it y
   items on the game's own screens.
 - **Items:** accessory models on other cats; models dropped on the ground by a questline's reward.
 - **Controls:** controller buttons, the side mouse buttons and the wheel.
-- **Questlines:** a quest starting over by itself after you change its steps (with Sandbox mode 0.5,
-  which isn't out yet), and **Start every questline over**.
+- **Questlines:** a quest starting over by itself after you change its steps (with Sandbox mode 0.5),
+  and **Start every questline over**.
 - **Mods that go with Clan Mod Studio:** **Add all four** on a fresh install.
 - **Try Lua in the game:** the page itself with the game running (what it asks the game has been tried
   against it).

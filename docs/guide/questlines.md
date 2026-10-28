@@ -43,7 +43,7 @@ You can:
 - write your own words for a step's **Objective**, or leave it empty for the words shown, which take the
   names your cats and items have when you apply;
 - say what the quest is about in **About it**, shown under its title on the
-  [mod menu](README.md#mod-menu)'s Questlines page (with Sandbox mode 0.5, which isn't out yet).
+  [mod menu](README.md#mod-menu)'s Questlines page (with Sandbox mode 0.5).
 
 You can't, yet:
 
@@ -95,7 +95,7 @@ watched them in it yet.
 - Every quest again: **Start every questline over**, under **Starting over** on this page (press it
   twice), starts every mod's questlines over, not only this mod's, for all your sandbox cats. Close the
   game first. Where their cats stand is kept.
-- With Sandbox mode 0.5 (not out yet), a quest a cat hasn't finished starts over by itself when you add or
+- With Sandbox mode 0.5, a quest a cat hasn't finished starts over by itself when you add or
   take out a step, change a step's kind (moving steps can do that), or change what or how many a **Pick up**
   step wants. New lines, objectives or a new title don't restart it, and a finished quest stays finished.
 
