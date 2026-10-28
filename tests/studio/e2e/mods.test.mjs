@@ -7,16 +7,15 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, makeGame, makeLoader, makeMod, makeZip, removeFolders, sleep, startStudio } from "../lib/studio.mjs";
+import { launch } from "../lib/browser.mjs";
+import { browserChoice, dataFolder, makeGame, makeLoader, makeMod, makeZip, removeFolders, requireBrowser, sleep,
+  startStudio, takeTurn } from "../lib/studio.mjs";
 
-const browserPath = findBrowser();
-const required = process.env.WC_REQUIRE_BROWSER === "1";
-const skip = browserPath || required ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
+const { browserPath, skip } = browserChoice();
 
 // Two studios: `fresh` walks Get set up from a made-up game with a save and the script loader; `page` has
 // mods of its own for the page's fixes. Each has a folder standing in for GitHub's releases.
-let browser, fresh, page, freshFolders, pageFolders;
+let browser, fresh, page, freshFolders, pageFolders, release;
 
 function releases(root, zips) {
   const dir = path.join(root, "releases");
@@ -27,7 +26,8 @@ function releases(root, zips) {
 
 before(async () => {
   if (skip) return;
-  if (!browserPath) throw new Error("WC_REQUIRE_BROWSER=1, and no Chromium was found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)");
+  requireBrowser(browserPath);
+  release = await takeTurn();   // one end-to-end file at a time
   freshFolders = dataFolder();
   makeGame(freshFolders.game);
   makeLoader(freshFolders.game);
@@ -59,6 +59,7 @@ after(async () => {
   for (const s of [fresh, page]) if (s) s.stop();
   if (browser) await browser.close();
   for (const f of [freshFolders, pageFolders]) if (f) await removeFolders(f);
+  if (release) release();
 });
 
 const stepTitles = p => p.evaluate(() => [...document.querySelectorAll(".setup .step strong")].map(s => s.textContent.replace(/^(Done|To do): /, "")));

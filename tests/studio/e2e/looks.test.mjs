@@ -6,18 +6,18 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, e2eSkip, makeGame, remove, removeFolders, requireBrowser, sleep, startStudio, warmUp, writeSave,
-  writeTables } from "../lib/studio.mjs";
+import { launch } from "../lib/browser.mjs";
+import { browserChoice, dataFolder, makeGame, remove, removeFolders, requireBrowser, sleep, startStudio, takeTurn,
+  warmUp, writeSave, writeTables } from "../lib/studio.mjs";
 
-const browserPath = findBrowser();
-const skip = e2eSkip(browserPath);
+const { browserPath, skip } = browserChoice();
 
-let browser, studio, folders;
+let browser, studio, folders, release;
 
 before(async () => {
   if (skip) return;
   requireBrowser(browserPath);
+  release = await takeTurn();   // one end-to-end file at a time
   folders = dataFolder();
   makeGame(folders.game);
   studio = await startStudio(folders);
@@ -29,6 +29,7 @@ after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
   if (folders) await removeFolders(folders);
+  if (release) release();
 });
 
 // ---------- the folder ----------

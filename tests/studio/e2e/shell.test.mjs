@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { launch } from "../lib/browser.mjs";
-import { browserChoice, dataFolder, makeGame, remove, removeFolders, requireBrowser, sleep, startStudio, takeTurn, warmUp } from "../lib/studio.mjs";
+import { browserChoice, dataFolder, makeGame, remove, removeFolders, requireBrowser, sleep, startStudio, takeTurn,
+  warmUp } from "../lib/studio.mjs";
 
 const { browserPath, skip } = browserChoice();
 

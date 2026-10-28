@@ -8,16 +8,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { launch } from "../lib/browser.mjs";
-import { e2eBrowser, needBrowser, takeTurn, startStudio, dataFolder, removeFolders, pngFile } from "../lib/studio.mjs";
 
-const { browserPath, skip } = e2eBrowser();
+import { browserChoice, dataFolder, pngFile, removeFolders, requireBrowser, startStudio, takeTurn } from "../lib/studio.mjs";
+
+const { browserPath, skip } = browserChoice();
 const GAME_ITEMS = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "game-items.json"), "utf8"));
 
 let browser, studio, folders, release;
 
 before(async () => {
   if (skip) return;
-  needBrowser(browserPath);
+  requireBrowser(browserPath);
   release = await takeTurn();   // one end-to-end file at a time
   folders = dataFolder();
   studio = await startStudio(folders);

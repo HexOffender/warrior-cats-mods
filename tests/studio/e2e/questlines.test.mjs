@@ -8,16 +8,20 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { launch } from "../lib/browser.mjs";
-import { browserPath, skip, startStudio, dataFolder, makeGame, writeMod, readJson, removeFolders } from "../lib/studio.mjs";
+import { browserChoice, dataFolder, makeGame, readJson, removeFolders, requireBrowser, startStudio, takeTurn,
+  writeMod } from "../lib/studio.mjs";
 
-let browser, studio, folders;
+const { browserPath, skip } = browserChoice();
+
+let browser, studio, folders, release;
 const SLOW = 30000;   // a page's first load, while the other e2e files start their own browser and studio beside this one
 const toastSaid = (page, text) => page.waitFor(new Function(`return [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes(${JSON.stringify(text)}))`));
 const questsFile = () => path.join(folders.data, "mods", "story", "quests.json");
 
 before(async () => {
   if (skip) return;
-  if (!browserPath) throw new Error("WC_REQUIRE_BROWSER=1, and no Chromium was found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)");
+  requireBrowser(browserPath);
+  release = await takeTurn();   // one end-to-end file at a time
   folders = dataFolder();
   makeGame(folders.game);
   writeMod(folders, "story", { name: "Story", uses: ["sandbox"] },
@@ -34,6 +38,7 @@ after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
   await removeFolders(folders);
+  if (release) release();
 });
 
 async function openQuestlines(mod) {

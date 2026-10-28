@@ -8,16 +8,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { launch } from "../lib/browser.mjs";
-import { e2eBrowser, needBrowser, takeTurn, startStudio, dataFolder, removeFolders } from "../lib/studio.mjs";
+import { browserChoice, dataFolder, removeFolders, requireBrowser, startStudio, takeTurn } from "../lib/studio.mjs";
 
-const { browserPath, skip } = e2eBrowser();
+const { browserPath, skip } = browserChoice();
 const SEQS = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "anim-sequences-cat.json"), "utf8"));
 
 let browser, studio, folders, release;
 
 before(async () => {
   if (skip) return;
-  needBrowser(browserPath);
+  requireBrowser(browserPath);
   release = await takeTurn();   // one end-to-end file at a time
   folders = dataFolder();
   studio = await startStudio(folders);

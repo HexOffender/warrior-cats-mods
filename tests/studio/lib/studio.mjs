@@ -31,22 +31,16 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 const python = () => process.env.PYTHON || "python";
 
 // The Chromium to drive, and the reason to skip when there's none: none found skips the tests, unless
-// WC_REQUIRE_BROWSER=1 (as CI does), when they fail instead (each file's `before` throws on browserPath null).
+// WC_REQUIRE_BROWSER=1 (as CI does), when they fail instead (each file's `before` calls requireBrowser).
 export function browserChoice() {
   const browserPath = findBrowser();
   const required = process.env.WC_REQUIRE_BROWSER === "1";
   return { browserPath, skip: browserPath || required ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)" };
 }
 export const NO_BROWSER = "WC_REQUIRE_BROWSER=1, and no Chromium was found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
-// The same, found once for a file: `browserPath` (null when there's none), `skip` (the reason, or false).
-export const { browserPath, skip } = browserChoice();
-export const required = process.env.WC_REQUIRE_BROWSER === "1";
-export const e2eSkip = browserPath => (browserPath || required ? false
-  : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)");
 export function requireBrowser(browserPath) {
   if (!browserPath) throw new Error(NO_BROWSER);
 }
-export const e2eBrowser = browserChoice, needBrowser = requireBrowser;
 
 // The end-to-end files take turns: node --test runs files side by side, and two studios with a Chromium each
 // make a small machine slow enough for the tests' waits to run out. Each file holds this lock from its `before`

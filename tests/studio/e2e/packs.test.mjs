@@ -4,19 +4,19 @@
 // WC_BROWSER to one, or WC_REQUIRE_BROWSER=1 (as CI does) to fail instead of skipping.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { findBrowser, launch } from "../lib/browser.mjs";
+import { launch } from "../lib/browser.mjs";
 import path from "node:path";
-import { dataFolder, makeGame, makeMod, makeZip, removeFolders, startStudio } from "../lib/studio.mjs";
 
-const browserPath = findBrowser();
-const required = process.env.WC_REQUIRE_BROWSER === "1";
-const skip = browserPath || required ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
+import { browserChoice, dataFolder, makeGame, makeMod, makeZip, removeFolders, requireBrowser, startStudio, takeTurn } from "../lib/studio.mjs";
 
-let browser, studio, folders;
+const { browserPath, skip } = browserChoice();
+
+let browser, studio, folders, release;
 
 before(async () => {
   if (skip) return;
-  if (!browserPath) throw new Error("WC_REQUIRE_BROWSER=1, and no Chromium was found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)");
+  requireBrowser(browserPath);
+  release = await takeTurn();   // one end-to-end file at a time
   folders = dataFolder();
   makeGame(folders.game);
   makeMod(folders.data, "alpha", { name: "Alpha" });
@@ -34,6 +34,7 @@ after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
   if (folders) await removeFolders(folders);
+  if (release) release();
 });
 
 const ticked = p => p.evaluate(() => [...document.querySelectorAll('[data-key="pack-form"] input[type="checkbox"]')].filter(b => b.checked).map(b => b.getAttribute("aria-label")));

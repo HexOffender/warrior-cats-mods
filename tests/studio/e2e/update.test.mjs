@@ -7,15 +7,14 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, makeGame, makeMod, removeFolders, startStudio } from "../lib/studio.mjs";
+import { launch } from "../lib/browser.mjs";
 
-const browserPath = findBrowser();
-const required = process.env.WC_REQUIRE_BROWSER === "1";
-const skip = browserPath || required ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
+import { browserChoice, dataFolder, makeGame, makeMod, removeFolders, requireBrowser, startStudio, takeTurn } from "../lib/studio.mjs";
+
+const { browserPath, skip } = browserChoice();
 const VERIFIED = 26184573;   // gamebuild.VERIFIED_BUILD
 
-let browser, verified, newer, verifiedFolders, newerFolders;
+let browser, verified, newer, verifiedFolders, newerFolders, release;
 
 // Every request the page makes, and whether the re-check's line was ever on it, from the page's first moment.
 const WATCH = `
@@ -29,7 +28,8 @@ const WATCH = `
 
 before(async () => {
   if (skip) return;
-  if (!browserPath) throw new Error("WC_REQUIRE_BROWSER=1, and no Chromium was found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)");
+  requireBrowser(browserPath);
+  release = await takeTurn();   // one end-to-end file at a time
   // On the verified build: a script mod made for an older build (left out; only its maker can vouch for it), and
   // a mod whose game_builds holds no build number.
   verifiedFolders = dataFolder();
@@ -56,6 +56,7 @@ after(async () => {
   for (const s of [verified, newer]) if (s) s.stop();
   if (browser) await browser.close();
   for (const f of [verifiedFolders, newerFolders]) if (f) await removeFolders(f);
+  if (release) release();
 });
 
 test("the update banner shows on the verified build when a mod is left out", { skip }, async () => {

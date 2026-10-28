@@ -8,18 +8,18 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, makeGame, makeMod, removeFolders, startStudio } from "../lib/studio.mjs";
+import { launch } from "../lib/browser.mjs";
 
-const browserPath = findBrowser();
-const required = process.env.WC_REQUIRE_BROWSER === "1";
-const skip = browserPath || required ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
+import { browserChoice, dataFolder, makeGame, makeMod, removeFolders, requireBrowser, startStudio, takeTurn } from "../lib/studio.mjs";
 
-let browser, studio, folders;
+const { browserPath, skip } = browserChoice();
+
+let browser, studio, folders, release;
 
 before(async () => {
   if (skip) return;
-  if (!browserPath) throw new Error("WC_REQUIRE_BROWSER=1, and no Chromium was found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)");
+  requireBrowser(browserPath);
+  release = await takeTurn();   // one end-to-end file at a time
   folders = dataFolder();
   makeGame(folders.game);
   // A C++ mod whose source is on the crash's stack.
@@ -51,6 +51,7 @@ after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
   if (folders) await removeFolders(folders);
+  if (release) release();
 });
 
 test("Back up now is disabled without a save", { skip }, async () => {
