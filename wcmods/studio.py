@@ -2422,7 +2422,12 @@ def make_handler(studio, port):
                 query = {k: v[-1] for k, v in parse_qs(url.query).items()}
                 where = f"{method} {path}"
                 try:
-                    result = studio.api(method, parts, body, query, upload)
+                    try:
+                        result = studio.api(method, parts, body, query, upload)
+                    finally:
+                        # Gone before the answer goes out: a client that looks once it has its answer never finds it.
+                        if upload:
+                            os.remove(upload)
                     if isinstance(result, Download):
                         return self._send(200, result.data, result.ctype, filename=result.filename)
                     return self._send(200, result)
@@ -2463,9 +2468,6 @@ def make_handler(studio, port):
                     said = str(e).strip()
                     return self._send(500, {"error": f"Something went wrong{': ' + said if said else ''}, with the "
                                                      f"details in {STUDIO_LOG}"})
-                finally:
-                    if upload:
-                        os.remove(upload)
             if method != "GET":
                 return self._send(405, {"error": "method not allowed"})
             if path in ("/", "/index.html", "/studio/index.html"):
