@@ -42,6 +42,18 @@ Coat colours can't take new slots. The game pairs each of its coat colours with 
 whisker colours it keeps in its code, and a coat slot past 24 has none, which crashes it. To give
 just your cat a coat colour of its own, use `cats.json`'s `colours`.
 
+A palette can offer **coat presets** instead: painted on, not new slots.
+```json
+{ "coats": { "Ash":  { "fur": "#9a9590", "nose": "#3a3330", "paws": "#4a4442", "ears": "#b8a0a0", "like": 12 },
+             "Snow": { "fur": "#ffffff", "like": 10 } } }
+```
+Each has a name (up to 40 characters, no `/`), its coat colour (`fur`), the `nose`, `paws`,
+`whiskers` and `ears` colours it wants (the rest stay the game's), and `like`: the game's coat (0–24)
+a cat wearing it is saved with. The save only ever holds that game coat, so turning the mod off
+leaves the cat on it. wcmods doesn't paint presets itself: it lists them in `WCModsPalettes`, and
+[Creator palettes](https://github.com/HexOffender/wcmods-creator-palettes) 1.2 offers them in the
+cat maker's Fur picker and paints them on the cats that chose them.
+
 #### Ready-made palettes
 
 Ten themed palettes are in [wcmods-examples](https://github.com/HexOffender/wcmods-examples): ThunderClan Forest, RiverClan
