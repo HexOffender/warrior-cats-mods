@@ -2,8 +2,9 @@
 
 This page is for people who write scripts in Lua, the language the game's mods are scripted in. If you want
 the game to look or play differently and you don't write code, you don't need it: the Make pages (Palettes,
-Your cat, Controls, Names, Items, Animations, Characters, Questlines, Game data and Save) change the game
-without any. The page is only in the side bar, under Advanced, once **Allow mods that run code** is ticked.
+Your cat, Controls, Names, Items, Animations, Characters, Questlines, Game data, Save and Tweaks) change the
+game without any, and [Tweaks](tweaks.md) keeps stamina full, heals on a key or holds the clock with a tick.
+The page is only in the side bar, under Advanced, once **Allow mods that run code** is ticked.
 
 ## What it changes in the game
 

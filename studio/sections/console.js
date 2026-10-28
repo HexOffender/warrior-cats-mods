@@ -10,7 +10,7 @@ export const EXAMPLES = [
     instead: "The Save page changes these without code." },
   { label: "Time of day", code: "return Game.time.get()" },
   { label: "Set 6:00", code: "return Game.time.set(6, 0)",
-    instead: "The mod menu's World page (in the game) sets and holds the time without code." },
+    instead: "Tweaks' Hold the clock at keeps a time without code." },
   { label: "Fresh-kill", code: "return Game.freshKill.value(), Game.freshKill.level()",
     instead: "The Save page changes the pile without code." },
   { label: "Items", code: "return Game.items.list()" },
@@ -64,7 +64,7 @@ export default {
 
     root.append(
       wc.pageHead({ eyebrow: "Advanced", title: "Try Lua in the game", help: "help:console",
-        lede: "For people who write scripts: this types a line of Lua into the running game and shows what comes back. Nothing here is saved into a mod. To change the game without code, use the Make pages." }),
+        lede: "For people who write scripts: this types a line of Lua into the running game and shows what comes back. Nothing here is saved into a mod. Tweaks and the other Make pages change the game without code." }),
       strip,
       el("div", { class: "card" },
         el("h2", { text: "Run a line" }),
