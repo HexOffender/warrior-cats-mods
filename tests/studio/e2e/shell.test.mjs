@@ -298,6 +298,13 @@ test("unsaved changes outlast the studio's window closing: the page keeps them, 
     await page.waitFor(() => document.querySelector(".target .dirty")?.textContent === "", 10000);
     const saved = JSON.parse(fs.readFileSync(path.join(d.data, "mods", mod, "npcs.json"), "utf8"));
     assert.deepEqual(saved.npcs.map(c => c.name), ["New cat"]);
+    // Saved, the cat keeps its id when it's renamed (quests may name it now), though the file wasn't read back.
+    const nameBox = '.section[data-page="npcs"] input[maxlength="40"]';
+    await page.evaluate(`(i => { i.focus(); i.setSelectionRange(i.value.length, i.value.length); })(document.querySelector(${JSON.stringify(nameBox)}))`);
+    await page.type(nameBox, " the Second");
+    const preview = JSON.parse(await page.evaluate(() => [...document.querySelectorAll('.section[data-page="npcs"] pre')].at(-1).textContent));
+    assert.deepEqual(preview.npcs.map(c => [c.id, c.name]), [[saved.npcs[0].id, "New cat the Second"]]);
+    assert.equal(await page.text(".target .dirty"), "Unsaved changes");
     // Nothing went wrong but the requests that found the studio closed, which the browser logs itself.
     assert.deepEqual(page.consoleErrors().filter(e => !/ERR_CONNECTION_REFUSED/.test(e)), []);
   } finally {

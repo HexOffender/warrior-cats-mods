@@ -92,6 +92,12 @@ export default {
       file: "palette.json",
       onLoad: obj => { state = P.fromPalette(obj, { labels: LABELS, gameSlots: GAME }); undo = null; renderAll(); otherSlotsReady = loadOtherSlots(); },
       getValue: () => P.toPalette(state, LABELS),
+      // Saved: the page reads what it wrote as it reads any file (a save doesn't read the file back), and Undo goes.
+      // Not when something changed while it saved: that stays on the page, still to be saved.
+      onSaved: (saved, { changed }) => {
+        if (changed) return;
+        state = P.fromPalette(saved, { labels: LABELS, gameSlots: GAME }); undo = null; renderAll();
+      },
     });
     const edited = () => target.markDirty();
     // curHex: the colour a slot shows with this palette: its own, else the game's, else another palette's new one.

@@ -47,6 +47,9 @@ export default {
       file: "cats.json",
       onLoad: obj => { ({ looks, fileExtra } = C.load(obj, known())); if (!looks[who]) who = "player"; render(); },
       getValue: () => C.toJson(looks, fileExtra, known()),
+      // Saved: the page reads what it wrote as it reads any file (a save doesn't read the file back), on the same
+      // cat. Not when something changed while it saved: that stays on the page, still to be saved.
+      onSaved: (saved, { changed }) => { if (changed) return; ({ looks, fileExtra } = C.load(saved, known())); render(); },
     });
     const saveLine = el("div", { class: "banner", role: "status", hidden: true });
     const whoCard = el("div", { class: "card" }), lookCard = el("div", { class: "card" }),

@@ -710,7 +710,8 @@ def test_a_port_held_by_another_program_moves_the_studio_along(served, monkeypat
     try:
         assert studio_mod.other_studio(busy) is False
         server, tried, other = studio_mod.find_port(busy)
-        assert server is not None and tried == [busy] and other is None and server.server_address[1] != busy
+        # The next port may happen to be taken too (another program's): it moves past that one as well.
+        assert server is not None and tried[0] == busy and other is None and server.server_address[1] not in tried
         server.server_close()
     finally:
         held.close()
