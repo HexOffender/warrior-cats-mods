@@ -45,11 +45,12 @@ class StorySection(Section):
         if not any(m.id == story.SANDBOX_ID for m in ctx.mods):
             ctx.warn("cats and questlines come into the game with the Sandbox mode mod (github.com/HexOffender/"
                      "wcmods-sandbox), and it isn't on; they go in, but nothing shows them until it is")
-        # Items the quests name: the game's, or one a mod adds (the items section comes first), with their icons.
+        # Items the quests name: the game's, or one a mod adds (the items section comes first and adds a row for
+        # each item it makes, so its rows here are every mod item), with their icons.
         icons = {v.get("itemTag"): _icon(v) for _, v in ctx.cooked_table("DT_QuestObjectsInfo")}
         for _, v, _, _ in ctx.table_rows.get("DT_QuestObjectsInfo", []):
             icons[v.get("itemTag")] = _icon(v)
-        known = set(icons) | set(ctx.notes.get("items", {}).get("items", []))
+        known = set(icons)
         used = set()
         for mod, data in items:
             used |= story.items_used(data)

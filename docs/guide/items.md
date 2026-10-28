@@ -65,8 +65,10 @@ You can't, yet:
 After **Apply to game**, each item in the list gets a chip: **In the game**, or **Left out**. The item's
 own page says why one was left out, or what to know about one that went in ("no save to give it in
 yet", "on the ground it's the game's pickup"), and a line at the top counts them: "3 of 4 items went in.
-Moon Herb was left out: it has no description, so it's left out of the game." When you open the studio
-again later, the chips are the last Apply's, and say when it was. The whole story is in
+Moon Herb was left out: it has no description." An item you added after that Apply says **Not applied
+yet**, and isn't counted until the next one. **Check my mods** (Settings and repair) puts nothing in the
+game, so it doesn't change the chips. When you open the studio again later, the chips are the last
+Apply's, and say when it was. The whole story is in
 [the log](studio.md#the-log), under **Last apply**.
 
 In the game, open your inventory. A herb or a material you gave yourself some of is there. One you didn't

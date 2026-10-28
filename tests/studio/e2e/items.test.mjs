@@ -222,6 +222,14 @@ test("status after apply: a chip on each item, its line, and the count at the to
   assert.match(await page.text(".banner[role=status]"),
     /0 of 1 item went in\. Moon Herb was left out: the game already has an item called MoonHerb: give yours another name\./);
   assert.match(await page.text('[data-key="editor:item"] .card .field-problem'), /^Left out of the game: the game already has an item called MoonHerb/);
+  // An item the Apply didn't know (Tea Leaf, saved by the tab test since) isn't left out: not applied yet, not counted.
+  const neutral = await page.evaluate(() => [...document.querySelectorAll(".pick .chip:not(.good):not(.bad)")].map(c => c.textContent));
+  assert.ok(neutral.length >= 1 && neutral.every(t => t === "Not applied yet"), neutral.join(", "));
+  // Check my mods (/build) put nothing in the game: the chips stay the last Apply's.
+  await emitInstalled(page, { ...base, task: "/build", notes: { items: { items: { "my-mods/MoonHerb": tag } } }, warnings: [] });
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal(await page.text(".pick .chip.bad"), "Left out");
+  assert.equal(await page.evaluate(() => document.querySelectorAll(".pick .chip.good").length), 0);
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });

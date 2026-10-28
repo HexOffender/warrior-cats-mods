@@ -179,8 +179,10 @@ test("itemStatus says whether an item went in, and why one didn't, in the page's
   assert.deepEqual(m.itemStatus(MANIFEST, "mine", { id: "Pebble" }), { state: "in", also: ["on the ground it's the game's pickup"], look: null });
   assert.deepEqual(m.itemStatus(MANIFEST, "mine", { id: "Blue" }), { state: "in", also: [], look: 3 });
   assert.equal(m.itemStatus(MANIFEST, "mine", { id: "Gem" }).state, "in", "a herb and a material with one id");
-  assert.deepEqual(m.itemStatus(MANIFEST, "mine", { id: "Lost" }), { state: "out", why: "it has no description, so it's left out of the game" });
-  assert.deepEqual(m.itemStatus(MANIFEST, "mine", { id: "Unsaved" }), { state: "out", why: "it didn't go in" });
+  assert.deepEqual(m.itemStatus(MANIFEST, "mine", { id: "Lost" }), { state: "out", why: "it has no description" });
+  // One the last Apply didn't know (added since, or saved but not applied): not applied yet, not left out.
+  assert.deepEqual(m.itemStatus(MANIFEST, "mine", { id: "Unsaved" }), { state: "new" });
+  assert.deepEqual(m.itemStatus(MANIFEST, "mine", { id: "Lost", _new: true }), { state: "new" }, "a new one that took an old one's id");
   assert.match(m.itemStatus(MANIFEST, "gone", { id: "MoonHerb" }).why, /its mod wasn't in the last Apply/);
   assert.equal(m.itemStatus({ manifest: MANIFEST }, "mine", { id: "Blue" }).look, 3, "as /build/last gives it");
 });
@@ -197,7 +199,10 @@ test("itemStatus leaves it unsaid when it can't tell: no build, or an older wcmo
 
 test("itemsSummary counts what went in and names the first left out", () => {
   const items = [{ id: "MoonHerb", name: "Moon Herb" }, { id: "Lost", name: "Lost Herb" }, { id: "Blue", name: "Blue Collar" }];
-  assert.equal(m.itemsSummary(MANIFEST, "mine", items), "2 of 3 items went in. Lost Herb was left out: it has no description, so it's left out of the game.");
+  assert.equal(m.itemsSummary(MANIFEST, "mine", items), "2 of 3 items went in. Lost Herb was left out: it has no description.");
+  assert.equal(m.itemsSummary(MANIFEST, "mine", [...items, { id: "Fresh", name: "Fresh", _new: true }, { id: "Unsaved" }]),
+    "2 of 3 items went in. Lost Herb was left out: it has no description.", "ones added since aren't counted");
+  assert.equal(m.itemsSummary(MANIFEST, "mine", [{ id: "Fresh", _new: true }]), null);
   assert.equal(m.itemsSummary(MANIFEST, "mine", [items[0]]), "1 of 1 item went in.");
   assert.equal(m.itemsSummary(null, "mine", items), null);
 });

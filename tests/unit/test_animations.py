@@ -618,13 +618,14 @@ def test_the_game_module_plays_animations():
 
 def test_the_scripts_share_what_plays_so_a_key_stops_what_the_wheel_started():
     # One playing state for every script (each has a Lua state of its own): Game.anims publishes its id per
-    # actor, playing() and stop() read it, and stop() stops another script's montage through the anim instance.
+    # actor, with its sequence and montage; playing() and stop() read it, and stop() stops another script's
+    # montage through the anim instance (test_lua.py checks it's only ever that montage).
     lua = source("game.lua")
-    assert 'ModRef:SetSharedVariable("WCModsAnims.playing." .. tostring(actor:GetAddress()), id or "")' in lua
-    assert 'ModRef:GetSharedVariable("WCModsAnims.playing." .. tostring(actor:GetAddress()))' in lua
-    assert "GetCurrentActiveMontage()" in lua and "IsAnyMontagePlaying()" in lua
+    assert 'local function sharedKey(actor) return "WCModsAnims.playing." .. tostring(actor:GetAddress()) end' in lua
+    assert "ModRef:SetSharedVariable(sharedKey(actor), v)" in lua and "ModRef:GetSharedVariable(sharedKey(actor))" in lua
+    assert "GetCurrentActiveMontage()" in lua and "IsAnyMontagePlaying()" not in lua
     play = lua[lua.index("function Game.anims.play("):lua.index("function Game.anims.playing(")]
-    assert "sharePlaying(actor, id)" in play
+    assert "sharePlaying(actor, id, path, m)" in play
     emotes = source("emotes.lua")
     assert "if Game.anims.playing() == e.id then" in emotes, "the key stops it whoever started it"
     assert "v.X and v.Y and v.X * v.X" in emotes, "a velocity without X or Y is no error"

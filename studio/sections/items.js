@@ -99,6 +99,8 @@ export default {
     function chip(it) {
       const s = itemStatus(lastResult, target.current, it);
       if (!s) return null;
+      // One the last Apply didn't know (added or saved since): neither in nor out yet.
+      if (s.state === "new") return el("span", { class: "chip", title: "Apply to game puts it in" }, el("i", { "aria-hidden": "true" }), "Not applied yet");
       const said = s.state === "in" ? "In the game" : "Left out";
       return el("span", { class: `chip ${s.state === "in" ? "good" : "bad"}`, title: s.state === "in" ? s.also.join("; ") : s.why },
         el("i", { "aria-hidden": "true" }), said);
@@ -108,6 +110,7 @@ export default {
       const s = itemStatus(lastResult, target.current, it);
       if (!s) return null;
       const when = asOf ? ` (as of the last Apply, ${asOf.replace("T", " ").slice(0, 16)})` : "";
+      if (s.state === "new") return el("p", { class: "muted", text: "Not applied yet: Apply to game puts it in." });
       if (s.state === "out") return el("p", { class: "field-problem", text: `Left out of the game${when}: ${s.why}.` });
       const look = s.look ? `, worn as look ${s.look} of ${(likeOf(it) || {}).name || "its accessory"}` : "";
       return el("p", { class: "note", text: `In the game${when}${look}${s.also.length ? `; ${s.also.join("; ")}` : ""}.` });
@@ -150,7 +153,9 @@ export default {
       const rest = notes.said.filter(n => !n.id || !items.some(x => x.id === n.id)).map(n => `${n.id ? `${nameOf(n.id)}: ` : ""}${n.why}.`);
       if (!notes.on) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), "this mod wasn't in it. It's off, or it couldn't be made ready (the log says why).");
       else if (counted) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), [counted, ...rest].join(" "));
-      else if (!notes.said.length) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), "the items saved here went in the game.");
+      else if (items.length && items.every(it => (itemStatus(lastResult, target.current, it) || {}).state === "new")) {
+        lastBox.append(el("strong", { text: `Last Apply${when}: ` }), "none of the items here were in it. Apply to game puts them in.");
+      } else if (!notes.said.length) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), "the items saved here went in the game.");
       else lastBox.append(el("strong", { text: `Last Apply${when}, about these items: ` }),
         notes.said.map(n => `${n.id ? `${nameOf(n.id)}: ` : ""}${n.why}.`).join(" "));
     }

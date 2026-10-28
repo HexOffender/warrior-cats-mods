@@ -96,6 +96,8 @@ export default {
     function chip(a) {
       const s = animationStatus(lastResult, target.current, a);
       if (!s) return null;
+      // One the last Apply didn't know (added or saved since): neither in nor out yet.
+      if (s.state === "new") return el("span", { class: "chip", title: "Apply to game puts it in" }, el("i", { "aria-hidden": "true" }), "Not applied yet");
       return el("span", { class: `chip ${s.state === "in" ? "good" : "bad"}`, title: s.state === "in" ? (s.also || []).join("; ") : s.why },
         el("i", { "aria-hidden": "true" }), s.state === "in" ? `In the game${s.key ? ` (${input.keyLabel(s.key)})` : ""}` : "Left out");
     }
@@ -104,6 +106,7 @@ export default {
       const s = animationStatus(lastResult, target.current, a);
       if (!s) return null;
       const when = asOf ? ` (as of the last Apply, ${asOf.replace("T", " ").slice(0, 16)})` : "";
+      if (s.state === "new") return el("p", { class: "muted", text: "Not applied yet: Apply to game puts it in." });
       if (s.state === "out") return el("p", { class: "field-problem", text: `Left out of the game${when}: ${s.why}.` });
       const where = s.replaced ? `, in place of ${plain(a.for || "cat", s.replaced)}` : s.key ? `, on ${input.keyLabel(s.key)}` : "";
       return el("p", { class: "note", text: `In the game${when}${where}${s.also && s.also.length ? `; ${s.also.join("; ")}` : ""}.` });
@@ -140,7 +143,9 @@ export default {
       const rest = notes.said.filter(n => !n.id || !anims.some(x => x.id === n.id)).map(n => `${n.id ? `${nameOf(n.id)}: ` : ""}${n.why}.`);
       if (!notes.on) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), "this mod wasn't in it. It's off, or it couldn't be made ready (the log says why).");
       else if (counted) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), [counted, ...rest].join(" "));
-      else if (!notes.said.length) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), "the animations saved here went in the game.");
+      else if (anims.length && anims.every(a => (animationStatus(lastResult, target.current, a) || {}).state === "new")) {
+        lastBox.append(el("strong", { text: `Last Apply${when}: ` }), "none of the animations here were in it. Apply to game puts them in.");
+      } else if (!notes.said.length) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), "the animations saved here went in the game.");
       else lastBox.append(el("strong", { text: `Last Apply${when}, about these animations: ` }),
         notes.said.map(n => `${n.id ? `${nameOf(n.id)}: ` : ""}${n.why}.`).join(" "));
     }

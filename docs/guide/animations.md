@@ -62,8 +62,9 @@ You can't, yet:
 
 After **Apply to game**, each animation in the list gets a chip: **In the game** (with its key, for an
 emote), or **Left out**. The animation's own page says why one was left out, and a line at the top sums
-it up: "In the game: Yawn (F7), Flap; left out: Wave (nothing chosen for it to play yet)". When you open
-the studio again later, the chips are the last Apply's, and say when it was. The whole story is in
+it up: "In the game: Yawn (F7), Flap; left out: Wave (nothing chosen for it to play yet)". One you added
+after that Apply says **Not applied yet** until the next one. When you open the studio again later, the
+chips are the last Apply's, and say when it was. The whole story is in
 [the log](studio.md#the-log), under **Last apply**.
 
 In the game, press the emote's key, or open the mod menu's Emotes page. A replacement shows wherever the

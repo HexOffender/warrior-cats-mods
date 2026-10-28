@@ -107,16 +107,22 @@ export function plainName(list, value) {
 // ---------- whether it reached the game ----------
 const manifestOf = r => r && (r.sections ? r : r.manifest && r.manifest.sections ? r.manifest : null);
 
+// Why the build left one out, without the ", so it's left out of the game" the page says itself.
+const plainWhy = w => String(w).replace(/, so it's left out( of the game)?$/, "");
+
 // What the last Apply did with one of this mod's animations: null when it can't be told (no build yet), else
-// {state: "in" or "out", why (for "out"), key (an emote's, for "in"), replaced (the path of the game's sequence
-// it plays in place of)}. From the animations section's notes (animations, emotes, replaced) and its warnings,
-// "animations: <mod>: <id>: ..." (sections/animations.py).
+// {state: "in", "out" or "new", why (for "out"), key (an emote's, for "in"), replaced (the path of the game's
+// sequence it plays in place of)}. "new": the last Apply didn't know it (added since, or saved but not applied:
+// no note or warning names it), so the page says it isn't applied yet and doesn't count it. From the animations
+// section's notes (animations, emotes, replaced) and its warnings, "animations: <mod>: <id>: ..."
+// (sections/animations.py).
 export function animationStatus(result, modId, a) {
   const m = manifestOf(result);
   if (!m || !a || !a.id) return null;
   const section = (m.sections || {}).animations;
   const notes = (m.notes || {}).animations;
   if (!notes && !section) return null;
+  if (a._new) return { state: "new" };
   if (!(m.mods || []).includes(modId)) return { state: "out", why: "its mod wasn't in the last Apply (it was off, or couldn't be made ready)" };
   const full = `${modId}/${a.id}`;
   const prefix = `animations: ${modId}: ${a.id}: `;
@@ -127,12 +133,13 @@ export function animationStatus(result, modId, a) {
     return { state: "in", key: ((notes || {}).emotes || []).includes(full) ? a.key || null : null, also: said };
   }
   const failed = ((section && section.failed) || []).find(([mod]) => mod === modId);
-  return { state: "out", why: said[0] || (failed ? failed[1] : "it didn't go in") };
+  if (!said.length && !failed) return { state: "new" };
+  return { state: "out", why: plainWhy(said[0] || failed[1]) };
 }
 
 // The line at the top of the page: "In the game: Yawn (F7), Flap; left out: Long (the animation is 70.0 s long...)".
 export function animationsSummary(result, modId, anims, label = k => k) {
-  const states = anims.map(a => [a, animationStatus(result, modId, a)]).filter(([, s]) => s);
+  const states = anims.map(a => [a, animationStatus(result, modId, a)]).filter(([, s]) => s && s.state !== "new");
   if (!states.length) return null;
   const name = a => a.name || a.id;
   const inGame = states.filter(([, s]) => s.state === "in").map(([a, s]) => `${name(a)}${s.key ? ` (${label(s.key)})` : ""}`);

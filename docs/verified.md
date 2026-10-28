@@ -229,7 +229,11 @@ Fawnstar, as a player reported it showing "Cat 1"):
   watched in game yet.
 - **One playing state for every script (2026-10-28):** an emote's key stopping what the Emote wheel
   started, through the shared `WCModsAnims.playing.<actor>` and the anim instance's current montage
-  (`GetCurrentActiveMontage`, `Montage_Stop`): not tried in game.
+  (`GetCurrentActiveMontage`, `Montage_Stop`): not tried in game. Nor is the check that keeps a finished
+  emote's id from stopping the game's own montage: the shared state holds the montage's address and its
+  sequence, and the current montage must be that object, playing that sequence (read from its
+  `SlotAnimTracks[1].AnimTrack.AnimSegments[1].AnimReference`; when that can't be read, the address
+  alone decides).
 - **Items:** a new look made from an accessory's second look (`"like": "Neck.DogCollar.2"`; the build
   takes it, as it takes the first).
 

@@ -195,33 +195,40 @@ export const manifestOf = r => r && (r.sections ? r : r.manifest && r.manifest.s
 // What the build says about an item that still went in: said in the page's words.
 const STILL_IN = [[/lies there as the game's pickup instead$/, "on the ground it's the game's pickup"],
   [/^no save yet to give it in/, "no save to give it in yet"]];
+// Why the build left one out, without the ", so it's left out of the game" the page says itself.
+export const plainWhy = w => String(w).replace(/, so it's left out( of the game)?$/, "");
 
 // What the last Apply did with one of this mod's items: null when it can't be told (no build yet, or one an
-// older wcmods made, whose note lists tags only), else {state: "in" or "out", why (for "out"), also (for
-// "in": what it said about it, in words), look (an accessory's: its look number)}. From the items section's
-// note {"<mod>/<id>": tag} and its warnings, "items: <mod>: <id>: ..." (sections/items.py).
+// older wcmods made, whose note lists tags only), else {state: "in", "out" or "new", why (for "out"), also (for
+// "in": what it said about it, in words), look (an accessory's: its look number)}. "new": the last Apply
+// didn't know it (added since, not saved yet, or saved but not applied: no note or warning names it), so the
+// page says it isn't applied yet and doesn't count it. From the items section's note {"<mod>/<id>": tag} and
+// its warnings, "items: <mod>: <id>: ..." (sections/items.py).
 export function itemStatus(result, modId, item) {
   const m = manifestOf(result);
   if (!m || !item || !item.id) return null;
   const section = (m.sections || {}).items;
   const note = ((m.notes || {}).items || {}).items;
   if (Array.isArray(note) || (!note && !section)) return null;
+  if (item._new) return { state: "new" };
   if (!(m.mods || []).includes(modId)) return { state: "out", why: "its mod wasn't in the last Apply (it was off, or couldn't be made ready)" };
   const prefix = `items: ${modId}: ${item.id}: `;
   const said = (m.warnings || []).filter(w => w.startsWith(prefix)).map(w => w.slice(prefix.length));
   const tag = (note || {})[`${modId}/${item.id}`];
   if (!tag) {
     const failed = ((section && section.failed) || []).find(([mod]) => mod === modId);
-    return { state: "out", why: said[0] || (failed ? failed[1] : "it didn't go in") };
+    if (!said.length && !failed) return { state: "new" };
+    return { state: "out", why: plainWhy(said[0] || failed[1]) };
   }
   // One tag, or (a herb and a material with one id) a list of them.
   const look = [].concat(tag).map(t => /^Gameplay\.Inventory\.Cosmetic\..*\.(\d+)$/.exec(t)).find(Boolean);
   return { state: "in", also: said.map(w => (STILL_IN.find(([re]) => re.test(w)) || [null, w])[1]), look: look ? Number(look[1]) : null };
 }
 
-// The line at the top of the page: how many of the items went in, and the first that didn't, by name.
+// The line at the top of the page: how many of the items went in, and the first that didn't, by name. The
+// ones the last Apply didn't know ("new") aren't counted.
 export function itemsSummary(result, modId, items) {
-  const states = items.map(it => [it, itemStatus(result, modId, it)]).filter(([, s]) => s);
+  const states = items.map(it => [it, itemStatus(result, modId, it)]).filter(([, s]) => s && s.state !== "new");
   if (!states.length) return null;
   const went = states.filter(([, s]) => s.state === "in").length;
   const out = states.find(([, s]) => s.state === "out");

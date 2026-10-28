@@ -124,6 +124,12 @@ test("animationStatus says whether an animation went in: an emote on its key, a 
   assert.match(m.animationStatus(MANIFEST, "gone", YAWN).why, /its mod wasn't in the last Apply/);
   assert.equal(m.animationStatus(null, "mine", YAWN), null);
   assert.equal(m.animationStatus({ ...MANIFEST, notes: {}, sections: {} }, "mine", YAWN), null, "no animations section in that build");
+  // One the last Apply didn't know (added since, or saved but not applied): not applied yet, not left out.
+  assert.deepEqual(m.animationStatus(MANIFEST, "mine", { id: "Wave", name: "Wave" }), { state: "new" });
+  assert.deepEqual(m.animationStatus(MANIFEST, "mine", { ...YAWN, _new: true }), { state: "new" });
+  // A half-made one the build left out: why, without "so it's left out".
+  const half = { ...MANIFEST, warnings: ["animations: mine: New: nothing chosen for it to play yet, so it's left out of the game"] };
+  assert.deepEqual(m.animationStatus(half, "mine", { id: "New" }), { state: "out", why: "nothing chosen for it to play yet" });
 });
 
 test("animationsSummary says what's in the game, with keys, and what's left out", () => {
@@ -133,4 +139,6 @@ test("animationsSummary says what's in the game, with keys, and what's left out"
   assert.equal(m.animationsSummary(MANIFEST, "mine", [{ id: "Long", name: "Long" }]),
     "Nothing here went in the game; left out: Long (the animation is 70.0 s long; an animation can be up to 60 s).");
   assert.equal(m.animationsSummary(null, "mine", anims), null);
+  assert.equal(m.animationsSummary(MANIFEST, "mine", [...anims, { id: "Wave", name: "Wave", _new: true }]),
+    "In the game: Yawn (F7), Flap; left out: Long (the animation is 70.0 s long; an animation can be up to 60 s).", "one added since isn't said");
 });

@@ -18,6 +18,36 @@ def test_shared_module_compiles(module):
     assert not problems(module.lua())
 
 
+def test_game_module_stops_another_scripts_animation_only_while_it_plays():
+    """Game.anims' shared playing state (what another script, the Emote wheel, started): the id is shared with
+    its sequence and its montage, and another script's is taken for playing, or stopped, only while the actor's
+    current montage is that montage, playing that sequence; otherwise the state is cleared, so a finished
+    emote's id never makes Game.anims.stop() stop one of the game's own montages."""
+    lua = game.lua()
+    assert not problems(lua)
+
+    def body(start, end):
+        return lua[lua.index(start):lua.index(end)]
+
+    shared = body("local function sharedPlaying(actor)", "local function anims()")
+    assert 'v = id .. "|" .. (path or "") .. "|" .. (ok and tostring(address) or "")' in shared
+    assert 'v:match("^([^|]+)|([^|]*)|([^|]*)$")' in shared
+    check = body("local function sharedMontage(actor)", "-- Play an animation on a cat")
+    assert "inst:GetCurrentActiveMontage()" in check
+    assert "tostring(address) == s.montage" in check, "the same montage the other script started"
+    assert 'seq == "AnimSequence " .. s.path' in check, "playing its sequence"
+    assert check.rstrip().endswith("sharePlaying(actor, nil)\n    return nil\nend"), "else the shared id is cleared"
+    assert "m.SlotAnimTracks[1].AnimTrack.AnimSegments[1].AnimReference:GetFullName()" in lua
+    assert "sharePlaying(actor, id, path, m)" in body("function Game.anims.play(", "function Game.anims.playing(")
+    playing = body("function Game.anims.playing(", "function Game.anims.stop(")
+    assert "local _, _, s = sharedMontage(actor)" in playing and "IsAnyMontagePlaying" not in lua
+    stop = body("function Game.anims.stop(", "-- The same on a cat")
+    other = stop[stop.index("local ai, m, s = sharedMontage(actor)"):]
+    assert other.index("if not ai then return false end") < other.index("ai:Montage_Stop(out, m)"), \
+        "another script's montage is stopped only when sharedMontage found it"
+    assert "GetCurrentActiveMontage" not in stop, "stop() never takes the current montage without the check"
+
+
 def test_names_module_with_the_games_own_text():
     lua = world.names_lua()
     assert not problems(lua)
