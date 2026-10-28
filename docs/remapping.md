@@ -61,7 +61,9 @@ pause menu moved with I and K and confirmed with U, O closing menus, the next ta
 2, and a fight's menu and moves picked with I, K and U; the old keys did nothing. The Travel and Talk
 prompts and the Controls tab showed F for Interact, and the pause screen's Back showed Escape for a
 menu pair. Scripts that listen for Interact themselves (`Game.npcs`, for a mod's own cats) follow it to its
-new key.
+new key. The mod menu's Overview lists each key with a new job beside Insert and F6 ("F: Interact (was E)",
+"H: Interact, like E", "U: Confirm and Skip in menus"): the script hands `keymap.native_plan`'s `menu_keys`
+to `Menu.key` when the menu is installed.
 
 Keys wcmods' own scripts listen on (`RegisterKeyBind`) do their job whatever the game does: the mod menu's
 key and controller button, mouse look's key, and the keys mods declare (an emote's key in `animations.json`,

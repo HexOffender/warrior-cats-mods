@@ -19,7 +19,7 @@ def script(plan, debug=False):
     """plan: keymap.native_plan's first result."""
     from .sdk import lua_value
     data = {"play": plan["play"], "menu": plan["menu"], "keys": plan["keys"], "icons": plan["icons"],
-            "debug": debug}
+            "menu_keys": plan.get("menu_keys", []), "debug": debug}
     return LUA_TEMPLATE.replace("@PLAN@", lua_value(data))
 
 

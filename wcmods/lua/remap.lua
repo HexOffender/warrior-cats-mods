@@ -22,6 +22,7 @@ local PLAN = @PLAN@
 -- drop = {command = {key, ...}}: the game's own command is dropped when it comes from one of these keys.
 -- PLAN.keys: {action = {key, ...}}: every key each changed action is on now, for other scripts.
 -- PLAN.icons.play and .menu: {command = {key, ...}}: the keys its pictures show now, the first that has one.
+-- PLAN.menu_keys: {{key, what it does now}, ...}: the mod menu's Overview lists these beside its own keys.
 
 local PRESSED, RELEASED = 0, 1   -- EInputEvent
 local NO_COMMAND = 0
@@ -42,6 +43,13 @@ local function valid(o) return o ~= nil and o:IsValid() end
 -- Other scripts (WCModsGame's Game.npcs, which listens to Interact itself) read where an action is now.
 for action, keys in pairs(PLAN.keys) do
     pcall(function() ModRef:SetSharedVariable("WCModsRemap." .. action, table.concat(keys, ",")) end)
+end
+
+-- The mod menu's Overview lists the keys that do something new ("F: Interact (was E)"), beside Insert and
+-- F6, when the menu is there (the player may have none of it).
+local okMenu, Menu = pcall(require, "WCModsMenu")
+if okMenu and type(Menu) == "table" and Menu.key then
+    for _, line in ipairs(PLAN.menu_keys or {}) do pcall(Menu.key, line[1], line[2]) end
 end
 
 local send = { play = {}, menu = {} }   -- key -> {command numbers}

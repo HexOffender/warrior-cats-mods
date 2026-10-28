@@ -7,7 +7,8 @@ row, press Change, press the key you want, and save it to a mod.
 
 After **Apply to game**, the new key does the action, however you start the game (from Steam too). The old
 key stops doing that action but keeps its other jobs: with Interact on F, E still shows the map's legend. The
-game's own prompts and its Controls tab show the new key.
+game's own prompts and its Controls tab show the new key, and the mod menu's Overview page lists every key you
+changed ("F: Interact (was E)").
 
 A key can do something already. Then the page says, under the row, what it will stop doing: put Interact on I
 and the Inventory row says I no longer opens the inventory. Give that action another key too, or pick a key

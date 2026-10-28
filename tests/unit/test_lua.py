@@ -186,6 +186,30 @@ def test_in_game_remap_script():
     assert "NotifyOnNewObject" in lua and "mcGuiButtonImage" in lua
 
 
+def test_in_game_remap_script_lists_its_keys_in_the_mod_menu():
+    # Each key with a new job once, in plain words, for the mod menu's Overview: a move says what it was, a second
+    # key what it's like, a key for menus only says so; the script hands them to Menu.key when the menu is there.
+    plan, _, _ = keymap.native_plan({"keyboard": {"Player_Interact": "F"}, "gamepad": {"Player_Run": "LT"},
+                                     "keys": {"H": "E", "T": "One", "MouseScrollUp": "R"}, "menus": {"U": "Enter"}})
+    assert plan["menu_keys"] == [["F", "Interact (was E)"], ["LT on a controller", "Run (was RB on a controller)"],
+                                 ["H", "Interact, like E"], ["T", "like 1"], ["Wheel up", "Reset the camera, like R"],
+                                 ["U", "Confirm and Skip in menus"]]
+    lua = gameremap.script(plan)
+    assert not problems(lua)
+    assert 'pcall(require, "WCModsMenu")' in lua and "pcall(Menu.key, line[1], line[2])" in lua
+    assert '["menu_keys"] = { { "F", "Interact (was E)" }' in lua
+    # A key both moved to and standing for something is listed once, with both.
+    plan, _, _ = keymap.native_plan({"keyboard": {"Player_Interact": "H"}, "keys": {"H": "Q"}})
+    assert plan["menu_keys"] == [["H", "Interact (was E); Scent tracking, like Q"]]
+
+
+def test_gameremap_has_no_work_on_an_empty_plan_and_writes_debug():
+    plan, _, _ = keymap.native_plan({})
+    assert not gameremap.has_work(plan) and plan["menu_keys"] == []
+    lua = gameremap.script(keymap.native_plan({"keyboard": {"Player_Interact": "F"}})[0], debug=True)
+    assert '["debug"] = true' in lua and not problems(lua)
+
+
 def test_key_remapper_gets_only_what_the_game_cant_do(tmp_path):
     from wcmods import mods as modlib
     from wcmods.sections.controls import remap_plan

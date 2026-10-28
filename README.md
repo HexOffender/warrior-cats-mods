@@ -207,8 +207,8 @@ written into your save only after a backup.
 
 1. Change keys on the **Controls** page in Clan Mod Studio (or in a mod's `controls.json`), Save to mod,
    Apply to game, then start the game any way you like.
-2. The new key does the action; the old key stops doing it but keeps its other jobs, and the game's prompts
-   and its Controls tab show the new key.
+2. The new key does the action; the old key stops doing it but keeps its other jobs, the game's prompts
+   and its Controls tab show the new key, and the mod menu's Overview lists it.
 3. Moving the cat and the camera can't be changed this way, because the game reads those keys itself: for
    the keyboard, start the game with `Play with key remaps.bat`; for the sticks, use Steam's controller
    settings.

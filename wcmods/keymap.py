@@ -450,7 +450,48 @@ def native_plan(merged):
         for key, commands in sends.items():
             for command in commands:
                 icons.setdefault(command, []).append(key)
+    plan["menu_keys"] = _menu_keys(merged, plans, setters)
     return plan, rest, warnings
+
+
+def _exploring(commands):
+    """The commands a key sends that do something while you explore (photo mode's own left out), for naming
+    what a key standing for it does."""
+    return [c for c in commands if c.startswith("Player_") and not c.startswith("Player_PhotoMode_")]
+
+
+def short_label(key):
+    """A key as the mod menu's Overview names it, beside Insert and F6: "F", "Mouse 4", "Up arrow",
+    "Y on a controller"."""
+    said = label(key)
+    if said.startswith("the controller's "):
+        return said[len("the controller's "):] + " on a controller"
+    if said.startswith("the "):
+        return _cap(said[4:]) + (" on a controller" if key.startswith("Gamepad_") else "")
+    return said
+
+
+def _menu_keys(merged, plans, setters):
+    """The keys this plan gives a job, for the mod menu's Overview: [[key, what it does now]], each key once.
+    A moved action is "Interact (was E)", a second key "Interact, like E" (or "like 1", for a key standing for
+    one whose jobs are all in menus), a key only for menus "Confirm and Skip in menus"."""
+    lines = []
+    for key, commands in plans["play"][0].items():
+        said = []
+        for section, name in sorted(setters.get(("play", key), ())):
+            if section in ("keyboard", "gamepad"):
+                old = _old_keys(section, name)
+                said.append(f"{say(name)} (was {short_label(old[0])})" if old else say(name))
+            else:
+                dst = _key(merged[section][name])
+                names = _and(say(c) for c in _exploring(KEY_COMMANDS.get(dst, [])))
+                said.append(f"{names}, like {short_label(dst)}" if names else f"like {short_label(dst)}")
+        lines.append([short_label(key), "; ".join(dict.fromkeys(said))])
+    for key, commands in plans["menu"][0].items():
+        if key not in plans["play"][0]:
+            names = _and(say(c) for c in commands if NAMES.get(c, True) is not None)
+            lines.append([short_label(key), f"{names} in menus"])
+    return lines
 
 
 def plan(merged):
@@ -686,7 +727,7 @@ def _pair_line(s, d, while_you=None):
     """A key standing for another, said: "H does what E does while you explore (Interact)."."""
     commands = [c for c in KEY_COMMANDS.get(d, []) if NAMES.get(c, True) is not None]
     if while_you:
-        names = _and(say(c) for c in commands if c.startswith("Player_"))
+        names = _and(say(c) for c in _exploring(commands))
         lost = [c for c in KEY_COMMANDS.get(s, []) if c.startswith("Player_") and c not in commands]
         line = f"{_cap(label(s))} does what {label(d)} does while you {while_you}" + (f" ({names})" if names else "")
         if lost:
