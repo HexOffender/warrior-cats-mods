@@ -316,7 +316,8 @@ test("after an Apply the cats are read again, even with changes not saved", asyn
   await tick(30);
   assert.ok(p.box("Stormheart"), "the cat is listed by its new name");
   assert.equal(p.box("Otterpaw").value, "Sparkle", "the change not saved is still there");
-  assert.equal(p.q(".target").querySelector(".dirty").textContent, "Unsaved changes");
+  // Still unsaved, and the bar says the Apply didn't take it (modTarget, after an Apply with unsaved changes).
+  assert.equal(p.q(".target").querySelector(".dirty").textContent, "Not in the game yet: Save to mod, then Apply");
   assert.ok(!dom.calls.slice(-3).some(c => c.url.includes("/file/names.json")), "the file isn't read again over the changes");
 });
 
