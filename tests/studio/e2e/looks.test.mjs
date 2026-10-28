@@ -299,6 +299,37 @@ test("what Palettes can't show is listed with a Remove, and Save says what keeps
   await page.close();
 });
 
+test("one colour named twice is listed as a conflict, written back as it was, and Save says which one Apply uses", { skip }, async () => {
+  await fresh();
+  makeMod("my-mods", {});
+  // Written as text: an object in this file would put "3" first, whatever order it's typed in.
+  fs.writeFileSync(fileOf("my-mods", "palette.json"), '{"pattern": {"03": "#111111", "3": "#222222"}}');
+  const page = await browser.page();
+  await openPalettes(page);
+  await page.waitFor(`${PAL} .pal-unread summary strong`);
+  assert.equal(await page.text(`${PAL} .pal-unread summary strong`), "2 entries this page can't show");
+  const listed = await page.evaluate(`[...document.querySelectorAll('${PAL} .pal-unread li span')].map(s => s.textContent)`);
+  assert.ok(listed.every(t => t.includes('"3" and "03" both name pattern colour 3')), listed.join(" | "));
+  // Another change saved: both are written back as they were, and the note under the bar says which one Apply uses.
+  await page.click(`${PAL} #pal-tab-pattern`);
+  await page.waitFor(`${PAL} #pal-pattern-5`);
+  await page.evaluate(() => { const i = document.getElementById("pal-pattern-5"); i.value = "#555555"; i.dispatchEvent(new Event("input")); });
+  await press(page, PAL, "Save to mod");
+  await page.waitFor(() => !document.querySelector('[data-page="palettes"] .save-notes').hidden);
+  const saved = readJson(fileOf("my-mods", "palette.json"));
+  assert.deepEqual(saved.pattern, { 3: "#222222", "03": "#111111", 5: "#555555" });
+  assert.match(await page.text(`${PAL} .save-notes li`), /^Pattern: "3" and "03" both name pattern colour 3, and Apply uses "03", the later in the file: remove the other$/);
+  // Set on the page, the colour takes the place of both.
+  await page.evaluate(() => { const i = document.getElementById("pal-pattern-3"); i.value = "#333333"; i.dispatchEvent(new Event("input")); });
+  await page.waitFor(() => [...document.querySelectorAll('[data-page="palettes"] .pal-unread li span')].every(s => s.textContent.endsWith("; Save puts the colour set here in its place)")));
+  await press(page, PAL, "Save to mod");
+  await waitForFile(fileOf("my-mods", "palette.json"), p => p.pattern["3"] === "#333333");
+  assert.deepEqual(readJson(fileOf("my-mods", "palette.json")).pattern, { 3: "#333333", 5: "#555555" });
+  await page.waitFor(() => document.querySelector('[data-page="palettes"] .pal-unread')?.closest("[hidden]") || !document.querySelector('[data-page="palettes"] .pal-unread'));
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
 test("Save says when another palette adds the same new colour, and which one shows", { skip }, async () => {
   await fresh();
   makeMod("dark", { "palette.json": { pattern: { 25: "#000000" } } }, { name: "Dark Forest", priority: 5 });

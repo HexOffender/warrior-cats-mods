@@ -81,7 +81,7 @@ export default {
     const origRow = r => (EYE_LIN ? EYE_LIN[r] : P.plainRow(64, r === 0));
     const rimOf = ramp => color.linearToHex(ramp[ramp.length - 1]);
     const vanillaRim = r => rimOf(origRow(r));
-    const eyeName = r => (LABELS ? LABELS[r] : `eye ${r}`);
+    const eyeName = r => P.eyeWord(LABELS, r);   // "Eye white", "Extra eye 1", else the game's name
 
     let state = P.blank();
     let undo = null;   // { label, state }: the last whole-tab change, for its Undo button
@@ -99,7 +99,14 @@ export default {
         state = P.fromPalette(saved, { labels: LABELS, gameSlots: GAME }); undo = null; renderAll();
       },
     });
-    const edited = () => target.markDirty();
+    // A change on the page: unsaved now, and the list of what the page can't show redrawn when an entry there is
+    // now (or no longer) one the page's own takes the place of at Save.
+    let replacedSeen = "";
+    const edited = () => {
+      target.markDirty();
+      if (state.unread.length && replacedNow() !== replacedSeen) renderUnread();
+    };
+    const replacedNow = () => state.unread.map(u => (P.replaced(state, u) ? 1 : 0)).join("");
     // curHex: the colour a slot shows with this palette: its own, else the game's, else another palette's new one.
     const curHex = (sec, i) => state[sec][i] || TABLE(sec)[i] || otherHex(sec, i);
 
@@ -127,7 +134,8 @@ export default {
       quick, target.element, startRow, styleRow,
       el("div", { style: { display: "grid", gridTemplateColumns: "minmax(260px, 360px) minmax(0, 1fr)", gap: "24px", alignItems: "start" }, class: "pal-grid" },
         el("div", { class: "card", style: { position: "sticky", top: "84px" } }, stage, picks,
-          el("label", { class: "row muted", for: "pal-vanilla" }, vanillaBox, "Show the game's original colours")),
+          el("label", { class: "row muted", for: "pal-vanilla" }, vanillaBox, "Show the game's original colours"),
+          el("p", { class: "note pal-caption", text: "In the game, paws, ears, nose and whiskers follow the coat; this drawing can't show them." })),
         el("div", { style: { display: "grid", gap: "12px", minWidth: "0" } }, tabs, tablesLine, unreadBox, panel)));
     const narrow = window.matchMedia("(max-width: 900px)");
     const applyNarrow = () => { root.querySelector(".pal-grid").style.gridTemplateColumns = narrow.matches ? "minmax(0,1fr)" : "minmax(260px, 360px) minmax(0, 1fr)"; };
@@ -245,7 +253,11 @@ export default {
       put(startRow, el("span", { class: "eyebrow", text: "Start from" }),
         el("button", { class: "chip", "data-focus": "pal:from:game", text: "Game colours",
           title: "Every change to the game's own colours and eyes goes; your new colours stay",
-          onclick: () => wholeTab("Game colours", P.gameColours(state, GAME)) }),
+          onclick: () => {
+            const eyesOutOfSight = !LABELS && state.kept.eyes !== undefined;
+            wholeTab("Game colours", P.gameColours(state, GAME));
+            if (eyesOutOfSight) toast("The file's eye colours went too, though this page can't show them until it finds the game's. Undo puts them back.");
+          } }),
         ...mods.filter(m => m.kinds.includes("palette") && m.id !== target.current).map(m => el("button", {
           class: "chip", "data-focus": `pal:from:${m.id}`, text: m.name,
           title: `${m.name}'s eyes and its changes to the game's colours; your new colours stay`, onclick: async () => {
@@ -276,6 +288,7 @@ export default {
     // ---------- what the page can't show ----------
     let unreadOpen = false;   // the list stays open (or folded) through a redraw, as it was left
     function renderUnread() {
+      replacedSeen = replacedNow();
       clear(unreadBox);
       const n = state.unread.length;
       unreadBox.hidden = !n;
@@ -284,7 +297,7 @@ export default {
         el("summary", {}, el("strong", { text: `${n} ${n === 1 ? "entry" : "entries"} this page can't show` }),
           el("span", { class: "muted", text: "kept in the file as written until you remove them" })),
         el("ul", { class: "notes" }, ...state.unread.map((u, i) => el("li", { class: "row" },
-          el("span", { text: P.describeUnread(u) }),
+          el("span", { text: P.describeUnread(u, state) }),
           el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove ${P.describeUnread(u)}`,
             onclick: () => { state.unread.splice(i, 1); edited(); renderUnread(); } })))));
       box.addEventListener("toggle", () => { unreadOpen = box.open; });
@@ -312,7 +325,7 @@ export default {
       svg.querySelector('[data-part="marking"]').setAttribute("fill", mark);
       svg.querySelectorAll('[data-part="sclera"]').forEach(n => n.setAttribute("fill", scl));
       svg.querySelectorAll('[data-part="lid"], [data-part="mouth"]').forEach(n => n.setAttribute("stroke", outline));
-      svg.querySelector('[data-part="whiskers"]').setAttribute("stroke", mark);
+      svg.querySelector('[data-part="whiskers"]').setAttribute("stroke", outline);   // from the coat, as the game's follow it
       setIris("irisL", view.eyeL); setIris("irisR", view.eyeR);
     }
     function renderPicks() {
@@ -335,7 +348,7 @@ export default {
           ...theirs.map(o => [o.slot, `${o.slot} (new, from ${o.name}) · ${o.hex}`])], sec.id);
       }
       if (LABELS) {
-        const eyeOpts = LABELS.slice(1).map((l, i) => [i + 1, `${l}${state.eyes[i + 1] ? " (changed)" : ""}`]);
+        const eyeOpts = LABELS.slice(1).map((l, i) => [i + 1, `${eyeName(i + 1)}${GROUPS.extra.includes(i + 1) ? " (from a game add-on)" : ""}${state.eyes[i + 1] ? " (changed)" : ""}`]);
         sel("pal-pick-eyeL", "Left eye", eyeOpts, "eyeL");
         sel("pal-pick-eyeR", "Right eye", eyeOpts, "eyeR");
       }
