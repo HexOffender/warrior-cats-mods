@@ -16,7 +16,7 @@ A map of the code for anyone changing it. What each part does for a player is in
 | `wcmods/templates/` | What `wcmods new --kind ...` copies |
 | `studio/` | Clan Mod Studio's front end: `index.html`, `app.js` (the shell: side bar, Apply and Play, the log drawer), `lib/wc.js` (the helpers every page uses), `sections/*.js` (one module per page) |
 | *(not in the repository)* | The player's own files: `mods/`, `wcmods.json` and `backups/`, in `%LOCALAPPDATA%\WCMods` (`config.data_dir()`, `WCMODS_DATA` to move it), so `git pull` or a new download never touches them. Older versions kept them here; `userdata.migrate` moves them out on the first start |
-| `tests/` | `unit/` (pytest, no game), `game/` (in-game, run by `agent test`), `cpp-sdk/` (a C++ test mod), `kraken/` (fixtures for the decoder), `dialogue/` (one small dialogue graph from the game: names and keys, no words) |
+| `tests/` | `unit/` (pytest, no game), `game/` (in-game, run by `agent test`), `cpp-sdk/` (a C++ test mod), `kraken/` (fixtures for the decoder) |
 | `tools/` | Generators (`make_palettes.py` for wcmods-examples, `make_kraken_fixtures.py`) and `re/`, the reverse-engineering scripts behind [reverse-engineering.md](reverse-engineering.md) |
 | `docs/` | The documentation ([docs/README.md](README.md) lists it) |
 

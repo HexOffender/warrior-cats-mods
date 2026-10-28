@@ -153,9 +153,13 @@ selftest check decodes all 412 rows, re-encodes them and rebuilds the package by
       the tags' FNames; a `TArray` is an i32 count and the items; a `TMap` is an i32 count of keys to
       remove (always 0) and an i32 count of pairs. **An enum used as a map key is its FName**
       (`EBondingTypes::Positive`, in the name map), while an enum property on its own is its byte.
-    - "Zero" is about memory, not the value: an empty FString or array the object had allocated is
-      written out (count 0) instead of being marked zero. `cooked.Empty` and `cooked.EmptyList` keep them
-      apart so the bytes come back the same.
+    - An empty value isn't always marked zero. In the dialogue graphs (all 27,900 objects), 735 empty
+      FStrings are written out (length 0) instead: the `VOEvent` of the `FParagraphValues` in bond nodes'
+      `BondingRankParagraphs` (525) and `BondingTypesParagraphs` (210) maps. Why those and not others is a
+      guess (the string had memory allocated, so its bytes weren't all zero). No empty array, map or tag
+      container is written out anywhere in them. `cooked.Empty` keeps a written-out empty string apart so
+      the bytes come back the same; `cooked.EmptyList` does the same for a container, by analogy, untested
+      on the game's data.
 - **A DataTable export:**
   - the object's own properties: an unversioned header and `RowStruct` (an i32 import index);
   - a u32 `HasGuid` = 0, then an i32 row count;
@@ -181,7 +185,8 @@ selftest check decodes all 412 rows, re-encodes them and rebuilds the package by
 
 Worked out on 2026-10-28 (build 26184573) from the game's files and its exe, without running the game.
 `wcmods/dialogue.py` reads them (`conversations(game)`); nothing writes them. The selftest's dialogue graph
-check decodes every object of every package below and writes each back byte for byte.
+check decodes every object of every package below, writes each back byte for byte, and rebuilds each
+package from the re-encoded objects byte for byte (`ZenPackage.rebuild`, as for the item table).
 
 **Where they are.** A scan of the name maps of all 11,312 `.uasset` packages (headers only,
 `tools/re/assetrefs.py names`) found the dialogue classes in 91 packages, all under `/Game/Quests`:
@@ -233,16 +238,27 @@ numbers them from the decoding above):
 - `ActivateDialogueView.RelativeOffsetDistance` (an `FFloatRange`) is set nowhere, so its encoding isn't
   known; reading refuses a node that sets it.
 
-**The words.** Every text in these graphs is empty or an FText of one of two kinds (all 27,900 objects
-read):
+**The words.** In the graphs the game plays (the 49 cats' own talks, the 30 cinematics and the 12
+templates), every text is empty or an FText of one of two kinds (all their objects read):
 - A **string table reference** (history 11) to the table `SwtStrings`, which the game loads from
-  `Strings_<language>.csv` (*Names*): 10,626 of them. The cats' own talks and the cinematics name their
-  lines this way: 294 of their 299 lines and 69 of their 74 answer buttons are keys, all of them in
-  `Strings_EN.csv`.
+  `Strings_<language>.csv` (*Names*): 10,626 of them in all 91 packages, copies included. The cats' own
+  talks and the cinematics name their lines this way: 294 of their 299 lines and 69 of their 74 answer
+  buttons are keys, all of them in `Strings_EN.csv`.
 - **Inline text** (history 0), only as placeholders: `None.Context.1` (a story template's line before
-  it's filled), `<Answer 1>`, `(Empty paragraph)`, `<Trait 1 Answer>`. In the graphs the game uses, the
-  only inline lines are `NpcDialogue_DefenderGatekeeper`'s 4 lines and 5 buttons in angle brackets
-  (`<A 1 vs 1 duel>`) and `Dialogue_Test`'s one. No line of the game's English is stored in a graph.
+  it's filled), `<Answer 1>`, `<Trait 1 Answer>`, and three angle-bracket sample lines on the Encounter
+  template's bond nodes (`<My time is ending…>`), whose `SubTag`s (`Context.1` to `3`) have rows in all 7
+  Encounter talks. Shown as they are, the only inline lines are `NpcDialogue_DefenderGatekeeper`'s 4 lines
+  and 5 buttons in angle brackets (`<A 1 vs 1 duel>`) and `Dialogue_Test`'s one. No line of the game's
+  English is stored in these graphs.
+
+The template packages' **saved copies** (above; nothing plays them) are different. Besides 1,644
+placeholders (`<Answer 1>`…, `(Empty paragraph)`, `None.ActivityTransition.1`) they hold 359 inline texts
+that aren't:
+- 340 whose words are a key's name (`QST_Gather.Apprentice.Return.End`): the keys the editor filled in,
+  stored inline. The cross-check below counts them as keys.
+- 19 copies of one English line, "I should take this back to camp fast!" (the words of
+  `QST_Gather.Apprentice.ActivityTransition.1`), in 18 of `StoryDialogue_Monologue_ActivityTransition_Template`'s
+  `BondDialogue_N` copies.
 
 **Templates, filled in as they play** ("autofill"). The story and quest graphs have no words of their own:
 the game fills each line and answer from a row of `StoryDialogues.csv` or `QuestDialogues.csv`. Read from
@@ -252,18 +268,39 @@ the code (addresses for build 26184573):
   (`FSwtQuestStoryDialoguesStruct`) is the columns: `Score`, `ClanBonding`, `Talker`, `Trait`, `VoiceOver`,
   `StringKey`, `DebugText`. Lookups: `0x1416B2F30` (story), `0x1416B3240` (quest).
 - **A row's words** (`0x14162DC10`): `FText::FromStringTable("SwtStrings", StringKey)` through the game's
-  text-by-key helper `0x1412816E0` (264 callers). When `StringKey` is empty the row's `DebugText` is used
-  instead, and also when the text comes back equal to a fixed text or empty (which fixed text wasn't
-  traced; presumably the missing-entry one, so a missing key shows `DebugText`).
+  text-by-key helper `0x1412816E0` (264 callers; an empty table name means `SwtStrings`). When `StringKey`
+  is empty the row's `DebugText` is used instead (made into a text by `0x141A14CC0`). So it is when the looked-up text's
+  display string is empty or equals `<MISSING STRING TABLE ENTRY>`: `0x141A19320` returns a function-static
+  `FString` made from that UTF-16 literal (at `0x147E99740`), and `0x14162DC10` compares against it. So a key
+  `Strings_EN` hasn't got shows the row's `DebugText`.
 - **Quest talks:** `0x1416632B0` walks a `QuestDialogue` from its roots. For each node with
   `bAllowAutoFill` (`0x1416648D0`) it clears `Paragraph` and `VOEvent`, then looks up the row
   `<prefix>.<AutoFillSuffix>` and sets `Paragraph` from it, `TalkingSource` from `Talker` and `VOEvent` from
-  `VoiceOver`. For each edge (`0x141663B70`) it sets the button from `<prefix>.<edge's AutoFillSuffix>`
-  and `TraitType`, `Score` and `ClanBonding` from the row. An answer still empty gets
-  `STR_QUEST_DIALOGUE_ACCEPT`/`DECLINE`, or the key `<prefix>.Context.Answer.<Trait>.Short`. The title
-  comes from `%s.Title`, `%s.Title_Alternative_1`… (`0x141662BB0`). It's called from five places in the
-  quest code (`0x14164FA9A`…). The prefix is the quest's, by the rows and the saved copies (below) its tag
-  and rank, `Quest.Procedural.Survival.Gather.Apprentice`; where the code takes it from wasn't traced.
+  `VoiceOver`. The title comes from `%s.Title`, `%s.Title_Alternative_1`… (`0x141662BB0`). The walk is
+  called from five places in the quest code (`0x14164FA9A`…).
+- **A quest answer** (`0x141663B70`, for each edge): nothing for a plain edge (`EdgeType` 0) or with
+  `bAllowAutoFill` off. Otherwise it clears the button's text and, when the prefix isn't empty, formats
+  `%s.%s` from the prefix and the edge's `AutoFillSuffix`, even when the suffix is empty. That row
+  (`0x141662A50`: the lookup `0x1416B3240`, then the row's words as above) sets `TraitType`, `Score` and
+  `ClanBonding` when it exists, and the button when its text isn't empty or the missing-entry text. A
+  button still empty then gets, as the code reads:
+  - with `TraitType` 0: `STR_QUEST_DIALOGUE_DECLINE` for `EdgeType` 4, `STR_QUEST_DIALOGUE_ACCEPT` for
+    the others;
+  - with a trait (and a `QuestDialogue` graph): `<AutoFillPrefix>.Context.Answer.<Trait>.Short` when the
+    edge's end node is a `QuestDialogueActionResolveAcceptQuest` (`0x1416642E0` is that cast), else
+    `<AutoFillPrefix>.Return.Answer.<Trait>.Short` (`0x149AE6110`), the trait named by `ECharacterTrait`,
+    and only if that key isn't missing.
+
+  `AutoFillPrefix` is read from graph+0x110, where the class dump (`CXXHeaderDump/SwtQuest.hpp`) puts
+  `UQuestDialogue::AutoFillPrefix`. It holds a *key* prefix: the 6 saved copies that set it have
+  `QST_SideQuest.WinFights`, and `QST_SideQuest.WinFights.Context.Answer.Brave.Short` is a `Strings_EN`
+  key. The three templates leave it empty as cooked; whether the game sets it before the fill wasn't traced.
+- **The row prefix** isn't `AutoFillPrefix`. The walk and the title read it from graph+0x120, a 16-byte
+  field after the class's last reflected property (`UQuestDialogue` is 0x130 bytes), as an optional string:
+  nothing is filled when its capacity is -1 (that it's a `TOptional<FString>` is a guess from that test).
+  By the rows and the saved copies (below) it's the quest's tag and rank,
+  `Quest.Procedural.Survival.Gather.Apprentice`; who sets it wasn't traced (the five callers take the graph
+  from a virtual call).
 - **Story talks:** a story tag's row is `<tag>.<SubTag>`. A `ResolveBondAnswer` node (`0x141672870`)
   joins its graph's `DialogueTag` and its `SubTag` (`%s.%s`) and takes that row's words; with no such row
   it keeps the joined key as its text. The code that names the variant rows (`0x141673230`…) uses
@@ -287,16 +324,28 @@ the code (addresses for build 26184573):
 - QuestDialogues.csv's rows fall into 72 quest prefixes. Each one's suffixes fit exactly one template's
   `AutoFillSuffix`es: 51 the main quest one, 12 the unique, 9 the side quest one. Left out are 78 extra
   titles (`Title2`, `Title3`, the alternatives) and 50 `Context.End` rows no template asks for.
-- 167 of the 556 saved quest copies carry keys the editor filled in. Of their 2,064 lines and answers
-  that have a row, 1,890 carry the row's `StringKey`. For 170 of the other 174, the copy's key isn't in
+- 167 of the 556 saved quest copies carry keys the editor filled in, as table references or as inline
+  text whose words are the key's name (*The words*, above). Of their 2,064 lines and answers that have a
+  row, 1,890 carry the row's `StringKey`. For 170 of the other 174, the copy's key isn't in
   `Strings_EN.csv` while the row's is (`QST_Gather.Apprentice.Response.Brave` against
   `…Context.Response.Brave`); for 4, neither is. That fits the game showing the row's key, not a key
   baked into a graph.
-- `DebugText` is an old copy: for 2,264 of the 3,985 rows whose key is in `Strings_EN.csv`, the words
-  differ. The aging leader's first answer is "I agree." in `DebugText` and "Of course it will!" in
-  `Strings_EN.csv`. This difference is the in-game check (in *verified.md*).
-- 90 keys the conversations show aren't in `Strings_EN.csv`: the Escort and Recruit quests' (66 lines,
-  18 answers), whose rows exist. By the code above, the game would show their `DebugText`.
+- `DebugText` is two different things:
+  - In `StoryDialogues.csv` it's an older English copy: of the 2,930 rows whose key is in
+    `Strings_EN.csv`, 1,210 have different words there. The aging leader's first answer is "I agree." in
+    `DebugText` and "Of course it will!" in `Strings_EN.csv`. This difference is the in-game check (in
+    *verified.md*).
+  - In `QuestDialogues.csv` it's the key itself, in all 1,214 rows (`QST_Gather.Apprentice.Context.1`).
+    So a quest line whose key is missing shows that raw key, not words. (With the 1,055 quest rows whose
+    key is in `Strings_EN.csv`, that makes 2,265 rows whose `DebugText` differs from the words shown.)
+- 90 keys the conversations show aren't in `Strings_EN.csv`, all with rows:
+  - 84 are the Escort and Recruit quests' (Escort Apprentice, Warrior, Deputy and Leader, Recruit Deputy and
+    Leader): 14 each, 11 lines and 3 answers (their titles' keys are missing too). By the code above, the
+    game would show those raw keys (`QST_Escort.Apprentice.Context.1`), since their `DebugText` is the key.
+  - 6 are the resentful elder's StarClan talk's variants,
+    `QST_Story.Monologue.Interaction.TheResentfulElder.StarClan.Context.1` to `3`, each `.CloseBond` and
+    `.Friend`. Their rows' `DebugText` is English ("It is one thing to regale others with dark tales…"),
+    which the game would show. That talk has no row for its lines outside those two bond ranks.
 - 8 story tags the cats' graphs play have no rows (`…Filler.Ivypool.StarClan`, …). One row is used by
   nothing (`…Filler.Rescue.Unique.3`).
 
@@ -334,7 +383,7 @@ line per bond type. The WindClan leader's rank-up button is ThunderClan's key
 
 `conversations(game)` gives this as the conversation
 `story:Gameplay.Dialogue.Story.Short.TheAgingLeader.Main.1`: 17 lines in reading order (16 the first time,
-`End` after), each with its key, English, row and speaker; the answers with their trait, score, clan bonding
+`End` after), each with its key, English (and `fallback`), row and speaker; the answers with their trait, score, clan bonding
 and the line they lead to; and `used_by` `npc:NpcDialogue_TheAgingLeader`.
 
 **Totals** (`conversations()` on build 26184573, 2 s):
@@ -353,7 +402,10 @@ and the line they lead to; and `used_by` `npc:NpcDialogue_TheAgingLeader`.
 - **The card can show:** each conversation's lines in order, who says each, the answers and their trait,
   score and clan bonding, and which cat's graph plays it under which quest state (`plays`, `used_by`).
 - **The card must not rely on:**
-  - The words in `DebugText`: they're shown only when the key is missing.
+  - The words in `DebugText`: they're shown only when the key is missing, and in `QuestDialogues.csv`
+    they're the key itself. `conversations()` marks each line a `DebugText` stands in for with `fallback`:
+    `"debug"` with its words, or `"key"` with no English when the game shows the raw key (the Escort and
+    Recruit quests).
   - Which variant a Filler or bond line shows: the player's bond or rank picks it at run time.
   - Which quest template a quest uses: it's matched by the quest's rows, and the game picks by the quest's
     flow type, which wcmods doesn't read.
@@ -1846,9 +1898,11 @@ The rules of play are in [mechanics/](mechanics/README.md):
   - Does a dialogue answer's `Score` go to your bond with that cat?
   - Do levels stop at a rank's cap until the rank-up quest?
   - **Dialogue graphs** (*Dialogue graphs*):
-    - Which quest template a quest plays (its `EQuestFlowDialogueTypes`), and where a quest's fill-in prefix
-      (`Quest.Procedural.Survival.Gather.Apprentice`) comes from (the graph's non-reflected string at
-      +0x120). The quest graphs (`QuestGraphProcedural_*`, `QuestLine_Main`) weren't decoded.
+    - Which quest template a quest plays (its `EQuestFlowDialogueTypes`), and who sets a quest's row prefix
+      (`Quest.Procedural.Survival.Gather.Apprentice`: the graph's non-reflected string at +0x120, read by the
+      walk and the title) and whether anything sets the graph's `AutoFillPrefix` (+0x110, a key prefix that
+      only a trait answer's fallback key uses) before the fill. The quest graphs (`QuestGraphProcedural_*`,
+      `QuestLine_Main`) weren't decoded.
     - Who plays the 42 story talks no cat's graph names (a level's `StoryDialoguesOnInteract`?), and the
       8 tags the graphs name that have no rows.
     - How `ActivateDialogueView.RelativeOffsetDistance` (an `FFloatRange`) is stored; nothing sets it.

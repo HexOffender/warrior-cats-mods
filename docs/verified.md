@@ -18,7 +18,7 @@ folders. `python wcmods.py selftest` checks, against your install:
 - **Cooked assets:** the item table's 412 rows read and write back byte-for-byte; texture copies get
   the IDs the game's own packages have; the accessory look lists read back with new looks added; every
   node and edge of the game's 91 dialogue graph packages (27,900 objects) decodes by its class and writes
-  back byte-for-byte.
+  back byte-for-byte, and each package rebuilt from them is the game's byte-for-byte.
 - **Animations:** all 757 of the game's animation sequences read and write back byte-for-byte (519 in ACL,
   229 in Unreal's per-track codec, 9 in its constant-key one) and decode, the ACL ones with their own
   skeleton's pose; each animal's template takes new keys and reads them back (the ACL ones moved to the
@@ -266,8 +266,16 @@ Fawnstar, as a player reported it showing "Cat 1"):
     gather quest (`Quest.Procedural.Survival.Gather.Apprentice`): answer Brave. The reply should be the
     words of `QST_Gather.Apprentice.Context.Response.Brave`. The saved graph copy names
     `QST_Gather.Apprentice.Response.Brave`, which `Strings_EN` hasn't got.
-  - **A missing key shows the row's `DebugText`.** An Escort or Recruit quest (their 11 keys each aren't in
-    `Strings_EN`) should show the `DebugText` words, if the game ever offers one.
+  - **A missing key shows the row's `DebugText`, which for a quest is the raw key.** The Escort and
+    Recruit quests' 84 keys (14 per quest: 11 lines and 3 answers) and their titles' aren't in `Strings_EN`, and
+    QuestDialogues.csv's `DebugText` is the key itself. So an Escort or Recruit quest, if the game ever
+    offers one, should show raw keys on screen (`QST_Escort.Apprentice.Context.1`), not words.
+  - **A missing story key shows English `DebugText`.** The resentful elder's StarClan talk
+    (`Gameplay.Dialogue.Story.Monologue.Interaction.TheResentfulElder.StarClan`, which
+    `NpcDialogue_TheResentfulElder` plays) has rows only for its `.Friend` and `.CloseBond` variants, and their
+    six keys aren't in `Strings_EN`. Talking with him in StarClan at Friend or CloseBond should show the row's
+    `DebugText` ("It is one thing to regale others with dark tales of the past…" first). At another bond
+    rank, what shows is unknown (it has no row).
   - **A cat's own talk and a cinematic show the key named in their graph.** The rank-up to WindClan leader
     (`Gameplay.Narrative.RankUp.WindClan.Leader`) shows the words of
     `STR_Script.WindClan.Deputy.Leader.Promotion.Narrator.1` first. Its one button is ThunderClan's key,
@@ -277,5 +285,24 @@ Fawnstar, as a player reported it showing "Cat 1"):
     with that cat. Check with two cats of different bonds.
   - **The gatekeeper's angle-bracket lines** (`NpcDialogue_DefenderGatekeeper`, `<A 1 vs 1 duel>`): are
     they what the game shows, if that giver is ever met? They're inline, so a text edit can't change them.
+  - **Playing a conversation by tag** (the RE roadmap's step 9, untried). On the Sandbox mode cat (save slot
+    4) with a backup, near a studio cat, run each call once from the Console page:
+
+    ```lua
+    local seq, me = Game.manager("sequencer"), Game.player()
+    local npc = Game.npcs.all()[1]
+    local cat = npc and npc:actorOrNil()
+    if seq and me and cat then
+        seq:PlaySequenceDialogue(Game.tag("Gameplay.Dialogue.Story.Short.TheAgingLeader.Main.1"), cat, me, false, false)
+    end
+    ```
+
+    and the same with the stem `Gameplay.Narrative.RankUp` and both flags `true` (they add your clan's and
+    your rank's leaf tags). By its name and rows, `DT_QuestSequenceDialogues` is the table
+    `PlaySequenceDialogue` looks the tag up in (a guess: the call's code wasn't read). Its 30 rows are the
+    cinematics' tags (`Gameplay.Narrative.RankUp.WindClan.Leader`, `…Prophecy.Intro.ThunderClan`…) and no
+    story tag. So the first call is expected to play nothing, and the second the rank-up cinematic for your
+    clan and rank. If either opens the game's dialogue box with the cat and its answers work, a Questlines
+    step "Play the conversation" exists without writing graphs.
 
 After a game update, run `selftest` before installing again ([updating.md](updating.md)).

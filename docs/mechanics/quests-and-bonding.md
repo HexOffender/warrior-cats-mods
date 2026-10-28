@@ -74,7 +74,9 @@ notes, *Dialogue graphs*):
   its template by its kind: Short and Long the first time and `End` after, Interaction 1 to 3 on the first
   three talks, Filler, Encounter or Activity Transition.
 - Each line is the row `<tag>.<SubTag>` (story) or `<quest>.<AutoFillSuffix>` (quest). Its `Talker` says
-  who speaks and its `StringKey` the words (`DebugText` only when the key is missing).
+  who speaks and its `StringKey` the words. `DebugText` shows only when the key is missing: older English
+  in `StoryDialogues.csv`, the key itself in `QuestDialogues.csv` (so the Escort and Recruit quests, whose
+  keys `Strings_EN` lacks, would show raw keys).
 - An answer button takes its `Trait`, `Score` and `ClanBonding` from its row. So the scores above are
   the ones the game puts on the buttons; what it does with them after is still the open question below.
 - A cat's own talks are graphs the quest sublevels place: one root per quest state (`Quest.Main.1.0`,
