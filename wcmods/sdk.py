@@ -117,6 +117,7 @@ class BuildContext:
         self.ue4ss_shared = {}  # Lua module name -> (text, section)
         self.save_ops = []      # [{"op": ..., "section": ..., ...}]
         self.warnings = []
+        self.left_out = []      # parts of a mod's file not finished yet, left out while the rest goes in (leave_out)
         self.notes = {}
         self.current = None
         self.mods = []          # the enabled mods in priority order (set by the build)
@@ -138,6 +139,15 @@ class BuildContext:
 
     def warn(self, msg):
         self.warnings.append(f"{self.current}: {msg}" if self.current else msg)
+
+    def leave_out(self, mod_id, part, name, why, said=None):
+        """Leave one part of a mod's file out of the build because it isn't finished yet (an item with no
+        description), while the rest of the file goes in. Warned as "<mod>: <part>: <said>, so it's left out of
+        the game", and listed in left_out as {"section", "mod", "id", "name", "why"} for the studio's save, which
+        says it as a note by name ("Moon Herb (no description)"), not as a problem. why: a few words ("no
+        description"); said: the warning's sentence ("it has no description"), why when not given."""
+        self.left_out.append({"section": self.current, "mod": mod_id, "id": part, "name": name or part, "why": why})
+        self.warn(f"{mod_id}: {part}: {said or why}, so it's left out of the game")
 
     def note(self, key, value):
         """Attach information to this build's manifest under the current section."""

@@ -318,6 +318,11 @@ body.help-page .help-body { padding: 0; }
 /* Under the Editing mod bar: what keeps a saved file out of the game, and the choice when switching with unsaved changes. */
 .problems { border: 1px solid var(--edge-bad); background: color-mix(in srgb, var(--bad) 8%, var(--surface)); border-radius: 12px; padding: 10px 14px; }
 .switch-ask { gap: 8px; }
+/* wc.captureKey's dialog: why a key can't be used, and the box where a click or the wheel picks a mouse button. */
+.capture-why { color: var(--ink); padding-left: 10px; border-left: 3px solid var(--changed); margin: 0; }
+.capture-zone { border: 2px dashed var(--field); border-radius: 12px; padding: 18px; text-align: center; color: var(--muted); user-select: none; cursor: crosshair; }
+.capture-zone:hover { border-color: var(--accent); }
+@media (forced-colors: active) { .capture-why { border-left: 3px solid CanvasText; } }
 .topbar button.chip:hover { border-color: var(--accent); }
 .toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 8px; z-index: 30; }
 .toast { background: var(--ink); color: var(--bg); border-left: 4px solid var(--accent); padding: 8px 14px; border-radius: 10px; font-size: 0.95rem; box-shadow: 0 8px 24px rgba(0,0,0,.25); max-width: min(560px, calc(100vw - 32px)); display: flex; gap: 10px; align-items: start; }

@@ -106,6 +106,43 @@ test("choosing an effect brings who it's for and when from its herb, and the sam
   assert.deepEqual(it, { id: "MoonHerb", like: "MediumHealingHerb" });
 });
 
+test("What it does offers one choice a herb, so the team's herbs are there too", () => {
+  const EFFECTS = ["Gameplay.Effect.Consumable.Buff.Strength.1", "Gameplay.Effect.Consumable.Health.2", "Gameplay.Effect.Consumable.Fly.1"];
+  assert.deepEqual(m.effectChoices(HERBS, EFFECTS), [
+    { value: "ThistlePouch", text: "Whole team +50% Strength for the fight (Juniper Poultice)" },
+    { value: "MediumHealingHerb", text: "Heals 50 health (Marigold Petal)" },
+    { value: "HealingHerbPouch", text: "Heals the whole team 50 health (Wintergreen Berries)" },
+    { value: "Gameplay.Effect.Consumable.Fly.1", text: "Fly 1" },
+    { value: "SmallHealingHerb", text: "Heals 25 health (Horsetail Stalks)" },
+    { value: "NewOne", text: "Mystery Moss's" }]);
+  // Choosing the team's herb brings its who-for, and the item reads back as that choice, not Marigold Petal.
+  const it = { id: "MoonHerb", like: "SmallHealingHerb" };
+  m.chooseEffect(it, "HealingHerbPouch", HERBS);
+  assert.deepEqual([it.effect, it.target, it.type], ["Gameplay.Effect.Consumable.Health.2", "OwnerTeam", "Health"]);
+  assert.equal(m.effectChoice(it, HERBS), "HealingHerbPouch");
+  m.chooseEffect(it, "MediumHealingHerb", HERBS);
+  assert.equal(m.effectChoice(it, HERBS), "MediumHealingHerb");
+  assert.equal(m.effectChoice({ effect: "Gameplay.Effect.Consumable.Health.2" }, HERBS), "MediumHealingHerb", "written by hand: the herb for you");
+  assert.equal(m.effectChoice({ effect: "Gameplay.Effect.Consumable.Fly.1" }, HERBS), "Gameplay.Effect.Consumable.Fly.1");
+  assert.equal(m.effectChoice({}, HERBS), "");
+  // An effect no herb has is kept as it is.
+  m.chooseEffect(it, "Gameplay.Effect.Consumable.Fly.1", HERBS);
+  assert.deepEqual(it, { id: "MoonHerb", like: "SmallHealingHerb", effect: "Gameplay.Effect.Consumable.Fly.1" });
+});
+
+test("renameItem: the mod's other items' recipes follow a material's new id, in the same place", () => {
+  const stone = { id: "NewHerb", kind: "material", _new: true };
+  const herb = { id: "MoonHerb", recipe: { Dandelion: 2, NewHerb: 1, Moss: 3 } };
+  const other = { id: "Collar", recipe: { Moss: 1 } };
+  const items = [stone, herb, other, { id: "Plain" }];
+  m.renameItem(items, stone, "Moonstone");
+  assert.equal(stone.id, "Moonstone");
+  assert.deepEqual(Object.entries(herb.recipe), [["Dandelion", 2], ["Moonstone", 1], ["Moss", 3]]);
+  assert.deepEqual(other.recipe, { Moss: 1 });
+  m.renameItem(items, stone, "Moonstone");
+  assert.deepEqual(Object.keys(herb.recipe), ["Dandelion", "Moonstone", "Moss"], "the same id again changes nothing");
+});
+
 test("whoAndWhen and badgeWords say it in words", () => {
   assert.equal(m.whoAndWhen({}, HERBS[1]), "Used anywhere, for you");
   assert.equal(m.whoAndWhen({}, HERBS[3]), "Used in fights only, for your whole team; it wears off when the fight ends");

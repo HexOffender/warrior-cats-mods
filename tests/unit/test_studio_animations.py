@@ -38,6 +38,22 @@ def kit_file(path, seconds=None):
     return str(path)
 
 
+def test_the_save_check_says_a_game_sequence_that_isnt_there(studio, fake_game):
+    """A misspelled game sequence is left out at the save, by name, as a note (the others still go in)."""
+    from types import SimpleNamespace
+    make_mod(studio, "mine")
+    cat = "Wrc/Content/Art/Characters/CatMaster/Animations/"
+    studio.ctx._game = SimpleNamespace(io=SimpleNamespace(files=[cat + "A_CatMaster_Yawn_1.uasset"]))
+    good = {"id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "emote": True}
+    typo = {"id": "Stretch", "name": "Big stretch", "game": "A_CatMaster_Strech_1"}
+    r = call(studio, "PUT", "mods/mine/file/animations.json", {"text": json.dumps({"animations": [good, typo]})})
+    assert r["problems"] == []
+    assert r["left_out"] == [{"id": "Stretch", "name": "Big stretch", "why": "the game has no sequence A_CatMaster_Strech_1 for cats"}]
+    # One saved before anything was chosen for it to play: the same note.
+    r = call(studio, "PUT", "mods/mine/file/animations.json", {"text": json.dumps({"animations": [good, {"id": "New", "name": "New"}]})})
+    assert r["problems"] == [] and r["left_out"] == [{"id": "New", "name": "New", "why": "nothing chosen to play yet"}]
+
+
 def test_uploads_never_overwrite_another_animations_file(toy, tmp_path):
     folder = make_mod(toy, "mine")
     q = {"name": "Wave", "file": "wave.glb", "for": "cat"}

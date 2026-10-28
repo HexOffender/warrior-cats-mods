@@ -333,7 +333,7 @@ Game.anims.stop(npc)
 | `Game.anims.play(who, id, opts)` | Play an animation on `who` (an actor or a `Game.cat()`; your cat when nil): a mod's by its id (`"<mod id>/<id>"`), or one of the game's sequences by its path. `opts`: `loop`, `speed`, `blend` (seconds in and out); a mod's animation brings its own. Returns the montage playing it, or nil and why (`"Swim is for cat, not mouse"`) |
 | `Game.anims.stop(who, blend)` | Stop what `play` started on it, blending out; true if something stopped |
 | `Game.anims.playing(who)` | The id of what `play` started on it, while it plays; else nil |
-| `Game.anims.list()` | Every mod's animation: `{["my-mod/Wave"] = {name, kind, path, loop, speed, blend, seconds, emote, key}}`. `path` is the sequence it plays: the mod's own (`/Game/WCMods/my-mod/A_Wave.A_Wave`), or one of the game's for an animation that uses the game's own (`"game"` in animations.json: `/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Yawn_1.A_CatMaster_Yawn_1`) |
+| `Game.anims.list()` | Every mod's animation: `{["my-mod/Wave"] = {name, kind, path, loop, speed, blend, seconds, emote, key}}`. `path` is the sequence it plays: the mod's own (`/Game/WCMods/my_mod/A_Wave.A_Wave`: a - in the mod's id is a _ in the path), or one of the game's for an animation that uses the game's own (`"game"` in animations.json: `/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Yawn_1.A_CatMaster_Yawn_1`) |
 | `Game.anims.kind(who)` | What it is, by its mesh: `"cat"`, `"mouse"`, `"bird"`... (nil for others) |
 | `cat:animate(id, opts)`, `cat:stopAnimation(blend)` | The same on a `Game.cat()` |
 

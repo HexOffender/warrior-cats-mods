@@ -32,19 +32,35 @@ export function needBrowser(browserPath) {
 
 // The end-to-end files take turns: node --test runs files side by side, and two studios with a Chromium each
 // make a small machine slow enough for the tests' waits to run out. Each file holds this lock from its `before`
-// to its `after` (takeTurn() resolves to the release). A lock left by a run that died is taken over.
-export async function takeTurn() {
-  const lock = path.join(os.tmpdir(), "wc-studio-e2e.lock");
+// to its `after` (takeTurn() resolves to the release); the holder touches it every few seconds while it holds
+// it. A lock that's stale is taken over: its process is gone, it's empty (written by a run that died before it
+// said who it was), or nobody has touched it for STALE_MS (a run that hangs). One that stays held longer than
+// `wait` ms (WC_E2E_LOCK_WAIT_MIN minutes, 20 by default) gives up with an error that names the lock.
+export const LOCK = path.join(os.tmpdir(), "wc-studio-e2e.lock");
+const STALE_MS = 10 * 60 * 1000, TOUCH_MS = 10 * 1000, EMPTY_MS = 5 * 1000;
+export async function takeTurn({ lock = LOCK, wait = Number(process.env.WC_E2E_LOCK_WAIT_MIN || 20) * 60 * 1000 } = {}) {
   const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+  const end = Date.now() + wait;
   for (;;) {
     try {
       fs.writeFileSync(lock, String(process.pid), { flag: "wx" });
-      return () => { try { if (fs.readFileSync(lock, "utf8") === String(process.pid)) fs.rmSync(lock); } catch (e) { /* gone */ } };
+      const touch = setInterval(() => { try { const now = new Date(); fs.utimesSync(lock, now, now); } catch (e) { /* gone */ } }, TOUCH_MS);
+      touch.unref();
+      return () => {
+        clearInterval(touch);
+        try { if (fs.readFileSync(lock, "utf8") === String(process.pid)) fs.rmSync(lock); } catch (e) { /* gone */ }
+      };
     } catch (e) {
       if (e.code !== "EEXIST") throw e;
-      let pid = 0;
-      try { pid = Number(fs.readFileSync(lock, "utf8")); } catch (e2) { /* being written or removed */ }
-      if (pid && !alive(pid)) { try { fs.rmSync(lock); } catch (e2) { /* another took it over */ } continue; }
+      let text = null, age = 0;
+      try { text = fs.readFileSync(lock, "utf8").trim(); age = Date.now() - fs.statSync(lock).mtimeMs; } catch (e2) { continue; /* just removed */ }
+      const pid = Number(text);
+      const stale = (text === "" && age > EMPTY_MS) || (pid > 0 && !alive(pid)) || (text !== "" && !(pid > 0)) || age > STALE_MS;
+      if (stale) { try { fs.rmSync(lock); } catch (e2) { /* another took it over */ } continue; }
+      if (Date.now() > end) {
+        throw new Error(`waited ${wait >= 60000 ? `${Math.round(wait / 60000)} minutes` : `${Math.round(wait / 1000)} s`} for the end-to-end tests' lock ${lock}, held by process ${text || "(none written)"}; ` +
+          "if no other test run is going, delete that file");
+      }
       await sleep(200);
     }
   }

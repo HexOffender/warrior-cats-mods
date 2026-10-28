@@ -11,12 +11,12 @@ const dom = install();
 function fresh() {
   return {
     mods: [{ id: "a", name: "Mod A", enabled: true, kinds: ["names"], problem: null }, { id: "b", name: "Mod B", enabled: false, kinds: [], problem: null }],
-    files: { "a/names.json": { prefixes: { remove: ["Moon"] } } }, problems: [], puts: [], patches: [],
+    files: { "a/names.json": { prefixes: { remove: ["Moon"] } } }, problems: [], left: [], puts: [], patches: [],
   };
 }
 function routes(state) {
   const file = id => () => state.files[`${id}/names.json`] ? { exists: true, text: JSON.stringify(state.files[`${id}/names.json`]) } : { exists: false, text: null };
-  const put = id => b => { state.files[`${id}/names.json`] = JSON.parse(b.text); state.puts.push(id); return { saved: "names.json", requires: [], problems: state.problems }; };
+  const put = id => b => { state.files[`${id}/names.json`] = JSON.parse(b.text); state.puts.push(id); return { saved: "names.json", requires: [], problems: state.problems, left_out: state.left }; };
   const patch = id => b => { state.patches.push({ id, body: b }); return {}; };
   const out = {
     "GET /mods": () => state.mods.map(x => ({ ...x })),
@@ -198,6 +198,32 @@ test("what keeps the saved file out of the game stays under the bar until a save
   assert.equal(t.problems.textContent, "");
 });
 
+test("what a save left out until it's finished is a plain note by name, and the mod is still turned on", async () => {
+  const t = await setUp();
+  t.state.mods[0].enabled = false;
+  t.state.left = [{ id: "MoonHerb", name: "Moon Herb", why: "no description" }, { id: "Collar", name: "Collar", why: "nothing of its own yet" }];
+  t.target.markDirty();
+  await t.target.save();
+  const note = t.target.element.querySelector(".left-out");
+  assert.equal(t.problems.hidden, true, "not a problem");
+  assert.equal(note.hidden, false);
+  assert.equal(note.getAttribute("role"), "status");
+  assert.equal(note.textContent, "Saved. Left out of the game until finished: Moon Herb (no description); Collar (nothing of its own yet).");
+  assert.deepEqual(t.state.patches, [{ id: "a", body: { enabled: true } }], "the rest of the file goes in: the mod is switched on");
+  assert.equal(t.target.dirty, false);
+  await tick(80);
+  assert.match(dom.byId.toasts.textContent, /Saved and turned on Mod A\. Left out of the game until finished: Moon Herb \(no description\); Collar/);
+  // Both at once: the problem in red, the note beside it; a save with neither clears both.
+  t.state.problems = ["names.json: 'hats' should be one of prefixes, suffixes", "another"];
+  await t.target.save();
+  assert.equal(t.problems.textContent, "Saved, but it can't go in the game yet: names.json: 'hats' should be one of prefixes, suffixes; another");
+  assert.equal(note.hidden, false);
+  t.state.problems = [];
+  t.state.left = [];
+  await t.target.save();
+  assert.ok(t.problems.hidden && note.hidden && note.textContent === "");
+});
+
 test("whether to turn the mod on after a save is read afresh, and a broken mod is left alone", async () => {
   const t = await setUp();
   // The bar's list says "a" is on; by the time of the save another page switched it off.
@@ -230,6 +256,10 @@ test("closing the page with unsaved changes is asked about; installedEvent waits
   assert.equal(staying.defaultPrevented, false);
   t.wc.bus.emit("installed", {});
   assert.equal(heard, 2);
+  // The event carries the task's route: a check of the mods (Check my mods) put nothing in the game.
+  assert.equal(t.wc.onlyChecked({ sections: {}, task: "/build" }), true);
+  assert.equal(t.wc.onlyChecked({ sections: {}, task: "/install" }), false);
+  assert.equal(t.wc.onlyChecked(null), false);
 });
 
 const REFUSED = { ok: false, status: 403, statusText: "Forbidden", json: async () => ({ error: "missing or wrong studio token; reload the page" }) };

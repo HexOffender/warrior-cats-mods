@@ -18,7 +18,9 @@
 //                  browser asks before the page closes, switching mods and importing a file ask first (save
 //                  them, go on without, or stay), and refresh() re-reads the mod list without reloading the
 //                  file while the page has unsaved changes. What would keep the saved file out of the game
-//                  shows under the bar until the next save that's fine.
+//                  (the save's `problems`) shows under the bar until the next save that's fine; what the save
+//                  left out until it's finished (its `left_out`, an item with no description yet) is a plain
+//                  note there instead, by name, and the mod is still turned on (leftSaid says it).
 //                  A save doesn't read the file back; onSaved(value) hears what was saved, and
 //                  settleNew(list, saved) keeps the ids of the new entries it held.
 //   installedEvent(target, fn)   bus.on("installed", fn) that skips fn while target has unsaved changes: for
@@ -27,7 +29,8 @@
 //   captureKey({title, pad, reserved, ...})   the dialog that asks for a key or a controller button (below);
 //                  resolves to the game's name for it, or null when cancelled.
 //   bus            events between pages: "mods-changed" (a mod was made, changed, switched or removed),
-//                  "installed" (an Apply, Play or Check finished; the manifest), "sections-changed" (the
+//                  "installed" (an Apply, Play or Check finished; the manifest, its `task` the route: "/build"
+//                  for Check my mods, which put nothing in the game: onlyChecked), "sections-changed" (the
 //                  side bar's pages may have changed), "focus" (the window came back).
 //   input          the game's names for keys and buttons (lib/keys.js: keyFromEvent, keyLabel...).
 //   el, clear, toast, announce, confirmButton, codePanel, copy, color, getPath, saveFile, docLink.
@@ -333,6 +336,9 @@ export const bus = {
 export function installedEvent(target, fn) {
   return bus.on("installed", d => { if (!target || !target.dirty) fn(d); });
 }
+// Whether an "installed" event's result is a check of the mods (Check my mods: /build), which put nothing in the
+// game, rather than an Apply or Play: a page that says what's in the game leaves it out.
+export const onlyChecked = result => !!(result && result.task === "/build");
 // Open a page of the guide (docs/guide/<page>.md) in the help panel; with no page, the guide's index.
 export function openHelp(page = "") {
   bus.emit("help", page);
@@ -400,6 +406,10 @@ export function settleNew(list, saved) {
   for (const x of list) if (x && x._new && ids.has(x.id)) delete x._new;
 }
 
+// A save's left_out (the parts of the file left out of the game until they're finished, by name), in words:
+// "Left out of the game until finished: Moon Herb (no description); Wave (nothing chosen to play yet)."
+export const leftSaid = left => `Left out of the game until finished: ${left.map(x => `${x.name || x.id} (${x.why})`).join("; ")}.`;
+
 // ---------- which mod a section edits ----------
 // Renders "Editing mod: [select] [New mod] [Save]". onLoad(obj|null, modId) fires when the target changes;
 // call target.save(obj) to write the file. Every page starts on the mod last chosen on any page, else on one
@@ -427,10 +437,12 @@ export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
     el("span", { class: "lbl", text: "Editing mod" }), select, newBtn, newBox, el("span", { style: { flex: "1" } }), status, saveBtn);
   // What would keep the saved file out of the game: said under the bar until a save that's fine.
   const problems = el("div", { class: "problems", role: "alert", hidden: true });
+  // What the save left out of the game until it's finished (an item with no description yet): a note, not a problem.
+  const leftNote = el("p", { class: "note left-out", role: "status", hidden: true });
   // The choice when switching mods with unsaved changes.
   const ask = el("div", { class: "banner switch-ask", role: "group", "aria-label": "Unsaved changes", hidden: true });
   const shareBox = share ? shareCard() : null;
-  const box = el("div", { class: "stack" }, bar, problems, ask, shareBox ? shareBox.element : null);
+  const box = el("div", { class: "stack" }, bar, problems, leftNote, ask, shareBox ? shareBox.element : null);
   const me = { element: box, file };   // in `unsaved` while this bar has unsaved changes
 
   const nameOf = id => (mods.find(m => m.id === id) || {}).name || (id === defaultId ? defaultName : id);
@@ -520,10 +532,14 @@ export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
     status.textContent = v ? "Unsaved changes" : "";
     if (v) unsaved.add(me); else unsaved.delete(me);
   }
-  function showProblems(list) {
+  // list: the save's problems (they keep the file out of the game); left: its left_out, the parts left out until
+  // they're finished ({name, why}), which the rest of the file goes in without: a plain note, not a problem.
+  function showProblems(list, left = []) {
     clear(problems);
     problems.hidden = !list.length;
-    if (list.length) problems.append(el("strong", { text: "Saved, but it can't go in the game yet: " }), el("span", { text: list.join(" ") }));
+    if (list.length) problems.append(el("strong", { text: "Saved, but it can't go in the game yet: " }), el("span", { text: list.join("; ") }));
+    leftNote.textContent = left.length ? `Saved. ${leftSaid(left)}` : "";
+    leftNote.hidden = !left.length;
   }
   // Writes the page's file into the mod; true when it's saved. quiet: no toast (Save as .zip says what it did).
   async function save(quiet = false) {
@@ -536,17 +552,20 @@ export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
       setDirty(edits !== at);   // a change made while it saved is still to be saved
       if (onSaved) onSaved(value);
       const found = (r && r.problems) || (r && r.problem ? [r.problem] : []);
-      showProblems(found);
+      const left = (r && r.left_out) || [];
+      showProblems(found, left);
       // Whether the mod is on is read afresh: another page may have switched it since this list was made.
       mods = await api.get("/mods");
       const now = mods.find(m => m.id === current);
+      // What's left out until it's finished doesn't keep the rest out: the mod is turned on all the same.
+      const also = left.length ? ` ${leftSaid(left)}` : "";
       if (found.length) {
         toast(`Saved, but it can't go in the game yet: ${found[0]}`, "bad");
       } else if (now && !now.enabled && !now.problem) {
         await api.patch(`/mods/${encodeURIComponent(current)}`, { enabled: true });
-        if (!quiet) toast(`Saved and turned on ${now.name}. Apply to game to use it.`);
+        if (!quiet) toast(`Saved and turned on ${now.name}.${also} Apply to game to use it.`);
       } else if (!quiet) {
-        toast(`Saved ${file} in ${current}. Apply to game to use it.`);
+        toast(left.length ? `Saved.${also}` : `Saved ${file} in ${current}. Apply to game to use it.`);
       }
       bus.emit("mods-changed");
       // The list again (the mod may be new, or on now), not the file: the page holds what it saved.
@@ -702,41 +721,68 @@ export async function copy(text) {
 // One is open at a time: opening another cancels the first.
 //   title     its heading;  label: what a screen reader calls it ("Rebind Interact"), the title by default
 //   message   the first line (what to press); the dialog says more there as keys are pressed
-//   pad       a controller button (true), with a chip for each; axis: a stick instead
-//   mouse     clicks and the wheel inside it bind mouse buttons (the Controls page); else a click outside cancels
+//   pad       a controller button (true), with a chip for each; axis: a stick instead. The controller is read
+//             until the dialog closes (a button that's taken says why, and is listened for again)
+//   mouse     clicks and the wheel anywhere in the dialog bind mouse buttons; else a click outside cancels
+//   zone      clicks and the wheel bind mouse buttons only in a box of their own in the dialog: true, or the
+//             box's words ("Or click a mouse button, or turn the wheel, here"); a click outside the dialog
+//             still cancels. Not with pad, nor where "menus"
 //   chips     keys offered as buttons too (ones the dialog uses itself, like Escape and Tab)
 //   reserved  {key: why}: a key that's taken says why, and a second press of it uses it anyway
+//   why       key => null when it's free, or why not: a sentence or {refuse: sentence}, said in the dialog's
+//             alert line while it stays open for another key; or {warn: sentence}, which lets the key through
+//             and is toasted after (a key another mod listens on too)
+//   where     "play" (the default) or "menus": in menus a mouse button is refused (a click there goes to the
+//             button under the cursor), and there's no zone
 //   style     the controller's glyphs (input.GLYPHS)
 // Focus starts on the dialog itself; Tab moves among its buttons; Enter and Space press a focused button, and
 // bind themselves while the dialog itself has focus. Focus goes back where it was afterwards.
+const MENU_MOUSE = "In menus a click goes to the button under the cursor, so use a key there.";
 let capturing = null;   // the open dialog's cancel()
-export function captureKey({ title, label, message, pad = false, axis = false, mouse = false, chips = [], reserved = {}, style = "xbox" } = {}) {
+export function captureKey({ title, label, message, pad = false, axis = false, mouse = false, zone = false, chips = [],
+  reserved = {}, why = null, where = "play", style = "xbox" } = {}) {
   if (capturing) capturing();
   return new Promise(resolve => {
     const back = keepPlace();
     const msg = el("p", { id: "capture-msg", "aria-live": "polite", text: message || (pad
       ? (axis ? "Move a stick on your controller, or pick one below." : "Press a button on your controller, or pick one below.")
       : "Press a key. Escape cancels.") });
+    const whyLine = el("p", { class: "capture-why", role: "alert", hidden: true });
     const padNote = el("p", { class: "muted", style: { fontSize: "0.9rem" } });
     const choices = pad ? (axis ? input.PAD_AXES : input.PAD_BUTTONS) : chips;
-    const card = el("div", { class: "card", tabindex: "-1", style: { width: "min(560px, 100%)" } },
-      el("h2", { id: "capture-title", text: title || "Press a key" }), msg, padNote,
+    const box = zone && !pad && where !== "menus"
+      ? el("div", { class: "capture-zone", text: typeof zone === "string" ? zone : "Or click a mouse button, or turn the wheel, here" })
+      : null;
+    const card = el("div", { class: "card capture", tabindex: "-1", style: { width: "min(560px, 100%)" } },
+      el("h2", { id: "capture-title", text: title || "Press a key" }), msg, box, whyLine, padNote,
       choices.length ? el("div", { class: "row" }, ...choices.map(k => el("button", { class: "chip", type: "button",
         text: input.keyLabel(k, style), title: k, "aria-label": `Use ${input.keyLabel(k, style)}`, onclick: () => choose(k) }))) : null,
       el("div", { class: "row" }, el("button", { class: "btn", type: "button", text: "Cancel", onclick: () => finish(null) })));
     const overlay = el("div", {
-      class: "capture", role: "dialog", "aria-modal": "true", "aria-label": label || title || "Press a key", "aria-describedby": "capture-msg",
+      class: "capture-overlay", role: "dialog", "aria-modal": "true", "aria-label": label || title || "Press a key", "aria-describedby": "capture-msg",
       style: { position: "fixed", inset: "0", background: "rgba(10,16,13,.55)", display: "grid", placeItems: "center", zIndex: "40", padding: "16px" },
     }, card);
     document.body.append(overlay);
     let raf = 0, done = false, pending = null;
+    const isMouse = k => input.MOUSE.includes(k) || k === "MouseScrollUp" || k === "MouseScrollDown";
+    function refuse(text) {
+      whyLine.textContent = text;
+      whyLine.hidden = false;
+      pending = null;
+    }
     function choose(k) {
+      if (done) return;
+      if (where === "menus" && isMouse(k)) return refuse(MENU_MOUSE);
+      const no = why ? why(k) : null;
+      const refused = typeof no === "string" ? no : no && no.refuse;
+      if (refused) return refuse(refused);
+      whyLine.hidden = true;
       if (reserved[k] && pending !== k) {
         pending = k;
         msg.textContent = `${reserved[k]}. Press ${input.keyLabel(k, style)} again to use it anyway, or another one.`;
         return;
       }
-      finish(k);
+      finish(k, no && typeof no === "object" ? no.warn : null);
     }
     const buttons = () => [...overlay.querySelectorAll("button")];
     const onKey = e => {
@@ -757,9 +803,11 @@ export function captureKey({ title, label, message, pad = false, axis = false, m
       if (k) choose(k);
       else msg.textContent = "That key isn't one the game knows. Try a letter, a number, an F key or an arrow.";
     };
+    // Where a click or the wheel picks a mouse button: the whole dialog (mouse), its zone, or nowhere.
+    const binds = target => !pad && (box ? box.contains(target) : mouse);
     const onMouse = e => {
       if (e.target.closest && e.target.closest("button")) return;
-      if (mouse && !pad) {
+      if (binds(e.target)) {
         e.preventDefault();
         if (input.MOUSE[e.button]) choose(input.MOUSE[e.button]);
       } else if (e.target === overlay) {
@@ -767,7 +815,7 @@ export function captureKey({ title, label, message, pad = false, axis = false, m
       }
     };
     const onWheel = e => {
-      if (!mouse || pad || !e.deltaY) return;
+      if (!binds(e.target) || !e.deltaY) return;   // a sideways wheel: nothing
       e.preventDefault();
       choose(e.deltaY < 0 ? "MouseScrollUp" : "MouseScrollDown");
     };
@@ -778,7 +826,10 @@ export function captureKey({ title, label, message, pad = false, axis = false, m
     overlay.addEventListener("contextmenu", e => e.preventDefault());
     overlay.addEventListener("wheel", onWheel, { passive: false });
     if (pad && typeof requestAnimationFrame === "function") {
-      let base = null;
+      // A button counts when it goes down (or a stick when it's pushed past the middle), against the frame before:
+      // one held when the dialog opened, or held after a press the dialog refused, isn't pressed again. It keeps
+      // listening until the dialog closes, so "press again" and "another one" work on the controller too.
+      let last = null;
       const poll = () => {
         if (done) return;
         let pads = [];
@@ -786,24 +837,26 @@ export function captureKey({ title, label, message, pad = false, axis = false, m
         catch (e) { padNote.textContent = "This browser window can't read controllers; pick a button above."; return; }
         if (!pads.length) padNote.textContent = "No controller detected yet. Press any button on it once, or pick a button above.";
         else padNote.textContent = `Listening to ${pads[0].id.replace(/\s*\(.*\)$/, "")}`;
-        const now = pads.map(p => ({ b: p.buttons.map(b => b.pressed || b.value > 0.6), a: [...p.axes] }));
-        if (base === null) base = now;
-        for (let i = 0; i < now.length; i++) {
+        const now = pads.map(p => ({ b: p.buttons.map(b => b.pressed || b.value > 0.6), a: [...p.axes].map(v => Math.abs(v) > 0.7) }));
+        const was = last || now;
+        last = now;
+        let hit = null;
+        for (let i = 0; i < now.length && !hit; i++) {
+          const before = was[i] || { b: [], a: [] };
           if (axis) {
-            for (let x = 0; x < Math.min(4, now[i].a.length); x++) if (Math.abs(now[i].a[x]) > 0.7) return choose(input.PAD_AXES[x]);
+            for (let x = 0; x < Math.min(4, now[i].a.length) && !hit; x++) if (now[i].a[x] && !before.a[x]) hit = input.PAD_AXES[x];
           } else {
-            for (let b = 0; b < Math.min(16, now[i].b.length); b++) {
-              if (now[i].b[b] && !(base[i] && base[i].b[b])) return choose(input.PAD_BUTTONS[b]);
-            }
+            for (let b = 0; b < Math.min(16, now[i].b.length) && !hit; b++) if (now[i].b[b] && !before.b[b]) hit = input.PAD_BUTTONS[b];
           }
         }
-        raf = requestAnimationFrame(poll);
+        if (hit) choose(hit);
+        if (!done) raf = requestAnimationFrame(poll);
       };
       raf = requestAnimationFrame(poll);
     }
     card.focus();
     announce(`${title || "Press a key"}. ${msg.textContent}`);
-    function finish(key) {
+    function finish(key, warning = null) {
       if (done) return;
       done = true;
       if (capturing === cancel) capturing = null;
@@ -812,6 +865,7 @@ export function captureKey({ title, label, message, pad = false, axis = false, m
       window.removeEventListener("hashchange", onLeave);
       overlay.remove();
       back();
+      if (key && warning) toast(warning);
       resolve(key || null);
     }
     const cancel = () => finish(null);

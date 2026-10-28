@@ -51,7 +51,9 @@ still build. `pipeline.install` then writes the build into the game (`Paks\~mods
 section didn't go right it raises `InstallBlocked` with the facts (section, mod, what went wrong), and
 each surface words the way past them: the command line says `--force`, the studio says Apply the rest
 anyway. The studio runs the same `collect()` on one mod's file when a page saves it (`Studio.check_file`),
-so a mistake is said at save time, under the Editing mod bar, not first at Apply.
+so a mistake is said at save time, under the Editing mod bar, not first at Apply. A part of the file that
+isn't finished yet (`ctx.leave_out`: an item with no description) isn't a mistake: the save lists it as
+`left_out`, the bar says it as a note by name, and the rest of the file goes in.
 
 While a build or install runs under the studio's lock, what it logs is kept for `GET /api/progress`,
 under the task's id (the page sends one), which the page polls to show the lines as they come; the answer

@@ -361,7 +361,7 @@ def test_a_mods_file_is_written_read_back_and_deleted(studio):
     make_mod(studio, "mine")
     assert get(studio, "mods/mine/file/palette.json") == {"exists": False, "text": None}
     text = json.dumps({"fur": {"3": "#ff0000"}})
-    assert call(studio, "PUT", "mods/mine/file/palette.json", {"text": text}) == {"saved": "palette.json", "requires": [], "problems": []}
+    assert call(studio, "PUT", "mods/mine/file/palette.json", {"text": text}) == {"saved": "palette.json", "requires": [], "problems": [], "left_out": []}
     with open(os.path.join(studio.ctx.mods_root, "mine", "palette.json"), encoding="utf-8") as f:
         assert f.read() == text + "\n"
     assert get(studio, "mods/mine/file/palette.json") == {"exists": True, "text": text + "\n"}

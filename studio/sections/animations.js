@@ -61,7 +61,7 @@ export default {
       },
     });
     root.append(head, target.element, lastBox, editor.element, out.element);
-    wc.installedEvent(target, result => { lastResult = result; showLast(); });
+    wc.installedEvent(target, result => { if (!wc.onlyChecked(result)) { lastResult = result; showLast(); } });
     await target.refresh();
 
     function load(obj) {
@@ -112,7 +112,7 @@ export default {
         for (const [group, members] of sequenceGroups(list)) {
           sel.append(el("optgroup", { label: group }, ...members.flatMap(s => sequenceOptions(s).map(o => el("option", { value: o.value, text: o.text })))));
         }
-        if (value && ![...sel.options].some(o => o.value === value)) sel.append(el("option", { value, text: `${value} (as items.json names it)` }));
+        if (value && ![...sel.options].some(o => o.value === value)) sel.append(el("option", { value, text: `${value} (set by hand)` }));
         sel.value = value || "";
         sel.disabled = false;
         status.textContent = "";
@@ -291,7 +291,7 @@ export default {
         facts.textContent = known[kind] ? `${who} plays this where the game played ${plain(kind, a.replaces)}.` : "Reading the game's animations…";
         sequenceFacts(kind, a.replaces).then(f => {
           const what = source === "game" && a.game ? plain(kind, a.game) : "this";
-          facts.textContent = `${who} plays ${what} where the game played ${plain(kind, a.replaces)} (${f.seconds.toFixed(2)} s; fitted to its ${f.keys} keys).` +
+          facts.textContent = `${who} plays ${what} where the game played ${plain(kind, a.replaces)} (${f.seconds.toFixed(2)} s; fitted to its ${f.keys} frames).` +
             (source === "file" ? " Make yours that long to see it at the speed you made it." : "") + " Its footsteps and other cues stay where they were." +
             (f.root_motion ? " The game moves the animal with it in some places (attacks, jumps), so keep the root's path close to the game's." : "");
         }).catch(e => { facts.textContent = e.message; });

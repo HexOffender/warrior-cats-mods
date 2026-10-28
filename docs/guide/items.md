@@ -36,18 +36,20 @@ cat makes one more for two Dandelions.
 
 You can:
 
-- make a herb do what any of the game's herbs does. **What it does** lists them in words, with the herb
-  that does it: "Heals 50 health (Marigold Petal)", "Whole team +50% Strength for the fight (Juniper
-  Poultice)". Choosing one also makes your herb usable when that herb is, and for whoever that herb is
-  for: the line under **Starts from** says which;
+- make a herb do what any of the game's herbs does. **What it does** lists every one of them in words,
+  with the herb that does it: "Heals 50 health (Marigold Petal)", "Heals the whole team 50 health
+  (Wintergreen Berries)", "Whole team +50% Strength for the fight (Juniper Poultice)". Choosing one also
+  makes your herb usable when that herb is, and for whoever that herb is for: the line under **Starts
+  from** says which;
 - give it the game's icon, the icon in another colour, another item's icon, or a picture of your own.
   **Save the game's icon to paint over** gives you the game's picture to start from;
 - ask for the game's materials, or materials this mod adds, in a recipe (they're listed under "Your
   materials");
 - make a new look of any look of a neck, body or paw accessory, in a colour or a picture of your own, and
   let the cat show through it (**Opacity**), as glass of one colour;
-- give an accessory a shape of your own, or a herb a look of its own on the ground, under **Advanced: a 3D
-  model of your own (needs Blender)**. The fold opens by itself when an item has a model.
+- give an accessory a shape of your own, or a herb a look of its own on the ground, under **Advanced:
+  shape and place (a model of your own needs Blender)**. **Where it sits** there moves an accessory on
+  the cat without Blender. The fold opens by itself when an item has a model or a place.
 
 You can't, yet:
 
@@ -71,8 +73,13 @@ inventory like the game's, once you have one.
 ## Common mistakes
 
 - **No description.** An item needs a name and a description. The page marks an empty one in red, and
-  the list says "needs a description". It still saves, but that one item is left out of the game until it
-  has one. A name you leave empty goes back to the item's technical name.
+  the list says "needs a description". It still saves, and the mod's other items go in, but that one is
+  left out of the game until it has one: under the Editing mod bar the save says "Saved. Left out of the
+  game until finished: Moon Herb (no description)." A name you leave empty goes back to the item's
+  technical name.
+- **A recipe with a material that was left out.** A material of this mod's that isn't finished yet (no
+  description) is left out, and so is a herb whose recipe asks for it: the log says "Moonstone is one of
+  this mod's, left out: no description". Finish the material, and both go in.
 - **A name the game already uses.** The page gives your item a technical name of its own, so "Medium
   Healing Herb" is fine: the studio calls it MediumHealingHerb2 behind the scenes.
 - **Starting with some, and no save yet.** They go into the cat you're playing when you apply, so start
