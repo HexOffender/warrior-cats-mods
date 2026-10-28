@@ -283,21 +283,6 @@ def needing(mods, mod_id):
     return [m.id for m in mods if m.enabled and m.id != mod_id and mod_id in needed(mods, m.id)]
 
 
-def version_key(text):
-    """A version as a tuple to compare ("0.10" after "0.9", "0.4" equal to "0.4.0"), or None when the text isn't a
-    plain dotted number (a leading "v" is allowed)."""
-    s = str(text or "").strip()
-    if s[:1] in ("v", "V"):
-        s = s[1:]
-    parts = s.split(".")
-    if not s or not all(p.isdigit() for p in parts):
-        return None
-    nums = [int(p) for p in parts]
-    while len(nums) < 3:
-        nums.append(0)
-    return tuple(nums)
-
-
 def unmet(mods, left_out=None):
     """{mod id: [why]} for the mods that are on but need a mod that's missing, off, or in `left_out`
     ({id: why}, e.g. made for an older version of the game). Mods are named by their names; a missing one
