@@ -36,6 +36,7 @@ export default {
       file: "npcs.json",
       onLoad: (obj, id) => { ({ cats, extra } = model.load(obj)); draw(); readQuests(id); },
       getValue: () => toJson(),
+      onSaved: saved => wc.settleNew(cats, saved.npcs),   // saved cats keep their ids from now on
     });
     const out = wc.codePanel("npcs.json");
     const idLine = el("p", { class: "note" });
@@ -67,10 +68,11 @@ export default {
       api.get("/cat/options").then(o => { options = o; }).catch(() => {}),
       api.get("/game/tables").then(t => { tables = t.tables || {}; }).catch(() => {}),
     ]);
-    await target.refresh();
-    editor.ready(true);
+    // Add waits for the file; one that can't be read is said, and Add comes back all the same.
+    try { await target.refresh(); }
+    catch (e) { toast(`The mod's cats couldn't be read: ${e.message}`, "bad"); }
+    finally { editor.ready(true); }
     await strip.refresh();
-    strip.update(usesFields());
 
     // The mod's quests, for the remove-a-cat toast: read again when any mod changes (a save on Questlines).
     async function readQuests(id) {
@@ -103,6 +105,7 @@ export default {
       out.set(toJson());
       editor.render(cats, drawCat);
       sayId();
+      strip.update(usesFields());   // another mod's cats (the Editing mod changed) may need another Sandbox mode
     }
 
     function drawCat(box, c, i) {
@@ -165,7 +168,7 @@ export default {
         sameRadio.checked = model.isFixed(c);
         newRadio.checked = !model.isFixed(c);
         coloursNote.textContent = model.isFixed(c)
-          ? "Tick a part to choose its colour, over the colour slot it wears."
+          ? "Tick a part to choose its own colour, over the one its colour number (under Fine-tune) gives it."
           : "Tick a part to choose its colour; the rest are made up with the look, each time they appear.";
         const parts = LOOK_PARTS.map(([p, label]) => {
           const sel = el("select", { "aria-label": label, onchange: () => {
@@ -209,10 +212,10 @@ export default {
           ...slotRows,
           el("div", { class: "row" },
             el("button", { class: "btn small", type: "button", text: "Roll a new look", onclick: () => { roll(c); paint(); edited(); drawLook(); } }),
-            el("span", { class: "muted", style: { fontSize: "0.85rem" }, text: "Every part and colour slot again, at random. Your ticked colours and eye colour stay." })));
+            el("span", { class: "muted", style: { fontSize: "0.85rem" }, text: "Every part and colour number again, at random. Your ticked colours and eye colour stay." })));
       };
       const fold = el("details", { class: "fold", "data-key": "fine-tune" },
-        el("summary", {}, el("strong", { text: "Fine-tune" }), el("span", { class: "muted", text: "the shape's parts and the colour slots" })),
+        el("summary", {}, el("strong", { text: "Fine-tune" }), el("span", { class: "muted", text: "the shape's parts and the colour numbers" })),
         fineTune);
       const lookRadio = (fixed, label, hint) => {
         const r = el("input", { type: "radio", name: `look-${i}`, "data-focus": `look:${fixed ? "same" : "new"}`, onchange: () => {

@@ -24,13 +24,19 @@ export default {
     const strip = sandboxStrip({ help: "questlines",
       route: "To play them: Apply to game, Play, Sandbox Mode on the main menu, then a new cat or one of your sandbox cats. The step you're on shows in the objective panel on the left and on the mod menu's Questlines page (not in the game's own quest list)." });
     let loading = Promise.resolve();   // the file being opened (its mod's cats and items come first)
+    let seq = 0;   // the mod reads, counted: one that finishes after a newer one started, or another mod was chosen, is dropped
     const target = wc.modTarget({
       file: "quests.json",
       // The mod's cats and items first: an objective that's the one the game would show stays automatic.
       onLoad: (obj, id) => {
-        loading = (async () => { await loadMod(id); ({ quests, extra } = model.load(obj, names)); draw(); })();
+        loading = (async () => {
+          if (!(await loadMod(id))) return;   // another mod chosen since (arrow keys in the select): its own load draws
+          ({ quests, extra } = model.load(obj, names));
+          draw();
+        })();
       },
       getValue: () => model.toJson(quests, extra),
+      onSaved: saved => wc.settleNew(quests, saved.quests),   // saved quests keep their ids from now on
     });
     const catsNote = el("div", { class: "banner", hidden: true });
     const out = wc.codePanel("quests.json");
@@ -52,10 +58,10 @@ export default {
     editor.ready(false);   // until the file is read
 
     // Starting over: progress is Sandbox mode's, beside the game's saves; the studio can clear it with the game closed.
-    const startOver = wc.confirmButton("Start every questline over", "Press again to start them all over", async () => {
+    const startOver = wc.confirmButton("Start every questline over", "Press again to start every mod's questlines over", async () => {
       try {
         const r = await api.del("/story/progress");
-        toast(r.cats ? `Every questline starts over, for ${r.cats} sandbox cat${r.cats === 1 ? "" : "s"}. Where their cats stand is kept.`
+        toast(r.cats ? `Every mod's questlines start over, for ${r.cats} sandbox cat${r.cats === 1 ? "" : "s"}. Where their cats stand is kept.`
           : "Nothing to start over: no sandbox cat has begun a questline yet.");
       } catch (e) { toast(e.message, "bad"); }
     });
@@ -65,27 +71,35 @@ export default {
       target.element, strip.element, catsNote, editor.element,
       el("div", { class: "card" },
         el("h3", { text: "Starting over" }),
-        el("p", { class: "note", text: "How far each sandbox cat has got is kept by Sandbox mode, one record per sandbox cat, in sandbox-story.json beside the game's saves. A new sandbox cat starts every questline from the beginning, and with Sandbox mode 0.5 or newer a quest whose steps you change starts over by itself. The mod menu's Questlines page (Insert, in the game) starts one quest over." }),
+        el("p", { class: "note", text: "Sandbox mode keeps how far each sandbox cat has got, beside the game's saves. A new sandbox cat starts every questline from the beginning. With Sandbox mode 0.5 or newer, a quest a cat hasn't finished starts over by itself when you add or take out a step, change a step's kind (moving steps can do that), or change what or how many a Pick up step wants. New lines, objectives or a new title don't restart it, and a finished quest stays finished. The mod menu's Questlines page (Insert, in the game) starts one quest over." }),
         el("div", { class: "row" }, startOver,
-          el("span", { class: "muted", style: { fontSize: "0.85rem" }, text: "For all your sandbox cats, with the game closed. Where their cats stand is kept." }))),
+          el("span", { class: "muted", style: { fontSize: "0.85rem" }, text: "Every mod's questlines, not only this one's, for all your sandbox cats, with the game closed. Where their cats stand is kept." }))),
       el("details", { class: "fold", "data-key": "makers:quests" },
         el("summary", {}, el("h3", { text: "For mod makers" }), el("span", { class: "muted", text: "the file this page writes" })),
         out.element));
 
     try { game = await api.get("/game/items"); } catch (e) { /* no game yet: the mod's own items, and tags typed in files */ }
     choices = itemChoices(game);
-    await target.refresh();
-    await loading;
-    editor.ready(true);
+    // Add waits for the file; one that can't be read is said, and Add comes back all the same.
+    try {
+      await target.refresh();
+      await loading;
+    } catch (e) {
+      toast(`The mod's questlines couldn't be read: ${e.message}`, "bad");
+    } finally { editor.ready(true); }
     await strip.refresh();
 
     // The mod's cats (npcs.json) and items (items.json), read only when the mod has them: a mod that isn't made
-    // yet (My mods before its first save) has no files to ask for.
+    // yet (My mods before its first save) has no files to ask for. False when another mod was chosen while it
+    // read (nothing is changed then).
     async function loadMod(id) {
-      cats = []; own = [];
+      // A file that came back after another mod was chosen counts for nothing, and holds no newer read back.
+      if (target.current !== id) return false;
+      const mine = ++seq;
+      let modCats = [], modItems = [];
       const m = target.mods.find(x => x.id === id);
-      const files = [["characters", "npcs.json", v => { cats = (Array.isArray(v.npcs) ? v.npcs : []).filter(c => c && c.id); }],
-        ["items", "items.json", v => { own = ownItems(v); }]];
+      const files = [["characters", "npcs.json", v => { modCats = (Array.isArray(v.npcs) ? v.npcs : []).filter(c => c && c.id); }],
+        ["items", "items.json", v => { modItems = ownItems(v); }]];
       for (const [kind, file, set] of files) {
         if (!m || !m.kinds.includes(kind)) continue;
         try {
@@ -93,10 +107,13 @@ export default {
           if (r.exists) set(JSON.parse(r.text));
         } catch (e) { /* a file that isn't JSON: the Characters or Items page says */ }
       }
+      if (mine !== seq || target.current !== id) return false;
+      cats = modCats; own = modItems;
       choices = itemChoices(game, own);
       catsNote.hidden = cats.length > 0;
       clear(catsNote).append(el("strong", { text: "This mod has no cats yet" }),
         el("span", { text: "Talking steps and quest givers are cats of the same mod. Make some on the Characters page (with this mod chosen), then come back." }));
+      return true;
     }
     function changed() {
       target.markDirty();
@@ -279,7 +296,7 @@ export default {
       strip.refresh();
       if (!target.current) return;
       await target.refresh();   // the list; the file only when nothing here is unsaved
-      if (target.dirty) { await loadMod(target.current); draw(); }
+      if (target.dirty && await loadMod(target.current)) draw();
     });
     return { unmount() { offInstalled(); offApplied(); offChanged(); } };
   },

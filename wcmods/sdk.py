@@ -121,6 +121,7 @@ class BuildContext:
         self.current = None
         self.mods = []          # the enabled mods in priority order (set by the build)
         self.found = []         # every mod in the mods folder, on or off (set by the build)
+        self.held_back = {}     # {mod id: why} for the mods on that a game update leaves out (set by the build)
         self._tuning = None     # TuningData.csv as numbers, read once (ctx.tuning)
         self._texts = {}        # language -> {key: text} (ctx.text)
         self._cooked = {}       # cooked table name -> (the game's asset, its rows) (ctx.cooked_table)

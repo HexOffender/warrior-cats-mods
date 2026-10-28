@@ -132,6 +132,37 @@ def test_story_sandbox_says_each_state(studio):
     with open(os.path.join(studio.ctx.mods_root, "sandbox", "mod.json"), "w", encoding="utf-8") as f:
         json.dump({"name": "Sandbox mode", "enabled": True, "version": "0.5.0"}, f)
     assert state()["older"] == []
+    # A version that isn't a plain number is older than any.
+    with open(os.path.join(studio.ctx.mods_root, "sandbox", "mod.json"), "w", encoding="utf-8") as f:
+        json.dump({"name": "Sandbox mode", "enabled": True, "version": "0.5-beta"}, f)
+    assert state()["older"] == ["look", "slots"]
+
+
+def test_story_sandbox_says_a_sandbox_held_back_after_a_game_update(studio, monkeypatch):
+    studio.ctx.cfg.data["allow_code_mods"] = True
+    studio.ctx.cfg.save()   # kept through "Use it anyway", which reads wcmods.json again
+    make_mod(studio, "sandbox", {"name": "Sandbox mode", "version": "0.5"})
+    assert call(studio, "GET", "story/sandbox")["state"] == "on"
+    # The game updated, and Sandbox mode was made for the build before: on, but every Apply leaves it out.
+    monkeypatch.setenv("WCMODS_GAME_BUILD", "99999999")
+    s = call(studio, "GET", "story/sandbox")
+    assert s["state"] == "held-back" and s["held"] == "made for an older version of the game" and s["version"] == "0.5"
+    # Until it's used anyway, on the Mods page.
+    call(studio, "POST", "mods/sandbox/allow-outdated", {"on": True})
+    s = call(studio, "GET", "story/sandbox")
+    assert s["state"] == "on" and s["held"] is None
+
+
+def test_a_story_mod_an_older_studio_saved_never_keeps_apply_out(studio):
+    # Downloaded, never saved here: "requires": ["sandbox"] and no code of its own reads as a use.
+    make_mod(studio, "old-story", {"requires": ["sandbox"]}, files={"npcs.json": CAT, "items.json": {"items": []}})
+    listed = {m["id"]: m for m in call(studio, "GET", "mods")}
+    assert listed["old-story"]["problems"] == [] and listed["old-story"]["requires"] == []
+    assert listed["old-story"]["works_with"] == [{"id": "sandbox", "name": "Sandbox mode", "state": "missing"}]
+    assert modlib.unmet(modlib.discover(studio.ctx.mods_root)) == {}
+    # Saved here, the file says so itself.
+    save_file(studio, "old-story", "npcs.json", CAT)
+    assert meta(studio, "old-story")["requires"] == [] and meta(studio, "old-story")["uses"] == ["sandbox"]
 
 
 # ---------- starting every questline over ----------

@@ -1,7 +1,8 @@
 // The Questlines page in a real browser (lib/browser.mjs), against a studio over a folder of its own with a
 // made-up game folder: opening on a mod that isn't made yet asks for none of its files, a first questline
 // with a mod's cat, a circle of "Starts after" said and the box that would close one disabled, objectives
-// left for the build to fill in, and Start every questline over. Skipped, with a reason, when no Chromium.
+// left for the build to fill in, Start every questline over, mods chosen quickly one after another, and a
+// mod whose questlines can't be read. Skipped, with a reason, when no Chromium.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -116,9 +117,47 @@ test("Start every questline over clears the sandbox cats' quests and keeps where
   fs.writeFileSync(progress, JSON.stringify({ 3: { quests: { "story/a": { step: 2, got: 0 } }, cats: { "story/mossfoot": { at: [1, 2, 3] } } } }));
   const page = await openQuestlines("story");
   await page.click({ text: "Start every questline over" });
-  await page.click({ text: "Press again to start them all over" });
-  await toastSaid(page, "Every questline starts over, for 1 sandbox cat.");
+  await page.click({ text: "Press again to start every mod's questlines over" });
+  await toastSaid(page, "Every mod's questlines start over, for 1 sandbox cat.");
   assert.deepEqual(readJson(progress), { 3: { quests: {}, cats: { "story/mossfoot": { at: [1, 2, 3] } } } });
   assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
+// The tests below choose other mods: the page opens on the last one chosen, so they come last.
+test("mods chosen one after another (arrow keys in the select) end on the last one's cats and quests", { skip }, async () => {
+  writeMod(folders, "nocats", { name: "No cats" });
+  const page = await openQuestlines("story");
+  await page.waitFor(() => document.querySelectorAll(".pick").length > 0);
+  // story -> nocats -> story -> nocats, at once: story's files (its quests, then its cats) come back last. The
+  // page's requests are counted, to know when everything they started has come back and been drawn.
+  await page.evaluate(() => {
+    const real = window.fetch;
+    window.inflight = 0;
+    window.fetch = (...args) => { window.inflight++; return real(...args).finally(() => { window.inflight--; }); };
+    const s = document.querySelector(".target select");
+    for (const id of ["nocats", "story", "nocats"]) { s.value = id; s.dispatchEvent(new Event("change")); }
+  });
+  for (let quiet = 0, looks = 0; quiet < 3 && looks < 150; looks++) {   // nothing in flight three looks running, 100 ms apart
+    await page.evaluate(() => new Promise(done => setTimeout(done, 100)));
+    quiet = await page.evaluate(() => window.inflight) === 0 ? quiet + 1 : 0;
+  }
+  assert.equal(await page.evaluate(() => document.querySelector(".target select").value), "nocats");
+  assert.ok(await page.evaluate(() => [...document.querySelectorAll(".banner")].some(b => !b.hidden && b.textContent.startsWith("This mod has no cats yet"))),
+    "nocats' (no) cats, not story's");
+  assert.equal(await page.evaluate(() => document.querySelectorAll(".pick").length), 0, "nocats' (no) quests, not story's");
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
+test("a mod whose questlines can't be read says so, and Add comes back all the same", { skip }, async () => {
+  writeMod(folders, "unreadable", { name: "Unreadable" });
+  fs.writeFileSync(path.join(folders.data, "mods", "unreadable", "quests.json"), Buffer.from([0xff, 0xfe, 0x7b, 0x7d]));   // not UTF-8
+  const page = await openQuestlines();
+  await page.evaluate(() => localStorage.setItem("wc-target", "unreadable"));
+  await page.reload();
+  await toastSaid(page, "The mod's questlines couldn't be read");
+  await page.waitFor(() => [...document.querySelectorAll("button")].some(b => b.textContent === "Add a questline" && !b.disabled), SLOW);
+  await page.evaluate(() => localStorage.setItem("wc-target", "story"));
   await page.close();
 });

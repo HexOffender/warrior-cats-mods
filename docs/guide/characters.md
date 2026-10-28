@@ -29,6 +29,8 @@ The strip at the top of the page says where Sandbox mode stands:
 
 - **Sandbox mode 0.5 is on**: nothing to do.
 - **Sandbox mode is off**: press **Turn it on**.
+- **Sandbox mode is left out since the game's update**: it was made for an older version of the game, so
+  Apply leaves it out. On the **Mods** page, its card has **Use it anyway…**; then Apply.
 - **Sandbox mode is in, but mods that run code aren't allowed**: it's a script, so allow mods that run
   code on **Settings and repair**, then Apply.
 - **You'll need Sandbox mode**: download `sandbox-0.5.zip` from its releases page (the strip links it)
@@ -45,7 +47,8 @@ You can:
 
 - give a cat a name, and a title shown smaller above it;
 - keep the **Same look every time** (its shape, pattern and colours chosen once and kept; **Fine-tune**
-  changes each part and colour slot) or give it a **New look each time**, as the game does with its own cats;
+  changes each part, and the colour number each colour comes from) or give it a **New look each time**, as
+  the game does with its own cats;
 - choose its coat, pattern, markings, nose, paws, ears and whiskers colours on top of that, its eye colour
   (or **Game's choice**), and its size, from apprentice size to bigger than a leader;
 - have it stand **Beside your cat** (the first time a sandbox cat comes into the forest, and there after

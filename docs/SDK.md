@@ -83,7 +83,8 @@ Only `mod.json`'s `name` is needed; the rest is what Clan Mod Studio shows and h
   ones that are in the mods folder (and a mod pack carries them in its .zip and keeps them on), but a
   missing or off one never keeps it out, and switching one off is never refused for it; its card on the
   Mods page says "Works with ..." while one is off or missing. Clan Mod Studio writes `"sandbox"` here
-  for a mod with cats or questlines ([formats.md](formats.md#npcsjson)). `mod-menu` means the mod
+  for a mod with cats or questlines ([formats.md](formats.md#npcsjson)); a `"sandbox"` an older studio
+  wrote in `requires` counts as a use too, for a mod with no code of its own. `mod-menu` means the mod
   menu, for a page in it: that's wcmods' own, so it's always there (in `requires` too).
 - **`game_builds`:** the builds of the game it was made for (a mod without it was made for
   24847281). After a game update, a mod that doesn't list the new build is left out until it's
@@ -1416,7 +1417,7 @@ affecting the others.
 | `reconnect()`, `anyDirty()`, `dirtyTargets()` | Whether the studio answers (taking up its token); whether any page, and which Editing mod bars, have unsaved changes. The shell never reloads the page or restarts the studio over them |
 | `el(tag, attrs, ...children)`, `$`, `clear` | Small DOM helpers |
 | `toast(msg, "bad"?)`, `confirmButton(label, armedLabel, fn)` | Feedback, and two-step confirm |
-| `modTarget({file, onLoad, getValue, share})` | The "Editing mod: … Save to mod" bar the built-in pages use. It keeps unsaved work (the browser asks before the page closes, switching mods and importing a file ask first, `refresh()` re-reads the mod list without reloading the file), and shows under itself what would keep a saved file out of the game (`problems` from the PUT) until a save that's fine. `target.dirty` says whether there's unsaved work |
+| `modTarget({file, onLoad, getValue, onSaved, share})` | The "Editing mod: … Save to mod" bar the built-in pages use. A save doesn't read the file back (the page holds what it saved; a change made while it saved stays, unsaved); `onSaved(value)` hears what was saved, and `settleNew(list, saved)` there keeps the ids of new entries that were saved. It keeps unsaved work (the browser asks before the page closes, switching mods and importing a file ask first, `refresh()` re-reads the mod list without reloading the file), and shows under itself what would keep a saved file out of the game (`problems` from the PUT) until a save that's fine. `target.dirty` says whether there's unsaved work |
 | `installedEvent(target, fn)` | `bus.on("installed", fn)` that skips `fn` while `target` has unsaved changes: for a page that reloads its file after an Apply |
 | `openHelp(page)`, `pageHead({eyebrow, title, lede, help})` | The help panel: `openHelp("studio")` opens `docs/guide/studio.md` in it (no page: the guide's index); `pageHead`'s `help: "help:<page>"` puts a "How this works" button in the page's head that does the same |
 | `codePanel(title)` | A copyable JSON preview |

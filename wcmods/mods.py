@@ -37,6 +37,8 @@ import re
 # The in-game mod menu's window, which mods name in "requires" or "uses" for a page in it. It was a mod of its
 # own; it's wcmods' now (menu.py), so it's always there: a mod needing it needs nothing more.
 MENU_ID = "mod-menu"
+# Mods an older studio put in "requires" that a mod without code only uses (story.SANDBOX_ID: Sandbox mode).
+SOFT_REQUIRES = ("sandbox",)
 CONTENT = (("files", "files"), ("paks", "cooked content"), ("palette.json", "palette"), ("controls.json", "controls"),
            ("mouselook.json", "mouse look"), ("data.json", "data"), ("items.json", "items"),
            ("animations.json", "animations"), ("npcs.json", "characters"), ("quests.json", "questlines"),
@@ -77,6 +79,15 @@ class Mod:
         self.author = str(meta.get("author") or "")
         self.requires = _ids(meta.get("requires"))
         self.uses = [i for i in _ids(meta.get("uses")) if i not in self.requires]
+        # An older Clan Mod Studio wrote "requires": ["sandbox"] for a mod with cats or quests. Without code of its
+        # own the mod works without Sandbox mode (its cats wait for it), so it's read as a use, as the studio
+        # writes it now: it never keeps the mod out, nor stops Sandbox mode being switched off. (A mod pack's
+        # "requires" are its mods, and a script may call Sandbox mode's own API: both keep it as a need.)
+        for i in SOFT_REQUIRES:
+            if i in self.requires and not meta.get("pack") and not self.has_code():
+                self.requires.remove(i)
+                if i not in self.uses:
+                    self.uses.append(i)
 
     @classmethod
     def broken(cls, folder, problem):
@@ -87,6 +98,11 @@ class Mod:
         m.name, m.description, m.enabled, m.priority = m.id, "", False, 0
         m.version, m.author, m.requires, m.uses = "", "", [], []
         return m
+
+    def written(self, key):
+        """The ids mod.json itself gives for "requires" or "uses", before an older studio's "sandbox" in
+        "requires" is read as a use (for rewriting the file)."""
+        return _ids(self.meta.get(key))
 
     def kinds(self):
         if self.problem:
@@ -198,15 +214,19 @@ def needing(mods, mod_id):
     return [m.id for m in mods if m.enabled and m.id != mod_id and mod_id in needed(mods, m.id)]
 
 
-def version_key(version):
-    """A version as something to compare: "0.5" is "0.5.0", "0.4" < "0.5" < "0.10", and anything that isn't a
-    version ("", "beta", None) comes before every version."""
-    parts = str(version or "").strip().lstrip("vV").split(".")
-    try:
-        numbers = [int(p) for p in parts]
-    except ValueError:
-        return (0, ())
-    return (1, tuple(numbers + [0] * (3 - len(numbers))))
+def version_key(text):
+    """A version as a tuple to compare ("0.10" after "0.9", "0.4" equal to "0.4.0"), or None when the text isn't a
+    plain dotted number (a leading "v" is allowed)."""
+    s = str(text or "").strip()
+    if s[:1] in ("v", "V"):
+        s = s[1:]
+    parts = s.split(".")
+    if not s or not all(p.isdigit() for p in parts):
+        return None
+    nums = [int(p) for p in parts]
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums)
 
 
 def unmet(mods, left_out=None):

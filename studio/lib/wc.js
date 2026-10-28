@@ -19,6 +19,8 @@
 //                  them, go on without, or stay), and refresh() re-reads the mod list without reloading the
 //                  file while the page has unsaved changes. What would keep the saved file out of the game
 //                  shows under the bar until the next save that's fine.
+//                  A save doesn't read the file back; onSaved(value) hears what was saved, and
+//                  settleNew(list, saved) keeps the ids of the new entries it held.
 //   installedEvent(target, fn)   bus.on("installed", fn) that skips fn while target has unsaved changes: for
 //                  a page that reloads its file after an Apply (wc.bus.on("installed", ...) runs regardless).
 //   openHelp(page) opens a page of the guide (docs/guide/<page>.md) in the help panel; no page, the index.
@@ -383,6 +385,14 @@ if (typeof window !== "undefined" && window.addEventListener) {
   window.addEventListener("beforeunload", e => { if (anyDirty()) { e.preventDefault(); e.returnValue = ""; } });
 }
 
+// A page's new entries (marked _new) have ids that follow their names until they're saved; once they are,
+// quests and others may name them, so the ids stay. For modTarget's onSaved: `list` is the page's entries,
+// `saved` the list it just wrote; an entry added since isn't in it, and keeps following its name.
+export function settleNew(list, saved) {
+  const ids = new Set((saved || []).map(x => x && x.id));
+  for (const x of list) if (x && x._new && ids.has(x.id)) delete x._new;
+}
+
 // ---------- which mod a section edits ----------
 // Renders "Editing mod: [select] [New mod] [Save]". onLoad(obj|null, modId) fires when the target changes;
 // call target.save(obj) to write the file. Every page starts on the mod last chosen on any page, else on one
@@ -390,11 +400,15 @@ if (typeof window !== "undefined" && window.addEventListener) {
 // The mod a page saves its file into, with a Share part: the mod's details (its name, author, version and
 // description, which a shared .zip carries), Save as .zip for others to add on their Mods page, and the
 // page's file on its own, out (Export) and in (Import). share: false leaves the Share part out.
-export function modTarget({ file, onLoad, getValue, share = true }) {
+// A save doesn't read the file back: the page already holds what it saved, and a change made while it saved
+// stays (and stays unsaved). onSaved(value), when given, hears what was saved: a page whose new entries' ids
+// follow their names until they're saved settles them there (settleNew).
+export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
   const defaultId = "my-mods", defaultName = "My mods";
   const key = "wc-target";   // the mod last chosen, on whichever page
   const kind = file.replace(".json", "");
   let mods = [], current = null, dirty = false;
+  let edits = 0;   // changes made on the page, counted: a save knows whether one came while it was saving
   const select = el("select", { "aria-label": `Mod that stores ${file}` });
   const status = el("span", { class: "dirty" });
   const saveBtn = el("button", { class: "btn primary", text: "Save to mod" });
@@ -494,6 +508,7 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
     } catch (e) { toast(e.message, "bad"); }
   }
   function setDirty(v) {
+    if (v) edits++;
     dirty = v;
     status.textContent = v ? "Unsaved changes" : "";
     if (v) unsaved.add(me); else unsaved.delete(me);
@@ -508,9 +523,11 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
     try {
       const value = getValue();
       if (value === undefined) return false;   // the page said what's wrong
+      const at = edits;
       await ensureMod(current);
       const r = await api.put(`/mods/${encodeURIComponent(current)}/file/${file}`, { text: JSON.stringify(value, null, 2) });
-      setDirty(false);
+      setDirty(edits !== at);   // a change made while it saved is still to be saved
+      if (onSaved) onSaved(value);
       const found = (r && r.problems) || (r && r.problem ? [r.problem] : []);
       showProblems(found);
       // Mods the save turned on too (Sandbox mode, for a file of cats or quests).
@@ -529,7 +546,10 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
         toast(also.trim());
       }
       bus.emit("mods-changed");
-      await refresh(current);
+      // The list again (the mod may be new, or on now), not the file: the page holds what it saved.
+      await relist();
+      if (listed(current)) select.value = current;
+      shareBox?.show(mods.find(m => m.id === current));
       return true;
     } catch (e) { toast(e.message, "bad"); return false; }
   }

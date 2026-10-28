@@ -263,10 +263,11 @@ Cats of the mod's own, made on Clan Mod Studio's Characters page. The
 sandbox cat, so a mod with them works with it: `"uses": ["sandbox"]` in its `mod.json`, which the studio
 writes when it saves cats or quests ([SDK.md](SDK.md#mod-folder)). Turning the mod on turns Sandbox mode
 on when it's there, and without it the mod still goes in (its items, palettes and names too), its cats
-waiting for Sandbox mode. A mod an older studio saved says `"requires": ["sandbox"]` instead, which keeps
-it out while Sandbox mode is missing or off; saving it again on either page moves that to `uses`, except
-for a mod with scripts of its own. Fixed looks need Sandbox mode 0.5 or newer; an older one makes the look
-up each time (the page and Apply say so).
+waiting for Sandbox mode. A mod an older studio saved says `"requires": ["sandbox"]` instead; for a mod
+with no code of its own (no scripts, C++ mod, `section.py` or studio page) wcmods reads that as `uses`
+too, so it never keeps the mod out, and saving it again on either page writes it as `uses`. A mod with
+code of its own keeps it as a real need. Fixed looks need Sandbox mode 0.5 or newer; an older one makes
+the look up each time (the page and Apply say so).
 - `id`: small letters, digits and dashes; quests name the cat by it. `name` and `title` (smaller, above
   the name) show over its head.
 - `colours`: any of `fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears`; the rest are the
@@ -318,8 +319,16 @@ Questlines with the mod's own cats, made on the Questlines page, run by Sandbox 
   takes them out on its next save, so they follow renames.)
 - `reward`: items dropped at the cat's paws when the last step is done.
 - How far each sandbox cat has got is kept by Sandbox mode in `sandbox-story.json` beside the game's
-  saves. The mod menu's Questlines page starts one quest over, and the Questlines page's **Start every
-  questline over** (with the game closed) clears every sandbox cat's quests and keeps where its cats stand.
+  saves, one record per sandbox cat. From Sandbox mode 0.5, a record belongs to the cat that was in the
+  save slot when it was written (the registry's `made` stamp), so a new sandbox cat made in the slot of a
+  deleted one starts every questline from the beginning, with its cats beside it; a record 0.4 wrote stays
+  that cat's. Each quest's record keeps its shape too (its steps' `do`, with a `collect` step's `item` and
+  `count`): a quest a cat hasn't finished starts over when its shape changes (a step added or taken out, a
+  step's `do` changed, a `collect` step's `item` or `count` changed), with a log line and the game's
+  update banner. New `lines`, objectives, a new `title` or another spot don't restart it, and a finished
+  quest stays finished (its reward isn't dropped again). The mod menu's Questlines page starts one quest
+  over, and the Questlines page's **Start every questline over** (with the game closed) clears every mod's
+  quests for every sandbox cat and keeps where its cats stand.
 
 wcmods checks both files at install and puts every enabled mod's together into one UE4SS mod,
 `WCModsStory`, which shares them as JSON text in the UE4SS shared variable `WCMods.story`
