@@ -166,7 +166,7 @@ button { cursor: pointer; }
 .skip { position: absolute; left: 12px; top: -100px; z-index: 50; background: var(--accent); color: var(--accent-ink); padding: 8px 14px; border-radius: 8px; font-weight: 700; text-decoration: none; }
 .skip:focus { top: 10px; }
 /* small caps in the body face read "book"; mono read "admin" */
-.eyebrow, .nav-group { font: 600 0.75rem/1 var(--body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.eyebrow, .nav-group { font: 700 0.75rem/1 var(--body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
 .muted { color: var(--muted); }
 .note { color: var(--muted); font-size: 0.95rem; max-width: 68ch; }
 
@@ -180,7 +180,6 @@ button { cursor: pointer; }
 .status { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
 .topbar .chip { border-color: var(--field); }               /* status chips sit on the bar: a real edge */
 .actions { display: flex; gap: 8px; margin-left: auto; align-items: center; }
-.topbar .btn.primary { padding: 9px 20px; font-size: 1.05rem; }
 
 /* The nav: a strip of parchment, each page with its glyph, the open page lit. */
 .nav { border-right: 1px solid var(--line); padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; background: var(--surface); }
@@ -189,7 +188,7 @@ button { cursor: pointer; }
 .nav button:hover { background: color-mix(in srgb, var(--accent-soft) 60%, var(--surface)); color: var(--ink); }
 .nav button[aria-current="page"] { background: var(--accent-soft); color: var(--ink); box-shadow: inset 3px 0 0 var(--accent); }
 .nav button[aria-current="page"]::before { opacity: 1; background: var(--accent); }
-.nav button small { margin-left: auto; font: 600 0.72rem/1 var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border: 1px solid currentColor; border-radius: 999px; padding: 2px 6px; }
+.nav button small { margin-left: auto; font: 700 0.72rem/1 var(--body); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border: 1px solid currentColor; border-radius: 999px; padding: 2px 6px; }
 .nav-group { padding: 16px 12px 6px; }
 .nav-group:first-child { padding-top: 2px; }
 /* Which glyph: paw for "Your mods" (mods, packs, settings), leaf for the making pages, moon for the story pages
@@ -221,7 +220,7 @@ button { cursor: pointer; }
 .section[data-page="npcs"], .section[data-page="quests"] { --clan: var(--shade); --clan-soft: var(--shade-soft); --stage: var(--shade-stage); --stage-2: var(--shade-stage-2); }
 
 /* ---------- controls ---------- */
-.btn { border: 1px solid var(--field); background: var(--raised); color: var(--ink); border-radius: 10px; padding: 7px 14px; min-height: 36px; font-weight: 600; box-shadow: 0 1px 0 var(--line); display: inline-flex; align-items: center; justify-content: center; gap: 8px; line-height: 1.2; }
+.btn { border: 1px solid var(--field); background: var(--raised); color: var(--ink); border-radius: 10px; padding: 7px 14px; min-height: 36px; font-weight: 500; box-shadow: 0 1px 0 var(--line); display: inline-flex; align-items: center; justify-content: center; gap: 8px; line-height: 1.2; }
 .btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 45%, var(--raised)); }
 a.btn { text-decoration: none; }
 /* Play, Save to mod, Apply, Install it, Add it: one shape everywhere, the only fern-filled thing in its region */
@@ -256,7 +255,7 @@ button.chip[aria-pressed="true"], button.chip[aria-selected="true"] { border-col
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px 12px 15px 11px / 12px 15px 11px 14px; box-shadow: var(--shadow); padding: 16px 18px; display: grid; gap: 12px; min-width: 0; }
 #pal-panel .card { border-radius: 10px; box-shadow: none; }      /* the Palettes page's 190px colour cards: plain, so the uneven corners don't read as a glitch */
 .field { display: grid; gap: 4px; }
-.field label, .lbl { font-weight: 600; font-size: 0.92rem; }
+.field label, .lbl { font-weight: 500; font-size: 0.92rem; }
 input[type="text"], input[type="number"], input[type="search"], select, textarea {
   border: 1px solid var(--field); background: var(--raised); color: var(--ink); border-radius: 8px; padding: 7px 10px; min-width: 0; box-shadow: inset 0 1px 2px rgba(42,32,23,.06);
 }
@@ -274,7 +273,7 @@ textarea { width: 100%; min-height: 120px; font: 400 0.84rem/1.5 var(--mono); re
 .target { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 14px; border: 1px solid var(--line); border-left: 5px solid var(--clan); border-radius: 12px; background: var(--raised); box-shadow: var(--shadow); }
 .target .lbl { font: 700 1.05rem var(--display); }
 .target .dirty { color: var(--changed); font-size: 0.95rem; }
-.target .dirty:not(:empty) { font-weight: 600; padding-left: 16px; position: relative; }
+.target .dirty:not(:empty) { font-weight: 500; padding-left: 16px; position: relative; }
 .target .dirty:not(:empty)::before { content: ""; position: absolute; left: 0; top: 50%; width: 9px; height: 9px; border-radius: 50%; background: var(--changed); transform: translateY(-50%); }
 .empty { color: var(--muted); padding: 20px 18px 18px; text-align: center; border: 1px dashed var(--field); border-radius: 12px; }
 .empty::before { content: ""; display: block; width: 44px; height: 44px; margin: 0 auto 6px; background: var(--muted); opacity: .55; -webkit-mask: var(--cat) center / contain no-repeat; mask: var(--cat) center / contain no-repeat; }
@@ -299,6 +298,7 @@ table.grid-table { border-collapse: collapse; width: 100%; font-size: 0.92rem; o
 .toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 8px; z-index: 30; }
 .toast { background: var(--ink); color: var(--bg); border-left: 4px solid var(--accent); padding: 8px 14px; border-radius: 10px; font-size: 0.95rem; box-shadow: 0 8px 24px rgba(0,0,0,.25); max-width: min(560px, calc(100vw - 32px)); display: flex; gap: 10px; align-items: start; }
 .toast-close { border: 0; background: none; color: inherit; font-size: 1.2rem; line-height: 1; padding: 0 2px; min-width: 24px; min-height: 24px; }
+.toast a { color: inherit; }   /* a link in a toast takes the toast's ink (accent on ink would be 2.5:1) */
 .toast.bad { background: var(--bad); color: var(--bad-ink); border-left-color: var(--bad-ink); }
 @media (prefers-reduced-motion: no-preference) { .toast { animation: rise 160ms ease-out; } @keyframes rise { from { transform: translateY(6px); opacity: 0; } } }
 
@@ -375,7 +375,8 @@ label.row { min-height: 24px; }
 
 /* ---------- narrow screens ---------- */
 @media (max-width: 860px) {
-  .shell { grid-template-columns: minmax(0, 1fr); }
+  /* one column: the nav takes an auto row of its own, so on a short page (Loading…, the server-gone card) its pills stay 44px and the main pane takes the rest */
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
   .nav { flex-direction: row; overflow-x: auto; gap: 6px; padding: 8px 10px; border-right: 0; border-bottom: 1px solid var(--line); scroll-snap-type: x proximity; scrollbar-width: thin; }
   .nav button { white-space: nowrap; min-height: 44px; scroll-snap-align: start; border: 1px solid var(--field); background: var(--raised); border-radius: 999px; padding: 6px 14px 6px 10px; }
   .nav button[aria-current="page"] { box-shadow: none; border-color: var(--accent); }
@@ -391,7 +392,7 @@ label.row { min-height: 24px; }
 }
 @media (max-width: 480px) {
   .topbar { position: static; gap: 8px 12px; }   /* four wrapped rows must not stick: on a phone the bar scrolls away */
-  .status { flex-basis: 100%; order: 3; }
+  .status { flex-basis: 100%; }   /* its own row between the brand and the buttons, in DOM order, so Tab follows what you see */
   .actions { flex: 1 1 100%; flex-wrap: wrap; }
   .actions .btn:not(.ghost, .icon) { flex: 1; min-width: 0; padding-inline: 10px; }   /* one :not(), so the 400px rule below outranks it */
   .topbar .btn.primary { font-size: 1rem; }

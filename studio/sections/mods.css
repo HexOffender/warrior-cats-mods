@@ -14,7 +14,7 @@
 .mod-wide { grid-column: 2 / -1; }
 @media (max-width: 560px) { .mod { grid-template-columns: auto minmax(0, 1fr); } .mod-actions { grid-column: 2; } }
 h3.group { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
-.ok-line { color: var(--good); font-weight: 600; }
+.ok-line { color: var(--good); font-weight: 500; }
 
 /* Get set up: birch with a fern edge (the first thing to do), and the paw as the done tick. */
 .card.setup { background: var(--raised); border-color: var(--accent); border-left-width: 5px; }
