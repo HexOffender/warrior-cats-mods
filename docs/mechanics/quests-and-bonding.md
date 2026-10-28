@@ -6,7 +6,8 @@ of the [mechanics notes](README.md).
 **Sources:** `QuestDialogues.csv` (1215 rows), `StoryDialogues.csv` (2937),
 `QuestDynamicObjectives.csv`, `QuestObjectives.csv`, `QuestGossipCost.csv`,
 `NPC/NarrativeRole.csv`, `CombatDilemmas.csv`, `TuningData.csv` (`Progression.Bonding.*`) and the
-save. How the numbers are used is inferred from the data; the quest code hasn't been read yet.
+save. How the numbers are used is inferred from the data; of the quest code, only how it fills
+dialogue in from the tables has been read (below).
 
 ## Kinds of quest
 
@@ -66,6 +67,20 @@ The NPC replies to each answer (`Context.2.Right` …), and the conversation end
 **Monologues** (`Gameplay.Dialogue.Story.Monologue.<Filler|Interaction|Encounter>.<Character>…`)
 have Positive, Neutral and Negative versions, and each gives +1 clan bonding. The version is
 probably picked by your bonding.
+
+**How the tables reach a conversation** (read from the graphs and the code; the reverse-engineering
+notes, *Dialogue graphs*):
+- Story and quest conversations are templates the quest manager fills in as they play. A story tag picks
+  its template by its kind: Short and Long the first time and `End` after, Interaction 1 to 3 on the first
+  three talks, Filler, Encounter or Activity Transition.
+- Each line is the row `<tag>.<SubTag>` (story) or `<quest>.<AutoFillSuffix>` (quest). Its `Talker` says
+  who speaks and its `StringKey` the words. `DebugText` shows only when the key is missing: older English
+  in `StoryDialogues.csv`, the key itself in `QuestDialogues.csv` (so the Escort and Recruit quests, whose
+  keys `Strings_EN` lacks, would show raw keys).
+- An answer button takes its `Trait`, `Score` and `ClanBonding` from its row. So the scores above are
+  the ones the game puts on the buttons; what it does with them after is still the open question below.
+- A cat's own talks are graphs the quest sublevels place: one root per quest state (`Quest.Main.1.0`,
+  `Quest.Main.1.Complete`…), each starting a story talk by tag.
 
 **What the scores feed** (inferred):
 - `Score` probably adds to your bond with the cat you're talking to.

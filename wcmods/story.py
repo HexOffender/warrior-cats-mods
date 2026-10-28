@@ -26,8 +26,9 @@ npcs.json, the mod's cats:
   left out (and the eye colour, without "eyes") is made up again each time it appears.
 
   A cat with no "at" turns up beside your sandbox cat the first time it comes into the forest, and stays
-  there for that cat; "at": [x, y, z] (with "yaw" and "level") puts it in one place for every cat. "lines"
-  is what it says when it has nothing to do with a quest.
+  there for that cat; "at": [x, y, z] (with "yaw" and "level") puts it in one place for every cat. "at":
+  null is the Characters page's "At one spot" with no spot filled in yet: the same as no "at" until it is.
+  "lines" is what it says when it has nothing to do with a quest.
 
 quests.json, the mod's questlines:
 
@@ -50,27 +51,41 @@ quests.json, the mod's questlines:
   A questline starts by itself once the quests in its "after" are done (at once with none), and its steps
   go in order: "talk" (to "npc", the giver if left out: the step is done after its last line), "collect"
   (pick up "count" of "item" from the step's start) and "visit" (go within "radius" cm of "at", or of the
-  nearest of a "place": the medicine cat). "objective" is what the quest panel says (made up from the step
-  when left out). "reward" is dropped at your cat's paws when the last step is done.
+  nearest of a "place": the medicine cat). "objective" is what the game's objective panel says; left out,
+  the build fills it in from the step at Apply (objective()), with the cat's and the item's names as they
+  are then. "description" is a sentence about the quest, shown under its title on the mod menu's
+  Questlines page. "reward" is dropped at your cat's paws when the last step is done.
 
 Ids are a mod's own: a quest names the mod's own cats and quests. Keys starting with "_" are notes.
+
+A mod with cats or questlines says "uses": ["sandbox"] in its mod.json (the studio writes it): Sandbox mode
+comes on with it when it's in the mods folder, and a mod without it still goes in (its items, palettes and
+names with it), waiting for Sandbox mode to show its cats. sandbox() says what the installed one can show.
 """
 import json
+import os
 import re
 
 from .catcolours import LOOK, LOOK_MAX
+from .mods import version_key
 from .palettes import GAME_SLOTS
 
 FILES = ("npcs.json", "quests.json")
 FORMAT = 1
-SANDBOX_ID = "sandbox"   # the mod that runs them: its folder name, what a mod gives in "requires"
+SANDBOX_ID = "sandbox"   # the mod that runs them: its folder name, what a mod gives in "uses"
+SANDBOX_NAME = "Sandbox mode"   # its name, for a studio that hasn't got it yet
+SANDBOX_RELEASES = "https://github.com/HexOffender/wcmods-sandbox/releases"
+# What a cat or a questline can say that a Sandbox mode older than this ignores: {field: version}.
+SANDBOX_NEEDS = {"look": "0.5", "slots": "0.5"}
+PROGRESS_FILE = "sandbox-story.json"   # Sandbox mode's record of each sandbox cat's quests, in Game.save.folder()
 SHARED_VARIABLE = "WCMods.story"   # what the game gets: every mod's cats and questlines, as JSON text
 
 ID = re.compile(r"[a-z0-9][a-z0-9-]{0,47}$")
 HEX = re.compile(r"#[0-9A-Fa-f]{6}$")
 COLOURS = ("fur", "pattern", "markings", "nose", "paws", "whiskers", "ears")
-# Places a "visit" step can name: the actor class of each (the nearest one counts).
+# Places a "visit" step can name: the actor class of each (the nearest one counts), and its words.
 PLACES = {"medicine-cat": "BP_Quest_Giver_Bartering_C"}
+PLACE_WORDS = {"medicine-cat": "the nearest medicine cat"}
 STEPS = ("talk", "collect", "visit")
 ITEM_ROOT = "Gameplay.Inventory."
 MAX_LINE, MAX_LINES, MAX_STEPS, MAX_COUNT = 400, 30, 40, 99
@@ -78,6 +93,9 @@ MAX_LINE, MAX_LINES, MAX_STEPS, MAX_COUNT = 400, 30, 40, 99
 # A fixed look's colour slots: the coat's (the game's 25, which also pick its nose, paws, ears and whiskers) and
 # the pattern's and markings' (any slot: new ones a palette adds too).
 SLOTS = ("fur", "pattern", "marking")
+# A cat's size when npcs.json leaves it out: a grown cat, as the Characters page shows it. The game's own
+# default for a spawned cat is 0.4, a kit's.
+DEFAULT_SIZE = 0.85
 NPC_KEYS = {"id", "name", "title", "colours", "eyes", "size", "look", "slots", "at", "yaw", "level", "lines"}
 QUEST_KEYS = {"id", "title", "description", "giver", "after", "steps", "reward"}
 STEP_KEYS = {"do", "objective", "npc", "lines", "item", "count", "at", "level", "place", "radius"}
@@ -201,6 +219,7 @@ def npcs(raw):
             v = _number(npc, key, where, lo, hi, whole)
             if v is not None:
                 cat[key] = v
+        cat.setdefault("size", DEFAULT_SIZE)
         for key in ("look", "slots"):
             parts = _parts(npc, key, where)
             if parts:
@@ -353,3 +372,114 @@ def items_used(data):
         out.update(q.get("reward", {}))
         out.update(s["item"] for s in q["steps"] if s["do"] == "collect")
     return out
+
+
+def objective(step, cat_name, item_name):
+    """What the game's objective panel says for a step its maker left without one: "Talk to Mossfoot",
+    "Find 2 Moss", "Visit the nearest medicine cat", "Go to the marked place". cat_name(id) and item_name(tag)
+    give today's names. (The Questlines page shows the same words as the field's placeholder.)"""
+    if step["do"] == "talk":
+        return f"Talk to {cat_name(step['npc'])}"
+    if step["do"] == "collect":
+        count = step.get("count", 1)
+        return f"Find {count} {item_name(step['item'])}" if count > 1 else f"Find {item_name(step['item'])}"
+    if step.get("place"):
+        return f"Visit {PLACE_WORDS.get(step['place'], step['place'])}"
+    return "Go to the marked place"
+
+
+def item_words(tag):
+    """An item's name from its tag alone, for one nothing names: "SmallHealingHerb" -> "Small Healing Herb"."""
+    last = str(tag).rsplit(".", 1)[-1]
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", last)
+
+
+def has_any(folder):
+    """Whether a mod's npcs.json or quests.json holds a cat or a quest (files that can't be read count as none)."""
+    for name, key in (("npcs.json", "npcs"), ("quests.json", "quests")):
+        try:
+            with open(os.path.join(folder, name), encoding="utf-8-sig") as f:
+                raw = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if isinstance(raw, dict) and isinstance(raw.get(key), list) and raw[key]:
+            return True
+    return False
+
+
+def needs_of(data):
+    """{field: [names of the cats that use it]} for the fields of SANDBOX_NEEDS a mod's cats and quests use."""
+    out = {}
+    for cat in data["npcs"]:
+        for field in ("look", "slots"):
+            if cat.get(field):
+                out.setdefault(field, []).append(cat["name"])
+    return out
+
+
+def sandbox(found, allow_code, held_back=None, released=None):
+    """What Sandbox mode can show of the mods' cats and questlines, for the story pages and the build:
+    {"state": "on" | "off" | "held-back" | "no-code" | "missing", "version": its version ("" when it has none,
+    None when it isn't there), "name", "needs": SANDBOX_NEEDS, "newest": the newest version they ask for (which
+    may not be released yet), "older": the fields of SANDBOX_NEEDS it's too old for, "releases": where to
+    download it, "released": its newest release as far as the studio knows (`released`, or None when it
+    doesn't), "code_allowed", "held": why it's left out, when it's held back (else None)}. found: the mods
+    folder's mods (mods.discover); allow_code: whether mods that run code are allowed, which Sandbox mode, a
+    script, needs; held_back: gamebuild.held_back's {mod id: why}, the mods a build leaves out after a game
+    update until they're used anyway (Sandbox mode among them is on, but nothing of it goes in)."""
+    m = next((x for x in found if x.id == SANDBOX_ID), None)
+    held = (held_back or {}).get(SANDBOX_ID) if m is not None and m.enabled else None
+    if m is None:
+        state = "missing"
+    elif not m.enabled:
+        state = "off"
+    elif held:
+        state = "held-back"
+    elif not allow_code:
+        state = "no-code"
+    else:
+        state = "on"
+    version = m.version if m else None
+    have = version_key(version)   # None: no version, or not one that reads as a number (older than any)
+    needs = {k: version_key(v) for k, v in SANDBOX_NEEDS.items()}
+    older = sorted(k for k, need in needs.items() if m is not None and need is not None and (have is None or have < need))
+    newest = max((v for v in SANDBOX_NEEDS.values() if version_key(v) is not None), key=version_key, default=None)
+    return {"state": state, "version": version, "name": m.name if m else SANDBOX_NAME, "needs": dict(SANDBOX_NEEDS),
+            "newest": newest, "older": older, "releases": SANDBOX_RELEASES, "released": released or None,
+            "code_allowed": bool(allow_code), "held": held}
+
+
+def held_words(held):
+    """Why a Sandbox mode that's on goes into no build after a game update, and the way to put it back:
+    `held` is gamebuild.held_back's why for it ("made for an older version of the game", or "needs X, made
+    for ..."). The studio's strip says the same (story.js stripWords)."""
+    if not held or held.startswith("made for"):
+        return ("Sandbox mode is left out since the game's update, as it was made for an older version of the game "
+                "(on the Mods page, its card has Use it anyway…)")
+    return (f"Sandbox mode is left out since the game's update: it {held} (on the Mods page, that mod's card has "
+            "Use it anyway…)")
+
+
+def start_over(folder):
+    """Every sandbox cat's questlines back to the start, as the mod menu's "Start every questline over" does:
+    sandbox-story.json in `folder` (pipeline.saved_folder) keeps each cat's entry and where its cats stand,
+    without its quests. A file that can't be read goes. Returns {"cats": how many sandbox cats it touched}."""
+    path = os.path.join(folder, PROGRESS_FILE)
+    if not os.path.isfile(path):
+        return {"cats": 0}
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+    except (OSError, ValueError):
+        os.remove(path)
+        return {"cats": 0, "removed": True}
+    touched = 0
+    for key, entry in data.items():
+        if not key.startswith("_") and isinstance(entry, dict):
+            entry["quests"] = {}
+            touched += 1
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, ensure_ascii=False)
+    return {"cats": touched}

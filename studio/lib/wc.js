@@ -3,21 +3,136 @@
 // A section is an ES module whose default export is:
 //   { title: "My page", mount(root, wc) { ...; return { unmount() {} } } }
 // `wc` is this module. See docs/SDK.md for a worked example.
+//
+// What a page gets from here:
+//   api            GET/POST/PUT/PATCH/DELETE on the studio's API, with the page's token. An error is an Error
+//                  whose message is a sentence for the player; e.data is the answer's JSON, e.code is "gone"
+//                  when the studio's server isn't there and "token" when it refuses this page. The studio gets
+//                  a new token each time it starts: a request it refuses for the token reads the new one from
+//                  the studio's page and is made once more, so a page from before a restart keeps working.
+//   reconnect()    whether the studio answers, taking up its token when it does (the shell's way back after
+//                  "server-gone", which is said once a request couldn't reach it twice, a few seconds apart).
+//   anyDirty(), dirtyTargets()   whether any page has unsaved changes, and which bars have them: the shell
+//                  never reloads the page or restarts the studio over them. markUnsaved(holder, on) counts
+//                  unsaved work that has no bar.
+//   modTarget      the "Editing mod" bar a page saves its file through (below). It keeps unsaved work: the
+//                  browser asks before the page closes, switching mods and importing a file ask first (save
+//                  them, go on without, or stay), and refresh() re-reads the mod list without reloading the
+//                  file while the page has unsaved changes. What would keep the saved file out of the game
+//                  (the save's `problems`) shows under the bar until the next save that's fine; under that, what
+//                  Apply would leave out or warn about in a file that goes in (the save's `notes`, "Good to know
+//                  before you apply"), and what the save left out until it's finished (its `left_out`, an item
+//                  with no description yet), a plain note by name (leftSaid says it); either way the mod is still
+//                  turned on. An Apply while there are unsaved changes says they aren't in the game yet; coming
+//                  back to the window re-reads a file changed outside the page, when nothing is unsaved. A save
+//                  doesn't read the file back; onSaved(value, {changed}) hears what was saved (changed: the page
+//                  was edited while it saved), and settleNew(list, saved) keeps the ids of the new entries it held.
+//   installedEvent(target, fn)   bus.on("installed", fn) that skips fn while target has unsaved changes: for
+//                  a page that reloads its file after an Apply (wc.bus.on("installed", ...) runs regardless).
+//   openHelp(page) opens a page of the guide (docs/guide/<page>.md) in the help panel; no page, the index.
+//   captureKey({title, pad, reserved, ...})   the dialog that asks for a key or a controller button (below);
+//                  resolves to the game's name for it, or null when cancelled.
+//   codeWarning(mods)   the one warning before allowing mods that run code (Get set up, Settings and repair),
+//                  naming the mods in the player's folder that do.
+//   addonButton(id)     a button that adds one of the mods that go with Clan Mod Studio (GET /addons lists
+//                  them) from its GitHub release, for a page that needs it (Characters needs Sandbox mode).
+//   crashCard(crash)    the game's last crash (GET /crash), with Copy the report and Turn <mod> off.
+//   bus            events between pages: "mods-changed" (a mod was made, changed, switched or removed),
+//                  "installed" (an Apply, Play or Check finished; the manifest, its `task` the route: "/build"
+//                  for Check my mods, which put nothing in the game: onlyChecked), "sections-changed" (the
+//                  side bar's pages may have changed), "focus" (the window came back), "game" (the game started or
+//                  closed: { running }).
+//   color          colours: normHex (the pickers' 3 or 6 hex digits), parse (every form a mod's file may use,
+//                  as wcmods/colors.py reads them), and the conversions and moods the Palettes page uses.
+//   input          the game's names for keys and buttons (lib/keys.js: keyFromEvent, keyLabel...).
+//   el, clear, toast, announce, confirmButton, codePanel, copy, getPath, saveFile, docLink.
+import { color } from "./colour.js";
+import { input } from "./keys.js";
 
-const TOKEN = document.querySelector('meta[name="wc-token"]')?.content || "";
+export { input };
+
+import { addonToast, sentence } from "./modlist.js";
+
+// The page's token: from its <meta> at first, then whatever the studio's page says after a restart (reconnect).
+let token = document.querySelector('meta[name="wc-token"]')?.content || "";
 
 // ---------- API ----------
-async function call(method, path, body) {
-  const res = await fetch("/api" + path, {
-    method,
-    headers: { "X-WC-Token": TOKEN, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  let data = null;
-  try { data = await res.json(); } catch (e) { /* empty body */ }
-  if (!res.ok) throw new Error((data && data.error) || `${res.status} ${res.statusText}`);
-  return data;
+// One request to the studio's server. Its failures are told apart for the shell: the server not answering at
+// all (its window was closed, or it's restarting) and a token it refuses.
+async function request(path, options) {
+  let res;
+  try {
+    res = await fetch("/api" + path, options);
+  } catch (e) {
+    const err = new Error("Clan Mod Studio's window was closed, or it's restarting");
+    err.code = "gone";
+    unsure();
+    throw err;
+  }
+  return res;
 }
+async function readJson(res) {
+  try { return await res.json(); } catch (e) { return null; }   // an empty answer, or not JSON
+}
+const refusedToken = (res, data) => res.status === 403 && !!data && /studio token/.test(data.error || "");
+function failed(res, data) {
+  const err = new Error((data && data.error) || `${res.status} ${res.statusText}`);
+  err.status = res.status;
+  err.data = data;
+  if (refusedToken(res, data)) {
+    err.code = "token";
+    bus.emit("token-lost");
+  }
+  return err;
+}
+// A request with the page's token; a refusal for the token (the studio restarted since this page was made) is
+// met by reading the new token from the studio's page and asking once more. A refused request did nothing, so
+// asking again never does a thing twice. Throws a failed() Error for any other answer that isn't ok.
+async function answer(path, options = {}) {
+  const ask = () => request(path, { ...options, headers: { ...(options.headers || {}), "X-WC-Token": token } });
+  let res = await ask();
+  if (res.ok) return res;
+  let data = await readJson(res);
+  if (refusedToken(res, data) && await reconnect()) {
+    res = await ask();
+    if (res.ok) return res;
+    data = await readJson(res);
+  }
+  throw failed(res, data);
+}
+async function call(method, path, body) {
+  const json = body !== undefined ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+  return readJson(await answer(path, { method, ...json }));
+}
+
+// Whether the studio answers: its page is asked for (this page's own origin, nowhere else), and the token in it
+// taken up, so the API goes on working with a studio that restarted.
+export async function reconnect() {
+  let res;
+  try { res = await fetch("/", { cache: "no-store", credentials: "same-origin" }); } catch (e) { return false; }
+  if (!res.ok) return false;
+  if (res.url && typeof location !== "undefined" && new URL(res.url, location.href).origin !== location.origin) return false;
+  let html = "";
+  try { html = await res.text(); } catch (e) { return false; }
+  const m = /<meta name="wc-token" content="([\w-]+)">/.exec(html);
+  if (!m) return false;
+  token = m[1];
+  return true;
+}
+// A request that couldn't reach the studio: once may be a blip (the computer waking, a moment's load), so the
+// studio is asked again a few seconds later, and only when that fails too is "server-gone" said.
+export const RECHECK_MS = 3000;
+let rechecking = false;
+function unsure() {
+  if (rechecking) return;
+  rechecking = true;
+  setTimeout(async () => {
+    const up = await reconnect();
+    rechecking = false;
+    if (!up) bus.emit("server-gone");
+  }, RECHECK_MS);
+}
+
 export const api = {
   get: p => call("GET", p),
   post: (p, b = {}) => call("POST", p, b),
@@ -26,20 +141,11 @@ export const api = {
   del: p => call("DELETE", p),
   // Send a file as the request's body (a downloaded mod's .zip, a picture); the answer is JSON.
   async upload(p, file, type = "application/zip") {
-    const res = await fetch("/api" + p, { method: "POST", headers: { "X-WC-Token": TOKEN, "Content-Type": type }, body: file });
-    let data = null;
-    try { data = await res.json(); } catch (e) { /* empty body */ }
-    if (!res.ok) throw new Error((data && data.error) || `${res.status} ${res.statusText}`);
-    return data;
+    return readJson(await answer(p, { method: "POST", headers: { "Content-Type": type }, body: file }));
   },
   // Fetch a file the API makes (a mod as a .zip) and hand it to the browser to save.
   async download(p) {
-    const res = await fetch("/api" + p, { headers: { "X-WC-Token": TOKEN } });
-    if (!res.ok) {
-      let data = null;
-      try { data = await res.json(); } catch (e) { /* not JSON */ }
-      throw new Error((data && data.error) || `${res.status} ${res.statusText}`);
-    }
+    const res = await answer(p);
     const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "download";
     const url = URL.createObjectURL(await res.blob());
     const a = el("a", { href: url, download: name });
@@ -52,11 +158,7 @@ export const api = {
   // A picture the API makes (an item's icon) as a URL for an <img>; kept, so asking again is free.
   async image(p) {
     if (!images.has(p)) {
-      images.set(p, (async () => {
-        const res = await fetch("/api" + p, { headers: { "X-WC-Token": TOKEN } });
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        return URL.createObjectURL(await res.blob());
-      })());
+      images.set(p, (async () => URL.createObjectURL(await (await answer(p)).blob()))());
       images.get(p).catch(() => images.delete(p));
     }
     return images.get(p);
@@ -96,6 +198,28 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export const DOCS = "https://github.com/HexOffender/warrior-cats-mods/blob/main/";
 export const docLink = (path, text) => el("a", { href: DOCS + path, target: "_blank", rel: "noopener", text: text || path });
 export const clear = node => { node.textContent = ""; return node; };
+
+// The head of a page: an eyebrow (its group, or what it touches), the title, the lede (what this page changes
+// in the game, in the player's words) and, when a doc explains the page, a help link: help is the doc's path,
+// or { path, text }. It is the markup styles.css styles as .section-head, so a page that builds its own head
+// the same way looks the same; pages adopt it one by one.
+// help as "help:<page>" (or { page, text }) opens that page of the guide (docs/guide/<page>.md) in the help
+// panel instead; a doc's path opens it on GitHub, as before.
+export function pageHead({ eyebrow, title, lede, help } = {}) {
+  let link = null;
+  if (help) {
+    const page = typeof help === "string" ? (help.startsWith("help:") ? help.slice(5) : null) : help.page || null;
+    const text = (typeof help === "object" && help.text) || "How this works";
+    link = page !== null
+      ? el("button", { class: "btn link", type: "button", text, onclick: () => openHelp(page) })
+      : docLink(typeof help === "string" ? help : help.path, text);
+  }
+  return el("div", { class: "section-head" },
+    eyebrow ? el("span", { class: "eyebrow", text: eyebrow }) : null,
+    el("h1", { text: title || "" }),
+    lede ? el("p", { class: "note", text: lede }) : null,
+    link);
+}
 
 // Say something to screen readers, without showing it: politely, or at once for a problem. The live
 // regions are in index.html; the text goes in a moment after they're emptied, so saying the same thing
@@ -177,10 +301,10 @@ function findKey(key) {
 const focusable = n => n && n.isConnected && !n.disabled && n.getClientRects().length > 0 && !n.closest('[aria-hidden="true"]');
 // The element that had focus, and when it was found gone: a redraw puts its replacement in within a
 // moment (after its data comes back); after that, the key is forgotten, so it can't pull focus later.
-let lastKey = null, lostAt = 0;
+let lastKey = null, lastNode = null, lostAt = 0;
 const WAIT = 3000;
 export function keepFocus() {
-  document.addEventListener("focusin", e => { lastKey = focusKey(e.target); lostAt = 0; });
+  document.addEventListener("focusin", e => { lastKey = focusKey(e.target); lastNode = e.target; lostAt = 0; });
   document.addEventListener("focusout", e => {
     // Focus moved off on purpose (a click on the page): forget it. A redraw takes the element out first.
     const t = e.target, key = lastKey;
@@ -188,6 +312,9 @@ export function keepFocus() {
   });
   new MutationObserver(() => {
     if (!lastKey || (document.activeElement && document.activeElement !== document.body)) return;
+    // The element that had focus is still there: focus left it on purpose (Tab on its way to the next box, while
+    // a change it made shows a message), so it isn't pulled back. Only one a redraw took away is replaced.
+    if (lastNode && lastNode.isConnected) return;
     lostAt ||= Date.now();
     if (Date.now() - lostAt > WAIT) { lastKey = null; return; }
     const n = findKey(lastKey);
@@ -221,50 +348,117 @@ export const bus = {
   on(evt, fn) { (listeners[evt] ||= []).push(fn); return () => { listeners[evt] = listeners[evt].filter(f => f !== fn); }; },
   emit(evt, data) { for (const fn of listeners[evt] || []) { try { fn(data); } catch (e) { console.error(e); } } },
 };
+// bus.on("installed", fn) for a page that reloads its file after an Apply: fn is skipped while the page's
+// modTarget has unsaved changes, so an Apply from the top bar can't take them away. Returns the unsubscribe.
+export function installedEvent(target, fn) {
+  return bus.on("installed", d => { if (!target || !target.dirty) fn(d); });
+}
+// Whether an "installed" event's result is a check of the mods (Check my mods: /build), which put nothing in the
+// game, rather than an Apply or Play: a page that says what's in the game leaves it out.
+export const onlyChecked = result => !!(result && result.task === "/build");
+// Open a page of the guide (docs/guide/<page>.md) in the help panel; with no page, the guide's index.
+export function openHelp(page = "") {
+  bus.emit("help", page);
+}
+
+// ---------- mods that run code, and the mods that go with Clan Mod Studio ----------
+// The warning before allowing mods that run code, the same wherever it's asked: what code can do, and which
+// of your mods (GET /mods, each with `about` when the page knows what it's for) run some, with their authors.
+export const CODE_WARNING = "Some mods carry code: small programs that run inside the game, or steps that run on " +
+  "your computer when your mods are applied. Code can do anything your account can, so allow it only if you " +
+  "trust every such mod you've added. The four that come with Clan Mod Studio are fine.";
+const CODE_KINDS = { "in-game script": "an in-game script", "C++ mod": "a C++ mod", "C++ source": "a C++ mod",
+  code: "a build step", "studio page": "a studio page" };
+export function codeWarning(mods = []) {
+  const code = mods.filter(m => m.code);
+  const what = m => m.about || (m.kinds || []).map(k => CODE_KINDS[k]).filter(Boolean)[0] || "it runs code";
+  return el("div", { class: "banner code-warning" },
+    el("strong", { text: "Only for mods from people you trust" }),
+    el("span", { text: CODE_WARNING }),
+    code.length ? el("span", { text: code.length > 1 ? "These of your mods run code:" : "This one of your mods runs code:" }) : null,
+    code.length ? el("ul", { class: "notes" }, ...code.map(m => el("li", { text: `${m.name}${m.author ? `, by ${m.author}` : ""}: ${what(m)}` }))) : null);
+}
+
+// The game's last crash since the last Apply or Take all mods out (GET /crash's "crash"), as a card: when, what
+// it said, the C++ mod that was running when it crashed (if one was), Copy the report and Turn <mod> off.
+// `dismiss` adds a Close.
+export function crashCard(c, { dismiss = null } = {}) {
+  const when = new Date(c.when).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const off = c.mod ? el("button", { class: "btn small", type: "button", text: `Turn ${c.mod_name || c.mod} off`, onclick: async () => {
+    try {
+      await api.post(`/mods/${encodeURIComponent(c.mod)}/switch`, { on: false, cascade: true });
+      toast(`${c.mod_name || c.mod} is off. Press Play to start the game without it.`);
+      bus.emit("mods-changed", { from: "crash" });
+    } catch (e) { toast(e.message, "bad"); }
+  } }) : null;
+  return el("div", { class: "banner crash", role: "group", "aria-label": "The game crashed last time" },
+    el("strong", { text: "The game crashed last time" }),
+    el("span", { text: `${when}: ${c.message}` }),
+    c.mod ? el("span", { text: `It was in ${c.mod_name || c.mod}${c.where ? ` (${c.where})` : ""}.` })
+      : c.where ? el("span", { text: `It was in ${c.where}.` }) : el("span", { class: "muted", text: "No C++ mod was running when it crashed, so this report doesn't say which mod it was, if any." }),
+    el("div", { class: "row" },
+      el("button", { class: "btn small", type: "button", text: "Copy the report", onclick: () => copy(c.readout) }),
+      off,
+      dismiss ? el("button", { class: "btn ghost small", type: "button", text: "Close", onclick: dismiss }) : null));
+}
+
+// A button that adds one of the mods that go with Clan Mod Studio (wcmods/addons.py) from its latest GitHub
+// release, then says what came of it and tells every page (mods-changed). `name` is said while it works. When
+// it turns out to have no release yet, the button gives way to a line saying so, as there's nothing to press.
+export function addonButton(id, { label = "Add it", name = "", cls = "btn small" } = {}) {
+  const b = el("button", { class: cls, type: "button", text: label, "data-addon": id });
+  b.addEventListener("click", async () => {
+    b.disabled = true;
+    b.textContent = name ? `Adding ${name}…` : "Adding…";
+    announce(b.textContent);
+    try {
+      const [r, settings] = await Promise.all([api.post(`/addons/${encodeURIComponent(id)}`, {}), api.get("/settings").catch(() => ({}))]);
+      toast(addonToast(r.result, settings.allow_code_mods));
+      bus.emit("mods-changed", { from: "addon" });
+    } catch (e) {
+      if (e.data && e.data.no_release) {
+        const who = name ? name.charAt(0).toUpperCase() + name.slice(1) : "It";
+        const said = el("span", { class: "muted", "data-addon": id, text: `${who} has no release yet: the owner of that mod has to publish one first.` });
+        b.replaceWith(said);
+        announce(said.textContent);
+        return;
+      }
+      toast(e.data && e.data.offline ? "No internet connection; try again when you're online." : sentence(e.message), "bad");
+    }
+    b.disabled = false;
+    b.textContent = label;
+  });
+  return b;
+}
 
 // ---------- colours (sRGB hex in files, linear floats in the engine) ----------
-const hexRe = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i;
-function normHex(h) {
-  const m = hexRe.exec(String(h).trim());
-  if (!m) return null;
-  let s = m[1];
-  if (s.length === 3) s = s.split("").map(c => c + c).join("");
-  return "#" + s.toUpperCase();
+// In colour.js, which touches no page: normHex, parse (every form a mod's file may write), the conversions and the moods.
+export { color };
+
+// ---------- unsaved work ----------
+// Every Editing-mod bar with unsaved changes, while it's on the page: the shell asks before restarting the
+// studio, never reloads the page over them, and the browser asks before the page closes.
+const unsaved = new Set();
+export const dirtyTargets = () => [...unsaved].filter(t => t.element.isConnected);
+// Unsaved work that isn't an Editing-mod bar's (a script's Settings on its mod's card): `holder` is
+// { element: what it's in, file }, counted until it's marked saved.
+export function markUnsaved(holder, on) { if (on) unsaved.add(holder); else unsaved.delete(holder); }
+export const anyDirty = () => dirtyTargets().length > 0;
+if (typeof window !== "undefined" && window.addEventListener) {
+  window.addEventListener("beforeunload", e => { if (anyDirty()) { e.preventDefault(); e.returnValue = ""; } });
 }
-const hexToRgb = h => { const s = normHex(h).slice(1); return [0, 2, 4].map(i => parseInt(s.slice(i, i + 2), 16) / 255); };
-const rgbToHex = c => "#" + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0")).join("").toUpperCase();
-const s2l = c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-const l2s = c => { c = Math.max(0, Math.min(1, c)); return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
-const luminance = p => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
-function rgbToHsl([r, g, b]) {
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
-  if (mx === mn) return [0, 0, l];
-  const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
-  const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
-  return [h * 60, s, l];
+
+// A page's new entries (marked _new) have ids that follow their names until they're saved; once they are,
+// quests and others may name them, so the ids stay. For modTarget's onSaved: `list` is the page's entries,
+// `saved` the list it just wrote; an entry added since isn't in it, and keeps following its name.
+export function settleNew(list, saved) {
+  const ids = new Set((saved || []).map(x => x && x.id));
+  for (const x of list) if (x && x._new && ids.has(x.id)) delete x._new;
 }
-function hslToRgb([h, s, l]) {
-  h = ((h % 360) + 360) % 360 / 360;
-  if (s === 0) return [l, l, l];
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
-  const f = t => { t = (t + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; };
-  return [f(h + 1 / 3), f(h), f(h - 1 / 3)];
-}
-const clamp01 = v => Math.max(0, Math.min(1, v));
-const toward = (h, t, a) => h + (((t - h + 540) % 360) - 180) * a;
-const MOODS = {
-  vivid: { name: "Vivid", fn: ([h, s, l]) => [h, clamp01(s * 1.35 + 0.06), l] },
-  pastel: { name: "Pastel", fn: ([h, s, l]) => [h, s * 0.55, l + (1 - l) * 0.45] },
-  moonlit: { name: "Moonlit", fn: ([h, s, l]) => [toward(h, 212, 0.4), s * 0.7, clamp01(l * 0.9 + 0.08)] },
-  ember: { name: "Ember", fn: ([h, s, l]) => [toward(h, 20, 0.45), clamp01(s * 1.2 + 0.05), l * 0.92] },
-};
-export const color = {
-  normHex, hexToRgb, rgbToHex, srgbToLinear: s2l, linearToSrgb: l2s, luminance, rgbToHsl, hslToRgb, MOODS,
-  hexToLinear: h => hexToRgb(h).map(s2l),
-  linearToHex: p => rgbToHex(p.map(l2s)),
-  shade: (hex, amt) => { const [h, s, l] = rgbToHsl(hexToRgb(hex)); return rgbToHex(hslToRgb([h, s, clamp01(l * amt)])); },
-  mood: (hex, name) => rgbToHex(hslToRgb(MOODS[name].fn(rgbToHsl(hexToRgb(hex))))),
-};
+
+// A save's left_out (the parts of the file left out of the game until they're finished, by name), in words:
+// "Left out of the game until finished: Moon Herb (no description); Wave (nothing chosen to play yet)."
+export const leftSaid = left => `Left out of the game until finished: ${left.map(x => `${x.name || x.id} (${x.why})`).join("; ")}.`;
 
 // ---------- which mod a section edits ----------
 // Renders "Editing mod: [select] [New mod] [Save]". onLoad(obj|null, modId) fires when the target changes;
@@ -273,11 +467,20 @@ export const color = {
 // The mod a page saves its file into, with a Share part: the mod's details (its name, author, version and
 // description, which a shared .zip carries), Save as .zip for others to add on their Mods page, and the
 // page's file on its own, out (Export) and in (Import). share: false leaves the Share part out.
-export function modTarget({ file, onLoad, getValue, share = true }) {
+// A save doesn't read the file back: the page already holds what it saved, and a change made while it saved
+// stays (and stays unsaved). onSaved(value, {changed}), when given, hears what was saved: a page whose new
+// entries' ids follow their names until they're saved settles them there (settleNew), and a page that tidies
+// its state to match the file does so only when `changed` is false (nothing was edited while it saved).
+// turnOn: false for a file whose mod the player may not want in their own game (the Save page's save.json,
+// which the next Apply would make in their own save): a new mod is made off, a mod that's off stays off, and
+// savedSays(mod) words the toast after a save (with the mod as it is now: whether it's on).
+export function modTarget({ file, onLoad, getValue, onSaved, share = true, turnOn = true, savedSays = null }) {
   const defaultId = "my-mods", defaultName = "My mods";
   const key = "wc-target";   // the mod last chosen, on whichever page
   const kind = file.replace(".json", "");
   let mods = [], current = null, dirty = false;
+  let loadedText = null;   // the file's text as it was last read or saved, to tell when something else changed it
+  let edits = 0;           // changes made on the page, counted: a save or a read under way knows one came meanwhile
   const select = el("select", { "aria-label": `Mod that stores ${file}` });
   const status = el("span", { class: "dirty" });
   const saveBtn = el("button", { class: "btn primary", text: "Save to mod" });
@@ -287,11 +490,24 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
   newBox.append(newId, el("button", { class: "btn small", text: "Create", onclick: () => create(newId.value.trim()) }));
   const bar = el("div", { class: "target" },
     el("span", { class: "lbl", text: "Editing mod" }), select, newBtn, newBox, el("span", { style: { flex: "1" } }), status, saveBtn);
+  // What would keep the saved file out of the game: said under the bar until a save that's fine. Under it, what
+  // Apply would leave out of a file that's fine, or where another mod's file wins (notes), until the next save.
+  const problems = el("div", { class: "problems", role: "alert", hidden: true });
+  const notes = el("div", { class: "save-notes", role: "status", hidden: true });
+  // What the save left out of the game until it's finished (an item with no description yet): a note, not a problem.
+  const leftNote = el("p", { class: "note left-out", role: "status", hidden: true });
+  // The choice when switching mods with unsaved changes.
+  const ask = el("div", { class: "banner switch-ask", role: "group", "aria-label": "Unsaved changes", hidden: true });
   const shareBox = share ? shareCard() : null;
-  const box = shareBox ? el("div", { class: "stack" }, bar, shareBox.element) : bar;
+  const box = el("div", { class: "stack" }, bar, problems, notes, leftNote, ask, shareBox ? shareBox.element : null);
+  const me = { element: box, file };   // in `unsaved` while this bar has unsaved changes
 
-  async function refresh(selectId) {
+  const nameOf = id => (mods.find(m => m.id === id) || {}).name || (id === defaultId ? defaultName : id);
+  const listed = id => [...select.options].some(o => o.value === id);
+  // The mod list, read again, with the choice kept: for refresh() and for "mods-changed" from any page.
+  async function relist() {
     mods = await api.get("/mods");
+    const was = select.value;
     clear(select);
     const withFile = [];
     for (const m of mods) {
@@ -304,6 +520,14 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
     for (const { m, has } of withFile) {
       select.append(el("option", { value: m.id, text: `${m.name}${has ? "" : " (no " + file + " yet)"}${m.enabled ? "" : " · off"}` }));
     }
+    // A mod removed while this page edits it stays chosen until the page is saved (which makes it again) or switched.
+    if (dirty && current && !listed(current)) select.append(el("option", { value: current, text: `${nameOf(current)} (removed)` }));
+    if (was && listed(was)) select.value = was;
+  }
+  // Read the mod list again and open the chosen mod's file (selectId, else the one last chosen). With unsaved
+  // changes on the page, the list is read but the file isn't loaded again, so nothing is lost.
+  async function refresh(selectId) {
+    await relist();
     let pick = selectId;
     if (!pick) {
       try {
@@ -313,67 +537,192 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
         localStorage.removeItem(old);
       } catch (e) { /* storage blocked */ }
     }
-    if (!pick || ![...select.options].some(o => o.value === pick)) pick = select.options[0]?.value;
+    if (dirty && current) {
+      select.value = current;
+      return;
+    }
+    if (!pick || !listed(pick)) pick = select.options[0]?.value;
     select.value = pick;
     await load(pick);
   }
   async function load(id) {
+    const switching = id !== current, edited = edits;
     current = id;
     try { localStorage.setItem(key, id); } catch (e) { /* storage blocked */ }
     let obj = null;
+    loadedText = null;
     if (mods.some(m => m.id === id)) {
       const r = await api.get(`/mods/${encodeURIComponent(id)}/file/${file}`);
+      loadedText = r.exists ? r.text : null;
+      // Changed on the page while the same file was being read again (a click just after Save): the changes stay.
+      if (!switching && edits !== edited) return;
       if (r.exists) { try { obj = JSON.parse(r.text); } catch (e) { toast(`${file} in ${id} isn't valid JSON`, "bad"); } }
     }
     setDirty(false);
+    if (switching) { showProblems([]); showNotes([]); }   // what's said about this mod's file stays through a reload of it
     shareBox?.show(mods.find(m => m.id === id));
     onLoad(obj, id);
   }
   // Saving to a mod means you want it applied: create it if it's new. A mod that exists but is off
   // is turned on only after its file has been written, so a failed save can't enable old content.
+  // With turnOn false, neither: a new mod is made off.
   async function ensureMod(id) {
-    const existing = mods.find(m => m.id === id);
-    if (!existing) {
-      await api.post("/mods", { id, name: id === defaultId ? defaultName : undefined, enabled: true });
+    if (!mods.find(m => m.id === id)) {
+      await api.post("/mods", { id, name: id === defaultId ? defaultName : undefined, enabled: turnOn });
       bus.emit("mods-changed");
     }
-    return existing;
   }
   async function create(id) {
     if (!id) return;
     try {
-      await api.post("/mods", { id, enabled: true });
+      await api.post("/mods", { id, enabled: turnOn });
       bus.emit("mods-changed");
       newBox.hidden = true; newId.value = "";
+      if (dirty) {   // made, but the page's unsaved work isn't dropped for it: the same choice as switching
+        await relist();
+        toast(`Created mod ${id}`);
+        askSwitch(id);
+        return;
+      }
       await refresh(id);
       toast(`Created mod ${id}`);
     } catch (e) { toast(e.message, "bad"); }
   }
-  function setDirty(v) { dirty = v; status.textContent = v ? "Unsaved changes" : ""; }
+  // behind: an Apply or Play ran while there were unsaved changes, so the game has the saved file, not these.
+  let behind = false;
+  const NOT_YET = "Not in the game yet: Save to mod, then Apply";
+  function setDirty(v) {
+    if (v) edits++;   // a change on the page (markDirty, an imported file): one made during a save or a read shows
+    dirty = v;
+    if (!v) behind = false;
+    showStatus();
+    if (v) unsaved.add(me); else unsaved.delete(me);
+  }
+  function showStatus() {
+    status.textContent = !dirty ? "" : behind ? NOT_YET : "Unsaved changes";
+  }
+  // list: the save's problems (they keep the file out of the game), in the alert under the bar; left: its
+  // left_out, the parts left out until they're finished ({name, why}), which the rest of the file goes in
+  // without: a plain note, not a problem.
+  function showProblems(list, left = []) {
+    clear(problems);
+    problems.hidden = !list.length;
+    if (list.length) problems.append(el("strong", { text: "Saved, but it can't go in the game yet: " }), el("span", { text: list.join("; ") }));
+    leftNote.textContent = left.length ? `Saved. ${leftSaid(left)}` : "";
+    leftNote.hidden = !left.length;
+  }
+  function showNotes(list) {
+    clear(notes);
+    notes.hidden = !list.length;
+    if (list.length) notes.append(el("strong", { text: "Good to know before you apply:" }), el("ul", { class: "notes" }, ...list.map(t => el("li", { text: t }))));
+  }
   // Writes the page's file into the mod; true when it's saved. quiet: no toast (Save as .zip says what it did).
   async function save(quiet = false) {
     try {
+      const at = edits;   // counted before the page's value is taken: a change after this one isn't in it
       const value = getValue();
       if (value === undefined) return false;   // the page said what's wrong
-      const existing = await ensureMod(current);
-      const r = await api.put(`/mods/${encodeURIComponent(current)}/file/${file}`, { text: JSON.stringify(value, null, 2) });
-      setDirty(false);
-      if (r && r.problem) {
-        toast(`Saved, but it can't go in the game until this is sorted: ${r.problem}`, "bad");
-      } else if (existing && !existing.enabled) {
-        await api.patch(`/mods/${encodeURIComponent(current)}`, { enabled: true });
-        if (!quiet) toast(`Saved and turned on ${existing.name}. Apply to game to use it.`);
-      } else if (!quiet) {
-        toast(`Saved ${file} in ${current}. Apply to game to use it.`);
+      const text = JSON.stringify(value, null, 2);
+      await ensureMod(current);
+      const r = await api.put(`/mods/${encodeURIComponent(current)}/file/${file}`, { text });
+      // A change made while it saved is still to be saved: the page stays unsaved, and keeps it (onSaved hears
+      // changed: true, so a page that would settle its state from what was saved leaves it alone).
+      const changed = edits !== at;
+      setDirty(changed);
+      loadedText = text.endsWith("\n") ? text : text + "\n";   // as the studio wrote it: not "changed outside"
+      if (onSaved) onSaved(value, { changed });
+      const found = (r && r.problems) || (r && r.problem ? [r.problem] : []);
+      // Its notes: what Apply would warn about in a file that goes in (a part it leaves out, such as a table the
+      // game hasn't got, or a colour another mod's palette wins), under the bar until the next save.
+      const saidNotes = (r && r.notes) || [];
+      const left = (r && r.left_out) || [];
+      showProblems(found, left);
+      showNotes(saidNotes);
+      // Mods the save turned on too (Sandbox mode, for a file of cats or quests).
+      const turned = r && r.turned_on && r.turned_on.length ? ` Turned ${r.turned_on.join(" and ")} on too.` : "";
+      // Whether the mod is on is read afresh: another page may have switched it since this list was made.
+      mods = await api.get("/mods");
+      const now = mods.find(m => m.id === current);
+      // What's left out until it's finished, said by name; it doesn't keep the rest out.
+      const leftAlso = left.length ? ` ${leftSaid(left)}` : "";
+      if (found.length) {
+        toast(`Saved, but it can't go in the game yet: ${found[0]}${turned}`, "bad");
+      } else {
+        // A part left out (a note, or a thing not finished yet) still lets the rest go in: the mod is turned on all
+        // the same.
+        const on = turnOn && now && !now.enabled && !now.problem;
+        if (on) await api.patch(`/mods/${encodeURIComponent(current)}`, { enabled: true });
+        const also = turned + leftAlso;
+        if (saidNotes.length && !quiet) toast(`Saved${on ? ` and turned on ${now.name}` : ""}. Good to know before you apply: ${saidNotes[0]}${also}`);
+        else if (!quiet && savedSays && now) toast(`${savedSays(now)}${also}`);
+        else if (!quiet && on) toast(`Saved and turned on ${now.name}.${also} Apply to game to use it.`);
+        else if (!quiet) toast(left.length ? `Saved.${also}` : `Saved ${file} in ${current}.${also} Apply to game to use it.`);
+        else if (turned) toast(turned.trim());
       }
       bus.emit("mods-changed");
-      await refresh(current);
+      // The list again (the mod may be new, or on now), not the file: the page holds what it saved.
+      await relist();
+      if (listed(current)) select.value = current;
+      shareBox?.show(mods.find(m => m.id === current));
       return true;
     } catch (e) { toast(e.message, "bad"); return false; }
   }
+  // What would replace unsaved changes (switching mods, importing a file) asks first, in the bar: save them to
+  // the mod they're for and go on, go on and leave them, or stay (focus goes back to `back`). go(saved) goes on.
+  function hideAsk() { ask.hidden = true; clear(ask); }
+  function askFirst(said, saveLabel, goLabel, go, back = select) {
+    clear(ask).append(el("strong", { text: "Unsaved changes" }), el("span", { text: said }),
+      el("div", { class: "row" },
+        el("button", { class: "btn primary", text: saveLabel, onclick: async () => {
+          if (!await save(true)) return;   // the save said what's wrong; the page stays
+          hideAsk();
+          await go(true);
+        } }),
+        el("button", { class: "btn danger", text: goLabel, onclick: async () => {
+          hideAsk();
+          setDirty(false);
+          await go(false);
+        } }),
+        el("button", { class: "btn ghost", text: "Stay", onclick: () => { hideAsk(); back.focus(); } })));
+    ask.hidden = false;
+    announce(said);
+    ask.querySelector("button").focus();
+  }
+  // The select shows the current mod until that's decided.
+  function askSwitch(to) {
+    const from = nameOf(current), name = nameOf(to);
+    askFirst(`Unsaved changes in ${file}. Save them to ${from} before switching to ${name}, or switch and leave them behind?`,
+      "Save and switch", "Switch without saving", async saved => {
+        await load(to);
+        select.value = to;
+        if (saved) toast(`Saved to ${from} and switched to ${name}.`);
+      });
+  }
   select.addEventListener("change", async () => {
-    if (dirty) toast("Switched mods; unsaved changes were dropped");
-    await load(select.value);
+    const to = select.value;
+    if (to === current) return;
+    if (!dirty) { await load(to); return; }
+    select.value = current;
+    askSwitch(to);
+  });
+  // Closing or reloading the page with unsaved changes: the browser asks first (the listener on `unsaved`, above).
+  // A mod made, renamed, switched or removed on another page shows here; the file isn't loaded again.
+  bus.on("mods-changed", () => { if (mods.length || current) relist().catch(() => { /* the next refresh says */ }); });
+  // An Apply or Play while this page has unsaved changes put the saved file in the game, not them: said beside Save
+  // until they're saved.
+  bus.on("installed", () => { if (dirty) { behind = true; showStatus(); } });   // not an edit: nothing changed here
+  // Back in the studio's window (from the game, whose own menu saves some files, or another window): a file changed
+  // outside this page is read again while nothing here is unsaved, so the next Save doesn't write over it.
+  bus.on("focus", async () => {
+    if (dirty || !current || !mods.some(m => m.id === current)) return;
+    let r;
+    try { r = await api.get(`/mods/${encodeURIComponent(current)}/file/${file}`); } catch (e) { return; }
+    // The same file whatever its spacing: what it says is what counts.
+    const said = t => { try { return JSON.stringify(JSON.parse(t)); } catch (e) { return t; } };
+    const same = (a, b) => (a == null || b == null ? a === b : said(a) === said(b));
+    if (dirty || same(r.exists ? r.text : null, loadedText)) return;
+    await load(current);
+    toast(`${file} in ${nameOf(current)} was changed outside this page, so the page shows it as it is now.`);
   });
   newBtn.addEventListener("click", () => { newBox.hidden = !newBox.hidden; if (!newBox.hidden) newId.focus(); });
   saveBtn.addEventListener("click", () => save());
@@ -397,9 +746,15 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
       let obj;
       try { obj = JSON.parse(await f.text()); } catch (e) { toast(`${f.name} isn't a ${file} (it isn't valid JSON)`, "bad"); return; }
       if (!obj || typeof obj !== "object" || Array.isArray(obj)) { toast(`${f.name} isn't a ${file}`, "bad"); return; }
-      onLoad(obj, current);
-      setDirty(true);
-      toast(`Loaded ${f.name}. Save to mod to keep it in ${select.selectedOptions[0]?.textContent || current}.`);
+      const use = () => {
+        onLoad(obj, current);
+        setDirty(true);
+        toast(`Loaded ${f.name}. Save to mod to keep it in ${nameOf(current)}.`);
+      };
+      if (!dirty) { use(); return; }
+      // It would replace what's on the page: the same question as switching mods.
+      askFirst(`Unsaved changes in ${file}. Save them to ${nameOf(current)} before loading ${f.name}, or load it and leave them behind?`,
+        "Save and load", "Load without saving", async () => use(), importBtn);
     });
     const saveDetails = el("button", { class: "btn small", text: "Save details", onclick: async () => {
       try {
@@ -442,14 +797,20 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
       fields.author.value = m ? m.author || "" : "";
       fields.version.value = m ? m.version || "" : "";
       fields.description.value = m ? m.description || "" : "";
-      const req = m ? m.requires || [] : [];
-      needs.textContent = req.length ? `It needs ${req.map(i => (mods.find(x => x.id === i) || {}).name || i).join(", ")}: whoever adds it is asked to add that too (their Mods page says so).` : "";
-      needs.hidden = !req.length;
+      // A mod it works with that isn't here is named by the studio's list (works_with), as its card names it.
+      const nameOf = i => (mods.find(x => x.id === i) || {}).name || ((m && m.works_with) || []).find(w => w.id === i)?.name || i;
+      const req = m ? m.requires || [] : [], uses = (m ? m.uses || [] : []).filter(i => i !== "mod-menu");
+      needs.textContent = [
+        req.length ? `It needs ${req.map(nameOf).join(", ")}: whoever adds it is asked to add that too (their Mods page says so).` : "",
+        uses.length ? `It works with ${uses.map(nameOf).join(", ")}: whoever adds it sees all of it once they have that too (their Mods page says so).` : "",
+      ].filter(Boolean).join(" ");
+      needs.hidden = !needs.textContent;
     }
     return { element, show };
   }
-  return { element: box, refresh, markDirty: () => setDirty(true), save: () => save(), get current() { return current; },
-           get mods() { return mods; } };
+  // markClean: the page is back to what the file holds (a change and its undo), so nothing is left to save.
+  return { element: box, refresh, markDirty: () => setDirty(true), markClean: () => setDirty(false), save: () => save(), get current() { return current; },
+           get mods() { return mods; }, get dirty() { return dirty; } };
 }
 
 export function codePanel(title) {
@@ -467,61 +828,160 @@ export async function copy(text) {
   catch (e) { toast("Couldn't copy; select the text and press Ctrl+C", "bad"); }
 }
 
-// ---------- input names (Unreal FKey) ----------
-const CODE_TO_KEY = {
-  Space: "SpaceBar", Enter: "Enter", NumpadEnter: "Enter", Escape: "Escape", Tab: "Tab", Backspace: "BackSpace",
-  CapsLock: "CapsLock", ShiftLeft: "LeftShift", ShiftRight: "RightShift", ControlLeft: "LeftControl",
-  ControlRight: "RightControl", AltLeft: "LeftAlt", AltRight: "RightAlt", ArrowUp: "Up", ArrowDown: "Down",
-  ArrowLeft: "Left", ArrowRight: "Right", Insert: "Insert", Delete: "Delete", Home: "Home", End: "End",
-  PageUp: "PageUp", PageDown: "PageDown", Backquote: "Tilde", Minus: "Hyphen", Equal: "Equals",
-  BracketLeft: "LeftBracket", BracketRight: "RightBracket", Backslash: "Backslash", Semicolon: "Semicolon",
-  Quote: "Apostrophe", Comma: "Comma", Period: "Period", Slash: "Slash", NumpadMultiply: "Multiply",
-  NumpadAdd: "Add", NumpadSubtract: "Subtract", NumpadDecimal: "Decimal", NumpadDivide: "Divide",
-};
-const DIGITS = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
-function keyFromEvent(e) {
-  const c = e.code;
-  if (/^Key[A-Z]$/.test(c)) return c.slice(3);
-  if (/^Digit\d$/.test(c)) return DIGITS[+c.slice(5)];
-  if (/^Numpad\d$/.test(c)) return "NumPad" + DIGITS[+c.slice(6)];
-  if (/^F\d{1,2}$/.test(c)) return c;
-  return CODE_TO_KEY[c] || null;
+// ---------- asking for a key ----------
+// The dialog that asks for a key, a mouse button or a controller button, for the Controls page's rebinding and
+// the Animations page's emote key. Resolves to the game's name for it ("F7", "Gamepad_DPad_Up"), or null when
+// it was cancelled: Escape, Cancel, a click outside it (unless clicks bind mouse buttons) or leaving the page.
+// One is open at a time: opening another cancels the first.
+//   title     its heading;  label: what a screen reader calls it ("Rebind Interact"), the title by default
+//   message   the first line (what to press); the dialog says more there as keys are pressed
+//   pad       a controller button (true), with a chip for each; axis: a stick instead. The controller is read
+//             until the dialog closes (a button that's taken says why, and is listened for again)
+//   mouse     clicks and the wheel anywhere in the dialog bind mouse buttons; else a click outside cancels
+//   zone      clicks and the wheel bind mouse buttons only in a box of their own in the dialog: true, or the
+//             box's words ("Or click a mouse button, or turn the wheel, here"); a click outside the dialog
+//             still cancels. Not with pad, nor where "menus"
+//   chips     keys offered as buttons too (ones the dialog uses itself, like Escape and Tab)
+//   reserved  {key: why}: a key that's taken says why, and a second press of it uses it anyway
+//   why       key => null when it's free, or why not: a sentence or {refuse: sentence}, said in the dialog's
+//             alert line while it stays open for another key; or {warn: sentence}, which lets the key through
+//             and is toasted after (a key another mod listens on too)
+//   where     "play" (the default) or "menus": in menus a mouse button is refused (a click there goes to the
+//             button under the cursor), and there's no zone
+//   style     the controller's glyphs (input.GLYPHS)
+// Focus starts on the dialog itself (the card, role "dialog"; the overlay around it is the backdrop); Tab moves
+// among its buttons; Enter and Space press a focused button, and bind themselves while the dialog itself has
+// focus (input.dialogKey). Focus goes back where it was afterwards. The look is styles.css's .capture rules.
+const MENU_MOUSE = "In menus a click goes to the button under the cursor, so use a key there.";
+let capturing = null;   // the open dialog's cancel()
+export function captureKey({ title, label, message, pad = false, axis = false, mouse = false, zone = false, chips = [],
+  reserved = {}, why = null, where = "play", style = "xbox" } = {}) {
+  if (capturing) capturing();
+  return new Promise(resolve => {
+    const back = keepPlace();
+    const msg = el("p", { id: "capture-msg", "aria-live": "polite", text: message || (pad
+      ? (axis ? "Move a stick on your controller, or pick one below." : "Press a button on your controller, or pick one below.")
+      : "Press a key. Escape cancels.") });
+    const whyLine = el("p", { class: "capture-why", role: "alert", hidden: true });
+    const padNote = el("p", { class: "muted", style: { fontSize: "0.9rem" } });
+    const choices = pad ? (axis ? input.PAD_AXES : input.PAD_BUTTONS) : chips;
+    const box = zone && !pad && where !== "menus"
+      ? el("div", { class: "capture-zone", text: typeof zone === "string" ? zone : "Or click a mouse button, or turn the wheel, here" })
+      : null;
+    const card = el("div", { class: "card capture", tabindex: "-1", role: "dialog", "aria-modal": "true",
+      "aria-label": label || title || "Press a key", "aria-describedby": "capture-msg" },
+      el("h2", { id: "capture-title", text: title || "Press a key" }), msg, box, whyLine, padNote,
+      choices.length ? el("div", { class: "row" }, ...choices.map(k => el("button", { class: "chip", type: "button",
+        text: input.keyLabel(k, style), title: k, "aria-label": `Use ${input.keyLabel(k, style)}`, onclick: () => choose(k) }))) : null,
+      el("div", { class: "row" }, el("button", { class: "btn", type: "button", text: "Cancel", onclick: () => finish(null) })));
+    const overlay = el("div", { class: "capture-overlay" }, card);
+    document.body.append(overlay);
+    let raf = 0, done = false, pending = null;
+    const isMouse = k => input.MOUSE.includes(k) || k === "MouseScrollUp" || k === "MouseScrollDown";
+    function refuse(text) {
+      whyLine.textContent = text;
+      whyLine.hidden = false;
+      pending = null;
+    }
+    function choose(k) {
+      if (done) return;
+      if (where === "menus" && isMouse(k)) return refuse(MENU_MOUSE);
+      const no = why ? why(k) : null;
+      const refused = typeof no === "string" ? no : no && no.refuse;
+      if (refused) return refuse(refused);
+      whyLine.hidden = true;
+      if (reserved[k] && pending !== k) {
+        pending = k;
+        msg.textContent = `${reserved[k]}. Press ${input.keyLabel(k, style)} again to use it anyway, or another one.`;
+        return;
+      }
+      finish(k, no && typeof no === "object" ? no.warn : null);
+    }
+    const buttons = () => [...overlay.querySelectorAll("button")];
+    const onKey = e => {
+      const onButton = !!document.activeElement && document.activeElement.tagName === "BUTTON" && overlay.contains(document.activeElement);
+      const act = input.dialogKey(e, onButton);
+      if (act.do === "press") return;   // the button that has focus does its own job
+      e.preventDefault(); e.stopPropagation();
+      if (act.do === "cancel") return finish(null);
+      if (act.do === "move") {   // Tab stays in the dialog, among its buttons
+        const bs = buttons(), at = bs.indexOf(document.activeElement);
+        bs[at < 0 ? (act.back ? bs.length - 1 : 0) : (at + (act.back ? -1 : 1) + bs.length) % bs.length].focus();
+        return;
+      }
+      if (pad) return;   // a controller's button is pressed on the controller
+      if (act.do === "unknown") { msg.textContent = "That key isn't one the game knows. Try a letter, a number, an F key or an arrow."; return; }
+      choose(act.key);
+    };
+    // Where a click or the wheel picks a mouse button: the whole dialog (mouse), its zone, or nowhere.
+    const binds = target => !pad && (box ? box.contains(target) : mouse);
+    const onMouse = e => {
+      if (e.target.closest && e.target.closest("button")) return;
+      if (binds(e.target)) {
+        e.preventDefault();
+        if (input.MOUSE[e.button]) choose(input.MOUSE[e.button]);
+      } else if (e.target === overlay) {
+        finish(null);   // a click outside the dialog
+      }
+    };
+    const onWheel = e => {
+      if (!binds(e.target) || !e.deltaY) return;   // a sideways wheel: nothing
+      e.preventDefault();
+      choose(e.deltaY < 0 ? "MouseScrollUp" : "MouseScrollDown");
+    };
+    const onLeave = () => finish(null);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("hashchange", onLeave);
+    overlay.addEventListener("mousedown", onMouse);
+    overlay.addEventListener("contextmenu", e => e.preventDefault());
+    overlay.addEventListener("wheel", onWheel, { passive: false });
+    if (pad && typeof requestAnimationFrame === "function") {
+      // A button counts when it goes down (or a stick when it's pushed past the middle), against the frame before:
+      // one held when the dialog opened, or held after a press the dialog refused, isn't pressed again. It keeps
+      // listening until the dialog closes, so "press again" and "another one" work on the controller too.
+      let last = null;
+      const poll = () => {
+        if (done) return;
+        let pads = [];
+        try { pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); }
+        catch (e) { padNote.textContent = "This browser window can't read controllers; pick a button above."; return; }
+        if (!pads.length) padNote.textContent = "No controller detected yet. Press any button on it once, or pick a button above.";
+        else padNote.textContent = `Listening to ${pads[0].id.replace(/\s*\(.*\)$/, "")}`;
+        const now = pads.map(p => ({ b: p.buttons.map(b => b.pressed || b.value > 0.6), a: [...p.axes].map(v => Math.abs(v) > 0.7) }));
+        const was = last || now;
+        last = now;
+        let hit = null;
+        for (let i = 0; i < now.length && !hit; i++) {
+          const before = was[i] || { b: [], a: [] };
+          if (axis) {
+            for (let x = 0; x < Math.min(4, now[i].a.length) && !hit; x++) if (now[i].a[x] && !before.a[x]) hit = input.PAD_AXES[x];
+          } else {
+            for (let b = 0; b < Math.min(16, now[i].b.length) && !hit; b++) if (now[i].b[b] && !before.b[b]) hit = input.PAD_BUTTONS[b];
+          }
+        }
+        if (hit) choose(hit);
+        if (!done) raf = requestAnimationFrame(poll);
+      };
+      raf = requestAnimationFrame(poll);
+    }
+    card.focus();
+    announce(`${title || "Press a key"}. ${msg.textContent}`);
+    function finish(key, warning = null) {
+      if (done) return;
+      done = true;
+      if (capturing === cancel) capturing = null;
+      if (raf && typeof cancelAnimationFrame === "function") cancelAnimationFrame(raf);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("hashchange", onLeave);
+      overlay.remove();
+      back();
+      if (key && warning) toast(warning);
+      resolve(key || null);
+    }
+    const cancel = () => finish(null);
+    capturing = cancel;
+  });
 }
-const MOUSE = ["LeftMouseButton", "MiddleMouseButton", "RightMouseButton", "ThumbMouseButton", "ThumbMouseButton2"];
-// Standard Gamepad API layout -> Unreal names.
-const PAD_BUTTONS = ["Gamepad_FaceButton_Bottom", "Gamepad_FaceButton_Right", "Gamepad_FaceButton_Left",
-  "Gamepad_FaceButton_Top", "Gamepad_LeftShoulder", "Gamepad_RightShoulder", "Gamepad_LeftTrigger",
-  "Gamepad_RightTrigger", "Gamepad_Special_Left", "Gamepad_Special_Right", "Gamepad_LeftThumbstick",
-  "Gamepad_RightThumbstick", "Gamepad_DPad_Up", "Gamepad_DPad_Down", "Gamepad_DPad_Left", "Gamepad_DPad_Right"];
-const PAD_AXES = ["Gamepad_LeftX", "Gamepad_LeftY", "Gamepad_RightX", "Gamepad_RightY"];
-const GLYPHS = {
-  xbox: { Bottom: "A", Right: "B", Left: "X", Top: "Y", LeftShoulder: "LB", RightShoulder: "RB", LeftTrigger: "LT",
-    RightTrigger: "RT", Special_Left: "View", Special_Right: "Menu", LeftThumbstick: "LS click", RightThumbstick: "RS click" },
-  playstation: { Bottom: "✕", Right: "○", Left: "□", Top: "△", LeftShoulder: "L1", RightShoulder: "R1", LeftTrigger: "L2",
-    RightTrigger: "R2", Special_Left: "Create", Special_Right: "Options", LeftThumbstick: "L3", RightThumbstick: "R3" },
-  switch: { Bottom: "B", Right: "A", Left: "Y", Top: "X", LeftShoulder: "L", RightShoulder: "R", LeftTrigger: "ZL",
-    RightTrigger: "ZR", Special_Left: "−", Special_Right: "+", LeftThumbstick: "L-stick click", RightThumbstick: "R-stick click" },
-};
-const KEY_LABELS = {
-  SpaceBar: "Space", LeftShift: "Left Shift", RightShift: "Right Shift", LeftControl: "Left Ctrl", RightControl: "Right Ctrl",
-  LeftAlt: "Left Alt", RightAlt: "Right Alt", Up: "↑", Down: "↓", Left: "←", Right: "→", BackSpace: "Backspace",
-  LeftMouseButton: "Left mouse", RightMouseButton: "Right mouse", MiddleMouseButton: "Middle mouse",
-  ThumbMouseButton: "Mouse 4", ThumbMouseButton2: "Mouse 5", MouseScrollUp: "Wheel up", MouseScrollDown: "Wheel down",
-  Tilde: "`", Hyphen: "-", Equals: "=", LeftBracket: "[", RightBracket: "]", Semicolon: ";", Apostrophe: "'",
-  Comma: ",", Period: ".", Slash: "/", Backslash: "\\",
-  Gamepad_LeftX: "Left stick ↔", Gamepad_LeftY: "Left stick ↕", Gamepad_RightX: "Right stick ↔", Gamepad_RightY: "Right stick ↕",
-  Gamepad_DPad_Up: "D-pad ↑", Gamepad_DPad_Down: "D-pad ↓", Gamepad_DPad_Left: "D-pad ←", Gamepad_DPad_Right: "D-pad →",
-};
-function keyLabel(key, style = "xbox") {
-  if (!key) return "—";
-  const m = /^Gamepad_(?:FaceButton_)?(.+)$/.exec(key);
-  if (m && GLYPHS[style][m[1]]) return GLYPHS[style][m[1]];
-  if (KEY_LABELS[key]) return KEY_LABELS[key];
-  if (key.startsWith("NumPad")) return "Num " + DIGITS.indexOf(key.slice(6));
-  const d = DIGITS.indexOf(key);
-  return d >= 0 ? String(d) : key;
-}
-export const input = { keyFromEvent, MOUSE, PAD_BUTTONS, PAD_AXES, GLYPHS, keyLabel };
 
 // ---------- small save-path helpers ----------
 export function getPath(obj, path) {

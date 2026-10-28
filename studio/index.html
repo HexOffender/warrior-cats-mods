@@ -6,8 +6,13 @@
 <meta name="wc-token" content="{{WC_TOKEN}}">
 <meta name="color-scheme" content="light dark">
 <title>Clan Mod Studio</title>
+<!-- The brand's paw as the tab's icon (ThunderClan russet), so the browser doesn't ask for a favicon.ico that isn't there. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%238a4616'%3E%3Cellipse cx='8' cy='11.2' rx='4.2' ry='3.3'/%3E%3Ccircle cx='3' cy='7.4' r='1.7'/%3E%3Ccircle cx='6.1' cy='4.3' r='1.8'/%3E%3Ccircle cx='9.9' cy='4.3' r='1.8'/%3E%3Ccircle cx='13' cy='7.4' r='1.7'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Day or night before the stylesheet, so the page never flashes the wrong one: the choice the toggle saved,
+     or ?theme=dark|light in the address (for a screenshot or a link; it isn't saved). Nothing stored: the system's choice. -->
+<script>try{var t=new URLSearchParams(location.search).get("theme")||localStorage.getItem("wc-theme");if(t==="dark"||t==="light")document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700;800&family=Alegreya+Sans:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/studio/styles.css">
 </head>
@@ -21,7 +26,9 @@
     </div>
     <div class="status" id="status" role="group" aria-label="Status"></div>
     <div class="actions">
-      <a class="btn ghost" id="helpLink" href="https://github.com/HexOffender/warrior-cats-mods/blob/main/docs/README.md" target="_blank" rel="noopener">Help</a>
+      <button class="btn ghost icon" id="themeBtn" type="button" aria-pressed="false" aria-label="Night theme"></button>
+      <button class="btn ghost" id="helpBtn" type="button" aria-controls="help">Help</button>
+      <button class="btn ghost" id="lastApplyBtn" type="button" title="The log of the last Apply or Play" aria-controls="drawer">Last apply</button>
       <button class="btn" id="installBtn">Apply to game</button>
       <button class="btn primary" id="playBtn">Play</button>
     </div>
@@ -29,9 +36,17 @@
   <nav class="nav" id="nav" aria-label="Sections"></nav>
   <main class="main" id="main"></main>
 </div>
+<!-- The log of a build, install or Play: what it did in a sentence (read out as it changes), then the log. -->
 <section class="drawer" id="drawer" hidden aria-labelledby="drawerTitle">
   <div class="drawer-head"><h2 id="drawerTitle" tabindex="-1">Build log</h2><button class="btn ghost" id="drawerClose">Close</button></div>
-  <pre id="drawerLog" tabindex="0" aria-label="What happened"></pre>
+  <p class="summary" id="drawerSummary" aria-live="polite"></p>
+  <pre id="drawerLog" role="log" tabindex="0" aria-label="The log"></pre>
+</section>
+<!-- The guide (docs/guide/), a page at a time, in a panel like the log's. -->
+<section class="drawer help" id="help" hidden aria-labelledby="helpTitle">
+  <div class="drawer-head"><h2 id="helpTitle" tabindex="-1">Help</h2>
+    <span class="row"><a class="btn ghost small" id="helpOpen" href="/help/" target="_blank" rel="noopener">Open in a tab</a><button class="btn ghost" id="helpClose">Close</button></span></div>
+  <div class="help-body" id="helpBody" tabindex="0"></div>
 </section>
 <!-- Toasts show; screen readers hear them through the live regions (wc.announce). -->
 <div class="toasts" id="toasts" aria-hidden="true"></div>

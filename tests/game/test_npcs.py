@@ -1,4 +1,5 @@
-"""Cats of a mod's own (Game.npcs) and the game's screens (Game.screens)."""
+"""Cats of a mod's own (Game.npcs), the game's screens (Game.screens), and a mod's quests on the mod menu
+(Game.quests.report)."""
 import time
 
 SPAWN = """
@@ -102,6 +103,38 @@ def test_npc_keeps_the_look_its_given(agent):
         assert again == first, (first, again)
     finally:
         agent.lua("if WCMODS_TEST_NPC then WCMODS_TEST_NPC:remove() end")
+
+
+def test_a_removed_npc_is_let_go_and_still_listed(agent):
+    """npc:remove() takes it out of the keeper's list (it isn't spawned again) but Game.npcs.all() keeps it."""
+    try:
+        assert agent.lua(SPAWN) is True
+        agent.lua("WCMODS_TEST_NPC:remove()")
+        time.sleep(1.5)                     # three turns of the keeper
+        assert agent.lua("return WCMODS_TEST_NPC:valid()") is False
+        assert agent.lua("for _, n in ipairs(Game.npcs.all()) do if n == WCMODS_TEST_NPC then return n.removed end end") is True
+    finally:
+        agent.lua("if WCMODS_TEST_NPC then WCMODS_TEST_NPC:remove() end")
+
+
+def test_a_reported_quest_keeps_its_description(agent):
+    """Game.quests.report's sixth field: a description goes in and comes back; a quest without one gives ""."""
+    try:
+        got = agent.lua("""
+Game.quests.report("wcmods-test-q", { title = "A test", status = "active", objective = "Do it", progress = "1/2",
+                                      by = "tests", description = "A quest\\tabout nothing." })
+Game.quests.report("wcmods-test-r", { title = "Another" })
+local out = {}
+for _, q in ipairs(Game.quests.reported()) do out[q.id] = q end
+return { out["wcmods-test-q"].description, out["wcmods-test-q"].by, out["wcmods-test-r"].description }
+""")
+        assert got == ["A quest about nothing.", "tests", ""], got
+    finally:
+        agent.lua('Game.quests.report("wcmods-test-q", nil) Game.quests.report("wcmods-test-r", nil)')
+
+
+def test_drop_refuses_a_tag_that_isnt_one(agent):
+    assert agent.lua("return select(2, Game.items.drop(nil))") == "drop needs an item tag like Gameplay.Inventory.Materials.Moss"
 
 
 def test_screens(agent):

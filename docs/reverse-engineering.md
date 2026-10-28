@@ -26,40 +26,158 @@ question from *Open questions* when it's answered.
 - **Build 26184573, patch 1.1 (2026-10-26):** the patch adds mouse control of the camera, bug
   fixes and quality-of-life changes. Nothing wcmods reads moved: every class in `game.HIDDEN` is
   the same size, every signed member is where it was (`python wcmods.py game signatures check`),
-  and the level component, which has no signature, was read in game at its old offsets: the
-  level at +0x120 and +0x124 (20, 20) and the stats at +0x154–0x168 (233, 199, 189, 199, 180, 100)
-  matched the save's `Stats`. The anchor functions `signatures.py` keeps (combat, status and
-  detection code around `0x1417B8000`–`0x1417DC000`) each sit 0x260 later than on 24847281; the
-  code addresses elsewhere in these notes are still 24847281's and haven't been checked.
+  and the level component, which had no signature then, was read in game at its old offsets: the
+  level at +0x120 and the level cap at +0x124 (20, 20) and the stats at +0x154–0x168 (233, 199,
+  189, 199, 180, 100) matched the save's `Stats`. The anchor functions `signatures.py` keeps (combat,
+  status and detection code around `0x1417B8000`–`0x1417DC000`) each sit 0x260 later than on
+  24847281; the code addresses elsewhere in these notes are still 24847281's unless they say so.
+- **The level component signed (2026-10-28, on 26184573, from the exe alone):** until then it had no
+  signature, so every update would have switched your cat's level and stats off, moved or not. The
+  cause, read from the code:
+  - **Functions come in parts.** MSVC gives a function that saves registers in stages several
+    `.pdata` entries: the first with the prologue, and the rest chained to it (`UNW_FLAG_CHAININFO`
+    in their unwind info). 221,277 of the exe's 563,063 entries are such parts, of 69,628 functions,
+    and every one of those functions' parts lie next to each other. `pe.Image.function_at` answered
+    the first part only, so the level component's own code was searched for 10, 15 and 81 bytes; its
+    stats function alone (`0x1417C6410`) is 1,400. It now joins the parts (`whole_functions()`), which
+    every class's search gets.
+  - **That was the whole cause.** The level and the cap (+0x120, +0x124) are members of its parent,
+    `USwtQuestLevelComponent` (SwtQuest), but the class's own code reaches them once it's read whole:
+    its start-up override (`0x1417C6210`, vtable +0x3F8) stores the cap (`mov [rsi+0x124],eax` at
+    `0x1417C6252`) and calls the parent's level setter `0x141658870` directly (at `0x1417C6326`), which
+    `class_code()` takes in as a direct callee; its stats function reads the level (`[rbx+0x120]` at
+    `0x1417C6629`). `make()` run with whole functions and no anchors for the class at all gives
+    signatures for all eight members (the level in 3 separate instructions, the cap in 2).
+  - **Its old anchors were no help.** They were fighter-stat functions (`0x1417D8270`, `0x1417D70C0`)
+    that touch none of its offsets: read whole, they have no `[reg+0x120]`, `+0x124` or
+    `+0x154`–`+0x168` operand. Two of the parent's functions replace them, for redundancy: the XP
+    setter `0x141658A90` (found with `callers.py` on the level setter), which adds a fourth separate
+    instruction on the level and a third on the cap, and the level setter itself, still searched if a
+    rebuild stops the start-up calling it. The parent's start-up `0x141658C00` (found with `xrefs.py` on
+    `Gameplay.Exploration.MaxLevel`) isn't one: its only access to the class, the cap's store, is the
+    same bytes as `0x1417C6210`'s as far as a signature reaches, so with both searched neither store
+    gives a unique pattern; as an anchor it cost the cap its signature in `0x1417C6210` (2 separate
+    instructions instead of 3).
+
+  More code searched showed false sites, some already in `signatures.json`. The level component's
+  start-up code reads +0x154 of the object behind the global at `0x14A8A6E08` (after an IsA check),
+  not its own Prowess; three of the combat component's Stance sites (in `0x141D0B220`) were
+  `lea rax,[rbp+0x1A0]`, a stack slot under a frame pointer (`lea rbp,[rsp-0x7D8]`); and the combat
+  component's code has vtable calls (`call [rax+0x1C8]`, in `0x141C67940`) at member offsets.
+  `signatures.py` now leaves out an access whose base register holds a stack address or a pointer read
+  from a global, by a straight read of the function (`_foreign`), and one wider than the member
+  (`_access`). `make()` refuses a class with no signature at all instead of writing it.
+
+  Votes are counted by instruction (since a review of this work, the same day). Sites around
+  neighbouring instructions overlap and capture the same instruction, and each capture used to count
+  as a vote, so a move could be followed on one instruction's word. In the `signatures.json` before
+  this work, the detection component's ConeDistance, SoundRadius, ProximityDistance and
+  ZoneEntryDistance were each captured in one instruction only, by 2 or 3 sites; in the first one made
+  with whole functions, the cap's 3 votes were 2 instructions and ProximityDistance's 3 were the one at
+  `0x1417B8123` (it has 2 separate ones now). `check()` now counts each captured displacement once,
+  `make()` gives a member sites until 3 separate instructions are captured (none for an instruction a
+  site already has), and each site records where it starts on the build it was made on (`"at"`), so
+  the count can be checked without the exe (`signatures.instructions()`).
+
+  The result (`python wcmods.py game signatures make`): the level component has 17 signatures over
+  all eight members, in separate instructions: the level 4, the cap 3, Prowess 3, Strength 4,
+  Resilience 4, Instinct 4, Agility 2, Stamina 2. 34 of the 45 members have a signature (23 before),
+  and none lost theirs; 26 are in two separate instructions or more, which a move needs. How it was
+  confirmed:
+  - `signatures.check()` on the installed exe with its fingerprint changed, so nothing counts as
+    the exe they were made on: all eight are found "same" by their signatures (with the old code and
+    file: all eight "lost"), and every other class as before or better.
+  - The 26 displacements those signatures capture moved by +4 in memory (the file untouched):
+    `check()` follows all eight (0x120→0x124 … 0x168→0x16C) and disturbs no other class.
+  - Each of the 17 sites read in the disassembly: every one's base register is `this` (rcx, or the
+    rbx/rsi it was copied to at the start).
+  - `tests/unit/test_signatures.py`, and the selftest's update check (`python wcmods.py selftest`).
+
+  Not seen yet: a real update moving it ([verified.md](verified.md#not-yet-confirmed-in-game)).
 
 ## How we find things
 
+The first place to look is the class index, `vanilla/sdk/api-index.txt` (not committed, like the
+rest of `vanilla/`). It has a `## [Module] Class : Parent` line per class, and a `## [Module]
+struct FName : Parent` line per struct (without ` : Parent` when it has none), of the game's own
+modules (SwtCore, SwtEngine, SwtAdventure, SwtQuest, SwtNativeAudio, SwtOnlineCloud and Wrc).
+Under each is a `P` line per property and an `F` line per function, with the function's Blueprint
+flags. Each module's enums are (nearly all) together in its block, one `enum E...: names` line each
+(`grep -n "^enum ECharacterTrait"`). That is 971 classes, 188 structs, 4,620 properties, 1,050
+functions and 198 enums in 7,027 lines; going by its file date (2026-10-24) it was dumped from build
+24847281, before patch 1.1. One search answers most first questions: is it reflected, what is the
+manager's class, what does a function take, which class holds a property of this type (`grep -n
+"Tuning" vanilla/sdk/api-index.txt`). It has no offsets (they're in the dump's
+`CXXHeaderDump/<Module>.hpp`, as `// 0x0460 (size: 0x8)`), no engine classes and no Blueprints.
+The dump has those. Counting headers whose classes are all Blueprint (`_C`) classes,
+`CXXHeaderDump/` has 401 and `CXXHeaderDump-world/` 1,222: all but two of the first folder's and
+823 more, so most Blueprints are in `CXXHeaderDump-world/` (by its name, dumped with a world
+loaded). What isn't reflected isn't in it or the dump; then the exe is where to look, with the
+tools below. For example, `USwtTuningManager` reflects no function, so the code that reads tuning
+keys is found with xrefs.
+
 - **Strings to code:** scan the exe for RIP-relative `lea`/`mov` instructions whose target is a
-  string's address. `tools/re/xrefs.py <exe> "<text>"` lists both. Tuning keys
-  (`Gameplay.Exploration.Camera.TurnRate.Yaw`) lead to the code that loads them. Each key is read
-  into a member, so a loader reveals a struct's layout (`tools/re/tunemap.py` maps each key to its
-  offset from a dumpbin listing of the loader).
+  string's address. `tools/re/xrefs.py <exe> "<text>"` lists both, and scripts can `import xrefs`
+  and call `find(image, texts)`. Tuning keys (`Gameplay.Exploration.Camera.TurnRate.Yaw`) lead to
+  the code that loads them. Each key is read into a member, so a loader reveals a struct's layout
+  (`tools/re/tunemap.py` maps each key to its offset from a dumpbin listing of the loader).
+  - `lea` passes the string's address on; `mov` copies its first eight bytes, and is rare. The
+    counts below are from a survey of the exe (build 26184573, 2026-10-28): every `lea` and `mov`
+    xrefs finds whose target starts a whole string of 4 or more characters (printable ASCII, tab,
+    CR or LF) in a data section. That is 230,329 `lea`s and 105 `mov`s (125 `mov`s counting
+    shorter strings), pointing at 104,041 distinct strings.
+  - Only whole strings count: the text followed by its terminator, and UTF-16 only at even
+    addresses. A terminator in front isn't required: 1,485 of those 104,041 strings have none (they
+    follow other data, or are UTF-16 right after a narrow string's last character). None of the
+    76,858 UTF-16 ones is at an odd address. So the "Turn" at the end of "EndTurn" is listed only
+    when code points at it.
+  - `--prefix` (`find(image, texts, prefix=True)`) lists the strings that start with the text
+    instead, shown whole. `Gameplay.Exploration.Level.` isn't a whole string, but
+    `L"Gameplay.Exploration.Level.%d"` starts with it and one `lea` points at that (0x141658d2a),
+    the pattern the level keys are built from.
+  - Before 2026-10-28 the whole-string filter was switched off (`or True`) and the pattern had no
+    `mov`. "Turn" reported 16 strings with code pointing at them, 15 of them longer ones
+    ("TurnBasedCombatComponent", "TurnRate", "Turn on to enable caching"), and the 6 `mov`s that
+    read "DOC_END" were missed. Now it reports the one `Turn` (read from the exe, build 26184573).
+    Switching the old filter back on wouldn't have been enough: it checked only the character in
+    front, so it kept the longer strings and would have dropped those 1,485.
 - **Reflection data:** UHT's property tables survive in the exe. Each entry is: name pointer at
   +0, RepNotify pointer at +8, flags (u64) at +16, generator flags (u8) at +24, array dimension
   (u16) at +48 and offset (u16) at +50. Find a pointer to a property's name and decode the table
-  around it. Enums are tables of `{const char* name, int64 value}`. `tools/re/uht.py` does both.
+  around it. Enums are tables of `{const char* name, int64 value}`, found through each enum's UHT
+  parameters, which name it (*The game's enums*). `tools/re/uht.py` does both, and `uht.py <exe> lua`
+  checks every enum number wcmods' Lua keeps against the exe.
 - **Disassembly:** `dumpbin /disasm:nobytes /range:<start>,<end>` from Visual Studio. Function
-  starts follow `int 3` padding.
+  starts follow `int 3` padding. Without Visual Studio, `wcmods/exe/x64.py` decodes each
+  instruction's length and operands (its memory operand's base and displacement, RIP targets,
+  branches), though it doesn't name instructions. A function's `.pdata` entry can be only its first
+  part: `pe.Image.function_at` gives the whole function (*Game updates*).
 - **From members to code:**
   - `tools/re/storemap.py` maps keys to members for loaders that store straight to `this`.
   - `tools/re/dispscan.py <exe> 38C,390,394 2` finds code that uses several members of one
     struct (float instructions with those offsets), which is how the damage formula was found.
   - `tools/re/callers.py <exe> <address>` lists the direct calls to a function.
-- **Not every tuning key is in the exe.** About half of `TuningData`'s keys never appear as whole
-  strings: some are built from parts (`Gameplay.Exploration.Detection.%s`), others are presumably
-  read by Blueprints. A key the code asks for that the table lacks, though, is a real bug (see
-  *What traits do*).
+- **Not every tuning key is in the exe.** 221 of `TuningData`'s 441 keys are whole strings in the
+  exe, and code points at every one of those 221 (xrefs on build 26184573, 2026-10-28). The other 220
+  aren't in it at all, as ASCII or UTF-16: some are built from parts
+  (`Gameplay.Exploration.Detection.%s`, found with `xrefs.py --prefix`), others are presumably read
+  by Blueprints. A key the code asks for that the table lacks, though, is a real bug (see *What
+  traits do*).
 - **Data tables:** `tools/re/mechanics_tables.py` fills the generated tables in `mechanics/` from
   the extracted CSVs, with names from `Strings_EN.csv`.
 - **Crash dumps:** `cdb -z <crash folder>\UEMinidump.dmp -c ".ecxr; r; u @rip-0x30 L20; kn 12; q"`.
 - **Live game:** UE4SS Lua probes (see *UE4SS in this game*). For reading memory from outside,
-  `tools/re/memscan.py` uses ReadProcessMemory. Never stop a debugger attached to the game
-  without detaching (`qd`): exiting kills the game.
+  `tools/re/memscan.py` uses ReadProcessMemory. Before 2026-10-28 it never searched the last chunk
+  of a region followed by unreadable memory (up to 16 MB, so all of any region of 16 MB or less).
+  It read each chunk 64 bytes past its end, and Windows fails such a read and reports only whole
+  56 KB blocks as copied, nothing for anything shorter. The script then threw the read away. On a
+  test Python process (not the game), 85 chunks over its 395 readable regions came back empty, and
+  the old scan found 0 of 4 markers planted next to unreadable pages. Now it reads up to each
+  region's end, carries the last bytes into a region that touches it, and finds all 4, with a chunk
+  of 16 MB or 4 KB. A "no other hits" found with memscan before then is worth repeating; `--old`
+  runs the old scan beside the new one and marks each hit it missed. The unit tests run it on their
+  own process too (Windows only). Never stop a debugger attached to the game without detaching
+  (`qd`): exiting kills the game.
 - **The game bridge:** with code mods allowed, `python wcmods.py lua "<code>"`, `inspect` and `find`
   run Lua in the running game and print what comes back ([scripting.md](scripting.md#the-game-bridge)).
   It's the quickest way to try a property, a function or an offset.
@@ -69,7 +187,14 @@ question from *Open questions* when it's answered.
   an index of the game's own modules.
 - **Game files:** `python wcmods.py files "<pattern>"` and `extract`. In cooked packages the name
   map is readable, but imports are hashes, so a Blueprint's parent class isn't stored by name. A
-  survey in game gets parents instead (*Game objects*).
+  survey in game gets parents instead (*Game objects*). A native class's import hash can be worked
+  out from its path, though (`anim.script_index`), so an export's class is known when the class dump
+  has it.
+- **Which packages hold or use something:** `tools/re/assetrefs.py <game folder> names <word>` lists the
+  packages whose name map has a name containing the word (a class name finds the packages with objects
+  of that class); `imports /Game/<path>` lists the packages that import objects of packages under a path.
+  It reads only the headers, about a minute for all 11,578 packages. From Git Bash, set
+  `MSYS_NO_PATHCONV=1` so `/Game/…` isn't turned into a Windows path.
 
 ## Files and formats
 
@@ -140,13 +265,274 @@ selftest check decodes all 412 rows, re-encodes them and rebuilds the package by
       FString); 0 is base text (namespace, key and source string, as FStrings).
     - A soft object path is the package FName, the asset FName and a sub-path FString.
     - Byte enums are one byte, left out when zero.
+    - The rest, worked out on the dialogue graphs (2026-10-28, below): a bool is one byte; an object
+      reference is an i32 `FPackageIndex` (export i is i + 1, import i is -i - 1, 0 is none); an
+      `FLinearColor` is four floats; an `FGameplayTagContainer` is serialized natively, an i32 count and
+      the tags' FNames; a `TArray` is an i32 count and the items; a `TMap` is an i32 count of keys to
+      remove (always 0) and an i32 count of pairs. **An enum used as a map key is its FName**
+      (`EBondingTypes::Positive`, in the name map), while an enum property on its own is its byte.
+    - An empty value isn't always marked zero. In the dialogue graphs (all 27,900 objects), 735 empty
+      FStrings are written out (length 0) instead: the `VOEvent` of the `FParagraphValues` in bond nodes'
+      `BondingRankParagraphs` (525) and `BondingTypesParagraphs` (210) maps. Why those and not others is a
+      guess (the string had memory allocated, so its bytes weren't all zero). No empty array, map or tag
+      container is written out anywhere in them. `cooked.Empty` keeps a written-out empty string apart so
+      the bytes come back the same; `cooked.EmptyList` does the same for a container, by analogy, untested
+      on the game's data.
 - **A DataTable export:**
   - the object's own properties: an unversioned header and `RowStruct` (an i32 import index);
   - a u32 `HasGuid` = 0, then an i32 row count;
   - each row: its FName and then the row struct.
   - The package file tag follows the export.
+- **Any other object** (an export that isn't a table) is its class's properties, unversioned, then a
+  u32 `HasGuid` = 0. **The properties are numbered from the object's own class first, then its base
+  class's, and so on up** (not base first). A `BondDialogue` graph sets fields 11 and 12: its own 3,
+  `NpcDialogue`'s 3, then `GenericGraph`'s `RootNodes` and `AllNodes` (its 6th and 7th). Confirmed by
+  decoding all 27,900 objects of the dialogue packages with nothing left over and writing each back
+  byte for byte (`cooked._Values.read_object`, the selftest's dialogue graph check).
+- **An export's class** is in its export map entry as an `FPackageObjectIndex`: the top two bits say
+  export (0), native "script" object (1), another package's object (2) or none (3). A script object's
+  value is CityHash64 of its lower-case path with `.` and `:` as `/`, in UTF-16, with the top two bits
+  set to 01: `/Script/SwtQuest.QuestDialogueTalkingNode` is `0x423BAE5FDC811ABA` (`anim.script_index`),
+  so a class is named from the class dump without the name map. Another package's object is that
+  package's index in `ImportedPackageNames` (<< 32) and the index of its public export hash
+  (`ZenPackage.resolve`).
 - **An empty FString** is written either as length 0 or as a length-1 lone terminator. Keep which,
   to get the same bytes back.
+
+### Dialogue graphs
+
+Worked out on 2026-10-28 (build 26184573) from the game's files and its exe, without running the game.
+`wcmods/dialogue.py` reads them (`conversations(game)`); nothing writes them. The selftest's dialogue graph
+check decodes every object of every package below, writes each back byte for byte, and rebuilds each
+package from the re-encoded objects byte for byte (`ZenPackage.rebuild`, as for the item table).
+
+**Where they are.** A scan of the name maps of all 11,312 `.uasset` packages (headers only,
+`tools/re/assetrefs.py names`) found the dialogue classes in 91 packages, all under `/Game/Quests`:
+
+| Folder | Packages | Graph | Used by (imports in all 11,312 packages and 266 `.umap`s, `assetrefs.py imports`) |
+|---|---|---|---|
+| `NpcDialogues/NPCUniques` | 49 | `NpcDialogue`, a cat's own talk | 44 by levels (`L_Gameplay_<Clan>_Quests`, `L_Sandbox_Gameplay_05_Quests` for the ThunderClan cats, a den), the gatekeepers', online and placeholder ones by quest giver Blueprints, `Dialogue_Test` by a test map |
+| `NpcDialogues/Cinematic` | 30 | `NpcDialogue` or `BondDialogue` | `DT_QuestSequenceDialogues`, by tag (below) |
+| `StoryDialogues` | 9 | `BondDialogue` templates | `BP_WrcQuestManager` |
+| `QuestDialogues` | 3 | `QuestDialogue` templates | `BP_WrcQuestManager` |
+
+The packages hold 27,900 objects of 34 classes. The template packages also hold 556 `QuestDialogue` and 22
+`BondDialogue` copies of their graph (`QuestDialogue_282`, `BondDialogue_7`; 167 of the quest ones filled in
+for one quest, so apparently copies the editor made while playing and saved) that nothing imports. Soft
+references weren't checked.
+
+**A graph** (the GenericGraph plugin; classes and property order from the class dump, the order an object
+numbers them from the decoding above):
+- The graph object is a top-level export. `UGenericGraph`: `Name`, `DataTable`, `NodeType`, `EdgeType`,
+  `GraphTags`, `RootNodes`, `AllNodes`, `bEdgeEnabled`. `UNpcDialogue` adds the two background colours and
+  `DialoguePartyTags`; `UBondDialogue` adds `DialogueTag`, `bShuffleOptions`, `WidgetId`; `UQuestDialogue`
+  adds `QuestName` (and alternatives), `QuestSecondaryTitle`, `QuestLongDescription`, `DialoguePartyTags`
+  and `AutoFillPrefix`.
+- **Nodes and edges are exports whose outer is the graph.** A node (`UGenericGraphNode`: `Graph`,
+  `EdgeTypeOverride`, `ParentNodes`, `ChildrenNodes`, `Edges`) lists its children and, in `Edges`, a map
+  from each child to the edge object leading to it. An edge (`UGenericGraphEdge`: `Graph`, `StartNode`,
+  `EndNode`) is a `UQuestDialogueEdge`: `EdgeType` (Simple 0 "go on", Option1–4: answer button 1–4),
+  `Button` (`FQuestCustomButton`: its `Text`), `TraitType` (`ECharacterTrait`), `Score`, `ClanBonding`,
+  `bAllowAutoFill`, `AutoFillSuffix`. A plain "go on" edge is 18 bytes: three object references.
+- **Roots:** `NpcDialogueRoot` (`QuestTags`: the quest states it's for, `Quest.Main.1.0`,
+  `Quest.Main.1.Complete`…; `RawTitle`), `QuestDialogueRoot` (`RootType`, an `EQuestStatus`: 1 when the
+  quest is offered, 3 when you come back with it done).
+- **Lines** are talking nodes, `UQuestDialogueTalkingNode`: `Paragraph` (FText), `ParagraphSingular`,
+  `TalkingSource` (`ETalkingSource`: NPC 0, Player 1, Current_Character 2, Custom 3: the cinematics'
+  narrator), `TalkingSourceText` (the name shown: `STR_QUEST_DIALOGUE_NPC_TALKER`, `STR_COMMON_NARRATOR`…),
+  three colours, `bSkipTalkMontage`, `VOEvent` (`vo_dialog_talk`…), `bVOEventFromParagraph`,
+  `bTalkingSourceWithColon`, `DialogueContext`, `ForcedTime`; and from `UQuestDialogueNode`
+  `bKeepShowingHud`, `bSkipConfirmation`, `TimeToWaitToNextNode`, `AutoFillSuffix`, `bAllowAutoFill`.
+  Subclasses: `QuestDialogueBondNode` (`SubTag`, and `FParagraphValues` for `DeathBoth`, `Traitor`,
+  `GiverRole`, per `EBondingRanks` and per `EBondingTypes`), `QuestDialogueBondingTypeNode` (`SubTag`,
+  `BondingTypesTexts`: a line per bond type), `QuestDialogueMultiTextTalkingNode` (`MultiParagraph`).
+- **Actions** are the other nodes: camera (`ActivateDialogueView`, `RestoreExplorationCamera`),
+  `StayInPlace`, `AllowMovement`, `CreateScreen` (`WidgetId`), `PlaySequence`, `NpcValidation`,
+  `SaveDialogueInteraction`, `StoryDialogue` (`StoryDialogueTag`: plays a story talk), the outcomes
+  (`ResolveAcceptQuest`, `ResolveConfirm`, `ResolveBondAnswer` with its `SubTag`, …) and SwtAdventure's
+  (`AdventureDialogueActionStartCombat`, `ClanRole`, `PhotoMode`, `SendGift`…). An action's own option edges
+  are presumably its outcomes, not buttons: an `NpcValidation`'s two carry only the default Accept and
+  Decline texts (a guess; `dialogue.py` follows them all).
+- `ActivateDialogueView.RelativeOffsetDistance` (an `FFloatRange`) is set nowhere, so its encoding isn't
+  known; reading refuses a node that sets it.
+
+**The words.** In the graphs the game plays (the 49 cats' own talks, the 30 cinematics and the 12
+templates), every text is empty or an FText of one of two kinds (all their objects read):
+- A **string table reference** (history 11) to the table `SwtStrings`, which the game loads from
+  `Strings_<language>.csv` (*Names*): 10,626 of them in all 91 packages, copies included. The cats' own
+  talks and the cinematics name their lines this way: 294 of their 299 lines and 69 of their 74 answer
+  buttons are keys, all of them in `Strings_EN.csv`.
+- **Inline text** (history 0), only as placeholders: `None.Context.1` (a story template's line before
+  it's filled), `<Answer 1>`, `<Trait 1 Answer>`, and three angle-bracket sample lines on the Encounter
+  template's bond nodes (`<My time is ending…>`), whose `SubTag`s (`Context.1` to `3`) have rows in all 7
+  Encounter talks. Shown as they are, the only inline lines are `NpcDialogue_DefenderGatekeeper`'s 4 lines
+  and 5 buttons in angle brackets (`<A 1 vs 1 duel>`) and `Dialogue_Test`'s one. No line of the game's
+  English is stored in these graphs.
+
+The template packages' **saved copies** (above; nothing plays them) are different. Besides 1,644
+placeholders (`<Answer 1>`…, `(Empty paragraph)`, `None.ActivityTransition.1`) they hold 359 inline texts
+that aren't:
+- 340 whose words are a key's name (`QST_Gather.Apprentice.Return.End`): the keys the editor filled in,
+  stored inline. The cross-check below counts them as keys.
+- 19 copies of one English line, "I should take this back to camp fast!" (the words of
+  `QST_Gather.Apprentice.ActivityTransition.1`), in 18 of `StoryDialogue_Monologue_ActivityTransition_Template`'s
+  `BondDialogue_N` copies.
+
+**Templates, filled in as they play** ("autofill"). The story and quest graphs have no words of their own:
+the game fills each line and answer from a row of `StoryDialogues.csv` or `QuestDialogues.csv`. Read from
+the code (addresses for build 26184573):
+- **The tables.** The quest manager's loader (`0x1416B3FA0`) reads `StoryDialogues.csv` into a map at
+  manager+0x280 and `QuestDialogues.csv` into one at +0x2D0, by row name. The row struct
+  (`FSwtQuestStoryDialoguesStruct`) is the columns: `Score`, `ClanBonding`, `Talker`, `Trait`, `VoiceOver`,
+  `StringKey`, `DebugText`. Lookups: `0x1416B2F30` (story), `0x1416B3240` (quest).
+- **A row's words** (`0x14162DC10`): `FText::FromStringTable("SwtStrings", StringKey)` through the game's
+  text-by-key helper `0x1412816E0` (264 callers; an empty table name means `SwtStrings`). When `StringKey`
+  is empty the row's `DebugText` is used instead (made into a text by `0x141A14CC0`). So it is when the looked-up text's
+  display string is empty or equals `<MISSING STRING TABLE ENTRY>`: `0x141A19320` returns a function-static
+  `FString` made from that UTF-16 literal (at `0x147E99740`), and `0x14162DC10` compares against it. So a key
+  `Strings_EN` hasn't got shows the row's `DebugText`.
+- **Quest talks:** `0x1416632B0` walks a `QuestDialogue` from its roots. For each node with
+  `bAllowAutoFill` (`0x1416648D0`) it clears `Paragraph` and `VOEvent`, then looks up the row
+  `<prefix>.<AutoFillSuffix>` and sets `Paragraph` from it, `TalkingSource` from `Talker` and `VOEvent` from
+  `VoiceOver`. The title comes from `%s.Title`, `%s.Title_Alternative_1`… (`0x141662BB0`). The walk is
+  called from five places in the quest code (`0x14164FA9A`…).
+- **A quest answer** (`0x141663B70`, for each edge): nothing for a plain edge (`EdgeType` 0) or with
+  `bAllowAutoFill` off. Otherwise it clears the button's text and, when the prefix isn't empty, formats
+  `%s.%s` from the prefix and the edge's `AutoFillSuffix`, even when the suffix is empty. That row
+  (`0x141662A50`: the lookup `0x1416B3240`, then the row's words as above) sets `TraitType`, `Score` and
+  `ClanBonding` when it exists, and the button when its text isn't empty or the missing-entry text. A
+  button still empty then gets, as the code reads:
+  - with `TraitType` 0: `STR_QUEST_DIALOGUE_DECLINE` for `EdgeType` 4, `STR_QUEST_DIALOGUE_ACCEPT` for
+    the others;
+  - with a trait (and a `QuestDialogue` graph): `<AutoFillPrefix>.Context.Answer.<Trait>.Short` when the
+    edge's end node is a `QuestDialogueActionResolveAcceptQuest` (`0x1416642E0` is that cast), else
+    `<AutoFillPrefix>.Return.Answer.<Trait>.Short` (`0x149AE6110`), the trait named by `ECharacterTrait`,
+    and only if that key isn't missing.
+
+  `AutoFillPrefix` is read from graph+0x110, where the class dump (`CXXHeaderDump/SwtQuest.hpp`) puts
+  `UQuestDialogue::AutoFillPrefix`. It holds a *key* prefix: the 6 saved copies that set it have
+  `QST_SideQuest.WinFights`, and `QST_SideQuest.WinFights.Context.Answer.Brave.Short` is a `Strings_EN`
+  key. The three templates leave it empty as cooked; whether the game sets it before the fill wasn't traced.
+- **The row prefix** isn't `AutoFillPrefix`. The walk and the title read it from graph+0x120, a 16-byte
+  field after the class's last reflected property (`UQuestDialogue` is 0x130 bytes), as an optional string:
+  nothing is filled when its capacity is -1 (that it's a `TOptional<FString>` is a guess from that test).
+  By the rows and the saved copies (below) it's the quest's tag and rank,
+  `Quest.Procedural.Survival.Gather.Apprentice`; who sets it wasn't traced (the five callers take the graph
+  from a virtual call).
+- **Story talks:** a story tag's row is `<tag>.<SubTag>`. A `ResolveBondAnswer` node (`0x141672870`)
+  joins its graph's `DialogueTag` and its `SubTag` (`%s.%s`) and takes that row's words; with no such row
+  it keeps the joined key as its text. The code that names the variant rows (`0x141673230`…) uses
+  `%s.%s.%s` with an `EBondingTypes` or `EBondingRanks` name, `%s.%s.Neutral`, `%s.%s.DeadBoth` and
+  `%s.%s.Traitor`; the Filler rows are named that way (`…Context.1.Positive`, `…Context.1.Warrior`).
+- **Which template a story tag plays** (`0x14168F4F0`), by the first of these parent tags it's under
+  (`MatchesTag`), and how many times you've had the talk:
+  - `Gameplay.Dialogue.Story.Long` or `.Short`: the Long or Short template the first time, `End` after.
+  - `…Story.Monologue.Interaction`: Interaction 1, 2 and 3 on the first three talks, then none.
+  - `…Story.Monologue.Filler`, `Filler2`, `Filler3`, `…Story.Monologue.Encounter` and
+    `Gameplay.Dialogue.Activity.Transition`: their own type, every time.
+- **The templates for each type** are `BP_WrcQuestManager`'s `StoryDialogueTemplates` and
+  `QuestDialogueTemplates` maps, read from its class defaults: an enum FName key and an import each (Short →
+  `StoryDialogue_Short_Template`, Monologue_Interaction_1 → `StoryDialogue_Monologue_Interaction_1_Template`,
+  …, End, Activity_Transition; MainQuest, SideQuest and UniqueQuest → the three `QuestDialogue_*_Template`s).
+  `Monologue_Filler_2` and `_3` have none.
+
+**Checked against the tables** (the files of build 26184573):
+- The Short and Long templates' `SubTag`s are exactly the row names under every Short (45) and Long (27)
+  story tag: no row left over, none missing.
+- QuestDialogues.csv's rows fall into 72 quest prefixes. Each one's suffixes fit exactly one template's
+  `AutoFillSuffix`es: 51 the main quest one, 12 the unique, 9 the side quest one. Left out are 78 extra
+  titles (`Title2`, `Title3`, the alternatives) and 50 `Context.End` rows no template asks for.
+- 167 of the 556 saved quest copies carry keys the editor filled in, as table references or as inline
+  text whose words are the key's name (*The words*, above). Of their 2,064 lines and answers that have a
+  row, 1,890 carry the row's `StringKey`. For 170 of the other 174, the copy's key isn't in
+  `Strings_EN.csv` while the row's is (`QST_Gather.Apprentice.Response.Brave` against
+  `…Context.Response.Brave`); for 4, neither is. That fits the game showing the row's key, not a key
+  baked into a graph.
+- `DebugText` is two different things:
+  - In `StoryDialogues.csv` it's an older English copy: of the 2,930 rows whose key is in
+    `Strings_EN.csv`, 1,210 have different words there. The aging leader's first answer is "I agree." in
+    `DebugText` and "Of course it will!" in `Strings_EN.csv`. This difference is the in-game check (in
+    *verified.md*).
+  - In `QuestDialogues.csv` it's the key itself, in all 1,214 rows (`QST_Gather.Apprentice.Context.1`).
+    So a quest line whose key is missing shows that raw key, not words. (With the 1,055 quest rows whose
+    key is in `Strings_EN.csv`, that makes 2,265 rows whose `DebugText` differs from the words shown.)
+- 90 keys the conversations show aren't in `Strings_EN.csv`, all with rows:
+  - 84 are the Escort and Recruit quests' (Escort Apprentice, Warrior, Deputy and Leader, Recruit Deputy and
+    Leader): 14 each, 11 lines and 3 answers (their titles' keys are missing too). By the code above, the
+    game would show those raw keys (`QST_Escort.Apprentice.Context.1`), since their `DebugText` is the key.
+  - 6 are the resentful elder's StarClan talk's variants,
+    `QST_Story.Monologue.Interaction.TheResentfulElder.StarClan.Context.1` to `3`, each `.CloseBond` and
+    `.Friend`. Their rows' `DebugText` is English ("It is one thing to regale others with dark tales…"),
+    which the game would show. That talk has no row for its lines outside those two bond ranks.
+- 8 story tags the cats' graphs play have no rows (`…Filler.Ivypool.StarClan`, …). One row is used by
+  nothing (`…Filler.Rescue.Unique.3`).
+
+**Cinematic talks** are played by tag (`PlaySequenceDialogue`): `DT_QuestSequenceDialogues`
+(`FSwtQuestSequenceDialoguesStruct`: `SequenceDialogueId`, `WidgetToUse`, `DialogueToUse`) maps 30 tags
+(`Gameplay.Narrative.RankUp.WindClan.Leader`…) to the 30 cinematic graphs, by import. Their lines are
+keys of `STR_Script…` and `QST_Story…` rows, with the narrator as `Custom`. Their `BondingTypeNode`s carry a
+line per bond type. The WindClan leader's rank-up button is ThunderClan's key
+(`STR_Script.ThunderClan.Deputy.Leader.Promotion.Player.1`).
+
+**A worked example: the aging leader's first talk.**
+- **The graph.** `NpcDialogue_TheAgingLeader` (16 objects, imported by `L_Sandbox_Gameplay_05_Quests`)
+  has five `NpcDialogueRoot`s, one per quest state. The first is for `Quest.Main.1.0`, `Quest.Main.1.1`
+  and `Quest.Main.1.Complete`. It leads by a plain edge to a `QuestDialogueActionStoryDialogue` with
+  `StoryDialogueTag` = `Gameplay.Dialogue.Story.Short.TheAgingLeader.Main.1`.
+- **The template.** That tag is under `…Story.Short`, so the first talk plays `StoryDialogue_Short_Template`
+  (a `BondDialogue`, 56 objects).
+- **The bytes of one node,** its `Question.1` bond node (154 bytes):
+  - The header is `00 02 | 05 02 | 11 02 | 01 07`: fields 0, 6, 24 and 26–28, that is `SubTag`,
+    `Paragraph`, `Graph`, `ParentNodes`, `ChildrenNodes`, `Edges`.
+  - `SubTag` is `"Question.1"`. `Paragraph` is base text `"None.Question.1"`, the placeholder.
+  - `ChildrenNodes` is three `ResolveBondAnswer`s. `Edges` maps each to an Option1–3 edge whose button
+    reads `<Answer 1>`…
+- **The walk,** with each row `<tag>.<SubTag>` giving the key `QST_Story.Short.TheAgingLeader.Main.1.<SubTag>`:
+  1. The camera and stay-in-place actions, then the leader says `Context.1` ("I'm troubled by this new
+     prophecy…") and `Question.1`.
+  2. Three answer buttons: `Right.1.Short` (Brave, Score 9, ClanBonding 2), `Wrong.1.Short`
+     (Ambitious, -3, -4) and `Neutral.1.Short` (Wise, 0, 0).
+  3. Each leads to your long line (`Right.1.Long`, Talker Player), then the leader's reply
+     (`Context.2.Right`/`Wrong`/`Neutral`), then `Question.2`.
+  4. Three more answers (`Right.2.Short`…), your long line, the reply (`Context.End.<Right|Wrong|Neutral>`)
+     and `End`.
+  5. A `SaveDialogueInteraction` and the camera back.
+- **Later talks** play the `End` template: just `…Main.1.End`.
+
+`conversations(game)` gives this as the conversation
+`story:Gameplay.Dialogue.Story.Short.TheAgingLeader.Main.1`: 17 lines in reading order (16 the first time,
+`End` after), each with its key, English (and `fallback`), row and speaker; the answers with their trait, score, clan bonding
+and the line they lead to; and `used_by` `npc:NpcDialogue_TheAgingLeader`.
+
+**Totals** (`conversations()` on build 26184573, 2 s):
+- 564 conversations: 49 cats' own talks, 30 cinematics, 413 story talks and 72 quest talks.
+- 4,062 distinct keys.
+- Of the story talks, 371 are played by a cat's graph. The other 42 (Fillers, Interactions, and the three
+  Long talks that `TheInsecureLeader`, `TheProudLoner` and `TheZealousWarrior` hold inline in their own
+  graph) are only known from the table. A level's quest component (`StoryDialoguesOnInteract`) or the
+  code may play them; that wasn't traced.
+
+**What the Lines card can rely on** (the names plan's card for rewriting what a cat says):
+- **Every line it can offer is a `Strings_EN` key.** The cats' own talks and the cinematics name the key in
+  the graph. Story and quest talks get it from their table row's `StringKey`, at the moment they play.
+  `names.json` `text` sets keys in that table, the mechanism seen working for names. That a rewritten
+  *dialogue* key shows in the dialogue box is the one thing not yet seen (*verified.md*).
+- **The card can show:** each conversation's lines in order, who says each, the answers and their trait,
+  score and clan bonding, and which cat's graph plays it under which quest state (`plays`, `used_by`).
+- **The card must not rely on:**
+  - The words in `DebugText`: they're shown only when the key is missing, and in `QuestDialogues.csv`
+    they're the key itself. `conversations()` marks each line a `DebugText` stands in for with `fallback`:
+    `"debug"` with its words, or `"key"` with no English when the game shows the raw key (the Escort and
+    Recruit quests).
+  - Which variant a Filler or bond line shows: the player's bond or rank picks it at run time.
+  - Which quest template a quest uses: it's matched by the quest's rows, and the game picks by the quest's
+    flow type, which wcmods doesn't read.
+- **What the card should warn about:**
+  - A key used in more than one place changes them all (`lines_by_key`).
+  - Placeholders like `{PLAYER}` and `{THE AGING LEADER}` (in 1,021 of the keys) and the rich text
+    `<B>…</>` (in 228) must stay.
+  - The gatekeeper's angle-bracket lines can't be changed through the text table.
+  - A line or answer can't be added (that needs graph writing).
 
 ### New packages and textures
 
@@ -434,7 +820,20 @@ parent bone space), against the decode of that key:
 
 `%LOCALAPPDATA%\Wrc\Saved\SaveGames\WrcGame.sav`:
 - **The container:** a GVAS file whose `SwtSaveGame` holds `Hash`, `GamerId`, `Version`,
-  `saveSlots` and `CompressedData`.
+  `saveSlots` and `CompressedData`. In the object (UHT's tables, `tools/re/uht.py props
+  CompressedData`, which spell them as the code does; the file spells `SaveSlots` as `saveSlots`):
+  `Hash` (uint64) at +0x28, `GamerId` +0x30, `Version` (uint8) +0x40, `ExportsName` +0x48,
+  `JsonString` +0x58, `SaveSlots` +0x68, `CurrentSaveSlotIndex` +0x78, `CompressedData` +0x80; 0xA0
+  bytes in all (`GetPrivateStaticClass` at `0x141219820`). The save manager (`SwtSaveManager`, the
+  game instance's `SaveManager`) keeps it at +0x168 (`SaveGame`).
+- **Two managers.** The save manager holds the save game; the storage manager (`SwtStorageManager`,
+  the game instance's `StorageManager` at +0x220, in game a `BP_WrcStorageManager_C`) reads and writes
+  the file. Their code reaches them through two globals that the game instance fills when it makes
+  them: the save manager's at `0x14A8A6E30` (stored at `0x14189868B`, and `+0x200` at `0x141898692`)
+  and the storage manager's at `0x14A8A6E40` (`+0x220` at `0x1418990B7`, the global at
+  `0x1418990C4`). `0x141244CA0` registers the class `SwtStorageManager`, 0x130 bytes (so it has
+  nothing at +0x168), and its constructor (`0x1412458F0`) puts the vtable `0x1498CF120` in place at
+  `0x14124591D`. Below, "slot" is a slot of that vtable unless it says otherwise.
 - **`CompressedData`:** what Unreal's `FArchiveSaveCompressedProxy` writes: one compressed archive
   per 128 KiB of payload, back to back. Each is an 8-byte tag (`C1 83 2A 9E 22 22 22 22`), the block
   size (128 KiB, int64), a compressor byte (3: zlib), a summary (compressed and uncompressed sizes,
@@ -442,8 +841,72 @@ parent bone space), against the decode of that key:
   (about 80 KiB of JSON); a long-played one is several, and a reader that stops after the first
   gets a payload cut short. The payload is `[u32 len+8][u32 len][JSON bytes, each minus 1][u32 len]`.
   `WrcGame.json` beside it is the same JSON in plain text.
-- **The checksum:** the save carries a 64-bit checksum whose formula isn't known. Keeping the
-  original value works: the game accepts edited saves and keeps the edits.
+- **`Hash` is not a checksum.** Each time the game writes the save it sets
+  `Hash = CityHash64WithSeed(UTF-8 of "<UTC now>__<storage manager's address>", previous Hash)`, the
+  time as `%Y.%m.%d-%H.%M.%S` and the address as `%p` (`formats/save.py` `next_hash`). Nothing in it
+  comes from what the save holds, so it can't be worked out from the file, and nothing reads it except
+  the next write, as its seed: the loader checks only `Version`. Keeping the original value works (seen
+  in game). Any other value should load too (read from the code; not tried, see
+  [verified.md](verified.md#not-yet-confirmed-in-game)). Read from the code on build 26184573:
+  - **The writer** is the storage manager's virtual at `0x1412B8F00` (slot 0x390). No other vtable
+    holds it, and there's no native class below `SwtStorageManager`. The save manager calls it on the
+    storage manager's global, `rcx = [0x14A8A6E40]; call [vtable+0x390]`: in its slot 0x490 at
+    `0x1412AB41A`, and in the Wrc override of that slot at `0x1416AD848`. Both skip the call until
+    the storage manager's byte +0x89 is set (the loader sets it at its end, `0x1412B969D`) and while
+    their own byte +0xE1 is set (a successful write sets it). The writer reaches the save game
+    through the save manager's global, `[0x14A8A6E30]+0x168`, not through `this`. It sets `Version`
+    from slot 0x370, then `Hash = 0x14119A210(this, Hash, "")` (`0x1412B9013`–`0x1412B9040`, `this`
+    in `rcx`), and only then turns the state into JSON and packs it into `CompressedData`
+    (`0x1412B9740`, called at `0x1412B9113`). `SwtSaveManager.Save` with its last argument false (as
+    `Game.save.write()` calls it) calls slot 0x490 straight away (`0x1412AA127`), so the new `Hash`
+    is in memory when it returns.
+  - **`0x14119A210`** formats its first argument, the writer's `this`, with `%p` (format at
+    `0x149862FD0`), takes `FDateTime::UtcNow()` (`0x141AD4130`, which calls `GetSystemTime`) as text with
+    `%Y.%m.%d-%H.%M.%S` (`0x141AD2A50`, format at `0x1498DB2A8`), and joins time, salt and address
+    with `%s_%s_%s` (`0x149862FF0`). The salt is empty, hence the double `_`. It turns the result into
+    UTF-8, without the terminator, and calls `0x1419D5C10` with it and the old `Hash`.
+  - **`0x1419D5C10` is CityHash64WithSeed.** It's CityHash64 (`0x1419D56F0`), plus
+    `0x651E95C4D06FBFB1` (−k2), then HashLen16 with the seed and kMul `0x9DDFEA08EB382D69`, as in
+    Google's city.cc. wcmods' `cityhash64_with_seed` gives city-test.cc's values for it.
+  - **`%p`** goes through `FString::Printf` (`0x141995A10`), which calls the UCRT's
+    `__stdio_common_vswprintf` (its `api-ms-win-crt-stdio-l1-1-0` import). Called on this machine
+    through ctypes with `%p`, that function gives 16 upper-case hex digits, zero-padded:
+    `0x1E5C8A2B000` gives `000001E5C8A2B000` and `0x10` gives `0000000000000010`. Microsoft's docs
+    don't say which case or padding it uses, and it wasn't seen in the game.
+  - **Nothing checks it.** The loader is the storage manager's (`0x1412B9440`, slot 0x398). It reads
+    `Version` (+0x40) and `CompressedData` (+0x80) or `JsonString` (+0x58), never +0x28. The cloud
+    copy goes through the same loader. `SwtSaveManager`'s `CloudLoad` (its native thunk `0x14123CBB0`,
+    named in its class's function table at `0x1498C4880`) calls the storage manager's slot 0x3B0
+    (`0x1412B9EC0`). That only lists the cloud files and starts reading them through the cloud
+    interface at +0xA0, handing it the delegate at +0xF0. The delegate is bound to `0x1412BA060` (at
+    `0x1412B88B7`). That function unpacks what was read (`0x141AFB820`: by its fields
+    `FArchiveLoadCompressedProxy`'s constructor, a loading archive over the bytes with a 128 KiB
+    buffer, a format name and flags), writes it to the slot (`0x14427E950`, by its arguments
+    `UGameplayStatics::SaveDataToSlot`: a guess) and calls the loader (slot 0x398, at `0x1412BA1C5`).
+    Neither touches +0x28. In the game's own code (`0x141190000`–`0x141900000`), the
+    only place that loads the save manager's +0x168 and then touches +0x28 within 16 instructions is
+    the writer. Two PlayFab replies on another class match that pattern too, but they aren't save code.
+    `Hash`'s flags are `CPF_NativeAccessSpecifierPublic` alone, so Blueprints can't read it.
+  - **The 18 copies of the save** (17 backups and the live save; 13 different hashes) fit this. A copy
+    with the same JSON always has the same hash, because it's the same file restored. On the two
+    smallest, no hash of the content matched: CityHash64, xxHash64, FNV-1/1a 64 and 16 CRC-64
+    variants (ECMA and ISO, reflected or not, each init and final XOR), and CRC-32/Adler-32 against
+    either half. Each was tried over the JSON, the JSON with
+    each byte minus one, the payload with and without its lengths, `CompressedData` and the file with
+    the hash zeroed. The value can't be checked against a backup: that needs the storage manager's
+    address in the session that wrote it.
+- **`Version` is the gate.** It's the game's `SaveVersion`
+  (`[/Script/SwtEngine.SwtEngineConfig] SaveVersion=20` in `DefaultGame.ini`). The storage manager's
+  slot 0x370 (`0x1412B8480`) returns `USwtEngineConfig.SaveVersion` (+0x28), or 1 without a config.
+  On load, a save whose `Version` differs goes to the storage manager's slot 0x368, which is a plain
+  `return false` (`0x14119A080`). The loader then has the save manager (its global, `0x14A8A6E30`)
+  make a new, empty save game (`0x1412A9CB0`, called at `0x1412B968C`) instead of loading it (read
+  from the code at `0x1412B95B7`–`0x1412B95D3`; not tried). All 18 copies hold 20. wcmods writes the
+  header back byte for byte.
+- **`saveSlots`** holds an id per slot, the same `C32BEA80…` in all 18 copies. `GenerateSaveSlotHash`
+  (`0x1416ACE50`) makes it from the same kind of text (`%s_%s_%p`: the UTC time,
+  `GenerateSaveSlotHash_<n>` and an address), hashed with `0x1419E39B0`. That function's 0x778-byte
+  state looks like BLAKE3's (a guess). It's an id, not a checksum.
 - **Your cat:** under
   `<slot>/GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization`, as one string
   in Unreal's struct text format:
@@ -529,7 +992,7 @@ Where each one is:
 | `SwtQuestHealthComponent` | your cat | |
 | `SwtQuestStaminaComponent` | your cat | +0x11C: stamina back per second (20) |
 | `SwtCombatStaminaComponent` | your cat | fight stamina: 0.4 × Prowess + Stamina (193.2 for Prowess 233) |
-| `SwtAdventureLevelComponent` | the player state | value is XP; +0x120 and +0x124: the level (20, 20); +0x138: the stats struct, so `Prowess` +0x154, `Strength` +0x158, `Resilience` +0x15C, `Instinct` +0x160, `Agility` +0x164, `Stamina` +0x168 (all equal to the save's) |
+| `SwtAdventureLevelComponent` | the player state | value is XP, max the XP for the next level; +0x120: the level (20); +0x124: the level cap, `Gameplay.Exploration.MaxLevel` (20; read from the code, see below: `WCM_LevelShown` is an older name); +0x138: the stats struct, so `Prowess` +0x154, `Strength` +0x158, `Resilience` +0x15C, `Instinct` +0x160, `Agility` +0x164, `Stamina` +0x168 (all equal to the save's) |
 | `SwtAdventureFreshKillPileComponent` | the game state (`FreshKillPileComponent`) | +0x130: seconds since it last dropped (counts up in real seconds); +0x134: 90, `Decay.Time` |
 | `SwtAdventureStatusComponent` | every cat and animal (`StatusConditionComponent`) | +0xE0: the status condition (`ESwtAdventureStatusType`); +0x144: rounds it has lasted; +0x148: `SelfCure.Chance` 0.2; +0x14C: `Poison.Damage` 0.1 (read from `ApplyStatusType`, `0x141736CD0`, and the end-of-round code; watched in game) |
 | `TurnBasedCombatComponent` | every cat and animal (+0x848) | +0x1A1: its team; +0x1E0: its moves (a `TArray` of `AttackMove` rows, count at +0x1E8); +0x3F8: the AI's tier ([combat.md](mechanics/combat.md#the-combatant)) |
@@ -537,6 +1000,21 @@ Where each one is:
 
 Writing them works: the values changed in memory, and the game's own code read them back. The HUD
 isn't told, so a bar may show the old value until something else updates it.
+
+**The level component's code** (build 26184573, read from the disassembly; the vtable slots are the
+level component's). `USwtAdventureLevelComponent` derives from `USwtQuestLevelComponent`, a resource
+component whose value is the XP; the level and the cap are the parent's, the stats its own.
+
+| Function | What it does | Found by |
+|---|---|---|
+| `0x141658C00` | The parent's start-up (vtable +0x3F8, presumably `BeginPlay`): the cap (+0x124) from `Gameplay.Exploration.MaxLevel`, then, for the player's component (`0x1416570E0`), a level and XP from `0x1416AF350` and `0x1416AF7A0`, each given the +0x154 of the object behind the global `0x14A8A6E08` (the save and a slot, presumably), then sets the level | `xrefs.py` on `Gameplay.Exploration.MaxLevel` |
+| `0x1417C6210` | The same, overridden by the level component (the parent's code repeated, not called: it stores the cap at `0x1417C6252` and calls the level setter at `0x1417C6326`), which then sets its stats struct (+0x138) from what `0x14180F9D0` returns. That function reads the object behind the global `0x14A8A6E30` (after an IsA check), looks up `Stats` in what that object's vtable +0x498 and +0x368 hand back, and when it's there reads it as a `SwtAdventureCharacterStats` (presumably the save's `Stats`); otherwise it takes `0x14181CD60`'s stats for `PlayerCat`, and with no such object, zeroes | its vtable |
+| `0x141658870` | Sets the level: +0x120 = n, the XP bar's size from vtable +0x548, then the XP, or a full bar at the cap; for the player's, the XP and level go to `0x1416AF600` and `0x1416AF1B0` (the save, presumably); calls `0x14120D010` with this+0x128 and a pointer to the level, which reads an array there (count at +8, 16-byte entries): presumably a multicast delegate broadcasting the new level; recomputes the stats (vtable +0x550) | `callers.py` (three calls) |
+| `0x141658A90` | Sets the XP (vtable +0x510): clamped between 0 and the bar (+0x110; +0x100 instead while the byte at +0x104 is set); below the cap, XP that reaches the bar sets level + 1 with what's over, which sets the XP again | calls `0x141658870` |
+| `0x141658D20` | The XP bar at level n (vtable +0x548): `Gameplay.Exploration.Level.%d` with n + 1 | `xrefs.py` on `Gameplay.Exploration.Level.` |
+| `0x1417C6410` | The level component's stats (vtable +0x550): the base stats for its level from `0x1418043E0` (with `PlayerCat`), then each Social trait's `Gameplay.Combat.<trait>.Strength/.Resilience/.Instinct` × (level − 1) × 0.05 added, then all six rounded (`FMath::RoundToInt`); then a resource component its owner hands back gets Prowess as its maximum and value (the health, presumably: in game health equals Prowess) | `dispscan.py` on the six stat offsets |
+
+`0x1418043E0` is called by the fight code too (`0x1417D5830`, `0x1417D5FC5`).
 
 **The clock:** the game state's +0x438 is a float, the seconds into the day. Setting it to 21600 made
 the game's own `GetDayClockTime` say 6:00.
@@ -795,8 +1273,8 @@ each part's options in groups, with the offset the position inside one. Not yet 
 
 From `wcmods/names.py` (checked against the tables and the save):
 - **A clan cat's name** is a prefix and a suffix.
-  - `NPC/PreffixName.csv` (the game's spelling) has 89 prefixes, with a weight per clan.
-  - `NPC/SuffixName.csv` has 26 suffixes, with a weight per rank: kits get -kit, apprentices
+  - `NPC/PreffixName.csv` (the game's spelling) has 90 prefixes, with a weight per clan (counted 2026-10-28).
+  - `NPC/SuffixName.csv` has 27 suffixes, with a weight per rank: kits get -kit, apprentices
     -paw, leaders -star.
 - **The name shown** is the English text under the key prefix ID + suffix ID
   (`STR_CAT_NAME53` + `_PAW` gives `STR_CAT_NAME53_PAW` = "Otterpaw"), in each language's
@@ -814,10 +1292,10 @@ From `wcmods/names.py` (checked against the tables and the save):
   experience, the den, dilemma popups and the trait/name screen).
 - **Name screen suggestions:** `PrefixNameFilters.csv` and `SuffixNameFilters.csv` score names
   against a cat's clan, looks and (for suffixes) traits.
-- **Rogues** take a whole name from `NPC/RogueNames.csv` (`STR_ROGUE_CAT_NAME_<n>`; the table's
+- **Rogues** take a whole name from `NPC/RogueNames.csv` (23 of them, `STR_ROGUE_CAT_NAME_<n>`; the table's
   Name column is only a label).
 - **The nine canon cameo cats** use `STR_CAT_NAME_ICONIC_<n>`.
-- **`NPC/NameBanList.csv`** holds 30 combinations that are never handed out (canon names).
+- **`NPC/NameBanList.csv`** holds 31 combinations that are never handed out (canon names).
 
 ## Colours
 
@@ -1040,6 +1518,105 @@ from `EPopupCheatsIds`:
   a parameter with `param:set()`, and the called function saw the new value. In a post-hook the
   parameters read empty. Two hooks on one function, both removed, left the game fine.
 
+## The game's enums
+
+Worked out on 2026-10-28 on build 26184573, from the exe and the class dump (`vanilla/sdk`, taken in game on
+build 24847281); the reading in game was seen on 2026-10-28: every enum `game.ENUMS` names, `ECommands` and
+`EGuiConsolesTypes` gave the exe's names and numbers (docs/verified.md).
+
+- **Where they are.** Each of the game's enums is a native `UEnum` named after its C++ name in its module's
+  script package: `/Script/<Module>.<EnumName>`. The module is the `## [Module]` block of `api-index.txt`
+  whose `enum E...` lines list it (`ECommands` and `EGuiConsolesTypes` in `SwtEngine`, `EClanType` and the
+  quest enums in `SwtQuest`, the combat ones in `SwtAdventure`). `/Script/SwtEngine.ECommands` was found
+  this way in game (the in-game remap reads it; verified.md, 2026-10-27); the `SwtQuest` and `SwtAdventure`
+  packages are the ones `Game.hidden`'s classes are found in, and their enums were looked up in game on
+  2026-10-28 (`EClanType` and the rest of `game.ENUMS`).
+- **In the exe.** UHT's enum tables are `{const char* name, int64 value}` pairs. Each enum also has its UHT
+  parameters (`FEnumParams`), which name it: OuterFunc at +0, DisplayNameFunc +8, NameUTF8 +16 (the enum's
+  name), CppTypeUTF8 +24 (the same, or `<EnumName>::Type` for a namespaced enum), the table +32, ObjectFlags
+  (u32) +40, the number of names (i16) +44, EnumFlags (u8) +46 and the C++ form (u8, `UEnum::ECppForm`: 0
+  plain, 1 namespaced, 2 enum class) +47. `tools/re/uht.py <exe> enum <EnumName>` finds an enum through
+  them and says where it is and its form: `ECommands`' 111 names (NoCommand 0 … TOTAL 110) at 0x14987A870
+  (RVA 0x987A870, parameters at 0x14A485F68), `EGuiConsolesTypes`' 11 at 0x14987D640, `EClanType`'s 6 at
+  0x149AE3270 (parameters at 0x14A4C2BD8). Of the 202 enums in the game's own modules (the class dump's
+  `SwtEngine`, `SwtQuest`, `SwtAdventure`, `SwtNativeAudio` and `Wrc`; `SwtCore` and `SwtOnlineCloud` have
+  none), all have parameters in build 26184573's exe, and the dump's form for each: 198 are `enum class`,
+  their names carrying the type (`ECommands::Player_Interact`), and 4 are plain,
+  their names without it: `EDataType` (`DataTypeNONE` 0 …, table at 0x14987A230), `ESwtEngineChannel`
+  (`ECC_None` 0 …, 0x1498D0460) and `ESwtServicesError` (`SWT_NO_ERROR` 0 …, 0x1498CFF70) in `SwtEngine`,
+  and `EPopupCombatState` (`ST_NONE` 0 … `ST_SELECT_OPPONENT` 3, 0x149BEBFE0) in `Wrc`. Unreal's own are
+  of all three forms (`EInputEvent` is plain: `IE_Pressed` 0, `IE_Released` 1, `IE_Repeat` 2,
+  `IE_DoubleClick` 3, `IE_Axis` 4, `IE_MAX` 5, at 0x1485A8BD0, parameters at 0x14A362E90). Where the
+  parameters can't be found, `uht.py` falls back on the names' `<EnumName>::` prefix, which finds an enum
+  class's table (for all 198 of the game's, the same table as the parameters give) but not a plain enum's.
+- **What patch 1.1 changed.** The class dump of build 24847281 lists 109 `ECommands` names, `Player_Interact`
+  the 66th (65). Build 26184573's table (above) has `Player_Mouse_Camera_Up` 64 and `Player_Mouse_Camera_Right`
+  65 after `Player_Camera_Right` 63, so `Player_Interact` is 67 and everything after it is 2 higher. Every
+  enum `Game.enums` names reads the same in both: the dump's lists and the exe's tables have the same names
+  in the same order.
+- **Reading one from Lua.** `StaticFindObject("/Script/SwtEngine.ECommands"):ForEachName(function(name,
+  value) ... end)` gives each name as an `FName` with its type in front (`ECommands::Player_Interact`) and
+  its value as a number (seen in game through the in-game remap, which sends the commands it gets this
+  way). A missing enum comes back as an invalid object, which must not be asked anything (that crashes the
+  game), and an error inside the callback goes to UE4SS's log and ends the listing without reaching a
+  `pcall` around it. In game, each enum ends with a `_MAX` name one past its last value, which the exe's
+  tables don't have: the engine adds it when it builds the enum (`UEnum::SetEnums` with
+  `bAddMaxKeyIfMissing`). The class dump taken in game (`vanilla/sdk/CXXHeaderDump`, UE4SS's
+  `GenerateSDK()` on build 24847281) lists it: `EClanType_MAX = 6` (`SwtQuest_enums.hpp`), `ECommands_MAX
+  = 109` and `EGuiConsolesTypes_MAX = 11` (`SwtEngine_enums.hpp`); the UHT-compatible dump
+  (`UHTHeaderDump`) leaves it out. An enum class's is `<EnumName>_MAX`. A plain enum's is `<prefix>_MAX`,
+  the prefix being what its names share up to its last `_` (`EPopupCombatState`'s `ST_MAX = 4`,
+  `ESwtEngineChannel`'s `ECC_MAX = 25`, `ESwtServicesError`'s `SWT_MAX = 30`), or `<EnumName>_MAX` when
+  they share none (`EDataType_MAX = 11`), all four in the dump. The engine adds none when the enum has that
+  name already (from the engine's code: `EInputEvent`'s own `IE_MAX` is in the exe's table, and the dump
+  lists it once), so in game a plain enum's last `_MAX` can't be told from one of its own.
+  `tests/game/test_cat.py` checks `EClanType_MAX` on build 26184573 when it runs.
+  `Game.enumNames(path)` (WCModsGame) and `enumNames(path)` in `WCModsRemap` do this. `Game.enumNames` leaves
+  out `<EnumName>_MAX`, so an enum class's, and keeps a plain enum's `<prefix>_MAX` (`ST_MAX`, `ECC_MAX`,
+  `SWT_MAX`; `EDataType_MAX` goes); none of `Game.enums`' is plain. The remap's keeps every name, and looks
+  up only the ones it knows.
+- **What wcmods reads this way:**
+  - **`Game.enums`:** each of its 17 lists is one enum (`wcmods/game.py` `ENUMS`: `clan` is `EClanType`,
+    `status` is `ESwtAdventureStatusType`, ...), matched to what each is used for by the dump (`ClanType`
+    is an `EClanType`, `CurrentPhase` an `EGamePhase`, `AlwaysHasFullResource` a
+    `TMap<EQuestResourceType, bool>`, `RemoveStatusType` takes an `ESwtAdventureStatusType`, ...), all 17
+    `enum class`. Each list is read from the game the first time a script looks anything up in it (or walks
+    it, or takes `#`). The shipped lists, numbered from 0, are the fallback, and are now each the whole enum:
+    `clan` and `rank` gained `Total` (5) and `resource` gained `Count` (6), which the old lists left out.
+    The fallback answers while the game's enum can't be read, but isn't kept: the game is asked again on a
+    lookup 5 seconds later, so a script that looks too early (its Lua starts before the game is up) gets the
+    game's numbers once they're there. The table's metatable says which it has (`fromGame`).
+  - **The Talk prompt's command:** `Player_Interact` in `ECommands`, read at the first prompt (it was the
+    number 67).
+  - **The in-game remap:** `NoCommand` from `ECommands` (it was 0), and `UI_PC` from `EGuiConsolesTypes`
+    (it was 1): the key of the PC's table in `URegisterButtonsMap.DataGamepadButtonsMap`
+    (`TMap<EGuiConsolesTypes, UDataTable*>`), whose pictures count as the keyboard's.
+  - **The agent:** `Button_Confirm` from `ECommands` (it was the number 26), which it sends to a screen that
+    waits for any key.
+- **Checked against the exe:** `python tools/re/uht.py <exe> lua` reads every `Game.enums` list and every
+  enum number wcmods keeps in a constant whose comment names it (`-- ECommands::Player_Interact`, or
+  `-- ESlateVisibility: Visible, Collapsed` for several), in its Lua files and in the Lua its Python holds
+  (the agent's), and compares them with the exe's tables. A line whose comment names a different count of
+  values than it has numbers counts as a failure. On build 26184573: 58 of 58 match, 2 not checked:
+  - the 17 lists;
+  - 4 of the game's numbers: `Player_Interact` 67, `NoCommand` 0, `UI_PC` 1, `Button_Confirm` 26;
+  - 37 of Unreal's own: `ESlateVisibility`, `ESlateSizeRule`, `EStretch`, `EUINavigation`,
+    `EUINavigationRule`, `EScrollWhenFocusChanges`, `EAttachmentRule`, `ECollisionEnabled::NoCollision` 0,
+    `ESpawnActorCollisionHandlingMethod::AlwaysSpawn` 1 (0x1487AC4B0), `ESpawnActorScaleMethod::OverrideRootScale`
+    0 (0x14865B5D0), `EUMGSequencePlayMode::Forward` 0 (0x1484E8BE0), `ETextJustify` Left 0, Center 1, Right 2
+    (0x147F77880), `EDescendantScrollDestination::TopOrLeft` 1 (0x147F81D30), and the plain `EInputEvent`
+    (`IE_Pressed` 0, `IE_Released` 1), `EHorizontalAlignment` (`HAlign_Fill` 0, `HAlign_Left` 1, `HAlign_Center`
+    2, `HAlign_Right` 3, 0x147F415D0) and `EVerticalAlignment` (`VAlign_Fill` 0, `VAlign_Top` 1, `VAlign_Center`
+    2, 0x147F41690);
+  - the 2 not checked are `EInternalObjectFlags::Garbage`, which isn't in a table (that flag set isn't
+    reflected).
+- **Unreal's own enums stay numbers.** They're the engine's (Unreal 5.7), not the game's, so a game update
+  can't move them without a new engine, which would break much more than these. Each is a constant whose
+  comment names its value, so the check above covers it: the spawns' `ALWAYS_SPAWN` and `ROOT_SCALE`, the
+  animations' `PLAY_FORWARD`, `NO_COLLISION`, `JUSTIFY_CENTER` and the prompt's `HIDDEN` in `game.lua`,
+  draw.lua's `JUSTIFY` table, `menu.lua`'s alignments and `TO_THE_TOP`, `menu_host.lua`'s `NAV_RIGHT` and
+  `NAV_ESCAPE`, and the remap's `PRESSED` and `RELEASED`.
+
 ## Items
 
 Worked out on 2026-10-24 and verified in game with a new herb and a new material (`items.json`).
@@ -1239,9 +1816,10 @@ Worked out on 2026-10-24 for `Game.npcs`, and checked in game with two cats.
     `CustomPOIIcon` takes the `MI_UI_Icon*` materials; `bStickPOIToBorder` keeps it at the minimap's edge.
     Textures and materials load with `LoadAsset` on their whole object path, not the package's.
   - **Dialogues** are `NpcDialogue` graphs (`GenericGraph`) of `QuestDialogueNode`s: camera actions,
-    `QuestDialogueTalkingNode`s with a `Paragraph` and a `TalkingSource` (0 the cat, 1 you; several "you"
-    children of one node are the answer choices) and screens (`QuestDialogueActionCreateScreen`). Giving a
-    spawned cat one didn't make the game talk with it, for the reason above.
+    `QuestDialogueTalkingNode`s with a `Paragraph` and a `TalkingSource` (0 the cat, 1 you) and screens
+    (`QuestDialogueActionCreateScreen`); the answer choices are a node's edges with an `EdgeType` of 1 to 4
+    (*Dialogue graphs* has the format). Giving a spawned cat one didn't make the game talk with it, for the
+    reason above.
 - **Keys:** the game's Interact (E) would also use whatever else is in reach (a travel tunnel opened
   the map). The examples talk on T and the controller's d-pad up, read from the game's own input
   (`WasInputKeyJustPressed`). That also works with keys the agent posts to the window, which UE4SS
@@ -1503,8 +2081,9 @@ Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`W
   to test `bShowMouseCursor`, which said "play" in every menu.
 - **`ECommands` moved in patch 1.1.** `Player_Mouse_Camera_Up` and `_Right` were added after
   `Player_Camera_Right`, so everything after them is 2 higher than in a class dump of the first release
-  (Interact 65 → 67). Read the numbers from the game:
-  `StaticFindObject("/Script/SwtEngine.ECommands"):ForEachName(function(name, value) … end)`.
+  (Interact 65 → 67; read from the exe's table, *The game's enums*). Read the numbers from the game:
+  `StaticFindObject("/Script/SwtEngine.ECommands"):ForEachName(function(name, value) … end)`, or
+  `Game.enumNames("/Script/SwtEngine.ECommands")` in a script.
 - **Commands can be sent and changed.**
   - **Sending:** `pc.InputComponent:OnListenCommandInternal(77, 0)` from Lua opened the inventory, as
     `pc:OnListenCommand(77, 0)` did. It reaches the controller's input listeners only, not the screens.
@@ -1628,6 +2207,18 @@ The rules of play are in [mechanics/](mechanics/README.md):
 - **Progression and dialogue:**
   - Does a dialogue answer's `Score` go to your bond with that cat?
   - Do levels stop at a rank's cap until the rank-up quest?
+  - **Dialogue graphs** (*Dialogue graphs*):
+    - Which quest template a quest plays (its `EQuestFlowDialogueTypes`), and who sets a quest's row prefix
+      (`Quest.Procedural.Survival.Gather.Apprentice`: the graph's non-reflected string at +0x120, read by the
+      walk and the title) and whether anything sets the graph's `AutoFillPrefix` (+0x110, a key prefix that
+      only a trait answer's fallback key uses) before the fill. The quest graphs (`QuestGraphProcedural_*`,
+      `QuestLine_Main`) weren't decoded.
+    - Who plays the 42 story talks no cat's graph names (a level's `StoryDialoguesOnInteract`?), and the
+      8 tags the graphs name that have no rows.
+    - How `ActivateDialogueView.RelativeOffsetDistance` (an `FFloatRange`) is stored; nothing sets it.
+    - What a `ResolveBondAnswer` in an `NpcDialogue` (not a `BondDialogue`) shows, since its words come
+      from the graph's `DialogueTag`, which only a `BondDialogue` has; the three inline Long talks have
+      them.
 - **Clan life:**
   - Are den build times real hours?
   - What are `FreshKillPile.ResetCycles`, `Stamina.Bonus.Modifier.1..16` and the sunspot rewards?

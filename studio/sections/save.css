@@ -1,0 +1,19 @@
+/* The Save page: your cat's numbers and quick buttons, what it carries, the changes to make and the ones done,
+   and the whole save under Advanced. Linked by app.js when the page opens; cards, folds and chips are in styles.css. */
+.cat-fields { align-items: flex-start; gap: 18px; }
+.presets { gap: 8px; }
+.carry { display: grid; gap: 4px; }
+.carry-row { gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.carry-row:last-child { border-bottom: 0; }
+.carry-row.gone { color: var(--muted); text-decoration: line-through; }
+.item-icon-small { width: 28px; height: 28px; object-fit: contain; }
+.changes.done > li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.changes.done > li:last-child { border-bottom: 0; }
+#save-share { margin-top: 6px; }
+.card.inner { box-shadow: none; }
+#save-advanced .leaf { gap: 10px; align-items: baseline; }
+#save-advanced .leaf > label { min-width: 12rem; font-size: 0.82rem; overflow-wrap: anywhere; }
+#save-advanced .leaf .value { font-size: 0.82rem; overflow-wrap: anywhere; max-width: 34rem; }
+#save-advanced details { padding-left: 4px; }
+#save-advanced .tree-kids { padding-left: 16px; display: grid; gap: 2px; }
+#save-advanced #save-found .hit { border-left: 3px solid var(--line); padding-left: 8px; }

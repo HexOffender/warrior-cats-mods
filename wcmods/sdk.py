@@ -117,9 +117,12 @@ class BuildContext:
         self.ue4ss_shared = {}  # Lua module name -> (text, section)
         self.save_ops = []      # [{"op": ..., "section": ..., ...}]
         self.warnings = []
+        self.left_out = []      # parts of a mod's file not finished yet, left out while the rest goes in (leave_out)
         self.notes = {}
         self.current = None
         self.mods = []          # the enabled mods in priority order (set by the build)
+        self.found = []         # every mod in the mods folder, on or off (set by the build)
+        self.held_back = {}     # {mod id: why} for the mods on that a game update leaves out (set by the build)
         self._tuning = None     # TuningData.csv as numbers, read once (ctx.tuning)
         self._texts = {}        # language -> {key: text} (ctx.text)
         self._cooked = {}       # cooked table name -> (the game's asset, its rows) (ctx.cooked_table)
@@ -138,6 +141,15 @@ class BuildContext:
 
     def warn(self, msg):
         self.warnings.append(f"{self.current}: {msg}" if self.current else msg)
+
+    def leave_out(self, mod_id, part, name, why, said=None):
+        """Leave one part of a mod's file out of the build because it isn't finished yet (an item with no
+        description), while the rest of the file goes in. Warned as "<mod>: <part>: <said>, so it's left out of
+        the game", and listed in left_out as {"section", "mod", "id", "name", "why"} for the studio's save, which
+        says it as a note by name ("Moon Herb (no description)"), not as a problem. why: a few words ("no
+        description"); said: the warning's sentence ("it has no description"), why when not given."""
+        self.left_out.append({"section": self.current, "mod": mod_id, "id": part, "name": name or part, "why": why})
+        self.warn(f"{mod_id}: {part}: {said or why}, so it's left out of the game")
 
     def note(self, key, value):
         """Attach information to this build's manifest under the current section."""
@@ -327,16 +339,21 @@ class BuildContext:
         self.add_package(path, built["data"], built["chunk_id"], built["imports"], built["shaders"], source=source)
         return package + "." + package.rsplit("/", 1)[-1], built["seconds"]
 
-    def replace_animation(self, sequence, read, kind="cat", clip=None, source="", key=None):
+    def replace_animation(self, sequence, read=None, kind="cat", clip=None, source="", key=None, from_game=None):
         """One of the game's sequences played with a glTF file's keys instead, wherever the game plays it (for
         every animal on that skeleton): `sequence` is its name ("A_CatMaster_Trot_1") or path, in `kind`'s
         folder; read, clip and key as add_animation's. The clip is fitted to the sequence's length, and the
-        sequence keeps its notifies (footsteps) and curves. Returns (its asset path, its seconds)."""
+        sequence keeps its notifies (footsteps) and curves. `from_game` (another of the game's sequences for
+        that kind, by name or path) in place of `read` puts that one's keys in, fitted the same way. Returns
+        (its asset path, its seconds)."""
         from . import animations
         from .formats import texture
         if kind not in animations.KINDS:
             raise ValueError(f"there's no animal {kind!r} to animate (there are {', '.join(animations.KINDS)})")
+        if read is None and from_game is None:
+            raise ValueError("say what plays in its place: a glTF file (read) or one of the game's (from_game)")
         package = animations.find_sequence(self.game.io.files, kind, sequence)
+        other = animations.find_sequence(self.game.io.files, kind, from_game) if from_game is not None else None
         path = texture.content_path(package)
         if path in self.packages and self.packages[path][1] != self.current:
             # Another section's change to the same package (a higher-priority mod's replacement in this one
@@ -344,20 +361,67 @@ class BuildContext:
             raise ValueError(f"{package.rsplit('/', 1)[-1]} is changed by {self.packages[path][1]} already")
         if self._skeletons is None:
             self._skeletons = animations.Game(self.read_game_file)
-        built = animations.build(self, package, kind, read, clip, key, game=self._skeletons, replace=True)
+        built = animations.build(self, package, kind, read, clip, key, game=self._skeletons, replace=True,
+                                 from_game=other)
         self.patch_package(path, built["data"], source=source, imports=built["imports"])
         return package + "." + package.rsplit("/", 1)[-1], built["seconds"]
 
-    def add_ue4ss_mod(self, name, files):
+    def game_sequence(self, name, kind="cat"):
+        """One of the game's sequences for `kind` (animations.KINDS), by its name ("A_CatMaster_Yawn_1") or path,
+        to play as it is: {"path" (its asset path, "/Game/.../A_CatMaster_Yawn_1"), "seconds", "additive",
+        "root_motion"}. ValueError when the kind's folder hasn't got it, or it can't be read."""
+        from . import animations
+        from .formats import anim, texture
+        if kind not in animations.KINDS:
+            raise ValueError(f"there's no animal {kind!r} to animate (there are {', '.join(animations.KINDS)})")
+        path = animations.find_sequence(self.game.io.files, kind, name)
+        try:
+            seq = anim.AnimSequence(self.read_game_file(texture.content_path(path)))
+            return {"path": path, "seconds": round((seq.nkeys - 1) / seq.frame_rate(), 4), "additive": seq.additive(),
+                    "root_motion": seq.root_motion()}
+        except anim.FormatError as e:
+            raise ValueError(f"{path.rsplit('/', 1)[-1]} isn't a sequence wcmods can read ({e})") from None
+
+    def add_animation_from_game(self, name, sequence, kind="cat", claws=False, source=""):
+        """A new animation, /Game/WCMods/<name> as add_animation's, that is a copy of one of the game's sequences
+        for `kind` (by name or path) with its own keys and length: for a game animation with the cats' claws
+        out, which only a copy can have. Its face curves aren't copied. Returns (its asset path, its seconds)."""
+        from . import animations
+        from .formats import texture
+        if kind not in animations.KINDS:
+            raise ValueError(f"there's no animal {kind!r} to animate (there are {', '.join(animations.KINDS)})")
+        other = animations.find_sequence(self.game.io.files, kind, sequence)
+        package = texture.new_package_name(name)
+        path = texture.content_path(package)
+        if any(p.lower() == path.lower() for p in self.packages):
+            raise ValueError(f"{package} is another animation's already (their mods' names or ids differ only "
+                             "in case, or in - and _)")
+        if self._skeletons is None:
+            self._skeletons = animations.Game(self.read_game_file)
+        built = animations.build(self, package, kind, None, None, None, claws=claws, game=self._skeletons,
+                                 from_game=other)
+        self.add_package(path, built["data"], built["chunk_id"], built["imports"], built["shaders"], source=source)
+        return package + "." + package.rsplit("/", 1)[-1], built["seconds"]
+
+    def add_ue4ss_mod(self, name, files, check=True):
         """files: {"Scripts/main.lua": text, ...}. Installed only when UE4SS is present.
 
-        Lua files get a structure check (balanced blocks and brackets); problems become build warnings.
+        Lua files get a structure check (balanced blocks and brackets); problems become build warnings
+        (check=False for files a section has checked and said itself). A name goes in once per build: one
+        that's taken already, in any case (Windows' folders don't tell case apart), is a ValueError, since
+        the second would silently replace the first.
         """
-        for rel, data in files.items():
-            if rel.endswith(".lua"):
-                text = data if isinstance(data, str) else data.decode("utf-8", "replace")
-                for problem in luacheck.check(text)[:3]:
-                    self.warn(f"{name}/{rel}: {problem}")
+        taken = next((n for n in self.ue4ss_mods if n.lower() == name.lower()), None)
+        if taken is not None:
+            by = self.ue4ss_mods[taken][1]
+            raise ValueError(f"two mods would go in as the UE4SS mod {name}"
+                             + (f" ({by} has it already)" if by and by != self.current else ""))
+        if check:
+            for rel, data in files.items():
+                if rel.endswith(".lua"):
+                    text = data if isinstance(data, str) else data.decode("utf-8", "replace")
+                    for problem in luacheck.check(text)[:3]:
+                        self.warn(f"{name}/{rel}: {problem}")
         self.ue4ss_mods[name] = ({k: v.encode() if isinstance(v, str) else v for k, v in files.items()}, self.current)
 
     def add_ue4ss_shared(self, name, text):
@@ -413,11 +477,27 @@ class BuildContext:
             try:
                 text = self.files[path][0].decode("utf-8") if path in self.files else self.game.read_text(path)
                 changes, warnings = [], []
+                table = path.rsplit('/', 1)[-1]
+                touched = {}   # (row, column) -> the source that changed it last
+                over = {}      # (column, earlier source, later source) -> the rows the later one set over it
                 for edits, section, source in queue:
-                    text, applied, problems = csvdata.apply_edits(text, edits)
-                    warnings += [f"{section}: {path.rsplit('/', 1)[-1]}: {p}" for p in problems]
-                    changes += [{"row": r, "column": c, "from": a, "to": b, "by": source or section}
-                                for r, c, a, b in applied]
+                    who = source or section
+                    how = {}
+                    text, applied, problems = csvdata.apply_edits(text, edits, how)
+                    warnings += [f"{who}: {table}: {p}" for p in problems]
+                    changes += [{"row": r, "column": c, "from": a, "to": b, "by": who} for r, c, a, b in applied]
+                    for r, c, _, _ in applied:
+                        if c == "(row)":
+                            continue
+                        # Two mods (or a page and a mod) on one cell: multipliers stack, as documented; a plain
+                        # value from the later one replaces what the earlier one made, which is said.
+                        if touched.get((r, c), who) != who and not how.get((r, c)):
+                            over.setdefault((c, touched[(r, c)], who), []).append(r)
+                        touched[(r, c)] = who
+                for (c, before, who), rows in over.items():   # one line per column and pair of mods
+                    named = ", ".join(rows[:3]) + (f" and {len(rows) - 3} more" if len(rows) > 3 else "")
+                    warnings.append(f"{who} sets {c} in {table} where {before} changed it too ({named}): the "
+                                    f"game gets {who}'s value{'s' if len(rows) > 1 else ''} there")
             except Exception as e:
                 failures.append((path, sorted({s for _, s, _ in queue}), f"{type(e).__name__}: {e}"))
                 continue

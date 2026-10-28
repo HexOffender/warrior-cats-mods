@@ -20,12 +20,21 @@ class CatsSection(Section):
         return catcolours.validate(self.read_json(mod, "cats.json")) or None
 
     def build(self, ctx, items):
+        if not items:   # nothing to do, so the save isn't read (one wcmods can't read mustn't stop other mods)
+            return
         merged = catcolours.merge(data for _, data in items)
         source = ", ".join(mod.id for mod, _ in items)
         player = {**EMPTY, **merged.get("player", {})}
         sav = os.path.join(ctx.cfg.save_dir, SAV_NAME)
-        cats = names.cats_in_save(SaveDoc(SaveGame.load(sav).json_text).data) if os.path.isfile(sav) else []
-        per_mod = [data.get("cats", {}) for _, data in items if data.get("cats")]   # lowest priority first
+        unreadable = False
+        try:
+            cats = names.cats_in_save(SaveDoc(SaveGame.load(sav).json_text).data) if os.path.isfile(sav) else []
+        except (ValueError, OSError):
+            ctx.warn("your save couldn't be read, so the changes to cats in it were skipped (your cat's colours "
+                     "still go in)")
+            cats, unreadable = [], True
+        # Lowest priority first; none while the save can't be read (other cats are found in it).
+        per_mod = [data.get("cats", {}) for _, data in items if data.get("cats")] if not unreadable else []
         plan = self._plan(ctx) if per_mod and cats else None
         others = self._others(ctx, plan, per_mod, cats, os.path.isfile(sav))
         coloured = self._coloured(ctx, plan, others, cats)
@@ -41,11 +50,11 @@ class CatsSection(Section):
                 ctx.add_ue4ss_mod(catcolours.UE4SS_MOD_NAME, {"Scripts/main.lua": script, "enabled.txt": ""})
             else:
                 ctx.warn("cats' own colours need UE4SS, which isn't installed")
-            if player["colours"] and not cats:
+            if player["colours"] and not cats and not unreadable:
                 ctx.warn("your cat's colours: no save yet, so they show only once you're in the world")
-        added = _new_slots(ctx.mods)
+        added = palettes.added_slots(ctx.mods)
         self._check(ctx, "your cat", player, added)
-        if any(player[k] for k in ("slots", "scars", "look")):
+        if any(player[k] for k in ("slots", "scars", "look")) and not unreadable:
             if not os.path.isfile(sav):
                 ctx.warn("your cat's slots, scars or look: no save yet; start the game once, then install again")
             else:
@@ -148,12 +157,12 @@ class CatsSection(Section):
     def _check(ctx, who, one, added):
         slots, scars = one["slots"], one["scars"]
         if slots.get("fur") in catcolours.FERAL_SLOTS:
-            ctx.warn(f"{who}: coat slot {slots['fur']} is one of the Feral Edition's; without it the game gives "
+            ctx.warn(f"{who}: coat colour {slots['fur']} is one of the Feral Edition's; without it the game gives "
                      "another")
         for part in ("pattern", "marking"):
             slot = slots.get(part)
             if slot is not None and slot >= palettes.GAME_SLOTS and slot not in added.get(part, set()):
-                ctx.warn(f"{who}: {part} slot {slot} isn't added by any enabled palette, so it shows no colour")
+                ctx.warn(f"{who}: {part} colour {slot} is a new colour no palette that's on adds, so it shows none")
         for part, n in sorted(scars.items()):
             if n > len(catcolours.SCAR_TYPES[part]):
                 ctx.warn(f"{who}: {part} scar {n} seems to show nothing (the game has no scar for it); its scars "
@@ -174,17 +183,3 @@ class CatsSection(Section):
         for path in cat["paths"]:
             ctx.save_op({"op": "fields", "path": path, "set": catcolours.fields_of(one), "source": source,
                          "label": ", ".join(label), "who": who})
-
-
-def _new_slots(mods):
-    """{part: {slot, ...}} for the new colour slots the enabled palettes add."""
-    out = {}
-    for mod in mods:
-        path = os.path.join(mod.folder, "palette.json")
-        if os.path.isfile(path):
-            try:
-                for part, found in palettes.new_slots(palettes.load(path)).items():
-                    out.setdefault(part, set()).update(found)
-            except ValueError:
-                continue   # the palette section reports a broken palette.json
-    return out

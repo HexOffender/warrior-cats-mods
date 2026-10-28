@@ -5,6 +5,7 @@ game's own sequences and skeletons are checked by `python wcmods.py selftest`.""
 import base64
 import json
 import math
+import os
 import random
 import struct
 
@@ -15,6 +16,7 @@ from wcmods import luacheck
 from wcmods.formats import anim
 from wcmods.formats.cooked import NAME_HASH_VERSION, write_header
 from wcmods.formats.cityhash import name_hash
+from wcmods.sdk import BuildContext
 from wcmods.lua import source
 from wcmods.sections.animations import AnimationsSection, check
 
@@ -502,17 +504,23 @@ def test_animations_json_is_read_and_checked(tmp_path):
         AnimationsSection().collect(mod, None)
     (tmp_path / "animations.json").write_text(json.dumps({"animations": []}))
     assert AnimationsSection().collect(mod, None) is None
-    # One the Animations page saved before its file was chosen is left out, and the others install.
+    # One the Animations page saved before its file (or one of the game's) was chosen is left out, and the
+    # others install.
     ctx = FakeCtx()
     (tmp_path / "animations.json").write_text(json.dumps({"animations": [{"id": "New", "name": "New"}, wave]}))
     assert AnimationsSection().collect(mod, ctx) == [wave]
-    assert ctx.warnings == ["m: New: no file chosen yet, so it's left out"]
+    assert ctx.warnings == ["m: New: nothing chosen for it to play yet, so it's left out of the game"]
+    assert [(x["id"], x["name"], x["why"]) for x in ctx.left_out] == [("New", "New", "nothing chosen to play yet")]
 
 
 class FakeCtx:
     def __init__(self):
         self.cfg = type("Cfg", (), {"ue4ss_mods_dir": "x"})()
         self.made, self.shared, self.scripts, self.warnings, self.notes, self.replaced = [], {}, {}, [], {}, []
+        self.copied = []         # add_animation_from_game's
+        self.left_out, self.current = [], None
+
+    leave_out = BuildContext.leave_out
 
     def add_animation(self, name, read, kind="cat", clip=None, claws=False, source="", key=None):
         if "Broken" in name:
@@ -520,11 +528,23 @@ class FakeCtx:
         self.made.append((name, kind, clip, claws))
         return "/Game/WCMods/" + name + "." + name.rsplit("/", 1)[-1], 2.0
 
-    def replace_animation(self, sequence, read, kind="cat", clip=None, source="", key=None):
+    def replace_animation(self, sequence, read=None, kind="cat", clip=None, source="", key=None, from_game=None):
         if sequence == "A_Nothing":
             raise ValueError("the game has no sequence A_Nothing for cats")
-        self.replaced.append((sequence, kind, clip))
-        return "/Game/Art/Characters/CatMaster/Animations/" + sequence + "." + sequence, 0.4667
+        self.replaced.append((sequence, kind, clip) if from_game is None else (sequence, kind, clip, from_game))
+        folder = "/Game/Art/Characters/CatMaster/Animations/" + ("Cinematic/" if "Cinematic" in sequence else "")
+        short = sequence.rsplit("/", 1)[-1]
+        return folder + short + "." + short, 0.4667
+
+    def game_sequence(self, name, kind="cat"):
+        if name == "A_Nothing":
+            raise ValueError("the game has no sequence A_Nothing for cats")
+        return {"path": "/Game/Art/Characters/CatMaster/Animations/" + name, "seconds": 3.1333,
+                "additive": name == "A_CatMaster_Meow_1", "root_motion": False}
+
+    def add_animation_from_game(self, name, sequence, kind="cat", claws=False, source=""):
+        self.copied.append((name, sequence, kind, claws))
+        return "/Game/WCMods/" + name + "." + name.rsplit("/", 1)[-1], 3.1333
 
     def add_ue4ss_shared(self, name, text):
         self.shared[name] = text
@@ -571,7 +591,7 @@ def test_a_replacement_goes_in_the_games_sequences_place(tmp_path):
     assert ctx.replaced == [("A_CatMaster_Trot_1", "cat", "Run")] * 2
     assert ctx.warnings == ["n: Prance: m/Trot replaces A_CatMaster_Trot_1 too; this one goes in (its mod comes later: "
                             "a higher priority, or the same and a later name)"]
-    assert ctx.notes == {"replaced": {"A_CatMaster_Trot_1": "n/Prance"}}
+    assert ctx.notes == {"replaced": {"/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1": "n/Prance"}}
     assert not ctx.made and not ctx.shared and not ctx.scripts      # not one of Game.anims'
     ctx = FakeCtx()
     AnimationsSection().build(ctx, [(mod, [dict(trot, replaces="A_Nothing")])])
@@ -594,3 +614,250 @@ def test_the_game_module_plays_animations():
                  "PlaySlotAnimationAsDynamicMontage", 'require, "WCModsAnims"'):
         assert call in lua
     assert not luacheck.check(source("emotes.lua").replace("@EMOTES@", "{}"))
+
+
+def test_the_scripts_share_what_plays_so_a_key_stops_what_the_wheel_started():
+    # One playing state for every script (each has a Lua state of its own): Game.anims publishes its id per
+    # actor, with its sequence and montage; playing() and stop() read it, and stop() stops another script's
+    # montage through the anim instance (test_lua.py checks it's only ever that montage).
+    lua = source("game.lua")
+    assert 'local function sharedKey(actor) return "WCModsAnims.playing." .. tostring(actor:GetAddress()) end' in lua
+    assert "ModRef:SetSharedVariable(sharedKey(actor), v)" in lua and "ModRef:GetSharedVariable(sharedKey(actor))" in lua
+    assert "GetCurrentActiveMontage()" in lua and "IsAnyMontagePlaying()" not in lua
+    play = lua[lua.index("function Game.anims.play("):lua.index("function Game.anims.playing(")]
+    assert "sharePlaying(actor, id, path, m)" in play
+    emotes = source("emotes.lua")
+    assert "if Game.anims.playing() == e.id then" in emotes, "the key stops it whoever started it"
+    assert "v.X and v.Y and v.X * v.X" in emotes, "a velocity without X or Y is no error"
+
+
+# ------------------------------------------------------------------- names, limits, and the game's own ones
+def test_an_animation_without_a_name_is_left_out_with_a_warning(tmp_path):
+    mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()
+    good = {"id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "emote": True}
+    for nameless in ({"id": "New", "name": "", "game": "A_CatMaster_Yawn_1"}, {"id": "New", "name": "  ", "file": "a.glb"},
+                     {"id": "New", "game": "A_CatMaster_Yawn_1"}):
+        (tmp_path / "animations.json").write_text(json.dumps({"animations": [good, nameless]}))
+        ctx = FakeCtx()
+        assert AnimationsSection().collect(mod, ctx) == [good]
+        assert ctx.warnings == ["m: New: it has no name, so it's left out of the game"]
+        assert [(x["name"], x["why"]) for x in ctx.left_out] == [("New", "no name")]
+
+
+CAT_ANIMS = "Wrc/Content/Art/Characters/CatMaster/Animations/"
+
+
+def test_a_game_sequence_that_isnt_there_is_left_out_when_the_games_files_can_be_read(tmp_path):
+    """A misspelled "game" or "replaces" is left out at collect, so the studio's save says so, not only the build."""
+    from types import SimpleNamespace
+    mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()
+    good = {"id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "emote": True}
+    typo = {"id": "Stretch", "name": "Big stretch", "game": "A_CatMaster_Strech_1"}
+    swap = {"id": "RunTrot", "name": "Run as the trot", "game": "A_CatMaster_Run_1", "replaces": "A_CatMaster_Trott_1"}
+    (tmp_path / "animations.json").write_text(json.dumps({"animations": [good, typo, swap]}))
+    ctx = FakeCtx()
+    ctx.game = SimpleNamespace(io=SimpleNamespace(files=[CAT_ANIMS + f"A_CatMaster_{n}_1.uasset" for n in ("Yawn", "Run", "Trot")]))
+    assert AnimationsSection().collect(mod, ctx) == [good]
+    assert [(x["name"], x["why"]) for x in ctx.left_out] == [
+        ("Big stretch", "the game has no sequence A_CatMaster_Strech_1 for cats"),
+        ("Run as the trot", "the game has no sequence A_CatMaster_Trott_1 for cats")]
+    assert ctx.warnings[0] == "m: Stretch: the game has no sequence A_CatMaster_Strech_1 for cats, so it's left out of the game"
+    # While the game's files can't be read, they go on to the build, which says it there.
+    assert AnimationsSection().collect(mod, FakeCtx()) == [good, typo, swap]
+
+
+def test_describe_marks_clips_over_the_limit():
+    skel = Skel()
+    for seconds, long in ((60.0, False), (70.0, True)):
+        data = gltf_file([{"name": "spine"}], [(0, "rotation", [(0, 0, 0, 1), (0, 0, 0, 1)])], {0: column(A.IDENTITY)}, [0.0, seconds])
+        info = A.describe("one-bone.gltf", data, "cat", skel)
+        assert info["clips"] == [{"name": "Wave", "seconds": seconds, "too_long": long}] and info["max_seconds"] == A.MAX_SECONDS
+
+
+def test_retarget_with_one_key_is_refused_plainly():
+    skel = Skel()
+    bones = A.track_bones(skel)
+    gltf = A.Gltf("kit.glb", A.write_rig(skel, Mesh(), [("Wag", bones, motion(skel, bones, 7), 30.0)], "test"))
+    with pytest.raises(ValueError, match="has one key, so it can't be replaced"):
+        A.retarget(gltf, gltf.clip(), skel, bones, 30.0, keys=1)
+
+
+@pytest.mark.parametrize("entry, message", [
+    ({"id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "file": "a.glb"}, "not both"),
+    ({"id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "clip": "Yawn"}, '"clip" picks an animation in a file'),
+    ({"id": "Yawn", "name": "Yawn", "game": "Yawn 1"}, '"game" should be one of the game\'s sequences'),
+    ({"id": "Yawn", "name": "Yawn", "game": 5}, '"game" should be one of the game\'s sequences'),
+    ({"id": "Trot", "name": "Trot", "game": "A_CatMaster_Trot_1", "replaces": "A_CatMaster_Trot_1"}, "can't take its own place"),
+    ({"id": "Yawn", "name": "Yawn"}, '"file" should be a glTF file.*or "game"'),
+])
+def test_a_game_animation_that_cant_be_used_is_refused(entry, message):
+    with pytest.raises(ValueError, match=message):
+        check(entry, "animations.json: animation 1")
+
+
+def test_a_game_animation_needs_no_file():
+    for ok in ({"id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "emote": True, "key": "F7", "claws": True},
+               {"id": "Flap", "name": "Flap", "for": "bird", "game": "A_Bird_Flying_Loop_1", "loop": True},
+               {"id": "Trot", "name": "Run as the trot", "game": "A_CatMaster_Run_1", "replaces": "A_CatMaster_Trot_1"},
+               {"id": "Sit", "name": "Sit", "game": "/Game/Art/Characters/CatMaster/Animations/Cinematic/A_CatMaster_Sit_1"}):
+        check(ok, "animations.json: animation 1")
+
+
+def test_a_game_animation_goes_in_the_list_by_its_path(tmp_path):
+    mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()
+    found = [{"id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "emote": True, "key": "F7"},
+             {"id": "Gone", "name": "Gone", "game": "A_Nothing"}]
+    ctx = FakeCtx()
+    AnimationsSection().build(ctx, [(mod, found)])
+    assert not ctx.made and not ctx.copied, "no package is made for it: the game has it"
+    assert ctx.warnings == ["m: Gone: the game has no sequence A_Nothing for cats"]
+    lua = ctx.shared["WCModsAnims"]
+    assert not luacheck.check(lua)
+    assert ('["m/Yawn"] = { ["name"] = "Yawn", ["kind"] = "cat", '
+            '["path"] = "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Yawn_1.A_CatMaster_Yawn_1"') in lua
+    assert '["seconds"] = 3.1333' in lua and '["emote"] = true' in lua and '["key"] = "F7"' in lua
+    assert '{ ["id"] = "m/Yawn", ["name"] = "Yawn", ["key"] = "F7" }' in ctx.scripts["WCModsEmotes"]["Scripts/main.lua"]
+
+
+def test_claws_out_on_a_game_animation_makes_a_copy(tmp_path):
+    mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()
+    ctx = FakeCtx()
+    AnimationsSection().build(ctx, [(mod, [{"id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "emote": True, "claws": True}])])
+    assert ctx.copied == [("m/A_Yawn", "A_CatMaster_Yawn_1", "cat", True)]
+    assert '["path"] = "/Game/WCMods/m/A_Yawn.A_Yawn"' in ctx.shared["WCModsAnims"]
+
+
+def test_an_additive_game_animation_is_refused(tmp_path):
+    mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()
+    ctx = FakeCtx()
+    AnimationsSection().build(ctx, [(mod, [{"id": "Meow", "name": "Meow", "game": "A_CatMaster_Meow_1", "emote": True}])])
+    assert ctx.warnings == ["m: Meow: A_CatMaster_Meow_1 is an additive animation (its keys are added to another pose, "
+                            "not a pose of their own), so it can't play on its own"]
+    assert "WCModsAnims" not in ctx.shared
+
+
+def test_friendly_names_are_real_sequence_names():
+    # Each is a start kit's example (read from the game by the selftest) or one the docs record from the game.
+    examples = {p.rsplit("/", 1)[-1] for k in A.KINDS.values() for p in k["examples"]}
+    docs = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "docs")
+    seen = "".join(open(os.path.join(docs, name), encoding="utf-8").read() for name in ("verified.md", "reverse-engineering.md"))
+    unknown = sorted(n for n in A.FRIENDLY if n not in examples and f"`{n}`" not in seen)
+    assert not unknown, unknown
+    cats = {p.rsplit("/", 1)[-1] for p in A.KINDS["cat"]["examples"]}
+    unnamed = {n for n in cats if A.label(n, lambda key: key)[0] is None}
+    # The standing pose hasn't been watched yet, and the photo poses are named by the game's text.
+    assert unnamed == {"A_CatMaster_Stand_1_c", "A_CatMaster_Pose_Photo_Mode_1"}
+    assert A.label("A_CatMaster_Yawn_1") == ("Yawn", "everyday")
+    assert A.label("A_CatMaster_Pose_Photo_Mode_9", {"STR_PHOTOMODE_POSE_9": "Floof Nap"}.get) == ("Floof Nap", "poses")
+    assert A.label("A_CatMaster_Pose_Photo_Mode_15", lambda key: key) == (None, None), "a pose the game has no name for"
+    assert A.label("A_CatMaster_Final_Showdown") == (None, None)
+
+
+# The properties of a plain sequence with its SequenceLength (as in
+# test_a_sequences_length_and_frame_rate_come_from_its_properties), and of one with notifies before it, whose
+# length can't be written, only kept.
+PLAIN = write_header([0, 1, 2, 20, 24, 26], set()) + struct.pack("<3if", -1, -2, -11, 2.5) + b"\0" * 12
+NOTIFIED = write_header([0, 1, 2, 19, 20, 24, 26], set()) + b"\0" * 40
+
+
+def per_track(props, bones, keys):
+    """A sequence with `keys` for `bones`, written with Unreal's per-track codec, as one of the game's might be."""
+    seq = sequence_with(props)
+    seq.handle, seq.nkeys, seq.track_map, seq.length = "AnimCompress_PerTrackCompression_5", len(keys[0][0]), list(bones), None
+    seq.set_tracks(keys, bones=bones, keep_length=True)
+    return seq
+
+
+def same_keys(a, b, eps=1e-4):
+    for (T, Q, S), (T2, Q2, S2) in zip(a, b):
+        assert len(T) == len(T2)
+        assert all(close(x, y, eps) for x, y in zip(T, T2)) and all(close(x, y, eps) for x, y in zip(S, S2))
+        assert all(same_rotation(x, y, 1e-5) for x, y in zip(Q, Q2))
+
+
+def test_build_from_a_game_sequence_keeps_its_keys():
+    skel = Skel()
+    bones = A.track_bones(skel)
+    keys = motion(skel, bones, 10)
+    src = per_track(PLAIN, bones, keys)
+    got_bones, got_keys, seconds = A.source_keys(src, skel, "A_CatMaster_Yawn_1")
+    assert got_bones == bones and abs(seconds - 9 / 30) < 1e-9
+    same_keys(keys, got_keys)
+    # The copy (the claws-out one) has them as they are, and the source's length.
+    copy = sequence_with(PLAIN)
+    copy.handle, copy.nkeys, copy.track_map, copy.length = "AnimCompress_PerTrackCompression_5", 2, [0], None
+    copy.set_tracks(got_keys, bones=got_bones, length=seconds)
+    assert copy.nkeys == 10 and copy.length == seconds and copy.track_map == bones
+    same_keys(keys, copy.tracks())
+
+
+def test_fit_keys_keeps_the_ends_and_interpolates():
+    T = [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)]
+    Q = [(0.0, 0.0, 0.0, 1.0), turn((0, 0, 1), 90)]
+    S = [(1.0, 1.0, 1.0), (2.0, 2.0, 2.0)]
+    (T2, Q2, S2), = A.fit_keys([(T, Q, S)], 5)
+    assert [t[0] for t in T2] == [0.0, 2.5, 5.0, 7.5, 10.0]
+    assert same_rotation(Q2[0], Q[0]) and same_rotation(Q2[-1], Q[-1]) and same_rotation(Q2[2], turn((0, 0, 1), 45), 1e-3)
+    assert S2[2] == (1.5, 1.5, 1.5)
+    assert A.fit_keys([(T, Q, S)], 2) == [(T, Q, S)], "as many keys as it has: as it is"
+    (T3, _, _), = A.fit_keys([([(1.0, 2.0, 3.0)], [(0.0, 0.0, 0.0, 1.0)], [(1.0, 1.0, 1.0)])], 4)
+    assert T3 == [(1.0, 2.0, 3.0)] * 4, "one key holds all through"
+
+
+def test_a_game_sequence_replaces_another_fitted_to_its_keys():
+    skel = Skel()
+    bones = A.track_bones(skel)
+    keys = motion(skel, bones, 10)
+    src = per_track(PLAIN, bones, keys)
+    _, got, _ = A.source_keys(src, skel, "A_CatMaster_Run_1")
+    target = per_track(NOTIFIED, [0, 1], motion(skel, [0, 1], 15, seed=4))      # the trot: notifies, 15 keys
+    target.set_tracks(A.fit_keys(got, target.nkeys), bones=src.track_map, keep_length=True)
+    assert target.nkeys == 15 and target.length is None and target.props == NOTIFIED, "its length and notifies stay"
+    back = target.tracks()
+    for (T, Q, _), (T2, Q2, _) in zip(keys, back):
+        assert len(T2) == 15
+        assert close(T[0], T2[0], 1e-4) and close(T[-1], T2[-1], 1e-4)
+        assert same_rotation(Q[0], Q2[0], 1e-5) and same_rotation(Q[-1], Q2[-1], 1e-5)
+
+
+def test_a_source_with_one_key_or_additive_is_refused():
+    skel = Skel()
+    one = sequence_with(PLAIN)
+    one.nkeys, one.track_map = 1, [0]
+    with pytest.raises(ValueError, match="A_X has one key, so it can't be used"):
+        A.source_keys(one, skel, "A_X")
+    additive = sequence_with(write_header([0, 1, 2, 3, 20], set()) + b"\0" * 20)
+    additive.nkeys, additive.track_map = 5, [0]
+    with pytest.raises(ValueError, match="A_Meow is an additive animation .*can't play on its own"):
+        A.source_keys(additive, skel, "A_Meow")
+
+
+def test_the_section_passes_from_game_for_a_game_replacement(tmp_path):
+    mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()
+    trot = {"id": "Trot", "name": "Run as the trot", "game": "A_CatMaster_Run_1", "replaces": "A_CatMaster_Trot_1"}
+    check(trot, "animations.json: animation 1")
+    ctx = FakeCtx()
+    AnimationsSection().build(ctx, [(mod, [trot])])
+    assert ctx.replaced == [("A_CatMaster_Trot_1", "cat", None, "A_CatMaster_Run_1")]
+    assert ctx.notes == {"replaced": {"/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1": "m/Trot"}}
+    assert not ctx.made and not ctx.shared, "a replacement isn't one of Game.anims'"
+
+
+def test_two_emotes_on_one_key_say_only_the_later_plays(tmp_path):
+    mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()
+    ctx = FakeCtx()
+    AnimationsSection().build(ctx, [(mod, [{"id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "emote": True, "key": "F7"},
+                                           {"id": "Shake", "name": "Shake", "game": "A_CatMaster_Shake_1", "emote": True, "key": "F7"}])])
+    assert ctx.warnings == ["m: Shake: the key F7 is m/Yawn's emote too; only the later one plays"]
+
+
+def test_two_sequences_with_one_short_name_both_go_in(tmp_path):
+    mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()
+    (tmp_path / "w.glb").write_bytes(b"glTF")
+    sits = [{"id": "Sit", "name": "Sit", "file": "w.glb", "replaces": "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Sit_1"},
+            {"id": "Sit2", "name": "Sit in a story", "file": "w.glb",
+             "replaces": "/Game/Art/Characters/CatMaster/Animations/Cinematic/A_CatMaster_Sit_1"}]
+    ctx = FakeCtx()
+    AnimationsSection().build(ctx, [(mod, sits)])
+    assert ctx.warnings == [], "two folders, two sequences: neither replaces the other's"
+    assert sorted(ctx.notes["replaced"].values()) == ["m/Sit", "m/Sit2"]

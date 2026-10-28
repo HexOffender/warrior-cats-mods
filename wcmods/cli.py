@@ -73,6 +73,8 @@ def cmd_status(ctx, args):
         if m.id in old:
             note = "  [made for an older version: " + ("used anyway]" if old[m.id]["allowed"] else "left out]")
         print(f"  [{'x' if m.enabled else ' '}] {m.id:28s} {', '.join(m.kinds()) or '(empty)':24s} {m.description}{note}")
+        if m.problem:   # a mod.json that can't be read: off, and said why, rather than an unexplained [ ]
+            print(f"      left out: {m.problem}")
     cfg.save()
 
 
@@ -361,6 +363,9 @@ def cmd_controls(ctx, args):
         print(f"{dev}:")
         for action, key in b[dev].items():
             print(f"  {action:24s} {key}")
+    # The save's copy is not what the game does (it ignores edits to it, and its Pause is on Enter).
+    print("\nThe game pauses on Escape, whatever the save says; Apply uses wcmods' own table "
+          "(the Controls page in Clan Mod Studio shows it).")
 
 
 def cmd_palette(ctx, args):
@@ -517,7 +522,8 @@ def cmd_uninstall(ctx, args):
 
 
 def cmd_backup(ctx, args):
-    where, files = save.backup(ctx.cfg.save_dir, ctx.backups, "manual")
+    from . import saverecord
+    where, files = saverecord.backup(ctx.cfg, ctx.backups, "manual")
     print(f"backed up {len(files)} file(s) -> {where}")
 
 
@@ -534,9 +540,10 @@ def cmd_restore(ctx, args):
         print("\nrun `wcmods restore <name>` (or `latest`) to restore one")
         return
     name = names[-1] if args.name == "latest" else args.name
-    save.backup(ctx.cfg.save_dir, ctx.backups, "before-restore")
-    restored = save.restore(ctx.backups, name, ctx.cfg.save_dir)
-    print(f"restored {', '.join(restored)} from {name}")
+    from . import saverecord
+    # After a backup of the save as it is ("before-restore"); the record of save edits comes back with the save.
+    restored, before = saverecord.restore(ctx.cfg, ctx.backups, name)
+    print(f"restored {', '.join(restored)} from {name}" + (f" (the save you had is kept as {before})" if before else ""))
 
 
 def cmd_tables(ctx, args):
@@ -590,20 +597,47 @@ def cmd_ingame(ctx, args, option):
           + (" (from the next time the game starts)" if args.state is not None else ""))
 
 
-def cmd_menu_pages(ctx, args):
-    from . import menupages
-    if args.zip and not os.path.isfile(args.zip):
-        sys.exit(f"there's no {args.zip}")
-    r = menupages.add(ctx.cfg, args.zip)
+def _said_added(ctx, r):
+    """What adding one of the mods that go with Clan Mod Studio did, as the command line says it."""
     if r["unchanged"]:
         print(f"{r['name']} {r['version']} is the latest already")
         return
     print(f"{r['name']} {r['version'] or ''} is in your mods ({r['from']})"
           + (f"; the older copy is in {os.path.join(ctx.backups, 'mods', r['replaced'])}" if r["replaced"] else ""))
+    for d in r.get("added", []):
+        if d["id"] != r["id"]:
+            print(f"  with {d['name']} ({'on' if d['on'] else 'off'})")
     if not ctx.cfg.data.get("allow_code_mods"):
-        print("it's an in-game script: set \"allow_code_mods\": true in wcmods.json (Clan Mod Studio: Options, on the "
-              "Settings and repair page) for an install to put it in the game")
+        print("it runs code in the game: set \"allow_code_mods\": true in wcmods.json (Clan Mod Studio: Options, on "
+              "the Settings and repair page) for an install to put it in the game")
     print("install again to put it in the game (python wcmods.py install)")
+
+
+def cmd_menu_pages(ctx, args):
+    from . import menupages
+    if args.zip and not os.path.isfile(args.zip):
+        sys.exit(f"there's no {args.zip}")
+    _said_added(ctx, menupages.add(ctx.cfg, args.zip))
+
+
+def cmd_addons(ctx, args):
+    """The mods that go with Clan Mod Studio: listed, with GitHub's latest of each; or one added (`add <id>`)."""
+    from . import addons, menupages
+    if args.action == "add":
+        if not args.id:
+            sys.exit(f"which one? {', '.join(a.id for a in addons.ADDONS)}")
+        if args.zip and not os.path.isfile(args.zip):
+            sys.exit(f"there's no {args.zip}")
+        addon = addons.get(args.id)
+        _said_added(ctx, menupages.add(ctx.cfg, args.zip) if addon.id == menupages.ID
+                    else addons.add(ctx.cfg, addon.id, args.zip))
+        return
+    releases = {a.id: addons.latest(a) for a in addons.ADDONS}
+    for a in addons.status(ctx.cfg, releases):
+        state = (f"in, {a['version'] or 'no version'}{'' if a['enabled'] else ', off'}" if a["installed"] else "not added")
+        out = (f"; {a['latest']} is out" if a["newer"] else "") if a["installed"] else ""
+        rel = "no release yet" if a["no_release"] else (a["error"] or f"latest {a['latest']}")
+        print(f"{a['id']:18} {a['name']}: {a['about']}\n{'':18} {state}{out} ({rel}; {a['page']})")
 
 
 def _bridge(ctx):
@@ -683,16 +717,23 @@ def _game_build(ctx, args):
     fit = gamebuild.layout(ctx.cfg, refresh=args.refresh)
     if fit["status"] == "adapted":
         print("every value wcmods reads was found again" +
-              (": moved " + ", ".join(gamebuild.describe(k) for k in fit["moved"]) if fit["moved"] else ", none moved"))
+              (": moved, and followed: " + gamebuild.describe(fit["moved"]) if fit["moved"] else ", none moved"))
     elif fit["status"] == "partial":
-        print("couldn't find these again, so what uses them stays off until wcmods is updated: " +
-              ", ".join(gamebuild.describe(k) for k in fit["lost"]))
+        print(f"couldn't find {gamebuild.describe(fit['lost'])} again, so they stay off in the mod menu and "
+              "scripts until wcmods is updated; everything else works")
         if fit["moved"]:
-            print("moved, and followed: " + ", ".join(gamebuild.describe(k) for k in fit["moved"]))
+            print("moved, and followed: " + gamebuild.describe(fit["moved"]))
     found = mods.discover(ctx.mods_root)
+    # Data mods made for an older build are built on this one first: the ones that build go in from now on.
+    if gamebuild.recheck_due(ctx.cfg, found, now["build"]):
+        gamebuild.recheck(ctx.cfg, found, ctx.build_dir, log=lambda m: print("  " + m))
+        found = mods.discover(ctx.mods_root)
+    checked = gamebuild.checked(ctx.cfg, now["build"]) if now["build"] else {}
     for mod_id, o in gamebuild.outdated(ctx.cfg, found, now["build"]).items():
+        why = checked.get(mod_id)
         print(f"  {mod_id}: made for build {', '.join(map(str, o['made_for']))}; " +
-              ("used anyway" if o["allowed"] else "left out (`wcmods allow-outdated " + mod_id + "` uses it anyway)"))
+              ("used anyway" if o["allowed"] else "left out (`wcmods allow-outdated " + mod_id + "` uses it anyway)") +
+              (f"; checked on this build: {why}" if why and why != "ok" else ""))
 
 
 def _game_signatures(ctx, args):
@@ -703,7 +744,10 @@ def _game_signatures(ctx, args):
         sys.exit("no game exe found; pass --exe")
     if args.action == "make":
         from .exe import gamebuild
-        result = signatures.make(exe)
+        try:
+            result = signatures.make(exe)
+        except signatures.Unsigned as e:   # signatures.json is left as it was
+            sys.exit(f"not written: {e}")
         # The installed game's build, unless it's another exe (whose build only --build can say).
         installed = pe.game_exe(ctx.cfg)
         same = installed and os.path.normcase(os.path.abspath(exe)) == os.path.normcase(os.path.abspath(installed))
@@ -849,7 +893,7 @@ def cmd_studio(ctx, args):
 # "game signatures" are forms of one command, so they're spelled out here.
 COMMAND_GROUPS = (
     ("Playing", ("status", "studio", "play", "remap", "cheats", "console", "backup", "restore")),
-    ("Mods", ("enable", "disable", "add", "menu-pages", "remove", "install", "uninstall", "build", "pack", "palette")),
+    ("Mods", ("enable", "disable", "add", "addons", "menu-pages", "remove", "install", "uninstall", "build", "pack", "palette")),
     ("Making mods", ("new", "files", "extract", "texture", "model", "animation", "eyes", "names", "controls", "tables")),
     ("In the game", ("lua", "inspect", "find", "game")),
     ("After a game update", (("game build", "which build of the game is installed, what moved, and the mods made for older ones"),
@@ -1026,6 +1070,13 @@ def main(root, argv=None):
                                           "latest GitHub release, or update it, keeping its settings")
     p.add_argument("--zip", help="a menu-pages .zip you downloaded, rather than the latest release")
     p.set_defaults(fn=cmd_menu_pages)
+    p = sub.add_parser("addons", help="the mods that go with Clan Mod Studio (Menu pages, Sandbox mode, Creator "
+                                      "palettes, Emote wheel): list them, or add or update one from its latest "
+                                      "GitHub release (addons add <id>)")
+    p.add_argument("action", nargs="?", choices=("list", "add"), default="list")
+    p.add_argument("id", nargs="?", help="for add: which one (menu-pages, sandbox, creator-palettes, emote-wheel)")
+    p.add_argument("--zip", help="for add: a .zip of it you downloaded, rather than the latest release")
+    p.set_defaults(fn=cmd_addons)
     for option, text in (("cheats", "show, or set, whether cheats start on in the mod menu's Cheats page (the Menu "
                                     "pages mod's setting)"),
                          ("console", "show, or switch on or off, the game's console (~ or F10; needs UE4SS)")):
@@ -1035,6 +1086,9 @@ def main(root, argv=None):
     _group_help(ap, sub)
     args = ap.parse_args(argv)
     try:
-        args.fn(Ctx(root), args)
+        ctx = Ctx(root)
+        if ctx.cfg.warning and args.cmd != "studio":   # the studio says it itself, in its window and its page
+            print(f"warning: {ctx.cfg.warning}", file=sys.stderr)
+        args.fn(ctx, args)
     except (RuntimeError, ValueError, LookupError, FileNotFoundError, zipfile.BadZipFile) as e:
         sys.exit(f"error: {e}")

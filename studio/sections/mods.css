@@ -1,0 +1,55 @@
+/* The Mods page: drop a .zip on the leaf, the list of mods, Get set up and the mods that go with Clan Mod Studio.
+   Linked by app.js when the page opens; the rules shared with other pages (.notes, .details, the switch, .fold) are in styles.css. */
+.dropzone { border: 2px dashed var(--field); border-radius: 14px; padding: 22px 16px 24px; display: grid; justify-items: center; gap: 6px; text-align: center; cursor: pointer; background: var(--raised); }
+.dropzone::before { content: ""; width: 30px; height: 30px; background: var(--accent); opacity: .7; -webkit-mask: var(--leaf) center / contain no-repeat; mask: var(--leaf) center / contain no-repeat; }   /* a leaf to drop the .zip on */
+.dropzone:hover, .dropzone.over { border-color: var(--accent); border-style: solid; background: var(--accent-soft); }
+.dropzone strong { font-family: var(--display); font-size: 1.08rem; }
+.mod { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 12px; align-items: start; border-top: 1px dashed var(--line); padding-top: 12px; }
+.mod.preview { grid-template-columns: auto minmax(0, 1fr); }
+.mod-body > label strong, .mod-name strong { font-family: var(--display); font-size: 1.08rem; }
+.mod.off .mod-name strong { color: var(--muted); }
+.mod.preview .small-on { font-size: 0.93rem; gap: 6px; }
+.mod-body { display: grid; gap: 4px; min-width: 0; grid-column: 2; }
+.mod.preview .mod-body:first-child { grid-column: 1 / -1; }
+.mod-actions { display: flex; gap: 6px; }
+.mod-wide { grid-column: 2 / -1; }
+@media (max-width: 560px) { .mod { grid-template-columns: auto minmax(0, 1fr); } .mod-actions { grid-column: 2; } }
+h3.group { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.ok-line { color: var(--good); font-weight: 500; }
+.warn-text { color: var(--changed); }
+
+/* The mods that go with Clan Mod Studio: a row each, its name and sentence, its state chip, its one button. */
+.addon { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px 12px; align-items: center; border-top: 1px dashed var(--line); padding-top: 10px; }
+.addon-body { display: grid; gap: 2px; min-width: 0; }
+.addon-body strong { font-family: var(--display); font-size: 1.05rem; }
+@media (max-width: 560px) { .addon { grid-template-columns: minmax(0, 1fr) auto; } .addon > .btn { grid-column: 1 / -1; justify-self: start; } }
+
+/* A script's line about the game's last start (green when it loaded), and What it said under More. */
+.notes .ok { color: var(--good); }
+.said { display: grid; gap: 6px; }
+.said .code { max-height: 240px; }
+.said pre.log { white-space: pre-wrap; }
+.said .note.warn { color: var(--changed); }
+.said .note.bad { color: var(--bad); }
+.said .dirty { color: var(--changed); font-weight: 500; }
+
+/* Get set up: birch with a fern edge (the first thing to do), and the paw as the done tick. */
+.card.setup { background: var(--raised); border-color: var(--accent); border-left-width: 5px; }
+.card.setup.folded { padding-top: 10px; padding-bottom: 10px; }   /* every step done: one line, with Show the steps */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.step { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; align-items: start; }
+.step .tick { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--field); background: var(--raised); display: grid; place-items: center; font-weight: 700; color: var(--accent-ink); position: relative; }
+.step.done .tick { background: var(--good); border-color: var(--good); }
+@supports (-webkit-mask-image: url("")) or (mask-image: url("")) {
+  .step.done .tick { font-size: 0; }      /* hides the "\2713" mods.js puts in (it's aria-hidden anyway); forced colours bring it back (styles.css) */
+  .step.done .tick::after { content: ""; position: absolute; inset: 4px; background: currentColor; -webkit-mask: var(--paw) center / contain no-repeat; mask: var(--paw) center / contain no-repeat; }
+}
+.step.done .step-body > strong { color: var(--muted); }
+.step-body { display: grid; gap: 6px; min-width: 0; }
+
+/* Windows' high contrast themes: the leaf keeps drawing, and the done tick shows its "\2713" text again. */
+@media (forced-colors: active) {
+  .dropzone::before { forced-color-adjust: none; background: CanvasText; opacity: 1; }
+  .step.done .tick::after { display: none; }
+  .step.done .tick { font-size: inherit; forced-color-adjust: none; }
+}

@@ -63,8 +63,11 @@ def options(cfg):
     each, as [value, label] pairs), the game's console, and whether Menu pages' cheats start on (None
     without that mod)."""
     s = menu_settings(cfg)
+    available = bool(cfg.ue4ss_mods_dir and os.path.isdir(os.path.join(cfg.ue4ss_mods_dir, CONSOLE_MOD)))
     return {"console": console_on(cfg), "cheats": menupages.cheats_or_none(cfg),
-            "console_available": bool(cfg.ue4ss_mods_dir and os.path.isdir(os.path.join(cfg.ue4ss_mods_dir, CONSOLE_MOD))),
+            "console_available": available,
+            # Why not, when it isn't: no script loader at all, or one without its console mod.
+            "console_why": None if available else "no script loader" if not cfg.ue4ss_mods_dir else "no console mod in it",
             "key": s["key"], "keys": [[k, menu.KEY_NAMES.get(k, k)] for k in menu.KEYS],
             "size": s["size"], "sizes": [[v, label] for v, label in SIZE_CHOICES],
             "pad": s["pad"], "pads": [[p, n] for p, n in menu.PAD_NAMES.items()]}
@@ -86,8 +89,10 @@ def set_options(cfg, console=None, key=None, size=None, pad=None, cheats=None):
         raise ValueError(f"size should be a number from {MENU_SCALES[0]} to {MENU_SCALES[1]} (1 is the usual size)")
     if key is not None and key not in menu.KEYS:
         raise ValueError(f"key should be one of {', '.join(menu.KEYS)}")
-    if pad is not None and pad not in menu.PADS:
-        raise ValueError(f"pad should be one of {', '.join(repr(p) for p in menu.PADS)}")
+    # A button the studio offers, or any Unreal key name, as menu_settings reads wcmods.json: one set there by
+    # hand can be chosen again.
+    if pad is not None and not (pad in menu.PADS or menu_settings(cfg, {KEYS["pad"]: pad})["pad_ok"]):
+        raise ValueError(f"pad should be one of {', '.join(repr(p) for p in menu.PADS)}, or an Unreal key name")
     if key is not None:
         cfg.data[KEYS["key"]] = key
     if size is not None:

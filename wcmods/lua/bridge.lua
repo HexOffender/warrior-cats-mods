@@ -97,6 +97,12 @@ local function say(...)
 end
 local env = setmetatable({ print = say, Game = Game }, { __index = _G })
 
+-- A line that runs on and on (while true do end) would hold the game still for good: after about a hundred
+-- million steps of Lua it's stopped with an error (a second or so; a call that hangs inside the game's own code
+-- isn't counted). The hook is this state's own, so no mod's script is touched.
+local RUNAWAY = 100000000
+local function stop() error("this line ran too long and was stopped", 2) end
+
 local function run(code)
     lines = {}
     -- An expression is returned as it is ("Game.player()"); anything else runs as a chunk.
@@ -105,7 +111,9 @@ local function run(code)
     if not fn then fn, err = load(code, "=wcmods", "t", env) end
     if not fn then return { ok = false, error = err, output = "" } end
     local started = os.clock()
+    debug.sethook(stop, "", RUNAWAY)
     local res = table.pack(xpcall(fn, debug.traceback))
+    debug.sethook()
     local reply = { ok = res[1], ms = math.floor((os.clock() - started) * 1000 + 0.5),
                     output = table.concat(lines, "\n") }
     if res[1] then
@@ -121,7 +129,9 @@ end
 local function poll()
     local text = readAll(REQUEST)
     if not text then return end
-    os.remove(REQUEST)
+    -- Taken only once it's removed: wcmods takes back a request the game doesn't take in time (a loading screen,
+    -- the game held still), and one it holds open this moment isn't run; it's looked at again next time.
+    if not os.remove(REQUEST) then return end
     local id = text:match("^%-%-wcmods%-id:([%w%-]+)") or ""
     local reply = run(text)
     reply.id = id

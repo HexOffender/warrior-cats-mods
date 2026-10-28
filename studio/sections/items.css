@@ -1,0 +1,4 @@
+/* The Items page: an item's icon in its clearing. Linked by app.js when the page opens; .split, .pick,
+   .cat-head and the colour inputs it shares with other pages are in styles.css. */
+.icon-box { width: 150px; flex: none; border-radius: 14px; background: radial-gradient(120% 90% at 50% 30%, var(--stage), var(--stage-2)); box-shadow: inset 0 0 0 1px var(--line); padding: 8px; display: grid; place-items: center; min-height: 150px; }
+.item-icon { width: 128px; height: 128px; object-fit: contain; }

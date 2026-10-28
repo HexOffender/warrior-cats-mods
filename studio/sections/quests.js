@@ -1,24 +1,42 @@
 // Questlines: quests of the mod's own (quests.json), step by step: talk to one of the mod's cats, pick
-// things up, go somewhere; a reward at the end. The Sandbox mode mod runs them with a sandbox cat.
-import { slug, listEditor, field, linesBox, wherePicker, itemChoices, itemSelect, ownItems, sandboxNote } from "../lib/story.js";
+// things up, go somewhere; a reward at the end. The Sandbox mode mod runs them with a sandbox cat. The
+// file's rules are in lib/quests-model.js; what the story pages share is in lib/story.js.
+import { slug, listEditor, field, linesBox, wherePicker, itemChoices, itemSelect, ownItems, sandboxStrip } from "../lib/story.js";
+import * as model from "../lib/quests-model.js";
 
-const STEP_LABEL = { talk: "Talk", collect: "Collect", visit: "Go somewhere" };
-const PLACES = { "medicine-cat": "your Clan's medicine cat" };
+const { STEP_LABEL, PLACES } = model;
 
 export default {
   title: "Questlines",
   async mount(root, wc) {
     const { el, api, toast, clear } = wc;
+    // Everything the drawing reads is declared here, before the first await: the file can come in (and the
+    // editor be drawn) while the rest of mount() still waits.
     let quests = [], extra = {}, cats = [], own = [];
     let game = { items: [] };
-    try { game = await api.get("/game/items"); } catch (e) { toast(`Couldn't read the game's items: ${e.message}`, "bad"); }
     let choices = itemChoices(game);
+    let showIssues = null;   // the open quest's "Not ready yet" note, said again as it changes
+    const names = {
+      cat: id => (cats.find(c => c.id === id) || {}).name || id,
+      item: tag => choices.name(tag),
+    };
 
+    const strip = sandboxStrip({ help: "questlines",
+      route: "To play them: Apply to game, Play, Sandbox Mode on the main menu, then a new cat or one of your sandbox cats. The step you're on shows in the objective panel on the left and on the mod menu's Questlines page (not in the game's own quest list)." });
+    let loading = Promise.resolve();   // the file being opened (its mod's cats and items come first)
+    let seq = 0;   // the mod reads, counted: one that finishes after a newer one started, or another mod was chosen, is dropped
     const target = wc.modTarget({
       file: "quests.json",
-      // The mod's cats and items first: an objective that's the one the page would write stays "auto".
-      onLoad: async (obj, id) => { await loadMod(id); load(obj); draw(); },
-      getValue: () => toJson(),
+      // The mod's cats and items first: an objective that's the one the game would show stays automatic.
+      onLoad: (obj, id) => {
+        loading = (async () => {
+          if (!(await loadMod(id))) return;   // another mod chosen since (arrow keys in the select): its own load draws
+          ({ quests, extra } = model.load(obj, names));
+          draw();
+        })();
+      },
+      getValue: () => model.toJson(quests, extra),
+      onSaved: saved => wc.settleNew(quests, saved.quests),   // saved quests keep their ids from now on
     });
     const catsNote = el("div", { class: "banner", hidden: true });
     const out = wc.codePanel("quests.json");
@@ -29,124 +47,145 @@ export default {
         const title = "A new quest";
         const giver = cats[0]?.id;
         quests.push({ id: slug(title, quests.map(q => q.id), "quest"), title, giver, after: [], reward: {}, _new: true,
-          steps: giver ? [{ do: "talk", npc: giver, lines: [] }] : [] });
+          steps: giver ? [{ do: "talk", npc: giver, lines: [], _auto: true }] : [] });
         editor.choose(quests.length - 1);
-        changed(true);
+        changed();
+        draw();
+        const input = root.querySelector('[data-focus="quest:title"]');
+        if (input) { input.focus(); input.select?.(); }
       },
     });
-    root.append(
-      el("div", { class: "section-head" },
-        el("span", { class: "eyebrow", text: "Sandbox mode" }),
-        el("h1", { text: "Questlines" }),
-        el("p", { class: "note", text: "Quests of your own, with your cats from the Characters page. A quest is a list of steps done in order: talk to a cat, pick things up, go somewhere. It can wait for other quests to be done first, so quests make a story. The reward is dropped at your cat's paws at the end." })),
-      target.element);
-    const note = await sandboxNote();
-    if (note) target.element.after(note);
-    root.append(catsNote, editor.element, out.element);
-    await target.refresh();
+    editor.ready(false);   // until the file is read
 
+    // Starting over: progress is Sandbox mode's, beside the game's saves; the studio can clear it with the game closed.
+    const startOver = wc.confirmButton("Start every questline over", "Press again to start every mod's questlines over", async () => {
+      try {
+        const r = await api.del("/story/progress");
+        toast(r.cats ? `Every mod's questlines start over, for ${r.cats} sandbox cat${r.cats === 1 ? "" : "s"}. Where their cats stand is kept.`
+          : "Nothing to start over: no sandbox cat has begun a questline yet.");
+      } catch (e) { toast(e.message, "bad"); }
+    });
+    root.append(
+      wc.pageHead({ eyebrow: "Sandbox mode", title: "Questlines", help: "help:questlines",
+        lede: "Quests of your own, with your cats from the Characters page. A quest is a list of steps done in order: talk to a cat, pick things up, go somewhere. It can wait for other quests to be done first, so quests make a story. The reward is dropped at your cat's paws at the end." }),
+      target.element, strip.element, catsNote, editor.element,
+      el("div", { class: "card" },
+        el("h3", { text: "Starting over" }),
+        el("p", { class: "note", text: "Sandbox mode keeps how far each sandbox cat has got, beside the game's saves. A new sandbox cat starts every questline from the beginning. With Sandbox mode 0.5 or newer, a quest a cat hasn't finished starts over by itself when you add or take out a step, change a step's kind (moving steps can do that), or change what or how many a Pick up step wants. New lines, objectives or a new title don't restart it, and a finished quest stays finished. The mod menu's Questlines page (Insert, in the game) starts one quest over." }),
+        el("div", { class: "row" }, startOver,
+          el("span", { class: "muted", style: { fontSize: "0.85rem" }, text: "Every mod's questlines, not only this one's, for all your sandbox cats, with the game closed. Where their cats stand is kept." }))),
+      el("details", { class: "fold", "data-key": "makers:quests" },
+        el("summary", {}, el("h3", { text: "For mod makers" }), el("span", { class: "muted", text: "the file this page writes" })),
+        out.element));
+
+    try { game = await api.get("/game/items"); } catch (e) { /* no game yet: the mod's own items, and tags typed in files */ }
+    choices = itemChoices(game);
+    // Add waits for the file; one that can't be read is said, and Add comes back all the same.
+    try {
+      await target.refresh();
+      await loading;
+    } catch (e) {
+      toast(`The mod's questlines couldn't be read: ${e.message}`, "bad");
+    } finally { editor.ready(true); }
+    await strip.refresh();
+
+    // The mod's cats (npcs.json) and items (items.json), read only when the mod has them: a mod that isn't made
+    // yet (My mods before its first save) has no files to ask for. False when another mod was chosen while it
+    // read (nothing is changed then).
     async function loadMod(id) {
-      cats = []; own = [];
-      for (const [file, set] of [["npcs.json", v => { cats = (v.npcs || []).filter(c => c && c.id); }],
-        ["items.json", v => { own = ownItems(v); }]]) {
+      // A file that came back after another mod was chosen counts for nothing, and holds no newer read back.
+      if (target.current !== id) return false;
+      const mine = ++seq;
+      let modCats = [], modItems = [];
+      const m = target.mods.find(x => x.id === id);
+      const files = [["characters", "npcs.json", v => { modCats = (Array.isArray(v.npcs) ? v.npcs : []).filter(c => c && c.id); }],
+        ["items", "items.json", v => { modItems = ownItems(v); }]];
+      for (const [kind, file, set] of files) {
+        if (!m || !m.kinds.includes(kind)) continue;
         try {
           const r = await api.get(`/mods/${encodeURIComponent(id)}/file/${file}`);
           if (r.exists) set(JSON.parse(r.text));
-        } catch (e) { /* a new mod, or a file that isn't JSON: the Characters or Items page says */ }
+        } catch (e) { /* a file that isn't JSON: the Characters or Items page says */ }
       }
+      if (mine !== seq || target.current !== id) return false;
+      cats = modCats; own = modItems;
       choices = itemChoices(game, own);
       catsNote.hidden = cats.length > 0;
       clear(catsNote).append(el("strong", { text: "This mod has no cats yet" }),
         el("span", { text: "Talking steps and quest givers are cats of the same mod. Make some on the Characters page (with this mod chosen), then come back." }));
+      return true;
     }
-    function load(obj) {
-      extra = {};
-      quests = [];
-      for (const [k, v] of Object.entries(obj || {})) if (k !== "quests" && !k.startsWith("_")) extra[k] = v;
-      for (const q of (obj && Array.isArray(obj.quests) ? obj.quests : [])) {
-        if (!q || typeof q !== "object") continue;
-        quests.push({ after: [], reward: {}, ...q, steps: (q.steps || []).map(s => ({ ...s, _auto: !s.objective || s.objective === autoObjective(s, q) })) });
-      }
-    }
-    const catName = id => (cats.find(c => c.id === id) || {}).name || id || "someone";
-    function autoObjective(s, q) {
-      if (s.do === "talk") return `Talk to ${catName(s.npc || q.giver)}`;
-      if (s.do === "collect") return s.item ? `Find ${choices.name(s.item)}${(s.count || 1) > 1 ? ` ×${s.count}` : ""}` : "Find something";
-      if (s.do === "visit") return s.place ? `Visit ${PLACES[s.place] || s.place}` : "Go to the marked place";
-      return "";
-    }
-    function toJson() {
-      const list = quests.map(q => {
-        const o = { id: q.id, title: (q.title || "").trim() || q.id };
-        if (q.description && q.description.trim()) o.description = q.description.trim();
-        if (q.giver) o.giver = q.giver;
-        o.after = (q.after || []).filter(a => quests.some(x => x.id === a));
-        o.steps = q.steps.map(s => {
-          const step = { do: s.do };
-          if (s.do === "talk") { step.npc = s.npc || q.giver; step.lines = s.lines || []; }
-          if (s.do === "collect") { step.item = s.item; step.count = s.count || 1; }
-          if (s.do === "visit") {
-            if (s.place) step.place = s.place; else { step.at = s.at; if (s.level) step.level = s.level; }
-            step.radius = s.radius || 400;
-          }
-          step.objective = !s._auto && s.objective && s.objective.trim() ? s.objective.trim() : autoObjective(s, q);
-          return step;
-        });
-        if (Object.keys(q.reward || {}).length) o.reward = q.reward;
-        return o;
-      });
-      return { _help: "Written by Clan Mod Studio (Questlines). This mod's questlines, which the Sandbox mode mod runs. See docs/formats.md, quests.json.", ...extra, quests: list };
-    }
-    // What would stop the quests going in, said beside them (saving still works; the build says it too).
-    function problems(q) {
-      const p = [];
-      if (!q.steps.length) p.push("It has no steps yet.");
-      q.steps.forEach((s, n) => {
-        const at = `Step ${n + 1}`;
-        if (s.do === "talk" && !(s.npc || q.giver)) p.push(`${at}: who to talk to?`);
-        if (s.do === "talk" && s.npc && !cats.some(c => c.id === s.npc)) p.push(`${at}: ${s.npc} isn't one of this mod's cats any more.`);
-        if (s.do === "talk" && !(s.lines || []).length) p.push(`${at}: what do they say? (at least one line)`);
-        if (s.do === "collect" && !s.item) p.push(`${at}: which item?`);
-        if (s.do === "visit" && !s.place && !s.at) p.push(`${at}: where? Type a spot or use where your cat is standing.`);
-      });
-      if (q.giver && !cats.some(c => c.id === q.giver)) p.push(`The giver, ${q.giver}, isn't one of this mod's cats any more.`);
-      return p;
-    }
-    let showIssues = null;   // the open quest's "Not ready yet" note, said again as it changes
-    function changed(redraw = false) {
+    function changed() {
       target.markDirty();
-      out.set(toJson());
-      if (redraw) draw();
-      else showIssues?.();
+      out.set(model.toJson(quests, extra));
+      showIssues?.();
     }
     function draw() {
-      out.set(toJson());
+      out.set(model.toJson(quests, extra));
       editor.render(quests, drawQuest);
     }
 
     function drawQuest(box, q, i) {
       const redraw = () => { clear(box); drawQuest(box, q, i); };
-      const title = el("input", { type: "text", value: q.title || "", maxlength: "60", oninput: () => {
+      const issues = el("div", { class: "banner", role: "status" });
+      const stepMarks = [];   // each step card's "not ready" line
+      showIssues = () => {
+        const p = model.problems(q, quests, cats);
+        issues.hidden = !p.length;
+        issues.replaceChildren(el("strong", { text: "Not ready yet" }), el("ul", { class: "notes" }, ...p.map(x => el("li", { text: x.text }))));
+        stepMarks.forEach((mark, n) => {
+          const mine = p.filter(x => x.step === n);
+          mark.hidden = !mine.length;
+          mark.textContent = mine.map(x => x.text.replace(/^Step \d+: (.)/, (_, c) => c.toUpperCase())).join(" ");
+          mark.closest?.(".step-card")?.classList.toggle("not-ready", mine.length > 0);
+        });
+      };
+
+      // ---- the quest
+      const title = el("input", { type: "text", value: q.title || "", maxlength: "60", "data-focus": "quest:title", oninput: () => {
         q.title = title.value;
         if (q._new) q.id = slug(q.title, quests.filter(x => x !== q).map(x => x.id), "quest");
+        editor.relabel(i);
         changed();
-      }, onchange: () => draw() });
-      const desc = el("input", { type: "text", value: q.description || "", placeholder: "Optional: a sentence about it, for the Quests page",
+      } });
+      const desc = el("input", { type: "text", value: q.description || "", maxlength: "400", "data-focus": "quest:about",
+        placeholder: "Optional: a sentence about it, shown under its title on the mod menu's Questlines page",
         oninput: () => { q.description = desc.value; changed(); } });
-      const giver = el("select", { "aria-label": "Quest giver", onchange: () => { q.giver = giver.value || undefined; changed(); redraw(); } },
+      const giver = el("select", { "aria-label": "Given by", onchange: () => {
+        const was = q.giver;
+        q.giver = giver.value || undefined;
+        // A talk step that named the old giver follows the new one.
+        for (const s of q.steps) if (s.do === "talk" && (!s.npc || s.npc === was)) s.npc = q.giver;
+        changed(); redraw();
+      } },
         el("option", { value: "", text: "Nobody (it starts on its own)" }),
         ...cats.map(c => el("option", { value: c.id, text: c.name })));
+      if (q.giver && !cats.some(c => c.id === q.giver)) giver.append(el("option", { value: q.giver, text: `${q.giver} (not in this mod)` }));
       giver.value = q.giver || "";
-      const others = quests.filter(x => x !== q);
-      const after = others.length ? el("div", { class: "stack" }, ...others.map(o => el("label", { class: "row" },
-        el("input", { type: "checkbox", checked: (q.after || []).includes(o.id), onchange: e => {
-          q.after = (q.after || []).filter(a => a !== o.id).concat(e.target.checked ? [o.id] : []);
-          changed();
-        } }), el("span", { text: o.title || o.id }))))
-        : el("p", { class: "muted", text: "It starts as soon as a sandbox cat comes into the forest. With more quests, you can make one wait for others." });
 
+      // ---- starts after: a quest that already waits for this one can't be ticked (it would be a circle)
+      const others = quests.filter(x => x !== q);
+      const after = others.length ? el("div", { class: "stack" }, ...others.map(o => {
+        const ticked = (q.after || []).includes(o.id);
+        const loops = !ticked && model.waitsFor(quests, o.id).has(q.id);
+        const why = loops ? `${o.title || o.id} already waits for this quest` : null;
+        return el("label", { class: "row", title: why },
+          el("input", { type: "checkbox", checked: ticked, disabled: loops, "aria-describedby": loops ? `why-${i}-${o.id}` : null,
+            "data-focus": `after:${o.id}`, onchange: e => {
+              q.after = (q.after || []).filter(a => a !== o.id).concat(e.target.checked ? [o.id] : []);
+              changed(); redraw();
+            } }),
+          el("span", { text: o.title || o.id }),
+          loops ? el("span", { class: "muted", id: `why-${i}-${o.id}`, text: `(${why})` }) : null);
+      })) : el("p", { class: "muted", text: "It starts as soon as a sandbox cat comes into the forest. With more quests, you can make one wait for others." });
+
+      // ---- steps
       const steps = el("ol", { class: "steps-list" });
-      q.steps.forEach((s, n) => steps.append(drawStep(q, s, n, redraw)));
+      q.steps.forEach((s, n) => {
+        const mark = el("p", { class: "step-problem", role: "note", hidden: true });
+        stepMarks.push(mark);
+        steps.append(drawStep(q, s, n, redraw, mark));
+      });
       const addStep = kind => {
         const s = { do: kind, _auto: true };
         if (kind === "talk") { s.npc = q.giver || cats[0]?.id; s.lines = []; }
@@ -156,6 +195,7 @@ export default {
         changed(); redraw();
       };
 
+      // ---- reward
       const rewards = el("div", { class: "stack" });
       const drawRewards = () => {
         clear(rewards);
@@ -163,7 +203,7 @@ export default {
           const count = el("input", { type: "number", min: "1", max: "99", value: n, style: { width: "5em" }, "aria-label": `How many ${choices.name(tag)}`,
             onchange: () => { q.reward[tag] = Math.max(1, Math.min(99, Math.round(Number(count.value) || 1))); changed(); } });
           rewards.append(el("div", { class: "row" }, count, el("span", { text: choices.name(tag) }),
-            el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove ${choices.name(tag)} from the reward`,
+            el("button", { class: "btn ghost small", type: "button", text: "Remove", "aria-label": `Remove ${choices.name(tag)} from the reward`,
               onclick: () => { delete q.reward[tag]; changed(); drawRewards(); } })));
         }
         const pick = itemSelect(choices, "", tag => {
@@ -175,50 +215,47 @@ export default {
       };
       drawRewards();
 
-      const issues = el("div", { class: "banner" });
-      showIssues = () => {
-        const p = problems(q);
-        issues.hidden = !p.length;
-        issues.replaceChildren(el("strong", { text: "Not ready yet" }), el("ul", { class: "notes" }, ...p.map(t => el("li", { text: t }))));
-      };
-      showIssues();
       box.append(
+        issues,
         el("div", { class: "card" },
+          el("h3", { text: "The quest" }),
           field("Title", title), field("About it", desc),
-          field("Quest giver", giver, "Their name gets a ! over it while the quest is waiting to be talked about."),
-          el("span", { class: "muted mono", text: `id: ${q.id}` })),
+          field("Given by", giver, "They wear the game's quest mark while the quest waits for you.")),
         el("div", { class: "card" }, el("h3", { text: "Starts after" }), after),
         el("div", { class: "card" }, el("h3", { text: "Steps" }),
-          el("p", { class: "note", text: "Done in order. The quest panel in the game shows each step's objective, with a marker on where to go." }),
+          el("p", { class: "note", text: "Done in order. The game's objective panel on the left shows the step you're on; a marker on the map shows where to go." }),
           q.steps.length ? steps : el("div", { class: "empty", text: "No steps yet." }),
           el("div", { class: "row" }, el("span", { class: "lbl", text: "Add a step:" }),
-            ...Object.entries(STEP_LABEL).map(([k, label]) => el("button", { class: "btn small", text: label, onclick: () => addStep(k) })))),
+            ...Object.entries(STEP_LABEL).map(([k, label]) => el("button", { class: "btn small", type: "button", text: label, onclick: () => addStep(k) })))),
         el("div", { class: "card" }, el("h3", { text: "Reward" }),
           el("p", { class: "note", text: "Dropped at your cat's paws when the last step is done, to pick up." }), rewards),
-        issues,
         el("div", { class: "row" },
           wc.confirmButton(`Remove ${q.title || "this quest"}`, "Press again to remove", () => {
             quests.splice(i, 1);
             for (const x of quests) x.after = (x.after || []).filter(a => a !== q.id);
-            changed(true);
+            changed(); draw();
+            toast(`Removed ${q.title || "the quest"}.`);
           }, "btn danger")));
+      showIssues();
     }
 
-    function drawStep(q, s, n, redraw) {
-      const objective = el("input", { type: "text", maxlength: "80", value: s._auto ? "" : s.objective || "", placeholder: autoObjective(s, q),
+    function drawStep(q, s, n, redraw, mark) {
+      const auto = () => model.autoObjective(s, q, names);
+      const objective = el("input", { type: "text", maxlength: "80", value: s._auto ? "" : s.objective || "", placeholder: auto(),
+        "aria-label": `Step ${n + 1}'s objective`,
         oninput: () => { s.objective = objective.value; s._auto = !objective.value.trim(); changed(); } });
       const body = el("div", { class: "stack" });
       if (s.do === "talk") {
-        const who = el("select", { "aria-label": "Who to talk to", onchange: () => { s.npc = who.value; changed(); objective.placeholder = autoObjective(s, q); } },
+        const who = el("select", { "aria-label": "Who to talk to", onchange: () => { s.npc = who.value; changed(); objective.placeholder = auto(); } },
           ...cats.map(c => el("option", { value: c.id, text: c.name })));
         if (s.npc && !cats.some(c => c.id === s.npc)) who.append(el("option", { value: s.npc, text: `${s.npc} (not in this mod)` }));
         who.value = s.npc || q.giver || "";
         body.append(field("Who", who), field("What they say", linesBox(s.lines || [], v => { s.lines = v; changed(); },
-          "One line each; G shows the next.\nThere you are! I need your help.\nCould you bring me some moss?"), "The step is done after the last line."));
+          "One line each; Interact or Enter shows the next.\nThere you are! I need your help.\nCould you bring me some moss?"), "The step is done after the last line."));
       } else if (s.do === "collect") {
         const count = el("input", { type: "number", min: "1", max: "99", value: s.count || 1, style: { width: "5em" }, "aria-label": "How many",
-          oninput: () => { s.count = Math.max(1, Math.min(99, Math.round(Number(count.value) || 1))); changed(); objective.placeholder = autoObjective(s, q); } });
-        const item = itemSelect(choices, s.item, v => { s.item = v; changed(); objective.placeholder = autoObjective(s, q); });
+          oninput: () => { s.count = Math.max(1, Math.min(99, Math.round(Number(count.value) || 1))); changed(); objective.placeholder = auto(); } });
+        const item = itemSelect(choices, s.item, v => { s.item = v; changed(); objective.placeholder = auto(); });
         body.append(el("div", { class: "row" }, el("span", { class: "lbl", text: "Pick up" }), count, item),
           el("p", { class: "muted", style: { fontSize: "0.85rem" }, text: "What you pick up from this step on counts. The items stay in your inventory." }));
       } else {
@@ -226,7 +263,7 @@ export default {
           if (kind.value === "spot") delete s.place; else { s.place = kind.value; delete s.at; delete s.level; }
           changed(); redraw();
         } }, el("option", { value: "spot", text: "A spot in the forest" }),
-        ...Object.entries(PLACES).map(([k, label]) => el("option", { value: k, text: `The nearest: ${label}` })));
+        ...Object.entries(PLACES).map(([k, label]) => el("option", { value: k, text: label[0].toUpperCase() + label.slice(1) })));
         kind.value = s.place || "spot";
         const radius = el("input", { type: "number", min: "100", max: "5000", step: "50", value: s.radius || 400, style: { width: "6em" }, "aria-label": "How close, in cm",
           onchange: () => { s.radius = Math.max(100, Math.min(5000, Number(radius.value) || 400)); changed(); } });
@@ -238,17 +275,29 @@ export default {
         }));
         body.append(el("div", { class: "row" }, el("span", { class: "lbl", text: "Done within" }), radius, el("span", { class: "muted", text: "cm (a cat is about 100)" })));
       }
-      const move = (d) => { const j = n + d; if (j < 0 || j >= q.steps.length) return; [q.steps[n], q.steps[j]] = [q.steps[j], q.steps[n]]; changed(); redraw(); };
+      const move = d => { const j = n + d; if (j < 0 || j >= q.steps.length) return; [q.steps[n], q.steps[j]] = [q.steps[j], q.steps[n]]; changed(); redraw(); };
       return el("li", { class: "step-card", "data-key": `step:${n}` },
         el("div", { class: "row spread" },
           el("strong", { text: `${n + 1}. ${STEP_LABEL[s.do] || s.do}` }),
           el("span", { class: "row" },
-            el("button", { class: "btn ghost small", text: "↑", "aria-label": `Move step ${n + 1} up`, disabled: n === 0, onclick: () => move(-1) }),
-            el("button", { class: "btn ghost small", text: "↓", "aria-label": `Move step ${n + 1} down`, disabled: n === q.steps.length - 1, onclick: () => move(1) }),
-            el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove step ${n + 1}`, onclick: () => { q.steps.splice(n, 1); changed(); redraw(); } }))),
+            el("button", { class: "btn ghost small", type: "button", text: "↑", "aria-label": `Move step ${n + 1} up`, disabled: n === 0, onclick: () => move(-1) }),
+            el("button", { class: "btn ghost small", type: "button", text: "↓", "aria-label": `Move step ${n + 1} down`, disabled: n === q.steps.length - 1, onclick: () => move(1) }),
+            el("button", { class: "btn ghost small", type: "button", text: "Remove", "aria-label": `Remove step ${n + 1}`, onclick: () => { q.steps.splice(n, 1); changed(); redraw(); } }))),
+        mark,
         body,
-        field("Objective", objective, "What the quest panel says. Leave it empty for the one shown."));
+        field("Objective", objective, "What the game's objective panel says. Leave it empty for the words shown, with the names as they are when you Apply."));
     }
-    return {};
+
+    // After an Apply the file is read again (unless there are unsaved changes), and the strip asked again; a
+    // save on Characters or Items (any mod changed) brings their cats and items here.
+    const offInstalled = wc.installedEvent(target, () => { target.refresh(); });
+    const offApplied = wc.bus.on("installed", () => { strip.refresh(); });
+    const offChanged = wc.bus.on("mods-changed", async () => {
+      strip.refresh();
+      if (!target.current) return;
+      await target.refresh();   // the list; the file only when nothing here is unsaved
+      if (target.dirty && await loadMod(target.current)) draw();
+    });
+    return { unmount() { offInstalled(); offApplied(); offChanged(); } };
   },
 };

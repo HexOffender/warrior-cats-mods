@@ -220,6 +220,9 @@ def test_the_models_script_knows_each_look():
     assert not luacheck.check(lua) and "@MODELS@" not in lua
     assert '["3"] = { ["mesh"] = "/Game/WCMods/m/SK_A.SK_A" }' in lua
     assert '["4"] = { ["opacity"] = 0.5, ["glass"] = { 1.0, 0.5, 0.25 } }' in lua
+    # Only the HUD's picture is taken again, and a slot with no model is never asked for a material.
+    assert '"RT_UI_Portrait_Exploration"' in lua and "CaptureComponentInventory" not in lua
+    assert "c.SkinnedAsset" in lua
 
 
 # ------------------------------------------------------------------------------------------------ placing

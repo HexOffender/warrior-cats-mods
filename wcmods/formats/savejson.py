@@ -14,9 +14,13 @@ def split(path):
     return tuple(p for p in str(path).strip("/").split("/") if p != "")
 
 
-def _spans(text):
+def _spans(text, children=None):
+    """{path: (start, end, kind)} for every value in the text. With `children` (a dict), it gets each
+    container's entries in order as {path: [(child path, start, end)]}, where an object member starts at its
+    key's opening quote (for delete)."""
     spans = {}
     n = len(text)
+    kids = children if children is not None else {}
 
     def ws(i):
         while i < n and text[i] in " \t\r\n":
@@ -34,11 +38,14 @@ def _spans(text):
         c = text[i]
         if c == "{":
             start, i = i, ws(i + 1)
+            mine = kids.setdefault(path, [])
             if text[i] != "}":
                 while True:
-                    key, i = string(ws(i))
+                    at = ws(i)
+                    key, i = string(at)
                     i = ws(i)
                     i = value(i + 1, path + (key,))
+                    mine.append((path + (key,), at, i))
                     i = ws(i)
                     if text[i] == ",":
                         i += 1
@@ -48,9 +55,12 @@ def _spans(text):
             return i + 1
         if c == "[":
             start, i, k = i, ws(i + 1), 0
+            mine = kids.setdefault(path, [])
             if text[i] != "]":
                 while True:
+                    at = ws(i)
                     i = value(i, path + (str(k),))
+                    mine.append((path + (str(k),), at, i))
                     k += 1
                     i = ws(i)
                     if text[i] == ",":
@@ -129,6 +139,30 @@ class SaveDoc:
         for start, end, dumped, _ in edits:   # back to front, so earlier offsets stay valid
             text = text[:start] + dumped + text[end:]
         self.__init__(text)
+
+    def delete(self, path):
+        """Remove a key from an object, or an element from a list, with its comma; the rest of the text stays as
+        it was. Several list elements: delete the highest index first, so the others keep theirs."""
+        full = self._full(path)
+        if len(full) < 2:
+            raise KeyError(f"can't remove {path or 'the whole save'}")
+        children = {}
+        _spans(self.text, children)
+        entries = children.get(full[:-1])
+        if entries is None:
+            raise KeyError(f"no value at {path}")
+        at = next((i for i, (p, _, _) in enumerate(entries) if p == full), None)
+        if at is None:
+            raise KeyError(f"no value at {path}")
+        _, start, end = entries[at]
+        if len(entries) == 1:   # the only entry: the container is left empty
+            parent = _spans(self.text)[full[:-1]]
+            start, end = parent[0] + 1, parent[1] - 1
+        elif at > 0:            # from the end of the entry before it, so its comma goes with it
+            start = entries[at - 1][2]
+        else:                   # the first: up to where the next one starts
+            end = entries[1][1]
+        self.__init__(self.text[:start] + self.text[end:])
 
     def insert(self, object_path, key, value):
         """Add a key to an existing object (used for new inventory items and similar)."""

@@ -20,8 +20,8 @@ end
 local function log(fmt, ...) print(string.format("[WCModsMenu] " .. fmt .. "\n", ...)) end
 local C, THEME, new, add, text = Menu.color, Menu.theme, Menu.new, Menu.add, Menu.text
 
-local VISIBLE, COLLAPSED = 0, 1   -- ESlateVisibility
-local FILL = 1
+local VISIBLE, COLLAPSED = 0, 1   -- ESlateVisibility: Visible, Collapsed
+local FILL = 1                    -- ESlateSizeRule::Fill
 local USER_SPECIFIED = 7          -- EStretch::UserSpecified: scale by SetUserSpecifiedScale
 local NAV_WRAP = 2                -- EUINavigationRule::Wrap, for EUINavigation Left..Previous (0-5)
 local SCROLL_INSTANT = 1          -- EScrollWhenFocusChanges::InstantScroll
@@ -348,7 +348,8 @@ local function firstControl(w, depth)
     local okc, c = pcall(function() return w:GetContent() end)
     return okc and firstControl(c, depth + 1) or nil
 end
-local NAV_RIGHT = 1
+local NAV_RIGHT = 1    -- EUINavigation::Right
+local NAV_ESCAPE = 0   -- EUINavigationRule::Escape: the engine's own
 local function pointTabs()
     if os.clock() < (win.pointAt or 0) then return end
     win.pointAt = os.clock() + 0.5
@@ -358,7 +359,7 @@ local function pointTabs()
     win.pointed = key
     for _, t in ipairs(win.tabButtons) do
         if first then pcall(function() t.b:SetNavigationRuleExplicit(NAV_RIGHT, first) end)
-        else pcall(function() t.b:SetNavigationRuleBase(NAV_RIGHT, 0) end) end   -- 0: Escape, the engine's own
+        else pcall(function() t.b:SetNavigationRuleBase(NAV_RIGHT, NAV_ESCAPE) end) end
     end
 end
 
@@ -560,6 +561,9 @@ end)
 
 -- The window's own pages are in menu_host_pages.lua, pasted in here by menu.host_script:
 @PAGES@
+-- The menu's key, for scripts that point at the menu ("<name> didn't start: ... The mod menu (Insert), Tools, Log
+-- says more", the script bootstrap's).
+Menu.share("key_name", SETTINGS.key_name)
 log("ready: %s opens the mod menu", SETTINGS.key_name)
 syncCpp()
 

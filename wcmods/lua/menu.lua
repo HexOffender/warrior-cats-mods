@@ -21,7 +21,13 @@
 local Menu = {}
 
 local function valid(o) return o ~= nil and o:IsValid() end
-local function log(fmt, ...) print(string.format("[WCModsMenu] " .. fmt .. "\n", ...)) end
+-- Lines go to UE4SS.log under the name of the mod whose page it is (WCModsGame's, set by the script bootstrap, in
+-- this Lua state), so a page's error says whose it is; "[WCModsMenu]" for the window's own.
+local function log(fmt, ...)
+    local G = package.loaded.WCModsGame
+    local who = type(G) == "table" and type(G.modName) == "string" and G.modName ~= "" and G.modName
+    print((who and ("[" .. who .. "] mod menu: ") or "[WCModsMenu] ") .. string.format(fmt, ...) .. "\n")
+end
 
 local reported, nreported = {}, 0
 local function report(where, err)
@@ -101,9 +107,10 @@ function Menu.new(kind, owner)
 end
 local new = Menu.new
 
-local AUTO, FILL = 0, 1                  -- ESlateSizeRule
-local H_FILL, H_LEFT, H_CENTER, H_RIGHT = 0, 1, 2, 3
-local V_FILL, V_TOP, V_CENTER = 0, 1, 2
+local AUTO, FILL = 0, 1                  -- ESlateSizeRule: Automatic, Fill
+local H_FILL, H_LEFT, H_CENTER, H_RIGHT = 0, 1, 2, 3   -- EHorizontalAlignment: HAlign_Fill, HAlign_Left, HAlign_Center, HAlign_Right
+local V_FILL, V_TOP, V_CENTER = 0, 1, 2               -- EVerticalAlignment: VAlign_Fill, VAlign_Top, VAlign_Center
+local TO_THE_TOP = 1                                  -- EDescendantScrollDestination::TopOrLeft
 
 -- Text at `pt` points (the UI scales it with the screen like the game's own text).
 function Menu.text(str, pt, colour, wrap)
@@ -333,7 +340,7 @@ local function agentScroll()
     local want = s:match("^row\t(.*)$")
     if want then
         local e = agent.rowAt and rows[agent.rowAt]
-        if e and valid(e.root) then content:ScrollWidgetIntoView(e.root, false, 1, 0) end   -- 1: to the top
+        if e and valid(e.root) then content:ScrollWidgetIntoView(e.root, false, TO_THE_TOP, 0) end
     elseif s == "top" then content:ScrollToStart()
     elseif s == "end" then content:ScrollToEnd()
     elseif tonumber(s) then content:SetScrollOffset(tonumber(s)) end
@@ -938,16 +945,34 @@ local function register(p)
     end
 end
 
+-- A page made again by its script: its line in the shared list says its title, order and group now.
+local function relist(p)
+    local out = {}
+    for line in (Menu.shared("pages") or ""):gmatch("[^\n]+") do
+        if line:match("^([^\t]*)\t") == p.id and ownerOf(line, p.id) == p.owner then
+            line = p.id .. "\t" .. p.title .. "\t" .. tostring(p.order) .. "\t" .. p.group .. "\t" .. p.owner
+        end
+        out[#out + 1] = line .. "\n"
+    end
+    Menu.share("pages", table.concat(out))
+end
+
 -- The mod a page comes from: the folder under Mods/ its script runs from (UE4SS names a chunk by its
--- path), else the chunk's name; "" when Lua can't say.
+-- path), else the chunk's name; "" when Lua can't say. A script mod's own files are loaded by the script
+-- bootstrap under their names in the mod ("@scripts/main.lua"), and the bootstrap says its folder (MOD.ue4ss).
 local SLASH = string.char(92)
 local function caller(level)
     local info = debug and debug.getinfo and debug.getinfo(level + 1, "S")
     local src = info and tostring(info.source or "") or ""
     src = src:gsub(SLASH, "/")
+    local folder = src:match("/Mods/([^/]+)/")
+    if folder then return folder end
+    if src:match("^@scripts/") and type(MOD) == "table" and type(MOD.ue4ss) == "string" and MOD.ue4ss ~= "" then
+        return MOD.ue4ss
+    end
     -- A chunk loaded from a string has the string itself as its source: one line of it, no tabs (the
     -- page list is tab-separated lines), and not too long.
-    return src:match("/Mods/([^/]+)/") or (src:gsub("[\t\r\n].*", ""):sub(1, 60))
+    return (src:gsub("[\t\r\n].*", ""):sub(1, 60))
 end
 
 -- The groups the menu's side bar shows, in order (menu.GROUPS in wcmods/menu.py, written in here): id and
@@ -963,8 +988,18 @@ Menu.groups = @GROUPS@
 -- the renamed one isn't known until the next frame, and Menu.open(title) opens the first of them.
 function Menu.page(title, fn, opts)
     opts = opts or {}
-    local p = { id = opts.id or title, title = title, fn = fn, order = opts.order or 50,
+    local p = { id = opts.id or title, asked = opts.id or title, title = title, fn = fn, order = opts.order or 50,
                 group = (tostring(opts.group or "mods"):gsub("[\t\n]", " ")), owner = caller(2) }
+    -- The same page made again by the same script takes the first one's place (its tab, with the title, order
+    -- and group it has now): a script's own page made later, from a timer, in the place of the one wcmods made
+    -- for its settings ("script:<id>").
+    for _, q in ipairs(pages) do
+        if q.asked == p.asked and q.owner == p.owner then
+            q.title, q.fn, q.order, q.group = p.title, p.fn, p.order, p.group
+            ExecuteInGameThread(function() relist(q) end)
+            return q.id
+        end
+    end
     pages[#pages + 1] = p
     ExecuteInGameThread(function() register(p) end)
     if not started then
@@ -1010,6 +1045,16 @@ function Menu.list(t)
     return setmetatable(t or {}, LIST)
 end
 
+-- Whether a table is a list to write as [...] even when it's empty: one of Menu.list's, or WCModsGame's (what
+-- Game.json.decode makes of a list in a file, as a script's settings.json is read when the game starts).
+local function listy(v)
+    local mt = getmetatable(v)
+    if mt == nil then return false end
+    if mt == LIST then return true end
+    local G = package.loaded.WCModsGame
+    return type(G) == "table" and type(G.json) == "table" and mt == G.json.listMeta
+end
+
 local function encode(v, indent)
     local t = type(v)
     if t == "nil" then return "null" end
@@ -1017,9 +1062,11 @@ local function encode(v, indent)
     if t == "number" then
         if v ~= v or v == math.huge or v == -math.huge then return "null" end
         if math.type(v) == "integer" then return tostring(v) end
-        -- %g writes 12.0 as "12", which comes back as a whole number (and a setting then only takes whole
-        -- numbers); keep it a float.
-        local s = string.format("%.6g", v)
+        -- The shortest form that reads back as the same number, so a Save never changes a value it didn't
+        -- touch. %g writes 12.0 as "12", which comes back as a whole number (and a setting then only takes
+        -- whole numbers); keep it a float.
+        local s = string.format("%.15g", v)
+        if tonumber(s) ~= v then s = string.format("%.17g", v) end
         if not s:find("[%.eE]") then s = s .. ".0" end
         return s
     end
@@ -1031,7 +1078,7 @@ local function encode(v, indent)
     end
     if t ~= "table" then error("can't save a " .. t .. " as JSON") end
     local pad, inner = string.rep("  ", indent), string.rep("  ", indent + 1)
-    if getmetatable(v) == LIST and #v == 0 then return "[]" end
+    if listy(v) and #v == 0 then return "[]" end
     if #v > 0 or next(v) == nil then
         local parts = {}
         for i, x in ipairs(v) do parts[i] = encode(x, indent + 1) end

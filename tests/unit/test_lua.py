@@ -18,6 +18,48 @@ def test_shared_module_compiles(module):
     assert not problems(module.lua())
 
 
+def test_game_module_stops_another_scripts_animation_only_while_it_plays():
+    """Game.anims' shared playing state (what another script, the Emote wheel, started): the id is shared with
+    its sequence and its montage, and another script's is taken for playing, or stopped, only while the actor's
+    current montage is that montage, playing that sequence; otherwise the state is cleared, so a finished
+    emote's id never makes Game.anims.stop() stop one of the game's own montages."""
+    lua = game.lua()
+    assert not problems(lua)
+
+    def body(start, end):
+        return lua[lua.index(start):lua.index(end)]
+
+    shared = body("local function sharedPlaying(actor)", "local function anims()")
+    assert 'v = id .. "|" .. (path or "") .. "|" .. (ok and tostring(address) or "")' in shared
+    assert 'v:match("^([^|]+)|([^|]*)|([^|]*)$")' in shared
+    check = body("local function sharedMontage(actor)", "-- Play an animation on a cat")
+    assert "inst:GetCurrentActiveMontage()" in check
+    assert "tostring(address) == s.montage" in check, "the same montage the other script started"
+    assert 'seq == "AnimSequence " .. s.path' in check, "playing its sequence"
+    assert check.rstrip().endswith("sharePlaying(actor, nil)\n    return nil\nend"), "else the shared id is cleared"
+    assert "m.SlotAnimTracks[1].AnimTrack.AnimSegments[1].AnimReference:GetFullName()" in lua
+    assert "sharePlaying(actor, id, path, m)" in body("function Game.anims.play(", "function Game.anims.playing(")
+    playing = body("function Game.anims.playing(", "function Game.anims.stop(")
+    assert "local _, _, s = sharedMontage(actor)" in playing and "IsAnyMontagePlaying" not in lua
+    stop = body("function Game.anims.stop(", "-- The same on a cat")
+    other = stop[stop.index("local ai, m, s = sharedMontage(actor)"):]
+    assert other.index("if not ai then return false end") < other.index("ai:Montage_Stop(out, m)"), \
+        "another script's montage is stopped only when sharedMontage found it"
+    assert "GetCurrentActiveMontage" not in stop, "stop() never takes the current montage without the check"
+
+
+def test_the_in_game_checks_lua_in_verified_md_compiles():
+    # docs/verified.md's not-yet-confirmed checks give Lua to run in the game (e.g. the save's Hash); a missing
+    # `end` there would only show up as an error in game.
+    import os
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "verified.md")
+    with open(path, encoding="utf-8") as f:
+        blocks = re.findall(r"```lua\n(.*?)\n\s*```", f.read(), re.S)
+    assert len(blocks) >= 2
+    for lua in blocks:
+        assert not luacheck.check(lua), lua
+
+
 def test_names_module_with_the_games_own_text():
     lua = world.names_lua()
     assert not problems(lua)
@@ -29,6 +71,15 @@ def test_names_module_with_areas_and_quests():
     assert not problems(lua)
     assert '["R-05"] = "Willow-Weep"' in lua and '["Apprentice"] = "Moss for the dens"' in lua
     assert "function N.area(" in lua and "function N.quest(" in lua
+
+
+def test_world_scan_clears_the_label_cache():
+    """World.label keeps a label per actor address and class. A pickup that went can leave its address to
+    another item of its class, so each scan of the actor list starts the cache afresh."""
+    lua = world.lua()
+    assert lua.index("local actorLabels = {}") < lua.index("local function scan()")   # scan() sees it
+    scan = lua.split("local function scan()", 1)[1].split("\nend\n", 1)[0]
+    assert "actorLabels = {}" in scan and "local actorLabels" not in scan
 
 
 def test_game_module_names_the_saved_folder_the_install_makes():
@@ -43,6 +94,61 @@ def test_mouse_look_script():
     assert "sensitivity = 1.5" in lua and "invert = true" in lua and "smoothing = 50.0" in lua
 
 
+@pytest.mark.parametrize("raw, said", [
+    ({"sensitivity": "1.5"}, "'sensitivity' should be a number"),
+    ({"sensitivity": True}, "'sensitivity' should be a number"),
+    ({"sensitivity": 0}, "between 0.05 and 10"),
+    ({"sensitivity": 11}, "between 0.05 and 10"),
+    ({"toggle_key": "f6"}, "'toggle_key' should be one of F1"),
+    ({"toggle_key": None}, "'toggle_key' should be one of F1"),
+    ({"toggle_key": "F11"}, "'toggle_key' should be one of F1"),
+    ({"smoothing": 1500}, "between 0 and 1000 milliseconds"),
+    ({"sensitvity": 1}, "unknown setting 'sensitvity' (known: sensitivity, invert, toggle_key"),
+    ({"pitch_min": -90}, "between -89 and 89 degrees"),
+    (["sensitivity"], "should be an object"),
+])
+def test_mouse_look_validate_rejects_bad_values(raw, said):
+    with pytest.raises(ValueError) as e:
+        mouselook.validate(raw)
+    assert said in str(e.value)
+
+
+def test_mouse_look_validate_keeps_what_the_studio_writes_and_ignores_notes():
+    page = {"_help": "mine", "sensitivity": 1.25, "invert": True, "smoothing": 40, "toggle_key": "", "pitch_min": -30,
+            "pitch_max": 40, "debug": True}
+    assert mouselook.validate(page) == {k: v for k, v in page.items() if not k.startswith("_")}
+
+
+def test_mouse_look_merge_names_both_mods_for_crossed_tilt_limits():
+    with pytest.raises(ValueError) as e:
+        mouselook.merge([{"pitch_min": 10.0}, {"pitch_max": 5.0}], ["low-mod", "high-mod"])
+    assert str(e.value) == "mouse look: pitch_min 10 (from low-mod) must be below pitch_max 5 (from high-mod)"
+    assert mouselook.merge([{"toggle_key": "F7"}, {"sensitivity": 2.0}])["toggle_key"] == "F7"   # later wins per key
+
+
+def test_mouse_look_build_saves_into_the_top_priority_mod_and_keeps_its_help(tmp_path):
+    # The in-game page's Save writes into the mod whose settings win, keeping that file's own notes.
+    import os
+    from types import SimpleNamespace
+    from wcmods.sdk import BuildContext
+    from wcmods.sections.mouselook import MouseLookSection
+    mods = []
+    for mod_id, data in (("low", {"sensitivity": 2.0}), ("top", {"_help": "my notes", "invert": True})):
+        folder = tmp_path / mod_id
+        folder.mkdir()
+        (folder / "mouselook.json").write_text(__import__("json").dumps(data), encoding="utf-8")
+        mods.append((SimpleNamespace(id=mod_id, folder=str(folder)), mouselook.validate(data)))
+    ctx = BuildContext(SimpleNamespace(ue4ss_mods_dir=str(tmp_path)), None, str(tmp_path / "out"), lambda m: None)
+    MouseLookSection().build(ctx, mods)
+    lua = ctx.ue4ss_mods[mouselook.UE4SS_MOD_NAME][0]["Scripts/main.lua"]
+    lua = lua.decode("utf-8") if isinstance(lua, bytes) else lua
+    assert not problems(lua)
+    assert "sensitivity = 2.0" in lua and "invert = true" in lua
+    assert os.path.abspath(str(tmp_path / "top" / "mouselook.json")).replace("\\", "\\\\") in lua
+    assert '"mods/top/mouselook.json"' in lua and '"my notes"' in lua
+    assert ctx.notes[None]["mouselook"]["sensitivity"] == 2.0
+
+
 def test_mouse_look_script_with_its_menu_page():
     lua = mouselook.script(mouselook.merge([{}]), {"path": r"C:\mods\m\mouselook.json", "file": "mods/m/mouselook.json",
                                                   "keep": {"_help": 'say "hi"'}})
@@ -54,12 +160,15 @@ def test_your_cats_colours_script_with_its_menu_page():
     lua = catcolours.script({"fur": (1.0, 0.5, 0.0)}, save={"path": "x", "file": "y", "doc": {"player": {"colours": {}}}})
     assert not problems(lua)
     assert '"#ff8000"' in lua
+    # Only the HUD's picture is taken again, and a part with no model is never asked for a material.
+    assert '"RT_UI_Portrait_Exploration"' in lua and "CaptureComponentInventory" not in lua
+    assert "mesh.SkinnedAsset" in lua
 
 
 def test_mod_menu_window_script_with_the_dev_pages():
     lua = menu.host_script(MANIFEST, [], dev=True, log=r"C:\Game\ue4ss\UE4SS.log", pages_note="Get set up adds it.")
     assert not problems(lua)
-    assert 'Menu.page("Inspector"' in lua and 'Menu.page("Lua console"' in lua
+    assert 'Menu.page("Inspector"' in lua and 'Menu.page("Lua (advanced)"' in lua and 'id = "Lua console"' in lua
     assert 'Menu.page("Overview"' in lua and 'Menu.page("Installed mods"' in lua and 'Menu.page("Log"' in lua
     assert '"Get set up adds it."' in lua and r'"C:\\Game\\ue4ss\\UE4SS.log"' in lua
     # The pages about the game are the Menu pages mod's (github.com/HexOffender/wcmods-menu-pages).
@@ -96,10 +205,12 @@ def test_palette_script():
 
 def test_key_remap_plan():
     # Interact and Scent tracking move along F/E/Q, so Q goes quiet; X stays because Return to camp still
-    # uses it; forward moves to I, so W goes quiet.
+    # uses it; forward moves to I, so W goes quiet, and I stops opening the inventory, which is said.
     send, block, warns = keymap.plan({"keyboard": {"Player_Interact": "F", "Player_Scent_Tracking": "E",
                                                    "Player_Den_Place": "Z"}, "keys": {"I": "W"}})
-    assert send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"} and not warns
+    assert send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"}
+    assert warns == ["With Play with key remaps.bat, I stands for W, so it no longer opens the inventory"]
+    assert warns[0].rows == [("keys", "I")]
 
 
 def test_in_game_remap_plan():
@@ -123,7 +234,9 @@ def test_in_game_remap_plan():
     assert plan["keys"]["Player_Interact"] == ["F", "LeftMouseButton", "Gamepad_FaceButton_Bottom"]
     assert plan["keys"]["Player_Crouch"] == ["LeftControl", "RightControl", "RightMouseButton"]
     assert rest == {"keyboard": {"Player_Movement_Up": "K"}, "keys": {"I": "W"}}
-    assert len(warns) == 2 and "Player_Crouch is on Gamepad_LeftTrigger" in warns[0] and "Player_Play is on J" in warns[1]
+    assert warns == ["The controller's LT now runs, so it no longer crouches; give Crouch another button",
+                     "J now does what C does while you explore, so it no longer does the game's Play action"]
+    assert [w.rows for w in warns] == [[("gamepad", "Player_Run")], [("keys", "J")]]
     # The game's key pictures show the new keys: a command can have one for each device, and the menu
     # pair's commands show Escape in menus only.
     icons = plan["icons"]
@@ -150,16 +263,22 @@ def test_in_game_menu_keys_and_any_command():
     assert rest == {"menus": {"I": "Up", "K": "Down", "ThumbMouseButton": "BackSpace"}}
     assert sum("zooming and moving the map" in w for w in warns) == 2
     assert sum("types on the name screen" in w for w in warns) == 1
+    # Pause leaving Escape for P is said too: nothing else on screen would.
+    assert "Escape will no longer open the pause menu" in warns
     _, _, warns = keymap.native_plan({"keyboard": {"Player_ShowHideControls": "H"}})
-    assert warns == ["keyboard: no key sends Player_ShowHideControls in the game; H will"]
+    assert warns == ["No key does Show or hide the controls in the game; H will"]
 
 
 def test_in_game_remap_warnings():
     _, _, warns = keymap.native_plan({"keyboard": {"Player_Interact": "Q", "Player_Pounce": "W"},
                                       "gamepad": {"Player_Camera_Up": "RB"}})
-    assert any("Player_Scent_Tracking is on Q" in w for w in warns)       # Q's own job stops
-    assert any(w.startswith("W now does Player_Pounce") for w in warns)   # W still walks too
-    assert any("is a stick" in w for w in warns)
+    assert "Q now does Interact, so it no longer tracks scents; give Scent tracking another key" in warns
+    assert "W now pounces, and still moves you forward too: the game reads that key itself" in warns
+    assert any(w.startswith("The right stick can't be moved by a mod; change it in Steam's controller settings")
+               for w in warns)
+    # The game's own stick, as the studio's old "Controller defaults" wrote it, is nothing to do and says nothing.
+    plan, _, warns = keymap.native_plan({"gamepad": {"Player_Camera_Up": "Gamepad_RightY", "Player_Movement_Right": "Gamepad_LeftX"}})
+    assert not gameremap.has_work(plan) and warns == []
     # The Controls screen's keys the save doesn't list move too, and a mouse button can take an action.
     plan, rest, warns = keymap.native_plan({"keyboard": {"Player_Show_Map": "N", "Player_Run": "ThumbMouseButton"}})
     assert plan["play"]["send"] == {"N": ["Player_Show_Map"], "ThumbMouseButton": ["Player_Run"]}
@@ -174,6 +293,30 @@ def test_in_game_remap_script():
     assert '["I"] = { "Button_Up" }' in lua
     assert '["icons"] = { ["play"] = { ["Player_Interact"] = { "F" } }' in lua
     assert "NotifyOnNewObject" in lua and "mcGuiButtonImage" in lua
+
+
+def test_in_game_remap_script_lists_its_keys_in_the_mod_menu():
+    # Each key with a new job once, in plain words, for the mod menu's Overview: a move says what it was, a second
+    # key what it's like, a key for menus only says so; the script hands them to Menu.key when the menu is there.
+    plan, _, _ = keymap.native_plan({"keyboard": {"Player_Interact": "F"}, "gamepad": {"Player_Run": "LT"},
+                                     "keys": {"H": "E", "T": "One", "MouseScrollUp": "R"}, "menus": {"U": "Enter"}})
+    assert plan["menu_keys"] == [["F", "Interact (was E)"], ["LT on a controller", "Run (was RB on a controller)"],
+                                 ["H", "Interact, like E"], ["T", "like 1"], ["Wheel up", "Reset the camera, like R"],
+                                 ["U", "Confirm and Skip in menus"]]
+    lua = gameremap.script(plan)
+    assert not problems(lua)
+    assert 'pcall(require, "WCModsMenu")' in lua and "pcall(Menu.key, line[1], line[2])" in lua
+    assert '["menu_keys"] = { { "F", "Interact (was E)" }' in lua
+    # A key both moved to and standing for something is listed once, with both.
+    plan, _, _ = keymap.native_plan({"keyboard": {"Player_Interact": "H"}, "keys": {"H": "Q"}})
+    assert plan["menu_keys"] == [["H", "Interact (was E); Scent tracking, like Q"]]
+
+
+def test_gameremap_has_no_work_on_an_empty_plan_and_writes_debug():
+    plan, _, _ = keymap.native_plan({})
+    assert not gameremap.has_work(plan) and plan["menu_keys"] == []
+    lua = gameremap.script(keymap.native_plan({"keyboard": {"Player_Interact": "F"}})[0], debug=True)
+    assert '["debug"] = true' in lua and not problems(lua)
 
 
 def test_key_remapper_gets_only_what_the_game_cant_do(tmp_path):
@@ -233,3 +376,314 @@ def test_play_says_the_warnings_of_the_build_it_applies(tmp_path, monkeypatch):
     assert onboarding.play(ctx, log=said.append)["applied"]
     assert "warning: a cat in your save has a name" in said
     assert not any("Steam starts the game" in s for s in said)
+
+
+# ---------- the runtime's own fixes (no Lua here: read from the source, as the game would load it) ----------
+def body(lua, start, end):
+    """The text of lua from `start` up to `end` (both found in order)."""
+    i = lua.index(start)
+    return lua[i:lua.index(end, i + len(start))]
+
+
+def test_log_names_the_script_when_it_has_a_name():
+    lua = game.lua()
+    log = body(lua, "local function log(fmt, ...)", "Game.log = log")
+    assert 'type(Game.modName) == "string" and Game.modName ~= "" and Game.modName or "WCModsGame"' in log
+    assert 'print("[" .. who .. "] " .. string.format(fmt, ...) .. "\\n")' in log
+    # WCModsDraw's and WCModsMenu's errors (a painter's, a page's) take the same name, from the module in that state.
+    for module in (draw.lua(), menu.lua()):
+        assert "local G = package.loaded.WCModsGame" in module and "G.modName" in module
+
+
+def test_runtime_errors_are_said_once_then_once_a_minute():
+    lua = game.lua()
+    said = body(lua, "local function failed(what, err)", "\nend\n")
+    assert 'log("error in %s: %s", what, err)' in said and 'log("error in %s: %s (%d more)", what, err, f.more)' in said
+    assert "now - f.at >= SAY_AGAIN" in said
+    assert "local SAY_AGAIN = 60" in lua
+    # One failure whatever its numbers say after the file and line, and a cap on new ones for each kind of call: an
+    # error whose text keeps changing doesn't log a line a frame.
+    assert 'local at, rest = err:match("^([^\\n]-:%d+:)(.*)$")' in said
+    assert 'local key = what .. ": " .. (at and (at .. rest:gsub("%d+", "#")) or err:gsub("%d+", "#"))' in said
+    assert "local NEW_A_MINUTE = 5" in lua and "if w.said >= NEW_A_MINUTE then" in said
+    assert said.index("if w.said >= NEW_A_MINUTE then") < said.index('log("error in %s: %s", what, err)')
+    assert "more failures in the last minute weren't said" in said
+    # Every place a script's code is called from goes through it: timers and frame functions, keys, hooks, events.
+    assert 'failed(t.what or "task", err)' in lua and 'failed("key " .. name, err)' in lua
+    assert lua.count('failed("hook " .. path, err)') == 2 and 'failed("on " .. tostring(event), err)' in lua
+    assert 'log("%s: %s", t.what' not in lua   # the old line a frame
+
+
+def test_run_tasks_runs_a_snapshot():
+    run = body(game.lua(), "local function runTasks()", "\nlocal function start()")
+    assert "for id in pairs(tasks) do ids[#ids + 1] = id end" in run and "for _, id in ipairs(ids) do" in run
+    assert "local t = tasks[id]" in run and "if t and (t.at == nil or now >= t.at) then" in run
+    assert "if tasks[id] == t then" in run   # a task that cancelled itself isn't put back
+    assert "for id, t in pairs(tasks) do" not in run
+
+
+def test_on_key_checks_the_name_and_returns_an_id():
+    lua = game.lua()
+    on_key = body(lua, "function Game.onKey(key, fn, modifiers, help)", "\n-- Whether a key or controller button")
+    assert 'local code = keyCode(key, Key, "key")' in on_key and "if not code then return false end" in on_key
+    assert "pcall(RegisterKeyBind, code, mods, fire)" in on_key and "pcall(RegisterKeyBind, code, fire)" in on_key
+    # One bind per key and modifiers, with a handler for each onKey; the Overview lists a key once it's bound.
+    assert "local bind = binds[slot]" in on_key and "bind.handlers[#bind.handlers + 1] = fn" in on_key
+    assert on_key.index("bind.handlers[#bind.handlers + 1] = fn") < on_key.index("if help then listKey(name, help) end")
+    assert "keyIds[id] = { bind = bind, handler = fn }" in on_key and on_key.rstrip().endswith("return id\nend")
+    code = body(lua, "local function keyCode(key, table_, what)", "\nfunction Game.onKey")
+    assert 'log("no %s called %s%s"' in code and "did you mean" in code and "F1 to F12" in code
+    cancel = body(lua, "function Game.cancel(id)", "\n-- A key and what it does")
+    assert "local k = keyIds[id]" in cancel and "table.remove(k.bind.handlers, i)" in cancel
+
+
+def test_level_component_is_only_your_cats():
+    lua = game.lua()
+    comp = body(lua, "function Cat:component(kind)", "\nlocal CLASS_PATHS")
+    assert 'owner = Game.get(self.actor, "Controller.PlayerState")' in comp
+    assert 'if not valid(owner) and self:isPlayer() then owner = Game.get(Game.controller(), "PlayerState") end' in comp
+    assert 'local NOT_YOURS = "only your cat has a level component out of a fight"' in lua
+    assert "NOT_YOURS" in body(lua, "local function setResource(", "\nend")
+    assert "NOT_YOURS" in body(lua, "function Cat:setStat(", "\nend")
+
+
+def test_find_never_hands_back_an_object_on_its_way_out():
+    lua = game.lua()
+    find = body(lua, "function Game.find(className)", "\n-- Every object of a class")
+    assert "if hit and valid(hit) and not garbage(hit) and Game.isA(hit, className) then return hit end" in find
+    # The first object on its way out: nil, and the miss kept a second; never a scan of every object of the class
+    # from in here (a level is loading then, when FindAllOf scans have crashed the game).
+    assert "if garbage(o) then\n        missUntil[className] = now + MISS_FOR\n        return nil\n    end" in find
+    assert "if missUntil[className] and now < missUntil[className] then return nil end" in find
+    assert find.index("then return nil end") < find.index("pcall(FindFirstOf, className)")
+    assert "findAll" not in find and "FindAllOf" not in find and "local MISS_FOR = 1" in lua
+    assert "o:HasAnyInternalFlags(GARBAGE)" in body(lua, "local function garbage(o)", "\nend")
+    assert "local alive = Game.alive" in lua   # the mod cats' check is the same one
+
+
+def test_map_marker_and_the_world_helpers_check_their_actor_first():
+    lua = game.lua()
+    marker = body(lua, "function Game.mapMarker(where, opts)", "local m = setmetatable")
+    assert 'return nil, "a marker needs a place, {x, y, z}, or an actor"' in marker
+    assert "elseif not Game.alive(where) then" in marker
+    w = world.lua()
+    assert "if not here(it) then return nil end" in body(w, "function World.location(it)", "\nend")
+    assert "if not (p and q and p.X and q.X) then return nil end" in body(w, "function World.distance(a, b)", "\nend")
+    assert "if not here(actor) then return nil end" in body(w, "function World.describe(actor)", "\nend")
+    assert "if not origin then return {} end" in w and "if ok and l then" in w
+
+
+def test_dialogue_claim_is_renewed_while_the_box_is_up():
+    lua = game.lua()
+    assert "talk.key = {}\nlocal talkId = (tostring(talk.key):gsub(" in lua
+    keep = body(lua, "local function keepClaim()", "\nfunction Game.dialogue.say")
+    assert "talk.renew = Game.every(0.2, function()" in keep and "talkShare(TALK_AT, os.clock())" in keep
+    say = body(lua, "function Game.dialogue.say(name, text)", "\nfunction Game.dialogue.hide")
+    assert "keepClaim()" in say and "if added then pcall(function() w:RemoveFromParent() end) end" in say
+    hide = body(lua, "function Game.dialogue.hide()", "\n-- Whether the box is up")
+    assert "Game.cancel(talk.renew)" in hide
+    assert "or talk.text == nil then return end" not in hide   # a box half made is taken down too
+
+
+def test_json_decode_skips_a_bom():
+    lua = game.lua()
+    assert 'local BOM = "\\239\\187\\191"' in lua
+    assert 'if pos == 1 and type(text) == "string" and text:sub(1, 3) == BOM then pos = 4 end' in lua
+
+
+def test_json_decode_keeps_a_number_written_with_a_point_a_float():
+    # 12.0 stays 12.0 (a setting's page keeps steps of 0.1 for it, and its Save writes it back with the point).
+    lua = game.lua()
+    assert 'if num:find("[%.eE]") then return tonumber(num) or fail("bad number " .. num) end' in lua
+
+
+def test_the_automatic_settings_page_shows_help_under_a_row_and_bounds_a_number():
+    from wcmods.sections import scripts
+    page = body(scripts.BOOTSTRAP, "local function partOf(k)", 'end, { order = 40')
+    assert 'k:match("^_help_(.+)$") or k:match("^_min_(.+)$") or k:match("^_max_(.+)$")' in page
+    assert 'local lo, hi = MOD.settings["_min_" .. tostring(k)], MOD.settings["_max_" .. tostring(k)]' in page
+    assert 'min = type(lo) == "number" and lo or nil' in page and 'max = type(hi) == "number" and hi or nil' in page
+    assert 'local help = type(k) == "string" and k:sub(1, 1) ~= "_" and MOD.settings["_help_" .. k]' in page
+
+
+def test_bootstrap_names_the_mod_for_game_log():
+    from wcmods.sections import scripts
+    start = body(scripts.BOOTSTRAP, 'local okGame, game = pcall(require, "WCModsGame")', "\nelse")
+    assert "Game = game" in start and "Game.modName = MOD.name" in start
+
+
+def test_bootstrap_strips_a_bom_and_loads_the_mods_files_by_their_names():
+    from wcmods.sections import scripts
+    boot = scripts.BOOTSTRAP
+    own = body(boot, "local function loadOwn(rel)", "\nend")
+    assert "if text:sub(1, 3) == BOM then text = text:sub(4) end" in own and 'return load(text, "@scripts/" .. rel)' in own
+    assert "table.insert(package.searchers, 2, function(name)" in boot
+    settings = body(boot, "if okGame and MOD.settingsFile then", "\nend\n")
+    assert settings.index("text:sub(1, 3) == BOM") < settings.index("pcall(Game.json.decode, text)")
+    assert 'local main, loadErr = loadOwn("main.lua")' in boot and "loadfile(" not in boot
+
+
+def test_bootstrap_says_a_script_that_didnt_start():
+    from wcmods.sections import scripts
+    boot = scripts.BOOTSTRAP
+    said = body(boot, "local function didntStart(err)", "\nlocal main, loadErr")
+    assert 'ModRef:SetSharedVariable("WCModsMenu.failed"' in said and '"\\t" .. (first:gsub("[\\t\\n]", " "))' in said
+    assert "Draw.onFrame(function(d)" in said and "Game.after(10, function() Draw.remove(painter) end)" in said
+    assert "if not Game.player() then return end" in said
+    assert "\" didn't start: \"" in said and '". The mod menu (" .. key .. "), Tools, Log says more."' in said
+    assert "MOD.log(\"can't load: %s\", tostring(loadErr))\n    didntStart(loadErr)" in boot
+    assert 'MOD.log("error: %s", tostring(err))\n    didntStart(err)' in boot
+    host = menu.host_script(MANIFEST, [], dev=True)
+    assert 'Menu.share("key_name", SETTINGS.key_name)' in host and 'local failed = Menu.shared("failed")' in host
+
+
+def test_bootstrap_save_says_so():
+    from wcmods.sections import scripts
+    page = body(scripts.BOOTSTRAP, 'if ui.button("Save", { kind = "primary" }) then', "end, { order = 40")
+    assert "status = saved and \"Saved to settings.json.\" or (\"Couldn't save: \" .. tostring(why))" in page
+    assert "if status then ui.note(status) end" in page
+
+
+def test_menu_keeps_one_page_per_id_and_writes_settings_back_as_they_were():
+    lua = menu.lua()
+    page = body(lua, "function Menu.page(title, fn, opts)", "\nfunction Menu.isOpen")
+    assert "if q.asked == p.asked and q.owner == p.owner then" in page and "return q.id" in page
+    assert "q.title, q.fn, q.order, q.group = p.title, p.fn, p.order, p.group" in page
+    assert "ExecuteInGameThread(function() relist(q) end)" in page
+    assert lua.index("local function relist(p)") < lua.index("function Menu.page(")
+    # A script's own files are loaded as "@scripts/...": its pages are still its UE4SS mod's, by the folder the
+    # script bootstrap says.
+    caller = body(lua, "local function caller(level)", "\nend\n")
+    assert 'if src:match("^@scripts/") and type(MOD) == "table" and type(MOD.ue4ss) == "string"' in caller
+    from wcmods.sections import scripts
+    assert 'ue4ss = here:match("/Mods/([^/]+)/") or "",' in scripts.BOOTSTRAP
+    assert 'return type(G) == "table" and type(G.json) == "table" and mt == G.json.listMeta' in lua
+    assert 'if listy(v) and #v == 0 then return "[]" end' in lua
+    assert 'string.format("%.15g", v)' in lua and 'if tonumber(s) ~= v then s = string.format("%.17g", v) end' in lua
+    assert "%.6g" not in lua
+
+
+def test_mod_menu_pages_say_a_left_out_script_and_filter_the_log_for_scripts():
+    host = menu.host_script(MANIFEST, [], dev=True)
+    assert 'ui.text(id .. ": left out, " .. tostring(note["left out"]), { color = THEME.danger })' in host
+    assert ("local ERRORS = { \"error:\", \"error in \", \"attempt to \", \"can't load\", \"stack traceback\", "
+            "\"didn't start\" }") in host
+    assert 'line:find("[Lua] ", 1, true) ~= nil and not line:find("[Lua] Exposing size of", 1, true)' in host
+    assert 'line:lower():find("error", 1, true)' not in host and 'line:find("[Lua] [", 1, true)' not in host
+
+
+def test_inspector_find_refuses_the_widest_classes_and_reads_names_once():
+    host = menu.host_script(MANIFEST, [], dev=True)
+    find = body(host, "local function find(class)", "\nend\n")
+    assert "if TOO_WIDE[class:lower()] then" in find and "if not Game.player() then" in find
+    assert "if i > FOUND_SHOWN then break end" in find and "label = string.format(" in find
+    assert "actor = true" in host and "userwidget = true" in host   # in small letters, as it's asked
+    page = body(host, 'Menu.page("Inspector"', "end, { order = 90")
+    assert "for _, e in ipairs(insp.found) do" in page and "Game.name(o)" not in page
+
+
+# ---------- the game's enums, read from the game by name (docs/reverse-engineering.md, "The game's enums") ----------
+def test_game_enum_names_checks_the_object_and_keeps_errors_in_the_listing():
+    lua = game.lua()
+    read = body(lua, "function Game.enumNames(path)", "\nend\n")
+    # A missing enum is an invalid object, and asking it anything crashes the game: it's checked before ForEachName.
+    assert (read.index("local e = Game.object(path)") < read.index("if not e then return nil end")
+            < read.index("e:ForEachName("))
+    assert "pcall(function()\n        e:ForEachName(function(name, value)" in read
+    # An error inside the callback ends the listing without reaching the outer pcall, so each name has its own.
+    assert "e:ForEachName(function(name, value)\n            -- An error in here" in read
+    assert "            pcall(function()\n                local n = name:ToString():gsub(\"^.*::\", \"\")" in read
+    assert 'local max = (tostring(path):match("([%w_]+)$") or "") .. "_MAX"' in read and "n ~= max" in read
+    assert "math.tointeger(value)" in read and "if #order == 0 then return nil end" in read
+    assert "return byName, order" in read
+    assert "local ok, o = pcall(StaticFindObject, path)\n    if ok and valid(o) then return o end" in lua
+
+
+def test_every_game_enum_names_its_path():
+    lua = game.lua()
+    keys = [k for k, _, _ in game.ENUMS]
+    # The enums scripts had before they were read from the game, none left out.
+    assert set(keys) == {"clan", "rank", "trait", "stance", "status", "aiProfile", "team", "detectionRange", "stat",
+                         "resource", "questStatus", "questResult", "questType", "objectiveStatus", "phase", "itemType",
+                         "characterType"}
+    assert len(keys) == len(set(keys))
+    for key, path, names in game.ENUMS:
+        module, _, enum = path.removeprefix("/Script/").partition(".")
+        assert module in ("SwtQuest", "SwtAdventure", "SwtEngine", "Wrc") and enum.startswith("E"), path
+        assert len(names) == len(set(names)) and all(n.isidentifier() for n in names), key
+        listed = ", ".join(f'"{n}"' for n in names)
+        assert f'    {key} = {{ "{path}", {{ {listed} }} }},' in lua
+    assert "local ENUMS = {\n    clan = {" in lua
+    assert "Game.enums = {}\nfor key in pairs(ENUMS) do Game.enums[key] = lazyEnum(key) end" in lua
+    assert "local function enum(names, first)" not in lua   # no list numbered by its position alone
+    # What the game's own code gives these numbers to and reads them from still goes through the tables.
+    assert "enumValue(Game.enums.status, s)" in lua
+    assert 'Game.enums.characterType[Game.get(self.actor, "CharacterType")]' in lua
+
+
+def test_game_enums_are_filled_from_the_game_the_first_time_theyre_used():
+    lua = game.lua()
+    fill = body(lua, "local function fillEnum(key, t, dropped)", "\n-- An enum table that fills itself")
+    assert "local byName, order = Game.enumNames(path)" in fill
+    # An enum that can't be read puts nothing in the table: the shipped numbers aren't kept in it.
+    assert "if not byName then return false end" in fill and "shippedEnum" not in lua
+    assert "rawset(t, name, n)" in fill and "if rawget(t, n) == nil then rawset(t, n, name) end" in fill
+    assert 'dropped[name] = true\n            changes[#changes + 1] = name .. " gone"' in fill
+    assert 'string.format("%s %d -> %d", name, i - 1, byName[name])' in fill
+    assert 'string.format("%s %d new", name, byName[name])' in fill
+    assert "log(\"the game's enum %s isn't build 26184573's: %s\", path, table.concat(changes, \", \"))" in fill
+    assert fill.rstrip().endswith("    end\n    return true\nend")
+    lazy = body(lua, "local function lazyEnum(key)", "\nGame.enums = {}")
+    # Build 26184573's numbers answer, both ways, while the game's can't be read; they're never put in the table.
+    assert "fallback[name] = i - 1\n        fallback[i - 1] = name" in lazy
+    # Read from the game on the first lookup, pairs or #; when it can't be, asked again ENUM_RETRY seconds later.
+    assert ("if mt.fromGame or (retryAt and os.clock() < retryAt) then return end\n"
+            "        local ok, read = pcall(fillEnum, key, t, dropped)\n"
+            "        if ok and read then\n            mt.fromGame = true") in lazy
+    assert "for k in next, t do rawset(t, k, nil) end\n        retryAt = os.clock() + ENUM_RETRY" in lazy
+    assert "local ENUM_RETRY = 5" in lua
+    assert "if not said then\n            said = true\n            log(\"can't read the game's enum %s%s" in lazy
+    assert "log(\"read the game's enum %s after all" in lazy
+    assert ("mt.__index = function(t, k)\n        if not mt.fromGame then\n            fill(t)\n"
+            "            if not mt.fromGame then return fallback[k] end") in lazy
+    assert "mt.__pairs = function(t)\n        fill(t)\n        return next, mt.fromGame and t or fallback, nil" in lazy
+    # # counts as a lookup too (before, an enum read 0 until something filled it).
+    assert "mt.__len = function(t)\n        fill(t)\n        return mt.fromGame and rawlen(t) or #fallback" in lazy
+    assert "local mt = { fromGame = false }" in lazy and "return setmetatable({}, mt)" in lazy
+    # A name the game dropped reads nil, said once.
+    assert "if dropped[k] == true then\n            dropped[k] = false\n            log(" in lazy
+    assert "rawset(" in lazy and "t[k] =" not in lazy   # nothing in here goes back through __index
+
+
+def test_interact_command_is_read_from_the_games_enum():
+    lua = game.lua()
+    assert "local INTERACT_COMMAND = 67               -- ECommands::Player_Interact in build 26184573" in lua
+    read = body(lua, "local function interactCommandNumber()", "\nend\n")
+    assert "if interactCommand then return interactCommand end" in read   # read once
+    assert 'local commands = Game.enumNames("/Script/SwtEngine.ECommands")' in read
+    assert "interactCommand = commands and commands.Player_Interact" in read
+    assert ("interactCommand = INTERACT_COMMAND\n"
+            "        log(\"can't read Player_Interact from the game's ECommands") in read
+    made = body(lua, "local function promptWidget(h)", "\nend\n")
+    assert "made.mcGuiButtonAction.ActionCommand = interactCommandNumber()" in made
+    assert "ActionCommand = INTERACT_COMMAND" not in lua
+
+
+def test_in_game_remap_reads_its_enum_numbers_by_name():
+    plan, _, _ = keymap.native_plan({"keyboard": {"Player_Interact": "F"}})
+    lua = gameremap.script(plan)
+    read = body(lua, "local function enumNames(path)", "\nend\n")
+    assert (read.index("local e = StaticFindObject(path)") < read.index("if not valid(e) then return nil end")
+            < read.index("e:ForEachName("))
+    assert 'byName[(name:ToString():gsub("^.*::", ""))] = value' in read
+    assert 'local function commands() return enumNames("/Script/SwtEngine.ECommands") end' in lua
+    assert "local NO_COMMAND = 0   -- ECommands::NoCommand" in lua
+    assert "local UI_PC = 1        -- EGuiConsolesTypes::UI_PC" in lua
+    setup = body(lua, "local function setup()", "\nend\n")
+    assert "if byName.NoCommand then\n        NO_COMMAND = byName.NoCommand\n    else\n        log(" in setup
+    assert 'local okConsoles, consoles = pcall(enumNames, "/Script/SwtEngine.EGuiConsolesTypes")' in setup
+    assert "UI_PC = consoles.UI_PC" in setup and "can't read UI_PC from the game's EGuiConsolesTypes" in setup
+    # The setup still waits for ECommands before anything else, as it did.
+    waits = setup.index("local byName = commands()\n    if not byName then return false end")
+    assert waits < setup.index("pcall(enumNames")
+    assert 'console:get() == UI_PC and "keyboard"' in lua and "console:get() == 1" not in lua

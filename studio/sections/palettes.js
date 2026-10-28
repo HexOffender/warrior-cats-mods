@@ -1,168 +1,107 @@
-// Palettes: recolour eyes, coats, patterns and markings on a live cat. Writes palette.json in a mod.
-const CAT_SVG = `
-<svg viewBox="0 0 360 330" role="img" aria-label="Preview cat with the selected colours">
-  <defs>
-    <radialGradient id="irisL" cx="50%" cy="50%" r="50%"></radialGradient>
-    <radialGradient id="irisR" cx="50%" cy="50%" r="50%"></radialGradient>
-    <clipPath id="almondL"><path d="M88 184 Q124 146 162 180 Q124 214 88 184 Z"/></clipPath>
-    <clipPath id="almondR"><path d="M272 184 Q236 146 198 180 Q236 214 272 184 Z"/></clipPath>
-    <clipPath id="headClip"><path d="M180 80 C252 80 318 120 322 196 C326 262 262 306 180 306 C98 306 34 262 38 196 C42 120 108 80 180 80 Z"/></clipPath>
-  </defs>
-  <g data-part="outline" stroke-width="3" stroke-linejoin="round">
-    <path data-part="coat" d="M70 152 L90 36 Q96 26 106 33 L172 100 Z"/>
-    <path data-part="coat" d="M290 152 L270 36 Q264 26 254 33 L188 100 Z"/>
-    <path data-part="coat" d="M180 80 C252 80 318 120 322 196 C326 262 262 306 180 306 C98 306 34 262 38 196 C42 120 108 80 180 80 Z"/>
-  </g>
-  <path d="M92 128 L103 58 L150 106 Z" fill="var(--ear)" opacity="0.85"/>
-  <path d="M268 128 L257 58 L210 106 Z" fill="var(--ear)" opacity="0.85"/>
-  <g clip-path="url(#headClip)">
-    <g data-part="pattern" fill="none" stroke-width="9" stroke-linecap="round">
-      <path d="M180 92 L180 134"/><path d="M158 98 Q163 118 168 136"/><path d="M202 98 Q197 118 192 136"/>
-      <path d="M136 108 Q147 124 154 142"/><path d="M224 108 Q213 124 206 142"/>
-      <path d="M36 190 Q72 184 102 196"/><path d="M38 216 Q74 208 104 220"/><path d="M46 244 Q78 236 108 244"/>
-      <path d="M324 190 Q288 184 258 196"/><path d="M322 216 Q286 208 256 220"/><path d="M314 244 Q282 236 252 244"/>
-    </g>
-    <g data-part="marking">
-      <path d="M180 144 C170 172 166 198 168 218 L192 218 C194 198 190 172 180 144 Z"/>
-      <ellipse cx="180" cy="258" rx="66" ry="50"/><ellipse cx="180" cy="318" rx="90" ry="40"/>
-    </g>
-  </g>
-  <g>
-    <path data-part="sclera" d="M88 184 Q124 146 162 180 Q124 214 88 184 Z"/>
-    <circle clip-path="url(#almondL)" cx="125" cy="181" r="27" fill="url(#irisL)"/>
-    <ellipse cx="125" cy="181" rx="5.5" ry="18" fill="#0b0b0c"/><circle cx="133" cy="171" r="4" fill="#ffffff" opacity="0.85"/>
-    <path data-part="lid" d="M88 184 Q124 146 162 180 Q124 214 88 184 Z" fill="none" stroke-width="3"/>
-  </g>
-  <g>
-    <path data-part="sclera" d="M272 184 Q236 146 198 180 Q236 214 272 184 Z"/>
-    <circle clip-path="url(#almondR)" cx="235" cy="181" r="27" fill="url(#irisR)"/>
-    <ellipse cx="235" cy="181" rx="5.5" ry="18" fill="#0b0b0c"/><circle cx="243" cy="171" r="4" fill="#ffffff" opacity="0.85"/>
-    <path data-part="lid" d="M272 184 Q236 146 198 180 Q236 214 272 184 Z" fill="none" stroke-width="3"/>
-  </g>
-  <path d="M168 236 L192 236 Q195 238 190 245 L183 252 Q180 255 177 252 L170 245 Q165 238 168 236 Z" fill="var(--nose)"/>
-  <path data-part="mouth" d="M180 254 L180 262 M180 262 Q170 272 160 266 M180 262 Q190 272 200 266" fill="none" stroke-width="2.5" stroke-linecap="round"/>
-  <g data-part="whiskers" stroke-width="1.6" stroke-linecap="round" opacity="0.75">
-    <path d="M148 252 L62 238 M148 259 L58 262 M150 266 L66 286"/><path d="M212 252 L298 238 M212 259 L302 262 M210 266 L294 286"/>
-  </g>
-</svg>`;
+// Palettes: recolour the eyes, coats, patterns and markings every cat can wear, on a drawn cat, and add new pattern
+// and marking colours. Writes palette.json in a mod; reading and writing it, and the whole-tab changes, are
+// lib/palette.js. The page opens without the game's files: the eyes wait for the game folder, and the game's coat,
+// pattern and marking colours show as numbered cards until the game has run once with the script loader.
+import * as P from "../lib/palette.js";
+import { catSvg, paintCat } from "../lib/cat.js";
 
 const SECTIONS = [
   { id: "eyes", title: "Eyes" },
-  { id: "fur", title: "Coat", table: "FurColors", noun: "Coat" },
-  { id: "pattern", title: "Pattern", table: "PatternMaskColors", noun: "Pattern" },
-  { id: "marking", title: "Markings", table: "MarkingMaskColors", noun: "Marking" },
+  { id: "fur", title: "Coat", table: "FurColors", noun: "coat" },
+  { id: "pattern", title: "Pattern", table: "PatternMaskColors", noun: "pattern" },
+  { id: "marking", title: "Markings", table: "MarkingMaskColors", noun: "marking" },
 ];
+const NEUTRAL = "#9a8f84";   // a colour the page doesn't know yet, on the drawn cat
 
 export default {
   title: "Palettes",
   async mount(root, wc) {
     const { el, api, clear, toast, color } = wc;
-    const [eyesRes, tablesRes] = await Promise.all([api.get("/game/eyes"), api.get("/game/tables")]);
-    const EYE_LABEL = eyesRes.labels;
-    const EYE_LIN = eyesRes.rows.map(r => r.map(h => color.hexToLinear("#" + h)));
-    const W = EYE_LIN[0].length;
-    const STD = [...Array(20).keys()].map(i => i + 1), DLC = [21, 22, 23, 24, 25];
+    // clear() hands back the bare element, whose own append writes a null as the text "null": this leaves them out.
+    const put = (node, ...kids) => { clear(node).append(...kids.filter(k => k != null && k !== false)); return node; };
+    // The game's eye colours and colour tables, and the studio's status: each may be missing (no game folder yet,
+    // the game's files unreadable, the game not yet run with the script loader), and the page opens all the same.
+    const [eyes, tablesRes, firstInfo] = await Promise.all([
+      api.get("/game/eyes").catch(() => null),
+      api.get("/game/tables").catch(() => ({ tables: null, game_slots: 25 })),
+      api.get("/info").catch(() => null)]);
+    let info = firstInfo;
+    const LABELS = eyes ? eyes.labels : null;
+    const EYE_LIN = eyes ? eyes.rows.map(r => r.map(h => color.hexToLinear("#" + h))) : null;
+    const GROUPS = LABELS ? P.eyeGroups(LABELS) : null;
+    const GAME = tablesRes.game_slots || 25;
     const TABLES = tablesRes.tables || {};
     const TABLE = id => TABLES[SECTIONS.find(s => s.id === id).table] || [];
+    const origRow = r => (EYE_LIN ? EYE_LIN[r] : P.plainRow(64, r === 0));
+    const rimOf = ramp => color.linearToHex(ramp[ramp.length - 1]);
+    const vanillaRim = r => rimOf(origRow(r));
+    const eyeName = r => P.eyeWord(LABELS, r);   // "Eye white", "Extra eye 1", else the game's name
 
-    let state = blank();
-    const view = { tab: "eyes", fur: 2, pattern: 3, marking: 10, eyeL: 2, eyeR: 2, vanilla: false };
-    // kept: the file's sections this page doesn't edit (coat presets, the cat maker's iris swatches), written back
-    // as they were. They belong to the file: starting from the game's colours or another palette keeps them.
-    function blank(kept = {}) { return { eyes: {}, fur: {}, pattern: {}, marking: {}, kept }; }
-    const EDITED = new Set(["eyes", "fur", "pattern", "marking", "_help"]);
-
-    // ---------- maths (mirrors wcmods/palettes.apply_eyes) ----------
-    function eyeRamp(row, ov) {
-      const orig = EYE_LIN[row];
-      if (!ov) return orig;
-      if (ov.mode === "grad" && ov.colors.length > 1) {
-        const stops = ov.colors.map(color.hexToLinear), n = stops.length;
-        return orig.map((_, x) => {
-          const t = x / (W - 1) * (n - 1), i = Math.min(Math.floor(t), n - 2), f = t - i;
-          return [0, 1, 2].map(k => stops[i][k] + (stops[i + 1][k] - stops[i][k]) * f);
-        });
-      }
-      const target = color.hexToLinear(ov.colors[0]);
-      const lums = orig.map(color.luminance), peak = Math.max(...lums);
-      const ramp = lums[0] < 0.02 * Math.max(peak, 1e-6);
-      return orig.map((_, x) => { const s = ramp && peak > 0 ? lums[x] / peak : 1; return target.map(c => c * s); });
-    }
-    const vanillaRim = row => color.linearToHex(EYE_LIN[row][W - 1]);
-    function rampCss(ramp) {
-      const stops = [];
-      for (let k = 0; k <= 8; k++) { const x = Math.round(k * (W - 1) / 8); stops.push(`${color.linearToHex(ramp[x])} ${(k * 12.5).toFixed(1)}%`); }
-      return `linear-gradient(90deg, ${stops.join(", ")})`;
-    }
-    function eyeRow(key) {
-      const k = String(key).trim().toLowerCase();
-      const i = EYE_LABEL.findIndex(l => l.toLowerCase() === k);
-      if (i >= 0) return i;
-      const m = /^(?:row|iris)?(\d+)$/.exec(k);
-      return m && +m[1] < EYE_LABEL.length ? +m[1] : null;
-    }
-    function fromPalette(p, kept) {
-      const s = blank(kept);
-      if (!kept) for (const [k, v] of Object.entries(p || {})) if (!EDITED.has(k)) s.kept[k] = v;
-      for (const [key, val] of Object.entries((p && p.eyes) || {})) {
-        const row = eyeRow(key);
-        const colors = (Array.isArray(val) ? val : [val]).map(color.normHex);
-        if (row == null || colors.some(c => !c)) continue;
-        s.eyes[row] = { mode: colors.length > 1 ? "grad" : "single", colors };
-      }
-      for (const sec of ["fur", "pattern", "marking"]) {
-        for (const [key, val] of Object.entries((p && p[sec]) || {})) {
-          const i = Number(key), c = color.normHex(val);
-          if (Number.isInteger(i) && c) s[sec][i] = c;
-        }
-      }
-      return s;
-    }
-    function toPalette() {
-      const out = { _help: "Written by Clan Mod Studio. Eye keys are the game's slot names; coat/pattern/marking keys are slot numbers." };
-      const eyeKeys = Object.keys(state.eyes).map(Number).sort((a, b) => a - b);
-      if (eyeKeys.length) {
-        out.eyes = {};
-        for (const r of eyeKeys) { const ov = state.eyes[r]; out.eyes[EYE_LABEL[r]] = ov.mode === "grad" ? ov.colors.slice() : ov.colors[0]; }
-      }
-      for (const sec of ["fur", "pattern", "marking"]) {
-        const keys = Object.keys(state[sec]).map(Number).sort((a, b) => a - b);
-        if (keys.length) { out[sec] = {}; for (const i of keys) out[sec][String(i)] = state[sec][i]; }
-      }
-      return Object.assign(out, state.kept);
-    }
-    const curHex = (sec, i) => state[sec][i] || TABLE(sec)[i];
+    let state = P.blank();
+    let undo = null;   // { label, state }: the last whole-tab change, for its Undo button
+    const view = { tab: LABELS ? "eyes" : "pattern", fur: 2, pattern: 3, marking: 10, eyeL: 2, eyeR: 2, vanilla: false };
 
     // ---------- layout ----------
     const target = wc.modTarget({
       file: "palette.json",
-      onLoad: obj => { state = fromPalette(obj); renderAll(); loadOtherSlots().catch(() => {}); },
-      getValue: () => toPalette(),
+      onLoad: obj => { state = P.fromPalette(obj, { labels: LABELS, gameSlots: GAME }); undo = null; renderAll(); otherSlotsReady = loadOtherSlots(); },
+      getValue: () => P.toPalette(state, LABELS),
+      // Saved: the last whole-tab change can't be undone past it, and the page reads what it wrote as it reads any
+      // file (a save doesn't read the file back), so what Save left out leaves the lists. Not when something changed
+      // while it saved: that stays on the page, still to be saved.
+      onSaved: (saved, { changed }) => {
+        undo = null;
+        if (changed) { renderStyleRow(); return; }
+        state = P.fromPalette(saved, { labels: LABELS, gameSlots: GAME }); renderAll();
+      },
     });
-    const stage = el("div", { style: { background: "radial-gradient(120% 90% at 50% 30%, var(--stage), var(--stage-2))", borderRadius: "12px" } });
-    stage.innerHTML = CAT_SVG;
+    // A change on the page: unsaved now, and the list of what the page can't show redrawn when an entry there is
+    // now (or no longer) one the page's own takes the place of at Save.
+    let replacedSeen = "";
+    const edited = () => {
+      target.markDirty();
+      if (state.unread.length && replacedNow() !== replacedSeen) renderUnread();
+    };
+    const replacedNow = () => state.unread.map(u => (P.replaced(state, u) ? 1 : 0)).join("");
+    // curHex: the colour a slot shows with this palette: its own, else the game's, else another palette's new one.
+    const curHex = (sec, i) => state[sec][i] || TABLE(sec)[i] || otherHex(sec, i);
+
+    const stage = el("div", { class: "cat-stage" });
+    stage.innerHTML = catSvg("pal", "The drawn cat, in the colours chosen below");
     const svg = stage.querySelector("svg");
-    svg.style.width = "100%"; svg.style.height = "auto"; svg.style.display = "block";
     const picks = el("div", { style: { display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: "8px 12px", alignItems: "center" } });
-    const vanillaBox = el("input", { type: "checkbox", id: "pal-vanilla" });
-    vanillaBox.addEventListener("change", () => { view.vanilla = vanillaBox.checked; drawCat(); });
+    // Which colours the drawn cat shows: this palette's, or the game's own (to compare).
+    const shows = el("div", { class: "row", role: "group", "aria-label": "Cat shows" }, el("span", { class: "muted", text: "Cat shows:" }));
+    for (const [vanilla, text] of [[false, "my colours"], [true, "the game's"]]) {
+      shows.append(el("button", { class: "chip", type: "button", text, "aria-pressed": String(view.vanilla === vanilla), onclick: () => {
+        view.vanilla = vanilla;
+        shows.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.textContent === text)));
+        drawCat();
+      } }));
+    }
     const tabs = el("div", { class: "row", role: "tablist", "aria-label": "Palette sections" });
     const panel = el("div", { role: "tabpanel", id: "pal-panel", style: { display: "grid", gap: "16px" } });
-    const presetRow = el("div", { class: "row" });
-    const quick = el("div", { class: "card" });
+    const startRow = el("div", { class: "row pal-row" });
+    const styleRow = el("div", { class: "row pal-row" });
+    const tablesLine = el("p", { class: "note heads-up pal-tables", hidden: true });
+    const unreadBox = el("div", { hidden: true });
+    const strip = el("div", { class: "card pal-strip" });
+    // Switching between ready-made palettes: folded, and left open or folded as it was through a redraw.
+    const quick = el("details", { class: "card fold pal-quick" });
+    let quickOpen = false;
+    quick.addEventListener("toggle", () => { quickOpen = quick.open; });
 
     root.append(
-      el("div", { class: "section-head" },
-        el("span", { class: "eyebrow", text: "Appearance only" }),
-        el("h1", { text: "Palettes" }),
-        el("p", { class: "note", text: "A palette redraws a colour slot; your cat keeps the same slot, so traits and stats don't change. Eye colours work on their own; coat, pattern and marking colours, and the cat creator's eye buttons, need UE4SS." })),
-      ...(tablesRes.tables ? [] : [el("div", { class: "banner" }, el("strong", { text: "Coat colours not loaded yet" }),
-        el("span", { text: "Start the game once with UE4SS and the mods installed; its log provides the coat, pattern and marking colours." }))]),
-      quick, target.element, presetRow,
+      wc.pageHead({ eyebrow: "Appearance only", title: "Palettes",
+        lede: "Recolour the eyes, coats, patterns and markings every cat can wear, or add new pattern and marking colours. " +
+          "A cat keeps the colour it has (coat 3 stays coat 3), so its traits don't change. Eye colours go in through the " +
+          "game's files; the rest need the script loader.",
+        help: "help:palettes" }),
+      strip, quick, target.element, startRow, styleRow,
       el("div", { style: { display: "grid", gridTemplateColumns: "minmax(260px, 360px) minmax(0, 1fr)", gap: "24px", alignItems: "start" }, class: "pal-grid" },
-        el("div", { class: "card", style: { position: "sticky", top: "84px" } }, stage, picks,
-          el("label", { class: "row muted", for: "pal-vanilla" }, vanillaBox, "Show the game's original colours")),
-        el("div", { style: { display: "grid", gap: "12px", minWidth: "0" } }, tabs, panel)));
+        el("div", { class: "card", style: { position: "sticky", top: "84px" } }, stage, shows, picks,
+          el("p", { class: "note", text: "In the game, paws, ears, nose and whiskers follow the coat; this drawing can't show them, nor the game's real pattern shapes." })),
+        el("div", { style: { display: "grid", gap: "12px", minWidth: "0" } }, tabs, tablesLine, unreadBox, panel)));
     const narrow = window.matchMedia("(max-width: 900px)");
     const applyNarrow = () => { root.querySelector(".pal-grid").style.gridTemplateColumns = narrow.matches ? "minmax(0,1fr)" : "minmax(260px, 360px) minmax(0, 1fr)"; };
     narrow.addEventListener("change", applyNarrow); applyNarrow();
@@ -170,121 +109,253 @@ export default {
     // ---------- quick palettes ----------
     // Mods that hold only a palette work as presets: Apply turns the ticked ones on, the other
     // palette-only mods off, and installs. Mods with anything besides a palette aren't touched, and
-    // neither are palettes that only add new colour slots (cats may be wearing them).
-    let quickPick = null;   // ids ticked here; null means "start from what's on"
-    let quickData = [];     // [{mod, palette (null if its file can't be read)}]
-    async function renderQuick() {
+    // neither are palettes that only add new colours (cats may be wearing them).
+    let quickPick = null;     // ids ticked here; null means "start from what's on"
+    let quickData = [];       // [{mod, palette (null if its file can't be read)}]
+    let quickOn = new Map();  // each one's on or off when the list was last read
+    const quickButtons = el("div", { class: "row" });
+    // The list is read again after an Apply (fresh: the ticks start from what's on) and whenever a mod is made or
+    // changed (a Save to mod makes My mods, or turns its mod on): a palette switched on or off since the last read
+    // is ticked or unticked to match, and the creator's other ticks stay. One read after another, so an earlier one
+    // never draws over a later one.
+    let quickQueue = Promise.resolve();
+    const renderQuick = (fresh = false) => (quickQueue = quickQueue.catch(() => {}).then(() => readQuick(fresh)));
+    async function readQuick(fresh) {
       const list = (await api.get("/mods")).filter(m => m.preset);
       quickData = await Promise.all(list.map(async m => {
         try { return { mod: m, palette: JSON.parse((await api.get(`/mods/${encodeURIComponent(m.id)}/file/palette.json`)).text) || {} }; }
         catch (e) { return { mod: m, palette: null }; }
       }));
-      if (quickPick === null) quickPick = new Set(list.filter(m => m.enabled).map(m => m.id));
+      if (fresh || quickPick === null) quickPick = new Set(list.filter(m => m.enabled).map(m => m.id));
+      else {
+        for (const m of list) {
+          const was = quickOn.get(m.id);
+          if (m.enabled && was !== true) quickPick.add(m.id);
+          else if (!m.enabled && was === true) quickPick.delete(m.id);
+        }
+        for (const id of [...quickPick]) if (!list.some(m => m.id === id)) quickPick.delete(id);   // not a quick palette now
+      }
+      quickOn = new Map(list.map(m => [m.id, m.enabled]));
       drawQuick();
     }
+    // Apply: unsaved colours on this page go in too, saved first (nothing is installed if that fails). The palette
+    // just saved is ticked, whatever the list said before: Apply turns an unticked quick palette off, and with it
+    // the colours just saved (a first Save makes My mods, which the list hadn't got).
+    async function applyQuick() {
+      if (target.dirty) {
+        const before = new Set(quickPick || []);
+        if (!await target.save()) return;
+        await renderQuick();
+        const saved = quickData.find(d => d.mod.id === target.current && d.palette !== null);
+        if (saved && !before.has(saved.mod.id)) {
+          quickPick.add(saved.mod.id);
+          drawQuick();
+          toast(`Ticked ${saved.mod.name} too, so the colours you just saved go in.`);
+        }
+      }
+      wc.bus.emit("run-task", { path: "/palettes/apply", title: "Apply palettes", body: { ids: [...(quickPick || [])], install: true } });
+    }
+    // Why Apply waits, in the shell's words (app.js greys its own Apply for the same reasons).
+    const applyWait = () => (!info ? "" : !info.game_dir ? "Find the game first: Get set up, on the Mods page"
+      : info.game_running ? "Close the game first" : "");
+    async function readInfo() {
+      try { info = await api.get("/info"); } catch (e) { /* keep the last answer */ }
+      drawQuickButtons();
+      renderStrip();
+    }
+
+    // ---------- what reaches the game ----------
+    // Each kind of colour and what it needs: eyes go in through the game's files; coat, pattern and marking colours
+    // through the script loader; new colours and coat presets reach the cat maker only with the Creator palettes mod
+    // (which runs code). Read again after an Apply, a change to the mods, and on coming back to the window.
+    const CREATOR = { id: "creator-palettes", url: "https://github.com/HexOffender/wcmods-creator-palettes" };
+    async function renderStrip() {
+      let mods = [];
+      try { mods = await api.get("/mods"); } catch (e) { /* the bar says what's wrong */ }
+      const creator = mods.find(m => m.id === CREATOR.id);
+      const link = () => el("a", { href: CREATOR.url, target: "_blank", rel: "noopener", text: "the Creator palettes mod" });
+      const line = (what, ready, ...said) => el("li", { class: "row" },
+        el("span", { class: `chip ${ready ? "good" : "warn"}`, "data-said": ready ? "ready" : "not yet" },
+          el("i", { "aria-hidden": "true" }), ready ? "ready" : "not yet"),
+        el("strong", { text: what }), el("span", { class: "muted" }, ...said));
+      const loader = !!(info && info.ue4ss), code = !!(info && info.allow_code_mods);
+      const built = info && info.installed && info.installed.built;
+      // Eye colours go into the game's own eye picture, which Apply reads from the game's files, as this page does.
+      const found = !!(info && info.game_dir);
+      put(strip, el("h2", { text: "What reaches the game" }),
+        el("ul", { class: "pal-strip-lines" },
+          line("Eye colours", found && !!eyes, found && eyes ? "through the game's own files"
+            : !found ? "need the game: Get set up, on the Mods page, finds it"
+            : "the game's eye colours can't be read just now (is Steam updating the game?): open this page again in a moment"),
+          line("Coat, pattern and marking colours", loader,
+            loader ? "through the script loader" : "need the script loader: Get set up, on the Mods page, installs it"),
+          line("New colours and coat presets in the cat maker", !!(creator && creator.enabled && loader && code),
+            ...(!creator ? ["need ", link(), ", added on the Mods page"]
+              : !creator.enabled ? ["Creator palettes is in your mods but off: switch it on, on the Mods page"]
+              : !code ? ["Creator palettes is on, but mods that run code aren't allowed (Settings and repair)"]
+              : !loader ? ["Creator palettes needs the script loader too"]
+              : ["with Creator palettes"]))),
+        el("p", { class: "note", text: built ? `Your mods last went in the game ${new Date(built).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.`
+          : "Nothing has gone in the game yet: Apply to game, at the top, puts your mods in." }));
+    }
+    function drawQuickButtons() {
+      const n = quickPick ? quickPick.size : 0, why = applyWait();
+      put(quickButtons,
+        el("button", { class: "btn primary", text: n ? `Apply ${n} and install` : "Use the game's colours and install", disabled: !!why,
+          title: why || "Turns the ticked palettes on and the other palette-only mods off, then puts them in the game", onclick: applyQuick }),
+        el("button", { class: "btn ghost", text: "Untick all", onclick: () => { quickPick?.clear(); drawQuick(); } }),
+        why ? el("span", { class: "muted", text: why }) : null);
+    }
+    const whose = name => (/s$/i.test(name) ? `${name}'` : `${name}'s`);   // "Gem eyes' colours", "Forest's colours"
     function drawQuick() {
+      if (quickPick === null) return;   // not read yet
       const dot = (hex, round) => el("span", { class: "swatch", title: hex, style: { display: "inline-block", width: "13px", height: "13px",
         background: hex, borderRadius: round ? "50%" : "3px", boxShadow: "inset 0 0 0 1px rgba(0,0,0,.18)" } });
       const eyeRim = (p, r) => {
-        const v = p.eyes && Object.entries(p.eyes).find(([k]) => eyeRow(k) === r)?.[1];
-        return color.normHex(Array.isArray(v) ? v[v.length - 1] : v) || vanillaRim(r);
+        const v = p.eyes && LABELS && Object.entries(p.eyes).find(([k]) => P.eyeRow(LABELS, k) === r)?.[1];
+        return color.parse(Array.isArray(v) && v.length && typeof v[0] !== "number" ? v[v.length - 1] : v) || vanillaRim(r);
       };
       const tiles = quickData.map(({ mod: m, palette: p }) => {
         const broken = p === null;
         if (broken) quickPick.delete(m.id);
         const box = el("input", { type: "checkbox", id: `quick-${m.id}`, checked: quickPick.has(m.id), disabled: broken });
-        box.addEventListener("change", () => { if (box.checked) quickPick.add(m.id); else quickPick.delete(m.id); renderQuickButtons(); });
-        const swatches = broken ? [el("span", { class: "chip warn", text: "palette.json can't be read; fix it on the Mods page or in the file" })] : [
-          el("div", { style: { display: "flex", gap: "2px", flexWrap: "wrap" }, title: "Coats 0-14" },
-            ...[...Array(15).keys()].map(s => dot(color.normHex(p.fur?.[String(s)]) || TABLE("fur")[s] || "#888888"))),
-          el("div", { style: { display: "flex", gap: "2px", flexWrap: "wrap" }, title: "Eyes" }, ...STD.map(r => dot(eyeRim(p, r), true)))];
+        box.addEventListener("change", () => { if (box.checked) quickPick.add(m.id); else quickPick.delete(m.id); drawQuick(); });
+        const swatches = broken ? [el("span", { class: "chip warn", text: "Its palette can't be read: the Mods page says why" })] : [
+          el("div", { class: "row pal-dots", title: "Coats 0-14" }, el("span", { class: "muted", text: "coats" }),
+            ...[...Array(15).keys()].map(s => dot(color.parse(p.fur?.[String(s)]) || TABLE("fur")[s] || "#888888"))),
+          LABELS ? el("div", { class: "row pal-dots", title: "Eyes" }, el("span", { class: "muted", text: "eyes" }),
+            ...GROUPS.standard.map(r => dot(eyeRim(p, r), true))) : null];
         return el("label", { for: `quick-${m.id}`, style: { display: "grid", gap: "6px", padding: "10px 12px", borderRadius: "10px",
             border: "1px solid var(--line, rgba(0,0,0,.12))", cursor: broken ? "default" : "pointer" } },
           el("div", { class: "row" }, box, el("strong", { text: m.name }),
             m.enabled ? el("span", { class: "chip", text: "on" }) : null),
           el("span", { class: "muted", style: { fontSize: "0.8rem" }, text: m.description || m.id }), ...swatches);
       });
-      const buttons = el("div", { class: "row" });
-      function renderQuickButtons() {
-        const n = quickPick.size;
-        clear(buttons).append(
-          el("button", { class: "btn primary", text: n ? `Apply ${n} and install` : "Use the game's colours and install", onclick: () =>
-            wc.bus.emit("run-task", { path: "/palettes/apply", title: "Apply palettes", body: { ids: [...quickPick], install: true } }) }),
-          el("button", { class: "btn ghost", text: "Untick all", onclick: () => { quickPick.clear(); drawQuick(); } }),
-          el("span", { class: "muted", text: "Close the game first." }));
+      drawQuickButtons();
+      // Ticked palettes that change the same colours: the later one in the Mods list wins each of them. One line for
+      // each palette that wins the same colours over several.
+      const overlaps = [];
+      for (const o of P.overlaps(quickData.filter(d => d.palette && quickPick.has(d.mod.id)).map(d => ({ name: d.mod.name, palette: d.palette })), LABELS)) {
+        const same = overlaps.find(x => x.later === o.later && x.what === o.what && x.onTop === o.onTop);
+        if (same) same.under.push(o.earlier); else overlaps.push({ ...o, under: [o.earlier] });
       }
-      renderQuickButtons();
-      clear(quick).append(el("h2", { text: "Quick palettes" }),
-        el("p", { class: "note", text: "Tick the palettes to use and apply them: it turns those on, turns the other palette mods off, and installs. " +
-          "Pick one full theme; eyes-only or coats-only palettes (Gemstone Eyes, Richer Coats, StarClan Glow Eyes) go on top of it. To change one, pick it under Editing mod below." }),
+      const and = names => (names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0]);
+      put(quick, el("summary", {}, el("h2", { text: "Switch between ready-made palettes" }),
+          el("span", { class: "muted", text: quickData.length ? `${quickData.length} palette mod${quickData.length === 1 ? "" : "s"}` : "none yet" })),
+        el("p", { class: "note", text: "Tick the palettes to use, then Apply: it switches the ticked ones on and the other palettes that hold nothing else off, and puts them in the game. Mods with more than a palette in them, and palettes that only add new colours, aren't touched." }),
+        el("p", { class: "note", text: "Pick one full theme; a palette that changes only the eyes or only the coats goes on top of it when it's later in the Mods list. To change one, choose it under Editing mod below." }),
         tiles.length ? null : el("p", { class: "empty", text: "No palette mods yet. Ten themed palettes, and palettes for eyes and coats, are in wcmods-examples (Add a mod, on the Mods page, says where)." }),
         el("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: "10px" } }, ...tiles),
-        buttons);
+        // A partial palette over a full theme is what the note above suggests: said, but not as a problem.
+        ...overlaps.map(o => (o.onTop
+          ? el("p", { class: "note pal-overlap", text: `${o.later} goes on top of ${and(o.under)}: for ${o.what}, ${whose(o.later)} colours show, as it's later in the Mods list.` })
+          : el("p", { class: "note heads-up pal-overlap", role: "status",
+            text: `${and([o.later, ...o.under])} ${o.under.length > 1 ? "all" : "both"} change ${o.what}: ${whose(o.later)} colours show there, as it's later in the Mods list. Untick ${o.under.length > 1 ? "all but one" : "one"}.` }))),
+        quickButtons);
+      quick.open = quickOpen;
     }
-    const offInstalled = wc.bus.on("installed", () => { quickPick = null; renderQuick(); target.refresh(); });
+
+    // ---------- Start from, Restyle this tab, Undo ----------
+    // A whole-tab change replaces the page's state; the one before is kept for Undo until the next save or mod switch.
+    function wholeTab(label, next) {
+      undo = { label, state };
+      state = next;
+      edited();
+      renderAll();
+    }
     async function renderPresets() {
-      const mods = await api.get("/mods");
-      clear(presetRow).append(el("span", { class: "eyebrow", text: "Start from" }),
-        el("button", { class: "chip", text: "Game colours", onclick: () => { state = blank(state.kept); target.markDirty(); renderAll(); } }));
-      for (const m of mods.filter(m => m.kinds.includes("palette") && m.id !== target.current)) {
-        presetRow.append(el("button", { class: "chip", text: m.name, title: `Copy ${m.id}'s palette here`, onclick: async () => {
-          const r = await api.get(`/mods/${encodeURIComponent(m.id)}/file/palette.json`);
-          try { state = fromPalette(JSON.parse(r.text), state.kept); target.markDirty(); renderAll(); toast(`Copied ${m.name}`); } catch (e) { toast(e.message, "bad"); }
-        } }));
-      }
-      presetRow.append(el("span", { class: "eyebrow", style: { marginLeft: "12px" }, text: "Restyle this tab" }),
-        ...Object.entries(color.MOODS).map(([k, m]) => el("button", { class: "chip", text: m.name, onclick: () => applyMood(k) })),
-        el("button", { class: "btn ghost small", text: "Reset tab", onclick: () => { state[view.tab] = {}; target.markDirty(); renderAll(); } }));
+      let mods = [];
+      try { mods = await api.get("/mods"); } catch (e) { /* the bar says what's wrong */ }
+      put(startRow, el("span", { class: "eyebrow", text: "Start from" }),
+        el("button", { class: "chip", "data-focus": "pal:from:game", text: "Game colours",
+          title: "Every change to the game's own colours and eyes goes; your new colours stay",
+          onclick: () => {
+            const eyesOutOfSight = !LABELS && state.kept.eyes !== undefined;
+            wholeTab("Game colours", P.gameColours(state, GAME));
+            if (eyesOutOfSight) toast("The file's eye colours went too, though this page can't show them until it finds the game's. Undo puts them back.");
+          } }),
+        ...mods.filter(m => m.kinds.includes("palette") && m.id !== target.current).map(m => el("button", {
+          class: "chip", "data-focus": `pal:from:${m.id}`, text: m.name,
+          title: `${m.name}'s eyes and its changes to the game's colours; your new colours stay`, onclick: async () => {
+            let other;
+            try { other = JSON.parse((await api.get(`/mods/${encodeURIComponent(m.id)}/file/palette.json`)).text); }
+            catch (e) { toast(`${m.name}'s palette can't be read: the Mods page says why`, "bad"); return; }
+            wholeTab(`Start from ${m.name}`, P.startFrom(state, other, { labels: LABELS, gameSlots: GAME }));
+            toast(`Copied ${m.name}'s colours. Undo puts yours back.`);
+          } })));
     }
-    function applyMood(key) {
-      if (view.tab === "eyes") for (const r of STD) state.eyes[r] = { mode: "single", colors: [color.mood(vanillaRim(r), key)] };
-      else TABLE(view.tab).forEach((h, i) => { state[view.tab][i] = color.mood(h, key); });
-      target.markDirty(); renderAll();
+    function renderStyleRow() {
+      const sec = SECTIONS.find(s => s.id === view.tab);
+      const can = sec.id === "eyes" ? !!LABELS : TABLE(sec.id).length > 0;
+      const wait = sec.id === "eyes" ? "Needs the game's eye colours" : "Needs the game's colours: press Play once, then come back";
+      put(styleRow, el("span", { class: "eyebrow", text: "Restyle this tab" }),
+        ...Object.entries(color.MOODS).map(([k, m]) => el("button", { class: "chip", "data-focus": `pal:mood:${k}`, text: m.name, disabled: !can,
+          title: !can ? wait : sec.id === "eyes" ? `${m.name} on every eye colour, extra eyes too; the eye white stays`
+            : `${m.name} on the game's ${TABLE(sec.id).length} ${sec.noun} colours; your new colours stay`,
+          onclick: () => wholeTab(m.name, P.restyle(state, sec.id, k, { eyeRims: LABELS ? LABELS.map((_, r) => vanillaRim(r)) : [], table: TABLE(sec.id) })) })),
+        el("button", { class: "btn ghost small", "data-focus": "pal:reset", text: "Reset tab",
+          title: sec.id === "eyes" ? "Every eye back to the game's" : `The game's ${sec.noun} colours back as they were; your new colours stay`,
+          onclick: () => wholeTab(`Reset ${sec.title}`, P.resetTab(state, sec.id, GAME)) }),
+        undo ? el("button", { class: "btn small", "data-focus": "pal:undo", text: `Undo ${undo.label}`, onclick: () => {
+          state = undo.state; undo = null; edited(); renderAll(); toast("Put back as it was");
+        } }) : null);
+    }
+
+    // ---------- what the page can't show ----------
+    let unreadOpen = false;   // the list stays open (or folded) through a redraw, as it was left
+    function renderUnread() {
+      replacedSeen = replacedNow();
+      clear(unreadBox);
+      const n = state.unread.length;
+      unreadBox.hidden = !n;
+      if (!n) return;
+      const box = el("details", { class: "card fold pal-unread", open: unreadOpen },
+        el("summary", {}, el("strong", { text: `${n} ${n === 1 ? "entry" : "entries"} this page can't show` }),
+          el("span", { class: "muted", text: "kept in the file as written until you remove them" })),
+        el("ul", { class: "notes" }, ...state.unread.map((u, i) => el("li", { class: "row" },
+          el("span", { text: P.describeUnread(u, state) }),
+          el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove ${P.describeUnread(u)}`,
+            onclick: () => { state.unread.splice(i, 1); edited(); renderUnread(); } })))));
+      box.addEventListener("toggle", () => { unreadOpen = box.open; });
+      unreadBox.append(box);
     }
 
     // ---------- cat ----------
-    function setIris(id, row) {
-      const g = svg.querySelector("#" + id);
-      const ramp = eyeRamp(row, view.vanilla ? null : state.eyes[row]);
-      g.textContent = "";
-      for (let k = 0; k <= 8; k++) {
-        const st = document.createElementNS("http://www.w3.org/2000/svg", "stop");
-        st.setAttribute("offset", `${18 + k * 10.25}%`);
-        st.setAttribute("stop-color", color.linearToHex(ramp[Math.round(k * (W - 1) / 8)]));
-        g.append(st);
-      }
-    }
     function drawCat() {
-      const pick = sec => (view.vanilla ? TABLE(sec)[view[sec]] : curHex(sec, view[sec])) || "#9a8f84";
-      const coat = pick("fur"), pat = pick("pattern"), mark = pick("marking"), outline = color.shade(coat, 0.55);
-      const scl = view.vanilla || !state.eyes[0] ? vanillaRim(0) : color.linearToHex(eyeRamp(0, state.eyes[0])[W - 1]);
-      svg.querySelectorAll('[data-part="coat"]').forEach(n => { n.setAttribute("fill", coat); n.setAttribute("stroke", outline); });
-      svg.querySelector('[data-part="pattern"]').setAttribute("stroke", pat);
-      svg.querySelector('[data-part="marking"]').setAttribute("fill", mark);
-      svg.querySelectorAll('[data-part="sclera"]').forEach(n => n.setAttribute("fill", scl));
-      svg.querySelectorAll('[data-part="lid"], [data-part="mouth"]').forEach(n => n.setAttribute("stroke", outline));
-      svg.querySelector('[data-part="whiskers"]').setAttribute("stroke", mark);
-      setIris("irisL", view.eyeL); setIris("irisR", view.eyeR);
+      const pick = sec => (view.vanilla ? TABLE(sec)[view[sec]] : curHex(sec, view[sec])) || NEUTRAL;
+      const eye = row => P.eyeRamp(origRow(row), view.vanilla ? null : state.eyes[row]);
+      paintCat(svg, { coat: pick("fur"), pattern: pick("pattern"), marking: pick("marking"), eyeWhite: rimOf(eye(0)),
+        rightEye: eye(view.eyeR), leftEye: eye(view.eyeL) });
     }
     function renderPicks() {
       clear(picks);
       const sel = (id, label, options, key) => {
         const s = el("select", { id }, ...options.map(([v, t]) => el("option", { value: v, text: t })));
+        if (!options.some(([v]) => Number(v) === view[key])) view[key] = Number(options[0]?.[0] ?? 0);
         s.value = view[key];
         s.addEventListener("change", () => { view[key] = Number(s.value); drawCat(); refreshCards(); });
         picks.append(el("label", { for: id, text: label }), s);
       };
-      for (const [sec, label] of [["fur", "Coat"], ["pattern", "Pattern"], ["marking", "Markings"]]) {
-        sel(`pal-pick-${sec}`, label, TABLE(sec).map((_, i) => [i, `${i} · ${curHex(sec, i)}${state[sec][i] ? " (changed)" : ""}`]), sec);
+      for (const sec of SECTIONS.slice(1)) {
+        const n = TABLE(sec.id).length || GAME;
+        // The game's colours, then this palette's new ones, then those other palettes that are on add.
+        const own = Object.keys(state[sec.id]).map(Number).filter(i => i >= GAME).sort((a, b) => a - b);
+        const theirs = sec.id === "fur" ? [] : (slotsElsewhere[sec.id] || []).filter(o => !own.includes(o.slot)).sort((a, b) => a.slot - b.slot);
+        sel(`pal-pick-${sec.id}`, sec.title, [
+          ...[...Array(n).keys()].map(i => [i, `${i} · ${curHex(sec.id, i) || "the game's"}${state[sec.id][i] ? " (changed)" : ""}`]),
+          ...own.map(i => [i, `${i} (new) · ${state[sec.id][i]}`]),
+          ...theirs.map(o => [o.slot, `${o.slot} (new, from ${o.name}) · ${o.hex}`])], sec.id);
       }
-      const eyeOpts = EYE_LABEL.slice(1).map((l, i) => [i + 1, `${l}${state.eyes[i + 1] ? " (changed)" : ""}`]);
-      sel("pal-pick-eyeL", "Left eye", eyeOpts, "eyeL");
-      sel("pal-pick-eyeR", "Right eye", eyeOpts, "eyeR");
+      if (LABELS) {
+        const eyeOpts = LABELS.slice(1).map((l, i) => [i + 1, `${eyeName(i + 1)}${GROUPS.extra.includes(i + 1) ? " (from a game add-on)" : ""}${state.eyes[i + 1] ? " (changed)" : ""}`]);
+        sel("pal-pick-eyeL", "Left eye", eyeOpts, "eyeL");
+        sel("pal-pick-eyeR", "Right eye", eyeOpts, "eyeR");
+      }
     }
 
     // ---------- tabs ----------
     // The arrow keys (and Home, End) move between the tabs; Tab goes on into the open one.
-    function pickTab(id) { view.tab = id; renderTabs(); renderPanel(); }
+    function pickTab(id) { view.tab = id; renderTabs(); renderPanel(); renderStyleRow(); }
     tabs.addEventListener("keydown", e => {
       const i = SECTIONS.findIndex(s => s.id === view.tab);
       const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: SECTIONS.length - 1 }[e.key];
@@ -303,78 +374,156 @@ export default {
           s.title, n ? el("span", { class: "mono", style: { color: "var(--changed)" }, text: ` ${n}` }, el("span", { class: "sr-only", text: " changed" })) : null));
       }
       panel.setAttribute("aria-labelledby", `pal-tab-${view.tab}`);
+      // Until the game has run with the script loader, its coat, pattern and marking colours aren't known here.
+      const waiting = view.tab !== "eyes" && !TABLE(view.tab).length;
+      tablesLine.hidden = !waiting;
+      tablesLine.textContent = !waiting ? "" : info && !info.ue4ss
+        ? "The game's own colours show here once the game has run with the script loader: Get set up, on the Mods page, installs it; then press Play once and come back. Until then each colour is a numbered card that still takes a colour of yours."
+        : "Press Play once, then come back: the game's own colours show here. Until then each colour is a numbered card that still takes a colour of yours.";
     }
     const grid = cards => el("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "10px" } }, ...cards);
     const group = (title, sub, cards) => el("div", { style: { display: "grid", gap: "8px" } },
       el("h3", {}, title, el("span", { class: "eyebrow", style: { marginLeft: "8px" }, text: sub })), grid(cards));
+    const range = (from, to) => [...Array(Math.max(0, to - from)).keys()].map(i => i + from);
+    let addBtn = null;
     function renderPanel() {
       clear(panel);
+      addBtn = null;
       if (view.tab === "eyes") {
-        panel.append(el("p", { class: "note", text: "Strips run from the pupil (left) to the rim (right). One colour keeps the game's shading; a gradient spreads your colours across the iris. Some of the game's names don't match the colour, so go by the strip." }),
-          group("Standard eyes", "20 slots", STD.map(eyeCard)), group("Eye white", "sclera", [eyeCard(0)]), group("DLC eyes", "5 slots", DLC.map(eyeCard)));
-      } else {
-        const sec = SECTIONS.find(s => s.id === view.tab);
-        const n = TABLE(sec.id).length;
-        if (!n) { panel.append(el("p", { class: "empty", text: "These colours load from the game's log once UE4SS has run." })); return; }
-        panel.append(group("Natural", "slots 0-14", [...Array(Math.min(15, n)).keys()].map(i => tableCard(sec, i))));
-        if (n > 15) panel.append(group("Extras", `slots 15-${n - 1}`, [...Array(n - 15).keys()].map(i => tableCard(sec, i + 15))));
-        if (sec.id === "fur") {
-          panel.append(el("p", { class: "note", text: "Coats can't take new slots: the game pairs each coat with paw, ear and nose colours of its own. To give just your cat a new coat colour, use the Your cat page." }));
+        if (!LABELS) {
+          panel.append(el("p", { class: "empty", text: !info || !info.game_dir
+            ? "Find the game first: Get set up, on the Mods page, asks where it is. The Coat, Pattern and Markings tabs work without it."
+            : "The game's eye colours can't be read just now (is Steam updating the game?). The other tabs still work; open this page again in a moment." }));
           return;
         }
-        // New slots past the game's: only cats set to them wear them (Your cat page), so the game's colours stay.
-        const extra = Object.keys(state[sec.id]).map(Number).filter(i => i >= n).sort((a, b) => a - b);
-        const add = el("button", { class: "btn small", text: `Add a new ${sec.noun.toLowerCase()} colour`, onclick: () => {
-          const next = Math.max(n, ...extra.map(i => i + 1), ...otherSlots(sec.id).map(i => i + 1));
-          state[sec.id][next] = TABLE(sec.id)[next % n] || "#888888";
-          target.markDirty(); renderPanel(); renderTabs(); renderPicks();
+        put(panel, el("p", { class: "note", text: "Strips run from the pupil (left) to the rim (right). One colour keeps the game's shading; a gradient spreads your colours across the iris. Some of the game's names don't match the colour, so go by the strip." }),
+          group("Standard eyes", `${GROUPS.standard.length} colours`, GROUPS.standard.map(eyeCard)),
+          group("Eye white", "behind every iris", GROUPS.white.map(eyeCard)),
+          GROUPS.extra.length ? group("Extra eyes", "from a game add-on", GROUPS.extra.map(eyeCard)) : null);
+        return;
+      }
+      const sec = SECTIONS.find(s => s.id === view.tab);
+      const n = TABLE(sec.id).length || GAME;
+      panel.append(group("Natural", `colours 0-${Math.min(15, n) - 1}`, range(0, Math.min(15, n)).map(i => tableCard(sec, i))));
+      if (n > 15) panel.append(group("Bright extras", `colours 15-${n - 1}`, range(15, n).map(i => tableCard(sec, i))));
+      if (sec.id === "fur") {
+        panel.append(el("p", { class: "note", text: "Coats can't take new colours: the game pairs each coat with paw, ear and nose colours of its own. To give just your cat a coat colour of its own, use the Your cat page." }));
+        return;
+      }
+      // New colours past the game's: only cats set to them wear them (the Your cat page), so the game's colours stay.
+      const extra = Object.keys(state[sec.id]).map(Number).filter(i => i >= GAME).sort((a, b) => a - b);
+      addBtn = el("button", { class: "btn small", id: `pal-add-${sec.id}`, text: `Add a new ${sec.noun} colour`,
+        disabled: !othersRead, title: othersRead ? "" : "Checking the other palettes…", onclick: async () => {
+          await otherSlotsReady;   // a number another palette already adds is never taken
+          const next = P.nextSlot(Object.keys(state[sec.id]).map(Number), (slotsElsewhere[sec.id] || []).map(o => o.slot), GAME);
+          state[sec.id][next] = TABLE(sec.id)[next % n] || curHex(sec.id, view[sec.id]) || "#888888";
+          view[sec.id] = next;
+          edited(); renderPanel(); renderTabs(); renderPicks(); drawCat();
+          document.getElementById(`pal-${sec.id}-${next}`)?.focus();
         } });
-        panel.append(el("div", { style: { display: "grid", gap: "8px" } },
-          el("h3", {}, "New colours", el("span", { class: "eyebrow", style: { marginLeft: "8px" }, text: `slot ${n} and up` })),
-          el("p", { class: "note", text: "Adds colours without changing any of the game's, so other cats keep theirs. Pick one for your cat on the Your cat page. Each new colour keeps its slot number, so your cat keeps it whatever else you turn on." }),
-          extra.length ? grid(extra.map(i => tableCard(sec, i))) : null, el("div", { class: "row" }, add)));
-      }
+      panel.append(el("div", { style: { display: "grid", gap: "8px" } },
+        el("h3", {}, "New colours", el("span", { class: "eyebrow", style: { marginLeft: "8px" }, text: `colour ${GAME} and up` })),
+        el("p", { class: "note", text: `Adds ${sec.noun} colours without changing any of the game's, so other cats keep theirs. Each new colour keeps its number for good, so a cat set to it keeps it whatever else you turn on. Pick one for your cat on the Your cat page, or in the cat maker with the Creator palettes mod.` }),
+        extra.length ? grid(extra.map(i => tableCard(sec, i))) : null, el("div", { class: "row" }, addBtn)));
     }
-    // Slots past the game's that other palette mods already add, so a new one here doesn't clash.
-    let slotsElsewhere = {};
+    // New colours other palettes that are on already add, so a new one here doesn't take their number.
+    let slotsElsewhere = {}, othersRead = false, otherSlotsReady = Promise.resolve();
     async function loadOtherSlots() {
-      slotsElsewhere = {};
-      for (const m of await api.get("/mods")) {
-        if (m.id === target.current || !m.kinds.includes("palette")) continue;
-        try {
-          const p = JSON.parse((await api.get(`/mods/${encodeURIComponent(m.id)}/file/palette.json`)).text) || {};
-          for (const sec of ["pattern", "marking"]) for (const k of Object.keys(p[sec] || {})) (slotsElsewhere[sec] ||= []).push(Number(k));
-        } catch (e) { /* unreadable palette: nothing to avoid */ }
-      }
+      othersRead = false;
+      if (addBtn) { addBtn.disabled = true; addBtn.title = "Checking the other palettes…"; }
+      const found = {};
+      try {
+        for (const m of await api.get("/mods")) {
+          if (m.id === target.current || !m.kinds.includes("palette") || !m.enabled) continue;
+          try {
+            const p = JSON.parse((await api.get(`/mods/${encodeURIComponent(m.id)}/file/palette.json`)).text) || {};
+            for (const sec of P.GROWABLE) {
+              for (const [k, v] of Object.entries(p[sec] || {})) {
+                if (/^[0-9]+$/.test(k) && Number(k) >= GAME) (found[sec] ||= []).push({ slot: Number(k), hex: color.parse(v) || "#888888", name: m.name });
+              }
+            }
+          } catch (e) { /* a palette that can't be read: nothing to avoid */ }
+        }
+      } catch (e) { /* no mod list: the bar says what's wrong */ }
+      slotsElsewhere = found;
+      othersRead = true;
+      if (addBtn) { addBtn.disabled = false; addBtn.title = ""; }
+      renderPicks();
     }
-    const otherSlots = sec => (slotsElsewhere[sec] || []).filter(i => i >= TABLE(sec).length);
+    const otherHex = (sec, i) => (slotsElsewhere[sec] || []).find(o => o.slot === i)?.hex;
     const cardBox = () => el("div", { class: "card", style: { padding: "10px", gap: "8px" } });
+    // A colour's code as text, beside its picker: it shows the colour now, takes any colour a palette.json may
+    // hold, any colour name a web page knows ("rebeccapurple", "peachpuff") and three numbers, "255, 136, 0" or
+    // "[255, 136, 0]", on Enter or when it's left, and selects itself when clicked, ready to copy. What it takes is
+    // written as a #RRGGBB code. sync() shows the colour again (not while it's being typed in).
+    function codeBox(label, current, take) {
+      const box = el("input", { type: "text", class: "code-box", spellcheck: "false", autocomplete: "off", size: "9", "aria-label": label });
+      box.addEventListener("focus", () => box.select());
+      const commit = () => {
+        const text = box.value.trim();
+        if (text === (current() || "")) return;   // nothing new (Enter, then leaving the box)
+        const nums = /^\[?\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]?$/.exec(text);
+        const c = nums ? color.parse(nums.slice(1).map(Number)) : color.parse(text) || cssColour(text);
+        if (!c) {
+          toast(`"${text}" isn't a colour: try a code like #FF8800, or a name like orange`, "bad");
+          box.value = current() || "";
+          return;
+        }
+        take(c);
+        box.value = c;
+      };
+      box.addEventListener("change", commit);
+      box.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); commit(); } });
+      box.sync = () => { if (document.activeElement !== box) box.value = current() || ""; };
+      return box;
+    }
+    // Any colour a web page knows, by the browser's own reading of it ("peachpuff", "rgb(10 20 30)"), as #RRGGBB; null
+    // for one it doesn't, and for one it can see through (the files' colours have no see-through part).
+    const probe = document.createElement("canvas").getContext("2d");
+    function cssColour(text) {
+      if (!probe || !text || /^(currentcolor|inherit|initial|unset|revert)$/i.test(text)) return null;
+      const read = start => { probe.fillStyle = start; probe.fillStyle = text; return probe.fillStyle; };
+      const a = read("#000000"), b = read("#ffffff");   // a colour it can't read leaves the one before
+      return a === b && /^#[0-9a-f]{6}$/i.test(a) ? a.toUpperCase() : null;
+    }
     function tableCard(sec, i) {
-      const isNew = i >= TABLE(sec.id).length;
-      const orig = isNew ? (state[sec.id][i] || "#888888") : TABLE(sec.id)[i];
+      const isNew = i >= GAME;
+      const orig = isNew ? null : TABLE(sec.id)[i] || null;   // the game's colour, once it's known
       const card = cardBox();
-      const newSw = el("span", { style: { background: orig } });
+      const newSw = el("span", {});
+      const before = el("span", orig ? { style: { background: orig } }
+        : { class: "pal-unknown", title: isNew ? "A new colour" : "The game's colour shows after one Play" });
       const pair = el("button", { class: "btn swatch", style: { padding: "0", height: "38px", display: "grid", gridTemplateColumns: "1fr 1fr", overflow: "hidden" },
-        "aria-label": `Show ${sec.noun.toLowerCase()} slot ${i} on the cat`, onclick: () => { view[sec.id] = i; renderPicks(); drawCat(); refreshCards(); } },
-        el("span", { style: { background: orig } }), newSw);
-      const name = el("strong"), hex = el("span", { class: "hex muted" });
-      const inp = el("input", { type: "color", id: `pal-${sec.id}-${i}`, "aria-label": `New colour for ${sec.noun.toLowerCase()} slot ${i}` });
-      inp.addEventListener("input", () => { state[sec.id][i] = color.normHex(inp.value); target.markDirty(); card._update(); drawCat(); });
+        "aria-label": `Show ${sec.noun} colour ${i} on the cat`, onclick: () => { view[sec.id] = i; renderPicks(); drawCat(); refreshCards(); } },
+        before, newSw);
+      const name = el("strong");
+      const inp = el("input", { type: "color", id: `pal-${sec.id}-${i}`, "aria-label": `New colour for ${sec.noun} colour ${i}` });
+      inp.addEventListener("input", () => { state[sec.id][i] = color.normHex(inp.value); edited(); card._update(); drawCat(); });
       inp.addEventListener("change", () => { renderTabs(); renderPicks(); });
-      const reset = el("button", { class: "btn ghost small", text: isNew ? "Remove" : "Reset", "aria-label": `${isNew ? "Remove" : "Reset"} ${sec.noun.toLowerCase()} slot ${i}`, onclick: () => {
+      const code = codeBox(`Colour code for ${sec.noun} colour ${i}`, () => curHex(sec.id, i),
+        c => { state[sec.id][i] = c; edited(); card._update(); drawCat(); renderTabs(); renderPicks(); });
+      const reset = el("button", { class: "btn ghost small", text: isNew ? "Remove" : "Reset", "aria-label": `${isNew ? "Remove" : "Reset"} ${sec.noun} colour ${i}`, onclick: () => {
         delete state[sec.id][i];
-        target.markDirty();
-        if (isNew) { if (view[sec.id] === i) view[sec.id] = 0; renderPanel(); renderTabs(); renderPicks(); drawCat(); return; }
+        edited();
+        if (isNew) {
+          if (view[sec.id] === i) view[sec.id] = 0;
+          renderPanel(); renderTabs(); renderPicks(); drawCat();
+          document.getElementById(`pal-add-${sec.id}`)?.focus();
+          return;
+        }
         card._update(); drawCat(); renderTabs(); renderPicks();
       } });
-      card.append(pair, el("div", { class: "row spread" }, name, hex), el("div", { class: "row" }, inp, reset));
+      card.append(pair, name, el("div", { class: "row" }, inp, code, reset));
       card._update = () => {
-        const cur = curHex(sec.id, i) || orig, changed = !!state[sec.id][i];
-        newSw.style.background = cur;
-        name.textContent = isNew ? `New ${sec.noun.toLowerCase()} ${i}` : `${changed ? "● " : ""}${sec.noun} ${i}`;
+        const cur = curHex(sec.id, i), changed = !!state[sec.id][i];
+        newSw.style.background = cur || "";
+        newSw.className = cur ? "" : "pal-unknown";
+        name.textContent = isNew ? `New ${sec.noun} colour ${i}` : `${changed ? "● " : ""}${sec.noun[0].toUpperCase()}${sec.noun.slice(1)} ${i}`;
         name.style.color = changed && !isNew ? "var(--changed)" : "";
-        hex.textContent = changed && !isNew ? `${orig} → ${cur}` : cur;
-        inp.value = cur.toLowerCase(); reset.disabled = !changed;
+        code.sync();
+        code.placeholder = cur ? "" : "after one Play";
+        code.title = changed && orig ? `The game's: ${orig}` : "";
+        inp.value = (cur || "#888888").toLowerCase(); reset.disabled = !changed;
         card.style.boxShadow = view[sec.id] === i ? "0 0 0 2px var(--accent)" : "";
         pair.setAttribute("aria-pressed", String(view[sec.id] === i));
       };
@@ -384,42 +533,46 @@ export default {
     function eyeCard(row) {
       const card = cardBox();
       const newRamp = el("span", { style: { height: "18px", borderRadius: "5px", border: "1px solid var(--line)" } });
-      const pick = el("button", { class: "btn swatch", style: { padding: "4px", display: "grid", gap: "3px" }, "aria-label": `Show ${EYE_LABEL[row]} on the cat`,
+      const pick = el("button", { class: "btn swatch", style: { padding: "4px", display: "grid", gap: "3px" }, "aria-label": `Show ${eyeName(row)} on the cat`,
         onclick: () => { if (row > 0) { view.eyeL = view.eyeR = row; renderPicks(); } drawCat(); refreshCards(); } },
-        el("span", { style: { height: "18px", borderRadius: "5px", border: "1px solid var(--line)", background: rampCss(EYE_LIN[row]) } }), newRamp);
-      const name = el("strong"), hex = el("span", { class: "hex muted" });
-      const one = el("button", { class: "chip", text: "One colour", onclick: () => setMode("single") });
-      const grad = el("button", { class: "chip", text: "Gradient", onclick: () => setMode("grad") });
+        el("span", { style: { height: "18px", borderRadius: "5px", border: "1px solid var(--line)", background: rampCss(origRow(row)) } }), newRamp);
+      const name = el("strong"), hex = el("span", { class: "muted" });
+      const one = el("button", { class: "chip", "data-focus": `pal:eye:${row}:one`, text: "One colour", onclick: () => setMode("single") });
+      const grad = el("button", { class: "chip", "data-focus": `pal:eye:${row}:grad`, text: "Gradient", onclick: () => setMode("grad") });
       const inputs = el("div", { class: "row" });
-      const reset = el("button", { class: "btn ghost small", text: "Reset", "aria-label": `Reset ${EYE_LABEL[row]}`, onclick: () => { delete state.eyes[row]; rebuild(); card._update(); drawCat(); renderTabs(); renderPicks(); } });
+      const reset = el("button", { class: "btn ghost small", text: "Reset", "aria-label": `Reset ${eyeName(row)}`, onclick: () => { delete state.eyes[row]; edited(); rebuild(); card._update(); drawCat(); renderTabs(); renderPicks(); } });
       card.append(pick, el("div", { class: "row spread" }, name, hex), el("div", { class: "row" }, one, grad, reset), inputs);
       const ensure = () => (state.eyes[row] ||= { mode: "single", colors: [vanillaRim(row)] });
       function setMode(mode) {
         const o = ensure();
         if (mode === "grad" && o.colors.length < 2) o.colors = ["#101418", o.colors[0]];
         if (mode === "single") o.colors = [o.colors[o.colors.length - 1]];
-        o.mode = mode; target.markDirty(); rebuild(); card._update(); drawCat(); renderTabs();
+        o.mode = mode; edited(); rebuild(); card._update(); drawCat(); renderTabs();
       }
       function rebuild() {
         clear(inputs);
         const o = state.eyes[row];
         (o ? o.colors : [vanillaRim(row)]).forEach((c, k) => {
-          const inp = el("input", { type: "color", id: `pal-eye-${row}-${k}`, value: c.toLowerCase(), "aria-label": `${EYE_LABEL[row]} colour ${k + 1}` });
-          inp.addEventListener("input", () => { ensure().colors[k] = color.normHex(inp.value); target.markDirty(); card._update(); drawCat(); });
+          const inp = el("input", { type: "color", id: `pal-eye-${row}-${k}`, value: c.toLowerCase(), "aria-label": `${eyeName(row)} colour ${k + 1}` });
+          const code = codeBox(`Colour code for ${eyeName(row)}${o && o.mode === "grad" ? `, colour ${k + 1}` : ""}`,
+            () => (state.eyes[row] ? state.eyes[row].colors[k] : vanillaRim(row)),
+            c2 => { ensure().colors[k] = c2; inp.value = c2.toLowerCase(); edited(); card._update(); drawCat(); renderTabs(); renderPicks(); });
+          inp.addEventListener("input", () => { ensure().colors[k] = color.normHex(inp.value); code.sync(); edited(); card._update(); drawCat(); });
           inp.addEventListener("change", () => { renderTabs(); renderPicks(); });
-          inputs.append(inp);
+          code.sync();
+          inputs.append(el("span", { class: "row pal-stop" }, inp, code));
         });
         if (o && o.mode === "grad") {
-          if (o.colors.length < 4) inputs.append(el("button", { class: "btn small", text: "+ stop", onclick: () => { o.colors.push(o.colors[o.colors.length - 1]); rebuild(); card._update(); drawCat(); } }));
-          if (o.colors.length > 2) inputs.append(el("button", { class: "btn small", text: "− stop", onclick: () => { o.colors.pop(); rebuild(); card._update(); drawCat(); } }));
+          if (o.colors.length < 4) inputs.append(el("button", { class: "btn small", "data-focus": `pal:eye:${row}:add-stop`, text: "+ stop", "aria-label": `Add a colour to ${eyeName(row)}'s gradient`, onclick: () => { o.colors.push(o.colors[o.colors.length - 1]); edited(); rebuild(); card._update(); drawCat(); } }));
+          if (o.colors.length > 2) inputs.append(el("button", { class: "btn small", "data-focus": `pal:eye:${row}:drop-stop`, text: "− stop", "aria-label": `Take the last colour off ${eyeName(row)}'s gradient`, onclick: () => { o.colors.pop(); edited(); rebuild(); card._update(); drawCat(); } }));
         }
       }
       card._update = () => {
         const o = state.eyes[row];
-        newRamp.style.background = rampCss(eyeRamp(row, o));
-        name.textContent = `${o ? "● " : ""}${EYE_LABEL[row]}`;
+        newRamp.style.background = rampCss(P.eyeRamp(origRow(row), o));
+        name.textContent = `${o ? "● " : ""}${eyeName(row)}`;
         name.style.color = o ? "var(--changed)" : "";
-        hex.textContent = o ? (o.mode === "grad" ? `${o.colors.length}-colour gradient` : `${vanillaRim(row)} → ${o.colors[0]}`) : vanillaRim(row);
+        hex.textContent = o ? (o.mode === "grad" ? `${o.colors.length}-colour gradient` : `the game's ${vanillaRim(row)}`) : "the game's colour";
         one.setAttribute("aria-pressed", String(!o || o.mode === "single"));
         grad.setAttribute("aria-pressed", String(!!o && o.mode === "grad"));
         reset.disabled = !o;
@@ -428,10 +581,24 @@ export default {
       rebuild(); card._update();
       return card;
     }
+    function rampCss(ramp) {
+      const stops = [];
+      for (let k = 0; k <= 8; k++) { const x = Math.round(k * (ramp.length - 1) / 8); stops.push(`${color.linearToHex(ramp[x])} ${(k * 12.5).toFixed(1)}%`); }
+      return `linear-gradient(90deg, ${stops.join(", ")})`;
+    }
     function refreshCards() { panel.querySelectorAll(".card").forEach(c => c._update && c._update()); }
-    function renderAll() { renderTabs(); renderPanel(); renderPicks(); drawCat(); renderPresets(); }
+    function renderAll() { renderTabs(); renderPanel(); renderPicks(); drawCat(); renderPresets(); renderStyleRow(); renderUnread(); }
 
-    await Promise.all([target.refresh(), renderQuick()]);
-    return { unmount() { offInstalled(); } };
+    // After an Apply or Play: the quick palettes (their ticks afresh) and the status are read again, and the file too,
+    // unless there are unsaved changes here (installedEvent), which stay, the bar saying they aren't in the game yet.
+    // A mod made or changed anywhere (a Save here makes My mods) reads the quick palettes again too.
+    const offs = [
+      wc.installedEvent(target, () => target.refresh()),
+      wc.bus.on("installed", () => { renderQuick(true).catch(() => {}); readInfo(); }),
+      wc.bus.on("focus", readInfo),
+      wc.bus.on("mods-changed", () => { renderPresets(); renderStrip(); otherSlotsReady = loadOtherSlots(); renderQuick().catch(() => {}); }),
+    ];
+    await Promise.all([target.refresh(), renderQuick(), renderStrip()]);
+    return { unmount() { for (const off of offs) off(); narrow.removeEventListener("change", applyNarrow); } };
   },
 };

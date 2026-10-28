@@ -1,0 +1,8 @@
+{
+  "_help": "tests/game/test_tweaks.py's tweaks: every one on but the story's scenes.",
+  "keep_stamina_full": true,
+  "heal_key": "F4",
+  "hold_time": true,
+  "time_of_day": 9.0,
+  "min_fresh_kill": 40
+}

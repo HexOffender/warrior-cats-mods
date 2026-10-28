@@ -1,0 +1,1317 @@
+{
+ "_help": "Made by tools/re/mechanics_notes.py from docs/mechanics/*.md: run it again after changing them. The Game data page shows these lines beside the rows they name.",
+ "<Clan>NpcGenerator.csv": [
+  {
+   "doc": "npcs.md",
+   "heading": "How many cats",
+   "anchor": "#how-many-cats",
+   "text": "<Clan>NpcGenerator.csv sets how many cats of each role to make."
+  }
+ ],
+ "AICombatChances.csv": [
+  {
+   "doc": "combat.md",
+   "heading": "The AI",
+   "anchor": "#the-ai",
+   "text": "Tiers: AICombatChances.csv gives each AI tier its chance to make each kind of choice:"
+  }
+ ],
+ "Agility.StaminaModifier.Stamina": [
+  {
+   "doc": "combat.md",
+   "heading": "Stats",
+   "anchor": "#stats",
+   "text": "Speed (0x1417D9800): Agility × (1 + Speed buffs), halved when stamina is at or below 30% of the maximum (Agility.StaminaModifier.Stamina 0.3, .Agility 0.5)."
+  }
+ ],
+ "BarteringCost.csv": [
+  {
+   "doc": "items.md",
+   "heading": "Bartering",
+   "anchor": "#bartering",
+   "text": "BarteringCost.csv gives the materials each item costs: 24 consumables (all but the Sage Pouch) and 31 accessories (8 head, 4 neck, 11 body, 8 leg)."
+  }
+ ],
+ "Belt.MaxQuantity": [
+  {
+   "doc": "progression.md",
+   "heading": "Ranks",
+   "anchor": "#ranks",
+   "text": "The combat item belt holds 4 (Belt.MaxQuantity)."
+  }
+ ],
+ "Bonding.Clan.Default": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Bonding",
+   "anchor": "#bonding",
+   "text": "Clan bonding starts at 67 (Bonding.Clan.Default)."
+  }
+ ],
+ "Buff.<Stance>.2": [
+  {
+   "doc": "items.md",
+   "heading": "What consumables do",
+   "anchor": "#what-consumables-do",
+   "text": "Unused parameter rows: Params.Stamina.4 (+20%), Stamina.FullHeal, MaxHealth.1 (+50%) and stronger stance buffs (Buff.<Stance>.2, +0.5) exist, but no consumable uses them."
+  }
+ ],
+ "Buff.Berserk.1": [
+  {
+   "doc": "items.md",
+   "heading": "What consumables do",
+   "anchor": "#what-consumables-do",
+   "text": "Herb Spices Pouch: combat, you, \"Berserk\" (Buff.Berserk.1, no parameter row)"
+  }
+ ],
+ "Buff.Offensive.1": [
+  {
+   "doc": "combat.md",
+   "heading": "Stances",
+   "anchor": "#stances",
+   "text": "Peppermint (Buff.Offensive.1, +0.25 for 1 round)."
+  }
+ ],
+ "CatSize.csv": [
+  {
+   "doc": "npcs.md",
+   "heading": "Size",
+   "anchor": "#size",
+   "text": "CatSize.csv gives each role a scale range:"
+  }
+ ],
+ "CharacterAttacks.csv": [
+  {
+   "doc": "combat.md",
+   "heading": "Moves",
+   "anchor": "#moves",
+   "text": "Tag spelling: CharacterAttacks.csv writes Thunderclan.1 and Shadowclan.1 where the tags are ThunderClan.1."
+  },
+  {
+   "doc": "combat.md",
+   "heading": "Moves",
+   "anchor": "#moves",
+   "text": "Starting moves (CharacterAttacks.csv, InitialAttacks):"
+  },
+  {
+   "doc": "combat.md",
+   "heading": "Moves",
+   "anchor": "#moves",
+   "text": "CharacterAttacks.csv gives each boss phase a signature move in FixedAttacks, e.g. the Starving Warrior's Ancestral Roar and the Proud Loner's StarClan Charge."
+  }
+ ],
+ "CharacterStatsBase.csv": [
+  {
+   "doc": "combat.md",
+   "heading": "Stats",
+   "anchor": "#stats",
+   "text": "Base stats come from CharacterStatsBase.csv and grow with level (see progression.md):"
+  },
+  {
+   "doc": "progression.md",
+   "heading": "How stats grow",
+   "anchor": "#how-stats-grow",
+   "text": "base is the CharacterStatsBase.csv row for the cat's type and clan (see combat.md)."
+  }
+ ],
+ "ClanSpecificBase.csv": [
+  {
+   "doc": "combat.md",
+   "heading": "Stats",
+   "anchor": "#stats",
+   "text": "ClanSpecificBase.csv has a second, lower set of clan bases (ThunderClan 70/80/70/70/50/100)."
+  }
+ ],
+ "Climb.Fall.DamageRate": [
+  {
+   "doc": "exploration.md",
+   "heading": "Jumping, climbing and falling",
+   "anchor": "#jumping-climbing-and-falling",
+   "text": "Climb falls have Climb.Fall.Multi.BaseHeight 5,000,000 and Climb.Fall.DamageRate 0.1."
+  }
+ ],
+ "Climb.Fall.Multi.BaseHeight": [
+  {
+   "doc": "exploration.md",
+   "heading": "Jumping, climbing and falling",
+   "anchor": "#jumping-climbing-and-falling",
+   "text": "Climb falls have Climb.Fall.Multi.BaseHeight 5,000,000 and Climb.Fall.DamageRate 0.1."
+  }
+ ],
+ "Climb.Modifier.Speed": [
+  {
+   "doc": "exploration.md",
+   "heading": "Jumping, climbing and falling",
+   "anchor": "#jumping-climbing-and-falling",
+   "text": "You climb at normal speed (Climb.Modifier.Speed 1)."
+  }
+ ],
+ "Climb.Stamina.DrainRate": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stamina",
+   "anchor": "#stamina",
+   "text": "Climbing: -24 per second (Climb.Stamina.DrainRate)"
+  }
+ ],
+ "Combat.Rest.Stamina": [
+  {
+   "doc": "combat.md",
+   "heading": "After the fight",
+   "anchor": "#after-the-fight",
+   "text": "Rest: resting in a fight restores 40% of stamina (Combat.Rest.Stamina 0.4)."
+  }
+ ],
+ "CombatBaseExperience.csv": [
+  {
+   "doc": "combat.md",
+   "heading": "After the fight",
+   "anchor": "#after-the-fight",
+   "text": "Experience: each enemy type has a BaseExperience in CombatBaseExperience.csv:"
+  }
+ ],
+ "CombatDilemmas.csv": [
+  {
+   "doc": "combat.md",
+   "heading": "Dilemmas and the warrior code",
+   "anchor": "#dilemmas-and-the-warrior-code",
+   "text": "A dilemma is a two-choice popup in a fight (CombatDilemmas.csv)."
+  }
+ ],
+ "CombatStance.csv": [
+  {
+   "doc": "combat.md",
+   "heading": "Stats",
+   "anchor": "#stats",
+   "text": "Resilience: Named as the defence stat for three stances in CombatStance.csv, but the damage code doesn't read that column (below)."
+  },
+  {
+   "doc": "combat.md",
+   "heading": "The damage formula",
+   "anchor": "#the-damage-formula",
+   "text": "A is the attacker's stat named in the Attack column of CombatStance.csv, for the attacker's current stance."
+  },
+  {
+   "doc": "combat.md",
+   "heading": "Stances",
+   "anchor": "#stances",
+   "text": "The multiplier is CombatStance.csv's value for the attacker's stance (row) against the defender's current stance (column):"
+  }
+ ],
+ "Cone.Angle": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "+0x57C: Cone.Angle, +0x598, Target.Distance"
+  }
+ ],
+ "Cone.Distance": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "+0x580: Cone.Distance, +0x59C, WalkSpeed.Roaming"
+  }
+ ],
+ "Context.2.Right": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Dialogue answers and their scores",
+   "anchor": "#dialogue-answers-and-their-scores",
+   "text": "The NPC replies to each answer (Context.2.Right …), and the conversation ends with Context.End.<Right|Wrong|Neutral>."
+  }
+ ],
+ "Curious.Drop": [
+  {
+   "doc": "progression.md",
+   "heading": "What traits do in play",
+   "anchor": "#what-traits-do-in-play",
+   "text": "If the item is tagged Gameplay.Inventory.Consumable, it reads the two Curious.Drop keys and, if one of the player's traits is Curious (5), rolls for +1."
+  }
+ ],
+ "Curious.FreshKill": [
+  {
+   "doc": "progression.md",
+   "heading": "What traits do in play",
+   "anchor": "#what-traits-do-in-play",
+   "text": "The bug: TuningData has no Curious.FreshKill rows (the fresh-kill rows are under Patient)."
+  }
+ ],
+ "DayNight.ClockSpeed": [
+  {
+   "doc": "exploration.md",
+   "heading": "Time of day",
+   "anchor": "#time-of-day",
+   "text": "Clock speed: 72 (DayNight.ClockSpeed)"
+  }
+ ],
+ "DayNight.StartTime": [
+  {
+   "doc": "exploration.md",
+   "heading": "Time of day",
+   "anchor": "#time-of-day",
+   "text": "A new game starts at: 21600 = 6:00 (DayNight.StartTime, seconds into the day)"
+  }
+ ],
+ "Decay.Time": [
+  {
+   "doc": "clan-life.md",
+   "heading": "The fresh-kill pile",
+   "anchor": "#the-fresh-kill-pile",
+   "text": "Goes down: 1 every 90 s (Decay.Value, Decay.Time), so a full pile empties in 2.5 hours of play"
+  }
+ ],
+ "Decay.Value": [
+  {
+   "doc": "clan-life.md",
+   "heading": "The fresh-kill pile",
+   "anchor": "#the-fresh-kill-pile",
+   "text": "Goes down: 1 every 90 s (Decay.Value, Decay.Time), so a full pile empties in 2.5 hours of play"
+  }
+ ],
+ "Decoration.<n>": [
+  {
+   "doc": "clan-life.md",
+   "heading": "Dens",
+   "anchor": "#dens",
+   "text": "Matching them to Decoration.<n> by number fits every row: the beds are nests and mats, the scratching ones are bark and stone, and the toys are cones and balls."
+  }
+ ],
+ "Defender.ForcedLevel": [
+  {
+   "doc": "combat.md",
+   "heading": "The AI",
+   "anchor": "#the-ai",
+   "text": "Defender mode: clan defenders fight at a set level (Defender.ForcedLevel 20; by difficulty, Easy 17, Medium 17, Hard 18, Insane 18, BossEasy 18, BossHard 19)."
+  }
+ ],
+ "Denominator.Constant": [
+  {
+   "doc": "combat.md",
+   "heading": "The damage formula",
+   "anchor": "#the-damage-formula",
+   "text": "0.015, 1, 0.5, 5 and 0.3 are Universal.Factor, Numerator.Constant, Numerator.Factor, Denominator.Constant and Denominator.Factor."
+  }
+ ],
+ "Denominator.Factor": [
+  {
+   "doc": "combat.md",
+   "heading": "The damage formula",
+   "anchor": "#the-damage-formula",
+   "text": "0.015, 1, 0.5, 5 and 0.3 are Universal.Factor, Numerator.Constant, Numerator.Factor, Denominator.Constant and Denominator.Factor."
+  }
+ ],
+ "Detection.LostCharacter.Delay": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "Detection.LostCharacter.Delay is named in the exe too."
+  }
+ ],
+ "Edge.Fall.Percent": [
+  {
+   "doc": "exploration.md",
+   "heading": "Jumping, climbing and falling",
+   "anchor": "#jumping-climbing-and-falling",
+   "text": "Walking off an edge: Edge.Fall.Percent 0.3, .Height 5 and .Forward 50."
+  }
+ ],
+ "Effects/CombatStatBuffEffect.csv": [
+  {
+   "doc": "combat.md",
+   "heading": "Moves",
+   "anchor": "#moves",
+   "text": "Reading the effects: an effect tag Gameplay.Effect.Movement.X takes its numbers from the row Gameplay.Params.Movement.X in Effects/CombatStatBuffEffect.csv (stat percentages) or Effects/GenericEffect.csv (everything else)."
+  }
+ ],
+ "Effects/GenericEffect.csv": [
+  {
+   "doc": "clan-life.md",
+   "heading": "The fresh-kill pile",
+   "anchor": "#the-fresh-kill-pile",
+   "text": "Each level has a bonus in Effects/GenericEffect.csv (Gameplay.Exploration.FreshKillPile.Bonus.<Level>.<Stat>):"
+  },
+  {
+   "doc": "combat.md",
+   "heading": "Moves",
+   "anchor": "#moves",
+   "text": "Reading the effects: an effect tag Gameplay.Effect.Movement.X takes its numbers from the row Gameplay.Params.Movement.X in Effects/CombatStatBuffEffect.csv (stat percentages) or Effects/GenericEffect.csv (everything else)."
+  },
+  {
+   "doc": "progression.md",
+   "heading": "Levels and experience",
+   "anchor": "#levels-and-experience",
+   "text": "XP effects: Effects/GenericEffect.csv has Gameplay.Params.XP.50 to XP.400 (50–400 XP), probably quest rewards."
+  }
+ ],
+ "Exploration.Health.Min": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stamina",
+   "anchor": "#stamina",
+   "text": "Exploration health never drops below 1 (Exploration.Health.Min), so you can't die out of combat."
+  }
+ ],
+ "Flee.Penalty": [
+  {
+   "doc": "combat.md",
+   "heading": "After the fight",
+   "anchor": "#after-the-fight",
+   "text": "What Flee.Penalty 0.5 costs isn't known."
+  }
+ ],
+ "Flee.Probability": [
+  {
+   "doc": "combat.md",
+   "heading": "After the fight",
+   "anchor": "#after-the-fight",
+   "text": "Fleeing: Flee.Probability is 1, so fleeing always works."
+  }
+ ],
+ "ForcedAppearance.csv": [
+  {
+   "doc": "npcs.md",
+   "heading": "Looks",
+   "anchor": "#looks",
+   "text": "Kits' looks: ForcedAppearance.csv has one row, Kit: body (6,7,8,9), fur (2,3,4,5), eyes (0,1,2,3), ears (1,2,3,4), whiskers (1,2,3,4), tail (0,1,2,3,5) and face (0,1,2,3)."
+  }
+ ],
+ "FreshKillPile.<Prey>": [
+  {
+   "doc": "clan-life.md",
+   "heading": "The fresh-kill pile",
+   "anchor": "#the-fresh-kill-pile",
+   "text": "What prey is worth (FreshKillPile.<Prey>):"
+  }
+ ],
+ "Gameplay.Combat.<Trait>.<Stat>": [
+  {
+   "doc": "progression.md",
+   "heading": "How stats grow",
+   "anchor": "#how-stats-grow",
+   "text": "Gameplay.Combat.<Trait>.<Stat> gives each Social trait extra growth, scaled the same way (× (level − 1) × 0.05):"
+  }
+ ],
+ "Gameplay.Combat.Attack.<Category>.<n>": [
+  {
+   "doc": "combat.md",
+   "heading": "Moves",
+   "anchor": "#moves",
+   "text": "The move tags are Gameplay.Combat.Attack.<Category>.<n>."
+  }
+ ],
+ "Gameplay.Combat.StatusCondition.Blinded.Attacks.Accuracy": [
+  {
+   "doc": "combat.md",
+   "heading": "Hitting and missing",
+   "anchor": "#hitting-and-missing",
+   "text": "Chance to hit: the move's Accuracy, minus 0.2 if the attacker is Blinded (Gameplay.Combat.StatusCondition.Blinded.Attacks.Accuracy)."
+  }
+ ],
+ "Gameplay.Effect.Consumable.<X>": [
+  {
+   "doc": "items.md",
+   "heading": "What consumables do",
+   "anchor": "#what-consumables-do",
+   "text": "Each consumable runs an effect, Gameplay.Effect.Consumable.<X>."
+  }
+ ],
+ "Gameplay.Effect.Movement.X": [
+  {
+   "doc": "combat.md",
+   "heading": "Moves",
+   "anchor": "#moves",
+   "text": "Reading the effects: an effect tag Gameplay.Effect.Movement.X takes its numbers from the row Gameplay.Params.Movement.X in Effects/CombatStatBuffEffect.csv (stat percentages) or Effects/GenericEffect.csv (everything else)."
+  }
+ ],
+ "Gameplay.Exploration.FreshKillPile.Bonus.<Level>.<Stat>": [
+  {
+   "doc": "clan-life.md",
+   "heading": "The fresh-kill pile",
+   "anchor": "#the-fresh-kill-pile",
+   "text": "Each level has a bonus in Effects/GenericEffect.csv (Gameplay.Exploration.FreshKillPile.Bonus.<Level>.<Stat>):"
+  }
+ ],
+ "Gameplay.Exploration.FreshKillPile.Bonus.Abundantv": [
+  {
+   "doc": "clan-life.md",
+   "heading": "The fresh-kill pile",
+   "anchor": "#the-fresh-kill-pile",
+   "text": "A data bug: the Abundant Prowess row is named Gameplay.Exploration.FreshKillPile.Bonus.Abundantv, not …Abundant.Prowess."
+  }
+ ],
+ "Gameplay.Exploration.Level.<n>": [
+  {
+   "doc": "progression.md",
+   "heading": "Levels and experience",
+   "anchor": "#levels-and-experience",
+   "text": "Gameplay.Exploration.Level.<n> gives the experience for each level:"
+  }
+ ],
+ "Gameplay.Exploration.MaxLevel": [
+  {
+   "doc": "progression.md",
+   "heading": "Levels and experience",
+   "anchor": "#levels-and-experience",
+   "text": "The level cap is 20 (Gameplay.Exploration.MaxLevel)."
+  }
+ ],
+ "Gameplay.Exploration.Player.<Rank>.Scale": [
+  {
+   "doc": "progression.md",
+   "heading": "Ranks",
+   "anchor": "#ranks",
+   "text": "Size: the cat's size is Gameplay.Exploration.Player.<Rank>.Scale (the mod menu's size cheat builds on this)."
+  }
+ ],
+ "Gameplay.Exploration.Stamina.Bonus.Modifier.1": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stamina",
+   "anchor": "#stamina",
+   "text": "Gameplay.Exploration.Stamina.Bonus.Modifier.1 to .16 run from 0.125 to 2.0 in steps of 0.125."
+  }
+ ],
+ "Gameplay.Exploration.Trait.Bonus.Curious.FreshKill.Chance": [
+  {
+   "doc": "progression.md",
+   "heading": "What traits do in play",
+   "anchor": "#what-traits-do-in-play",
+   "text": "If the item is tagged Gameplay.Inventory.Materials.FreshKill, it does the same with Gameplay.Exploration.Trait.Bonus.Curious.FreshKill.Chance and .PlusQuantity, and checks for Curious again."
+  },
+  {
+   "doc": "progression.md",
+   "heading": "What traits do in play",
+   "anchor": "#what-traits-do-in-play",
+   "text": "A data fix: adding Gameplay.Exploration.Trait.Bonus.Curious.FreshKill.Chance (0.5) and .PlusQuantity (1) rows to TuningData would turn the fresh-kill bonus on, but for Curious cats."
+  }
+ ],
+ "Gameplay.Inventory.Capacity.<Rank>": [
+  {
+   "doc": "progression.md",
+   "heading": "Ranks",
+   "anchor": "#ranks",
+   "text": "Inventory: space is Gameplay.Inventory.Capacity.<Rank>, with no limit per item (Inventory.MaxQuantity -1)."
+  }
+ ],
+ "Gameplay.Inventory.Consumable": [
+  {
+   "doc": "progression.md",
+   "heading": "What traits do in play",
+   "anchor": "#what-traits-do-in-play",
+   "text": "If the item is tagged Gameplay.Inventory.Consumable, it reads the two Curious.Drop keys and, if one of the player's traits is Curious (5), rolls for +1."
+  }
+ ],
+ "Gameplay.Inventory.Decoration.<n>": [
+  {
+   "doc": "items.md",
+   "heading": "Items, herbs and bartering",
+   "anchor": "#items-herbs-and-bartering",
+   "text": "Gameplay.Inventory.Decoration.<n>: den decorations (see clan-life.md)."
+  }
+ ],
+ "Gameplay.Inventory.Materials.Cobweb": [
+  {
+   "doc": "clan-life.md",
+   "heading": "Online gifts",
+   "anchor": "#online-gifts",
+   "text": "A data bug: the last entry is Gameplay.Inventory.Materials.Cobweb, but every other table spells the item Materials.Cobwebs."
+  }
+ ],
+ "Gameplay.Inventory.Materials.FreshKill": [
+  {
+   "doc": "clan-life.md",
+   "heading": "The fresh-kill pile",
+   "anchor": "#the-fresh-kill-pile",
+   "text": "Fresh-kill items are Gameplay.Inventory.Materials.FreshKill (\"Mouse Fresh-kill\", \"Bird Fresh-kill\" …)."
+  },
+  {
+   "doc": "progression.md",
+   "heading": "What traits do in play",
+   "anchor": "#what-traits-do-in-play",
+   "text": "If the item is tagged Gameplay.Inventory.Materials.FreshKill, it does the same with Gameplay.Exploration.Trait.Bonus.Curious.FreshKill.Chance and .PlusQuantity, and checks for Curious again."
+  }
+ ],
+ "Gameplay.Params.<X>": [
+  {
+   "doc": "items.md",
+   "heading": "What consumables do",
+   "anchor": "#what-consumables-do",
+   "text": "Its numbers are in the parameter row of the same name, Gameplay.Params.<X> (matched by name):"
+  }
+ ],
+ "Gameplay.Params.Movement.X": [
+  {
+   "doc": "combat.md",
+   "heading": "Moves",
+   "anchor": "#moves",
+   "text": "Reading the effects: an effect tag Gameplay.Effect.Movement.X takes its numbers from the row Gameplay.Params.Movement.X in Effects/CombatStatBuffEffect.csv (stat percentages) or Effects/GenericEffect.csv (everything else)."
+  }
+ ],
+ "Gameplay.Params.XP.50": [
+  {
+   "doc": "progression.md",
+   "heading": "Levels and experience",
+   "anchor": "#levels-and-experience",
+   "text": "XP effects: Effects/GenericEffect.csv has Gameplay.Params.XP.50 to XP.400 (50–400 XP), probably quest rewards."
+  }
+ ],
+ "Gameplay.Progression.Bonding.TraitModifier": [
+  {
+   "doc": "progression.md",
+   "heading": "What traits do in play",
+   "anchor": "#what-traits-do-in-play",
+   "text": "Bonding: Gameplay.Progression.Bonding.TraitModifier is 1, and what it does isn't traced."
+  },
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Dialogue answers and their scores",
+   "anchor": "#dialogue-answers-and-their-scores",
+   "text": "Gameplay.Progression.Bonding.TraitModifier is 1."
+  }
+ ],
+ "Health.FullRecover": [
+  {
+   "doc": "items.md",
+   "heading": "What consumables do",
+   "anchor": "#what-consumables-do",
+   "text": "Super Healing Herb: anywhere, you, Health.FullRecover (no parameter row; probably full health and cures)"
+  }
+ ],
+ "Housing.Hotspot.Assist.Time": [
+  {
+   "doc": "clan-life.md",
+   "heading": "Dens",
+   "anchor": "#dens",
+   "text": "Help from friends: Housing.Hotspot.Assist.Time 86400 (a day) and .Assist.Quote 1800 (half an hour)."
+  }
+ ],
+ "Housing.Hotspot.Play.Time": [
+  {
+   "doc": "clan-life.md",
+   "heading": "Dens",
+   "anchor": "#dens",
+   "text": "Beds play a sleep animation, scratching posts a sharpen animation, and toys a play animation for 1.5 s (Housing.Hotspot.Play.Time)."
+  }
+ ],
+ "HousingCost.csv": [
+  {
+   "doc": "clan-life.md",
+   "heading": "Dens",
+   "anchor": "#dens",
+   "text": "Building: a decoration costs materials (HousingCost.csv) and takes its BuildTime:"
+  }
+ ],
+ "Inventory.MaxQuantity": [
+  {
+   "doc": "progression.md",
+   "heading": "Ranks",
+   "anchor": "#ranks",
+   "text": "Inventory: space is Gameplay.Inventory.Capacity.<Rank>, with no limit per item (Inventory.MaxQuantity -1)."
+  }
+ ],
+ "Jump.Height.Max": [
+  {
+   "doc": "exploration.md",
+   "heading": "Jumping, climbing and falling",
+   "anchor": "#jumping-climbing-and-falling",
+   "text": "A jump is 85 high (Jump.Height.Min from standing, Jump.Height.Max from a run) and 200–250 long."
+  }
+ ],
+ "Jump.Height.Min": [
+  {
+   "doc": "exploration.md",
+   "heading": "Jumping, climbing and falling",
+   "anchor": "#jumping-climbing-and-falling",
+   "text": "A jump is 85 high (Jump.Height.Min from standing, Jump.Height.Max from a run) and 200–250 long."
+  }
+ ],
+ "Jump.Hotspot.InteractThreshold": [
+  {
+   "doc": "exploration.md",
+   "heading": "Jumping, climbing and falling",
+   "anchor": "#jumping-climbing-and-falling",
+   "text": "Their radii are 150, 120 and 60, and they become usable within 120 (Jump.Hotspot.InteractThreshold)."
+  }
+ ],
+ "Jump.RunSpeed": [
+  {
+   "doc": "exploration.md",
+   "heading": "Jumping, climbing and falling",
+   "anchor": "#jumping-climbing-and-falling",
+   "text": "Taking off from a run is 100 (Jump.RunSpeed)."
+  }
+ ],
+ "LocationsData.csv": [
+  {
+   "doc": "exploration.md",
+   "heading": "The map",
+   "anchor": "#the-map",
+   "text": "Territories: LocationsData.csv names 50 areas, each with a code."
+  }
+ ],
+ "Materials.Cobwebs": [
+  {
+   "doc": "clan-life.md",
+   "heading": "Online gifts",
+   "anchor": "#online-gifts",
+   "text": "A data bug: the last entry is Gameplay.Inventory.Materials.Cobweb, but every other table spells the item Materials.Cobwebs."
+  }
+ ],
+ "MaxBaseGrowth.StaminaBase": [
+  {
+   "doc": "progression.md",
+   "heading": "How stats grow",
+   "anchor": "#how-stats-grow",
+   "text": "The code reads MaxBaseGrowth.StaminaBase (100), then never uses it, and stamina stays at its base (100 for cats)."
+  }
+ ],
+ "MaxHealth.1": [
+  {
+   "doc": "items.md",
+   "heading": "What consumables do",
+   "anchor": "#what-consumables-do",
+   "text": "Unused parameter rows: Params.Stamina.4 (+20%), Stamina.FullHeal, MaxHealth.1 (+50%) and stronger stance buffs (Buff.<Stance>.2, +0.5) exist, but no consumable uses them."
+  }
+ ],
+ "NPC.Heterochromia.Chance": [
+  {
+   "doc": "npcs.md",
+   "heading": "Looks",
+   "anchor": "#looks",
+   "text": "Eye2Color is the same as Eye1Color, and a cat gets two different eyes 15% of the time (NPC.Heterochromia.Chance)."
+  }
+ ],
+ "NPC/NarrativeRole.csv": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "The story cast",
+   "anchor": "#the-story-cast",
+   "text": "NPC/NarrativeRole.csv has 102 roles, 25 or 26 per clan."
+  }
+ ],
+ "NameBanList.csv": [
+  {
+   "doc": "npcs.md",
+   "heading": "Names",
+   "anchor": "#names",
+   "text": "Banned names: NameBanList.csv keeps 31 canon names (Tigerstar, Jayfeather, Lionblaze …) from being generated."
+  }
+ ],
+ "NarrativeRole.csv": [
+  {
+   "doc": "npcs.md",
+   "heading": "How many cats",
+   "anchor": "#how-many-cats",
+   "text": "The story cast (NarrativeRole.csv) comes on top (see quests-and-bonding.md)."
+  },
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Bonding",
+   "anchor": "#bonding",
+   "text": "Rewards (NarrativeRole.csv): reaching each level with a key character gives a reward:"
+  }
+ ],
+ "Numerator.Constant": [
+  {
+   "doc": "combat.md",
+   "heading": "The damage formula",
+   "anchor": "#the-damage-formula",
+   "text": "0.015, 1, 0.5, 5 and 0.3 are Universal.Factor, Numerator.Constant, Numerator.Factor, Denominator.Constant and Denominator.Factor."
+  }
+ ],
+ "Numerator.Factor": [
+  {
+   "doc": "combat.md",
+   "heading": "The damage formula",
+   "anchor": "#the-damage-formula",
+   "text": "0.015, 1, 0.5, 5 and 0.3 are Universal.Factor, Numerator.Constant, Numerator.Factor, Denominator.Constant and Denominator.Factor."
+  }
+ ],
+ "OnlineGifts.csv": [
+  {
+   "doc": "clan-life.md",
+   "heading": "Online gifts",
+   "anchor": "#online-gifts",
+   "text": "OnlineGifts.csv gives 1–30 of a random item."
+  }
+ ],
+ "Params.Damage.1.Health": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stamina",
+   "anchor": "#stamina",
+   "text": "Hazards deal fixed amounts: Params.Damage.1.Health -50."
+  }
+ ],
+ "Params.Damage.ClanInvader": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stamina",
+   "anchor": "#stamina",
+   "text": "A clan invader (Params.Damage.ClanInvader) also deals -50, with CanKillPlayer 0."
+  }
+ ],
+ "Params.Damage.PounceVictim.Health": [
+  {
+   "doc": "exploration.md",
+   "heading": "Pouncing and sneak attacks",
+   "anchor": "#pouncing-and-sneak-attacks",
+   "text": "A pounced animal loses 30% of its health (Params.Damage.PounceVictim.Health -0.3, UsePercent), so a pounce opens a fight with a head start."
+  }
+ ],
+ "Params.Dilemma.13.B.FreshKillMultiplier": [
+  {
+   "doc": "clan-life.md",
+   "heading": "The fresh-kill pile",
+   "anchor": "#the-fresh-kill-pile",
+   "text": "Getting more: the \"A Final Show of Strength\" dilemma can double a fight's fresh-kill (Params.Dilemma.13.B.FreshKillMultiplier 2)."
+  }
+ ],
+ "Params.Stamina.4": [
+  {
+   "doc": "items.md",
+   "heading": "What consumables do",
+   "anchor": "#what-consumables-do",
+   "text": "Unused parameter rows: Params.Stamina.4 (+20%), Stamina.FullHeal, MaxHealth.1 (+50%) and stronger stance buffs (Buff.<Stance>.2, +0.5) exist, but no consumable uses them."
+  }
+ ],
+ "Params.XP.1": [
+  {
+   "doc": "progression.md",
+   "heading": "Levels and experience",
+   "anchor": "#levels-and-experience",
+   "text": "The Sage Pouch: gives 200 XP (Params.XP.1)."
+  }
+ ],
+ "PatternBanList.csv": [
+  {
+   "doc": "npcs.md",
+   "heading": "Looks",
+   "anchor": "#looks",
+   "text": "Banned patterns: PatternBanList.csv names 11 patterns kept off NPCs: gentleman 15, motted 7, sprinkled 8, leopard 10, calico 11, tortoiseshell 12, pirate 16, lovely 17, bandid 18, starry 19 and chimera 20."
+  }
+ ],
+ "Player.MoveAndRun.Run.Acceleration": [
+  {
+   "doc": "exploration.md",
+   "heading": "Moving",
+   "anchor": "#moving",
+   "text": "Run: 390 (Player.MoveAndRun.Run.Speed), acceleration 175 (Player.MoveAndRun.Run.Acceleration)"
+  }
+ ],
+ "Player.MoveAndRun.Run.Speed": [
+  {
+   "doc": "exploration.md",
+   "heading": "Moving",
+   "anchor": "#moving",
+   "text": "Run: 390 (Player.MoveAndRun.Run.Speed), acceleration 175 (Player.MoveAndRun.Run.Acceleration)"
+  }
+ ],
+ "Player.MoveAndRun.Stamina.DrainRate": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stamina",
+   "anchor": "#stamina",
+   "text": "Running: -10 per second (Player.MoveAndRun.Stamina.DrainRate)"
+  }
+ ],
+ "Player.MoveAndRun.Walk.Acceleration": [
+  {
+   "doc": "exploration.md",
+   "heading": "Moving",
+   "anchor": "#moving",
+   "text": "Walk: 175 (Player.MoveAndRun.Walk.Speed), reached at 175/s² acceleration (Player.MoveAndRun.Walk.Acceleration)"
+  }
+ ],
+ "Player.MoveAndRun.Walk.Speed": [
+  {
+   "doc": "exploration.md",
+   "heading": "Moving",
+   "anchor": "#moving",
+   "text": "Walk: 175 (Player.MoveAndRun.Walk.Speed), reached at 175/s² acceleration (Player.MoveAndRun.Walk.Acceleration)"
+  }
+ ],
+ "PlayerZone.EntryDistance": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "+0x58C: Sound.Radius, +0x5A4, PlayerZone.EntryDistance"
+  }
+ ],
+ "PlayerZone.ExitDistance": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "+0x590: Sound.Speed, +0x5A8, PlayerZone.ExitDistance"
+  }
+ ],
+ "Poison.Damage": [
+  {
+   "doc": "combat.md",
+   "heading": "Status conditions",
+   "anchor": "#status-conditions",
+   "text": "The status component (SwtAdventureStatusComponent, the character's StatusConditionComponent) keeps the condition at +0xE0 and how many rounds it has lasted at +0x144 (1 when applied), with the tuning at +0x148 (SelfCure.Chance 0.2) and..."
+  }
+ ],
+ "Pounce.Distance": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "+0x588: Pounce.Distance, +0x5A0, WalkSpeed.Chasing"
+  }
+ ],
+ "Pounce.Multi.AgilityBonus": [
+  {
+   "doc": "exploration.md",
+   "heading": "Pouncing and sneak attacks",
+   "anchor": "#pouncing-and-sneak-attacks",
+   "text": "A pounce flies at 500, × 1.2 with an Agility bonus (Pounce.Multi.AgilityBonus), and lands 50 short of the target (Pounce.Offset -50)."
+  }
+ ],
+ "Pounce.Offset": [
+  {
+   "doc": "exploration.md",
+   "heading": "Pouncing and sneak attacks",
+   "anchor": "#pouncing-and-sneak-attacks",
+   "text": "A pounce flies at 500, × 1.2 with an Agility bonus (Pounce.Multi.AgilityBonus), and lands 50 short of the target (Pounce.Offset -50)."
+  }
+ ],
+ "PreffixName.csv": [
+  {
+   "doc": "npcs.md",
+   "heading": "Names",
+   "anchor": "#names",
+   "text": "Clan cats: a prefix from PreffixName.csv (90, weighted per clan) and a suffix from SuffixName.csv (27, one set per role: -kit, -paw, a warrior suffix, -star)."
+  }
+ ],
+ "PrefixNameFilters.csv": [
+  {
+   "doc": "npcs.md",
+   "heading": "Names",
+   "anchor": "#names",
+   "text": "Your cat's name suggestions: the name screen scores prefixes with PrefixNameFilters.csv (clan and looks) and suffixes with SuffixNameFilters.csv (traits too)."
+  }
+ ],
+ "Prey.Flee.WalkSpeed.Factor": [
+  {
+   "doc": "exploration.md",
+   "heading": "Moving",
+   "anchor": "#moving",
+   "text": "Fleeing prey: 5 × its walking speed (Prey.Flee.WalkSpeed.Factor)"
+  }
+ ],
+ "Proximity.Distance": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "Close range (Proximity.Distance): 100 (200 for Small)"
+  },
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "+0x594: Proximity.Distance, +0x5AC, Time.ReactToChase"
+  }
+ ],
+ "Quest.Chapter00.MQ<n>": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Kinds of quest",
+   "anchor": "#kinds-of-quest",
+   "text": "Main story: Quest.Main.<n>, Quest.Rank.<n> and the tutorial Quest.Chapter00.MQ<n> (QuestObjectives.csv has its fixed objectives)."
+  }
+ ],
+ "Quest.Main.1.0": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Dialogue answers and their scores",
+   "anchor": "#dialogue-answers-and-their-scores",
+   "text": "A cat's own talks are graphs the quest sublevels place: one root per quest state (Quest.Main.1.0, Quest.Main.1.Complete…), each starting a story talk by tag."
+  }
+ ],
+ "Quest.Main.1.Complete": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Dialogue answers and their scores",
+   "anchor": "#dialogue-answers-and-their-scores",
+   "text": "A cat's own talks are graphs the quest sublevels place: one root per quest state (Quest.Main.1.0, Quest.Main.1.Complete…), each starting a story talk by tag."
+  }
+ ],
+ "Quest.Main.<n>": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Kinds of quest",
+   "anchor": "#kinds-of-quest",
+   "text": "Main story: Quest.Main.<n>, Quest.Rank.<n> and the tutorial Quest.Chapter00.MQ<n> (QuestObjectives.csv has its fixed objectives)."
+  }
+ ],
+ "Quest.Procedural.<Family>.<Kind>.<Rank>": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Kinds of quest",
+   "anchor": "#kinds-of-quest",
+   "text": "Procedural quests (Quest.Procedural.<Family>.<Kind>.<Rank>) are given by clan cats."
+  }
+ ],
+ "Quest.Procedural.Progression.RankUp": [
+  {
+   "doc": "progression.md",
+   "heading": "Ranks",
+   "anchor": "#ranks",
+   "text": "Getting promoted: promotions come from quests (Quest.Procedural.Progression.RankUp, RankUp2 and RankUp3 in the dialogue tables, and the \"Name a Warrior\" / \"Appoint a Deputy\" narrative dilemmas)."
+  }
+ ],
+ "Quest.Rank.<n>": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Kinds of quest",
+   "anchor": "#kinds-of-quest",
+   "text": "Main story: Quest.Main.<n>, Quest.Rank.<n> and the tutorial Quest.Chapter00.MQ<n> (QuestObjectives.csv has its fixed objectives)."
+  }
+ ],
+ "QuestCineCameraSettings.csv": [
+  {
+   "doc": "combat.md",
+   "heading": "Camera framing",
+   "anchor": "#camera-framing",
+   "text": "QuestCineCameraSettings.csv places the fight camera for each party size: 1v1 at (-258, 98, 36) with a 55 mm lens, 2v2 at 50 mm, 3v3 at 45 mm, all at f/16."
+  }
+ ],
+ "QuestDialogues.csv": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Dialogue answers and their scores",
+   "anchor": "#dialogue-answers-and-their-scores",
+   "text": "DebugText shows only when the key is missing: older English in StoryDialogues.csv, the key itself in QuestDialogues.csv (so the Escort and Recruit quests, whose keys Strings_EN lacks, would show raw keys)."
+  }
+ ],
+ "QuestDynamicObjectives.MaxQuantity": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Kinds of quest",
+   "anchor": "#kinds-of-quest",
+   "text": "Side quests (Quest.Procedural.SideQuest.*) come in sets of 16, each with a target (QuestDynamicObjectives.MaxQuantity):"
+  }
+ ],
+ "QuestGossipCost.csv": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Kinds of quest",
+   "anchor": "#kinds-of-quest",
+   "text": "Gossip: QuestGossipCost.csv gives a cost to each side quest's hint."
+  }
+ ],
+ "QuestObjectives.csv": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Kinds of quest",
+   "anchor": "#kinds-of-quest",
+   "text": "Main story: Quest.Main.<n>, Quest.Rank.<n> and the tutorial Quest.Chapter00.MQ<n> (QuestObjectives.csv has its fixed objectives)."
+  }
+ ],
+ "RogueNames.csv": [
+  {
+   "doc": "npcs.md",
+   "heading": "Names",
+   "anchor": "#names",
+   "text": "Rogues: a whole name from RogueNames.csv (23)."
+  }
+ ],
+ "Rotation.Rate.Min": [
+  {
+   "doc": "exploration.md",
+   "heading": "Moving",
+   "anchor": "#moving",
+   "text": "Turning: Rotation.Rate.Min 520 and .Max 200 (°/s, probably at rest and at full speed); AI chasing turns at 720"
+  }
+ ],
+ "Scars.csv": [
+  {
+   "doc": "npcs.md",
+   "heading": "Scars",
+   "anchor": "#scars",
+   "text": "Scars.csv gives the chance of an ear, body and eye scar by role:"
+  }
+ ],
+ "SelfCure.Chance": [
+  {
+   "doc": "combat.md",
+   "heading": "Status conditions",
+   "anchor": "#status-conditions",
+   "text": "The status component (SwtAdventureStatusComponent, the character's StatusConditionComponent) keeps the condition at +0xE0 and how many rounds it has lasted at +0x144 (1 when applied), with the tuning at +0x148 (SelfCure.Chance 0.2) and..."
+  }
+ ],
+ "Shadowclan.1": [
+  {
+   "doc": "combat.md",
+   "heading": "Moves",
+   "anchor": "#moves",
+   "text": "Tag spelling: CharacterAttacks.csv writes Thunderclan.1 and Shadowclan.1 where the tags are ThunderClan.1."
+  }
+ ],
+ "SkirmishRank.csv": [
+  {
+   "doc": "combat.md",
+   "heading": "The AI",
+   "anchor": "#the-ai",
+   "text": "Ranks (SkirmishRank.csv): each rank has a level offset (a triple, probably one per opponent) and an AI profile: Novice (0,0,0) profile 2, Adept (0,1,0) 3, Veteran (1,1,1) 4, Elite (1,2,1) 5 and Legend (2,2,2) 6."
+  }
+ ],
+ "SneakAttack.AutoDefeatDelta": [
+  {
+   "doc": "exploration.md",
+   "heading": "Pouncing and sneak attacks",
+   "anchor": "#pouncing-and-sneak-attacks",
+   "text": "SneakAttack.AutoDefeatDelta 3: probably, a sneak attack on an animal 3 or more levels below you wins outright (a guess from the name)."
+  }
+ ],
+ "Sound.Radius": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "+0x58C: Sound.Radius, +0x5A4, PlayerZone.EntryDistance"
+  }
+ ],
+ "Sound.Speed": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "+0x590: Sound.Speed, +0x5A8, PlayerZone.ExitDistance"
+  }
+ ],
+ "Stamina.FullHeal": [
+  {
+   "doc": "items.md",
+   "heading": "What consumables do",
+   "anchor": "#what-consumables-do",
+   "text": "Unused parameter rows: Params.Stamina.4 (+20%), Stamina.FullHeal, MaxHealth.1 (+50%) and stronger stance buffs (Buff.<Stance>.2, +0.5) exist, but no consumable uses them."
+  }
+ ],
+ "Stamina.Max": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stamina",
+   "anchor": "#stamina",
+   "text": "Maximum: 100 (Stamina.Max)"
+  }
+ ],
+ "Stamina.RegenRate": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stamina",
+   "anchor": "#stamina",
+   "text": "Back when not running: 20 per second (Stamina.RegenRate)"
+  }
+ ],
+ "StanceModifier.Neutral": [
+  {
+   "doc": "combat.md",
+   "heading": "Stances",
+   "anchor": "#stances",
+   "text": "A Neutral attacker, or a fighter with no stance, gets StanceModifier.Neutral (1) (0x1417D98C0)."
+  }
+ ],
+ "StatusCondition.Poison.Damage": [
+  {
+   "doc": "combat.md",
+   "heading": "Status conditions",
+   "anchor": "#status-conditions",
+   "text": "Poisoned: \"You lose 10% health at the end of every round\", StatusCondition.Poison.Damage 0.1"
+  }
+ ],
+ "StoryDialogues.csv": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Dialogue answers and their scores",
+   "anchor": "#dialogue-answers-and-their-scores",
+   "text": "DebugText shows only when the key is missing: older English in StoryDialogues.csv, the key itself in QuestDialogues.csv (so the Escort and Recruit quests, whose keys Strings_EN lacks, would show raw keys)."
+  }
+ ],
+ "SuffixName.csv": [
+  {
+   "doc": "npcs.md",
+   "heading": "Names",
+   "anchor": "#names",
+   "text": "Clan cats: a prefix from PreffixName.csv (90, weighted per clan) and a suffix from SuffixName.csv (27, one set per role: -kit, -paw, a warrior suffix, -star)."
+  }
+ ],
+ "SuffixNameFilters.csv": [
+  {
+   "doc": "npcs.md",
+   "heading": "Names",
+   "anchor": "#names",
+   "text": "Your cat's name suggestions: the name screen scores prefixes with PrefixNameFilters.csv (clan and looks) and suffixes with SuffixNameFilters.csv (traits too)."
+  }
+ ],
+ "Sunspot.Reward.Movement.1": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stamina",
+   "anchor": "#stamina",
+   "text": "Sunspots (BP_Interactable_Sleep_Sunspot, 17 on the map) give Sunspot.Reward.Movement.1 8 and .2 16, units unknown."
+  }
+ ],
+ "Target.Distance": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "How far you can target it (Target.Distance): 1200"
+  },
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "+0x57C: Cone.Angle, +0x598, Target.Distance"
+  }
+ ],
+ "ThunderClan.1": [
+  {
+   "doc": "combat.md",
+   "heading": "Moves",
+   "anchor": "#moves",
+   "text": "Tag spelling: CharacterAttacks.csv writes Thunderclan.1 and Shadowclan.1 where the tags are ThunderClan.1."
+  }
+ ],
+ "Thunderclan.1": [
+  {
+   "doc": "combat.md",
+   "heading": "Moves",
+   "anchor": "#moves",
+   "text": "Tag spelling: CharacterAttacks.csv writes Thunderclan.1 and Shadowclan.1 where the tags are ThunderClan.1."
+  }
+ ],
+ "Time.ReactToChase": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "Delay before chasing (Time.ReactToChase, Small, Medium, Large): 0.5 s"
+  },
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "+0x594: Proximity.Distance, +0x5AC, Time.ReactToChase"
+  }
+ ],
+ "Trait.Bonus.Curious.Drop.Chance": [
+  {
+   "doc": "progression.md",
+   "heading": "What traits do in play",
+   "anchor": "#what-traits-do-in-play",
+   "text": "Curious: Gameplay, Extra items: getting a consumable has a 50% chance of +1 (Trait.Bonus.Curious.Drop.Chance 0.5, .PlusQuantity 1), Read from the code"
+  }
+ ],
+ "Trait.Bonus.Energic.MoveAndRun.DrainRate": [
+  {
+   "doc": "progression.md",
+   "heading": "What traits do in play",
+   "anchor": "#what-traits-do-in-play",
+   "text": "Energetic: Gameplay, Less stamina drain: Trait.Bonus.Energic.MoveAndRun.DrainRate -5 (running normally drains -10) and .Climb.DrainRate -18 (climbing drains -24), The code loads both, into the player's exploration settings at +0x208 and..."
+  }
+ ],
+ "Trait.Bonus.Patient.FreshKill.Chance": [
+  {
+   "doc": "progression.md",
+   "heading": "What traits do in play",
+   "anchor": "#what-traits-do-in-play",
+   "text": "TuningData has Trait.Bonus.Patient.FreshKill.Chance 0.5 / .PlusQuantity 1, but the exe never mentions \"Patient\" in a tuning key, Read from the code"
+  }
+ ],
+ "UniqueIds/L_WorldMap_01_P.csv": [
+  {
+   "doc": "exploration.md",
+   "heading": "The map",
+   "anchor": "#the-map",
+   "text": "UniqueIds/L_WorldMap_01_P.csv lists the 3727 world objects that keep state (an ID, the actor, and its SoftData: rewards, location and a class number)."
+  }
+ ],
+ "Universal.2": [
+  {
+   "doc": "combat.md",
+   "heading": "The combatant",
+   "anchor": "#the-combatant",
+   "text": "Seen in game (your level 20 cat against a weak mouse, read through the C++ SDK's Fighter::moves() and WCModsGame's fighter): your cat had team 1, no tier and three moves (Universal.2 30/1/20 Offensive, Universal.6 30/1/20 Defensive..."
+  }
+ ],
+ "Universal.6": [
+  {
+   "doc": "combat.md",
+   "heading": "The combatant",
+   "anchor": "#the-combatant",
+   "text": "Seen in game (your level 20 cat against a weak mouse, read through the C++ SDK's Fighter::moves() and WCModsGame's fighter): your cat had team 1, no tier and three moves (Universal.2 30/1/20 Offensive, Universal.6 30/1/20 Defensive..."
+  }
+ ],
+ "Universal.9": [
+  {
+   "doc": "combat.md",
+   "heading": "The combatant",
+   "anchor": "#the-combatant",
+   "text": "Seen in game (your level 20 cat against a weak mouse, read through the C++ SDK's Fighter::moves() and WCModsGame's fighter): your cat had team 1, no tier and three moves (Universal.2 30/1/20 Offensive, Universal.6 30/1/20 Defensive..."
+  }
+ ],
+ "Universal.Factor": [
+  {
+   "doc": "combat.md",
+   "heading": "The damage formula",
+   "anchor": "#the-damage-formula",
+   "text": "0.015, 1, 0.5, 5 and 0.3 are Universal.Factor, Numerator.Constant, Numerator.Factor, Denominator.Constant and Denominator.Factor."
+  }
+ ],
+ "VisitRewards.csv": [
+  {
+   "doc": "clan-life.md",
+   "heading": "Den visits",
+   "anchor": "#den-visits",
+   "text": "Visiting a den hands out a random item from VisitRewards.csv:"
+  },
+  {
+   "doc": "combat.md",
+   "heading": "Moves",
+   "anchor": "#moves",
+   "text": "Den visits: VisitRewards.csv lists every move, but all at weight 0, so visits never give one."
+  }
+ ],
+ "WalkSpeed.Chasing": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "+0x588: Pounce.Distance, +0x5A0, WalkSpeed.Chasing"
+  }
+ ],
+ "WalkSpeed.Roaming": [
+  {
+   "doc": "exploration.md",
+   "heading": "Stealth and being noticed",
+   "anchor": "#stealth-and-being-noticed",
+   "text": "+0x580: Cone.Distance, +0x59C, WalkSpeed.Roaming"
+  }
+ ],
+ "WeakMice.1": [
+  {
+   "doc": "combat.md",
+   "heading": "The combatant",
+   "anchor": "#the-combatant",
+   "text": "Seen in game (your level 20 cat against a weak mouse, read through the C++ SDK's Fighter::moves() and WCModsGame's fighter): your cat had team 1, no tier and three moves (Universal.2 30/1/20 Offensive, Universal.6 30/1/20 Defensive..."
+  }
+ ],
+ "XP.400": [
+  {
+   "doc": "progression.md",
+   "heading": "Levels and experience",
+   "anchor": "#levels-and-experience",
+   "text": "XP effects: Effects/GenericEffect.csv has Gameplay.Params.XP.50 to XP.400 (50–400 XP), probably quest rewards."
+  }
+ ]
+}

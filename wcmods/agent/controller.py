@@ -18,17 +18,15 @@ import os
 import re
 import time
 
-from .. import mods as modlib, pipeline
-from ..formats import save
-from ..bridge import Bridge, BridgeError
+from .. import mods as modlib, pipeline, saverecord
+from ..bridge import FOREST, Bridge, BridgeError
 from ..config import STEAM_APP_ID, Config
+from ..scriptlog import ERROR_LINE   # a line in UE4SS.log that says a script went wrong
 from ..sdk import lua_value
 from . import window
 from .menu import MenuDriver
 
-WORLD = "L_WorldMap_01_P"
-# A line in UE4SS.log that says a script went wrong.
-ERROR_LINE = re.compile(r"\berror\b|stack traceback|attempt to (call|index|perform|compare|concatenate)", re.I)
+WORLD = FOREST
 
 
 class AgentError(RuntimeError):
@@ -70,8 +68,11 @@ Game.call(s, "OnUIRelease", b)
 return true
 """
 
-# Confirm on a screen that waits for any key (the splash, the cat choice).
+# Confirm on a screen that waits for any key (the splash, the cat choice). The Confirm command is read from the
+# game's ECommands by name (docs/reverse-engineering.md, "The game's enums"); CONFIRM is build 26184573's number,
+# for when it can't be, and `python tools/re/uht.py <exe> lua` checks it.
 CONFIRM_LUA = """
+local CONFIRM = 26   -- ECommands::Button_Confirm
 local s = Game.find(%s)
 if not s then return false end
 local pc = Game.controller()
@@ -79,8 +80,10 @@ for _, k in ipairs({ "Enter", "SpaceBar", "Gamepad_FaceButton_Bottom" }) do
     Game.call(s, "OnKeyPressed", { KeyName = FName(k) }, pc)
     Game.call(s, "OnKeyReleased", { KeyName = FName(k) }, pc)
 end
-Game.call(s, "OnListenCommand", 26, 0, pc)
-Game.call(s, "OnListenCommand", 26, 1, pc)
+local commands = Game.enumNames and Game.enumNames("/Script/SwtEngine.ECommands")
+local confirm = commands and commands.Button_Confirm or CONFIRM
+Game.call(s, "OnListenCommand", confirm, 0, pc)
+Game.call(s, "OnListenCommand", confirm, 1, pc)
 return true
 """
 
@@ -278,21 +281,23 @@ class Agent:
     def install(self, extra=(), code_mods=True, force=False):
         """Build and install your enabled mods for a test: code mods allowed for this build (so the bridge
         goes in, and every enabled mod's code runs, downloaded ones too), plus the mod folders in `extra`
-        (e.g. ../wcmods-examples/game-tweaks), on for this build. wcmods.json keeps its settings; the install updates
-        its record of what's installed. The game must be closed. Returns the build's manifest."""
+        (e.g. ../wcmods-examples/game-tweaks), on for this build, and used even when their mod.json doesn't name
+        this version of the game (the tests' own mods name none). wcmods.json keeps its settings; the install
+        updates its record of what's installed. The game must be closed. Returns the build's manifest."""
         if window.game_pid():
             raise AgentError("the game is running; agent.quit() first (installing replaces files it has open)")
         cfg = Config(self.root, self.cfg.data_dir)
         if code_mods:
             cfg.data["allow_code_mods"] = True
-        found = modlib.discover(cfg.mods_root)
+        found, chosen = modlib.discover(cfg.mods_root), []
         for path in extra:
             m = modlib.Mod(os.path.abspath(os.path.join(self.root, path)))
             m.enabled = True
             found = [x for x in found if x.id != m.id] + [m]
+            chosen.append(m.id)
         found.sort(key=lambda m: (m.priority, m.id))
         build_dir = os.path.join(self.root, "build", "agent-install")
-        manifest = pipeline.build(cfg, found, build_dir, log=lambda m: None)
+        manifest = pipeline.build(cfg, found, build_dir, log=lambda m: None, trusted=chosen)
         pipeline.install(cfg, build_dir, cfg.backups_dir, log=lambda m: None, force=force)
         return manifest
 
@@ -309,16 +314,15 @@ class Agent:
 
     def backup_save(self, reason="agent"):
         """Copy the save aside (backups/<time>-<reason>); returns the backup's name for restore_save."""
-        dest, _ = save.backup(self.cfg.save_dir, self.cfg.backups_dir, reason)
+        dest, _ = saverecord.backup(self.cfg, self.cfg.backups_dir, reason)   # with the record of save edits
         return os.path.basename(dest)
 
     def restore_save(self, name):
-        """Put a backed-up save back (the game must be closed: it rewrites the save as it plays)."""
+        """Put a backed-up save back (the game must be closed: it rewrites the save as it plays), with the record
+        of save edits it kept, as the studio's and `wcmods restore` do."""
         if window.game_pid():
             raise AgentError("the game is running; agent.quit() first")
-        backups = self.cfg.backups_dir
-        save.backup(self.cfg.save_dir, backups, "before-restore")
-        return save.restore(backups, name, self.cfg.save_dir)
+        return saverecord.restore(self.cfg, self.cfg.backups_dir, name)[0]
 
     # ---------- Lua ----------
     def lua(self, code, timeout=15):

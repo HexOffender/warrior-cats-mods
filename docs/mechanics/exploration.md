@@ -19,8 +19,8 @@ row descriptions are the designers' own, quoted where useful.
 
 | | Value |
 |---|---|
-| Walk | 175, reached at 175/s² acceleration |
-| Run | 390, acceleration 175 |
+| Walk | 175 (`Player.MoveAndRun.Walk.Speed`), reached at 175/s² acceleration (`Player.MoveAndRun.Walk.Acceleration`) |
+| Run | 390 (`Player.MoveAndRun.Run.Speed`), acceleration 175 (`Player.MoveAndRun.Run.Acceleration`) |
 | Crouch | 0.5 × walk speed, turning at 65°/s |
 | Turning | `Rotation.Rate.Min` 520 and `.Max` 200 (°/s, probably at rest and at full speed); AI chasing turns at 720 |
 | Gravity | -980 |
@@ -34,7 +34,7 @@ row descriptions are the designers' own, quoted where useful.
 |---|---|
 | Maximum | 100 (`Stamina.Max`) |
 | Back when not running | 20 per second (`Stamina.RegenRate`) |
-| Running | -10 per second (`MoveAndRun.Stamina.DrainRate`) |
+| Running | -10 per second (`Player.MoveAndRun.Stamina.DrainRate`) |
 | Climbing | -24 per second (`Climb.Stamina.DrainRate`) |
 | Energetic cats | running -5, climbing -18 (see [progression.md](progression.md#what-traits-do-in-play)) |
 
@@ -50,7 +50,8 @@ also deals -50, with `CanKillPlayer` 0.
 ## Jumping, climbing and falling
 
 **Jumping:**
-- A jump is 85 high and 200–250 long. Air control is 150 sideways and forward, capped at 500.
+- A jump is 85 high (`Jump.Height.Min` from standing, `Jump.Height.Max` from a run) and 200–250 long. Air
+  control is 150 sideways and forward, capped at 500.
 - Taking off from a run is 100 (`Jump.RunSpeed`).
 
 **Jump spots** (`BP_Jump_Spline_HotSpot`) snap you along a set path. Their radii are 150, 120 and

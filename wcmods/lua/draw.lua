@@ -20,13 +20,20 @@
 local View = require("WCModsView")
 local Draw = {}
 
-local COLLAPSED, HIT_TEST_INVISIBLE = 1, 3               -- ESlateVisibility
-local JUSTIFY = { left = 0, center = 1, right = 2 }       -- ETextJustify
+local COLLAPSED, HIT_TEST_INVISIBLE = 1, 3               -- ESlateVisibility: Collapsed, HitTestInvisible
+local J_LEFT, J_CENTER, J_RIGHT = 0, 1, 2                 -- ETextJustify: Left, Center, Right
+local JUSTIFY = { left = J_LEFT, center = J_CENTER, right = J_RIGHT }
 local ALIGN_X = { left = 0, center = 0.5, right = 1 }
 local ALIGN_Y = { top = 0, middle = 0.5, bottom = 1 }
 
 local function valid(o) return o ~= nil and o:IsValid() end
-local function log(fmt, ...) print(string.format("[WCModsDraw] " .. fmt .. "\n", ...)) end
+-- Lines go to UE4SS.log under the name of the mod whose script draws (WCModsGame's, set by the script bootstrap,
+-- in this Lua state), so a painter's error says whose it is; "[WCModsDraw]" when there's none.
+local function log(fmt, ...)
+    local G = package.loaded.WCModsGame
+    local who = type(G) == "table" and type(G.modName) == "string" and G.modName ~= "" and G.modName
+    print((who and ("[" .. who .. "] drawing: ") or "[WCModsDraw] ") .. string.format(fmt, ...) .. "\n")
+end
 
 local reported, nreported = {}, 0
 local function report(where, err)
@@ -274,7 +281,7 @@ function d.text(x, y, text, opts)
     end)
     local lin, key = colour(opts.color or "#ffffff")
     put(e, "color", key, function() e.w:SetColorAndOpacity({ SpecifiedColor = lin, ColorUseRule = 0 }) end)
-    put(e, "justify", opts.align or "left", function(v) e.w:SetJustification(JUSTIFY[v] or 0) end)
+    put(e, "justify", opts.align or "left", function(v) e.w:SetJustification(JUSTIFY[v] or J_LEFT) end)
     local shadow = opts.shadow ~= false
     put(e, "shadow", shadow, function(v)
         e.w:SetShadowOffset(v and { X = 1, Y = 1 } or { X = 0, Y = 0 })

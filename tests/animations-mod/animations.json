@@ -1,0 +1,8 @@
+{
+  "_help": "For tests/game/test_animations.py. Install it with: python wcmods.py agent install --with tests/animations-mod",
+  "animations": [
+    { "id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "emote": true, "key": "F7", "loop": true },
+    { "id": "Stretch", "name": "Stretch", "game": "A_CatMaster_Stretch_1", "emote": true, "key": "F8", "claws": true, "loop": true },
+    { "id": "Trot", "name": "Sleep as the trot", "game": "A_CatMaster_Sleep_Loop_2", "replaces": "A_CatMaster_Trot_1" }
+  ]
+}

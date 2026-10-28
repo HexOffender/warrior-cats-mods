@@ -7,6 +7,7 @@ from black (pupil side) to the full colour. MI_Cat_Eyes samples a row per eye.
 Patching keeps the package byte-for-byte identical except the pixel block, so the export
 sizes in the zen header and the container's store entry stay valid.
 """
+import re
 import struct
 
 from .formats.binio import read_name_batch
@@ -58,20 +59,12 @@ class EyeAtlas:
             self.labels.append(label)
 
     def slot(self, name):
-        """Resolve a palette key ('Amber', 'sclera', 'iris3', 'row5', '5') to a row index."""
-        key = str(name).strip().lower()
-        for i, label in enumerate(self.labels):
-            if label.lower() == key:
-                return i
-        if key.startswith("iris") and key[4:].isdigit():
-            return int(key[4:])
-        if key.startswith("row") and key[3:].isdigit():
-            return int(key[3:])
-        if key.isdigit():
-            return int(key)
-        raise KeyError(f"unknown eye slot '{name}' (try one of: {', '.join(self.labels)})")
+        """Resolve a palette key ('Amber', 'sclera', 'iris3', 'row5', '5') to a row index (resolve())."""
+        return resolve(self.labels, name, self.height)
 
     def row(self, r):
+        if not 0 <= r < self.height:
+            raise ValueError("bad row")
         base = self.pixel_offset + r * self.width * 8
         return [struct.unpack_from("<4e", self.data, base + x * 8) for x in range(self.width)]
 
@@ -84,6 +77,24 @@ class EyeAtlas:
 
     def bytes(self):
         return bytes(self.data)
+
+
+def resolve(labels, name, height=None):
+    """The row a palette's eye key means: one of the atlas's labels in any case ('Amber', 'sclera'), then
+    'irisN', 'rowN' or a plain number, which has to be one of its rows. KeyError, with a sentence that names
+    the key, for anything else: the build skips that entry, and Clan Mod Studio says so when it's saved."""
+    height = len(labels) if height is None else height
+    key = str(name).strip().lower()
+    for i, label in enumerate(labels):
+        if label.lower() == key:
+            return i
+    m = re.fullmatch(r"(?:iris|row)?([0-9]+)", key)
+    if not m:
+        raise KeyError(f"'{name}' isn't one of the game's eye colours ({', '.join(labels)})")
+    row = int(m.group(1))
+    if row >= height:
+        raise KeyError(f"'{name}' is past the game's {height} eye colours (they're 0-{height - 1})")
+    return row
 
 
 def _clamp_half(v):

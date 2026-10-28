@@ -1,0 +1,7 @@
+/* The Questlines page: a questline's steps as cards, each carrying the page's colour (ShadowClan's, from
+   styles.css). Linked by app.js when the page opens; .split and .pick are in styles.css. */
+.steps-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.step-card { border: 1px solid var(--line); border-left: 4px solid var(--clan); border-radius: 10px; padding: 12px; background: var(--raised); display: grid; gap: 10px; }
+/* A step with something not ready yet: its edge in the warning colour, and what's missing said on the card. */
+.step-card.not-ready { border-left-color: var(--changed); }
+.step-problem { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--tint-warn); font-size: 0.9rem; }

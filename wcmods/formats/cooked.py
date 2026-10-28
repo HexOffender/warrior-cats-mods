@@ -15,7 +15,10 @@ Format (UE 5.7 zen packages with unversioned properties; docs/reverse-engineerin
   * Unversioned struct: u16 fragments (skip count in bits 0-6, "has zeroes" bit 7, last-fragment bit 8,
     value count in bits 9-15), a zero mask when any fragment has zeroes, then the values that aren't zero,
     in the struct's property order.
+  * Any other export (an object): its class's properties, unversioned, numbered the most derived class's
+    own first and then each base class's in turn, then a u32 HasGuid (0). Read with _Values.read_object.
 """
+import collections
 import struct
 
 from .binio import read_fstring, write_fstring
@@ -29,7 +32,11 @@ EMPTY_Z = "\0"                  # an empty FString written as a lone terminator 
 NAME_HASH_VERSION = 0xC1640000  # FNameHash's algorithm id, written in a name batch's header
 
 # Row structs, as (field, type) in the struct's property order. Types: "tag" (FGameplayTag), "text"
-# (FText), "soft" (FSoftObjectPath), "name", "u8" (a byte enum), "i32", "f32".
+# (FText), "soft" (FSoftObjectPath), "name", "u8" (a byte enum), "i32", "f32"; and for objects, "bool",
+# "str" (FString), "obj" (an object reference, an FPackageIndex: export i is i + 1, import i is -i - 1, 0 is
+# none), "color" (FLinearColor), "tags" (FGameplayTagContainer: a count and the tags' FNames), ("array",
+# type), ("map", key type, value type) (an enum key is its FName, "EBondingTypes::Neutral", so "name") and
+# ("struct", [(field, type), ...]) for a nested struct.
 SCHEMAS = {
     "QuestObjectsInfoDataStruct": [
         ("itemTag", "tag"), ("Name", "text"), ("Description", "text"), ("Icon", "soft"),
@@ -52,6 +59,20 @@ ITEM_CATEGORY_COLOR = {"None": 0, "Consumable": 1, "Quest": 2, "Den": 3}
 
 class FormatError(ValueError):
     """The asset isn't laid out as wcmods expects (a game update may have changed it)."""
+
+
+# An export map entry (ZenPackage.export_entry). outer, cls, super, template are FPackageObjectIndex values.
+ExportEntry = collections.namedtuple("ExportEntry", "offset size name outer cls super template public flags")
+# An FPackageObjectIndex's kind, in its top two bits: one of this package's exports (the low bits are its
+# index), a native object (a hash of its path, see anim.script_index), an object of another package (the
+# imported package's index << 32 | its public export hash's index), or none (all bits set).
+OBJECT_EXPORT, OBJECT_SCRIPT, OBJECT_PACKAGE, OBJECT_NULL = range(4)
+
+
+def object_index(value):
+    """(kind, index) of an FPackageObjectIndex: an export's index for OBJECT_EXPORT, the value for the rest."""
+    kind = value >> 62
+    return kind, (value & ((1 << 62) - 1) if kind == OBJECT_EXPORT else value)
 
 
 def split_name(s):
@@ -127,6 +148,71 @@ class ZenPackage:
     def export(self, i):
         """(offset into the export data, size) of export i."""
         return struct.unpack_from("<QQ", self.data, self._export_map + EXPORT_ENTRY * i)
+
+    def export_entry(self, i):
+        """Export i's map entry: its offset and size in the export data, its object name, its outer, class,
+        super and template (FPackageObjectIndex values, see object_index), its public hash (0 when nothing
+        outside the package can import it) and its object flags."""
+        off, size, name, number, outer, cls, sup, tmpl, public, flags = struct.unpack_from(
+            "<QQIIQQQQQI", self.data, self._export_map + EXPORT_ENTRY * i)
+        if name >= len(self.names):
+            raise FormatError("an export's name is past the name map")
+        return ExportEntry(off, size, self.names[name] + (f"_{number - 1}" if number else ""), outer, cls, sup,
+                           tmpl, public, flags)
+
+    def imports(self):
+        """The import map: an FPackageObjectIndex per import."""
+        s = self.summary
+        return list(struct.unpack_from(f"<{(s[8] - s[7]) // 8}Q", self.data, s[7]))
+
+    def imported_packages(self):
+        """The names of the packages it imports objects of (its ImportedPackageNames), as a package import's
+        index gives them: "/Game/Quests/StoryDialogues/StoryDialogue_Short_Template"."""
+        s = self.summary
+        if s[12] != max(s[6:15]) or s[12] > s[1]:
+            raise FormatError("the imported package names aren't where wcmods expects")
+        raw = self.data[s[12]:s[1]]
+        (count,) = struct.unpack_from("<I", raw, 0)
+        if not count:
+            return []
+        p = 16 + 8 * count
+        lengths = struct.unpack_from(f">{count}H", raw, p)
+        p += 2 * count
+        names = []
+        for n in lengths:
+            if n & 0x8000:
+                raise FormatError("wide imported package names aren't supported")
+            names.append(raw[p:p + n].decode("ascii"))
+            p += n
+        numbers = struct.unpack_from(f"<{count}i", raw, p)
+        return [n + (f"_{k - 1}" if k else "") for n, k in zip(names, numbers)]
+
+    def resolve(self, index):
+        """What an object reference (an FPackageIndex, the "obj" type) points at: ("export", i) for one of
+        this package's exports, ("package", package name, public export hash) for an object of another package,
+        ("script", FPackageObjectIndex) for a native one (a class, say), or None."""
+        if index > 0:
+            if index > self.export_count:
+                raise FormatError("an object reference past the export map")
+            return ("export", index - 1)
+        if index == 0:
+            return None
+        imports = self.imports()
+        if -index > len(imports):
+            raise FormatError("an object reference past the import map")
+        value = imports[-index - 1]
+        kind = value >> 62
+        if kind == OBJECT_SCRIPT:
+            return ("script", value)
+        if kind == OBJECT_PACKAGE:
+            s = self.summary
+            hashes = struct.unpack_from(f"<{(s[7] - s[6]) // 8}Q", self.data, s[6])
+            packages = self.imported_packages()
+            p, h = value >> 32 & 0x3FFFFFFF, value & 0xFFFFFFFF
+            if p >= len(packages) or h >= len(hashes):
+                raise FormatError("a package import out of range")
+            return ("package", packages[p], hashes[h])
+        return None
 
     def rebuild(self, export_data, sizes):
         """The package with the current name map and new export data; sizes[i] is export i's size."""
@@ -244,15 +330,40 @@ def write_header(present, zero):
     return out
 
 
-ZERO = {"tag": "", "name": "None", "u8": 0, "i32": 0, "f32": 0.0}
+ZERO = {"tag": "", "name": "None", "u8": 0, "i32": 0, "f32": 0.0, "bool": False, "str": "", "obj": 0}
 
 
 def _zero(kind):
+    if isinstance(kind, tuple):
+        if kind[0] in ("array", "map"):
+            return []
+        raise FormatError(f"a {kind[0]} field written as zero")
     if kind == "soft":
         return {"package": "None", "asset": "None", "sub": ""}
+    if kind == "color":
+        return [0.0, 0.0, 0.0, 0.0]
+    if kind == "tags":
+        return []
     if kind not in ZERO:
         raise FormatError(f"a {kind} field written as zero")
     return ZERO[kind]
+
+
+class Empty(str):
+    """An empty FString a package writes out (length 0) where it could have marked it zero (its memory held an
+    allocation). It equals "", and is kept apart only so the bytes come back the same."""
+
+
+class EmptyList(list):
+    """The same for an empty array, map or tag container written out with a count of 0."""
+
+
+def _count(r):
+    """A container's element count, refused when it can't fit in what's left (each element takes a byte)."""
+    n = r.take("<i")
+    if n < 0 or n > len(r.data) - r.pos:
+        raise FormatError(f"a container's count ({n}) is out of range")
+    return n
 
 
 class _Values:
@@ -273,6 +384,27 @@ class _Values:
         return struct.pack("<II", self.pkg.name_index(base), number)
 
     def read(self, r, kind):
+        if isinstance(kind, tuple):
+            what = kind[0]
+            if what == "struct":
+                return self.read_struct(r, kind[1])
+            if what == "array":
+                return [self.read(r, kind[1]) for _ in range(_count(r))] or EmptyList()
+            if what == "map":
+                if r.take("<i"):
+                    raise FormatError("a map with keys to remove")
+                return [(self.read(r, kind[1]), self.read(r, kind[2])) for _ in range(_count(r))] or EmptyList()
+            raise FormatError(f"unknown field type {what}")
+        if kind == "bool":
+            return r.take("<B") != 0
+        if kind == "str":
+            return r.fstring() or Empty()
+        if kind == "obj":
+            return r.take("<i")
+        if kind == "color":
+            return list(r.take("<4f"))
+        if kind == "tags":
+            return [self.name(r) for _ in range(_count(r))] or EmptyList()
         if kind == "name":
             return self.name(r)
         if kind == "tag":
@@ -298,6 +430,26 @@ class _Values:
         raise FormatError(f"unknown field type {kind}")
 
     def write(self, v, kind):
+        if isinstance(kind, tuple):
+            what = kind[0]
+            if what == "struct":
+                return self.write_struct(v, kind[1])
+            if what == "array":
+                return struct.pack("<i", len(v)) + b"".join(self.write(x, kind[1]) for x in v)
+            if what == "map":
+                return struct.pack("<ii", 0, len(v)) + b"".join(self.write(a, kind[1]) + self.write(b, kind[2])
+                                                                for a, b in v)
+            raise ValueError(f"unknown field type {what}")
+        if kind == "bool":
+            return struct.pack("<B", 1 if v else 0)
+        if kind == "str":
+            return _fstring(v)
+        if kind == "obj":
+            return struct.pack("<i", v)
+        if kind == "color":
+            return struct.pack("<4f", *v)
+        if kind == "tags":
+            return struct.pack("<i", len(v)) + b"".join(self.write_name(t) for t in v)
         if kind == "name":
             return self.write_name(v)
         if kind == "tag":
@@ -326,16 +478,39 @@ class _Values:
     def is_zero(v, kind):
         """Whether a value is written as "zero" (all bytes 0 in memory). Never for text: a zeroed FText
         isn't a valid one."""
+        if isinstance(kind, tuple):
+            return kind[0] in ("array", "map") and not v and not isinstance(v, EmptyList)
+        if kind == "str":
+            return v == "" and not isinstance(v, Empty)
         if kind == "soft":
             return v.get("package", "None") == "None" and v.get("asset", "None") == "None" and not v.get("sub")
+        if kind == "color":
+            return all(x == 0 for x in v)
+        if kind == "tags":
+            return not v and not isinstance(v, EmptyList)
         return kind in ZERO and v == ZERO[kind]
 
     def read_struct(self, r, schema):
         present, zero = read_header(r)
         if present and present[-1] >= len(schema):
-            raise FormatError("a row has more fields than wcmods knows (the game may have updated)")
+            raise FormatError("a row or object has more fields than wcmods knows (the game may have updated)")
         return {schema[i][0]: _zero(schema[i][1]) if i in zero else self.read(r, schema[i][1])
                 for i in present}
+
+    def read_object(self, blob, schema):
+        """An object export (not a table): its properties, {field: value} for those it sets, schema being its
+        class's properties in the order the package numbers them. The HasGuid after them must be 0 and end it."""
+        r = _Reader(blob)
+        values = self.read_struct(r, schema)
+        if r.take("<I") != 0:
+            raise FormatError("an object with a GUID")
+        if r.pos != len(blob):
+            raise FormatError(f"{len(blob) - r.pos} bytes after an object's properties (its class may have changed)")
+        return values
+
+    def write_object(self, values, schema):
+        """Inverse of read_object (for checking the decoding; nothing writes objects into packages)."""
+        return self.write_struct(values, schema) + struct.pack("<I", 0)
 
     def write_struct(self, values, schema):
         unknown = set(values) - {f for f, _ in schema}

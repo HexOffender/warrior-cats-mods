@@ -39,6 +39,14 @@ end
 
 Menu.page("Overview", function(ui)
     ui.heading("Overview")
+    -- Scripts that didn't start this time (the script bootstrap lists them: "<name>\t<why>" a line).
+    local failed = Menu.shared("failed")
+    if type(failed) == "string" then
+        for line in failed:gmatch("[^\n]+") do
+            local name, why = line:match("^([^\t]*)\t(.*)$")
+            if name then ui.text(name .. " didn't start: " .. why .. " (Tools, Log, says more)", { color = THEME.danger }) end
+        end
+    end
     local okN, N = pcall(require, "WCModsNames")
     if okN and type(N) == "table" and N.loaded and N.loaded() == false then
         ui.text("The game isn't showing the names your mods add: it isn't reading wcmods' pak (~mods/zzz_WCMods_P.pak), " ..
@@ -91,6 +99,17 @@ Menu.page("Installed mods", function(ui)
             ui.field("From", table.concat(s.mods, ", "))
             if s.status ~= "ok" then ui.text("Status: " .. s.status, { color = THEME.danger }) end
             for _, err in ipairs(s.errors) do ui.text(err, { color = THEME.danger }) end
+            -- A mod the section had but left out (a script, with mods that run code off), or whose script won't
+            -- load: said in the danger colour, not as if it went in.
+            for _, id in ipairs(s.mods) do
+                local note = type(s.notes) == "table" and s.notes[id]
+                if type(note) == "table" and note["left out"] then
+                    ui.text(id .. ": left out, " .. tostring(note["left out"]), { color = THEME.danger })
+                end
+                if type(note) == "table" and type(note.problems) == "table" then
+                    for _, p in ipairs(note.problems) do ui.text(id .. ": " .. tostring(p), { color = THEME.danger }) end
+                end
+            end
             if s.notes then show_value(ui, "", s.notes) end
         end, { id = "section:" .. s.id, open = false })
     end
@@ -116,6 +135,21 @@ local function readLog()
     for line in text:gmatch("[^\r\n]+") do out[#out + 1] = line end
     return out
 end
+-- What the filters keep. Mods: every line a script printed (a plain print too), not UE4SS's own start-up lines.
+-- Errors: a script's error and what goes with it, not the start-up dump's names that have "Error" in them
+-- ("FArchiveState::ArIsError = 0x29").
+local function fromAScript(line)
+    return line:find("[Lua] ", 1, true) ~= nil and not line:find("[Lua] Exposing size of", 1, true)
+           and not line:find("[Lua] Failed to expose size of", 1, true)
+end
+local ERRORS = { "error:", "error in ", "attempt to ", "can't load", "stack traceback", "didn't start" }
+local function anError(line)
+    local l = line:lower()
+    for _, e in ipairs(ERRORS) do
+        if l:find(e, 1, true) then return true end
+    end
+    return false
+end
 Menu.page("Log", function(ui)
     ui.heading("Log")
     ui.note("The end of UE4SS's log, newest first: what the mods' scripts say, and their errors.")
@@ -125,8 +159,8 @@ Menu.page("Log", function(ui)
     local shown = {}
     for i = #logView.lines, 1, -1 do
         local line = logView.lines[i]
-        local keep = logView.mode == "Everything" or (logView.mode == "Mods" and line:find("[Lua] [", 1, true))
-                     or (logView.mode == "Errors" and line:lower():find("error", 1, true))
+        local keep = logView.mode == "Everything" or (logView.mode == "Mods" and fromAScript(line))
+                     or (logView.mode == "Errors" and anError(line))
         if keep then
             shown[#shown + 1] = (line:gsub("^%[%d+%-%d+%-%d+ (%d+:%d+:%d+)[%.%d]*%] ", "%1  "):gsub("%[Lua%] ", ""))
             if #shown >= 40 then break end
@@ -168,7 +202,8 @@ local INTEGER = { IntProperty = true, Int8Property = true, Int16Property = true,
 -- A number for a property of this type: whole for integers, bytes and enums.
 local function asType(v, t) return INTEGER[t] and math.floor(v + 0.5) or v end
 
-local insp = { stack = {}, find = "", found = {}, filter = "", cache = nil, cacheFor = nil, cacheAt = -1, results = {} }
+local insp = { stack = {}, find = "", found = {}, foundCount = 0, findNote = nil, filter = "", cache = nil, cacheFor = nil,
+               cacheAt = -1, results = {} }
 local ROOTS = {
     { "Your cat", function() return Game.player() end },
     { "Player state", function() return Game.get(Game.controller(), "PlayerState") end },
@@ -197,6 +232,35 @@ local function members(o)
     end
     return insp.cache
 end
+-- Classes so wide that finding them means reading thousands of objects, which has crashed the game (above all
+-- just after a level loads): Find asks for a narrower one instead.
+-- (In small letters: class names match whatever their case.)
+local TOO_WIDE = { object = true, actor = true, pawn = true, character = true, actorcomponent = true,
+                   scenecomponent = true, primitivecomponent = true, meshcomponent = true, widget = true,
+                   userwidget = true, panelwidget = true, textblock = true, image = true, button = true,
+                   texture2d = true, material = true, materialinstancedynamic = true, staticmesh = true }
+local FOUND_SHOWN = 30
+local function find(class)
+    class = class:gsub("^%s+", ""):gsub("%s+$", "")
+    insp.found, insp.foundCount, insp.findNote = {}, 0, nil
+    if TOO_WIDE[class:lower()] then
+        insp.findNote = class .. " is the start of thousands of the game's objects, and reading them all can crash the " ..
+                        "game. Find a narrower class, e.g. WrcRoamingEnemy."
+        return
+    end
+    if not Game.player() then
+        insp.findNote = "Find works once your cat is in the world (reading objects while a level loads can crash the game)."
+        return
+    end
+    local all = Game.findAll(class)
+    insp.foundCount = #all
+    for i, o in ipairs(all) do
+        if i > FOUND_SHOWN then break end
+        local name = Game.name(o) or "?"
+        insp.found[i] = { obj = o, name = name, label = string.format("%s  (%s)", name, Game.className(o) or "?") }
+    end
+    if #all == 0 then insp.findNote = "None found. Class names are the game's own, e.g. WrcRoamingEnemy (the Inspector shows an object's)." end
+end
 Menu.page("Inspector", function(ui)
     ui.heading("Inspector")
     ui.note("Browse the game's objects: what each holds and what it can do. Numbers, switches and text can be changed " ..
@@ -218,16 +282,18 @@ Menu.page("Inspector", function(ui)
         end
     end, { id = "insp-managers", open = false })
     insp.find = ui.input("Find by class", insp.find, { hint = "e.g. WrcRoamingEnemy" })
-    if ui.button("Find") and insp.find ~= "" then insp.found = Game.findAll(insp.find) end
+    if ui.button("Find") and insp.find ~= "" then find(insp.find) end
+    if insp.findNote then ui.note(insp.findNote) end
     if #insp.found > 0 then
-        ui.section(string.format("Found %d", #insp.found), function()
-            for i, o in ipairs(insp.found) do
-                if i > 30 then ui.note(string.format("... and %d more", #insp.found - 30)) break end
-                if valid(o) and ui.button(string.format("%s  (%s)", Game.name(o) or "?", Game.className(o) or "?")) then
+        ui.section(string.format("Found %d", insp.foundCount), function()
+            -- The names were read once, when Find was pressed: not again each frame across every object.
+            for _, e in ipairs(insp.found) do
+                if valid(e.obj) and ui.button(e.label) then
                     insp.stack = {}
-                    open(Game.name(o), o)
+                    open(e.name, e.obj)
                 end
             end
+            if insp.foundCount > #insp.found then ui.note(string.format("... and %d more", insp.foundCount - #insp.found)) end
         end, { id = "insp-found", open = true })
     end
     ui.separator()
@@ -293,7 +359,9 @@ Menu.page("Inspector", function(ui)
     end, { id = "insp-funcs", open = false })
 end, { order = 90, group = "tools" })
 
--- A Lua console in the game: type a line, Run, see what it printed and returned.
+-- A Lua console in the game, for people who write scripts: type a line, Run, see what it printed and returned.
+-- Titled "Lua (advanced)", as the game's own command window (~) and the studio's Try Lua in the game are other
+-- things; its id stays "Lua console", which the agent's tests open it by.
 local con = { code = "", lines = {} }
 local env = setmetatable({ Game = Game, Menu = Menu }, { __index = _G })
 env.print = function(...)
@@ -320,14 +388,15 @@ local function run(code)
     end
     while #con.lines > 40 do table.remove(con.lines, 1) end
 end
-Menu.page("Lua console", function(ui)
-    ui.heading("Lua console")
-    ui.note("Runs Lua in the game, with WCModsGame as Game (docs/scripting.md). An expression shows its value: " ..
-            "Game.cat():health(). Globals you set stay for the next line.")
+Menu.page("Lua (advanced)", function(ui)
+    ui.heading("Lua (advanced)")
+    ui.note("For people who write scripts: runs a line of Lua in the game, with WCModsGame as Game " ..
+            "(docs/scripting.md). An expression shows its value: Game.cat():health(). Globals you set stay for the " ..
+            "next line. Nothing here is saved into a mod.")
     con.code = ui.input("Lua", con.code, { hint = "Game.cat():name()" })
     local hit = ui.buttons({ "Run", "Clear" }, { kinds = { "primary" } })
     if hit == 1 and con.code ~= "" then run(con.code)
     elseif hit == 2 then con.lines = {} end
     for _, l in ipairs(con.lines) do ui.note(l) end
-end, { order = 91, group = "tools" })
+end, { order = 91, group = "tools", id = "Lua console" })
 end)()

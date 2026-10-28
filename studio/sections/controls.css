@@ -1,0 +1,19 @@
+/* The Controls page: its key chips, what the build says under a cell, the markers, and the "press a key" dialog.
+   Linked by app.js when the page opens; .chip, .grid-table, .banner and .fold are in styles.css. */
+.controls-table td.cell { min-width: 15rem; }
+.controls-table td.cell > * + * { margin-top: 6px; }
+.controls-table td.warned { background: var(--tint-warn); box-shadow: inset 3px 0 0 var(--changed); }
+.chip.key { font-weight: 700; font-size: .95rem; min-width: 2.2em; justify-content: center; }
+.chip.was-key { color: var(--muted); }
+.chip.mark { font-size: .8rem; }
+.said { font-size: .88rem; color: var(--muted); max-width: 62ch; }
+.said.warn { color: var(--ink); padding-left: 10px; border-left: 3px solid var(--changed); }
+.seconds { display: grid; gap: 4px; justify-items: start; }
+.move-key + .move-key { margin-top: 10px; }
+.other { display: grid; gap: 4px; padding-top: 8px; border-top: 1px solid var(--line); }
+.controls-also .notes { margin: 0; }
+.controls-where { margin-top: -10px; padding-left: 16px; color: var(--muted); font-size: .95rem; }
+.controls-where::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--good); margin-right: 8px; }
+.controls-where.waiting { color: var(--ink); }
+.controls-where.waiting::before { background: var(--changed); }
+@media (forced-colors: active) { .said.warn, .controls-table td.warned { border-left: 3px solid CanvasText; } }

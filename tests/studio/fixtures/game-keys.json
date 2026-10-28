@@ -1,0 +1,477 @@
+{
+ "_help": "Written by tests/unit/test_repo.py from wcmods.keymap.game_keys (WC_UPDATE_FIXTURES=1 rewrites it): what GET /game/keys serves, for tests/studio/controls.test.mjs.",
+ "keyboard": {
+  "Player_Movement_Up": "S",
+  "Player_Movement_Right": "A",
+  "Player_Camera_Up": "Down",
+  "Player_Camera_Right": "Left",
+  "Player_Pounce": "SpaceBar",
+  "Player_Drop": "C",
+  "Player_Den_Place": "X",
+  "Player_Interact": "E",
+  "Player_ReturnToCamp": "X",
+  "Player_Friend_Talk": "C",
+  "Player_Crouch": "LeftControl",
+  "Player_Scent_Tracking": "Q",
+  "Player_Camera_Reset": "R",
+  "Player_Run": "LeftShift",
+  "Player_Pause": "Escape",
+  "Player_Show_Inventory": "I",
+  "Player_Show_Quest": "K",
+  "Player_Show_Map": "M",
+  "Player_Growl": "L"
+ },
+ "gamepad": {
+  "Player_Movement_Up": "Gamepad_LeftY",
+  "Player_Movement_Right": "Gamepad_LeftX",
+  "Player_Camera_Up": "Gamepad_RightY",
+  "Player_Camera_Right": "Gamepad_RightX",
+  "Player_Pounce": "Gamepad_FaceButton_Top",
+  "Player_Drop": "Gamepad_FaceButton_Right",
+  "Player_Den_Place": "Gamepad_FaceButton_Top",
+  "Player_Interact": "Gamepad_FaceButton_Bottom",
+  "Player_ReturnToCamp": "Gamepad_FaceButton_Top",
+  "Player_Friend_Talk": "Gamepad_FaceButton_Right",
+  "Player_Crouch": "Gamepad_LeftTrigger",
+  "Player_Scent_Tracking": "Gamepad_FaceButton_Left",
+  "Player_Camera_Reset": "Gamepad_LeftShoulder",
+  "Player_Run": "Gamepad_RightShoulder",
+  "Player_Pause": "Gamepad_Special_Right"
+ },
+ "built_in": [
+  "W",
+  "D",
+  "Up",
+  "Right"
+ ],
+ "axes": [
+  "Player_Movement_Up",
+  "Player_Movement_Right",
+  "Player_Camera_Up",
+  "Player_Camera_Right"
+ ],
+ "axis_keys": [
+  "W",
+  "S",
+  "A",
+  "D",
+  "Up",
+  "Down",
+  "Left",
+  "Right"
+ ],
+ "commands": {
+  "W": [
+   "Button_Up"
+  ],
+  "S": [
+   "Button_Down"
+  ],
+  "A": [
+   "Button_Left",
+   "AnimTool_PreviousAnim"
+  ],
+  "D": [
+   "Button_Right",
+   "AnimTool_NextAnim"
+  ],
+  "Up": [
+   "Button_Up"
+  ],
+  "Down": [
+   "Button_Down"
+  ],
+  "Left": [
+   "Button_Left"
+  ],
+  "Right": [
+   "Button_Right"
+  ],
+  "Enter": [
+   "Button_A",
+   "Button_Confirm",
+   "Button_Skip"
+  ],
+  "BackSpace": [
+   "Button_B",
+   "Button_Back"
+  ],
+  "Escape": [
+   "Player_Pause"
+  ],
+  "SpaceBar": [
+   "Button_Y",
+   "Player_Pounce",
+   "Player_PhotoMode_Shoot",
+   "AnimTool_PlayLoopAnim"
+  ],
+  "E": [
+   "Button_X",
+   "Player_Interact"
+  ],
+  "C": [
+   "Player_Friend_Talk",
+   "Player_Drop"
+  ],
+  "X": [
+   "Player_ReturnToCamp",
+   "Player_Den_Place",
+   "Player_PhotoMode_Exit",
+   "AnimTool_StopAnim"
+  ],
+  "Q": [
+   "Player_Scent_Tracking",
+   "Player_PhotoMode_HideUI"
+  ],
+  "R": [
+   "Button_Randomize",
+   "Player_Camera_Reset"
+  ],
+  "I": [
+   "Player_Show_Inventory",
+   "Minigame_Button_A"
+  ],
+  "J": [
+   "Player_Play",
+   "Minigame_Button_X"
+  ],
+  "K": [
+   "Player_Show_Quest",
+   "Minigame_Button_B"
+  ],
+  "L": [
+   "Player_Growl",
+   "Minigame_Button_Y"
+  ],
+  "M": [
+   "Player_Show_Map"
+  ],
+  "P": [
+   "Button_Start"
+  ],
+  "T": [
+   "Button_StickR"
+  ],
+  "V": [
+   "Button_Select"
+  ],
+  "One": [
+   "Button_ShoulderL"
+  ],
+  "Two": [
+   "Button_ShoulderR"
+  ],
+  "Three": [
+   "Button_TriggerL"
+  ],
+  "Four": [
+   "Button_TriggerR"
+  ],
+  "LeftShift": [
+   "Player_Run",
+   "AnimTool_PlayAnim"
+  ],
+  "RightShift": [
+   "Player_Run"
+  ],
+  "LeftControl": [
+   "Player_Crouch"
+  ],
+  "RightControl": [
+   "Player_Crouch"
+  ],
+  "LeftMouseButton": [
+   "Button_Confirm",
+   "Player_Interact"
+  ],
+  "RightMouseButton": [
+   "Player_Crouch"
+  ]
+ },
+ "aliases": {
+  "a": "Gamepad_FaceButton_Bottom",
+  "cross": "Gamepad_FaceButton_Bottom",
+  "b": "Gamepad_FaceButton_Right",
+  "circle": "Gamepad_FaceButton_Right",
+  "x": "Gamepad_FaceButton_Left",
+  "square": "Gamepad_FaceButton_Left",
+  "y": "Gamepad_FaceButton_Top",
+  "triangle": "Gamepad_FaceButton_Top",
+  "lb": "Gamepad_LeftShoulder",
+  "l1": "Gamepad_LeftShoulder",
+  "rb": "Gamepad_RightShoulder",
+  "r1": "Gamepad_RightShoulder",
+  "lt": "Gamepad_LeftTrigger",
+  "l2": "Gamepad_LeftTrigger",
+  "rt": "Gamepad_RightTrigger",
+  "r2": "Gamepad_RightTrigger",
+  "ls": "Gamepad_LeftThumbstick",
+  "l3": "Gamepad_LeftThumbstick",
+  "rs": "Gamepad_RightThumbstick",
+  "r3": "Gamepad_RightThumbstick",
+  "start": "Gamepad_Special_Right",
+  "options": "Gamepad_Special_Right",
+  "menu": "Gamepad_Special_Right",
+  "back": "Gamepad_Special_Left",
+  "select": "Gamepad_Special_Left",
+  "view": "Gamepad_Special_Left",
+  "dpad_up": "Gamepad_DPad_Up",
+  "dpad_down": "Gamepad_DPad_Down",
+  "dpad_left": "Gamepad_DPad_Left",
+  "dpad_right": "Gamepad_DPad_Right"
+ },
+ "names": {
+  "Player_Interact": [
+   "Interact",
+   "does Interact"
+  ],
+  "Player_Pounce": [
+   "Pounce",
+   "pounces"
+  ],
+  "Player_Run": [
+   "Run",
+   "runs"
+  ],
+  "Player_Crouch": [
+   "Crouch",
+   "crouches"
+  ],
+  "Player_Scent_Tracking": [
+   "Scent tracking",
+   "tracks scents"
+  ],
+  "Player_Drop": [
+   "Drop",
+   "drops what you carry"
+  ],
+  "Player_Friend_Talk": [
+   "Talk to a friend",
+   "talks to a friend"
+  ],
+  "Player_Den_Place": [
+   "Place a den decoration",
+   "places a den decoration"
+  ],
+  "Player_ReturnToCamp": [
+   "Return to camp",
+   "takes you back to camp"
+  ],
+  "Player_Camera_Reset": [
+   "Reset the camera",
+   "resets the camera"
+  ],
+  "Player_Pause": [
+   "Pause menu",
+   "opens the pause menu"
+  ],
+  "Player_Show_Inventory": [
+   "Inventory",
+   "opens the inventory"
+  ],
+  "Player_Show_Quest": [
+   "Quest log",
+   "opens the quest log"
+  ],
+  "Player_Show_Map": [
+   "Map",
+   "opens the map"
+  ],
+  "Player_Growl": [
+   "Meow",
+   "meows"
+  ],
+  "Player_Play": [
+   "Play",
+   "does the game's Play action"
+  ],
+  "Player_PhotoMode_Shoot": [
+   "Take a photo",
+   "takes a photo in photo mode"
+  ],
+  "Player_PhotoMode_Exit": [
+   "Leave photo mode",
+   "leaves photo mode"
+  ],
+  "Player_PhotoMode_HideUI": [
+   "Hide photo mode's buttons",
+   "hides photo mode's buttons"
+  ],
+  "Player_PhotoMode_Camera_Crane_Up": [
+   "Photo mode's camera up",
+   "raises photo mode's camera"
+  ],
+  "Player_PhotoMode_Camera_Crane_Down": [
+   "Photo mode's camera down",
+   "lowers photo mode's camera"
+  ],
+  "Player_Cinematic_Skip": [
+   "Skip a cutscene",
+   "skips cutscenes"
+  ],
+  "Player_ShowHideControls": [
+   "Show or hide the controls",
+   "shows or hides the controls"
+  ],
+  "Button_Up": [
+   "Up",
+   "moves up in menus"
+  ],
+  "Button_Down": [
+   "Down",
+   "moves down in menus"
+  ],
+  "Button_Left": [
+   "Left",
+   "moves left in menus"
+  ],
+  "Button_Right": [
+   "Right",
+   "moves right in menus"
+  ],
+  "Button_A": [
+   "Confirm",
+   "confirms in menus"
+  ],
+  "Button_Confirm": [
+   "Confirm",
+   "confirms in menus"
+  ],
+  "Button_Skip": [
+   "Skip",
+   "skips dialogue"
+  ],
+  "Button_B": [
+   "Back",
+   "goes back in menus"
+  ],
+  "Button_Back": [
+   "Back",
+   "goes back in menus"
+  ],
+  "Button_X": [
+   "the map's legend",
+   "shows the map's legend"
+  ],
+  "Button_Y": [
+   "the menus' Y button",
+   "does the menus' Y button"
+  ],
+  "Button_Randomize": [
+   "Randomize",
+   "randomizes in the cat maker"
+  ],
+  "Button_Start": [
+   "the game's Start button",
+   "does the game's Start button"
+  ],
+  "Button_Select": [
+   "the game's Select button",
+   "does the game's Select button"
+  ],
+  "Button_StickL": [
+   "the left stick's click",
+   "does the left stick's click"
+  ],
+  "Button_StickR": [
+   "the right stick's click",
+   "does the right stick's click"
+  ],
+  "Button_ShoulderL": [
+   "Previous tab",
+   "goes to the previous tab"
+  ],
+  "Button_ShoulderR": [
+   "Next tab",
+   "goes to the next tab"
+  ],
+  "Button_TriggerL": [
+   "Previous page",
+   "goes to the previous page of a tab"
+  ],
+  "Button_TriggerR": [
+   "Next page",
+   "goes to the next page of a tab"
+  ],
+  "Minigame_Button_A": [
+   "a minigame's button",
+   "presses a minigame's button"
+  ],
+  "Minigame_Button_B": [
+   "a minigame's button",
+   "presses a minigame's button"
+  ],
+  "Minigame_Button_X": [
+   "a minigame's button",
+   "presses a minigame's button"
+  ],
+  "Minigame_Button_Y": [
+   "a minigame's button",
+   "presses a minigame's button"
+  ],
+  "Player_Movement_Up": [
+   "Move back",
+   "moves you back"
+  ],
+  "Player_Movement_Right": [
+   "Move left",
+   "moves you left"
+  ],
+  "Player_Camera_Up": [
+   "Camera down",
+   "moves the camera down"
+  ],
+  "Player_Camera_Right": [
+   "Camera left",
+   "moves the camera left"
+  ],
+  "key:W": [
+   "Move forward",
+   "moves you forward"
+  ],
+  "key:D": [
+   "Move right",
+   "moves you right"
+  ],
+  "key:Up": [
+   "Camera up",
+   "moves the camera up"
+  ],
+  "key:Right": [
+   "Camera right",
+   "moves the camera right"
+  ],
+  "Button_StickL_Up": [
+   "the left stick up",
+   "pushes the left stick up in menus"
+  ],
+  "Button_StickL_Down": [
+   "the left stick down",
+   "pushes the left stick down in menus"
+  ],
+  "Button_StickL_Left": [
+   "the left stick left",
+   "pushes the left stick left in menus"
+  ],
+  "Button_StickL_Right": [
+   "the left stick right",
+   "pushes the left stick right in menus"
+  ],
+  "Button_StickR_Up": [
+   "the right stick up",
+   "pushes the right stick up in menus"
+  ],
+  "Button_StickR_Down": [
+   "the right stick down",
+   "pushes the right stick down in menus"
+  ],
+  "Button_StickR_Left": [
+   "the right stick left",
+   "pushes the right stick left in menus"
+  ],
+  "Button_StickR_Right": [
+   "the right stick right",
+   "pushes the right stick right in menus"
+  ]
+ }
+}

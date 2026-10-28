@@ -33,11 +33,15 @@ that cat wears, which colour slots it uses, its scars, and its shape (body, ears
   IDs as your cat's do (a rank-up changes a cat's name IDs: install again after one).
 
 Your cat is your character in the world, plus the copies menus and portraits show (never another
-cat in the world, even one with your name). In the world those copies must have your character's name
-IDs; before that (the main menu, with no character yet) the same name prefix, so a rank-up doesn't
-lose them. The script remembers the IDs your character last had (yourcat.txt in its UE4SS folder);
-until it has seen your character, it uses your save's from when the mods were installed. Copies'
-pictures (portraits, thumbnails) are taken again, at most every 2 seconds.
+cat in the world, even one with your name). Those copies must have your character's name IDs; before
+the world, the main menu's cat and the cat choice's big cat need only the same name prefix, so a
+rank-up doesn't lose them. The script remembers the IDs your character last had (yourcat.txt in its
+UE4SS folder); until it has seen your character, it uses your save's from when the mods were installed.
+The menus take their pictures of cats with actors every cat shares, and one's picture target can be
+another cat's, so out of the world a picture actor gets colours only as the cat choice's big cat (the
+small pictures there show saved colours), and in the world only the HUD's picture is taken again (at most
+every 2 seconds). An actor that moves on to a cat without colours gets the game's back, as the game
+doesn't set colours it thinks are there. Parts with no model yet (a cat being set up) are skipped.
 "debug_cat_look": true in wcmods.json makes the script log every cat it sees and whether it's yours.
 """
 import re

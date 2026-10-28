@@ -1,7 +1,5 @@
 {
-  "_help": "Applied to your save on install, after a backup. Paths start inside the save: Shared/... or 0/... for cat slot 0. Open the Save page in `python wcmods.py studio` to browse your save.",
-  "set": {
-    "Shared/SettingsData/Minimap": true
-  },
+  "_help": "Changes to the player's save, each made once (after a backup) when the mod is applied; playing on past them is never undone. The Save page in Clan Mod Studio writes this file for you (Keep it as a mod to share). By hand: paths start inside the save, Shared/... or 1/... for cat slot 1; \"set\" changes a value the save has, \"add\" adds keys to an object (an item to the inventory), \"remove\" takes keys out. docs/formats.md has the rest.",
+  "set": {},
   "add": {}
 }

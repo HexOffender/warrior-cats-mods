@@ -12,10 +12,41 @@ BASE_UTOC = "pakchunk0-Windows.utoc"
 NONASSET = "Wrc/Content/Gameplay/DataTables/NonAsset/"
 
 
+class Unreadable(RuntimeError):
+    """The game's files can't be opened: its pak isn't where the game folder should have it (Steam updating
+    or verifying the game, or game_dir pointing at the wrong folder), or can't be read."""
+
+
+def unreadable(cfg):
+    """Why the game's files can't be read right now (no game folder; its pak or container missing, being
+    updated, or locked), or None when both open."""
+    if not cfg.game_dir:
+        return "the game hasn't been found"
+    try:
+        game = GameFiles(cfg)
+        game.pak, game.io
+    except Unreadable as e:
+        return str(e)
+    except (OSError, ValueError) as e:   # there, but not a pak or container wcmods can read
+        return f"the game's files can't be read: {e}"
+    return None
+
+
 class GameFiles:
     def __init__(self, cfg):
         self.cfg = cfg
         self._oodle = self._pak = self._io = None
+
+    def _open(self, reader, name):
+        path = os.path.join(self.cfg.paks_dir, name)
+        try:
+            return reader(path, self.oodle)
+        except FileNotFoundError:
+            raise Unreadable(f"the game's files can't be read: there's no {name} in {self.cfg.paks_dir} (is Steam "
+                             "updating or verifying the game? If the game is somewhere else, Get set up asks where)") from None
+        except OSError as e:
+            raise Unreadable(f"the game's files can't be read: {path} ({e.strerror or e}); is Steam updating or "
+                             "verifying the game?") from None
 
     @property
     def oodle(self):
@@ -33,13 +64,13 @@ class GameFiles:
     @property
     def pak(self):
         if self._pak is None:
-            self._pak = PakReader(os.path.join(self.cfg.paks_dir, BASE_PAK), self.oodle)
+            self._pak = self._open(PakReader, BASE_PAK)
         return self._pak
 
     @property
     def io(self):
         if self._io is None:
-            self._io = IoStoreReader(os.path.join(self.cfg.paks_dir, BASE_UTOC), self.oodle)
+            self._io = self._open(IoStoreReader, BASE_UTOC)
         return self._io
 
     def exists(self, path):

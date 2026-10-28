@@ -13,20 +13,56 @@ from . import ue4ss, view, world
 from . import game as game_lua   # WCModsGame (the name `game` is the game's files in build())
 from . import mods as modlib
 from .formats.blake3 import blake3
-from .config import (MOD_BASENAME, UE4SS_MOD_NAME, Config, game_running, same_folder, steam_elsewhere,
+from .config import (MOD_BASENAME, UE4SS_MOD_NAME, game_running, same_folder, steam_elsewhere,
                      steam_elsewhere_text)
 from .formats.csvdata import Table
 from .gamefiles import GameFiles
 from .formats.iostore import ModContainerWriter
 from .formats.pak import PakReader, PakWriter
-from .formats.save import SAV_NAME, SaveGame, backup, write_save
+from .formats.save import SAV_NAME, SaveGame, list_backups, write_save
 from .formats.savejson import SaveDoc
 from .sdk import BuildContext
-from .sections import load_sections
+from .sections import load_sections, savedit
+from . import saverecord
 
 MARKER = "Wrc/WCMods/BuildInfo.json"
 PAK_PREFIX = "zzz_WCMods_"                  # every pak file wcmods installs starts with this
 PAK_EXTS = (".pak", ".utoc", ".ucas", ".sig")
+
+
+class InstallBlocked(RuntimeError):
+    """Not installing, because some mods didn't build: installing replaces what's installed now, so a mod
+    that failed would silently lose what it put in the game before. `problems` is [(section title, mod id or
+    None, what went wrong)], for each surface to word with its own way past it: the command line says
+    --force (str(e)), the studio says Apply the rest anyway (describe)."""
+
+    def __init__(self, problems):
+        self.problems = list(problems)
+        super().__init__(self.describe("install anyway with --force", "anything they installed before is removed"))
+
+    def describe(self, how, then, lead="not installing because some mods didn't build"):
+        said = "; ".join(f"{title}: {mod + ': ' if mod else ''}{text}" for title, mod, text in self.problems)
+        return f"{lead}: {said}. Fix or turn off those mods, or {how} ({then})."
+
+    def mods(self):
+        """The mods that didn't build, in order, once each."""
+        return list(dict.fromkeys(mod for _, mod, _ in self.problems if mod))
+
+
+def section_problems(rep):
+    """What went wrong in one section of a build's report, [(mod id or None, text)]; [] when its status is
+    "ok". Its "failed" lines up with its "errors", one for one; a report where it doesn't (an older wcmods
+    wrote only the errors' text, or added one without the other) is read from the errors, so nothing that
+    went wrong is ever missed. A section that isn't "ok" always has at least one."""
+    if rep.get("status") == "ok":
+        return []
+    errors = list(rep.get("errors") or [])
+    failed = rep.get("failed")
+    if isinstance(failed, list) and failed and len(failed) >= len(errors):
+        found = [(mod, text) for mod, text in failed]
+    else:
+        found = [(None, e) for e in errors]
+    return found or [(None, "it didn't build fully")]
 
 
 def user_paks(mod):
@@ -67,38 +103,109 @@ def remove_paks(folder):
 
 
 def names_without_text(cfg, ctx, game):
-    """Build warnings for cats in your save named with a mod's own text (an ID with _WCM_ in it) that this
-    build doesn't give the game, once the sections' CSV edits are in: the mod that named them is off or left
-    out, so the game would show <MISSING STRING TABLE ENTRY>. The game's text is only read when a cat has
-    such a name."""
+    """Build warnings for cats in your save named with a mod's own text (names.mod_given by their IDs: an ID
+    with _WCM_ in it, or one of the game's prefix IDs alone, as a rogue given that prefix has) that this build
+    doesn't give the game, once the sections' CSV edits are in: the mod that named them is off or left out, so
+    the game would show <MISSING STRING TABLE ENTRY>. The game's text is only read when a cat has such a
+    name."""
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     try:
         text = SaveGame.load(sav).json_text if os.path.isfile(sav) else ""
-        if "_WCM_" not in text:
+        cats = names.cats_in_save(SaveDoc(text).data) if "PrefixNameId=" in text else []
+        if not any(names.mod_given(key) for _, _, key in names.named_keys(cats, ctx.save_ops)):
             return []
-        path = BuildContext.data_path(names.strings_path("EN"))
-        strings = ctx.files[path][0].decode("utf-8") if path in ctx.files else game.read_text(path)
+        strings = built_text(ctx, game)(BuildContext.data_path(names.strings_path("EN")))
         keys = {r.fields[0] for r in Table(strings).rows if r.fields}
-        missing = names.without_text(names.cats_in_save(SaveDoc(text).data), ctx.save_ops, keys.__contains__)
+        missing = names.losing_text(cats, ctx.save_ops, keys.__contains__)
     except Exception as e:   # said, so the check isn't skipped unseen
-        return [f"couldn't check your cats' names against the game's text ({type(e).__name__}: {e})"]
+        return [f"couldn't check your cats' names against the game's text ({e})"]
     if not missing:
         return []
-    shown = [f"{'your cat' if where == 'you' else where} ({key})" for where, key in missing[:5]]
-    if len(missing) > 5:
-        shown.append(f"{len(missing) - 5} more")
     them = "it" if len(missing) == 1 else "them"
     cats = "a cat in your save has" if len(missing) == 1 else f"{len(missing)} cats in your save have"
-    yours = ", and the HUD calls your cat Cat 1" if any(where == "you" for where, _ in missing) else ""
+    yours = ", and the HUD calls your cat Cat 1" if any(c["player"] and c["current"] for c, _, _ in missing) else ""
     return [f"{cats} a name a mod made, and no mod in this build gives the game its text, so the game will show "
-            f"{them} as <MISSING STRING TABLE ENTRY>{yours}: {', '.join(shown)}. Turn the mod that named {them} "
-            "back on (or, if it's left out as made for an older version of the game, use it anyway), or rename "
-            f"{them} on the Names page; Backups and repair puts your save back as it was before"]
+            f"{them} as <MISSING STRING TABLE ENTRY>{yours}: {say_cats([_losing_cat(c, ids) for c, ids, _ in missing])}. "
+            f"Turn the mod that named {them} back on (or, if it's left out as made for an older version of the game, "
+            f"use it anyway), or rename {them} on the Names page; Backups and repair puts your save back as it was "
+            "before"]
+
+
+def built_text(ctx, game):
+    """read_text(path) for the game's text files as this build leaves them: the build's own copy when a
+    section edited it (after ctx.resolve_csv_edits), else the game's."""
+    def read(path):
+        return ctx.files[path][0].decode("utf-8") if path in ctx.files else game.read_text(path)
+    return read
+
+
+def english(read_text):
+    """text(key): the English text under a key in Strings_EN as read_text reads it, the key itself when there's
+    none (as BuildContext.text). Read once."""
+    table = {}
+
+    def text(key):
+        if not table:
+            table.update({r.fields[0]: r.fields[1] for r in Table(read_text(world.STRINGS_EN)).rows if len(r.fields) > 1})
+        return table.get(key, key)
+    return text
+
+
+def _losing_cat(cat, ids, plan=None):
+    """One of the cats losing_text finds, for the page and the log: its cats key, where it is, the name it had
+    (from the plan's text, else made from its IDs), and whether it's your cat."""
+    name = (plan.known_name(ids) if plan is not None else "") or names.guess_name(ids, plan)
+    return {"target": names.target_of(cat), "where": names.place(cat["paths"][0]), "name": name,
+            "player": cat["player"], "current": cat["current"]}
+
+
+def say_cats(cats, most=5):
+    """Cats from _losing_cat in a sentence: "your cat (Sparkle), Wrenheart, the cat at RiverClan · Warrior · 3 and
+    2 more"."""
+    words = []
+    for c in cats[:most]:
+        if c["player"]:
+            mine = "your cat" if c["current"] else f"your cat in {names.game_words(c['target'].split('/', 1)[0])}"
+            words.append(f"{mine} ({c['name']})" if c["name"] else mine)
+        else:
+            words.append(c["name"] or names.describe_target(c["target"]))
+    if len(cats) > most:
+        words.append(f"{len(cats) - most} more")
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+
+
+def cats_losing_text(cfg, plan=None):
+    """The cats in your save whose names are text only a mod gives (names.mod_given: an ID with _WCM_ in it, or a
+    key the game's own text doesn't have, such as the prefix ID alone a rogue given one of the game's prefixes
+    has): with every mod taken out of the game they show as <MISSING STRING TABLE ENTRY> (your cat as Cat 1),
+    until the mods go back in or the save does. Your cat first. `plan` (names.Plan, the enabled mods') brings the
+    game's own text to check against and names them better; without it, the IDs alone say. [] with no save, or
+    one that can't be read."""
+    sav = os.path.join(cfg.save_dir, SAV_NAME)
+    try:
+        text = SaveGame.load(sav).json_text if os.path.isfile(sav) else ""
+        if "PrefixNameId=" not in text:
+            return []
+        cats = names.losing_text(names.cats_in_save(SaveDoc(text).data), (), lambda key: False,
+                                 plan.game.text if plan is not None else None)
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    out = [_losing_cat(c, ids, plan) for c, ids, _ in cats]
+    return sorted(out, key=lambda c: not (c["player"] and c["current"]))
 # Shared Lua modules installed with any build, for UE4SS scripts to require (docs/SDK.md, "Overlays").
 SHARED_LUA = (view, draw, world, menu, game_lua)
 
 
-def build(cfg, mods, out_dir, log=print):
+def leave_out(cfg, mods, build=None, trusted=()):
+    """{mod id: why} for the mods that are on but that an install leaves out, with a warning instead of
+    stopping: made for an older version of the game (gamebuild.held_back; `trusted` ones count as used anyway),
+    or needing a newer Clan Mod Studio than this one (mods.too_new), and the mods that need those."""
+    return {**modlib.too_new(mods), **gamebuild.held_back(cfg, mods, build, trusted)}
+
+
+def build(cfg, mods, out_dir, log=print, trusted=()):
+    """Build every enabled mod into out_dir and return the manifest. `trusted`: mods made for an older version
+    of the game to build all the same, as if used anyway (the re-check after a game update, gamebuild.recheck)."""
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
     os.makedirs(out_dir)
@@ -106,25 +213,30 @@ def build(cfg, mods, out_dir, log=print):
     # player chose to use it anyway on this build; the in-game module follows what the update moved.
     build = gamebuild.current(cfg)["build"]
     old = gamebuild.outdated(cfg, mods, build)
-    # Those mods, and the ones that need them: a game update alone doesn't stop installing.
-    left_out = gamebuild.held_back(cfg, mods, build)
+    # Those mods, and the ones that need them, and the mods that need a newer wcmods than this one (mod.json
+    # "wcmods"): left out with a warning, so neither a game update nor an older wcmods stops installing.
+    left_out = leave_out(cfg, mods, build, trusted)
     # A mod that needs another mod ("requires" in mod.json) which is missing or off is left out, and
     # the report says why, so installing stops until that's sorted (or --force leaves it out).
     unmet = modlib.unmet(mods, left_out)
     enabled = [m for m in mods if m.enabled and m.id not in unmet and m.id not in left_out]
+    titles = {m.id: m.name for m in mods}
     game = GameFiles(cfg)
     sections, skipped = load_sections(cfg, [m for m in mods if m.id not in unmet and m.id not in left_out], log)
     ctx = BuildContext(cfg, game, out_dir, log)
     ctx.mods = enabled   # the enabled mods, for sections that check another kind of file (cats.json and palettes)
+    ctx.found = list(mods)   # and every mod, on or off (the story section says whether Sandbox mode is there)
+    ctx.held_back = dict(left_out)   # and the ones a game update leaves out (Sandbox mode can be one)
     report = {}
     if unmet:
         report["requirements"] = {"title": "Mods that need other mods", "status": "failed", "mods": [],
                                   "errors": [f"{i}: {why}" for i, whys in unmet.items() for why in whys],
+                                  "failed": [(i, why) for i, whys in unmet.items() for why in whys],
                                   "from_mod": None}
 
     for sec in sections:
         ctx.begin(sec.id)
-        items, used, errors = [], [], []
+        items, used, errors, failed = [], [], [], []   # failed: [(mod id or None, what went wrong)], as errors
         for mod in enabled:
             try:
                 if not sec.claims(mod):
@@ -132,9 +244,11 @@ def build(cfg, mods, out_dir, log=print):
                 data = sec.collect(mod, ctx)
             except (ValueError, KeyError) as e:   # mistakes in the mod's files
                 errors.append(f"{mod.id}: {e}")
+                failed.append((mod.id, str(e)))
                 continue
             except Exception as e:                # anything else still only skips this mod
                 errors.append(f"{mod.id}: {type(e).__name__}: {e} (is the file laid out as documented?)")
+                failed.append((mod.id, f"{e} (is the file laid out as documented?)"))
                 continue
             if data is not None:
                 items.append((mod, data))
@@ -145,32 +259,60 @@ def build(cfg, mods, out_dir, log=print):
         except Exception as e:  # isolate sections: drop this one's outputs, keep going
             ctx.rollback()
             errors.append(f"{type(e).__name__}: {e}")
+            failed.append((None, str(e)))
             status = "failed"
-        report[sec.id] = {"title": sec.title, "status": status, "mods": used, "errors": errors,
+        report[sec.id] = {"title": sec.title, "status": status, "mods": used, "errors": errors, "failed": failed,
                           "from_mod": getattr(sec, "owner", None)}
         ctx.end()
 
     for mod_id in skipped:
-        ctx.warnings.append(f"{mod_id}: ships its own section.py (Python code); set \"allow_code_mods\": true "
-                            "in wcmods.json to let it run")
+        ctx.warnings.append(f"{titles.get(mod_id, mod_id)} brings code of its own (section.py), which only runs with mods "
+                            "that run code allowed (Options, on the Settings and repair page; \"allow_code_mods\" in "
+                            "wcmods.json); left out")
+    # A mod whose mod.json can't be read counts as off (mods.Mod, Mod.broken), so nothing above mentions it: said
+    # here, for `wcmods build` and install and for the studio's Apply log, rather than left out without a word.
+    for m in mods:
+        if getattr(m, "problem", None):
+            ctx.warnings.append(f"{m.id} is left out: {m.problem}")
+
+    # What goes wrong after the sections ran goes in "failed" as well as "errors": install reads "failed", and a
+    # problem missing from it would let an install go ahead and remove what the section put in before. `by`:
+    # the mods whose edits these were, in the section's "blame" ({text: [mod ids]}, [] when that isn't known),
+    # so the re-check after a game update (gamebuild.recheck) holds back only those.
+    def fail(sid, text, by=None):
+        rep = report[sid]
+        rep["errors"].append(text)
+        rep["failed"].append((None, text))
+        if by is not None:
+            rep.setdefault("blame", {})[text] = by
+        if rep["status"] == "ok":
+            rep["status"] = "partial"
+
+    def editors(sid, sources):
+        """The section's mods whose edits these were ("a, b" for a section that merges several), or [] when one
+        of them isn't one of its mods (the source can't be told)."""
+        ids = {p.strip() for s in sources for p in str(s or "").split(",") if p.strip()}
+        return sorted(ids) if ids and ids <= set(report[sid]["mods"]) else []
+
+    blamed = {}   # section id -> the mods its failed files' edits were from; None once one of them is unknown
+
+    def failed_file(sid, text, by):
+        fail(sid, text, by)
+        blamed[sid] = None if not by or blamed.get(sid, set()) is None else blamed.get(sid, set()) | set(by)
 
     csv_changes, csv_failures = ctx.resolve_csv_edits()
     for path, section_ids, error in csv_failures:
         for sid in section_ids:
-            rep = report.get(sid)
-            if rep is not None:
-                rep["errors"].append(f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})")
-                if rep["status"] == "ok":
-                    rep["status"] = "partial"
+            if sid in report:
+                failed_file(sid, f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})",
+                            editors(sid, [src for _, s, src in ctx.csv_edits.get(path, []) if s == sid]))
 
     table_changes, table_failures = ctx.resolve_table_rows()
     for name, section_ids, error in table_failures:
         for sid in section_ids:
-            rep = report.get(sid)
-            if rep is not None:
-                rep["errors"].append(f"{name}: rows not added ({error})")
-                if rep["status"] == "ok":
-                    rep["status"] = "partial"
+            if sid in report:
+                failed_file(sid, f"{name}: rows not added ({error})",
+                            editors(sid, [src for _, _, s, src in ctx.table_rows.get(name, []) if s == sid]))
     # A section's save edits go with its table edits: a cat's new name is an ID whose text the pak adds, and
     # a new item's inventory entry needs its rows. With a table of theirs left out, the save would point at
     # text or items the game hasn't got (the cat shows as "<MISSING STRING TABLE ENTRY>"), so they stay out too.
@@ -180,8 +322,8 @@ def build(cfg, mods, out_dir, log=print):
         ctx.save_ops = kept
         for sid in broken:
             if sid in report:
-                report[sid]["errors"].append("its save edits were left out too: they'd point at text or items "
-                                             "the game wouldn't have")
+                fail(sid, "its save edits were left out too: they'd point at text or items the game wouldn't have",
+                     sorted(blamed.get(sid) or []))
     # What else leaves a renamed cat without its text: a mod that named one is off now, or the mods go into a
     # copy of the game Steam doesn't start.
     ctx.warnings += names_without_text(cfg, ctx, game)
@@ -189,13 +331,15 @@ def build(cfg, mods, out_dir, log=print):
     if steam:
         ctx.warnings.append(steam_elsewhere_text(steam, cfg.game_dir))
 
-    manifest = {"mods": [m.id for m in enabled], "sections": report, "outputs": [], "ue4ss_mods": [],
+    manifest = {"mods": [m.id for m in enabled], "names": titles, "sections": report, "outputs": [], "ue4ss_mods": [],
                 "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
                 "csv_changes": csv_changes, "table_rows": table_changes, "files": sorted(ctx.files),
-                "built": datetime.datetime.now().isoformat(timespec="seconds")}
-    titles = {m.id: m.name for m in mods}
-    manifest["outdated"] = [{"id": i, "name": titles[i], "made_for": o["made_for"], "used": o["allowed"]}
+                "built": datetime.datetime.now().isoformat(timespec="seconds"), "left_out": left_out}
+    manifest["outdated"] = [{"id": i, "name": titles[i], "made_for": o["made_for"], "used": o["allowed"] or i in trusted}
                             for i, o in old.items()]
+    for m in mods:   # a game_builds that holds no build number: it counts as made for the oldest build
+        if m.enabled and gamebuild.builds_problem(m):
+            manifest["warnings"].append(f"{m.name}: {gamebuild.builds_problem(m)}")
     for o in manifest["outdated"]:
         manifest["warnings"].append(
             f"{o['name']} was made for an older version of the game, so it may not work or may behave "
@@ -211,8 +355,8 @@ def build(cfg, mods, out_dir, log=print):
                         "layout": gamebuild.layout_key(cfg)}
     if fit["lost"]:
         manifest["warnings"].append(
-            "the game updated, and these values couldn't be found again, so what uses them is off until wcmods "
-            "is updated: " + ", ".join(gamebuild.describe(k) for k in fit["lost"]))
+            f"the game updated, and wcmods couldn't find {gamebuild.describe(fit['lost'])} again, so they're "
+            "off in the mod menu and scripts until wcmods is updated; everything else works")
 
     if ctx.files or ctx.packages:
         pak = PakWriter()
@@ -304,13 +448,16 @@ def build(cfg, mods, out_dir, log=print):
                           names.merge(names.mod_specs(enabled)))
     except Exception as e:   # no game data (no Oodle DLL) or a broken names.json, which the names section reports
         log(f"  (cat names for the mod menu left out: {e})")
+    # Items' names, areas' names and quests' titles as this build leaves them: names.json's "text" renames them
+    # in the build's own Strings_EN, so the mod menu's pages follow the game.
+    read = built_text(ctx, game)
     item_labels = {}
     try:   # items' own names, for the Nearby page's labels
-        item_labels = world.item_names(ctx)
+        item_labels = world.item_names(ctx, english(read))
     except Exception as e:   # no game data (no Oodle DLL)
         log(f"  (item names for the mod menu left out: {e})")
     # Areas' names and quests' titles, for the menu's pages (WCModsNames' N.area and N.quest).
-    places = world.place_names(lambda path: game.read_text(path))
+    places = world.place_names(read)
     shared_files[world.NAMES_NAME] = world.names_lua(plan, item_labels, places)
     for name, (text, section) in ctx.ue4ss_shared.items():   # the sections' own (items: WCModsItems)
         if name.lower() in {n.lower() for n in shared_files}:   # folders on Windows don't mind the case
@@ -334,13 +481,33 @@ def build(cfg, mods, out_dir, log=print):
     return manifest
 
 
-def _newest(folder):
+def _newest(folder, skip=()):
+    """When the newest file in a mod's folder changed, leaving out the files (paths in the folder) in `skip`."""
     newest = 0.0
     for d, dirs, files in os.walk(folder):
         dirs[:] = [x for x in dirs if x != "__pycache__"]
         for f in files:
-            newest = max(newest, os.path.getmtime(os.path.join(d, f)))
+            path = os.path.join(d, f)
+            if os.path.relpath(path, folder).replace(os.sep, "/") not in skip:
+                newest = max(newest, os.path.getmtime(path))
     return newest
+
+
+def _reread(mod, installed_ue4ss, mods_dir):
+    """The files of a mod the game reads afresh each time it starts, so a change to them needs no install: a
+    script mod's settings.json, once its script is in the game (an in-game Save, or the studio's "Cheats on when
+    the game starts", writes it). Only when the installed script has a settings.json to read: one added since
+    the install needs one, to be read at all."""
+    from .sections import scripts
+    name = scripts.ue4ss_name(mod.id)
+    if not (mods_dir and scripts.has_scripts(mod) and name in installed_ue4ss):
+        return ()
+    try:
+        with open(os.path.join(mods_dir, name, "Scripts", "main.lua"), encoding="utf-8", errors="replace") as f:
+            installed = f.read()
+    except OSError:
+        return ()
+    return () if "settingsFile = nil," in installed else (scripts.SETTINGS,)   # script_bootstrap.lua's MOD
 
 
 def code_installed(data):
@@ -353,30 +520,37 @@ def code_installed(data):
 
 def pending(cfg, mods):
     """How your mods differ from what's installed: {"installed" (ever), "on" and "off" (ids turned on or off
-    since), "changed" (on both times, with files changed since), "redo" (why the last install has to be
-    made again: it was made before UE4SS or the Oodle DLL was there, so it left parts out), "any"}. The
-    studio's Apply button shows it."""
-    # wcmods.json read afresh into a Config of its own: reloading the studio's would throw away what an
+    since), "changed" (on both times, with files changed since), "left_out" ({id: why} for the mods that are
+    on but that an install leaves out: leave_out()), "still_in" (those of them still in the game: the next
+    install takes them out, so each counts as a change), "redo" (why the last install has to be made again:
+    it was made before UE4SS or the Oodle DLL was there, so it left parts out; mods that run code were
+    allowed since), "any"}. The studio's Apply button shows it."""
+    # wcmods.json read afresh, without touching the studio's Config: reloading that would throw away what an
     # install running at the same time has noted but not saved yet.
     try:
-        data = Config(cfg.root, cfg.data_dir).data
-    except (OSError, ValueError):   # being written this moment
+        data = cfg.peek()
+    except (OSError, ValueError):   # not there yet, or being written this moment
         data = cfg.data
-    # What an install would put in: mods made for an older version of the game stay out (unless used anyway).
-    left_out = set(gamebuild.held_back(cfg, mods))
-    now = {m.id for m in mods if m.enabled} - left_out
+    # What an install would put in: mods made for an older version of the game stay out (unless used anyway),
+    # and so do mods that need a newer wcmods.
+    left_out = leave_out(cfg, mods)
+    switched_on = {m.id for m in mods if m.enabled}
+    now = switched_on - set(left_out)
     inst = data.get("installed")
     if not inst:
         # The mod menu's window goes in with every install, so with the script loader there one is worth
         # making even with no mods on.
         redo = ["the mod menu isn't in the game yet"] if not now and cfg.ue4ss_mods_dir else []
-        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "redo": redo, "any": bool(now or redo)}
+        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "left_out": left_out, "still_in": [],
+                "redo": redo, "any": bool(now or redo)}
     was = set(inst.get("mods", []))
     try:
         built = datetime.datetime.fromisoformat(inst.get("built", "")).timestamp()
     except ValueError:
         built = 0.0
-    changed = sorted(m.id for m in mods if m.enabled and m.id in was and _newest(m.folder) > built + 1)
+    in_game = set(data.get("installed_ue4ss") or [])
+    changed = sorted(m.id for m in mods if m.enabled and m.id in was
+                     and _newest(m.folder, _reread(m, in_game, cfg.ue4ss_mods_dir)) > built + 1)
     redo = []
     if inst.get("ue4ss") is False and cfg.ue4ss_mods_dir:   # the mod menu at least goes in now
         redo.append("the script loader (UE4SS) is in now")
@@ -403,8 +577,20 @@ def pending(cfg, mods):
     # takes it out again.
     if not data.get("allow_code_mods") and code_installed(data):
         redo.append("the game has code from a test install, and mods that run code are off")
-    out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed, "redo": redo}
-    out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo)
+    # And the other way: code mods allowed since the last install, which left out the bridge (the studio's
+    # Console) and every mod's code. The bridge goes in with every install while they're allowed, so its
+    # absence says so, for an install recorded by any version, with or without a code mod on.
+    elif (data.get("allow_code_mods") and cfg.ue4ss_mods_dir and inst.get("ue4ss") is not False
+          and bridge.NAME not in data.get("installed_ue4ss", [])):
+        redo.append("mods that run code are allowed now, and the game doesn't have them yet")
+    # Save edits made before there was a save were left out; now there is one, they're waiting.
+    if inst.get("save_pending") and os.path.isfile(os.path.join(cfg.save_dir, SAV_NAME)):
+        redo.append("save edits are waiting for a save")
+    # "off" is what was switched off; a mod left out while it's on is in left_out instead, and the install
+    # still has to take it out of the game while it's there (still_in).
+    out = {"installed": True, "on": sorted(now - was), "off": sorted(was - switched_on), "changed": changed,
+           "left_out": left_out, "still_in": sorted(was & set(left_out)), "redo": redo}
+    out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo or out["still_in"])
     return out
 
 
@@ -439,12 +625,10 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
     cfg.reload()
     # Installing replaces what's installed now, so a section that failed or skipped a mod would
     # silently remove that mod's previously installed changes.
-    problems = [f"{rep['title']}: {err}" for rep in manifest["sections"].values()
-                if rep["status"] != "ok" for err in rep["errors"]]
+    problems = [(rep.get("title", sid), mod, text) for sid, rep in manifest["sections"].items()
+                for mod, text in section_problems(rep)]
     if problems and not force:
-        raise RuntimeError("not installing because some mods didn't build: " + "; ".join(problems) +
-                           ". Fix or turn off those mods, or install anyway with --force "
-                           "(anything they installed before is removed).")
+        raise InstallBlocked(problems)
     dest = cfg.mods_install_dir
     os.makedirs(dest, exist_ok=True)
     remove_paks(dest)   # wcmods' own and any a mod shipped, including ones no longer on
@@ -484,54 +668,152 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
         if manifest.get("menu"):
             skipped.append("the mod menu")
         if skipped:
-            log(f"  NOTE: {' and '.join(skipped)} need UE4SS, which isn't installed; skipped.")
+            log(f"  NOTE: {' and '.join(skipped)} need the script loader (UE4SS), which isn't installed; skipped.")
 
+    save_pending = False
     if manifest["save_ops"]:
-        apply_save_ops(cfg, manifest["save_ops"], backups_root, log)
+        # The paks are in by now: a save edit that fails is said, and the install is still recorded.
+        try:
+            save_pending = apply_save_ops(cfg, manifest["save_ops"], backups_root, log)["no_save"]
+        except Exception as e:   # noqa: BLE001 - said in the log and the warnings, never lost
+            log(f"  save edits couldn't be made: {e}")
+            manifest["warnings"].append(f"your save edits couldn't be made ({e}); your save is as it was")
     # What the game had then: an install made without UE4SS left parts out, so pending() asks for
-    # another once it's there.
+    # another once it's there; one made before there was a save left its save edits out.
     game_info = manifest.get("game") or {}
     cfg.data["installed"] = {"mods": manifest["mods"], "built": manifest["built"], "ue4ss": bool(mods_dir),
                              "game_build": game_info.get("build"), "layout": game_info.get("layout"),
                              "mods_root": cfg.mods_root, "menu": manifest.get("menu"), "game_dir": cfg.game_dir}
+    if save_pending:
+        cfg.data["installed"]["save_pending"] = True
+    # The studio's crash card shows only crashes from after this (studio.last_crash); taking every mod out
+    # moves it on too, so an older crash doesn't come back once "installed" is gone.
+    cfg.data["crash_after"] = manifest["built"]
     cfg.save()
     return manifest
 
 
+def _said(value):
+    """A save value in a log line: none for a value that isn't there, else as JSON."""
+    return "none" if value is None else json.dumps(value, ensure_ascii=False)
+
+
+def _made_at(path):
+    """When a file was made (its creation time), or None where the system doesn't keep one (Linux)."""
+    st = os.stat(path)
+    born = getattr(st, "st_birthtime", None)
+    if born is None and os.name == "nt":
+        born = st.st_ctime   # creation time on Windows before Python 3.12's st_birthtime
+    return born
+
+
+def _had_save(cfg, backups_root, when):
+    """Whether there was a save at `when` (a timestamp: the last install's): a backup of one made by then, or
+    the save file itself made by then. Unknown (no creation time, and no backup that old) counts as yes, as
+    before this was asked."""
+    stamp = datetime.datetime.fromtimestamp(when).strftime("%Y%m%d-%H%M%S")
+    if any(name[:15] <= stamp and os.path.isfile(os.path.join(backups_root, name, SAV_NAME))
+           for name in list_backups(backups_root)):
+        return True
+    made = _made_at(os.path.join(cfg.save_dir, SAV_NAME))
+    return made is None or made <= when + 1
+
+
 def apply_save_ops(cfg, ops, backups_root, log=print):
+    """Make the build's save edits in WrcGame.sav, after a backup when anything changes. An op with "once"
+    (a save.json's, unless it says "always") is made once per save: saverecord keeps what was made, and an op
+    recorded with the same value is skipped, so playing on past it isn't undone. One with "record" (the Save
+    page's) is always made and recorded. The others (renames, looks, controls, starting items) have guards of
+    their own. Returns {"changed": [lines for the log], "applied": [{"source", "path", "label", "was", "now"}],
+    "backup": the backup's name or None, "no_save": True when there's no save to change yet}."""
+    result = {"changed": [], "applied": [], "backup": None, "no_save": False}
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     if not os.path.isfile(sav):
         log("  NOTE: no save yet; launch the game once, then install again to apply save edits.")
-        return []
+        result["no_save"] = True
+        return result
     save = SaveGame.load(sav)
     doc = SaveDoc(save.json_text)
-    changed = []
+    changed = result["changed"]
+    # The record of what's been made. With none yet (the first install since edits were made once), the mods
+    # of the last install have had theirs made at every install: they're recorded as made, without writing,
+    # so a save that has played on past them keeps what it has. Not when that install had no save to make them
+    # in (wcmods 0.3 didn't say so; the save made since does): they're still to be made.
+    record = saverecord.load(cfg)
+    first = record is None
+    record = record or {}
+    last = cfg.data.get("installed") or {}
+    made_before = set()
+    if first and not last.get("save_pending"):
+        try:
+            built = datetime.datetime.fromisoformat(last.get("built", "")).timestamp()
+        except ValueError:
+            built = 0.0
+        # A mod changed since that install may have a new value, which that install never made: not counted.
+        if built and _had_save(cfg, backups_root, built):
+            made_before = {i for i in last.get("mods", [])
+                           if not _newest(os.path.join(cfg.mods_root, i)) > built + 1}
+    records = []   # (op, key, value, was, lost_to): what to record once the save is written
+    write_record = first
+
+    def source(op):
+        return op.get("source") or op.get("section") or "?"
+
+    def wanted(op, key, value):
+        """Whether a once-per-save op is to be made now (False: it was, or it was made before this version)."""
+        nonlocal write_record
+        if not op.get("once"):
+            return True
+        had = saverecord.entry(record, doc.account, source(op), key)
+        if had is not None and had.get("op") == op["op"] and had.get("value") == value:
+            return False
+        if source(op) in made_before:
+            saverecord.note(record, doc.account, source(op), key, op=op["op"], value=value, was=None,
+                            label=op.get("label") or key, when=saverecord.now(), backup=None, before=True)
+            write_record = True
+            return False
+        return True
+
     # Consecutive "set" ops are applied together with one parse of the save. Keyed by path, so a
     # later (higher-priority) op replaces an earlier one, and whether anything changes is decided
     # against the save itself at flush time.
     pending = {}
     labels = {}   # path -> how a name change reads in the log ("Otterpaw -> Mothpaw")
+    said = {}     # path -> a set op's path in words ("Fawnstar's level")
+    owners = {}   # path -> the recorded ops that set it
+    winner = {}   # path -> the op whose value it gets (the last to set it, recorded or not)
+    inserted = {}  # an added key's path -> its record's place in records (a later add of it wins)
+    removes = []  # remove ops, made after the sets and inserts
 
     def flush():
         if not pending:
             return
-        items = [(p, v) for p, v in pending.items() if doc.get(p) != v]
-        olds = {p: doc.get(p) for p, _ in items}
+        olds = {p: doc.get(p) for p in pending}
+        items = [(p, v) for p, v in pending.items() if olds[p] != v]
+        settled = {p for p, v in pending.items() if olds[p] == v}   # already so: recorded, not written
         pending.clear()
-        if not items:
-            return
-        try:
-            doc.set_many(items)
-            done = items
-        except Exception:
-            done = []
-            for p, v in items:   # fall back to one at a time so one bad edit doesn't drop the rest
-                try:
-                    doc.set(p, v)
-                    done.append((p, v))
-                except Exception as e:
-                    log(f"  save edit skipped ({p}): {e}")
-        changed.extend(labels.get(p) or f"{p}: {json.dumps(olds[p])} -> {json.dumps(v)}" for p, v in done)
+        done = []
+        if items:
+            try:
+                doc.set_many(items)
+                done = items
+            except Exception:
+                for p, v in items:   # fall back to one at a time so one bad edit doesn't drop the rest
+                    try:
+                        doc.set(p, v)
+                        done.append((p, v))
+                    except Exception as e:
+                        log(f"  save edit skipped ({p}): {e}")
+        for p, v in done:
+            changed.append(labels.get(p) or f"{said.get(p) or p}: {_said(olds[p])} -> {_said(v)}")
+        for p in settled | {p for p, _ in done}:
+            # Every op that set it, so a lower mod's isn't made next time instead; the ones another op won over
+            # are recorded as not made.
+            for op in owners.pop(p, []):
+                won = winner.get(p)
+                records.append((op, p, op["value"], olds[p], None if won is op else source(won) if won else "?"))
+        owners.clear()
+        winner.clear()
 
     for op in ops:
         if op["op"] == "set":
@@ -540,7 +822,18 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
             except (KeyError, IndexError, ValueError, TypeError):
                 log(f"  save edit skipped ({op.get('section')}): your save has no value at {op['path']}")
                 continue
+            if not wanted(op, op["path"], op["value"]):
+                continue
             pending[op["path"]] = op["value"]
+            labels.pop(op["path"], None)
+            said[op["path"]] = op.get("label")
+            winner[op["path"]] = op
+            if op.get("once") or op.get("record"):
+                owners.setdefault(op["path"], []).append(op)
+            continue
+        if op["op"] == "remove":
+            if wanted(op, op["path"], None):
+                removes.append(op)
             continue
         if op["op"] == "name":
             # A cat's name lives inside its save text: change just the name IDs, and only if the cat
@@ -555,6 +848,7 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                 log(f"  name skipped ({op.get('from')}): that cat's name changed since the build; install again")
             elif new != current:
                 pending[op["path"]] = new
+                winner[op["path"]] = op
                 labels[op["path"]] = f"name: {op.get('from')} -> {op.get('to')} ({op.get('where', op['path'])})"
             continue
         if op["op"] == "fields":
@@ -568,6 +862,7 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                 new = catcolours.set_fields(current, op["set"])
                 if new != current:
                     pending[op["path"]] = new
+                    winner[op["path"]] = op
                     labels[op["path"]] = f"{op.get('who', 'your cat')}: {op.get('label', op['set'])}"
             continue
         flush()
@@ -583,22 +878,108 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                 old = doc.get(full) if doc.exists(full) else None
                 if old is not None and op.get("only_new"):
                     continue
+                if not wanted(op, full, op["value"]):
+                    continue
                 if old != op["value"]:
                     doc.insert(op["path"], op["key"], op["value"])
-                    changed.append(f"{full}: {json.dumps(old)} -> {json.dumps(op['value'])}")
+                    changed.append(f"{op.get('label') or full}: {_said(old)} -> {_said(op['value'])}")
+                if op.get("once") or op.get("record"):
+                    if full in inserted:   # added by another op before, this install: this one's value went in
+                        i = inserted[full]
+                        o, k, v, old, _ = records[i]   # what was there before either
+                        records[i] = (o, k, v, old, source(op))
+                    inserted[full] = len(records)
+                    records.append((op, full, op["value"], old, None))
         except (KeyError, IndexError, ValueError, TypeError) as e:
             log(f"  save edit skipped ({op.get('section')}): {e}")
     flush()
-    if not changed:
+    # Removals last, list elements from the highest index down so the others keep theirs.
+    def order(op):
+        last_part = op["path"].rstrip("/").rsplit("/", 1)[-1]
+        return (op["path"].rstrip("/").rsplit("/", 1)[0], -int(last_part) if last_part.isdigit() else 0)
+    for op in sorted(removes, key=order):
+        problem = savedit.remove_problem(op["path"], doc)
+        if problem:   # a whole cat, the game's settings, a cat's progress: never taken out
+            log(f"  save edit skipped ({source(op)}): {problem}")
+            continue
+        if not doc.exists(op["path"]):
+            records.append((op, op["path"], None, None, None))   # already gone: nothing to do, ever
+            continue
+        try:
+            old = doc.get(op["path"])
+            doc.delete(op["path"])
+            changed.append(f"{op.get('label') or op['path']}: {_said(old)} -> removed")
+            records.append((op, op["path"], None, old, None))
+        except (KeyError, IndexError, ValueError, TypeError) as e:
+            log(f"  save edit skipped ({op.get('section')}): {e}")
+    if changed:
+        # The backup keeps the record as it is before these changes, for a restore to put back with it.
+        where, _ = saverecord.backup(cfg, backups_root, "before-save-edits")
+        log(f"  backed up saves -> {where}")
+        save.json_text = doc.text
+        write_save(cfg.save_dir, save)
+        result["backup"] = os.path.basename(where)
+        for c in changed:
+            log(f"  save: {c}")
+    else:
         log("  save already matches; nothing to change")
-        return []
-    where, _ = backup(cfg.save_dir, backups_root, "before-save-edits")
-    log(f"  backed up saves -> {where}")
-    save.json_text = doc.text
-    write_save(cfg.save_dir, save)
-    for c in changed:
-        log(f"  save: {c}")
-    return changed
+    when = saverecord.now()
+    for op, key, value, was, lost_to in records:
+        made = was != value and not lost_to
+        if made:
+            result["applied"].append({"source": source(op), "path": key, "label": op.get("label") or key,
+                                      "was": was, "now": value, "op": op["op"]})
+        fields = {"op": op["op"], "value": value, "was": was, "label": op.get("label") or key, "when": when,
+                  "backup": result["backup"] if made else None}
+        if lost_to:   # another op's value went in: not made, and not made later instead of that one
+            fields["lost_to"] = lost_to
+        saverecord.note(record, doc.account, source(op), key, **fields)
+        write_record = True
+    if write_record:
+        saverecord.store(cfg, record)
+    return result
+
+
+def undo_save_change(cfg, source, key, backups_root, log=print):
+    """Put back what a recorded save change replaced (its "was"), after a backup, and mark the record undone,
+    so a mod that is still on doesn't make it again. Returns {"label", "before": what the save held just
+    before, "now": what it holds now, "backup"}."""
+    sav = os.path.join(cfg.save_dir, SAV_NAME)
+    if not os.path.isfile(sav):
+        raise LookupError("no save yet; start the game once")
+    save = SaveGame.load(sav)
+    doc = SaveDoc(save.json_text)
+    record = saverecord.load(cfg) or {}
+    entry = saverecord.entry(record, doc.account, source, key)
+    if entry is None:
+        raise LookupError("that change isn't in the record of changes to this save")
+    if entry.get("before"):
+        raise ValueError("that change was made before wcmods kept a record of them, so what it replaced isn't known; "
+                         "Settings and repair puts a whole backup back")
+    if entry.get("undone"):
+        raise ValueError("that change was put back already")
+    if entry.get("lost_to"):
+        raise ValueError(f"that change wasn't made: {entry['lost_to']}'s change there went in instead")
+    before = doc.get(key) if doc.exists(key) else None
+    was = entry.get("was")
+    parent, _, last = key.rstrip("/").rpartition("/")
+    if entry.get("op") == "insert" and was is None:   # an item that wasn't there: it goes again
+        if doc.exists(key):
+            doc.delete(key)
+    elif doc.exists(key):
+        doc.set(key, was)
+    elif was is not None:   # removed since (or by the change): it comes back
+        doc.insert(parent, last, was)
+    if doc.text != save.json_text:
+        where, _ = saverecord.backup(cfg, backups_root, "before-put-back")   # the record before it's undone
+        log(f"  backed up saves -> {where}")
+        save.json_text = doc.text
+        write_save(cfg.save_dir, save)
+        entry["undone_backup"] = os.path.basename(where)
+    log(f"  save: {entry.get('label') or key}: {_said(before)} -> {_said(was)} (put back)")
+    entry["undone"] = saverecord.now()
+    saverecord.store(cfg, record)
+    return {"label": entry.get("label") or key, "before": before, "now": was, "backup": entry.get("undone_backup")}
 
 
 def install_outdated(cfg):
@@ -616,9 +997,19 @@ def install_outdated(cfg):
         return False
 
 
-def uninstall(cfg, log=print):
+def uninstall(cfg, log=print, losing=None):
+    """Take everything wcmods put in the game out again. Returns the paths removed. First says which cats in the
+    save have names only the mods give (cats_losing_text, or `losing` when the caller has it already), since they
+    show as <MISSING STRING TABLE ENTRY> once the mods are out."""
     if game_running():
         raise RuntimeError("the game is running; close it before uninstalling mods")
+    losing = cats_losing_text(cfg) if losing is None else losing
+    if losing:
+        n = len(losing)
+        log(f"warning: {'a cat' if n == 1 else f'{n} cats'} in your save {'has a name' if n == 1 else 'have names'} "
+            f"only your mods give: {say_cats(losing)}. With the mods out, {'it shows' if n == 1 else 'they show'} as "
+            "<MISSING STRING TABLE ENTRY> (your cat as Cat 1) until you put the mods back in, put a backup of your "
+            f"save back, or give {'it a game name' if n == 1 else 'them game names'} on the Names page and apply")
     cfg.reload()
     removed = remove_paks(cfg.mods_install_dir)
     mods_dir = cfg.ue4ss_mods_dir
@@ -634,6 +1025,7 @@ def uninstall(cfg, log=print):
                 removed.append(gone)
         cfg.data["installed_ue4ss_shared"] = []
     cfg.data.pop("installed", None)
+    cfg.data["crash_after"] = datetime.datetime.now().isoformat(timespec="seconds")   # see install
     cfg.save()
     for p in removed:
         log(f"  removed {p}")
