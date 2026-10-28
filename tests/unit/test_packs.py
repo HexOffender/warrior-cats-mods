@@ -6,7 +6,7 @@ import json
 import os
 import zipfile
 
-from wcmods import modzip, packs
+from wcmods import __version__, modzip, packs
 from wcmods.exe import gamebuild
 from wcmods.mods import discover
 
@@ -144,6 +144,57 @@ def test_describe_lists_a_packs_problems(studio, fake_game, monkeypatch):
     (p,) = call(studio, "GET", "packs")["packs"]
     assert p["problems"] == ["Script runs code, so it stays out until you allow mods that run code",
                              "Old palette was made for an older version of the game, so it's left out until it's updated",
-                             "Future needs Clan Mod Studio 9.0 or newer; you have 0.4.0: update it"]
+                             f"Future needs Clan Mod Studio 9.0 or newer; you have {__version__}: update it"]
     call(studio, "PATCH", "settings", {"allow_code_mods": True})
     assert len(call(studio, "GET", "packs")["packs"][0]["problems"]) == 2
+
+
+# ---------- review fixes ----------
+def test_the_same_names_and_sizes_with_other_contents_is_different(studio, tmp_path):
+    # A friend's Dark Forest: the same file, the same size, other colours.
+    make_mod(studio, "palette-dark-forest", {"name": "Dark Forest"}, {"palette.json": '{"fur": {"3": "#112233"}}'})
+    z = tmp_path / "pack.zip"
+    with zipfile.ZipFile(z, "w") as w:
+        w.writestr("pack/mod.json", json.dumps({"name": "Pack", "pack": True, "requires": ["palette-dark-forest"]}))
+        w.writestr("palette-dark-forest/mod.json", json.dumps({"name": "Dark Forest", "enabled": False}))
+        w.writestr("palette-dark-forest/palette.json", '{"fur": {"3": "#445566"}}')
+        w.writestr("same/mod.json", json.dumps({"name": "Same"}))
+    seen = {m["id"]: m["existing"] for m in modzip.inspect(str(z), studio.ctx.mods_root)}
+    assert seen["palette-dark-forest"]["different"] is True and seen["palette-dark-forest"]["take"] is True
+    # A folder dropped in is compared the same way: the same bytes are the same.
+    folder = tmp_path / "drop" / "palette-dark-forest"
+    folder.mkdir(parents=True)
+    (folder / "mod.json").write_text(json.dumps({"name": "Dark Forest"}), encoding="utf-8")
+    (folder / "palette.json").write_text('{"fur": {"3": "#112233"}}', encoding="utf-8")
+    (same,) = modzip.inspect_folder(str(folder), studio.ctx.mods_root)
+    assert same["existing"]["different"] is False
+    (folder / "palette.json").write_text('{"fur": {"3": "#998877"}}', encoding="utf-8")
+    assert modzip.inspect_folder(str(folder), studio.ctx.mods_root)[0]["existing"]["different"] is True
+
+
+def test_versions_in_the_preview_use_the_shared_version_key(studio, tmp_path):
+    make_mod(studio, "sandbox", {"name": "Sandbox mode", "version": "0.4"}, {"scripts/main.lua": "-- mine"})
+
+    def existing(version):
+        z = tmp_path / f"s-{version or 'none'}.zip"
+        with zipfile.ZipFile(z, "w") as w:
+            w.writestr("sandbox/mod.json", json.dumps({"name": "Sandbox mode", **({"version": version} if version else {})}))
+            w.writestr("sandbox/scripts/main.lua", "-- theirs, other")
+        return modzip.inspect(str(z), studio.ctx.mods_root)[0]["existing"]
+    same = existing("0.4.0")   # "0.4" is "0.4.0": not newer, and an add-on keeps yours
+    assert same["take"] is False and same["keep"] == "You have Sandbox mode 0.4; this carries 0.4.0: keeping yours"
+    odd = existing("beta")    # not a version: compares with nothing, so never a downgrade said, never ticked
+    assert odd["take"] is False and odd["keep"] is None
+    assert existing("v0.5")["take"] is True
+
+
+def test_a_pack_holding_a_mod_named_like_its_own_content_gets_another_name(studio):
+    make_mod(studio, "my-mods", {"name": "My mods"}, {"names.json": {"a": 1}})
+    make_mod(studio, "moon-mods", {"name": "Moon mods"}, {"names.json": {"b": 2}})
+    call(studio, "POST", "packs", {"name": "Moon", "mods": ["my-mods", "moon-mods"]})
+    found = discover(studio.ctx.mods_root)
+    blob = modzip.pack(next(m for m in found if m.id == "moon"), found)
+    with zipfile.ZipFile(io.BytesIO(blob)) as z:
+        tops = {n.split("/")[0] for n in z.namelist()}
+        meta = json.loads(z.read("moon/mod.json"))
+    assert tops == {"moon", "moon-mods", "moon-mods-2"} and meta["requires"] == ["moon-mods-2", "moon-mods"]

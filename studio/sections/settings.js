@@ -78,14 +78,16 @@ export default {
         // Menu pages' setting (its settings.json), while that mod is in your mods.
         const cheats = options.cheats === null ? null : el("input", { type: "checkbox", id: "ig-cheats", checked: options.cheats });
         if (cheats) cheats.addEventListener("change", () => save({ cheats: cheats.checked }));
-        optionsBox.append(
+        // The DOM's own append prints a null as "null": the cheats line, without Menu pages, is filtered out.
+        optionsBox.append(...[
           el("h3", { text: "The mod menu" }),
           el("div", { class: "row" }, el("label", { for: "ig-key", class: "lbl", text: "Opens with" }), key,
             el("label", { for: "ig-pad", class: "lbl", text: "or on a controller" }), pad,
             el("label", { for: "ig-size", class: "lbl", text: "Size" }), size),
           cheats ? el("label", { class: "row", for: "ig-cheats" }, cheats, el("strong", { text: "Cheats on when the game starts" }),
             el("span", { class: "muted", text: "Menu pages' Cheats page switches them on and off while you play." })) : null,
-          el("p", { class: "note", text: "The in-game menu lists your mods, and mods add their pages to it; Menu pages adds your cat, the world, quests, fights and cheats (the Mods page's card of the mods that go with Clan Mod Studio adds it). In game, A- and A+ in its top bar change its size until the game closes. Opened from a controller, the game pauses while it's open, and the same button or B closes it. Needs the script loader." }));
+          el("p", { class: "note", text: "The in-game menu lists your mods, and mods add their pages to it; Menu pages adds your cat, the world, quests, fights and cheats (the Mods page's card of the mods that go with Clan Mod Studio adds it). In game, A- and A+ in its top bar change its size until the game closes. Opened from a controller, the game pauses while it's open, and the same button or B closes it. Needs the script loader." }),
+        ].filter(Boolean));
       }
     }
 

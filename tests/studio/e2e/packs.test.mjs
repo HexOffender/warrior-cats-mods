@@ -5,7 +5,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, makeGame, makeMod, removeFolders, startStudio } from "../lib/studio.mjs";
+import path from "node:path";
+import { dataFolder, makeGame, makeMod, makeZip, removeFolders, startStudio } from "../lib/studio.mjs";
 
 const browserPath = findBrowser();
 const required = process.env.WC_REQUIRE_BROWSER === "1";
@@ -19,7 +20,7 @@ before(async () => {
   folders = dataFolder();
   makeGame(folders.game);
   makeMod(folders.data, "alpha", { name: "Alpha" });
-  makeMod(folders.data, "menu-pages", { name: "Menu pages" });   // one of your own tools: stays on whatever pack plays
+  makeMod(folders.data, "menu-pages", { name: "Menu pages", version: "1.1" });   // one of your own tools: stays on whatever pack plays
   makeMod(folders.data, "moon", { name: "Moon", pack: true, requires: ["alpha", "ghost"], enabled: false });
   studio = await startStudio(folders);
   browser = await launch({ browser: browserPath });
@@ -42,6 +43,8 @@ test("the pack form keeps typed text across a redraw, and starts without your ow
   await p.goto(studio.url + "#packs");
   await p.waitFor('input[aria-label="Pack name"]');
   assert.deepEqual(await ticked(p), ["Alpha"], "the mods you have on, but Menu pages");
+  // Nothing left out of the form shows as the word "null" (the DOM's own append prints one).
+  assert.doesNotMatch(await p.text('[data-key="pack-form"]'), /\bnull\b/);
   await p.type('input[aria-label="Pack name"]', "The Moonlit Path");
   await p.type('textarea[aria-label="Description"]', "A walk by night.");
   await p.click('input[aria-label="Menu pages"]');
@@ -68,5 +71,21 @@ test("Change it with a missing mod lists it as dropped", { skip }, async () => {
   await p.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.startsWith("Saved Moon.")));
   await p.waitFor(() => !document.querySelector('[data-key="pack:moon"]').textContent.includes("Missing"));
   assert.deepEqual(p.consoleErrors(), []);
+  await p.close();
+});
+
+test("an older copy of one of the four, dropped on its own, isn't ticked: yours is kept unless you tick it", { skip }, async () => {
+  const zip = makeZip(path.join(folders.root, "menu-pages-1.0.zip"), {
+    "menu-pages/mod.json": { name: "Menu pages", version: "1.0" }, "menu-pages/scripts/main.lua": "-- older" });
+  const p = await browser.page();
+  await p.goto(studio.url + "#mods");
+  await p.waitFor("#mod-file");
+  await p.setFiles("#mod-file", [zip]);
+  await p.waitFor("#pick-menu-pages");
+  assert.equal(await p.evaluate(() => document.getElementById("pick-menu-pages").checked), false);
+  assert.match(await p.text(".mod.preview .notes"), /You have Menu pages 1\.1; this carries 1\.0: keeping yours\. Tick it to put this older copy in instead/);
+  await p.click({ text: "Add to my mods" });
+  await p.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.startsWith("Nothing to add: you're keeping yours")));
+  await p.click({ text: "Cancel" });
   await p.close();
 });

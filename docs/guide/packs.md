@@ -26,7 +26,9 @@ You can:
   go in with them.
 - Play a pack on its own (**Play only this pack**), or with your own mods (**Turn on with my mods**).
 - Share it with **Save as .zip**: the .zip carries every mod in it. Whoever gets it drops it on their Mods
-  page, where the preview shows the pack and its mods.
+  page, where the preview shows the pack and its mods. Your My mods goes in under the pack's name, so
+  theirs stays theirs; a script or coat preset that names "my-mods" inside it still does, so put those in
+  a mod of their own before you share.
 - Change it (**Change it**) or remove it (**Remove the pack**); removing a pack keeps its mods, and
   removing the pack you're playing brings your own mods back.
 - See on its card what would keep one of its mods out of the game: a mod that runs code while that isn't

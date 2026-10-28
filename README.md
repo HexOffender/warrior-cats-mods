@@ -133,8 +133,9 @@ closes.
   and removing the pack while it plays does the same. A pack's card says what would keep one of its mods out
   of the game (a story pack's cats need Sandbox mode, which runs code, so mods that run code allowed). A
   pack someone sent you is added like any mod, on the Mods page: a mod you already have is ticked only when
-  the pack's copy is different and newer, and a pack never puts in an older copy of one of the mods that go
-  with Clan Mod Studio than yours.
+  the pack's copy is different (its files' contents, not only their names and sizes) and newer, and an older
+  copy of one of the mods that go with Clan Mod Studio than yours is never ticked, in a pack or a .zip of
+  its own: it goes in only if you tick it yourself.
 - **Settings and repair**, the other page under Your mods: the game's console, allowing mods that run
   code, your save backups, removed mods (a removed or replaced mod is kept in `backups/mods/`, and
   Put it back does that), "Take all mods out of the game", and starting an empty mod of your own.

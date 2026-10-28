@@ -322,8 +322,11 @@ off, but your own tools and the mods its mods `"uses"` that were on) and goes ba
 (`"pack_before"` in `wcmods.json` remembers them, and the pack's name, so going back works even after the
 pack is removed). A mod is one of your own tools when its mod.json says `"tool": true`, or it's Menu pages,
 Creator palettes or the Emote wheel. In a pack's .zip, My mods (`my-mods`) goes in as `<pack>-mods`, named
-"<pack name>: its own content", with every `requires` and `uses` naming it rewritten, so whoever adds it
-keeps their own My mods; the folders on your side are unchanged.
+"<pack name>: its own content" (`<pack>-mods-2` and so on when the pack holds a mod by that name already),
+with every `requires` and `uses` naming it rewritten, so whoever adds it keeps their own My mods; the
+folders on your side are unchanged. Only mod.json's `requires` and `uses` are rewritten: anything inside
+the mods that names `my-mods` itself (a script reading `mods/my-mods`, a coat preset's id made from it)
+still says `my-mods` in the pack, so give such content a mod of its own before packing it.
 
 ### `names.json`
 ```json

@@ -474,13 +474,16 @@ export default {
         // pack's are ticked, except mods the player has already. Each goes in on or off as it ships, unless changed.
         // In a pack, a mod you have already is ticked only when the pack's copy is different and newer (or neither
         // says a version), and never when it's an older copy of one of the mods that go with Clan Mod Studio.
-        const pick = el("input", { type: "checkbox", checked: !many || (!!pack && (!m.existing || !!m.existing.take)), id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
+        // An older copy of one of the mods that go with Clan Mod Studio than yours is never ticked, a .zip of it
+        // alone included: its box shows, unticked, for one who means to go back to it.
+        const keepYours = !!(m.existing && m.existing.keep);
+        const pick = el("input", { type: "checkbox", checked: !keepYours && (!many || (!!pack && (!m.existing || !!m.existing.take))), id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
         const on = el("input", { type: "checkbox", checked: m.enabled !== false, id: `on-${m.id}`, "aria-label": `${m.name} switched on` });
         picks.set(m.id, pick);
         ons.set(m.id, on);
         const notes = [];
         const had = m.existing;
-        if (had && had.keep) notes.push(el("li", { text: `${had.keep}.` }));
+        if (had && had.keep) notes.push(el("li", { text: `${had.keep}. Tick it to put this older copy in instead (yours is kept in backups).` }));
         else if (had && pack && !had.different) notes.push(el("li", { class: "muted", text: "You have this one already, the same." }));
         else if (had && pack) notes.push(el("li", { text: "You have a different mod with this name; tick it to use the pack's copy (yours is kept in backups)." }));
         else if (had) notes.push(el("li", { text: `Replaces the ${had.name}${had.version ? " " + had.version : ""} you have${m.version ? " with " + m.version : ""}. The old copy is kept in backups.` }));
@@ -499,7 +502,7 @@ export default {
         }
         if (m.menu_page) notes.push(el("li", { text: "Adds a page to the in-game mod menu." }));
         addBox.append(el("div", { class: "mod preview" },
-          many ? pick : null,
+          many || keepYours ? pick : null,
           el("div", { class: "mod-body" },
             el("label", { for: `pick-${m.id}` }, el("strong", { text: m.name }), m.version ? el("span", { class: "muted", text: ` ${m.version}` }) : null,
               m.author ? el("span", { class: "muted", text: ` · by ${m.author}` }) : null),
@@ -513,7 +516,7 @@ export default {
       addBox.append(el("div", { class: "row" },
         el("button", { class: "btn primary", text: many ? "Add these" : "Add to my mods", onclick: async () => {
           const ids = [...picks].filter(([, p]) => p.checked).map(([id]) => id);
-          if (!ids.length) { toast("Pick at least one.", "bad"); return; }
+          if (!ids.length) { toast(many ? "Pick at least one." : "Nothing to add: you're keeping yours. Tick it to put this copy in instead.", "bad"); return; }
           try {
             const res = await add(ids, ids.filter(id => ons.get(id).checked));
             toast(addedToast(res.added, addons));
