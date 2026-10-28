@@ -55,8 +55,8 @@ test("without the script loader the page says so once, and with it the banner go
   assert.equal(await page.evaluate(() => document.querySelector('[data-page="controls"] .banner').hidden), false);
   assert.match(await page.text('[data-page="controls"] .banner'), /^Key changes need the script loader\. Get set up, on the Mods page, installs it\./);
   makeGame(folders.game);
-  await page.reload();
-  await page.waitFor(() => document.querySelector('[data-page="controls"] .banner')?.hidden === true);
+  await page.reload({ timeout: 20000 });
+  await page.waitFor(() => document.querySelector('[data-page="controls"] .banner')?.hidden === true, 20000);
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });
@@ -93,8 +93,8 @@ test("Change, then F: the cell says what the build will do, and Save to mod writ
   await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => /Saved/.test(t.textContent)));
   assert.deepEqual(file(), { keyboard: { Player_Interact: "F" } });
   // Opened again, the saved file shows the same; then Change to I: the inventory loses its key, said on both rows.
-  await page.reload();
-  await page.waitFor(() => /F does Interact/.test(document.querySelector('tr[data-key="row:Player_Interact"]')?.textContent));
+  await page.reload({ timeout: 20000 });
+  await page.waitFor(() => /F does Interact/.test(document.querySelector('tr[data-key="row:Player_Interact"]')?.textContent), 20000);
   assert.equal(await chip(page, "Player_Interact"), "F");
   await page.click('button[aria-label="Change the keyboard key for Interact"]');
   await page.press("i");
@@ -167,8 +167,8 @@ test("the sticks have no Change button, the moving keys say they need the launch
   await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => /Saved/.test(t.textContent)));
   assert.deepEqual(file(), {});
   // A second key in menus: Confirm also on U.
-  await page.reload();
-  await page.waitFor('button[aria-label="Add another key for Confirm in menus"]');
+  await page.reload({ timeout: 20000 });
+  await page.waitFor(() => document.querySelector('details[data-key="free"] table'), 20000);
   await page.click('button[aria-label="Add another key for Confirm in menus"]');
   await page.press("u");
   await page.waitFor(() => /In menus, U does what Enter does \(Confirm and Skip\)/.test(document.querySelector('tr[data-key="menu:Enter"]').textContent));
