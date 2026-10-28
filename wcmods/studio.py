@@ -479,10 +479,10 @@ class Studio:
                                f"{'its colour shows' if later else 'this one shows'}")
 
     def _cats_notes(self, mod, notes):
-        from .sections.cats import EMPTY, CatsSection, _new_slots
+        from .sections.cats import EMPTY, CatsSection
         data = catcolours.validate(CatsSection.read_json(mod, "cats.json"))
         enabled = [m for m in self.mods() if m.enabled or m.id == mod.id]
-        added = _new_slots(enabled)
+        added = palettes.added_slots(enabled)
         # The build's own checks, with its own words: a new colour no palette adds, a Feral coat, a scar that
         # shows nothing.
         CatsSection._check(notes, "your cat", {**EMPTY, **data.get("player", {})}, added)
