@@ -26,7 +26,8 @@ folders. `python wcmods.py selftest` checks, against your install:
 - **Game update signatures:** on a build wcmods was checked on, every class and value it reads is where
   `game.HIDDEN` says; and with the exe's fingerprint changed, as on another build, a class whose
   signatures are taken away keeps nothing, and the level component's eight values are found by their
-  own signatures (since 2026-10-28; before, it had none).
+  own signatures, where they were or where an update moved them (since 2026-10-28; before, it had
+  none).
 - **UE4SS scripts:** the generated Lua has balanced blocks and brackets (a light structure check;
   there's no Lua interpreter to fully parse it). Builds also warn if any UE4SS script fails it.
 
@@ -259,13 +260,19 @@ Fawnstar, as a player reported it showing "Cat 1"):
   build 26184573 as if it were another build, and follow it when its code is moved in memory
   (docs/reverse-engineering.md, "Game updates"), but no real update has come since. After the next
   one: `python wcmods.py game signatures check` should list `SwtAdventureLevelComponent` with all
-  eight values `same` (or `moved`), none `lost`; then, with the new install, `python wcmods.py lua
-  "local c = Game.cat() return c:level(), c:stats().Prowess"` should print the cat's level and Prowess
-  (the mod menu's Cat page shows them too).
+  eight values `same` (or `moved`), none `lost`; then, with the new install and your cat in the world,
+  `python wcmods.py lua "local ps = Game.get(Game.controller(), 'PlayerState') local cls =
+  Game.object('/Script/SwtAdventure.SwtAdventureLevelComponent') local ok, c = pcall(function() return
+  Game.valid(ps) and cls and ps:GetComponentByClass(cls) end) if not (ok and Game.valid(c)) then return
+  'no level component' end return Game.get(c, 'WCM_Level'), Game.get(c, 'WCM_Prowess')"` should print
+  the cat's level and Prowess (the mod menu's Cat page shows them too). It reads the player state's
+  component itself, calling nothing on an object that isn't there, and doesn't scan for it:
+  `Cat:level()` and `stats()` go through `Cat:component`, which falls back to scanning every level
+  component when the player state's `GetComponentByClass` finds none.
 - **+0x124 is the level cap, not a second copy of the level.** Read from the code (the level
   component's start-up sets it from `Gameplay.Exploration.MaxLevel`, and the level setter compares the
   level with it), but only seen in game on a level 20 cat, where the two are equal. To check, on a cat
-  below level 20: `python wcmods.py lua "local c = Game.cat():component('Level') return
-  Game.get(c, 'WCM_Level'), Game.get(c, 'WCM_LevelShown')"` should print the cat's level, then 20.
+  below level 20, the same command ending `return Game.get(c, 'WCM_Level'), Game.get(c,
+  'WCM_LevelShown')` should print the cat's level, then 20.
 
 After a game update, run `selftest` before installing again ([updating.md](updating.md)).

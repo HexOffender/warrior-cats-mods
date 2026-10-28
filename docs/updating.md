@@ -63,25 +63,29 @@ everything here works in RVAs). A rebuild that adds a member to a class does mov
   first with the prologue and the rest chained to it, and `pe.Image.function_at` joins them.
 - **Anchors:** functions the reverse-engineering notes tie to a class whose own code hardly touches its
   members, such as `0x1417D8010`, which builds a fighter's stats, or code of an unmonitored parent's
-  (the level component's level and cap are `USwtQuestLevelComponent`'s). Each is found in a new build
-  by a pattern of its first instructions that's unique in the whole exe.
+  (the level component's anchors are `USwtQuestLevelComponent`'s XP and level setters, for
+  redundancy: its own code reaches the level and the cap already). Each is the start of a whole
+  function, found in a new build by a pattern of its first instructions that's unique in the whole exe.
 - **Signatures:** short byte patterns around the instructions that read or write each member. Every
   displacement, branch target and relocated address is a wildcard, and the members' offsets are
   captures. A pattern only has to be unique among the class's code, so it stays short and survives
   changes around it. Not every instruction at a member's offset is the member: one through a stack
   address or a global's pointer (a local, a singleton's field), or one wider than the member (a
-  pointer, a vtable slot: `call [rax+0x1C8]`), isn't made a signature.
+  pointer, a vtable slot: `call [rax+0x1C8]`), isn't made a signature. Signatures around neighbouring
+  instructions overlap and capture the same one, so a member gets them until three separate
+  instructions are captured, and each records where it starts (`"at"`) on the build it was made on.
 
 `check()` on another exe finds each class again the same way, compares its size, and reads each
-member's offset out of the code its signatures match. The sites vote on each member:
+member's offset out of the code its signatures match. Each instruction a member is captured in is one
+vote, however many overlapping signatures hold it:
 
 | Status | Meaning | What wcmods does |
 |---|---|---|
-| same | the signatures agree it hasn't moved | uses it |
-| moved | two or more agree on a new offset, inside the class and aligned | uses the new offset |
+| same | the instructions agree it hasn't moved | uses it |
+| moved | two or more separate instructions agree on a new offset, inside the class and aligned | uses the new offset |
 | kept | no signature matched, but the exe is the one the signatures were made on, or the class is the same size, another of its members was found where it was, and none moved or disagreed | uses it |
-| unsure | one site alone says it moved | leaves it out |
-| conflict | the signatures disagree, the offset can't be one, or two members land on one offset | leaves it out |
+| unsure | one instruction alone says it moved | leaves it out |
+| conflict | the instructions disagree, the offset can't be one, or two members land on one offset | leaves it out |
 | lost | no signature matched and it can't be kept | leaves it out |
 
 `gamebuild.layout()` runs the check once per build. It keeps the result in `cache/layout-<key>.json`,
@@ -95,18 +99,23 @@ every member is left out, and it's tried again next time. The install records th
 so after an update Play and Apply make the install again even when no mod changed.
 
 On build 26184573 (patch 1.1; `signatures.json` was made on it, last on 2026-10-28) the signatures
-confirm 34 of the 45 values directly (the number of signatures in brackets):
+confirm 34 of the 45 values directly (in brackets, the separate instructions they're captured in:
+`signatures.instructions()`):
 - the resource component's Value (3), Max (1) and Scale (1);
 - stamina regen (1);
 - the level component's level (4), level cap (3, `WCM_LevelShown`), Prowess (3), Strength (4),
-  Resilience (6), Instinct (4), Agility (2) and Stamina (2);
-- the fresh-kill pile's timer (4) and decay time (3);
+  Resilience (4), Instinct (4), Agility (2) and Stamina (2);
+- the fresh-kill pile's timer (3) and decay time (2);
 - the clock (2);
-- the combat component's Stance (2), Team (3), Stamina (2), MoveCount (3), Clan (3) and Level (4);
+- the combat component's Stance (2), Team (3), Stamina (2), MoveCount (3), Clan (3) and Level (3);
 - the status component's Status (5), StatusRounds (3), SelfCureChance (2) and PoisonDamage (1);
-- the detection component's ConeAngle (1), ConeDistance (4), SoundRadius (3), SoundSpeed (1),
-  ProximityDistance (3), WalkSpeedRoaming (2), ZoneEntryDistance (3), ZoneExitDistance (1) and
+- the detection component's ConeAngle (1), ConeDistance (3), SoundRadius (2), SoundSpeed (1),
+  ProximityDistance (2), WalkSpeedRoaming (2), ZoneEntryDistance (2), ZoneExitDistance (1) and
   ReactToChase (1).
+
+The eight in one instruction only (Max, Scale, stamina regen, PoisonDamage, ConeAngle, SoundSpeed,
+ZoneExitDistance and ReactToChase) are confirmed where they were, but if an update moves them they're
+"unsure" and left out: `game signatures make` lists them ("one instruction only for ...").
 
 The rest have no signature of their own: ResourceType, the combat component's stats, preset damage and
 AI tier, and three of the detection component's senses. Their classes' code doesn't touch them in a way
