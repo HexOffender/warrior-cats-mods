@@ -717,12 +717,12 @@ def _game_build(ctx, args):
     fit = gamebuild.layout(ctx.cfg, refresh=args.refresh)
     if fit["status"] == "adapted":
         print("every value wcmods reads was found again" +
-              (": moved " + ", ".join(gamebuild.describe(k) for k in fit["moved"]) if fit["moved"] else ", none moved"))
+              (": moved, and followed: " + gamebuild.describe(fit["moved"]) if fit["moved"] else ", none moved"))
     elif fit["status"] == "partial":
-        print("couldn't find these again, so what uses them stays off until wcmods is updated: " +
-              ", ".join(gamebuild.describe(k) for k in fit["lost"]))
+        print(f"couldn't find {gamebuild.describe(fit['lost'])} again, so they stay off in the mod menu and "
+              "scripts until wcmods is updated; everything else works")
         if fit["moved"]:
-            print("moved, and followed: " + ", ".join(gamebuild.describe(k) for k in fit["moved"]))
+            print("moved, and followed: " + gamebuild.describe(fit["moved"]))
     found = mods.discover(ctx.mods_root)
     # Data mods made for an older build are built on this one first: the ones that build go in from now on.
     if gamebuild.recheck_due(ctx.cfg, found, now["build"]):
@@ -744,7 +744,10 @@ def _game_signatures(ctx, args):
         sys.exit("no game exe found; pass --exe")
     if args.action == "make":
         from .exe import gamebuild
-        result = signatures.make(exe)
+        try:
+            result = signatures.make(exe)
+        except signatures.Unsigned as e:   # signatures.json is left as it was
+            sys.exit(f"not written: {e}")
         # The installed game's build, unless it's another exe (whose build only --build can say).
         installed = pe.game_exe(ctx.cfg)
         same = installed and os.path.normcase(os.path.abspath(exe)) == os.path.normcase(os.path.abspath(installed))

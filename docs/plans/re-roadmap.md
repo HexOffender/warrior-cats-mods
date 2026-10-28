@@ -322,7 +322,7 @@ Optionally, prove the check without a patch: copy the exe to the scratchpad, fli
   - `test_two_members_on_one_offset_conflict`;
   - `test_a_class_with_no_sites_is_kept_when_its_anchors_match`;
   - `test_make_fails_a_class_with_no_sites`.
-- `tests/unit/test_gamebuild.py`, with the harness's temp folders:
+- `tests/unit/test_gamebuild_layout.py`, with the harness's temp folders:
   - `test_a_verified_build_needs_no_check`;
   - `test_layout_caches_a_check`;
   - `test_a_half_written_cache_is_ignored`;
@@ -339,7 +339,7 @@ In game only after a real patch: `python wcmods.py game signatures check`, then 
 - **The game module carries the status.** `game.py`'s `lua()` gets the layout status and the lost classes in words, as a `@LAYOUT@` beside `@SAVED@`, passed by `pipeline.py` line 299.
 - **The Overview says it in game.** The mod menu's Overview (`wcmods/lua/menu_host.lua`) shows one line while values are off: "The game updated: level and stats are off until wcmods updates".
 
-Tests: `tests/unit/test_gamebuild.py::test_describe_says_it_in_plain_words` and `tests/unit/test_lua.py::test_game_module_carries_the_layout_status`.
+Tests: `tests/unit/test_gamebuild_layout.py::test_describe_says_it_in_plain_words` and `tests/unit/test_lua.py::test_game_module_carries_the_layout_status`.
 
 Docs:
 - `docs/updating.md`: the level component is now signed, and what "partial" means in words.

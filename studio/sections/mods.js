@@ -136,10 +136,11 @@ export default {
         lines.push(el("span", { text: "Couldn't find the game's exe to check what the update changed, so the values wcmods reads stay off until it's updated." }));
       } else if (update.status === "adapted") {
         lines.push(el("span", { text: update.moved.length
-          ? `wcmods followed the values the update moved (${update.moved.join(", ")}), so its own parts and the mod menu keep working.`
+          // One phrase per class (gamebuild.phrases), some with commas of their own: semicolons between.
+          ? `wcmods followed the values the update moved (${update.moved.join("; ")}), so its own parts and the mod menu keep working.`
           : "Nothing wcmods reads moved, so its own parts and the mod menu keep working." }));
       } else if (update.status === "partial") {
-        lines.push(el("span", { text: `These values couldn't be found again, so what uses them is off until wcmods is updated: ${update.lost.join(", ")}.` }));
+        lines.push(el("span", { text: `These values couldn't be found again, so what uses them is off until wcmods is updated: ${update.lost.join("; ")}.` }));
       }
       updateBox.append(el("div", { class: "banner" }, el("strong", { text: `The game updated (build ${b.build})` }), ...lines));
     }

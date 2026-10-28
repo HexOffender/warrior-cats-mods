@@ -18,7 +18,8 @@ SHARED_NAME = "WCModsGame"
 
 # Members the game doesn't reflect, found by reverse-engineering build 24847281 (docs/mechanics/,
 # docs/reverse-engineering.md) and confirmed unchanged on 26184573, patch 1.1 (the level component read in
-# game, the rest by signatures.py): class, then (property name, offset in the object, type). Rendered into
+# game, the rest by signatures.py, which covers the level component too since 2026-10-28): class, then
+# (property name, offset in the object, type). Rendered into
 # the Lua as Game.hidden. They're offsets inside objects, so ASLR doesn't move them, but a game update
 # that changes a class's layout does: signatures.py finds them again in a new build, and lua() takes the
 # offsets it found.
@@ -28,7 +29,8 @@ HIDDEN = [
         ("WCM_ResourceType", 0x108, "IntProperty"), ("WCM_Value", 0x10C, "FloatProperty"),
         ("WCM_Max", 0x110, "FloatProperty"), ("WCM_Scale", 0x114, "FloatProperty")]),
     ("/Script/SwtQuest.SwtQuestStaminaComponent", [("WCM_Regen", 0x11C, "FloatProperty")]),
-    # The player state's level component: level, and the cat's stats out of combat.
+    # The player state's level component: level, and the cat's stats out of combat. +0x124 is the level
+    # cap (Gameplay.Exploration.MaxLevel, read from the code), not a shown level: the name is older.
     ("/Script/SwtAdventure.SwtAdventureLevelComponent", [
         ("WCM_Level", 0x120, "IntProperty"), ("WCM_LevelShown", 0x124, "IntProperty"),
         ("WCM_Prowess", 0x154, "FloatProperty"), ("WCM_Strength", 0x158, "FloatProperty"),
