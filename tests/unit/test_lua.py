@@ -43,6 +43,61 @@ def test_mouse_look_script():
     assert "sensitivity = 1.5" in lua and "invert = true" in lua and "smoothing = 50.0" in lua
 
 
+@pytest.mark.parametrize("raw, said", [
+    ({"sensitivity": "1.5"}, "'sensitivity' should be a number"),
+    ({"sensitivity": True}, "'sensitivity' should be a number"),
+    ({"sensitivity": 0}, "between 0.05 and 10"),
+    ({"sensitivity": 11}, "between 0.05 and 10"),
+    ({"toggle_key": "f6"}, "'toggle_key' should be one of F1"),
+    ({"toggle_key": None}, "'toggle_key' should be one of F1"),
+    ({"toggle_key": "F11"}, "'toggle_key' should be one of F1"),
+    ({"smoothing": 1500}, "between 0 and 1000 milliseconds"),
+    ({"sensitvity": 1}, "unknown setting 'sensitvity' (known: sensitivity, invert, toggle_key"),
+    ({"pitch_min": -90}, "between -89 and 89 degrees"),
+    (["sensitivity"], "should be an object"),
+])
+def test_mouse_look_validate_rejects_bad_values(raw, said):
+    with pytest.raises(ValueError) as e:
+        mouselook.validate(raw)
+    assert said in str(e.value)
+
+
+def test_mouse_look_validate_keeps_what_the_studio_writes_and_ignores_notes():
+    page = {"_help": "mine", "sensitivity": 1.25, "invert": True, "smoothing": 40, "toggle_key": "", "pitch_min": -30,
+            "pitch_max": 40, "debug": True}
+    assert mouselook.validate(page) == {k: v for k, v in page.items() if not k.startswith("_")}
+
+
+def test_mouse_look_merge_names_both_mods_for_crossed_tilt_limits():
+    with pytest.raises(ValueError) as e:
+        mouselook.merge([{"pitch_min": 10.0}, {"pitch_max": 5.0}], ["low-mod", "high-mod"])
+    assert str(e.value) == "mouse look: pitch_min 10 (from low-mod) must be below pitch_max 5 (from high-mod)"
+    assert mouselook.merge([{"toggle_key": "F7"}, {"sensitivity": 2.0}])["toggle_key"] == "F7"   # later wins per key
+
+
+def test_mouse_look_build_saves_into_the_top_priority_mod_and_keeps_its_help(tmp_path):
+    # The in-game page's Save writes into the mod whose settings win, keeping that file's own notes.
+    import os
+    from types import SimpleNamespace
+    from wcmods.sdk import BuildContext
+    from wcmods.sections.mouselook import MouseLookSection
+    mods = []
+    for mod_id, data in (("low", {"sensitivity": 2.0}), ("top", {"_help": "my notes", "invert": True})):
+        folder = tmp_path / mod_id
+        folder.mkdir()
+        (folder / "mouselook.json").write_text(__import__("json").dumps(data), encoding="utf-8")
+        mods.append((SimpleNamespace(id=mod_id, folder=str(folder)), mouselook.validate(data)))
+    ctx = BuildContext(SimpleNamespace(ue4ss_mods_dir=str(tmp_path)), None, str(tmp_path / "out"), lambda m: None)
+    MouseLookSection().build(ctx, mods)
+    lua = ctx.ue4ss_mods[mouselook.UE4SS_MOD_NAME][0]["Scripts/main.lua"]
+    lua = lua.decode("utf-8") if isinstance(lua, bytes) else lua
+    assert not problems(lua)
+    assert "sensitivity = 2.0" in lua and "invert = true" in lua
+    assert os.path.abspath(str(tmp_path / "top" / "mouselook.json")).replace("\\", "\\\\") in lua
+    assert '"mods/top/mouselook.json"' in lua and '"my notes"' in lua
+    assert ctx.notes[None]["mouselook"]["sensitivity"] == 2.0
+
+
 def test_mouse_look_script_with_its_menu_page():
     lua = mouselook.script(mouselook.merge([{}]), {"path": r"C:\mods\m\mouselook.json", "file": "mods/m/mouselook.json",
                                                   "keep": {"_help": 'say "hi"'}})
@@ -99,10 +154,12 @@ def test_palette_script():
 
 def test_key_remap_plan():
     # Interact and Scent tracking move along F/E/Q, so Q goes quiet; X stays because Return to camp still
-    # uses it; forward moves to I, so W goes quiet.
+    # uses it; forward moves to I, so W goes quiet, and I stops opening the inventory, which is said.
     send, block, warns = keymap.plan({"keyboard": {"Player_Interact": "F", "Player_Scent_Tracking": "E",
                                                    "Player_Den_Place": "Z"}, "keys": {"I": "W"}})
-    assert send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"} and not warns
+    assert send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"}
+    assert warns == ["With Play with key remaps.bat, I stands for W, so it no longer opens the inventory"]
+    assert warns[0].rows == [("keys", "I")]
 
 
 def test_in_game_remap_plan():
@@ -126,7 +183,9 @@ def test_in_game_remap_plan():
     assert plan["keys"]["Player_Interact"] == ["F", "LeftMouseButton", "Gamepad_FaceButton_Bottom"]
     assert plan["keys"]["Player_Crouch"] == ["LeftControl", "RightControl", "RightMouseButton"]
     assert rest == {"keyboard": {"Player_Movement_Up": "K"}, "keys": {"I": "W"}}
-    assert len(warns) == 2 and "Player_Crouch is on Gamepad_LeftTrigger" in warns[0] and "Player_Play is on J" in warns[1]
+    assert warns == ["The controller's LT now runs, so it no longer crouches; give Crouch another button",
+                     "J now does what C does while you explore, so it no longer does the game's Play action"]
+    assert [w.rows for w in warns] == [[("gamepad", "Player_Run")], [("keys", "J")]]
     # The game's key pictures show the new keys: a command can have one for each device, and the menu
     # pair's commands show Escape in menus only.
     icons = plan["icons"]
@@ -153,16 +212,22 @@ def test_in_game_menu_keys_and_any_command():
     assert rest == {"menus": {"I": "Up", "K": "Down", "ThumbMouseButton": "BackSpace"}}
     assert sum("zooming and moving the map" in w for w in warns) == 2
     assert sum("types on the name screen" in w for w in warns) == 1
+    # Pause leaving Escape for P is said too: nothing else on screen would.
+    assert "Escape will no longer open the pause menu" in warns
     _, _, warns = keymap.native_plan({"keyboard": {"Player_ShowHideControls": "H"}})
-    assert warns == ["keyboard: no key sends Player_ShowHideControls in the game; H will"]
+    assert warns == ["No key does Show or hide the controls in the game; H will"]
 
 
 def test_in_game_remap_warnings():
     _, _, warns = keymap.native_plan({"keyboard": {"Player_Interact": "Q", "Player_Pounce": "W"},
                                       "gamepad": {"Player_Camera_Up": "RB"}})
-    assert any("Player_Scent_Tracking is on Q" in w for w in warns)       # Q's own job stops
-    assert any(w.startswith("W now does Player_Pounce") for w in warns)   # W still walks too
-    assert any("is a stick" in w for w in warns)
+    assert "Q now does Interact, so it no longer tracks scents; give Scent tracking another key" in warns
+    assert "W now pounces, and still moves you forward too: the game reads that key itself" in warns
+    assert any(w.startswith("The right stick can't be moved by a mod; change it in Steam's controller settings")
+               for w in warns)
+    # The game's own stick, as the studio's old "Controller defaults" wrote it, is nothing to do and says nothing.
+    plan, _, warns = keymap.native_plan({"gamepad": {"Player_Camera_Up": "Gamepad_RightY", "Player_Movement_Right": "Gamepad_LeftX"}})
+    assert not gameremap.has_work(plan) and warns == []
     # The Controls screen's keys the save doesn't list move too, and a mouse button can take an action.
     plan, rest, warns = keymap.native_plan({"keyboard": {"Player_Show_Map": "N", "Player_Run": "ThumbMouseButton"}})
     assert plan["play"]["send"] == {"N": ["Player_Show_Map"], "ThumbMouseButton": ["Player_Run"]}
@@ -177,6 +242,30 @@ def test_in_game_remap_script():
     assert '["I"] = { "Button_Up" }' in lua
     assert '["icons"] = { ["play"] = { ["Player_Interact"] = { "F" } }' in lua
     assert "NotifyOnNewObject" in lua and "mcGuiButtonImage" in lua
+
+
+def test_in_game_remap_script_lists_its_keys_in_the_mod_menu():
+    # Each key with a new job once, in plain words, for the mod menu's Overview: a move says what it was, a second
+    # key what it's like, a key for menus only says so; the script hands them to Menu.key when the menu is there.
+    plan, _, _ = keymap.native_plan({"keyboard": {"Player_Interact": "F"}, "gamepad": {"Player_Run": "LT"},
+                                     "keys": {"H": "E", "T": "One", "MouseScrollUp": "R"}, "menus": {"U": "Enter"}})
+    assert plan["menu_keys"] == [["F", "Interact (was E)"], ["LT on a controller", "Run (was RB on a controller)"],
+                                 ["H", "Interact, like E"], ["T", "like 1"], ["Wheel up", "Reset the camera, like R"],
+                                 ["U", "Confirm and Skip in menus"]]
+    lua = gameremap.script(plan)
+    assert not problems(lua)
+    assert 'pcall(require, "WCModsMenu")' in lua and "pcall(Menu.key, line[1], line[2])" in lua
+    assert '["menu_keys"] = { { "F", "Interact (was E)" }' in lua
+    # A key both moved to and standing for something is listed once, with both.
+    plan, _, _ = keymap.native_plan({"keyboard": {"Player_Interact": "H"}, "keys": {"H": "Q"}})
+    assert plan["menu_keys"] == [["H", "Interact (was E); Scent tracking, like Q"]]
+
+
+def test_gameremap_has_no_work_on_an_empty_plan_and_writes_debug():
+    plan, _, _ = keymap.native_plan({})
+    assert not gameremap.has_work(plan) and plan["menu_keys"] == []
+    lua = gameremap.script(keymap.native_plan({"keyboard": {"Player_Interact": "F"}})[0], debug=True)
+    assert '["debug"] = true' in lua and not problems(lua)
 
 
 def test_key_remapper_gets_only_what_the_game_cant_do(tmp_path):

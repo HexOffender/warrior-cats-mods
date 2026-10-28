@@ -1,6 +1,6 @@
 -- Tells the wcmods key remapper whether you're playing (exploring, talking to a cat, photo mode) or in one
 -- of the game's menus (the pause menu, the map, a fight's menu), by writing "play" or "menu" to a file it
--- reads. Written by wcmods; see README, "Remapping keys".
+-- reads. Written by wcmods; see docs/remapping.md.
 local STATE_FILE = @PATH@
 
 local function log(fmt, ...) print(string.format("[PlayState] " .. fmt .. "\n", ...)) end

@@ -134,16 +134,19 @@ apply in priority order, so a later mod's choice wins even when it names the cat
 ### `controls.json`
 ```json
 { "keyboard": { "Player_Interact": "F", "Player_Movement_Up": "K" },
-  "keys": { "I": "W", "Escape": "P" },
+  "keys": { "T": "W", "H": "E" },
   "menus": { "keys": { "Escape": "BackSpace" } },
   "gamepad": { "Player_Run": "LT" } }
 ```
 
 - **`keyboard`** moves an action to a new key: here Interact goes from E to F. Actions are the game's;
-  `python wcmods.py controls` lists them with their keys. The game's axis actions list only one
+  the Controls page shows each with the game's own key (`keymap.game_keys`, `GET /game/keys`).
+  `python wcmods.py controls` lists the save's copy of the bindings, which the game ignores and which
+  puts Pause on Enter, while the game pauses on Escape. The game's axis actions list only one
   direction, so `Player_Movement_Up` is the back key (S) and `Player_Camera_Right` is the left key.
   The Controls screen's `Player_Show_Inventory` (I), `Player_Show_Quest` (K), `Player_Show_Map` (M)
-  and `Player_Growl` (L) aren't in the save, but move the same way. So does any other of the game's
+  and `Player_Growl` (L) aren't in the save, but move the same way (the Controls page has rows for them:
+  Inventory, Quest log, Map and Meow). So does any other of the game's
   commands (`keymap.COMMANDS`): `Button_Confirm` and `Button_Back` (Enter and Backspace, in menus),
   `Button_Skip`, `Button_ShoulderL`/`R` (the tabs, on 1 and 2), `Player_Play` (J) and the rest. Which
   key sends which is in [reverse-engineering.md, Input](reverse-engineering.md#input). A new key can be
@@ -151,21 +154,37 @@ apply in priority order, so a later mod's choice wins even when it names the cat
 - **`keys`** maps a key you press straight to a game key while you play. Use it for keys no action
   lists: the built-in W, D, Up and Right, or any other key the game uses. `"T": "W"` makes T go
   forward and W stop. The game key stops working on its own once something stands in for it, unless
-  an action still uses it (then it's a second key for that job).
+  an action still uses it (then it's a second key for that job). The key you press stops doing its own
+  job too (I standing for anything stops opening the inventory), and the page and the build say what.
+  A second key for an action is a pair standing for the action's game key: `"H": "E"` makes H interact
+  as E does, even when Interact has moved to F. It does what that key does while you explore, and
+  nothing in menus; the Controls page shows it on the action's row as "also on H".
 - **`menus`** is a separate set of key pairs used only in the game's menus (every screen but the HUD,
   a fight's menu included).
   Here `Escape` closes menus (it stands for Backspace); `{"I": "Up", "K": "Down", "F": "Enter"}` would
-  move through them with I and K and confirm with F. The game's own keys keep working too. A letter,
+  move through them with I and K and confirm with F. The game's own keys keep working too, but the key
+  you press does the other key's job there instead of its own (Backspace standing for Enter no longer goes
+  back), and the build says what it stops doing. A letter,
   digit or Space used here still types on the name screen and does the other key's job there too, and
   the build warns about it. A press finishes as it started: the Escape that closes a menu is released
   as Backspace. A pair standing for an arrow key or WASD also goes to the old key remapper, as the map
   zooms and moves on those keys by reading them itself.
 - **`gamepad`** moves an action to a controller button, like `keyboard` (here Run goes to LT). The
-  sticks can't move; use Steam Input for them.
+  left stick and the right stick can't be moved by a mod; change them in Steam's controller settings
+  (right-click the game in Steam, then Properties, Controller). An entry that puts a stick action on the
+  game's own stick does nothing and says nothing.
 
 Keys are Unreal key names. Controller buttons also take short names (A/B/X/Y, LB/RB, LT/RT,
-Start). The build checks the names. Two things carry the remaps out (the README,
-[Remapping keys](../README.md#remapping-keys)):
+Start). The build checks the names; a value that isn't a key's name in quotes (`null`, a list) is
+refused with the entry it's in. Several mods' files merge, the later one in the mods' order (the
+higher priority) winning per action or key. The build's warnings are sentences that say what each
+change does and stops doing ("I now does Interact, so it no longer opens the inventory; give Inventory
+another key"); they're in the Apply drawer, and the Controls page shows the same ones on its rows
+before you apply (`keymap.describe`). Keys wcmods' own scripts listen on (the mod menu's key and
+controller button, mouse look's `toggle_key` while a mouse look mod is on) and F11 are kept free by the
+page, and a mod's keys (an
+emote's `key`, the Emote wheel's) are warned about. Two things carry the remaps out
+([remapping.md](remapping.md) has the details):
 - **Inside the game**, the `WCModsRemap` UE4SS script (written by `wcmods/gameremap.py` from
   `keymap.native_plan`) does every action and command that's a button, on any key, mouse button or
   controller button, and every `keys` and `menus` pair whose game key sends commands
@@ -188,12 +207,15 @@ The game's own camera took no mouse input at release (`DefaultViewportMouseCaptu
 in its settings, so no binding can change that); patch 1.1 (October 2026) added a rough mouse control
 of the camera of its own. Mouse look stays, because it's smoother and adjustable. It's a UE4SS script. While you explore with the cursor hidden, it captures the mouse and moves the camera
 (`BP_AdventureCamera`) itself. It lets go whenever the game shows its cursor. The arrow keys
-and right stick still work. `toggle_key` switches it off and on in game. R (or LB) levels the
+and right stick still work. `toggle_key` switches it off and on in game (the Controls page won't put an
+action on it while mouse look is on). R (or LB) levels the
 tilt. `pitch_min`/`pitch_max` limit the tilt (default -20/23, the game's own). `smoothing` is how
 long the camera takes to catch up with the mouse, in milliseconds: 0 (the default) follows it at
 once, and the game eases the arrow keys and stick over about 200. `"debug": true` logs what it
 does to `ue4ss\UE4SS.log`, including whether each turn stayed and how even the frames were. The
-`mouse-look` mod and the Mouse look card on the Controls page both edit this file.
+Mouse look card on the Controls page sets every one of these (the tilt limits in its Tilt limits fold,
+`debug` under For mod makers) and saves them by itself into the `mouse-look` mod, keeping any other keys
+the file has; the in-game page edits the same file.
 
 How it turns the camera, and how the game's own camera works (`SwtAdventureCameraActor`, its
 tuning keys, splines and the lean while the cat moves), is in

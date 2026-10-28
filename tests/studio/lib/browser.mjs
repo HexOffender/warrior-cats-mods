@@ -268,10 +268,16 @@ export class Page {
     if (!ok) throw new Error(`couldn't focus ${JSON.stringify(target)}`);
     await this.send("Input.insertText", { text });
   }
-  async press(key) {
-    const text = key.length === 1 ? key : undefined;
-    await this.send("Input.dispatchKeyEvent", { type: "keyDown", key, text, windowsVirtualKeyCode: key === "Enter" ? 13 : key === "Escape" ? 27 : 0 });
-    await this.send("Input.dispatchKeyEvent", { type: "keyUp", key, windowsVirtualKeyCode: key === "Enter" ? 13 : key === "Escape" ? 27 : 0 });
+  // Press a key: its `key` ("Escape", "f"); code is the key's place on the keyboard ("KeyF", "Insert"), which
+  // a page reading KeyboardEvent.code needs (the usual one for Enter, Escape, Tab, Space and a letter is
+  // filled in); shift holds Shift.
+  async press(key, { code, shift = false } = {}) {
+    const text = key.length === 1 ? key : key === "Enter" ? "\r" : undefined;   // Enter's text presses a focused button
+    const vk = { Enter: 13, Escape: 27, Tab: 9, " ": 32 }[key] || (/^[a-z]$/i.test(key) ? key.toUpperCase().charCodeAt(0) : 0);
+    code ||= { Enter: "Enter", Escape: "Escape", Tab: "Tab", " ": "Space" }[key] || (/^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : undefined);
+    const modifiers = shift ? 8 : 0;
+    await this.send("Input.dispatchKeyEvent", { type: "keyDown", key, code, text, modifiers, windowsVirtualKeyCode: vk });
+    await this.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, modifiers, windowsVirtualKeyCode: vk });
   }
   // Give a file input files from disk, as choosing them would.
   async setFiles(selector, paths) {

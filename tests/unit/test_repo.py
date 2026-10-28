@@ -132,6 +132,22 @@ def test_the_studios_place_fixture_is_what_models_place_gives():
     assert have == want, "tests/studio/fixtures/place.json is out of date: run pytest with WC_UPDATE_FIXTURES=1 and commit it"
 
 
+GAME_KEYS = os.path.join(REPO, "tests", "studio", "fixtures", "game-keys.json")
+
+
+def test_the_studios_game_keys_fixture_is_what_the_build_knows():
+    # tests/studio/controls.test.mjs runs the Controls page's model over the game's keys as /game/keys serves them.
+    from wcmods import keymap
+    want = {"_help": "Written by tests/unit/test_repo.py from wcmods.keymap.game_keys (WC_UPDATE_FIXTURES=1 rewrites "
+                     "it): what GET /game/keys serves, for tests/studio/controls.test.mjs.", **keymap.game_keys()}
+    if os.environ.get("WC_UPDATE_FIXTURES") == "1":
+        with open(GAME_KEYS, "w", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(want, indent=1) + "\n")
+    with open(GAME_KEYS, encoding="utf-8") as f:
+        have = json.load(f)
+    assert have == want, "tests/studio/fixtures/game-keys.json is out of date: run pytest with WC_UPDATE_FIXTURES=1 and commit it"
+
+
 def test_nothing_was_written_to_the_players_folder(players_folder):
     """WCMODS_DATA points at a folder of this run's own (conftest.py); the run's end checks it again."""
     assert os.environ["WCMODS_DATA"] == players_folder and os.listdir(players_folder) == []

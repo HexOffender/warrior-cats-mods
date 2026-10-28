@@ -23,8 +23,8 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (animations, bridge, catcolours, colors, controls, eyeatlas, guide, menupages, menusettings, models, mods,
-               modzip, names, onboarding, packs, palettes, pipeline, recolor, story, ue4ss)
+from . import (animations, bridge, catcolours, colors, controls, eyeatlas, guide, keymap, menupages, menusettings,
+               models, mods, modzip, mouselook, names, onboarding, packs, palettes, pipeline, recolor, story, ue4ss)
 from .formats import cooked, csvdata, png, save, texture
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
@@ -33,6 +33,7 @@ from .config import game_running
 from .gamefiles import NONASSET, Unreadable
 from .formats.savejson import SaveDoc
 from .sdk import BuildContext
+from .sections import controls as controls_section
 from .sections.files import classify
 
 NO_GAME = "Clan Mod Studio hasn't found the game yet: Get set up, on the Mods page, asks where it is"
@@ -497,8 +498,10 @@ class Studio:
             found = self.mods()
             p = pipeline.pending(cfg, found)
             titles = {m.id: m.name for m in found}
+            # held_back: mods that are on but that Apply leaves out (made for an older version of the game, or
+            # needing one that is), which the Controls page's line says aren't in the game.
             return {**p, "names": {i: titles.get(i, i) for i in p["on"] + p["off"] + p["changed"]},
-                    "game_running": game_running()}
+                    "held_back": sorted(gamebuild.held_back(cfg, found)), "game_running": game_running()}
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "switch" and method == "POST":
             # On: with the mods it requires. Off: refused while mods that are on need it, unless cascade.
             found = self.mods()
@@ -656,8 +659,22 @@ class Studio:
                     return {"tables": json.load(f), "source": "colour_tables.json"}
             return {"tables": None, "source": None}
         if parts == ["game", "bindings"]:
+            # The save's copy of the bindings (the game ignores edits to it, and it puts Pause on Enter while the
+            # game pauses on Escape): for mods' own pages. The Controls page uses /game/keys.
             text, mtime = self.save_text()
             return {"bindings": controls.read_bindings(text), "save_time": mtime}
+        if parts == ["game", "keys"] and method == "GET":
+            # The game's own keys as the build knows them (keymap.game_keys), with no save needed, and mouse look's
+            # settings as the build reads them (its defaults, and the keys that can switch it off and on).
+            return {**keymap.game_keys(), "ue4ss": bool(cfg.ue4ss_mods_dir),
+                    "mouselook": {"defaults": mouselook.DEFAULTS, "toggle_keys": list(mouselook.TOGGLE_KEYS)}}
+        if parts == ["controls", "check"] and method == "POST":
+            # What Apply would do with the Controls page's controls.json for a mod, merged with the other mods'
+            # (sections/controls.check): a sentence per entry, the keys in use, who else changes the same.
+            mod_id = field(body, "mod")
+            if "controls" not in body:
+                raise ValueError("the page didn't send its controls.json; reload the page and try again")
+            return controls_section.check(body["controls"], mod_id, self.mods(), cfg)
         if parts == ["game", "data"]:
             tables = self.ctx.game.data_tables()
             return {"tables": tables, "kinds": {t: classify(NONASSET + t) for t in tables}}

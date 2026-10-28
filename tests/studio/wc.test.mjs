@@ -37,9 +37,10 @@ test("shade scales lightness and the moods keep a valid hex", () => {
 // ---------- input names ----------
 test("browser key codes become the game's key names", () => {
   const cases = { KeyW: "W", Digit3: "Three", Digit0: "Zero", Numpad7: "NumPadSeven", Space: "SpaceBar", Enter: "Enter",
-    NumpadEnter: "Enter", ArrowUp: "Up", Backquote: "Tilde", F13: "F13", F1: "F1", ShiftLeft: "LeftShift", Quote: "Apostrophe" };
+    NumpadEnter: "Enter", ArrowUp: "Up", Backquote: "Tilde", F12: "F12", F1: "F1", ShiftLeft: "LeftShift", Quote: "Apostrophe" };
   for (const [code, key] of Object.entries(cases)) assert.equal(wc.input.keyFromEvent({ code }), key, code);
-  for (const code of ["MetaLeft", "ContextMenu", "Unidentified", ""]) assert.equal(wc.input.keyFromEvent({ code }), null, code);
+  // F13 and above: the game has no key for them.
+  for (const code of ["MetaLeft", "ContextMenu", "Unidentified", "", "F13", "F24"]) assert.equal(wc.input.keyFromEvent({ code }), null, code);
 });
 
 test("key labels read as a player would, per controller", () => {

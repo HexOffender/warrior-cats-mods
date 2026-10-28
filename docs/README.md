@@ -28,6 +28,7 @@ confirmed in game, and what hasn't).
 | [guide/](guide/README.md) | The guide inside Clan Mod Studio (its Help button): how the studio works, a page at a time, for people who make mods without code | players |
 | [updating.md](updating.md) | Game updates: what wcmods follows by itself, mods made for older builds, the signatures | players, mod makers, wcmods |
 | [formats.md](formats.md) | Every JSON file a mod can hold, with examples | mod makers |
+| [remapping.md](remapping.md) | How key remaps reach the game: the in-game script, the old key remapper and its command line, what hasn't been checked | mod makers, wcmods |
 | [scripting.md](scripting.md) | `WCModsGame`, script mods, the bridge and console, the mod menu's pages, the game's own UI from Lua | mod makers (Lua) |
 | [SDK.md](SDK.md) | The mod folder, `wcmods.sdk` build steps, studio pages, repacking, new items, animations and content, the shared Lua modules, C++ mods | mod makers (code) |
 | [mechanics/](mechanics/README.md) | Combat, progression, exploration, clan life, items, quests, NPCs: the rules and the tables behind them | mod makers |
