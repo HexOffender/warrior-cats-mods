@@ -74,9 +74,9 @@ python wcmods.py studio      # what double-clicking Clan Mod Studio does
 ```
 
 Also in this folder: **`Play with key remaps.bat`** starts the game with the old key remapper, which
-is deprecated (see [Remapping keys](#remapping-keys)). Remaps work inside the game however you start
-it; the old remapper is only for remapping movement or the camera. It stops by itself when the game
-closes.
+is deprecated (see [Remapping keys](#remapping-keys)). Key changes work inside the game however you start
+it; the old remapper is only for moving the cat and the camera on other keys. It stops by itself when the
+game closes.
 
 **Clan Mod Studio** puts your mods in the game. Its **Mods** page is where you start:
 - **Add a mod:** drop a downloaded mod's .zip on the page. It shows what's in it (what the mod
@@ -117,7 +117,7 @@ the game; the page asks before you switch mods or close it with unsaved changes.
 |---|---|---|---|
 | **Palettes** | eye, coat, pattern and marking colours on a live cat; new pattern and marking colours | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
 | **Your cat** | colours only your cat wears (coat, paws, ears, nose, whiskers); which colour slots it wears; its scars | `cats.json` | UE4SS script (colours); your save, on install (slots, scars) |
-| **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | the game itself (`WCModsRemap`); movement and the camera only with the old key remapper (deprecated); see [Remapping keys](#remapping-keys) |
+| **Controls** | which key, mouse button or controller button does each action, second keys, keys in menus, controller presets; says what each change will do before you apply | `controls.json` | the game itself, through a small helper installed with your mods; moving and the camera only with `Play with key remaps.bat` (deprecated); see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert, smoothing | `mouselook.json` | UE4SS script |
 | **Names** | rename, add and remove name prefixes, suffixes and rogue names; the ban list; cameo cats and any shown name; the cats in your save | `names.json` | edited tables and text in the mod pak; cat renames in your save, on install |
 | **Items** | herbs, materials and accessories of your own: name, description, icon (the game's, recoloured, or your own picture), what a herb does, an accessory's look (recoloured or your own picture), shape (your own model, OBJ or glTF from Blender), where it sits (moved, turned, sized) and opacity (see-through glass), how a herb or material lies on the ground to be picked up (your own model and picture), the medicine cat's recipe, some to start with | `items.json`, with the pictures and models it names | new rows, textures and meshes in the mod pak; a UE4SS script that puts models on the cats wearing them, and a list of models on the ground for `Game.items.drop`; starting ones in your save |
@@ -205,98 +205,30 @@ written into your save only after a backup.
 
 ## Remapping keys
 
-The game doesn't take remaps from mods. It keeps a copy of your bindings in the save
-(`Shared/InputKeyboard`, `Shared/InputGamepad`) but ignores edits to it, its own rebinding
-screen (`WBP_GuiPopupControlConfig`) is hidden and not wired up on PC, and the bindings themselves
-live in native code no script can reach ([docs/reverse-engineering.md, Input](docs/reverse-engineering.md#input)
-has what was found). So wcmods remaps while the game runs. Set your keys on the Controls page (or in
-`controls.json`), save them to a mod, and install mods (game closed). Then:
+1. Change keys on the **Controls** page in Clan Mod Studio (or in a mod's `controls.json`), Save to mod,
+   Apply to game, then start the game any way you like.
+2. The new key does the action; the old key stops doing it but keeps its other jobs, and the game's prompts
+   and its Controls tab show the new key.
+3. Moving the cat and the camera can't be changed this way, because the game reads those keys itself: for
+   the keyboard, start the game with `Play with key remaps.bat`; for the sticks, use Steam's controller
+   settings.
+4. If a key already does something else, the page says what it will stop doing before you save, and so does
+   Apply; the mod menu's key and button (Insert and View unless you changed them), mouse look's key (F6) and
+   F11 are taken, and the page's "Which keys are free?" lists the rest.
+5. Controller buttons, the side mouse buttons and the wheel haven't been tried in the game yet.
 
-| What you remap | Done by |
-|---|---|
-| The game's actions that are buttons: Interact, Pounce, Run, Crouch, Scent tracking, Drop, Talk to friend, Place den decoration, Return to camp, Reset camera, Pause, and the Controls screen's Inventory (I), Quest (K), Map (M) and Meow (L), onto keyboard keys, mouse buttons or controller buttons | **the game**, through wcmods' `WCModsRemap` script: start the game any way you like, from Steam too |
-| Any other of the game's commands, everywhere: the menus' Confirm, Back, Skip, tab buttons and the rest (`"keyboard": {"Button_Skip": "G"}`) | **the game** |
-| A key that stands for another while you play (`"keys": {"H": "E"}`) | **the game** |
-| A key that stands for another in menus, the "In menus" list (`"menus"`): I and K for Up and Down, F for Enter | **the game** (mouse buttons there: the old key remapper) |
-| Movement and the camera (Move back, Move left, Camera down, Camera left, and keys standing for W, D, Up or Right) | only **the old key remapper** outside the game (deprecated, below) |
-| The controller's sticks | **Steam Input** (in Steam, right-click the game, then Properties, Controller) |
-| Anything, without UE4SS | **the old key remapper**, for keyboard and mouse |
+| What you change | After Apply | Note |
+|---|---|---|
+| An action (Interact, Pounce, Run, Crouch, Scent tracking, Drop, Talk to a friend, Place a den decoration, Return to camp, Reset the camera, Pause menu, Inventory, Quest log, Map, Meow) on a key, mouse button or controller button | works in the game | the old key keeps its other jobs; Inventory, Quest log, Map and Meow have no controller button |
+| A second key for an action | works in the game while you explore | it does what the game's key does there |
+| A second key for Confirm, Back or the tabs in menus | works in the game | letters still type on the name screen |
+| Moving and the camera, on the keyboard | only with `Play with key remaps.bat` | deprecated, keyboard and mouse only |
+| The sticks | no | Steam's controller settings |
+| Mouse look | works in the game | its own card on the Controls page; needs the script loader |
+| Anything, without the script loader | keyboard and mouse only, with `Play with key remaps.bat` | Get set up installs the loader |
 
-**Inside the game.** The `WCModsRemap` script is installed with your mods whenever they remap anything it
-can do, with "Allow mods that run code" on or off (it's wcmods' own script, like mouse look's). Every key
-the game hears becomes one or more of its commands (Interact, Pounce, and in menus Up, Confirm, Back...),
-and the script works on those:
-- **Moving an action or command** (`keyboard`, `gamepad`): the new key does it, in play and in the game's
-  menus, and the old key stops doing it but keeps its other jobs. With Interact on F, E still shows info on
-  the map; with Pounce moved off Space, Space still confirms dialogue. A key that takes an action stops doing
-  its own (with Interact on Q, Q no longer tracks scents; the build says so).
-- **A key standing for another** while you play (`keys`) or in menus (`menus`): it does all of that key's
-  jobs there, and none of its own. Menus are every screen but the HUD: the title and cat maker, the
-  pause menu and its pages, the inventory, the map, photo mode, a fight's menu, and talking to a cat.
-  Letters still type on the name screen, and do the other key's job there too (the build says so).
-  A few screens read some keys directly, like movement: the map's zoom and move (arrows, WASD), photo
-  mode's camera (Shift+WASD, Z/C) and turning the cat in the cat maker (Q/E). A menu pair standing for
-  an arrow key or WASD therefore also goes to the old key remapper, which can do those (the build says so).
-
-The game's pictures of keys follow too: prompts such as Travel and Talk, the menus' footers (Back,
-Confirm) and the pause screen's Controls tab show the new key, from the game's own pictures. A command
-that didn't move keeps the game's picture (with Escape standing for Backspace in menus, the footers' Back
-shows Escape while Confirm keeps Enter).
-The keyboard's pictures follow keyboard moves and a controller's follow controller moves. A key the game
-has no picture for (the middle mouse button, the wheel) leaves the game's picture as it was. Movement and
-the camera, which only the old key remapper can move, keep theirs. Seen working in game: Interact on F, Run on G,
-Scent tracking on the middle mouse button, Map on N (in the map screen too), H as a second Interact, the
-pause menu moved with I and K and confirmed with U, O closing menus, the next tab on PageDown instead of
-2, and a fight's menu and moves picked with I, K and U; the old keys did nothing. The Travel and Talk
-prompts and the Controls tab showed F for Interact, and the pause screen's Back showed Escape for a
-menu pair. Controller buttons and the wheel are done the same way but haven't been tried yet. Scripts that listen for Interact themselves (`Game.npcs`, for a mod's own cats) follow it to its
-new key.
-
-**The old key remapper outside the game (deprecated).** Remapping is done inside the game now, and the
-old key remapper is kept only for what a script can't reach: what the game reads as axes every frame
-(movement and the camera, the map's zoom and move) and mouse buttons in the "In menus" list (in menus, a
-click goes to the button under the cursor, not to the game's keys). The studio's Play doesn't start it
-any more; when your mods have remaps only it can do, the build and Play say so. While you play, the keys in your mods' `controls.json` stand in for the game's. "Play"
-means the game window is in front and you're exploring, not in a menu. A small UE4SS script
-(`WCModsPlayState`, installed with your mods when the remapper has work to do) tells the remapper
-which it is. Windows can't, because the game draws its own cursor. Without that script, remaps
-apply whenever the game is in front. The remapper holds back the key you press and sends the
-game's key in its place, and it stops when the game closes. Menus, the name screen and other
-programs keep your normal keys, except for the menu remaps you set (the Controls page's "In menus"
-list). A key whose action moved stops doing it, unless another action still uses it. Mouse buttons
-and the wheel can stand in for keys. The pause menu hasn't been checked yet.
-
-To use it, start the game with `Play with key remaps.bat` or `python wcmods.py play` instead of from
-Steam or the studio's Play. Its "play" means no game screen is showing: exploring, photo mode, or
-talking to a cat. When everything you remap is done inside the game, `play` just starts the game:
-
-```
-python wcmods.py play              # start the game through Steam and remap until it closes
-python wcmods.py remap             # the same, when the game is already running (or about to be)
-python wcmods.py play --dry-run    # report which remaps would happen, without changing any keys
-python wcmods.py play --in-menus   # remap in menus too
-python wcmods.py play --debug      # log the window in front, the play state, and remapped key presses
-```
-
-Microsoft PowerToys Keyboard Manager can stand in for the key remapper, if you'd rather not run it:
-choose *Remap a key*, map your new key to the game's key (for example T to W for forward), and set
-the target app to `Wrc-Win64-ShippingDRM.exe` so the remap only applies in the game. Don't remap the
-same keys with it and wcmods at once.
-
-The key remapper runs as a normal program using Windows' low-level keyboard hook. Ctrl+C stops it,
-and anything it was holding down is let go. Details:
-
-- **A press finishes as it started.** A key you were already holding when you went from a menu into
-  play keeps going to the game unchanged until you let go, so nothing gets stuck. A remapped key
-  stops repeating when a menu opens.
-- **Some keys keep their old job.** Enter, Space, Escape, Backspace and Tab are never held back when
-  their action moves, because prompts and dialogue shown while you play may need them; the build
-  and `play` say so.
-- **Other programs' keys pass through.** Keys sent by other programs (Steam Input's keyboard buttons,
-  macro tools) aren't remapped or held back. A controller button that Steam Input turns into W still
-  walks forward.
-- **Mouse remaps cost a little.** Remapping a mouse button or the wheel adds a mouse hook, which
-  Windows calls for every mouse movement. Remap keyboard keys only if you notice any lag.
+How it works inside the game, the old key remapper and its command line, and what hasn't been checked yet:
+[docs/remapping.md](docs/remapping.md). The file itself: [formats.md, controls.json](docs/formats.md#controlsjson).
 
 ## Command line
 
