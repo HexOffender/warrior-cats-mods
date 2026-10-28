@@ -4,8 +4,11 @@ tests wrote nothing into the player's folder."""
 import ast
 import json
 import os
+import re
 import subprocess
 import sys
+
+import pytest
 
 from unit_helpers import REPO
 
@@ -90,6 +93,28 @@ def test_pytest_collects_nothing_under_tests_game():
                        cwd=REPO, capture_output=True, text=True, timeout=120)
     assert r.returncode == 5 and "error" not in (r.stdout + r.stderr).lower(), r.stdout + r.stderr   # 5: nothing collected
     assert "test_cat.py" not in r.stdout
+
+
+def test_every_throwaway_mod_the_game_tests_name_is_in_git():
+    """The in-game tests' own mods (tests/game/mods/<id>, put in with `agent install --with`) are committed: a
+    `mods/` in .gitignore once kept them out, and the tests that need them skipped without a word."""
+    named = {}
+    sources = [os.path.join("tests", "game", f) for f in os.listdir(os.path.join(REPO, "tests", "game")) if f.endswith(".py")]
+    for rel in sources + [os.path.join("docs", "agent.md")]:
+        with open(os.path.join(REPO, rel), encoding="utf-8") as f:
+            text = f.read()
+        for name in re.findall(r"tests/game/mods/([A-Za-z0-9_.-]+)", text) + re.findall(r'"mods",\s*"([A-Za-z0-9_.-]+)"', text):
+            named.setdefault(name, rel)
+    assert named, "no tests/game/mods/<id> found: the patterns above no longer match how the tests name them"
+    try:
+        r = subprocess.run(["git", "ls-files", "-z", "--", "tests/game/mods"], cwd=REPO, capture_output=True, timeout=60)
+    except OSError:
+        pytest.skip("git isn't here to ask")
+    if r.returncode != 0:
+        pytest.skip("not a git checkout: " + r.stderr.decode("utf-8", "replace").strip())
+    tracked = set(r.stdout.decode("utf-8").split("\0"))
+    missing = [f"{name} (named in {rel})" for name, rel in sorted(named.items()) if f"tests/game/mods/{name}/mod.json" not in tracked]
+    assert missing == [], "throwaway mods named by the in-game tests but not committed: " + ", ".join(missing)
 
 
 # ---------- the studio's placeMesh against models.place ----------

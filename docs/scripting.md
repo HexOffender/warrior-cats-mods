@@ -11,7 +11,7 @@ Three ways in:
 |---|---|---|
 | **A script mod** | `scripts/main.lua` (and `settings.json`) in a mod folder. No Python needed | [Script mods](#script-mods) |
 | **A build step** | A mod's `section.py` that writes a script from the mod's settings, for mods that build things too | [SDK.md](SDK.md#in-game-scripts) |
-| **Live** | The console in the mod menu and in Clan Mod Studio, and `wcmods lua`, which run Lua in the game while it's open | [The game bridge](#the-game-bridge) |
+| **Live** | Clan Mod Studio's Try Lua in the game (under Advanced), the mod menu's Lua (advanced) page, and `wcmods lua`, which run Lua in the game while it's open | [The game bridge](#the-game-bridge) |
 
 All of them are code, so they only run with `"allow_code_mods": true` in `wcmods.json`. Every call on
 this page was tried in game on build 24847281 and rechecked on 26184573, patch 1.1 ([reverse-engineering.md, Game updates](reverse-engineering.md#game-updates)), unless it says otherwise. The game's rules and numbers
@@ -42,19 +42,24 @@ sets up two globals, then runs yours:
 | `settings` | `settings.json` as a table (empty without one), read from the file each time the game starts, so what `save()` wrote is back after a restart. Change it and the script sees the change at once |
 | `settingsFile` | Where `MOD.save()` writes, or nil |
 | `save()` | Write `MOD.settings` back to `settings.json`, for the next time the game starts and the next install. Returns true, or false and why |
-| `log(fmt, ...)` | Print `[Mod name] text` to `ue4ss\UE4SS.log` |
-| `page(fn, {title, order, group})` | A page in the mod menu (`fn(ui)`, as in [SDK.md](SDK.md#wcmodsmenu)). The menu goes in with UE4SS, as scripts do; returns false only if `WCModsMenu` is missing |
+| `log(fmt, ...)` | Print `[Mod name] text` to `ue4ss\UE4SS.log`. It's `string.format` underneath, so a `%` in the text is written `%%` |
+| `page(fn, {title, order, group})` | A page in the mod menu (`fn(ui)`, as in [SDK.md](SDK.md#wcmodsmenu)). The menu goes in with UE4SS, as scripts do; returns false only if `WCModsMenu` is missing. A page made later, from a timer, takes the place of the settings page below rather than being a second one |
 
 **A settings page for free:** a mod with a `settings.json` and no page of its own gets one. It has a row
-per setting (on/off, number, text, `"#rrggbb"` colours) and a Save button, and keys starting with `_` show as notes.
-`"settings_page": false` in `mod.json` turns that off. The page is in the mod menu, which goes in with
-every install; say `"uses": ["mod-menu"]` in `mod.json` so Clan Mod Studio shows that the mod has one.
+per setting (on/off, number, text, `"#rrggbb"` colours) and a Save button, which says under it whether it saved;
+keys starting with `_` show as notes, `"_help_<key>"` under its setting, and `"_min_<key>"`/`"_max_<key>"` bound a
+number ([formats.md](formats.md#scripts-and-settingsjson) has which value makes which row, and what Save writes).
+The same rows are on the mod's card in Clan Mod Studio, under More, to change before the game starts.
+`"settings_page": false` in `mod.json` turns both off. The page is in the mod menu, which goes in with every
+install; say `"uses": ["mod-menu"]` in `mod.json` so Clan Mod Studio shows that the mod has one.
 
 `python wcmods.py new my-script --kind script` makes a new one to start from.
 [game-tweaks](https://github.com/HexOffender/wcmods-examples/tree/main/game-tweaks), in wcmods-examples, is a complete one: it
 keeps stamina full, holds the time of day, keeps the fresh-kill pile up and heals on a key, with its
 settings on a page. Add it in the studio (or `wcmods add ../wcmods-examples/game-tweaks`), allow code
-mods, and apply.
+mods, and apply. Its tweaks are also on the studio's Tweaks page with no code at all
+([formats.md, `tweaks.json`](formats.md#tweaksjson)): a mod holds the settings, and `WCModsTweaks`, wcmods' own
+script, acts on them, so nothing has to be allowed.
 
 ```lua
 -- mods/my-mod/scripts/main.lua
@@ -69,7 +74,24 @@ Game.onKey("F6", function() Game.cat():heal() end)
 Game.on("combatStart", function(fight) MOD.log("%d enemies", #fight:enemies()) end)
 ```
 
-Errors in a script go to `UE4SS.log` with the mod's name. A broken script doesn't stop the others.
+Errors in a script go to `UE4SS.log` with the mod's name: the script's own, and `WCModsGame`'s about it (a
+timer's, a key's, a hook's), once, then once a minute with how many more times it happened. An error whose
+numbers change each time (`... 3 cats`, `... 4 cats`) counts as one, and each kind of call says at most five
+new errors a minute, then how many more it didn't say. The script keeps running, and a broken script doesn't
+stop the others. The files are loaded by their names in the mod, so an
+error says `scripts/main.lua:12: ...`.
+
+**Where a script's words and errors show:**
+- **In Clan Mod Studio:** before any Apply, the mod's card on the Mods page says what would stop its Lua from
+  loading at all (a `function` with no `end`, a string left open, by file and line) and what's wrong with its
+  `settings.json`. After the game has run, the card says whether the script loaded when the game last started
+  (or why not), and under More, What it said has its lines, newest first. The log knows a script's lines by
+  its mod's name, so give each mod its own: of two script mods with one name, each card has only what was said
+  as its script started, and says why.
+- **In the game:** a script that didn't start is named at the top of the screen for ten seconds once your cat
+  is in the world, and in red on the mod menu's Overview; the mod menu's Log page (Tools) shows the scripts'
+  lines, a plain `print` too.
+- **On disk:** `<game>\Wrc\Binaries\Win64\ue4ss\UE4SS.log`, a new one each time the game starts.
 
 ## `WCModsGame`
 
@@ -99,16 +121,20 @@ local Game = require("WCModsGame")   -- a script mod has it as Game already
   into nil (or your default).
 - **Objects last a level:** look things up again rather than keeping them. `Game.cat()` is cheap.
 - **One thread:** don't use `LoopAsync` in a script that uses these modules (see SDK.md).
+- **Some calls are costly every frame:** `Game.save.file()` and `Game.items.list()` read and decode the whole
+  save (kept for a second), and `Game.quests.objectives(q)` looks through every objective in the game each time.
+  Call them from `Game.every`, not `Game.onFrame`.
 
 ### Objects
 
 | Call | Gives |
 |---|---|
 | `Game.valid(o)` | Whether `o` is a live object |
+| `Game.alive(o)` | Whether it's live and staying: not destroyed, or left behind by a level that unloaded (UE4SS calls those valid until the engine collects them) |
 | `Game.get(o, "A.B.C", default)` | A property path, or `default` when any step is missing. Numbers index arrays (from 1) |
 | `Game.set(o, "A.B", value)` | Set one; true, or false and why |
 | `Game.call(o, "Function", ...)` | Call a function safely: `true, results...` or `false, error` |
-| `Game.find("Class")`, `Game.findAll("Class")` | One object of a class (kept while it lasts) or all of them; short class names, e.g. `"WrcRoamingEnemy"` |
+| `Game.find("Class")`, `Game.findAll("Class")` | One object of a class (kept while it lasts; never one on its way out, like the last level's HUD after a load: nil then, for a second, and asked again after) or all of them; short class names, e.g. `"WrcRoamingEnemy"` |
 | `Game.object(path)`, `Game.load(path)` | An object by its path; load an asset, a mod's own too (`/Game/WCMods/<mod>/...`, which UE4SS's `LoadAsset` can't find) |
 | `Game.library(name)` | A function library for static calls: `GameplayStatics`, `KismetSystemLibrary`, `KismetMathLibrary`, `BFLSwtQuest`, `QuestManager`, `SaveManager`, … (`Game.libraries`) |
 | `Game.className(o)`, `Game.name(o)`, `Game.fullName(o)`, `Game.parents(o)`, `Game.isA(o, "Class")` | What an object is |
@@ -150,8 +176,8 @@ Also `util`, `vfx`, `achievements`, `analytics`, `online`, `cloud`, `services`, 
 | Call | Does |
 |---|---|
 | `Game.onFrame(fn)` | `fn(dt)` every frame |
-| `Game.every(seconds, fn)`, `Game.after(seconds, fn)` | Every so often; once later. These return an id for `Game.cancel(id)` |
-| `Game.onKey("F6", fn, {"CONTROL"}, help)` | `fn` on the game thread when the key (with modifiers) is pressed; with `help` ("Heal your cat") the mod menu's Overview lists it |
+| `Game.every(seconds, fn)`, `Game.after(seconds, fn)` | Every so often; once later. These return an id for `Game.cancel(id)`, which a function may call on itself |
+| `Game.onKey("F6", fn, {"CONTROL"}, help)` | `fn` on the game thread when the key (with modifiers) is pressed; with `help` ("Heal your cat") the mod menu's Overview lists it. The key is one of UE4SS's names, in capitals (`F1`-`F12`, `A`-`Z`, `SPACE`, `ONE`-`NINE`; the modifiers `SHIFT`, `CONTROL`, `ALT`) or its number. Returns an id for `Game.cancel`; for a name UE4SS doesn't know it logs "no key called f6 (did you mean F6? ...)" and returns false, and the rest of the script runs |
 | `Game.onPress({"T", "Gamepad_DPad_Up"}, fn, help)` | `fn(key)` when any of the keys or controller buttons is pressed in the game's own input (Unreal's key names). Unlike `onKey`, it only hears them while the game has the focus, it hears the controller, and `agent key` can press them. Returns an id for `Game.cancel` |
 | `Game.pressed(key)`, `Game.keyDown(key)` | Whether a key or button went down this frame, and whether it's held, in the game's own input, for a frame function |
 | `Game.on(event, fn)`, `Game.off(handle)` | Listen to an event |
@@ -162,7 +188,7 @@ Also `util`, `vfx`, `achievements`, `analytics`, `online`, `cloud`, `services`, 
 | `level` | new level name, old | polled twice a second | yes |
 | `player` | your cat's actor or nil | polled | yes |
 | `phase` | new, old (`Game.enums.phase`) | polled | yes |
-| `combatStart` / `combatEnd` | a fight (below) | polled | yes |
+| `combatStart` / `combatEnd` | a fight (below); `combatEnd` has nothing | polled | yes |
 | `itemPickedUp` | tag, how many, new total | hook on the HUD's `OnItemPickedUp` | yes |
 | `questStatus` | quest, status, exact | hook on `SwtQuestGameplayGameState:OnQuestStatusChanged` | hooked; not yet seen firing |
 | `genericEvent` | name | hook on `SwtGameUtil:BroadcastGenericEvent` | hooked; not yet seen firing |
@@ -198,8 +224,8 @@ Some limits:
 | `stamina()`, `maxStamina()`, `setStamina(v)`, `setMaxStamina(v)` | Exploring stamina | read and set |
 | `staminaRegen()`, `setStaminaRegen(v)` | Stamina back per second (20) | read |
 | `combatStamina()`, `maxCombatStamina()`, `setCombatStamina(v)` | Fight stamina (the maximum is 0.4 × Prowess + Stamina) | read |
-| `level()`, `setLevel(n)`, `xp()`, `setXp(v)`, `xpNeeded()` | Level and experience (your cat) | read |
-| `stats()`, `setStat(name, v)` | `{Prowess, Strength, Resilience, Instinct, Agility, Stamina}` (your cat; a fight's own copy is under `Game.fighter`) | read and set |
+| `level()`, `setLevel(n)`, `xp()`, `setXp(v)`, `xpNeeded()` | Level and experience (your cat: only your cat has a level component out of a fight, so another cat's are nil, and setting them gives false and why) | read |
+| `stats()`, `setStat(name, v)` | `{Prowess, Strength, Resilience, Instinct, Agility, Stamina}` (your cat, as above; a fight's own copy, any fighter's, is under `Game.fighter`) | read and set |
 | `location()`, `teleport(x, y, z)` / `teleport({X,Y,Z})` / `teleport(actor)` | Where it is; move it | yes |
 | `scale()`, `setScale(f)` | Size (the same call as the menu's size cheat) | read |
 | `setTimeDilation(f)` | This cat's own time: 2 is twice as fast | no |
@@ -284,7 +310,7 @@ nothing of the game's takes them back:
 |---|---|
 | `Game.hud.objective({title, location, activity, goals})` | The game's current-objective panel, on the left: the quest's title, a place under it (with the game's pin), what to do now, and up to three `goals`, `{name, progress ("1/2"), icon (a texture's asset path), done}`. `Game.hud.objective(nil)` puts it away |
 | `Game.hud.banner(kind, {kind, title, text, seconds})` | One of the game's banners, with its particles: `"begin"` (a quest taken up: its kind, "Quest", its title and the first objective), `"update"`, `"done"` ("Quest completed!") or `"failed"`. It goes after `seconds` (4.5) |
-| `Game.mapMarker(where, {icon, border, map})` | A marker on the minimap and the world map, the game's own point of interest: `where` is a place (`{x, y, z}`) or an actor it follows; `icon` is `"search"` (a ?), `"talk"`, `"barter"`, `"freshkill"`, `"trainer"`, `"den"`, `"outpost"`, `"skirmish"`, `"madcat"`, a Clan, or a material's path; it stays at the minimap's edge when it's further off (`border = false` doesn't). Returns a marker with `remove()` and `moveTo(x, y, z)` |
+| `Game.mapMarker(where, {icon, border, map})` | A marker on the minimap and the world map, the game's own point of interest: `where` is a place (`{x, y, z}`) or an actor it follows; `icon` is `"search"` (a ?), `"talk"`, `"barter"`, `"freshkill"`, `"trainer"`, `"den"`, `"outpost"`, `"skirmish"`, `"madcat"`, a Clan, or a material's path; it stays at the minimap's edge when it's further off (`border = false` doesn't). Returns a marker with `remove()` and `moveTo(x, y, z)`; or nil and why for a place without its three numbers, or an actor that isn't there any more |
 | `npc:mapMarker(icon)` | The same on a mod's cat, put back on it when it's spawned again; `npc:mapMarker(nil)` takes it off |
 
 Where the label or prompt isn't wanted, a script draws its own with `WCModsDraw`. What they say goes in the
@@ -293,8 +319,8 @@ game's own dialogue box:
 | Call | |
 |---|---|
 | `Game.dialogue.say(name, text)` | Show the game's dialogue box (`WBP_QuestGiver_Dialogue`) with a speaker's name and a line, with its own fade-in; again with another line to change it. Returns false and why if the box can't be made |
-| `Game.dialogue.hide()`, `Game.dialogue.showing()` | Fade it out; whether it's up |
-| `Game.dialogue.busy()`, `Game.dialogue.claim()` | Whether another mod's cat is talking (each mod has its own box, so two could overlap); take the box for this script's talk, false if it's taken. Check `busy()` before starting a talk |
+| `Game.dialogue.hide()`, `Game.dialogue.showing()` | Fade it out (a box a failed `say` left half made too); whether it's up |
+| `Game.dialogue.busy()`, `Game.dialogue.claim()` | Whether another mod's cat is talking (each mod has its own box, so two could overlap); take the box for this script's talk, false if it's taken. Check `busy()` before starting a talk. The claim lasts while the box is up, however long the talk waits for a key, and `hide()` lets it go |
 
 The box is only the picture: it takes no input, so the script moves the talk on with its own key (the
 box shows Enter, the game's own key for it, so take that too). The answer buttons stay hidden. [custom-npc](https://github.com/HexOffender/wcmods-examples/tree/main/custom-npc) in
@@ -415,7 +441,9 @@ others, so try each one.
 
 ### JSON and enums
 
-- **JSON:** `Game.json.encode(v)`, `Game.json.decode(text)` (null is `Game.json.null`), and
+- **JSON:** `Game.json.encode(v)`, `Game.json.decode(text)` (null is `Game.json.null`; a number written with a
+  point or an exponent, `12.0`, stays a number with a fraction, as Lua's `tonumber` has it; a list comes back
+  marked as one, so it's written `[]` again when empty; a byte order mark at the start is passed over), and
   `Game.json.list(t)` to write an empty table as `[]`.
 - **Enums:** `Game.enums.<name>` maps each way, name to number and number to name (`Game.enums.status.Poisoned
   == 3`). The enums are `clan`, `rank`, `trait`, `stance`, `status`, `stat`, `resource`, `questStatus`,
@@ -441,7 +469,19 @@ confirmed on 26184573 (patch 1.1).
 With code mods allowed, every install adds `WCModsBridge`, a small UE4SS mod. Several times a second it
 looks for a request from wcmods, runs the Lua in it, and writes back what it printed and returned. It
 also writes a status file once a second. Requests and replies are files in
-`%LOCALAPPDATA%\Wrc\Saved\WCMods\bridge\`, written whole and then renamed, one request at a time.
+`%LOCALAPPDATA%\Wrc\Saved\WCMods\bridge\` (beside the game's saves), written whole and then renamed, one
+request at a time.
+
+- **A request that isn't picked up within the timeout is withdrawn** (15 seconds; a loading screen, or the game
+  held still behind another window): the bridge runs a request only once it has taken it, so one taken back
+  never runs later. One the game took and is still running says so instead.
+- **A line that runs on is stopped** after about a hundred million steps of Lua (a second or so), with the
+  error "this line ran too long and was stopped". A call that hangs inside the game's own code isn't counted.
+  The count goes on inside a function UE4SS calls back from its own C++ (`array:ForEach(function ... end)`),
+  so the stop can come out of there, through UE4SS's own code: that hasn't been tried in the game yet, so keep
+  a long loop out of a `ForEach` in a line you try.
+- **Allowing code mods asks for an Apply:** until the bridge is in the game, the studio counts "mods that run
+  code are allowed now" as a change to apply, so Play applies first.
 
 ```bash
 python wcmods.py game
@@ -471,11 +511,18 @@ python wcmods.py find WrcRoamingEnemy
 
 From Python, `wcmods.bridge.Bridge(cfg).run(code)` returns `{"ok", "result", "output", "error", "ms"}`.
 
-Clan Mod Studio has the same as its **Console** page: a Lua box with examples, and an inspector that
-opens an object's properties one click at a time.
+Clan Mod Studio has `lua` and `inspect` as its **Try Lua in the game** page (under Advanced in the side bar,
+with code mods allowed): a Lua box with examples (Ctrl+Up and Ctrl+Down go back through the lines run), and an
+inspector that opens an object's properties one click at a time, with the engine's own members too when asked.
+`find` is the command line's only, and none of the page's examples scans the world: reading many objects at once
+has crashed the game just after a level loads. A line at the top of the page says whether the game can hear the
+studio: listening (and where), running but not answering (loading, or held still behind another window),
+running without the studio's connection (code mods were allowed after the last Apply: close the game, Apply,
+Play), or closed.
 
 The bridge only takes requests from files on your own computer, and only runs when code mods are
-allowed, as the rest of this page does.
+allowed, as the rest of this page does. Any program on your computer that can write that folder can run Lua in
+the game through it, as wcmods does.
 
 ## In the mod menu
 
@@ -484,8 +531,8 @@ The mod menu (Insert) has these pages built on `WCModsGame`, in the side bar's g
 mod's ([SDK.md, Menu pages](SDK.md#menu-pages)), a script like any other, built only on what this page
 and SDK.md describe; the rest are the window's own. They're live, and a change applies at once:
 
-- **Overview:** the menu's keys, the keys scripts use (from `Game.onKey`'s `help` and `Menu.key`), and
-  each group's pages.
+- **Overview:** scripts that didn't start this time (in red, with why), the menu's keys, the keys scripts use
+  (from `Game.onKey`'s `help` and `Menu.key`), and each group's pages.
 - **At a glance:** your cat's health, stamina and experience as bars, the territory, area, time and
   fresh-kill pile, the quest you follow, and quick buttons (Heal, Full stamina, Morning, Evening).
 - **Stats:** health, stamina and its regeneration, fight stamina, size, level and experience, and
@@ -504,15 +551,21 @@ and SDK.md describe; the rest are the window's own. They're live, and a change a
   is won).
 - **Game switches:** the game's developer switches: "always full" for each resource, and every on/off
   and number setting.
-- **Log:** the end of UE4SS.log, newest first: the mods' lines, the errors, or everything.
+- **Log:** the end of UE4SS.log, newest first: Mods (every line a script printed, a plain `print` too),
+  Errors (a script's errors and what goes with them, not UE4SS's own start-up names with "Error" in them), or
+  Everything.
 - **Inspector** (with code mods allowed): start from your cat, the player state, the game state, the
   game instance, the fight, any manager, or a class name. You'll see the class chain, every property
   with its value, and every function. Numbers and switches can be changed in place, object properties
-  open with a click, and functions without parameters can be called.
-- **Lua console** (with code mods allowed): type Lua, Run, and see what it printed and returned.
+  open with a click, and functions without parameters can be called. Find by class works once your cat is in
+  the world, lists the first 30 and refuses the widest classes (`Actor`, `UserWidget`, ...), since reading
+  thousands of objects has crashed the game.
+- **Lua (advanced)** (with code mods allowed, for people who write scripts): type Lua, Run, and see what it
+  printed and returned.
 
 A script mod with a `settings.json` and no page of its own gets one under Mods: a row for each
-setting (`heal_key` shows as "Heal key"), and Save.
+setting (`heal_key` shows as "Heal key"), and Save, which says under it "Saved to settings.json." or why it
+couldn't.
 
 ## The game's own menus and HUD
 

@@ -13,7 +13,8 @@
 //   reconnect()    whether the studio answers, taking up its token when it does (the shell's way back after
 //                  "server-gone", which is said once a request couldn't reach it twice, a few seconds apart).
 //   anyDirty(), dirtyTargets()   whether any page has unsaved changes, and which bars have them: the shell
-//                  never reloads the page or restarts the studio over them.
+//                  never reloads the page or restarts the studio over them. markUnsaved(holder, on) counts
+//                  unsaved work that has no bar.
 //   modTarget      the "Editing mod" bar a page saves its file through (below). It keeps unsaved work: the
 //                  browser asks before the page closes, switching mods and importing a file ask first (save
 //                  them, go on without, or stay), and refresh() re-reads the mod list without reloading the
@@ -39,7 +40,8 @@
 //   bus            events between pages: "mods-changed" (a mod was made, changed, switched or removed),
 //                  "installed" (an Apply, Play or Check finished; the manifest, its `task` the route: "/build"
 //                  for Check my mods, which put nothing in the game: onlyChecked), "sections-changed" (the
-//                  side bar's pages may have changed), "focus" (the window came back).
+//                  side bar's pages may have changed), "focus" (the window came back), "game" (the game started or
+//                  closed: { running }).
 //   color          colours: normHex (the pickers' 3 or 6 hex digits), parse (every form a mod's file may use,
 //                  as wcmods/colors.py reads them), and the conversions and moods the Palettes page uses.
 //   input          the game's names for keys and buttons (lib/keys.js: keyFromEvent, keyLabel...).
@@ -438,6 +440,9 @@ export { color };
 // studio, never reloads the page over them, and the browser asks before the page closes.
 const unsaved = new Set();
 export const dirtyTargets = () => [...unsaved].filter(t => t.element.isConnected);
+// Unsaved work that isn't an Editing-mod bar's (a script's Settings on its mod's card): `holder` is
+// { element: what it's in, file }, counted until it's marked saved.
+export function markUnsaved(holder, on) { if (on) unsaved.add(holder); else unsaved.delete(holder); }
 export const anyDirty = () => dirtyTargets().length > 0;
 if (typeof window !== "undefined" && window.addEventListener) {
   window.addEventListener("beforeunload", e => { if (anyDirty()) { e.preventDefault(); e.returnValue = ""; } });

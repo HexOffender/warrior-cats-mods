@@ -19,6 +19,7 @@ and any of:
   palette.json        colour palette (sections/palettes.py)
   controls.json       button remaps (sections/controls.py)
   mouselook.json      mouse look settings (sections/mouselook.py)
+  tweaks.json         small changes while you play: stamina, a heal key, the clock... (sections/tweaks.py)
   data.json           gameplay data edits (sections/data.py)
   items.json          new herbs and materials (sections/items.py)
   npcs.json           cats of the mod's own, and quests.json, questlines with them (sections/story.py; the
@@ -42,7 +43,7 @@ MENU_ID = "mod-menu"
 # Mods an older studio put in "requires" that a mod without code only uses (story.SANDBOX_ID: Sandbox mode).
 SOFT_REQUIRES = ("sandbox",)
 CONTENT = (("files", "files"), ("paks", "cooked content"), ("palette.json", "palette"), ("controls.json", "controls"),
-           ("mouselook.json", "mouse look"), ("data.json", "data"), ("items.json", "items"),
+           ("mouselook.json", "mouse look"), ("tweaks.json", "tweaks"), ("data.json", "data"), ("items.json", "items"),
            ("animations.json", "animations"), ("npcs.json", "characters"), ("quests.json", "questlines"),
            ("names.json", "names"), ("cats.json", "cats"),
            ("save.json", "save"), ("scripts", "in-game script"), ("dlls", "C++ mod"), ("cpp", "C++ source"),
@@ -121,11 +122,12 @@ class Mod:
 
     def menu_page(self):
         """Whether it adds a page to the mod menu: it says it uses the menu, or it's something wcmods gives
-        one (mouse look, a script with settings)."""
+        one (mouse look, tweaks, a script with settings)."""
         if MENU_ID in self.requires or MENU_ID in self.uses:
             return True
         kinds = self.kinds()
-        return "mouse look" in kinds or ("in-game script" in kinds and os.path.isfile(os.path.join(self.folder, "settings.json")))
+        return ("mouse look" in kinds or "tweaks" in kinds
+                or ("in-game script" in kinds and os.path.isfile(os.path.join(self.folder, "settings.json"))))
 
     def update(self, **fields):
         if self.problem:
@@ -411,6 +413,18 @@ def discover(mods_root):
 VALID_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 
 
+def safe_name(mod_id):
+    """A mod's id as part of the names of what it installs (its script's and its C++ mod's folders in the game,
+    WCModsScript_<safe name>): every run of anything but letters and digits becomes one _. Two ids whose safe
+    names match, ignoring case (Windows' folders do), would install into one folder (same_install)."""
+    return re.sub(r"[^A-Za-z0-9]+", "_", mod_id).strip("_")
+
+
+def same_install(a, b):
+    """Whether two different mod ids would install into the same folders (my-mod, my_mod, My.Mod)."""
+    return a != b and safe_name(a).lower() == safe_name(b).lower()
+
+
 def create(mods_root, mod_id, name=None, description="", enabled=False, priority=0, game_build=None):
     """A new, empty mod. game_build: the build of the game it's made on (mod.json "game_builds"); without
     one it counts as made for the build mods were made on before builds were noted, and a newer game
@@ -420,6 +434,10 @@ def create(mods_root, mod_id, name=None, description="", enabled=False, priority
     folder = os.path.join(mods_root, mod_id)
     if os.path.exists(folder):
         raise ValueError(f"a mod named {mod_id} already exists")
+    if os.path.isdir(mods_root):
+        for other in sorted(os.listdir(mods_root)):
+            if not other.startswith("_") and same_install(mod_id, other) and os.path.isdir(os.path.join(mods_root, other)):
+                raise ValueError(f"{mod_id} is too like {other}: pick another name")
     os.makedirs(folder)
     with open(os.path.join(folder, "mod.json"), "w", encoding="utf-8") as f:
         meta = {"name": name or mod_id.replace("-", " ").title(), "description": description,

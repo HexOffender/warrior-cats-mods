@@ -1,0 +1,6 @@
+{
+  "name": "Late page",
+  "description": "A throwaway script for tests/game/test_scripts.py: it makes its own mod menu page from a timer, which takes the place of the settings page wcmods made for it. Not for playing with.",
+  "enabled": true,
+  "uses": ["mod-menu"]
+}

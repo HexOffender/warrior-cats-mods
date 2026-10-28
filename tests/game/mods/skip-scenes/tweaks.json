@@ -1,0 +1,4 @@
+{
+  "_help": "The hand check of skipping the story's scenes, on a fresh story cat: tests/game/test_tweaks.py says how.",
+  "skip_scenes": true
+}

@@ -31,6 +31,10 @@ panel; a page's own help (How this works, under its title) opens the one about i
   search, and every table.
 - [Save](save.md): your own save, your cat's level, the fresh-kill pile and what it carries; each change
   made once, and put back.
+- [Tweaks](tweaks.md): small changes while you play, ticked on one page: stamina, a heal key, the clock, the
+  fresh-kill pile, the story's scenes.
+- [Try Lua in the game](console.md): for people who write scripts, running a line of Lua in the game
+  while it plays. Not needed to make mods on the other pages.
 
 The rest of what wcmods can do is written up in the repository's docs, which open on GitHub:
 the [README](../../README.md) (getting set up, the mod menu in game, remapping keys), the

@@ -1,0 +1,18 @@
+/* Try Lua in the game (the "console" page): the strip that says whether the game can hear the studio, and what
+   the game said. Linked by app.js when the page opens; .code, .card and the chips are styles.css's. */
+.strip { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid var(--line); border-left: 5px solid var(--field); border-radius: 10px; background: var(--raised); font-weight: 500; }
+.strip i { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.strip.listening { border-left-color: var(--good); }
+.strip.listening i { background: var(--good); }
+.strip.not-answering, .strip.no-bridge { border-left-color: var(--changed); background: var(--tint-warn); }
+.strip.not-answering i, .strip.no-bridge i { background: var(--changed); }
+.con-out { margin: 0; padding: 12px 14px; font: 400 0.82rem/1.55 var(--mono); white-space: pre-wrap; display: grid; gap: 2px; min-height: 3em; }
+.section[data-page="console"] .note.bad { color: var(--bad); }   /* what Inspect couldn't do */
+.con-out:empty::before { content: "What the game sends back shows here."; color: var(--muted); font-family: var(--body); }
+.con-out .bad { color: var(--bad); }
+.con-out .con-ms { color: var(--muted); font: 500 0.75rem/1.4 var(--body); }
+.con-out .con-note { color: var(--muted); font: italic 400 0.85rem/1.4 var(--body); }
+
+@media (forced-colors: active) {
+  .strip i { forced-color-adjust: none; background: CanvasText; }
+}

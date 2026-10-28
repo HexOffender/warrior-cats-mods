@@ -279,7 +279,7 @@ def test_noon(agent):
 - **Clean up:** tests should put back what they change, as the ones here do: health, the clock,
   where your cat stands, a saved travel spot.
 
-The suite here has 58 tests:
+The suite here has 80 tests:
 
 - **The bridge, Lua and pictures:** `test_bridge.py`.
 - **Your cat and moving it:** `test_cat.py`.
@@ -296,8 +296,19 @@ The suite here has 58 tests:
 - **The mod menu:** `test_menu.py`. Every page draws without an error (with a picture of each), the
   Stats page matches your cat, the Health slider and Heal work, "Hold this time" holds the clock,
   and a Travel spot can be saved and forgotten. It also checks a jump and Back, the Items, Quests,
-  Log, Lua console and Inspector pages, a script's settings page, and that Insert opens and closes the
+  Log, Lua (advanced) and Inspector pages, a script's settings page, and that Insert opens and closes the
   menu.
+- **Scripts and the runtime:** `test_scripts.py`. A script's errors carry its mod's name and are said once,
+  a misspelt key doesn't stop it, another cat's level isn't yours, a task can cancel itself and add another,
+  a script that doesn't start is named, a script's settings page saves and says so (with a setting's help
+  under its row), and a page made from a timer is the only one. Most need three throwaway mods in the test
+  install (`agent install --with tests/game/mods/noisy-script --with tests/game/mods/broken-script --with
+  tests/game/mods/late-page`) and skip without them.
+- **The studio's Try Lua in the game:** `test_studio_console.py`, its routes against the running game.
+- **Tweaks:** `test_tweaks.py`. Stamina kept full, the clock held, the fresh-kill pile kept up, the heal key, and
+  the mod menu's Tweaks page and its Save, with a throwaway mod in the test install (`agent install --with
+  tests/game/mods/all-tweaks`); they skip without it. Skipping the story's scenes waits for a check by hand, which
+  the file's top says how to run (with `tests/game/mods/skip-scenes`).
 
 ## What it changes, and what it won't do
 

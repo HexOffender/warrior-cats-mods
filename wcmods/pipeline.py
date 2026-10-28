@@ -481,13 +481,33 @@ def build(cfg, mods, out_dir, log=print, trusted=()):
     return manifest
 
 
-def _newest(folder):
+def _newest(folder, skip=()):
+    """When the newest file in a mod's folder changed, leaving out the files (paths in the folder) in `skip`."""
     newest = 0.0
     for d, dirs, files in os.walk(folder):
         dirs[:] = [x for x in dirs if x != "__pycache__"]
         for f in files:
-            newest = max(newest, os.path.getmtime(os.path.join(d, f)))
+            path = os.path.join(d, f)
+            if os.path.relpath(path, folder).replace(os.sep, "/") not in skip:
+                newest = max(newest, os.path.getmtime(path))
     return newest
+
+
+def _reread(mod, installed_ue4ss, mods_dir):
+    """The files of a mod the game reads afresh each time it starts, so a change to them needs no install: a
+    script mod's settings.json, once its script is in the game (an in-game Save, or the studio's "Cheats on when
+    the game starts", writes it). Only when the installed script has a settings.json to read: one added since
+    the install needs one, to be read at all."""
+    from .sections import scripts
+    name = scripts.ue4ss_name(mod.id)
+    if not (mods_dir and scripts.has_scripts(mod) and name in installed_ue4ss):
+        return ()
+    try:
+        with open(os.path.join(mods_dir, name, "Scripts", "main.lua"), encoding="utf-8", errors="replace") as f:
+            installed = f.read()
+    except OSError:
+        return ()
+    return () if "settingsFile = nil," in installed else (scripts.SETTINGS,)   # script_bootstrap.lua's MOD
 
 
 def code_installed(data):
@@ -528,7 +548,9 @@ def pending(cfg, mods):
         built = datetime.datetime.fromisoformat(inst.get("built", "")).timestamp()
     except ValueError:
         built = 0.0
-    changed = sorted(m.id for m in mods if m.enabled and m.id in was and _newest(m.folder) > built + 1)
+    in_game = set(data.get("installed_ue4ss") or [])
+    changed = sorted(m.id for m in mods if m.enabled and m.id in was
+                     and _newest(m.folder, _reread(m, in_game, cfg.ue4ss_mods_dir)) > built + 1)
     redo = []
     if inst.get("ue4ss") is False and cfg.ue4ss_mods_dir:   # the mod menu at least goes in now
         redo.append("the script loader (UE4SS) is in now")
@@ -555,13 +577,12 @@ def pending(cfg, mods):
     # takes it out again.
     if not data.get("allow_code_mods") and code_installed(data):
         redo.append("the game has code from a test install, and mods that run code are off")
-    # The other way: installed while mods that run code weren't allowed, so a mod's scripts stayed out though
-    # the mod is in installed["mods"] (Menu pages, Sandbox mode); allowed now, an install puts them in. With
-    # code allowed, every install with the script loader there puts the bridge in, so code_installed is never
-    # empty after one.
-    elif data.get("allow_code_mods") and cfg.ue4ss_mods_dir and not code_installed(data) \
-            and any(m.id in now and m.has_code() for m in mods):
-        redo.append("mods that run code are allowed now")
+    # And the other way: code mods allowed since the last install, which left out the bridge (the studio's
+    # Console) and every mod's code. The bridge goes in with every install while they're allowed, so its
+    # absence says so, for an install recorded by any version, with or without a code mod on.
+    elif (data.get("allow_code_mods") and cfg.ue4ss_mods_dir and inst.get("ue4ss") is not False
+          and bridge.NAME not in data.get("installed_ue4ss", [])):
+        redo.append("mods that run code are allowed now, and the game doesn't have them yet")
     # Save edits made before there was a save were left out; now there is one, they're waiting.
     if inst.get("save_pending") and os.path.isfile(os.path.join(cfg.save_dir, SAV_NAME)):
         redo.append("save edits are waiting for a save")

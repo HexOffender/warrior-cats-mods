@@ -156,7 +156,7 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.add_ue4ss_shared(name, text)` | A Lua module any UE4SS script can `require(name)`, installed beside `WCModsGame` (with UE4SS): data a section gives the shared scripts, as the items section's `WCModsItems` tells `Game.items.drop` how mod items look on the ground |
 | `ctx.add_package(path, data, chunk_id, imports, shaders, bulk=None)` | Add a cooked package the game hasn't got, with its chunk ID, container header entry and `.ubulk`; `add_texture` is the easy way |
 | `ctx.cache_dir` | A folder for work an install can reuse (wcmods' `cache/`; the selftest's stays in its temp folder) |
-| `ctx.add_ue4ss_mod(name, {"Scripts/main.lua": text})` | Ship a UE4SS Lua mod; installed and registered only when UE4SS is present. `.lua` files get a structure check (balanced blocks and brackets) and problems become build warnings |
+| `ctx.add_ue4ss_mod(name, {"Scripts/main.lua": text}, check=True)` | Ship a UE4SS Lua mod; installed and registered only when UE4SS is present. `.lua` files get a structure check (balanced blocks and brackets) and problems become build warnings (`check=False` for files the section has checked and said itself). A name goes in once per build: one already taken, whatever its case, is a `ValueError` |
 | `ctx.edit_save(path, value)` | Set an existing save value on install, e.g. `"0/GameplayProgression/Level"`, at every install (a `save.json`'s changes are made once per save instead: `ctx.save_op({..., "once": True})`, as `sections/savedit.py` queues them). A section's save ops are dropped when its table edits fail |
 | `ctx.add_save_key(object_path, key, value, only_new=False)` | Add a key to a save object, e.g. a new inventory item, at every install. With `only_new`, a key the save already has keeps its value (a mod's starting items, given once). A section's save ops are dropped when its table edits fail |
 | `ctx.save_op(op)` | Queue any save op: `{"op": "set", "path", "value"}`, `{"op": "insert", "path", "key", "value"}` or `{"op": "remove", "path"}`, with `"source": mod.id`, `"label"` (the change in words, for the log: "Fawnstar's level") and `"once": True` to make it once per save and record it in `save-changes.json` ([formats.md](formats.md#save-changesjson)). A remove of anything but an item carried or one element of a list is skipped (`savedit.remove_problem`) |
@@ -821,7 +821,7 @@ it:
 | Fight | With Menu pages: **Fight** (both sides during a fight) |
 | Cheats | With Menu pages: **Cheats** (the engine's cheat manager), **Game switches** (the developers' own) |
 | Mods | Pages scripts add, and a script mod's settings page |
-| Tools | **Log** (UE4SS's log, newest first), **Menu** (its size, pausing, the status line), and with code mods allowed **Inspector** and **Lua console** |
+| Tools | **Log** (UE4SS's log, newest first), **Menu** (its size, pausing, the status line), and with code mods allowed **Inspector** and **Lua (advanced)** (its id is still `Lua console`) |
 
 ### Menu pages
 
@@ -987,10 +987,10 @@ local quests = World.manager("quests")                    -- the game's quest ma
 | `World.nearby(kind, radius?, from?)` | What's within `radius` cm of `from` (an actor or `{X, Y, Z}`; your cat by default), nearest first, as `{actor, location, distance, name, label, class}`. Your cat itself is left out |
 | `World.find(kind)` | Every actor of a kind, or of a class given by name (e.g. `"BP_Pickup_Herb_1_C"`) |
 | `World.player()` | Your cat (the player's pawn), or nil in menus |
-| `World.location(actor)`, `World.distance(a, b)` | `{X, Y, Z}`; centimetres between two actors or locations |
+| `World.location(actor)`, `World.distance(a, b)` | `{X, Y, Z}`; centimetres between two actors or locations. nil for an actor that isn't there any more (one kept from an earlier `nearby` may be gone: these check first, since asking a gone actor anything crashes the game) |
 | `World.label(actor, kind?)` | A readable name: from its class (`BP_Pickup_SmallHealingHerb_C` is "Small Healing Herb", `BP_Interactable_Claw_Bush_C` "Bush (claw)"); with kind `cats` or `questGivers`, the cat's own name ("Otterpaw (Deputy)"); with `creatures`, its model ("Mouse") |
 | `World.kindOrder()`, `World.kindLabel(kind)`, `World.kindColor(kind)` | The kinds in the menu's order, their names ("Quest givers") and colours (`World.kindInfo` holds them; scripts can change them) |
-| `World.describe(actor)`, `World.parents(class)` | Its name, label, class, the classes that's made from, and location |
+| `World.describe(actor)`, `World.parents(class)` | Its name, label, class, the classes that's made from, and location (nil for an actor that isn't there any more) |
 | `World.manager(name)` | One of the game's managers: `quests`, `npcs`, `tracer`, `gui`, `storage`, `paths`, `tutorial`, `combat`, `tuning`, or a class name |
 | `World.addKind(kind, classes)`, `World.rescan()` | Add or change a kind; look again at the next query |
 

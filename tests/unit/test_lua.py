@@ -147,7 +147,7 @@ def test_your_cats_colours_script_with_its_menu_page():
 def test_mod_menu_window_script_with_the_dev_pages():
     lua = menu.host_script(MANIFEST, [], dev=True, log=r"C:\Game\ue4ss\UE4SS.log", pages_note="Get set up adds it.")
     assert not problems(lua)
-    assert 'Menu.page("Inspector"' in lua and 'Menu.page("Lua console"' in lua
+    assert 'Menu.page("Inspector"' in lua and 'Menu.page("Lua (advanced)"' in lua and 'id = "Lua console"' in lua
     assert 'Menu.page("Overview"' in lua and 'Menu.page("Installed mods"' in lua and 'Menu.page("Log"' in lua
     assert '"Get set up adds it."' in lua and r'"C:\\Game\\ue4ss\\UE4SS.log"' in lua
     # The pages about the game are the Menu pages mod's (github.com/HexOffender/wcmods-menu-pages).
@@ -355,3 +355,207 @@ def test_play_says_the_warnings_of_the_build_it_applies(tmp_path, monkeypatch):
     assert onboarding.play(ctx, log=said.append)["applied"]
     assert "warning: a cat in your save has a name" in said
     assert not any("Steam starts the game" in s for s in said)
+
+
+# ---------- the runtime's own fixes (no Lua here: read from the source, as the game would load it) ----------
+def body(lua, start, end):
+    """The text of lua from `start` up to `end` (both found in order)."""
+    i = lua.index(start)
+    return lua[i:lua.index(end, i + len(start))]
+
+
+def test_log_names_the_script_when_it_has_a_name():
+    lua = game.lua()
+    log = body(lua, "local function log(fmt, ...)", "Game.log = log")
+    assert 'type(Game.modName) == "string" and Game.modName ~= "" and Game.modName or "WCModsGame"' in log
+    assert 'print("[" .. who .. "] " .. string.format(fmt, ...) .. "\\n")' in log
+    # WCModsDraw's and WCModsMenu's errors (a painter's, a page's) take the same name, from the module in that state.
+    for module in (draw.lua(), menu.lua()):
+        assert "local G = package.loaded.WCModsGame" in module and "G.modName" in module
+
+
+def test_runtime_errors_are_said_once_then_once_a_minute():
+    lua = game.lua()
+    said = body(lua, "local function failed(what, err)", "\nend\n")
+    assert 'log("error in %s: %s", what, err)' in said and 'log("error in %s: %s (%d more)", what, err, f.more)' in said
+    assert "now - f.at >= SAY_AGAIN" in said
+    assert "local SAY_AGAIN = 60" in lua
+    # One failure whatever its numbers say after the file and line, and a cap on new ones for each kind of call: an
+    # error whose text keeps changing doesn't log a line a frame.
+    assert 'local at, rest = err:match("^([^\\n]-:%d+:)(.*)$")' in said
+    assert 'local key = what .. ": " .. (at and (at .. rest:gsub("%d+", "#")) or err:gsub("%d+", "#"))' in said
+    assert "local NEW_A_MINUTE = 5" in lua and "if w.said >= NEW_A_MINUTE then" in said
+    assert said.index("if w.said >= NEW_A_MINUTE then") < said.index('log("error in %s: %s", what, err)')
+    assert "more failures in the last minute weren't said" in said
+    # Every place a script's code is called from goes through it: timers and frame functions, keys, hooks, events.
+    assert 'failed(t.what or "task", err)' in lua and 'failed("key " .. name, err)' in lua
+    assert lua.count('failed("hook " .. path, err)') == 2 and 'failed("on " .. tostring(event), err)' in lua
+    assert 'log("%s: %s", t.what' not in lua   # the old line a frame
+
+
+def test_run_tasks_runs_a_snapshot():
+    run = body(game.lua(), "local function runTasks()", "\nlocal function start()")
+    assert "for id in pairs(tasks) do ids[#ids + 1] = id end" in run and "for _, id in ipairs(ids) do" in run
+    assert "local t = tasks[id]" in run and "if t and (t.at == nil or now >= t.at) then" in run
+    assert "if tasks[id] == t then" in run   # a task that cancelled itself isn't put back
+    assert "for id, t in pairs(tasks) do" not in run
+
+
+def test_on_key_checks_the_name_and_returns_an_id():
+    lua = game.lua()
+    on_key = body(lua, "function Game.onKey(key, fn, modifiers, help)", "\n-- Whether a key or controller button")
+    assert 'local code = keyCode(key, Key, "key")' in on_key and "if not code then return false end" in on_key
+    assert "pcall(RegisterKeyBind, code, mods, fire)" in on_key and "pcall(RegisterKeyBind, code, fire)" in on_key
+    # One bind per key and modifiers, with a handler for each onKey; the Overview lists a key once it's bound.
+    assert "local bind = binds[slot]" in on_key and "bind.handlers[#bind.handlers + 1] = fn" in on_key
+    assert on_key.index("bind.handlers[#bind.handlers + 1] = fn") < on_key.index("if help then listKey(name, help) end")
+    assert "keyIds[id] = { bind = bind, handler = fn }" in on_key and on_key.rstrip().endswith("return id\nend")
+    code = body(lua, "local function keyCode(key, table_, what)", "\nfunction Game.onKey")
+    assert 'log("no %s called %s%s"' in code and "did you mean" in code and "F1 to F12" in code
+    cancel = body(lua, "function Game.cancel(id)", "\n-- A key and what it does")
+    assert "local k = keyIds[id]" in cancel and "table.remove(k.bind.handlers, i)" in cancel
+
+
+def test_level_component_is_only_your_cats():
+    lua = game.lua()
+    comp = body(lua, "function Cat:component(kind)", "\nlocal CLASS_PATHS")
+    assert 'owner = Game.get(self.actor, "Controller.PlayerState")' in comp
+    assert 'if not valid(owner) and self:isPlayer() then owner = Game.get(Game.controller(), "PlayerState") end' in comp
+    assert 'local NOT_YOURS = "only your cat has a level component out of a fight"' in lua
+    assert "NOT_YOURS" in body(lua, "local function setResource(", "\nend")
+    assert "NOT_YOURS" in body(lua, "function Cat:setStat(", "\nend")
+
+
+def test_find_never_hands_back_an_object_on_its_way_out():
+    lua = game.lua()
+    find = body(lua, "function Game.find(className)", "\n-- Every object of a class")
+    assert "if hit and valid(hit) and not garbage(hit) and Game.isA(hit, className) then return hit end" in find
+    # The first object on its way out: nil, and the miss kept a second; never a scan of every object of the class
+    # from in here (a level is loading then, when FindAllOf scans have crashed the game).
+    assert "if garbage(o) then\n        missUntil[className] = now + MISS_FOR\n        return nil\n    end" in find
+    assert "if missUntil[className] and now < missUntil[className] then return nil end" in find
+    assert find.index("then return nil end") < find.index("pcall(FindFirstOf, className)")
+    assert "findAll" not in find and "FindAllOf" not in find and "local MISS_FOR = 1" in lua
+    assert "o:HasAnyInternalFlags(GARBAGE)" in body(lua, "local function garbage(o)", "\nend")
+    assert "local alive = Game.alive" in lua   # the mod cats' check is the same one
+
+
+def test_map_marker_and_the_world_helpers_check_their_actor_first():
+    lua = game.lua()
+    marker = body(lua, "function Game.mapMarker(where, opts)", "local m = setmetatable")
+    assert 'return nil, "a marker needs a place, {x, y, z}, or an actor"' in marker
+    assert "elseif not Game.alive(where) then" in marker
+    w = world.lua()
+    assert "if not here(it) then return nil end" in body(w, "function World.location(it)", "\nend")
+    assert "if not (p and q and p.X and q.X) then return nil end" in body(w, "function World.distance(a, b)", "\nend")
+    assert "if not here(actor) then return nil end" in body(w, "function World.describe(actor)", "\nend")
+    assert "if not origin then return {} end" in w and "if ok and l then" in w
+
+
+def test_dialogue_claim_is_renewed_while_the_box_is_up():
+    lua = game.lua()
+    assert "talk.key = {}\nlocal talkId = (tostring(talk.key):gsub(" in lua
+    keep = body(lua, "local function keepClaim()", "\nfunction Game.dialogue.say")
+    assert "talk.renew = Game.every(0.2, function()" in keep and "talkShare(TALK_AT, os.clock())" in keep
+    say = body(lua, "function Game.dialogue.say(name, text)", "\nfunction Game.dialogue.hide")
+    assert "keepClaim()" in say and "if added then pcall(function() w:RemoveFromParent() end) end" in say
+    hide = body(lua, "function Game.dialogue.hide()", "\n-- Whether the box is up")
+    assert "Game.cancel(talk.renew)" in hide
+    assert "or talk.text == nil then return end" not in hide   # a box half made is taken down too
+
+
+def test_json_decode_skips_a_bom():
+    lua = game.lua()
+    assert 'local BOM = "\\239\\187\\191"' in lua
+    assert 'if pos == 1 and type(text) == "string" and text:sub(1, 3) == BOM then pos = 4 end' in lua
+
+
+def test_json_decode_keeps_a_number_written_with_a_point_a_float():
+    # 12.0 stays 12.0 (a setting's page keeps steps of 0.1 for it, and its Save writes it back with the point).
+    lua = game.lua()
+    assert 'if num:find("[%.eE]") then return tonumber(num) or fail("bad number " .. num) end' in lua
+
+
+def test_the_automatic_settings_page_shows_help_under_a_row_and_bounds_a_number():
+    from wcmods.sections import scripts
+    page = body(scripts.BOOTSTRAP, "local function partOf(k)", 'end, { order = 40')
+    assert 'k:match("^_help_(.+)$") or k:match("^_min_(.+)$") or k:match("^_max_(.+)$")' in page
+    assert 'local lo, hi = MOD.settings["_min_" .. tostring(k)], MOD.settings["_max_" .. tostring(k)]' in page
+    assert 'min = type(lo) == "number" and lo or nil' in page and 'max = type(hi) == "number" and hi or nil' in page
+    assert 'local help = type(k) == "string" and k:sub(1, 1) ~= "_" and MOD.settings["_help_" .. k]' in page
+
+
+def test_bootstrap_names_the_mod_for_game_log():
+    from wcmods.sections import scripts
+    start = body(scripts.BOOTSTRAP, 'local okGame, game = pcall(require, "WCModsGame")', "\nelse")
+    assert "Game = game" in start and "Game.modName = MOD.name" in start
+
+
+def test_bootstrap_strips_a_bom_and_loads_the_mods_files_by_their_names():
+    from wcmods.sections import scripts
+    boot = scripts.BOOTSTRAP
+    own = body(boot, "local function loadOwn(rel)", "\nend")
+    assert "if text:sub(1, 3) == BOM then text = text:sub(4) end" in own and 'return load(text, "@scripts/" .. rel)' in own
+    assert "table.insert(package.searchers, 2, function(name)" in boot
+    settings = body(boot, "if okGame and MOD.settingsFile then", "\nend\n")
+    assert settings.index("text:sub(1, 3) == BOM") < settings.index("pcall(Game.json.decode, text)")
+    assert 'local main, loadErr = loadOwn("main.lua")' in boot and "loadfile(" not in boot
+
+
+def test_bootstrap_says_a_script_that_didnt_start():
+    from wcmods.sections import scripts
+    boot = scripts.BOOTSTRAP
+    said = body(boot, "local function didntStart(err)", "\nlocal main, loadErr")
+    assert 'ModRef:SetSharedVariable("WCModsMenu.failed"' in said and '"\\t" .. (first:gsub("[\\t\\n]", " "))' in said
+    assert "Draw.onFrame(function(d)" in said and "Game.after(10, function() Draw.remove(painter) end)" in said
+    assert "if not Game.player() then return end" in said
+    assert "\" didn't start: \"" in said and '". The mod menu (" .. key .. "), Tools, Log says more."' in said
+    assert "MOD.log(\"can't load: %s\", tostring(loadErr))\n    didntStart(loadErr)" in boot
+    assert 'MOD.log("error: %s", tostring(err))\n    didntStart(err)' in boot
+    host = menu.host_script(MANIFEST, [], dev=True)
+    assert 'Menu.share("key_name", SETTINGS.key_name)' in host and 'local failed = Menu.shared("failed")' in host
+
+
+def test_bootstrap_save_says_so():
+    from wcmods.sections import scripts
+    page = body(scripts.BOOTSTRAP, 'if ui.button("Save", { kind = "primary" }) then', "end, { order = 40")
+    assert "status = saved and \"Saved to settings.json.\" or (\"Couldn't save: \" .. tostring(why))" in page
+    assert "if status then ui.note(status) end" in page
+
+
+def test_menu_keeps_one_page_per_id_and_writes_settings_back_as_they_were():
+    lua = menu.lua()
+    page = body(lua, "function Menu.page(title, fn, opts)", "\nfunction Menu.isOpen")
+    assert "if q.asked == p.asked and q.owner == p.owner then" in page and "return q.id" in page
+    assert "q.title, q.fn, q.order, q.group = p.title, p.fn, p.order, p.group" in page
+    assert "ExecuteInGameThread(function() relist(q) end)" in page
+    assert lua.index("local function relist(p)") < lua.index("function Menu.page(")
+    # A script's own files are loaded as "@scripts/...": its pages are still its UE4SS mod's, by the folder the
+    # script bootstrap says.
+    caller = body(lua, "local function caller(level)", "\nend\n")
+    assert 'if src:match("^@scripts/") and type(MOD) == "table" and type(MOD.ue4ss) == "string"' in caller
+    from wcmods.sections import scripts
+    assert 'ue4ss = here:match("/Mods/([^/]+)/") or "",' in scripts.BOOTSTRAP
+    assert 'return type(G) == "table" and type(G.json) == "table" and mt == G.json.listMeta' in lua
+    assert 'if listy(v) and #v == 0 then return "[]" end' in lua
+    assert 'string.format("%.15g", v)' in lua and 'if tonumber(s) ~= v then s = string.format("%.17g", v) end' in lua
+    assert "%.6g" not in lua
+
+
+def test_mod_menu_pages_say_a_left_out_script_and_filter_the_log_for_scripts():
+    host = menu.host_script(MANIFEST, [], dev=True)
+    assert 'ui.text(id .. ": left out, " .. tostring(note["left out"]), { color = THEME.danger })' in host
+    assert ("local ERRORS = { \"error:\", \"error in \", \"attempt to \", \"can't load\", \"stack traceback\", "
+            "\"didn't start\" }") in host
+    assert 'line:find("[Lua] ", 1, true) ~= nil and not line:find("[Lua] Exposing size of", 1, true)' in host
+    assert 'line:lower():find("error", 1, true)' not in host and 'line:find("[Lua] [", 1, true)' not in host
+
+
+def test_inspector_find_refuses_the_widest_classes_and_reads_names_once():
+    host = menu.host_script(MANIFEST, [], dev=True)
+    find = body(host, "local function find(class)", "\nend\n")
+    assert "if TOO_WIDE[class:lower()] then" in find and "if not Game.player() then" in find
+    assert "if i > FOUND_SHOWN then break end" in find and "label = string.format(" in find
+    assert "actor = true" in host and "userwidget = true" in host   # in small letters, as it's asked
+    page = body(host, 'Menu.page("Inspector"', "end, { order = 90")
+    assert "for _, e in ipairs(insp.found) do" in page and "Game.name(o)" not in page

@@ -10,8 +10,54 @@
 -- not from LoopAsync (two threads in one Lua state crash the game). docs/scripting.md has every call.
 local Game = { version = 1 }
 
-local function log(fmt, ...) print(string.format("[WCModsGame] " .. fmt .. "\n", ...)) end
+-- What the module says goes to UE4SS.log as "[<whose script>] ...": the mod's name once the script bootstrap has
+-- set Game.modName (every UE4SS mod has a Lua state, and so a copy of this module, of its own; the bridge and the
+-- mod menu's window set none), else "[WCModsGame]".
+local function log(fmt, ...)
+    local who = type(Game.modName) == "string" and Game.modName ~= "" and Game.modName or "WCModsGame"
+    print("[" .. who .. "] " .. string.format(fmt, ...) .. "\n")
+end
 Game.log = log
+
+-- A script's error, said once, then at most once a minute with how many more times it happened: a frame function
+-- with a mistake in it fails every frame, and the log would get one line a frame for the whole session. What
+-- fails keeps running (a timer may only fail while a level loads). The line starts "error in", which the Log
+-- page's Errors and the studio's reader of the log (scriptlog.py) know it by: "[Game Tweaks] error in every:
+-- scripts/main.lua:5: attempt to index a nil value (1812 more)".
+-- An error whose text has a number that keeps changing (a count, a distance, an address) is still one failure:
+-- the numbers after its file and line count as one ("#"). And each kind of call (a timer, a key, a hook) says at
+-- most NEW_A_MINUTE new failures a minute, so an error whose words change too can't fill the log either.
+local failures, nfailures, fresh = {}, 0, {}
+local SAY_AGAIN = 60     -- seconds between lines about the same failure
+local NEW_A_MINUTE = 5   -- new failures said a minute for one kind of call
+local function failed(what, err)
+    what, err = tostring(what), tostring(err)
+    local at, rest = err:match("^([^\n]-:%d+:)(.*)$")   -- "scripts/main.lua:5:" stays as it is
+    local key = what .. ": " .. (at and (at .. rest:gsub("%d+", "#")) or err:gsub("%d+", "#"))
+    local f, now = failures[key], os.clock()
+    if not f then
+        local w = fresh[what]
+        if not w or now - w.at >= SAY_AGAIN then
+            if w and w.held > 0 then log("%s: %d more failures in the last minute weren't said", what, w.held) end
+            w = { at = now, said = 0, held = 0 }
+            fresh[what] = w
+        end
+        if w.said >= NEW_A_MINUTE then
+            w.held = w.held + 1
+            return
+        end
+        if nfailures >= 1000 then failures, nfailures = {}, 0 end   -- a long session's worth: start again
+        w.said = w.said + 1
+        failures[key], nfailures = { more = 0, at = now }, nfailures + 1
+        log("error in %s: %s", what, err)
+    else
+        f.more = f.more + 1
+        if now - f.at >= SAY_AGAIN then
+            log("error in %s: %s (%d more)", what, err, f.more)
+            f.more, f.at = 0, now
+        end
+    end
+end
 
 -- ===================================================================================== objects
 -- UE4SS hands back invalid objects (not nil) for things it can't find, and a destroyed object's slot
@@ -32,6 +78,17 @@ local function dead(o)
     return ok and v == false
 end
 Game.dead = dead
+
+-- Whether a live object is on its way out: destroyed, or left behind by a level that unloaded. UE4SS still calls
+-- it valid until the engine collects it, and calling into it does nothing useful (or worse).
+local GARBAGE = 0x00200000   -- EInternalObjectFlags::Garbage
+local function garbage(o)
+    if not valid(o) then return false end   -- asking a missing object anything crashes the game
+    local ok, gone = pcall(function() return o:HasAnyInternalFlags(GARBAGE) end)
+    return ok and gone == true
+end
+-- Whether an object is there and staying: valid and not on its way out.
+function Game.alive(o) return valid(o) and not garbage(o) end
 
 -- The text of an FString, FName or FText (or a Lua string), else "".
 function Game.str(v)
@@ -144,18 +201,27 @@ function Game.call(o, fname, ...)
 end
 
 -- One object of a class (its short name: "WrcRoamingEnemy", "BP_WrcQuestManager_C"), found once and kept
--- while it's still that class.
-local firsts = {}
+-- while it's still that class. One on its way out (the last level's HUD, after a level loads) is never
+-- handed back: nil instead, for a second, and then FindFirstOf is asked again. It never scans every object
+-- of the class (FindAllOf) to look past it: a level is loading then, when scans have crashed the game, and
+-- every caller (the HUD's prompt watcher, a page, a timer) would scan again on each call.
+local firsts, missUntil = {}, {}
+local MISS_FOR = 1   -- seconds a class whose first object was on its way out answers nil without asking again
 function Game.find(className)
     local hit = firsts[className]
-    if hit and valid(hit) and Game.isA(hit, className) then return hit end
-    local ok, o = pcall(FindFirstOf, className)
-    if ok and valid(o) then
-        firsts[className] = o
-        return o
-    end
+    if hit and valid(hit) and not garbage(hit) and Game.isA(hit, className) then return hit end
     firsts[className] = nil
-    return nil
+    local now = os.clock()
+    if missUntil[className] and now < missUntil[className] then return nil end
+    missUntil[className] = nil
+    local ok, o = pcall(FindFirstOf, className)
+    if not (ok and valid(o)) then return nil end
+    if garbage(o) then
+        missUntil[className] = now + MISS_FOR
+        return nil
+    end
+    firsts[className] = o
+    return o
 end
 
 -- Every object of a class (valid ones only).
@@ -411,11 +477,16 @@ Game.json.listMeta = {}
 function Game.json.list(t) return setmetatable(t or {}, Game.json.listMeta) end
 function Game.json.encode(v) return encodeJson(v) end
 
--- JSON text to Lua: objects and arrays become tables, null becomes Game.json.null.
+-- JSON text to Lua: objects and arrays become tables, null becomes Game.json.null. A UTF-8 byte order mark
+-- at the start (Notepad's, on a file saved as UTF-8) is skipped.
+local BOM = "\239\187\191"
 function Game.json.decode(text)
     local pos = 1
     local function fail(what) error(string.format("bad JSON at %d: %s", pos, what)) end
-    local function ws() pos = text:find("[^ \t\r\n]", pos) or #text + 1 end
+    local function ws()
+        if pos == 1 and type(text) == "string" and text:sub(1, 3) == BOM then pos = 4 end
+        pos = text:find("[^ \t\r\n]", pos) or #text + 1
+    end
     local value
     local escapes = { b = "\b", f = "\f", n = "\n", r = "\r", t = "\t", ['"'] = '"', ["\\"] = "\\", ["/"] = "/" }
     local function utf8char(cp)
@@ -494,6 +565,9 @@ function Game.json.decode(text)
             local num = text:match("^-?%d+%.?%d*[eE]?[-+]?%d*", pos)
             if not num or num == "" then fail("unexpected '" .. c .. "'") end
             pos = pos + #num
+            -- A number written with a point or an exponent stays one with a fraction (12.0 is 12.0, not 12), as
+            -- Lua's own tonumber has it; one written whole is a whole number.
+            if num:find("[%.eE]") then return tonumber(num) or fail("bad number " .. num) end
             return math.tointeger(tonumber(num)) or tonumber(num)
         end
     end
@@ -511,14 +585,22 @@ local function runTasks()
     local now = os.clock()
     local dt = now - lastFrame
     lastFrame = now
-    for id, t in pairs(tasks) do
-        if t.at == nil or now >= t.at then
+    -- The ids first, then each task that's still there when its turn comes: a callback may add tasks and cancel
+    -- them (its own too), which pairs() can't take while it walks the table itself.
+    local ids = {}
+    for id in pairs(tasks) do ids[#ids + 1] = id end
+    table.sort(ids)
+    for _, id in ipairs(ids) do
+        local t = tasks[id]
+        if t and (t.at == nil or now >= t.at) then
             local ok, err = pcall(t.fn, dt)
-            if not ok then log("%s: %s", t.what or "task", tostring(err)) end
-            if t.every then
-                t.at = now + t.every
-            elseif t.at ~= nil then
-                tasks[id] = nil
+            if not ok then failed(t.what or "task", err) end
+            if tasks[id] == t then   -- unless the callback cancelled it
+                if t.every then
+                    t.at = now + t.every
+                elseif t.at ~= nil then
+                    tasks[id] = nil
+                end
             end
         end
     end
@@ -549,8 +631,23 @@ function Game.onFrame(fn) return add({ fn = fn, what = "onFrame" }) end
 function Game.every(seconds, fn) return add({ fn = fn, every = seconds, at = os.clock() + seconds, what = "every" }) end
 -- fn() once, `seconds` from now.
 function Game.after(seconds, fn) return add({ fn = fn, at = os.clock() + seconds, what = "after" }) end
--- Stop a timer, frame function or event listener.
-function Game.cancel(id) tasks[id] = nil end
+-- Stop a timer, frame function, key (Game.onKey's id) or event listener.
+local keyIds = {}   -- Game.onKey's ids -> { bind = its bind, handler = the handler it added }
+function Game.cancel(id)
+    if id == nil then return end
+    if type(id) == "table" and id.event then return Game.off(id) end   -- Game.on's handle
+    tasks[id] = nil
+    local k = keyIds[id]
+    if k then
+        keyIds[id] = nil
+        for i, h in ipairs(k.bind.handlers) do
+            if h == k.handler then
+                table.remove(k.bind.handlers, i)
+                break
+            end
+        end
+    end
+end
 
 -- A key and what it does, for the mod menu's Overview (its list of the keys scripts use).
 local function listKey(name, help)
@@ -565,27 +662,58 @@ local function listKey(name, help)
 end
 
 -- fn() on the game thread when a key is pressed: Game.onKey("F6", fn) or Game.onKey("F6", fn, {"CONTROL"}).
--- With `help` ("Heal your cat"), the mod menu's Overview lists the key.
+-- The key is one of UE4SS's names (Key.F6: F1 to F12, A to Z, SPACE...) or its number. With `help` ("Heal your
+-- cat"), the mod menu's Overview lists the key. Returns an id for Game.cancel; or false, with a line in the log,
+-- for a name UE4SS doesn't know (so the rest of the script still runs).
+local binds = {}   -- "<key>|<modifiers>" -> { handlers }: UE4SS binds a key once, and each onKey adds a handler
+local function keyCode(key, table_, what)
+    if type(key) == "number" then return key end
+    local ok, code = pcall(function() return table_[key] end)
+    if ok and type(code) == "number" then return code end
+    local upper = type(key) == "string" and key:upper() or nil
+    local okU, hint = pcall(function() return upper and table_[upper] end)
+    log("no %s called %s%s", what, tostring(key),
+        okU and type(hint) == "number" and upper ~= key and (" (did you mean " .. upper .. "? UE4SS's names are in capitals)")
+        or (what == "key" and " (UE4SS's names: F1 to F12, A to Z, SPACE, ONE to NINE, NUM_ZERO to NUM_NINE...)"
+            or " (UE4SS's: SHIFT, CONTROL, ALT)"))
+    return nil
+end
 function Game.onKey(key, fn, modifiers, help)
-    if help then
-        local name = tostring(key)
-        if modifiers and #modifiers > 0 then name = table.concat(modifiers, "+") .. "+" .. name end
-        listKey(name, help)
+    local code = keyCode(key, Key, "key")
+    if not code then return false end
+    local mods, names = {}, {}
+    for i, m in ipairs(modifiers or {}) do
+        mods[i] = keyCode(m, ModifierKey, "modifier key")
+        if not mods[i] then return false end
+        names[i] = tostring(m)
     end
-    local k = Key[key] or key
-    local wrapped = function()
-        ExecuteInGameThread(function()
-            local ok, err = pcall(fn)
-            if not ok then log("key %s: %s", tostring(key), tostring(err)) end
-        end)
+    local name = (#names > 0 and table.concat(names, "+") .. "+" or "") .. tostring(key)
+    local slot = tostring(code) .. "|" .. table.concat(mods, ",")
+    local bind = binds[slot]
+    if not bind then
+        bind = { handlers = {} }
+        local function fire()
+            ExecuteInGameThread(function()
+                for _, h in ipairs({ table.unpack(bind.handlers) }) do
+                    local ok, err = pcall(h)
+                    if not ok then failed("key " .. name, err) end
+                end
+            end)
+        end
+        local ok, err
+        if #mods > 0 then ok, err = pcall(RegisterKeyBind, code, mods, fire) else ok, err = pcall(RegisterKeyBind, code, fire) end
+        if not ok then
+            log("couldn't put anything on the key %s: %s", name, tostring(err))
+            return false
+        end
+        binds[slot] = bind
     end
-    if modifiers and #modifiers > 0 then
-        local mods = {}
-        for i, m in ipairs(modifiers) do mods[i] = ModifierKey[m] or m end
-        RegisterKeyBind(k, mods, wrapped)
-    else
-        RegisterKeyBind(k, wrapped)
-    end
+    bind.handlers[#bind.handlers + 1] = fn
+    if help then listKey(name, help) end
+    local id = nextTask
+    nextTask = nextTask + 1
+    keyIds[id] = { bind = bind, handler = fn }
+    return id
 end
 
 -- Whether a key or controller button went down this frame, in the game's own input: Game.pressed("T"),
@@ -653,7 +781,7 @@ function Game.hook(path, fn, opts)
         end
         local okSelf, self = pcall(function() return ctx:get() end)
         local ok, err = pcall(fn, okSelf and self or ctx, table.unpack(values, 1, values.n))
-        if not ok then log("hook %s: %s", path, tostring(err)) end
+        if not ok then failed("hook " .. path, err) end
     end
     local noop = function() end
     local ok, pre, post
@@ -676,7 +804,7 @@ function Game.hookRaw(path, fn)
     local ok, pre, post = pcall(RegisterHook, path, function(ctx, ...)
         local okSelf, self = pcall(function() return ctx:get() end)
         local okCall, err = pcall(fn, okSelf and self or ctx, table.pack(...))
-        if not okCall then log("hook %s: %s", path, tostring(err)) end
+        if not okCall then failed("hook " .. path, err) end
     end)
     if not ok then return nil, tostring(pre) end
     return { path = path, pre = pre, post = post }
@@ -689,9 +817,15 @@ local listeners, nextListener = {}, 1
 local sources = {}   -- event -> how it starts: a poller or a hook, set up on the first listener
 
 function Game.emit(event, ...)
-    for _, l in pairs(listeners[event] or {}) do
-        local ok, err = pcall(l, ...)
-        if not ok then log("on %s: %s", event, tostring(err)) end
+    -- The listeners as they are now: one may add or remove listeners (itself too) while they're called.
+    local now = {}
+    for id, l in pairs(listeners[event] or {}) do now[#now + 1] = { id = id, fn = l } end
+    table.sort(now, function(a, b) return a.id < b.id end)
+    for _, l in ipairs(now) do
+        if listeners[event][l.id] == l.fn then
+            local ok, err = pcall(l.fn, ...)
+            if not ok then failed("on " .. tostring(event), err) end
+        end
     end
 end
 
@@ -1120,16 +1254,27 @@ function Game.cat(actor)
 end
 
 function Cat:valid() return valid(self.actor) end
-function Cat:isPlayer() return self.actor == Game.player() or (Game.player() and self.actor:GetAddress() == Game.player():GetAddress()) end
+function Cat:isPlayer()
+    local me = Game.player()
+    if not me then return false end
+    if self.actor == me then return true end
+    local ok, same = pcall(function() return self.actor:GetAddress() == me:GetAddress() end)
+    return ok and same == true
+end
 
 -- The resource component of a kind: "Health", "Stamina", "StaminaCombat" (on the cat), "Level" (on the
--- player state, for your cat).
+-- player state: only your cat has one out of a fight, and another cat's answers nil rather than yours; a
+-- fighter's own level and stats are Game.fighter(cat)'s).
 local COMPONENT_CLASS = { Health = "SwtQuestHealthComponent", Stamina = "SwtQuestStaminaComponent",
                           StaminaCombat = "SwtCombatStaminaComponent", Level = "SwtAdventureLevelComponent" }
+local NOT_YOURS = "only your cat has a level component out of a fight"
 function Cat:component(kind)
     local cls = COMPONENT_CLASS[kind] or kind
     local owner = self.actor
-    if kind == "Level" then owner = Game.get(self.actor, "Controller.PlayerState") or Game.get(Game.controller(), "PlayerState") end
+    if kind == "Level" then
+        owner = Game.get(self.actor, "Controller.PlayerState")
+        if not valid(owner) and self:isPlayer() then owner = Game.get(Game.controller(), "PlayerState") end
+    end
     if not valid(owner) then return nil end
     local clsObj = Game.object(self._classPath(cls))
     if clsObj then
@@ -1157,7 +1302,7 @@ local function resource(cat, kind, field)
 end
 local function setResource(cat, kind, field, v)
     local c = cat:component(kind)
-    if not c then return false, "no " .. kind .. " component" end
+    if not c then return false, (kind == "Level" and not cat:isPlayer()) and NOT_YOURS or ("no " .. kind .. " component") end
     return Game.set(c, field, v)
 end
 
@@ -1181,7 +1326,8 @@ function Cat:combatStamina() return resource(self, "StaminaCombat", "WCM_Value")
 function Cat:maxCombatStamina() return resource(self, "StaminaCombat", "WCM_Max") end
 function Cat:setCombatStamina(v) return setResource(self, "StaminaCombat", "WCM_Value", v) end
 
--- Level and experience (your cat: the player state's level component).
+-- Level and experience (your cat: the player state's level component). Another cat's are nil, and setting them
+-- gives false and why.
 function Cat:level() return resource(self, "Level", "WCM_Level") end
 function Cat:setLevel(n) return setResource(self, "Level", "WCM_Level", n) end
 function Cat:xp() return resource(self, "Level", "WCM_Value") end
@@ -1201,7 +1347,7 @@ function Cat:stats()
 end
 function Cat:setStat(name, v)
     local c = self:component("Level")
-    if not c then return false, "no level component" end
+    if not c then return false, self:isPlayer() and "no level component" or NOT_YOURS end
     return Game.set(c, "WCM_" .. name, v)
 end
 
@@ -1732,14 +1878,9 @@ local live = {}         -- the ones not removed, which the keeper and the prompt
 local Npc = {}
 Npc.__index = Npc
 local npcWatch          -- the timer that keeps them in the world, started by the first spawn
-local GARBAGE = 0x00200000   -- EInternalObjectFlags::Garbage: destroyed, though still valid to UE4SS until collected
 
 -- Whether the cat's actor is in the world (not destroyed, by a script or the level it was in going away).
-local function alive(a)
-    if not valid(a) then return false end
-    local ok, gone = pcall(function() return a:HasAnyInternalFlags(GARBAGE) end)
-    return not (ok and gone)
-end
+local alive = Game.alive
 
 -- "#rrggbb" as the linear colour a material takes, or nil.
 local function linearColour(hex)
@@ -2418,6 +2559,16 @@ end
 
 function Game.mapMarker(where, opts)
     opts = opts or {}
+    -- A place needs its three numbers; an actor has to be there still (one kept from earlier may be gone, and
+    -- calling into it would crash the game).
+    if type(where) == "table" then
+        local x, y, z = where.X or where[1], where.Y or where[2], where.Z or where[3]
+        if type(x) ~= "number" or type(y) ~= "number" or type(z) ~= "number" then
+            return nil, "a marker needs a place, {x, y, z}, or an actor"
+        end
+    elseif not Game.alive(where) then
+        return nil, "that actor isn't in the world any more"
+    end
     local m = setmetatable({ icon = opts.icon, border = opts.border ~= false }, Marker)
     local gs = Game.library("GameplayStatics")
     local ok, err = pcall(function()
@@ -2488,7 +2639,11 @@ local talk = { widget = nil, name = nil, text = nil, closing = 0 }
 -- One talk at a time across mods (each has its own Lua state, and its own box): the one talking holds a
 -- claim in a shared variable, renewed while its box is up.
 local TALK_OWNER, TALK_AT = "WCModsDialogue.owner", "WCModsDialogue.at"
-local talkId = (tostring({}):gsub("^table: ", ""))   -- this Lua state's own id
+-- This Lua state's own id: the address of a table kept for as long as the state lasts, in `talk`, which the
+-- dialogue's functions hold (a table let go could have its address taken by another state's table, and two
+-- scripts would share an id).
+talk.key = {}
+local talkId = (tostring(talk.key):gsub("^table: ", ""))
 local function talkShared(k) local ok, v = pcall(function() return ModRef:GetSharedVariable(k) end) return ok and v or nil end
 local function talkShare(k, v) pcall(function() ModRef:SetSharedVariable(k, v) end) end
 
@@ -2534,36 +2689,75 @@ function Game.dialogue.claim()
     return true
 end
 
+-- While this script's box is up its claim is renewed, so another mod's cat can't open a box over it however
+-- long the talk waits for a key; hide() lets it go.
+local function keepClaim()
+    if talk.renew then return end
+    talk.renew = Game.every(0.2, function()
+        if Game.dialogue.showing() and talkShared(TALK_OWNER) == talkId then
+            talkShare(TALK_AT, os.clock())
+        else
+            Game.cancel(talk.renew)
+            talk.renew = nil
+        end
+    end)
+end
+
 function Game.dialogue.say(name, text)
     name, text = tostring(name or ""), tostring(text or "")
     if not Game.dialogue.claim() then return false, "another mod's cat is talking" end
     local w, why = dialogueWidget()
     if not w then return false, why end
+    local added = false
     local ok, err = pcall(function()
         talk.closing = talk.closing + 1   -- a fade-out under way no longer takes it away
+        talk.fading = false
         if name ~= talk.name then w.mcGuiDialogueTalker.mcGuiTextName:SetText(FText(name)) end
         if text ~= talk.text then w.mcGuiTextParagraph:SetText(FText(text)) end
         if not w:IsInViewport() then
             w:AddToViewport(1500)
+            added = true
             layOut(w)
             w:PlayAnimation(w.AniScreenIn, 0, 1, 0, 1, false)
         end
     end)
-    if not ok then return false, tostring(err) end
+    if not ok then
+        -- Not a box half made and left on screen (a game update that renamed one of its parts, say).
+        if added then pcall(function() w:RemoveFromParent() end) end
+        return false, tostring(err)
+    end
     talk.name, talk.text = name, text
+    keepClaim()
     return true
 end
 
 function Game.dialogue.hide()
     local w = talk.widget
-    if not (valid(w) and w:IsInViewport()) or talk.text == nil then return end
-    talk.name, talk.text = nil, nil
-    if talkShared(TALK_OWNER) == talkId then talkShare(TALK_OWNER, "") end
+    if talk.text ~= nil or talk.renew then   -- this script was talking: the box is free for others again
+        if talk.renew then
+            Game.cancel(talk.renew)
+            talk.renew = nil
+        end
+        if talkShared(TALK_OWNER) == talkId then talkShare(TALK_OWNER, "") end
+    end
+    -- Taken down whenever it's on screen, with a line or without (a say() that failed half-way), unless it's
+    -- fading out already.
+    local okIn, inView = false, false
+    if valid(w) and not (talk.text == nil and talk.fading) then
+        okIn, inView = pcall(function() return w:IsInViewport() end)
+    end
+    if not (okIn and inView) then
+        talk.name, talk.text = nil, nil
+        return
+    end
+    talk.name, talk.text, talk.fading = nil, nil, true
     talk.closing = talk.closing + 1
     local mine = talk.closing
     pcall(function() w:PlayAnimation(w.AniScreenOut, 0, 1, 0, 1, false) end)
     Game.after(0.3, function()
-        if talk.closing == mine and valid(w) then pcall(function() w:RemoveFromParent() end) end
+        if talk.closing ~= mine then return end
+        talk.fading = false
+        if valid(w) then pcall(function() w:RemoveFromParent() end) end
     end)
 end
 

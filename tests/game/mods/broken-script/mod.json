@@ -1,0 +1,5 @@
+{
+  "name": "Broken script",
+  "description": "A throwaway script for tests/game/test_scripts.py whose main.lua is missing an end, so it doesn't start. Not for playing with.",
+  "enabled": true
+}

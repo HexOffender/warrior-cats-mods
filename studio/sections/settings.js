@@ -12,7 +12,7 @@ export default {
 
     root.append(
       wc.pageHead({ eyebrow: "Your mods", title: "Settings and repair", help: "help:settings",
-        lede: "The mod menu, the game's console and mods that run code, your save backups, mods you removed, and a mod of your own to start from." }),
+        lede: "The mod menu, the game's own command window and mods that run code, your save backups, mods you removed, and a mod of your own to start from." }),
       optionsBox, repairBox, makeBox);
 
     function renderOptions() {
@@ -23,10 +23,13 @@ export default {
           try { options = await api.patch("/ingame", { console: consoleBox.checked }); toast("Saved."); } catch (e) { toast(e.message, "bad"); }
           renderOptions();
         });
-        optionsBox.append(el("label", { class: "row", for: "ig-console" }, consoleBox, el("strong", { text: "Game console" }),
-          el("span", { class: "muted", text: options.console_available ? "~ or F10 opens it, from the next time the game starts."
+        // The game's own command window (UE4SS's console enabler), not the studio's Try Lua in the game or the mod
+        // menu's Lua (advanced) page: three things, three names.
+        optionsBox.append(el("label", { class: "row", for: "ig-console" }, consoleBox, el("strong", { text: "The game's own command window" }),
+          el("span", { class: "muted", text: options.console_available
+            ? "~ or F10 opens it from the next time the game starts, for engine commands like god and slomo with cheats on."
             : options.console_why === "no console mod in it" ? "The script loader here has no console mod in it: installing it again (Get set up, on the Mods page) puts it in."
-              : "Needs the script loader (Get set up, on the Mods page)." })));
+              : "Needs the script loader (Get set up, on the Mods page, installs it)." })));
       }
       if (settings) {
         const code = el("input", { type: "checkbox", id: "allow-code", checked: settings.allow_code_mods });
@@ -249,7 +252,7 @@ export default {
       codeMods = found.filter(m => m.code).map(m => ({ ...m, about: (extra.addons.find(a => a.id === m.id) || {}).about }));
       if (shell) {
         saveFound = !!shell.save_found;
-        const titles = shell.sections.filter(s => (s.group || "make") === "make" && !s.from_mod && s.id !== "console").map(s => s.title);
+        const titles = shell.sections.filter(s => (s.group || "make") === "make" && !s.from_mod).map(s => s.title);
         if (titles.join("|") !== makePages.join("|")) { makePages = titles; renderMake(); }
       }
       renderOptions();

@@ -43,7 +43,7 @@ test("the studio opens with no console errors, its status chips and its pages", 
   assert.deepEqual(chips, ["Game closed", "No script loader", "No save yet", "Nothing installed"]);
   const pages = await page.evaluate(() => [...document.querySelectorAll("#nav button")].map(b => b.textContent));
   assert.deepEqual(pages, ["Mods", "Mod packs", "Settings and repair", "Palettes", "Your cat", "Controls", "Names", "Items",
-    "Animations", "Characters", "Questlines", "Game data", "Save"]);
+    "Animations", "Characters", "Questlines", "Game data", "Save", "Tweaks"]);
   assert.equal(await page.evaluate(() => document.querySelector("#nav button[aria-current]").textContent), "Mods");
   assert.equal(await page.text("#playBtn"), "Play");
   await page.close();
@@ -154,10 +154,16 @@ test("Help opens the guide in a panel, its links move between its pages, and Esc
   await page.close();
 });
 
-test("Apply with the game's files unreadable: a sentence at the top of the log, Apply the rest anyway, and Last apply brings it back", { skip }, async () => {
-  makeGame(folders.game);   // the exe and folders, no paks: nothing the build can read
+test("Apply with the game's files unreadable: a sentence at the top of the log, Apply the rest anyway, and Last apply brings it back", { skip }, async t => {
+  // A folder and a studio of its own: an earlier test's studio can still be writing last-apply.log (its Play)
+  // into the shared folder, and Last apply would bring that back instead.
+  const own = dataFolder();
+  let ownStudio;
+  t.after(async () => { if (ownStudio) ownStudio.stop(); await remove(own.root); await remove(own.app); });
+  makeGame(own.game);   // the exe and folders, no paks: nothing the build can read
+  ownStudio = await startStudio(own);
   const page = await browser.page();
-  await page.goto(studio.url);
+  await page.goto(ownStudio.url);
   await page.waitFor(() => !document.getElementById("installBtn").disabled);
   await page.click("#installBtn");
   await page.waitFor(() => !document.getElementById("drawer").hidden && document.getElementById("drawerSummary").textContent.includes("can't be read"), 30000);
@@ -172,7 +178,7 @@ test("Apply with the game's files unreadable: a sentence at the top of the log, 
   // Closed, then brought back with Last apply, from last-apply.log in the player's folder.
   await page.click("#drawerClose");
   await page.waitFor(() => document.getElementById("drawer").hidden);
-  assert.ok(fs.existsSync(path.join(folders.data, "last-apply.log")), "last-apply.log is kept");
+  assert.ok(fs.existsSync(path.join(own.data, "last-apply.log")), "last-apply.log is kept");
   await page.click("#lastApplyBtn");
   await page.waitFor(() => !document.getElementById("drawer").hidden);
   assert.match(await page.text("#drawerTitle"), /^Apply to game \(\d{4}-\d\d-\d\d \d\d:\d\d\)$/);
@@ -296,5 +302,34 @@ test("Restart the studio waits for unsaved changes to be saved, and a new studio
     s.stop();
     await page.close();
     await removeFolders(d);
+  }
+});
+
+test("Try Lua in the game sits last, under Advanced, and says when the game runs without the studio's connection to it", { skip }, async () => {
+  // A folder of its own with mods that run code allowed (the page is only listed then), and the game "running"
+  // with nothing installed: no bridge in it, so the page can't reach it and says what to do.
+  const own = dataFolder();
+  makeGame(own.game);
+  fs.writeFileSync(path.join(own.data, "wcmods.json"), JSON.stringify({ game_dir: own.game, save_dir: own.saves, allow_code_mods: true }));
+  const running = await startStudio(own, { WCMODS_FAKE_RUNNING: "1" });
+  try {
+    const page = await browser.page();
+    await page.goto(running.url + "#console");
+    await page.waitFor(() => /^The game is running without/.test(document.querySelector(".strip")?.textContent || ""));
+    assert.equal(await page.text(".strip"), "The game is running without the studio's connection to it: close the game, press Apply to game, then Play");
+    const nav = await page.evaluate(() => [...document.querySelectorAll("#nav > *")].map(n => n.textContent));
+    assert.deepEqual(nav.slice(-2), ["Advanced", "Try Lua in the game"]);
+    assert.equal(await page.text("#main .section:not([hidden]) h1"), "Try Lua in the game");
+    const run = await page.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => x.textContent === "Run"); return { off: b.disabled, title: b.title }; });
+    assert.deepEqual(run, { off: true, title: "The game is running without the studio's connection to it: close the game, press Apply to game, then Play" });
+    // Its help is the guide's page about it, in the panel.
+    await page.click({ text: "How this works" });
+    await page.waitFor(() => !document.getElementById("help").hidden && document.getElementById("helpTitle").textContent === "Try Lua in the game");
+    assert.deepEqual(page.consoleErrors(), []);
+    await page.close();
+  } finally {
+    running.stop();
+    await remove(own.root);
+    await remove(own.app);
   }
 });

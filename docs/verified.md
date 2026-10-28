@@ -244,9 +244,31 @@ Fawnstar, as a player reported it showing "Cat 1"):
   `Game.items.drop`, but not watched).
 
 - **Scripting:**
-  - the studio's Console page;
+  - the studio's Try Lua in the game page (once the Console) against the game; its routes, the strip's four
+    states and the request withdrawn after a timeout are tested without it, over a made-up bridge folder;
   - the damage, quest-status and status events;
   - whether the game obeys each of its developer switches.
+- **Tweaks** (`tweaks.json`, the studio's Tweaks page, `WCModsTweaks`): written from Game Tweaks' calls (stamina,
+  the clock, the fresh-kill pile, seen working there) and Sandbox mode's skip (seen skipping the opening scenes of a
+  sandbox game), but not yet run in the game as Tweaks. Above all unchecked: the heal key through the game's own
+  input (`Game.pressed`), the skip in a story game (a fresh story cat, not a sandbox one: refused, and its rows
+  hidden, until that check shows a skipped scene still gives its quest step or rank; `tests/game/test_tweaks.py`
+  says how to run it), and the mod menu's Tweaks page and its Save. `tests/game/test_tweaks.py` has the in-game
+  tests.
+- **The runtime fixes of 2026-10-28** (written and checked by their shape and by luacheck, not yet run in the
+  game; `tests/game/test_scripts.py` has the in-game tests for them): a script's errors with its mod's name,
+  once then once a minute; a task that cancels itself and adds another; `Game.onKey` with a misspelt name
+  returning false, and its id cancelling the key; another cat's `level()` being nil; `Game.find` not handing back
+  the last level's HUD (nil until the new one comes first); the dialogue claim renewed while the box is up; the bridge stopping a runaway line and
+  running only a request it took; the script bootstrap loading the mod's files by their names (and
+  `require` through them), naming a script that didn't start on the Overview and at the top of the screen, and
+  its Save saying so; a page made from a timer replacing the automatic one; an empty list and a float saved as
+  they were; the Log page's Mods and Errors filters; the Inspector's Find refusing the widest classes; a
+  setting's `_help_<key>` under its row and `_min_`/`_max_` bounding its number on the automatic page; a number
+  written `12.0` read back by `Game.json.decode` as `12.0`.
+- **UE4SS's log format** that `scriptlog.py` (a script's card) and the Log page read: `Starting Lua mod '<name>'`
+  and `[Lua] [<mod name>] ...`, as UE4SS 3.0.1 (Git SHA 83330635) writes them, read from the installed game's
+  log on 2026-10-28. Other UE4SS versions are unchecked; a line the reader doesn't recognise is left out.
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
 - **Game data tables in play.** They load from the same pak as the text, but no gameplay change has
   been checked on screen yet (the Game data page's Quick changes say so).

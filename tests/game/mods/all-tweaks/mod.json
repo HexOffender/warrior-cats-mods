@@ -1,0 +1,5 @@
+{
+  "name": "All tweaks",
+  "description": "A throwaway mod for tests/game/test_tweaks.py: every tweak on but the story's scenes. Not for playing with.",
+  "enabled": true
+}

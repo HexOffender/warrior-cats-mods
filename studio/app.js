@@ -40,6 +40,7 @@ const WORKING_TIP = "Saving, switching mods, Apply and Play wait until it's done
 let gone = false;   // the studio's server stopped answering: the page waits for it to come back
 let restarting = false;   // Restart the studio was pressed: the page waits for the new one, and nothing else asks
 let failure = null;   // why the last status refresh failed: "gone", "token" (the shell's own cards say those), "error"
+let wasRunning = null;   // whether the game ran at the last look, for the "game" event
 
 // One status refresh at a time: asked for while one is under way (the window coming back to the front, a save,
 // the 15 s tick), it's made once more when that one ends, never piled up beside it.
@@ -65,6 +66,9 @@ async function refreshStatusNow() {
   }
   if (restarting) return null;   // asked before Restart was pressed: the status says it's restarting now
   if (gone) { back(); return null; }   // it answers again: this page is from before it went
+  // The game started or closed: pages that show what it did last time (a script's card) look again.
+  if (wasRunning !== null && wasRunning !== info.game_running) bus.emit("game", { running: info.game_running });
+  wasRunning = info.game_running;
   const waiting = changes ? changeCount(changes) : 0;
   setStatus([
     // A page's own task under the server's lock (the Mods page's check after a game update): said here, as a
@@ -187,10 +191,11 @@ function unsavedPages() {
   return bars.length && !titles.length ? ["this page"] : titles;
 }
 
-// The side bar: managing mods first, then the pages for making them. Made again only when the pages
-// change (a mod with a page of its own turned on or off); opening a page moves aria-current, so the
-// button you pressed keeps focus.
-const GROUPS = { play: "Your mods", make: "Make mods" };
+// The side bar: managing mods first, then the pages for making them, then the page for people who write
+// scripts (Try Lua in the game, with mods that run code allowed). Made again only when the pages change (a mod
+// with a page of its own turned on or off); opening a page moves aria-current, so the button you pressed keeps
+// focus.
+const GROUPS = { play: "Your mods", make: "Make mods", advanced: "Advanced" };
 let navMade = "";
 function renderNav() {
   const pages = info.sections.map(s => `${s.id}|${s.title}|${s.group || ""}|${s.from_mod || ""}`).join("\n");
@@ -262,7 +267,7 @@ async function open(id, asked = false) {
 // A page's own stylesheet, studio/sections/<id>.css, linked once when the page first opens and ready before it
 // draws. Only the pages that have one are listed: the server answers a missing file with a 404, which the
 // browser would log as an error.
-const PAGE_STYLES = new Set(["mods", "items", "npcs", "quests", "controls", "names", "data", "save", "palettes"]);
+const PAGE_STYLES = new Set(["mods", "items", "npcs", "quests", "controls", "names", "data", "save", "palettes", "console"]);
 const styled = {};   // section id -> Promise that settles when its stylesheet has loaded
 function pageStyles(id) {
   if (!PAGE_STYLES.has(id)) return Promise.resolve();

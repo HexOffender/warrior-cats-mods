@@ -136,7 +136,7 @@ game closes.
   the pack's copy is different (its files' contents, not only their names and sizes) and newer, and an older
   copy of one of the mods that go with Clan Mod Studio than yours is never ticked, in a pack or a .zip of
   its own: it goes in only if you tick it yourself.
-- **Settings and repair**, the other page under Your mods: the game's console, allowing mods that run
+- **Settings and repair**, the other page under Your mods: the game's own command window, allowing mods that run
   code, your save backups, removed mods (a removed or replaced mod is kept in `backups/mods/`, and
   Put it back does that), "Take all mods out of the game", and starting an empty mod of your own from a
   name. Backups are listed in words ("Today 15:30, backed up by you"); restoring one keeps the save you had
@@ -145,6 +145,14 @@ game closes.
   the game from Steam. When the game crashed since the last Apply (or Take all mods out), the page says so at
   the top of Backups and repair and on the Mods page until it's closed, with the C++ mod that was running
   when it crashed, if one was, Copy the report and Turn it off. A folder with no Apply yet shows no crash.
+- **A script mod's card** says, before any Apply, what would stop its script from loading (a `function`
+  with no `end`, by file and line, or a `settings.json` that isn't right), and after the game has run,
+  whether the script loaded when the game last started; its More has **What it said**, the script's lines
+  from the game's log, newest first, and **Settings**, the rows of its page in the mod menu (switches, numbers,
+  colours, text), to change before the game starts.
+- **Try Lua in the game**, under **Advanced** (last in the side bar, with mods that run code allowed): for
+  people who write scripts, a box that runs a line of Lua in the running game and an inspector for its
+  objects. Nothing there is saved into a mod; a line at its top says whether the game can hear the studio.
 
 The pages under **Make mods** are for making your own; each edits a file in a mod folder. **Save to
 mod** reads the file as Apply first does and says under the Editing mod bar what in it would keep it out
@@ -167,6 +175,7 @@ it has one, opens its page of the guide.
 | **Questlines** | quests with those cats, step by step (talk, pick things up, go somewhere), one after another, with rewards | `quests.json` | the Sandbox mode mod |
 | **Game data** | Quick changes in words (running speed, XP from fights, what prey is worth, cat sizes, scars...), a search for any number by what it does, and every runtime table cell by cell | `data.json` | edited tables in the mod pak |
 | **Save** | your cat's level, experience and fresh-kill pile, what it carries (by name), anything else in the save; each change made once, after a backup, and each one can be put back | none: Change my save now changes your save straight away; or `save.json`, to share | your save: at once, or when the mod is applied (once per save) |
+| **Tweaks** | small changes while you play: stamina kept full, a heal key, the clock held, the fresh-kill pile kept up | `tweaks.json` | a UE4SS script wcmods writes (no mods that run code needed), with a Tweaks page in the mod menu |
 
 **If a cat shows as Cat 1** (or as `<MISSING STRING TABLE ENTRY>`): its name is text only a mod gives,
 and that mod is off, or the game isn't reading your mods. The Names page lists such cats and offers
@@ -181,9 +190,13 @@ backup back. The guide's Names page ([docs/guide/names.md](docs/guide/names.md))
 - timers, keys, events and hooks;
 - an inspector for any of the game's objects.
 
-With code mods allowed, `python wcmods.py lua "Game.cat():name()"`, the studio's **Console** page and
-the mod menu's Lua console run Lua in the game while it's open. See [docs/scripting.md](docs/scripting.md);
-the example is [game-tweaks](https://github.com/HexOffender/wcmods-examples/tree/main/game-tweaks) in wcmods-examples.
+With code mods allowed, `python wcmods.py lua "Game.cat():name()"`, the studio's **Try Lua in the game**
+page and the mod menu's Lua (advanced) page run Lua in the game while it's open. See
+[docs/scripting.md](docs/scripting.md); the example is
+[game-tweaks](https://github.com/HexOffender/wcmods-examples/tree/main/game-tweaks) in wcmods-examples. A
+script's errors carry its mod's name; they show on its card in the studio, on the mod menu's Log page, and,
+for a script that didn't start, at the top of the screen once your cat is in the world
+([where a script's words show](docs/scripting.md#script-mods)).
 
 **Stories without code:** Items, Characters and Questlines make a whole story with no code. The
 cats and quests come into the game with the [Sandbox mode](https://github.com/HexOffender/wcmods-sandbox)
@@ -217,7 +230,7 @@ pause screen, inventory and settings, change the HUD and draw over it, with the 
 **In game, Insert opens the mod menu** (with UE4SS). It comes with wcmods and goes in with every
 install. The side bar groups its pages: Home (an Overview of the keys and what's where, and the
 installed mods), the groups the pages from mods go in (Your cat, World, Story, Fight, Cheats, Mods) and
-Tools (the log, the menu's own settings, and with code mods allowed the Inspector and the Lua console).
+Tools (the log, the menu's own settings, and with code mods allowed the Inspector and Lua (advanced)).
 [docs/SDK.md](docs/SDK.md#wcmodsmenu) lists every page.
 
 Everything there changes live. Mouse look and your cat's colours change as you move their sliders,
@@ -227,7 +240,8 @@ and Save writes the change back to the mod, so the next install keeps it.
   resize it while you play.
 - **With a controller:** View opens it, the d-pad moves between its controls and A presses them, and
   View or B closes it. Opened from a controller, the game pauses while it's open.
-- **The game's console:** it's under Options on the Settings and repair page too.
+- **The game's own command window** (`~` or F10, the game's console): it's under Options on the Settings and
+  repair page too.
 - **Your own page:** [docs/SDK.md, `WCModsMenu`](docs/SDK.md#wcmodsmenu) shows how a script adds one.
 
 **The pages about the game are a mod of their own, Menu pages**

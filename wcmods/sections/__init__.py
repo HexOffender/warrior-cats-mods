@@ -17,10 +17,11 @@ from .palettes import PaletteSection
 from .savedit import SaveSection
 from .scripts import ScriptsSection
 from .story import StorySection
+from .tweaks import TweaksSection
 
 # Order matters only where outputs layer: replacement files first, CSV edits on top of them.
 BUILTIN = (FilesSection, DataSection, ItemsSection, AnimationsSection, StorySection, NamesSection, PaletteSection, CatsSection, ControlsSection, MouseLookSection,
-           SaveSection, ScriptsSection, CppSection)
+           TweaksSection, SaveSection, ScriptsSection, CppSection)
 
 
 def load_sections(cfg, mods, log=print):

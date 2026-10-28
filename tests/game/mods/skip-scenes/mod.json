@@ -1,0 +1,5 @@
+{
+  "name": "Skip scenes",
+  "description": "A throwaway mod for the hand check of skipping the story's scenes (tests/game/test_tweaks.py): it only installs with WCMODS_UNCHECKED_TWEAKS=1 set. Not for playing with.",
+  "enabled": true
+}

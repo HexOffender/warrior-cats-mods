@@ -105,16 +105,32 @@ function World.player()
     return nil
 end
 
--- An actor's location as {X, Y, Z}; a table that's already a location comes back as it is.
+-- Whether an actor is there to ask: a live object, not one on its way out (destroyed, or its level unloaded,
+-- which UE4SS still calls valid until the engine collects it). Asking one that isn't there crashes the game,
+-- so an actor kept from an earlier World.nearby() is checked before every call.
+local GARBAGE = 0x00200000   -- EInternalObjectFlags::Garbage
+local function here(a)
+    if type(a) ~= "userdata" then return false end
+    local ok, live = pcall(function() return a:IsValid() end)
+    if not (ok and live) then return false end
+    local okF, gone = pcall(function() return a:HasAnyInternalFlags(GARBAGE) end)
+    return not (okF and gone)
+end
+
+-- An actor's location as {X, Y, Z}; a table that's already a location comes back as it is; nil for nothing, or
+-- an actor that isn't there any more.
 function World.location(it)
     if type(it) == "table" then return it end
-    local l = it:K2_GetActorLocation()
+    if not here(it) then return nil end
+    local ok, l = pcall(function() return it:K2_GetActorLocation() end)
+    if not ok or l == nil then return nil end
     return { X = l.X, Y = l.Y, Z = l.Z }
 end
 
--- Centimetres between two actors or locations.
+-- Centimetres between two actors or locations; nil when either isn't there.
 function World.distance(a, b)
     local p, q = World.location(a), World.location(b)
+    if not (p and q and p.X and q.X) then return nil end
     local dx, dy, dz = p.X - q.X, p.Y - q.Y, p.Z - q.Z
     return math.sqrt(dx * dx + dy * dy + dz * dz)
 end
@@ -347,6 +363,7 @@ function World.nearby(kind, radius, from)
     from = from or me
     if not from then return {} end
     local origin = World.location(from)
+    if not origin then return {} end
     local mine = me and me:GetAddress()
     local out = {}
     local isKind = World.kinds[kind] ~= nil
@@ -358,7 +375,7 @@ function World.nearby(kind, radius, from)
         end)
         if ok0 and fits then
             local ok, l = pcall(World.location, a)
-            if ok then
+            if ok and l then
                 local dx, dy, dz = l.X - origin.X, l.Y - origin.Y, l.Z - origin.Z
                 local d = math.sqrt(dx * dx + dy * dy + dz * dz)
                 if not radius or d <= radius then
@@ -373,8 +390,10 @@ function World.nearby(kind, radius, from)
     return out
 end
 
--- Everything handy about one actor: { name, label, class, parents, location }.
+-- Everything handy about one actor: { name, label, class, parents, location }; nil for nothing, or an actor
+-- that isn't there any more.
 function World.describe(actor)
+    if not here(actor) then return nil end
     return { name = actor:GetFName():ToString(), label = World.label(actor),
              class = actor:GetClass():GetFName():ToString(), parents = World.parents(actor:GetClass()),
              location = World.location(actor) }
