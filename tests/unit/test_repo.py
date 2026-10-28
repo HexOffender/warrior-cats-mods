@@ -7,7 +7,7 @@ import os
 import subprocess
 import sys
 
-from conftest import REPO, SANDBOX
+from unit_helpers import REPO
 
 SKIPPED_DIRS = {".git", ".claude", "__pycache__", "build", "cache", "node_modules"}
 
@@ -115,6 +115,6 @@ def test_the_studios_place_fixture_is_what_models_place_gives():
     assert have == want, "tests/studio/fixtures/place.json is out of date: run pytest with WC_UPDATE_FIXTURES=1 and commit it"
 
 
-def test_nothing_was_written_to_the_players_folder():
+def test_nothing_was_written_to_the_players_folder(players_folder):
     """WCMODS_DATA points at a folder of this run's own (conftest.py); the run's end checks it again."""
-    assert os.environ["WCMODS_DATA"] == SANDBOX and os.listdir(SANDBOX) == []
+    assert os.environ["WCMODS_DATA"] == players_folder and os.listdir(players_folder) == []

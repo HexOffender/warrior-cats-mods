@@ -1,9 +1,15 @@
-# The game-free tests on every push and pull request: tests/unit/ under pytest (Windows, the oldest and the
-# newest Python wcmods runs on; Ubuntu too, where the Windows-only parts skip), then the studio's JavaScript
-# tests under Node's own runner, with the browser tests on Windows, where Edge is there to drive. The in-game
-# tests (tests/game/) need the game and run on a developer's machine with `python wcmods.py agent test`.
+# The game-free tests on every pull request and every push to main: tests/unit/ under pytest (Windows, the
+# oldest and the newest Python wcmods runs on; Ubuntu too, where the Windows-only parts skip), then the
+# studio's JavaScript tests under Node's own runner, with the browser tests on Windows, where Edge is there to
+# drive. The in-game tests (tests/game/) need the game and run on a developer's machine with
+# `python wcmods.py agent test`.
+#
+# Pushes only to main: `on: [push, pull_request]` ran everything twice for a branch with a pull request open.
 name: tests
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 jobs:
   unit:
     strategy:
@@ -29,4 +35,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
+      # The runner has Edge: a browser test that can't find it fails rather than skipping to a green job.
       - run: node --test "tests/studio/**/*.test.mjs"
+        env:
+          WC_REQUIRE_BROWSER: "1"
