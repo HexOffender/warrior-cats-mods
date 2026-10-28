@@ -59,7 +59,8 @@ mods/my-mod/
   animations/         their glTF files (.glb), named in animations.json
   names.json          cat names                         -> section "names"
   palette.json        colour palettes                   -> section "palettes"
-  cats.json           your cat's own colours and slots  -> section "cats"
+  cats.json           cats' own colours, slots, scars   -> section "cats"
+                      and shape: yours and any cat's in your save
   controls.json       key and button remaps             -> section "controls" (applied inside the
                                                            game by the WCModsRemap script)
   mouselook.json      mouse look settings               -> section "mouselook"

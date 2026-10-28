@@ -562,22 +562,57 @@ class Studio:
         raise LookupError("unknown API route")
 
     def cat_info(self):
-        """Your cat's colour slots and scars in the save, the colours each slot has with the enabled
-        palettes (the game's tables, recoloured slots, and new slots palettes add), and what each scar
-        place can be."""
-        current, scars = {}, {}
+        """Your cat's colour slots, scars and look in the save, the other cats of the game being played with
+        theirs (for cats.json's "cats"), the colours each slot has with the enabled palettes (the game's
+        tables, recoloured slots, and new slots palettes add), what each scar place can be, and the look's
+        parts with the highest each takes."""
+        current, scars, looks, others = {}, {}, {}, []
+
+        def read(raw):
+            """(slots, scars, look) a cat's save text has; a field it leaves out is at its default, 0."""
+            def num(field, cast=int):
+                m = re.search(rf"(?<![A-Za-z0-9_]){field}=(-?\d+(?:\.\d+)?)", raw)
+                return cast(m.group(1)) if m else cast(0)
+            look = {part: num(fields[0]) for part, fields in catcolours.LOOK.items()}
+            # A size the save leaves out is the game's default, not 0: unknown here.
+            look["size"] = round(num(catcolours.SIZE[0], float), 3) if re.search(
+                rf"(?<![A-Za-z0-9_]){catcolours.SIZE[0]}=", raw) else None
+            return ({part: num(field) for part, field in catcolours.SLOTS.items()},
+                    {part: num(field) for part, field in catcolours.SCARS.items()}, look)
         try:
             text, _ = self.save_text()
             doc = SaveDoc(text)
-            mine = [c for c in names.cats_in_save(doc.data) if c["player"] and c["current"]]
+            cats = [c for c in names.cats_in_save(doc.data) if c["current"]]
+            mine = [c for c in cats if c["player"]]
             if mine:
-                raw = doc.get(mine[0]["paths"][0])
-                for part, field in catcolours.SLOTS.items():
-                    m = re.search(rf"(?<![A-Za-z0-9_]){field}=(\d+)", raw)
-                    current[part] = int(m.group(1)) if m else 0
-                for part, field in catcolours.SCARS.items():
-                    m = re.search(rf"(?<![A-Za-z0-9_]){field}=(\d+)", raw)
-                    scars[part] = int(m.group(1)) if m else 0
+                current, scars, looks = read(doc.get(mine[0]["paths"][0]))
+            # The cats' names as they show with the enabled names mods; without the game's name tables (no game
+            # folder, a pak that won't read) the cats are named by their places.
+            shown = lambda c: ""     # noqa: E731
+            try:
+                if self._names is None:
+                    self._names = names.GameNames(lambda path: self.ctx.game.read_text(BuildContext.data_path(path)))
+                try:
+                    spec = names.merge(names.mod_specs([m for m in self.mods() if m.enabled]))
+                except ValueError:
+                    spec = names.merge([])
+                plan = names.Plan(self._names, spec)
+                shown = lambda c: plan.display(c["ids"]) or plan.display(c["ids"], final=False)   # noqa: E731
+            except Exception:       # noqa: BLE001 - the page still opens, with places for names
+                pass
+            called = {}
+            for c in cats:
+                if not c["player"] and shown(c):
+                    called[shown(c).lower()] = called.get(shown(c).lower(), 0) + 1
+            for c in cats:
+                if c["player"]:
+                    continue
+                name, where = shown(c), names.place(c["paths"][0])
+                slots_now, scars_now, look_now = read(doc.get(c["paths"][0]))
+                # A name picks the cat while it's the only one called that; else its place does.
+                others.append({"target": name if name and called[name.lower()] == 1 else where, "name": name or where,
+                               "where": where, "role": c["ids"].get("Role", ""),
+                               "current": {"slots": slots_now, "scars": scars_now, "look": look_now}})
         except LookupError:
             pass
         enabled = []
@@ -593,7 +628,10 @@ class Studio:
                  for part in ("fur", "pattern", "marking")}
         return {"current": current, "palette": slots, "game_slots": palettes.GAME_SLOTS,
                 "feral_slots": list(catcolours.FERAL_SLOTS), "parts": catcolours.PARTS,
-                "scars": {"current": scars, "types": catcolours.SCAR_TYPES}}
+                "scars": {"current": scars, "types": catcolours.SCAR_TYPES},
+                "look": {"current": looks, "parts": {p: catcolours.LOOK_MAX.get(p, 9) for p in catcolours.LOOK},
+                         "size": list(catcolours.SIZE[1:])},
+                "cats": others}
 
     def names_preview(self, spec):
         """The game's names, what a names.json (not yet saved) does to them, and the cats in the save."""

@@ -72,17 +72,36 @@ palette you've added is your own copy, so add it again to get the new one.
 ### `cats.json`
 ```json
 { "player": { "colours": { "fur": "#9fb6e0", "paws": "#ffb6c1", "ears": "#ff9aa6", "nose": "#ff7b9a", "whiskers": "#ffffff" },
-              "slots": { "fur": 11, "pattern": 25, "marking": 26 },
-              "scars": { "ear": "notch-left", "eye": "claws-right", "back": "none" } } }
+              "slots": { "fur": 11, "pattern": 25, "marking": 26, "eyes": 3 },
+              "scars": { "ear": "notch-left", "eye": "claws-right", "back": "none" },
+              "look": { "body": 6, "ears": 2, "tail": 7, "pattern": 12, "size": 0.9 } },
+  "cats": { "Duskfang": { "look": { "fur": 0, "tail": 9 }, "slots": { "fur": 0 }, "colours": { "nose": "#202020" } },
+            "WindClan/Warrior/3": { "scars": "none" } } }
 ```
-- **`colours`** go onto your cat's own materials while you play. That covers menus and portraits,
+`player` is your cat, in the game you're playing. **`cats`** changes other cats in your save the same
+way, each by its name (`"Duskfang"`, as it shows with your names mods) or its place as the Names page
+and the Your cat page show it (`"WindClan/Warrior/3"`, for one of two cats with the same name), in the
+game you're playing, or with the game's slot first for another (`"2/Duskfang"`), as `names.json`'s
+`cats` picks them. Every cat called the name changes, with a warning when that's more than one. Mods
+apply in priority order, so a later mod's choice wins even when it names the cat another way.
+- **`colours`** go onto the cat's own materials while you play. That covers menus and portraits,
   and every part is optional. No other cat changes, and any colour works, including paws, ears,
-  nose and whiskers, which have no slots at all. The game sets your cat's colours again whenever it
-  sets your cat up, so the UE4SS script (`WCModsCatLook`) puts yours back twice a second.
-  Uninstalling brings your saved colours back.
-- **`slots`** picks which colour slot your cat wears, written into your save on install, after a
+  nose and whiskers, which have no slots at all. The game sets a cat's colours again whenever it
+  sets the cat up, so the UE4SS script (`WCModsCatLook`) puts them back twice a second. Another cat's
+  are found by its name, so they go on only in the game you're playing, and a cat with the same name
+  gets them too (with a warning). A rank-up changes a cat's name (Gustpaw becomes Gust-something),
+  so install again after one. Uninstalling brings the saved colours back.
+- **`slots`** picks which colour slot the cat wears, written into your save on install, after a
   backup: `fur` 0–24 (20–24 are the Feral Edition's, which the game swaps without it), `pattern`
-  and `marking` any slot, including new ones a palette adds. Leave a part out to keep your save's.
+  and `marking` any slot, including new ones a palette adds, and the eyes' colours 0–24:
+  `eye_left`, `eye_right`, or `eyes` for both. Leave a part out to keep your save's.
+- **`look`** sets the cat's shape in your save the same way. `body`, `fur`, `tail`, `ears`, `eyes`,
+  `whiskers` and `face` are each one of the game's 10 (0–9): the cat maker shows a clan's 7 of them
+  (a WindClan cat's body 3–9, say), and the clans' cats use all 10. The body sets the fur's shape to
+  match, as the cat maker does. `pattern` and `marking` are one of its 21 (0–20), the cat maker's grids
+  in order. `size` is a scale: the game's cats go from about 0.1 (a kit) to 1.0 (a leader). Body, ears
+  and face chose your cat's traits when it was made; the traits are kept apart, so they stay. The
+  game sets your cat's size again when it ranks up.
 - **`scars`** chooses your cat's scars, written into your save on install after a backup: `"none"`
   for none at all, or each place on its own (leave one out to keep your save's):
   - `ear`: `torn-right`, `torn-left`, `torn-both`, `notch-right`, `notch-left`, `notch-both`;
