@@ -348,7 +348,8 @@ local function firstControl(w, depth)
     local okc, c = pcall(function() return w:GetContent() end)
     return okc and firstControl(c, depth + 1) or nil
 end
-local NAV_RIGHT = 1
+local NAV_RIGHT = 1    -- EUINavigation::Right
+local NAV_ESCAPE = 0   -- EUINavigationRule::Escape: the engine's own
 local function pointTabs()
     if os.clock() < (win.pointAt or 0) then return end
     win.pointAt = os.clock() + 0.5
@@ -358,7 +359,7 @@ local function pointTabs()
     win.pointed = key
     for _, t in ipairs(win.tabButtons) do
         if first then pcall(function() t.b:SetNavigationRuleExplicit(NAV_RIGHT, first) end)
-        else pcall(function() t.b:SetNavigationRuleBase(NAV_RIGHT, 0) end) end   -- 0: Escape, the engine's own
+        else pcall(function() t.b:SetNavigationRuleBase(NAV_RIGHT, NAV_ESCAPE) end) end
     end
 end
 

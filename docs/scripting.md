@@ -449,14 +449,26 @@ others, so try each one.
 - **Enums:** `Game.enums.<name>` maps each way, name to number and number to name (`Game.enums.status.Poisoned
   == 3`). The enums are `clan`, `rank`, `trait`, `stance`, `status`, `aiProfile`, `team`, `detectionRange`,
   `stat`, `resource`, `questStatus`, `questResult`, `questType`, `objectiveStatus`, `phase`, `itemType` and
-  `characterType`, each one of the game's own (`clan` is `EClanType`; `wcmods/game.py` lists them all). The
-  numbers come from the game: each enum is read from it the first time a script looks anything up in it, so
-  a game update that renumbers one is followed. If the game's enum can't be read, the numbers are those of
-  build 26184573, and the log says so once; a name the game no longer has reads nil, also said once.
+  `characterType`, each one of the game's own (`clan` is `EClanType`; `wcmods/game.py` lists them all), and
+  each the whole enum, so the names it ends on are there too: `clan` and `rank` end with `Total` (5),
+  `resource` with `Count` (6), and a list of clans made with `pairs(Game.enums.clan)` gets `Total` unless it
+  leaves it out (`Game.enums.clan[5]` is `"Total"`).
+- **Where the numbers come from:** each enum is read from the game the first time a script looks anything up in
+  it (or walks it with `pairs` or `ipairs`, or takes `#`), so a game update that renumbers one is followed.
+  While the game's enum can't be read (a script that looks at one as it loads may be too early), the numbers
+  are those of build 26184573, the log says so once, and the game is asked again on a lookup five seconds
+  later; `getmetatable(Game.enums.clan).fromGame` is true once the table has the game's own. A name the game
+  no longer has reads nil, also said once. `next(Game.enums.clan)` sees an empty table until the first lookup:
+  walk one with `pairs`. This reading is written and checked against the exe, but not yet run in the game
+  ([verified.md](verified.md), "The game's enums read by name").
 - **Any of the game's enums:** `Game.enumNames("/Script/SwtQuest.EGiverRole")` gives `{name = number}` (and its
   names in order as a second result), or nil when the game has no such enum. The path is the module the class
   dump lists it under (`/Script/SwtEngine`, `/Script/SwtQuest`, `/Script/SwtAdventure`, `/Script/Wrc`) and the
-  enum's name.
+  enum's name. The names are without the `EGiverRole::` in front and without the `EGiverRole_MAX` the engine
+  adds. Four of the game's enums are plain C++ enums (`EDataType`, `ESwtEngineChannel`, `ESwtServicesError`,
+  `EPopupCombatState`): their names have nothing in front, and three keep the last `_MAX` name the engine adds
+  (`EPopupCombatState`'s `ST_MAX`, named after the prefix their names share), which in game can't be told from
+  one an enum has of its own.
 
 ### Mapped values
 

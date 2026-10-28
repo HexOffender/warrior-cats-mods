@@ -23,7 +23,7 @@ local PLAN = @PLAN@
 -- PLAN.keys: {action = {key, ...}}: every key each changed action is on now, for other scripts.
 -- PLAN.icons.play and .menu: {command = {key, ...}}: the keys its pictures show now, the first that has one.
 
-local PRESSED, RELEASED = 0, 1   -- EInputEvent
+local PRESSED, RELEASED = 0, 1   -- EInputEvent: IE_Pressed, IE_Released
 -- The game's own enum numbers this script needs, read by name from the game in setup(); these are build
 -- 26184573's, kept for when that read fails.
 local NO_COMMAND = 0   -- ECommands::NoCommand
@@ -60,7 +60,9 @@ local function fkey(name)
 end
 
 -- One of the game's enums by name ("/Script/SwtEngine.ECommands" -> {Player_Interact = 67, ...}), or nil when
--- the game has no such enum. WCModsGame's Game.enumNames does the same; this script runs without it.
+-- the game has no such enum. A smaller copy of WCModsGame's Game.enumNames, which this script runs without:
+-- {name = number} only, <Enum>_MAX included, no order, and the setup's one pcall around it rather than one for
+-- each name (it only looks up names it knows).
 local function enumNames(path)
     local e = StaticFindObject(path)
     if not valid(e) then return nil end   -- asking a missing object anything crashes the game

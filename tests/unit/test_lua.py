@@ -482,22 +482,33 @@ def test_game_enums_are_filled_from_the_game_the_first_time_theyre_used():
     lua = game.lua()
     fill = body(lua, "local function fillEnum(key, t, dropped)", "\n-- An enum table that fills itself")
     assert "local byName, order = Game.enumNames(path)" in fill
-    assert ("if not byName then\n        shippedEnum(t, shipped)\n        log(\"can't read the game's enum %s, so "
-            "Game.enums.%s has build 26184573's numbers\", path, key)\n        return") in fill
+    # An enum that can't be read puts nothing in the table: the shipped numbers aren't kept in it.
+    assert "if not byName then return false end" in fill and "shippedEnum" not in lua
     assert "rawset(t, name, n)" in fill and "if rawget(t, n) == nil then rawset(t, n, name) end" in fill
     assert 'dropped[name] = true\n            changes[#changes + 1] = name .. " gone"' in fill
     assert 'string.format("%s %d -> %d", name, i - 1, byName[name])' in fill
     assert 'string.format("%s %d new", name, byName[name])' in fill
     assert "log(\"the game's enum %s isn't build 26184573's: %s\", path, table.concat(changes, \", \"))" in fill
+    assert fill.rstrip().endswith("    end\n    return true\nend")
     lazy = body(lua, "local function lazyEnum(key)", "\nGame.enums = {}")
-    # Filled once, on the first lookup or pairs; an error while filling leaves build 26184573's numbers.
-    assert ("if filled then return end\n        filled = true\n"
-            "        local ok, err = pcall(fillEnum, key, t, dropped)") in lazy
-    assert "shippedEnum(t, ENUMS[key][2])" in lazy
-    assert "__index = function(t, k)\n            if not filled then\n                fill(t)" in lazy
-    assert "__pairs = function(t)\n            fill(t)\n            return next, t, nil" in lazy
+    # Build 26184573's numbers answer, both ways, while the game's can't be read; they're never put in the table.
+    assert "fallback[name] = i - 1\n        fallback[i - 1] = name" in lazy
+    # Read from the game on the first lookup, pairs or #; when it can't be, asked again ENUM_RETRY seconds later.
+    assert ("if mt.fromGame or (retryAt and os.clock() < retryAt) then return end\n"
+            "        local ok, read = pcall(fillEnum, key, t, dropped)\n"
+            "        if ok and read then\n            mt.fromGame = true") in lazy
+    assert "for k in next, t do rawset(t, k, nil) end\n        retryAt = os.clock() + ENUM_RETRY" in lazy
+    assert "local ENUM_RETRY = 5" in lua
+    assert "if not said then\n            said = true\n            log(\"can't read the game's enum %s%s" in lazy
+    assert "log(\"read the game's enum %s after all" in lazy
+    assert ("mt.__index = function(t, k)\n        if not mt.fromGame then\n            fill(t)\n"
+            "            if not mt.fromGame then return fallback[k] end") in lazy
+    assert "mt.__pairs = function(t)\n        fill(t)\n        return next, mt.fromGame and t or fallback, nil" in lazy
+    # # counts as a lookup too (before, an enum read 0 until something filled it).
+    assert "mt.__len = function(t)\n        fill(t)\n        return mt.fromGame and rawlen(t) or #fallback" in lazy
+    assert "local mt = { fromGame = false }" in lazy and "return setmetatable({}, mt)" in lazy
     # A name the game dropped reads nil, said once.
-    assert "if dropped[k] == true then\n                dropped[k] = false\n                log(" in lazy
+    assert "if dropped[k] == true then\n            dropped[k] = false\n            log(" in lazy
     assert "rawset(" in lazy and "t[k] =" not in lazy   # nothing in here goes back through __index
 
 

@@ -69,8 +69,11 @@ Game.call(s, "OnUIRelease", b)
 return true
 """
 
-# Confirm on a screen that waits for any key (the splash, the cat choice).
+# Confirm on a screen that waits for any key (the splash, the cat choice). The Confirm command is read from the
+# game's ECommands by name (docs/reverse-engineering.md, "The game's enums"); CONFIRM is build 26184573's number,
+# for when it can't be, and `python tools/re/uht.py <exe> lua` checks it.
 CONFIRM_LUA = """
+local CONFIRM = 26   -- ECommands::Button_Confirm
 local s = Game.find(%s)
 if not s then return false end
 local pc = Game.controller()
@@ -78,8 +81,10 @@ for _, k in ipairs({ "Enter", "SpaceBar", "Gamepad_FaceButton_Bottom" }) do
     Game.call(s, "OnKeyPressed", { KeyName = FName(k) }, pc)
     Game.call(s, "OnKeyReleased", { KeyName = FName(k) }, pc)
 end
-Game.call(s, "OnListenCommand", 26, 0, pc)
-Game.call(s, "OnListenCommand", 26, 1, pc)
+local commands = Game.enumNames and Game.enumNames("/Script/SwtEngine.ECommands")
+local confirm = commands and commands.Button_Confirm or CONFIRM
+Game.call(s, "OnListenCommand", confirm, 0, pc)
+Game.call(s, "OnListenCommand", confirm, 1, pc)
 return true
 """
 
