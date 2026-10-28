@@ -21,8 +21,35 @@ import pytest  # noqa: E402
 from unit_helpers import REPO, SAVE, write_save  # noqa: E402 - plain helpers; tests import them from there too
 
 
+# A player's files may be in the repository's folder (WCMODS_DATA pointing there, or from before they moved out of
+# it), where a Ctx made with the repository as its root would move them into a test's folder, which is deleted.
+# Every test makes its studio with a root of its own; the run fails if any of those files went anyway.
+REPO_FILES = ("mods", "wcmods.json", "backups")
+
+
+def repo_files():
+    """The files in the repository's folder that are a player's: {path relative to it: size}."""
+    found = {}
+    for name in REPO_FILES:
+        top = os.path.join(REPO, name)
+        if os.path.isfile(top):
+            found[name] = os.path.getsize(top)
+        for folder, _, files in os.walk(top):
+            for f in files:
+                found[os.path.relpath(os.path.join(folder, f), REPO)] = os.path.getsize(os.path.join(folder, f))
+    return found
+
+
+REPO_BEFORE = repo_files()
+
+
 def pytest_sessionfinish(session, exitstatus):
-    """The run fails when anything was written to the player's folder stand-in."""
+    """The run fails when anything was written to the player's folder stand-in, or a player's files in the
+    repository's folder went."""
+    gone = sorted(set(REPO_BEFORE) - set(repo_files()))
+    if gone:
+        print(f"\nERROR: the tests moved a player's files out of the repository's folder: {gone[:10]}", file=sys.stderr)
+        session.exitstatus = 1
     left = sorted(os.listdir(SANDBOX)) if os.path.isdir(SANDBOX) else []
     if left:
         print(f"\nERROR: the tests wrote into the player's own folder (its stand-in {SANDBOX}): {left}", file=sys.stderr)

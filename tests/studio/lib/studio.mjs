@@ -1,12 +1,13 @@
 // What the end-to-end tests (e2e/) share: a Clan Mod Studio of their own, started on a free port over a
-// folder of the test's (`python wcmods.py studio --no-browser --port 0` with WCMODS_DATA), a made-up game in
-// it, and .zips made the way a download would be.
+// folder of the test's (`python wcmods.py studio --no-browser --port 0` with WCMODS_DATA), from a copy of
+// wcmods of their own, a made-up game in it, and .zips made the way a download would be.
 //
-//   const folders = dataFolder();          // data (the player's folder), game, saves, temp, under one root
+//   const folders = dataFolder();          // data (the player's folder), game, saves, temp, under one root,
+//                                          // and app, the copy of wcmods the studio runs from
 //   makeGame(folders.game);                // the exe and folders that make it the game's (no paks)
 //   const studio = await startStudio(folders, { WCMODS_RELEASES: dir });
 //   makeZip(path.join(dir, "sandbox-0.4.zip"), { "sandbox/mod.json": { name: "Sandbox mode" } });
-//   studio.stop(); await removeFolder(folders.root);
+//   studio.stop(); await removeFolders(folders);
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -17,17 +18,29 @@ export const EXE = "Wrc-Win64-ShippingDRM.exe";   // config.EXE_NAME: what makes
 const PYTHON = process.env.PYTHON || "python";
 export const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// A studio started on a free port over the test's folders; its URL is on the first line it prints. The game
-// counts as closed (WCMODS_FAKE_RUNNING=0) unless `env` says otherwise, whether or not the real one is running
-// on this machine; its temp folder (the inbox a dropped mod waits in) is the test's, not the one a studio of
-// the player's would share.
-export async function startStudio(folders, env = {}) {
+// wcmods as the studio runs it (wcmods.py, wcmods/, studio/ and docs/), copied to a folder of its own. Started
+// from the repository, the studio would take it for wcmods' folder and move a mods/, wcmods.json or backups/
+// kept there (a supported way to keep them) into the test's folder, which is deleted.
+function appCopy() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wc-e2e-app-"));
+  const skipCache = src => !src.split(path.sep).includes("__pycache__");
+  for (const d of ["wcmods", "studio", "docs"]) fs.cpSync(path.join(REPO, d), path.join(root, d), { recursive: true, filter: skipCache });
+  fs.copyFileSync(path.join(REPO, "wcmods.py"), path.join(root, "wcmods.py"));
+  return root;
+}
+
+// A studio started over the test's folders (on a free port, or `port`), from `root` (a copy of wcmods, the
+// folders' own unless said); its URL is on the first line it prints. The game counts as closed
+// (WCMODS_FAKE_RUNNING=0) unless `env` says otherwise, whether or not the real one is running on this machine;
+// its temp folder (the inbox a dropped mod waits in) is the test's, not the one a studio of the player's would
+// share.
+export async function startStudio(folders, env = {}, { root = folders.app, port = 0 } = {}) {
   const own = { ...process.env, WCMODS_DATA: folders.data, WCMODS_FAKE_RUNNING: "0", TEMP: folders.temp, TMP: folders.temp,
     TMPDIR: folders.temp, ...env };
   delete own.WCMODS_GAME_BUILD;   // a build number a developer set to try an update
   if (!env.WCMODS_RELEASES) delete own.WCMODS_RELEASES;
-  const proc = spawn(PYTHON, ["-I", "wcmods.py", "studio", "--no-browser", "--port", "0"],
-    { cwd: REPO, env: own, stdio: ["ignore", "pipe", "pipe"] });
+  const proc = spawn(PYTHON, ["-I", "wcmods.py", "studio", "--no-browser", "--port", String(port)],
+    { cwd: root, env: own, stdio: ["ignore", "pipe", "pipe"] });
   let out = "", err = "";
   proc.stdout.on("data", d => { out += d; });
   proc.stderr.on("data", d => { err += d; });
@@ -48,16 +61,17 @@ export async function startStudio(folders, env = {}) {
 }
 
 // A folder of the player's own, with wcmods.json naming a game folder (empty: not the game yet) and a saves
-// folder, both made up, so the real game folder and the real save are never used, and a temp folder. Steam
-// is still read (its registry key and library list, read only): once the made-up folder holds the game,
-// Get set up and the Mods page say whether Steam starts another copy, and nothing here depends on the answer.
+// folder, both made up, so the real game folder and the real save are never used, a temp folder, and a copy
+// of wcmods to run the studio from (app). Steam is still read (its registry key and library list, read
+// only): once the made-up folder holds the game, Get set up and the Mods page say whether Steam starts
+// another copy, and nothing here depends on the answer.
 export function dataFolder() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "wc-e2e-"));
   const game = path.join(root, "Game"), saves = path.join(root, "Saves"), data = path.join(root, "data");
   const temp = path.join(root, "temp");
   for (const d of [game, saves, data, temp]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(data, "wcmods.json"), JSON.stringify({ game_dir: game, save_dir: saves }));
-  return { root, game, saves, data, temp };
+  return { root, game, saves, data, temp, app: appCopy() };
 }
 
 export function makeGame(game) {
@@ -96,9 +110,15 @@ export function makeMod(data, id, meta = {}) {
   return folder;
 }
 
-// The test's folders gone, once the studio has let go of them.
-export async function removeFolder(root) {
+// A folder gone, once the studio has let go of it.
+export async function removeFolder(folder) {
   for (let i = 0; i < 5; i++) {
-    try { fs.rmSync(root, { recursive: true, force: true }); return; } catch (e) { await sleep(300); }
+    try { fs.rmSync(folder, { recursive: true, force: true }); return; } catch (e) { await sleep(300); }
   }
+}
+
+// The test's folders (dataFolder's) and its copy of wcmods, gone.
+export async function removeFolders(folders) {
+  await removeFolder(folders.root);
+  await removeFolder(folders.app);
 }
