@@ -1836,7 +1836,8 @@ def _update_safety(cfg):
     fields = {f"{c.rsplit('.', 1)[-1]}.{n}": f for c, rep in res["classes"].items() for n, f in rep["fields"].items()}
     if fields["SwtQuestResourceComponent.WCM_Max"]["status"] != "unsure":
         problems.append("one site moved Max")
-    if fields["SwtQuestResourceComponent.WCM_Value"]["status"] != "same":
+    # Found by its signatures: where it was, or (after a real update that moved it) where it went.
+    if fields["SwtQuestResourceComponent.WCM_Value"]["status"] not in ("same", "moved"):
         problems.append("Value not found")
     if fields["SwtQuestResourceComponent.WCM_ResourceType"]["now"] is not None:
         problems.append("ResourceType kept beside a member that may have moved")
@@ -1844,8 +1845,10 @@ def _update_safety(cfg):
             and f["now"] is not None]
     if kept:
         problems.append("kept with no evidence: " + ", ".join(kept))
-    # The level component's own signatures find it on an exe they weren't made on (it had none before).
-    unsigned = [k for k, f in fields.items() if k.startswith("SwtAdventureLevelComponent") and f["status"] != "same"]
+    # The level component's own signatures find it on an exe they weren't made on (it had none before):
+    # "same" on the build they were made on, "moved" on one where an update moved it.
+    unsigned = [k for k, f in fields.items() if k.startswith("SwtAdventureLevelComponent")
+                and f["status"] not in ("same", "moved")]
     if unsigned:
         problems.append("the level component not found by its signatures: " + ", ".join(unsigned))
     if res["same"]:

@@ -135,6 +135,8 @@ class Image:
         if unwind & 1:
             return struct.unpack("<I", self.read(unwind & ~1, 4))[0]
         head = self.read(unwind, 4)
+        if len(head) < 4:   # in a section's zero-filled tail, which the file doesn't hold: no unwind info
+            return None
         if not (head[0] >> 3) & UNW_FLAG_CHAININFO:
             return None
         codes = head[2] + (head[2] & 1)                 # unwind codes are 2 bytes, padded to an even count

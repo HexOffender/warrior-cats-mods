@@ -3,6 +3,10 @@
   registers in stages: pe.Image.function_at answers the whole function, not its first 10 bytes;
 - which accesses can be a member's: none through a stack address or a global's pointer, none wider than
   the member (a vtable slot at the same offset);
+- sites are made, and votes counted, by separate instructions: overlapping sites that capture the same
+  instruction are one piece of evidence;
+- check()'s votes: two instructions agreeing move a member, one alone is unsure, disagreeing ones, an
+  offset outside the class and two members on one offset are conflicts;
 - the level component's signatures as committed: code laid out the way their patterns say finds all eight
   members where they were on an exe they weren't made on, and follows them when the update moves them;
 - make() refuses a class it found no signature for, instead of shipping one a game update switches off.
@@ -22,20 +26,22 @@ TEXT = 0x1000
 
 # ---------- a PE built by hand ----------
 def build_pe(sections, dirs):
-    """A PE32+ file: sections [(name, rva, data)], data directories {index: (rva, size)}."""
+    """A PE32+ file: sections [(name, rva, data)] or [(name, rva, data, virtual size)] (a bigger virtual
+    size is a zero-filled tail the file doesn't hold), data directories {index: (rva, size)}."""
     nsec, optsize = len(sections), 240
     raw = 0x400
     headers, body = [], b""
-    for name, rva, data in sections:
+    for name, rva, data, *vsize in sections:
         size = -(-len(data) // 0x200) * 0x200
-        headers.append(struct.pack("<8sIIII12xI", name.encode(), len(data), rva, size, raw, 0x60000020))
+        headers.append(struct.pack("<8sIIII12xI", name.encode(), vsize[0] if vsize else len(data), rva, size, raw,
+                                   0x60000020))
         body += data + b"\0" * (size - len(data))
         raw += size
     opt = bytearray(optsize)
     struct.pack_into("<H", opt, 0, 0x20B)
     struct.pack_into("<Q", opt, 24, 0x140000000)
     struct.pack_into("<II", opt, 32, 0x1000, 0x200)
-    struct.pack_into("<I", opt, 56, max(rva for _, rva, _ in sections) + 0x1000)
+    struct.pack_into("<I", opt, 56, max(s[1] + max([len(s[2]), *s[3:]]) for s in sections) + 0x1000)
     struct.pack_into("<I", opt, 108, 16)
     for i, (rva, size) in dirs.items():
         struct.pack_into("<II", opt, 112 + 8 * i, rva, size)
@@ -91,6 +97,23 @@ def test_chained_unwind_entries_make_one_function(tmp_path):
     assert img.function_at(0x1035) is None
 
 
+def test_unwind_info_in_a_sections_empty_tail_is_a_first_part(tmp_path):
+    """An unwind RVA in the part of a section the file doesn't hold (its virtual size past its data) reads
+    short: that entry is a function of its own, and the others are still joined (it used to raise
+    IndexError, which switched every value off)."""
+    rdata, tail, pdata = 0x2000, 0x3000, 0x5000
+    infos = unwind() + unwind(0, (0x1000, 0x1010, rdata))
+    entries = [(0x1000, 0x1010, rdata), (0x1010, 0x1020, rdata + 4), (0x1030, 0x1038, tail + 0x800)]
+    table = b"".join(struct.pack("<III", *e) for e in entries)
+    path = tmp_path / "game.exe"
+    path.write_bytes(build_pe([(".text", 0x1000, b"\xCC" * 0x100), (".rdata", rdata, infos),
+                               (".bss", tail, b"\0" * 16, 0x1000), (".pdata", pdata, table)],
+                              {3: (pdata, len(table))}))
+    img = pe.Image(str(path))
+    assert img.read(tail + 0x800, 4) == b""
+    assert img.whole_functions() == [(0x1000, 0x1020), (0x1030, 0x1038)]
+
+
 # ---------- which accesses can be a member's ----------
 def finder_for(code):
     """What _foreign and _access read of a Finder, over `code` at RVA TEXT, and its instructions."""
@@ -135,17 +158,118 @@ def test_an_access_wider_than_the_member_is_not_it():
         [False, False, True, True, True, True, False]
 
 
+# ---------- sites, by separate instructions ----------
+def test_sites_count_separate_instructions():
+    """A site around two neighbouring accesses captures both; the second gets no site of its own (it would
+    capture the same two again: one piece of evidence counted twice), and the member's next site goes to
+    an instruction no site has yet. Counted by captures, the two overlapping sites made three, and C was
+    never signed."""
+    code = bytes.fromhex(
+        "B8 01 00 00 00"            # mov eax, 1
+        "B9 07 00 00 00"            # mov ecx, 7
+        "8B 83 00 01 00 00"         # mov eax, [rbx+0x100]   A (at +10)
+        "8B 93 00 01 00 00"         # mov edx, [rbx+0x100]   B
+        "90"                        # nop
+        "B8 02 00 00 00"            # mov eax, 2             (at +23)
+        "8B BB 00 01 00 00"         # mov edi, [rbx+0x100]   C
+        "B8 03 00 00 00"            # mov eax, 3
+        "C3")
+    finder, _ = finder_for(code)
+    finder.relocs = set()
+    finder.insns = lambda begin, end: [(TEXT + p, ins) for p, ins in x64.instructions(code, begin - TEXT, end - TEXT)]
+    sites = signatures._sites(finder, [(TEXT, TEXT + len(code))], {0x100: 4})
+    assert [(s["at"], s["captures"]) for s in sites] == [
+        (f"0x{TEXT:X}", {"12": 0x100, "18": 0x100}), (f"0x{TEXT + 23:X}", {"7": 0x100})]
+    assert signatures.instructions({"sites": sites}) == {0x100: 3}
+
+
+# ---------- check()'s votes ----------
+THING = "/Script/Test.Thing"   # a made-up class: A at +0x100, B at +0x104, 0x120 bytes
+
+
+def thing(sites, size=0x120):
+    """Signatures for THING with these sites, made on another exe than check_on's."""
+    return {"made_on": {"text_sha1": "the build they were made on"}, "classes": {THING: {
+        "fields": {"A": 0x100, "B": 0x104}, "size": size, "parent": None, "anchors": [], "sites": sites}}}
+
+
+def reads(*sites):
+    """Code with one `mov eax,[rbx+disp]` per site, each after its own `mov eax,<tag>`, and the sites that
+    find them: [(tag, the offset it was, what the code says now)]."""
+    code, out = bytearray(b"\xCC" * 16), []
+    for tag, was, now in sites:
+        code += bytes([0xB8, tag, 0, 0, 0, 0x8B, 0x83]) + struct.pack("<i", now) + b"\xC3" + b"\xCC" * 16
+        out.append({"pattern": f"B8 {tag:02X} 00 00 00 8B 83 ?? ?? ?? ?? C3", "captures": {"7": was}})
+    return bytes(code), out
+
+
+def statuses(res):
+    return {n: (f["status"], f["now"], f["votes"]) for n, f in res["classes"][THING]["fields"].items()}
+
+
+def test_two_instructions_agreeing_move_a_member(monkeypatch):
+    code, sites = reads((1, 0x100, 0x108), (2, 0x100, 0x108), (3, 0x104, 0x104))
+    assert statuses(check_on(monkeypatch, code, thing(sites), 0x120)) == {
+        "A": ("moved", 0x108, 2), "B": ("same", 0x104, 1)}
+
+
+def test_one_instruction_alone_is_unsure(monkeypatch):
+    code, sites = reads((1, 0x100, 0x108), (3, 0x104, 0x104))
+    res = check_on(monkeypatch, code, thing(sites), 0x120)
+    assert statuses(res) == {"A": ("unsure", None, 1), "B": ("same", 0x104, 1)}
+    assert res["offsets"][f"{THING}:A"] is None and not res["same"]
+
+
+def test_overlapping_sites_on_one_instruction_are_one_vote(monkeypatch):
+    """Two patterns that both hold the same `mov eax,[rbx+disp]` (one reaching back to the mov before it,
+    one forward to the mov after it) are one instruction's word: not enough to follow a move."""
+    code = b"\xCC" * 16 + bytes.fromhex("B8 01 00 00 00 8B 83") + struct.pack("<i", 0x108) + \
+        bytes.fromhex("B8 02 00 00 00 C3") + b"\xCC" * 16
+    sites = [{"pattern": "B8 01 00 00 00 8B 83 ?? ?? ?? ??", "captures": {"7": 0x100}},
+             {"pattern": "8B 83 ?? ?? ?? ?? B8 02 00 00 00", "captures": {"2": 0x100}}]
+    res = check_on(monkeypatch, code, thing(sites), 0x120)
+    assert res["classes"][THING]["fields"]["A"] == {"was": 0x100, "now": None, "votes": 1, "status": "unsure"}
+
+
+def test_instructions_disagreeing_conflict(monkeypatch):
+    code, sites = reads((1, 0x100, 0x108), (2, 0x100, 0x10C), (3, 0x104, 0x104))
+    assert statuses(check_on(monkeypatch, code, thing(sites), 0x120))["A"] == ("conflict", None, 2)
+
+
+def test_an_offset_outside_the_class_conflicts(monkeypatch):
+    code, sites = reads((1, 0x100, 0x200), (2, 0x100, 0x200), (3, 0x104, 0x106), (4, 0x104, 0x106))
+    assert statuses(check_on(monkeypatch, code, thing(sites), 0x120)) == {
+        "A": ("conflict", None, 2),    # past the class's end
+        "B": ("conflict", None, 2)}    # not on a 4-byte boundary
+
+
+def test_two_members_on_one_offset_conflict(monkeypatch):
+    code, sites = reads((1, 0x100, 0x104), (2, 0x100, 0x104), (3, 0x104, 0x104))
+    assert statuses(check_on(monkeypatch, code, thing(sites), 0x120)) == {
+        "A": ("conflict", None, 2), "B": ("conflict", None, 1)}
+
+
 # ---------- the level component's signatures, as committed ----------
 def code_for(entry, shift=0):
-    """Code laid out as a class's site patterns say, one after another between int3s: wildcards zero, and
-    each capture holding the member's offset (moved by `shift`)."""
-    out = bytearray(b"\xCC" * 16)
-    for site in entry["sites"]:
-        part = bytearray(0 if b is None else b for b in signatures._unhex(site["pattern"]))
-        for at, was in site["captures"].items():
-            struct.pack_into("<i", part, int(at), was + shift)
-        out += part + b"\xCC" * 16
-    return bytes(out)
+    """Code laid out as a class's site patterns say, each where it was on the build they were made on
+    ("at"), so sites that overlapped there overlap here and capture the same instruction; the code between
+    them is cut to int3s. Wildcards are zero, and each capture holds the member's offset (moved by
+    `shift`)."""
+    out, origin, end = bytearray(b"\xCC" * 16), 0, None
+    for site in sorted(entry["sites"], key=lambda s: int(s["at"], 16)):
+        at, part = int(site["at"], 16), signatures._unhex(site["pattern"])
+        if end is None or at > end:          # apart from the last one: after int3s
+            out += b"\xCC" * 16
+            origin = len(out) - at
+        p = origin + at
+        out += b"\0" * max(0, p + len(part) - len(out))
+        for j, b in enumerate(part):
+            if b is not None:
+                out[p + j] = b
+        for k, was in site["captures"].items():
+            struct.pack_into("<i", out, p + int(k), was + shift)
+        end = max(end or 0, at + len(part))
+    return bytes(out + b"\xCC" * 16)
 
 
 def check_on(monkeypatch, code, sigs, size):
@@ -188,14 +312,20 @@ def level_only():
 
 def test_the_level_component_has_signatures_for_every_member():
     entry = signatures.load()["classes"][LEVEL]
-    votes = {}
-    for site in entry["sites"]:
-        for was in site["captures"].values():
-            votes[was] = votes.get(was, 0) + 1
-    # Every member, and twice at least: a move is followed on the word of two sites.
+    votes = signatures.instructions(entry)
+    # Every member, in two separate instructions at least: a move is followed on the word of two (sites
+    # that overlap and capture the same instruction count it once).
     assert {n: votes.get(o, 0) >= signatures.MIN_MOVE_VOTES for n, o in entry["fields"].items()} == \
         {n: True for n in entry["fields"]}
     assert entry["anchors"] and all(a["pattern"] for a in entry["anchors"])
+
+
+def test_every_site_says_where_it_was():
+    """Each site's "at" (where its pattern starts on the build it was made on) is in its function, after
+    its start: what instructions() counts separate instructions by."""
+    for cls, entry in signatures.load()["classes"].items():
+        for site in entry["sites"]:
+            assert 0 <= int(site["at"], 16) - int(site["from"], 16) < 20000, (cls, site)
 
 
 def test_the_level_component_is_found_on_another_build(monkeypatch):
@@ -265,7 +395,8 @@ def fake_maker(monkeypatch, unsigned=()):
     def sites(finder, search, offsets):
         short = next(c for c, fields in signatures.game.HIDDEN
                      if {o for _, o, _ in fields} == set(offsets)).rsplit(".", 1)[-1]
-        return [] if short in unsigned else [{"from": "0x1000", "pattern": "90", "captures": {"0": min(offsets)}}]
+        return [] if short in unsigned else [{"from": "0x1000", "at": "0x1000", "pattern": "90",
+                                              "captures": {"0": min(offsets)}}]
 
     monkeypatch.setattr(signatures.pe, "Image", Image)
     monkeypatch.setattr(signatures, "Finder", Finder)
