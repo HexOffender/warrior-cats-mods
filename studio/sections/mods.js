@@ -363,9 +363,17 @@ export default {
           ": download it (Code, then Download ZIP) and drop the .zip here to pick the ones you want."));
     }
 
+    // The preview names the mods that go with Clan Mod Studio and offers their Add: their list first, if the
+    // page hasn't got it yet.
+    async function knowAddons() {
+      if (addons.length) return;
+      try { addons = (await api.get("/addons")).addons; } catch (e) { /* named by their ids */ }
+    }
+
     async function look(file) {
       if (!/\.zip$/i.test(file.name)) { toast("That isn't a .zip file. Mods come as .zip files (or folders for the mods folder).", "bad"); return; }
       clear(addBox).append(el("h2", { text: "Add a mod" }), el("p", { class: "muted", role: "status", text: `Looking inside ${file.name}…` }));
+      await knowAddons();
       try {
         const r = await api.upload(`/mods/add?step=preview&name=${encodeURIComponent(file.name)}`, file);
         clear(addBox);
@@ -383,6 +391,7 @@ export default {
       let r;
       try { r = await api.get("/mods/inbox"); } catch (e) { toast(e.message, "bad"); return; }
       if (!r.mods.length) return;
+      await knowAddons();
       inboxShown = true;
       clear(addBox);
       renderPreview(r, r.name,

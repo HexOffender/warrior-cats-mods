@@ -96,7 +96,7 @@ test("Get set up: five steps, Add all four says what has no release yet, Allow n
   assert.equal(await p.count('[data-key="addon:emote-wheel"] button'), 0, "nothing to press until a release exists");
   assert.ok(fs.existsSync(path.join(freshFolders.data, "mods", "sandbox", "mod.json")) && !fs.existsSync(path.join(freshFolders.data, "mods", "sandbox-story")));
   assert.equal(config(freshFolders).setup_addons, "added");
-  assert.deepEqual((await stepTitles(p)).slice(-1), ["The mods that go with Clan Mod Studio"]);
+  await p.waitFor(() => [...document.querySelectorAll(".setup .step.done strong")].some(s => s.textContent.endsWith("The mods that go with Clan Mod Studio")));
 
   // Allow asks once, naming the mods in your folder that run code, then patches the setting.
   await p.click({ text: "Allow" });

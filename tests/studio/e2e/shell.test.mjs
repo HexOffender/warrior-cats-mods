@@ -98,7 +98,8 @@ test("a mod made from a Make page's Editing-mod bar shows on the Mods page", { s
   await page.type('input[aria-label="New mod folder name"]', "e2e-mod");
   await page.click({ text: "Create" });
   await page.waitFor(() => [...document.querySelectorAll(".target select option")].some(o => o.value === "e2e-mod"));
-  assert.equal(await page.evaluate(() => document.querySelector(".target select").value), "e2e-mod");
+  // The option shows as soon as the list is read again; the bar moves to it once the new mod is opened.
+  await page.waitFor(() => document.querySelector(".target select").value === "e2e-mod");
   await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes("Created mod e2e-mod")));
   assert.ok(fs.existsSync(path.join(folders.data, "mods", "e2e-mod", "mod.json")), "the mod's folder is there");
   await page.goto(studio.url + "#mods");
