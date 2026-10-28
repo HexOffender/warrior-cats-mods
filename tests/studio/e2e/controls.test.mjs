@@ -115,6 +115,8 @@ test("a key that's already a second key isn't taken for another: the dialog says
   await page.click('button[aria-label="Add another key for Interact"]');
   await page.press("h");
   await page.waitFor(() => !document.querySelector(".capture"));
+  // The build's line under it first: drawn in, it moves the rows below.
+  await page.waitFor(() => /H does what E does while you explore/.test(document.querySelector('tr[data-key="row:Player_Interact"]').textContent));
   await page.click('button[aria-label="Add another key for Drop"]');
   await page.press("h");
   await page.waitFor(() => { const w = document.querySelector(".capture [role=alert]"); return w && !w.hidden; });
@@ -206,8 +208,10 @@ test("the sticks have no Change button, the moving keys say they need the launch
   await page.click({ text: "Save to mod" });
   await page.waitFor(() => !document.querySelector(".target .dirty").textContent);
   assert.deepEqual(file(), { menus: { keys: { U: "Enter" } } });
-  // Backspace as a second Confirm: the Back row says Backspace no longer goes back.
-  await page.click('button[aria-label="Add another key for Confirm in menus"]');
+  // Backspace as a second Confirm: the Back row says Backspace no longer goes back. Pressed from the page's
+  // script: right after a save the page may still move under a mouse click (the build's answer drawn again).
+  await page.evaluate(() => document.querySelector('button[aria-label="Add another key for Confirm in menus"]').click());
+  await page.waitFor(".capture");
   await page.click('button[aria-label="Use Backspace"]');
   await page.waitFor(() => /Backspace no longer goes back in menus: in menus it does what Enter does now\. Give Back another key\./.test(
     document.querySelector('tr[data-key="menu:BackSpace"]').textContent));
