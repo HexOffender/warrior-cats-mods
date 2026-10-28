@@ -13,6 +13,9 @@ FRAME = re.compile(r"^(?P<module>[^!\s]+)!(?P<function>.*?)(?: \[(?P<file>[^\]]+
 
 
 def crashes_dir():
+    """Where the game leaves its crash reports; WCMODS_CRASHES stands in for it (the tests' own folder)."""
+    if os.environ.get("WCMODS_CRASHES"):
+        return os.environ["WCMODS_CRASHES"]
     base = os.environ.get("LOCALAPPDATA") or ""
     return os.path.join(base, "Wrc", "Saved", "Crashes")
 
@@ -80,11 +83,56 @@ def blame(crash, mods, sdk_dir):
     return None
 
 
+UNREADABLE = "the crash report couldn't be read"
+
+
+def read(path):
+    """A crash file's crash (parse), its text decoded by its byte-order mark: UTF-16 (as Unreal often writes
+    it), UTF-8, else the Windows code page. ValueError (UNREADABLE) when it isn't a crash context at all."""
+    with open(path, "rb") as f:
+        raw = f.read()
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        text = raw.decode("utf-16", errors="replace")
+    elif raw.startswith(b"\xef\xbb\xbf"):
+        text = raw.decode("utf-8-sig", errors="replace")
+    else:
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("cp1252", errors="replace")
+    try:
+        return parse(text)
+    except ET.ParseError:
+        raise ValueError(UNREADABLE) from None
+
+
+def summary(path, mods, sdk_dir):
+    """A crash for the studio's card: {"when" (ISO time), "message", "mod" (the C++ mod it was in, or None),
+    "mod_name", "where" (a sentence on where in it, or None), "readout" (readout()'s lines, to copy), "path"}."""
+    import datetime
+    when = datetime.datetime.fromtimestamp(os.path.getmtime(path)).isoformat(timespec="minutes")
+    try:
+        crash = read(path)
+    except ValueError as e:
+        return {"when": when, "message": str(e), "mod": None, "mod_name": None, "where": None, "readout": f"{e}\n  {path}",
+                "path": path}
+    who = blame(crash, mods, sdk_dir)
+    names = {m.id: m.name for m in mods}
+    mod = who["mod"] if who and who["mod"] else None
+    where = (f"{who['file']}:{who['line']}, {who['function']}" if who and who["mod"]
+             else "wcmods' C++ SDK, called by a C++ mod" if who else None)
+    return {"when": when, "message": crash["error"] or crash["type"] or "no message", "mod": mod,
+            "mod_name": names.get(mod, mod) if mod else None, "where": where, "readout": readout(path, mods, sdk_dir),
+            "path": path}
+
+
 def readout(path, mods, sdk_dir):
     """A few lines about a crash file: when, what, and which C++ mod, for people."""
     import datetime
-    with open(path, encoding="utf-8", errors="replace") as f:
-        crash = parse(f.read())
+    try:
+        crash = read(path)
+    except ValueError as e:
+        return f"{e}\n  {path}"
     when = datetime.datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M:%S")
     lines = [f"the game crashed at {when}: {crash['error'] or crash['type'] or 'no message'}"]
     who = blame(crash, mods, sdk_dir)

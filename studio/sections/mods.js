@@ -21,6 +21,7 @@ export default {
     let mods = [], filter = "all", search = "", settings = null, addons = [];
     const open = new Set();   // mod cards with "More" open
 
+    const crashBox = el("div");
     const setupBox = el("div");
     const changesBox = el("div");
     const addonsBox = el("div", { class: "card addons", "data-key": "addons" });
@@ -31,7 +32,22 @@ export default {
     root.append(
       wc.pageHead({ eyebrow: "Your mods", title: "Mods", help: "help:mods",
         lede: "Add mods you've downloaded, switch them on or off, then press Play (top right)." }),
-      setupBox, changesBox, addonsBox, addBox, updateBox, listBox);
+      crashBox, setupBox, changesBox, addonsBox, addBox, updateBox, listBox);
+
+    // The game's last crash since the last Apply (GET /crash), shown here until it's closed; Settings and repair
+    // shows it for as long as it's the last one. Closing it is remembered in this browser only.
+    async function renderCrash() {
+      let c = null;
+      try { c = (await api.get("/crash")).crash; } catch (e) { /* no card */ }
+      clear(crashBox);
+      if (!c) return;
+      const key = `wc-crash-seen:${c.path}:${c.when}`;
+      try { if (localStorage.getItem(key)) return; } catch (e) { /* storage blocked: shown */ }
+      crashBox.append(wc.crashCard(c, { dismiss: () => {
+        try { localStorage.setItem(key, "1"); } catch (e) { /* storage blocked */ }
+        clear(crashBox);
+      } }));
+    }
 
     // ---------- after a game update (wcmods/exe/gamebuild.py) ----------
     let update = null;   // what wcmods found the update changed, once asked (it takes a while the first time)
@@ -709,6 +725,7 @@ export default {
     }
 
     renderAdd();
+    renderCrash();
     const off = [
       bus.on("installed", () => renderChanges()),
       bus.on("mods-changed", d => { if (!d || d.from !== "mods") refresh({ notify: false }); }),

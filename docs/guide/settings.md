@@ -7,7 +7,7 @@
   next time the game starts.
 - **Backups and repair**: copies of your save, put back when you need them; mods you removed, put back; a
   check of your mods; and taking every mod out of the game.
-- **Make your own mod**: an empty mod to start from.
+- **Make your own mod**: an empty mod to start from, from its **Name** alone (its folder is shown under the box).
 
 How it gets there: the options are kept in your settings file and written into the mod menu and the script
 loader when you apply. A backup is a copy of the game's save folder, kept in your files' folder.
@@ -25,10 +25,14 @@ You can:
 
 - Allow mods that run code (**Allow mods that run code**), after a warning that names your mods that do.
   Get set up asks the same thing once, on the Mods page.
+- See what crashed the game: when it crashed since your last Apply, **The game crashed last time** sits at the
+  top of Backups and repair, with what the game said, the mod it was in when a C++ mod was on its stack,
+  **Copy the report** (for whoever helps you) and **Turn <mod> off**.
 - Choose the mod menu's key, the controller button that opens it too, and its size.
 - Switch the game's console on, and say whether Menu pages starts with cheats on.
-- Back up your save at any time, and put any backup back (**Restore**). Restoring makes a copy of the save
-  you have first.
+- Back up your save at any time, and put any backup back (**Restore**). Each backup is named in words: when,
+  and why ("backed up by you", "before Apply (save edits)", "First safety copy"). Restoring makes a copy of the
+  save you have first, and says which.
 - Bring back a mod you removed, or the older copy of one you replaced (**Put it back**).
 - Check every mod without putting anything in the game (**Check my mods**).
 - Take every mod out of the game (**Take all mods out of the game**). Your mods stay in your mods folder.
@@ -36,7 +40,8 @@ You can:
 You can't:
 
 - Restore a save while the game is running: close it first.
-- Back up a save that isn't there yet: start the game once and get into the forest.
+- Back up a save that isn't there yet: **Back up now** waits until you've started the game once and got into
+  the forest.
 - Use the game's console without the script loader and its console mod.
 
 ## Did it reach the game?

@@ -277,6 +277,26 @@ class Studio:
             pass
 
     # ---------- API ----------
+    def new_id(self, name):
+        """A mod folder name for a mod called `name`, not taken yet: "Moonlit Path" -> moonlit-path (-2, -3...)."""
+        base = modzip.safe_id(name or "my-mod")
+        taken = {m.id for m in self.mods()} | set(os.listdir(self.ctx.mods_root) if os.path.isdir(self.ctx.mods_root) else [])
+        mod_id, n = base, 2
+        while mod_id in taken:
+            mod_id, n = f"{base}-{n}", n + 1
+        return mod_id
+
+    def last_crash(self):
+        """GET /crash: the game's newest crash report from after the last Apply (crashes.summary), or None."""
+        from . import cppmods, crashes
+        built = (self.ctx.cfg.data.get("installed") or {}).get("built")
+        try:
+            after = datetime.datetime.fromisoformat(built).timestamp() if built else None
+        except (TypeError, ValueError):
+            after = None
+        path = crashes.latest(after=after)
+        return {"crash": crashes.summary(path, self.mods(), cppmods.SDK_DIR) if path else None}
+
     # ---- the mods that go with Clan Mod Studio (wcmods/addons.py) ----
     def ask_releases(self):
         """What GitHub has of each add-on, asked at most once an hour (self.releases)."""
@@ -636,9 +656,14 @@ class Studio:
                         cfg.data["skip_code"] = True
                     cfg.save()
             return {"allow_code_mods": bool(cfg.data.get("allow_code_mods")), "data_dir": cfg.data_dir}
+        if parts == ["mods", "new-id"] and method == "GET":
+            # The folder a new mod with this name would get (Make your own mod shows it under the Name box).
+            return {"id": self.new_id((query or {}).get("name", ""))}
         if parts == ["mods"] and method == "POST":
             fields = {k: field(body, k, *MOD_FIELDS[k]) for k in MOD_FIELDS if body.get(k) is not None}
-            m = mods.create(self.ctx.mods_root, field(body, "id"), fields.get("name"), fields.get("description", ""),
+            # A name alone is enough: the folder's made from it (new_id), as Make your own mod shows.
+            mod_id = field(body, "id") if "id" in body or not fields.get("name") else self.new_id(fields["name"])
+            m = mods.create(self.ctx.mods_root, mod_id, fields.get("name"), fields.get("description", ""),
                             enabled=fields.get("enabled", False), priority=fields.get("priority", 0),
                             game_build=self.build())
             return m.to_dict()
@@ -699,20 +724,29 @@ class Studio:
         if parts == ["uninstall"] and method == "POST":
             return self.run(lambda log: {"removed": pipeline.uninstall(cfg, log)}, "Take mods out", keep=True)
         if parts == ["backups"]:
-            return save.list_backups(self.ctx.backups)[::-1]
+            # Newest first, each with its name in words ("Today 15:30, backed up by you").
+            return [{"name": n, "label": save.backup_label(n)} for n in save.list_backups(self.ctx.backups)[::-1]]
         if parts == ["backup"] and method == "POST":
-            # Never an empty backup: it would count as the save being backed up (Get set up, and the first
-            # safety copy, which only happens while there's none).
-            if not os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)):
-                raise ValueError("there's no save to back up yet; start the game once, and get into the forest")
-            where, files = save.backup(cfg.save_dir, self.ctx.backups, "studio")
-            return {"name": os.path.basename(where), "files": files}
+            # Never an empty backup (save.backup refuses without a save): it would count as the save being
+            # backed up (Get set up, and the first safety copy, which only happens while there's none).
+            with self.lock:   # not while an install writes the save
+                where, files = save.backup(cfg.save_dir, self.ctx.backups, "studio")
+            return {"name": os.path.basename(where), "label": save.backup_label(os.path.basename(where)), "files": files}
         if parts == ["restore"] and method == "POST":
             if game_running():
                 raise RuntimeError("close the game before restoring a save")
             name = field(body, "name")
-            save.backup(cfg.save_dir, self.ctx.backups, "before-restore")
-            return {"restored": save.restore(self.ctx.backups, name, cfg.save_dir)}
+            with self.lock:
+                if name not in save.list_backups(self.ctx.backups):   # only a backup: nothing else is put back
+                    raise LookupError(f"there's no backup called {name}")
+                before = None
+                if save.has_save(cfg.save_dir):   # the save you have, kept first
+                    before = os.path.basename(save.backup(cfg.save_dir, self.ctx.backups, "before-restore")[0])
+                restored = save.restore(self.ctx.backups, name, cfg.save_dir)
+            return {"restored": restored, "before": before, "before_label": save.backup_label(before) if before else None}
+        if parts == ["crash"] and method == "GET":
+            # The game's last crash since the last Apply, and which C++ mod it was in when one is on its stack.
+            return self.last_crash()
         if parts == ["game", "eyes"]:
             return self.eyes()
         if parts == ["game", "tables"]:

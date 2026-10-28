@@ -1454,12 +1454,15 @@ with `problems`, what would keep the file out of the game, from the build sectio
 `POST /build`, `/install`, `/uninstall`, `/palettes/apply` (a build that some mods didn't make it
 through answers 409 with `blocked`, the facts behind Apply the rest anyway), `GET /progress` (what the
 task under way has logged so far), `GET /last-apply` (`last-apply.log`), `POST /restart`,
-`GET /help/<page>` (a page of the guide, rendered), `GET /backups`, `POST /backup`,
-`/restore`, `GET|PATCH /ingame` (the game console, cheats at start, the mod menu's key and size),
+`GET /help/<page>` (a page of the guide, rendered), `GET /backups` (newest first, each `{name, label}`, the label in
+words), `POST /backup` (refused without a save), `/restore` `{name}` (only a listed backup; it answers with the
+`before` backup it made of the save you had), `GET|PATCH /ingame` (the game console, cheats at start, the mod menu's key and size),
 `GET /game/bridge` (whether the game runs with the bridge), `POST /game/lua` `{code}` and
 `/game/inspect` `{expr}` (run Lua in the game, or describe an object; code mods only),
 `GET /names`, `POST /names/preview`, `GET /cat`, `GET /game/eyes`, `/game/tables`,
-`/game/bindings`, `/game/data`, `/game/data/<table>`, `/save`, and for getting set up and the mods that
+`/game/bindings`, `/game/data`, `/game/data/<table>`, `/save`, `GET /crash` (the game's newest crash report
+since the last Apply: when, its message, the C++ mod it was in, and the readout to copy), `GET /mods/new-id?name=`
+(the folder a new mod called that would get; `POST /mods` takes a name alone), and for getting set up and the mods that
 go with Clan Mod Studio: `GET /setup` (each step's state, `code` and `addons` among them),
 `POST /setup/game` `{dir}`, `/setup/backup`, `/setup/loader`, `/setup/code` `{skip: true}`,
 `/setup/addons` `{choice: "added" | "not now"}`, `GET /addons` (each one's state; `?latest=1` also asks

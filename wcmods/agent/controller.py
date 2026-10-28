@@ -317,7 +317,8 @@ class Agent:
         if window.game_pid():
             raise AgentError("the game is running; agent.quit() first")
         backups = self.cfg.backups_dir
-        save.backup(self.cfg.save_dir, backups, "before-restore")
+        if save.has_save(self.cfg.save_dir):
+            save.backup(self.cfg.save_dir, backups, "before-restore")
         return save.restore(backups, name, self.cfg.save_dir)
 
     # ---------- Lua ----------

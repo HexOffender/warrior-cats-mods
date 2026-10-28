@@ -536,7 +536,8 @@ def cmd_restore(ctx, args):
         print("\nrun `wcmods restore <name>` (or `latest`) to restore one")
         return
     name = names[-1] if args.name == "latest" else args.name
-    save.backup(ctx.cfg.save_dir, ctx.backups, "before-restore")
+    if save.has_save(ctx.cfg.save_dir):
+        save.backup(ctx.cfg.save_dir, ctx.backups, "before-restore")
     restored = save.restore(ctx.backups, name, ctx.cfg.save_dir)
     print(f"restored {', '.join(restored)} from {name}")
 

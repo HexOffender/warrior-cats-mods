@@ -124,7 +124,23 @@ def write_save(save_dir, save):
         f.write(save.json_text)
 
 
+NO_SAVE = "there's no save to back up yet; start the game once, and get into the forest"
+# What each reason a backup is made for says to a player (backup_label).
+BACKUP_REASONS = {"first-run": "first safety copy", "studio": "backed up by you", "manual": "backed up by you",
+                  "before-restore": "the save you had before a restore", "before-save-edits": "before Apply (save edits)",
+                  "agent": "before a test"}
+
+
+def has_save(save_dir):
+    return os.path.isfile(os.path.join(save_dir, SAV_NAME))
+
+
 def backup(save_dir, backups_root, reason="manual"):
+    """Copy the save folder's files to backups/<date>-<time>-<reason>. Returns (that folder, the files).
+    Refused (ValueError, NO_SAVE) while there's no save, so no caller leaves an empty backup that would count
+    as one."""
+    if not has_save(save_dir):
+        raise ValueError(NO_SAVE)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     dest = os.path.join(backups_root, f"{stamp}-{reason}")
     n = 2
@@ -150,10 +166,26 @@ def list_backups(backups_root):
                   if re.match(r"^\d{8}-\d{6}-", d) and os.path.isdir(os.path.join(backups_root, d)))
 
 
+def backup_label(name, today=None):
+    """A backup's name in words: "Today 15:30, backed up by you", "First safety copy, 27 Oct 2026 09:12"."""
+    m = re.match(r"^(\d{8}-\d{6})-(.+?)(?:-\d+)?$", name)
+    if not m:
+        return name
+    when = datetime.datetime.strptime(m.group(1), "%Y%m%d-%H%M%S")
+    today = today or datetime.date.today()
+    day = ("Today" if when.date() == today else "Yesterday" if when.date() == today - datetime.timedelta(days=1)
+           else f"{when.day} {when.strftime('%b %Y')}")
+    said = f"{day} {when.strftime('%H:%M')}"
+    why = BACKUP_REASONS.get(m.group(2), m.group(2).replace("-", " "))
+    return f"First safety copy, {said}" if m.group(2) == "first-run" else f"{said}, {why}"
+
+
 def restore(backups_root, name, save_dir):
+    """Put a backup's files back in the save folder. Only a backup list_backups() lists: a name that climbs
+    out of the backups folder, or names anything else, is no backup."""
+    if name not in list_backups(backups_root):
+        raise LookupError(f"there's no backup called {name}")
     src = os.path.join(backups_root, name)
-    if not os.path.isdir(src):
-        raise FileNotFoundError(f"no backup named {name}")
     restored = []
     for fn in os.listdir(src):
         shutil.copy2(os.path.join(src, fn), os.path.join(save_dir, fn))

@@ -22,8 +22,9 @@ export const sleep = ms => new Promise(r => setTimeout(r, ms));
 // on this machine; its temp folder (the inbox a dropped mod waits in) is the test's, not the one a studio of
 // the player's would share.
 export async function startStudio(folders, env = {}) {
+  // The game's crash reports are looked for in the test's own folder too (none, unless a test leaves one).
   const own = { ...process.env, WCMODS_DATA: folders.data, WCMODS_FAKE_RUNNING: "0", TEMP: folders.temp, TMP: folders.temp,
-    TMPDIR: folders.temp, ...env };
+    TMPDIR: folders.temp, WCMODS_CRASHES: path.join(folders.root, "Crashes"), ...env };
   // A build number a developer set to try an update, and a folder standing in for GitHub: only a test's own.
   for (const k of ["WCMODS_GAME_BUILD", "WCMODS_RELEASES"]) if (!(k in env)) delete own[k];
   const proc = spawn(PYTHON, ["-I", "wcmods.py", "studio", "--no-browser", "--port", "0"],

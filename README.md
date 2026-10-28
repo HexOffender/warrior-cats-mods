@@ -136,7 +136,13 @@ closes.
   with Clan Mod Studio than yours.
 - **Settings and repair**, the other page under Your mods: the game's console, allowing mods that run
   code, your save backups, removed mods (a removed or replaced mod is kept in `backups/mods/`, and
-  Put it back does that), "Take all mods out of the game", and starting an empty mod of your own.
+  Put it back does that), "Take all mods out of the game", and starting an empty mod of your own from a
+  name. Backups are listed in words ("Today 15:30, backed up by you"); restoring one keeps the save you had
+  as another backup, and the next Apply puts your mods' save changes back (turn those mods off first to keep
+  them out). Take all mods out leaves your mods on here, so Play puts them back: to play without mods, start
+  the game from Steam. When the game crashed since the last Apply, the page says so at the top of Backups and
+  repair (and the Mods page once), with the C++ mod it was in when one was on its stack, Copy the report and
+  Turn it off.
 
 The pages under **Make mods** are for making your own; each edits a file in a mod folder. **Save to
 mod** checks the file the way Apply would and says under the Editing mod bar what would keep it out of

@@ -21,6 +21,7 @@
 //                  naming the mods in the player's folder that do.
 //   addonButton(id)     a button that adds one of the mods that go with Clan Mod Studio (GET /addons lists
 //                  them) from its GitHub release, for a page that needs it (Characters needs Sandbox mode).
+//   crashCard(crash)    the game's last crash (GET /crash), with Copy the report and Turn <mod> off.
 //   bus            events between pages: "mods-changed" (a mod was made, changed, switched or removed),
 //                  "installed" (an Apply, Play or Check finished; the manifest), "sections-changed" (the
 //                  side bar's pages may have changed), "focus" (the window came back).
@@ -315,6 +316,28 @@ export function codeWarning(mods = []) {
     el("span", { text: CODE_WARNING }),
     code.length ? el("span", { text: code.length > 1 ? "These of your mods run code:" : "This one of your mods runs code:" }) : null,
     code.length ? el("ul", { class: "notes" }, ...code.map(m => el("li", { text: `${m.name}${m.author ? `, by ${m.author}` : ""}: ${what(m)}` }))) : null);
+}
+
+// The game's last crash since the last Apply (GET /crash's "crash"), as a card: when, what it said, the mod it
+// was in when a C++ mod's code was on its stack, Copy the report and Turn <mod> off. `dismiss` adds a Close.
+export function crashCard(c, { dismiss = null } = {}) {
+  const when = new Date(c.when).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const off = c.mod ? el("button", { class: "btn small", type: "button", text: `Turn ${c.mod_name || c.mod} off`, onclick: async () => {
+    try {
+      await api.post(`/mods/${encodeURIComponent(c.mod)}/switch`, { on: false, cascade: true });
+      toast(`${c.mod_name || c.mod} is off. Press Play to start the game without it.`);
+      bus.emit("mods-changed", { from: "crash" });
+    } catch (e) { toast(e.message, "bad"); }
+  } }) : null;
+  return el("div", { class: "banner crash", role: "group", "aria-label": "The game crashed last time" },
+    el("strong", { text: "The game crashed last time" }),
+    el("span", { text: `${when}: ${c.message}` }),
+    c.mod ? el("span", { text: `It was in ${c.mod_name || c.mod}${c.where ? ` (${c.where})` : ""}.` })
+      : c.where ? el("span", { text: `It was in ${c.where}.` }) : el("span", { class: "muted", text: "No C++ mod was on the game's stack, so this report doesn't say which mod it was, if any." }),
+    el("div", { class: "row" },
+      el("button", { class: "btn small", type: "button", text: "Copy the report", onclick: () => copy(c.readout) }),
+      off,
+      dismiss ? el("button", { class: "btn ghost small", type: "button", text: "Close", onclick: dismiss }) : null));
 }
 
 // A button that adds one of the mods that go with Clan Mod Studio (wcmods/addons.py) from its latest GitHub
