@@ -72,6 +72,12 @@ FLAG_KEYS = ("combat", "exploring", "fight_only")
 MODELS_SCRIPT = "WCModsModels"            # the in-game script that puts mods' models on the cats wearing them
 SLOT_FIELDS = {"Head": "Head", "Neck": "Neck", "Body": "Body", "Legs": "Paw"}   # tag slot -> the cat's CustomData
 GLASS = "#ffffff"                         # a see-through accessory's colour, unless it says
+# What makes a new accessory look its own: without one of these it would be the look it's "like" again. Said
+# in the Items page's words; docs/SDK.md has the keys for a hand-written file.
+OWN_LOOK = ("texture", "model", "place", "opacity")
+NOTHING_OWN = "it has nothing of its own yet: choose a colour or a picture under Look, or a model"
+ACCESSORY_LIKE = re.compile(r"(Gameplay\.Inventory\.)?Cosmetic\.|(Head|Neck|Body|Legs)\.")
+PICTURE_FILES = (".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tga", ".dds")   # pictures, but not PNGs
 ITEMS_LUA = "WCModsItems"                 # the shared Lua module that tells WCModsGame how mod items look on the ground
 PICKUPS = "Wrc/Content/Gameplay/Blueprints/WorldElements/Pickups/BP_Pickup_"   # the game's pickups, one class each
 # The accessory a model on the ground is a copy of: one LOD, no body-shape morphs, the accessories' usual
@@ -82,6 +88,36 @@ GROUND_PLAIN = (200, 196, 186)            # a model on the ground without a pict
 # metal, and its normal map flat, in place of the copied accessory's.
 GROUND_ARM = (255, 204, 0)
 FLAT_NORMAL = "/Engine/EngineMaterials/FlatNormal.FlatNormal"
+# What using each of the game's herbs does, in a creator's words, by its short id (docs/mechanics/items.md,
+# "What consumables do", one herb a row). The Items page names an effect by these words and the herb that
+# has it ("Heals 50 health (Marigold Petal)"); a herb a game update adds is named the old way until it's here.
+EFFECT_WORDS = {
+    "SmallHealingHerb": "Heals 25 health",
+    "MediumHealingHerb": "Heals 50 health",
+    "BigHealingHerb": "Heals 100 health",
+    "FullHealingHerb": "Heals to full health",
+    "SuperHealingHerb": "Full health, and maybe cures (not checked)",
+    "HealingHerbPouch": "Heals the whole team 50 health",
+    "SmallCatnip": "+25 stamina",
+    "MediumCatnip": "+50 stamina",
+    "BigCatnip": "+100 stamina",
+    "CatnipPouch": "Whole team +50 stamina",
+    "ThistlePouch": "Whole team +50% Strength for the fight",
+    "FishScalePouch": "Whole team +50% Resilience for the fight",
+    "CatThymePouch": "Whole team +50% Instinct for the fight",
+    "FeatherPouch": "Whole team +50% Agility for the fight",
+    "HerbSpicesPouch": "Berserk for the fight",
+    "EyewortPouch": "Cures Blinded",
+    "ChamomilePouch": "Cures Furious",
+    "AntidoteHerbPouch": "Cures Poisoned",
+    "ValerianRootPouch": "Cures Stressed",
+    "PeppermintPouch": "Whole team's Offensive stance stronger for a round",
+    "GingerRootPouch": "Whole team's Defensive stance stronger for a round",
+    "ChestnutPouch": "Whole team's Trick stance stronger for a round",
+    "LavenderPouch": "Whole team's Sneaky stance stronger for a round",
+    "TurmericPouch": "Whole team's Reckless stance stronger for a round",
+    "SagePouch": "+200 XP",
+}
 
 
 class ItemsSection(Section):
@@ -100,6 +136,7 @@ class ItemsSection(Section):
         if not isinstance(recipes, dict) or not all(isinstance(r, dict) for r in recipes.values()):
             raise ValueError('items.json: "recipes" should map game items to materials, e.g. '
                              '{"Cosmetic.Head.MossPatch.1": {"Moss": 3}}')
+        kept = []
         for i, item in enumerate(items):
             what = f"items.json: item {i + 1}"
             unknown = sorted(k for k in item if k not in KEYS and not k.startswith("_"))
@@ -108,8 +145,18 @@ class ItemsSection(Section):
             if not isinstance(item.get("id"), str) or not ID.match(item["id"]):
                 raise ValueError(f"{what}: \"id\" should be letters and digits, starting with a letter (e.g. \"MoonHerb\")")
             for key in ("name", "description"):
-                if not isinstance(item.get(key), str) or not item[key].strip():
-                    raise ValueError(f"{what} ({item['id']}): \"{key}\" is missing")
+                if item.get(key) is not None and not isinstance(item[key], str):
+                    raise ValueError(f"{what} ({item['id']}): \"{key}\" should be text")
+            # One the Items page saved half made: the others still go in, and the save says so.
+            blank = next((key for key in ("name", "description") if not (item.get(key) or "").strip()), None)
+            if blank:
+                if ctx is not None:
+                    ctx.warn(f"{mod.id}: {item['id']}: it has no {blank}, so it's left out of the game")
+                continue
+            if _accessory(item) and item.get("like") and all(item.get(k) is None for k in OWN_LOOK):
+                if ctx is not None:
+                    ctx.warn(f"{mod.id}: {item['id']}: {NOTHING_OWN}, so it's left out of the game")
+                continue
             for key in TEXT_KEYS:
                 if item.get(key) is not None and not isinstance(item[key], str):
                     raise ValueError(f"{what} ({item['id']}): \"{key}\" should be text")
@@ -142,7 +189,8 @@ class ItemsSection(Section):
                     raise ValueError(f"{what} ({item['id']}): \"{key}\" should be true or false")
             if item.get("recipe") is not None and not isinstance(item["recipe"], dict):
                 raise ValueError(f"{what} ({item['id']}): \"recipe\" should map materials to how many")
-        return {"items": items, "recipes": recipes} if items or recipes else None
+            kept.append(item)
+        return {"items": kept, "recipes": recipes} if kept or recipes else None
 
     def build(self, ctx, items):
         game = Game(ctx)
@@ -348,7 +396,8 @@ class Game:
             pickup = self.pickup(item, like)
             tag = f"{TAG_ROOT}{KINDS[kind]}.{item['id']}"
         if tag in self.info or tag in self.use:
-            raise ValueError(f"the game already has {tag}; change it with data.json instead")
+            # Said where the Items page shows it; docs/SDK.md says how to change the game's own (data.json).
+            raise ValueError(f"the game already has an item called {item['id']}: give yours another name")
         if tag in made:
             raise ValueError(f"{made[tag]} adds {tag} too, and comes later, so its item is used")
         base = self.info.get(like, {})
@@ -407,10 +456,10 @@ class Game:
             picture = Picture(spec)
         elif spec is None and (shape is not None or item.get("opacity") is not None):
             picture = None                       # it wears the look it's "like" as it is, in a new shape or see-through
+        elif spec is None:
+            raise ValueError(NOTHING_OWN)
         else:
-            raise ValueError('an accessory needs "texture": its new look, a recolour of its own ({"tint": "#a8c4ff"}) '
-                             "or a PNG in the mod's folder (paint over the game's: python wcmods.py texture "
-                             f"{like[len(TAG_ROOT):]}), or a \"model\" of its own")
+            raise ValueError("its look should be a colour, or a PNG picture in the mod's folder")
         mesh = None
         if shape is not None:
             mesh = self.meshes().get(name)
@@ -497,6 +546,8 @@ class Game:
             return base["Icon"]
         if icon.lower().endswith(".png"):
             return Picture(icon)
+        if os.path.splitext(icon)[1].lower() in PICTURE_FILES or "/" in icon and not icon.startswith("/Game/"):
+            raise ValueError(f"\"icon\": icons are PNG pictures, and {icon} isn't one (save it as .png)")
         if icon.startswith("/Game/"):
             if not self.ctx.game.exists(cooked.game_file(icon)):
                 raise ValueError(f"\"icon\": the game has no texture {icon}")
@@ -677,6 +728,14 @@ class Recolour:
     def read(self, mod, ctx):
         w, h, rgba = texture.load(ctx.game, self.source).image(0)
         return w, h, recolor.apply(rgba, self.spec)
+
+
+def _accessory(item):
+    """Whether an item is an accessory, from its "kind" or the look it's "like", without the game's tables."""
+    if item.get("kind") is not None:
+        return item["kind"] == "accessory"
+    like = item.get("like")
+    return isinstance(like, str) and ACCESSORY_LIKE.match(like) is not None
 
 
 def _current_slot(ctx):

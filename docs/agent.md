@@ -279,7 +279,7 @@ def test_noon(agent):
 - **Clean up:** tests should put back what they change, as the ones here do: health, the clock,
   where your cat stands, a saved travel spot.
 
-The suite here has 42 tests:
+The suite here has 58 tests:
 
 - **The bridge, Lua and pictures:** `test_bridge.py`.
 - **Your cat and moving it:** `test_cat.py`.
@@ -288,6 +288,11 @@ The suite here has 42 tests:
   documents and records what it got; the tests compare that with Lua and have it make changes Lua
   confirms. It needs the mod built and installed first (`cpp build tests/cpp-sdk`, then `agent install
   --with tests/cpp-sdk`); the tests say so and skip otherwise.
+- **The game's own animations:** `test_animations.py`. A test mod (`tests/animations-mod`) plays the
+  game's Yawn as an emote on F7, a claws-out copy of its Stretch on F8, and the sleep loop in the trot's
+  place, all without a file; the tests press the keys and read the anim instance, and measure the head
+  while the cat trots. It needs the mod installed first (`agent install --with tests/animations-mod`);
+  the tests say so and skip otherwise. Not run in the game yet.
 - **The mod menu:** `test_menu.py`. Every page draws without an error (with a picture of each), the
   Stats page matches your cat, the Health slider and Heal work, "Hold this time" holds the clock,
   and a Travel spot can be saved and forgotten. It also checks a jump and Back, the Items, Quests,

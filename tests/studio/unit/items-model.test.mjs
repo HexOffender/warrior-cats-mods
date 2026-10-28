@@ -1,0 +1,126 @@
+// studio/lib/items-model.js: the Items page's pure parts. An item's id, the items.json it saves, tags and
+// kinds, what a new accessory look needs, the Kind switch, and the words for effects, who for and badges.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { install } from "../lib/dom.mjs";
+
+const dom = install();
+const m = await import(dom.studio("lib/items-model.js"));
+
+// A few of the game's items, as /game/items gives them.
+const HERBS = [
+  { tag: "Gameplay.Inventory.Consumable.SmallHealingHerb", short: "SmallHealingHerb", kind: "consumable", name: "Horsetail Stalks",
+    effect: "Gameplay.Effect.Consumable.Health.1", type: "Health", target: "Owner", combat: true, exploring: true, fight_only: false, group: "Health", words: "Heals 25 health" },
+  { tag: "Gameplay.Inventory.Consumable.MediumHealingHerb", short: "MediumHealingHerb", kind: "consumable", name: "Marigold Petal",
+    effect: "Gameplay.Effect.Consumable.Health.2", type: "Health", target: "Owner", combat: true, exploring: true, fight_only: false, group: "Health", words: "Heals 50 health" },
+  { tag: "Gameplay.Inventory.Consumable.HealingHerbPouch", short: "HealingHerbPouch", kind: "consumable", name: "Wintergreen Berries",
+    effect: "Gameplay.Effect.Consumable.Health.2", type: "Health", target: "OwnerTeam", combat: true, exploring: true, fight_only: false, group: "Health", words: "Heals the whole team 50 health" },
+  { tag: "Gameplay.Inventory.Consumable.ThistlePouch", short: "ThistlePouch", kind: "consumable", name: "Juniper Poultice",
+    effect: "Gameplay.Effect.Consumable.Buff.Strength.1", type: "BuffStrength", target: "OwnerTeam", combat: true, exploring: false, fight_only: true, group: "Stats", words: "Whole team +50% Strength for the fight" },
+  { tag: "Gameplay.Inventory.Consumable.NewOne", short: "NewOne", kind: "consumable", name: "Mystery Moss",
+    effect: "Gameplay.Effect.Consumable.Glow.1", type: "Glow", target: "Owner", combat: true, exploring: true, fight_only: false, group: "Free" },
+];
+const byTag = new Map([...HERBS, { tag: "Gameplay.Inventory.Materials.Dandelion", short: "Dandelion", kind: "material", name: "Dandelion" }].map(i => [i.tag, i]));
+
+test("itemId makes letters and digits from a name, unique among the mod's and the game's ids", () => {
+  assert.equal(m.itemId("Moon Herb"), "MoonHerb");
+  assert.equal(m.itemId("étoile du soir"), "EtoileDuSoir");
+  assert.equal(m.itemId("123"), "Item123");
+  assert.equal(m.itemId(""), "Item");
+  assert.equal(m.itemId("Moon Herb", ["MoonHerb"]), "MoonHerb2");
+  assert.equal(m.itemId("Moon Herb", ["moonherb", "MoonHerb2"]), "MoonHerb3", "ids that differ only in case are one file on Windows");
+  assert.equal(m.itemId("Medium Healing Herb", [], ["MediumHealingHerb"]), "MediumHealingHerb2", "never one the game has");
+  assert.equal(m.itemId("x".repeat(60)).length, 40);
+});
+
+test("toJson leaves out the page's _new, empty values and an empty recipe, and keeps hand-written notes", () => {
+  const items = [{ id: "MoonHerb", name: "Moon Herb", description: "", icon: null, recipe: {}, _new: true, _note: "mine", give: 3 },
+    { id: "Stone", kind: "material", name: "Stone", description: "A stone.", recipe: { Dandelion: 2 }, rarity: "Rare" }];
+  const out = m.toJson(items, { recipes: { "Cosmetic.Head.MossPatch.1": { Moss: 3 } } });
+  assert.deepEqual(out.items, [{ id: "MoonHerb", name: "Moon Herb", _note: "mine", give: 3 },
+    { id: "Stone", kind: "material", name: "Stone", description: "A stone.", recipe: { Dandelion: 2 }, rarity: "Rare" }]);
+  assert.deepEqual(out.recipes, { "Cosmetic.Head.MossPatch.1": { Moss: 3 } });
+  assert.match(out._help, /Clan Mod Studio \(Items\)/);
+});
+
+test("fullTag and kindOf read the short names items.json uses", () => {
+  assert.equal(m.fullTag("Neck.DogCollar.1", byTag), "Gameplay.Inventory.Cosmetic.Neck.DogCollar.1");
+  assert.equal(m.fullTag("Cosmetic.Neck.DogCollar.2", byTag), "Gameplay.Inventory.Cosmetic.Neck.DogCollar.2");
+  assert.equal(m.fullTag("Dandelion", byTag), "Gameplay.Inventory.Materials.Dandelion");
+  assert.equal(m.fullTag("SmallHealingHerb", byTag), "Gameplay.Inventory.Consumable.SmallHealingHerb");
+  assert.equal(m.fullTag("Gameplay.Inventory.Consumable.X", byTag), "Gameplay.Inventory.Consumable.X");
+  assert.equal(m.fullTag("Nothing", byTag), null);
+  assert.equal(m.fullTag("", byTag), null);
+  assert.equal(m.kindOf({ like: "Dandelion" }, byTag), "material");
+  assert.equal(m.kindOf({ kind: "accessory", like: "Dandelion" }, byTag), "accessory");
+  assert.equal(m.kindOf({ like: "Nothing" }, byTag), null);
+});
+
+test("needsOwn: an accessory with no look, model, place or opacity of its own gets a colour back", () => {
+  for (const own of [{ texture: { tint: "#fff" } }, { model: "models/a.glb" }, { place: { up: 1 } }, { opacity: 0.5 }]) {
+    assert.equal(m.needsOwn({ like: "Neck.DogCollar.1", ...own }, "accessory"), false, JSON.stringify(own));
+  }
+  const bare = { like: "Neck.DogCollar.1" };
+  assert.equal(m.needsOwn(bare, "accessory"), true);
+  assert.equal(m.needsOwn(bare, "consumable"), false, "a herb's model is optional");
+  assert.equal(m.giveOwn(bare, "accessory"), true);
+  assert.deepEqual(bare.texture, { tint: m.NEW_LOOK });
+  assert.equal(m.giveOwn(bare, "accessory"), false, "once is enough");
+});
+
+test("the Kind switch puts each kind's fields aside and brings them back, keeping the name and notes on the item", () => {
+  const stash = new WeakMap();
+  const start = kind => ({ consumable: "MediumHealingHerb", material: "Dandelion", accessory: "Cosmetic.Neck.DogCollar.1" })[kind];
+  const it = { id: "Collar", kind: "accessory", like: "Cosmetic.Neck.DogCollar.1", name: "Collar", description: "Blue.", give: 2,
+    texture: "pictures/c.png", model: "models/c.glb", place: { up: 1 }, opacity: 0.5, glass: "#fff", recipe: { Bone: 1 }, _note: "hand" };
+  m.switchKind(it, "consumable", stash, start);
+  assert.deepEqual(it, { id: "Collar", kind: "consumable", like: "MediumHealingHerb", name: "Collar", description: "Blue.", give: 2, _note: "hand" });
+  it.effect = "Gameplay.Effect.Consumable.Health.1";
+  m.switchKind(it, "accessory", stash, start);
+  assert.deepEqual(it.place, { up: 1 });
+  assert.equal(it.model, "models/c.glb");
+  assert.deepEqual(it.recipe, { Bone: 1 });
+  assert.equal(it.effect, undefined, "the herb's effect is put aside too");
+  m.switchKind(it, "consumable", stash, start);
+  assert.equal(it.effect, "Gameplay.Effect.Consumable.Health.1", "and comes back with the herb");
+  assert.equal(JSON.stringify(m.toJson([it]).items[0]).includes("stash"), false, "nothing of the stash goes in items.json");
+  const fresh = { id: "Gem", name: "Gem", description: "x", kind: "material", like: "Dandelion" };
+  m.switchKind(fresh, "accessory", stash, start);
+  assert.deepEqual(fresh.texture, { tint: m.NEW_LOOK }, "a new accessory starts with a colour of its own");
+  assert.equal(fresh.like, "Cosmetic.Neck.DogCollar.1");
+});
+
+test("effectName says what an effect does and the herb that does it, preferring the herb for you alone", () => {
+  assert.equal(m.effectName("Gameplay.Effect.Consumable.Health.2", HERBS), "Heals 50 health (Marigold Petal)");
+  assert.equal(m.effectName("Gameplay.Effect.Consumable.Buff.Strength.1", HERBS), "Whole team +50% Strength for the fight (Juniper Poultice)");
+  assert.equal(m.effectName("Gameplay.Effect.Consumable.Glow.1", HERBS), "Mystery Moss's", "a herb without words is named the old way");
+  assert.equal(m.effectName("Gameplay.Effect.Consumable.Fly.1", HERBS), "Fly 1");
+});
+
+test("choosing an effect brings who it's for and when from its herb, and the same as the start takes them away", () => {
+  const it = { id: "MoonHerb", like: "MediumHealingHerb" };
+  m.chooseEffect(it, "Gameplay.Effect.Consumable.Buff.Strength.1", HERBS);
+  assert.deepEqual(it, { id: "MoonHerb", like: "MediumHealingHerb", effect: "Gameplay.Effect.Consumable.Buff.Strength.1", type: "BuffStrength",
+    target: "OwnerTeam", combat: true, exploring: false, fight_only: true });
+  m.chooseEffect(it, "", HERBS);
+  assert.deepEqual(it, { id: "MoonHerb", like: "MediumHealingHerb" });
+});
+
+test("whoAndWhen and badgeWords say it in words", () => {
+  assert.equal(m.whoAndWhen({}, HERBS[1]), "Used anywhere, for you");
+  assert.equal(m.whoAndWhen({}, HERBS[3]), "Used in fights only, for your whole team; it wears off when the fight ends");
+  assert.equal(m.whoAndWhen({ combat: false }, HERBS[1]), "Used while exploring only, for you");
+  assert.equal(m.whoAndWhen({ target: "OwnerTeam" }, HERBS[1]), "Used anywhere, for your whole team");
+  assert.equal(m.badgeWords("Health", HERBS), "Health: like Horsetail Stalks and Marigold Petal and others");
+  assert.equal(m.badgeWords("Stats", HERBS), "Stats: like Juniper Poultice");
+  assert.equal(m.badgeWords("Damage", HERBS), "Damage");
+  assert.equal(m.badgeWords("None", HERBS), "No badge");
+});
+
+test("isPicture tells the mod's own pictures from the game's items and textures", () => {
+  assert.equal(m.isPicture("pictures/MoonHerb-icon.png"), true);
+  assert.equal(m.isPicture("icons/moon.PNG"), true);
+  assert.equal(m.isPicture("Rock"), false);
+  assert.equal(m.isPicture("/Game/Art/UXD/Textures/T_Rock"), false);
+  assert.equal(m.isPicture({ tint: "#fff" }), false);
+});

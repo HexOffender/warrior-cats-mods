@@ -801,6 +801,12 @@ def _animations(io):
                 additive_refused = False
             except ValueError as e:
                 additive_refused = "additive" in str(e)
+            # Without Blender: the trot replaced by the game's own run, fitted to the trot's keys; and a copy of
+            # the game's yawn with the claws out.
+            run = animations.find_sequence(io.files, "cat", "A_CatMaster_Run_1")
+            yawn = animations.find_sequence(io.files, "cat", "A_CatMaster_Yawn_1")
+            by_run = animations.build(ctx, trot, "cat", None, None, None, replace=True, from_game=run)
+            copied = animations.build(ctx, "/Game/WCMods/t/A_Yawn", "cat", None, None, None, claws=True, from_game=yawn)
         original, replaced = anim.AnimSequence(read(trot)), anim.AnimSequence(built["data"])
         theirs = dict(zip(original.track_map, original.tracks(original.bind_pose(skeleton))))
         ours = dict(zip(replaced.track_map, replaced.tracks()))
@@ -809,13 +815,33 @@ def _animations(io):
         kept = (replaced.props == original.props and len(replaced.exports) == len(original.exports)
                 and replaced.nkeys == original.nkeys and replaced.curves == original.curves
                 and replaced.codec == "per-track" and texture.package_id(anim.UE_SETTINGS) in built["imports"])
-        kit_ok = worst < 1e-3 and turn < 1e-4 and not short and kept and moved < 1e-3 and turned < 1e-4 and additive_refused
+
+        def keys_of(seq, fit=None):
+            tracks = seq.tracks(seq.bind_pose(skeleton) if seq.codec == "acl" else None)
+            return dict(zip(seq.track_map, animations.fit_keys(tracks, fit) if fit else tracks))
+
+        def off(a, b):                    # the farthest apart two sets of keys are: cm, and in rotations
+            return (max(math.dist(p, q) for bone, (T, _, _) in a.items() for p, q in zip(T, b[bone][0])),
+                    max(apart(p, q) for bone, (_, Q, _) in a.items() for p, q in zip(Q, b[bone][1])))
+        run_seq, yawn_seq = anim.AnimSequence(read(run)), anim.AnimSequence(read(yawn))
+        as_run, yawned = anim.AnimSequence(by_run["data"]), anim.AnimSequence(copied["data"])
+        run_off = off(keys_of(run_seq, original.nkeys), keys_of(as_run))
+        yawn_off = off(keys_of(yawn_seq), keys_of(yawned))
+        game_ok = (as_run.props == original.props and as_run.nkeys == original.nkeys and as_run.curves == original.curves
+                   and yawned.nkeys == yawn_seq.nkeys
+                   and abs(copied["seconds"] - (yawn_seq.nkeys - 1) / yawn_seq.frame_rate()) < 1e-3
+                   and all(yawned.constant_curves().get(c) == 0.0 for c in animations.CLAWS if c in yawned.curves)
+                   and max(run_off + yawn_off) < 1e-3)
+        kit_ok = (worst < 1e-3 and turn < 1e-4 and not short and kept and moved < 1e-3 and turned < 1e-4 and additive_refused
+                  and game_ok)
         detail_kit = (f"{len(kits)} start kits, {sum(len(k.clips) for k in kits.values())} examples"
                       + (f" (short: {', '.join(short)})" if short else "")
                       + f"; kit round trip {worst:.1e} cm, {turn:.1e} in rotations"
                       + f"; the trot replaced by the kit's {moved:.1e} cm, {turned:.1e}"
                       + ("" if kept else " (its length, notifies, curves or codec didn't come through)")
-                      + ("" if additive_refused else "; an additive sequence (Meow_1) wasn't refused"))
+                      + ("" if additive_refused else "; an additive sequence (Meow_1) wasn't refused")
+                      + f"; by the game's run {run_off[0]:.1e} cm, a claws-out yawn {yawn_off[0]:.1e} cm"
+                      + ("" if game_ok else " (the game's own, without Blender, didn't come through)"))
     except (ValueError, KeyError) as e:
         detail_kit = f"start kit: {e}"
     detail = (f"{sum(codecs.values())} sequences ({', '.join(f'{n} {c}' for c, n in sorted(codecs.items()))}); "

@@ -1,0 +1,18 @@
+{
+ "_help": "A small /api/game/anim-sequences?for=cat (sequences) and /api/game/anim-sequence answers (facts, by name) for the Animations page's browser tests (tests/studio/e2e/animations.test.mjs), written by hand from wcmods/animations.py's FRIENDLY and the lengths docs/SDK.md gives: names only, no game files.",
+ "sequences": [
+  {"name": "A_CatMaster_A_Final_Showdown", "paths": ["/Game/Art/Characters/CatMaster/Animations/A_CatMaster_A_Final_Showdown"], "additive": false, "label": null, "group": null},
+  {"name": "A_CatMaster_Idle_1", "paths": ["/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Idle_1"], "additive": false, "label": "Idle", "group": "everyday"},
+  {"name": "A_CatMaster_Meow_1", "paths": ["/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Meow_1"], "additive": true, "label": null, "group": null},
+  {"name": "A_CatMaster_Pose_Photo_Mode_1", "paths": ["/Game/Art/Characters/CatMaster/Animations/PhotoMode/A_CatMaster_Pose_Photo_Mode_1"], "additive": false, "label": "Feral Frenzy", "group": "poses"},
+  {"name": "A_CatMaster_Run_1", "paths": ["/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Run_1"], "additive": false, "label": "Run", "group": "everyday"},
+  {"name": "A_CatMaster_Stretch_1", "paths": ["/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Stretch_1"], "additive": false, "label": "Stretch", "group": "everyday"},
+  {"name": "A_CatMaster_Trot_1", "paths": ["/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1"], "additive": false, "label": "Trot", "group": "everyday"},
+  {"name": "A_CatMaster_Yawn_1", "paths": ["/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Yawn_1"], "additive": false, "label": "Yawn", "group": "everyday"}
+ ],
+ "facts": {
+  "A_CatMaster_Yawn_1": {"path": "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Yawn_1", "seconds": 3.1333, "keys": 95, "root_motion": false},
+  "A_CatMaster_Run_1": {"path": "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Run_1", "seconds": 0.6333, "keys": 20, "root_motion": true},
+  "A_CatMaster_Trot_1": {"path": "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1", "seconds": 0.4667, "keys": 15, "root_motion": true}
+ }
+}

@@ -222,6 +222,13 @@ Fawnstar, as a player reported it showing "Cat 1"):
 - **Animations:** on the clans' cats in the forest and on quest givers (they run the same AnimBlueprint
   and mesh, but only your cat was watched); the rats', rabbits', squirrels', foxes', badgers', dogs' and
   snakes' (made the same way as the mice's and birds'); an emote's key on a controller button.
+- **The game's own animations (`"game"`, 2026-10-28):** one played as an emote by its own path, its
+  claws-out copy, one of the game's in another's place (the run as the trot), and the Animations page's
+  Try it on my cat. The selftest builds the copy and the replacement from the game's files and reads the
+  same keys back (within 1e-6 cm), and a build of a mod using them goes through, but none has been
+  watched in game yet.
+- **Items:** a new look made from an accessory's second look (`"like": "Neck.DogCollar.2"`; the build
+  takes it, as it takes the first).
 
 - **Accessories' models:** on other cats (a mod's cats, NPCs) and in the save slots' pictures; and on
   a cat whose build the game set up as brawny or chubby (`RefreshShape` doesn't apply a build, so only

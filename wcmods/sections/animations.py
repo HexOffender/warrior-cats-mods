@@ -9,8 +9,9 @@ played as emotes on your cat (a key, and the mod menu's Emotes page) or by scrip
           "file": "animations/wave.glb",
           "for": "cat",
           "emote": true,
-          "key": "F6"
-        }
+          "key": "F7"
+        },
+        { "id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "emote": true, "key": "F8" }
       ]
     }
 
@@ -20,9 +21,14 @@ in the shared Lua module WCModsAnims, from which WCModsGame's Game.anims plays t
 "<mod>/<id>"; with emotes, the WCModsEmotes script puts those on their keys and on a mod menu page. They
 play over what the cat or animal is doing, in the slot its AnimBlueprint plays the game's own montages in.
 
+One with "game" (one of the game's sequences, "A_CatMaster_Yawn_1") in place of "file" needs no Blender:
+that sequence plays as it is (by its own path), or, with "claws", as a copy with the claws out
+(ctx.add_animation_from_game).
+
 One with "replaces" (a game sequence: "A_CatMaster_Trot_1") goes in that sequence's place instead
 (ctx.replace_animation): every cat, or every animal of that kind, plays it wherever the game played its
-own, fitted to that one's length. It isn't one of Game.anims' then.
+own, fitted to that one's length; its keys come from its file, or from the "game" sequence. It isn't one
+of Game.anims' then.
 See docs/SDK.md for every key.
 """
 import re
@@ -32,9 +38,9 @@ from ..sdk import Section
 from .items import ModelFile
 
 ID = re.compile(r"[A-Za-z][A-Za-z0-9]{0,47}$")
-KEY = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,39}$")      # one of Unreal's key names: "F6", "T", "Gamepad_DPad_Up"
+KEY = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,39}$")      # one of Unreal's key names: "F7", "T", "Gamepad_DPad_Up"
 REPLACES = re.compile(r"(/Game/[A-Za-z0-9_/]+/)?A_[A-Za-z0-9_]{1,120}$")   # a game sequence's name or path
-KEYS = {"id", "name", "file", "for", "clip", "loop", "speed", "blend", "emote", "key", "claws", "replaces"}
+KEYS = {"id", "name", "file", "game", "for", "clip", "loop", "speed", "blend", "emote", "key", "claws", "replaces"}
 # What a replacement can't have: the game plays it where it played its own, as it played that.
 NOT_WITH_REPLACES = ("loop", "speed", "blend", "emote", "key", "claws")
 ANIMS_LUA = "WCModsAnims"       # the shared Lua module that lists the install's animations
@@ -72,9 +78,15 @@ class AnimationsSection(Section):
             what = f"animations.json: animation {i + 1}"
             if not isinstance(a, dict):
                 raise ValueError(f"{what} should be an object")
-            if not a.get("file") and isinstance(a.get("id"), str):
-                # One the Animations page saved before its file was chosen: the others still install.
-                ctx.warn(f"{mod.id}: {a['id']}: no file chosen yet, so it's left out")
+            # One the Animations page saved half made: the others still install, and the save says so.
+            if isinstance(a.get("id"), str) and not a.get("file") and not a.get("game"):
+                if ctx is not None:
+                    ctx.warn(f"{mod.id}: {a['id']}: nothing chosen for it to play yet, so it's left out")
+                continue
+            if isinstance(a.get("id"), str) and (a.get("name") is None or isinstance(a["name"], str)
+                                                 and not a["name"].strip()):
+                if ctx is not None:
+                    ctx.warn(f"{mod.id}: {a['id']}: it has no name, so it's left out")
                 continue
             check(a, what)
             if a["id"].lower() in seen:     # the game's package names are any case
@@ -89,27 +101,43 @@ class AnimationsSection(Section):
             for a in found:
                 full = f"{mod.id}/{a['id']}"
                 kind = a.get("for", "cat")
-                file = AnimationFile(a["file"])
+                said = f"{mod.id}: {a['id']}"
+                file = AnimationFile(a["file"]) if a.get("file") else None
                 if a.get("replaces"):
                     try:
-                        path, _ = ctx.replace_animation(
-                            a["replaces"], lambda file=file, mod=mod: file.parts(mod), kind=kind, clip=a.get("clip"),
-                            source=f"{mod.id}: {a['id']}", key=file.key(mod))
+                        if file is not None:
+                            path, _ = ctx.replace_animation(
+                                a["replaces"], lambda file=file, mod=mod: file.parts(mod), kind=kind, clip=a.get("clip"),
+                                source=said, key=file.key(mod))
+                        else:
+                            path, _ = ctx.replace_animation(a["replaces"], None, kind=kind, source=said,
+                                                            from_game=a["game"])
                     except ValueError as e:
-                        ctx.warn(f"{mod.id}: {a['id']}: {e}")
+                        ctx.warn(f"{said}: {e}")
                         continue
-                    short = path.split(".", 1)[0].rsplit("/", 1)[-1]
-                    if short in replaced:       # mods come lowest priority first: the later one goes in
-                        ctx.warn(f"{mod.id}: {a['id']}: {replaced[short]} replaces {short} too; this one goes in "
-                                 "(its mod comes later: a higher priority, or the same and a later name)")
-                    replaced[short] = full
+                    target = path.split(".", 1)[0]     # by its path: two folders can have one name
+                    if target in replaced:      # mods come lowest priority first: the later one goes in
+                        ctx.warn(f"{said}: {replaced[target]} replaces {target.rsplit('/', 1)[-1]} too; this one goes "
+                                 "in (its mod comes later: a higher priority, or the same and a later name)")
+                    replaced[target] = full
                     continue
                 try:
-                    path, seconds = ctx.add_animation(
-                        f"{mod.id}/A_{a['id']}", lambda file=file, mod=mod: file.parts(mod), kind=kind, clip=a.get("clip"),
-                        claws=bool(a.get("claws")), source=f"{mod.id}: {a['id']}", key=file.key(mod))
+                    if file is not None:
+                        path, seconds = ctx.add_animation(
+                            f"{mod.id}/A_{a['id']}", lambda file=file, mod=mod: file.parts(mod), kind=kind,
+                            clip=a.get("clip"), claws=bool(a.get("claws")), source=said, key=file.key(mod))
+                    elif a.get("claws"):         # the cats' claws can only be set on a copy
+                        path, seconds = ctx.add_animation_from_game(f"{mod.id}/A_{a['id']}", a["game"], kind=kind,
+                                                                    claws=True, source=said)
+                    else:                        # the game's own sequence, played by its path
+                        seq = ctx.game_sequence(a["game"], kind)
+                        short = seq["path"].rsplit("/", 1)[-1]
+                        if seq["additive"]:
+                            raise ValueError(f"{short} is an additive animation (its keys are added to another pose, "
+                                             "not a pose of their own), so it can't play on its own")
+                        path, seconds = f"{seq['path']}.{short}", seq["seconds"]
                 except ValueError as e:
-                    ctx.warn(f"{mod.id}: {a['id']}: {e}")
+                    ctx.warn(f"{said}: {e}")
                     continue
                 entry = {"name": a["name"], "kind": kind, "path": path, "loop": bool(a.get("loop")),
                          "speed": float(a.get("speed", 1.0)), "blend": float(a.get("blend", BLEND)), "seconds": seconds}
@@ -118,8 +146,9 @@ class AnimationsSection(Section):
                     emote = {"id": full, "name": a["name"]}
                     if a.get("key"):
                         entry["key"] = emote["key"] = a["key"]
-                        if a["key"] in keys:
-                            ctx.warn(f"{mod.id}: {a['id']}: the key {a['key']} is {keys[a['key']]}'s emote too; it plays both")
+                        if a["key"] in keys:   # both start, and the later one takes the cat over
+                            ctx.warn(f"{mod.id}: {a['id']}: the key {a['key']} is {keys[a['key']]}'s emote too; only the "
+                                     "later one plays")
                         keys[a["key"]] = full
                     emotes.append(emote)
                 made[full] = entry
@@ -147,14 +176,24 @@ def check(a, what):
     what = f"{what} ({a['id']})"
     if not isinstance(a.get("name"), str) or not a["name"].strip():
         raise ValueError(f"{what}: \"name\" is missing")
-    if not isinstance(a.get("file"), str) or not a["file"].lower().endswith(animations.FORMATS):
+    if a.get("file") is not None and a.get("game") is not None:
+        raise ValueError(f"{what}: it plays a \"file\" or one of the game's animations (\"game\"), not both")
+    if a.get("game") is not None:
+        if not isinstance(a["game"], str) or not REPLACES.match(a["game"]):
+            raise ValueError(f"{what}: \"game\" should be one of the game's sequences, by its name "
+                             "(\"A_CatMaster_Yawn_1\") or its path")
+        if a.get("clip") is not None:
+            raise ValueError(f"{what}: \"clip\" picks an animation in a file; one of the game's takes none")
+    elif not isinstance(a.get("file"), str) or not a["file"].lower().endswith(animations.FORMATS):
         raise ValueError(f"{what}: \"file\" should be a glTF file in the mod's folder (.glb or .gltf), e.g. "
-                         "\"animations/wave.glb\"")
+                         "\"animations/wave.glb\" (or \"game\": one of the game's own animations)")
     kind = a.get("for", "cat")
     if kind not in animations.KINDS:
         raise ValueError(f"{what}: \"for\" should be one of {', '.join(animations.KINDS)}")
     if a.get("clip") is not None and (not isinstance(a["clip"], str) or not a["clip"]):
         raise ValueError(f"{what}: \"clip\" should be the name of an animation in the file")
+    if isinstance(a.get("game"), str) and isinstance(a.get("replaces"), str) and a["game"].lower() == a["replaces"].lower():
+        raise ValueError(f"{what}: a sequence can't take its own place: \"game\" and \"replaces\" are the same")
     if a.get("replaces") is not None:
         if not isinstance(a["replaces"], str) or not REPLACES.match(a["replaces"]):
             raise ValueError(f"{what}: \"replaces\" should be one of the game's sequences, by its name "

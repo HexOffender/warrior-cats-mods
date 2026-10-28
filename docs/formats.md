@@ -222,13 +222,14 @@ adds them (missing columns stay empty).
 ```
 New herbs, materials and accessory looks: a name, a description and an icon in the inventory, what
 the herb does (one of the game's herb effects), a recipe at the medicine cat's bartering, and some
-to start with. `like` borrows the rest from a game item, and `"recipes"` changes what the game's own
-herbs and accessories cost. An icon or a look can be a PNG of the mod's own or one of the game's
-recoloured (`{"tint": "#a8c4ff"}`, made from your game files at install); `python wcmods.py texture
-<item or accessory>` saves the game's as a PNG to paint over. A new look can also have a shape of its
-own, `"model": "models/my-collar.glb"`: an OBJ or glTF file made in Blender or the like, in metres
-around the cat that `python wcmods.py model <accessory>` saves to start from; it follows the cat's
-body and needs the script loader (UE4SS) in the game. `"place"` moves, turns and scales that shape (or
+to start with. Each item needs a name and a description: one without is left out of the game, with a
+warning, and the rest go in. `like` borrows the rest from a game item, and `"recipes"` changes what the
+game's own herbs and accessories cost. An icon or a look can be a PNG of the mod's own or one of the
+game's recoloured (`{"tint": "#a8c4ff"}`, made from your game files at install); the Items page's "Save
+the game's icon to paint over" (and look) saves the game's as a PNG to paint over. A new look can also
+have a shape of its own, `"model": "models/my-collar.glb"`: an OBJ or glTF file made in Blender or the
+like, in metres around the cat that the Items page's "Save a start kit to model on" saves to start from;
+it follows the cat's body and needs the script loader (UE4SS) in the game. `"place"` moves, turns and scales that shape (or
 the accessory's own) where it sits on the cat, and `"opacity"` below 1 makes it see-through glass of the
 `"glass"` colour. New looks work for neck, body and paw accessories, not head ones. A herb's or a
 material's `"model"` (with a `"texture"` PNG and a `"place"`) is how it lies on the ground when a script
@@ -237,17 +238,19 @@ drops it for the cat to pick up; without one it lies there as the game's pickup 
 
 ### `animations.json`
 ```json
-{ "animations": [ { "id": "Wave", "name": "Wave", "file": "animations/wave.glb", "emote": true, "key": "F6" },
+{ "animations": [ { "id": "Yawn", "name": "Yawn", "game": "A_CatMaster_Yawn_1", "emote": true, "key": "F7" },
+                  { "id": "Wave", "name": "Wave", "file": "animations/wave.glb", "emote": true, "key": "F8" },
                   { "id": "Spin", "name": "Spin", "file": "animations/spin.glb", "for": "mouse", "loop": true } ] }
 ```
-Animations of the mod's own, made in Blender and saved as glTF (`.glb`), for cats or one kind of animal
-(`"for"`: mouse, rat, rabbit, squirrel, bird, fox, badger, dog, snake). A cat's can be an emote: a button
-on the mod menu's Emotes page, and a key. Scripts play any of them (`Game.anims.play`). `python wcmods.py
-animation <kind>` saves the animal rigged to the game's skeleton to animate. They play over what the
-animal is doing, where it stands, and need the script loader (UE4SS). One with `"replaces":
+Animations for cats or one kind of animal (`"for"`: mouse, rat, rabbit, squirrel, bird, fox, badger,
+dog, snake): one of the game's own (`"game"`, by its name, no Blender needed; needs wcmods 0.4.0 or
+newer) or the mod's own, made in Blender and saved as glTF (`"file"`, a `.glb`). A cat's can be an emote:
+a button on the mod menu's Emotes page, and a key. Scripts play any of them (`Game.anims.play`). The
+Animations page's start kit saves the animal rigged to the game's skeleton to animate. They play over
+what the animal is doing, where it stands, and need the script loader (UE4SS). One with `"replaces":
 "A_CatMaster_Trot_1"` (one of the game's sequences) plays in that one's place instead, for every cat or
-every animal of the kind, fitted to its length. Every key is in
-[SDK.md, Animations](SDK.md#animations-animationsjson).
+every animal of the kind, fitted to its length. Each needs a name, and a file or one of the game's: one
+without is left out with a warning. Every key is in [SDK.md, Animations](SDK.md#animations-animationsjson).
 
 ### `npcs.json`
 ```json

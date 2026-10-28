@@ -327,16 +327,21 @@ class BuildContext:
         self.add_package(path, built["data"], built["chunk_id"], built["imports"], built["shaders"], source=source)
         return package + "." + package.rsplit("/", 1)[-1], built["seconds"]
 
-    def replace_animation(self, sequence, read, kind="cat", clip=None, source="", key=None):
+    def replace_animation(self, sequence, read=None, kind="cat", clip=None, source="", key=None, from_game=None):
         """One of the game's sequences played with a glTF file's keys instead, wherever the game plays it (for
         every animal on that skeleton): `sequence` is its name ("A_CatMaster_Trot_1") or path, in `kind`'s
         folder; read, clip and key as add_animation's. The clip is fitted to the sequence's length, and the
-        sequence keeps its notifies (footsteps) and curves. Returns (its asset path, its seconds)."""
+        sequence keeps its notifies (footsteps) and curves. `from_game` (another of the game's sequences for
+        that kind, by name or path) in place of `read` puts that one's keys in, fitted the same way. Returns
+        (its asset path, its seconds)."""
         from . import animations
         from .formats import texture
         if kind not in animations.KINDS:
             raise ValueError(f"there's no animal {kind!r} to animate (there are {', '.join(animations.KINDS)})")
+        if read is None and from_game is None:
+            raise ValueError("say what plays in its place: a glTF file (read) or one of the game's (from_game)")
         package = animations.find_sequence(self.game.io.files, kind, sequence)
+        other = animations.find_sequence(self.game.io.files, kind, from_game) if from_game is not None else None
         path = texture.content_path(package)
         if path in self.packages and self.packages[path][1] != self.current:
             # Another section's change to the same package (a higher-priority mod's replacement in this one
@@ -344,8 +349,46 @@ class BuildContext:
             raise ValueError(f"{package.rsplit('/', 1)[-1]} is changed by {self.packages[path][1]} already")
         if self._skeletons is None:
             self._skeletons = animations.Game(self.read_game_file)
-        built = animations.build(self, package, kind, read, clip, key, game=self._skeletons, replace=True)
+        built = animations.build(self, package, kind, read, clip, key, game=self._skeletons, replace=True,
+                                 from_game=other)
         self.patch_package(path, built["data"], source=source, imports=built["imports"])
+        return package + "." + package.rsplit("/", 1)[-1], built["seconds"]
+
+    def game_sequence(self, name, kind="cat"):
+        """One of the game's sequences for `kind` (animations.KINDS), by its name ("A_CatMaster_Yawn_1") or path,
+        to play as it is: {"path" (its asset path, "/Game/.../A_CatMaster_Yawn_1"), "seconds", "additive",
+        "root_motion"}. ValueError when the kind's folder hasn't got it, or it can't be read."""
+        from . import animations
+        from .formats import anim, texture
+        if kind not in animations.KINDS:
+            raise ValueError(f"there's no animal {kind!r} to animate (there are {', '.join(animations.KINDS)})")
+        path = animations.find_sequence(self.game.io.files, kind, name)
+        try:
+            seq = anim.AnimSequence(self.read_game_file(texture.content_path(path)))
+            return {"path": path, "seconds": round((seq.nkeys - 1) / seq.frame_rate(), 4), "additive": seq.additive(),
+                    "root_motion": seq.root_motion()}
+        except anim.FormatError as e:
+            raise ValueError(f"{path.rsplit('/', 1)[-1]} isn't a sequence wcmods can read ({e})") from None
+
+    def add_animation_from_game(self, name, sequence, kind="cat", claws=False, source=""):
+        """A new animation, /Game/WCMods/<name> as add_animation's, that is a copy of one of the game's sequences
+        for `kind` (by name or path) with its own keys and length: for a game animation with the cats' claws
+        out, which only a copy can have. Its face curves aren't copied. Returns (its asset path, its seconds)."""
+        from . import animations
+        from .formats import texture
+        if kind not in animations.KINDS:
+            raise ValueError(f"there's no animal {kind!r} to animate (there are {', '.join(animations.KINDS)})")
+        other = animations.find_sequence(self.game.io.files, kind, sequence)
+        package = texture.new_package_name(name)
+        path = texture.content_path(package)
+        if any(p.lower() == path.lower() for p in self.packages):
+            raise ValueError(f"{package} is another animation's already (their mods' names or ids differ only "
+                             "in case, or in - and _)")
+        if self._skeletons is None:
+            self._skeletons = animations.Game(self.read_game_file)
+        built = animations.build(self, package, kind, None, None, None, claws=claws, game=self._skeletons,
+                                 from_game=other)
+        self.add_package(path, built["data"], built["chunk_id"], built["imports"], built["shaders"], source=source)
         return package + "." + package.rsplit("/", 1)[-1], built["seconds"]
 
     def add_ue4ss_mod(self, name, files):
