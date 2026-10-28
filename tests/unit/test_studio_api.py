@@ -90,8 +90,9 @@ def test_settings_change_code_mods_and_refuse_anything_but_true_or_false(studio)
 
 
 def test_changes_name_the_mods_waiting_to_go_in(studio, sandbox):
-    assert get(studio, "changes") == {"installed": False, "on": [], "off": [], "changed": [], "redo": [], "any": False,
-                                      "names": {}, "held_back": [], "game_running": False}
+    assert get(studio, "changes") == {"installed": False, "on": [], "off": [], "changed": [], "left_out": {}, "still_in": [],
+                                      "redo": [], "any": False, "names": {}, "held_back": [], "recheck_due": False,
+                                      "game_running": False}
     make_mod(studio, "tweaks", {"name": "Tweaks"})
     sandbox.running = True
     r = get(studio, "changes")
@@ -137,7 +138,9 @@ def test_setup_backup_makes_the_first_safety_copy_once_there_is_a_save(studio):
     write_save(studio.ctx.cfg.save_dir)
     first = post(studio, "setup/backup")["name"]
     assert first.endswith("-first-run") and post(studio, "setup/backup") == {"name": None}
-    assert get(studio, "backups") == [first] and get(studio, "setup")["backup"] == {"ok": True, "latest": first}
+    assert [b["name"] for b in get(studio, "backups")] == [first]
+    assert get(studio, "backups")[0]["label"].startswith("First safety copy, Today ")
+    assert get(studio, "setup")["backup"] == {"ok": True, "latest": first}
 
 
 # ---------- mods: list, make, change, switch, remove, restore, pack as .zip ----------
@@ -163,7 +166,7 @@ def test_a_mod_is_made_listed_changed_switched_removed_and_put_back(studio):
 
 def test_making_a_mod_refuses_bad_ids_missing_keys_and_wrong_types(studio):
     with pytest.raises(ValueError, match='needs "id"'):
-        post(studio, "mods", {"name": "No id"})
+        post(studio, "mods", {"description": "No id and no name"})
     with pytest.raises(ValueError, match='"id" should be text'):
         post(studio, "mods", {"id": ["list"]})
     with pytest.raises(ValueError, match="lowercase"):
@@ -487,7 +490,7 @@ def test_ingame_options_are_read_and_changed_and_mistakes_refused(studio):
         data = json.load(f)
     assert data["menu_key"] == "F5" and data["menu_scale"] == 1.25 and data["console"] is True
     for bad, said in (({"size": "big"}, "size should be a number"), ({"size": 9}, "size should be a number"),
-                      ({"key": "Q"}, "key should be one of"), ({"pad": "nope"}, "pad should be one of"),
+                      ({"key": "Q"}, "key should be one of"), ({"pad": "two words"}, "pad should be one of"),
                       ({"size": True}, "size should be a number")):
         with pytest.raises(ValueError, match=said):
             call(studio, "PATCH", "ingame", bad)
@@ -499,18 +502,20 @@ def test_the_save_is_backed_up_and_restored(studio, save, sandbox):
     saves = studio.ctx.cfg.save_dir
     b = post(studio, "backup")
     assert b["name"].endswith("-studio") and b["files"] == [SAV_NAME]
-    assert get(studio, "backups") == [b["name"]]
+    assert get(studio, "backups") == [{"name": b["name"], "label": b["label"]}] and b["label"].endswith(", backed up by you")
     time.sleep(1.1)   # a backup's name is to the second
     before = os.path.getsize(os.path.join(saves, SAV_NAME))
     with open(os.path.join(saves, SAV_NAME), "ab") as f:
         f.write(b"spoiled")
-    assert post(studio, "restore", {"name": b["name"]}) == {"restored": [SAV_NAME]}
+    r = post(studio, "restore", {"name": b["name"]})
+    assert r["restored"] == [SAV_NAME] and r["before"].endswith("-before-restore")
+    assert r["before_label"].endswith(", the save you had before a restore")
     assert os.path.getsize(os.path.join(saves, SAV_NAME)) == before
-    names = get(studio, "backups")
-    assert len(names) == 2 and names[0].endswith("-before-restore") and names[1] == b["name"]   # newest first
+    names = [x["name"] for x in get(studio, "backups")]
+    assert len(names) == 2 and names[0] == r["before"] and names[1] == b["name"]   # newest first
     with pytest.raises(ValueError, match='needs "name"'):
         post(studio, "restore", {})
-    with pytest.raises(FileNotFoundError, match="no backup named"):
+    with pytest.raises(LookupError, match="no backup called"):
         post(studio, "restore", {"name": "20260101-000000-manual"})
     sandbox.running = True
     with pytest.raises(RuntimeError, match="close the game"):

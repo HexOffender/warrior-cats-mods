@@ -1,6 +1,7 @@
 # The files a mod is made of
 
-A mod is a folder under `mods/` in your files' folder ([`wcmods.json`](#wcmodsjson) says where) with a `mod.json` (its name and what it needs; [SDK.md](SDK.md#mod-folder)
+A mod is a folder under `mods/` in your files' folder ([`wcmods.json`](#wcmodsjson) says where) with a `mod.json` (its name, what it needs, and
+optionally the oldest Clan Mod Studio that can build it, `"wcmods": "0.4.0"`; [SDK.md](SDK.md#mod-folder)
 lists every key) and any of the files below. Clan Mod Studio's Make pages write them; you can also write
 them by hand, and `python wcmods.py new <name> --kind <palette|controls|...>` starts one from a template.
 A mod that only holds these files runs no code. The game's rules behind the numbers are in
@@ -72,7 +73,10 @@ a cat wearing it is saved with. Use 0–19: 20–24 are the Feral Edition's, whi
 swaps for another coat. The save only ever holds that game coat, so turning the mod off
 leaves the cat on it. wcmods doesn't paint presets itself: it lists them in `WCModsPalettes`, and
 [Creator palettes](https://github.com/HexOffender/wcmods-creator-palettes) 1.2 offers them in the
-cat maker's Fur picker and paints them on the cats that chose them.
+cat maker's Fur picker and paints them on the cats that chose them. A palette with `coats` needs wcmods
+0.4.0 or newer (an older one stops at "unknown palette section coats"), so it says `"wcmods": "0.4.0"` in its
+mod.json, and an older Clan Mod Studio leaves it out instead. The Mods page's card of the mods that go with
+Clan Mod Studio adds Creator palettes from its GitHub release, once it has one.
 
 #### Ready-made palettes
 
@@ -430,7 +434,15 @@ script to read; every step has its `objective` there, filled in at install when 
 A mod pack is a mod.json and nothing else: a set of mods that go together as one experience. Its mods
 are its `"requires"`, so turning it on turns them on. Its .zip (Save as .zip, or `wcmods pack`) carries
 every mod in it. Clan Mod Studio's Mod packs page makes them, plays one on its own (every other mod
-off, but Menu pages) and goes back to your own mods (`"pack_before"` in `wcmods.json` remembers them).
+off, but your own tools and the mods its mods `"uses"` that were on) and goes back to your own mods
+(`"pack_before"` in `wcmods.json` remembers them, and the pack's name, so going back works even after the
+pack is removed). A mod is one of your own tools when its mod.json says `"tool": true`, or it's Menu pages,
+Creator palettes or the Emote wheel. In a pack's .zip, My mods (`my-mods`) goes in as `<pack>-mods`, named
+"<pack name>: its own content" (`<pack>-mods-2` and so on when the pack holds a mod by that name already),
+with every `requires` and `uses` naming it rewritten, so whoever adds it keeps their own My mods; the
+folders on your side are unchanged. Only mod.json's `requires` and `uses` are rewritten: anything inside
+the mods that names `my-mods` itself (a script reading `mods/my-mods`, a coat preset's id made from it)
+still says `my-mods` in the pack, so give such content a mod of its own before packing it.
 
 ### `names.json`
 ```json
@@ -532,7 +544,9 @@ commands. Every key is optional. It's in your files' folder, `%LOCALAPPDATA%\WCM
 wcmods never touches it. Older versions kept all three in the wcmods folder; the first start after
 updating moves them out (`wcmods/userdata.py`). A damaged one (not JSON) is set aside as
 `wcmods.json.broken-<date>-<time>` and the settings start afresh: the studio says so at the top of its
-page and the commands print it, and Get set up finds the game again.
+page and the commands print it, and Get set up finds the game again. Beside them, `cache\downloads\`
+keeps the last .zip of each of the mods that go with Clan Mod Studio fetched from GitHub
+(`wcmods/addons.py`); it can be deleted at any time.
 
 | Key | What it is |
 |---|---|
@@ -541,12 +555,16 @@ page and the commands print it, and Get set up finds the game again.
 | `oodle_dll` | An `oo2core_*_win64.dll` from another installed game, for faster decoding of the game's files (wcmods decodes them itself without one) |
 | `allow_code_mods` | `true` lets mods that carry code run it (build steps, in-game scripts, studio pages, C++): only for mods from people you trust. Options on the Settings and repair page |
 | `allow_outdated` | `{ "<mod>": [<build>, ...] }`: mods used anyway on game builds they weren't made for ("Use it anyway", `wcmods allow-outdated`) |
-| `pack_before` | `{ "pack": "<pack>", "on": ["<mod>", ...] }`: while a mod pack is played on its own, the mods that were on before it (the Mod packs page's Back to my mods) |
+| `rechecked` | `{ "build": <build>, "when": "<date and time>", "results": { "<mod>": "ok" or why it didn't build }, "signatures": { "<mod>": "<its version, file count, size and newest time>" }, "warnings": { "<mod>": ["<what the check's build warned of it>"] } }`: what the check after a game update found, for the installed build (`wcmods/exe/gamebuild.py`, `recheck`). A mod that passed is also marked in its own mod.json's `game_builds`; one marked "couldn't check: the game's files can't be read right now" is tried again, and so is any mod whose signature changed since |
+| `pack_before` | `{ "pack": "<pack>", "name": "<its name>", "on": ["<mod>", ...] }`: while a mod pack is played on its own, the mods that were on before it (the Mod packs page's Back to my mods) |
 | `console` | Whether the game's `~` console (UE4SS's console enabler) is on |
 | `debug_cat_look` | `true` makes your cat's colours script log every cat it sees |
 | `installed`, `installed_ue4ss`, `installed_ue4ss_shared` | What the last install put in the game: the mods, when they were built, the game build, the mods folder they came from, the UE4SS mods and shared modules, and `save_pending` when it had save edits but no save to make them in. The studio compares them with your mods; leave them alone |
+| `crash_after` | When the last install, or Take all mods out, happened: the studio's crash card shows only a game crash from after it (none at all before the first) |
 | `menu_key`, `menu_pad`, `menu_scale` | The mod menu's key (`INS`, `HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN`, `F1`-`F12` but F11), the controller button that opens it too (an Unreal key name, `""` for none) and its size (0.6 to 2.2). Options on the Settings and repair page; an install puts them in the game ([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)) |
-| `skip_menu_pages` | `true` once Get set up was told "Not now" for the Menu pages mod |
+| `skip_code` | `true` once Get set up's "Let mods run their own scripts" was told "Not now" (or mods that run code were turned off on the Settings and repair page): the step counts as done, and `allow_code_mods` stays as it is |
+| `setup_addons` | `"added"` once Get set up's "Add all four" has run (whatever came of each one; the Mods page's card of the mods that go with Clan Mod Studio says), or `"not now"` |
+| `skip_menu_pages` | `true` once an older Get set up was told "Not now" for the Menu pages mod; read as `setup_addons: "not now"`, and adding Menu pages clears it |
 | `cheats` | From when the mod menu was a mod of its own: whether its cheats started on. Adding the Menu pages mod takes it into that mod's `settings.json` |
 
 The file starts with a `_help` line saying the same.

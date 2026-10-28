@@ -31,6 +31,11 @@
 //   openHelp(page) opens a page of the guide (docs/guide/<page>.md) in the help panel; no page, the index.
 //   captureKey({title, pad, reserved, ...})   the dialog that asks for a key or a controller button (below);
 //                  resolves to the game's name for it, or null when cancelled.
+//   codeWarning(mods)   the one warning before allowing mods that run code (Get set up, Settings and repair),
+//                  naming the mods in the player's folder that do.
+//   addonButton(id)     a button that adds one of the mods that go with Clan Mod Studio (GET /addons lists
+//                  them) from its GitHub release, for a page that needs it (Characters needs Sandbox mode).
+//   crashCard(crash)    the game's last crash (GET /crash), with Copy the report and Turn <mod> off.
 //   bus            events between pages: "mods-changed" (a mod was made, changed, switched or removed),
 //                  "installed" (an Apply, Play or Check finished; the manifest, its `task` the route: "/build"
 //                  for Check my mods, which put nothing in the game: onlyChecked), "sections-changed" (the
@@ -43,6 +48,8 @@ import { color } from "./colour.js";
 import { input } from "./keys.js";
 
 export { input };
+
+import { addonToast, sentence } from "./modlist.js";
 
 // The page's token: from its <meta> at first, then whatever the studio's page says after a restart (reconnect).
 let token = document.querySelector('meta[name="wc-token"]')?.content || "";
@@ -350,6 +357,76 @@ export const onlyChecked = result => !!(result && result.task === "/build");
 // Open a page of the guide (docs/guide/<page>.md) in the help panel; with no page, the guide's index.
 export function openHelp(page = "") {
   bus.emit("help", page);
+}
+
+// ---------- mods that run code, and the mods that go with Clan Mod Studio ----------
+// The warning before allowing mods that run code, the same wherever it's asked: what code can do, and which
+// of your mods (GET /mods, each with `about` when the page knows what it's for) run some, with their authors.
+export const CODE_WARNING = "Some mods carry code: small programs that run inside the game, or steps that run on " +
+  "your computer when your mods are applied. Code can do anything your account can, so allow it only if you " +
+  "trust every such mod you've added. The four that come with Clan Mod Studio are fine.";
+const CODE_KINDS = { "in-game script": "an in-game script", "C++ mod": "a C++ mod", "C++ source": "a C++ mod",
+  code: "a build step", "studio page": "a studio page" };
+export function codeWarning(mods = []) {
+  const code = mods.filter(m => m.code);
+  const what = m => m.about || (m.kinds || []).map(k => CODE_KINDS[k]).filter(Boolean)[0] || "it runs code";
+  return el("div", { class: "banner code-warning" },
+    el("strong", { text: "Only for mods from people you trust" }),
+    el("span", { text: CODE_WARNING }),
+    code.length ? el("span", { text: code.length > 1 ? "These of your mods run code:" : "This one of your mods runs code:" }) : null,
+    code.length ? el("ul", { class: "notes" }, ...code.map(m => el("li", { text: `${m.name}${m.author ? `, by ${m.author}` : ""}: ${what(m)}` }))) : null);
+}
+
+// The game's last crash since the last Apply or Take all mods out (GET /crash's "crash"), as a card: when, what
+// it said, the C++ mod that was running when it crashed (if one was), Copy the report and Turn <mod> off.
+// `dismiss` adds a Close.
+export function crashCard(c, { dismiss = null } = {}) {
+  const when = new Date(c.when).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const off = c.mod ? el("button", { class: "btn small", type: "button", text: `Turn ${c.mod_name || c.mod} off`, onclick: async () => {
+    try {
+      await api.post(`/mods/${encodeURIComponent(c.mod)}/switch`, { on: false, cascade: true });
+      toast(`${c.mod_name || c.mod} is off. Press Play to start the game without it.`);
+      bus.emit("mods-changed", { from: "crash" });
+    } catch (e) { toast(e.message, "bad"); }
+  } }) : null;
+  return el("div", { class: "banner crash", role: "group", "aria-label": "The game crashed last time" },
+    el("strong", { text: "The game crashed last time" }),
+    el("span", { text: `${when}: ${c.message}` }),
+    c.mod ? el("span", { text: `It was in ${c.mod_name || c.mod}${c.where ? ` (${c.where})` : ""}.` })
+      : c.where ? el("span", { text: `It was in ${c.where}.` }) : el("span", { class: "muted", text: "No C++ mod was running when it crashed, so this report doesn't say which mod it was, if any." }),
+    el("div", { class: "row" },
+      el("button", { class: "btn small", type: "button", text: "Copy the report", onclick: () => copy(c.readout) }),
+      off,
+      dismiss ? el("button", { class: "btn ghost small", type: "button", text: "Close", onclick: dismiss }) : null));
+}
+
+// A button that adds one of the mods that go with Clan Mod Studio (wcmods/addons.py) from its latest GitHub
+// release, then says what came of it and tells every page (mods-changed). `name` is said while it works. When
+// it turns out to have no release yet, the button gives way to a line saying so, as there's nothing to press.
+export function addonButton(id, { label = "Add it", name = "", cls = "btn small" } = {}) {
+  const b = el("button", { class: cls, type: "button", text: label, "data-addon": id });
+  b.addEventListener("click", async () => {
+    b.disabled = true;
+    b.textContent = name ? `Adding ${name}…` : "Adding…";
+    announce(b.textContent);
+    try {
+      const [r, settings] = await Promise.all([api.post(`/addons/${encodeURIComponent(id)}`, {}), api.get("/settings").catch(() => ({}))]);
+      toast(addonToast(r.result, settings.allow_code_mods));
+      bus.emit("mods-changed", { from: "addon" });
+    } catch (e) {
+      if (e.data && e.data.no_release) {
+        const who = name ? name.charAt(0).toUpperCase() + name.slice(1) : "It";
+        const said = el("span", { class: "muted", "data-addon": id, text: `${who} has no release yet: the owner of that mod has to publish one first.` });
+        b.replaceWith(said);
+        announce(said.textContent);
+        return;
+      }
+      toast(e.data && e.data.offline ? "No internet connection; try again when you're online." : sentence(e.message), "bad");
+    }
+    b.disabled = false;
+    b.textContent = label;
+  });
+  return b;
 }
 
 // ---------- colours (sRGB hex in files, linear floats in the engine) ----------

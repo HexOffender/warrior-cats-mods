@@ -196,7 +196,16 @@ def cats_losing_text(cfg, plan=None):
 SHARED_LUA = (view, draw, world, menu, game_lua)
 
 
-def build(cfg, mods, out_dir, log=print):
+def leave_out(cfg, mods, build=None, trusted=()):
+    """{mod id: why} for the mods that are on but that an install leaves out, with a warning instead of
+    stopping: made for an older version of the game (gamebuild.held_back; `trusted` ones count as used anyway),
+    or needing a newer Clan Mod Studio than this one (mods.too_new), and the mods that need those."""
+    return {**modlib.too_new(mods), **gamebuild.held_back(cfg, mods, build, trusted)}
+
+
+def build(cfg, mods, out_dir, log=print, trusted=()):
+    """Build every enabled mod into out_dir and return the manifest. `trusted`: mods made for an older version
+    of the game to build all the same, as if used anyway (the re-check after a game update, gamebuild.recheck)."""
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
     os.makedirs(out_dir)
@@ -204,8 +213,9 @@ def build(cfg, mods, out_dir, log=print):
     # player chose to use it anyway on this build; the in-game module follows what the update moved.
     build = gamebuild.current(cfg)["build"]
     old = gamebuild.outdated(cfg, mods, build)
-    # Those mods, and the ones that need them: a game update alone doesn't stop installing.
-    left_out = gamebuild.held_back(cfg, mods, build)
+    # Those mods, and the ones that need them, and the mods that need a newer wcmods than this one (mod.json
+    # "wcmods"): left out with a warning, so neither a game update nor an older wcmods stops installing.
+    left_out = leave_out(cfg, mods, build, trusted)
     # A mod that needs another mod ("requires" in mod.json) which is missing or off is left out, and
     # the report says why, so installing stops until that's sorted (or --force leaves it out).
     unmet = modlib.unmet(mods, left_out)
@@ -266,25 +276,43 @@ def build(cfg, mods, out_dir, log=print):
             ctx.warnings.append(f"{m.id} is left out: {m.problem}")
 
     # What goes wrong after the sections ran goes in "failed" as well as "errors": install reads "failed", and a
-    # problem missing from it would let an install go ahead and remove what the section put in before.
-    def fail(sid, text):
+    # problem missing from it would let an install go ahead and remove what the section put in before. `by`:
+    # the mods whose edits these were, in the section's "blame" ({text: [mod ids]}, [] when that isn't known),
+    # so the re-check after a game update (gamebuild.recheck) holds back only those.
+    def fail(sid, text, by=None):
         rep = report[sid]
         rep["errors"].append(text)
         rep["failed"].append((None, text))
+        if by is not None:
+            rep.setdefault("blame", {})[text] = by
         if rep["status"] == "ok":
             rep["status"] = "partial"
+
+    def editors(sid, sources):
+        """The section's mods whose edits these were ("a, b" for a section that merges several), or [] when one
+        of them isn't one of its mods (the source can't be told)."""
+        ids = {p.strip() for s in sources for p in str(s or "").split(",") if p.strip()}
+        return sorted(ids) if ids and ids <= set(report[sid]["mods"]) else []
+
+    blamed = {}   # section id -> the mods its failed files' edits were from; None once one of them is unknown
+
+    def failed_file(sid, text, by):
+        fail(sid, text, by)
+        blamed[sid] = None if not by or blamed.get(sid, set()) is None else blamed.get(sid, set()) | set(by)
 
     csv_changes, csv_failures = ctx.resolve_csv_edits()
     for path, section_ids, error in csv_failures:
         for sid in section_ids:
             if sid in report:
-                fail(sid, f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})")
+                failed_file(sid, f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})",
+                            editors(sid, [src for _, s, src in ctx.csv_edits.get(path, []) if s == sid]))
 
     table_changes, table_failures = ctx.resolve_table_rows()
     for name, section_ids, error in table_failures:
         for sid in section_ids:
             if sid in report:
-                fail(sid, f"{name}: rows not added ({error})")
+                failed_file(sid, f"{name}: rows not added ({error})",
+                            editors(sid, [src for _, _, s, src in ctx.table_rows.get(name, []) if s == sid]))
     # A section's save edits go with its table edits: a cat's new name is an ID whose text the pak adds, and
     # a new item's inventory entry needs its rows. With a table of theirs left out, the save would point at
     # text or items the game hasn't got (the cat shows as "<MISSING STRING TABLE ENTRY>"), so they stay out too.
@@ -294,7 +322,8 @@ def build(cfg, mods, out_dir, log=print):
         ctx.save_ops = kept
         for sid in broken:
             if sid in report:
-                fail(sid, "its save edits were left out too: they'd point at text or items the game wouldn't have")
+                fail(sid, "its save edits were left out too: they'd point at text or items the game wouldn't have",
+                     sorted(blamed.get(sid) or []))
     # What else leaves a renamed cat without its text: a mod that named one is off now, or the mods go into a
     # copy of the game Steam doesn't start.
     ctx.warnings += names_without_text(cfg, ctx, game)
@@ -305,9 +334,12 @@ def build(cfg, mods, out_dir, log=print):
     manifest = {"mods": [m.id for m in enabled], "names": titles, "sections": report, "outputs": [], "ue4ss_mods": [],
                 "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
                 "csv_changes": csv_changes, "table_rows": table_changes, "files": sorted(ctx.files),
-                "built": datetime.datetime.now().isoformat(timespec="seconds")}
-    manifest["outdated"] = [{"id": i, "name": titles[i], "made_for": o["made_for"], "used": o["allowed"]}
+                "built": datetime.datetime.now().isoformat(timespec="seconds"), "left_out": left_out}
+    manifest["outdated"] = [{"id": i, "name": titles[i], "made_for": o["made_for"], "used": o["allowed"] or i in trusted}
                             for i, o in old.items()]
+    for m in mods:   # a game_builds that holds no build number: it counts as made for the oldest build
+        if m.enabled and gamebuild.builds_problem(m):
+            manifest["warnings"].append(f"{m.name}: {gamebuild.builds_problem(m)}")
     for o in manifest["outdated"]:
         manifest["warnings"].append(
             f"{o['name']} was made for an older version of the game, so it may not work or may behave "
@@ -468,24 +500,29 @@ def code_installed(data):
 
 def pending(cfg, mods):
     """How your mods differ from what's installed: {"installed" (ever), "on" and "off" (ids turned on or off
-    since), "changed" (on both times, with files changed since), "redo" (why the last install has to be
-    made again: it was made before UE4SS or the Oodle DLL was there, so it left parts out), "any"}. The
-    studio's Apply button shows it."""
+    since), "changed" (on both times, with files changed since), "left_out" ({id: why} for the mods that are
+    on but that an install leaves out: leave_out()), "still_in" (those of them still in the game: the next
+    install takes them out, so each counts as a change), "redo" (why the last install has to be made again:
+    it was made before UE4SS or the Oodle DLL was there, so it left parts out; mods that run code were
+    allowed since), "any"}. The studio's Apply button shows it."""
     # wcmods.json read afresh, without touching the studio's Config: reloading that would throw away what an
     # install running at the same time has noted but not saved yet.
     try:
         data = cfg.peek()
     except (OSError, ValueError):   # not there yet, or being written this moment
         data = cfg.data
-    # What an install would put in: mods made for an older version of the game stay out (unless used anyway).
-    left_out = set(gamebuild.held_back(cfg, mods))
-    now = {m.id for m in mods if m.enabled} - left_out
+    # What an install would put in: mods made for an older version of the game stay out (unless used anyway),
+    # and so do mods that need a newer wcmods.
+    left_out = leave_out(cfg, mods)
+    switched_on = {m.id for m in mods if m.enabled}
+    now = switched_on - set(left_out)
     inst = data.get("installed")
     if not inst:
         # The mod menu's window goes in with every install, so with the script loader there one is worth
         # making even with no mods on.
         redo = ["the mod menu isn't in the game yet"] if not now and cfg.ue4ss_mods_dir else []
-        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "redo": redo, "any": bool(now or redo)}
+        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "left_out": left_out, "still_in": [],
+                "redo": redo, "any": bool(now or redo)}
     was = set(inst.get("mods", []))
     try:
         built = datetime.datetime.fromisoformat(inst.get("built", "")).timestamp()
@@ -518,11 +555,21 @@ def pending(cfg, mods):
     # takes it out again.
     if not data.get("allow_code_mods") and code_installed(data):
         redo.append("the game has code from a test install, and mods that run code are off")
+    # The other way: installed while mods that run code weren't allowed, so a mod's scripts stayed out though
+    # the mod is in installed["mods"] (Menu pages, Sandbox mode); allowed now, an install puts them in. With
+    # code allowed, every install with the script loader there puts the bridge in, so code_installed is never
+    # empty after one.
+    elif data.get("allow_code_mods") and cfg.ue4ss_mods_dir and not code_installed(data) \
+            and any(m.id in now and m.has_code() for m in mods):
+        redo.append("mods that run code are allowed now")
     # Save edits made before there was a save were left out; now there is one, they're waiting.
     if inst.get("save_pending") and os.path.isfile(os.path.join(cfg.save_dir, SAV_NAME)):
         redo.append("save edits are waiting for a save")
-    out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed, "redo": redo}
-    out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo)
+    # "off" is what was switched off; a mod left out while it's on is in left_out instead, and the install
+    # still has to take it out of the game while it's there (still_in).
+    out = {"installed": True, "on": sorted(now - was), "off": sorted(was - switched_on), "changed": changed,
+           "left_out": left_out, "still_in": sorted(was & set(left_out)), "redo": redo}
+    out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo or out["still_in"])
     return out
 
 
@@ -618,6 +665,9 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
                              "mods_root": cfg.mods_root, "menu": manifest.get("menu"), "game_dir": cfg.game_dir}
     if save_pending:
         cfg.data["installed"]["save_pending"] = True
+    # The studio's crash card shows only crashes from after this (studio.last_crash); taking every mod out
+    # moves it on too, so an older crash doesn't come back once "installed" is gone.
+    cfg.data["crash_after"] = manifest["built"]
     cfg.save()
     return manifest
 
@@ -954,6 +1004,7 @@ def uninstall(cfg, log=print, losing=None):
                 removed.append(gone)
         cfg.data["installed_ue4ss_shared"] = []
     cfg.data.pop("installed", None)
+    cfg.data["crash_after"] = datetime.datetime.now().isoformat(timespec="seconds")   # see install
     cfg.save()
     for p in removed:
         log(f"  removed {p}")

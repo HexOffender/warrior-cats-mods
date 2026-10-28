@@ -34,6 +34,22 @@ export default {
       .then(r => { known[kind] = r.sequences; return r.sequences; })
       .catch(e => { delete sequences[kind]; throw e; }));
     const plain = (kind, value) => plainName(known[kind], value);
+    // The Emote wheel, one of the mods that go with Clan Mod Studio: a note with its Add button while it isn't
+    // in your mods, or, once the studio knows it has no release yet, a note saying so (the button says so too
+    // when it finds out).
+    const wheelNote = el("div");
+    async function drawWheelNote() {
+      let wheel = null;
+      try { wheel = (await api.get("/addons")).addons.find(a => a.id === "emote-wheel"); } catch (e) { /* no note */ }
+      clear(wheelNote);
+      if (!wheel || wheel.installed) return;
+      wheelNote.append(el("p", { class: "note row" }, "The Emote wheel shows your emotes on a wheel in the game, with the game's own poses. ",
+        wheel.no_release
+          ? el("span", { class: "muted" }, "It has no release yet: the owner of that mod has to publish one first (",
+            el("a", { href: wheel.page, target: "_blank", rel: "noopener", text: "its releases" }), ").")
+          : wc.addonButton("emote-wheel", { label: "Add the Emote wheel", name: "the Emote wheel" })));
+    }
+    const offWheel = wc.bus.on("mods-changed", () => drawWheelNote());
 
     const target = wc.modTarget({
       file: "animations.json",
@@ -67,12 +83,13 @@ export default {
         el("span", { class: "muted", text: "Each animal rigged the game's way, with some of its own animations to start from" })),
       el("p", { class: "note", text: "A .zip with the animal as a .glb and a README. Unzip it first, then import the .glb into Blender (File > Import > glTF 2.0), animate it, and choose your file under \"A file I made in Blender\"." }),
       el("div", { class: "row" }, ...kinds.map(kitButton)));
-    root.append(head, target.element, lastBox, kits, editor.element, out.element);
+    root.append(head, wheelNote, target.element, lastBox, kits, editor.element, out.element);
     // After an Apply, what the build said about this mod's animations (wc.installedEvent: not over unsaved
     // changes); after the studio started again, the last build's, when it's the one in the game. Not after
     // Check my mods, which put nothing in the game.
     wc.installedEvent(target, result => { if (wc.onlyChecked(result)) return; lastResult = result; asOf = null; draw(); });
     await target.refresh();
+    drawWheelNote();
     api.get("/build/last").then(r => {
       if (lastResult || !r.installed || !r.manifest) return;
       lastResult = r.manifest;
@@ -427,6 +444,6 @@ export default {
       catch (e) { toast(e.message, "bad"); }
       btn.disabled = false;
     }
-    return {};
+    return { unmount() { offWheel(); } };
   },
 };

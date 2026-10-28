@@ -1,4 +1,5 @@
 import * as wc from "./lib/wc.js";
+import { changeCount } from "./lib/modlist.js";
 
 const { el, api, clear, toast, bus } = wc;
 const nav = document.getElementById("nav");
@@ -34,6 +35,8 @@ function setStatus(chips) {
 const installBtn = document.getElementById("installBtn");
 const playBtn = document.getElementById("playBtn");
 let busy = false;   // a build, install or Play is running: the buttons wait for it
+let working = null;   // what a page's own task under the lock is doing (bus "working"), for a chip
+const WORKING_TIP = "Saving, switching mods, Apply and Play wait until it's done";
 let gone = false;   // the studio's server stopped answering: the page waits for it to come back
 let restarting = false;   // Restart the studio was pressed: the page waits for the new one, and nothing else asks
 let failure = null;   // why the last status refresh failed: "gone", "token" (the shell's own cards say those), "error"
@@ -62,8 +65,11 @@ async function refreshStatusNow() {
   }
   if (restarting) return null;   // asked before Restart was pressed: the status says it's restarting now
   if (gone) { back(); return null; }   // it answers again: this page is from before it went
-  const waiting = changes ? changes.on.length + changes.off.length + changes.changed.length + (changes.redo || []).length : 0;
+  const waiting = changes ? changeCount(changes) : 0;
   setStatus([
+    // A page's own task under the server's lock (the Mods page's check after a game update): said here, as a
+    // save, a switch or Play waits for it.
+    working ? chip(working, "warn working", WORKING_TIP) : null,
     chip(info.game_running ? "Game running" : "Game closed", info.game_running ? "warn" : "good",
       info.game_running ? "Close the game to apply mods" : ""),
     info.game_build && info.game_build.build && !info.game_build.verified
@@ -380,6 +386,20 @@ playBtn.addEventListener("click", () => runTask("/play", "Play"));
 bus.on("apply", () => runTask("/install", "Apply to game"));
 bus.on("run-task", ({ path, title, body }) => runTask(path, title, body));
 bus.on("mods-changed", () => refreshStatus());
+// A page says it has a task running under the lock ("Checking your mods on the new version…"), or null when done:
+// its chip shows at once (the status's own refresh asks the studio first, and a quick task is over by then).
+bus.on("working", text => {
+  working = text || null;
+  if (!gone && !restarting) {
+    statusBox.querySelector(".chip.working")?.remove();
+    if (working) {
+      statusBox.prepend(chip(working, "warn working", WORKING_TIP));
+      wc.announce(working);
+    }
+    statusSaid = null;   // the next refresh draws the line whole again
+  }
+  refreshStatus();
+});
 bus.on("sections-changed", () => refreshStatus());
 
 // The last Apply's log (last-apply.log in your files' folder), back in the drawer.

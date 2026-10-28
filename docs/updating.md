@@ -15,10 +15,29 @@ Mods page says what that means:
   that moved is followed, and anything it can't find again, or can't vouch for, is switched off
   instead of guessed: the mod menu shows those values as not available. This takes under a minute,
   once per update, and the next Play or Apply puts the result in.
-- **Your mods:** a mod made for an older version of the game is left out until its maker updates
-  it, and so is a mod that needs it. Its card says so. **Use it anyway…** puts it back in, for this version only, after a warning:
-  it may not work, or may behave unpredictably (a broken page, odd values, a crash). Back up your save
-  first. After the next update it's left out again.
+- **Your mods that are only data** (palettes, controls, mouse look, game data, items, animations, names,
+  your cat's colours, save edits, characters and questlines: no code, no cooked content in `paks/`, no
+  replaced files in `files/`, not a mod pack): when the Mods page opens, it builds each one made for an
+  older version on the new game, with the mods it needs and no others, without putting anything in the
+  game ("Checking your mods on the new version…", at the top too: saving, switching mods and Play wait
+  for it). One that builds is marked as made for the new build too, in its own mod.json, and goes in
+  with the next Play; one that doesn't (its own file, a part of the build it's in failing, or a save edit
+  your save has no place for) stays out, and its card and the banner say why, with **Turn it off** and
+  **Use it anyway…**. What the check warned about shows on its card. Each mod is checked once per game
+  version, and again when it changes (fixed, or updated). One that needs a mod that's held back itself
+  (a story needing Sandbox mode, made for the older version) waits for that one. While the game's files
+  can't be read (Steam updating or checking the game), nothing is checked, and it's tried again the next
+  time the page opens. `python wcmods.py game build` runs the same check. Items with accessories or
+  models, and animations, change the game's own cooked files: building is as far as the check can go for
+  those, so whether they look right in the game is for you to see.
+- **Your other mods** (anything that runs code, cooked content, replaced game files): a mod made for an
+  older version of the game is left out until its maker updates it, and so is a mod that needs it. Its
+  card says so. **Use it anyway…** puts it back in, for this version only, after a warning: it may not
+  work, or may behave unpredictably (a broken page, odd values, a crash). Back up your save first. After
+  the next update it's left out again.
+
+The Mods page's banner says all of this whenever a mod is left out for the game's version, on the build
+wcmods was checked on as well as a newer one.
 
 `python wcmods.py game build` says the same on the command line. `python wcmods.py allow-outdated
 <mod>` uses a mod anyway (`--off` stops), and `python wcmods.py status` marks such mods.
@@ -36,7 +55,26 @@ Properties, Updates) to "Only update this game when I launch it".
 
 After the game updates, try your mod on the new build. If it works, add the build's number
 (`python wcmods.py game build` shows it) and share the new version. A mod without `game_builds` was
-made for build 24847281, like every mod made before the list existed.
+made for build 24847281, like every mod made before the list existed. Each build is a whole number;
+`"26184573"` and `26184573.0` are read as that number too, and a `game_builds` with no build number in
+it is said on the mod's card ("mod.json's game_builds should be a list of build numbers like [26184573]").
+
+A mod that is only data is checked on the new build by each player's Clan Mod Studio (above), which adds
+the build to its `game_builds` when it builds, so for those, listing the new build is a courtesy. A mod
+with code, cooked content or replaced files is only trusted on the builds it lists: list the new one once
+you've tried it.
+
+Beside it, `"wcmods"` says the oldest wcmods that can build the mod, when it uses something a wcmods
+release added (a palette's coat presets need 0.4.0):
+
+```json
+{ "name": "Coat presets", "game_builds": [26184573], "wcmods": "0.4.0" }
+```
+
+An older wcmods leaves the mod out with "needs Clan Mod Studio 0.4.0 or newer; you have 0.3.0: update it",
+and so the mods that need it; the rest still go in. It's a different question from `game_builds`: that
+one is about the game Steam installed, this one about the wcmods the player has. wcmods reads it from
+0.4.0 on, so a mod that needs 0.4.0 should only be released once 0.4.0 is out.
 
 ## For wcmods: the signatures
 

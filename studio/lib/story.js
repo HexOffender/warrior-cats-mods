@@ -2,7 +2,7 @@
 // box of lines to say, a place in the game (typed, or read from where your cat stands), an item picker, a
 // drawing of a cat in its colours, and the strip that says what Sandbox mode can show. See wcmods/story.py
 // for npcs.json and quests.json.
-import { el, api, clear, toast, bus, openHelp, announce } from "./wc.js";
+import { el, api, clear, toast, bus, openHelp, announce, addonButton } from "./wc.js";
 
 export const SANDBOX = "sandbox";
 
@@ -183,9 +183,10 @@ export function stripWords(s, uses = []) {
   const zip = `sandbox-${s.newest || "0.5"}.zip`;
   const codeStep = s.code_allowed ? "" : " It runs a script, so allow mods that run code on Settings and repair too.";
   if (s.state === "missing") {
+    // Add Sandbox mode gets it from its GitHub release in one press (wc.addonButton), as the Mods page's card does.
     return { kind: "warn", title: "You'll need Sandbox mode",
-      text: `Your cats and questlines go in with your mod, but Sandbox mode brings them into the game: download ${zip} from its releases page and drop it on the Mods page.${codeStep}`,
-      link: s.releases };
+      text: `Your cats and questlines go in with your mod, but Sandbox mode brings them into the game: press Add Sandbox mode, or download ${zip} from its releases page and drop it on the Mods page.${codeStep}`,
+      link: s.releases, addon: true };
   }
   const tooOld = uses.filter(f => (s.older || []).includes(f) && FIELDS[f]);
   if (tooOld.length) {
@@ -234,7 +235,8 @@ export function sandboxStrip({ help, route }) {
       w.link ? el("a", { href: w.link, target: "_blank", rel: "noopener", text: "Sandbox mode's releases page" }) : null,
       w.settings ? el("a", { href: "#settings", text: "Open Settings and repair" }) : null,
       w.mods ? el("a", { href: "#mods", text: "Open the Mods page" }) : null,
-      w.button ? el("div", { class: "row" }, el("button", { class: "btn small", type: "button", text: w.button, onclick: turnOn })) : null]
+      w.button ? el("div", { class: "row" }, el("button", { class: "btn small", type: "button", text: w.button, onclick: turnOn })) : null,
+      w.addon ? el("div", { class: "row" }, addonButton(SANDBOX, { label: "Add Sandbox mode", name: "Sandbox mode" })) : null]
       .filter(Boolean));
   }
   async function turnOn() {

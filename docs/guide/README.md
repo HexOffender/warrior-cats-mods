@@ -1,10 +1,17 @@
 # The guide
 
 Help for Clan Mod Studio, a page at a time. The Help button at the top of the studio opens these in a
-panel.
+panel; a page's own help (How this works, under its title) opens the one about it.
 
 - [How Clan Mod Studio works](studio.md): your mods folder, the Editing mod bar and My mods, Save to
   mod, Apply to game and Play, the log, what Undo means here, and where your files are. Start here.
+- [The Mods page](mods.md): getting set up, adding mods, switching them on and off, and telling whether
+  they reached the game.
+- [Mods that go with Clan Mod Studio](companion-mods.md): Menu pages, Sandbox mode, Creator palettes and
+  the Emote wheel, what each one does and how to get them.
+- [Mod packs](packs.md): mods shared and played together as one experience.
+- [Settings and repair](settings.md): the options, your save backups, putting mods back, and taking them
+  all out of the game.
 - [Palettes](palettes.md): recolour the eyes, coats, patterns and markings every cat picks from, and add
   new pattern and marking colours.
 - [Your cat](cat.md): a look of its own for your cat, or any cat in your save: colours, the game's

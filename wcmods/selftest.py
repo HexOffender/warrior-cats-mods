@@ -1291,7 +1291,7 @@ def _menu_window(cfg):
         pages = ({"name": "Menu pages", "author": "wcmods", "uses": ["mod-menu"]},
                  {"scripts/main.lua": "local Menu = require('WCModsMenu')\n", "settings.json": '{"cheats": false}'})
         for label, folder, code, wanted in (
-                ("no mods", {}, False, "Get set up"),
+                ("no mods", {}, False, "add-ons card"),
                 ("Menu pages off", {menupages.ID: ({**pages[0], "enabled": False}, pages[1])}, True, "which is off"),
                 ("Menu pages without code allowed", {menupages.ID: pages}, False, "allow mods that run code"),
                 ("Menu pages on", {menupages.ID: pages}, True, None)):
@@ -1406,7 +1406,8 @@ def _onboarding():
         ini = open(os.path.join(win64, "ue4ss", "UE4SS-settings.ini")).read()
         txt = open(os.path.join(win64, "ue4ss", "Mods", "mods.txt")).read()
         before = onboarding.status(cfg, backups)
-        onboarding.skip_pages(cfg)
+        onboarding.skip_pages(cfg)     # an older studio's Not now for Menu pages: the add-ons step's Not now
+        onboarding.skip_code(cfg)
         st = onboarding.status(cfg, backups)
         kept = onboarding.INBOX
         onboarding.INBOX = os.path.join(tmp, "inbox.json")
@@ -1422,6 +1423,7 @@ def _onboarding():
                 and "GuiConsoleEnabled = 0" in ini and "CheatManagerEnablerMod : 0" in txt
                 and st["game"]["ok"] and st["loader"]["ok"] and st["backup"]["ok"] and st["done"]
                 and not before["done"] and not before["pages"]["ok"] and st["pages"]["ok"]
+                and not before["addons"]["ok"] and st["addons"]["ok"] and st["code"]["ok"]
                 and os.path.normcase(waiting) == os.path.normcase(z) and gone is None)
 
 

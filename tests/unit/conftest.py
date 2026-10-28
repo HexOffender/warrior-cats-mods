@@ -13,6 +13,10 @@ import tempfile
 # Set before anything imports wcmods: whatever a test forgets, the player's own folder is never touched.
 SANDBOX = tempfile.mkdtemp(prefix="wcmods-tests-data-")
 os.environ["WCMODS_DATA"] = SANDBOX
+# The game's crash reports likewise (crashes.crashes_dir): a folder of this run's own, never the player's
+# %LOCALAPPDATA%\Wrc\Saved\Crashes; a test with crashes of its own points it elsewhere.
+CRASHES = tempfile.mkdtemp(prefix="wcmods-tests-crashes-")
+os.environ["WCMODS_CRASHES"] = CRASHES
 os.environ.pop("WCMODS_GAME_BUILD", None)      # a build number a developer set to try an update
 os.environ.pop("WCMODS_FAKE_RUNNING", None)    # the e2e tests' stand-in for the game running: not here
 
@@ -56,6 +60,8 @@ def pytest_sessionfinish(session, exitstatus):
         session.exitstatus = 1
     else:
         os.rmdir(SANDBOX)
+    import shutil
+    shutil.rmtree(CRASHES, ignore_errors=True)
 
 
 @pytest.fixture

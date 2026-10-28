@@ -25,14 +25,14 @@ import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import (animations, bridge, catcolours, colors, controls, eyeatlas, guide, keymap, menupages, menusettings,
-               models, mods, modzip, mouselook, names, onboarding, packs, palettes, pipeline, recolor, saverecord, story,
-               ue4ss, world)
+from . import (addons, animations, bridge, catcolours, colors, controls, eyeatlas, guide, keymap, menupages,
+               menusettings, models, mods, modzip, mouselook, names, onboarding, packs, palettes, pipeline, recolor,
+               saverecord, story, ue4ss, world)
 from .formats import cooked, csvdata, png, save, texture
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
 from .colors import hex_from_linear
-from .config import game_running
+from .config import game_running, is_game_dir
 from .gamefiles import NONASSET, Unreadable
 from .formats.savejson import SaveDoc
 from .sdk import BuildContext
@@ -53,6 +53,10 @@ DEFAULT_PORT = 8765
 LAST_APPLY = "last-apply.log"   # in your files' folder: what the last Apply, Play or check logged
 STUDIO_LOG = "studio.log"       # there too: the details behind "Something went wrong"
 STUDIO_LOG_MAX = 1024 ** 2      # studio.log's size before it starts again (the one before is kept as studio.log.1)
+# How long what GitHub said of the add-ons' releases is kept (GET /addons?latest=1): GitHub answers sixty
+# questions an hour to everyone behind one address, and the Mods page asks only when the player presses
+# "Check for newer versions".
+RELEASES_FOR = 3600
 
 MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "items.json", "animations.json",
              "names.json", "cats.json", "save.json", "settings.json") + story.FILES
@@ -316,6 +320,7 @@ class Studio:
         self._english = None  # the game's English text by key, read once
         self._data_index = None   # every data table's row names and descriptions, read once (data_index)
         self._model_views = {}  # (mod, path, mtime, on_cat) -> a model's drawing, the last few
+        self.releases, self.releases_at = {}, 0.0   # add-on id -> addons.latest(), and when GitHub was asked
 
     # ---------- helpers ----------
     def mods(self):
@@ -562,6 +567,77 @@ class Studio:
             pass
 
     # ---------- API ----------
+    def new_id(self, name):
+        """A mod folder name for a mod called `name`, not taken yet: "Moonlit Path" -> moonlit-path (-2, -3...)."""
+        base = modzip.safe_id(name or "my-mod")
+        taken = {m.id for m in self.mods()} | set(os.listdir(self.ctx.mods_root) if os.path.isdir(self.ctx.mods_root) else [])
+        mod_id, n = base, 2
+        while mod_id in taken:   # a folder name is at most 64 characters: the number fits inside them
+            suffix = f"-{n}"
+            mod_id, n = base[:64 - len(suffix)].rstrip("-._") + suffix, n + 1
+        return mod_id
+
+    def last_crash(self):
+        """GET /crash: the game's newest crash report from after the last Apply or Take all mods out
+        (wcmods.json "crash_after", else the install's "built"), as crashes.summary says it; None without
+        either (a fresh folder: no crash of wcmods' to show), or when the crash folder can't be read right now
+        (a report being written or removed as it's read)."""
+        from . import cppmods, crashes
+        data = self.ctx.cfg.data
+        since = data.get("crash_after") or (data.get("installed") or {}).get("built")
+        try:
+            after = datetime.datetime.fromisoformat(str(since)).timestamp()
+        except (TypeError, ValueError):
+            return {"crash": None}
+        try:
+            path = crashes.latest(after=after)
+            return {"crash": crashes.summary(path, self.mods(), cppmods.SDK_DIR) if path else None}
+        except OSError:
+            return {"crash": None}
+
+    # ---- the mods that go with Clan Mod Studio (wcmods/addons.py) ----
+    def ask_releases(self):
+        """What GitHub has of each add-on (self.releases), asked at most once an hour. Only answers are kept
+        for the hour (addons.answered): when GitHub couldn't be reached, or turned the question away, the card
+        shows why, and the next press asks again."""
+        fresh = time.time() - self.releases_at < RELEASES_FOR
+        if fresh and all(addons.answered(self.releases.get(a.id)) for a in addons.ADDONS):
+            return
+        found = {a.id: addons.latest(a) for a in addons.ADDONS}
+        with self.lock:
+            self.releases = found
+            self.releases_at = time.time() if all(addons.answered(r) for r in found.values()) else 0.0
+
+    def noting_release(self, addon, fn):
+        """fn(), noting what it found out about the add-on's release: none yet (ue4ss.NoRelease), so the
+        Add-ons card can say so without asking GitHub again."""
+        try:
+            return fn()
+        except ue4ss.NoRelease as e:
+            self.releases[addon.id] = {"no_release": True, "error": str(e)}
+            raise
+
+    def add_addon(self, addon_id, upload, body):
+        """POST /addons/<id>: add or update it, with the progress shown (self.run)."""
+        addon = addons.get(addon_id)
+        on = body.get("on")
+        if on is not None and not isinstance(on, bool):
+            raise ValueError('"on" should be true or false')
+        cfg = self.ctx.cfg
+
+        def go(log):
+            if addon.id == menupages.ID:   # with its cheats from when the mod menu was wcmods' own
+                done = menupages.add(cfg, upload, log)
+                if on is not None and not done["unchanged"]:
+                    mods.Mod(os.path.join(cfg.mods_root, addon.id)).set_enabled(on)
+                    done["on"] = on
+                return done
+            return addons.add(cfg, addon.id, upload, on=on, log=log)
+        result = self.run(lambda log: self.noting_release(addon, lambda: go(log)), f"Add {addon.name}")
+        if not upload and not result["result"]["unchanged"]:
+            self.releases[addon.id] = {"version": result["result"]["version"]}
+        return result
+
     # ---- C++ mods: what's ready, and building one from its card (a thread; the page polls /api/cpp) ----
     def cpp_status(self):
         from . import cppmods
@@ -602,7 +678,7 @@ class Studio:
         parameters, `upload` the path of a file sent as the body (mods/add)."""
         cfg = self.ctx.cfg
         if method == "POST" and parts in (["build"], ["install"], ["uninstall"], ["palettes", "apply"], ["play"]):
-            if not cfg.game_dir:
+            if not is_game_dir(cfg.game_dir):   # none found, or the folder named isn't the game's (it moved)
                 raise ValueError(NO_GAME)
             self.need_current_code()
         if parts == ["info"]:
@@ -614,7 +690,10 @@ class Studio:
                         sections.append({"id": f"mod-{m.id}", "title": m.meta.get("studio_title", m.name),
                                          "module": f"/mods/{m.id}/studio/section.js", "from_mod": m.id,
                                          "group": "play"})
-            return {"game_dir": cfg.game_dir, "save_found": os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)),
+            # A folder that isn't the game's (the game moved) is no game: Play and Apply wait while Get set up
+            # asks where it is.
+            return {"game_dir": cfg.game_dir if is_game_dir(cfg.game_dir) else None,
+                    "save_found": os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)),
                     "ue4ss": bool(cfg.ue4ss_mods_dir), "game_running": game_running(),
                     "installed": cfg.data.get("installed"), "install_outdated": pipeline.install_outdated(cfg),
                     "code_changed": self.code_changed(), "restartable": bool(self.server),
@@ -654,7 +733,18 @@ class Studio:
             waiting = onboarding.inbox()
             return {**onboarding.status(cfg, self.ctx.backups), "inbox": os.path.basename(waiting) if waiting else None}
         if parts == ["setup", "game"] and method == "POST":
-            return {"dir": onboarding.set_game_dir(cfg, body.get("dir"))}
+            with self.lock:   # it reloads and saves wcmods.json: not in the middle of an install
+                return {"dir": onboarding.set_game_dir(cfg, body.get("dir"))}
+        if parts == ["setup", "code"] and method == "POST":
+            # Not now on "Let mods run their own scripts"; Allow is PATCH /settings, as on Settings and repair.
+            if not body.get("skip"):
+                raise ValueError("allowing mods that run code is PATCH /settings {allow_code_mods: true}")
+            with self.lock:
+                return {"result": onboarding.skip_code(cfg)}
+        if parts == ["setup", "addons"] and method == "POST":
+            # The add-ons step done: {"choice": "added"} once Add all four has run, or "not now".
+            with self.lock:
+                return {"result": onboarding.addons_step(cfg, body.get("choice"))}
         if parts == ["setup", "backup"] and method == "POST":
             with self.lock:   # two pages asking at once make one copy
                 return {"name": onboarding.first_backup(cfg, self.ctx.backups)}
@@ -662,12 +752,27 @@ class Studio:
             # UE4SS: downloaded from GitHub, or from a .zip sent as the body.
             return self.run(lambda log: onboarding.install_loader(cfg, upload, log), "Install the script loader")
         if parts == ["setup", "pages"] and method == "POST":
-            # The mod menu's pages (wcmods/menupages.py): downloaded from GitHub, from a .zip sent as the body,
-            # or skipped for now.
+            # The older route for the mod menu's pages, kept: POST /addons/menu-pages, or skipped for now.
             if body.get("skip"):
                 with self.lock:
                     return {"result": onboarding.skip_pages(cfg)}
-            return self.run(lambda log: onboarding.add_pages(cfg, upload, log), "Add the menu's pages")
+            return self.add_addon(menupages.ID, upload, body)
+        if parts == ["addons"] and method == "GET":
+            # The mods that go with Clan Mod Studio (wcmods/addons.py), as the Add-ons card shows them;
+            # ?latest=1 also asks GitHub for each one's latest release (kept for an hour).
+            if (query or {}).get("latest") == "1":
+                self.ask_releases()
+            return {"addons": addons.status(cfg, self.releases), "code_allowed": bool(cfg.data.get("allow_code_mods")),
+                    "checked": self.releases_at or None}
+        if len(parts) == 3 and parts[0] == "addons" and parts[2] == "preview" and method == "POST":
+            # What adding one would add, as a dropped .zip's preview: downloaded (with the progress shown).
+            addon = addons.get(parts[1])
+            return self.run(lambda log: self.noting_release(addon, lambda: addons.preview(cfg, addon.id, log)),
+                            f"Look at {addon.name}")["result"]
+        if len(parts) == 2 and parts[0] == "addons" and method == "POST":
+            # Add or update one: its latest release from GitHub, or a .zip of it sent as the body; {on} says
+            # whether it goes in on (else as it ships, or as you had it).
+            return self.add_addon(parts[1], upload, body)
         if parts == ["play"] and method == "POST":
             self.need_current_code()
             return self.run(lambda log: onboarding.play(self.ctx, log, force=bool(body.get("force"))), "Play", keep=True,
@@ -682,19 +787,28 @@ class Studio:
             except (ValueError, OSError, zipfile.BadZipFile):
                 onboarding.clear_inbox()   # said once: it isn't offered again
                 raise
+            onboarding.shown_inbox()   # on the page now: it waits there as long as the player likes
             return {"mods": found, "name": os.path.basename(waiting), "code_allowed": bool(cfg.data.get("allow_code_mods"))}
         if parts == ["mods", "inbox", "add"] and method == "POST":
             waiting = onboarding.inbox()
             if not waiting:
                 raise LookupError("that mod isn't waiting any more; drop it on Clan Mod Studio again")
-            enable = bool(body.get("enable", True))
+            # {ids, on: [the ids that go in switched on]}, or {ids, enable: one answer for all}.
+            if isinstance(body.get("on"), list):
+                enable = {i: i in body["on"] for i in (body.get("ids") or [])} if body.get("ids") else \
+                    {i: True for i in body["on"]}
+            else:
+                enable = bool(body.get("enable", True))
             with self.lock:
+                # An add-on updated from its own .zip keeps your values in its settings, as its Add does.
+                mine = addons.remember(self.ctx.mods_root)
                 if os.path.isdir(waiting):
                     added = modzip.add_folder(waiting, self.ctx.mods_root, self.ctx.backups, ids=body.get("ids") or None,
                                               enable=enable)
                 else:
                     added = modzip.add_zip(waiting, self.ctx.mods_root, self.ctx.backups, ids=body.get("ids") or None,
                                            enable=enable, name=os.path.basename(waiting))
+                addons.put_back(self.ctx.mods_root, mine, added)
             onboarding.clear_inbox()
             return {"added": added}
         if parts == ["mods", "inbox", "clear"] and method == "POST":
@@ -729,10 +843,12 @@ class Studio:
         if parts == ["mods"] and method == "GET":
             found = self.mods()
             old = gamebuild.outdated(cfg, found)
-            held = gamebuild.held_back(cfg, found)
+            held = pipeline.leave_out(cfg, found)
             unmet = mods.unmet(found, held)
             titles = {m.id: m.name for m in found}
-            for i, why in held.items():   # needs a mod made for an older version: left out with it
+            # Needs a newer Clan Mod Studio, or needs a mod that's left out (made for an older version of the
+            # game, or needing a newer studio): left out, and why. A mod made for an older version says so itself.
+            for i, why in held.items():
                 if i not in old:
                     unmet.setdefault(i, []).append(f"left out: it {why}")
             for m in found:   # a mod.json or palette.json that can't be read: said on the card, never a blank page
@@ -741,15 +857,29 @@ class Studio:
                         unmet.setdefault(m.id, []).append(problem)
             by_id = {m.id: m for m in found}
             known = {story.SANDBOX_ID: story.SANDBOX_NAME}   # a mod's name for a studio that hasn't got it
+            # What the re-check after a game update found (gamebuild.recheck): "ok" or why, for this build; a
+            # mod it passed says so on its card until the next Apply.
+            build = gamebuild.steam_build(cfg)
+            results = gamebuild.checked(cfg, build) if build is not None else {}
+            check_warnings = gamebuild.check_warnings(cfg, build) if build is not None else {}
+            rec = cfg.data.get("rechecked") if isinstance(cfg.data.get("rechecked"), dict) else {}
+            since = str(rec.get("when", "")) > str((cfg.data.get("installed") or {}).get("built", ""))
             return [{**m.to_dict(), "problems": unmet.get(m.id, []),
                      "needed_by": [titles[i] for i in mods.needing(found, m.id)],
-                     "requires_names": [titles.get(i, i) for i in m.requires if i != mods.MENU_ID],
+                     "requires_names": [titles.get(i) or mods.missing_name(i) for i in m.requires if i != mods.MENU_ID],
                      # The mods it works with that aren't on: said on its card, never a reason to leave it out.
                      "works_with": [{"id": i, "name": titles.get(i) or known.get(i, i),
                                      "state": "off" if i in by_id else "missing"}
                                     for i in m.uses if i != mods.MENU_ID and not (i in by_id and by_id[i].enabled)],
+                     # A game_builds without a build number, and what the check after a game update warned of it
+                     # (while it's still held back, or until the next Apply puts it in).
+                     "warnings": [w for w in [gamebuild.builds_problem(m)] if w] +
+                                 (list(check_warnings.get(m.id) or []) if old.get(m.id) or (since and m.id in results) else []),
+                     "checkable": gamebuild.checkable(m),
+                     "rechecked": results.get(m.id), "rechecked_since_apply": since and m.id in results,
                      "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id),
-                     "menu_pages": m.id == menupages.ID} for m in found]
+                     "menu_pages": m.id == menupages.ID, "addon": bool(addons.find(m.id)),
+                     "tool": packs.is_tool(m)} for m in found]
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "allow-outdated" and method == "POST":
             # Use a mod made for an older version of the game anyway, on this build only (the page warns first).
             build = gamebuild.current(cfg)["build"]
@@ -759,14 +889,24 @@ class Studio:
             with self.lock:
                 gamebuild.allow(cfg, parts[1], build, on=bool(body.get("on", True)))
             return {"build": build, "allowed": bool(body.get("on", True))}
+        if parts == ["mods", "recheck"] and method == "POST":
+            # After a game update: build the held-back data mods on the new game; those that build go in.
+            return self.run(lambda log: gamebuild.recheck(cfg, self.mods(), self.ctx.build_dir, log),
+                            "Check mods on the new version")
         if parts == ["changes"] and method == "GET":
             found = self.mods()
             p = pipeline.pending(cfg, found)
             titles = {m.id: m.name for m in found}
-            # held_back: mods that are on but that Apply leaves out (made for an older version of the game, or
-            # needing one that is), which the Controls page's line says aren't in the game.
-            return {**p, "names": {i: titles.get(i, i) for i in p["on"] + p["off"] + p["changed"]},
-                    "held_back": sorted(gamebuild.held_back(cfg, found)), "game_running": game_running()}
+            # left_out ({id: why}): the mods that are on but that Apply leaves out (made for an older version of
+            # the game, needing a newer Clan Mod Studio, or needing one of those); held_back is their ids, which
+            # the Controls page's line says aren't in the game. Neither counts as a change to apply, but one
+            # still in the game (still_in) does: the next Apply takes it out.
+            return {**p, "names": {i: titles.get(i, i) for i in p["on"] + p["off"] + p["changed"] + list(p["left_out"])},
+                    "held_back": sorted(p["left_out"]),
+                    # The re-check after a game update has mods to build (the page starts it: POST /mods/recheck);
+                    # nothing is built here, which four pages ask on every focus.
+                    "recheck_due": gamebuild.recheck_due(cfg, found),
+                    "game_running": game_running()}
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "switch" and method == "POST":
             # On: with the mods it requires. Off: refused while mods that are on need it, unless cascade.
             found = self.mods()
@@ -783,9 +923,19 @@ class Studio:
                 return {"mods": modzip.inspect(upload, self.ctx.mods_root, name),
                         "code_allowed": bool(cfg.data.get("allow_code_mods"))}
             ids = [i for i in (query.get("ids") or "").split(",") if i] or None
+            # ?on=a,b: the ticked mods that go in switched on (the others off); without it, ?enable=1 or 0 for all.
+            if "on" in query:
+                on = {i for i in query["on"].split(",") if i}
+                enable = {i: i in on for i in ids} if ids else {i: True for i in on}
+            else:
+                enable = query.get("enable", "1") == "1"
             with self.lock:
-                return {"added": modzip.add_zip(upload, self.ctx.mods_root, self.ctx.backups, ids=ids,
-                                                enable=query.get("enable", "1") == "1", name=name)}
+                # An add-on updated from its own .zip keeps your values in its settings (the Emote wheel's key,
+                # Menu pages' cheats), as its Add on the add-ons card does.
+                mine = addons.remember(self.ctx.mods_root)
+                added = modzip.add_zip(upload, self.ctx.mods_root, self.ctx.backups, ids=ids, enable=enable, name=name)
+                addons.put_back(self.ctx.mods_root, mine, added)
+                return {"added": added}
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "remove" and method == "POST":
             # As with switching it off: while mods that are on need it, nothing changes and they're
             # returned, unless cascade, which turns them off too.
@@ -796,8 +946,12 @@ class Studio:
                 need = mods.needing(found, m.id)
                 if need and not body.get("cascade"):
                     return {"blocked_by": [{"id": i, "name": titles.get(i, i)} for i in need]}
-                return {"moved_to": modzip.remove(m, self.ctx.backups, found, cascade=True),
-                        "turned_off": [titles.get(i, i) for i in need], "blocked_by": []}
+                # The pack being played on its own: your own mods come back first, as Back to my mods does.
+                before = cfg.data.get("pack_before") if isinstance(cfg.data.get("pack_before"), dict) else {}
+                back = packs.stop(cfg, found) if before.get("pack") == m.id else None
+                return {"moved_to": modzip.remove(m, self.ctx.backups, self.mods() if back else found, cascade=True),
+                        "turned_off": [titles.get(i, i) for i in need], "blocked_by": [],
+                        "back_to_my_mods": back is not None}
         if parts == ["mods", "removed"] and method == "GET":
             return modzip.removed(self.ctx.backups)
         if parts == ["mods", "restore"] and method == "POST":
@@ -823,11 +977,18 @@ class Studio:
                 with self.lock:   # not in the middle of an install (see "menusettings")
                     cfg.reload()
                     cfg.data["allow_code_mods"] = allow
+                    if not allow:   # a choice made: Get set up doesn't ask again
+                        cfg.data["skip_code"] = True
                     cfg.save()
             return {"allow_code_mods": bool(cfg.data.get("allow_code_mods")), "data_dir": cfg.data_dir}
+        if parts == ["mods", "new-id"] and method == "GET":
+            # The folder a new mod with this name would get (Make your own mod shows it under the Name box).
+            return {"id": self.new_id((query or {}).get("name", ""))}
         if parts == ["mods"] and method == "POST":
             fields = {k: field(body, k, *MOD_FIELDS[k]) for k in MOD_FIELDS if body.get(k) is not None}
-            m = mods.create(self.ctx.mods_root, field(body, "id"), fields.get("name"), fields.get("description", ""),
+            # A name alone is enough: the folder's made from it (new_id), as Make your own mod shows.
+            mod_id = field(body, "id") if "id" in body or not fields.get("name") else self.new_id(fields["name"])
+            m = mods.create(self.ctx.mods_root, mod_id, fields.get("name"), fields.get("description", ""),
                             enabled=fields.get("enabled", False), priority=fields.get("priority", 0),
                             game_build=self.build())
             return m.to_dict()
@@ -911,20 +1072,30 @@ class Studio:
                 return {"removed": pipeline.uninstall(cfg, log, losing=losing), "losing": losing}
             return self.run(take_out, "Take mods out", keep=True, task=body.get("task"))
         if parts == ["backups"]:
-            return save.list_backups(self.ctx.backups)[::-1]
+            # Newest first, each with its name in words ("Today 15:30, backed up by you").
+            return [{"name": n, "label": save.backup_label(n)} for n in save.list_backups(self.ctx.backups)[::-1]]
         if parts == ["backup"] and method == "POST":
-            # Never an empty backup: it would count as the save being backed up (Get set up, and the first
-            # safety copy, which only happens while there's none).
-            if not os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)):
-                raise ValueError("there's no save to back up yet; start the game once, and get into the forest")
-            where, files = saverecord.backup(cfg, self.ctx.backups, "studio")
-            return {"name": os.path.basename(where), "files": files}
+            # Never an empty backup (save.backup refuses without a save): it would count as the save being
+            # backed up (Get set up, and the first safety copy, which only happens while there's none). The
+            # record of save edits goes in it, to come back with the save.
+            with self.lock:   # not while an install writes the save
+                where, files = saverecord.backup(cfg, self.ctx.backups, "studio")
+            return {"name": os.path.basename(where), "label": save.backup_label(os.path.basename(where)), "files": files}
         if parts == ["restore"] and method == "POST":
             if game_running():
                 raise RuntimeError("close the game before restoring a save")
-            # The record of save edits comes back with the save: the next Apply makes again only the mods'
-            # changes that save hasn't got.
-            return {"restored": saverecord.restore(cfg, self.ctx.backups, field(body, "name"))}
+            name = field(body, "name")
+            with self.lock:
+                if name not in save.list_backups(self.ctx.backups):   # only a backup: nothing else is put back
+                    raise LookupError(f"there's no backup called {name}")
+                before = None
+                if save.has_save(cfg.save_dir):   # the save you have, kept first, with the record as it is now
+                    before = os.path.basename(saverecord.backup(cfg, self.ctx.backups, "before-restore")[0])
+                restored = save.restore(self.ctx.backups, name, cfg.save_dir)
+                # The record of save edits comes back with the save: the next Apply makes again only the mods'
+                # changes that save hasn't got.
+                saverecord.put_back(cfg, os.path.join(self.ctx.backups, name))
+            return {"restored": restored, "before": before, "before_label": save.backup_label(before) if before else None}
         if parts == ["game", "eyes"]:
             return self.eyes()
         if parts == ["game", "tables"]:
@@ -2186,7 +2357,10 @@ def make_handler(studio, port):
                     return self._send(404, {"error": str(e)})
                 except (ValueError, RuntimeError) as e:
                     if str(e).strip():
-                        return self._send(400, {"error": str(e)})
+                        # GitHub out of reach, or a mod with no release yet: said for the page to tell apart.
+                        flags = {"offline": True} if isinstance(e, ue4ss.Offline) else \
+                            {"no_release": True} if isinstance(e, ue4ss.NoRelease) else {}
+                        return self._send(400, {"error": str(e), **flags})
                     studio.log_error(where, e)   # nothing to say: the details are all there is
                     return self._send(400, {"error": f"Something went wrong, with the details in {STUDIO_LOG}"})
                 except Exception as e:   # noqa: BLE001 - whatever it is, the page gets a sentence and the log the rest

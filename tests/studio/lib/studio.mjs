@@ -12,6 +12,8 @@
 //   fixtureGame(folders);                          // the made-up game with a few tables, and the tests' save
 //   writeMod(folders, "my-mod", { name: "My mod" }, { "npcs.json": {...} });
 //   await writeSave(folders.saves, {...});         // WrcGame.sav holding that JSON
+//   startStudio(folders, { WCMODS_RELEASES: dir }) // a folder standing in for GitHub's releases, and in it
+//   makeZip(path.join(dir, "sandbox-0.4.zip"), { "sandbox/mod.json": { name: "Sandbox mode" } })
 //   await removeFolders(folders); release();       // in `after`
 //
 // Each e2e file is skipped, with a reason, when no Chromium is found: set WC_BROWSER to one, or
@@ -100,9 +102,11 @@ export function appCopy(root = fs.mkdtempSync(path.join(os.tmpdir(), "wc-e2e-app
 // its temp folder (the inbox a dropped mod waits in) is the test's, not the one a studio of the player's would
 // share.
 export async function startStudio(folders, env = {}, { root = folders.app, port = 0 } = {}) {
+  // The game's crash reports are looked for in the test's own folder too (none, unless a test leaves one).
   const own = { ...process.env, WCMODS_DATA: folders.data, WCMODS_FAKE_RUNNING: "0", TEMP: folders.temp, TMP: folders.temp,
-    TMPDIR: folders.temp, ...env };
-  delete own.WCMODS_GAME_BUILD;   // a build number a developer set to try an update
+    TMPDIR: folders.temp, WCMODS_CRASHES: path.join(folders.root, "Crashes"), ...env };
+  // A build number a developer set to try an update, and a folder standing in for GitHub: only a test's own.
+  for (const k of ["WCMODS_GAME_BUILD", "WCMODS_RELEASES"]) if (!(k in env)) delete own[k];
   const proc = spawn(python(), ["-I", "wcmods.py", "studio", "--no-browser", "--port", String(port)],
     { cwd: root, env: own, stdio: ["ignore", "pipe", "pipe"] });
   let out = "", err = "";
@@ -248,3 +252,27 @@ export function pngFile(file, w = 32, h = 32, rgba = [200, 60, 160, 255]) {
     chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]));
   return file;
 }
+
+// The script loader's two files in the made-up game, as Install it would leave them (ue4ss.loader_installed).
+export function makeLoader(game) {
+  const win64 = path.join(game, "Wrc", "Binaries", "Win64");
+  fs.mkdirSync(path.join(win64, "ue4ss"), { recursive: true });
+  fs.writeFileSync(path.join(win64, "dwmapi.dll"), "MZ");
+  fs.writeFileSync(path.join(win64, "ue4ss", "UE4SS.dll"), "MZ");
+}
+
+// A .zip at `file` holding `files` ({path inside: text, or a value written as JSON}), written by Python's
+// zipfile as any download would be.
+export function makeZip(file, files) {
+  const spec = Object.fromEntries(Object.entries(files).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]));
+  const r = spawnSync(python(), ["-I", "-c", "import json, sys, zipfile\n" +
+    "spec = json.load(sys.stdin)\n" +
+    "with zipfile.ZipFile(sys.argv[1], 'w') as z:\n" +
+    "    for name, text in spec.items():\n" +
+    "        z.writestr(name, text)\n", file], { input: JSON.stringify(spec), encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`couldn't make ${file}: ${r.stderr}`);
+  return file;
+}
+
+// A mod folder in the player's folder `data`: mod.json from `meta` (on, unless it says); writeMod's.
+export const makeMod = (data, id, meta = {}) => writeMod({ data }, id, meta);
