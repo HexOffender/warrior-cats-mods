@@ -26,6 +26,10 @@ export default {
     let partRows = { prefixes: [], suffixes: [], rogues: [] };   // [{ x, tr, rename, remove, reset, said }]
     let nameRows = [];   // [{ name, also }]
     let banChips = [];   // [{ b, chip }]
+    let drawnProblem = null;   // the save problem the cats card says, if any
+    // Whether the cats card has to be drawn again for the latest preview: other cats, or another save problem.
+    const listChanged = () => [...rows.keys()].join("|") !== (view.cats || []).map(c => c.target).join("|")
+      || (view.save_problem || null) !== drawnProblem;
     const cards = { cats: card("cats"), prefixes: card("prefixes"), suffixes: card("suffixes"), rogues: card("rogues"),
                     names: card("names"), banned: card("banned") };
     const notes = el("div", { class: "card names-summary" });
@@ -118,12 +122,13 @@ export default {
     }
 
     // ---------- cats in your save ----------
-    const listChanged = () => [...rows.keys()].join("|") !== (view.cats || []).map(c => c.target).join("|");
 
     function renderCats() {
       const cats = view.cats || [];
       const box = cards.cats;
       rows = new Map();
+      drawnProblem = view.save_problem || null;
+      earlierBox = banner = ask = null;
       nameCount = countNames(cats);
       const intro = el("p", { class: "note", text: `Type a new name. A prefix + suffix the game has (Mothheart) grows with rank, like any clan cat's; any other name stays the same at every rank, unless you tick "grows with rank". Story roles show the cat cast in them.` });
       if (view.save_problem) {
@@ -134,7 +139,6 @@ export default {
       }
       if (!cats.length) {
         clear(box).append(el("h2", { text: "Cats in your save" }), el("p", { class: "note", text: "No save yet: start the game once, and your cats show here." }));
-        earlierBox = null;
         return;
       }
       const slots = [...new Set(cats.map(c => c.slot))];   // the game being played comes first

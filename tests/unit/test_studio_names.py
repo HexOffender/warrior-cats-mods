@@ -1,16 +1,18 @@
 """The Names page's routes (Studio.names_preview, GET /names/losing, POST /uninstall's "losing") on the tiny game
 of tiny_names.py: the cats come from every enabled mod with the page's file in its own mod's place, a cat a
 mod named is listed by its name and can be renamed again, a broken names.json elsewhere or a save that can't
-be read doesn't stop the page, and taking every mod out says which cats lose their names first."""
+be read doesn't stop the page, and taking every mod out says which cats lose their names first. And the page's
+guide."""
 import json
 import os
+import re
 
 import pytest
 
-from wcmods import pipeline
+from wcmods import guide, pipeline
 from wcmods.formats.save import SAV_NAME
 
-from unit_helpers import make_mod, write_save
+from unit_helpers import REPO, make_mod, write_save
 from tiny_names import cat, save, tiny_game
 
 SPARKLE = cat("Warrior", "STR_CAT_NAME_WCM_FIXED_SPARKLE", "_HEART")   # named Sparkle by a mod
@@ -163,3 +165,24 @@ def test_uninstall_answers_losing_and_says_it_first(studio, fake_game):
     assert [c["name"] for c in r["result"]["losing"]] == ["Sparkle"] and r["result"]["removed"] == []
     assert r["log"][0].startswith("  warning: a cat in your save has a name only your mods give: Sparkle. With the mods "
                                   "out, it shows as <MISSING STRING TABLE ENTRY>")
+
+
+def test_a_mod_named_cat_says_the_name_it_had_as_its_mods_file_says(names_studio):
+    make_mod(names_studio, "sparkle", {"enabled": False}, files={"names.json": NAMED})
+    r = call(names_studio, "GET", "names")
+    assert listed(r)["RiverClan/Warrior/0"]["before"] == "Woodheart"
+    assert listed(r)["RiverClan/Warrior/1"]["before"] == ""   # not named by a mod
+    by_place = {"cats": {"RiverClan/Warrior/0": {"fixed": "Sparkle", "was": "Wrenheart"}}}
+    r = call(names_studio, "POST", "names/preview", {"spec": by_place, "mod": "mine"})
+    assert listed(r)["RiverClan/Warrior/0"]["before"] == "Wrenheart"   # the page's file counts too, and says last
+
+
+# ---------- the page's guide ----------
+def test_the_names_guide_has_its_six_parts_in_plain_words():
+    text = guide.read(REPO, "names")
+    assert re.findall(r"^## (.+)$", text, re.M) == ["What it changes in the game", "A five-minute first try",
+                                                    "What you can and can't do", "Did it reach the game?",
+                                                    "Common mistakes", "Undo"]
+    assert "names" in guide.pages(REPO)
+    assert not re.search(r"—|STR_|python wcmods|--\w", text)
+    assert "**" not in guide.render(text)   # every bold closes where it should

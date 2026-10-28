@@ -250,6 +250,10 @@ Fawnstar, as a player reported it showing "Cat 1"):
   but no cooked content has been tried in game yet.
 - **Names beyond the text.** Renamed and added names reach the game's text table (Mothpaw,
   Sparrowheart, Mothwhisper and the rogue Moss were read back in game). Still unchecked: new cats
-  getting added parts, removed parts and ban list changes, and the name screen's suggestions.
+  getting added parts, removed parts and ban list changes, and the name screen's suggestions. Also
+  unchecked (2026-10-28, the planner's fixes, tested without the game): a rogue name given to a clan
+  cat showing as that fixed name (Storm), one of the game's prefixes given to a rogue or loner showing
+  alone (Otter, from a text under the prefix's ID), and the mod menu's pages titling rank-less quests
+  (Rank Up, the Sleep quests) by their own titles.
 
 After a game update, run `selftest` before installing again ([updating.md](updating.md)).

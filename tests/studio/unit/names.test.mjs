@@ -133,6 +133,16 @@ test("a save that can't be read says so, and Try again reads it again", async ()
   assert.ok(p.box("Otterpaw"), "the cats are listed once the save reads");
 });
 
+test("a save that stops reading between previews is said too, not left as No save yet", async () => {
+  const state = fresh();
+  state.cats = [];
+  const p = await open(state);
+  assert.match(p.q('[data-key="names:cats"]').textContent, /No save yet/);
+  state.saveProblem = "Couldn't open your save (Permission denied). The cats list is empty until it can be read";
+  await p.type(p.q('input[aria-label="New text for Otter"]'), "Moth");
+  assert.match(p.q('[data-key="names:cats"]').textContent, /Couldn't open your save \(Permission denied\)/);
+});
+
 test("a name that isn't a prefix + suffix says it stays the same at every rank, and the file has it plain", async () => {
   const p = await open();
   await p.type(p.box("Otterpaw"), "Sparkle");

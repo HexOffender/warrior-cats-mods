@@ -335,26 +335,42 @@ of this. Names are matched by their English text (any case) or ID.
     Mothheart.
   - `add` makes a new part that every combination exists for. `like` copies how often another part
     is used (each clan for prefixes, each rank for suffixes) and how it's suggested on the name
-    screen. Without it, the new part gets the average.
+    screen. Without it, the new part gets the average. An added part's object can also say how
+    often it's used, as `weights` does: `clans` for a prefix (`{ "RiverClan": 0.05 }`), `ranks` for a
+    suffix (`{ "Warrior": 0.1 }`); and `looks`, its scores on the name screen against a cat's looks
+    (the filters table's columns: `{ "Body_1": 2 }`).
   - `remove` stops the game handing a part out; cats that already have it keep their names. The
     kit, paw and star suffixes are kept, because kits, apprentices and leaders need them.
-  - `weights` sets how often one is used, e.g. `{ "Fern": { "ThunderClan": 0.07 } }`.
+  - `weights` sets how often one is used, e.g. `{ "Fern": { "ThunderClan": 0.07 } }` (a number, or a
+    number in quotes).
+  - Renaming a part to another part's text is warned about: the game would have two parts it can't
+    tell apart by name.
 - **`rogues`:** the whole names cats outside the clans get.
 - **`banned`:** names the game never hands out (mostly canon characters). `add` takes any prefix +
   suffix the game can make, and `"clear": true` empties the list.
 - **`names`:** changes every text that's exactly this name, including the nine canon cameo cats.
-  Some cameo names are also clan names (Brightheart is Bright + heart), so both change. `text`
-  sets any of the game's text by key: `{ "STR_BOT_NAME_1": "..." }`.
+  Some cameo names are also clan names (Brightheart is Bright + heart), so both change, and some are
+  something else in the game too (Rock is a cameo cat and a crafting material, Fox a rogue and an
+  animal): the Names page says under each entry what else it renames. `text` sets any of the game's
+  text by key: `{ "STR_BOT_NAME_1": "..." }`.
 - **`cats`:** renames cats in your save on install, after a backup. Each key picks a cat: `player`,
-  its current name, or its place from `names --cats` (`RiverClan/Warrior/3`). A save holds a game
+  its current name, or its place from `names --cats` (`RiverClan/Warrior/3`), with `"was"` for the
+  name it has there (`{ "name": "Mothheart", "was": "Woodheart" }`), so the entry stops counting if
+  another cat takes that place. A cat whose name only a mod that's off gives is also found by that
+  name, or by its current IDs (`STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART`, as an older Names page wrote
+  such a cat). A save holds a game
   per cat slot you've started; a key means the game you're playing, and a slot first (`1/player`,
   `1/Blaze`, `1/RiverClan/Warrior/3`) picks a cat in another one. The Names page lists each game's
   cats under its own heading, the one you're playing first.
-  - A plain name must be a prefix + suffix the game can make, new ones included. Otherwise it's
-    used as a fixed name.
+  - A plain name that's a prefix + suffix the game can make (new ones included) grows with rank like
+    any clan cat's. Any other plain name is used as a fixed name, a rogue name too (Storm on a clan
+    cat); only a rogue or loner given a rogue name takes that rogue's own name.
   - `{ "prefix": "Glimmer" }` gives the cat its own prefix that grows with rank: Glimmerkit, then
-    Glimmerpaw.
+    Glimmerpaw. One of the game's prefixes (`{ "prefix": "Otter" }`) keeps the cat's suffix; a rogue
+    or loner, who has no suffix, is then called Otter.
   - `{ "fixed": "Sparkle" }` never changes.
+  - A rename the game would have no text for (a prefix kept with a suffix from a mod that's off) is
+    left out, with a warning, and the cat keeps its name.
 
   Story roles (`{THE AGING LEADER}` in dialogue) show the cat cast in them, so renaming that cat
   renames the role. A cat is skipped if its name changed between building and installing.
@@ -366,7 +382,15 @@ of this. Names are matched by their English text (any case) or ID.
   either way), and when Steam starts another copy of the game than the one wcmods installs into (the
   Mods page offers to switch to Steam's). Otherwise the game isn't loading wcmods' pak, which the mod
   menu's Overview says. Turn the mod back on or check the game folder in Get set up, then Apply
-  again, or put the save back from Backups and repair (the Settings and repair page).
+  again, or put the save back from Backups and repair (the Settings and repair page). The Names page
+  lists such a cat by its name, says it would show as `<MISSING STRING TABLE ENTRY>`, and offers it a
+  game name. "Take all mods out of the game" says first which cats in your save have names only your
+  mods give.
+
+The build refuses a `names.json` whose values are the wrong kind (a rename to nothing, a weight that
+isn't a number, a name in a list that isn't text), saying where in the file; Save to mod says it under
+the Editing mod bar. Shapes that only do nothing (a `cats` entry with both `name` and `fixed`) are
+warnings instead.
 
 Renames change the English text only. The other languages translate names, and those translations
 stay. Added names and parts appear in every language with their English text. Added parts get IDs
