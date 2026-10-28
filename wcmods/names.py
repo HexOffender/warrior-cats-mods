@@ -77,6 +77,11 @@ def _parse_target(target):
     return (m.group(1), m.group(2)) if m else (None, target)
 
 
+def by_place(target):
+    """Whether a cats key picks a cat by its place (Clans/RiverClan/Warrior/3) rather than its name."""
+    return "/" in _parse_target(target)[1]
+
+
 def _slot_order(slot):
     return (0, int(slot)) if slot.isdigit() else (1, slot)
 
@@ -543,6 +548,11 @@ class Plan:
             return [c for c in hits if c["slot"] == slot]
         here = [c for c in hits if c["current"]]
         return here or hits
+
+    def cats_called(self, target, cats):
+        """The cats a cats key means ("player", a name or a place, a slot first for another game), as a
+        names.json "cats" entry finds them: for cats.json's other cats."""
+        return self._targets(target, {}, cats)
 
     def _called(self, cat, name):
         return name.lower() in (self.display(cat["ids"]).lower(), self.display(cat["ids"], final=False).lower())

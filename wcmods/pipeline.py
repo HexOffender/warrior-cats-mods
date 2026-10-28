@@ -510,17 +510,17 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                 labels[op["path"]] = f"name: {op.get('from')} -> {op.get('to')} ({op.get('where', op['path'])})"
             continue
         if op["op"] == "fields":
-            # Whole-number fields inside a cat's save text (your cat's colour slots).
+            # Number fields inside a cat's save text (a cat's colour slots, scars and look).
             try:
                 current = pending[op["path"]] if op["path"] in pending else doc.get(op["path"])
             except (KeyError, IndexError, ValueError, TypeError):
-                log(f"  colour slots skipped: your save has no cat at {op['path']}")
+                log(f"  {op.get('who', 'your cat')}: skipped, your save has no cat at {op['path']}")
                 continue
             if isinstance(current, str):
                 new = catcolours.set_fields(current, op["set"])
                 if new != current:
                     pending[op["path"]] = new
-                    labels[op["path"]] = f"your cat: {op.get('label', op['set'])}"
+                    labels[op["path"]] = f"{op.get('who', 'your cat')}: {op.get('label', op['set'])}"
             continue
         flush()
         try:
