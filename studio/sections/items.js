@@ -65,6 +65,7 @@ export default {
       file: "items.json",
       onLoad: obj => { load(obj); draw(); },
       getValue: () => toJson(items, extra),
+      onSaved: saved => wc.settleNew(items, saved.items),   // saved items keep their ids from now on
     });
     const out = wc.codePanel("items.json");
     const lastBox = el("div", { class: "banner", role: "status", hidden: true });
