@@ -213,3 +213,23 @@ def test_play_starts_the_game_without_the_old_key_remapper(tmp_path, monkeypatch
         assert started == [f"steam://rungameid/{onboarding.STEAM_APP_ID}"]
         assert any("deprecated" in s for s in said) is needed
         assert any(s.startswith(f"warning: Steam starts the game from {steam}") for s in said) is bool(steam)
+
+
+def test_play_says_the_warnings_of_the_build_it_applies(tmp_path, monkeypatch):
+    # Play applies waiting changes itself; its log is all the studio shows of it, so the build's warnings go there
+    # (the Steam copy's once, from the build).
+    from types import SimpleNamespace
+    from wcmods import onboarding
+    said = []
+    monkeypatch.setattr(onboarding, "game_running", lambda: False)
+    monkeypatch.setattr(onboarding.pipeline, "pending", lambda cfg, found: {"any": True})
+    monkeypatch.setattr(onboarding.pipeline, "build", lambda *a, **k: {"warnings": ["a cat in your save has a name"]})
+    monkeypatch.setattr(onboarding.pipeline, "install", lambda *a, **k: None)
+    monkeypatch.setattr(onboarding.os, "startfile", lambda url: None, raising=False)
+    monkeypatch.setattr(onboarding, "remaps", lambda c: False)
+    monkeypatch.setattr(onboarding, "steam_elsewhere", lambda c: str(tmp_path / "Steam"))
+    ctx = SimpleNamespace(cfg=SimpleNamespace(game_dir=str(tmp_path / "Copy")), mods_root=str(tmp_path),
+                          root=str(tmp_path), build_dir=str(tmp_path / "build"), backups=str(tmp_path / "backups"))
+    assert onboarding.play(ctx, log=said.append)["applied"]
+    assert "warning: a cat in your save has a name" in said
+    assert not any("Steam starts the game" in s for s in said)

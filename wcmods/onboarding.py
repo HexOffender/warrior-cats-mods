@@ -17,13 +17,9 @@ import time
 
 from . import menupages, mods as modlib, pipeline, ue4ss
 from .formats import save
-from .config import EXE_NAME, STEAM_APP_ID, game_running, steam_elsewhere, steam_elsewhere_text
+from .config import STEAM_APP_ID, game_running, is_game_dir as _game_ok, steam_elsewhere, steam_elsewhere_text
 
 INBOX = os.path.join(tempfile.gettempdir(), "wcmods-studio-inbox.json")
-
-
-def _game_ok(folder):
-    return bool(folder) and os.path.isfile(os.path.join(folder, "Wrc", "Binaries", "Win64", EXE_NAME))
 
 
 def status(cfg, backups_root):
@@ -37,7 +33,7 @@ def status(cfg, backups_root):
     backups = save.list_backups(backups_root)
     steam = steam_elsewhere(cfg) if game else None
     out = {"game": {"ok": bool(game), "dir": game, "steam": steam,
-                    "steam_text": steam_elsewhere_text(steam, game) if steam else None},
+                    "steam_text": steam_elsewhere_text(steam, game, fix=False) if steam else None},
            "save": {"ok": save_found},
            "backup": {"ok": bool(backups), "latest": backups[-1] if backups else None},
            "loader": {"ok": ue4ss.loader_installed(win64), "page": ue4ss.RELEASE_PAGE},
@@ -121,16 +117,17 @@ def play(ctx, log=print, force=False):
     applied = False
     if pipeline.pending(cfg, found)["any"] or pipeline.install_outdated(cfg):
         log("applying your mods first:")
-        pipeline.build(cfg, found, ctx.build_dir, log)
+        manifest = pipeline.build(cfg, found, ctx.build_dir, log)
         pipeline.install(cfg, ctx.build_dir, ctx.backups, log, force=force)
         applied = True
+        for w in manifest["warnings"]:   # Apply's drawer lists them from the manifest; Play's has only this log
+            log(f"warning: {w}")
     with_remaps = remaps(ctx)
     os.startfile(f"steam://rungameid/{STEAM_APP_ID}")
     log("starting the game through Steam")
-    steam = steam_elsewhere(cfg)
+    steam = None if applied else steam_elsewhere(cfg)   # an apply's build said so already
     if steam:
-        log(f"warning: {steam_elsewhere_text(steam, cfg.game_dir)}. Use Steam's folder (Get set up, on the Mods "
-            "page) and apply again")
+        log(f"warning: {steam_elsewhere_text(steam, cfg.game_dir)}")
     if with_remaps:
         log("some of your remaps only work with the old key remapper, which is deprecated (what the game reads "
             "itself, such as movement and the camera, or every remap without UE4SS): start the game with "

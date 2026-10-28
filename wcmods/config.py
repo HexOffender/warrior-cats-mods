@@ -173,6 +173,11 @@ def _find_game_dir():
     return None
 
 
+def is_game_dir(folder):
+    """Whether `folder` is the game's: the one with Wrc in it, and the game's exe there."""
+    return bool(folder) and os.path.isfile(os.path.join(folder, "Wrc", "Binaries", "Win64", EXE_NAME))
+
+
 def steam_game_dir():
     """The copy of the game Steam starts (Play, steam://rungameid): the folder under steamapps/common that its
     appmanifest names, in the Steam library that has one; None when Steam hasn't got the game, or not whole
@@ -185,7 +190,7 @@ def steam_game_dir():
         except OSError:
             continue
         d = os.path.join(lib, "steamapps", "common", m.group(1) if m else GAME_FOLDER)
-        if os.path.isfile(os.path.join(d, "Wrc", "Binaries", "Win64", EXE_NAME)):
+        if is_game_dir(d):
             return d
     return None
 
@@ -197,10 +202,13 @@ def steam_elsewhere(cfg):
     return steam if steam and cfg.game_dir and not same_folder(steam, cfg.game_dir) else None
 
 
-def steam_elsewhere_text(steam, game_dir):
-    """What that means, for every place that says so (the build, `status`, Play, the studio's Mods page)."""
-    return (f"Steam starts the game from {steam}, but wcmods puts your mods into {game_dir}, so the game you play "
-            "has none of them, and a cat renamed to a mod's own name shows as <MISSING STRING TABLE ENTRY>")
+def steam_elsewhere_text(steam, game_dir, fix=True):
+    """What that means, for every place that says so (the build, `status`, Play, the studio's Mods page), and
+    with `fix` what to do (the Mods page has its own button instead)."""
+    text = (f"Steam starts the game from {steam}, but wcmods puts your mods into {game_dir}, so the game you play "
+            "has none of them, and a cat renamed to a mod's own name shows as Cat 1 or <MISSING STRING TABLE ENTRY>")
+    return text + (". Switch to Steam's copy (Use Steam's copy, on Clan Mod Studio's Mods page, or game_dir in "
+                   "wcmods.json), then apply again" if fix else "")
 
 
 def game_running():

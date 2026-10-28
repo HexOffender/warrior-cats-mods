@@ -80,8 +80,8 @@ def names_without_text(cfg, ctx, game):
         strings = ctx.files[path][0].decode("utf-8") if path in ctx.files else game.read_text(path)
         keys = {r.fields[0] for r in Table(strings).rows if r.fields}
         missing = names.without_text(names.cats_in_save(SaveDoc(text).data), ctx.save_ops, keys.__contains__)
-    except Exception:   # a save or table that can't be read: the sections that need them say so
-        return []
+    except Exception as e:   # said, so the check isn't skipped unseen
+        return [f"couldn't check your cats' names against the game's text ({type(e).__name__}: {e})"]
     if not missing:
         return []
     shown = [f"{'your cat' if where == 'you' else where} ({key})" for where, key in missing[:5]]
@@ -89,9 +89,11 @@ def names_without_text(cfg, ctx, game):
         shown.append(f"{len(missing) - 5} more")
     them = "it" if len(missing) == 1 else "them"
     cats = "a cat in your save has" if len(missing) == 1 else f"{len(missing)} cats in your save have"
+    yours = ", and the HUD calls your cat Cat 1" if any(where == "you" for where, _ in missing) else ""
     return [f"{cats} a name a mod made, and no mod in this build gives the game its text, so the game will show "
-            f"{them} as <MISSING STRING TABLE ENTRY>: {', '.join(shown)}. Turn the mod that named {them} back on, "
-            f"or rename {them} in names.json; Backups and repair puts your save back as it was before"]
+            f"{them} as <MISSING STRING TABLE ENTRY>{yours}: {', '.join(shown)}. Turn the mod that named {them} "
+            "back on (or, if it's left out as made for an older version of the game, use it anyway), or rename "
+            f"{them} on the Names page; Backups and repair puts your save back as it was before"]
 # Shared Lua modules installed with any build, for UE4SS scripts to require (docs/SDK.md, "Overlays").
 SHARED_LUA = (view, draw, world, menu, game_lua)
 
@@ -185,8 +187,7 @@ def build(cfg, mods, out_dir, log=print):
     ctx.warnings += names_without_text(cfg, ctx, game)
     steam = steam_elsewhere(cfg)
     if steam:
-        ctx.warnings.append(steam_elsewhere_text(steam, cfg.game_dir) + ". Use Steam's folder (Get set up, on Clan "
-                            "Mod Studio's Mods page, or game_dir in wcmods.json) and install again")
+        ctx.warnings.append(steam_elsewhere_text(steam, cfg.game_dir))
 
     manifest = {"mods": [m.id for m in enabled], "sections": report, "outputs": [], "ue4ss_mods": [],
                 "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
@@ -223,9 +224,10 @@ def build(cfg, mods, out_dir, log=print):
         # The game reads a pak in ~mods only with a container of the same name beside it (seen on build
         # 26184573: a pak of text edits alone was ignored), so one goes with every pak, empty when no
         # package changed.
-        io = game.io if ctx.packages else None
-        header = io.container_header() if ctx.packages else None
         container = ModContainerWriter(blake3(MOD_BASENAME.lower().encode(), 8))
+        if ctx.packages:
+            io = game.io
+            header = io.container_header()
         for path, (data, _, _) in ctx.packages.items():
             if path in ctx.new_packages:
                 cid, imports, shaders, bulk = ctx.new_packages[path]
@@ -255,6 +257,10 @@ def build(cfg, mods, out_dir, log=print):
             for ext, src in files.items():
                 shutil.copy2(src, os.path.join(out_dir, name + ext))
                 manifest["outputs"].append(name + ext)
+            if ".utoc" not in files:   # a pak alone isn't read, as wcmods' own isn't: an empty container goes with it
+                ModContainerWriter(blake3(name.lower().encode(), 8)).write(
+                    os.path.join(out_dir, name + ".utoc"), os.path.join(out_dir, name + ".ucas"))
+                manifest["outputs"] += [name + ".utoc", name + ".ucas"]
             manifest["paks"].append({"mod": m.id, "file": f"paks/{stem}", "installed_as": name})
             log(f"  {m.id}: paks/{stem} goes in as {name}")
     # The in-game mod menu's window is wcmods' own: it goes in with every build (the install leaves it out
@@ -386,6 +392,9 @@ def pending(cfg, mods):
     was_root = inst.get("mods_root") or os.path.join(cfg.root, "mods")
     if now and not same_folder(was_root, cfg.mods_root):
         redo.append(f"your mods moved (to {cfg.mods_root})")
+    # An install into another copy of the game (before Use Steam's copy, say) isn't in this one.
+    if inst.get("game_dir") and cfg.game_dir and not same_folder(inst["game_dir"], cfg.game_dir):
+        redo.append(f"the game folder changed (to {cfg.game_dir})")
     # The mod menu's key, button and size are written into its script at install.
     menu_now = {k: v for k, v in menusettings.menu_settings(cfg, data).items() if k in ("key", "pad", "size")}
     if isinstance(inst.get("menu"), dict) and inst["menu"] != menu_now:
@@ -484,7 +493,7 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
     game_info = manifest.get("game") or {}
     cfg.data["installed"] = {"mods": manifest["mods"], "built": manifest["built"], "ue4ss": bool(mods_dir),
                              "game_build": game_info.get("build"), "layout": game_info.get("layout"),
-                             "mods_root": cfg.mods_root, "menu": manifest.get("menu")}
+                             "mods_root": cfg.mods_root, "menu": manifest.get("menu"), "game_dir": cfg.game_dir}
     cfg.save()
     return manifest
 

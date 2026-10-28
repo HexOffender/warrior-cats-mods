@@ -1470,10 +1470,11 @@ def _onboarding_edges():
 
 def _steam_copy():
     """Steam's copy of the game, from its appmanifest in a made-up Steam library: found under the folder the
-    manifest names, told apart from another copy wcmods installs into (and said so in Get set up's status),
-    and no copy at all with no manifest or no game in its folder."""
+    manifest names, told apart from another copy wcmods installs into (said in Get set up's status, where the
+    Mods page's button is the fix, and with the fix everywhere else), no copy at all with no manifest or no
+    game in its folder, and an install into the other copy waiting to be made again once wcmods uses Steam's."""
     import json
-    from . import config as config_mod, onboarding
+    from . import config as config_mod, onboarding, pipeline
     from .config import EXE_NAME, STEAM_APP_ID, Config
     with tempfile.TemporaryDirectory() as tmp:
         lib = os.path.join(tmp, "Library")
@@ -1496,15 +1497,26 @@ def _steam_copy():
             found = config_mod.steam_game_dir()
             elsewhere = config_mod.steam_elsewhere(cfg)
             st = onboarding.status(cfg, os.path.join(tmp, "backups"))
-            cfg.data["game_dir"] = steam
+            told = config_mod.steam_elsewhere_text(steam, other)
+            # Mods installed into the other copy, then Use Steam's copy: the install is to be made again.
+            cfg.data["installed"] = {"mods": [], "built": "2026-10-27T12:00:00", "game_dir": other}
+            cfg.save()   # set_game_dir reads wcmods.json again
+            onboarding.set_game_dir(cfg, steam)
             same = config_mod.steam_elsewhere(cfg)
+            moved = pipeline.pending(cfg, [])["redo"]
+            cfg.data["installed"]["game_dir"] = steam
+            cfg.save()
+            stays = pipeline.pending(cfg, [])["redo"]
             os.remove(os.path.join(steam, "Wrc", "Binaries", "Win64", EXE_NAME))
             no_game = config_mod.steam_game_dir()   # Steam's folder without the game: being moved or installed
         finally:
             config_mod._steam_library_dirs = kept
+        text = st["game"]["steam_text"]
         return (no_manifest is None and found == steam and elsewhere == steam and same is None and no_game is None
-                and st["game"]["ok"] and st["game"]["steam"] == steam and other in st["game"]["steam_text"]
-                and "<MISSING STRING TABLE ENTRY>" in st["game"]["steam_text"])
+                and st["game"]["ok"] and st["game"]["steam"] == steam and other in text
+                and "Cat 1" in text and "<MISSING STRING TABLE ENTRY>" in text and "Use Steam's copy" not in text
+                and told.startswith(text) and "Use Steam's copy, on Clan Mod Studio's Mods page" in told
+                and moved == [f"the game folder changed (to {steam})"] and stays == [])
 
 
 def _user_data():
@@ -1951,8 +1963,9 @@ def _colour_slots():
 
 def _pak_with_container(cfg):
     """A build that only edits tables (no cooked package) still ships a container beside its pak, empty, as the
-    game reads a pak in ~mods only with one (seen on build 26184573); a build that changes no file ships neither;
-    and an install with a pak alone is outdated."""
+    game reads a pak in ~mods only with one (seen on build 26184573); a mod's own .pak alone gets one too, while
+    its own container is used as it is; a build that changes no file ships neither; and an install with a pak
+    alone is outdated."""
     import json
     import shutil
     from . import mods, pipeline
@@ -1960,11 +1973,18 @@ def _pak_with_container(cfg):
     with tempfile.TemporaryDirectory() as tmp:
         root = _mods_folder(tmp, {"moth": ({"name": "Moth", "enabled": True},
                                            {"names.json": json.dumps({"prefixes": {"rename": {"Otter": "Moth"}}})}),
-                                  "none": ({"name": "Nothing", "enabled": True}, {})},
+                                  "none": ({"name": "Nothing", "enabled": True}, {}),
+                                  "retex": ({"name": "Retexture", "enabled": True}, {"paks/Retexture.pak": b"pak"}),
+                                  "cooked": ({"name": "Cooked", "enabled": True},
+                                             {"paks/Full.pak": b"pak", "paks/Full.utoc": b"toc", "paks/Full.ucas": b"cas"})},
                             build=gamebuild.steam_build(cfg))
         out = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out"), log=lambda m: None)
         utoc = os.path.join(tmp, "out", "zzz_WCMods_P.utoc")
         empty = os.path.isfile(utoc) and not IoStoreReader(utoc, Oodle()).files
+        retex, cooked = pipeline.user_pak_name("retex", "Retexture"), pipeline.user_pak_name("cooked", "Full")
+        theirs = (sorted(o for o in out["outputs"] if o.startswith(retex)) == [retex + e for e in (".pak", ".ucas", ".utoc")]
+                  and not IoStoreReader(os.path.join(tmp, "out", retex + ".utoc"), Oodle()).files
+                  and open(os.path.join(tmp, "out", cooked + ".utoc"), "rb").read() == b"toc")
         mods.switch(mods.discover(root), "moth", False)
         bare = pipeline.build(cfg, mods.discover(root), os.path.join(tmp, "out2"), log=lambda m: None)
         # An install from before has a pak alone: outdated, so the studio says Apply again and Play applies first.
@@ -1977,7 +1997,7 @@ def _pak_with_container(cfg):
         for ext in (".utoc", ".ucas"):
             shutil.copy2(os.path.join(tmp, "out", "zzz_WCMods_P" + ext), mods_dir)
         paired = pipeline.install_outdated(here)
-    return (out["outputs"][:3] == ["zzz_WCMods_P.pak", "zzz_WCMods_P.utoc", "zzz_WCMods_P.ucas"] and empty
+    return (out["outputs"][:3] == ["zzz_WCMods_P.pak", "zzz_WCMods_P.utoc", "zzz_WCMods_P.ucas"] and empty and theirs
             and not [o for o in bare["outputs"] if o.startswith("zzz_WCMods_P")] and alone and not paired)
 
 
@@ -2066,7 +2086,8 @@ def _names_without_text():
         plain = pipeline.names_without_text(cfg, Build(), Game())
     return (ok and no_save == [] and fine == [] and plain == [] and Game.reads == reads == 1 and len(warned) == 1
             and warned[0].startswith("3 cats in your save have a name a mod made")
-            and all(k in warned[0] for _, k in gone) and "your cat (STR_CAT_NAME_WCM_FAWN_STAR)" in warned[0])
+            and all(k in warned[0] for _, k in gone) and "your cat (STR_CAT_NAME_WCM_FAWN_STAR)" in warned[0]
+            and "calls your cat Cat 1" in warned[0] and "use it anyway" in warned[0])
 
 
 def _names_plan(read_text):

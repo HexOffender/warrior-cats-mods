@@ -96,7 +96,7 @@ export default {
         setupBox.append(el("div", { class: "banner" }, el("strong", { text: "Your mods go into another copy of the game" }),
           el("span", { text: `${s.game.steam_text}.` }),
           el("div", { class: "row" }, el("button", { class: "btn primary", text: "Use Steam's copy", onclick: async () => {
-            try { await api.post("/setup/game", { dir: s.game.steam }); toast("Using Steam's copy of the game. Apply to game to put your mods in it."); location.reload(); }
+            try { await api.post("/setup/game", { dir: s.game.steam }); toast("Using Steam's copy of the game. Play or Apply to game puts your mods in it."); location.reload(); }
             catch (e) { toast(e.message, "bad"); }
           } }))));
       }

@@ -49,8 +49,7 @@ def cmd_status(ctx, args):
     print(f"game folder : {cfg.game_dir or 'NOT FOUND (Clan Mod Studio, Get set up, asks for it; or set game_dir in wcmods.json)'}")
     steam = steam_elsewhere(cfg)
     if steam:
-        print(f"              warning: {steam_elsewhere_text(steam, cfg.game_dir)}. Set game_dir in wcmods.json "
-              "to Steam's folder (or use it in Get set up) and install again")
+        print(f"              warning: {steam_elsewhere_text(steam, cfg.game_dir)}")
     print(f"save folder : {cfg.save_dir} ({'found' if os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)) else 'no save yet'})")
     print(f"your files  : {cfg.data_dir} (your mods, wcmods.json and backups)")
     print(f"decoder     : {cfg.oodle_dll or 'wcmods (set oodle_dll in wcmods.json to an oo2core DLL for a faster one)'}")
@@ -471,8 +470,7 @@ def cmd_play(ctx, args):
         os.startfile(f"steam://rungameid/{STEAM_APP_ID}")
         steam = steam_elsewhere(ctx.cfg)
         if steam:
-            print(f"warning: {steam_elsewhere_text(steam, ctx.cfg.game_dir)}. Set game_dir in wcmods.json to "
-                  "Steam's folder (or use it in Get set up) and install again")
+            print(f"warning: {steam_elsewhere_text(steam, ctx.cfg.game_dir)}")
     _run_remapper(ctx, args, launching=launching)
 
 
