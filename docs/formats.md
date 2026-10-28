@@ -18,10 +18,27 @@ with this game). Mods with code are in [SDK.md](SDK.md).
 { "eyes": { "Amber": "#FFB300", "Sky": ["#001B2E", "#00E5FF"] },
   "fur": { "3": "#D9380B" }, "pattern": { "0": "#3B2A6B" }, "marking": { "0": "#FFF4E0" } }
 ```
-Eye keys are the game's slot names (`python wcmods.py eyes`). Some names don't match the colour
-(`Yellow` is green). One colour keeps the game's shading; a list is spread from pupil to rim. The
-cat creator's eye buttons are recoloured to match. Coat, pattern and marking keys are slots 0–24
-(0–14 natural, 15–24 bright extras); `python wcmods.py tables` lists the game's originals.
+Eye keys are the game's names for its eye colours, in any case (`Amber`, `amber`), or their numbers
+(`iris3`, `row3` or `3`). `python wcmods.py eyes` lists them: `Sclera` is the eye white (0), then the 20
+standard colours, then `Dlc1` to `Dlc5`, the extra eyes that come with a game add-on. Some names don't
+match the colour (`Yellow` is green). One colour keeps the game's shading, dark at the pupil; a list is
+spread from pupil to rim, so a list of one colour (`["#ffb300"]`) is that colour flat. The cat
+creator's eye buttons are recoloured to match. Coat, pattern and marking keys are slots 0–24 (0–14
+natural, 15–24 bright extras; `"03"` is 3); `python wcmods.py tables` lists the game's originals, and
+the Palettes page shows them once the game has run with the script loader (by their numbers until
+then).
+
+A colour is `#RGB`, `#RRGGBB` or `#RRGGBBAA` (the alpha is dropped), with or without the `#`, one of
+the names black, white, red, green, blue, gold, silver, pink, purple, teal, orange, cyan, magenta,
+lime and navy, or `[r, g, b]` from 0 to 255. Keys starting with `_`, and `name` and `description`,
+are notes: wcmods ignores them, and the Palettes page keeps them. Anything else the page can't show (a
+misspelt eye, a coat past 24, a part a palette hasn't got) it lists under its tabs, keeps as written
+and offers to remove. Save to mod says what would keep the file out of the game, and what Apply would
+leave out of it (an eye the game hasn't got is skipped, with a warning; the rest goes in).
+
+Where palettes that are on set the same colour, the one later in the Mods list wins, colour by
+colour, and eyes too, whatever each calls them (a name in one, a number in another). The Mods page
+sets the order (a mod's priority).
 
 A recoloured slot changes every cat with that slot. To add colours instead, give **pattern** and
 **marking** colours slot numbers from 25 up:
@@ -95,14 +112,16 @@ palette you've added is your own copy, so add it again to get the new one.
   "cats": { "Duskfang": { "look": { "fur": 0, "tail": 9 }, "slots": { "fur": 0 }, "colours": { "nose": "#202020" } },
             "WindClan/Warrior/3": { "scars": "none" } } }
 ```
-`player` is your cat, in the game you're playing. **`cats`** changes other cats in your save the same
+`player` is your cat: its `slots`, `scars` and `look` go into the game you were playing when you
+applied, and its `colours` go on whichever cat you play, in any save slot. **`cats`** changes other cats in your save the same
 way, each by its name (`"Duskfang"`, as it shows with your names mods) or its place as the Names page
 and the Your cat page show it (`"WindClan/Warrior/3"`, for one of two cats with the same name), in the
 game you're playing, or with the game's slot first for another (`"2/Duskfang"`), as `names.json`'s
 `cats` picks them. Every cat called the name changes, with a warning when that's more than one. Mods
 apply in priority order, so a later mod's choice wins even when it names the cat another way.
 - **`colours`** go onto the cat's own materials while you play. That covers menus and portraits,
-  and every part is optional. No other cat changes, and any colour works, including paws, ears,
+  and every part is optional; a colour is written any way `palette.json` takes one (the Your cat page
+  writes `#RRGGBB`). No other cat changes, and any colour works, including paws, ears,
   nose and whiskers, which have no slots at all. The game sets a cat's colours again whenever it
   sets the cat up, so the UE4SS script (`WCModsCatLook`) puts them back twice a second. Another cat's
   are found by its name, so they go on only in the game you're playing, and a cat with the same name
@@ -130,6 +149,11 @@ apply in priority order, so a later mod's choice wins even when it names the cat
 
   Scars show with the game's own Injury system switch on (its Gameplay settings). A boss fight can
   still give new ones. The studio's **Your cat** page has a Scars card for them.
+
+Keys starting with `_` are notes, kept as they are. Anything else the Your cat page can't change (a
+part the build doesn't know, a number past the game's) it lists under "Things this page can't
+change" on its card, keeps as written and offers to remove; Save to mod says what would keep the file
+out of the game.
 
 ### `controls.json`
 ```json

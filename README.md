@@ -111,7 +111,9 @@ closes.
 
 The pages under **Make mods** are for making your own; each edits a file in a mod folder. **Save to
 mod** checks the file the way Apply would and says under the Editing mod bar what would keep it out of
-the game; the page asks before you switch mods or close it with unsaved changes.
+the game, and what Apply would leave out of it; the page asks before you switch mods or close it with
+unsaved changes, and reads the file again when something else changed it. A page's **How this
+works**, where it has one, opens its page of the guide.
 
 | Page | What you change | Stored as | Reaches the game through |
 |---|---|---|---|
