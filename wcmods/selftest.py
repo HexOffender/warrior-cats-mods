@@ -297,6 +297,16 @@ def _gvas(archives, head=b""):
             + struct.pack("<i", len(archives) + 4) + bytes(1) + struct.pack("<i", len(archives)) + archives + bytes(4))
 
 
+# The game's own Hash and Version tags, byte for byte, from a save it wrote (build 26184573, read from a copy
+# of WrcGame.sav): name and type as FStrings, the type's parameter count (0), the value's size (8 and 1),
+# flags (0), the value (Hash 0xE0621E33FF8139C3, Version 20). The GamerId tag between them, a Steam id, is
+# left out. _header_value is checked against these, not only against _save_header, which shares its layout.
+GAME_HASH_TAG = bytes.fromhex("05000000 4861736800 0f000000 55496e74363450726f706572747900"
+                              "00000000 08000000 00 c33981ff331e62e0")
+GAME_VERSION_TAG = bytes.fromhex("08000000 56657273696f6e00 0d000000 427974655072 6f706572747900"
+                                 "00000000 01000000 00 14")
+
+
 def _save_header(hash_value, version):
     """The properties before CompressedData as the game writes them (UE 5.7 tags): name and type as FStrings,
     the type's parameter count, the value's size, flags, the value."""
@@ -320,6 +330,12 @@ def _save_hash():
     if (cityhash.cityhash64_with_seed(b"", 1234567) != 0x75106DB890237A4A
             or cityhash.cityhash64_with_seeds(b"", 1234567, cityhash.K0) != 0x3FEAC5F636039766):
         return False, "CityHash64WithSeed doesn't match Google's test values"
+    game = SaveGame(_small_save("{\r\n}", GAME_HASH_TAG + GAME_VERSION_TAG))
+    if (game.hash, game.version) != (0xE0621E33FF8139C3, 20):
+        return False, f"read Hash {game.hash!r} and Version {game.version!r} from the game's own tags"
+    built = _save_header(0xE0621E33FF8139C3, 20)
+    if not (built.startswith(GAME_HASH_TAG) and built.endswith(GAME_VERSION_TAG)):
+        return False, "_save_header doesn't lay out its tags as the game does"
     s = SaveGame(_small_save("{\r\n}", _save_header(0x0123456789ABCDEF, 20)))
     if (s.hash, s.version) != (0x0123456789ABCDEF, 20):
         return False, f"read Hash {s.hash!r} and Version {s.version!r} from the header"
@@ -329,7 +345,7 @@ def _save_hash():
         return False, "an edited save didn't keep its Hash and Version"
     if SaveGame(_small_save("{\r\n}")).hash is not None:
         return False, "a header without a Hash read as having one"
-    # The game's text for one write: the UTC time, an empty salt, its save manager's address (%p).
+    # The game's text for one write: the UTC time, an empty salt, the storage manager's address (%p).
     when = datetime.datetime(2026, 10, 26, 12, 5, 9)
     want = cityhash.cityhash64_with_seed(b"2026.10.26-12.05.09__000001E5C8A2B000", 0x0123456789ABCDEF)
     if savelib.next_hash(0x0123456789ABCDEF, when, 0x1E5C8A2B000) != want:

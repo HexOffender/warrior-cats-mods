@@ -100,8 +100,10 @@ def next_hash(previous, when, address):
     """The Hash the game gives the save when it writes it, read from the exe (build 26184573; see
     docs/reverse-engineering.md, "The save"): CityHash64WithSeed of the UTF-8 text "<when>__<address>",
     seeded with the save's previous Hash. `when` is the UTC time of the write (a datetime, to the second),
-    `address` the save manager's address in the game's memory, which the game prints with %p (16
-    upper-case hex digits). Nothing in it comes from what the save holds."""
+    `address` the storage manager's address in the game's memory (GameInstance.StorageManager, a
+    SwtStorageManager: the writer is its virtual and formats its own `this`), which the game prints with
+    %p (16 upper-case hex digits, zero-padded, as the UCRT does). Nothing in it comes from what the save
+    holds."""
     text = f"{when:%Y.%m.%d-%H.%M.%S}__{address:016X}"
     return cityhash64_with_seed(text.encode("utf-8"), previous)
 

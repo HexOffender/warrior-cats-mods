@@ -28,6 +28,21 @@ def test_save_hash_is_read_from_the_gvas_header():
     assert ok, detail
 
 
+def test_save_hash_and_version_read_from_the_games_own_bytes():
+    # The tags as the game wrote them (copied from a WrcGame.sav it wrote, build 26184573), spelled out
+    # here so the parser is held to the game's bytes and not only to selftest._save_header's layout.
+    from wcmods.formats.save import SaveGame, _header_value
+    hash_tag = (b"\x05\x00\x00\x00Hash\x00" + b"\x0f\x00\x00\x00UInt64Property\x00" + bytes(4)
+                + b"\x08\x00\x00\x00" + b"\x00" + bytes.fromhex("c33981ff331e62e0"))
+    version_tag = (b"\x08\x00\x00\x00Version\x00" + b"\x0d\x00\x00\x00ByteProperty\x00" + bytes(4)
+                   + b"\x01\x00\x00\x00" + b"\x00" + b"\x14")
+    assert (hash_tag, version_tag) == (selftest.GAME_HASH_TAG, selftest.GAME_VERSION_TAG)
+    assert _header_value(hash_tag + version_tag, "Hash", "UInt64Property", 8) == bytes.fromhex("c33981ff331e62e0")
+    assert _header_value(hash_tag + version_tag, "Version", "ByteProperty", 1) == b"\x14"
+    s = SaveGame(selftest._small_save("{\r\n}", hash_tag + version_tag))
+    assert (s.hash, s.version) == (0xE0621E33FF8139C3, 20)
+
+
 def test_save_hash_and_version_of_a_save_without_them_or_laid_out_otherwise():
     from wcmods.formats.save import _header_value
     head = selftest._save_header(0x1122334455667788, 20)

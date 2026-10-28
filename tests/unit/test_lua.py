@@ -18,6 +18,18 @@ def test_shared_module_compiles(module):
     assert not problems(module.lua())
 
 
+def test_the_in_game_checks_lua_in_verified_md_compiles():
+    # docs/verified.md's not-yet-confirmed checks give Lua to run in the game (e.g. the save's Hash); a missing
+    # `end` there would only show up as an error in game.
+    import os
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "verified.md")
+    with open(path, encoding="utf-8") as f:
+        blocks = re.findall(r"```lua\n(.*?)\n\s*```", f.read(), re.S)
+    assert len(blocks) >= 2
+    for lua in blocks:
+        assert not luacheck.check(lua), lua
+
+
 def test_names_module_with_the_games_own_text():
     lua = world.names_lua()
     assert not problems(lua)

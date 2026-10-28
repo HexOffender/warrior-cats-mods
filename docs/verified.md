@@ -238,18 +238,56 @@ Fawnstar, as a player reported it showing "Cat 1"):
   - whether the game obeys each of its developer switches.
 - **The save's `Hash` and `Version`** (read from the code: [reverse-engineering.md](reverse-engineering.md#the-save)).
   Two checks would confirm it, both on a test cat and after a backup:
-  - **Any `Hash` loads.** With the game closed, change the save's `Hash`: the 8 bytes that start 9
-    bytes after `UInt64Property` and its NUL. Use another value, e.g. `0123456789ABCDEF`. Start the
-    game and enter the cat. It should load with its progress, and after the next save,
-    `formats.save.SaveGame.load(...).hash` should be a new value.
-  - **The formula.** In the forest, run `python wcmods.py lua "local m = Game.save.manager();
-    local old = tostring(m.SaveGame.Hash); local t0 = os.date('!%Y.%m.%d-%H.%M.%S');
-    Game.save.write(); return old .. ' ' .. tostring(m.SaveGame.Hash) .. ' ' ..
-    string.format('%X', m:GetAddress()) .. ' ' .. t0 .. ' ' .. os.date('!%Y.%m.%d-%H.%M.%S')"`.
-    It prints the old Hash, the new Hash, the address and the UTC time before and after the write.
-    UE4SS may give the hashes as signed numbers, so mask each with `& (2**64 - 1)`. Then check in
-    Python that `next_hash(old, when, address)` gives the new Hash, with `when` at either printed
-    time. If no second matches, doubt the `%p` text (16 upper-case digits) first.
+  - **Any `Hash` loads.** Turn Steam Cloud off for the game first (its Properties, General): the
+    save folder has `steam_autocloud.vdf`, and the game has a cloud path of its own that writes the
+    cloud copy over the slot and loads it, so the patched file might not be the one that loads. With
+    the game closed, change the save's `Hash` with a hex editor: the 8 bytes that start 9 bytes after
+    `UInt64Property` and its NUL. Write `EF CD AB 89 67 45 23 01` (0x0123456789ABCDEF, little-endian).
+    Start the game and enter the cat, and before anything saves, run `python wcmods.py lua -f
+    hash-read.lua` with:
+    ```lua
+    local m = Game.save.manager()
+    if not m then return 'no save manager' end
+    local sg = Game.get(m, 'SaveGame')
+    if not Game.valid(sg) then return 'no save game' end
+    local h = Game.get(sg, 'Hash')
+    local ok, text = pcall(string.format, '%016X', h)
+    return ok and text or tostring(h)
+    ```
+    It should print `0123456789ABCDEF`, which shows that the patched file is the one that loaded, and
+    the cat should have its progress. Another value means the game saved first (try sooner) or
+    another copy loaded.
+  - **The formula.** In the forest, run `python wcmods.py lua -f hash-write.lua` with:
+    ```lua
+    local m, st = Game.save.manager(), Game.manager('storage')
+    if not (m and st) then return 'no managers' end
+    local function hash()
+        local sg = Game.get(m, 'SaveGame')
+        if not Game.valid(sg) then return nil end
+        return Game.get(sg, 'Hash')
+    end
+    local function hex(v)
+        local ok, text = pcall(string.format, '%016X', v)
+        return ok and text or tostring(v)
+    end
+    local old = hash()
+    if old == nil then return 'no save game' end
+    local t0 = os.date('!%Y.%m.%d-%H.%M.%S')
+    Game.save.write()
+    local new = hash()
+    if new == nil then return 'no save game after the write' end
+    return table.concat({ hex(old), hex(new), hex(st:GetAddress()), hex(m:GetAddress()), t0,
+        os.date('!%Y.%m.%d-%H.%M.%S') }, ' ')
+    ```
+    It prints the old Hash, the new Hash, the storage manager's address, the save manager's address
+    and the UTC time before and after the write. If the two hashes are the same, the game skipped the
+    write (the code skips it while a byte that an earlier write set is still set): run it again a
+    little later. Then check in Python that `next_hash(old, when, address)` (`wcmods/formats/save.py`)
+    gives the new Hash, with the storage manager's address and `when` at each second from the first
+    printed time to the second. If no second matches, first doubt which
+    object's address it is: the writer is the storage manager's and formats its own `this` (read
+    from the code), so try the save manager's address next. The `%p` text (16 upper-case digits) was
+    checked against the UCRT's `__stdio_common_vswprintf` on this machine, not in the game.
   - **Not to try on a real save:** a `Version` other than 20. The code says the game starts a new
     save instead of loading it.
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
