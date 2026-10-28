@@ -202,3 +202,9 @@ which aren't instructions.
    it (`game.HIDDEN` holds one layout, so it's one build), and note it in `docs/reverse-engineering.md`.
 5. Add an `ANCHORS` entry for any class `make` says has no signatures, so it can be found automatically
    next time.
+6. Run `python tools/re/uht.py <exe> lua`. In game, scripts read the game's enums by name (`Game.enums`, the
+   Talk prompt's Interact, the in-game remap's commands, the agent's Confirm), so a renumbered enum is followed
+   there, but the numbers the Lua falls back on when that read fails are the old build's. Bring each one it
+   reports into line: `game.ENUMS`' lists, and the constants whose comment names the value
+   (`-- ECommands::Player_Interact`). It reads wcmods' `.lua` files and the Lua in its `.py` files (the agent's);
+   a game number written anywhere else, or without such a comment, isn't checked, so name each new one that way.

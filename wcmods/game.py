@@ -68,6 +68,42 @@ HIDDEN = [
         ("WCM_ZoneExitDistance", 0x5A8, "FloatProperty"), ("WCM_ReactToChase", 0x5AC, "FloatProperty")]),
 ]
 
+# The game's enums Game.enums gives scripts: the name scripts use, the enum's path in the game (its module's
+# /Script package, from the class dump's `## [Module]` blocks), and its names in order. In game each is read
+# from the game's own enum the first time it's used, so a game update that renumbers one is followed; these
+# lists, numbered from 0, are the fallback for when that read fails. They're build 26184573's, each the whole
+# enum as the exe's enum table has it (`python tools/re/uht.py <exe> lua` checks them against an exe).
+ENUMS = [
+    ("clan", "/Script/SwtQuest.EClanType", ["None", "ThunderClan", "ShadowClan", "RiverClan", "WindClan", "Total"]),
+    ("rank", "/Script/SwtQuest.ECharacterRank", ["None", "Apprentice", "Warrior", "Deputy", "Leader", "Total"]),
+    ("trait", "/Script/SwtQuest.ECharacterTrait",
+     ["None", "Brave", "Ambitious", "Wise", "Energetic", "Curious", "Patient"]),
+    ("stance", "/Script/SwtAdventure.ESwtAdventureCombatStance",
+     ["None", "Neutral", "Offensive", "Defensive", "Trick", "Sneaky", "Reckless"]),
+    ("status", "/Script/SwtAdventure.ESwtAdventureStatusType", ["None", "Blinded", "Furious", "Poisoned", "Stressed"]),
+    ("aiProfile", "/Script/SwtAdventure.EAICombatProfile",
+     ["None", "Tier1", "Tier2", "Tier3", "Tier4", "Tier5", "Tier6", "Terrible", "Perfect"]),
+    ("team", "/Script/SwtAdventure.ESwtAdventureCombatTeam", ["None", "Player", "Enemy"]),
+    ("detectionRange", "/Script/SwtAdventure.EAdventureDetectionRange", ["Tiny", "Small", "Medium", "Large"]),
+    ("stat", "/Script/SwtAdventure.ESwtAdventureCombatAttribute",
+     ["None", "Prowess", "Strength", "Resilience", "Instinct", "Agility"]),
+    ("resource", "/Script/SwtQuest.EQuestResourceType",
+     ["Health", "Level", "Stamina", "StaminaCombat", "Currency", "FreshKill", "Count"]),
+    ("questStatus", "/Script/SwtQuest.EQuestStatus",
+     ["None", "QuestAvailable", "OngoingQuest", "QuestComplete", "QuestTurnedIn", "DialogueProgress"]),
+    ("questResult", "/Script/SwtQuest.EQuestResultTypes", ["Any", "Success", "Fail"]),
+    ("questType", "/Script/SwtQuest.EQuestType", ["MainQuest", "SideQuest"]),
+    ("objectiveStatus", "/Script/SwtQuest.EObjectiveStatus",
+     ["NotStarted", "InProgress", "Failed", "FailedTimePressure", "Succeeded"]),
+    ("phase", "/Script/SwtQuest.EGamePhase",
+     ["None", "PreCinematic", "CinematicIntro", "PreGame", "Game", "PostGame", "TutorialIntro"]),
+    ("itemType", "/Script/SwtQuest.EItemType", ["None", "Consumable", "Equipment", "Quest", "Collectible"]),
+    ("characterType", "/Script/SwtQuest.ESwtQuestCharacterType",
+     ["None", "Cat", "BossCat", "WeakMice", "Mice", "WeakSquirrel", "Squirrel", "WeakRabbit", "Rabbit", "BossRabbit",
+      "WeakBird", "Bird", "WeakRat", "Rat", "Snake", "ThreatSnake", "BossSnake", "Badger", "ThreatBadger", "BossBadger",
+      "ThreatFox", "TitanFox", "BossFox", "ThreatDog", "TitanDog", "BossDog"]),
+]
+
 LUA = lua_source("game.lua")
 
 
@@ -104,4 +140,6 @@ def lua(offsets=None, saved=None):
     for cls, fields in hidden(offsets):
         items = ", ".join(f'{{ "{n}", 0x{o:X}, "{k}" }}' for n, o, k in fields)
         rows.append(f'    ["{cls}"] = {{ {items} }},')
-    return LUA.replace("@HIDDEN@", "{\n" + "\n".join(rows) + "\n}").replace("@SAVED@", lua_value(saved))
+    enums = "".join(f"\n    {key} = {{ {lua_value(path)}, {lua_value(names)} }}," for key, path, names in ENUMS)
+    return (LUA.replace("@HIDDEN@", "{\n" + "\n".join(rows) + "\n}").replace("@SAVED@", lua_value(saved))
+            .replace("@ENUMS@", "{" + enums + "\n}"))

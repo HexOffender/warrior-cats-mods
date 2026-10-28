@@ -107,9 +107,10 @@ function Menu.new(kind, owner)
 end
 local new = Menu.new
 
-local AUTO, FILL = 0, 1                  -- ESlateSizeRule
-local H_FILL, H_LEFT, H_CENTER, H_RIGHT = 0, 1, 2, 3
-local V_FILL, V_TOP, V_CENTER = 0, 1, 2
+local AUTO, FILL = 0, 1                  -- ESlateSizeRule: Automatic, Fill
+local H_FILL, H_LEFT, H_CENTER, H_RIGHT = 0, 1, 2, 3   -- EHorizontalAlignment: HAlign_Fill, HAlign_Left, HAlign_Center, HAlign_Right
+local V_FILL, V_TOP, V_CENTER = 0, 1, 2               -- EVerticalAlignment: VAlign_Fill, VAlign_Top, VAlign_Center
+local TO_THE_TOP = 1                                  -- EDescendantScrollDestination::TopOrLeft
 
 -- Text at `pt` points (the UI scales it with the screen like the game's own text).
 function Menu.text(str, pt, colour, wrap)
@@ -339,7 +340,7 @@ local function agentScroll()
     local want = s:match("^row\t(.*)$")
     if want then
         local e = agent.rowAt and rows[agent.rowAt]
-        if e and valid(e.root) then content:ScrollWidgetIntoView(e.root, false, 1, 0) end   -- 1: to the top
+        if e and valid(e.root) then content:ScrollWidgetIntoView(e.root, false, TO_THE_TOP, 0) end
     elseif s == "top" then content:ScrollToStart()
     elseif s == "end" then content:ScrollToEnd()
     elseif tonumber(s) then content:SetScrollOffset(tonumber(s)) end
