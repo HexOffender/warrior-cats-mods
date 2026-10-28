@@ -133,7 +133,8 @@ class MatchPlan(NamesPlan):
     """NamesPlan's names with the build's own matcher (names.Plan's _targets), as sections/cats.py's _others uses it."""
     NOW = {**NamesPlan.NOW, "STR_CAT_NAME5": "Brackenfur", "STR_CAT_NAME6": "Hawkleaf"}
     AFTER = {**NOW, "STR_CAT_NAME4": "Mothfang"}
-    _targets, cats_called, _called = RealPlan._targets, RealPlan.cats_called, RealPlan._called
+    _targets, cats_called, _called, id_name = RealPlan._targets, RealPlan.cats_called, RealPlan._called, RealPlan.id_name
+    prefixes, suffixes = [], []   # the game's name parts, for names.guess_name: none here
 
 
 # Two Hawkleafs and a deputy in a story role too, a Warrior/0 in two clans, and game 2 with a Hawkleaf at the same
