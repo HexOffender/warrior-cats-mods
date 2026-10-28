@@ -1,15 +1,16 @@
 """Read-only scan of the running game's memory (ReadProcessMemory) for byte patterns.
 
-usage: memscan.py <process name> <label>=<hex> ... [--context N] [--max M]
+usage: memscan.py <process name or pid> <label>=<hex> ... [--context N] [--max M] [--old]
 Prints every hit with N bytes of context either side (inside the hit's region), and the region it's in.
+--old also runs the scan from before 2026-10-28 (scan_with_old()), and marks each hit it missed.
 
 Each committed, readable region is read in chunks that stay inside it, with the last len(pattern) - 1
 bytes searched in front of the next chunk, so a pattern across two chunks, or across two regions that
 touch, is found, once. Before 2026-10-28 each chunk was read 64 bytes past its end, and a read that ran
-into unreadable memory came back empty, so a region followed by unreadable memory was never searched
-(its last 16 MB, which is all of most regions): "no other hits" from memscan before then is worth
-repeating. scan() is the search itself, on any list of regions and any read function; Proc is the
-Windows part.
+into unreadable memory came back empty, so the last chunk of a region followed by unreadable memory
+(up to 16 MB: all of any region of 16 MB or less) was never searched. "No other hits" from memscan
+before then is worth repeating. scan() is the search itself, on any list of regions and any read
+function; Proc is the Windows part.
 """
 import ctypes
 import sys
@@ -68,6 +69,33 @@ def scan(regions, read, patterns, chunk=16 << 20):
     return hits
 
 
+def scan_with_old(regions, read, patterns, chunk=16 << 20):
+    """scan(), with the scan from before 2026-10-28 run beside it on the same chunks, to show the fix on a
+    live process. Right before scan() reads a chunk, it is read the old way: 64 bytes past its end, and
+    nothing at all when that read fails (ReadProcessMemory fails a read that runs into unreadable memory,
+    and the old read() then returned nothing). The two reads come back to back, so memory changing
+    between them is unlikely.
+    Returns (hits, old, empty): scan()'s hits; {label: [address]}, what the old scan found (a pattern
+    starting in the chunk); and [(address, size)] of each chunk the old read came back empty."""
+    old = {label: [] for label in patterns}
+    empty = []
+
+    def both(addr, n):
+        data = read(addr, n + 64)
+        if len(data) < n + 64:
+            data = b""
+            empty.append((addr, n))
+        for label, pat in patterns.items():
+            i = data.find(pat)
+            while 0 <= i < n:
+                old[label].append(addr + i)
+                i = data.find(pat, i + 1)
+        return read(addr, n)
+
+    hits = scan(regions, both, patterns, chunk)
+    return hits, {label: sorted(found) for label, found in old.items()}, empty
+
+
 _k32 = None
 
 
@@ -95,6 +123,9 @@ class MBI(ctypes.Structure):
 
 
 def find_pid(name):
+    """The pid of the first process whose image name starts with `name`; a number is taken as a pid."""
+    if name.isdigit():
+        return int(name)
     import subprocess
     out = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True).stdout
     for line in out.splitlines():
@@ -135,19 +166,21 @@ class Proc:
         return scan(self.regions(), self.read, patterns, chunk)
 
 
-def main():
-    args = sys.argv[1:]
-    ctx, mx = 64, 20
+def main(argv=None):
+    args = sys.argv[1:] if argv is None else argv
+    ctx, mx, with_old = 64, 20, False
     patterns = {}
     for i, a in enumerate(args[1:], 1):
         if a == "--context":
             ctx = int(args[i + 1])
         elif a == "--max":
             mx = int(args[i + 1])
+        elif a == "--old":
+            with_old = True
         elif "=" in a:
             label, hx = a.split("=", 1)
             patterns[label] = bytes.fromhex(hx)
-    if not patterns or not all(patterns.values()):
+    if not args or not patterns or not all(patterns.values()):
         sys.exit(__doc__)
     name = args[0]
     pid = find_pid(name)
@@ -155,11 +188,33 @@ def main():
         sys.exit(f"{name} isn't running")
     p = Proc(pid)
     print("pid", pid)
-    hits = p.scan(patterns)
+    old, empty = None, []
+    if with_old:
+        regions = list(p.regions())
+        hits, old, empty = scan_with_old(regions, p.read, patterns)
+        old = {label: set(found) for label, found in old.items()}
+        print(f"the old scan (before 2026-10-28) read {len(empty)} chunk(s) as empty, over {len(regions)} "
+              f"readable regions")
+    else:
+        hits = p.scan(patterns)
+
+    def by_old(addr, label):
+        if addr in old[label]:
+            return "found"
+        return "blind" if any(a <= addr < a + n for a, n in empty) else "missed"
+
     for label, lst in hits.items():
-        print(f"== {label}: {len(lst)} hit(s)")
+        line = f"== {label}: {len(lst)} hit(s)"
+        if with_old:
+            says = [by_old(h[0], label) for h in lst]
+            only_old = old[label] - {h[0] for h in lst}
+            line += (f": {says.count('found')} the old scan found too, {says.count('blind')} only in chunks it read"
+                     f" as empty, {says.count('missed')} it missed otherwise; {len(only_old)} only it found")
+        print(line)
         for addr, base, size, typ, prot in lst[:mx]:
-            print(f"  @{addr:#x} region {base:#x}+{size:#x} type {typ:#x} prot {prot:#x}")
+            mark = {"found": "  (old: found)", "blind": "  (old: missed, in a chunk it read as empty)",
+                    "missed": "  (old: MISSED)"}[by_old(addr, label)] if with_old else ""
+            print(f"  @{addr:#x} region {base:#x}+{size:#x} type {typ:#x} prot {prot:#x}{mark}")
             if ctx:
                 lo = max(addr - ctx, base)   # inside the hit's region: a read past it can come back empty
                 data = p.read(lo, min(addr + ctx, base + size) - lo)
