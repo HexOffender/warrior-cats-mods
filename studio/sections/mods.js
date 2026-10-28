@@ -99,7 +99,7 @@ export default {
     // Add all four, one after the other, each row on the add-ons card saying "Adding …" while it goes.
     async function addAll() {
       const todo = addons.filter(a => !a.installed);
-      const went = [], missed = [];
+      const went = [], unreleased = [], failed = [];
       adding = todo.length ? todo[0].id : null;
       renderSetup();
       for (const a of todo) {
@@ -108,15 +108,17 @@ export default {
         try {
           const r = await api.post(`/addons/${encodeURIComponent(a.id)}`, {});
           went.push(`${r.result.name} ${r.result.version || ""}`.trim());
-        } catch (e) { missed.push(e.message); }
+        } catch (e) { (/no release yet/.test(e.message) ? unreleased : failed).push(/no release yet/.test(e.message) ? a.name : e.message); }
       }
       adding = null;
       try { await api.post("/setup/addons", { choice: "added" }); } catch (e) { toast(e.message, "bad"); }
       const code = settings && settings.allow_code_mods;
-      toast((went.length ? `Added ${went.join(", ")}.` : "Nothing was added.")
-        + (missed.length ? ` Not now: ${missed.join(" ")}` : "")
-        + (went.length && !code ? " They run their own scripts: Let mods run their own scripts is the next step." : went.length ? " Press Play to put them in the game." : ""),
-        missed.length && !went.length ? "bad" : "info");
+      const and = list => list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : list[0];
+      toast((went.length ? `Added ${and(went)}.` : "Nothing was added.")
+        + (unreleased.length ? ` ${and(unreleased)} ${unreleased.length > 1 ? "have" : "has"} no release yet: the owner of that mod has to publish one, and its row below says so until then.` : "")
+        + (failed.length ? ` ${failed.join(" ")}` : "")
+        + (went.length && !code ? " They run their own scripts, so Let mods run their own scripts is the next step." : went.length ? " Press Play to put them in the game." : ""),
+        failed.length && !went.length ? "bad" : "info");
       await refresh();
     }
 
@@ -143,10 +145,10 @@ export default {
           } }))));
       }
       if (s.done && !showSetup) {
-        setupBox.append(el("div", { class: "card setup folded row spread" },
+        setupBox.append(el("div", { class: "card setup folded" }, el("div", { class: "row spread" },
           el("strong", {}, "Set up ", el("span", { class: "ok-line", text: "\u2713" })),
           el("button", { class: "btn link", type: "button", "aria-expanded": "false", text: "Show the steps",
-            onclick: () => { showSetup = true; renderSetup(); } })));
+            onclick: () => { showSetup = true; renderSetup(); } }))));
         return;
       }
       const steps = el("ol", { class: "steps" });
@@ -207,7 +209,8 @@ export default {
           el("span", { class: "muted", text: `${ADDON_NAMES} stay out of the game until you allow it.` }),
           el("div", { class: "row" }, el("button", { class: "btn small", text: "Allow…", onclick: () => { asked = true; renderSetup(); } }))));
       } else {
-        const warning = asked ? wc.codeWarning(mods) : null;
+        // Your mods that run code, by name and author; one of the four says what it's for.
+        const warning = asked ? wc.codeWarning(mods.map(m => ({ ...m, about: (addons.find(a => a.id === m.id) || {}).about }))) : null;
         steps.append(step(false, "Let mods run their own scripts",
           el("span", { class: "muted", text: scripts }),
           warning,
@@ -297,7 +300,8 @@ export default {
           el("div", { class: "addon-body" },
             el("strong", { text: a.name }),
             el("span", { class: "muted", text: a.about }),
-            a.no_release && !a.installed ? el("span", { class: "muted", text: "The owner of that mod has to publish a release before Clan Mod Studio can add it." }) : null,
+            a.no_release && !a.installed ? el("span", { class: "muted" }, "The owner of that mod has to publish a release before Clan Mod Studio can add it (",
+              el("a", { href: a.page, target: "_blank", rel: "noopener", text: "its releases" }), ").") : null,
             a.too_new ? el("span", { class: "warn-text", text: sentence(a.too_new) }) : null),
           el("span", { class: `chip ${st.kind}` }, el("i"), busy ? `Adding ${a.name}…` : st.chip),
           label && !busy ? el("button", { class: "btn small", type: "button", "aria-label": `${label}: ${a.name}`, text: label,

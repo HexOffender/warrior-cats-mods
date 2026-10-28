@@ -14,7 +14,7 @@ import pytest
 from wcmods import addons, cli, menupages, modzip, onboarding, ue4ss
 from wcmods.mods import discover
 
-from conftest import make_mod
+from unit_helpers import make_mod
 
 
 def zip_of(path, files):

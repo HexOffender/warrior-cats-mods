@@ -24,7 +24,7 @@ export default {
           renderOptions();
         });
         optionsBox.append(el("label", { class: "row", for: "ig-console" }, consoleBox, el("strong", { text: "Game console" }),
-          el("span", { class: "muted", text: options.console_available ? "~ or F10 opens it, from the next time the game starts." : "Needs the script loader (Get set up, on the Mods page)." })));
+          el("span", { class: "muted", text: options.console_available ? "~ or F10 opens it, from the next time the game starts." : "Needs the script loader and its console mod (Install it, in Get set up on the Mods page, puts both in)." })));
       }
       if (settings) {
         const code = el("input", { type: "checkbox", id: "allow-code", checked: settings.allow_code_mods });

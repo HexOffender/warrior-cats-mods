@@ -14,7 +14,7 @@ from wcmods.mods import discover
 from wcmods.pipeline import InstallBlocked
 from wcmods.studio import NO_GAME
 
-from conftest import make_mod
+from unit_helpers import make_mod
 
 
 def call(st, method, path, body=None, query=None, upload=None):
