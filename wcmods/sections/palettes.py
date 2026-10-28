@@ -44,6 +44,10 @@ class PaletteSection(Section):
             ctx.patch_package(eyeatlas.PATH, atlas.bytes(), source="palettes")
             ctx.note("eyes", [{"row": r, "slot": l, "from": o, "to": n} for r, l, o, n in changes])
         runtime = {s: e for s, e in merged.items() if s in palettes.RUNTIME_SECTIONS}
+        # Said where Apply's summary counts it, not only in the log's NOTE: the colours that need the script loader.
+        if any(runtime.get(s) for s in ("fur", "pattern", "marking")) and not ctx.cfg.ue4ss_mods_dir:
+            ctx.warn("coat, pattern and marking colours go in through the script loader (UE4SS), which isn't "
+                     "installed: Get set up on the Mods page adds it")
         # Always shipped: with no changes it still logs the game's colour tables.
         ctx.add_ue4ss_mod(UE4SS_MOD_NAME, {"Scripts/main.lua": palettes.ue4ss_script(runtime), "enabled.txt": ""})
         ctx.note("runtime_palette", {s: sorted(e, key=int) for s, e in runtime.items()})

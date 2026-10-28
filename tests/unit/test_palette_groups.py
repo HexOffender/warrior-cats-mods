@@ -80,9 +80,11 @@ def test_coat_presets_are_listed_by_palette_with_their_ids(tmp_path):
 
 
 class Ctx:
-    """Just enough of the build context for the palettes section: what it adds, patches, notes and warns."""
-    def __init__(self):
+    """Just enough of the build context for the palettes section: what it adds, patches, notes and warns, with the
+    script loader installed unless `loader` says otherwise."""
+    def __init__(self, loader=True):
         self.shared, self.notes, self.mods, self.patched, self.warnings, self.read = {}, {}, {}, {}, [], []
+        self.cfg = type("Cfg", (), {"ue4ss_mods_dir": "ue4ss/Mods" if loader else None})()
 
     def add_ue4ss_mod(self, name, files): self.mods[name] = files
     def add_ue4ss_shared(self, name, text): self.shared[name] = text
@@ -163,9 +165,9 @@ def atlases(monkeypatch):
     return made
 
 
-def build(*items):
+def build(*items, loader=True):
     from wcmods.sections.palettes import PaletteSection
-    ctx = Ctx()
+    ctx = Ctx(loader)
     PaletteSection().build(ctx, [(Mod(i, i.title()), pal) for i, pal in items])
     return ctx
 
@@ -207,6 +209,17 @@ def test_iris_ui_is_derived_from_the_new_rims_unless_the_file_sets_it(atlases):
     assert "IrisColors = { [1] = {1.0000, 0.0000, 0.0000}, [2] = {0.0000, 0.0000, 1.0000} }" in lua
     assert ctx.notes["runtime_palette"]["iris_ui"] == ["1", "2"]
     assert not luacheck.check(lua)
+
+
+def test_runtime_colours_without_the_script_loader_warn(atlases):
+    said = ("coat, pattern and marking colours go in through the script loader (UE4SS), which isn't installed: "
+            "Get set up on the Mods page adds it")
+    for part in ("fur", "pattern", "marking"):
+        assert build(("theme", {part: {"3": RED}}), loader=False).warnings == [said], part
+    assert build(("theme", {"pattern": {"30": RED}}), loader=False).warnings == [said], "a new colour too"
+    # Eyes go in through the game's files; the cat maker's eye buttons they bring along aren't worth a warning.
+    assert build(("eyes", {"eyes": {"Amber": RED}}), loader=False).warnings == []
+    assert build(("theme", {"fur": {"3": RED}})).warnings == [], "with the script loader in"
 
 
 def test_no_eyes_in_any_mod_patches_nothing(atlases):

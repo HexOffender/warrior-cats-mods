@@ -920,9 +920,10 @@ class Studio:
         """Your cat's colour slots, scars and look in the save, the other cats of the game being played with
         theirs (for cats.json's "cats"), the colours each slot has with the enabled palettes (the game's
         tables, recoloured slots, and new slots palettes add), what each scar place can be, and the look's
-        parts with the highest each takes. A save that isn't there or can't be read leaves the cats out and
-        says why in save_problem (None when it reads), so the page still opens."""
-        current, scars, looks, others, save_problem, your_clan = {}, {}, {}, [], None, None
+        parts with the highest each takes, and the slot of the game being played (current_slot: a key with it first
+        means that game's cat). A save that isn't there or can't be read leaves the cats out and says why in
+        save_problem (None when it reads), so the page still opens."""
+        current, scars, looks, others, save_problem, your_clan, slot = {}, {}, {}, [], None, None, None
 
         def read(raw):
             """(slots, scars, look) a cat's save text has; a field it leaves out is at its default, 0."""
@@ -948,6 +949,7 @@ class Studio:
             if doc is None:
                 raise LookupError(save_problem)
             cats = [c for c in names.cats_in_save(doc.data) if c["current"]]
+            slot = names.current_slot(doc.data)   # a key with it first ("0/Warrior/1") means this game's cat
             mine = [c for c in cats if c["player"]]
             if mine:
                 raw = doc.get(mine[0]["paths"][0])
@@ -997,7 +999,7 @@ class Studio:
                 "feral_slots": options["feral_slots"], "parts": catcolours.PARTS,
                 "scars": {"current": scars, "types": catcolours.SCAR_TYPES},
                 "look": {"current": looks, "parts": options["parts"], "size": list(catcolours.SIZE[1:])},
-                "cats": others, "your_clan": your_clan}
+                "cats": others, "your_clan": your_clan, "current_slot": slot}
 
     def look_options(self):
         """What a cat's look can be, with no save needed: the colours each slot has with the enabled palettes
@@ -1035,8 +1037,10 @@ class Studio:
                 except KeyError:
                     continue   # the build skips it too, and Save said so
                 listed = isinstance(spec, list)
-                out[str(row)] = {"mode": "grad" if listed else "single",
-                                 "colors": [colors.hex_from_srgb(c) for c in (spec if listed else [spec])]}
+                hexes = [colors.hex_from_srgb(c) for c in (spec if listed else [spec])]
+                # A list of one is that colour flat, pupil to rim (palettes.apply_eyes): a gradient of two the same, as
+                # the Palettes page reads it, since one colour alone keeps the game's shading.
+                out[str(row)] = {"mode": "grad" if listed else "single", "colors": hexes * 2 if listed and len(hexes) == 1 else hexes}
         return out
 
     def names_preview(self, spec):
