@@ -67,6 +67,43 @@ def test_npc_comes_back(agent):
         agent.lua("if WCMODS_TEST_NPC then WCMODS_TEST_NPC:remove() end")
 
 
+LOOKED = """
+local me = Game.cat():location()
+WCMODS_TEST_NPC = Game.npcs.spawn({ at = { me.X + 150, me.Y + 150, me.Z }, yaw = 90,
+    look = { body = 9, tail = 0, ears = 9, pattern = 20, marking = 0 }, slots = { fur = 3, pattern = 10 } })
+return WCMODS_TEST_NPC:valid()
+"""
+# The look's fields in the cat's data, and the meshes of its tail and ears.
+LOOKED_DATA = """
+local comp = WCMODS_TEST_NPC:actorOrNil().MeshCustomizationComponent
+local d = comp.CustomData
+return { d.BodyValue, d.FurIdx, d.TailIdx, d.EarIdx, d.PatternIdx, d.MarkingIdx, d.FurColorIdx, d.Pattern01ColorIdx,
+         comp.TailSkelMeshComp:GetSkeletalMeshAsset():GetFName():ToString(),
+         comp.EarSkelMeshComp:GetSkeletalMeshAsset():GetFName():ToString() }
+"""
+LOOK_FIELDS = [9, 9, 0, 9, 20, 0, 3, 10]
+
+
+def test_npc_keeps_the_look_its_given(agent):
+    """A fixed look goes on over the one the game makes up, stays, and is the same when it's spawned again."""
+    try:
+        assert agent.lua(LOOKED) is True
+        first = agent.lua(LOOKED_DATA)
+        assert first[:8] == LOOK_FIELDS, first
+        time.sleep(2)                       # the game setting it up again doesn't take it back
+        assert agent.lua(LOOKED_DATA) == first
+        agent.lua("WCMODS_TEST_NPC:actorOrNil():K2_DestroyActor()")
+        again = None
+        for _ in range(20):
+            time.sleep(0.5)
+            if agent.lua("return WCMODS_TEST_NPC:valid() and WCMODS_TEST_NPC.spawns") == 2:
+                again = agent.lua(LOOKED_DATA)
+                break
+        assert again == first, (first, again)
+    finally:
+        agent.lua("if WCMODS_TEST_NPC then WCMODS_TEST_NPC:remove() end")
+
+
 def test_screens(agent):
     open_now = agent.lua("return Game.screens()") or []
     assert not open_now, f"a screen is already open: {open_now}"

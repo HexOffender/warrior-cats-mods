@@ -2,11 +2,12 @@
 studio noting the game's build. No game needed."""
 import json
 import os
+import re
 import zipfile
 
 import pytest
 
-from wcmods import luacheck, modzip, packs, story
+from wcmods import catcolours, game, luacheck, modzip, packs, story
 from wcmods import mods as modlib
 from wcmods.config import Config
 from wcmods.exe import gamebuild
@@ -47,6 +48,12 @@ def test_cats_and_quests_read_as_the_game_gets_them():
     (lambda n, q: n["npcs"][0].update(eyes=30), "\"eyes\""),
     (lambda n, q: n["npcs"].append(dict(n["npcs"][0])), "two cats have this id"),
     (lambda n, q: n["npcs"][0].update(hat="yes"), "unknown key"),
+    (lambda n, q: n["npcs"][0].update(look={"wings": 1}), "has no part wings"),
+    (lambda n, q: n["npcs"][0].update(look={"tail": 10}), "from 0 to 9"),
+    (lambda n, q: n["npcs"][0].update(look={"pattern": 1.5}), "whole number"),
+    (lambda n, q: n["npcs"][0].update(slots={"fur": 25}), "from 0 to 24"),
+    (lambda n, q: n["npcs"][0].update(slots={"eyes": 3}), "has no part eyes"),
+    (lambda n, q: n["npcs"][0].update(look="random"), "should map parts"),
     (lambda n, q: q["quests"][0].update(giver="nobody"), "isn't one of this mod's cats"),
     (lambda n, q: q["quests"][0].update(after=["second"]), "each wait for the other"),
     (lambda n, q: q["quests"][1].update(after=["third"]), "isn't one of this mod's quests"),
@@ -62,6 +69,27 @@ def test_mistakes_say_what_to_fix(change, said):
     change(n, q)
     with pytest.raises(ValueError, match=said.replace("\"", ".").replace("(", ".").replace(")", ".")):
         story.read(n, q)
+
+
+def test_a_cats_look_is_the_games_choice_or_fixed():
+    random, = story.npcs({"npcs": [{"id": "a", "name": "A"}]})
+    assert "look" not in random and "slots" not in random
+    fixed, = story.npcs({"npcs": [{"id": "b", "name": "B", "look": {"body": 9, "pattern": 20, "_note": "x"},
+                                   "slots": {"fur": 24, "pattern": 130, "marking": 0}}]})
+    assert fixed["look"] == {"body": 9, "pattern": 20} and fixed["slots"] == {"fur": 24, "pattern": 130, "marking": 0}
+    empty, = story.npcs({"npcs": [{"id": "c", "name": "C", "look": {}}]})   # all the game's choice, as with none
+    assert "look" not in empty
+    assert set(story.LOOK) == {"body", "fur", "tail", "ears", "eyes", "whiskers", "face", "pattern", "marking"}
+
+
+def test_the_game_module_knows_a_looks_parts():
+    """Game.npcs.spawn's look and slots set the same fields of the cat's data as cats.json's do."""
+    lua = game.lua()
+    table = re.search(r"local NPC_LOOK = \{(.*?)\n(?!\s)", lua, re.S).group(1)
+    look = re.findall(r'(\w+) = \{ ((?:"\w+",? ?)+) \}', table)
+    assert {k: tuple(re.findall(r'"(\w+)"', v)) for k, v in look} == catcolours.LOOK
+    slots = re.search(r"local NPC_SLOTS = \{([^}]*)\}", lua).group(1)
+    assert dict(re.findall(r'(\w+) = "(\w+)"', slots)) == {k: catcolours.SLOTS[k] for k in story.SLOTS}
 
 
 def test_the_games_script_shares_them_as_json_text():

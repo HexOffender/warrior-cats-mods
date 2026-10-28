@@ -254,6 +254,8 @@ every animal of the kind, fitted to its length. Every key is in
 { "npcs": [ { "id": "mossfoot", "name": "Mossfoot", "title": "Elder",
               "colours": { "fur": "#7a6a58", "pattern": "#4a3f33", "markings": "#d8cfc0" },
               "eyes": 6, "size": 0.8,
+              "look": { "body": 6, "fur": 2, "tail": 7, "ears": 3, "pattern": 12, "marking": 3 },
+              "slots": { "fur": 9, "pattern": 4, "marking": 0 },
               "lines": ["The forest is yours, young one."] } ] }
 ```
 Cats of the mod's own, made on Clan Mod Studio's Characters page. The
@@ -263,7 +265,15 @@ sandbox cat, so a mod with them needs it (`"requires": ["sandbox"]`, which the s
   the name) show over its head.
 - `colours`: any of `fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears`; the rest are the
   game's. `eyes` is an iris colour slot (0 to 24), `size` the cat's size (0.3 to 1.5; the game's are about
-  0.4 to 1.1). The game chooses the pattern's shape.
+  0.4 to 1.1).
+- Its look: with no `look` or `slots`, the game makes it up each time the cat appears, as it does for its
+  own clan cats (its shape, pattern and colour slots; `colours` go on top). `look` fixes the shape, as
+  `cats.json`'s does: `body`, `fur`, `tail`, `ears`, `eyes` (their shape), `whiskers` and `face` each one
+  of the game's 10 (0–9), `pattern` and `marking` one of its 21 (0–20). `slots` fixes the colour slots it
+  wears: `fur` 0–24 (its nose, paws, ears and whiskers go with it), `pattern` and `marking` any slot,
+  including new ones a palette adds. A part left out of both (and the eye colour, without `eyes`) is
+  made up again each time it appears. The Characters page's **Fixed** look fills in all of them at
+  random, to keep or change.
 - Where it stands: with no `at`, beside the sandbox cat the first time it comes into the forest, and there
   for that cat after. `"at": [x, y, z]` (cm, with `yaw` in degrees and `level`) puts it in one place for
   every cat; the studio fills it in from where your cat stands.
