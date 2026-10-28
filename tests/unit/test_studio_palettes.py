@@ -59,7 +59,7 @@ def test_without_the_game_or_its_files_the_eye_names_wait_for_apply(studio, fake
     make_mod(studio, "mine")
     # A game folder whose files can't be read (fake_game has no paks): no note, and nothing in studio.log.
     assert put(studio, "mine", {"eyes": {"Ambre": "#fff"}}) == {"saved": "palette.json", "requires": [], "problems": [],
-                                                              "notes": []}
+                                                              "notes": [], "left_out": []}
     assert not os.path.isfile(os.path.join(studio.ctx.cfg.data_dir, "studio.log"))
     studio.ctx.cfg.data["game_dir"] = None
     assert put(studio, "mine", {"eyes": {"Ambre": "#fff"}})["notes"] == []
