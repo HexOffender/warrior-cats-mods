@@ -142,3 +142,43 @@ export function badgeWords(group, herbs) {
   const who = herbs.filter(h => h.group === group).map(h => h.name);
   return who.length ? `${group}: like ${who.slice(0, 2).join(" and ")}${who.length > 2 ? " and others" : ""}` : group;
 }
+
+// ---------- whether it reached the game ----------
+// The build's manifest from an "installed" event's result, or from /build/last's (both may hold it as `manifest`).
+export const manifestOf = r => r && (r.sections ? r : r.manifest && r.manifest.sections ? r.manifest : null);
+// What the build says about an item that still went in: said in the page's words.
+const STILL_IN = [[/lies there as the game's pickup instead$/, "on the ground it's the game's pickup"],
+  [/^no save yet to give it in/, "no save to give it in yet"]];
+
+// What the last Apply did with one of this mod's items: null when it can't be told (no build yet, or one an
+// older wcmods made, whose note lists tags only), else {state: "in" or "out", why (for "out"), also (for
+// "in": what it said about it, in words), look (an accessory's: its look number)}. From the items section's
+// note {"<mod>/<id>": tag} and its warnings, "items: <mod>: <id>: ..." (sections/items.py).
+export function itemStatus(result, modId, item) {
+  const m = manifestOf(result);
+  if (!m || !item || !item.id) return null;
+  const section = (m.sections || {}).items;
+  const note = ((m.notes || {}).items || {}).items;
+  if (Array.isArray(note) || (!note && !section)) return null;
+  if (!(m.mods || []).includes(modId)) return { state: "out", why: "its mod wasn't in the last Apply (it was off, or couldn't be made ready)" };
+  const prefix = `items: ${modId}: ${item.id}: `;
+  const said = (m.warnings || []).filter(w => w.startsWith(prefix)).map(w => w.slice(prefix.length));
+  const tag = (note || {})[`${modId}/${item.id}`];
+  if (!tag) {
+    const failed = ((section && section.failed) || []).find(([mod]) => mod === modId);
+    return { state: "out", why: said[0] || (failed ? failed[1] : "it didn't go in") };
+  }
+  // One tag, or (a herb and a material with one id) a list of them.
+  const look = [].concat(tag).map(t => /^Gameplay\.Inventory\.Cosmetic\..*\.(\d+)$/.exec(t)).find(Boolean);
+  return { state: "in", also: said.map(w => (STILL_IN.find(([re]) => re.test(w)) || [null, w])[1]), look: look ? Number(look[1]) : null };
+}
+
+// The line at the top of the page: how many of the items went in, and the first that didn't, by name.
+export function itemsSummary(result, modId, items) {
+  const states = items.map(it => [it, itemStatus(result, modId, it)]).filter(([, s]) => s);
+  if (!states.length) return null;
+  const went = states.filter(([, s]) => s.state === "in").length;
+  const out = states.find(([, s]) => s.state === "out");
+  return `${went} of ${states.length} item${states.length === 1 ? "" : "s"} went in.` +
+    (out ? ` ${out[0].name || out[0].id} was left out: ${out[1].why}.` : "");
+}

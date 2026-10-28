@@ -135,3 +135,122 @@ def test_effect_words_cover_every_game_herb_in_the_docs():
     assert EFFECT_WORDS["MediumHealingHerb"] == "Heals 50 health"
     assert "not checked" in EFFECT_WORDS["SuperHealingHerb"], "what it does isn't known for sure"
     assert items_mod.KEYS >= {"name", "description", "texture", "model", "place", "opacity"}
+
+
+# ------------------------------------------------------------------------------------------------- the build
+ROOT = "Gameplay.Inventory."
+MEDIUM = ROOT + "Consumable.MediumHealingHerb"
+
+
+class BuildCtx:
+    """What ItemsSection.build asks of a BuildContext, recorded: rows, csv edits, files, textures, warnings, notes."""
+
+    def __init__(self, tmp_path):
+        self.cfg = type("Cfg", (), {"save_dir": str(tmp_path / "no-saves"), "ue4ss_mods_dir": "x"})()
+        self.rows, self.csv, self.files, self.textures, self.saves, self.warnings, self.notes = [], [], {}, [], [], [], {}
+
+    def add_table_row(self, table, row, values, source=""):
+        self.rows.append((table, row, values, source))
+
+    def edit_csv(self, name, edits, source=""):
+        self.csv.append((name, edits, source))
+
+    def add_file(self, path, data, source=""):
+        self.files[path] = data
+
+    def add_texture(self, name, image, like, source="", key=None):
+        self.textures.append(name)
+        return f"/Game/WCMods/{name}.{name.rsplit('/', 1)[-1]}"
+
+    def add_save_key(self, object_path, key, value, source="", only_new=False):
+        self.saves.append((key, value))
+
+    def add_ue4ss_shared(self, name, text):
+        self.files[name] = text
+
+    def warn(self, text):
+        self.warnings.append(text)
+
+    def note(self, key, value):
+        self.notes[key] = value
+
+
+def game_of(ctx):
+    """The game's tables for the build, small: Medium Healing Herb, and two materials."""
+    game = object.__new__(Game)
+    icon = {"package": "/Game/Art/UXD/T_Herb", "asset": "T_Herb"}
+    game.ctx = ctx
+    game.info = {t: {"itemTag": t, "Icon": icon, "ItemRarity": 1, "ItemGroupIcon": 1, "ItemCategoryColor": 1}
+                 for t in (MEDIUM, ROOT + "Materials.Dandelion", ROOT + "Materials.Moss")}
+    game.use = {MEDIUM: {"---": MEDIUM, "EffectOnUse": "Gameplay.Effect.Consumable.Health.2", "bCombat": "TRUE",
+                         "bExploration": "TRUE", "Target": "Owner", "bRemoveAfterCombat": "FALSE", "Type": "Health"}}
+    game.recipes = {}
+    game.effects, game.types, game.targets = ["Gameplay.Effect.Consumable.Health.2"], ["Health"], ["Owner", "OwnerTeam"]
+    game.materials = {ROOT + "Materials.Dandelion", ROOT + "Materials.Moss"}
+    game.added, game._looks, game._meshes, game._pickups, game._plain = {}, {}, {}, set(), {}
+    return game
+
+
+def build(tmp_path, monkeypatch, mods):
+    """ItemsSection.build over [(mod id, [items])], lowest priority first; the BuildCtx it wrote to."""
+    ctx = BuildCtx(tmp_path)
+    monkeypatch.setattr(items_mod, "Game", game_of)
+    found = []
+    for mod_id, items in mods:
+        folder = tmp_path / mod_id
+        folder.mkdir(exist_ok=True)
+        found.append((type("Mod", (), {"id": mod_id, "folder": str(folder)})(), {"items": items, "recipes": {}}))
+    ItemsSection().build(ctx, found)
+    return ctx
+
+
+def herb(item_id, **more):
+    return dict({"id": item_id, "like": "MediumHealingHerb", "name": item_id, "description": "x"}, **more)
+
+
+def material(item_id, **more):
+    return dict({"id": item_id, "kind": "material", "name": item_id, "description": "x", "icon": "Dandelion"}, **more)
+
+
+def test_the_install_notes_each_item_with_its_mod_and_warns_the_rest(tmp_path, monkeypatch):
+    ctx = build(tmp_path, monkeypatch, [("low", [herb("MoonHerb"), herb("Lost", like="Nothing")]),
+                                        ("high", [herb("MoonHerb", give=3), material("Moonstone")])])
+    # Each item by its mod and id: the Items page finds its own there.
+    assert ctx.notes["items"] == {"high/MoonHerb": ROOT + "Consumable.MoonHerb", "high/Moonstone": ROOT + "Materials.Moonstone"}
+    # The rest are warned about as "<mod>: <id>: why", which the page reads as "items: <mod>: <id>: ...".
+    assert sorted(ctx.warnings) == sorted([
+        "low: MoonHerb: high adds an item called MoonHerb too, and comes later, so its item is used",
+        'low: Lost: "like": the game has no item Nothing',
+        "high: MoonHerb: no save yet to give it in; start the game once, then install again"])
+    assert not ctx.saves, "no save: nothing given"
+    assert sorted(r[1] for r in ctx.rows) == ["WCMods_Consumable_MoonHerb", "WCMods_Materials_Moonstone"]
+
+
+def test_materials_are_built_before_herbs_across_mods(tmp_path, monkeypatch):
+    # A herb in one mod made from a material another adds, whichever comes first.
+    for n, mods in enumerate(([("herbs", [herb("StarHerb", recipe={"Moonstone": 2})]), ("stones", [material("Moonstone")])],
+                              [("stones", [material("Moonstone")]), ("herbs", [herb("StarHerb", recipe={"Moonstone": 2})])])):
+        (tmp_path / str(n)).mkdir()
+        ctx = build(tmp_path / str(n), monkeypatch, mods)
+        assert ctx.warnings == []
+        recipe = [e["+"][0] for name, e, _ in ctx.csv if name == "BarteringCost.csv"]
+        assert recipe == [{"---": ROOT + "Consumable.StarHerb", "Cost": ROOT + "Materials.Moonstone,2", "bIsHidden": "FALSE"}]
+
+
+def test_the_tags_ini_lists_every_made_tag(tmp_path, monkeypatch):
+    ctx = build(tmp_path, monkeypatch, [("mine", [herb("MoonHerb"), material("Moonstone"), herb("Lost", like="Nothing")])])
+    lines = ctx.files[items_mod.TAGS_INI].decode("utf-8").split("\r\n")
+    assert lines[0] == "[/Script/GameplayTags.GameplayTagsList]"
+    assert lines[1:-1] == [f'GameplayTagList=(Tag="{ROOT}Consumable.MoonHerb",DevComment="wcmods: mine")',
+                           f'GameplayTagList=(Tag="{ROOT}Materials.Moonstone",DevComment="wcmods: mine")']
+
+
+def test_a_herb_and_a_material_with_one_id_have_their_own_icons(tmp_path, monkeypatch):
+    from wcmods.formats import png
+    (tmp_path / "mine" / "pictures").mkdir(parents=True)
+    (tmp_path / "mine" / "pictures" / "gem.png").write_bytes(png.write(16, 16, bytes((90, 160, 220, 255)) * 256))
+    ctx = build(tmp_path, monkeypatch, [("mine", [herb("Gem", icon="pictures/gem.png"), material("Gem", icon="pictures/gem.png")])])
+    assert ctx.warnings == []
+    assert sorted(ctx.textures) == ["mine/T_Consumable_Gem_Icon", "mine/T_Materials_Gem_Icon"]
+    # Both are in the note under their mod and id: the material (made first) and the herb.
+    assert ctx.notes["items"] == {"mine/Gem": [ROOT + "Materials.Gem", ROOT + "Consumable.Gem"]}

@@ -185,3 +185,27 @@ test("game emote flow: one of the game's animations on a key, and another in a g
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });
+
+test("status after apply: In the game on a key, in another's place, or left out; and the start kits fold", { skip }, async () => {
+  const page = await animationsPage();   // my-mods, with Yawn and Run as the trot saved by the game emote flow
+  await page.evaluate(`(async () => {
+    const wc = await import("/studio/lib/wc.js");
+    wc.bus.emit("installed", ${JSON.stringify({
+      built: "2026-10-28T10:00:00", mods: ["my-mods"],
+      notes: { animations: { animations: ["my-mods/Yawn"], emotes: ["my-mods/Yawn"],
+        replaced: { "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1": "my-mods/RunAsTheTrot" } } },
+      warnings: [], sections: { animations: { status: "ok", mods: ["my-mods"], errors: [], failed: [] } } })});
+  })()`);
+  await page.waitFor(() => document.querySelectorAll(".pick .chip.good").length === 2);
+  const chips = await page.evaluate(() => [...document.querySelectorAll(".pick")].map(p => [p.querySelector("strong").textContent, p.querySelector(".chip")?.textContent]));
+  assert.deepEqual(chips.filter(([name]) => name === "Yawn" || name === "Run as the trot"),
+    [["Yawn", "In the game (F7)"], ["Run as the trot", "In the game"]]);
+  assert.match(await page.text(".banner[role=status]"), /In the game: Yawn \(F7\), Run as the trot/);
+  // The start kits, for Blender, wait in a fold at the top: one button per animal.
+  assert.equal(await page.evaluate(() => document.querySelector('[data-key="animations:kits"]').open), false);
+  const kits = await page.evaluate(() => [...document.querySelectorAll('[data-key="animations:kits"] button')].map(b => b.textContent));
+  assert.equal(kits.length, 10);
+  assert.match(kits[0], /^Cats: \d+ to start from$/);
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});

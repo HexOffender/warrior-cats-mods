@@ -1495,6 +1495,18 @@ local animLoaded = {}         -- asset path -> its sequence
 local animPlaying = {}        -- actor address -> { id, montage, anim }
 local animLib
 
+-- What any script's Game.anims.play started on an actor, shared between the scripts (each has a Lua state of its
+-- own: the emotes script and the Emote wheel among them), so one's key stops what another started:
+-- "WCModsAnims.playing.<actor address>" holds its id, "" once it's stopped.
+local function sharedPlaying(actor)
+    local ok, id = pcall(function() return ModRef:GetSharedVariable("WCModsAnims.playing." .. tostring(actor:GetAddress())) end)
+    if ok and type(id) == "string" and id ~= "" then return id end
+    return nil
+end
+local function sharePlaying(actor, id)
+    pcall(function() ModRef:SetSharedVariable("WCModsAnims.playing." .. tostring(actor:GetAddress()), id or "") end)
+end
+
 local function anims()
     if animModule == nil then
         local ok, m = pcall(require, "WCModsAnims")
@@ -1591,36 +1603,61 @@ function Game.anims.play(who, id, opts)
     end)
     if not ok or not valid(m) then return nil, ok and "the game didn't play it" or tostring(m) end
     animPlaying[actor:GetAddress()] = { id = id, montage = m, anim = ai }
+    sharePlaying(actor, id)
     return m
 end
 
--- The animation Game.anims.play started on a cat or an animal that's still playing (its id), or nil.
+-- The animation Game.anims.play started on a cat or an animal that's still playing (its id), or nil: this
+-- script's, or another's (shared), while the actor's AnimBlueprint plays a montage.
 function Game.anims.playing(who)
     local actor = animActor(who)
     if not valid(actor) then return nil end
     local key = actor:GetAddress()
     local p = animPlaying[key]
-    if not p then return nil end
-    if valid(p.anim) and valid(p.montage) then
-        local ok, on = pcall(function() return p.anim:Montage_IsPlaying(p.montage) end)
-        if ok and on then return p.id end
+    if p then
+        if valid(p.anim) and valid(p.montage) then
+            local ok, on = pcall(function() return p.anim:Montage_IsPlaying(p.montage) end)
+            if ok and on then return p.id end
+        end
+        animPlaying[key] = nil
+        if sharedPlaying(actor) == p.id then sharePlaying(actor, nil) end
+        return nil
     end
-    animPlaying[key] = nil
+    local id = sharedPlaying(actor)
+    if not id then return nil end
+    local mesh = animMesh(actor)
+    local ok, on = pcall(function() return mesh:GetAnimInstance():IsAnyMontagePlaying() end)
+    if ok and on then return id end
+    sharePlaying(actor, nil)
     return nil
 end
 
--- Stop what Game.anims.play started on it, blending out over `blend` seconds (the animation's own by
--- default). Returns whether something stopped.
+-- Stop what Game.anims.play started on it, here or in another script, blending out over `blend` seconds (the
+-- animation's own by default). Returns whether something stopped.
 function Game.anims.stop(who, blend)
     local actor = animActor(who)
     if not valid(actor) then return false end
     local key = actor:GetAddress()
     local p = animPlaying[key]
     animPlaying[key] = nil
-    if not (p and valid(p.anim) and valid(p.montage)) then return false end
-    local info = Game.anims.list()[p.id]
+    local id = (p and p.id) or sharedPlaying(actor)
+    sharePlaying(actor, nil)
+    local info = id and Game.anims.list()[id]
     local out = blend or (info and info.blend) or ANIM_BLEND
-    return (pcall(function() p.anim:Montage_Stop(out, p.montage) end))
+    if p and valid(p.anim) and valid(p.montage) then
+        return (pcall(function() p.anim:Montage_Stop(out, p.montage) end))
+    end
+    if not id then return false end
+    -- Another script's montage: the one the AnimBlueprint plays now.
+    local mesh = animMesh(actor)
+    local ok, stopped = pcall(function()
+        local ai = mesh:GetAnimInstance()
+        local m = ai:GetCurrentActiveMontage()
+        if not valid(m) then return false end
+        ai:Montage_Stop(out, m)
+        return true
+    end)
+    return ok and stopped == true
 end
 
 -- The same on a cat: Game.cat():animate("my-mod/Wave"), Game.cat(npc):stopAnimation().

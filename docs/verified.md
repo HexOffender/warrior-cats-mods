@@ -227,6 +227,9 @@ Fawnstar, as a player reported it showing "Cat 1"):
   Try it on my cat. The selftest builds the copy and the replacement from the game's files and reads the
   same keys back (within 1e-6 cm), and a build of a mod using them goes through, but none has been
   watched in game yet.
+- **One playing state for every script (2026-10-28):** an emote's key stopping what the Emote wheel
+  started, through the shared `WCModsAnims.playing.<actor>` and the anim instance's current montage
+  (`GetCurrentActiveMontage`, `Montage_Stop`): not tried in game.
 - **Items:** a new look made from an accessory's second look (`"like": "Neck.DogCollar.2"`; the build
   takes it, as it takes the first).
 

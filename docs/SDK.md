@@ -434,7 +434,7 @@ Animations page in Clan Mod Studio writes the file and saves the start kits.
 
 | Key | |
 |---|---|
-| `id` | Letters and digits, starting with a letter. Scripts know it as `"<mod id>/<id>"`; in the game it's `/Game/WCMods/<mod id>/A_<id>` |
+| `id` | Letters and digits, starting with a letter. Scripts know it as `"<mod id>/<id>"`; in the game it's `/Game/WCMods/<mod id>/A_<id>`, with any `-` in the mod's id as `_` (`/Game/WCMods/my_mod/A_Wave`) |
 | `name` | What the Emotes page calls it. Needed: one without a name is left out of the game with a warning, and the mod's other animations still go in |
 | `file` | A glTF file in the mod's folder: `.glb`, or a `.gltf` with its data inside it. A `.gltf` with its data in a `.bin` beside it works when both are placed in the mod's folder by hand; the Animations page takes one file, so it asks for a `.glb`. Up to 64 MB, and each animation in it up to 60 s: a longer one is left out with a warning (the page refuses a file with none shorter) |
 | `game` | In place of `file`: one of the game's own sequences for that skeleton, by its name (`"A_CatMaster_Yawn_1"`) or its path (for a name in more than one folder), played as the game has it (below). Not an additive one (keys added to another pose, like `A_CatMaster_Meow_1`). **Needs wcmods 0.4.0 or newer**: an older one refuses the key and leaves that mod's animations out. One with neither `file` nor `game` is left out with a warning |
@@ -501,7 +501,10 @@ body during the animation, not the animal. The install lists every animation in 
 `WCModsAnims`, which `Game.anims` plays them from ([scripting.md](scripting.md#animations)); with
 emotes, the `WCModsEmotes` script adds the mod menu's Emotes page and their keys. A key works while the
 game has the focus. An emote's key or button again stops it, and so does walking off (the game's walk is
-under it). It all needs the script loader (UE4SS).
+under it). The [Emote wheel](https://github.com/HexOffender/wcmods-emote-wheel) mod is the second place
+emotes show: it plays the same ones through `Game.anims`, and the scripts share what plays
+(`Game.anims.playing`), so an emote's key stops what the wheel started.
+It all needs the script loader (UE4SS).
 
 **Replacing one of the game's (`replaces`):** the game's sequence itself is written again with the
 file's keys in place of its own, in wcmods' container under the same name, so every cat (or every
@@ -533,6 +536,11 @@ of their own (Brightheart, Tallstar...), whose skeletons are their own; replace 
 animations for one cat only (every cat shares the AnimBlueprint and its sequences). Animals far off or
 out of view don't move their bones until they're seen, the engine's way, so a script's animation on one
 shows when it comes into view.
+
+**Not confirmed in game yet** ([verified.md](verified.md)): animations on the clans' cats and on quest
+givers (only your cat was watched), the rats', rabbits', squirrels', foxes', badgers', dogs' and snakes'
+(made as the mice's and birds' are), an emote on a controller button, the game's own animations without
+a file (`game`), and a key stopping what the Emote wheel started.
 
 ### New content: models, textures, sounds
 

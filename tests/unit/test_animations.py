@@ -611,6 +611,20 @@ def test_the_game_module_plays_animations():
     assert not luacheck.check(source("emotes.lua").replace("@EMOTES@", "{}"))
 
 
+def test_the_scripts_share_what_plays_so_a_key_stops_what_the_wheel_started():
+    # One playing state for every script (each has a Lua state of its own): Game.anims publishes its id per
+    # actor, playing() and stop() read it, and stop() stops another script's montage through the anim instance.
+    lua = source("game.lua")
+    assert 'ModRef:SetSharedVariable("WCModsAnims.playing." .. tostring(actor:GetAddress()), id or "")' in lua
+    assert 'ModRef:GetSharedVariable("WCModsAnims.playing." .. tostring(actor:GetAddress()))' in lua
+    assert "GetCurrentActiveMontage()" in lua and "IsAnyMontagePlaying()" in lua
+    play = lua[lua.index("function Game.anims.play("):lua.index("function Game.anims.playing(")]
+    assert "sharePlaying(actor, id)" in play
+    emotes = source("emotes.lua")
+    assert "if Game.anims.playing() == e.id then" in emotes, "the key stops it whoever started it"
+    assert "v.X and v.Y and v.X * v.X" in emotes, "a velocity without X or Y is no error"
+
+
 # ------------------------------------------------------------------- names, limits, and the game's own ones
 def test_an_animation_without_a_name_is_left_out_with_a_warning(tmp_path):
     mod = type("Mod", (), {"id": "m", "folder": str(tmp_path)})()

@@ -104,6 +104,43 @@ export function plainName(list, value) {
   return s && s.label ? s.label : (value || "").split(".")[0].split("/").pop();
 }
 
+// ---------- whether it reached the game ----------
+const manifestOf = r => r && (r.sections ? r : r.manifest && r.manifest.sections ? r.manifest : null);
+
+// What the last Apply did with one of this mod's animations: null when it can't be told (no build yet), else
+// {state: "in" or "out", why (for "out"), key (an emote's, for "in"), replaced (the path of the game's sequence
+// it plays in place of)}. From the animations section's notes (animations, emotes, replaced) and its warnings,
+// "animations: <mod>: <id>: ..." (sections/animations.py).
+export function animationStatus(result, modId, a) {
+  const m = manifestOf(result);
+  if (!m || !a || !a.id) return null;
+  const section = (m.sections || {}).animations;
+  const notes = (m.notes || {}).animations;
+  if (!notes && !section) return null;
+  if (!(m.mods || []).includes(modId)) return { state: "out", why: "its mod wasn't in the last Apply (it was off, or couldn't be made ready)" };
+  const full = `${modId}/${a.id}`;
+  const prefix = `animations: ${modId}: ${a.id}: `;
+  const said = (m.warnings || []).filter(w => w.startsWith(prefix)).map(w => w.slice(prefix.length));
+  const replaced = Object.entries((notes || {}).replaced || {}).find(([, who]) => who === full);
+  if (replaced) return { state: "in", replaced: replaced[0], also: said };
+  if (((notes || {}).animations || []).includes(full)) {
+    return { state: "in", key: ((notes || {}).emotes || []).includes(full) ? a.key || null : null, also: said };
+  }
+  const failed = ((section && section.failed) || []).find(([mod]) => mod === modId);
+  return { state: "out", why: said[0] || (failed ? failed[1] : "it didn't go in") };
+}
+
+// The line at the top of the page: "In the game: Yawn (F7), Flap; left out: Long (the animation is 70.0 s long...)".
+export function animationsSummary(result, modId, anims, label = k => k) {
+  const states = anims.map(a => [a, animationStatus(result, modId, a)]).filter(([, s]) => s);
+  if (!states.length) return null;
+  const name = a => a.name || a.id;
+  const inGame = states.filter(([, s]) => s.state === "in").map(([a, s]) => `${name(a)}${s.key ? ` (${label(s.key)})` : ""}`);
+  const out = states.filter(([, s]) => s.state === "out").map(([a, s]) => `${name(a)} (${s.why})`);
+  return [inGame.length ? `In the game: ${inGame.join(", ")}` : "Nothing here went in the game",
+    out.length ? `left out: ${out.join(", ")}` : null].filter(Boolean).join("; ") + ".";
+}
+
 // The keys an emote shouldn't share, with why: the other emotes' keys in this mod (only one of them would
 // play), and the game's full screen key. {key: why}
 export function emoteReserved(anims, a, label = k => k) {

@@ -102,3 +102,35 @@ test("an emote's key: the other emotes' keys in the mod and the full screen key 
   assert.deepEqual(Object.keys(reserved).sort(), ["F11", "F8"], "not its own key, and not a key on something that isn't an emote");
   assert.match(reserved.F8, /Wave's key too, and only one of them would play/);
 });
+
+// ---------- whether it reached the game ----------
+const MANIFEST = {
+  built: "2026-10-28T10:00:00", mods: ["mine"],
+  notes: { animations: { animations: ["mine/Flap", "mine/Yawn"], emotes: ["mine/Yawn"],
+    replaced: { "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1": "mine/Trot" } } },
+  warnings: ["animations: mine: Long: the animation is 70.0 s long; an animation can be up to 60 s",
+    "animations: mine: Shake: the key F7 is mine/Yawn's emote too; only the later one plays"],
+  sections: { animations: { status: "ok", mods: ["mine"], errors: [], failed: [] } },
+};
+const YAWN = { id: "Yawn", name: "Yawn", game: "A_CatMaster_Yawn_1", emote: true, key: "F7" };
+
+test("animationStatus says whether an animation went in: an emote on its key, a replacement, or why not", () => {
+  assert.deepEqual(m.animationStatus(MANIFEST, "mine", YAWN), { state: "in", key: "F7", also: [] });
+  assert.deepEqual(m.animationStatus(MANIFEST, "mine", { id: "Flap", for: "bird" }), { state: "in", key: null, also: [] });
+  assert.deepEqual(m.animationStatus(MANIFEST, "mine", { id: "Trot", replaces: "A_CatMaster_Trot_1" }),
+    { state: "in", replaced: "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1", also: [] });
+  assert.deepEqual(m.animationStatus(MANIFEST, "mine", { id: "Long" }),
+    { state: "out", why: "the animation is 70.0 s long; an animation can be up to 60 s" });
+  assert.match(m.animationStatus(MANIFEST, "gone", YAWN).why, /its mod wasn't in the last Apply/);
+  assert.equal(m.animationStatus(null, "mine", YAWN), null);
+  assert.equal(m.animationStatus({ ...MANIFEST, notes: {}, sections: {} }, "mine", YAWN), null, "no animations section in that build");
+});
+
+test("animationsSummary says what's in the game, with keys, and what's left out", () => {
+  const anims = [YAWN, { id: "Flap", name: "Flap" }, { id: "Long", name: "Long" }];
+  assert.equal(m.animationsSummary(MANIFEST, "mine", anims),
+    "In the game: Yawn (F7), Flap; left out: Long (the animation is 70.0 s long; an animation can be up to 60 s).");
+  assert.equal(m.animationsSummary(MANIFEST, "mine", [{ id: "Long", name: "Long" }]),
+    "Nothing here went in the game; left out: Long (the animation is 70.0 s long; an animation can be up to 60 s).");
+  assert.equal(m.animationsSummary(null, "mine", anims), null);
+});

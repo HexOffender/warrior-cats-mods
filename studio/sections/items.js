@@ -7,7 +7,7 @@
 import { listEditor, field, itemChoices, itemSelect, lastApply } from "../lib/story.js";
 import { shapeDrawing, asPng, placeMesh } from "../lib/shape.js";
 import { KIND, SLOTS, START_HERB, itemId, isPicture, toJson, fullTag, kindOf, giveOwn, switchKind, effectName,
-  chooseEffect, whoAndWhen, badgeWords, NEW_LOOK } from "../lib/items-model.js";
+  chooseEffect, whoAndWhen, badgeWords, NEW_LOOK, itemStatus, itemsSummary } from "../lib/items-model.js";
 
 // The keys the page has controls for; others an item has are listed as kept as they are (rarity among them:
 // what it changes in the game hasn't been seen, so there's no control for it). target, combat, exploring and
@@ -41,6 +41,7 @@ export default {
     const stash = new WeakMap();     // what a Kind change put aside, by item (items-model.switchKind)
     const opened = new WeakSet();    // items whose Advanced fold was opened by hand
     let lastResult = null;           // the last Apply's result, for what it said about this mod's items
+    let asOf = null;                 // when that was, for one read back from the last build after a restart
     const head = wc.pageHead({ eyebrow: "New items", title: "Items", help: "help:items",
       lede: "Herbs, materials and accessories of your own. They're real items: they show in the inventory with their icon, herbs do what you choose when used, accessories are worn in a look of your own, and the medicine cat can make them. Questlines can ask for them and give them as rewards. They work in story games too, not only in Sandbox mode." });
     let game;
@@ -71,7 +72,7 @@ export default {
     const editor = listEditor({
       noun: "item", empty: "No items yet. Add one: a herb that heals, a material for quests and recipes, or something to wear.",
       label: it => [el("strong", { text: it.name || it.id }), el("span", { class: "muted", text: ` ${KIND[kindOf(it, byTag)] || "item"}` }),
-        missing(it) ? el("span", { class: "field-problem", text: ` needs ${missing(it)}` }) : null],
+        missing(it) ? el("span", { class: "field-problem", text: ` needs ${missing(it)}` }) : null, chip(it)],
       add: () => {
         const name = "New herb";
         items.push({ id: itemId(name, items.map(x => x.id), gameIds("consumable")), kind: "consumable", like: start("consumable"),
@@ -81,9 +82,34 @@ export default {
       },
     });
     root.append(head, target.element, lastBox, editor.element, out.element);
-    // After an Apply, what the build said about this mod's items (wc.installedEvent: not over unsaved changes).
-    wc.installedEvent(target, result => { lastResult = result; showLast(); });
+    // After an Apply, what the build said about this mod's items (wc.installedEvent: not over unsaved changes);
+    // after the studio started again, the last build's, when it's the one in the game.
+    wc.installedEvent(target, result => { lastResult = result; asOf = null; draw(); });
     await target.refresh();
+    api.get("/build/last").then(r => {
+      if (lastResult || !r.installed || !r.manifest) return;
+      lastResult = r.manifest;
+      asOf = r.manifest.built;
+      if (!target.dirty) draw();
+    }).catch(() => { /* no build yet */ });
+
+    // Whether the last Apply put an item in the game, as a chip for its line in the list.
+    function chip(it) {
+      const s = itemStatus(lastResult, target.current, it);
+      if (!s) return null;
+      const said = s.state === "in" ? "In the game" : "Left out";
+      return el("span", { class: `chip ${s.state === "in" ? "good" : "bad"}`, title: s.state === "in" ? s.also.join("; ") : s.why },
+        el("i", { "aria-hidden": "true" }), said);
+    }
+    // The same, said in full at the top of the item.
+    function statusLine(it) {
+      const s = itemStatus(lastResult, target.current, it);
+      if (!s) return null;
+      const when = asOf ? ` (as of the last Apply, ${asOf.replace("T", " ").slice(0, 16)})` : "";
+      if (s.state === "out") return el("p", { class: "field-problem", text: `Left out of the game${when}: ${s.why}.` });
+      const look = s.look ? `, worn as look ${s.look} of ${(likeOf(it) || {}).name || "its accessory"}` : "";
+      return el("p", { class: "note", text: `In the game${when}${look}${s.also.length ? `; ${s.also.join("; ")}` : ""}.` });
+    }
 
     function likeOf(it) { return byTag.get(fullTag(it.like, byTag)) || null; }
     function tagOf(it) {
@@ -116,9 +142,14 @@ export default {
       lastBox.hidden = !notes;
       if (!notes) return;
       const nameOf = id => (items.find(x => x.id === id) || {}).name || id;
-      if (!notes.on) lastBox.append(el("strong", { text: "Last Apply: " }), "this mod wasn't in it. It's off, or it couldn't be made ready (the log says why).");
-      else if (!notes.said.length) lastBox.append(el("strong", { text: "Last Apply: " }), "the items saved here went in the game.");
-      else lastBox.append(el("strong", { text: "Last Apply, about these items: " }),
+      const when = asOf ? ` (${asOf.replace("T", " ").slice(0, 16)})` : "";
+      const counted = itemsSummary(lastResult, target.current, items);
+      // What the build said about the mod as a whole, or about an item the page hasn't got (the recipes of the game's).
+      const rest = notes.said.filter(n => !n.id || !items.some(x => x.id === n.id)).map(n => `${n.id ? `${nameOf(n.id)}: ` : ""}${n.why}.`);
+      if (!notes.on) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), "this mod wasn't in it. It's off, or it couldn't be made ready (the log says why).");
+      else if (counted) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), [counted, ...rest].join(" "));
+      else if (!notes.said.length) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), "the items saved here went in the game.");
+      else lastBox.append(el("strong", { text: `Last Apply${when}, about these items: ` }),
         notes.said.map(n => `${n.id ? `${nameOf(n.id)}: ` : ""}${n.why}.`).join(" "));
     }
     // The mod has to exist on disk before a file can go in its folder. Saving a new mod reads its file again,
@@ -196,7 +227,17 @@ export default {
       if (like && likeSel.value !== like.short) likeSel.append(el("option", { value: like.short, text: like.name, selected: true }));
 
       const icon = el("img", { class: "item-icon", alt: `${it.name || "The item"}'s icon` });
-      const whatItIs = el("div", { class: "card" }, el("h3", { text: "What it is" }),
+      // A technical name the game has already (written by hand: a new item's never is) keeps it out of the game.
+      const taken = !accessory && gameIds(kind).some(g => g.toLowerCase() === (it.id || "").toLowerCase());
+      const tagFold = el("details", { class: "fold", "data-key": "items:tag", open: taken },
+        el("summary", {}, el("span", { text: "Technical name" })),
+        el("p", { class: "note", text: "What the game calls it. You don't need it, unless a script or another mod names this item." }), techNote,
+        taken ? el("p", { class: "field-problem", text: "The game already has one called that, so this one is left out." }) : null,
+        taken ? el("button", { class: "btn small", text: "Give it a name of its own", onclick: () => {
+          it.id = itemId(it.name || it.id, others(it), gameIds(kind));
+          changed(true);
+        } }) : null);
+      const whatItIs = el("div", { class: "card" }, el("h3", { text: "What it is" }), statusLine(it),
         el("div", { class: "cat-head" },
           el("div", { class: "icon-box" }, icon),
           el("div", { class: "stack", style: { flex: "1", minWidth: "220px" } },
@@ -209,9 +250,7 @@ export default {
             ? "The accessory it's worn as: its place on the cat, its shape unless you give it a model, and its icon. Head accessories can't take new looks."
             : "Its icon, badge and what it does, unless you change them below.")),
         kind === "consumable" ? el("p", { class: "muted", text: whoAndWhen(it, like || {}) }) : null,
-        el("details", { class: "fold", "data-key": "items:tag" },
-          el("summary", {}, el("span", { text: "Technical name" })),
-          el("p", { class: "note", text: "What the game calls it. You don't need it, unless a script or another mod names this item." }), techNote));
+        tagFold);
 
       // ---------- the icon ----------
       const iconMode = typeof it.icon === "string" ? (isPicture(it.icon) ? "own" : "item")

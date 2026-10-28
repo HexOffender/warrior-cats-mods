@@ -45,8 +45,9 @@ You can:
 - put an emote on a key or a controller button, with the claws out, looping, faster or slower;
 - make animations for mice, rats, rabbits, squirrels, birds, foxes, badgers, dogs and snakes too, from
   their own animations;
-- make your own in Blender: **A file I made in Blender** saves a start kit (the animal, rigged the game's
-  way) and takes the file you export, up to 60 seconds long.
+- make your own in Blender: **Start kits (for Blender)**, at the top of the page, saves an animal rigged the
+  game's way, and **A file I made in Blender** takes the file you export, up to 60 seconds long;
+- stop an emote the Emote wheel started with the emote's own key.
 
 You can't, yet:
 
@@ -59,9 +60,11 @@ You can't, yet:
 
 ## Did it reach the game?
 
-After **Apply to game**, a line at the top of the Animations page says how the last Apply went for this
-mod: that its animations went in, or what it said about one, like "Wave: nothing chosen for it to play
-yet, so it's left out". The whole story is in [the log](studio.md#the-log), under **Last apply**.
+After **Apply to game**, each animation in the list gets a chip: **In the game** (with its key, for an
+emote), or **Left out**. The animation's own page says why one was left out, and a line at the top sums
+it up: "In the game: Yawn (F7), Flap; left out: Wave (nothing chosen for it to play yet)". When you open
+the studio again later, the chips are the last Apply's, and say when it was. The whole story is in
+[the log](studio.md#the-log), under **Last apply**.
 
 In the game, press the emote's key, or open the mod menu's Emotes page. A replacement shows wherever the
 game plays the one it replaced.

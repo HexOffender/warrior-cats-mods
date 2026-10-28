@@ -107,6 +107,27 @@ def test_a_models_drawing_is_kept_until_the_model_changes(studio, tmp_path):
     assert again is not first and again["triangles"] == 2
 
 
+def test_build_last_reads_the_last_manifest(studio):
+    assert call(studio, "GET", "build/last") == {"manifest": None, "installed": False}, "no build yet"
+    manifest = {"built": "2026-10-28T10:00:00", "mods": ["mine"], "names": {"mine": "Mine"}, "outputs": ["x.pak"],
+                "notes": {"items": {"items": {"mine/MoonHerb": "Gameplay.Inventory.Consumable.MoonHerb"}}},
+                "warnings": ["items: mine: Lost: it has no description, so it's left out of the game"],
+                "sections": {"items": {"status": "ok", "mods": ["mine"], "errors": [], "failed": []}}}
+    os.makedirs(studio.ctx.build_dir, exist_ok=True)
+    with open(os.path.join(studio.ctx.build_dir, "manifest.json"), "w", encoding="utf-8") as f:
+        json.dump(manifest, f)
+    got = call(studio, "GET", "build/last")
+    assert got["installed"] is False, "built (a check of the mods), but not what's in the game"
+    assert got["manifest"] == {k: manifest[k] for k in ("built", "mods", "names", "notes", "warnings", "sections")}
+    studio.ctx.cfg.data["installed"] = {"built": "2026-10-28T10:00:00", "mods": ["mine"]}
+    assert call(studio, "GET", "build/last")["installed"] is True
+    studio.ctx.cfg.data["installed"]["built"] = "2026-10-27T09:00:00"
+    assert call(studio, "GET", "build/last")["installed"] is False, "an older install"
+    with open(os.path.join(studio.ctx.build_dir, "manifest.json"), "w", encoding="utf-8") as f:
+        f.write("{not json")
+    assert call(studio, "GET", "build/last") == {"manifest": None, "installed": False}
+
+
 @pytest.mark.parametrize("page", ["items", "animations"])
 def test_the_pages_guide_has_its_six_parts_and_no_command_line(studio, page):
     import re

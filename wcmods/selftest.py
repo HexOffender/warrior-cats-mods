@@ -597,8 +597,8 @@ def _items_section(cfg):
         # game's list, and the icons in the item table.
         made = IoStoreReader(os.path.join(tmp, "out", "zzz_WCMods_P.utoc"))
         look = "/Game/WCMods/good/T_WCModsTestCollar_BC"
-        icon = "/Game/WCMods/good/T_WCModsTestPicture_Icon"
-        stone = "/Game/WCMods/good/T_WCModsTestStone_Icon"
+        icon = "/Game/WCMods/good/T_Consumable_WCModsTestPicture_Icon"
+        stone = "/Game/WCMods/good/T_Materials_WCModsTestStone_Icon"
         packed = (ok and all(texture.content_path(p) in made.files for p in (look, icon, stone))
                   and texture.content_path(look)[:-len(".uasset")] + ".ubulk" in made.files)
         if packed:

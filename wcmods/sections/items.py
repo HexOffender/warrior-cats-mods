@@ -196,6 +196,7 @@ class ItemsSection(Section):
         game = Game(ctx)
         slot = _current_slot(ctx)
         made = {}                      # tag -> mod id
+        who = {}                       # "<mod>/<id>" -> tag: the build's note, for the Items page
         looks = []                     # new accessory looks, for the GUI manager's lists
         worn = {}                      # the cat's slot -> accessory -> look number -> {"mesh", "opacity", "glass"}
         ground = {}                    # tag -> how a herb or a material lies on the ground (WCModsItems)
@@ -210,7 +211,8 @@ class ItemsSection(Section):
                 icon = rows["info"]["Icon"]
                 if isinstance(icon, (Picture, Recolour)):        # a new texture for the icon
                     like_icon = icon.source if isinstance(icon, Recolour) else rows.get("icon_like", ICON_LIKE)
-                    asset = ctx.add_texture(f"{mod.id}/T_{item['id']}_Icon", lambda: icon.read(mod, ctx),
+                    # Named by its kind too: a herb and a material may share an id.
+                    asset = ctx.add_texture(f"{mod.id}/T_{KINDS[game.kind(item)]}_{item['id']}_Icon", lambda: icon.read(mod, ctx),
                                             like_icon, source=mod.id, key=icon.key(mod, ctx))
                     rows["info"]["Icon"] = cooked.soft_path(asset)
                 if look:                             # the accessory's new look: a copy of its texture
@@ -249,6 +251,8 @@ class ItemsSection(Section):
                 ctx.warn(f"{mod.id}: {item['id']}: {e}")
                 continue
             made[tag] = mod.id
+            key = f"{mod.id}/{item['id']}"     # a herb and a material may share an id: then both, in a list
+            who[key] = [*who[key], tag] if isinstance(who.get(key), list) else [who[key], tag] if key in who else tag
             text = f"{TAG_ROOT}{mod.id}.{item['id']}"
             # The row's name, from the tag: a herb and a material may share an id.
             row = "WCMods_" + tag[len(TAG_ROOT):].replace(".", "_")
@@ -298,7 +302,7 @@ class ItemsSection(Section):
             lines = ["[/Script/GameplayTags.GameplayTagsList]"]
             lines += [f'GameplayTagList=(Tag="{tag}",DevComment="wcmods: {by}")' for tag, by in sorted(made.items())]
             ctx.add_file(TAGS_INI, ("\r\n".join(lines) + "\r\n").encode("utf-8"), source="items")
-            ctx.note("items", sorted(made))
+            ctx.note("items", dict(sorted(who.items())))   # each item by its mod and id: an accessory's tag is a look number
 
 
 def ground_model(ctx, game, mod, item, tag, pickup):
@@ -399,7 +403,7 @@ class Game:
             # Said where the Items page shows it; docs/SDK.md says how to change the game's own (data.json).
             raise ValueError(f"the game already has an item called {item['id']}: give yours another name")
         if tag in made:
-            raise ValueError(f"{made[tag]} adds {tag} too, and comes later, so its item is used")
+            raise ValueError(f"{made[tag]} adds an item called {item['id']} too, and comes later, so its item is used")
         base = self.info.get(like, {})
         info = {"itemTag": tag,
                 "Icon": self.icon(item.get("icon"), base),

@@ -16,8 +16,10 @@ local function stop()
 end
 
 local function toggle(e)
-    if current == e.id and Game.anims.playing() == e.id then
-        stop()
+    -- Playing, from here or from another script (the Emote wheel): its key stops it.
+    if Game.anims.playing() == e.id then
+        Game.anims.stop()
+        current = nil
         return
     end
     local montage, why = Game.anims.play(nil, e.id)
@@ -44,7 +46,7 @@ Game.every(0.15, function()
     local cat = Game.player()
     if not cat then return end
     local ok, v = pcall(function() return cat:GetVelocity() end)
-    if ok and v and v.X * v.X + v.Y * v.Y > MOVING * MOVING then stop() end
+    if ok and v and v.X and v.Y and v.X * v.X + v.Y * v.Y > MOVING * MOVING then stop() end
 end)
 
 -- The page is extra: if the menu can't load or add it, the keys still work.

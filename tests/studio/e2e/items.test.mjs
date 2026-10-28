@@ -179,3 +179,31 @@ test("a recipe can ask for a material the same mod adds", { skip }, async () => 
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });
+
+// An Apply's result, as the shell hands it to the pages ("installed" on wc's bus): the build's manifest.
+const emitInstalled = (page, manifest) => page.evaluate(`(async () => {
+  const wc = await import("/studio/lib/wc.js");
+  wc.bus.emit("installed", ${JSON.stringify(manifest)});
+})()`);
+
+test("status after apply: a chip on each item, its line, and the count at the top", { skip }, async () => {
+  const page = await itemsPage();   // my-mods, with Moon Herb saved by the first upload's test
+  const tag = "Gameplay.Inventory.Consumable.MoonHerb";
+  const base = { built: "2026-10-28T10:00:00", mods: ["my-mods"], sections: { items: { status: "ok", mods: ["my-mods"], errors: [], failed: [] } } };
+  await emitInstalled(page, { ...base, notes: { items: { items: { "my-mods/MoonHerb": tag } } },
+    warnings: ["items: my-mods: MoonHerb: no save yet to give it in; start the game once, then install again"] });
+  await page.waitFor(() => document.querySelector(".pick .chip.good"));
+  assert.equal(await page.text(".pick .chip.good"), "In the game");
+  assert.match(await page.text(".banner[role=status]"), /^Last Apply: 1 of 1 item went in\.$/);
+  assert.equal(await page.text('[data-key="editor:item"] .card p.note'), "In the game; no save to give it in yet.");
+  // The next Apply left it out: the chip, the line and the count follow.
+  await emitInstalled(page, { ...base, notes: { items: { items: {} } },
+    warnings: ["items: my-mods: MoonHerb: the game already has an item called MoonHerb: give yours another name"] });
+  await page.waitFor(() => document.querySelector(".pick .chip.bad"));
+  assert.equal(await page.text(".pick .chip.bad"), "Left out");
+  assert.match(await page.text(".banner[role=status]"),
+    /0 of 1 item went in\. Moon Herb was left out: the game already has an item called MoonHerb: give yours another name\./);
+  assert.match(await page.text('[data-key="editor:item"] .card .field-problem'), /^Left out of the game: the game already has an item called MoonHerb/);
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});

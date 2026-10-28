@@ -60,9 +60,12 @@ You can't, yet:
 
 ## Did it reach the game?
 
-After **Apply to game**, a line at the top of the Items page says how the last Apply went for this mod:
-that its items went in, or what it said about one of them, like "Moon Herb: it has no description, so
-it's left out of the game". The whole story is in [the log](studio.md#the-log), under **Last apply**.
+After **Apply to game**, each item in the list gets a chip: **In the game**, or **Left out**. The item's
+own page says why one was left out, or what to know about one that went in ("no save to give it in
+yet", "on the ground it's the game's pickup"), and a line at the top counts them: "3 of 4 items went in.
+Moon Herb was left out: it has no description, so it's left out of the game." When you open the studio
+again later, the chips are the last Apply's, and say when it was. The whole story is in
+[the log](studio.md#the-log), under **Last apply**.
 
 In the game, open your inventory. A herb or a material you gave yourself some of is there. One you didn't
 shows at the medicine cat's bartering when it has a recipe. An accessory you made is worn from the
@@ -73,8 +76,10 @@ inventory like the game's, once you have one.
 - **No description.** An item needs a name and a description. The page marks an empty one in red, and
   the list says "needs a description". It still saves, but that one item is left out of the game until it
   has one. A name you leave empty goes back to the item's technical name.
-- **A name the game already uses.** The page gives your item a technical name of its own, so "Medium
-  Healing Herb" is fine: the studio calls it MediumHealingHerb2 behind the scenes.
+- **A name the game already uses.** The page gives a new item a technical name of its own, so "Medium
+  Healing Herb" is fine: the studio calls it MediumHealingHerb2 behind the scenes. One made outside the
+  studio with the game's own technical name shows it in red under **Technical name**, with **Give it a
+  name of its own**.
 - **Starting with some, and no save yet.** They go into the cat you're playing when you apply, so start
   the game once first. It happens once: a cat that already has some isn't given more.
 - **Changing the Kind.** A herb, a material and an accessory each keep their own settings. Changing the

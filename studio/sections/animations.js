@@ -5,7 +5,7 @@
 // See wcmods/sections/animations.py and wcmods/animations.py; the page's pure parts are in lib/animations-model.js.
 import { listEditor, field, lastApply } from "../lib/story.js";
 import { EDITED, ROLE_KEYS, SOURCE_KEYS, KIND_KEYS, NEW_NAME, animId, toJson, sourceOf, roleOf, switchChoice,
-  sequenceGroups, sequenceOptions, findSequence, plainName, emoteReserved } from "../lib/animations-model.js";
+  sequenceGroups, sequenceOptions, findSequence, plainName, emoteReserved, animationStatus, animationsSummary } from "../lib/animations-model.js";
 
 const FILES = ".glb,.gltf";
 
@@ -17,7 +17,8 @@ export default {
     const stash = new WeakMap();     // what a switch put aside, by animation (animations-model.switchChoice)
     const chosen = new WeakMap();    // where an animation with nothing picked yet comes from, as chosen here
     const chosenRole = new WeakMap(); // what one that's to replace a game animation, not picked yet, does
-    let lastResult = null;
+    let lastResult = null;           // the last Apply's result, for what it said about this mod's animations
+    let asOf = null;                 // when that was, for one read back from the last build after a restart
     const head = wc.pageHead({ eyebrow: "Animations", title: "Animations", help: "help:animations",
       lede: "Animations for your cat and the animals. Use one of the game's own (a yawn, a stretch, a photo pose) as an emote on a key, or play one where the game plays another, every cat trotting with the run, say: no Blender needed. Or make your own in Blender from a start kit. They play over what the cat is doing, where it stands." });
     let kinds;
@@ -50,7 +51,7 @@ export default {
     const editor = listEditor({
       noun: "animation", empty: "No animations yet. Add one: one of the game's as an emote for your cat, the game's own in another's place, or your own from Blender.",
       label: a => [el("strong", { text: a.name || a.id }), el("span", { class: "muted", text: ` ${does(a)}` }),
-        !a.file && !a.game ? el("span", { class: "field-problem", text: " needs an animation" }) : null],
+        !a.file && !a.game ? el("span", { class: "field-problem", text: " needs an animation" }) : null, chip(a)],
       add: () => {
         const a = { id: animId(NEW_NAME, anims.map(x => x.id)), name: NEW_NAME, for: "cat", emote: true, _new: true };
         chosen.set(a, "game");
@@ -59,9 +60,52 @@ export default {
         changed(true);
       },
     });
-    root.append(head, target.element, lastBox, editor.element, out.element);
-    wc.installedEvent(target, result => { lastResult = result; showLast(); });
+    // The start kits, for making one in Blender: folded, since the game's own need none.
+    const kits = el("details", { class: "card fold", "data-key": "animations:kits" },
+      el("summary", {}, el("h3", { text: "Start kits (for Blender)" }),
+        el("span", { class: "muted", text: "Each animal rigged the game's way, with some of its own animations to start from" })),
+      el("p", { class: "note", text: "A .zip with the animal as a .glb and a README. Unzip it first, then import the .glb into Blender (File > Import > glTF 2.0), animate it, and choose your file under \"A file I made in Blender\"." }),
+      el("div", { class: "row" }, ...kinds.map(kitButton)));
+    root.append(head, target.element, lastBox, kits, editor.element, out.element);
+    // After an Apply, what the build said about this mod's animations (wc.installedEvent: not over unsaved
+    // changes); after the studio started again, the last build's, when it's the one in the game.
+    wc.installedEvent(target, result => { lastResult = result; asOf = null; draw(); });
     await target.refresh();
+    api.get("/build/last").then(r => {
+      if (lastResult || !r.installed || !r.manifest) return;
+      lastResult = r.manifest;
+      asOf = r.manifest.built;
+      if (!target.dirty) draw();
+    }).catch(() => { /* no build yet */ });
+
+    function kitButton(k) {
+      const label = `${k.label}${k.examples ? `: ${k.examples} to start from` : ""}`;
+      const b = el("button", { class: "btn small", text: label, onclick: async () => {
+        b.disabled = true;
+        b.textContent = `Making the kit for ${k.label.toLowerCase()}…`;
+        try { toast(`Saved ${await api.download(`/game/anim-kit?for=${encodeURIComponent(k.id)}`)}: unzip it first, then import the .glb into Blender. README.txt says the rest.`); }
+        catch (e) { toast(e.message, "bad"); }
+        b.disabled = false;
+        b.textContent = label;
+      } });
+      return b;
+    }
+    // Whether the last Apply put an animation in the game, as a chip for its line in the list.
+    function chip(a) {
+      const s = animationStatus(lastResult, target.current, a);
+      if (!s) return null;
+      return el("span", { class: `chip ${s.state === "in" ? "good" : "bad"}`, title: s.state === "in" ? (s.also || []).join("; ") : s.why },
+        el("i", { "aria-hidden": "true" }), s.state === "in" ? `In the game${s.key ? ` (${input.keyLabel(s.key)})` : ""}` : "Left out");
+    }
+    // The same, said in full at the top of the animation.
+    function statusLine(a) {
+      const s = animationStatus(lastResult, target.current, a);
+      if (!s) return null;
+      const when = asOf ? ` (as of the last Apply, ${asOf.replace("T", " ").slice(0, 16)})` : "";
+      if (s.state === "out") return el("p", { class: "field-problem", text: `Left out of the game${when}: ${s.why}.` });
+      const where = s.replaced ? `, in place of ${plain(a.for || "cat", s.replaced)}` : s.key ? `, on ${input.keyLabel(s.key)}` : "";
+      return el("p", { class: "note", text: `In the game${when}${where}${s.also && s.also.length ? `; ${s.also.join("; ")}` : ""}.` });
+    }
 
     function load(obj) {
       extra = {};
@@ -89,9 +133,13 @@ export default {
       lastBox.hidden = !notes;
       if (!notes) return;
       const nameOf = id => (anims.find(x => x.id === id) || {}).name || id;
-      if (!notes.on) lastBox.append(el("strong", { text: "Last Apply: " }), "this mod wasn't in it. It's off, or it couldn't be made ready (the log says why).");
-      else if (!notes.said.length) lastBox.append(el("strong", { text: "Last Apply: " }), "the animations saved here went in the game.");
-      else lastBox.append(el("strong", { text: "Last Apply, about these animations: " }),
+      const when = asOf ? ` (${asOf.replace("T", " ").slice(0, 16)})` : "";
+      const counted = animationsSummary(lastResult, target.current, anims, k => input.keyLabel(k));
+      const rest = notes.said.filter(n => !n.id || !anims.some(x => x.id === n.id)).map(n => `${n.id ? `${nameOf(n.id)}: ` : ""}${n.why}.`);
+      if (!notes.on) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), "this mod wasn't in it. It's off, or it couldn't be made ready (the log says why).");
+      else if (counted) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), [counted, ...rest].join(" "));
+      else if (!notes.said.length) lastBox.append(el("strong", { text: `Last Apply${when}: ` }), "the animations saved here went in the game.");
+      else lastBox.append(el("strong", { text: `Last Apply${when}, about these animations: ` }),
         notes.said.map(n => `${n.id ? `${nameOf(n.id)}: ` : ""}${n.why}.`).join(" "));
     }
     async function modReady() {
@@ -103,7 +151,7 @@ export default {
     // shown. value: the chosen one's name or path; onPick(value, its sequence) when another is chosen.
     function sequencePicker(kind, value, label, onPick) {
       const sel = el("select", { "aria-label": label, disabled: true },
-        el("option", { value: value || "", text: value ? plain(kind, value) : "Reading the game's animations…" }));
+        el("option", { value: value || "", text: known[kind] && value ? plain(kind, value) : "Reading the game's animations…" }));
       const status = el("p", { class: "muted", style: { fontSize: "0.9rem" }, text: "Reading the game's animations…" });
       sequencesOf(kind).then(list => {
         clear(sel);
@@ -163,7 +211,7 @@ export default {
         changed(true);
       } }, ...kinds.map(k => el("option", { value: k.id, text: k.label })));
       forSel.value = kind;
-      const cards = [el("div", { class: "card" }, el("h3", { text: "What it is" }),
+      const cards = [el("div", { class: "card" }, el("h3", { text: "What it is" }), statusLine(a),
         el("div", { style: { display: "grid", gap: "10px", alignItems: "start", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" } },
           field("Name", name, cat ? "What the Emotes page calls it." : null, { required: true }),
           field("For", forSel, "Every cat shares one skeleton; each kind of animal has its own, and plays only its own animations. Changing it puts this one's animation aside until you change it back.")))];
@@ -356,16 +404,9 @@ export default {
         } catch (e) { toast(e.message, "bad"); }
         finally { uploading = false; chooseBtn.disabled = false; }
       } });
-      const kit = el("button", { class: "btn ghost small", text: `Save a start kit to animate (${kindLabel(kind).toLowerCase()})`, onclick: async () => {
-        kit.disabled = true;
-        toast("Making the start kit…");
-        try { toast(`Saved ${await api.download(`/game/anim-kit?for=${encodeURIComponent(kind)}`)}: unzip it, then import the .glb into Blender; README.txt says the rest.`); }
-        catch (e) { toast(e.message, "bad"); }
-        kit.disabled = false;
-      } });
       return [
-        el("p", { class: "note", text: "Animate the start kit's armature in Blender, keeping its bones' names, then File > Export > glTF 2.0 as glTF Binary (.glb) with Animation on. Units are metres with Y up, Blender's own settings. Bones you don't move hold their place; moving the root moves the body, not the cat. Up to 60 seconds." }),
-        el("div", { class: "row" }, a.file ? el("span", { class: "muted mono", text: a.file }) : null, chooseBtn, kit), picker,
+        el("p", { class: "note", text: "Animate a start kit's armature in Blender (Start kits, at the top of the page), keeping its bones' names, then File > Export > glTF 2.0 as glTF Binary (.glb) with Animation on. Units are metres with Y up, Blender's own settings. Bones you don't move hold their place; moving the root moves the body, not the cat. Up to 60 seconds." }),
+        el("div", { class: "row" }, a.file ? el("span", { class: "muted mono", text: a.file }) : null, chooseBtn), picker,
         field("Which animation in the file", clipSel), facts];
     }
 

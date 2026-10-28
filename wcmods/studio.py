@@ -756,6 +756,10 @@ class Studio:
             # One of them: where it is, how long it plays and how many keys it has (a replacement is fitted to them).
             q = query or {}
             return self.anim_sequence(q.get("for", "cat"), q.get("name", ""))
+        if parts == ["build", "last"] and method == "GET":
+            # The last build's notes and warnings, and whether it's the one in the game: the Items and
+            # Animations pages' "in the game" chips after the studio was started again.
+            return self.last_build()
         if parts == ["game", "try-anim"] and method == "POST":
             # One of the game's animations played on your cat in the running game (through the game bridge), to
             # see it before choosing it on the Animations page.
@@ -1125,6 +1129,21 @@ class Studio:
                 out.append({"name": name, "paths": paths, "additive": additive, "label": label, "group": group})
             self._sequences[kind] = sorted(out, key=lambda s: s["name"].lower())
         return self._sequences[kind]
+
+    def last_build(self):
+        """{"manifest": the build folder's manifest.json as the pages read it (built, mods, names, notes, warnings,
+        sections), or None without one; "installed": whether that build is the one in the game (wcmods.json's
+        "installed" names the same build), not only a check of the mods}."""
+        try:
+            with open(os.path.join(self.ctx.build_dir, "manifest.json"), encoding="utf-8-sig") as f:
+                m = json.load(f)
+        except (OSError, ValueError):
+            return {"manifest": None, "installed": False}
+        if not isinstance(m, dict):
+            return {"manifest": None, "installed": False}
+        installed = (self.ctx.cfg.data.get("installed") or {}).get("built")
+        return {"manifest": {k: m.get(k) for k in ("built", "mods", "names", "notes", "warnings", "sections")},
+                "installed": bool(installed) and installed == m.get("built")}
 
     def try_anim(self, cfg, path):
         """Play one of the game's sequences (`path`, /Game/...) on your cat in the running game, through the

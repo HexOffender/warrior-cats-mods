@@ -124,3 +124,43 @@ test("isPicture tells the mod's own pictures from the game's items and textures"
   assert.equal(m.isPicture("/Game/Art/UXD/Textures/T_Rock"), false);
   assert.equal(m.isPicture({ tint: "#fff" }), false);
 });
+
+// ---------- whether it reached the game ----------
+const MANIFEST = {
+  built: "2026-10-28T10:00:00", mods: ["mine"],
+  notes: { items: { items: { "mine/MoonHerb": "Gameplay.Inventory.Consumable.MoonHerb", "mine/Pebble": "Gameplay.Inventory.Materials.Pebble",
+    "mine/Blue": "Gameplay.Inventory.Cosmetic.Neck.DogCollar.3", "mine/Gem": ["Gameplay.Inventory.Materials.Gem", "Gameplay.Inventory.Consumable.Gem"] } } },
+  warnings: ["items: mine: Lost: it has no description, so it's left out of the game",
+    "items: mine: Pebble: its model on the ground: there's no model models/p.obj in the mod's folder; it lies there as the game's pickup instead",
+    "items: mine: MoonHerb: no save yet to give it in; start the game once, then install again",
+    "items: other: MoonHerb: something about another mod's"],
+  sections: { items: { status: "ok", mods: ["mine"], errors: [], failed: [] } },
+};
+
+test("itemStatus says whether an item went in, and why one didn't, in the page's words", () => {
+  assert.deepEqual(m.itemStatus(MANIFEST, "mine", { id: "MoonHerb" }), { state: "in", also: ["no save to give it in yet"], look: null });
+  assert.deepEqual(m.itemStatus(MANIFEST, "mine", { id: "Pebble" }), { state: "in", also: ["on the ground it's the game's pickup"], look: null });
+  assert.deepEqual(m.itemStatus(MANIFEST, "mine", { id: "Blue" }), { state: "in", also: [], look: 3 });
+  assert.equal(m.itemStatus(MANIFEST, "mine", { id: "Gem" }).state, "in", "a herb and a material with one id");
+  assert.deepEqual(m.itemStatus(MANIFEST, "mine", { id: "Lost" }), { state: "out", why: "it has no description, so it's left out of the game" });
+  assert.deepEqual(m.itemStatus(MANIFEST, "mine", { id: "Unsaved" }), { state: "out", why: "it didn't go in" });
+  assert.match(m.itemStatus(MANIFEST, "gone", { id: "MoonHerb" }).why, /its mod wasn't in the last Apply/);
+  assert.equal(m.itemStatus({ manifest: MANIFEST }, "mine", { id: "Blue" }).look, 3, "as /build/last gives it");
+});
+
+test("itemStatus leaves it unsaid when it can't tell: no build, or an older wcmods' note", () => {
+  assert.equal(m.itemStatus(null, "mine", { id: "MoonHerb" }), null);
+  assert.equal(m.itemStatus({ log: [] }, "mine", { id: "MoonHerb" }), null);
+  const old = { ...MANIFEST, notes: { items: { items: ["Gameplay.Inventory.Consumable.MoonHerb"] } } };
+  assert.equal(m.itemStatus(old, "mine", { id: "MoonHerb" }), null, "the old list of tags can't tell items apart");
+  // The section ran and made nothing: every item is out, with what kept it out.
+  const none = { ...MANIFEST, notes: {}, warnings: [], sections: { items: { status: "partial", mods: ["mine"], errors: ["x"], failed: [["mine", "items.json: item 1: \"icon\" should be text"]] } } };
+  assert.deepEqual(m.itemStatus(none, "mine", { id: "MoonHerb" }), { state: "out", why: "items.json: item 1: \"icon\" should be text" });
+});
+
+test("itemsSummary counts what went in and names the first left out", () => {
+  const items = [{ id: "MoonHerb", name: "Moon Herb" }, { id: "Lost", name: "Lost Herb" }, { id: "Blue", name: "Blue Collar" }];
+  assert.equal(m.itemsSummary(MANIFEST, "mine", items), "2 of 3 items went in. Lost Herb was left out: it has no description, so it's left out of the game.");
+  assert.equal(m.itemsSummary(MANIFEST, "mine", [items[0]]), "1 of 1 item went in.");
+  assert.equal(m.itemsSummary(null, "mine", items), null);
+});
