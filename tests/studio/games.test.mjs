@@ -42,6 +42,25 @@ test("cats with one name in several games are told apart by their games", () => 
   assert.equal(G.andList(["a", "b", "c"]), "a, b and c");
 });
 
+test("who else wears a game's colours of its own: one twin, or several, in a sentence that agrees", () => {
+  assert.equal(G.alsoWearIt(G.sameName(GAMES, GAMES[0]).slice(0, 1)), "your cat in your 3rd game, which has the same name, gets them too");
+  assert.equal(G.alsoWearIt(G.sameName(GAMES, GAMES[3])),
+    "your cats in your 1st game and your 3rd game, which have the same name, get them too");
+});
+
+test("each game's cats list that game's own clan first, never the game played last's", () => {
+  const clans = ["ThunderClan", "NarrativeRoles", "RiverClan", "ShadowClan", "Outsiders"];
+  assert.deepEqual(G.clanOrder(clans, "RiverClan"), ["RiverClan", "ShadowClan", "ThunderClan", "NarrativeRoles", "Outsiders"]);
+  assert.deepEqual(G.clanOrder(clans, "ThunderClan"), ["ThunderClan", "RiverClan", "ShadowClan", "NarrativeRoles", "Outsiders"]);
+  assert.deepEqual(G.clanOrder(clans, null), ["RiverClan", "ShadowClan", "ThunderClan", "NarrativeRoles", "Outsiders"]);
+  assert.equal(clans[0], "ThunderClan", "the list given is left as it was");
+});
+
+test("the Save page says which game it moved to when another was played since it read the save", () => {
+  assert.equal(G.movedTo(GAMES[3]), "Now on your 5th game: Sharppaw, the game you played last (it was played since this page read your save). Changes already in the list stay with their games.");
+  assert.match(G.movedTo(GAMES[2]), /^Now on your 4th game, the game you played last \(/);
+});
+
 test("a picker starts on the game played last, or on the one this tab chose while that's still the same", () => {
   assert.equal(G.startSlot(GAMES, "4", null), "4");
   assert.equal(G.startSlot(GAMES, "4", { slot: "2", last: "4" }), "2", "chosen before, and the game played last is the same");

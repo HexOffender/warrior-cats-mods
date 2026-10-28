@@ -35,7 +35,7 @@ test("a range clamp refuses -5 and 999999 for Level", () => {
   assert.deepEqual(S.rangeFor(`${P}/Level`, RANGES).max, 20);
 });
 
-test("a preset expands to the right paths and values", () => {
+test("a preset expands to the right paths and values", async () => {
   const list = S.emptyList();
   S.preset("max-level", list, DATA, "1");
   assert.deepEqual(list.set, { [`${P}/Level`]: 20 });   // no Experience in this save: only what it has
@@ -59,6 +59,9 @@ test("a preset expands to the right paths and values", () => {
     "Horsetail Stalks, Marigold Petal, Comfrey Poultice and Lamb's Ear Leaves");
   assert.equal(S.andList(["Moss"]), "Moss");
   assert.equal(S.andList(["Moss", "Fern"]), "Moss and Fern");
+  // One home for it: lib/games.js's, which the Save page's game words use too.
+  const G = await import(dom.studio("lib/games.js"));
+  assert.equal(S.andList, G.andList);
 });
 
 test("describe turns a path into words", () => {

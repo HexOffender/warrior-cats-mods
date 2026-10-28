@@ -154,7 +154,7 @@ def build(tmp_path, monkeypatch, *mods):
 
 def test_a_name_means_the_game_being_played_and_a_slot_first_another(tmp_path, monkeypatch):
     ctx = build(tmp_path, monkeypatch, {"cats": {"Gustpaw": {"look": {"tail": 1}}}})
-    assert not ctx.ops and ctx.warnings == ["cats: 'Gustpaw' isn't in the game you're playing; for the one in your 3rd "
+    assert not ctx.ops and ctx.warnings == ["'Gustpaw' isn't in the game you're playing; for the one in your 3rd "
                                             "game, write '2/Gustpaw'"]
     ctx = build(tmp_path, monkeypatch, {"cats": {"2/Gustpaw": {"look": {"tail": 1}, "colours": {"nose": "#000000"}}}})
     assert [op["path"] for op in ctx.ops] == ["2/NPCData/Clans/WindClan/Apprentice/0"]

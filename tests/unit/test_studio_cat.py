@@ -233,7 +233,7 @@ def test_a_new_colour_no_palette_adds_and_a_feral_coat_are_notes(studio):
         "Your cat: coat colour 21 is one of the Feral Edition's; without it the game gives another",
         "Your cat: pattern colour 30 is a new colour no palette that's on adds, so it shows none",
         "Hawkleaf: marking colour 26 is a new colour no palette that's on adds, so it shows none",
-        "Cats: no save yet, so Hawkleaf can't be found; start the game once, then install again"]
+        "No save yet, so Hawkleaf can't be found; start the game once, then install again"]
     # A palette that's on (or this mod's own) adding them: nothing to say about those colours.
     make_mod(studio, "dark", files={"palette.json": {"pattern": {"30": "#ff00cc"}}})
     make_mod(studio, "mine2", files={"palette.json": {"marking": {"26": "#00e5ff"}}})
@@ -261,7 +261,7 @@ def test_a_cat_no_key_finds_is_a_note_found_the_way_the_build_finds_cats(studio,
     make_mod(studio, "mine")
     r = put(studio, "mine", "cats.json", {"cats": {"hawkleaf": {"look": {"tail": 1}}, "Nobody": {"look": {"tail": 1}}}})
     assert r["problems"] == []
-    assert r["notes"] == ["Cats: no cat in your save is called 'Nobody' (the Your cat page lists them, with their places)"]
+    assert r["notes"] == ["No cat in your save is called 'Nobody' (the Your cat page lists them, with their places)"]
 
 
 def test_without_the_games_names_the_cats_arent_looked_for(studio, fake_game):

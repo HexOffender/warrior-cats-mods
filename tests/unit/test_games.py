@@ -238,17 +238,40 @@ def test_colours_for_your_cat_in_one_game_go_on_by_its_name_and_a_game_sharing_i
     script = ctx.scripts[catcolours.UE4SS_MOD_NAME]["Scripts/main.lua"]
     assert not luacheck.check(script) and "@YOURS@" not in script
     yours = script.split("local YOURS = {", 1)[1].split("\n}", 1)[0]
-    # Game 4's Sharppaw, by its name IDs, with the player's colours under its own.
-    assert '["STR_CAT_NAME6|_PAW"] = {' in yours and '["Nose Color"]' in yours and '["Ears Color"]' in yours
+    # Game 4's Sharppaw, by its name IDs, with that game's own colours only: the player's stay in COLOURS, which
+    # the script lays them over as it paints (so the in-game Colours page, which changes COLOURS, still works).
+    assert '["STR_CAT_NAME6|_PAW"] = {' in yours and '["Nose Color"]' in yours and '["Ears Color"]' not in yours
+    assert '["Ears Color"]' in script.split("local COLOURS = {", 1)[1].split("\n}", 1)[0]
     assert any("its colours go on your cat in your 1st game too, which has the very same name" in w for w in ctx.warnings)
     assert not ctx.ops, "colours only: nothing goes into the save"
+
+
+def test_colours_for_one_game_name_every_game_sharing_its_cats_name_in_one_sentence(studio, tmp_path, monkeypatch):
+    save = games_save(current=2)
+    save["acct"]["3"] = json.loads(json.dumps(save["acct"]["0"]))   # a third Sharppaw, in your 4th game
+    write_save(studio.ctx.cfg.save_dir, save)
+    ctx = build_cats(studio, tmp_path, monkeypatch, {"cats": {"4/player": {"colours": {"nose": "#ff0000"}}}})
+    assert ctx.warnings == ["your cat in your 5th game: its colours go on your cats in your 1st game and your 4th game "
+                            "too, which have the very same name: the game tells cats apart only by their names"]
 
 
 def test_a_game_with_no_cat_of_yours_is_said_and_nothing_changes(studio, tmp_path, monkeypatch):
     write_save(studio.ctx.cfg.save_dir, games_save())
     ctx = build_cats(studio, tmp_path, monkeypatch, {"cats": {"1/player": {"look": {"tail": 5}}}})
     assert not ctx.ops
-    assert ctx.warnings == ["cats: your cat in your 2nd game ('1/player'): your save has no cat of yours in that game"]
+    assert ctx.warnings == ["your cat in your 2nd game ('1/player'): your save has no cat of yours in that game"]
+
+
+def test_a_games_own_colours_go_over_the_live_player_colours_so_the_colours_page_still_works():
+    # The mod menu's Colours page changes COLOURS while you play: your cat in a game with colours of its own
+    # wears COLOURS with that game's over them, made as it's painted, never a table fixed at install.
+    lua = catcolours.script({"fur": (1.0, 0.0, 0.0)}, "A|B", yours={"C|D": {"nose": (0.0, 1.0, 0.0)}})
+    over = lua.split("local function over(own)", 1)[1].split("\nend", 1)[0]
+    assert over.index("pairs(COLOURS)") < over.index("pairs(own)"), "the game's own colours win where both set a part"
+    tick = lua.split("local function tick()", 1)[1].split("\nend\n", 1)[0]
+    assert "cols, who = over(YOURS[key])" in tick and "YOURS[key], " not in tick
+    page = lua.split('Menu.page("Colours"', 1)[1]
+    assert "if YOURS[known] then" in page and "colours of its own in cats.json too, and those win where both" in page
 
 
 def test_the_script_takes_your_cat_by_game_beside_the_others():

@@ -85,7 +85,7 @@ export default {
       errorBox.hidden = true;
       for (const card of [gameCard, catCard, carryCard, pendingCard, doneCard, advanced]) card.hidden = false;
       data = save.data;
-      const before = slot === null ? keptGame() : { slot, last: current };
+      const was = slot, before = slot === null ? keptGame() : { slot, last: current };
       current = String(save.current_cat?.slot ?? getSlot());
       games = G.pickable(save.games || [], current);
       // The game kept from before while the game played last is the same; after another game was played, that one.
@@ -93,6 +93,8 @@ export default {
       say = { words: save.words, cats: save.cats || {}, current, items: items.names };
       running(save.game_running);
       drawGames();
+      // Read again (after Change my save now, an install) with another game played since: the page moved to it.
+      if (was !== null && slot !== was) toast(G.movedTo(game()));
       return true;
     }
     const getSlot = () => String(S.getPath(data, "Shared/General/CurrentCatSlot") ?? 0);
@@ -116,7 +118,7 @@ export default {
           ? el("div", { class: "field" }, el("label", { for: "save-game-pick", class: "lbl", text: "The game to change" }), gamePick)
           : el("p", { id: "save-game-only", text: `Your save has one game: ${G.gameLabel(game())}.` }),
         el("p", { class: "note", text: "Your save keeps a game for each cat you've started, numbered as the game's cat choice numbers them. This page starts on the game you played last; what's below is for the game chosen here." }),
-        twins.length ? el("p", { class: "note heads-up", id: "save-game-twins", text: `${game().name}, the cat in ${G.gameWords(slot)}, has the same name as the cat in ${S.andList(twins.map(g => G.gameWords(g.slot)))}: the games' numbers tell them apart.` }) : null].filter(Boolean));
+        twins.length ? el("p", { class: "note heads-up", id: "save-game-twins", text: `${game().name}, the cat in ${G.gameWords(slot)}, has the same name as the cat in ${G.andList(twins.map(g => G.gameWords(g.slot)))}: the games' numbers tell them apart.` }) : null].filter(Boolean));
     }
     // Another game chosen: everything below is for it. The list of changes keeps every game's, each under its game.
     function chooseGame(to) {

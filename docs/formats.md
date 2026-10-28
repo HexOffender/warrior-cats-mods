@@ -139,8 +139,8 @@ and from 1 in the game's cat choice (`4` is your 5th game). `player` is your cat
 playing when you apply, which is what a mod to share wants. To change only one game's cat, write
 `"<slot>/player"` under `cats` (`"4/player"`, your 5th game's): its `slots`, `scars` and `look` go into
 that game whichever one you're playing, after `player`'s when it's the game being played (its own win, part
-by part). Its `colours` go on your cat while it has that cat's name, in place of `player`'s (with
-`player`'s under them), so another game whose cat has the very same name gets them too, with a warning;
+by part). Its `colours` go on your cat while it has that cat's name, over `player`'s part by part (and
+over the mod menu's Colours page, which changes `player`'s while you play), so another game whose cat has the very same name gets them too, with a warning;
 a rank-up changes the name, so apply again after one. In someone else's save it's the cat in their game
 with that number. The Your cat page writes it when you choose a game in **Which game**. A `"<slot>/player"`
 for a game with no cat of yours changes nothing, with a warning.

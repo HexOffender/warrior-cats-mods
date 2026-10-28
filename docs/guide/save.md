@@ -28,7 +28,8 @@ the one the game opens on.
 - The page starts on the game you played last. Choose another, and everything below it (**Your cat**,
   the quick buttons, **What it carries**, **Combat stats** and **Advanced**) is for that game.
 - The studio remembers your choice while the tab is open. If you play another game in the meantime, the
-  page opens on that one instead.
+  page opens on that one instead. When the page reads your save again (after **Change my save now** or an
+  Apply) and finds another game played since, it moves to that game and says so.
 - Two games can have cats with the same name: three Sharppaws are three games, and their numbers tell them
   apart. The page says so under **Which game**.
 - **Changes to make** keeps every game's changes, each under its game's name ("Your 1st game",

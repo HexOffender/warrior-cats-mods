@@ -22,7 +22,7 @@ pattern, markings and **Size**. The **Scars** card chooses its scars. The game's
 the scars are written into your save when you apply, after the studio makes a copy of your save.
 
 The card at the top picks the cat: **Your cat**, or any cat in your save, listed by game (the one you played
-last first) and clan (yours first), with its role. Type in **Find a cat** to narrow the list. The card's
+last first) and clan (the clan of your cat in that game first), with its role. Type in **Find a cat** to narrow the list. The card's
 heading names the cat and its game. The drawn cat shows the look as you've chosen it, and
 **In your save now** says what the cat has in your save, and from which game: its colours, eyes, scars
 and shape.
@@ -37,13 +37,16 @@ numbers them (the first is your 1st game). With **Your cat** chosen, **Which gam
   you'll share: it changes the cat of whoever adds it. **In your save now** shows the game you played last.
 - One of your games ("Sharppaw, your 5th game"). Only that game's cat changes, whichever game you're
   playing: its scars, its shape and the game's colours it wears go into that game in your save when you
-  apply. Its colours of its own go on your cat while you play it, found by its name, so another of your
+  apply. Its colours of its own go on your cat while you play it, over the first choice's where both choose
+  a part, found by its name, so another of your
   games whose cat has the very same name gets them too: the page says which. For someone you share the
   mod with, it's the cat in their game with that number.
 
 Each choice has a look of its own in the file, so you can give the game you're playing one look and your
-5th game another. A choice with a look already says "changed" in the list. Two cats called Sharppaw in
-two games are told apart by their games' numbers, never by the name.
+5th game another. A choice with a look already says "changed" in the list. Where a game's own look and
+the first choice's both choose a part, the game's own wins while it's the game you're playing when you
+apply, and the page says so on both. Two cats called Sharppaw in two games are told apart by their games'
+numbers, never by the name.
 
 Another cat in a game other than the one you played last gets its scars, shape and the game's colours in
 that game, but its colours of its own go on only while its game is the one you're playing when you apply.
@@ -71,7 +74,9 @@ You can:
   mod (the **Colours of its own** card names which one). The page is there while a mod that's on gives a
   cat colours of its own. Its Save writes the cats.json of your last Apply with the new colours in it,
   so apply again before you use it, or changes saved on this page since then are lost. Other cats'
-  colours aren't on that page. Nobody has watched that Save in the game yet
+  colours aren't on that page. The page changes the colours of **The cat in the game you're playing**: in a
+  game chosen in **Which game** with colours of its own, those win where both choose a part, and the page
+  says so. Nobody has watched that Save in the game yet
   ([what's been checked](../verified.md#not-yet-confirmed-in-game)).
 
 You can't:

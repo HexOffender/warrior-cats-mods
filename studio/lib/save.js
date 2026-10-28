@@ -3,7 +3,7 @@
 // a save path in words; which values are only shown, not changed; and the presets. The words and the ranges
 // come from the server (GET /api/save: wcmods/sections/savedit.py WORDS and RANGES), one home for both. A game's
 // words are lib/games.js's.
-import { gameWords } from "./games.js";
+import { andList, gameWords } from "./games.js";
 
 export const ITEM_ROOT = "Gameplay.Inventory.";
 // What Give herbs gives. Their tags aren't their names: the game's item table calls them Horsetail Stalks,
@@ -11,10 +11,8 @@ export const ITEM_ROOT = "Gameplay.Inventory.";
 export const HERBS = ["Consumable.SmallHealingHerb", "Consumable.MediumHealingHerb", "Consumable.BigHealingHerb", "Consumable.SmallCatnip"]
   .map(t => ITEM_ROOT + t);
 
-// Names in a sentence: "A", "A and B", "A, B and C".
-export function andList(names) {
-  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}
+// Names in a sentence: "A", "A and B", "A, B and C" (lib/games.js's, one home for it).
+export { andList };
 
 export function getPath(obj, path) {
   let node = obj;

@@ -254,8 +254,9 @@ def script(colours, save_key="", key_file="", debug=False, save=None, others=Non
     the in-game menu's Save writes: {"path": the mod's cats.json, "file": its name for the player,
     "doc": that file's contents, whose player colours Save replaces}. others: {name key: colours} for
     other cats, found by their name IDs wherever they are (the world, the clan's menus, portraits). yours:
-    {name key: colours} for your cat in a game cats.json names by its slot ("4/player"), worn in place of
-    `colours` while your cat has those name IDs (each one whole: the player colours under its own)."""
+    {name key: colours} for your cat in a game cats.json names by its slot ("4/player"): that game's own colours
+    only, laid over `colours` as the script paints while your cat has those name IDs (so the in-game Colours page,
+    which changes `colours`, still changes the parts they leave alone)."""
     from .sdk import lua_value
 
     def keyed(table):

@@ -154,7 +154,7 @@ export default {
         const list = cats.filter(c => c.slot === slot);
         const fold = el("details", { class: "fold", open: openSlots.has(slot), "data-slot": slot },
           el("summary", {}, el("strong", { text: slotHeading(slot, list) }),
-            el("span", { class: "muted", text: `${list.length} cat${list.length === 1 ? "" : "s"}${list[0].current ? " · played last: the one you're playing" : ""}` })),
+            el("span", { class: "muted", text: `${list.length} cat${list.length === 1 ? "" : "s"}${list[0].current ? " · played last" : ""}` })),
           table(list));
         // Toggles come later than the change, so a search's own unfolding (below) is told apart from the player's.
         fold.addEventListener("toggle", () => { if (catFilter || settling) return; if (fold.open) openSlots.add(slot); else openSlots.delete(slot); });

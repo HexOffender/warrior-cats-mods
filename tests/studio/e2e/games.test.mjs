@@ -20,10 +20,13 @@ const CAT = (clan, role, prefix, suffix, fields) =>
 const GAME = (cat, level, npc) => ({ GameplayProgression: { Level: level, Experience: 10 * level,
   "Gameplay.Combat.Character.Cat.Player": { Customization: cat } },
   ...(npc ? { NPCData: { Clans: { ThunderClan: { Warrior: [npc] } } } } : {}) });
+// Your 3rd game (a RiverClan cat) has clan cats in ThunderClan and in RiverClan: Whose look lists its RiverClan first.
 const SAVE = current => ({ acct: {
   0: GAME(CAT("ThunderClan", "Apprentice", "STR_CAT_NAME6", "_PAW", "FurColorIdx=3,TailIdx=1"), 3,
     CAT("ThunderClan", "Warrior", "STR_CAT_NAME7", "_HEART", "FurColorIdx=4")),
-  2: GAME(CAT("RiverClan", "MedicineCat", "STR_CAT_NAME9", "_WING", "FurColorIdx=5,TailIdx=7"), 7),
+  2: { ...GAME(CAT("RiverClan", "MedicineCat", "STR_CAT_NAME9", "_WING", "FurColorIdx=5,TailIdx=7"), 7),
+    NPCData: { Clans: { ThunderClan: { Warrior: [CAT("ThunderClan", "Warrior", "STR_CAT_NAME11", "_STORM", "FurColorIdx=2")] },
+      RiverClan: { Warrior: [CAT("RiverClan", "Warrior", "STR_CAT_NAME12", "_SPLASH", "FurColorIdx=1")] } } } },
   4: GAME(CAT("ThunderClan", "Apprentice", "STR_CAT_NAME6", "_PAW", "FurColorIdx=8,TailIdx=2"), 1,
     CAT("ThunderClan", "Warrior", "STR_CAT_NAME10", "_FUR", "FurColorIdx=6")),
   Shared: { General: { CurrentCatSlot: current }, SettingsData: { MasterVolume: 1 } } } });
@@ -141,6 +144,20 @@ test("the game chosen is kept while the game played last is the same, and follow
   await writeSave(folders.saves, SAVE(4));
 });
 
+test("read again after another game was played, the Save page moves to it and says so", { skip }, async () => {
+  const page = await openSave();
+  assert.equal(await page.evaluate(() => document.getElementById("save-game-pick").value), "4");
+  await writeSave(folders.saves, SAVE(0));   // the 1st game played since
+  // An Apply's news, as the shell sends it: the page reads the save again.
+  await page.evaluate(`(async () => { const wc = await import("/studio/lib/wc.js"); wc.bus.emit("installed", {}); })()`);
+  await page.waitFor(() => document.getElementById("save-game-pick").value === "0");
+  await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => /^Now on your 1st game, the game you played last \(it was played since this page read your save\)\./.test(t.textContent)));
+  assert.equal(await page.text("#save-cat h2"), "Your cat in your 1st game");
+  assert.deepEqual(page.consoleErrors(), []);
+  await leave(page);
+  await writeSave(folders.saves, SAVE(4));
+});
+
 // ---------- Your cat ----------
 const CATP = '[data-page="cat"]';
 async function openCat() {
@@ -172,6 +189,7 @@ test("Your cat writes \"player\" for the game being played, and \"0/player\" for
   assert.deepEqual((await options(page, `${CATP} select[aria-label="Which game"]`)).map(([, t]) => t), [
     "The cat in the game you're playing (whichever it is when you Apply)",
     "Your cat, your 1st game", "Your cat, your 3rd game", "Your cat, your 5th game, Sandbox mode, played last"]);
+  assert.equal(await page.count("#cat-own-looks"), 0, "no game has a look of its own yet");
   await choose(page, `${CATP} select[aria-label="Tail"]`, "4");
   let doc = await saveToMod(page, d => d.player?.look?.tail === 4);
   assert.equal(doc.cats, undefined, "nothing under cats");
@@ -185,9 +203,19 @@ test("Your cat writes \"player\" for the game being played, and \"0/player\" for
   doc = await saveToMod(page, d => d.cats?.["0/player"]?.look?.tail === 6);
   assert.equal(doc.player.look.tail, 4, "the game being played's look stays as it was");
   assert.doesNotMatch(await page.text(CATP), /\bnull\b|undefined|NaN/);
-  // The other cats show their games.
+  // The other cats show their games, each game's own clan first (your 3rd game's cat is a RiverClan cat).
   const groups = await page.evaluate(`[...document.querySelectorAll('${CATP} select[aria-label="Whose look"] optgroup')].map(g => g.label)`);
   assert.ok(groups.includes("ThunderClan, your 5th game") && groups.includes("ThunderClan, your 1st game"), groups.join(" | "));
+  assert.ok(groups.indexOf("RiverClan, your 3rd game") >= 0 && groups.indexOf("RiverClan, your 3rd game") < groups.indexOf("ThunderClan, your 3rd game"), groups.join(" | "));
+  // Back on the first choice: the 1st game's own look wins there, and the page says so.
+  await choose(page, `${CATP} select[aria-label="Which game"]`, "player");
+  await page.waitFor(() => document.getElementById("cat-who-title")?.textContent === "Your cat, in the game you're playing");
+  assert.equal(await page.text("#cat-own-looks"), "Your 1st game has a look of its own too (choose it in Which game). When you Apply while it's the game you're playing, its look wins over this one where both choose a part.");
+  // The game played last, chosen: the first choice's look goes in too, under its own.
+  await choose(page, `${CATP} select[aria-label="Which game"]`, "4/player");
+  await page.waitFor(() => document.getElementById("cat-who-title")?.textContent === "Your cat in your 5th game");
+  assert.match(await page.text("#cat-who-note"), /While it's the game you're playing when you Apply, the look chosen for the cat in the game you're playing goes in too, and this one wins where both choose a part\.$/);
+  assert.equal(await page.count("#cat-own-looks"), 0, "said on the first choice only");
   assert.deepEqual(page.consoleErrors(), []);
   await leave(page);
 });

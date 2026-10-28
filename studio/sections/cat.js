@@ -210,8 +210,9 @@ export default {
       const slots = [...new Set(cats.map(gameOfCat))];
       const groups = slots.flatMap(at => {
         const inGame = cats.filter(c => gameOfCat(c) === at);
-        const clans = [...new Set(inGame.map(c => c.clan || ""))]
-          .sort((a, b) => (b === info.your_clan) - (a === info.your_clan) || (b.endsWith("Clan") - a.endsWith("Clan")) || a.localeCompare(b));
+        // Each game's clans with that game's own clan first (the game played last's is info.your_clan).
+        const own = games().find(g => g.slot === at)?.clan ?? (at === String(slot()) ? info.your_clan : null);
+        const clans = G.clanOrder([...new Set(inGame.map(c => c.clan || ""))], own);
         return clans.map(clan => {
           const inIt = inGame.filter(c => (c.clan || "") === clan && shown(c));
           const name = GROUP_WORDS[clan] || clan || "Other cats";
@@ -254,6 +255,17 @@ export default {
           return el("option", { value: `${at}/player`, text: facts.filter(Boolean).join(", ") + (changedLook(`${at}/player`) ? ", changed" : "") });
         })];
     }
+    // "Your 6th game has a look of its own ...": the games ownLooks() found, in a sentence.
+    function ownLooksNote(slots) {
+      const which = G.andList(slots.map(s => {
+        const g = G.gameOf(games(), s);
+        return `${G.gameWords(s)}${g.current ? " (the one you played last)" : ""}`;
+      }));
+      const cap = which.charAt(0).toUpperCase() + which.slice(1);
+      return slots.length === 1
+        ? `${cap} has a look of its own too (choose it in Which game). When you Apply while it's the game you're playing, its look wins over this one where both choose a part.`
+        : `${cap} have looks of their own too (choose one in Which game). When you Apply while one of them is the game you're playing, its look wins over this one where both choose a part.`;
+    }
     // The header: whose look, and in which game.
     function whoTitle() {
       if (yourGame() !== null) return G.catInGame(G.gameOf(games(), yourGame())).replace(/^y/, "Y");
@@ -268,7 +280,15 @@ export default {
         return `Your cat in the game you're playing when you Apply${games().length ? ` (now ${G.gameTitle(playing).replace(/^Y/, "y")}, the game you played last)` : ""}. It's what a mod to share wants: it changes the cat of whoever adds it. Choose a game to change only that game's cat, or another cat below to change its look the same way: it's found by its name (or its place, when two share a name), and only it changes.`;
       }
       const g = G.gameOf(games(), at), twins = G.sameName(games(), g);
-      return `Only your cat in ${G.gameWords(at)} changes, whichever game you're playing: its scars, its shape and the game's colours it wears go into that game in your save at Apply. Its colours of its own go on by its name while you play${twins.length ? `, so your cat in ${G.andList(twins.map(t => G.gameWords(t.slot)))}, which has the same name, gets them too` : ""}; a rank-up changes its name, so apply again after one. For someone you share the mod with, it's the cat in their ${G.ordinal(G.numberOf(at))} game.`;
+      const under = changedLook("player") ? ` While it's the game you're playing when you Apply, the look chosen for the cat in the game you're playing goes in too, and this one wins where both choose a part.` : "";
+      return `Only your cat in ${G.gameWords(at)} changes, whichever game you're playing: its scars, its shape and the game's colours it wears go into that game in your save at Apply. Its colours of its own go on by its name while you play${twins.length ? `, so ${G.alsoWearIt(twins)}` : ""}; a rank-up changes its name, so apply again after one. For someone you share the mod with, it's the cat in their ${G.ordinal(G.numberOf(at))} game.${under}`;
+    }
+    // On the first choice: the games with a look of their own in the file ("4/player"), which win in their game
+    // where both choose (the build puts that game's entry over "player"'s, colours too). [] on any other choice.
+    function ownLooks() {
+      if (who !== "player") return [];
+      return [...new Set(fileKeys().map(C.yourGame).filter(s => s !== null && changedLook(`${s}/player`)))]
+        .sort((a, b) => Number(a) - Number(b));
     }
     function renderWho() {
       const sel = el("select", { "aria-label": "Whose look" }, ...whoOptions());
@@ -302,6 +322,7 @@ export default {
         el("div", { class: "row" }, find, sel),
         mine() ? el("div", { class: "row" }, el("label", { for: "cat-game", class: "lbl", text: "Which game" }), pick) : null,
         el("p", { class: "note", id: "cat-who-note", text: note }),
+        ownLooks().length ? el("p", { class: "note heads-up", id: "cat-own-looks", text: ownLooksNote(ownLooks()) }) : null,
         also.length ? el("div", { class: "stack cat-also" },
           el("strong", { text: "Other entries in the file for this cat" }),
           el("p", { class: "note", text: "The build applies them too. Where this page chooses the same thing, this page's choice wins: Save writes it after them. Remove takes one out of the file." }),

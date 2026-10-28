@@ -2,7 +2,7 @@
 // one for each cat started, numbered as the game's cat choice numbers them (its first is slot 0, "your 1st game").
 // A game: { slot: "4", n: 5, name: "Sharppaw" | null, clan, rank, level, sandbox, current (the game played last) }.
 // The Save page and Your cat pick a game with these; the Names page heads its games with them.
-// tests/studio/unit/games.test.mjs runs these in node.
+// tests/studio/games.test.mjs runs these in node.
 
 // 1st, 2nd, 3rd, 4th, 11th, 21st.
 export function ordinal(n) {
@@ -38,6 +38,24 @@ export function gameFacts(game) {
 export function gameLabel(game) {
   const n = numberOf(game.slot), facts = gameFacts(game);
   return `${n === null ? String(game.slot) : ordinal(n)} game${facts ? `: ${facts}` : ""}`;
+}
+// A game's clans in order for a list of its cats: the clan of your cat in that game first, then the clans, then the
+// rest (story roles, outsiders), each by name. `yours` is that game's own clan (games()[i].clan), never another's.
+export function clanOrder(clans, yours) {
+  return [...clans].sort((a, b) => (b === yours) - (a === yours) || (b.endsWith("Clan") - a.endsWith("Clan")) || a.localeCompare(b));
+}
+// What the Save page says when it reads the save again and finds another game played since, so it moved to that
+// one: "Now on your 6th game: Fennelpaw, the game you played last (...)".
+export function movedTo(game) {
+  return `Now on ${gameWords(game.slot)}${game.name ? `: ${game.name}` : ""}, the game you played last (it was played since this page read your save). Changes already in the list stay with their games.`;
+}
+// Who else wears a game's colours of its own, the cats of the games sharing its cat's name (sameName): "your cat in
+// your 2nd game, which has the same name, gets them too", or for two games or more "your cats in your 2nd game and
+// your 5th game, which have the same name, get them too".
+export function alsoWearIt(twins) {
+  const where = andList(twins.map(g => gameWords(g.slot)));
+  return twins.length === 1 ? `your cat in ${where}, which has the same name, gets them too`
+    : `your cats in ${where}, which have the same name, get them too`;
 }
 // The games another game's cat shares a name with ([] when its name is its own, or not known): two games with a
 // Sharppaw are told apart by their numbers, never by the name.
