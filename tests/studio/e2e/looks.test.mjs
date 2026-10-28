@@ -319,9 +319,11 @@ test("Your cat opens on a save it can't read, then shows what the cat wears, and
 test("a cats.json written by hand: colour names load, and what the page can't change is listed and removable", { skip }, async () => {
   await fresh();
   makeMod("my-mods", { "cats.json": { player: { colours: { nose: "red" }, slots: { coat: 3, fur: 4 } } } });
+  writeTables(folders.game, TABLES);   // the game's colours in: no "now grey" line, and nothing in its place
   const page = await browser.page();
   await page.goto(studio.url + "#cat", { timeout: SLOW });
   await page.waitFor(`${CATP} button[aria-label="Remove slots.coat"]`, SLOW);
+  assert.equal(await page.evaluate(noNullText(CATP)), 0, "no stray null where a line is left out");
   assert.deepEqual(await page.evaluate(`(() => { const box = document.querySelector('${CATP} input[aria-label="Use its own nose colour"]');
     const pick = document.querySelector('${CATP} input[aria-label="Nose colour"]'); return [box.checked, pick.value]; })()`), [true, "#ff0000"]);
   assert.equal(await status(page, CATP), "", "reading \"red\" as #FF0000 changes nothing");

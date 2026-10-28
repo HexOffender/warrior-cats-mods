@@ -32,6 +32,8 @@ export default {
   title: "Your cat",
   async mount(root, wc) {
     const { el, api, clear, toast, color } = wc;
+    // clear() hands back the bare element, whose own append writes a null as the text "null": this leaves them out.
+    const put = (node, ...kids) => { clear(node).append(...kids.filter(k => k != null && k !== false)); return node; };
     // looks: each cat's choices, "player" for yours and the others by their cats.json key (lib/catlook.js says
     // what each holds); fileExtra: the file's other keys, kept as they are.
     let looks = { player: C.blank() }, fileExtra = {}, who = "player";
@@ -101,7 +103,7 @@ export default {
           .map(t => el("option", { value: t, text: `${t} (${saveRead() ? "not in the game you're playing" : "your save can't be read now"})` })));
       sel.value = who;
       sel.addEventListener("change", () => { who = sel.value; render(); });
-      clear(whoCard).append(el("h2", { text: "Whose look" }),
+      put(whoCard, el("h2", { text: "Whose look" }),
         el("div", { class: "row" }, sel),
         el("p", { class: "note", text: mine() ? "Your cat, in the game you're playing. Choose another cat to change its look the same way: it's found by its name (or its place, when two share a name), and only it changes."
           : `${whoName()} is changed by ${/\//.test(who) ? "its place" : "its name"} (${who}). Its colours go on by its name, so a cat with the same name gets them too; a rank-up changes a cat's name: apply again after one to keep its colours on it.` }));
@@ -137,7 +139,7 @@ export default {
       const box = el("input", { type: "checkbox", checked: on, "aria-label": "Change the size" });
       size.addEventListener("change", () => { const v = clampSize(size.value); l.look.size = v; size.value = v; changed(); });
       box.addEventListener("change", () => { if (box.checked) { l.look.size = clampSize(size.value); size.value = l.look.size; } else delete l.look.size; size.disabled = !box.checked; changed(); });
-      clear(lookCard).append(el("h2", { text: "Shape" }),
+      put(lookCard, el("h2", { text: "Shape" }),
         el("p", { class: "note", text: `${mine() ? "Your cat's" : `${whoName()}'s`} body, fur, tail, ears, eyes, whiskers and face, each one of the game's 10 (the cat maker shows a clan's 7 of them), and its pattern and markings (21 each). They go into your save on Apply, after a backup.${mine() ? " Body, ears and face chose your cat's traits when it was made; the traits stay as they are." : ""}` }),
         ...rows,
         el("div", { class: "row" }, el("label", { class: "row", style: { minWidth: "150px" } }, box, el("strong", { text: "Size" })), size,
@@ -162,7 +164,7 @@ export default {
         return el("div", { class: "row" }, el("label", { class: "row", style: { minWidth: "150px", flexWrap: "nowrap" } }, box, el("strong", { text: p.name })),
           inp, el("span", { class: "muted", text: p.note || "" }));
       });
-      clear(coloursCard).append(el("h2", { text: "Colours of its own" }),
+      put(coloursCard, el("h2", { text: "Colours of its own" }),
         el("p", { class: "note", text: `Tick a part to give ${whoName()} its own colour; unticked parts keep the game's. They show while you play, in menus and portraits, and go away if you turn the mod off.` }),
         ...rows);
       const block = cantChange(rawOf("colours"));
@@ -203,7 +205,7 @@ export default {
           (s.id === "pattern" || s.id === "marking") && !extraSlots.length ? el("p", { class: "note", text: "Palettes can add new colours here (Palettes page, New colours)." }) : null);
       });
       const tablesMissing = !Object.keys(TABLES).length;
-      clear(slotsCard).append(el("h2", { text: "Colours from the game's picker" }),
+      put(slotsCard, el("h2", { text: "Colours from the game's picker" }),
         el("p", { class: "note", text: `Pick one of the game's colours for ${whoName()} to wear, by its number; click it again to keep the one in your save. Dashed ones are new colours your palettes add, which only the cats set to them wear. Coats 20-24 belong to the Feral Edition.` }),
         tablesMissing ? el("p", { class: "note", text: "The game's colours show here once the game has run with the script loader (press Play once after an Apply); until then they're grey squares with their numbers." }) : null,
         ...blocks);
@@ -241,7 +243,7 @@ export default {
         onclick: () => { for (const s of SCAR_PARTS) l.scars[s.id] = 0; l.raw.scars = {}; changed(); renderScars(); } });
       const keep = el("button", { class: "btn", type: "button", text: "Keep the save's scars", "data-focus": "scars:keep",
         onclick: () => { l.scars = {}; l.raw.scars = {}; changed(); renderScars(); } });
-      clear(scarsCard).append(el("h2", { text: "Scars" }),
+      put(scarsCard, el("h2", { text: "Scars" }),
         el("p", { class: "note", text: `Choose ${whoName()}'s scars, or none. An eye scar shuts that eye; right and left are the cat's own. They go into your save on Apply, after a backup, and show with the game's Injury system setting on (its Gameplay settings). A boss fight can still give new ones.` }),
         ...rows, el("div", { class: "row" }, none, keep));
       const block = cantChange(rawOf("scars"));
