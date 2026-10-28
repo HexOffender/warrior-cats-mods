@@ -409,6 +409,7 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
     await load(pick);
   }
   async function load(id) {
+    const switching = id !== current;
     current = id;
     try { localStorage.setItem(key, id); } catch (e) { /* storage blocked */ }
     let obj = null;
@@ -417,7 +418,7 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
       if (r.exists) { try { obj = JSON.parse(r.text); } catch (e) { toast(`${file} in ${id} isn't valid JSON`, "bad"); } }
     }
     setDirty(false);
-    showProblems([]);
+    if (switching) showProblems([]);   // what's wrong with this mod's file stays in view through a reload of it
     shareBox?.show(mods.find(m => m.id === id));
     onLoad(obj, id);
   }
