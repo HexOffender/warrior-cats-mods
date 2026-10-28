@@ -172,6 +172,9 @@ def run(cfg, oodle, log=print):
 
     ok, detail = _cooked_table(io)
     check("cooked item table: every row read and written back the same, and a new row added", ok, detail)
+    ok, detail = _dialogue_graphs(io)
+    check("dialogue graphs: every node and edge of the game's conversations read and written back the same",
+          ok, detail)
     ok, detail = _textures(io)
     check("new textures: a copy of the game's with the IDs the game would give it, new pixels in every mip",
           ok, detail)
@@ -363,6 +366,37 @@ def _cooked_table(io):
              and "ItemRarity" not in row and row["ItemGroupIcon"] == 1 and back.check_encoder() and back.pkg.check_hashes(len(back.pkg.names))
              and back.rows[:-1] == dt.rows[:-1] and refused)
     return ok and added, f"{count} rows" + ("" if same else "; rebuilt package differs")
+
+
+def _dialogue_graphs(io):
+    """Every object of the game's dialogue graph packages decodes by its class and writes back the same, and the
+    Short story template walks from its root to its lines (the format: docs/reverse-engineering.md)."""
+    from . import dialogue
+    from .formats import cooked
+    paths = sorted(p for p in io.files if p.startswith(dialogue.QUESTS) and p.endswith(".uasset")
+                   and p.split("/")[3] in ("NpcDialogues", "QuestDialogues", "StoryDialogues"))
+    objects = same = 0
+    problems = []
+    for p in paths:
+        try:
+            data = io.read_file(p)
+            pkg = cooked.ZenPackage(data)
+            values = cooked._Values(pkg)
+            for i in range(pkg.export_count):
+                e = pkg.export_entry(i)
+                schema = dialogue.SCHEMA[dialogue.CLASS_OF[e.cls]]
+                blob = pkg.export_data[e.offset:e.offset + e.size]
+                objects += 1
+                same += values.write_object(values.read_object(blob, schema), schema) == blob
+        except (KeyError, ValueError) as ex:      # a class it doesn't know, or a FormatError
+            problems.append(f"{p.rsplit('/', 1)[-1]}: {type(ex).__name__} {ex}")
+    lines = []
+    short = dialogue.QUESTS + dialogue.STORY_TEMPLATES["Short"] + ".uasset"
+    if short in io.files:
+        [g] = dialogue.read_graphs(io.read_file(short), short, "StoryDialogue_Short_Template")
+        lines = [n.props.get("SubTag") for n in g.walk() if n.cls in dialogue.TALKING]
+    ok = bool(paths) and not problems and same == objects and lines[:2] == ["Context.1", "Question.1"]
+    return ok, f"{len(paths)} packages, {same} of {objects} objects" + (f"; {problems[:2]}" if problems else "")
 
 
 def _png_file(width, height, ctype, depth, rows, palette=None, trns=None):

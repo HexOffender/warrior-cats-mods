@@ -16,7 +16,9 @@ folders. `python wcmods.py selftest` checks, against your install:
   The pak's directory index stores file names the way the game's own pak does (see below).
 - **CSV editor:** reproduces all 67 runtime tables byte-for-byte.
 - **Cooked assets:** the item table's 412 rows read and write back byte-for-byte; texture copies get
-  the IDs the game's own packages have; the accessory look lists read back with new looks added.
+  the IDs the game's own packages have; the accessory look lists read back with new looks added; every
+  node and edge of the game's 91 dialogue graph packages (27,900 objects) decodes by its class and writes
+  back byte-for-byte.
 - **Animations:** all 757 of the game's animation sequences read and write back byte-for-byte (519 in ACL,
   229 in Unreal's per-track codec, 9 in its constant-key one) and decode, the ACL ones with their own
   skeleton's pose; each animal's template takes new keys and reads them back (the ACL ones moved to the
@@ -251,5 +253,29 @@ Fawnstar, as a player reported it showing "Cat 1"):
 - **Names beyond the text.** Renamed and added names reach the game's text table (Mothpaw,
   Sparrowheart, Mothwhisper and the rogue Moss were read back in game). Still unchecked: new cats
   getting added parts, removed parts and ban list changes, and the name screen's suggestions.
+- **What the conversations show** (`wcmods/dialogue.py`, read from the graphs and the code only;
+  reverse-engineering.md, *Dialogue graphs*). Each check is on the test cat, with a backup, in nobody
+  else's game:
+  - **Story lines come from `Strings_EN` through the row's `StringKey`, not `DebugText`.** When the aging
+    leader offers his first talk (`Gameplay.Dialogue.Story.Short.TheAgingLeader.Main.1`, quest states
+    `Quest.Main.1.0`, `.1` or `.Complete`), read his first three answer buttons, in any order (a
+    `BondDialogue` may shuffle them). They should be "Of course it will!", "I doubt it." and "How can you
+    be sure?" (`Strings_EN`), not "I agree.", "Maybe." and "I don't know." (the table's `DebugText`). Then give `names.json` `text` a new
+    `QST_Story.Short.TheAgingLeader.Main.1.Right.1.Short`, install, and the first button should show it.
+  - **Quest lines come from QuestDialogues.csv's row, not the key a graph copy holds.** An apprentice's
+    gather quest (`Quest.Procedural.Survival.Gather.Apprentice`): answer Brave. The reply should be the
+    words of `QST_Gather.Apprentice.Context.Response.Brave`. The saved graph copy names
+    `QST_Gather.Apprentice.Response.Brave`, which `Strings_EN` hasn't got.
+  - **A missing key shows the row's `DebugText`.** An Escort or Recruit quest (their 11 keys each aren't in
+    `Strings_EN`) should show the `DebugText` words, if the game ever offers one.
+  - **A cat's own talk and a cinematic show the key named in their graph.** The rank-up to WindClan leader
+    (`Gameplay.Narrative.RankUp.WindClan.Leader`) shows the words of
+    `STR_Script.WindClan.Deputy.Leader.Promotion.Narrator.1` first. Its one button is ThunderClan's key,
+    `STR_Script.ThunderClan.Deputy.Leader.Promotion.Player.1`.
+  - **The variant follows your bond.** A Filler talk with a clan cat (for example
+    `…Filler.ThunderClanDeputy.Main.1`) shows its `.Positive`, `.Neutral` or `.Negative` row by your bond
+    with that cat. Check with two cats of different bonds.
+  - **The gatekeeper's angle-bracket lines** (`NpcDialogue_DefenderGatekeeper`, `<A 1 vs 1 duel>`): are
+    they what the game shows, if that giver is ever met? They're inline, so a text edit can't change them.
 
 After a game update, run `selftest` before installing again ([updating.md](updating.md)).
