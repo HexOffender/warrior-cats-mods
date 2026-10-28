@@ -179,8 +179,8 @@ def test_a_section_that_fails_as_a_whole_fails_its_mods(studio, updated, readabl
 
 
 def test_a_mod_needing_a_held_back_mod_or_a_newer_studio_is_never_stamped(studio, updated, readable):
-    make_mod(studio, "sandbox", {"name": "Sandbox mode", "game_builds": [OLD]}, {"scripts/main.lua": "-- sandbox"})
-    make_mod(studio, "story", {"name": "Moonlit story", "game_builds": [OLD], "requires": ["sandbox"]},
+    make_mod(studio, "base", {"name": "Moonlit base", "game_builds": [OLD]}, {"scripts/main.lua": "-- base"})
+    make_mod(studio, "story", {"name": "Moonlit story", "game_builds": [OLD], "requires": ["base"]},
              {"npcs.json": {"npcs": []}})
     palette(studio, "future", {"wcmods": "9.0"})
     palette(studio, "needs-ghost", {"requires": ["ghost"]})

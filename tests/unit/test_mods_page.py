@@ -152,17 +152,18 @@ def test_a_left_out_mod_still_in_the_game_is_counted_as_a_change(studio, fake_ga
 
 
 def test_a_missing_requirement_on_a_card_is_named_by_its_name(studio):
-    make_mod(studio, "moonlit", {"name": "Moonlit cats", "requires": ["sandbox", "ghost-mod"], "enabled": False})
-    assert card(studio, "moonlit")["requires_names"] == ["Sandbox mode", "ghost-mod"]
+    # (Sandbox mode, for a mod without code, is a mod it works with, not a requirement: Menu pages is one.)
+    make_mod(studio, "moonlit", {"name": "Moonlit cats", "requires": ["menu-pages", "ghost-mod"], "enabled": False})
+    assert card(studio, "moonlit")["requires_names"] == ["Menu pages", "ghost-mod"]
 
 
 def test_requirements_are_named_by_name_and_a_missing_addon_by_its_name(studio):
-    make_mod(studio, "story", {"name": "Moonlit story", "requires": ["sandbox", "helper", "ghost-mod"]})
+    make_mod(studio, "story", {"name": "Moonlit story", "requires": ["menu-pages", "helper", "ghost-mod"]})
     make_mod(studio, "helper", {"name": "Helper", "enabled": False})
-    assert card(studio, "story")["problems"] == ["needs Sandbox mode, which isn't in your mods",
+    assert card(studio, "story")["problems"] == ["needs Menu pages, which isn't in your mods",
                                                  "needs Helper, which is off",
                                                  "needs ghost-mod, which isn't in your mods"]
-    with pytest.raises(ValueError, match="Moonlit story needs Sandbox mode, ghost-mod, which isn't in your mods"):
+    with pytest.raises(ValueError, match="Moonlit story needs Menu pages, ghost-mod, which isn't in your mods"):
         mods.switch(discover(studio.ctx.mods_root), "story", True)
 
 
@@ -300,16 +301,16 @@ def test_a_mod_that_only_shares_a_name_with_yours_never_replaces_it(studio, tmp_
 
 
 def test_adding_a_mod_whose_requirement_is_missing_leaves_it_off_and_says_why(studio, tmp_path):
-    z = zip_of(tmp_path / "moonlit.zip", {"moonlit/mod.json": {"name": "Moonlit cats", "requires": ["sandbox"]},
-                                           "moonlit/npcs.json": {"npcs": []}})
+    z = zip_of(tmp_path / "moonlit.zip", {"moonlit/mod.json": {"name": "Moonlit pages", "requires": ["menu-pages"]},
+                                           "moonlit/names.json": {}})
     (added,) = post(studio, "mods/add", query={"step": "add"}, upload=z)["added"]
-    assert added["on"] is False and added["missing"] == ["sandbox"]
-    assert added["off_because"] == "needs Sandbox mode, which you don't have"
+    assert added["on"] is False and added["missing"] == ["menu-pages"]
+    assert added["off_because"] == "needs Menu pages, which you don't have"
     assert card(studio, "moonlit")["enabled"] is False and get(studio, "changes")["any"] is False
     # Once the mod it needs is there, adding it again (or switching it on) turns both on.
-    make_mod(studio, "sandbox", {"name": "Sandbox mode", "enabled": False})
+    make_mod(studio, "menu-pages", {"name": "Menu pages", "enabled": False})
     (added,) = post(studio, "mods/add", query={"step": "add"}, upload=z)["added"]
-    assert added["on"] is True and added["also_on"] == ["Sandbox mode"] and "off_because" not in added
+    assert added["on"] is True and added["also_on"] == ["Menu pages"] and "off_because" not in added
     # A requirement inside the same .zip (a pack's own mods) is met by it.
     pack = zip_of(tmp_path / "pack.zip", {"a/mod.json": {"name": "A", "requires": ["b"]}, "b/mod.json": {"name": "B"}})
     assert {a["id"]: a["on"] for a in post(studio, "mods/add", query={"step": "add"}, upload=pack)["added"]} == {"a": True, "b": True}

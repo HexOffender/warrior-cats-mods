@@ -117,7 +117,7 @@ def test_an_older_studios_sandbox_requirement_is_a_use_for_a_mod_without_code(tm
     unmet = modlib.unmet(found)
     assert "story" not in unmet
     # A mod with code of its own may call Sandbox mode's API, and a pack's "requires" are its mods: both still need it.
-    assert unmet["scripted"] == ["needs sandbox, which isn't in your mods"] and "pack" in unmet
+    assert unmet["scripted"] == ["needs Sandbox mode, which isn't in your mods"] and "pack" in unmet
     (tmp_path / "sandbox").mkdir()
     (tmp_path / "sandbox" / "mod.json").write_text('{"enabled": false}', encoding="utf-8")
     found = modlib.discover(str(tmp_path))

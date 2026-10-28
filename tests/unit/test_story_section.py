@@ -233,7 +233,7 @@ def test_the_pipeline_tells_the_sections_what_a_game_update_holds_back(tmp_path,
     held = {"sandbox": "made for an older version of the game"}
     monkeypatch.setattr(pipeline, "load_sections", lambda cfg, mods, log: ([Spy()], []))
     monkeypatch.setattr(pipeline.gamebuild, "current", lambda cfg: {"build": None})
-    monkeypatch.setattr(pipeline.gamebuild, "held_back", lambda cfg, mods, build=None: dict(held))
+    monkeypatch.setattr(pipeline.gamebuild, "held_back", lambda cfg, mods, build=None, trusted=(): dict(held))
     monkeypatch.setattr(pipeline.gamebuild, "layout", lambda cfg, log=None: {"status": "verified", "moved": [], "lost": [], "offsets": {}})
     found = [mod(tmp_path, "mine", {"npcs.json": CATS}), sandbox(tmp_path)]
     try:
