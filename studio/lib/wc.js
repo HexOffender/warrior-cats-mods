@@ -21,7 +21,8 @@
 //                  shows under the bar until the next save that's fine, and under that what Apply would leave
 //                  out (the save's notes). An Apply while there are unsaved changes says they aren't in the
 //                  game yet; coming back to the window re-reads a file changed outside the page, when nothing
-//                  is unsaved.
+//                  is unsaved. A save doesn't read the file back; onSaved(value) hears what was saved, and
+//                  settleNew(list, saved) keeps the ids of the new entries it held.
 //   installedEvent(target, fn)   bus.on("installed", fn) that skips fn while target has unsaved changes: for
 //                  a page that reloads its file after an Apply (wc.bus.on("installed", ...) runs regardless).
 //   openHelp(page) opens a page of the guide (docs/guide/<page>.md) in the help panel; no page, the index.
@@ -349,6 +350,14 @@ if (typeof window !== "undefined" && window.addEventListener) {
   window.addEventListener("beforeunload", e => { if (anyDirty()) { e.preventDefault(); e.returnValue = ""; } });
 }
 
+// A page's new entries (marked _new) have ids that follow their names until they're saved; once they are,
+// quests and others may name them, so the ids stay. For modTarget's onSaved: `list` is the page's entries,
+// `saved` the list it just wrote; an entry added since isn't in it, and keeps following its name.
+export function settleNew(list, saved) {
+  const ids = new Set((saved || []).map(x => x && x.id));
+  for (const x of list) if (x && x._new && ids.has(x.id)) delete x._new;
+}
+
 // ---------- which mod a section edits ----------
 // Renders "Editing mod: [select] [New mod] [Save]". onLoad(obj|null, modId) fires when the target changes;
 // call target.save(obj) to write the file. Every page starts on the mod last chosen on any page, else on one
@@ -356,13 +365,16 @@ if (typeof window !== "undefined" && window.addEventListener) {
 // The mod a page saves its file into, with a Share part: the mod's details (its name, author, version and
 // description, which a shared .zip carries), Save as .zip for others to add on their Mods page, and the
 // page's file on its own, out (Export) and in (Import). share: false leaves the Share part out.
-export function modTarget({ file, onLoad, getValue, share = true }) {
+// A save doesn't read the file back: the page already holds what it saved, and a change made while it saved
+// stays (and stays unsaved). onSaved(value), when given, hears what was saved: a page whose new entries' ids
+// follow their names until they're saved settles them there (settleNew).
+export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
   const defaultId = "my-mods", defaultName = "My mods";
   const key = "wc-target";   // the mod last chosen, on whichever page
   const kind = file.replace(".json", "");
   let mods = [], current = null, dirty = false;
-  let loadedText = null;   // the file's text as it was last read, to tell when something else changed it
-  let edits = 0;           // changes made on the page (markDirty), to tell a change made while the file was read again
+  let loadedText = null;   // the file's text as it was last read or saved, to tell when something else changed it
+  let edits = 0;   // changes made on the page, counted: a save, or a read of the file, knows whether one came meanwhile
   const select = el("select", { "aria-label": `Mod that stores ${file}` });
   const status = el("span", { class: "dirty" });
   const saveBtn = el("button", { class: "btn primary", text: "Save to mod" });
@@ -469,10 +481,12 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
   }
   // behind: an Apply or Play ran while there were unsaved changes, so the game has the saved file, not these.
   let behind = false;
+  const NOT_YET = "Not in the game yet: Save to mod, then Apply";
   function setDirty(v) {
+    if (v) edits++;
     dirty = v;
     if (!v) behind = false;
-    status.textContent = !v ? "" : behind ? "Not in the game yet: Save to mod, then Apply" : "Unsaved changes";
+    status.textContent = !v ? "" : behind ? NOT_YET : "Unsaved changes";
     if (v) unsaved.add(me); else unsaved.delete(me);
   }
   function showProblems(list) {
@@ -490,9 +504,13 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
     try {
       const value = getValue();
       if (value === undefined) return false;   // the page said what's wrong
+      const at = edits;
       await ensureMod(current);
-      const r = await api.put(`/mods/${encodeURIComponent(current)}/file/${file}`, { text: JSON.stringify(value, null, 2) });
-      setDirty(false);
+      const text = JSON.stringify(value, null, 2);
+      const r = await api.put(`/mods/${encodeURIComponent(current)}/file/${file}`, { text });
+      loadedText = text;
+      setDirty(edits !== at);   // a change made while it saved is still to be saved
+      if (onSaved) onSaved(value);
       const found = (r && r.problems) || (r && r.problem ? [r.problem] : []);
       showProblems(found);
       showNotes((r && r.notes) || []);
@@ -508,7 +526,10 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
         toast(`Saved ${file} in ${current}. Apply to game to use it.`);
       }
       bus.emit("mods-changed");
-      await refresh(current);
+      // The list again (the mod may be new, or on now), not the file: the page holds what it saved.
+      await relist();
+      if (listed(current)) select.value = current;
+      shareBox?.show(mods.find(m => m.id === current));
       return true;
     } catch (e) { toast(e.message, "bad"); return false; }
   }
@@ -555,14 +576,17 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
   bus.on("mods-changed", () => { if (mods.length || current) relist().catch(() => { /* the next refresh says */ }); });
   // An Apply or Play while this page has unsaved changes put the saved file in the game, not them: said beside Save
   // until they're saved.
-  bus.on("installed", () => { if (dirty) { behind = true; setDirty(true); } });
+  bus.on("installed", () => { if (dirty) { behind = true; status.textContent = NOT_YET; } });
   // Back in the studio's window (from the game, whose own menu saves some files, or another window): a file changed
   // outside this page is read again while nothing here is unsaved, so the next Save doesn't write over it.
   bus.on("focus", async () => {
     if (dirty || !current || !mods.some(m => m.id === current)) return;
     let r;
     try { r = await api.get(`/mods/${encodeURIComponent(current)}/file/${file}`); } catch (e) { return; }
-    if (dirty || (r.exists ? r.text : null) === loadedText) return;
+    // The same file whatever its spacing: what it says is what counts.
+    const said = t => { try { return JSON.stringify(JSON.parse(t)); } catch (e) { return t; } };
+    const same = (a, b) => (a == null || b == null ? a === b : said(a) === said(b));
+    if (dirty || same(r.exists ? r.text : null, loadedText)) return;
     await load(current);
     toast(`${file} in ${nameOf(current)} was changed outside this page, so the page shows it as it is now.`);
   });
@@ -645,7 +669,7 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
     }
     return { element, show };
   }
-  return { element: box, refresh, markDirty: () => { edits++; setDirty(true); }, save: () => save(), get current() { return current; },
+  return { element: box, refresh, markDirty: () => setDirty(true), save: () => save(), get current() { return current; },
            get mods() { return mods; }, get dirty() { return dirty; } };
 }
 
