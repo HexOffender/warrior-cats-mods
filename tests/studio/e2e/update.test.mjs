@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, makeGame, makeMod, removeFolder, startStudio } from "../lib/studio.mjs";
+import { dataFolder, makeGame, makeMod, removeFolders, startStudio } from "../lib/studio.mjs";
 
 const browserPath = findBrowser();
 const required = process.env.WC_REQUIRE_BROWSER === "1";
@@ -54,7 +54,7 @@ before(async () => {
 after(async () => {
   for (const s of [verified, newer]) if (s) s.stop();
   if (browser) await browser.close();
-  for (const f of [verifiedFolders, newerFolders]) if (f) await removeFolder(f.root);
+  for (const f of [verifiedFolders, newerFolders]) if (f) await removeFolders(f);
 });
 
 test("the update banner shows on the verified build when a mod is left out", { skip }, async () => {
