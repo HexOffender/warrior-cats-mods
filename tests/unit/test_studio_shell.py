@@ -102,7 +102,7 @@ def test_broken_json_isnt_written_and_is_said_in_words(studio):
     with pytest.raises(ValueError, match=r"names\.json isn't valid: .* at line 1"):
         call(studio, "PUT", "mods/mine/file/names.json", {"text": "{bad"})
     assert not (studio.data / "mods" / "mine" / "names.json").exists()
-    with pytest.raises(ValueError, match="didn't send 'text'"):
+    with pytest.raises(ValueError, match='needs "text"'):
         call(studio, "PUT", "mods/mine/file/names.json", {})
 
 
@@ -125,9 +125,10 @@ def test_a_mod_whose_mod_json_cant_be_read_is_listed_with_its_problem(studio):
     assert found["fine"]["problem"] is None and found["fine"]["enabled"] and found["fine"]["kinds"] == ["palette"]
     assert found["broken"]["name"] == "broken" and not found["broken"]["enabled"] and found["broken"]["kinds"] == []
     assert found["broken"]["problem"].startswith("mod.json isn't valid: ") and "line 1" in found["broken"]["problem"]
-    assert "should be an object" in found["list"]["problem"]
+    assert "should hold an object" in found["list"]["problem"]
+    assert found["broken"]["problems"] == [found["broken"]["problem"]]   # on the card, with the switch off
     # It can't be changed until it's fixed, and that's said in words.
-    with pytest.raises(ValueError, match="can't be changed until its mod.json is fixed"):
+    with pytest.raises(ValueError, match="can't be changed"):
         call(studio, "PATCH", "mods/broken", {"enabled": True})
     # The rest of the studio takes it in its stride.
     assert call(studio, "GET", "changes")["on"] == ["fine"]
@@ -138,7 +139,7 @@ def test_a_mod_whose_mod_json_cant_be_read_is_listed_with_its_problem(studio):
 @pytest.mark.parametrize("text, said", [
     ("[1]", "should be an object"),
     ("{bad", "isn't valid"),
-    ('{"fur": "red"}', "should be an object of slot numbers"),
+    ('{"fur": "red"}', "fur should be an object of colours by slot"),
     ('{"fur": {"0": "nope"}}', "not a colour"),
     ('{"fur": {"0": 12}}', "not a colour"),
     ('{"eyes": {"Amber": [1, "x"]}}', "eyes.Amber"),
@@ -411,7 +412,7 @@ def test_errors_reach_the_page_as_sentences_and_the_details_go_to_the_log(served
     code, a = ask(studio, port, "/api/mods/mine/file/names.json", "PUT", {"text": "{bad"})
     assert code == 400 and a["error"].startswith("names.json isn't valid: ")
     code, a = ask(studio, port, "/api/mods/mine/file/names.json", "PUT", {})
-    assert code == 400 and a["error"] == "the page didn't send 'text'; reload the page and try again"
+    assert code == 400 and a["error"] == 'the request needs "text"'
     code, a = ask(studio, port, "/api/mods/nope/file/names.json")
     assert code == 404 and a["error"] == "no mod named nope"
     code, a = ask(studio, port, "/api/info", token=False)

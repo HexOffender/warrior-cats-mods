@@ -47,11 +47,18 @@ class Mod:
     def __init__(self, folder):
         self.folder = folder
         self.id = os.path.basename(folder)
-        self.problem = None   # what's wrong with its mod.json, for one discover() lists without reading it
-        with open(os.path.join(folder, "mod.json"), encoding="utf-8-sig") as f:
-            meta = json.load(f)
-        if not isinstance(meta, dict):
-            raise ValueError("mod.json should be an object, {\"name\": ..., \"enabled\": true}")
+        # A mod.json that can't be read (not JSON, or not an object) is a mod that's off, with the problem
+        # on its card, so it can't blank the list of every other mod. (One that can't be opened at all is
+        # Mod.broken, from discover().)
+        self.problem = None
+        try:
+            with open(os.path.join(folder, "mod.json"), encoding="utf-8-sig") as f:
+                meta = json.load(f)
+            if not isinstance(meta, dict):
+                raise ValueError("it should hold an object, {...}")
+        except ValueError as e:
+            self.problem = f"{file_problem('mod.json', e)}; fix it in a text editor, or remove the mod"
+            meta = {"enabled": False}
         self.meta = meta
         # A mistake in one mod's mod.json (a name that isn't text, a priority that isn't a number) falls
         # back to the default here, so it can't stop every other mod from being listed and built.
@@ -98,10 +105,16 @@ class Mod:
 
     def update(self, **fields):
         if self.problem:
-            raise ValueError(f"{self.name} can't be changed until its mod.json is fixed: {self.problem}")
+            raise ValueError(f"{self.id}'s mod.json can't be read, so the mod can't be changed: {self.problem}")
         path = os.path.join(self.folder, "mod.json")
         with open(path, encoding="utf-8-sig") as f:
-            meta = json.load(f)
+            try:
+                meta = json.load(f)
+            except ValueError as e:   # broken since it was listed
+                raise ValueError(f"{self.id}'s mod.json can't be read: {file_problem('mod.json', e)}; fix it in a text "
+                                 "editor first") from None
+        if not isinstance(meta, dict):
+            raise ValueError(f"{self.id}'s mod.json should hold an object, {{...}}; fix it in a text editor first")
         for k, v in fields.items():
             if v is not None:
                 meta[k] = v
@@ -213,7 +226,8 @@ def switch(mods, mod_id, on, cascade=False):
 def palette_only(mod):
     """A mod that holds nothing but a palette.json recolouring the game's slots: safe to switch on and off
     as a colour preset. One that only adds new colour slots isn't a preset (cats may be wearing those
-    slots), so quick palette switching leaves it alone."""
+    slots), so quick palette switching leaves it alone. One whose palette.json can't be read counts as a
+    preset (palette_problem says what's wrong with it)."""
     if mod.kinds() != ["palette"]:
         return False
     from . import palettes
@@ -221,6 +235,20 @@ def palette_only(mod):
         return not palettes.adds_only(palettes.load(os.path.join(mod.folder, "palette.json")))
     except (OSError, ValueError):
         return True
+
+
+def palette_problem(mod):
+    """What's wrong with a mod's palette.json (not JSON, a list, a section that isn't an object of colours),
+    or None: for the mod's card, so one mistake never stops the list of mods from showing."""
+    path = os.path.join(mod.folder, "palette.json")
+    if not os.path.isfile(path):
+        return None
+    from . import palettes
+    try:
+        palettes.load(path)
+    except ValueError as e:   # a sentence naming the file (palettes.load never raises anything else)
+        return str(e)
+    return None
 
 
 def choose_palettes(mods, ids):

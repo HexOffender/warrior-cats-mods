@@ -30,7 +30,7 @@ from .exe import gamebuild
 from .bridge import Bridge, BridgeError
 from .colors import hex_from_linear
 from .config import game_running
-from .gamefiles import NONASSET
+from .gamefiles import NONASSET, Unreadable
 from .formats.savejson import SaveDoc
 from .sdk import BuildContext
 from .sections.files import classify
@@ -38,6 +38,8 @@ from .sections.files import classify
 NO_GAME = "Clan Mod Studio hasn't found the game yet: Get set up, on the Mods page, asks where it is"
 # What a saved file gets instead of a check while the game's files can't be read (check_file).
 CHECK_LATER = "It will be checked when you apply, because the game's files aren't readable now"
+# How the page says pipeline.InstallBlocked (the command line says "not installing because some mods didn't build").
+BLOCKED = "Nothing went in the game, because some mods couldn't be made ready"
 DEFAULT_PORT = 8765
 LAST_APPLY = "last-apply.log"   # in your files' folder: what the last Apply, Play or check logged
 STUDIO_LOG = "studio.log"       # there too: the details behind "Something went wrong"
@@ -79,6 +81,22 @@ class Download:
         self.data, self.filename, self.ctype = data, filename, ctype
 
 
+def field(body, key, kind=str, what="text"):
+    """body[key], which the request has to send as `kind`; a sentence (ValueError, answered 400) when it's
+    missing or something else, instead of the bare key name a KeyError would give the page."""
+    if key not in body:
+        raise ValueError(f'the request needs "{key}"')
+    value = body[key]
+    if not isinstance(value, kind) or isinstance(value, bool) and kind is not bool:
+        raise ValueError(f'"{key}" should be {what}')
+    return value
+
+
+# What PATCH /mods/<id> may change, and what each should be.
+MOD_FIELDS = {"enabled": (bool, "true or false"), "priority": (int, "a whole number"), "name": (str, "text"),
+              "description": (str, "text"), "version": (str, "text"), "author": (str, "text")}
+
+
 def code_stamp():
     """The newest change to wcmods' own Python code. The studio runs the code it started with, so once
     this moves on (wcmods was updated while it ran), building with it would install stale scripts."""
@@ -99,11 +117,11 @@ class Body(dict):
 
 
 class _NoGame:
-    """The game's files while there's no game folder: anything read from them is an OSError, as a pak that
+    """The game's files while there's no game folder: anything read from them is Unreadable, as a pak that
     isn't there would be, so check_file says the check waits for Apply."""
 
     def __getattr__(self, name):
-        raise OSError("the game's files aren't readable now")
+        raise Unreadable("the game's files aren't readable now")
 
 
 def owner(file):
@@ -216,7 +234,7 @@ class Studio:
                     else CHECK_LATER]
         except ValueError as e:
             return [str(e)]
-        except OSError:   # the game's pak isn't there, or won't open
+        except (OSError, Unreadable):   # the game's pak isn't there, or won't open
             return [CHECK_LATER]
         except Exception as e:   # noqa: BLE001 - said, not hidden, and never as a Python name
             return [f"{file} couldn't be checked: {e}"]
@@ -426,6 +444,10 @@ class Studio:
             for i, why in held.items():   # needs a mod made for an older version: left out with it
                 if i not in old:
                     unmet.setdefault(i, []).append(f"left out: it {why}")
+            for m in found:   # a mod.json or palette.json that can't be read: said on the card, never a blank page
+                for problem in (m.problem, mods.palette_problem(m)):
+                    if problem:
+                        unmet.setdefault(m.id, []).append(problem)
             return [{**m.to_dict(), "problems": unmet.get(m.id, []),
                      "needed_by": [titles[i] for i in mods.needing(found, m.id)],
                      "requires_names": [titles.get(i, i) for i in m.requires if i != mods.MENU_ID],
@@ -481,7 +503,7 @@ class Studio:
             return modzip.removed(self.ctx.backups)
         if parts == ["mods", "restore"] and method == "POST":
             with self.lock:
-                return {"restored": modzip.restore(self.ctx.backups, body["name"], self.ctx.mods_root)}
+                return {"restored": modzip.restore(self.ctx.backups, field(body, "name"), self.ctx.mods_root)}
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "zip" and method == "GET":
             found = self.mods()
             m = self.mod(parts[1])
@@ -498,19 +520,21 @@ class Studio:
         if parts == ["settings"]:
             # "Allow mods that run code" (wcmods.json "allow_code_mods"); the studio asks twice first.
             if method == "PATCH" and "allow_code_mods" in body:
+                allow = field(body, "allow_code_mods", bool, "true or false")
                 with self.lock:   # not in the middle of an install (see "menusettings")
                     cfg.reload()
-                    cfg.data["allow_code_mods"] = bool(body["allow_code_mods"])
+                    cfg.data["allow_code_mods"] = allow
                     cfg.save()
             return {"allow_code_mods": bool(cfg.data.get("allow_code_mods")), "data_dir": cfg.data_dir}
         if parts == ["mods"] and method == "POST":
-            m = mods.create(self.ctx.mods_root, body["id"], body.get("name"), body.get("description", ""),
-                            enabled=bool(body.get("enabled", False)), priority=int(body.get("priority", 0)),
+            fields = {k: field(body, k, *MOD_FIELDS[k]) for k in MOD_FIELDS if body.get(k) is not None}
+            m = mods.create(self.ctx.mods_root, field(body, "id"), fields.get("name"), fields.get("description", ""),
+                            enabled=fields.get("enabled", False), priority=fields.get("priority", 0),
                             game_build=self.build())
             return m.to_dict()
         if len(parts) == 2 and parts[0] == "mods" and method == "PATCH":
             m = self.mod(parts[1])
-            m.update(**{k: body.get(k) for k in ("enabled", "priority", "name", "description", "version", "author")})
+            m.update(**{k: field(body, k, *MOD_FIELDS[k]) for k in MOD_FIELDS if body.get(k) is not None})
             return m.to_dict()
         if len(parts) == 4 and parts[0] == "mods" and parts[2] == "file":
             m, name = self.mod(parts[1]), parts[3]
@@ -526,17 +550,18 @@ class Studio:
                 with open(path, encoding="utf-8-sig") as f:
                     return {"exists": True, "text": f.read()}
             if method == "PUT":
-                text = body["text"]
+                text = field(body, "text")
                 try:
                     json.loads(text)  # refuse to write broken JSON
                 except ValueError as e:
                     raise ValueError(mods.file_problem(name, e)) from None
-                with open(path, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(text if text.endswith("\n") else text + "\n")
-                # Cats and questlines come into the game with the Sandbox mode mod: turning this mod on turns
-                # that one on, and a shared .zip says it's needed.
-                if name in story.FILES and story.SANDBOX_ID not in m.requires:
-                    m.update(requires=m.requires + [story.SANDBOX_ID])
+                with self.lock:   # two pages saving the same file at once: one after the other, never interleaved
+                    with open(path, "w", encoding="utf-8", newline="\n") as f:
+                        f.write(text if text.endswith("\n") else text + "\n")
+                    # Cats and questlines come into the game with the Sandbox mode mod: turning this mod on turns
+                    # that one on, and a shared .zip says it's needed.
+                    if name in story.FILES and story.SANDBOX_ID not in m.requires:
+                        m.update(requires=m.requires + [story.SANDBOX_ID])
                 # A file half made still saves; what would keep it out of the game is said now, not at Apply.
                 return {"saved": name, "requires": m.requires, "problems": self.check_file(m, name)}
             if method == "DELETE":
@@ -566,13 +591,18 @@ class Studio:
         if parts == ["backups"]:
             return save.list_backups(self.ctx.backups)[::-1]
         if parts == ["backup"] and method == "POST":
+            # Never an empty backup: it would count as the save being backed up (Get set up, and the first
+            # safety copy, which only happens while there's none).
+            if not os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)):
+                raise ValueError("there's no save to back up yet; start the game once, and get into the forest")
             where, files = save.backup(cfg.save_dir, self.ctx.backups, "studio")
             return {"name": os.path.basename(where), "files": files}
         if parts == ["restore"] and method == "POST":
             if game_running():
                 raise RuntimeError("close the game before restoring a save")
+            name = field(body, "name")
             save.backup(cfg.save_dir, self.ctx.backups, "before-restore")
-            return {"restored": save.restore(self.ctx.backups, body["name"], cfg.save_dir)}
+            return {"restored": save.restore(self.ctx.backups, name, cfg.save_dir)}
         if parts == ["game", "eyes"]:
             return self.eyes()
         if parts == ["game", "tables"]:
@@ -607,6 +637,8 @@ class Studio:
         if parts == ["packs"] and method == "POST":
             # Make a pack, or change one: {id, name, description, author, version, mods: [ids]}.
             pack_id = body.get("id")
+            if not isinstance(body.get("mods") or [], list):
+                raise ValueError('"mods" should be a list of the ids of the mods in the pack')
             with self.lock:
                 if not pack_id:   # a new pack: never one that's there already
                     taken = {m.id for m in self.mods()}
@@ -741,6 +773,8 @@ class Studio:
             shown = lambda c: ""     # noqa: E731
             try:
                 if self._names is None:
+                    if not self.ctx.cfg.game_dir:   # not ctx.game, which ends the command line (SystemExit)
+                        raise LookupError(NO_GAME)
                     self._names = names.GameNames(lambda path: self.ctx.game.read_text(BuildContext.data_path(path)))
                 try:
                     spec = names.merge(names.mod_specs([m for m in self.mods() if m.enabled]))
@@ -1116,7 +1150,7 @@ class Studio:
             result.get("manifest") if isinstance(result, dict) and isinstance(result.get("manifest"), dict) else None
         head = [f"{title} · {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"]
         if error is not None:
-            head.append(error.describe("press Apply the rest anyway", "what they put in the game before is removed")
+            head.append(error.describe("press Apply the rest anyway", "what they put in the game before is removed", BLOCKED)
                         if isinstance(error, pipeline.InstallBlocked) else f"Couldn't finish: {error}")
         elif manifest:
             head.append(plain_summary(manifest))
@@ -1247,7 +1281,7 @@ def make_handler(studio, port):
                 except pipeline.InstallBlocked as e:
                     # The facts, worded for the page: its way past them is Apply the rest anyway.
                     return self._send(409, {"error": e.describe("press Apply the rest anyway",
-                                                                "what they put in the game before is removed"),
+                                                                "what they put in the game before is removed", BLOCKED),
                                             "blocked": [{"title": t, "mod": m, "text": x} for t, m, x in e.problems],
                                             "mods": e.mods()})
                 except SystemExit as e:   # Ctx.need_game and the like, which end the command line
@@ -1260,6 +1294,10 @@ def make_handler(studio, port):
                         studio.log_error(where, e)
                         return self._send(400, {"error": sentence(e)})
                     return self._send(403, {"error": str(e)})
+                except KeyError as e:
+                    # Something the request left out (a LookupError too, but not a 404: the route is there), or a
+                    # game file that isn't (gamefiles.read): the key alone, without the quotes str() adds.
+                    return self._send(400, {"error": str(e.args[0]) if len(e.args) == 1 else str(e)})
                 except LookupError as e:
                     return self._send(404, {"error": str(e)})
                 except (ValueError, RuntimeError) as e:
@@ -1389,7 +1427,8 @@ def find_port(port):
 def serve(ctx, port=DEFAULT_PORT, open_browser=True, add=None):
     """Run the studio; `add` is a mod's .zip or folder (dropped on the launcher) for it to offer to add,
     which a studio already running picks up too. When the port is held by another studio, that one is opened
-    instead; when by anything else, the next ports are tried. Port 0 takes any free port (the tests)."""
+    instead; when by anything else, the next ports are tried. Port 0 takes any free port (the tests), named on
+    the first line printed."""
     if add:
         onboarding.put_inbox(add)
     studio = Studio(ctx)
@@ -1406,15 +1445,15 @@ def serve(ctx, port=DEFAULT_PORT, open_browser=True, add=None):
     if server is None:
         sys.exit(f"Couldn't open Clan Mod Studio: ports {tried[0]} to {tried[-1]} are all in use by other programs. "
                  "Close some, or start it with --port and a free one.")
-    port = server.server_address[1]
+    port = server.server_address[1]   # the one chosen for port 0, or the next free one
     server.RequestHandlerClass = make_handler(studio, port)
     studio.server, studio.port = server, port
     url = f"http://127.0.0.1:{port}/"
+    print(f"Clan Mod Studio running at {url}  (Ctrl+C to stop)", flush=True)
     if tried:
-        print(f"Port {tried[0]} is in use by another program, so Clan Mod Studio is on port {port} instead.")
+        print(f"(port {tried[0]} is in use by another program, so it's on port {port} instead)", flush=True)
     if ctx.cfg.warning:
-        print(ctx.cfg.warning)
-    print(f"Clan Mod Studio running at {url}  (Ctrl+C to stop)")
+        print(ctx.cfg.warning, flush=True)
     if open_browser:
         webbrowser.open(url)
     try:

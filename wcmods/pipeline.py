@@ -39,9 +39,9 @@ class InstallBlocked(RuntimeError):
         self.problems = list(problems)
         super().__init__(self.describe("install anyway with --force", "anything they installed before is removed"))
 
-    def describe(self, how, then):
+    def describe(self, how, then, lead="not installing because some mods didn't build"):
         said = "; ".join(f"{title}: {mod + ': ' if mod else ''}{text}" for title, mod, text in self.problems)
-        return f"not installing because some mods didn't build: {said}. Fix or turn off those mods, or {how} ({then})."
+        return f"{lead}: {said}. Fix or turn off those mods, or {how} ({then})."
 
     def mods(self):
         """The mods that didn't build, in order, once each."""

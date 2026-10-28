@@ -43,7 +43,8 @@ GROWABLE = ("pattern", "marking")     # sections whose tables can take slots pas
 
 def load(path):
     """A palette.json as {part: {key: colour}} (and "coats": its presets), checked. Anything wrong with it
-    raises ValueError with a sentence that names the file (never its folder) and what to change."""
+    raises ValueError with a sentence that names the file (never its folder) and what to change; it's never
+    anything else, so the studio lists a mod with a bad palette.json, with the problem on its card."""
     from .mods import file_problem
     name = os.path.basename(path)
     try:
@@ -63,8 +64,9 @@ def load(path):
             out["coats"] = _coats(entries, name)
             continue
         if not isinstance(entries, dict):
-            what = "eye slot names" if section == "eyes" else "slot numbers"
-            raise ValueError(f'{name}: {section} should be an object of {what} to colours, like {{"0": "#f2e6d0"}}')
+            raise ValueError(f'{name}: {section} should be an object of colours by slot, like {{"3": "#ff7a1a"}}'
+                             if section != "eyes" else f'{name}: eyes should be an object of colours by slot name, '
+                             'like {"Amber": "#ffb300"}')
         parsed = {}
         for key, spec in entries.items():
             if str(key).startswith("_"):

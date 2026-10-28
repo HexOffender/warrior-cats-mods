@@ -1,227 +1,163 @@
-// A small DOM for running studio/lib/wc.js under node --test, with no browser: elements with attributes,
-// children, events and a few selectors; a select's options and value; document, window, localStorage and a
-// fetch the test supplies. Enough for the Editing mod bar (wc.modTarget); not a browser.
+// The smallest DOM the studio's library needs under node:test: enough of document, Element, localStorage and
+// fetch for studio/lib/wc.js to import (the token's <meta>), make elements (el), say things (announce, toast)
+// and pick a mod (modTarget). Nothing here draws; a test that needs a real page uses lib/browser.mjs.
+//
+//   import { install } from "./lib/dom.mjs";
+//   const dom = install();            // sets the globals, once
+//   dom.routes = { "GET /mods": () => [...] };   // what fetch("/api/...") answers
+//   const wc = await import(dom.studio("lib/wc.js"));
+import { pathToFileURL } from "node:url";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-function parseSelector(sel) {
-  // "tag", "#id", ".class", "[attr=\"value\"]", "[attr]", any of them joined, and a descendant chain with spaces.
-  return sel.trim().split(/\s+/).map(part => {
-    const out = { tag: null, id: null, classes: [], attrs: [] };
-    const re = /([a-z0-9-]+)|#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:="([^"]*)")?\]/gi;
-    let m;
-    while ((m = re.exec(part))) {
-      if (m[1]) out.tag = m[1].toUpperCase();
-      else if (m[2]) out.id = m[2];
-      else if (m[3]) out.classes.push(m[3]);
-      else out.attrs.push([m[4], m[5]]);
-    }
-    return out;
-  });
-}
+export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+export const STUDIO = path.join(REPO, "studio");
 
 export class Element {
-  constructor(tag, doc) {
+  constructor(tag) {
     this.tagName = tag.toUpperCase();
-    this.ownerDocument = doc;
     this.children = [];
-    this.parentNode = null;
     this.attrs = {};
-    this.listeners = {};
     this.style = {};
-    this._text = null;   // a text node of its own, when set through textContent
-    this._value = "";
-    this.dataset = new Proxy({}, {
-      get: (_, k) => this.attrs["data-" + k.replace(/[A-Z]/g, c => "-" + c.toLowerCase())],
-      set: (_, k, v) => { this.attrs["data-" + k.replace(/[A-Z]/g, c => "-" + c.toLowerCase())] = String(v); return true; },
-      deleteProperty: (_, k) => { delete this.attrs["data-" + k]; return true; },
-    });
-    this.classList = {
-      add: (...c) => { const s = new Set(this.className.split(/\s+/).filter(Boolean)); c.forEach(x => s.add(x)); this.className = [...s].join(" "); },
-      remove: (...c) => { this.className = this.className.split(/\s+/).filter(x => x && !c.includes(x)).join(" "); },
-      contains: c => this.className.split(/\s+/).includes(c),
-    };
+    this.listeners = {};
+    this.parent = null;
+    this.isConnected = true;
+    this.disabled = false;
+    this._hidden = false;
   }
   get id() { return this.attrs.id || ""; }
-  set id(v) { this.attrs.id = v; }
-  // Attribute-backed, as in a browser: el() sets them as attributes, the page reads and sets them as properties.
-  get hidden() { return "hidden" in this.attrs; }
-  set hidden(v) { if (v) this.attrs.hidden = ""; else delete this.attrs.hidden; }
-  get disabled() { return "disabled" in this.attrs; }
-  set disabled(v) { if (v) this.attrs.disabled = ""; else delete this.attrs.disabled; }
-  get selected() { return !!this._selected; }
-  set selected(v) { this._selected = !!v; }
+  set id(v) { this.attrs.id = String(v); }
   get className() { return this.attrs.class || ""; }
-  set className(v) { this.attrs.class = v; }
-  get tabIndex() { return Number(this.attrs.tabindex ?? -1); }
-  set tabIndex(v) { this.attrs.tabindex = String(v); }
-  get childNodes() { return [...this.children]; }
-  get firstChild() { return this.children[0] || null; }
-  get attributes() { return Object.entries(this.attrs).map(([name, value]) => ({ name, value })); }
-  get isConnected() { let n = this; while (n.parentNode) n = n.parentNode; return n === this.ownerDocument.body || n === this.ownerDocument; }
+  set className(v) { this.attrs.class = String(v); }
+  get classList() {
+    const n = this;
+    const list = () => (n.attrs.class || "").split(" ").filter(Boolean);
+    return {
+      add: (...cs) => { n.attrs.class = [...new Set([...list(), ...cs])].join(" "); },
+      remove: (...cs) => { n.attrs.class = list().filter(x => !cs.includes(x)).join(" "); },
+      contains: c => list().includes(c),
+      toggle: (c, on) => { const has = list().includes(c); if (on ?? !has) n.classList.add(c); else n.classList.remove(c); },
+    };
+  }
+  get dataset() { return Object.fromEntries(Object.entries(this.attrs).filter(([k]) => k.startsWith("data-")).map(([k, v]) => [k.slice(5).replace(/-(\w)/g, (_, c) => c.toUpperCase()), v])); }
+  get hidden() { return this._hidden || "hidden" in this.attrs; }
+  set hidden(v) { this._hidden = !!v; if (v) this.attrs.hidden = ""; else delete this.attrs.hidden; }
+  get textContent() { return this.children.map(c => typeof c === "string" ? c : c.textContent).join(""); }
+  set textContent(v) { for (const c of this.children) if (typeof c !== "string") c.parent = null; this.children = v === "" || v == null ? [] : [String(v)]; }
+  get innerHTML() { return this._html || ""; }
+  set innerHTML(v) { this._html = String(v); this.children = []; }
   setAttribute(k, v) { this.attrs[k] = String(v); }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
   removeAttribute(k) { delete this.attrs[k]; }
   hasAttribute(k) { return k in this.attrs; }
-  append(...kids) {
-    for (const kid of kids) {
-      if (kid == null) continue;
-      const node = typeof kid === "string" ? this.ownerDocument.createTextNode(kid) : kid;
-      if (node.parentNode) node.parentNode.children = node.parentNode.children.filter(c => c !== node);
-      node.parentNode = this;
-      this.children.push(node);
-    }
-  }
-  prepend(...kids) { const was = this.children; this.children = []; this.append(...kids); this.children.push(...was); }
-  after(...kids) { const i = this.parentNode.children.indexOf(this); for (const k of kids) { k.parentNode = this.parentNode; } this.parentNode.children.splice(i + 1, 0, ...kids); }
-  remove() { if (this.parentNode) { this.parentNode.children = this.parentNode.children.filter(c => c !== this); this.parentNode = null; } }
-  replaceWith(...nodes) { const p = this.parentNode, i = p.children.indexOf(this); nodes.forEach(n => { n.parentNode = p; }); p.children.splice(i, 1, ...nodes); this.parentNode = null; }
-  contains(n) { while (n) { if (n === this) return true; n = n.parentNode; } return false; }
-  get textContent() {
-    if (this._text !== null) return this._text;
-    return this.children.map(c => c.textContent).join("");
-  }
-  set textContent(v) { this.children = []; this._text = v === "" ? null : String(v); }
+  append(...kids) { for (const k of kids) { if (typeof k !== "string") { k.parent = this; k.isConnected = true; } this.children.push(k); } }
+  appendChild(k) { this.append(k); return k; }
+  after(...nodes) { if (!this.parent) return; const i = this.parent.children.indexOf(this); this.parent.children.splice(i + 1, 0, ...nodes); for (const n of nodes) if (typeof n !== "string") n.parent = this.parent; }
+  remove() { if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this); this.parent = null; this.isConnected = false; }
+  contains(n) { for (let x = n; x; x = x.parent) if (x === this) return true; return false; }
+  // <select>: its <option>s and the chosen value; an <option>: its value attribute or its text.
+  get options() { return this.all().filter(c => c.tagName === "OPTION"); }
+  get selectedOptions() { return this.options.filter(o => o.value === this.value); }
   get value() {
     if (this.tagName === "OPTION") return this.attrs.value ?? this.textContent;
-    if (this.tagName === "SELECT") {
-      const opts = this.options;
-      const chosen = opts.find(o => o.selected) || opts[0];
-      return chosen ? chosen.value : "";
-    }
-    return this._value;
+    if (this.tagName === "SELECT") return this._value ?? this.options[0]?.value ?? "";
+    return this._value ?? this.attrs.value ?? "";
   }
-  set value(v) {
-    if (this.tagName === "SELECT") {
-      const opts = this.options;
-      if (!opts.some(o => o.value === String(v))) { opts.forEach(o => { o.selected = false; }); return; }
-      opts.forEach(o => { o.selected = o.value === String(v); });
-      return;
-    }
-    this._value = String(v);
-  }
-  get options() { return this.children.filter(c => c.tagName === "OPTION"); }
-  get selectedOptions() { return this.options.filter(o => o.selected); }
-  get checked() { return !!this._checked; }
+  set value(v) { this._value = String(v); }
+  get checked() { return this._checked ?? "checked" in this.attrs; }
   set checked(v) { this._checked = !!v; }
   get files() { return this._files || []; }
-  matches(sel) { return parseSelector(sel).some(() => false) || matchOne(this, parseSelector(sel)); }
-  closest(sel) { let n = this; while (n && n instanceof Element) { if (n.matches(sel)) return n; n = n.parentNode; } return null; }
-  querySelectorAll(sel) { const chain = parseSelector(sel), out = []; walk(this, n => { if (n !== this && matchOne(n, chain)) out.push(n); }); return out; }
+  addEventListener(t, fn) { (this.listeners[t] ||= []).push(fn); }
+  removeEventListener(t, fn) { this.listeners[t] = (this.listeners[t] || []).filter(f => f !== fn); }
+  // A test's way of pressing, typing or blurring: the listeners for `type` run with a small event.
+  dispatch(type, extra = {}) {
+    const e = { type, target: this, currentTarget: this, preventDefault() {}, stopPropagation() {}, ...extra };
+    for (const fn of this.listeners[type] || []) fn(e);
+    return e;
+  }
+  click() { this.dispatch("click"); }
+  focus() { document.activeElement = this; this.dispatch("focus"); }
+  blur() { if (document.activeElement === this) document.activeElement = document.body; this.dispatch("blur"); }
+  all() { const out = []; const walk = n => { for (const c of n.children) if (typeof c !== "string") { out.push(c); walk(c); } }; walk(this); return out; }
+  // Selectors a test needs: a tag, .class, #id, [attr="value"], and one of those with a trailing :not() left out.
+  matches(sel) {
+    const m = /^(\w+)?(?:#([\w-]+))?(?:\.([\w-]+))?(?:\[([\w-]+)(?:="([^"]*)")?\])?$/.exec(sel.trim());
+    if (!m) return false;
+    const [, tag, id, cls, attr, val] = m;
+    if (tag && this.tagName !== tag.toUpperCase()) return false;
+    if (id && this.id !== id) return false;
+    if (cls && !this.classList.contains(cls)) return false;
+    if (attr && !(attr in this.attrs && (val === undefined || this.attrs[attr] === val))) return false;
+    return true;
+  }
+  querySelectorAll(sel) { return this.all().filter(n => n.matches(sel)); }
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
-  getElementsByTagName(tag) { return this.querySelectorAll(tag); }
-  addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
-  removeEventListener(type, fn) { this.listeners[type] = (this.listeners[type] || []).filter(f => f !== fn); }
-  dispatchEvent(evt) {
-    evt.target ||= this;
-    for (let n = this; n; n = n.parentNode) {
-      evt.currentTarget = n;
-      for (const fn of n.listeners?.[evt.type] || []) fn(evt);
-      if (!evt.bubbles) break;
-    }
-    return !evt.defaultPrevented;
-  }
-  click() { this.dispatchEvent(new Event("click", { bubbles: true })); }
-  focus() { this.ownerDocument.activeElement = this; this.dispatchEvent(new Event("focusin", { bubbles: true })); }
-  blur() { if (this.ownerDocument.activeElement === this) this.ownerDocument.activeElement = this.ownerDocument.body; }
-  getClientRects() { return this.isConnected ? [{}] : []; }
+  closest(sel) { for (let n = this; n; n = n.parent) if (n.matches(sel)) return n; return null; }
+  getClientRects() { return this.isConnected ? [1] : []; }
+  getBoundingClientRect() { return { x: 0, y: 0, width: 1, height: 1, top: 0, left: 0 }; }
   scrollIntoView() {}
+  setSelectionRange() {}
 }
 
-class Text {
-  constructor(text, doc) { this.text = String(text); this.ownerDocument = doc; this.parentNode = null; this.nodeType = 3; }
-  get textContent() { return this.text; }
-  remove() { if (this.parentNode) { this.parentNode.children = this.parentNode.children.filter(c => c !== this); } }
-}
+let installed = null;
 
-function walk(node, fn) {
-  for (const c of node.children || []) { if (c instanceof Element) { fn(c); walk(c, fn); } }
-}
-function matchSimple(n, s) {
-  if (s.tag && n.tagName !== s.tag) return false;
-  if (s.id && n.id !== s.id) return false;
-  if (s.classes.some(c => !n.classList.contains(c))) return false;
-  for (const [k, v] of s.attrs) {
-    if (!(k in n.attrs)) return false;
-    if (v !== undefined && n.attrs[k] !== v) return false;
-  }
-  return true;
-}
-function matchOne(n, chain) {
-  // The last part matches n; each earlier part matches some ancestor, in order.
-  if (!matchSimple(n, chain[chain.length - 1])) return false;
-  let a = n.parentNode, i = chain.length - 2;
-  while (i >= 0 && a && a instanceof Element) {
-    if (matchSimple(a, chain[i])) i--;
-    a = a.parentNode;
-  }
-  return i < 0;
-}
-
-export class Event {
-  constructor(type, init = {}) { this.type = type; this.bubbles = !!init.bubbles; this.defaultPrevented = false; this.target = null; }
-  preventDefault() { this.defaultPrevented = true; }
-  stopPropagation() { this.bubbles = false; }
-}
-
-class Document {
-  constructor() {
-    this.body = new Element("body", this);
-    this.head = new Element("head", this);
-    this.activeElement = this.body;
-    this.listeners = {};
-    this.nodeType = 9;
-  }
-  createElement(tag) { return new Element(tag, this); }
-  createTextNode(t) { return new Text(t, this); }
-  getElementById(id) { return this.body.querySelector(`#${id}`) || this.head.querySelector(`#${id}`); }
-  querySelector(sel) { return this.body.querySelector(sel) || this.head.querySelector(sel); }
-  querySelectorAll(sel) { return [...this.body.querySelectorAll(sel), ...this.head.querySelectorAll(sel)]; }
-  addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
-  removeEventListener() {}
-}
-
-// Set the DOM up as globals and give the page the live regions and toasts index.html has. `fetch(path,
-// options)` answers API calls: it gets the path after /api and the options, and returns an object (a JSON
-// answer), or throws an Error with .status to answer with that status.
-export function install({ fetch: answer, token = "test-token" } = {}) {
-  const document = new Document();
-  const storage = new Map();
-  const localStorage = {
-    getItem: k => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, String(v)),
-    removeItem: k => storage.delete(k), clear: () => storage.clear(),
+export function install() {
+  if (installed) return installed;
+  const body = new Element("body");
+  const byId = {};
+  const document = {
+    body, activeElement: body,
+    createElement: tag => new Element(tag),
+    createElementNS: (ns, tag) => new Element(tag),
+    getElementById: id => byId[id] || body.querySelector(`#${id}`),
+    querySelector: sel => (sel === 'meta[name="wc-token"]' ? { content: "test-token" } : body.querySelector(sel)),
+    querySelectorAll: sel => body.querySelectorAll(sel),
+    addEventListener() {},
+    title: "",
   };
-  const window = {
-    listeners: {},
-    addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); },
-    dispatchEvent(evt) { for (const fn of this.listeners[evt.type] || []) fn(evt); return !evt.defaultPrevented; },
-    localStorage, sessionStorage: localStorage, document,
+  // The live regions and the toasts' box, as index.html has them.
+  for (const id of ["toasts", "say", "shout", "main"]) { byId[id] = new Element("div"); byId[id].id = id; body.append(byId[id]); }
+  globalThis.document = document;
+  globalThis.CSS = { escape: s => String(s).replace(/([^\w-])/g, "\\$1") };
+  globalThis.MutationObserver = class { observe() {} disconnect() {} };
+  globalThis.localStorage = {
+    _m: {}, getItem(k) { return k in this._m ? this._m[k] : null; }, setItem(k, v) { this._m[k] = String(v); },
+    removeItem(k) { delete this._m[k]; }, clear() { this._m = {}; },
   };
-  const meta = document.createElement("meta");
-  meta.setAttribute("name", "wc-token");
-  meta.content = token;
-  document.head.append(meta);
-  for (const [id, cls] of [["toasts", "toasts"], ["say", "sr-only"], ["shout", "sr-only"], ["main", "main"]]) {
-    const n = document.createElement("div");
-    n.id = id; n.className = cls;
-    document.body.append(n);
-  }
-  const calls = [];
-  globalThis.fetch = async (url, options = {}) => {
-    const path = url.replace(/^\/api/, "");
-    const body = options.body ? JSON.parse(options.body) : undefined;
-    calls.push({ method: options.method || "GET", path, body });
+  // Node has a navigator of its own (read-only); the clipboard is the one thing wc.js asks of it.
+  Object.defineProperty(globalThis, "navigator", { value: { clipboard: { writeText: async () => {} } }, configurable: true });
+  globalThis.URL.createObjectURL ||= () => "blob:test";
+  globalThis.URL.revokeObjectURL ||= () => {};
+  globalThis.window = globalThis;
+  // The window's own events (beforeunload, focus): Node's globalThis has no listeners of its own. A test
+  // dispatches one with window.dispatchEvent({ type, preventDefault() {...} }).
+  const windowListeners = {};   // dom.windowListeners: a test clears it between pages, as a reload would
+  globalThis.addEventListener = (type, fn) => { (windowListeners[type] ||= []).push(fn); };
+  globalThis.removeEventListener = (type, fn) => { windowListeners[type] = (windowListeners[type] || []).filter(f => f !== fn); };
+  globalThis.dispatchEvent = evt => { for (const fn of windowListeners[evt.type] || []) fn(evt); return !evt.defaultPrevented; };
+  // fetch: a scripted API. routes maps "GET /mods" to a handler(body, headers) whose return is the answer;
+  // a handler may throw {status, error} for an error answer. Every call is noted in `calls`.
+  const dom = {
+    document, body, byId, routes: {}, calls: [], windowListeners,
+    studio: rel => pathToFileURL(path.join(STUDIO, rel)).href,
+  };
+  globalThis.fetch = async (url, init = {}) => {
+    const method = init.method || "GET";
+    const key = `${method} ${String(url).replace(/^\/api/, "")}`;
+    const body = init.body ? JSON.parse(init.body) : undefined;
+    dom.calls.push({ method, url: String(url), body, headers: init.headers || {} });
+    const handler = dom.routes[key];
+    if (!handler) return { ok: false, status: 404, statusText: "no route", headers: new Map(), json: async () => ({ error: `unknown API route ${key}` }) };
     try {
-      const data = await answer(path, { ...options, method: options.method || "GET", body });
-      return { ok: true, status: 200, statusText: "OK", json: async () => data, headers: { get: () => null } };
+      const out = await handler(body, init.headers || {});
+      return { ok: true, status: 200, statusText: "OK", headers: new Map(), json: async () => out };
     } catch (e) {
-      const status = e.status || 500;
-      return { ok: false, status, statusText: "Error", json: async () => ({ error: e.message }), headers: { get: () => null } };
+      if (e && e.status) return { ok: false, status: e.status, statusText: "error", headers: new Map(), json: async () => ({ error: e.error }) };
+      throw e;
     }
   };
-  Object.assign(globalThis, { document, window, localStorage, sessionStorage: localStorage, Event, Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
-    CSS: { escape: s => String(s).replace(/([^\w-])/g, "\\$1") }, location: { hash: "", search: "" } });
-  globalThis.HTMLElement = Element;
-  return { document, window, localStorage, calls };
+  installed = dom;
+  return dom;
 }
 
-// Let the page's timers run: wc.js announces and toasts a moment later.
 export const tick = (ms = 0) => new Promise(r => setTimeout(r, ms));
