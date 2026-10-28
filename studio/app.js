@@ -348,19 +348,20 @@ async function runTask(path, title, body = {}) {
     stopPolling();
     const manifest = manifestOf(r);
     drawerLog.textContent = [...(manifest ? summarize(manifest) : []), "", ...r.log].join("\n").trim() || "Done.";
+    // Some key changes work only with the old key remapper, which Play doesn't start (Play's result says so:
+    // remaps, true or false): said in a toast, and the drawer stays.
+    const launcher = path === "/play" && !!(r.result && r.result.remaps);
     // Something to read: a warning (the build's, or one Play logged itself), a part that didn't build, or
     // remaps that need the old key remapper.
     const trouble = (manifest ? (manifest.warnings || []).length > 0 || Object.values(manifest.sections || {}).some(s => s.status !== "ok") : false)
-      || r.log.some(line => line.startsWith("warning: ")) || !!(r.result && r.result.remaps && r.result.remaps.length);
-    // The sentence is the server's (studio.task_summary), as last-apply.log has it.
-    drawerSummary.textContent = r.summary
-      || (path === "/uninstall" ? "Took every mod out of the game. Your mods are still here." : "Done.");
+      || r.log.some(line => line.startsWith("warning: ")) || launcher;
+    // The sentence is the server's (studio.task_summary: a build's, Play's, Take mods out's with the cats whose
+    // names it takes), as last-apply.log has it.
+    drawerSummary.textContent = r.summary || "Done.";
     toast(path === "/play" ? "Starting the game…" : `${title}: done`);
-    // Some key changes work only with the old key remapper, which Play doesn't start: said where it stays.
-    const launcher = path === "/play" && r.result && r.result.remaps;
     if (launcher) toast("Some of your key changes only work when you start the game with Play with key remaps.bat.");
     // After Play the log gets out of the way, unless it has something to say.
-    if (path === "/play" && !trouble && !launcher) hideLater = setTimeout(hideDrawer, 4000);
+    if (path === "/play" && !trouble) hideLater = setTimeout(hideDrawer, 4000);
     // With the task's path: a check of the mods (/build) put nothing in the game, and the pages that say what's
     // in the game (Items, Animations) leave it out (wc.onlyChecked).
     bus.emit("installed", r.result && typeof r.result === "object" && !Array.isArray(r.result) ? { ...r.result, task: path } : r.result);
