@@ -47,8 +47,18 @@ class Mod:
     def __init__(self, folder):
         self.folder = folder
         self.id = os.path.basename(folder)
-        with open(os.path.join(folder, "mod.json"), encoding="utf-8-sig") as f:
-            meta = json.load(f)
+        # A mod.json that can't be read (not JSON, or not an object) is a mod that's off, with the problem
+        # on its card, so it can't blank the list of every other mod. (One that can't be opened at all is
+        # Mod.broken, from discover().)
+        self.problem = None
+        try:
+            with open(os.path.join(folder, "mod.json"), encoding="utf-8-sig") as f:
+                meta = json.load(f)
+            if not isinstance(meta, dict):
+                raise ValueError("it should hold an object, {...}")
+        except ValueError as e:
+            self.problem = f"{file_problem('mod.json', e)}; fix it in a text editor, or remove the mod"
+            meta = {"enabled": False}
         self.meta = meta
         # A mistake in one mod's mod.json (a name that isn't text, a priority that isn't a number) falls
         # back to the default here, so it can't stop every other mod from being listed and built.
@@ -65,7 +75,19 @@ class Mod:
         self.requires = _ids(meta.get("requires"))
         self.uses = [i for i in _ids(meta.get("uses")) if i not in self.requires]
 
+    @classmethod
+    def broken(cls, folder, problem):
+        """A mod whose mod.json can't be read: listed by its folder's name, off, with nothing in it, and
+        `problem` saying what's wrong, so one damaged file can't stop the others from being listed."""
+        m = cls.__new__(cls)
+        m.folder, m.id, m.problem, m.meta = folder, os.path.basename(folder), problem, {}
+        m.name, m.description, m.enabled, m.priority = m.id, "", False, 0
+        m.version, m.author, m.requires, m.uses = "", "", [], []
+        return m
+
     def kinds(self):
+        if self.problem:
+            return []
         kinds = [kind for name, kind in CONTENT if os.path.exists(os.path.join(self.folder, name))]
         return ["mod pack"] + kinds if self.meta.get("pack") else kinds
 
@@ -82,9 +104,17 @@ class Mod:
         return "mouse look" in kinds or ("in-game script" in kinds and os.path.isfile(os.path.join(self.folder, "settings.json")))
 
     def update(self, **fields):
+        if self.problem:
+            raise ValueError(f"{self.id}'s mod.json can't be read, so the mod can't be changed: {self.problem}")
         path = os.path.join(self.folder, "mod.json")
         with open(path, encoding="utf-8-sig") as f:
-            meta = json.load(f)
+            try:
+                meta = json.load(f)
+            except ValueError as e:   # broken since it was listed
+                raise ValueError(f"{self.id}'s mod.json can't be read: {file_problem('mod.json', e)}; fix it in a text "
+                                 "editor first") from None
+        if not isinstance(meta, dict):
+            raise ValueError(f"{self.id}'s mod.json should hold an object, {{...}}; fix it in a text editor first")
         for k, v in fields.items():
             if v is not None:
                 meta[k] = v
@@ -101,7 +131,19 @@ class Mod:
                 "priority": self.priority, "kinds": self.kinds(), "preset": palette_only(self),
                 "version": self.version, "author": self.author,
                 "requires": [i for i in self.requires if i != MENU_ID], "uses": self.uses,
-                "code": self.has_code(), "menu_page": self.menu_page(), "pack": bool(self.meta.get("pack"))}
+                "code": self.has_code(), "menu_page": self.menu_page(), "pack": bool(self.meta.get("pack")),
+                "problem": self.problem}
+
+
+def file_problem(name, e):
+    """What's wrong with a JSON file, as a sentence: "mod.json isn't valid: Expecting ',' at line 3"."""
+    if isinstance(e, json.JSONDecodeError):
+        return f"{name} isn't valid: {e.msg} at line {e.lineno}"
+    if isinstance(e, UnicodeDecodeError):
+        return f"{name} isn't a text file wcmods can read (save it as UTF-8)"
+    if isinstance(e, OSError):
+        return f"{name} can't be read ({e.strerror or e})"
+    return f"{name} isn't right: {e}"
 
 
 def _ids(value):
@@ -184,7 +226,8 @@ def switch(mods, mod_id, on, cascade=False):
 def palette_only(mod):
     """A mod that holds nothing but a palette.json recolouring the game's slots: safe to switch on and off
     as a colour preset. One that only adds new colour slots isn't a preset (cats may be wearing those
-    slots), so quick palette switching leaves it alone."""
+    slots), so quick palette switching leaves it alone. One whose palette.json can't be read counts as a
+    preset (palette_problem says what's wrong with it)."""
     if mod.kinds() != ["palette"]:
         return False
     from . import palettes
@@ -192,6 +235,20 @@ def palette_only(mod):
         return not palettes.adds_only(palettes.load(os.path.join(mod.folder, "palette.json")))
     except (OSError, ValueError):
         return True
+
+
+def palette_problem(mod):
+    """What's wrong with a mod's palette.json (not JSON, a list, a section that isn't an object of colours),
+    or None: for the mod's card, so one mistake never stops the list of mods from showing."""
+    path = os.path.join(mod.folder, "palette.json")
+    if not os.path.isfile(path):
+        return None
+    from . import palettes
+    try:
+        palettes.load(path)
+    except ValueError as e:   # a sentence naming the file (palettes.load never raises anything else)
+        return str(e)
+    return None
 
 
 def choose_palettes(mods, ids):
@@ -217,13 +274,18 @@ def choose_palettes(mods, ids):
 
 
 def discover(mods_root):
+    """Every mod under mods_root, in priority order. One whose mod.json can't be read is listed all the
+    same (Mod.broken, with `problem` saying why), off and empty, rather than stopping the whole list."""
     mods = []
     if os.path.isdir(mods_root):
         for name in sorted(os.listdir(mods_root)):
             folder = os.path.join(mods_root, name)
             if name.startswith("_") or not os.path.isfile(os.path.join(folder, "mod.json")):
                 continue
-            mods.append(Mod(folder))
+            try:
+                mods.append(Mod(folder))
+            except (OSError, ValueError) as e:   # ValueError: not JSON, not UTF-8, or not an object
+                mods.append(Mod.broken(folder, file_problem("mod.json", e)))
     return sorted(mods, key=lambda m: (m.priority, m.id))
 
 

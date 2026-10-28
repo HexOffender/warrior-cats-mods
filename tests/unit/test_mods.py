@@ -1,5 +1,9 @@
 """Mods and setup without the game: downloaded .zips and what's refused, the key remapper's presses, menu
 remaps, the agent controller's parts, and getting set up in temporary folders."""
+import sys
+
+import pytest
+
 from wcmods import selftest
 
 
@@ -24,6 +28,7 @@ def test_menu_remaps():
     assert selftest._menu_remaps()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="the agent's runner drives the game's window through user32")
 def test_agent_controller_parts():
     assert selftest._agent_parts()
 

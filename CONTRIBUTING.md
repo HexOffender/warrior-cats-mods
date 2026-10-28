@@ -32,6 +32,10 @@ python -m pytest
 ```
 
 ```bash
+node --test "tests/studio/**/*.test.mjs"
+```
+
+```bash
 python wcmods.py selftest
 ```
 
@@ -39,11 +43,20 @@ python wcmods.py selftest
 python wcmods.py agent test
 ```
 
-`pytest` (install it with `python -m pip install pytest`) runs `tests/unit/`, which needs no game;
-it's what CI runs. `selftest` checks every file format against the installed game and writes only to
-a temp folder. `agent test` drives the running game through the in-game tests in `tests/game/`
-([docs/agent.md](docs/agent.md)); it needs the game and UE4SS, and backs up the save first. A change
-to the Lua, the mod menu or a section wants all three; a change to a format, the first two.
+`pytest` (install it with `python -m pip install pytest`) runs `tests/unit/`, which needs no game: the
+formats, the Lua the sections write, mods and packs, and Clan Mod Studio's API and HTTP handler, called
+on a studio over temporary folders (`tests/unit/conftest.py` sets that up, and keeps every test away
+from the game, Steam and your own `%LOCALAPPDATA%\WCMods`). `node --test` (Node 24, nothing to install)
+runs `tests/studio/`: the studio's JavaScript helpers under a small DOM shim, and the end-to-end tests
+in `tests/studio/e2e/`, which start the studio on a free port and drive it in a headless Chromium over
+the DevTools protocol. Those need a Chromium: Edge or Chrome where they're usually installed, or any
+one named in `WC_BROWSER` (the path of `msedge.exe`, `chrome.exe` or `chromium`); without one they
+skip, saying so, or fail with `WC_REQUIRE_BROWSER=1` (CI sets it). `selftest` checks every file
+format against the installed game and writes only to a temp folder. `agent test` drives the running
+game through the in-game tests in `tests/game/`
+([docs/agent.md](docs/agent.md)); it needs the game and UE4SS, and backs up the save first. CI runs the
+first two. A change to the Lua, the mod menu or a section wants all four; a change to a format, pytest
+and selftest; a change to a studio page, pytest and the node tests.
 
 ## Writing it down
 

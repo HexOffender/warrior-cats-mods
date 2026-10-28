@@ -13,7 +13,7 @@ from . import ue4ss, view, world
 from . import game as game_lua   # WCModsGame (the name `game` is the game's files in build())
 from . import mods as modlib
 from .formats.blake3 import blake3
-from .config import (MOD_BASENAME, UE4SS_MOD_NAME, Config, game_running, same_folder, steam_elsewhere,
+from .config import (MOD_BASENAME, UE4SS_MOD_NAME, game_running, same_folder, steam_elsewhere,
                      steam_elsewhere_text)
 from .formats.csvdata import Table
 from .gamefiles import GameFiles
@@ -27,6 +27,41 @@ from .sections import load_sections
 MARKER = "Wrc/WCMods/BuildInfo.json"
 PAK_PREFIX = "zzz_WCMods_"                  # every pak file wcmods installs starts with this
 PAK_EXTS = (".pak", ".utoc", ".ucas", ".sig")
+
+
+class InstallBlocked(RuntimeError):
+    """Not installing, because some mods didn't build: installing replaces what's installed now, so a mod
+    that failed would silently lose what it put in the game before. `problems` is [(section title, mod id or
+    None, what went wrong)], for each surface to word with its own way past it: the command line says
+    --force (str(e)), the studio says Apply the rest anyway (describe)."""
+
+    def __init__(self, problems):
+        self.problems = list(problems)
+        super().__init__(self.describe("install anyway with --force", "anything they installed before is removed"))
+
+    def describe(self, how, then, lead="not installing because some mods didn't build"):
+        said = "; ".join(f"{title}: {mod + ': ' if mod else ''}{text}" for title, mod, text in self.problems)
+        return f"{lead}: {said}. Fix or turn off those mods, or {how} ({then})."
+
+    def mods(self):
+        """The mods that didn't build, in order, once each."""
+        return list(dict.fromkeys(mod for _, mod, _ in self.problems if mod))
+
+
+def section_problems(rep):
+    """What went wrong in one section of a build's report, [(mod id or None, text)]; [] when its status is
+    "ok". Its "failed" lines up with its "errors", one for one; a report where it doesn't (an older wcmods
+    wrote only the errors' text, or added one without the other) is read from the errors, so nothing that
+    went wrong is ever missed. A section that isn't "ok" always has at least one."""
+    if rep.get("status") == "ok":
+        return []
+    errors = list(rep.get("errors") or [])
+    failed = rep.get("failed")
+    if isinstance(failed, list) and failed and len(failed) >= len(errors):
+        found = [(mod, text) for mod, text in failed]
+    else:
+        found = [(None, e) for e in errors]
+    return found or [(None, "it didn't build fully")]
 
 
 def user_paks(mod):
@@ -112,6 +147,7 @@ def build(cfg, mods, out_dir, log=print):
     # the report says why, so installing stops until that's sorted (or --force leaves it out).
     unmet = modlib.unmet(mods, left_out)
     enabled = [m for m in mods if m.enabled and m.id not in unmet and m.id not in left_out]
+    titles = {m.id: m.name for m in mods}
     game = GameFiles(cfg)
     sections, skipped = load_sections(cfg, [m for m in mods if m.id not in unmet and m.id not in left_out], log)
     ctx = BuildContext(cfg, game, out_dir, log)
@@ -120,11 +156,12 @@ def build(cfg, mods, out_dir, log=print):
     if unmet:
         report["requirements"] = {"title": "Mods that need other mods", "status": "failed", "mods": [],
                                   "errors": [f"{i}: {why}" for i, whys in unmet.items() for why in whys],
+                                  "failed": [(i, why) for i, whys in unmet.items() for why in whys],
                                   "from_mod": None}
 
     for sec in sections:
         ctx.begin(sec.id)
-        items, used, errors = [], [], []
+        items, used, errors, failed = [], [], [], []   # failed: [(mod id or None, what went wrong)], as errors
         for mod in enabled:
             try:
                 if not sec.claims(mod):
@@ -132,9 +169,11 @@ def build(cfg, mods, out_dir, log=print):
                 data = sec.collect(mod, ctx)
             except (ValueError, KeyError) as e:   # mistakes in the mod's files
                 errors.append(f"{mod.id}: {e}")
+                failed.append((mod.id, str(e)))
                 continue
             except Exception as e:                # anything else still only skips this mod
                 errors.append(f"{mod.id}: {type(e).__name__}: {e} (is the file laid out as documented?)")
+                failed.append((mod.id, f"{e} (is the file laid out as documented?)"))
                 continue
             if data is not None:
                 items.append((mod, data))
@@ -145,32 +184,42 @@ def build(cfg, mods, out_dir, log=print):
         except Exception as e:  # isolate sections: drop this one's outputs, keep going
             ctx.rollback()
             errors.append(f"{type(e).__name__}: {e}")
+            failed.append((None, str(e)))
             status = "failed"
-        report[sec.id] = {"title": sec.title, "status": status, "mods": used, "errors": errors,
+        report[sec.id] = {"title": sec.title, "status": status, "mods": used, "errors": errors, "failed": failed,
                           "from_mod": getattr(sec, "owner", None)}
         ctx.end()
 
     for mod_id in skipped:
-        ctx.warnings.append(f"{mod_id}: ships its own section.py (Python code); set \"allow_code_mods\": true "
-                            "in wcmods.json to let it run")
+        ctx.warnings.append(f"{titles.get(mod_id, mod_id)} brings code of its own (section.py), which only runs with mods "
+                            "that run code allowed (Options, on the Settings and repair page; \"allow_code_mods\" in "
+                            "wcmods.json); left out")
+    # A mod whose mod.json can't be read counts as off (mods.Mod, Mod.broken), so nothing above mentions it: said
+    # here, for `wcmods build` and install and for the studio's Apply log, rather than left out without a word.
+    for m in mods:
+        if getattr(m, "problem", None):
+            ctx.warnings.append(f"{m.id} is left out: {m.problem}")
+
+    # What goes wrong after the sections ran goes in "failed" as well as "errors": install reads "failed", and a
+    # problem missing from it would let an install go ahead and remove what the section put in before.
+    def fail(sid, text):
+        rep = report[sid]
+        rep["errors"].append(text)
+        rep["failed"].append((None, text))
+        if rep["status"] == "ok":
+            rep["status"] = "partial"
 
     csv_changes, csv_failures = ctx.resolve_csv_edits()
     for path, section_ids, error in csv_failures:
         for sid in section_ids:
-            rep = report.get(sid)
-            if rep is not None:
-                rep["errors"].append(f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})")
-                if rep["status"] == "ok":
-                    rep["status"] = "partial"
+            if sid in report:
+                fail(sid, f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})")
 
     table_changes, table_failures = ctx.resolve_table_rows()
     for name, section_ids, error in table_failures:
         for sid in section_ids:
-            rep = report.get(sid)
-            if rep is not None:
-                rep["errors"].append(f"{name}: rows not added ({error})")
-                if rep["status"] == "ok":
-                    rep["status"] = "partial"
+            if sid in report:
+                fail(sid, f"{name}: rows not added ({error})")
     # A section's save edits go with its table edits: a cat's new name is an ID whose text the pak adds, and
     # a new item's inventory entry needs its rows. With a table of theirs left out, the save would point at
     # text or items the game hasn't got (the cat shows as "<MISSING STRING TABLE ENTRY>"), so they stay out too.
@@ -180,8 +229,7 @@ def build(cfg, mods, out_dir, log=print):
         ctx.save_ops = kept
         for sid in broken:
             if sid in report:
-                report[sid]["errors"].append("its save edits were left out too: they'd point at text or items "
-                                             "the game wouldn't have")
+                fail(sid, "its save edits were left out too: they'd point at text or items the game wouldn't have")
     # What else leaves a renamed cat without its text: a mod that named one is off now, or the mods go into a
     # copy of the game Steam doesn't start.
     ctx.warnings += names_without_text(cfg, ctx, game)
@@ -189,11 +237,10 @@ def build(cfg, mods, out_dir, log=print):
     if steam:
         ctx.warnings.append(steam_elsewhere_text(steam, cfg.game_dir))
 
-    manifest = {"mods": [m.id for m in enabled], "sections": report, "outputs": [], "ue4ss_mods": [],
+    manifest = {"mods": [m.id for m in enabled], "names": titles, "sections": report, "outputs": [], "ue4ss_mods": [],
                 "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
                 "csv_changes": csv_changes, "table_rows": table_changes, "files": sorted(ctx.files),
                 "built": datetime.datetime.now().isoformat(timespec="seconds")}
-    titles = {m.id: m.name for m in mods}
     manifest["outdated"] = [{"id": i, "name": titles[i], "made_for": o["made_for"], "used": o["allowed"]}
                             for i, o in old.items()]
     for o in manifest["outdated"]:
@@ -356,11 +403,11 @@ def pending(cfg, mods):
     since), "changed" (on both times, with files changed since), "redo" (why the last install has to be
     made again: it was made before UE4SS or the Oodle DLL was there, so it left parts out), "any"}. The
     studio's Apply button shows it."""
-    # wcmods.json read afresh into a Config of its own: reloading the studio's would throw away what an
+    # wcmods.json read afresh, without touching the studio's Config: reloading that would throw away what an
     # install running at the same time has noted but not saved yet.
     try:
-        data = Config(cfg.root, cfg.data_dir).data
-    except (OSError, ValueError):   # being written this moment
+        data = cfg.peek()
+    except (OSError, ValueError):   # not there yet, or being written this moment
         data = cfg.data
     # What an install would put in: mods made for an older version of the game stay out (unless used anyway).
     left_out = set(gamebuild.held_back(cfg, mods))
@@ -439,12 +486,10 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
     cfg.reload()
     # Installing replaces what's installed now, so a section that failed or skipped a mod would
     # silently remove that mod's previously installed changes.
-    problems = [f"{rep['title']}: {err}" for rep in manifest["sections"].values()
-                if rep["status"] != "ok" for err in rep["errors"]]
+    problems = [(rep.get("title", sid), mod, text) for sid, rep in manifest["sections"].items()
+                for mod, text in section_problems(rep)]
     if problems and not force:
-        raise RuntimeError("not installing because some mods didn't build: " + "; ".join(problems) +
-                           ". Fix or turn off those mods, or install anyway with --force "
-                           "(anything they installed before is removed).")
+        raise InstallBlocked(problems)
     dest = cfg.mods_install_dir
     os.makedirs(dest, exist_ok=True)
     remove_paks(dest)   # wcmods' own and any a mod shipped, including ones no longer on
@@ -484,7 +529,7 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
         if manifest.get("menu"):
             skipped.append("the mod menu")
         if skipped:
-            log(f"  NOTE: {' and '.join(skipped)} need UE4SS, which isn't installed; skipped.")
+            log(f"  NOTE: {' and '.join(skipped)} need the script loader (UE4SS), which isn't installed; skipped.")
 
     if manifest["save_ops"]:
         apply_save_ops(cfg, manifest["save_ops"], backups_root, log)

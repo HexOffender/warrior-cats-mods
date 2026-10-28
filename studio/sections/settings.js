@@ -31,7 +31,15 @@ export default {
       if (settings) {
         const code = el("input", { type: "checkbox", id: "allow-code", checked: settings.allow_code_mods });
         const setCode = async on => {
-          try { settings = await api.patch("/settings", { allow_code_mods: on }); toast(on ? "Mods that run code are allowed. Apply to game to use them." : "Mods that run code are off."); await refresh(); location.reload(); }
+          try {
+            settings = await api.patch("/settings", { allow_code_mods: on });
+            toast(on ? "Mods that run code are allowed. Apply to game to use them." : "Mods that run code are off.");
+            await refresh();
+            // The side bar's pages change (the Console, mods' own pages): the shell redraws it, without reloading
+            // the page, so what's unsaved on other pages stays.
+            bus.emit("sections-changed");
+            bus.emit("mods-changed", { from: "settings" });
+          }
           catch (e) { toast(e.message, "bad"); }
         };
         const warn = el("div", { class: "banner", hidden: true },
@@ -128,12 +136,15 @@ export default {
     }
 
     // ---------- making your own ----------
+    // The Make pages' names come from the shell's list (/info), so this stays true as pages are added.
+    let makePages = [];
     function renderMake() {
       const id = el("input", { type: "text", id: "new-mod-id", placeholder: "e.g. my-tweaks", spellcheck: "false" });
       const name = el("input", { type: "text", id: "new-mod-name", placeholder: "My tweaks" });
       const desc = el("input", { type: "text", id: "new-mod-desc", placeholder: "What it changes" });
+      const pages = makePages.length ? ` (${makePages.join(", ")})` : "";
       clear(makeBox).append(el("h2", { text: "Make your own mod" }),
-        el("p", { class: "note", text: "The pages under Make mods (Palettes, Your cat, Controls, Names, Game data, Save) save into a mod of yours, My mods unless you pick another. Start an empty one here, or from those pages. Save as .zip (under a mod's More) packs one up to share." }),
+        el("p", { class: "note", text: `The pages under Make mods${pages} save into a mod of yours, My mods unless you pick another. Start an empty one here, or from those pages. Save as .zip (under a mod's More) packs one up to share.` }),
         el("form", { class: "row", onsubmit: async e => {
           e.preventDefault();
           try {
@@ -150,8 +161,13 @@ export default {
 
 
     async function refresh() {
-      try { [options, settings] = await Promise.all([api.get("/ingame").catch(() => null), api.get("/settings")]); }
+      let shell = null;
+      try { [options, settings, shell] = await Promise.all([api.get("/ingame").catch(() => null), api.get("/settings"), api.get("/info").catch(() => null)]); }
       catch (e) { toast(e.message, "bad"); }
+      if (shell) {
+        const titles = shell.sections.filter(s => (s.group || "make") === "make" && !s.from_mod && s.id !== "console").map(s => s.title);
+        if (titles.join("|") !== makePages.join("|")) { makePages = titles; renderMake(); }
+      }
       renderOptions();
       await renderRepair();
     }

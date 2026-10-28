@@ -1,11 +1,14 @@
 """Locate the game, its saves and UE4SS (and an optional Oodle DLL); persist overrides in wcmods.json.
 Locate your own files too: your mods, wcmods.json and backups are in a folder outside wcmods' (data_dir)."""
+import datetime
 import json
 import os
 import re
 import subprocess
+import time
 
 DATA_ENV = "WCMODS_DATA"
+SAVE_RETRIES = (0.05, 0.1, 0.2, 0.4)   # seconds between tries at putting wcmods.json in place (Config.save)
 STEAM_APP_ID = "3960600"
 GAME_FOLDER = "Warrior Cats Clans of the Forest"
 EXE_NAME = "Wrc-Win64-ShippingDRM.exe"
@@ -30,6 +33,9 @@ def data_dir():
         os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "WCMods"))
 
 
+_set_aside = {}   # wcmods.json path -> the warning from setting a damaged one aside, for the Configs made after
+
+
 def same_folder(a, b):
     """Whether two paths are one folder, however each is spelled (a junction, a subst drive, a short name)."""
     try:
@@ -47,25 +53,74 @@ class Config:
         self.data_dir = data or data_dir()
         self.path = os.path.join(self.data_dir, "wcmods.json")
         self.data = {}
+        self.warning = None   # a damaged wcmods.json set aside by reload(): the studio shows it, the CLI prints it
         self.reload()
+
+    def peek(self):
+        """wcmods.json as it is on disk now, parsed, without touching this Config: for a check against what
+        another process wrote (pipeline.pending). Raises OSError or ValueError when it can't be read."""
+        with open(self.path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("wcmods.json should be an object")
+        return data
 
     def reload(self):
         """Read wcmods.json again. The studio keeps one Config for its whole run, so anything that
         reads a value, changes it and saves (install, uninstall) reloads first; otherwise it would
-        write back what it read at startup over what the command line wrote since."""
-        if os.path.exists(self.path):
-            with open(self.path, encoding="utf-8-sig") as f:
-                self.data = json.load(f)
+        write back what it read at startup over what the command line wrote since.
+
+        A damaged file (not JSON, not an object) is set aside as wcmods.json.broken-<stamp> and the
+        settings start afresh, with `warning` saying so: the studio still opens, on Get set up."""
+        # A Config made earlier in this run (userdata.prepare's) may have set the file aside: its warning is this
+        # one's to show, for the run.
+        self.warning = self.warning or _set_aside.get(os.path.normcase(self.path))
+        if not os.path.exists(self.path):
+            return
+        try:
+            self.data = self.peek()
+        except OSError:   # being written this moment, or not readable: keep what's loaded
+            return
+        except ValueError:
+            stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            aside = f"{self.path}.broken-{stamp}"
+            try:
+                os.replace(self.path, aside)
+            except OSError:
+                return
+            self.data = {}
+            self.warning = (f"Your settings file was damaged; it was set aside as {os.path.basename(aside)} and the "
+                            "studio starts afresh: check Get set up")
+            _set_aside[os.path.normcase(self.path)] = self.warning
 
     def save(self):
-        """Write wcmods.json, with a _help line first saying what it is (docs/formats.md lists every key)."""
+        """Write wcmods.json, with a _help line first saying what it is (docs/formats.md lists every key). It's
+        written whole, then put in place, so nothing reading it (the studio, a command) sees half a file; only
+        while something else keeps it open past a few tries is it written in place (peek's readers take a
+        half-written one in their stride)."""
         ordered = {"_help": HELP, **{k: v for k, v in self.data.items() if k != "_help"}}
         self.data.clear()   # in place: whoever holds this dict keeps it
         self.data.update(ordered)
         os.makedirs(self.data_dir, exist_ok=True)
+        text = json.dumps(self.data, indent=2) + "\n"
+        part = self.path + ".part"
+        with open(part, "w", encoding="utf-8") as f:
+            f.write(text)
+        # On Windows the file can't be replaced while anything has it open (the studio reads it every few
+        # seconds, a virus scanner looks at it): tried again a moment later, then, still held, written in place.
+        for wait in (0,) + SAVE_RETRIES:
+            time.sleep(wait)
+            try:
+                os.replace(part, self.path)
+                return
+            except PermissionError:
+                pass
         with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
-            f.write("\n")
+            f.write(text)
+        try:
+            os.remove(part)
+        except OSError:
+            pass
 
     # ---- locations ----
     @property
@@ -212,6 +267,15 @@ def steam_elsewhere_text(steam, game_dir, fix=True):
 
 
 def game_running():
+    """Whether the game's process is running.
+
+    WCMODS_FAKE_RUNNING stands in for the answer: exactly "1" (running) or "0" (not); any other value is
+    ignored. It's a switch for testing (the studio's end-to-end tests set it), honoured only while WCMODS_DATA
+    is set too. That doesn't make it test-only: a player may set WCMODS_DATA to keep their files elsewhere,
+    and then WCMODS_FAKE_RUNNING would work for them as well. wcmods never sets it, and it has no use in play."""
+    fake = os.environ.get("WCMODS_FAKE_RUNNING")
+    if fake in ("0", "1") and os.environ.get(DATA_ENV):   # in (...): "1 " or "true" don't count
+        return fake == "1"
     try:
         out = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {EXE_NAME}", "/NH"],
                              capture_output=True, text=True, timeout=15).stdout

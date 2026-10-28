@@ -1,0 +1,7 @@
+/* The Characters page: the cat's face in its clearing (ShadowClan's, from styles.css) and its colour slots.
+   Linked by app.js when the page opens; .split, .pick, .cat-head and the swatches are in styles.css. */
+.face-box { width: 150px; flex: none; border-radius: 14px; background: radial-gradient(120% 90% at 50% 30%, var(--stage), var(--stage-2)); box-shadow: inset 0 0 0 1px var(--line); padding: 8px; position: relative; }
+.face-box svg { display: block; width: 100%; height: auto; }
+.face-box::after { content: ""; position: absolute; right: 8px; bottom: 6px; width: 20px; height: 20px; opacity: .3; background: var(--clan); pointer-events: none; -webkit-mask: var(--paw) center / contain no-repeat; mask: var(--paw) center / contain no-repeat; }   /* a faint paw in the corner of the clearing */
+.colour-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px 14px; }
+@media (forced-colors: active) { .face-box::after { forced-color-adjust: none; background: CanvasText; opacity: 1; } }   /* the paw keeps drawing in Windows' high contrast themes */

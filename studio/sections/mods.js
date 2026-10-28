@@ -336,7 +336,8 @@ export default {
     }
 
     function modCard(m, state) {
-      const toggle = el("input", { type: "checkbox", role: "switch", class: "switch", id: `mod-on-${m.id}`, checked: m.enabled, "aria-label": m.name });
+      // A mod whose mod.json can't be read is listed, off, with what's wrong; it can't be switched on until that's fixed.
+      const toggle = el("input", { type: "checkbox", role: "switch", class: "switch", id: `mod-on-${m.id}`, checked: m.enabled, "aria-label": m.name, disabled: !!m.problem });
       toggle.addEventListener("change", () => switchMod(m, toggle.checked));
       const flags = [];
       if (m.menu_page) flags.push(el("span", { class: "chip", title: "It has a page in the in-game mod menu (Insert)", text: "Page in the mod menu" }));

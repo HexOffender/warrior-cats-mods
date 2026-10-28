@@ -3,21 +3,112 @@
 // A section is an ES module whose default export is:
 //   { title: "My page", mount(root, wc) { ...; return { unmount() {} } } }
 // `wc` is this module. See docs/SDK.md for a worked example.
+//
+// What a page gets from here:
+//   api            GET/POST/PUT/PATCH/DELETE on the studio's API, with the page's token. An error is an Error
+//                  whose message is a sentence for the player; e.data is the answer's JSON, e.code is "gone"
+//                  when the studio's server isn't there and "token" when it refuses this page. The studio gets
+//                  a new token each time it starts: a request it refuses for the token reads the new one from
+//                  the studio's page and is made once more, so a page from before a restart keeps working.
+//   reconnect()    whether the studio answers, taking up its token when it does (the shell's way back after
+//                  "server-gone", which is said once a request couldn't reach it twice, a few seconds apart).
+//   anyDirty(), dirtyTargets()   whether any page has unsaved changes, and which bars have them: the shell
+//                  never reloads the page or restarts the studio over them.
+//   modTarget      the "Editing mod" bar a page saves its file through (below). It keeps unsaved work: the
+//                  browser asks before the page closes, switching mods and importing a file ask first (save
+//                  them, go on without, or stay), and refresh() re-reads the mod list without reloading the
+//                  file while the page has unsaved changes. What would keep the saved file out of the game
+//                  shows under the bar until the next save that's fine.
+//                  A save doesn't read the file back; onSaved(value) hears what was saved, and
+//                  settleNew(list, saved) keeps the ids of the new entries it held.
+//   installedEvent(target, fn)   bus.on("installed", fn) that skips fn while target has unsaved changes: for
+//                  a page that reloads its file after an Apply (wc.bus.on("installed", ...) runs regardless).
+//   openHelp(page) opens a page of the guide (docs/guide/<page>.md) in the help panel; no page, the index.
+//   bus            events between pages: "mods-changed" (a mod was made, changed, switched or removed),
+//                  "installed" (an Apply, Play or Check finished; the manifest), "sections-changed" (the
+//                  side bar's pages may have changed), "focus" (the window came back).
+//   el, clear, toast, announce, confirmButton, codePanel, copy, color, input, getPath, saveFile, docLink.
 
-const TOKEN = document.querySelector('meta[name="wc-token"]')?.content || "";
+// The page's token: from its <meta> at first, then whatever the studio's page says after a restart (reconnect).
+let token = document.querySelector('meta[name="wc-token"]')?.content || "";
 
 // ---------- API ----------
-async function call(method, path, body) {
-  const res = await fetch("/api" + path, {
-    method,
-    headers: { "X-WC-Token": TOKEN, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  let data = null;
-  try { data = await res.json(); } catch (e) { /* empty body */ }
-  if (!res.ok) throw new Error((data && data.error) || `${res.status} ${res.statusText}`);
-  return data;
+// One request to the studio's server. Its failures are told apart for the shell: the server not answering at
+// all (its window was closed, or it's restarting) and a token it refuses.
+async function request(path, options) {
+  let res;
+  try {
+    res = await fetch("/api" + path, options);
+  } catch (e) {
+    const err = new Error("Clan Mod Studio's window was closed, or it's restarting");
+    err.code = "gone";
+    unsure();
+    throw err;
+  }
+  return res;
 }
+async function readJson(res) {
+  try { return await res.json(); } catch (e) { return null; }   // an empty answer, or not JSON
+}
+const refusedToken = (res, data) => res.status === 403 && !!data && /studio token/.test(data.error || "");
+function failed(res, data) {
+  const err = new Error((data && data.error) || `${res.status} ${res.statusText}`);
+  err.status = res.status;
+  err.data = data;
+  if (refusedToken(res, data)) {
+    err.code = "token";
+    bus.emit("token-lost");
+  }
+  return err;
+}
+// A request with the page's token; a refusal for the token (the studio restarted since this page was made) is
+// met by reading the new token from the studio's page and asking once more. A refused request did nothing, so
+// asking again never does a thing twice. Throws a failed() Error for any other answer that isn't ok.
+async function answer(path, options = {}) {
+  const ask = () => request(path, { ...options, headers: { ...(options.headers || {}), "X-WC-Token": token } });
+  let res = await ask();
+  if (res.ok) return res;
+  let data = await readJson(res);
+  if (refusedToken(res, data) && await reconnect()) {
+    res = await ask();
+    if (res.ok) return res;
+    data = await readJson(res);
+  }
+  throw failed(res, data);
+}
+async function call(method, path, body) {
+  const json = body !== undefined ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+  return readJson(await answer(path, { method, ...json }));
+}
+
+// Whether the studio answers: its page is asked for (this page's own origin, nowhere else), and the token in it
+// taken up, so the API goes on working with a studio that restarted.
+export async function reconnect() {
+  let res;
+  try { res = await fetch("/", { cache: "no-store", credentials: "same-origin" }); } catch (e) { return false; }
+  if (!res.ok) return false;
+  if (res.url && typeof location !== "undefined" && new URL(res.url, location.href).origin !== location.origin) return false;
+  let html = "";
+  try { html = await res.text(); } catch (e) { return false; }
+  const m = /<meta name="wc-token" content="([\w-]+)">/.exec(html);
+  if (!m) return false;
+  token = m[1];
+  return true;
+}
+// A request that couldn't reach the studio: once may be a blip (the computer waking, a moment's load), so the
+// studio is asked again a few seconds later, and only when that fails too is "server-gone" said.
+export const RECHECK_MS = 3000;
+let rechecking = false;
+function unsure() {
+  if (rechecking) return;
+  rechecking = true;
+  setTimeout(async () => {
+    const up = await reconnect();
+    rechecking = false;
+    if (!up) bus.emit("server-gone");
+  }, RECHECK_MS);
+}
+
 export const api = {
   get: p => call("GET", p),
   post: (p, b = {}) => call("POST", p, b),
@@ -26,20 +117,11 @@ export const api = {
   del: p => call("DELETE", p),
   // Send a file as the request's body (a downloaded mod's .zip, a picture); the answer is JSON.
   async upload(p, file, type = "application/zip") {
-    const res = await fetch("/api" + p, { method: "POST", headers: { "X-WC-Token": TOKEN, "Content-Type": type }, body: file });
-    let data = null;
-    try { data = await res.json(); } catch (e) { /* empty body */ }
-    if (!res.ok) throw new Error((data && data.error) || `${res.status} ${res.statusText}`);
-    return data;
+    return readJson(await answer(p, { method: "POST", headers: { "Content-Type": type }, body: file }));
   },
   // Fetch a file the API makes (a mod as a .zip) and hand it to the browser to save.
   async download(p) {
-    const res = await fetch("/api" + p, { headers: { "X-WC-Token": TOKEN } });
-    if (!res.ok) {
-      let data = null;
-      try { data = await res.json(); } catch (e) { /* not JSON */ }
-      throw new Error((data && data.error) || `${res.status} ${res.statusText}`);
-    }
+    const res = await answer(p);
     const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "download";
     const url = URL.createObjectURL(await res.blob());
     const a = el("a", { href: url, download: name });
@@ -52,11 +134,7 @@ export const api = {
   // A picture the API makes (an item's icon) as a URL for an <img>; kept, so asking again is free.
   async image(p) {
     if (!images.has(p)) {
-      images.set(p, (async () => {
-        const res = await fetch("/api" + p, { headers: { "X-WC-Token": TOKEN } });
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        return URL.createObjectURL(await res.blob());
-      })());
+      images.set(p, (async () => URL.createObjectURL(await (await answer(p)).blob()))());
       images.get(p).catch(() => images.delete(p));
     }
     return images.get(p);
@@ -96,6 +174,28 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export const DOCS = "https://github.com/HexOffender/warrior-cats-mods/blob/main/";
 export const docLink = (path, text) => el("a", { href: DOCS + path, target: "_blank", rel: "noopener", text: text || path });
 export const clear = node => { node.textContent = ""; return node; };
+
+// The head of a page: an eyebrow (its group, or what it touches), the title, the lede (what this page changes
+// in the game, in the player's words) and, when a doc explains the page, a help link: help is the doc's path,
+// or { path, text }. It is the markup styles.css styles as .section-head, so a page that builds its own head
+// the same way looks the same; pages adopt it one by one.
+// help as "help:<page>" (or { page, text }) opens that page of the guide (docs/guide/<page>.md) in the help
+// panel instead; a doc's path opens it on GitHub, as before.
+export function pageHead({ eyebrow, title, lede, help } = {}) {
+  let link = null;
+  if (help) {
+    const page = typeof help === "string" ? (help.startsWith("help:") ? help.slice(5) : null) : help.page || null;
+    const text = (typeof help === "object" && help.text) || "How this works";
+    link = page !== null
+      ? el("button", { class: "btn link", type: "button", text, onclick: () => openHelp(page) })
+      : docLink(typeof help === "string" ? help : help.path, text);
+  }
+  return el("div", { class: "section-head" },
+    eyebrow ? el("span", { class: "eyebrow", text: eyebrow }) : null,
+    el("h1", { text: title || "" }),
+    lede ? el("p", { class: "note", text: lede }) : null,
+    link);
+}
 
 // Say something to screen readers, without showing it: politely, or at once for a problem. The live
 // regions are in index.html; the text goes in a moment after they're emptied, so saying the same thing
@@ -221,6 +321,15 @@ export const bus = {
   on(evt, fn) { (listeners[evt] ||= []).push(fn); return () => { listeners[evt] = listeners[evt].filter(f => f !== fn); }; },
   emit(evt, data) { for (const fn of listeners[evt] || []) { try { fn(data); } catch (e) { console.error(e); } } },
 };
+// bus.on("installed", fn) for a page that reloads its file after an Apply: fn is skipped while the page's
+// modTarget has unsaved changes, so an Apply from the top bar can't take them away. Returns the unsubscribe.
+export function installedEvent(target, fn) {
+  return bus.on("installed", d => { if (!target || !target.dirty) fn(d); });
+}
+// Open a page of the guide (docs/guide/<page>.md) in the help panel; with no page, the guide's index.
+export function openHelp(page = "") {
+  bus.emit("help", page);
+}
 
 // ---------- colours (sRGB hex in files, linear floats in the engine) ----------
 const hexRe = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -266,6 +375,24 @@ export const color = {
   mood: (hex, name) => rgbToHex(hslToRgb(MOODS[name].fn(rgbToHsl(hexToRgb(hex))))),
 };
 
+// ---------- unsaved work ----------
+// Every Editing-mod bar with unsaved changes, while it's on the page: the shell asks before restarting the
+// studio, never reloads the page over them, and the browser asks before the page closes.
+const unsaved = new Set();
+export const dirtyTargets = () => [...unsaved].filter(t => t.element.isConnected);
+export const anyDirty = () => dirtyTargets().length > 0;
+if (typeof window !== "undefined" && window.addEventListener) {
+  window.addEventListener("beforeunload", e => { if (anyDirty()) { e.preventDefault(); e.returnValue = ""; } });
+}
+
+// A page's new entries (marked _new) have ids that follow their names until they're saved; once they are,
+// quests and others may name them, so the ids stay. For modTarget's onSaved: `list` is the page's entries,
+// `saved` the list it just wrote; an entry added since isn't in it, and keeps following its name.
+export function settleNew(list, saved) {
+  const ids = new Set((saved || []).map(x => x && x.id));
+  for (const x of list) if (x && x._new && ids.has(x.id)) delete x._new;
+}
+
 // ---------- which mod a section edits ----------
 // Renders "Editing mod: [select] [New mod] [Save]". onLoad(obj|null, modId) fires when the target changes;
 // call target.save(obj) to write the file. Every page starts on the mod last chosen on any page, else on one
@@ -273,11 +400,15 @@ export const color = {
 // The mod a page saves its file into, with a Share part: the mod's details (its name, author, version and
 // description, which a shared .zip carries), Save as .zip for others to add on their Mods page, and the
 // page's file on its own, out (Export) and in (Import). share: false leaves the Share part out.
-export function modTarget({ file, onLoad, getValue, share = true }) {
+// A save doesn't read the file back: the page already holds what it saved, and a change made while it saved
+// stays (and stays unsaved). onSaved(value), when given, hears what was saved: a page whose new entries' ids
+// follow their names until they're saved settles them there (settleNew).
+export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
   const defaultId = "my-mods", defaultName = "My mods";
   const key = "wc-target";   // the mod last chosen, on whichever page
   const kind = file.replace(".json", "");
   let mods = [], current = null, dirty = false;
+  let edits = 0;   // changes made on the page, counted: a save knows whether one came while it was saving
   const select = el("select", { "aria-label": `Mod that stores ${file}` });
   const status = el("span", { class: "dirty" });
   const saveBtn = el("button", { class: "btn primary", text: "Save to mod" });
@@ -287,11 +418,20 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
   newBox.append(newId, el("button", { class: "btn small", text: "Create", onclick: () => create(newId.value.trim()) }));
   const bar = el("div", { class: "target" },
     el("span", { class: "lbl", text: "Editing mod" }), select, newBtn, newBox, el("span", { style: { flex: "1" } }), status, saveBtn);
+  // What would keep the saved file out of the game: said under the bar until a save that's fine.
+  const problems = el("div", { class: "problems", role: "alert", hidden: true });
+  // The choice when switching mods with unsaved changes.
+  const ask = el("div", { class: "banner switch-ask", role: "group", "aria-label": "Unsaved changes", hidden: true });
   const shareBox = share ? shareCard() : null;
-  const box = shareBox ? el("div", { class: "stack" }, bar, shareBox.element) : bar;
+  const box = el("div", { class: "stack" }, bar, problems, ask, shareBox ? shareBox.element : null);
+  const me = { element: box, file };   // in `unsaved` while this bar has unsaved changes
 
-  async function refresh(selectId) {
+  const nameOf = id => (mods.find(m => m.id === id) || {}).name || (id === defaultId ? defaultName : id);
+  const listed = id => [...select.options].some(o => o.value === id);
+  // The mod list, read again, with the choice kept: for refresh() and for "mods-changed" from any page.
+  async function relist() {
     mods = await api.get("/mods");
+    const was = select.value;
     clear(select);
     const withFile = [];
     for (const m of mods) {
@@ -304,6 +444,14 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
     for (const { m, has } of withFile) {
       select.append(el("option", { value: m.id, text: `${m.name}${has ? "" : " (no " + file + " yet)"}${m.enabled ? "" : " · off"}` }));
     }
+    // A mod removed while this page edits it stays chosen until the page is saved (which makes it again) or switched.
+    if (dirty && current && !listed(current)) select.append(el("option", { value: current, text: `${nameOf(current)} (removed)` }));
+    if (was && listed(was)) select.value = was;
+  }
+  // Read the mod list again and open the chosen mod's file (selectId, else the one last chosen). With unsaved
+  // changes on the page, the list is read but the file isn't loaded again, so nothing is lost.
+  async function refresh(selectId) {
+    await relist();
     let pick = selectId;
     if (!pick) {
       try {
@@ -313,11 +461,16 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
         localStorage.removeItem(old);
       } catch (e) { /* storage blocked */ }
     }
-    if (!pick || ![...select.options].some(o => o.value === pick)) pick = select.options[0]?.value;
+    if (dirty && current) {
+      select.value = current;
+      return;
+    }
+    if (!pick || !listed(pick)) pick = select.options[0]?.value;
     select.value = pick;
     await load(pick);
   }
   async function load(id) {
+    const switching = id !== current;
     current = id;
     try { localStorage.setItem(key, id); } catch (e) { /* storage blocked */ }
     let obj = null;
@@ -326,18 +479,17 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
       if (r.exists) { try { obj = JSON.parse(r.text); } catch (e) { toast(`${file} in ${id} isn't valid JSON`, "bad"); } }
     }
     setDirty(false);
+    if (switching) showProblems([]);   // what's wrong with this mod's file stays in view through a reload of it
     shareBox?.show(mods.find(m => m.id === id));
     onLoad(obj, id);
   }
   // Saving to a mod means you want it applied: create it if it's new. A mod that exists but is off
   // is turned on only after its file has been written, so a failed save can't enable old content.
   async function ensureMod(id) {
-    const existing = mods.find(m => m.id === id);
-    if (!existing) {
+    if (!mods.find(m => m.id === id)) {
       await api.post("/mods", { id, name: id === defaultId ? defaultName : undefined, enabled: true });
       bus.emit("mods-changed");
     }
-    return existing;
   }
   async function create(id) {
     if (!id) return;
@@ -345,36 +497,99 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
       await api.post("/mods", { id, enabled: true });
       bus.emit("mods-changed");
       newBox.hidden = true; newId.value = "";
+      if (dirty) {   // made, but the page's unsaved work isn't dropped for it: the same choice as switching
+        await relist();
+        toast(`Created mod ${id}`);
+        askSwitch(id);
+        return;
+      }
       await refresh(id);
       toast(`Created mod ${id}`);
     } catch (e) { toast(e.message, "bad"); }
   }
-  function setDirty(v) { dirty = v; status.textContent = v ? "Unsaved changes" : ""; }
+  function setDirty(v) {
+    if (v) edits++;
+    dirty = v;
+    status.textContent = v ? "Unsaved changes" : "";
+    if (v) unsaved.add(me); else unsaved.delete(me);
+  }
+  function showProblems(list) {
+    clear(problems);
+    problems.hidden = !list.length;
+    if (list.length) problems.append(el("strong", { text: "Saved, but it can't go in the game yet: " }), el("span", { text: list.join(" ") }));
+  }
   // Writes the page's file into the mod; true when it's saved. quiet: no toast (Save as .zip says what it did).
   async function save(quiet = false) {
     try {
       const value = getValue();
       if (value === undefined) return false;   // the page said what's wrong
-      const existing = await ensureMod(current);
+      const at = edits;
+      await ensureMod(current);
       const r = await api.put(`/mods/${encodeURIComponent(current)}/file/${file}`, { text: JSON.stringify(value, null, 2) });
-      setDirty(false);
-      if (r && r.problem) {
-        toast(`Saved, but it can't go in the game until this is sorted: ${r.problem}`, "bad");
-      } else if (existing && !existing.enabled) {
+      setDirty(edits !== at);   // a change made while it saved is still to be saved
+      if (onSaved) onSaved(value);
+      const found = (r && r.problems) || (r && r.problem ? [r.problem] : []);
+      showProblems(found);
+      // Whether the mod is on is read afresh: another page may have switched it since this list was made.
+      mods = await api.get("/mods");
+      const now = mods.find(m => m.id === current);
+      if (found.length) {
+        toast(`Saved, but it can't go in the game yet: ${found[0]}`, "bad");
+      } else if (now && !now.enabled && !now.problem) {
         await api.patch(`/mods/${encodeURIComponent(current)}`, { enabled: true });
-        if (!quiet) toast(`Saved and turned on ${existing.name}. Apply to game to use it.`);
+        if (!quiet) toast(`Saved and turned on ${now.name}. Apply to game to use it.`);
       } else if (!quiet) {
         toast(`Saved ${file} in ${current}. Apply to game to use it.`);
       }
       bus.emit("mods-changed");
-      await refresh(current);
+      // The list again (the mod may be new, or on now), not the file: the page holds what it saved.
+      await relist();
+      if (listed(current)) select.value = current;
+      shareBox?.show(mods.find(m => m.id === current));
       return true;
     } catch (e) { toast(e.message, "bad"); return false; }
   }
+  // What would replace unsaved changes (switching mods, importing a file) asks first, in the bar: save them to
+  // the mod they're for and go on, go on and leave them, or stay (focus goes back to `back`). go(saved) goes on.
+  function hideAsk() { ask.hidden = true; clear(ask); }
+  function askFirst(said, saveLabel, goLabel, go, back = select) {
+    clear(ask).append(el("strong", { text: "Unsaved changes" }), el("span", { text: said }),
+      el("div", { class: "row" },
+        el("button", { class: "btn primary", text: saveLabel, onclick: async () => {
+          if (!await save(true)) return;   // the save said what's wrong; the page stays
+          hideAsk();
+          await go(true);
+        } }),
+        el("button", { class: "btn danger", text: goLabel, onclick: async () => {
+          hideAsk();
+          setDirty(false);
+          await go(false);
+        } }),
+        el("button", { class: "btn ghost", text: "Stay", onclick: () => { hideAsk(); back.focus(); } })));
+    ask.hidden = false;
+    announce(said);
+    ask.querySelector("button").focus();
+  }
+  // The select shows the current mod until that's decided.
+  function askSwitch(to) {
+    const from = nameOf(current), name = nameOf(to);
+    askFirst(`Unsaved changes in ${file}. Save them to ${from} before switching to ${name}, or switch and leave them behind?`,
+      "Save and switch", "Switch without saving", async saved => {
+        await load(to);
+        select.value = to;
+        if (saved) toast(`Saved to ${from} and switched to ${name}.`);
+      });
+  }
   select.addEventListener("change", async () => {
-    if (dirty) toast("Switched mods; unsaved changes were dropped");
-    await load(select.value);
+    const to = select.value;
+    if (to === current) return;
+    if (!dirty) { await load(to); return; }
+    select.value = current;
+    askSwitch(to);
   });
+  // Closing or reloading the page with unsaved changes: the browser asks first (the listener on `unsaved`, above).
+  // A mod made, renamed, switched or removed on another page shows here; the file isn't loaded again.
+  bus.on("mods-changed", () => { if (mods.length || current) relist().catch(() => { /* the next refresh says */ }); });
   newBtn.addEventListener("click", () => { newBox.hidden = !newBox.hidden; if (!newBox.hidden) newId.focus(); });
   saveBtn.addEventListener("click", () => save());
 
@@ -397,9 +612,15 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
       let obj;
       try { obj = JSON.parse(await f.text()); } catch (e) { toast(`${f.name} isn't a ${file} (it isn't valid JSON)`, "bad"); return; }
       if (!obj || typeof obj !== "object" || Array.isArray(obj)) { toast(`${f.name} isn't a ${file}`, "bad"); return; }
-      onLoad(obj, current);
-      setDirty(true);
-      toast(`Loaded ${f.name}. Save to mod to keep it in ${select.selectedOptions[0]?.textContent || current}.`);
+      const use = () => {
+        onLoad(obj, current);
+        setDirty(true);
+        toast(`Loaded ${f.name}. Save to mod to keep it in ${nameOf(current)}.`);
+      };
+      if (!dirty) { use(); return; }
+      // It would replace what's on the page: the same question as switching mods.
+      askFirst(`Unsaved changes in ${file}. Save them to ${nameOf(current)} before loading ${f.name}, or load it and leave them behind?`,
+        "Save and load", "Load without saving", async () => use(), importBtn);
     });
     const saveDetails = el("button", { class: "btn small", text: "Save details", onclick: async () => {
       try {
@@ -449,7 +670,7 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
     return { element, show };
   }
   return { element: box, refresh, markDirty: () => setDirty(true), save: () => save(), get current() { return current; },
-           get mods() { return mods; } };
+           get mods() { return mods; }, get dirty() { return dirty; } };
 }
 
 export function codePanel(title) {

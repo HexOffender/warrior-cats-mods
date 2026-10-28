@@ -114,13 +114,13 @@ def play(ctx, log=print, force=False):
     if game_running():
         raise RuntimeError("the game is already running")
     found = modlib.discover(ctx.mods_root)
-    applied = False
+    applied, manifest = False, None
     if pipeline.pending(cfg, found)["any"] or pipeline.install_outdated(cfg):
         log("applying your mods first:")
         manifest = pipeline.build(cfg, found, ctx.build_dir, log)
         pipeline.install(cfg, ctx.build_dir, ctx.backups, log, force=force)
         applied = True
-        for w in manifest["warnings"]:   # Apply's drawer lists them from the manifest; Play's has only this log
+        for w in manifest["warnings"]:   # the studio's drawer sums them up from the manifest; the log has them too
             log(f"warning: {w}")
     with_remaps = remaps(ctx)
     os.startfile(f"steam://rungameid/{STEAM_APP_ID}")
@@ -130,9 +130,10 @@ def play(ctx, log=print, force=False):
         log(f"warning: {steam_elsewhere_text(steam, cfg.game_dir)}")
     if with_remaps:
         log("some of your remaps only work with the old key remapper, which is deprecated (what the game reads "
-            "itself, such as movement and the camera, or every remap without UE4SS): start the game with "
-            "Play with key remaps.bat for them")
-    return {"applied": applied, "remaps": with_remaps}
+            "itself, such as movement and the camera, or every remap without the script loader): start the game "
+            "with Play with key remaps.bat for them")
+    # The manifest goes back too, so the studio's drawer can say what went in (and keep its warnings in view).
+    return {"applied": applied, "remaps": with_remaps, "manifest": manifest}
 
 
 # ---------- a mod's .zip dropped on the launcher ----------

@@ -89,7 +89,18 @@ closes.
 - **Switch mods on and off:** a mod that needs another turns that one on too, and turning off a mod
   that others need asks first.
 - **Play** (top right): puts what's changed in the game, then starts it. Apply to game does just the
-  first part. Both need the game closed, and a banner lists what isn't in the game yet.
+  first part. Both need the game closed, and a banner lists what isn't in the game yet. While they
+  work, the panel at the bottom right shows the log as it comes, and ends with a line saying what
+  happened in plain words (which mods went in, or what kept one out); after Play it closes by itself
+  unless there's a warning. **Last apply** opens the last one again (it's `last-apply.log` in your
+  files' folder). If some mods can't be made ready, nothing goes in until you fix or switch them off,
+  or press **Apply the rest anyway**.
+- **Help** (top right) opens the guide in a panel: how the studio works, your mods folder, saving,
+  applying, the log, and where your files are ([docs/guide/](docs/guide/README.md)).
+- **If Clan Mod Studio is updated while it's open**, "Restart the studio" appears at the top: press it,
+  and a fresh studio opens in a new window while the page comes back by itself (it waits until your
+  changes are saved). If the studio's black window is closed, the page says so and carries on when you
+  open Clan Mod Studio again, with anything unsaved still on it.
 - **The rest:** each mod's More has its priority, its folder, Save as .zip (to share it) and Remove.
 - **Mod packs**, the next page: a set of mods shared and played together as one experience (a story
   with its cats, quests and items, the colours and names that suit it). Make one from your mods; its
@@ -99,7 +110,11 @@ closes.
   code, your save backups, removed mods (a removed or replaced mod is kept in `backups/mods/`, and
   Put it back does that), "Take all mods out of the game", and starting an empty mod of your own.
 
-The pages under **Make mods** are for making your own; each edits a file in a mod folder:
+The pages under **Make mods** are for making your own; each edits a file in a mod folder. **Save to
+mod** reads the file as Apply first does and says under the Editing mod bar what in it would keep it out
+of the game; what only shows once the mods are put together (a table's rows and columns, a model or a
+picture, two mods changing the same thing) is still found at Apply. The page asks before you switch
+mods, import a file over your changes or close it with unsaved changes.
 
 | Page | What you change | Stored as | Reaches the game through |
 |---|---|---|---|
