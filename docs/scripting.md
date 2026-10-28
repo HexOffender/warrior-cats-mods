@@ -240,15 +240,17 @@ end)
 | `ground` | `false` puts it exactly at `at`, not on the ground below |
 | `colours` | `fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears` as `"#rrggbb"`; the rest stay the game's |
 | `eyes`, `size` | An iris colour slot, as in `palette.json`, and the cat's size (the game's are about 0.4–1.1) |
+| `look`, `slots` | Its shape, as in `cats.json`: `{ body = 6, fur = 2, tail = 7, ears = 3, eyes = 1, whiskers = 4, face = 5, pattern = 12, marking = 3 }` (0–9, pattern and marking 0–20); and the colour slots it wears, `{ fur = 9, pattern = 4, marking = 0 }`. What they leave out, and the eye colour without `eyes`, is made up each time it's spawned |
 | `prefix`, `suffix` | Name IDs (`"STR_CAT_NAME1"`, `"_PAW"`), for the name the game itself knows it by |
 | `npc:valid()`, `npc:actorOrNil()` | Whether it's in the world now, and its actor |
 | `npc:location()`, `npc:distance()`, `npc:near(cm)` | Where it is; how far your cat is; whether your cat is within `cm` (300) |
 | `npc:face(target)`, `npc:moveTo(x, y, z)`, `npc:remove()` | Turn to a place or actor (your cat with none); move it, onto the ground there; take it away for good |
 | `Game.npcs.spot(cm, side)` | A place beside your cat with room for a cat (220 cm away, to its front left by default), and a yaw facing your cat: `local at, yaw = Game.npcs.spot()` |
 
-Move a cat with `npc:moveTo` rather than removing it and spawning it again: the game chooses a new
-cat's patterns itself (wcmods puts back only the colours), so a new one can look different. That also
-happens when the game unloads the cat and wcmods spawns it again.
+Move a cat with `npc:moveTo` rather than removing it and spawning it again: a new cat's look is made up
+again (all of it, or what its `look` and `slots` leave out), so a new one can look different. That also
+happens when the game unloads the cat and wcmods spawns it again. Give it a whole `look`, `slots` and
+`eyes` and it looks the same every time.
 
 `Game.trace(from, to)` gives where a straight line first hits something, and `Game.ground(x, y, z)`
 the height of the ground below a place.

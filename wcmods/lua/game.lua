@@ -1629,16 +1629,27 @@ function Cat:stopAnimation(blend) return Game.anims.stop(self.actor, blend) end
 
 -- ===================================================================================== cats of a mod's own
 -- A cat of a mod's own, standing in the world: one of the game's clan cats (its "filler" class) with the
--- colours, eyes, size and name IDs a mod gives it. wcmods keeps it where it was put: it's spawned again
--- when the game unloads it (a level change, a far-off area), and its colours go back on when the game
--- sets it up again.
+-- colours, eyes, size, look and name IDs a mod gives it. wcmods keeps it where it was put: it's spawned
+-- again when the game unloads it (a level change, a far-off area), with the same look, and its colours go
+-- back on when the game sets it up again.
 --   local npc = Game.npcs.spawn({ at = { -60040, -200, 813 }, yaw = 180, size = 0.9, eyes = 15,
---       colours = { fur = "#8c919e", pattern = "#33363f", markings = "#f2f2f7" } })
+--       colours = { fur = "#8c919e", pattern = "#33363f", markings = "#f2f2f7" },
+--       look = { body = 6, tail = 7, pattern = 12 }, slots = { fur = 9 } })
 --   if npc:near(300) then ... end   -- your cat is within 3 m
 Game.npcs = {}
 local NPC_CLASS = "/Game/Gameplay/Blueprints/Quest/Givers/BP_Quest_Filler.BP_Quest_Filler_C"
 local NPC_PARAMS = { fur = "Fur Color", pattern = "Pattern Mask Color", markings = "Markings Mask Color",
                      nose = "Nose Color", paws = "Paws Color", whiskers = "Whiskers Color", ears = "Ears Color" }
+-- A look's parts as the fields of the cat's customisation data each sets (catcolours.LOOK: the body sets
+-- the fur's shape to match, as the cat maker does), the highest each takes (catcolours.LOOK_MAX, 9 for the
+-- rest), and its colour slots' fields (catcolours.SLOTS) with the highest a made-up one takes (coats past
+-- 19 are the Feral Edition's).
+local NPC_LOOK = { body = { "BodyValue", "FurIdx" }, fur = { "FurValue" }, tail = { "TailIdx" }, ears = { "EarIdx" },
+                   eyes = { "EyeValue" }, whiskers = { "WhiskerValue" }, face = { "FaceValue" },
+                   pattern = { "PatternIdx" }, marking = { "MarkingIdx" } }
+local NPC_LOOK_MAX = { pattern = 20, marking = 20 }
+local NPC_SLOTS = { fur = "FurColorIdx", pattern = "Pattern01ColorIdx", marking = "Pattern02ColorIdx" }
+local NPC_SLOTS_MAX = { fur = 19, pattern = 24, marking = 24 }
 local NPC_MESHES = { "SkeletalMeshComponent", "Fur", "Tail", "Ears" }
 local npcs = {}
 local Npc = {}
@@ -1715,6 +1726,21 @@ local function paintNpc(n)
     return changed
 end
 
+-- A cat's whole look for one spawn, as its customisation data's fields: the parts and slots it was given,
+-- and the rest made up (each spawn anew, as the game does). The game keeps every field of DefaultCustomData
+-- once bOverrideColors is set, so one left out would be 0, the same for every cat.
+local function npcLook(n)
+    local out = {}
+    for part, fields in pairs(NPC_LOOK) do
+        local v = n.look[part] or math.random(0, NPC_LOOK_MAX[part] or 9)
+        for _, field in ipairs(fields) do out[field] = v end
+    end
+    for part, field in pairs(NPC_SLOTS) do out[field] = n.slots[part] or math.random(0, NPC_SLOTS_MAX[part]) end
+    local eye = n.eyes or math.random(0, 24)
+    out.EyeLeftColorIdx, out.EyeRightColorIdx = eye, eye
+    return out
+end
+
 -- Put a cat's feet (its body's origin) on the ground at height g: the game's cats don't fall, so one
 -- placed at another cat's middle, or above a slope, would float.
 local function standOn(a, g)
@@ -1755,6 +1781,12 @@ local function spawnNpc(n)
         if n.size then d.CatSize = n.size end
         if n.prefix then d.PrefixNameId = n.prefix end
         if n.suffix then d.SuffixNameId = n.suffix end
+        -- A look of its own: the game makes up a filler's look as it sets it up, unless it's told to keep
+        -- this one (seen in game: shape, pattern and colour slots all kept; changed later, they aren't drawn).
+        if n.look then
+            for field, v in pairs(npcLook(n)) do d[field] = v end
+            d.bOverrideColors = true
+        end
     end)
     pcall(function() gs:FinishSpawningActor(a, xf, 0) end)
     pcall(standOn, a, g)
@@ -2004,10 +2036,13 @@ end
 
 -- A new cat of the mod's own at `at` ({x, y, z} or {X =, Y =, Z =}), facing `yaw` degrees. Options:
 -- colours = {fur, pattern, markings, nose, paws, whiskers, ears} as "#rrggbb"; eyes = an iris colour
--- slot (0-24, as in palette.json); size (the game's cats are about 0.4-1.1); prefix and suffix = name
--- IDs ("STR_CAT_NAME1", "_PAW") for the game's own name for it; level = the level it stands in
--- ("L_WorldMap_01_P" is the forest; by default the one it first appears in). Returns the npc, which
--- appears whenever you're in its level.
+-- slot (0-24, as in palette.json); size (the game's cats are about 0.4-1.1); look = its shape, as
+-- cats.json's: {body, fur, tail, ears, eyes, whiskers, face} each 0-9, {pattern, marking} 0-20; slots =
+-- {fur, pattern, marking}, the colour slots it wears. Without look and slots the game makes up its look
+-- each time the cat is spawned; with them, what they leave out (and its eye colour, without eyes) is made
+-- up each time instead. prefix and suffix = name IDs ("STR_CAT_NAME1", "_PAW") for the game's own name for
+-- it; level = the level it stands in ("L_WorldMap_01_P" is the forest; by default the one it first appears
+-- in). Returns the npc, which appears whenever you're in its level.
 function Game.npcs.spawn(opts)
     opts = opts or {}
     local at = opts.at or {}
@@ -2019,6 +2054,15 @@ function Game.npcs.spawn(opts)
     for part, hex in pairs(opts.colours or {}) do
         local param, c = NPC_PARAMS[part], linearColour(hex)
         if param and c then n.paint[param] = c end
+    end
+    if opts.look or opts.slots then
+        n.look, n.slots, n.eyes = {}, {}, math.tointeger(opts.eyes)
+        for part, v in pairs(opts.look or {}) do
+            if NPC_LOOK[part] then n.look[part] = math.tointeger(v) end
+        end
+        for part, v in pairs(opts.slots or {}) do
+            if NPC_SLOTS[part] then n.slots[part] = math.tointeger(v) end
+        end
     end
     if opts.eyes then
         n.paint["IndexIrisColorCurveLeft"] = opts.eyes + 1      -- row 0 of the eye atlas is the eye's white
@@ -2088,9 +2132,8 @@ function Npc:face(target)
     self.yaw = math.deg(math.atan(to.Y - from.Y, to.X - from.X))
     return pcall(function() a:K2_SetActorRotation(Game.rotator(0, self.yaw, 0), false) end)
 end
--- Move it, and where it comes back to.
 -- Move it, and where it comes back to; it stands on the ground there. The same cat moves, so it keeps its
--- look (spawning it again lets the game choose its patterns again).
+-- look (spawning it again makes up again whatever its look and slots leave out).
 function Npc:moveTo(x, y, z)
     if type(x) == "table" then x, y, z = x.X or x[1], x.Y or x[2], x.Z or x[3] end
     self.at = { X = x, Y = y, Z = z }

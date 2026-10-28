@@ -11,10 +11,19 @@ npcs.json, the mod's cats:
           "id": "mossfoot", "name": "Mossfoot", "title": "Elder",
           "colours": { "fur": "#7a6a58", "pattern": "#4a3f33", "markings": "#d8cfc0" },
           "eyes": 6, "size": 0.8,
+          "look": { "body": 6, "fur": 2, "tail": 7, "ears": 3, "eyes": 1, "whiskers": 4, "face": 5,
+                    "pattern": 12, "marking": 3 },
+          "slots": { "fur": 9, "pattern": 4, "marking": 0 },
           "lines": ["The forest is yours, young one."]
         }
       ]
     }
+
+  Without "look" and "slots" the game makes up the cat's look each time it appears, as it does for its own
+  filler cats: its shape, pattern and colour slots ("colours" go on top). "look" fixes its shape, as
+  cats.json's does (catcolours.LOOK: body to face each one of the game's 10, pattern and marking one of
+  its 21), and "slots" its coat, pattern and marking colour slots, so it looks the same every time; a part
+  left out (and the eye colour, without "eyes") is made up again each time it appears.
 
   A cat with no "at" turns up beside your sandbox cat the first time it comes into the forest, and stays
   there for that cat; "at": [x, y, z] (with "yaw" and "level") puts it in one place for every cat. "lines"
@@ -49,6 +58,9 @@ Ids are a mod's own: a quest names the mod's own cats and quests. Keys starting 
 import json
 import re
 
+from .catcolours import LOOK, LOOK_MAX
+from .palettes import GAME_SLOTS
+
 FILES = ("npcs.json", "quests.json")
 FORMAT = 1
 SANDBOX_ID = "sandbox"   # the mod that runs them: its folder name, what a mod gives in "requires"
@@ -63,7 +75,10 @@ STEPS = ("talk", "collect", "visit")
 ITEM_ROOT = "Gameplay.Inventory."
 MAX_LINE, MAX_LINES, MAX_STEPS, MAX_COUNT = 400, 30, 40, 99
 
-NPC_KEYS = {"id", "name", "title", "colours", "eyes", "size", "at", "yaw", "level", "lines"}
+# A fixed look's colour slots: the coat's (the game's 25, which also pick its nose, paws, ears and whiskers) and
+# the pattern's and markings' (any slot: new ones a palette adds too).
+SLOTS = ("fur", "pattern", "marking")
+NPC_KEYS = {"id", "name", "title", "colours", "eyes", "size", "look", "slots", "at", "yaw", "level", "lines"}
 QUEST_KEYS = {"id", "title", "description", "giver", "after", "steps", "reward"}
 STEP_KEYS = {"do", "objective", "npc", "lines", "item", "count", "at", "level", "place", "radius"}
 
@@ -118,6 +133,28 @@ def _at(obj, where):
     return [round(n) for n in v]
 
 
+def _parts(obj, key, where):
+    """A cat's "look" or "slots": {part: number}, {} when it's left out (the game chooses)."""
+    v = obj.get(key)
+    if v is None:
+        return {}
+    known = LOOK if key == "look" else SLOTS
+    if not isinstance(v, dict):
+        raise ValueError(f"{where}: \"{key}\" should map parts ({', '.join(known)}) to numbers")
+    out = {}
+    for part, n in v.items():
+        if str(part).startswith("_"):
+            continue
+        if part not in known:
+            raise ValueError(f"{where}: \"{key}\" has no part {part} (it takes {', '.join(known)})")
+        top = LOOK_MAX.get(part, 9) if key == "look" else GAME_SLOTS - 1 if part == "fur" else None
+        if isinstance(n, bool) or not isinstance(n, int) or n < 0 or (top is not None and n > top):
+            raise ValueError(f"{where}: {key} {part} should be a whole number from 0"
+                             + (f" to {top}" if top is not None else " up"))
+        out[part] = n
+    return out
+
+
 def _id(obj, where):
     v = obj.get("id")
     if not isinstance(v, str) or not ID.match(v):
@@ -164,6 +201,10 @@ def npcs(raw):
             v = _number(npc, key, where, lo, hi, whole)
             if v is not None:
                 cat[key] = v
+        for key in ("look", "slots"):
+            parts = _parts(npc, key, where)
+            if parts:
+                cat[key] = parts
         at = _at(npc, where)
         if at:
             cat["at"] = at

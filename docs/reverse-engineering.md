@@ -1191,8 +1191,15 @@ Worked out on 2026-10-24 for `Game.npcs`, and checked in game with two cats.
 - **Spawning:** `BeginDeferredActorSpawnFromClass` and then `FinishSpawningActor` give a working cat
   with the body, fur, tail and ears.
   - The `DefaultCustomData` set in between keeps its `CatSize` and name IDs.
-  - Its colour and pattern indexes are replaced by others when the cat is set up.
-  - `RefreshShape` on its `MeshCustomizationComponent` doesn't change the colours.
+  - The rest of its look is made up when the cat is set up: the shape, pattern, markings and colour and
+    eye slots, all of it, whatever `DefaultCustomData` held.
+  - With `bOverrideColors` set in `DefaultCustomData`, the game keeps every field of it instead (seen on
+    2026-10-27): the tail, ears and fur meshes, the body's shape, the pattern and marking textures, and the
+    coat, pattern, marking and eye colours of the slots it names. A field left alone stays at its default,
+    0 for all of them (`CatSize` 0.4). That's how `Game.npcs.spawn`'s `look` and `slots` go on.
+  - Changed after the spawn, the look isn't drawn: written into `MeshCustomizationComponent.CustomData`,
+    `RefreshShape` moved the anim instance's shape values (`ABP_CatMaker`'s `BodyShapeValue` and the rest)
+    but kept the meshes, the pattern texture and the colours.
 - **Colours** are vector parameters on each part's dynamic material:
   - "Fur Color", "Pattern Mask Color", "Markings Mask Color", "Nose Color", "Paws Color" and
     "Whiskers Color", plus "Ears Color" on the ears.

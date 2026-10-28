@@ -452,6 +452,8 @@ class Studio:
             return {"account": doc.account, "data": doc.data, "save_time": mtime}
         if parts == ["cat"] and method == "GET":
             return self.cat_info()
+        if parts == ["cat", "options"] and method == "GET":
+            return self.look_options()
         if parts == ["packs"] and method == "GET":
             return packs.describe(cfg, self.mods())
         if parts == ["packs"] and method == "POST":
@@ -615,6 +617,17 @@ class Studio:
                                "current": {"slots": slots_now, "scars": scars_now, "look": look_now}})
         except LookupError:
             pass
+        options = self.look_options()
+        return {"current": current, "palette": options["palette"], "game_slots": options["game_slots"],
+                "feral_slots": options["feral_slots"], "parts": catcolours.PARTS,
+                "scars": {"current": scars, "types": catcolours.SCAR_TYPES},
+                "look": {"current": looks, "parts": options["parts"], "size": list(catcolours.SIZE[1:])},
+                "cats": others}
+
+    def look_options(self):
+        """What a cat's look can be, with no save needed: the colours each slot has with the enabled palettes
+        (recoloured slots and new slots palettes add; the rest are the game's tables) and the look's parts
+        with the highest each takes."""
         enabled = []
         for m in self.mods():
             path = os.path.join(m.folder, "palette.json")
@@ -626,12 +639,8 @@ class Studio:
         merged = palettes.merge(enabled)
         slots = {part: {k: colors.hex_from_srgb(v) for k, v in merged.get(part, {}).items()}
                  for part in ("fur", "pattern", "marking")}
-        return {"current": current, "palette": slots, "game_slots": palettes.GAME_SLOTS,
-                "feral_slots": list(catcolours.FERAL_SLOTS), "parts": catcolours.PARTS,
-                "scars": {"current": scars, "types": catcolours.SCAR_TYPES},
-                "look": {"current": looks, "parts": {p: catcolours.LOOK_MAX.get(p, 9) for p in catcolours.LOOK},
-                         "size": list(catcolours.SIZE[1:])},
-                "cats": others}
+        return {"palette": slots, "game_slots": palettes.GAME_SLOTS, "feral_slots": list(catcolours.FERAL_SLOTS),
+                "parts": {p: catcolours.LOOK_MAX.get(p, 9) for p in catcolours.LOOK}}
 
     def names_preview(self, spec):
         """The game's names, what a names.json (not yet saved) does to them, and the cats in the save."""
