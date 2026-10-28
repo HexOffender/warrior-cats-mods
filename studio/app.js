@@ -188,11 +188,12 @@ async function open(id, asked = false) {
   renderNav();
   for (const [sid, entry] of Object.entries(loaded)) entry.pane.hidden = sid !== active;
   if (loaded[active]) return;
-  const pane = el("div", { class: "section" }, el("p", { class: "muted", text: `Loading ${spec.title}…` }));
+  // data-page: styles.css gives the page its glyph and, on the cat pages, its Clan's colour.
+  const pane = el("div", { class: "section", "data-page": spec.id }, el("p", { class: "muted", text: `Loading ${spec.title}…` }));
   main.append(pane);
   loaded[active] = { pane };
   try {
-    const mod = await import(spec.module);
+    const [mod] = await Promise.all([import(spec.module), pageStyles(spec.id)]);
     const section = mod.default;
     clear(pane);
     loaded[spec.id].handle = await section.mount(pane, wc);
@@ -205,6 +206,19 @@ async function open(id, asked = false) {
       el("p", { class: "note", text: spec.from_mod ? `This page comes from the mod "${spec.from_mod}".` : "The other sections still work." }),
       el("button", { class: "btn", text: "Try again", onclick: () => { pane.remove(); delete loaded[spec.id]; open(spec.id, true); } })));
   }
+}
+
+// A page's own stylesheet, studio/sections/<id>.css, linked once when the page first opens and ready before it
+// draws. Only the pages that have one are listed: the server answers a missing file with a 404, which the
+// browser would log as an error.
+const PAGE_STYLES = new Set(["mods", "items", "npcs", "quests"]);
+const styled = {};   // section id -> Promise that settles when its stylesheet has loaded
+function pageStyles(id) {
+  if (!PAGE_STYLES.has(id)) return Promise.resolve();
+  return styled[id] ||= new Promise(done => {
+    const link = el("link", { rel: "stylesheet", href: `/studio/sections/${id}.css`, onload: done, onerror: done });
+    document.head.append(link);
+  });
 }
 
 // ---------- build / install ----------
@@ -393,6 +407,21 @@ document.getElementById("helpBtn").addEventListener("click", () => openHelp(""))
 document.getElementById("helpClose").addEventListener("click", hideHelp);
 help.addEventListener("keydown", e => { if (e.key === "Escape") { e.preventDefault(); hideHelp(); } });
 bus.on("help", page => openHelp(page));
+
+// ---------- day and night ----------
+// The toggle sets data-theme on <html> and remembers it; with nothing remembered the page follows the system
+// (index.html's head script applies the saved choice before the stylesheet loads). aria-pressed says whether
+// the page is dark now, whichever way it got there.
+const root = document.documentElement, themeBtn = document.getElementById("themeBtn");
+const isNight = () => { const cs = getComputedStyle(root).colorScheme; return cs ? cs === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; };
+function setTheme(t) {   // "dark", "light", or "" to follow the system again
+  if (t) root.dataset.theme = t; else delete root.dataset.theme;
+  try { t ? localStorage.setItem("wc-theme", t) : localStorage.removeItem("wc-theme"); } catch (e) { /* storage blocked */ }
+  themeBtn.setAttribute("aria-pressed", String(isNight()));
+}
+themeBtn.addEventListener("click", () => setTheme(isNight() ? "light" : "dark"));
+themeBtn.setAttribute("aria-pressed", String(isNight()));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (!root.dataset.theme) themeBtn.setAttribute("aria-pressed", String(isNight())); });
 
 // ---------- boot ----------
 wc.keepFocus();

@@ -137,6 +137,28 @@ export const DOCS = "https://github.com/HexOffender/warrior-cats-mods/blob/main/
 export const docLink = (path, text) => el("a", { href: DOCS + path, target: "_blank", rel: "noopener", text: text || path });
 export const clear = node => { node.textContent = ""; return node; };
 
+// The head of a page: an eyebrow (its group, or what it touches), the title, the lede (what this page changes
+// in the game, in the player's words) and, when a doc explains the page, a help link: help is the doc's path,
+// or { path, text }. It is the markup styles.css styles as .section-head, so a page that builds its own head
+// the same way looks the same; pages adopt it one by one.
+// help as "help:<page>" (or { page, text }) opens that page of the guide (docs/guide/<page>.md) in the help
+// panel instead; a doc's path opens it on GitHub, as before.
+export function pageHead({ eyebrow, title, lede, help } = {}) {
+  let link = null;
+  if (help) {
+    const page = typeof help === "string" ? (help.startsWith("help:") ? help.slice(5) : null) : help.page || null;
+    const text = (typeof help === "object" && help.text) || "How this works";
+    link = page !== null
+      ? el("button", { class: "btn link", type: "button", text, onclick: () => openHelp(page) })
+      : docLink(typeof help === "string" ? help : help.path, text);
+  }
+  return el("div", { class: "section-head" },
+    eyebrow ? el("span", { class: "eyebrow", text: eyebrow }) : null,
+    el("h1", { text: title || "" }),
+    lede ? el("p", { class: "note", text: lede }) : null,
+    link);
+}
+
 // Say something to screen readers, without showing it: politely, or at once for a problem. The live
 // regions are in index.html; the text goes in a moment after they're emptied, so saying the same thing
 // twice is heard twice, and what's said in that moment (a toast and the status line) goes in together.
