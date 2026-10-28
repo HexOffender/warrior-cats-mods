@@ -229,3 +229,18 @@ def test_the_story_guides_have_the_six_parts_and_the_pages_link_them(page, modul
         assert word not in text, word
     with open(os.path.join(REPO, "studio", "sections", module), encoding="utf-8") as f:
         assert f'help: "help:{page}"' in f.read()
+
+
+# ---------- the Apply summary ----------
+def test_the_apply_summary_says_the_cats_and_questlines_and_whether_sandbox_mode_shows_them():
+    manifest = {"mods": ["my-mods", "pal"], "names": {"my-mods": "My mods", "pal": "Palette"}, "sections": {}, "warnings": [],
+                "notes": {"story": {"story": {"my-mods": {"npcs": ["mossfoot", "sparrowpaw"], "quests": ["moss"]}},
+                                    "sandbox": {"state": "on", "version": "0.5", "older": []}}}}
+    assert studio_mod.plain_summary(manifest) == ("Put 2 mods in the game: My mods, Palette. 2 cats and 1 questline from "
+                                                  "My mods; Sandbox mode 0.5 will show them.")
+    manifest["notes"]["story"]["sandbox"] = {"state": "missing", "version": None, "older": []}
+    manifest["warnings"] = ["story: cats and questlines go in, but nothing shows them"]
+    assert studio_mod.plain_summary(manifest).endswith(
+        "2 cats and 1 questline from My mods; they're waiting for Sandbox mode. 1 warning.")
+    manifest["notes"] = {}
+    assert studio_mod.plain_summary(manifest) == "Put 2 mods in the game: My mods, Palette. 1 warning."

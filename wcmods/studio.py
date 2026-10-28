@@ -152,7 +152,25 @@ def plain_summary(manifest):
     warnings = len(manifest.get("warnings", []))
     said = (f"Put {len(ids)} mod{'s' if len(ids) != 1 else ''} in the game: {', '.join(names.get(i, i) for i in ids)}."
             if ids else "Put the mod menu in the game, with no mods on.")
-    return said + (f" {warnings} warning{'s' if warnings != 1 else ''}." if warnings else "")
+    return said + story_sentence(manifest) + (f" {warnings} warning{'s' if warnings != 1 else ''}." if warnings else "")
+
+
+def story_sentence(manifest):
+    """The cats and questlines a build put in, and whether Sandbox mode will show them, for the summary (the
+    story section's notes): " 2 cats and 1 questline from My mods; Sandbox mode 0.5 will show them.", or ""
+    with none. (app.js's plainSummary says the same.)"""
+    notes = (manifest.get("notes") or {}).get("story") or {}
+    made = notes.get("story") or {}
+    cats = sum(len(v.get("npcs", [])) for v in made.values())
+    quests = sum(len(v.get("quests", [])) for v in made.values())
+    if not cats and not quests:
+        return ""
+    parts = [f"{n} {word}{'s' if n != 1 else ''}" for n, word in ((cats, "cat"), (quests, "questline")) if n]
+    names = manifest.get("names") or {}
+    sandbox = notes.get("sandbox") or {}
+    then = (f"Sandbox mode{' ' + sandbox['version'] if sandbox.get('version') else ''} will show them"
+            if sandbox.get("state") == "on" else "they're waiting for Sandbox mode")
+    return f" {' and '.join(parts)} from {', '.join(names.get(i, i) for i in made)}; {then}."
 
 
 class Studio:

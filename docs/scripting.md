@@ -236,7 +236,7 @@ end)
 
 | Option or method | |
 |---|---|
-| `at`, `yaw`, `level` | Where it stands (on the ground below `at`), which way it faces (degrees), and the level it's in (by default the one it first appears in) |
+| `at`, `yaw`, `level` | Where it stands (on the ground below `at`), which way it faces (degrees), and the level it's in (by default the one it first appears in). Give it an `at`: without one it stands at 0, 0, 0, and the log says so |
 | `ground` | `false` puts it exactly at `at`, not on the ground below |
 | `colours` | `fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears` as `"#rrggbb"`; the rest stay the game's |
 | `eyes`, `size` | An iris colour slot, as in `palette.json`, and the cat's size (the game's are about 0.4–1.1) |
@@ -244,7 +244,7 @@ end)
 | `prefix`, `suffix` | Name IDs (`"STR_CAT_NAME1"`, `"_PAW"`), for the name the game itself knows it by |
 | `npc:valid()`, `npc:actorOrNil()` | Whether it's in the world now, and its actor |
 | `npc:location()`, `npc:distance()`, `npc:near(cm)` | Where it is; how far your cat is; whether your cat is within `cm` (300) |
-| `npc:face(target)`, `npc:moveTo(x, y, z)`, `npc:remove()` | Turn to a place or actor (your cat with none); move it, onto the ground there; take it away for good |
+| `npc:face(target)`, `npc:moveTo(x, y, z)`, `npc:remove()` | Turn to a place or actor (your cat with none), which it keeps when it's spawned again; move it, onto the ground there; take it away for good (wcmods lets go of it; `Game.npcs.all()` still lists it, with `npc.removed` set) |
 | `Game.npcs.spot(cm, side)` | A place beside your cat with room for a cat (220 cm away, to its front left by default), and a yaw facing your cat: `local at, yaw = Game.npcs.spot()` |
 
 Move a cat with `npc:moveTo` rather than removing it and spawning it again: a new cat's look is made up
@@ -307,7 +307,7 @@ questline on one.
 | Call | Gives or does |
 |---|---|
 | `Game.items.list()`, `Game.items.count(tag)` | Your items, `{["Gameplay.Inventory.Materials.Dandelion"] = 6, …}`: as of the game's last save (it writes `WrcGame.json` each time), with pickups since then from the HUD's pickup messages |
-| `Game.items.drop(tag, count, where)` | A pickup holding the items on the ground by your cat (or below `where`), for the cat to pick up as usual. It returns the actor. A mod's herb or material lies there as its own model (items.json `model`), or as the game's pickup of the herb it's `like`. Seen in game: the cat collects it with Interact, and `itemPickedUp` fires |
+| `Game.items.drop(tag, count, where)` | A pickup holding the items on the ground by your cat (or below `where`), for the cat to pick up as usual. It returns the actor, or nil and why (a `tag` that isn't an item's tag in text, `"Gameplay.Inventory.Materials.Moss"`, is refused). A mod's herb or material lies there as its own model (items.json `model`), or as the game's pickup of the herb it's `like`. Seen in game: the cat collects it with Interact, and `itemPickedUp` fires |
 | `Game.items.info(tag)`, `Game.items.type(tag)` | What the quest manager knows of an item (nothing, as shipped: its item stats table is empty), and an item's kind: the quest manager's answer where it has one, else from the tag: `"Consumable"` (herbs and pouches), `"Collectible"` (materials), `"Equipment"` (accessories) or `"Quest"`; nil for a tag that isn't an item's |
 
 **Why items can't be put in the inventory directly:** the inventory is native, with no reflected way to
@@ -358,7 +358,7 @@ or hidden animal doesn't move its bones until it's in view (the engine's way), t
 |---|---|
 | `Game.quests.all()` | Every quest: `{quest, id, graph, type, status, result, tracked, xp, rewards}`. `id` comes from its quest graph: `"Tutorial"`, `"Deliver"`, `"RiverClan_Unique1"` |
 | `Game.quests.tracked()` | The quest being followed, or nil |
-| `Game.quests.report(id, {title, status, objective, progress})` | List a quest of the mod's own on the mod menu's Quests page: `status` is `"available"`, `"active"` or `"done"`. Report again when it changes; `nil` takes it off. `Game.quests.reported()` reads them back |
+| `Game.quests.report(id, {title, status, objective, progress, by, description})` | List a quest of the mod's own on the mod menu's Quests page: `status` is `"available"`, `"active"` or `"done"`; `by` the mod's name; `description` an optional sentence about it. Report again when it changes; `nil` takes it off. `Game.quests.reported()` reads them back, `description` `""` when there's none (a page from before it was a field shows the first five) |
 | `Game.quests.status(tag)`, `.result(tag)`, `.successes(tag)` | By quest tag: `"QuestAvailable"`, `"OngoingQuest"`, … |
 | `Game.quests.start(tag)`, `.give(tag)`, `.track(quest, on)` | The quest manager's own StartQuestOfTag, GiveQuestOfTag and SetTracked. Not tried yet; they can move the story on |
 | `Game.quests.chapter()` | `"Chapter00"` |

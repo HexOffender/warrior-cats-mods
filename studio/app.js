@@ -271,7 +271,18 @@ function plainSummary(manifest) {
   const ids = manifest.mods || [], warnings = (manifest.warnings || []).length;
   const said = ids.length ? `Put ${ids.length} mod${ids.length === 1 ? "" : "s"} in the game: ${ids.map(i => nameIn(manifest, i)).join(", ")}.`
     : "Put the mod menu in the game, with no mods on.";
-  return said + (warnings ? ` ${warnings} warning${warnings === 1 ? "" : "s"}.` : "");
+  return said + storySentence(manifest) + (warnings ? ` ${warnings} warning${warnings === 1 ? "" : "s"}.` : "");
+}
+// The cats and questlines the build put in, and whether Sandbox mode will show them (the story section's
+// notes; studio.py story_sentence says the same for last-apply.log).
+function storySentence(manifest) {
+  const notes = (manifest.notes || {}).story || {}, made = notes.story || {};
+  const count = key => Object.values(made).reduce((n, m) => n + (m[key] || []).length, 0);
+  const parts = [[count("npcs"), "cat"], [count("quests"), "questline"]].filter(([n]) => n).map(([n, w]) => `${n} ${w}${n === 1 ? "" : "s"}`);
+  if (!parts.length) return "";
+  const sandbox = notes.sandbox || {};
+  const then = sandbox.state === "on" ? `Sandbox mode${sandbox.version ? " " + sandbox.version : ""} will show them` : "they're waiting for Sandbox mode";
+  return ` ${parts.join(" and ")} from ${Object.keys(made).map(i => nameIn(manifest, i)).join(", ")}; ${then}.`;
 }
 const manifestOf = r => r && r.result && (r.result.sections ? r.result : r.result.manifest && r.result.manifest.sections ? r.result.manifest : null);
 
