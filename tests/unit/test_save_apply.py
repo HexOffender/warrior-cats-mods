@@ -148,11 +148,10 @@ def test_the_first_install_after_upgrading_records_without_writing(studio, cfg):
 
 
 def test_restoring_a_backup_forgets_the_records_after_it(studio, cfg):
-    from wcmods.studio import Body
     out, _ = apply(studio, [level_op(10)])
     assert saverecord.load(cfg)["acct"]["my-mod"]
     time.sleep(1.1)   # a backup's name is to the second
-    studio.api("POST", ["restore"], Body({"name": out["backup"]}), None)
+    studio.api("POST", ["restore"], {"name": out["backup"]}, None)
     assert doc(cfg).get(LEVEL) == 5 and saverecord.load(cfg) == {}
     apply(studio, [level_op(10)])   # the next Apply makes the mod's change again
     assert doc(cfg).get(LEVEL) == 10

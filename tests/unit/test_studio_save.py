@@ -10,7 +10,6 @@ from wcmods import saverecord
 from wcmods.formats.save import SAV_NAME, SaveGame, list_backups
 from wcmods.formats.savejson import SaveDoc
 from wcmods.sections import savedit
-from wcmods.studio import Body
 
 from unit_helpers import write_save
 
@@ -23,7 +22,7 @@ SAVE = {"acct": {"0": {"GameplayProgression": {"Level": 2}},
 
 
 def call(st, method, path, body=None):
-    return st.api(method, [p for p in path.split("/") if p], Body(body or {}), None)
+    return st.api(method, [p for p in path.split("/") if p], dict(body or {}), None)
 
 
 def doc(studio):

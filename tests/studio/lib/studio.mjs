@@ -2,7 +2,7 @@
 // (WCMODS_DATA, with a made-up game folder named in its wcmods.json), so neither Steam's game nor the real save
 // is ever used.
 //
-//   const folders = dataFolder();                  // root, game, saves, data, temp
+//   const folders = dataFolder();                  // root, game, saves, data, temp, app (a copy of wcmods)
 //   fixtureGame(folders);                          // the made-up game with a few tables, and the tests' save
 //   const studio = await startStudio(folders);
 //   ... studio.url ...
@@ -17,16 +17,28 @@ export const EXE = "Wrc-Win64-ShippingDRM.exe";   // config.EXE_NAME: what makes
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const python = () => process.env.PYTHON || "python";
 
-// A studio started on a free port over the test's folders; its URL is on the first line it prints. The game
-// counts as closed (WCMODS_FAKE_RUNNING=0) unless `env` says otherwise, whether or not the real one is running
-// on this machine; its temp folder (the inbox a dropped mod waits in) is the test's, not the one a studio of
-// the player's would share.
-export async function startStudio(folders, env = {}) {
+// wcmods as the studio runs it (wcmods.py, wcmods/, studio/ and docs/), copied into `root`/app. Started from the
+// repository, the studio would take it for wcmods' folder and move a mods/, wcmods.json or backups/ kept there (a
+// supported way to keep them) into the test's folder, which is deleted.
+function appCopy(root) {
+  const app = path.join(root, "app");
+  const skipCache = src => !src.split(path.sep).includes("__pycache__");
+  for (const d of ["wcmods", "studio", "docs"]) fs.cpSync(path.join(REPO, d), path.join(app, d), { recursive: true, filter: skipCache });
+  fs.copyFileSync(path.join(REPO, "wcmods.py"), path.join(app, "wcmods.py"));
+  return app;
+}
+
+// A studio started over the test's folders (on a free port, or `port`), from `root` (a copy of wcmods, the
+// folders' own unless said); its URL is on the first line it prints. The game counts as closed
+// (WCMODS_FAKE_RUNNING=0) unless `env` says otherwise, whether or not the real one is running on this machine;
+// its temp folder (the inbox a dropped mod waits in) is the test's, not the one a studio of the player's would
+// share.
+export async function startStudio(folders, env = {}, { root = folders.app, port = 0 } = {}) {
   const own = { ...process.env, WCMODS_DATA: folders.data, WCMODS_FAKE_RUNNING: "0", TEMP: folders.temp, TMP: folders.temp,
     TMPDIR: folders.temp, ...env };
   delete own.WCMODS_GAME_BUILD;   // a build number a developer set to try an update
-  const proc = spawn(python(), ["-I", "wcmods.py", "studio", "--no-browser", "--port", "0"],
-    { cwd: REPO, env: own, stdio: ["ignore", "pipe", "pipe"] });
+  const proc = spawn(python(), ["-I", "wcmods.py", "studio", "--no-browser", "--port", String(port)],
+    { cwd: root, env: own, stdio: ["ignore", "pipe", "pipe"] });
   let out = "", err = "";
   proc.stdout.on("data", d => { out += d; });
   proc.stderr.on("data", d => { err += d; });
@@ -56,7 +68,7 @@ export function dataFolder() {
   const temp = path.join(root, "temp");
   for (const d of [game, saves, data, temp]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(data, "wcmods.json"), JSON.stringify({ game_dir: game, save_dir: saves }));
-  return { root, game, saves, data, temp };
+  return { root, game, saves, data, temp, app: appCopy(root) };   // removeFolder(root) takes the copy too
 }
 
 // The game's folder as config.is_game_dir knows one: the exe and the folders, no paks (nothing to read).

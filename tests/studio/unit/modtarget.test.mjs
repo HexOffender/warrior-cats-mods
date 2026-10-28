@@ -128,8 +128,42 @@ test("refresh and mods-changed read the list again without reloading the file wh
   // Saved: the mod is made again (POST /mods) and the file written; a refresh while clean loads the file as before.
   await t.target.save();
   assert.ok(t.state.mods.some(m => m.id === "a") && t.state.puts.includes("a"));
+  assert.equal(t.loads.length, 1, "a save doesn't read the file back: the page holds what it saved");
   await t.target.refresh();
-  assert.equal(t.loads.length, 3, "a save reloads the file (2), and so does a refresh while clean (3)");
+  assert.equal(t.loads.length, 2, "a refresh while clean loads the file");
+});
+
+test("a change made while a save is under way stays on the page, unsaved, and onSaved hears what was saved", async () => {
+  const state = fresh();
+  dom.routes = routes(state);
+  for (const type of Object.keys(dom.windowListeners)) delete dom.windowListeners[type];
+  localStorage.clear();
+  localStorage.setItem("wc-target", "a");
+  const wc = await import(dom.studio("lib/wc.js") + "?" + Math.random());
+  const loads = [], heard = [];
+  let value = { prefixes: { remove: ["Sun"] } }, release;
+  const target = wc.modTarget({ file: "names.json", share: false, onLoad: obj => loads.push(obj), getValue: () => value, onSaved: v => heard.push(v) });
+  dom.byId.main.append(target.element);
+  await target.refresh();
+  // The PUT waits until the test lets it answer; meanwhile the creator changes something.
+  const put = dom.routes["PUT /mods/a/file/names.json"];
+  dom.routes["PUT /mods/a/file/names.json"] = b => new Promise(ok => { release = () => ok(put(b)); });
+  target.markDirty();
+  const saving = target.save();
+  await tick(5);
+  value = { prefixes: { remove: ["Sun", "Moon"] } };
+  target.markDirty();
+  release();
+  assert.equal(await saving, true);
+  assert.deepEqual(state.files["a/names.json"], { prefixes: { remove: ["Sun"] } }, "what was on the page when Save was pressed");
+  assert.equal(loads.length, 1, "not read back over the change");
+  assert.equal(target.dirty, true, "the change made meanwhile is still to be saved");
+  assert.deepEqual(heard, [{ prefixes: { remove: ["Sun"] } }]);
+  assert.equal(target.element.querySelector(".dirty").textContent, "Unsaved changes");
+  // settleNew: the entries just saved keep their ids; one added since still follows its name.
+  const list = [{ id: "a", _new: true }, { id: "b", _new: true }, { id: "c" }];
+  wc.settleNew(list, [{ id: "a" }, { id: "c" }]);
+  assert.deepEqual(list, [{ id: "a" }, { id: "b", _new: true }, { id: "c" }]);
 });
 
 test("New mod with unsaved changes makes the mod, then asks the same question", async () => {
@@ -215,6 +249,10 @@ test("closing the page with unsaved changes is asked about; installedEvent waits
   assert.equal(heard, 2);
 });
 
+const REFUSED = { ok: false, status: 403, statusText: "Forbidden", json: async () => ({ error: "missing or wrong studio token; reload the page" }) };
+const OK = body => ({ ok: true, status: 200, statusText: "OK", json: async () => body });
+const PAGE = tok => ({ ok: true, status: 200, url: "", text: async () => `<html><head><meta name="wc-token" content="${tok}">` });
+
 test("the API's failures are told apart for the shell", async () => {
   const t = await setUp();
   let gone = 0, lost = 0;
@@ -222,14 +260,114 @@ test("the API's failures are told apart for the shell", async () => {
   t.wc.bus.on("token-lost", () => lost++);
   const real = globalThis.fetch;
   try {
-    globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); };
-    await assert.rejects(t.wc.api.get("/info"), e => e.code === "gone" && /window was closed/.test(e.message));
-    globalThis.fetch = async () => ({ ok: false, status: 403, statusText: "Forbidden", json: async () => ({ error: "missing or wrong studio token; reload the page" }) });
+    // Refused for its token, and the studio's page can't be had either: said as "token".
+    globalThis.fetch = async url => (url === "/" ? { ok: false, status: 404 } : REFUSED);
     await assert.rejects(t.wc.api.get("/info"), e => e.code === "token" && e.status === 403);
     globalThis.fetch = async () => ({ ok: false, status: 409, statusText: "Conflict", json: async () => ({ error: "not installing", blocked: [{ title: "Names", mod: "a", text: "bad" }] }) });
     await assert.rejects(t.wc.api.post("/install"), e => e.data.blocked.length === 1 && !e.code);
   } finally {
     globalThis.fetch = real;
   }
-  assert.deepEqual([gone, lost], [1, 1]);
+  assert.deepEqual([gone, lost], [0, 1]);
+});
+
+test("a page from before the studio restarted takes up its new token and carries on", async () => {
+  const t = await setUp();
+  let lost = 0;
+  t.wc.bus.on("token-lost", () => lost++);
+  const real = globalThis.fetch, sent = [];
+  try {
+    globalThis.fetch = async (url, init = {}) => {
+      if (url === "/") return PAGE("new-token");
+      sent.push({ url, token: init.headers["X-WC-Token"], body: init.body });
+      return init.headers["X-WC-Token"] === "new-token" ? OK({ saved: "names.json" }) : REFUSED;
+    };
+    assert.deepEqual(await t.wc.api.put("/mods/a/file/names.json", { text: "{}" }), { saved: "names.json" });
+    assert.deepEqual(sent.map(s => s.token), ["test-token", "new-token"], "refused once, then asked again with the new token");
+    assert.equal(sent[1].body, sent[0].body, "the same request");
+    await t.wc.api.get("/mods");
+    assert.equal(sent.at(-1).token, "new-token", "and every request after it");
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.equal(lost, 0, "nothing for the shell to do");
+});
+
+test("the studio is gone only when it can't be reached twice, a few seconds apart", async t0 => {
+  t0.mock.timers.enable({ apis: ["setTimeout"] });
+  const t = await setUp();
+  let gone = 0;
+  t.wc.bus.on("server-gone", () => gone++);
+  const real = globalThis.fetch;
+  const flush = async () => { for (let i = 0; i < 5; i++) await new Promise(r => setImmediate(r)); };
+  try {
+    // A blip: the request fails, but the studio answers when asked again.
+    globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); };
+    await assert.rejects(t.wc.api.get("/info"), e => e.code === "gone" && /window was closed/.test(e.message));
+    await assert.rejects(t.wc.api.get("/changes"), e => e.code === "gone");   // one check for both
+    globalThis.fetch = async url => (url === "/" ? PAGE("test-token") : OK({}));
+    t0.mock.timers.tick(t.wc.RECHECK_MS);
+    await flush();
+    assert.equal(gone, 0, "not gone: it answered");
+    // Gone: it fails again when asked a few seconds later.
+    globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); };
+    await assert.rejects(t.wc.api.get("/info"));
+    t0.mock.timers.tick(t.wc.RECHECK_MS - 1);
+    await flush();
+    assert.equal(gone, 0, "not before the second try");
+    t0.mock.timers.tick(1);
+    await flush();
+    assert.equal(gone, 1);
+    assert.equal(await t.wc.reconnect(), false);
+    globalThis.fetch = async url => (url === "/" ? PAGE("third-token") : OK({}));
+    assert.equal(await t.wc.reconnect(), true, "and back");
+  } finally {
+    globalThis.fetch = real;
+    t0.mock.timers.reset();
+  }
+});
+
+test("unsaved changes are known to the shell, page by page, until they're saved", async () => {
+  const t = await setUp();
+  assert.equal(t.wc.anyDirty(), false);
+  t.target.markDirty();
+  assert.equal(t.wc.anyDirty(), true);
+  assert.deepEqual(t.wc.dirtyTargets().map(x => x.file), ["names.json"]);
+  await t.target.save();
+  assert.equal(t.wc.anyDirty(), false);
+  // A bar that's no longer on the page (its page was taken down) doesn't count.
+  t.target.markDirty();
+  t.target.element.remove();
+  assert.equal(t.wc.anyDirty(), false);
+});
+
+test("importing a file over unsaved changes asks first, as switching mods does", async () => {
+  dom.routes = routes(fresh());
+  for (const type of Object.keys(dom.windowListeners)) delete dom.windowListeners[type];
+  localStorage.clear();
+  localStorage.setItem("wc-target", "a");
+  const wc = await import(dom.studio("lib/wc.js") + "?" + Math.random());
+  const loads = [];
+  const target = wc.modTarget({ file: "names.json", onLoad: (obj, id) => loads.push({ obj, id }), getValue: () => ({ prefixes: {} }) });
+  dom.byId.main.append(target.element);
+  await target.refresh();
+  const picker = target.element.querySelector("input[type=\"file\"]");
+  const ask = target.element.querySelector(".switch-ask");
+  const choose = async (name, obj) => { picker._files = [{ name, text: async () => JSON.stringify(obj) }]; picker.dispatch("change"); await tick(10); };
+  await choose("theirs.json", { prefixes: { add: ["Sky"] } });
+  assert.deepEqual(loads.at(-1), { obj: { prefixes: { add: ["Sky"] } }, id: "a" }, "nothing unsaved: loaded at once");
+  assert.equal(target.dirty, true);
+  await choose("other.json", { prefixes: { add: ["Moss"] } });
+  assert.equal(loads.length, 2, "not loaded yet");
+  assert.equal(ask.hidden, false);
+  assert.deepEqual([...ask.querySelectorAll("button")].map(b => b.textContent), ["Save and load", "Load without saving", "Stay"]);
+  assert.match(ask.textContent, /Save them to Mod A before loading other\.json/);
+  [...ask.querySelectorAll("button")].find(b => b.textContent === "Stay").click();
+  await tick();
+  assert.equal(loads.length, 2, "Stay keeps the page as it was");
+  await choose("other.json", { prefixes: { add: ["Moss"] } });
+  [...ask.querySelectorAll("button")].find(b => b.textContent === "Load without saving").click();
+  await tick(10);
+  assert.deepEqual(loads.at(-1), { obj: { prefixes: { add: ["Moss"] } }, id: "a" });
+  assert.equal(target.dirty, true, "what was loaded is unsaved in its turn");
 });
