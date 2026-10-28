@@ -557,8 +557,9 @@ shows when it comes into view.
 
 **Not confirmed in game yet** ([verified.md](verified.md)): animations on the clans' cats and on quest
 givers (only your cat was watched), the rats', rabbits', squirrels', foxes', badgers', dogs' and snakes'
-(made as the mice's and birds' are), an emote on a controller button, the game's own animations without
-a file (`game`), and a key stopping what the Emote wheel started.
+(made as the mice's and birds' are), an emote on a controller button, one of the game's own animations
+in another's place other than the trot (an emote by its own path, a claws-out copy and the sleep loop as the
+trot were seen on 2026-10-28), and a key stopping what the Emote wheel started.
 
 ### New content: models, textures, sounds
 

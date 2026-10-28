@@ -459,8 +459,9 @@ others, so try each one.
   are those of build 26184573, the log says so once, and the game is asked again on a lookup five seconds
   later; `getmetatable(Game.enums.clan).fromGame` is true once the table has the game's own. A name the game
   no longer has reads nil, also said once. `next(Game.enums.clan)` sees an empty table until the first lookup:
-  walk one with `pairs`. This reading is written and checked against the exe, but not yet run in the game
-  ([verified.md](verified.md), "The game's enums read by name").
+  walk one with `pairs`. This reading is checked against the exe, and was seen in the game on 2026-10-28
+  ([verified.md](verified.md), "2026-10-28, the overhaul's integration build"); a read too early, then the
+  game's numbers a little later, hasn't been seen yet.
 - **Any of the game's enums:** `Game.enumNames("/Script/SwtQuest.EGiverRole")` gives `{name = number}` (and its
   names in order as a second result), or nil when the game has no such enum. The path is the module the class
   dump lists it under (`/Script/SwtEngine`, `/Script/SwtQuest`, `/Script/SwtAdventure`, `/Script/Wrc`) and the

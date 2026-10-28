@@ -222,16 +222,63 @@ Fawnstar, as a player reported it showing "Cat 1"):
   - the Controls tab showed F for Interact and G for Drop; Pause and the rest kept the game's keys;
   - the script set each picture once (its debug log), so nothing fought over them.
 
+**2026-10-28, the overhaul's integration build** (build 26184573; `claude/studio-integration` with the in-game
+check's fixes and PRs #97 and #99 merged, put in with `agent install` and the tests' own mods; Sandbox mode 0.5 from
+wcmods-sandbox#4; the test save's sandbox cat Sharppaw, a level 1 ThunderClan apprentice; `agent test`: 57 passed,
+24 skipped):
+- **The runtime fixes** (`tests/game/test_scripts.py`, all ten passed): a frame function failing every frame was
+  said once with its mod's name (`[Noisy script] error in onFrame: scripts/main.lua:6: ...`), then once a minute
+  with a count (`(1918 more)`, the lines 60 s apart); a misspelt key (`f6`) was said with "did you mean F6?" and
+  the script went on; a task that cancels itself and adds another ran with no "invalid key to 'next'";
+  `Game.onKey` gave false for a wrong name and an id that cancels the key; a mod's cat's `level()` was nil; a
+  script that didn't start (an `end` missing) was named at the top of the screen ("Broken script didn't start:
+  scripts/main.lua, line 5. The mod menu (Insert), Tools, Log says more.") and in red on the Overview with Lua's
+  own message; a script's settings page saved, said "Saved to settings.json." and kept an empty list a list and
+  0.1234567 as it was; a page made from a timer was the script's only page; `_help_speed` showed under its row,
+  and `_min_`/`_max_` made no rows.
+- **The mod menu** by its real key: Insert opened and closed it, and the Overview listed a moved key ("F:
+  Interact (was E)", from a test `controls.json`) and the emotes' and the heal key's keys (F7, F8, F4).
+- **Interact on F** (`controls.json`, `WCModsRemap`): the Travel prompt at a tunnel showed F; at a studio cat's
+  Talk prompt (F), E did nothing and F started the talk with its line.
+- **A Character with a fixed look** (`npcs.json` `look` and `slots`, Sandbox mode 0.5): the log said "1 cats and 0
+  quests from Clan Mod Studio, for the sandbox cat in slot 4", the cat stood beside the sandbox cat with its name
+  and title over its head, red with dark markings, and its customisation data was the file's: `BodyValue` and
+  `FurIdx` 6, `FurValue` 2, `TailIdx` 7 (`SK_Tail_Tapered`), `EarIdx` 3 (`SK_Mid_Pointy`), `EyeValue` 4,
+  `WhiskerValue` 5, `FaceValue` 1, `PatternIdx` 12, `MarkingIdx` 3, `FurColorIdx` 9, `Pattern01ColorIdx` 4,
+  `Pattern02ColorIdx` 0, eye colour slot 6, size 0.85 (read through a small sphere at its spot, no scan). The
+  same numbers in a second game session.
+- **Tweaks** (`tests/game/test_tweaks.py` passed: stamina topped up, the clock held at 09:00, the fresh-kill pile
+  kept at 40, the heal key F4 posted to the window healing through the game's own input, the Tweaks page's Save
+  writing `tweaks.json`). By hand: running 3 s left the stamina at 99.4 of 100 with "Keep my cat's stamina full"
+  on; switched off on the Tweaks page, the same run left 86.3; on again, full.
+- **The game's own animations** (`"game"`, `tests/game/test_animations.py` passed): F7 played the game's Yawn by
+  its own path (`A_CatMaster_Yawn_1`, no package made) and F7 again stopped it; F8 played the claws-out copy of
+  the Stretch (`/Game/WCMods/animations_mod/A_Stretch`) with the claws' curve under 0.5; the sleep loop in the
+  trot's place kept the head 2.8 to 4.5 cm above the root bone while the cat moved at 174 cm/s.
+- **Game data in play** (`data.json`: `TuningData.csv`'s `Gameplay.Exploration.Player.MoveAndRun.Run.Speed`, 390
+  made 780): running at Bright-Water Flats (a key and LeftShift held 4.5 s from the same spot), the game's own
+  speed stopped at 389 to 390 cm/s without the change; with it, it went on rising at the same acceleration, to
+  594 and 613 cm/s. From `Game.cat()`'s position, 517 cm/s between two readings, against at most 395 without.
+- **The studio's Try Lua in the game routes** against the game (`tests/game/test_studio_console.py`): the strip's
+  "The game is running and listening (in the forest)", a line run (42), and your cat's properties and functions.
+- **The level component** (PR #99): on the level 1 cat, the player state's component gave level 1 and Prowess 90
+  (its health), and +0x124 (`WCM_LevelShown`) gave 20: it's the level cap, not a second copy of the level.
+  `Game.cat():level()` gave 1 and `stats()` numbers (Prowess 90, Strength 95, Resilience 85, Instinct 85,
+  Agility 80, Stamina 100), as the Stats page showed.
+- **The game's enums read by name** (PR #97): `tests/game/test_cat.py::test_enums_are_read_from_the_game` passed;
+  UE4SS.log had no "can't read the game's enum", "isn't build 26184573's", "can't read Player_Interact", "can't
+  read UI_PC" or "NoCommand" line; a script reading `Game.enums.clan.Total` as it loaded logged "clan Total 5 at
+  load, 5 now; the game's own: true"; with Interact on F, the Travel and Talk prompts showed F; with no remap, the
+  studio cat's Talk prompt showed the game's own picture for Interact (the mouse button, as the game's Travel
+  prompt does) and E started the talk.
+
 ## Not yet confirmed in game
 
 - **Animations:** on the clans' cats in the forest and on quest givers (they run the same AnimBlueprint
   and mesh, but only your cat was watched); the rats', rabbits', squirrels', foxes', badgers', dogs' and
   snakes' (made the same way as the mice's and birds'); an emote's key on a controller button.
-- **The game's own animations (`"game"`, 2026-10-28):** one played as an emote by its own path, its
-  claws-out copy, one of the game's in another's place (the run as the trot), and the Animations page's
-  Try it on my cat. The selftest builds the copy and the replacement from the game's files and reads the
-  same keys back (within 1e-6 cm), and a build of a mod using them goes through, but none has been
-  watched in game yet.
+- **The game's own animations (`"game"`):** the run as the trot (the sleep loop in the trot's place was watched
+  on 2026-10-28, above), and the Animations page's Try it on my cat.
 - **One playing state for every script (2026-10-28):** an emote's key stopping what the Emote wheel
   started, through the shared `WCModsAnims.playing.<actor>` and the anim instance's current montage
   (`GetCurrentActiveMontage`, `Montage_Stop`): not tried in game. Nor is the check that keeps a finished
@@ -249,59 +296,33 @@ Fawnstar, as a player reported it showing "Cat 1"):
   `Game.items.drop`, but not watched).
 
 - **Scripting:**
-  - the studio's Try Lua in the game page (once the Console) against the game; its routes, the strip's four
-    states and the request withdrawn after a timeout are tested without it, over a made-up bridge folder;
+  - the studio's Try Lua in the game page itself against the game (its routes ran against the game on
+    2026-10-28, above; the strip's four states and the request withdrawn after a timeout are tested without it,
+    over a made-up bridge folder);
   - the damage, quest-status and status events;
   - whether the game obeys each of its developer switches.
-- **Tweaks** (`tweaks.json`, the studio's Tweaks page, `WCModsTweaks`): written from Game Tweaks' calls (stamina,
-  the clock, the fresh-kill pile, seen working there) and Sandbox mode's skip (seen skipping the opening scenes of a
-  sandbox game), but not yet run in the game as Tweaks. Above all unchecked: the heal key through the game's own
-  input (`Game.pressed`), the skip in a story game (a fresh story cat, not a sandbox one: refused, and its rows
-  hidden, until that check shows a skipped scene still gives its quest step or rank; `tests/game/test_tweaks.py`
-  says how to run it), and the mod menu's Tweaks page and its Save. `tests/game/test_tweaks.py` has the in-game
-  tests.
-- **The runtime fixes of 2026-10-28** (written and checked by their shape and by luacheck, not yet run in the
-  game; `tests/game/test_scripts.py` has the in-game tests for them): a script's errors with its mod's name,
-  once then once a minute; a task that cancels itself and adds another; `Game.onKey` with a misspelt name
-  returning false, and its id cancelling the key; another cat's `level()` being nil; `Game.find` not handing back
-  the last level's HUD (nil until the new one comes first); the dialogue claim renewed while the box is up; the bridge stopping a runaway line and
-  running only a request it took; the script bootstrap loading the mod's files by their names (and
-  `require` through them), naming a script that didn't start on the Overview and at the top of the screen, and
-  its Save saying so; a page made from a timer replacing the automatic one; an empty list and a float saved as
-  they were; the Log page's Mods and Errors filters; the Inspector's Find refusing the widest classes; a
-  setting's `_help_<key>` under its row and `_min_`/`_max_` bounding its number on the automatic page; a number
-  written `12.0` read back by `Game.json.decode` as `12.0`.
-- **The game's enums read by name** (2026-10-28: `Game.enumNames`, `Game.enums` filled from the game and asked
-  again after a failed read, `#` on one, the Talk prompt's Interact, the in-game remap's `NoCommand` and `UI_PC`,
-  and the agent's `Button_Confirm`; written and checked against the exe with `tools/re/uht.py <exe> lua`, 58 of
-  58, but not run in the game). `tests/game/test_cat.py::test_enums_are_read_from_the_game` checks the first
-  ones against the installed exe, read with `tools/re/uht.py` (so it holds after an update too): every
-  `wcmods/game.py` `ENUMS` path, `ECommands` and `EGuiConsolesTypes` give the exe's names and numbers in order
-  through `Game.enumNames`, without the engine's `_MAX`; the game's `EClanType` does end with `EClanType_MAX`
-  (the class dump taken in game on 24847281 lists it; this re-checks it on 26184573); a missing enum gives nil
-  without harm; and every `Game.enums` table has the exe's names and numbers both ways and `#`, with its
-  metatable's `fromGame` true (the game's own numbers, not build 26184573's fallback). By hand, with code mods
-  allowed:
-  - a studio cat's Talk prompt (Sandbox mode) still shows the Interact key's picture, and UE4SS.log has no
-    "can't read Player_Interact" line;
-  - with an in-game remap installed, the key pictures still come out of the PC's table (Interact on F shows
-    F on the Travel prompt), and the log has no "can't read UI_PC" or "the game has no command NoCommand" line;
-  - on this build, UE4SS.log has no "can't read the game's enum" line (or each is followed by its "read the
-    game's enum ... after all" line: a script that looked as it loaded) and no "the game's enum ... isn't
-    build 26184573's" line;
-  - a script that reads an enum as it loads, maybe before the game is up, has the game's numbers a little later.
-    A script mod whose `main.lua` is
-    `local early = Game.enums.clan.Total Game.after(15, function() local now = Game.enums.clan.Total local mt = getmetatable(Game.enums.clan) Game.log("clan Total %s at load, %s now; the game's own: %s", tostring(early), tostring(now), tostring(mt ~= nil and mt.fromGame == true)) end)`
-    logs "the game's own: true" (and, if its first read was too early, "can't read the game's enum
-    /Script/SwtQuest.EClanType" at load and "read the game's enum /Script/SwtQuest.EClanType after all" later);
-  - after the next game update, UE4SS.log's "the game's enum ... isn't build 26184573's" lines say what moved,
-    and `python tools/re/uht.py <exe> lua` says which fallbacks to update.
+- **Tweaks' skip in a story game** (`skip_scenes`): seen skipping the opening scenes of a sandbox game as Sandbox
+  mode's skip, but not on a fresh story cat, so it's refused, and its rows hidden, until that check shows a skipped
+  scene still gives its quest step or rank (`tests/game/test_tweaks.py` says how to run it). The other tweaks ran
+  in the game on 2026-10-28 (above).
+- **The rest of the runtime fixes of 2026-10-28** (written and checked by their shape and by luacheck; the ones
+  `tests/game/test_scripts.py` covers ran in the game on 2026-10-28, above): `Game.find` not handing back the last
+  level's HUD (nil until the new one comes first); the dialogue claim renewed while the box is up; the bridge
+  stopping a runaway line and running only a request it took; the script bootstrap loading the mod's files by
+  their names (and `require` through them); the Log page's Mods and Errors filters; the Inspector's Find refusing
+  the widest classes; a number written `12.0` read back by `Game.json.decode` as `12.0`.
+- **The game's enums after a game update** (`Game.enums`, the Talk prompt's Interact, the in-game remap's
+  `NoCommand` and `UI_PC`, the agent's `Button_Confirm`; seen read from the game on 2026-10-28, above): after the
+  next update, UE4SS.log's "the game's enum ... isn't build 26184573's" lines should say what moved, and
+  `python tools/re/uht.py <exe> lua` which fallbacks to update. A script that reads an enum before the game is up
+  wasn't seen either: the one that read `Game.enums.clan` as it loaded had the game's numbers already (no "can't
+  read the game's enum ..." then "... after all" lines).
 - **UE4SS's log format** that `scriptlog.py` (a script's card) and the Log page read: `Starting Lua mod '<name>'`
   and `[Lua] [<mod name>] ...`, as UE4SS 3.0.1 (Git SHA 83330635) writes them, read from the installed game's
   log on 2026-10-28. Other UE4SS versions are unchecked; a line the reader doesn't recognise is left out.
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
-- **Game data tables in play.** They load from the same pak as the text, but no gameplay change has
-  been checked on screen yet (the Game data page's Quick changes say so).
+- **Game data tables in play** beyond the running speed (seen on 2026-10-28, above): the other tables and
+  rows load from the same pak, but none has been watched in play (the Game data page's Quick changes say so).
 - **The Save page's Change my save now and Put it back** (2026-10-28). They write through the same codec
   as save edits on install, which the game accepts (above), but a save changed from the page and then
   loaded hasn't been checked in game; nor has a `save.json` made once per save, then played on past and
@@ -338,14 +359,10 @@ Fawnstar, as a player reported it showing "Cat 1"):
   Game.object('/Script/SwtAdventure.SwtAdventureLevelComponent') local ok, c = pcall(function() return
   Game.valid(ps) and cls and ps:GetComponentByClass(cls) end) if not (ok and Game.valid(c)) then return
   'no level component' end return Game.get(c, 'WCM_Level'), Game.get(c, 'WCM_Prowess')"` should print
-  the cat's level and Prowess (the mod menu's Cat page shows them too). It reads the player state's
-  component itself, calling nothing on an object that isn't there, and doesn't scan for it:
-  `Cat:level()` and `stats()` go through `Cat:component`, which falls back to scanning every level
-  component when the player state's `GetComponentByClass` finds none.
-- **+0x124 is the level cap, not a second copy of the level.** Read from the code (the level
-  component's start-up sets it from `Gameplay.Exploration.MaxLevel`, and the level setter compares the
-  level with it), but only seen in game on a level 20 cat, where the two are equal. To check, on a cat
-  below level 20, the same command ending `return Game.get(c, 'WCM_Level'), Game.get(c,
-  'WCM_LevelShown')` should print the cat's level, then 20.
+  the cat's level and Prowess (the mod menu's Cat page shows them too; on build 26184573 it gave 1 and 90
+  for a level 1 cat, 2026-10-28). It reads the player state's component itself, calling nothing on an
+  object that isn't there, and doesn't scan for it: `Cat:level()` and `stats()` go through
+  `Cat:component`, which falls back to scanning every level component when the player state's
+  `GetComponentByClass` finds none.
 
 After a game update, run `selftest` before installing again ([updating.md](updating.md)).

@@ -1126,15 +1126,16 @@ from `EPopupCheatsIds`:
 ## The game's enums
 
 Worked out on 2026-10-28 on build 26184573, from the exe and the class dump (`vanilla/sdk`, taken in game on
-build 24847281); the reading in game is written but not yet run there (docs/verified.md).
+build 24847281); the reading in game was seen on 2026-10-28: every enum `game.ENUMS` names, `ECommands` and
+`EGuiConsolesTypes` gave the exe's names and numbers (docs/verified.md).
 
 - **Where they are.** Each of the game's enums is a native `UEnum` named after its C++ name in its module's
   script package: `/Script/<Module>.<EnumName>`. The module is the `## [Module]` block of `api-index.txt`
   whose `enum E...` lines list it (`ECommands` and `EGuiConsolesTypes` in `SwtEngine`, `EClanType` and the
   quest enums in `SwtQuest`, the combat ones in `SwtAdventure`). `/Script/SwtEngine.ECommands` was found
   this way in game (the in-game remap reads it; verified.md, 2026-10-27); the `SwtQuest` and `SwtAdventure`
-  packages are the ones `Game.hidden`'s classes are found in, but no enum in them has been looked up in
-  game yet.
+  packages are the ones `Game.hidden`'s classes are found in, and their enums were looked up in game on
+  2026-10-28 (`EClanType` and the rest of `game.ENUMS`).
 - **In the exe.** UHT's enum tables are `{const char* name, int64 value}` pairs. Each enum also has its UHT
   parameters (`FEnumParams`), which name it: OuterFunc at +0, DisplayNameFunc +8, NameUTF8 +16 (the enum's
   name), CppTypeUTF8 +24 (the same, or `<EnumName>::Type` for a namespaced enum), the table +32, ObjectFlags
