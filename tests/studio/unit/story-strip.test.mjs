@@ -45,8 +45,9 @@ test("the strip asks the studio, draws the line and the way to see them, and ope
   const helps = [];
   const off = wc.bus.on("help", p => helps.push(p));
   const strip = story.sandboxStrip({ help: "characters", route: "To see them: Apply to game, Play." });
-  await strip.refresh();
   const line = strip.element.children[0];
+  assert.equal(line.hidden, true, "nothing said before the studio has answered");
+  await strip.refresh();
   assert.equal(line.hidden, false);
   assert.equal(line.className, "banner");
   assert.match(line.textContent, /^You'll need Sandbox mode/);
