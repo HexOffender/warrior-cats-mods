@@ -149,6 +149,17 @@ def cityhash64(s):
     return _len16((_len16(v[0], w[0]) + _smix(y) * K1 + z) & _M, (_len16(v[1], w[1]) + x) & _M)
 
 
+def cityhash64_with_seeds(s, seed0, seed1):
+    """CityHash64WithSeeds: CityHash64 mixed with two seeds, HashLen16(CityHash64(s) - seed0, seed1)."""
+    return _len16((cityhash64(s) - seed0) & _M, seed1 & _M)
+
+
+def cityhash64_with_seed(s, seed):
+    """CityHash64WithSeed, which the game uses for its save's Hash (formats/save.py next_hash): the game's
+    copy at 0x1419D5C10 (build 26184573) is CityHash64 then HashLen16(hash - K2, seed), as here."""
+    return cityhash64_with_seeds(s, K2, seed)
+
+
 def name_hash(name):
     """The hash a package's name map stores for an ASCII name: CityHash64 of it in lower case."""
     return cityhash64(name.lower().encode("ascii"))

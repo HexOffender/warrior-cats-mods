@@ -22,7 +22,8 @@ folders. `python wcmods.py selftest` checks, against your install:
   skeleton's pose; each animal's template takes new keys and reads them back (the ACL ones moved to the
   engine's own settings); every kind's start kit carries all its examples (49), and the game's Stretch
   and Idle (ACL), put in the cats' start kit and read back from it, give the same keys.
-- **Save editor:** changes only the values it's told to.
+- **Save editor:** changes only the values it's told to, and writes the header (`Hash`, `Version`)
+  back as it read it.
 - **Game update signatures:** on a build wcmods was checked on, every class and value it reads is where
   `game.HIDDEN` says; and with the exe's fingerprint changed, as on another build, a class whose
   signatures are taken away keeps nothing, and the level component's eight values are found by their
@@ -47,8 +48,10 @@ folders. `python wcmods.py selftest` checks, against your install:
 - Mouse look turns and tilts the camera, gives the cursor back in menus, and toggles with F6
   (see its known issues above).
 - Edited saves load, and the game keeps the edits when it saves again; a Level change made with the
-  save editor was accepted. The save carries a 64-bit checksum whose formula isn't known; the tool
-  keeps the original value and the game accepts it.
+  save editor was accepted. The save's 64-bit `Hash` isn't a checksum: the game makes a new one
+  from the clock and an address at every write and doesn't check it (read from the code, see
+  [reverse-engineering.md](reverse-engineering.md#the-save)). The tool keeps the original value, and
+  the game accepts it.
   Save edits are applied after a backup: restore one from Settings and repair (or
   `python wcmods.py restore latest`) if anything goes wrong.
 - Edited key bindings in the save are ignored, and the game's rebinding screen doesn't work on PC
@@ -274,6 +277,60 @@ Fawnstar, as a player reported it showing "Cat 1"):
 - **UE4SS's log format** that `scriptlog.py` (a script's card) and the Log page read: `Starting Lua mod '<name>'`
   and `[Lua] [<mod name>] ...`, as UE4SS 3.0.1 (Git SHA 83330635) writes them, read from the installed game's
   log on 2026-10-28. Other UE4SS versions are unchecked; a line the reader doesn't recognise is left out.
+- **The save's `Hash` and `Version`** (read from the code: [reverse-engineering.md](reverse-engineering.md#the-save)).
+  Two checks would confirm it, both on a test cat and after a backup:
+  - **Any `Hash` loads.** Turn Steam Cloud off for the game first (its Properties, General): the
+    save folder has `steam_autocloud.vdf`, and the game has a cloud path of its own that writes the
+    cloud copy over the slot and loads it, so the patched file might not be the one that loads. With
+    the game closed, change the save's `Hash` with a hex editor: the 8 bytes that start 9 bytes after
+    `UInt64Property` and its NUL. Write `EF CD AB 89 67 45 23 01` (0x0123456789ABCDEF, little-endian).
+    Start the game and enter the cat, and before anything saves, run `python wcmods.py lua -f
+    hash-read.lua` with:
+    ```lua
+    local m = Game.save.manager()
+    if not m then return 'no save manager' end
+    local sg = Game.get(m, 'SaveGame')
+    if not Game.valid(sg) then return 'no save game' end
+    local h = Game.get(sg, 'Hash')
+    local ok, text = pcall(string.format, '%016X', h)
+    return ok and text or tostring(h)
+    ```
+    It should print `0123456789ABCDEF`, which shows that the patched file is the one that loaded, and
+    the cat should have its progress. Another value means the game saved first (try sooner) or
+    another copy loaded.
+  - **The formula.** In the forest, run `python wcmods.py lua -f hash-write.lua` with:
+    ```lua
+    local m, st = Game.save.manager(), Game.manager('storage')
+    if not (m and st) then return 'no managers' end
+    local function hash()
+        local sg = Game.get(m, 'SaveGame')
+        if not Game.valid(sg) then return nil end
+        return Game.get(sg, 'Hash')
+    end
+    local function hex(v)
+        local ok, text = pcall(string.format, '%016X', v)
+        return ok and text or tostring(v)
+    end
+    local old = hash()
+    if old == nil then return 'no save game' end
+    local t0 = os.date('!%Y.%m.%d-%H.%M.%S')
+    Game.save.write()
+    local new = hash()
+    if new == nil then return 'no save game after the write' end
+    return table.concat({ hex(old), hex(new), hex(st:GetAddress()), hex(m:GetAddress()), t0,
+        os.date('!%Y.%m.%d-%H.%M.%S') }, ' ')
+    ```
+    It prints the old Hash, the new Hash, the storage manager's address, the save manager's address
+    and the UTC time before and after the write. If the two hashes are the same, the game skipped the
+    write (the code skips it while a byte that an earlier write set is still set): run it again a
+    little later. Then check in Python that `next_hash(old, when, address)` (`wcmods/formats/save.py`)
+    gives the new Hash, with the storage manager's address and `when` at each second from the first
+    printed time to the second. If no second matches, first doubt which
+    object's address it is: the writer is the storage manager's and formats its own `this` (read
+    from the code), so try the save manager's address next. The `%p` text (16 upper-case digits) was
+    checked against the UCRT's `__stdio_common_vswprintf` on this machine, not in the game.
+  - **Not to try on a real save:** a `Version` other than 20. The code says the game starts a new
+    save instead of loading it.
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
 - **Game data tables in play.** They load from the same pak as the text, but no gameplay change has
   been checked on screen yet (the Game data page's Quick changes say so).
