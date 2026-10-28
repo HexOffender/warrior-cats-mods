@@ -1463,14 +1463,17 @@ logged so far), `GET /last-apply` (`last-apply.log`), `POST /restart`,
 go with Clan Mod Studio: `GET /setup` (each step's state, `code` and `addons` among them),
 `POST /setup/game` `{dir}`, `/setup/backup`, `/setup/loader`, `/setup/code` `{skip: true}`,
 `/setup/addons` `{choice: "added" | "not now"}`, `GET /addons` (each one's state; `?latest=1` also asks
-GitHub, at most once an hour), `POST /addons/<id>` `{on?}` or a .zip as the body (add or update it),
+GitHub, keeping its answers for an hour and asking again after an `error`, `offline` when it couldn't be
+reached), `POST /addons/<id>` `{on?}` or a .zip as the body (add or update it; its `kept` lists mods of the
+player's that share an id with one in its .zip and were left alone),
 `POST /addons/<id>/preview` (what adding it would add, as a dropped .zip's preview), and
 `POST /mods/add?step=preview|add&ids=a,b&on=a` (a .zip as the body; `on` lists the ticked mods that go in
 switched on, the others off; `enable=1|0` still says it for all).
 
 The server listens on 127.0.0.1 only, and every API call needs the per-run token that the page
 gets when it loads. Other websites therefore can't drive it. An error is answered with a sentence
-for the player; the traceback behind an unexpected one goes to the console window and to
+for the player (`{error}`, with `offline: true` when GitHub couldn't be reached and `no_release: true`
+for a mod with no release yet); the traceback behind an unexpected one goes to the console window and to
 `studio.log` in the player's folder. The studio runs the wcmods code it started with: if wcmods is
 updated while it's open, it refuses to build or install until it's restarted, and the "Restart the
 studio" chip at the top of the page is a button that does that (`POST /restart`: a fresh studio

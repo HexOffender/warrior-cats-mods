@@ -9,7 +9,9 @@ something into the game that the studio's pages make or need:
 - **Sandbox mode**: a Sandbox Mode on the game's main menu, where the cats and questlines you make on the
   Characters and Questlines pages turn up.
 - **Creator palettes**: your new colours and coat presets as choices in the cat maker's colour pickers.
-  It comes with ten themed palettes, which go in switched off, and Coat presets, which goes in on.
+  It comes with ten themed palettes, which go in switched off, and Coat presets, which goes in on. A
+  palette of yours with the same folder name (from wcmods-examples, say) is left as it is: the toast says
+  which.
 - **Emote wheel**: hold a key for a wheel of your emotes and the game's own poses (its description on the
   Mods page says which key).
 
@@ -36,7 +38,8 @@ You can:
 - Press **Check for newer versions** to ask GitHub, and **Get the latest** to update one. An update keeps
   whether it's on and your own settings (the Emote wheel's key, Menu pages' cheats). The older copy is kept
   with your removed mods.
-- Add one from a .zip you downloaded yourself: drop it on **Add a mod**, as any mod.
+- Add one from a .zip you downloaded yourself: drop it on **Add a mod**, as any mod. That keeps your
+  settings too.
 - Switch any of them off on its card under Your mods, like any mod.
 
 You can't:
@@ -61,6 +64,8 @@ You can't:
 - **The chip says Off.** Press **Switch on**.
 - **"GitHub is turning requests away for now."** GitHub answers only so many questions an hour. Wait an
   hour, or download the .zip from its page and drop it on **Add a mod**.
+- **"No internet connection."** Clan Mod Studio couldn't reach GitHub. Nothing was added, and Get set up's
+  step stays open: press **Add all four** (or **Check for newer versions**) again once you're online.
 - **"No release yet."** Nothing to fix here: that mod's owner hasn't published it yet. Its row has a link
   to its releases.
 

@@ -57,8 +57,9 @@ You can't:
 ## Did it reach the game?
 
 - Under Get set up, "Not in the game yet" lists what's waiting (a mod on, a mod off, a mod changed, a mod
-  left out and why), with **Apply to game**. When nothing is waiting, it says "The game has your mods as
-  they are here".
+  left out and why, or a reason to apply again, such as mods that run code being allowed since the last
+  time), with **Apply to game**. When nothing is waiting, it says "The game has your mods as they are
+  here".
 - The chip at the top says "Game up to date" once the game has everything.
 - **Last apply** (top) opens what the last Apply or Play did: which mods went in, by name, or what kept
   one out.

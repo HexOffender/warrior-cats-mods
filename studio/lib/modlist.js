@@ -94,13 +94,45 @@ export function addonToast(r, codeAllowed) {
   if (r.unchanged) return `${r.name} ${r.version} is the latest already.`;
   const runsCode = (r.added || []).some(a => a.code);
   const extra = (r.added || []).filter(a => a.id !== r.id);
+  const kept = r.kept || [];
   let said = `${r.name}${r.version ? " " + r.version : ""} is in your mods` +
     (r.replaced ? ", with your settings kept." : ".") +
-    (extra.length ? ` It came with ${extra.length} more: ${extra.filter(a => a.on).length} on, the rest off.` : "");
+    (extra.length ? ` It came with ${extra.length} more: ${extra.filter(a => a.on).length} on, the rest off.` : "") +
+    (kept.length ? ` Your own ${kept.map(k => k.name).join(", ")} ${kept.length > 1 ? "have the same folder names as mods in it, so they were" : "has the same folder name as a mod in it, so it was"} left as ${kept.length > 1 ? "they are" : "it is"}.` : "");
   if (!r.on) said += " It's still off: switch it on, then Apply.";
   else if (runsCode && !codeAllowed) said += " It runs its own scripts, so allow that (Get set up, or Options on Settings and repair) for the game to get it.";
   else said += " Press Play to put it in the game.";
   return said;
+}
+
+// The sentence for "No internet connection": what GitHub's trouble comes to when it couldn't be reached at all.
+export const OFFLINE = "No internet connection; press Add all four again when you're online.";
+
+// What Add all four says once it's done, from what happened to each: `went` (["Menu pages 1.0", …]),
+// `unreleased` (names of those with no release yet) and `failed` ([{message, offline}], the other errors).
+// {text, kind, done}: done says whether Get set up's step counts as done ("added"), which it doesn't when
+// nothing went in for a reason other than no release yet. With no connection, one sentence says so.
+export function addAllToast(went, unreleased, failed, codeAllowed) {
+  const and = list => list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}` : list[0];
+  const done = went.length > 0 || failed.length === 0;
+  if (!went.length && failed.length && failed.every(f => f.offline)) return { text: OFFLINE, kind: "bad", done };
+  const offline = failed.filter(f => f.offline), other = failed.filter(f => !f.offline);
+  const text = (went.length ? `Added ${and(went)}.` : "Nothing was added.")
+    + (unreleased.length ? ` ${and(unreleased)} ${unreleased.length > 1 ? "have" : "has"} no release yet: the owner of that mod has to publish one, and its row below says so until then.` : "")
+    + (offline.length ? ` The connection dropped before ${offline.length > 1 ? `${offline.length} of them` : "one of them"} went in; press its Add below to try again.` : "")
+    + other.map(f => ` ${sentence(f.message)}`).join("")
+    + (went.length && !codeAllowed ? " They run their own scripts, so Let mods run their own scripts is the next step." : went.length ? " Press Play to put them in the game." : "");
+  return { text, kind: failed.length && !went.length ? "bad" : "info", done };
+}
+
+// What the add-ons card says when GitHub had no answer for "Check for newer versions" (GET /addons?latest=1):
+// one sentence when it couldn't be reached at all, else each one's trouble ({id: sentence}); null when it
+// answered for every one (no release yet is an answer, which each row says itself).
+export function checkTrouble(addons) {
+  const trouble = addons.filter(a => a.error && !a.no_release);
+  if (!trouble.length) return null;
+  if (trouble.every(a => a.offline)) return { all: "No internet connection, so GitHub couldn't be asked; press Check for newer versions again when you're online.", each: {} };
+  return { all: null, each: Object.fromEntries(trouble.map(a => [a.id, sentence(a.error)])) };
 }
 
 // The "Not in the game yet" banner's list, from GET /changes.
@@ -114,3 +146,7 @@ export function changeParts(c) {
     ...(c.redo || []).map(r => `apply again: ${r}`),
   ];
 }
+
+// How many changes the status chip counts from GET /changes: mods on, off and changed, each reason to apply
+// again, and the left-out mods still in the game (the next install takes them out).
+export const changeCount = c => c.on.length + c.off.length + c.changed.length + (c.redo || []).length + (c.still_in || []).length;

@@ -120,3 +120,52 @@ test("an add-on button adds it, says so, and tells the other pages", async () =>
   assert.match(dom.byId.toasts.textContent, /Sandbox mode 0\.4 is in your mods\. Press Play/);
   off();
 });
+
+test("Add all four with no connection says one sentence and leaves the step open", () => {
+  const offline = [1, 2, 3, 4].map(() => ({ message: "couldn't reach GitHub for X (no connection); try again, or download it from https://github.com/x", offline: true }));
+  assert.deepEqual(list.addAllToast([], [], offline, false), { text: list.OFFLINE, kind: "bad", done: false });
+  // Some went in before the connection dropped: said, and the step is done (the rows offer the rest).
+  const some = list.addAllToast(["Menu pages 1.0"], [], [offline[0]], true);
+  assert.equal(some.done, true);
+  assert.equal(some.text, "Added Menu pages 1.0. The connection dropped before one of them went in; press its Add below to try again. Press Play to put them in the game.");
+  // Only "no release yet" kept them out: nothing to wait for on this side, so the step is done.
+  const none = list.addAllToast([], ["Creator palettes", "Emote wheel"], [], false);
+  assert.equal(none.done, true);
+  assert.match(none.text, /^Nothing was added\. Creator palettes and Emote wheel have no release yet/);
+  // Any other trouble, worded as sentences, and the step left open when nothing went in.
+  const other = list.addAllToast([], [], [{ message: "github is turning requests away for now (too many); try again in an hour", offline: false }], false);
+  assert.deepEqual(other, { text: "Nothing was added. Github is turning requests away for now (too many); try again in an hour.", kind: "bad", done: false });
+});
+
+test("Check for newer versions says when GitHub couldn't be reached, and each one's other trouble", () => {
+  assert.equal(list.checkTrouble([{ id: "a" }, { id: "b", no_release: true, error: "b has no release yet" }]), null);
+  const off = list.checkTrouble([{ id: "a", error: "couldn't reach GitHub", offline: true }, { id: "b", no_release: true, error: "none" }]);
+  assert.match(off.all, /^No internet connection/);
+  const busy = list.checkTrouble([{ id: "a", error: "GitHub is turning requests away for now (too many)", offline: false }]);
+  assert.deepEqual(busy, { all: null, each: { a: "GitHub is turning requests away for now (too many)." } });
+});
+
+test("the status chip counts a left-out mod that's still in the game", () => {
+  assert.equal(list.changeCount({ on: [], off: [], changed: [], redo: [], left_out: { old: "made for an older version" }, still_in: ["old"] }), 1);
+  assert.equal(list.changeCount({ on: ["a"], off: ["b"], changed: ["c"], redo: ["x"] }), 4);
+});
+
+test("an add-on's toast names your own mods it left as they are", () => {
+  const r = { id: "creator-palettes", name: "Creator palettes", version: "1.2.0", on: true,
+    added: [{ id: "creator-palettes", on: true }], kept: [{ id: "palette-dark-forest", name: "Dark Forest" }] };
+  assert.match(list.addonToast(r, true), /Your own Dark Forest has the same folder name as a mod in it, so it was left as it is\./);
+});
+
+test("an add-on button with no release yet gives way to a line saying so", async () => {
+  dom.routes = {
+    "POST /addons/emote-wheel": () => { throw { status: 400, error: "Emote wheel has no release yet; the owner of that mod has to publish one (https://x)", no_release: true }; },
+    "GET /settings": () => ({ allow_code_mods: true }),
+  };
+  const box = dom.document.createElement("div");
+  const b = wc.addonButton("emote-wheel", { label: "Add the Emote wheel", name: "the Emote wheel" });
+  box.append(b);
+  b.click();
+  for (let i = 0; i < 20 && box.querySelector("button"); i++) await tick(5);
+  assert.equal(box.querySelector("button"), null);
+  assert.equal(box.textContent, "The Emote wheel has no release yet: the owner of that mod has to publish one first.");
+});
