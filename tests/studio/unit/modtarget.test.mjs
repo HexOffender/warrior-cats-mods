@@ -128,8 +128,42 @@ test("refresh and mods-changed read the list again without reloading the file wh
   // Saved: the mod is made again (POST /mods) and the file written; a refresh while clean loads the file as before.
   await t.target.save();
   assert.ok(t.state.mods.some(m => m.id === "a") && t.state.puts.includes("a"));
+  assert.equal(t.loads.length, 1, "a save doesn't read the file back: the page holds what it saved");
   await t.target.refresh();
-  assert.equal(t.loads.length, 3, "a save reloads the file (2), and so does a refresh while clean (3)");
+  assert.equal(t.loads.length, 2, "a refresh while clean loads the file");
+});
+
+test("a change made while a save is under way stays on the page, unsaved, and onSaved hears what was saved", async () => {
+  const state = fresh();
+  dom.routes = routes(state);
+  for (const type of Object.keys(dom.windowListeners)) delete dom.windowListeners[type];
+  localStorage.clear();
+  localStorage.setItem("wc-target", "a");
+  const wc = await import(dom.studio("lib/wc.js") + "?" + Math.random());
+  const loads = [], heard = [];
+  let value = { prefixes: { remove: ["Sun"] } }, release;
+  const target = wc.modTarget({ file: "names.json", share: false, onLoad: obj => loads.push(obj), getValue: () => value, onSaved: v => heard.push(v) });
+  dom.byId.main.append(target.element);
+  await target.refresh();
+  // The PUT waits until the test lets it answer; meanwhile the creator changes something.
+  const put = dom.routes["PUT /mods/a/file/names.json"];
+  dom.routes["PUT /mods/a/file/names.json"] = b => new Promise(ok => { release = () => ok(put(b)); });
+  target.markDirty();
+  const saving = target.save();
+  await tick(5);
+  value = { prefixes: { remove: ["Sun", "Moon"] } };
+  target.markDirty();
+  release();
+  assert.equal(await saving, true);
+  assert.deepEqual(state.files["a/names.json"], { prefixes: { remove: ["Sun"] } }, "what was on the page when Save was pressed");
+  assert.equal(loads.length, 1, "not read back over the change");
+  assert.equal(target.dirty, true, "the change made meanwhile is still to be saved");
+  assert.deepEqual(heard, [{ prefixes: { remove: ["Sun"] } }]);
+  assert.equal(target.element.querySelector(".dirty").textContent, "Unsaved changes");
+  // settleNew: the entries just saved keep their ids; one added since still follows its name.
+  const list = [{ id: "a", _new: true }, { id: "b", _new: true }, { id: "c" }];
+  wc.settleNew(list, [{ id: "a" }, { id: "c" }]);
+  assert.deepEqual(list, [{ id: "a" }, { id: "b", _new: true }, { id: "c" }]);
 });
 
 test("New mod with unsaved changes makes the mod, then asks the same question", async () => {
@@ -253,19 +287,34 @@ test("coming back to the window re-reads a file changed outside the page, only w
   assert.ok([...dom.byId.toasts.querySelectorAll("span")].some(s => s.textContent.includes("was changed outside this page")));
 });
 
-test("a change made while the file is read again after a save stays on the page", async () => {
+test("a change made while the file is read again (after an Apply) stays on the page", async () => {
   const t = await setUp();
   const read = dom.routes["GET /mods/a/file/names.json"];
   let reading = null;
   dom.routes["GET /mods/a/file/names.json"] = async () => { await new Promise(r => { reading = r; }); return read(); };
-  const saving = t.target.save();
-  while (!reading) await tick(5);   // saved, and reading the file back
-  t.target.markDirty();             // a click on the page just then
-  reading();
-  assert.equal(await saving, true);
-  assert.equal(t.loads.length, 1, "the page's state wasn't replaced by the file");
-  assert.equal(t.target.dirty, true, "and the change is still to be saved");
-  dom.routes["GET /mods/a/file/names.json"] = read;
+  try {
+    const refreshing = t.target.refresh();   // what installedEvent does on a page with nothing unsaved
+    while (!reading) await tick(5);
+    t.target.markDirty();                    // a click on the page just then
+    reading();
+    await refreshing;
+    assert.equal(t.loads.length, 1, "the page's state wasn't replaced by the file");
+    assert.equal(t.target.dirty, true, "and the change is still to be saved");
+  } finally {
+    dom.routes["GET /mods/a/file/names.json"] = read;
+  }
+});
+
+test("what a save wrote is the file as it is: coming back to the window doesn't read it again", async () => {
+  const t = await setUp();
+  t.setValue({ prefixes: { remove: ["Sun"] } });
+  t.target.markDirty();
+  await t.target.save();
+  const toasts = dom.byId.toasts.querySelectorAll("span").length;
+  t.wc.bus.emit("focus");
+  await tick(20);
+  assert.equal(t.loads.length, 1, "not loaded again");
+  assert.ok(![...dom.byId.toasts.querySelectorAll("span")].slice(toasts).some(s => s.textContent.includes("changed outside")));
 });
 
 const REFUSED = { ok: false, status: 403, statusText: "Forbidden", json: async () => ({ error: "missing or wrong studio token; reload the page" }) };

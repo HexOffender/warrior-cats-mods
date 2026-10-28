@@ -46,6 +46,8 @@ export default {
       file: "palette.json",
       onLoad: obj => { state = P.fromPalette(obj, { labels: LABELS, gameSlots: GAME }); undo = null; renderAll(); otherSlotsReady = loadOtherSlots(); },
       getValue: () => P.toPalette(state, LABELS),
+      // A save keeps what's on the page (it isn't read back); the last whole-tab change can't be undone past it.
+      onSaved: () => { undo = null; renderStyleRow(); },
     });
     const edited = () => target.markDirty();
     // curHex: the colour a slot shows with this palette: its own, else the game's, else another palette's new one.

@@ -19,6 +19,7 @@ export default {
       // The mod's cats and items first: an objective that's the one the page would write stays "auto".
       onLoad: async (obj, id) => { await loadMod(id); load(obj); draw(); },
       getValue: () => toJson(),
+      onSaved: saved => wc.settleNew(quests, saved.quests),   // saved quests keep their ids from now on
     });
     const catsNote = el("div", { class: "banner", hidden: true });
     const out = wc.codePanel("quests.json");
