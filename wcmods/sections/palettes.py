@@ -41,3 +41,7 @@ class PaletteSection(Section):
         # Always shipped: with no changes it still logs the game's colour tables.
         ctx.add_ue4ss_mod(UE4SS_MOD_NAME, {"Scripts/main.lua": palettes.ue4ss_script(runtime), "enabled.txt": ""})
         ctx.note("runtime_palette", {s: sorted(e, key=int) for s, e in runtime.items()})
+        groups = palettes.slot_groups(items)
+        ctx.add_ue4ss_shared(palettes.GROUPS_LUA, palettes.groups_module(groups))
+        if groups:
+            ctx.note("new_colours", {g["id"]: {s: len(g[s]) for s in palettes.GROWABLE if g[s]} for g in groups})
