@@ -26,7 +26,8 @@ Everything on this page was tried in game on build 24847281 and rechecked on 261
   - **`wcmods.json`:** your settings in it stay as they are ("allow_code_mods" included). Like any
     install, it updates the record of what's installed (`installed`, `installed_ue4ss`,
     `installed_ue4ss_shared`), which the studio's Apply button compares against.
-  - **More mods:** `--with <mod folder>` adds a mod that isn't in `mods/`, switched on for the build,
+  - **More mods:** `--with <mod folder>` adds a mod that isn't in `mods/`, switched on for the build
+    and used even if its `mod.json` names another version of the game (the tests' own mods name none),
     e.g. `--with ../wcmods-examples/game-tweaks` (from a checkout of wcmods-examples beside wcmods).
 - **Afterwards:** `agent install --normal` installs as `wcmods.json` says, like `wcmods install`.
   Until then, with "allow_code_mods" off, the studio says the game has code from a test install, and
