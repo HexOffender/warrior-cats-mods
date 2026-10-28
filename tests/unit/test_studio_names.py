@@ -10,7 +10,7 @@ import pytest
 from wcmods import pipeline
 from wcmods.formats.save import SAV_NAME
 
-from conftest import make_mod, write_save
+from unit_helpers import make_mod, write_save
 from tiny_names import cat, save, tiny_game
 
 SPARKLE = cat("Warrior", "STR_CAT_NAME_WCM_FIXED_SPARKLE", "_HEART")   # named Sparkle by a mod

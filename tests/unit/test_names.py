@@ -10,7 +10,7 @@ import pytest
 
 from wcmods import names
 
-from conftest import REPO
+from unit_helpers import REPO
 from tiny_names import cat, save, tiny_game
 
 GAME = tiny_game()
