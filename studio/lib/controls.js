@@ -3,11 +3,12 @@
 // aliases, names), importing nothing, so node:test loads it with no page (tests/studio/controls.test.mjs).
 //
 // The page's state is the file's shape, flattened: { keyboard: {action: key}, gamepad: {action: key},
-// keys: {key you press: game key}, menus: {key you press: game key}, notes: {"_help": ...} }. What a row shows
-// is read from it; what a row does is written into it. Putting a row back on the game's key deletes its entry
-// (so a fresh "Back to the game's keys" writes {}), except when a lower-priority mod sets that entry: then the
-// game's key is written, so this mod's "back" wins in the game. Entries a file already has are kept as they
-// are until their row is changed, even when they're the game's own key.
+// keys: {key you press: game key}, menus: {key you press: game key}, notes: {"_help": ...}, inner: the "_"
+// notes inside each section, dropped: what the file had that the build can't read }. What a row shows is read
+// from it; what a row does is written into it. Putting a row back on the game's key deletes its entry (so a
+// fresh "Back to the game's keys" writes {}), except when a lower-priority mod sets that entry: then the game's
+// key is written, so this mod's "back" wins in the game. Entries a file already has are kept as they are until
+// their row is changed, even when they're the game's own key; Undo puts a row back to what the file had.
 
 // Keys while you play, top to bottom; their labels are the game's names (game.names).
 export const PLAY_ROWS = ["Player_Pounce", "Player_Interact", "Player_Run", "Player_Crouch", "Player_Scent_Tracking",
@@ -43,34 +44,74 @@ const asKey = v => {
   return typeof k === "string" && k.trim() ? k : null;
 };
 
-// A file (or nothing) as the page's state. A null or a list where a key should be is dropped (the build
-// refuses it, and saving writes the file without it); {"key": "F"} from older pages is read as "F".
+export const SECTIONS = ["keyboard", "gamepad", "keys", "menus"];
+const empty = () => ({ keyboard: {}, gamepad: {}, keys: {}, menus: {}, notes: {},
+  inner: { keyboard: {}, gamepad: {}, keys: {}, menus: {}, menusOuter: {} }, dropped: [] });
+
+// A file (or nothing) as the page's state. Notes ("_" entries) are kept, in each section too. What the build
+// can't read is left out and listed in `dropped` ([{ section, name?, value?, why }], why "value" for a null, a
+// list or a number where a key should be, "section" for a part the build doesn't know, "shape" for a part
+// that isn't a list of keys), so the page can say what saving leaves out. {"key": "F"} from older pages is "F".
 export function normalize(obj, game) {
-  const s = { keyboard: {}, gamepad: {}, keys: {}, menus: {}, notes: {} };
+  const s = empty();
   if (!isObj(obj)) return s;
-  for (const [k, v] of Object.entries(obj)) if (k.startsWith("_")) s.notes[k] = v;
-  for (const dev of ["keyboard", "gamepad"]) {
-    for (const [action, v] of Object.entries(isObj(obj[dev]) ? obj[dev] : {})) {
-      const k = asKey(v);
-      if (!action.startsWith("_") && k) s[dev][action] = norm(k, dev, game);
-    }
+  const drop = d => s.dropped.push(d);
+  for (const [k, v] of Object.entries(obj)) {
+    if (k.startsWith("_")) s.notes[k] = v;
+    else if (!SECTIONS.includes(k)) drop({ section: k, why: "section" });
+    else if (!isObj(v)) drop({ section: k, why: "shape" });
   }
-  const pairs = { keys: obj.keys, menus: isObj(obj.menus) ? obj.menus.keys : null };
-  for (const sec of ["keys", "menus"]) {
-    for (const [pressed, v] of Object.entries(isObj(pairs[sec]) ? pairs[sec] : {})) {
+  // One section's entries: notes kept as they are, keys read, the rest dropped with what it was.
+  const read = (sec, entries, put) => {
+    for (const [name, v] of Object.entries(entries)) {
+      if (name.startsWith("_")) { s.inner[sec][name] = v; continue; }
       const k = asKey(v);
-      if (!pressed.startsWith("_") && k) s[sec][norm(pressed)] = norm(k);
+      if (k) put(name, k);
+      else drop({ section: sec, name, value: v, why: "value" });
     }
+  };
+  for (const dev of ["keyboard", "gamepad"]) {
+    if (isObj(obj[dev])) read(dev, obj[dev], (action, k) => { s[dev][action] = norm(k, dev, game); });
+  }
+  if (isObj(obj.keys)) read("keys", obj.keys, (pressed, k) => { s.keys[norm(pressed)] = norm(k); });
+  if (isObj(obj.menus)) {
+    for (const [k, v] of Object.entries(obj.menus)) {
+      if (k.startsWith("_")) s.inner.menusOuter[k] = v;
+      else if (k !== "keys") drop({ section: "menus", name: k, why: "shape" });
+    }
+    if (isObj(obj.menus.keys)) read("menus", obj.menus.keys, (pressed, k) => { s.menus[norm(pressed)] = norm(k); });
+    else if ("keys" in obj.menus) drop({ section: "menus", name: "keys", why: "shape" });
   }
   return s;
 }
 
-// The state as controls.json: only the sections with something in them.
+// The state as controls.json: only the sections with something in them, their notes first.
 export function toJson(s) {
+  const inner = s.inner || empty().inner;
   const o = { ...s.notes };
-  for (const sec of ["keyboard", "gamepad", "keys"]) if (Object.keys(s[sec]).length) o[sec] = { ...s[sec] };
-  if (Object.keys(s.menus).length) o.menus = { keys: { ...s.menus } };
+  const has = x => Object.keys(x).length > 0;
+  for (const sec of ["keyboard", "gamepad", "keys"]) if (has(s[sec]) || has(inner[sec])) o[sec] = { ...inner[sec], ...s[sec] };
+  if (has(s.menus) || has(inner.menus) || has(inner.menusOuter)) {
+    o.menus = { ...inner.menusOuter };
+    if (has(s.menus) || has(inner.menus)) o.menus.keys = { ...inner.menus, ...s.menus };
+  }
   return o;
+}
+
+// What normalize left out, one sentence each, for the page to say before a save loses it. nameOf: an action's
+// name on the page.
+export function droppedSaid(s, nameOf = a => a) {
+  const shown = v => { const t = JSON.stringify(v) ?? String(v); return t.length > 30 ? `${t.slice(0, 29)}…` : t; };
+  return (s.dropped || []).map(d => {
+    if (d.why === "section") return `The part called "${d.section}": the game reads only keyboard, gamepad, keys and menus.`;
+    if (d.why === "shape") {
+      return d.section === "menus" ? `In "menus", "${d.name}": the menus part holds only "keys".`
+        : `The part called "${d.section}", which should hold keys by name and doesn't.`;
+    }
+    const where = d.section === "keyboard" || d.section === "gamepad"
+      ? `${nameOf(d.name)} (${d.section === "gamepad" ? "controller" : "keyboard"})` : `"${d.name}" in "${d.section}"`;
+    return `${where}: ${shown(d.value)} isn't a key's name.`;
+  });
 }
 
 export const clone = s => JSON.parse(JSON.stringify(s));
@@ -93,6 +134,7 @@ export function set(s, game, dev, action, key, lower = []) {
   else s[dev][action] = k;
   return before !== s[dev][action];
 }
+// A row back on the game's key (its "Back to E" button, and the column's "Back to the game's keys").
 export const undo = (s, game, dev, action, lower = []) => {
   if (dev === "gamepad" && isAxis(game, action)) return remove(s, dev, action);
   return set(s, game, dev, action, gameKey(game, dev, action), lower);
@@ -102,6 +144,15 @@ export function remove(s, sec, name) {
   delete s[sec][name];
   return true;
 }
+// Undo: an entry back to what the file had when the page loaded it (or last saved it), `loaded`: its key, or
+// no entry. differs: whether there's anything to undo.
+export const differs = (s, loaded, sec, name) => s[sec][name] !== loaded[sec][name];
+export function revert(s, loaded, sec, name) {
+  if (!differs(s, loaded, sec, name)) return false;
+  if (loaded[sec][name] === undefined) delete s[sec][name];
+  else s[sec][name] = loaded[sec][name];
+  return true;
+}
 
 // The moving keys the game has built in (W, D, Up, Right): the row shows the first pair standing for one; any
 // other pair for the same key is an extra, under For mod makers.
@@ -109,13 +160,19 @@ export function rowPair(s, raw) {
   return Object.keys(s.keys).find(p => s.keys[p] === raw && p !== raw) || null;
 }
 export const rawKey = (s, raw) => rowPair(s, raw) || raw;
+// A key that already stands for another one (a second key, another moving key) isn't taken over: false, and
+// pairTaken says where it is.
 export function setRaw(s, raw, key) {
   const k = norm(key), was = rowPair(s, raw);
   if (was === k) return false;
+  if (k !== raw && k in s.keys && s.keys[k] !== raw) return false;
   if (was) delete s.keys[was];
   if (k !== raw) s.keys[k] = raw;
   return true;
 }
+// Undo on a moving key: back to the key the file had for it (or the game's own). differsRaw: anything to undo.
+export const differsRaw = (s, loaded, raw) => rowPair(s, raw) !== rowPair(loaded, raw);
+export const revertRaw = (s, loaded, raw) => setRaw(s, raw, rowPair(loaded, raw) || raw);
 
 // Second keys: while you play, a "keys" pair standing for the action's game key (it does what that key does
 // there, nothing in menus); in menus, a "menus" pair standing for the row's key.
@@ -123,11 +180,36 @@ export function setRaw(s, raw, key) {
 // mod makers.
 const padSource = p => p.startsWith("Gamepad_");
 export const secondKeys = (s, sec, target) => Object.keys(s[sec]).filter(p => s[sec][p] === target && !padSource(p));
+// A key stands for one key at a time: one that already stands for another isn't moved (false; pairTaken
+// says where it is, for the capture dialog to refuse it first).
 export function addSecond(s, sec, target, key) {
   const k = norm(key);
-  if (k === target || s[sec][k] === target) return false;
+  if (k === target || k in s[sec]) return false;
   s[sec][k] = target;
   return true;
+}
+
+// Why `key` can't stand for `target` in `sec` ("keys" or "menus"): it already stands for another key there.
+// A sentence that says where ("H is already a second key for Interact; remove it there first."), or null.
+// target null: any key it stands for (the For mod makers' pair, whose game key is asked for next).
+export function pairTaken(s, game, sec, key, target = null, label = k => k) {
+  const k = norm(key);
+  if (!(k in s[sec]) || k === target || s[sec][k] === target) return null;
+  const to = s[sec][k], name = c => (game.names[c] || [c])[0];
+  if (sec === "menus") {
+    const row = MENU_ROWS.find(r => r.key === to);
+    return row ? `${label(k)} is already a second key for ${name(row.command)} in menus; remove it there first.`
+      : `${label(k)} already stands for ${label(to)} in menus; remove it under For mod makers first.`;
+  }
+  if (game.built_in.includes(to) && rowPair(s, to) === k) {
+    return `${label(k)} is already the key for ${name(`key:${to}`)}; give that another key first.`;
+  }
+  const actions = PLAY_ROWS.filter(a => gameKey(game, "keyboard", a) === to).map(name);
+  if (actions.length) {
+    const said = actions.length === 1 ? actions[0] : `${actions.slice(0, -1).join(", ")} and ${actions.at(-1)}`;
+    return `${label(k)} is already a second key for ${said}; remove it there first.`;
+  }
+  return `${label(k)} already stands for ${label(to)} while you explore; remove it under For mod makers first.`;
 }
 
 // "Back to the game's keys" for a column: every change its rows show goes. The keyboard's: the actions while
