@@ -12,7 +12,7 @@ from wcmods.formats.savejson import SaveDoc
 from wcmods.sections import savedit
 from wcmods.studio import Body
 
-from conftest import write_save
+from unit_helpers import write_save
 
 LEVEL = "1/GameplayProgression/Level"
 INV = "1/GameplayProgression/State/Inventory"

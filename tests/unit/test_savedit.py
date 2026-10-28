@@ -10,7 +10,7 @@ from wcmods.sdk import BuildContext
 from wcmods.sections import savedit
 from wcmods.sections.savedit import SaveSection
 
-from conftest import write_save
+from unit_helpers import write_save
 
 SAVE = {"acct": {"1": {"GameplayProgression": {"Level": 5, "Experience": 120, "FreshKill": {"Value": 62},
                                                "State": {"Inventory": {"Gameplay.Inventory.Materials.Moss": 4}}}},

@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from conftest import make_mod
+from unit_helpers import make_mod
 
 
 def get(st, path):

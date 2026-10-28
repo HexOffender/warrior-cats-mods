@@ -12,7 +12,7 @@ from wcmods import pipeline, saverecord
 from wcmods.formats.save import SAV_NAME, SaveGame, list_backups
 from wcmods.formats.savejson import SaveDoc
 
-from conftest import make_mod, write_save
+from unit_helpers import make_mod, write_save
 
 LEVEL = "1/GameplayProgression/Level"
 INV = "1/GameplayProgression/State/Inventory"

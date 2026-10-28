@@ -11,16 +11,23 @@ import { findBrowser, launch } from "../lib/browser.mjs";
 import { dataFolder, fixtureGame, makeGame, removeFolder, startStudio } from "../lib/studio.mjs";
 
 const browserPath = findBrowser();
-const skip = browserPath ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
+const required = process.env.WC_REQUIRE_BROWSER === "1";
+const skip = browserPath || required ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
 
 let browser, studio, folders;
 
 before(async () => {
   if (skip) return;
+  if (!browserPath) throw new Error("WC_REQUIRE_BROWSER=1, and no Chromium was found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)");
   folders = dataFolder();
   fixtureGame(folders);
-  studio = await startStudio(folders.data);
+  studio = await startStudio(folders);
   browser = await launch({ browser: browserPath });
+  // A first load, with time to spare: a cold browser and studio are slow, and every test's own waits are 10 s.
+  const page = await browser.page();
+  await page.goto(studio.url, { timeout: 60000 });
+  await page.waitFor("#nav button", 60000);
+  await page.close();
 });
 
 after(async () => {
@@ -222,7 +229,7 @@ test("a file's own row removals and additions, and a table the game hasn't got, 
 test("with the game's files unreadable the page says so, and still shows its file", { skip }, async () => {
   const empty = dataFolder();
   makeGame(empty.game);   // the exe and the folders, no paks
-  const other = await startStudio(empty.data);
+  const other = await startStudio(empty);
   try {
     const page = await browser.page();
     await page.goto(other.url + "#data");

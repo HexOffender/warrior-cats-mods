@@ -1,12 +1,12 @@
-// The studio for the end-to-end tests: `python wcmods.py studio --no-browser --port 0` on a folder of its own
+// The studio for the end-to-end tests: `python wcmods.py studio --no-browser --port 0` on folders of its own
 // (WCMODS_DATA, with a made-up game folder named in its wcmods.json), so neither Steam's game nor the real save
-// is ever looked at.
+// is ever used.
 //
-//   const folders = dataFolder();                  // root, game, saves, data
+//   const folders = dataFolder();                  // root, game, saves, data, temp
 //   fixtureGame(folders);                          // the made-up game with a few tables, and the tests' save
-//   const studio = await startStudio(folders.data);
+//   const studio = await startStudio(folders);
 //   ... studio.url ...
-//   studio.stop(); removeFolder(folders.root);
+//   studio.stop(); await removeFolder(folders.root);
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -17,10 +17,16 @@ export const EXE = "Wrc-Win64-ShippingDRM.exe";   // config.EXE_NAME: what makes
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const python = () => process.env.PYTHON || "python";
 
-// A studio started on a free port over `data`; its URL is on the first line it prints.
-export async function startStudio(data, env = {}) {
+// A studio started on a free port over the test's folders; its URL is on the first line it prints. The game
+// counts as closed (WCMODS_FAKE_RUNNING=0) unless `env` says otherwise, whether or not the real one is running
+// on this machine; its temp folder (the inbox a dropped mod waits in) is the test's, not the one a studio of
+// the player's would share.
+export async function startStudio(folders, env = {}) {
+  const own = { ...process.env, WCMODS_DATA: folders.data, WCMODS_FAKE_RUNNING: "0", TEMP: folders.temp, TMP: folders.temp,
+    TMPDIR: folders.temp, ...env };
+  delete own.WCMODS_GAME_BUILD;   // a build number a developer set to try an update
   const proc = spawn(python(), ["-I", "wcmods.py", "studio", "--no-browser", "--port", "0"],
-    { cwd: REPO, env: { ...process.env, WCMODS_DATA: data, ...env }, stdio: ["ignore", "pipe", "pipe"] });
+    { cwd: REPO, env: own, stdio: ["ignore", "pipe", "pipe"] });
   let out = "", err = "";
   proc.stdout.on("data", d => { out += d; });
   proc.stderr.on("data", d => { err += d; });
@@ -41,13 +47,16 @@ export async function startStudio(data, env = {}) {
 }
 
 // A folder of the player's own, with wcmods.json naming a game folder (empty: not the game yet) and a saves
-// folder, both made up.
+// folder, both made up, so the real game folder and the real save are never used, and a temp folder. Steam
+// is still read (its registry key and library list, read only): once the made-up folder holds the game,
+// Get set up and the Mods page say whether Steam starts another copy, and nothing here depends on the answer.
 export function dataFolder() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "wc-e2e-"));
   const game = path.join(root, "Game"), saves = path.join(root, "Saves"), data = path.join(root, "data");
-  for (const d of [game, saves, data]) fs.mkdirSync(d, { recursive: true });
+  const temp = path.join(root, "temp");
+  for (const d of [game, saves, data, temp]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(data, "wcmods.json"), JSON.stringify({ game_dir: game, save_dir: saves }));
-  return { root, game, saves, data };
+  return { root, game, saves, data, temp };
 }
 
 // The game's folder as config.is_game_dir knows one: the exe and the folders, no paks (nothing to read).
@@ -72,7 +81,7 @@ export async function removeFolder(root) {
   }
 }
 
-// Read the save the studio wrote, as JSON (through wcmods' own codec).
+// The save the studio wrote, as JSON (through wcmods' own codec).
 export function readSave(saves) {
   const code = "import sys, json; sys.path.insert(0, sys.argv[1]); from wcmods.formats.save import SaveGame; " +
     "print(SaveGame.load(sys.argv[2]).json_text)";

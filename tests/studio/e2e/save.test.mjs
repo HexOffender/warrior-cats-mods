@@ -11,17 +11,24 @@ import { REPO } from "../lib/dom.mjs";
 import { dataFolder, fixtureGame, readSave, removeFolder, startStudio } from "../lib/studio.mjs";
 
 const browserPath = findBrowser();
-const skip = browserPath ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
+const required = process.env.WC_REQUIRE_BROWSER === "1";
+const skip = browserPath || required ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
 const P = "1/GameplayProgression";
 
 let browser, studio, folders;
 
 before(async () => {
   if (skip) return;
+  if (!browserPath) throw new Error("WC_REQUIRE_BROWSER=1, and no Chromium was found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)");
   folders = dataFolder();
   fixtureGame(folders);
-  studio = await startStudio(folders.data);
+  studio = await startStudio(folders);
   browser = await launch({ browser: browserPath });
+  // A first load, with time to spare: a cold browser and studio are slow, and every test's own waits are 10 s.
+  const page = await browser.page();
+  await page.goto(studio.url, { timeout: 60000 });
+  await page.waitFor("#nav button", 60000);
+  await page.close();
 });
 
 after(async () => {
@@ -165,7 +172,7 @@ test("the tree keeps a typed decimal, keeps its groups open, and shows key bindi
 
 test("without a save the page says to start the game once", { skip }, async () => {
   const empty = dataFolder();
-  const other = await startStudio(empty.data);
+  const other = await startStudio(empty);
   try {
     const page = await browser.page();
     await page.goto(other.url + "#save");
