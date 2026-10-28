@@ -263,7 +263,7 @@ local function pickupLabel(actor)
     return table.concat(names, ", ")
 end
 
-local actorLabels = {}   -- "address|class" -> label, for labels that belong to one actor
+local actorLabels = {}   -- "address|class" -> label, for labels that belong to one actor; scan() clears it
 -- A readable name for an actor (kind, when known, helps: cats get their names, creatures their model).
 function World.label(actor, kind)
     local n = actor:GetClass():GetFName():ToString()
@@ -316,6 +316,9 @@ local function kindsOf(cls)
 end
 
 local function scan()
+    -- An actor that went since the last scan can have left its address to another of the same class (a
+    -- pickup picked up, another item dropped there), which mustn't keep the old one's label.
+    actorLabels = {}
     local byKind = {}
     for kind in pairs(World.kinds) do byKind[kind] = {} end
     for _, a in ipairs(FindAllOf("Actor") or {}) do

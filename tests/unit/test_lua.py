@@ -61,6 +61,15 @@ def test_names_module_with_areas_and_quests():
     assert "function N.area(" in lua and "function N.quest(" in lua
 
 
+def test_world_scan_clears_the_label_cache():
+    """World.label keeps a label per actor address and class. A pickup that went can leave its address to
+    another item of its class, so each scan of the actor list starts the cache afresh."""
+    lua = world.lua()
+    assert lua.index("local actorLabels = {}") < lua.index("local function scan()")   # scan() sees it
+    scan = lua.split("local function scan()", 1)[1].split("\nend\n", 1)[0]
+    assert "actorLabels = {}" in scan and "local actorLabels" not in scan
+
+
 def test_game_module_names_the_saved_folder_the_install_makes():
     lua = game.lua(None, r"D:\Saves\WCMods")
     assert not problems(lua)

@@ -289,6 +289,19 @@ Fawnstar, as a player reported it showing "Cat 1"):
   menu under the key remapper.
 - **Mods' own cooked paks (`paks/`).** They're installed as the game's own patch paks are named,
   but no cooked content has been tried in game yet.
+- **memscan on the game itself** since the 2026-10-28 fix. On a test Python process it found 4 of 4
+  markers planted next to unreadable pages, where the old scan found none, and the unit tests check
+  one such marker on their own process. To check on the game:
+  - Install the names test mod (the prefix Fawn, the cat renamed Fawnstar). Without it the game has
+    no "Fawnstar" text, and the check finds nothing and proves nothing.
+  - With the test cat in the world and the game paused (P), run `python tools/re/memscan.py
+    Wrc-Win64 name=4600610077006e007300740061007200 --old --max 1000 --context 0` ("Fawnstar" in
+    UTF-16). One scan reads each chunk the old way and the new way back to back.
+  - It needs at least one hit. Every hit should say `old: found` or `old: missed, in a chunk it read
+    as empty`; the summary's "missed otherwise" and "only it found" should be 0.
+  - Record how many chunks the old scan read as empty, and the hits found only in those. Those hits
+    are the fix shown on the game; with none, the check shows only that nothing the old scan found
+    is lost.
 - **Names beyond the text.** Renamed and added names reach the game's text table (Mothpaw,
   Sparrowheart, Mothwhisper and the rogue Moss were read back in game). Still unchecked: new cats
   getting added parts, removed parts and ban list changes, and the name screen's suggestions. Also
