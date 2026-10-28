@@ -13,14 +13,20 @@
 //                  browser asks before the page closes, switching mods asks first (Save and switch, Switch
 //                  without saving, Stay), and refresh() re-reads the mod list without reloading the file
 //                  while the page has unsaved changes. What would keep the saved file out of the game shows
-//                  under the bar until the next save that's fine.
+//                  under the bar until the next save that's fine, and under that what Apply would leave out
+//                  (the save's notes). An Apply while there are unsaved changes says they aren't in the game
+//                  yet; coming back to the window re-reads a file changed outside the page, when nothing is
+//                  unsaved.
 //   installedEvent(target, fn)   bus.on("installed", fn) that skips fn while target has unsaved changes: for
 //                  a page that reloads its file after an Apply (wc.bus.on("installed", ...) runs regardless).
 //   openHelp(page) opens a page of the guide (docs/guide/<page>.md) in the help panel; no page, the index.
 //   bus            events between pages: "mods-changed" (a mod was made, changed, switched or removed),
 //                  "installed" (an Apply, Play or Check finished; the manifest), "sections-changed" (the
 //                  side bar's pages may have changed), "focus" (the window came back).
-//   el, clear, toast, announce, confirmButton, codePanel, copy, color, input, getPath, saveFile, docLink.
+//   color          colours: normHex (the pickers' 3 or 6 hex digits), parse (every form a mod's file may use,
+//                  as wcmods/colors.py reads them), and the conversions and moods the Palettes page uses.
+//   el, clear, toast, announce, confirmButton, codePanel, copy, input, getPath, saveFile, docLink.
+import { color } from "./colour.js";
 
 const TOKEN = document.querySelector('meta[name="wc-token"]')?.content || "";
 
@@ -294,48 +300,8 @@ export function openHelp(page = "") {
 }
 
 // ---------- colours (sRGB hex in files, linear floats in the engine) ----------
-const hexRe = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i;
-function normHex(h) {
-  const m = hexRe.exec(String(h).trim());
-  if (!m) return null;
-  let s = m[1];
-  if (s.length === 3) s = s.split("").map(c => c + c).join("");
-  return "#" + s.toUpperCase();
-}
-const hexToRgb = h => { const s = normHex(h).slice(1); return [0, 2, 4].map(i => parseInt(s.slice(i, i + 2), 16) / 255); };
-const rgbToHex = c => "#" + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0")).join("").toUpperCase();
-const s2l = c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-const l2s = c => { c = Math.max(0, Math.min(1, c)); return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; };
-const luminance = p => 0.2126 * p[0] + 0.7152 * p[1] + 0.0722 * p[2];
-function rgbToHsl([r, g, b]) {
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
-  if (mx === mn) return [0, 0, l];
-  const d = mx - mn, s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
-  const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
-  return [h * 60, s, l];
-}
-function hslToRgb([h, s, l]) {
-  h = ((h % 360) + 360) % 360 / 360;
-  if (s === 0) return [l, l, l];
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
-  const f = t => { t = (t + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; };
-  return [f(h + 1 / 3), f(h), f(h - 1 / 3)];
-}
-const clamp01 = v => Math.max(0, Math.min(1, v));
-const toward = (h, t, a) => h + (((t - h + 540) % 360) - 180) * a;
-const MOODS = {
-  vivid: { name: "Vivid", fn: ([h, s, l]) => [h, clamp01(s * 1.35 + 0.06), l] },
-  pastel: { name: "Pastel", fn: ([h, s, l]) => [h, s * 0.55, l + (1 - l) * 0.45] },
-  moonlit: { name: "Moonlit", fn: ([h, s, l]) => [toward(h, 212, 0.4), s * 0.7, clamp01(l * 0.9 + 0.08)] },
-  ember: { name: "Ember", fn: ([h, s, l]) => [toward(h, 20, 0.45), clamp01(s * 1.2 + 0.05), l * 0.92] },
-};
-export const color = {
-  normHex, hexToRgb, rgbToHex, srgbToLinear: s2l, linearToSrgb: l2s, luminance, rgbToHsl, hslToRgb, MOODS,
-  hexToLinear: h => hexToRgb(h).map(s2l),
-  linearToHex: p => rgbToHex(p.map(l2s)),
-  shade: (hex, amt) => { const [h, s, l] = rgbToHsl(hexToRgb(hex)); return rgbToHex(hslToRgb([h, s, clamp01(l * amt)])); },
-  mood: (hex, name) => rgbToHex(hslToRgb(MOODS[name].fn(rgbToHsl(hexToRgb(hex))))),
-};
+// In colour.js, which touches no page: normHex, parse (every form a mod's file may write), the conversions and the moods.
+export { color };
 
 // ---------- which mod a section edits ----------
 // Renders "Editing mod: [select] [New mod] [Save]". onLoad(obj|null, modId) fires when the target changes;
@@ -349,6 +315,8 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
   const key = "wc-target";   // the mod last chosen, on whichever page
   const kind = file.replace(".json", "");
   let mods = [], current = null, dirty = false;
+  let loadedText = null;   // the file's text as it was last read, to tell when something else changed it
+  let edits = 0;           // changes made on the page (markDirty), to tell a change made while the file was read again
   const select = el("select", { "aria-label": `Mod that stores ${file}` });
   const status = el("span", { class: "dirty" });
   const saveBtn = el("button", { class: "btn primary", text: "Save to mod" });
@@ -358,12 +326,14 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
   newBox.append(newId, el("button", { class: "btn small", text: "Create", onclick: () => create(newId.value.trim()) }));
   const bar = el("div", { class: "target" },
     el("span", { class: "lbl", text: "Editing mod" }), select, newBtn, newBox, el("span", { style: { flex: "1" } }), status, saveBtn);
-  // What would keep the saved file out of the game: said under the bar until a save that's fine.
+  // What would keep the saved file out of the game: said under the bar until a save that's fine. Under it, what
+  // Apply would leave out of a file that's fine, or where another mod's file wins (notes), until the next save.
   const problems = el("div", { class: "problems", role: "alert", hidden: true });
+  const notes = el("div", { class: "save-notes", role: "status", hidden: true });
   // The choice when switching mods with unsaved changes.
   const ask = el("div", { class: "banner switch-ask", role: "group", "aria-label": "Unsaved changes", hidden: true });
   const shareBox = share ? shareCard() : null;
-  const box = el("div", { class: "stack" }, bar, problems, ask, shareBox ? shareBox.element : null);
+  const box = el("div", { class: "stack" }, bar, problems, notes, ask, shareBox ? shareBox.element : null);
 
   const nameOf = id => (mods.find(m => m.id === id) || {}).name || (id === defaultId ? defaultName : id);
   const listed = id => [...select.options].some(o => o.value === id);
@@ -409,16 +379,20 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
     await load(pick);
   }
   async function load(id) {
-    const switching = id !== current;
+    const switching = id !== current, edited = edits;
     current = id;
     try { localStorage.setItem(key, id); } catch (e) { /* storage blocked */ }
     let obj = null;
+    loadedText = null;
     if (mods.some(m => m.id === id)) {
       const r = await api.get(`/mods/${encodeURIComponent(id)}/file/${file}`);
+      loadedText = r.exists ? r.text : null;
+      // Changed on the page while the same file was being read again (a click just after Save): the changes stay.
+      if (!switching && edits !== edited) return;
       if (r.exists) { try { obj = JSON.parse(r.text); } catch (e) { toast(`${file} in ${id} isn't valid JSON`, "bad"); } }
     }
     setDirty(false);
-    if (switching) showProblems([]);   // what's wrong with this mod's file stays in view through a reload of it
+    if (switching) { showProblems([]); showNotes([]); }   // what's said about this mod's file stays through a reload of it
     shareBox?.show(mods.find(m => m.id === id));
     onLoad(obj, id);
   }
@@ -446,11 +420,22 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
       toast(`Created mod ${id}`);
     } catch (e) { toast(e.message, "bad"); }
   }
-  function setDirty(v) { dirty = v; status.textContent = v ? "Unsaved changes" : ""; }
+  // behind: an Apply or Play ran while there were unsaved changes, so the game has the saved file, not these.
+  let behind = false;
+  function setDirty(v) {
+    dirty = v;
+    if (!v) behind = false;
+    status.textContent = !v ? "" : behind ? "Not in the game yet: Save to mod, then Apply" : "Unsaved changes";
+  }
   function showProblems(list) {
     clear(problems);
     problems.hidden = !list.length;
     if (list.length) problems.append(el("strong", { text: "Saved, but it can't go in the game yet: " }), el("span", { text: list.join(" ") }));
+  }
+  function showNotes(list) {
+    clear(notes);
+    notes.hidden = !list.length;
+    if (list.length) notes.append(el("strong", { text: "Good to know before you apply:" }), el("ul", { class: "notes" }, ...list.map(t => el("li", { text: t }))));
   }
   // Writes the page's file into the mod; true when it's saved. quiet: no toast (Save as .zip says what it did).
   async function save(quiet = false) {
@@ -462,6 +447,7 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
       setDirty(false);
       const found = (r && r.problems) || (r && r.problem ? [r.problem] : []);
       showProblems(found);
+      showNotes((r && r.notes) || []);
       // Whether the mod is on is read afresh: another page may have switched it since this list was made.
       mods = await api.get("/mods");
       const now = mods.find(m => m.id === current);
@@ -517,6 +503,19 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
   }
   // A mod made, renamed, switched or removed on another page shows here; the file isn't loaded again.
   bus.on("mods-changed", () => { if (mods.length || current) relist().catch(() => { /* the next refresh says */ }); });
+  // An Apply or Play while this page has unsaved changes put the saved file in the game, not them: said beside Save
+  // until they're saved.
+  bus.on("installed", () => { if (dirty) { behind = true; setDirty(true); } });
+  // Back in the studio's window (from the game, whose own menu saves some files, or another window): a file changed
+  // outside this page is read again while nothing here is unsaved, so the next Save doesn't write over it.
+  bus.on("focus", async () => {
+    if (dirty || !current || !mods.some(m => m.id === current)) return;
+    let r;
+    try { r = await api.get(`/mods/${encodeURIComponent(current)}/file/${file}`); } catch (e) { return; }
+    if (dirty || (r.exists ? r.text : null) === loadedText) return;
+    await load(current);
+    toast(`${file} in ${nameOf(current)} was changed outside this page, so the page shows it as it is now.`);
+  });
   newBtn.addEventListener("click", () => { newBox.hidden = !newBox.hidden; if (!newBox.hidden) newId.focus(); });
   saveBtn.addEventListener("click", () => save());
 
@@ -590,7 +589,7 @@ export function modTarget({ file, onLoad, getValue, share = true }) {
     }
     return { element, show };
   }
-  return { element: box, refresh, markDirty: () => setDirty(true), save: () => save(), get current() { return current; },
+  return { element: box, refresh, markDirty: () => { edits++; setDirty(true); }, save: () => save(), get current() { return current; },
            get mods() { return mods; }, get dirty() { return dirty; } };
 }
 

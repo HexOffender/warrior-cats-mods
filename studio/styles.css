@@ -253,7 +253,6 @@ button.chip[aria-pressed="true"], button.chip[aria-selected="true"] { border-col
 
 /* Cards: leaves of parchment, with corners a touch uneven. */
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px 12px 15px 11px / 12px 15px 11px 14px; box-shadow: var(--shadow); padding: 16px 18px; display: grid; gap: 12px; min-width: 0; }
-#pal-panel .card { border-radius: 10px; box-shadow: none; }      /* the Palettes page's 190px colour cards: plain, so the uneven corners don't read as a glitch */
 .field { display: grid; gap: 4px; }
 .field label, .lbl { font-weight: 500; font-size: 0.92rem; }
 input[type="text"], input[type="number"], input[type="search"], select, textarea {
@@ -315,6 +314,7 @@ body.help-page { padding: 24px max(16px, calc(50vw - 360px)); }
 body.help-page .help-body { padding: 0; }
 /* Under the Editing mod bar: what keeps a saved file out of the game, and the choice when switching with unsaved changes. */
 .problems { border: 1px solid var(--edge-bad); background: color-mix(in srgb, var(--bad) 8%, var(--surface)); border-radius: 12px; padding: 10px 14px; }
+.save-notes { border: 1px solid var(--line); background: var(--raised); border-radius: 12px; padding: 10px 14px; }   /* what Apply would leave out of a file that's fine */
 .switch-ask { gap: 8px; }
 .topbar button.chip:hover { border-color: var(--accent); }
 .toasts { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 8px; z-index: 30; }
