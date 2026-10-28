@@ -434,7 +434,10 @@ parent bone space), against the decode of that key:
 
 `%LOCALAPPDATA%\Wrc\Saved\SaveGames\WrcGame.sav`:
 - **The container:** a GVAS file whose `SwtSaveGame` holds `Hash`, `GamerId`, `Version`,
-  `saveSlots` and `CompressedData`.
+  `saveSlots` and `CompressedData`. In the object (UHT's tables, `tools/re/uht.py props
+  CompressedData`): `Hash` (uint64) at +0x28, `GamerId` +0x30, `Version` (uint8) +0x40, `ExportsName`
+  +0x48, `jsonString` +0x58, `saveSlots` +0x68, `CurrentSaveSlotIndex` +0x78, `CompressedData` +0x80;
+  0xA0 bytes in all (`GetPrivateStaticClass` at `0x141219820`). The save manager keeps it at +0x168.
 - **`CompressedData`:** what Unreal's `FArchiveSaveCompressedProxy` writes: one compressed archive
   per 128 KiB of payload, back to back. Each is an 8-byte tag (`C1 83 2A 9E 22 22 22 22`), the block
   size (128 KiB, int64), a compressor byte (3: zlib), a summary (compressed and uncompressed sizes,
@@ -442,8 +445,55 @@ parent bone space), against the decode of that key:
   (about 80 KiB of JSON); a long-played one is several, and a reader that stops after the first
   gets a payload cut short. The payload is `[u32 len+8][u32 len][JSON bytes, each minus 1][u32 len]`.
   `WrcGame.json` beside it is the same JSON in plain text.
-- **The checksum:** the save carries a 64-bit checksum whose formula isn't known. Keeping the
-  original value works: the game accepts edited saves and keeps the edits.
+- **`Hash` is not a checksum.** Each time the game writes the save it sets
+  `Hash = CityHash64WithSeed(UTF-8 of "<UTC now>__<save manager's address>", previous Hash)`, the time
+  as `%Y.%m.%d-%H.%M.%S` and the address as `%p` (`formats/save.py` `next_hash`). Nothing in it comes
+  from what the save holds, so it can't be worked out from the file, and nothing reads it except the
+  next write, as its seed: the loader checks only `Version`. Keeping the original value works (seen
+  in game). Any other value should load too (read from the code; not tried, see
+  [verified.md](verified.md#not-yet-confirmed-in-game)). Read from the code on build 26184573:
+  - **The writer** is the save manager's virtual at `0x1412B8F00` (slot 0x390 of the vtable at
+    `0x1498CF120`; the manager's own calls, e.g. at `0x1412AA1B9`, make it on itself). It sets
+    `Version` from slot 0x370, then `Hash = 0x14119A210(this, Hash, "")` (`0x1412B9013`–`0x1412B9040`),
+    and only then turns the state into JSON and packs it into `CompressedData` (`0x1412B9740`, called
+    at `0x1412B9113`).
+  - **`0x14119A210`** formats `this` with `%p` (format at `0x149862FD0`), takes
+    `FDateTime::UtcNow()` (`0x141AD4130`, which calls `GetSystemTime`) as text with
+    `%Y.%m.%d-%H.%M.%S` (`0x141AD2A50`, format at `0x1498DB2A8`), and joins time, salt and address
+    with `%s_%s_%s` (`0x149862FF0`). The salt is empty, hence the double `_`. It turns the result into
+    UTF-8, without the terminator, and calls `0x1419D5C10` with it and the old `Hash`.
+  - **`0x1419D5C10` is CityHash64WithSeed.** It's CityHash64 (`0x1419D56F0`), plus
+    `0x651E95C4D06FBFB1` (−k2), then HashLen16 with the seed and kMul `0x9DDFEA08EB382D69`, as in
+    Google's city.cc. wcmods' `cityhash64_with_seed` gives city-test.cc's values for it.
+  - **`%p`** goes through the CRT's `__stdio_common_vswprintf` (`FString::Printf` at `0x141995A10`),
+    which prints a pointer as 16 upper-case hex digits. That's the CRT's documented behaviour, not
+    seen in the game.
+  - **Nothing checks it.** The loader (`0x1412B9440`, slot 0x398) reads `Version` (+0x40) and
+    `CompressedData` (+0x80) or `jsonString` (+0x58), never +0x28. CloudLoad (`0x1412B9EC0`) unpacks
+    the cloud copy and calls the same loader. In the game's own code (`0x141190000`–`0x141900000`),
+    the only place that loads the manager's +0x168 and then touches +0x28 within 16 instructions is
+    the writer. Two PlayFab
+    replies on another class match that pattern too, but they aren't save code. `Hash`'s flags are
+    `CPF_NativeAccessSpecifierPublic` alone, so Blueprints can't read it.
+  - **The 18 copies of the save** (17 backups and the live save; 13 different hashes) fit this. A copy
+    with the same JSON always has the same hash, because it's the same file restored. On the two
+    smallest, no hash of the content matched: CityHash64, xxHash64, FNV-1/1a 64 and 16 CRC-64
+    variants (ECMA and ISO, reflected or not, each init and final XOR), and CRC-32/Adler-32 against
+    either half. Each was tried over the JSON, the JSON with
+    each byte minus one, the payload with and without its lengths, `CompressedData` and the file with
+    the hash zeroed. The value can't be checked against a backup: that needs the save manager's
+    address in the session that wrote it.
+- **`Version` is the gate.** It's the game's `SaveVersion`
+  (`[/Script/SwtEngine.SwtEngineConfig] SaveVersion=20` in `DefaultGame.ini`). Slot 0x370
+  (`0x1412B8480`) returns `USwtEngineConfig.SaveVersion` (+0x28), or 1 without a config. On load,
+  a save whose `Version` differs goes to slot 0x368, which is a plain `return false`
+  (`0x14119A080`). The manager then makes a new, empty save game (`0x1412A9CB0`) instead of loading
+  it (read from the code at `0x1412B95B7`–`0x1412B95D3`; not tried). All 18 copies hold 20. wcmods
+  writes the header back byte for byte.
+- **`saveSlots`** holds an id per slot, the same `C32BEA80…` in all 18 copies. `GenerateSaveSlotHash`
+  (`0x1416ACE50`) makes it from the same kind of text (`%s_%s_%p`: the UTC time,
+  `GenerateSaveSlotHash_<n>` and an address), hashed with `0x1419E39B0`. That function's 0x778-byte
+  state looks like BLAKE3's (a guess). It's an id, not a checksum.
 - **Your cat:** under
   `<slot>/GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization`, as one string
   in Unreal's struct text format:

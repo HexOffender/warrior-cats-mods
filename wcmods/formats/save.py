@@ -9,7 +9,10 @@ compressor byte (3: zlib), a summary (compressed and uncompressed sizes), one en
 same two sizes), then the zlib blocks. The payload is [u32 len+8][u32 len][JSON bytes, each minus
 1][u32 len]. WrcGame.json next to it is the same JSON in plain text.
 
-Edits are made to the JSON text in place so the game's own formatting is preserved.
+Edits are made to the JSON text in place so the game's own formatting is preserved. The header (Hash,
+GamerId, Version, saveSlots) is kept byte for byte. Hash is not a checksum: the game makes a new one
+from the clock and an address each time it writes (next_hash) and never checks it, so there is nothing
+to verify a save against (docs/reverse-engineering.md, "The save").
 """
 import datetime
 import os
@@ -17,6 +20,8 @@ import re
 import shutil
 import struct
 import zlib
+
+from .cityhash import cityhash64_with_seed
 
 ARCHIVE_TAG = b"\xc1\x83\x2a\x9e\x22\x22\x22\x22"
 BLOCK = 0x20000   # LOADING_COMPRESSION_CHUNK_SIZE: the proxy's buffer, so the most one archive holds
@@ -52,6 +57,20 @@ class SaveGame:
         with open(path, "rb") as f:
             return cls(f.read())
 
+    @property
+    def hash(self):
+        """USwtSaveGame.Hash, the uint64 in the header, or None if the header hasn't got one. The game sets a
+        new one at every write (next_hash) and never reads it back; wcmods keeps the value it read."""
+        value = _header_value(self.raw[:self._data_start], "Hash", "UInt64Property", 8)
+        return None if value is None else struct.unpack("<Q", value)[0]
+
+    @property
+    def version(self):
+        """USwtSaveGame.Version, the game's SaveVersion when it wrote the save (20 on build 26184573), or None.
+        The game doesn't load a save whose Version isn't its own: it starts a new one instead."""
+        value = _header_value(self.raw[:self._data_start], "Version", "ByteProperty", 1)
+        return None if value is None else value[0]
+
     def to_bytes(self):
         archive = _encode_archive(self.json_text)
         out = bytearray(self.raw[:self._data_start])
@@ -60,6 +79,31 @@ class SaveGame:
         out += archive
         out += self.raw[self._data_end:]
         return bytes(out)
+
+
+def _header_value(head, name, type_name, size):
+    """The value of a simple property in the save's header: its tag is the name and the type (FStrings), the
+    type's parameter count (0), the value's size (int32) and flags (u8, 0), then the value. None if the
+    property isn't there or its tag isn't laid out that way."""
+    def fstring(text):
+        return struct.pack("<i", len(text) + 1) + text.encode("ascii") + b"\0"
+    at = head.find(fstring(name) + fstring(type_name))
+    if at < 0:
+        return None
+    p = at + len(fstring(name) + fstring(type_name))
+    if len(head) < p + 9 + size or head[p:p + 9] != struct.pack("<iiB", 0, size, 0):
+        return None
+    return head[p + 9:p + 9 + size]
+
+
+def next_hash(previous, when, address):
+    """The Hash the game gives the save when it writes it, read from the exe (build 26184573; see
+    docs/reverse-engineering.md, "The save"): CityHash64WithSeed of the UTF-8 text "<when>__<address>",
+    seeded with the save's previous Hash. `when` is the UTC time of the write (a datetime, to the second),
+    `address` the save manager's address in the game's memory, which the game prints with %p (16
+    upper-case hex digits). Nothing in it comes from what the save holds."""
+    text = f"{when:%Y.%m.%d-%H.%M.%S}__{address:016X}"
+    return cityhash64_with_seed(text.encode("utf-8"), previous)
 
 
 def _decode_archive(a):

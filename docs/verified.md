@@ -22,7 +22,8 @@ folders. `python wcmods.py selftest` checks, against your install:
   skeleton's pose; each animal's template takes new keys and reads them back (the ACL ones moved to the
   engine's own settings); every kind's start kit carries all its examples (49), and the game's Stretch
   and Idle (ACL), put in the cats' start kit and read back from it, give the same keys.
-- **Save editor:** changes only the values it's told to.
+- **Save editor:** changes only the values it's told to, and writes the header (`Hash`, `Version`)
+  back as it read it.
 - **UE4SS scripts:** the generated Lua has balanced blocks and brackets (a light structure check;
   there's no Lua interpreter to fully parse it). Builds also warn if any UE4SS script fails it.
 
@@ -42,8 +43,10 @@ folders. `python wcmods.py selftest` checks, against your install:
 - Mouse look turns and tilts the camera, gives the cursor back in menus, and toggles with F6
   (see its known issues above).
 - Edited saves load, and the game keeps the edits when it saves again; a Level change made with the
-  save editor was accepted. The save carries a 64-bit checksum whose formula isn't known; the tool
-  keeps the original value and the game accepts it.
+  save editor was accepted. The save's 64-bit `Hash` isn't a checksum: the game makes a new one
+  from the clock and an address at every write and doesn't check it (read from the code, see
+  [reverse-engineering.md](reverse-engineering.md#the-save)). The tool keeps the original value, and
+  the game accepts it.
   Save edits are applied after a backup: restore one from Settings and repair (or
   `python wcmods.py restore latest`) if anything goes wrong.
 - Edited key bindings in the save are ignored, and the game's rebinding screen doesn't work on PC
@@ -233,6 +236,22 @@ Fawnstar, as a player reported it showing "Cat 1"):
   - the studio's Console page;
   - the damage, quest-status and status events;
   - whether the game obeys each of its developer switches.
+- **The save's `Hash` and `Version`** (read from the code: [reverse-engineering.md](reverse-engineering.md#the-save)).
+  Two checks would confirm it, both on a test cat and after a backup:
+  - **Any `Hash` loads.** With the game closed, change the save's `Hash`: the 8 bytes that start 9
+    bytes after `UInt64Property` and its NUL. Use another value, e.g. `0123456789ABCDEF`. Start the
+    game and enter the cat. It should load with its progress, and after the next save,
+    `formats.save.SaveGame.load(...).hash` should be a new value.
+  - **The formula.** In the forest, run `python wcmods.py lua "local m = Game.save.manager();
+    local old = tostring(m.SaveGame.Hash); local t0 = os.date('!%Y.%m.%d-%H.%M.%S');
+    Game.save.write(); return old .. ' ' .. tostring(m.SaveGame.Hash) .. ' ' ..
+    string.format('%X', m:GetAddress()) .. ' ' .. t0 .. ' ' .. os.date('!%Y.%m.%d-%H.%M.%S')"`.
+    It prints the old Hash, the new Hash, the address and the UTC time before and after the write.
+    UE4SS may give the hashes as signed numbers, so mask each with `& (2**64 - 1)`. Then check in
+    Python that `next_hash(old, when, address)` gives the new Hash, with `when` at either printed
+    time. If no second matches, doubt the `%p` text (16 upper-case digits) first.
+  - **Not to try on a real save:** a `Version` other than 20. The code says the game starts a new
+    save instead of loading it.
 - **Coat colours on screen.** The UE4SS script rewrites the fur table about two seconds after launch.
 - **Game data tables in play.** They load from the same pak as the text, but no gameplay change has
   been checked on screen yet.

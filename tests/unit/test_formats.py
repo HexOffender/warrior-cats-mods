@@ -23,6 +23,22 @@ def test_saves_over_128k_read_and_written():
     assert ok, detail
 
 
+def test_save_hash_is_read_from_the_gvas_header():
+    ok, detail = selftest._save_hash()
+    assert ok, detail
+
+
+def test_save_hash_and_version_of_a_save_without_them_or_laid_out_otherwise():
+    from wcmods.formats.save import _header_value
+    head = selftest._save_header(0x1122334455667788, 20)
+    assert _header_value(head, "Hash", "UInt64Property", 8) == bytes.fromhex("8877665544332211")
+    assert _header_value(head, "Version", "ByteProperty", 1) == b"\x14"
+    assert _header_value(head, "Hash", "UInt64Property", 4) is None          # another size: not read
+    assert _header_value(head[:-1], "Version", "ByteProperty", 1) is None    # cut short
+    flagged = head.replace(b"\x08\x00\x00\x00\x00\x88", b"\x08\x00\x00\x00\x01\x88")   # a flag set: more fields
+    assert _header_value(flagged, "Hash", "UInt64Property", 8) is None
+
+
 def test_pictures_pngs_dxt_blocks_and_recolours():
     assert selftest._pictures()
 

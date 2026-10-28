@@ -26,6 +26,8 @@ def run(cfg, oodle, log=print):
     check("unversioned property headers write back as they read", _unversioned_headers())
     ok, detail = _long_save()
     check("saves over 128 KiB: the game's archive per 128 KiB, read and written", ok, detail)
+    ok, detail = _save_hash()
+    check("the save's Hash and Version read and kept, and the game's formula for a new Hash", ok, detail)
     check("pictures: PNGs of every kind read, written back, DXT blocks and recolours", _pictures())
     lua = mouselook.script(mouselook.merge([mouselook.validate({"sensitivity": 1.5, "invert": True, "smoothing": 50})]))
     problems = luacheck.check(lua)
@@ -248,6 +250,11 @@ def run(cfg, oodle, log=print):
                       and raw[s._data_start:s._data_start + 17] == new[again._data_start:again._data_start + 17]
                       and raw[len(raw) - tail:] == new[len(new) - tail:])
         check("save re-encode keeps structure and content", same_frame and again.json_text == s.json_text)
+        # Hash isn't a checksum (the game makes one from the clock at every write and never checks it), so
+        # there's nothing to verify: only that it's read and that wcmods writes it back unchanged.
+        check("save's Hash and Version read from its header, and kept by a re-encode",
+              s.hash is not None and s.version is not None and (again.hash, again.version) == (s.hash, s.version),
+              f"Version {s.version}")
         b = controls.read_bindings(s.json_text)
         want = "G" if b["keyboard"].get("Player_Interact") == "F" else "F"   # must differ from the current key
         new, applied, _ = controls.apply(s.json_text, {"keyboard": {"Player_Interact": want}})
@@ -283,15 +290,58 @@ def _unversioned_headers():
             and split_name("Foo_01") == ("Foo_01", 0) and split_name("Gameplay.Item") == ("Gameplay.Item", 0))
 
 
-def _gvas(archives):
+def _gvas(archives, head=b""):
     """A save file around the CompressedData property's archives: its tail is size (int32), flags (u8),
-    count (int32), the archives."""
-    return (b"GVAS" + bytes(20) + b"CompressedData" + bytes(1) + b"ArrayProperty" + bytes(1)
+    count (int32), the archives. `head` goes before it (_save_header's properties)."""
+    return (b"GVAS" + bytes(20) + head + b"CompressedData" + bytes(1) + b"ArrayProperty" + bytes(1)
             + struct.pack("<i", len(archives) + 4) + bytes(1) + struct.pack("<i", len(archives)) + archives + bytes(4))
 
 
-def _small_save(text):
-    """A save file holding `text` (under 128 KiB) in one archive, laid out as _long_save lays out the game's."""
+def _save_header(hash_value, version):
+    """The properties before CompressedData as the game writes them (UE 5.7 tags): name and type as FStrings,
+    the type's parameter count, the value's size, flags, the value."""
+    def tag(name, type_name, value):
+        def fstring(text):
+            return struct.pack("<i", len(text) + 1) + text.encode("ascii") + b"\0"
+        return fstring(name) + fstring(type_name) + struct.pack("<iiB", 0, len(value), 0) + value
+    gamer = struct.pack("<i", 18) + b"76561190000000000\0"
+    return (tag("Hash", "UInt64Property", struct.pack("<Q", hash_value)) + tag("GamerId", "StrProperty", gamer)
+            + tag("Version", "ByteProperty", bytes([version])))
+
+
+def _save_hash():
+    """The save's Hash and Version read from the header, and kept as they were when wcmods writes the save;
+    the game's formula for a new Hash (formats/save.py next_hash; docs/reverse-engineering.md "The save")."""
+    import datetime
+    from .formats import cityhash
+    from .formats import save as savelib
+    # CityHash64WithSeed(s) and WithSeeds(s) of no bytes, from Google's own tests (city-test.cc, kSeed0 =
+    # 1234567, kSeed1 = k0); CityHash64 itself is checked by _name_hashes.
+    if (cityhash.cityhash64_with_seed(b"", 1234567) != 0x75106DB890237A4A
+            or cityhash.cityhash64_with_seeds(b"", 1234567, cityhash.K0) != 0x3FEAC5F636039766):
+        return False, "CityHash64WithSeed doesn't match Google's test values"
+    s = SaveGame(_small_save("{\r\n}", _save_header(0x0123456789ABCDEF, 20)))
+    if (s.hash, s.version) != (0x0123456789ABCDEF, 20):
+        return False, f"read Hash {s.hash!r} and Version {s.version!r} from the header"
+    s.json_text = '{\r\n\t"Shared": {}\r\n}'
+    again = SaveGame(s.to_bytes())
+    if (again.hash, again.version) != (s.hash, s.version) or again.json_text != s.json_text:
+        return False, "an edited save didn't keep its Hash and Version"
+    if SaveGame(_small_save("{\r\n}")).hash is not None:
+        return False, "a header without a Hash read as having one"
+    # The game's text for one write: the UTC time, an empty salt, its save manager's address (%p).
+    when = datetime.datetime(2026, 10, 26, 12, 5, 9)
+    want = cityhash.cityhash64_with_seed(b"2026.10.26-12.05.09__000001E5C8A2B000", 0x0123456789ABCDEF)
+    if savelib.next_hash(0x0123456789ABCDEF, when, 0x1E5C8A2B000) != want:
+        return False, "next_hash doesn't hash the text the game builds"
+    if savelib.next_hash(0, when, 0x1E5C8A2B000) == want:
+        return False, "next_hash ignores the previous Hash"
+    return True, ""
+
+
+def _small_save(text, head=b""):
+    """A save file holding `text` (under 128 KiB) in one archive, laid out as _long_save lays out the game's,
+    with `head` (_save_header) before CompressedData."""
     import zlib
     from .formats import save as savelib
     body = text.encode("utf-8")
@@ -299,7 +349,7 @@ def _small_save(text):
                + struct.pack("<I", len(body)))
     packed = zlib.compress(payload)
     return _gvas(savelib.ARCHIVE_TAG + struct.pack("<q", 0x20000) + bytes([3])
-                 + struct.pack("<qq", len(packed), len(payload)) * 2 + packed)
+                 + struct.pack("<qq", len(packed), len(payload)) * 2 + packed, head)
 
 
 def _long_save():
