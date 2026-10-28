@@ -1,24 +1,27 @@
 // Clan Mod Studio in a real browser: `python wcmods.py studio --no-browser --port 0` on a folder of its own
 // (WCMODS_DATA, with a made-up game folder named in its wcmods.json), driven headless over the DevTools
-// protocol (lib/browser.mjs). Skipped, with a reason, when no Chromium is found: set WC_BROWSER to one.
+// protocol (lib/browser.mjs). Skipped, with a reason, when no Chromium is found: set WC_BROWSER to one, or
+// WC_REQUIRE_BROWSER=1 (as CI does) to fail instead of skipping.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, makeGame, removeFolder, startStudio } from "../lib/studio.mjs";
+import { dataFolder, e2eSkip, makeGame, removeFolder, requireBrowser, sleep, startStudio, warmUp } from "../lib/studio.mjs";
 
 const browserPath = findBrowser();
-const skip = browserPath ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
+const skip = e2eSkip(browserPath);
 
 let browser, studio, folders;
 
 before(async () => {
   if (skip) return;
+  requireBrowser(browserPath);
   folders = dataFolder();
   // One after the other, each kept as soon as it's up, so `after` can end whatever started if the other fails.
-  studio = await startStudio(folders.data);
+  studio = await startStudio(folders);
   browser = await launch({ browser: browserPath });
+  await warmUp(browser, studio.url);
 });
 
 after(async () => {
@@ -42,6 +45,22 @@ test("the studio opens with no console errors, its status chips and its pages", 
     "Animations", "Characters", "Questlines", "Game data", "Save"]);
   assert.equal(await page.evaluate(() => document.querySelector("#nav button[aria-current]").textContent), "Mods");
   assert.equal(await page.text("#playBtn"), "Play");
+  await page.close();
+});
+
+test("the console record counts a page file that fails to load, and not the API saying no", { skip }, async () => {
+  const page = await browser.page();
+  await page.goto(studio.url);
+  await page.waitFor("#nav button");
+  assert.equal(await page.evaluate(() => fetch("/api/info").then(r => r.status)), 403);   // no token: refused
+  await page.evaluate(() => new Promise(ok => {
+    const s = Object.assign(document.createElement("script"), { src: "/studio/not-there.js", onerror: ok, onload: ok });
+    document.head.append(s);
+  }));
+  const missing = () => page.consoleErrors().some(e => /status of 404 .*\/studio\/not-there\.js/.test(e));
+  for (let i = 0; i < 100 && !missing(); i++) await sleep(50);   // the browser's log comes on its own
+  assert.ok(missing(), page.consoleErrors().join("\n"));
+  assert.ok(!page.consoleErrors().some(e => e.includes("/api/info")), page.consoleErrors().join("\n"));
   await page.close();
 });
 
@@ -71,7 +90,7 @@ test("a mod made from a Make page's Editing-mod bar shows on the Mods page", { s
   await page.type('input[aria-label="New mod folder name"]', "e2e-mod");
   await page.click({ text: "Create" });
   // The new mod is listed as soon as the list is read again (mods-changed), and chosen a moment later, once its
-  // file is opened: under load the two can be seen apart.
+  // file is opened: on a busy machine the two can be seen apart.
   await page.waitFor(() => document.querySelector(".target select").value === "e2e-mod");
   await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes("Created mod e2e-mod")));
   assert.ok(fs.existsSync(path.join(folders.data, "mods", "e2e-mod", "mod.json")), "the mod's folder is there");
@@ -85,7 +104,7 @@ test("a mod made from a Make page's Editing-mod bar shows on the Mods page", { s
 
 test("Apply and Play wait while the game is running", { skip }, async () => {
   makeGame(folders.game);   // with the game found, only the running game holds Apply back
-  const running = await startStudio(folders.data, { WCMODS_FAKE_RUNNING: "1" });
+  const running = await startStudio(folders, { WCMODS_FAKE_RUNNING: "1" });
   try {
     const page = await browser.page();
     await page.goto(running.url);
@@ -98,7 +117,8 @@ test("Apply and Play wait while the game is running", { skip }, async () => {
   } finally {
     running.stop();
   }
-  // And not otherwise: the first studio, with the same game folder, offers to apply.
+  // And not otherwise: the first studio (the game closed, whatever this machine runs), with the same game
+  // folder, offers to apply.
   const page = await browser.page();
   await page.goto(studio.url);
   await page.waitFor(() => [...document.querySelectorAll("#status .chip")].some(c => c.dataset.said === "Game closed"));

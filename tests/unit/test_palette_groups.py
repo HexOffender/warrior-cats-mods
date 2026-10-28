@@ -8,7 +8,7 @@ import pytest
 from wcmods import luacheck
 from wcmods import palettes as P
 
-from conftest import eye_atlas
+from unit_helpers import eye_atlas
 
 
 class Mod:

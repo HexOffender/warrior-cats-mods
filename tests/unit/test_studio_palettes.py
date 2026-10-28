@@ -7,7 +7,7 @@ import pytest
 
 from wcmods import mods as modlib
 
-from conftest import EYE_LABELS, make_mod
+from unit_helpers import EYE_LABELS, make_mod
 
 
 def call(st, method, path, body=None):

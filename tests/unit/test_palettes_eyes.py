@@ -6,7 +6,7 @@ import pytest
 
 from wcmods import colors, eyeatlas, palettes
 
-from conftest import EYE_LABELS, eye_atlas
+from unit_helpers import EYE_LABELS, eye_atlas
 
 CLOSE = 2e-3   # half floats keep about three decimal places
 

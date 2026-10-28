@@ -1,25 +1,28 @@
 // The Palettes and Your cat pages in a real browser, against a studio over a folder of its own with a made-up game
 // (lib/studio.mjs: the exe and folders, no paks, so the game's files can't be read). The game's colour tables come
 // from a made-up UE4SS.log where a test needs them, and the save from lib/studio.mjs's writeSave. Skipped, with a
-// reason, when no Chromium is found: set WC_BROWSER to one.
+// reason, when no Chromium is found: set WC_BROWSER to one, or WC_REQUIRE_BROWSER=1 to fail instead.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, makeGame, remove, removeFolder, sleep, startStudio, writeSave, writeTables } from "../lib/studio.mjs";
+import { dataFolder, e2eSkip, makeGame, remove, removeFolder, requireBrowser, sleep, startStudio, warmUp, writeSave,
+  writeTables } from "../lib/studio.mjs";
 
 const browserPath = findBrowser();
-const skip = browserPath ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
+const skip = e2eSkip(browserPath);
 
 let browser, studio, folders;
 
 before(async () => {
   if (skip) return;
+  requireBrowser(browserPath);
   folders = dataFolder();
   makeGame(folders.game);
-  studio = await startStudio(folders.data);
+  studio = await startStudio(folders);
   browser = await launch({ browser: browserPath });
+  await warmUp(browser, studio.url);
 });
 
 after(async () => {
@@ -91,7 +94,7 @@ async function waitForFile(file, check) {
 // page's first load (the studio reading the made-up game for the first time) can take a while.
 const SLOW = 30000;
 async function openPalettes(page, url = studio.url) {
-  await page.goto(url + "#palettes", SLOW);
+  await page.goto(url + "#palettes", { timeout: SLOW });
   await page.waitFor(`${PAL} #pal-tab-pattern`, SLOW);
   // Laid out for good once the file is in (the Editing mod bar's list), the quick palettes are drawn above it and the
   // Start from row has its chips: clicks before that can land where a button was a moment ago.
@@ -128,7 +131,7 @@ test("Palettes opens without the game's files: the eyes say why, and the game's 
 test("the five-minute first try: a new pattern colour made on Palettes, worn on Your cat", { skip }, async () => {
   await fresh();
   const page = await browser.page();
-  await page.goto(studio.url + "#cat", SLOW);   // open first: it reads again when a palette is saved
+  await page.goto(studio.url + "#cat", { timeout: SLOW });   // open first: it reads again when a palette is saved
   await page.waitFor(`${CATP} [data-focus="slot:pattern:3"]`, SLOW);
   assert.equal(await page.count(`${CATP} [data-focus="slot:pattern:25"]`), 0);
   await page.evaluate(() => { location.hash = "#palettes"; });
@@ -197,7 +200,7 @@ test("Quick palettes' Apply saves the page first, and waits while the game runs"
   assert.equal(readJson(fileOf("my-mods", "palette.json")).fur["4"], "#445566");
   await page.close();
   // With the game running, the button waits, as the shell's Apply does.
-  const running = await startStudio(folders.data, { WCMODS_FAKE_RUNNING: "1" });
+  const running = await startStudio(folders, { WCMODS_FAKE_RUNNING: "1" });
   try {
     const p2 = await browser.page();
     await openPalettes(p2, running.url);
@@ -292,7 +295,7 @@ test("Your cat opens on a save it can't read, then shows what the cat wears, and
   await fresh();
   fs.writeFileSync(path.join(folders.saves, "WrcGame.sav"), "");   // half written, while the game saves
   const page = await browser.page();
-  await page.goto(studio.url + "#cat", SLOW);
+  await page.goto(studio.url + "#cat", { timeout: SLOW });
   await page.waitFor(`${CATP} [data-focus="slot:fur:3"]`, SLOW);
   assert.match(await page.text(`${CATP} .banner[role="status"]`), /Your save couldn't be read \(it may be half written/);
   assert.equal(await page.evaluate(`document.querySelector('${CATP} input[aria-label="Use its own nose colour"]').disabled`), false,
@@ -317,7 +320,7 @@ test("a cats.json written by hand: colour names load, and what the page can't ch
   await fresh();
   makeMod("my-mods", { "cats.json": { player: { colours: { nose: "red" }, slots: { coat: 3, fur: 4 } } } });
   const page = await browser.page();
-  await page.goto(studio.url + "#cat", SLOW);
+  await page.goto(studio.url + "#cat", { timeout: SLOW });
   await page.waitFor(`${CATP} button[aria-label="Remove slots.coat"]`, SLOW);
   assert.deepEqual(await page.evaluate(`(() => { const box = document.querySelector('${CATP} input[aria-label="Use its own nose colour"]');
     const pick = document.querySelector('${CATP} input[aria-label="Nose colour"]'); return [box.checked, pick.value]; })()`), [true, "#ff0000"]);

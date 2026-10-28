@@ -8,7 +8,7 @@ import pytest
 from wcmods import studio as studio_mod
 from wcmods.formats.save import SAV_NAME
 
-from conftest import make_mod, write_save
+from unit_helpers import make_mod, write_save
 
 
 def call(st, method, path, body=None):
