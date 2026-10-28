@@ -13,8 +13,11 @@ UE4SS starts a new log each time the game starts, so the file is one session. It
 
 A script's own lines carry its mod's name (MOD.log, and WCModsGame's messages once the script bootstrap names
 the mod); a plain print() while the script starts belongs to the mod UE4SS is starting then. A message of
-several lines (an error with its stack traceback) goes on without the time on its next lines.
+several lines (an error with its stack traceback) goes on without the time on its next lines. Two script mods
+with one name can't be told apart by their lines once they've started: each gets only what it said as it
+started, and its card says why.
 """
+import collections
 import datetime
 import os
 import re
@@ -46,6 +49,8 @@ SAID = {
     "not-started": "Didn't start when the game last started (the script loader didn't run it)",
     "waiting": "Hasn't run since you applied",
 }
+# Said after the state when another script mod in the game has the same name.
+SHARED = "; two script mods are called \"{name}\", and the log can't tell them apart after they start"
 
 _cache = {}   # (path, size, mtime) -> what read() found
 
@@ -92,8 +97,9 @@ def _entries(text):
 
 def read(path):
     """What a log says: {"session" (its first time), "started" (the UE4SS mods it started, in order), "lines"
-    ({name: [(time, text)]}: each name's own lines, by the name they carry, or by the UE4SS mod being started
-    for a plain print as it starts)}. None when there's no log."""
+    ({name: [(time, text)]}: each name's own lines, by the name they carry), "by_mod" ({UE4SS mod: [(time,
+    text)]}: a plain print while that mod was starting), "named_at_start" ({UE4SS mod: [(time, name, text)]}: the
+    named lines said while that mod was starting)}. None when there's no log."""
     try:
         st = os.stat(path)
     except (OSError, TypeError):
@@ -106,7 +112,7 @@ def read(path):
         head, tail = _text(path)
     except OSError:
         return None
-    found = {"session": None, "started": [], "lines": {}, "by_mod": {}}
+    found = {"session": None, "started": [], "lines": {}, "by_mod": {}, "named_at_start": {}}
 
     def take(entries):
         starting = None
@@ -129,6 +135,8 @@ def read(path):
             named = NAMED.match(said)
             if named:
                 found["lines"].setdefault(named.group(1), []).append((when, named.group(2)))
+                if starting:
+                    found["named_at_start"].setdefault(starting, []).append((when, named.group(1), named.group(2)))
             elif starting:
                 found["by_mod"].setdefault(starting, []).append((when, said))
 
@@ -155,9 +163,15 @@ def _when(text):
         return None
 
 
-def mod_report(found, mod, ue4ss_name, installed, run_since_apply):
-    """One script mod's part of the report (see report)."""
-    own = list(found["lines"].get(mod.name, [])) if found else []
+def mod_report(found, mod, ue4ss_name, installed, run_since_apply, shared=False):
+    """One script mod's part of the report (see report). `shared`: another script mod in the game has its name,
+    so only the lines said while its own script started are its."""
+    if not found:
+        own = []
+    elif shared:
+        own = [(when, text) for when, name, text in found["named_at_start"].get(ue4ss_name, []) if name == mod.name]
+    else:
+        own = list(found["lines"].get(mod.name, []))
     if found:   # a plain print while its script started counts as its own
         own = sorted(own + found["by_mod"].get(ue4ss_name, []), key=lambda e: e[0])
     started = bool(found) and ue4ss_name in found["started"]
@@ -188,16 +202,20 @@ def mod_report(found, mod, ue4ss_name, installed, run_since_apply):
     else:
         out["state"] = "loaded"
     out["said"] = SAID[out["state"]].format(error=out["errors"][0] if out["errors"] else "") if out["state"] else None
+    if shared and out["state"] not in (None, "waiting"):
+        out["said"] += SHARED.format(name=mod.name)
     return out
 
 
-def report(cfg, mods):
-    """What the game's last run said about each script mod in `mods` (those with scripts/):
+def report(cfg, mods, among=None):
+    """What the game's last run said about each script mod in `mods` (those with scripts/), with `among` (every
+    mod, when `mods` is only some of them) for telling whether another one in the game has the same name:
     {"log": UE4SS.log's path or None, "session": when the game last started (local time, as the log says) or
     None, "run_since_apply": whether that was after the last install, "mods": {id: {"installed" (its script went
     in with the last install), "started", "loaded", "errors" (first lines, load failures first), "lines" (its
     own, newest first, with their times), "state" (None when it wasn't installed, else "loaded", "errors",
-    "failed", "not-started" or "waiting"), "said" (the state in a sentence)}}}."""
+    "failed", "not-started" or "waiting"), "said" (the state in a sentence, and that the log can't tell it from
+    another script mod in the game with its name)}}}."""
     from .sections import scripts
     path = log_path(cfg)
     found = read(path) if path else None
@@ -206,9 +224,11 @@ def report(cfg, mods):
     since = bool(found and session and built and session >= built)
     out = {"log": path if found else None, "session": found["session"] if found else None, "run_since_apply": since,
            "mods": {}}
+    names = collections.Counter(m.name for m in (mods if among is None else among)
+                                if scripts.has_scripts(m) and scripts.ue4ss_name(m.id) in ue4ss_mods)
     for m in mods:
         if not scripts.has_scripts(m):
             continue
         name = scripts.ue4ss_name(m.id)
-        out["mods"][m.id] = mod_report(found, m, name, name in ue4ss_mods, since)
+        out["mods"][m.id] = mod_report(found, m, name, name in ue4ss_mods, since, shared=names[m.name] > 1)
     return out

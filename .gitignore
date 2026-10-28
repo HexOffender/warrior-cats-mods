@@ -3,7 +3,7 @@
 # to this folder keeps them.
 backups/
 wcmods.json
-mods/
+/mods/
 
 # Generated from the installed game (game data, not ours to redistribute)
 vanilla/

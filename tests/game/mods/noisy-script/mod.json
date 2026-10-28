@@ -1,0 +1,6 @@
+{
+  "name": "Noisy script",
+  "description": "A throwaway script for tests/game/test_scripts.py: a frame function that fails every frame, a misspelt key, then a line to show the script went on. Not for playing with.",
+  "enabled": true,
+  "uses": ["mod-menu"]
+}

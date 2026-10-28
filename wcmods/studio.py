@@ -565,7 +565,7 @@ class Studio:
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "log" and method == "GET":
             # What a script mod's script said when the game last started (UE4SS.log): the card's More.
             m = self.mod(parts[1])
-            rep = scriptlog.report(cfg, [m])
+            rep = scriptlog.report(cfg, [m], among=self.mods())   # (another mod may have its name)
             if m.id not in rep["mods"]:
                 raise LookupError(f"{m.name} has no in-game script, so the game's log says nothing about it")
             return {**rep["mods"][m.id], "log": rep["log"], "session": rep["session"],

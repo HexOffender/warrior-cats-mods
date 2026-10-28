@@ -255,9 +255,16 @@ def test_log_names_the_script_when_it_has_a_name():
 def test_runtime_errors_are_said_once_then_once_a_minute():
     lua = game.lua()
     said = body(lua, "local function failed(what, err)", "\nend\n")
-    assert 'log("error in %s", key)' in said and 'log("error in %s (%d more)", key, f.more)' in said
+    assert 'log("error in %s: %s", what, err)' in said and 'log("error in %s: %s (%d more)", what, err, f.more)' in said
     assert "now - f.at >= SAY_AGAIN" in said
     assert "local SAY_AGAIN = 60" in lua
+    # One failure whatever its numbers say after the file and line, and a cap on new ones for each kind of call: an
+    # error whose text keeps changing doesn't log a line a frame.
+    assert 'local at, rest = err:match("^([^\\n]-:%d+:)(.*)$")' in said
+    assert 'local key = what .. ": " .. (at and (at .. rest:gsub("%d+", "#")) or err:gsub("%d+", "#"))' in said
+    assert "local NEW_A_MINUTE = 5" in lua and "if w.said >= NEW_A_MINUTE then" in said
+    assert said.index("if w.said >= NEW_A_MINUTE then") < said.index('log("error in %s: %s", what, err)')
+    assert "more failures in the last minute weren't said" in said
     # Every place a script's code is called from goes through it: timers and frame functions, keys, hooks, events.
     assert 'failed(t.what or "task", err)' in lua and 'failed("key " .. name, err)' in lua
     assert lua.count('failed("hook " .. path, err)') == 2 and 'failed("on " .. tostring(event), err)' in lua
@@ -301,7 +308,12 @@ def test_find_never_hands_back_an_object_on_its_way_out():
     lua = game.lua()
     find = body(lua, "function Game.find(className)", "\n-- Every object of a class")
     assert "if hit and valid(hit) and not garbage(hit) and Game.isA(hit, className) then return hit end" in find
-    assert "if garbage(o) then" in find and "Game.findAll(className)" in find
+    # The first object on its way out: nil, and the miss kept a second; never a scan of every object of the class
+    # from in here (a level is loading then, when FindAllOf scans have crashed the game).
+    assert "if garbage(o) then\n        missUntil[className] = now + MISS_FOR\n        return nil\n    end" in find
+    assert "if missUntil[className] and now < missUntil[className] then return nil end" in find
+    assert find.index("then return nil end") < find.index("pcall(FindFirstOf, className)")
+    assert "findAll" not in find and "FindAllOf" not in find and "local MISS_FOR = 1" in lua
     assert "o:HasAnyInternalFlags(GARBAGE)" in body(lua, "local function garbage(o)", "\nend")
     assert "local alive = Game.alive" in lua   # the mod cats' check is the same one
 

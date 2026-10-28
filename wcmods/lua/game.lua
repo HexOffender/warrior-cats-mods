@@ -24,19 +24,36 @@ Game.log = log
 -- fails keeps running (a timer may only fail while a level loads). The line starts "error in", which the Log
 -- page's Errors and the studio's reader of the log (scriptlog.py) know it by: "[Game Tweaks] error in every:
 -- scripts/main.lua:5: attempt to index a nil value (1812 more)".
-local failures, nfailures = {}, 0
-local SAY_AGAIN = 60   -- seconds between lines about the same failure
+-- An error whose text has a number that keeps changing (a count, a distance, an address) is still one failure:
+-- the numbers after its file and line count as one ("#"). And each kind of call (a timer, a key, a hook) says at
+-- most NEW_A_MINUTE new failures a minute, so an error whose words change too can't fill the log either.
+local failures, nfailures, fresh = {}, 0, {}
+local SAY_AGAIN = 60     -- seconds between lines about the same failure
+local NEW_A_MINUTE = 5   -- new failures said a minute for one kind of call
 local function failed(what, err)
-    local key = tostring(what) .. ": " .. tostring(err)
+    what, err = tostring(what), tostring(err)
+    local at, rest = err:match("^([^\n]-:%d+:)(.*)$")   -- "scripts/main.lua:5:" stays as it is
+    local key = what .. ": " .. (at and (at .. rest:gsub("%d+", "#")) or err:gsub("%d+", "#"))
     local f, now = failures[key], os.clock()
     if not f then
-        if nfailures >= 200 then failures, nfailures = {}, 0 end   -- errors whose text keeps changing
+        local w = fresh[what]
+        if not w or now - w.at >= SAY_AGAIN then
+            if w and w.held > 0 then log("%s: %d more failures in the last minute weren't said", what, w.held) end
+            w = { at = now, said = 0, held = 0 }
+            fresh[what] = w
+        end
+        if w.said >= NEW_A_MINUTE then
+            w.held = w.held + 1
+            return
+        end
+        if nfailures >= 1000 then failures, nfailures = {}, 0 end   -- a long session's worth: start again
+        w.said = w.said + 1
         failures[key], nfailures = { more = 0, at = now }, nfailures + 1
-        log("error in %s", key)
+        log("error in %s: %s", what, err)
     else
         f.more = f.more + 1
         if now - f.at >= SAY_AGAIN then
-            log("error in %s (%d more)", key, f.more)
+            log("error in %s: %s (%d more)", what, err, f.more)
             f.more, f.at = 0, now
         end
     end
@@ -185,23 +202,23 @@ end
 
 -- One object of a class (its short name: "WrcRoamingEnemy", "BP_WrcQuestManager_C"), found once and kept
 -- while it's still that class. One on its way out (the last level's HUD, after a level loads) is never
--- handed back: the live one is looked for instead.
-local firsts = {}
+-- handed back: nil instead, for a second, and then FindFirstOf is asked again. It never scans every object
+-- of the class (FindAllOf) to look past it: a level is loading then, when scans have crashed the game, and
+-- every caller (the HUD's prompt watcher, a page, a timer) would scan again on each call.
+local firsts, missUntil = {}, {}
+local MISS_FOR = 1   -- seconds a class whose first object was on its way out answers nil without asking again
 function Game.find(className)
     local hit = firsts[className]
     if hit and valid(hit) and not garbage(hit) and Game.isA(hit, className) then return hit end
     firsts[className] = nil
+    local now = os.clock()
+    if missUntil[className] and now < missUntil[className] then return nil end
+    missUntil[className] = nil
     local ok, o = pcall(FindFirstOf, className)
     if not (ok and valid(o)) then return nil end
     if garbage(o) then
-        o = nil
-        for _, x in ipairs(Game.findAll(className)) do
-            if not garbage(x) then
-                o = x
-                break
-            end
-        end
-        if not o then return nil end
+        missUntil[className] = now + MISS_FOR
+        return nil
     end
     firsts[className] = o
     return o

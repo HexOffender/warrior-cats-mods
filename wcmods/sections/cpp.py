@@ -165,7 +165,7 @@ class CppSection(Section):
                 ctx.warn(f"{mod.id}: cpp/ changed after dlls/main.dll was built; `python wcmods.py cpp build "
                          f"{mod.id}` builds it again")
             name = ue4ss_name(mod.id)
-            info ={"id": mod.id, "name": mod.name, "version": mod.version, "author": mod.author,
+            info = {"id": mod.id, "name": mod.name, "version": mod.version, "author": mod.author,
                     "description": mod.description, "folder": os.path.abspath(mod.folder),
                     "settings_file": data["settings_file"], "settings": data["settings"]}
             files = {"dlls/" + rel: blob for rel, blob in data["files"].items()}

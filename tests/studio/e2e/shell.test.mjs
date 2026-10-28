@@ -231,10 +231,16 @@ test("Help opens the guide in a panel, its links move between its pages, and Esc
   await page.close();
 });
 
-test("Apply with the game's files unreadable: a sentence at the top of the log, Apply the rest anyway, and Last apply brings it back", { skip }, async () => {
-  makeGame(folders.game);   // the exe and folders, no paks: nothing the build can read
+test("Apply with the game's files unreadable: a sentence at the top of the log, Apply the rest anyway, and Last apply brings it back", { skip }, async t => {
+  // A folder and a studio of its own: an earlier test's studio can still be writing last-apply.log (its Play)
+  // into the shared folder, and Last apply would bring that back instead.
+  const own = dataFolder();
+  let ownStudio;
+  t.after(async () => { if (ownStudio) ownStudio.stop(); await remove(own.root); await remove(own.app); });
+  makeGame(own.game);   // the exe and folders, no paks: nothing the build can read
+  ownStudio = await startStudio(own);
   const page = await browser.page();
-  await page.goto(studio.url);
+  await page.goto(ownStudio.url);
   await page.waitFor(() => !document.getElementById("installBtn").disabled);
   await page.click("#installBtn");
   await page.waitFor(() => !document.getElementById("drawer").hidden && document.getElementById("drawerSummary").textContent.includes("can't be read"), 30000);
@@ -249,7 +255,7 @@ test("Apply with the game's files unreadable: a sentence at the top of the log, 
   // Closed, then brought back with Last apply, from last-apply.log in the player's folder.
   await page.click("#drawerClose");
   await page.waitFor(() => document.getElementById("drawer").hidden);
-  assert.ok(fs.existsSync(path.join(folders.data, "last-apply.log")), "last-apply.log is kept");
+  assert.ok(fs.existsSync(path.join(own.data, "last-apply.log")), "last-apply.log is kept");
   await page.click("#lastApplyBtn");
   await page.waitFor(() => !document.getElementById("drawer").hidden);
   assert.match(await page.text("#drawerTitle"), /^Apply to game \(\d{4}-\d\d-\d\d \d\d:\d\d\)$/);
