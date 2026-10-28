@@ -3,7 +3,8 @@
 A mod is a folder under `mods/` in your files' folder ([`wcmods.json`](#wcmodsjson) says where) with a `mod.json` (its name and what it needs; [SDK.md](SDK.md#mod-folder)
 lists every key) and any of the files below. Clan Mod Studio's Make pages write them; you can also write
 them by hand, and `python wcmods.py new <name> --kind <palette|controls|...>` starts one from a template.
-A mod that only holds these files runs no code. The game's rules behind the numbers are in
+A mod that only holds these files runs no code, but for [`scripts/`](#scripts-and-settingsjson), an in-game
+script, which comes last. The game's rules behind the numbers are in
 [mechanics/](mechanics/README.md); how each file reaches the game is in the [README](../README.md#clan-mod-studio)'s table.
 
 Besides these, a mod can hold **`files/Wrc/...`**, whole replacement files at their game path
@@ -405,3 +406,46 @@ The file starts with a `_help` line saying the same.
 { "set": { "0/GameplayProgression/Level": 5 },
   "add": { "0/GameplayProgression/State/Inventory": { "Gameplay.Inventory.Consumable.SmallCatnip": 5 } } }
 ```
+
+### `scripts/` and `settings.json`
+```
+scripts/main.lua      runs when the game starts
+scripts/*.lua         more files for require("name") (scripts/lib/util.lua is require("lib.util"))
+settings.json         optional: the script's settings, MOD.settings
+```
+```json
+{ "_help": "Game Tweaks' settings: change them on its page in the mod menu (Insert).",
+  "keep_stamina_full": false, "time_of_day": 12.0, "min_fresh_kill": 0, "heal_key": "F5", "spots": [] }
+```
+A script is code, so it only goes in the game with mods that run code allowed (Options, on the Settings and
+repair page). Everything under `scripts/` goes in as a UE4SS mod of its own, `WCModsScript_<mod id>`, with the
+characters that aren't letters or digits as `_`: two mods whose ids differ only in those, or in capitals
+(`my-mod`, `my_mod`, `My.Mod`), would go in as one, so both are refused, by name, until one is renamed; and a new
+mod too like another is refused when it's made. How a script is written is in
+[scripting.md, Script mods](scripting.md#script-mods).
+
+What's checked before the game sees it, and said in words on the mod's card on the Mods page (and when the
+studio saves `settings.json`):
+- `scripts/` needs a `main.lua`;
+- each `.lua` file's blocks and brackets: a `function`, `if`, `for` or `while` without its `end`, a `repeat`
+  without its `until`, a bracket or a string left open. A file with one of these won't load in the game, so
+  the card says the first one, by file and line; the rest of the install still goes in;
+- `settings.json` has to be JSON (a byte order mark from Notepad is fine) holding an object. A mistake, such as
+  a comma after the last setting, is said with its line, and keeps the mod out of the install until it's
+  fixed, since the script would start without its settings.
+
+Keys starting with `_` are notes. A script with a `settings.json` and no page of its own gets one in the mod
+menu (`"settings_page": false` in `mod.json` turns it off), with a row for each key, by its value:
+- `true` or `false`: a switch;
+- a number: a number box. A whole number (`3`) stays whole; one written with a point (`12.0`, `1.5`) moves in
+  steps of 0.1 and is saved with its point, so the script still gets a number with a fraction;
+- `"#rrggbb"`: a colour;
+- any other text: a text box;
+- a list or an object: shown as it is, to change in the file;
+- a `_` key with text: a note.
+
+Its Save writes the file again, from what the script has now: the notes first, then the settings in the order
+of their names, two spaces in, an empty list as `[]`, and every number as it was read (`12.0` stays `12.0`,
+`0.1234567` stays `0.1234567`). The page says under the button whether it saved. The script reads the file
+afresh each time the game starts, so what was saved is there next time, and a change made by hand counts once
+the game starts again.

@@ -5,6 +5,8 @@ panel.
 
 - [How Clan Mod Studio works](studio.md): your mods folder, the Editing mod bar and My mods, Save to
   mod, Apply to game and Play, the log, what Undo means here, and where your files are. Start here.
+- [Try Lua in the game](console.md): for people who write scripts, running a line of Lua in the game
+  while it plays. Not needed to make mods on the other pages.
 
 The rest of what wcmods can do is written up in the repository's docs, which open on GitHub:
 the [README](../../README.md) (getting set up, the mod menu in game, remapping keys), the
