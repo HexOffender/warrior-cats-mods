@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { launch } from "../lib/browser.mjs";
-import { NO_BROWSER, browserChoice, dataFolder, makeGame, removeFolder, startStudio, warmUp, writeSave } from "../lib/studio.mjs";
+import { NO_BROWSER, browserChoice, dataFolder, makeGame, removeFolders, startStudio, warmUp, writeSave } from "../lib/studio.mjs";
 
 const { browserPath, skip } = browserChoice();
 // The save's bindings, as tests/unit/conftest.py's `save` fixture has them, with the game's own Pause on Enter.
@@ -31,7 +31,7 @@ before(async () => {
 after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
-  if (folders) await removeFolder(folders.root);
+  if (folders) await removeFolders(folders);
 });
 
 const file = () => {
@@ -100,6 +100,30 @@ test("Change, then F: the cell says what the build will do, and Save to mod writ
   await page.press("i");
   await page.waitFor(() => /no longer opens the inventory/.test(document.querySelector('tr[data-key="row:Player_Show_Inventory"]').textContent));
   assert.match(await page.text('tr[data-key="row:Player_Interact"]'), /I does Interact and no longer opens the inventory/);
+  // Undo goes back to what the file has, F (not the game's E), and focus stays on the row, on its Change.
+  await page.click('button[aria-label="Undo the keyboard change to Interact, back to F"]');
+  assert.equal(await chip(page, "Player_Interact"), "F");
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), "Change the keyboard key for Interact");
+  assert.equal(await page.count('button[aria-label="Put Interact back on the game\'s key, E"]'), 1, "the game's key is a button away");
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
+test("a key that's already a second key isn't taken for another: the dialog says where it is", { skip }, async () => {
+  const page = await browser.page();
+  await open(page);
+  await page.click('button[aria-label="Add another key for Interact"]');
+  await page.press("h");
+  await page.waitFor(() => !document.querySelector(".capture"));
+  await page.click('button[aria-label="Add another key for Drop"]');
+  await page.press("h");
+  await page.waitFor(() => { const w = document.querySelector(".capture [role=alert]"); return w && !w.hidden; });
+  assert.equal(await page.text(".capture [role=alert]"), "H is already a second key for Interact; remove it there first.");
+  await page.press("Escape");
+  assert.equal(await page.count('button[aria-label="Remove H, the second key for Drop"]'), 0);
+  // Removed, focus goes to the row's Add another key, which stays.
+  await page.click('button[aria-label="Remove H, the second key for Interact"]');
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), "Add another key for Interact");
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });
@@ -159,8 +183,15 @@ test("the sticks have no Change button, the moving keys say they need the launch
   // A controller preset, then each column's Back to the game's keys, pressed twice: the file is empty.
   await page.click({ text: "Nintendo layout" });
   assert.equal(await chip(page, "Player_Interact", "gamepad"), "B");
-  await page.click('button[aria-label="Back to the game\'s keys for the keyboard and mouse"]');
-  await page.click('button[aria-label="Back to the game\'s keys for the keyboard and mouse"]');
+  // The build's word on the preset first, so its redraw doesn't land between a column button's two presses.
+  await page.waitFor(() => /The controller's B does Interact/.test(document.querySelector(`tr[data-key="row:Player_Interact"] td:nth-child(3)`).textContent));
+  // Pressed once, the button stays armed through a redraw (the build answering again in between).
+  const kb = 'button[aria-label="Back to the game\'s keys for the keyboard and mouse"]';
+  await page.click(kb);
+  await page.evaluate(() => { window.__row = document.querySelector('tr[data-key="row:Player_Interact"]'); window.dispatchEvent(new Event("focus")); });
+  await page.waitFor(() => document.querySelector('tr[data-key="row:Player_Interact"]') !== window.__row);
+  assert.equal(await page.text(kb), "Press again to put every key back");
+  await page.click(kb);
   await page.click('button[aria-label="Back to the game\'s buttons for the controller"]');
   await page.click('button[aria-label="Back to the game\'s buttons for the controller"]');
   await page.click({ text: "Save to mod" });
@@ -175,6 +206,11 @@ test("the sticks have no Change button, the moving keys say they need the launch
   await page.click({ text: "Save to mod" });
   await page.waitFor(() => !document.querySelector(".target .dirty").textContent);
   assert.deepEqual(file(), { menus: { keys: { U: "Enter" } } });
+  // Backspace as a second Confirm: the Back row says Backspace no longer goes back.
+  await page.click('button[aria-label="Add another key for Confirm in menus"]');
+  await page.click('button[aria-label="Use Backspace"]');
+  await page.waitFor(() => /Backspace no longer goes back in menus: in menus it does what Enter does now\. Give Back another key\./.test(
+    document.querySelector('tr[data-key="menu:BackSpace"]').textContent));
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });

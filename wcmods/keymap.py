@@ -237,11 +237,13 @@ def jobs(commands):
 
 class Note(str):
     """A warning, in plain words, that knows which controls.json entries it's about: rows, a list of
-    (section, name), section "keyboard", "gamepad", "keys" or "menus" and name an action or a pressed key."""
+    (section, name), section "keyboard", "gamepad", "keys" or "menus" and name an action or a pressed key.
+    line_says: the rows' own line (describe) already says it, so Apply says it and the rows don't, twice."""
 
-    def __new__(cls, text, rows=()):
+    def __new__(cls, text, rows=(), line_says=False):
         note = super().__new__(cls, text)
         note.rows = [tuple(r) for r in rows if r]
+        note.line_says = line_says
         return note
 
 
@@ -305,8 +307,8 @@ def native_plan(merged):
     plans = {"play": ({}, {}), "menu": ({}, {})}
     rest, warnings, setters, moved = {}, [], {}, set()
 
-    def warn(text, *rows):
-        warnings.append(Note(text, rows))
+    def warn(text, *rows, line_says=False):
+        warnings.append(Note(text, rows, line_says))
 
     def send(where, key, command, setter):
         out = plans[where][0].setdefault(key, [])
@@ -358,14 +360,15 @@ def native_plan(merged):
             if device == "keyboard" and new in ("Enter", "BackSpace"):
                 landed.append((row, new, action))
     # Moves that change what a menu key or the pause key does, which nothing else on screen would say: a mod
-    # made with the studio's old "Keyboard defaults" button put Pause on Enter.
+    # made with the studio's old "Keyboard defaults" button put Pause on Enter. The row's own line says the
+    # same (_move_line), so these are for Apply.
     for row, new, action in landed:
         text = f"{_cap(label(new))} now {does(action)}, in menus as well, and still {jobs(_native('keyboard', new))}"
         if action == "Player_Pause":
             text += "; Escape will no longer open the pause menu"
-        warn(text, row)
+        warn(text, row, line_says=True)
     if ("keyboard", "Player_Pause") in moved and not any(a == "Player_Pause" for _, _, a in landed):
-        warn("Escape will no longer open the pause menu", ("keyboard", "Player_Pause"))
+        warn("Escape will no longer open the pause menu", ("keyboard", "Player_Pause"), line_says=True)
     # The key that takes an action stops doing the actions the game has on it, unless they move too.
     own = {"keyboard": {**GAME_KEYBOARD, **SCREEN_KEYBOARD}, "gamepad": GAME_GAMEPAD}
     for key, commands in list(plans["play"][0].items()):
@@ -395,15 +398,19 @@ def native_plan(merged):
                 continue
             for command in commands:
                 send(where, s, command, row)
-            lost = []
             for command in KEY_COMMANDS.get(s, []):
                 if command not in commands:
                     drop(where, command, s)
-                    if where == "play" and command.startswith("Player_"):
-                        lost.append(command)
-            if lost:
+            # What the pressed key stops doing there: its actions while you explore, its menu jobs in menus
+            # (Backspace standing for Enter no longer goes back). The row's line says it too (_pair_line). A
+            # menus pair for an arrow or WASD key goes to the key remapper as well, whose plan says it.
+            lost = _pair_lost(s, d, where)
+            if lost and where == "play":
                 warn(f"{_cap(label(s))} now does what {label(d)} does while you explore, so it no longer "
-                     f"{_and(does(c) for c in lost)}", row)
+                     f"{_and(does(c) for c in lost)}", row, line_says=True)
+            elif lost and d not in AXIS_KEYS:
+                warn(f"In menus, {label(s)} now does what {label(d)} does, so it no longer {jobs(lost)}", row,
+                     line_says=True)
             if where == "play" and s in AXIS_KEYS:
                 warn(f"{_cap(label(s))} now does what {label(d)} does while you explore, and still "
                      f"{does(AXIS_JOB[s])} too: the game reads that key itself", row)
@@ -579,8 +586,8 @@ def plan(merged):
 def menu_plan(merged):
     """The "menus" section, {key you press: game key}, used only while a menu is open.
 
-    Returns (send, warnings). Nothing is held back in menus: the game's own key keeps working too, so
-    typing on the name screen and the game's own menu keys are never lost.
+    Returns (send, warnings). Only the key you press is held back in menus (it does the game key's job
+    instead of its own, which is said): the game's key keeps working too, and no key is blocked.
     """
     send, warnings = {}, []
     for src, dst in merged.get("menus", {}).items():
@@ -592,6 +599,10 @@ def menu_plan(merged):
             warnings.append(Note(f"In menus, {label(s)} can only stand for a keyboard key, not {label(d)}", row))
         elif s != d:
             send[s] = d
+            lost = [] if s in MOUSE else _pair_lost(s, d, "menu")   # it holds s back, so s's own jobs go
+            if lost:
+                warnings.append(Note(f"In menus, with {LAUNCHER}, {label(s)} stands for {label(d)}, so it no longer "
+                                     f"{jobs(lost)}", row))
             if len(s) == 1 or s in DIGITS or s == "SpaceBar":
                 warnings.append(Note(f"In menus, with {LAUNCHER}, typing {label(s)} on the name screen sends "
                                      f"{label(d)} instead", row))
@@ -609,10 +620,12 @@ def describe(merged, in_game=True, reserved=None):
     "menus" (name the key you press). Each row is {"key", "status", "line", "notes"}: status "game" (Apply
     puts it in the game), "launcher" (it works only when the game is started with Play with key remaps.bat),
     "cannot" (nothing will do it; notes say why) or "same" (the game's own key: nothing changes); line says
-    what happens, notes are the warnings about it. lost: the game's actions that stay on their key in the
-    file but stop working there because another change took it (Crouch, when Run moves onto the controller's
-    LT). lines are the warnings about no entry; warnings all of them, as Apply says them; launcher whether
-    anything needs Play with key remaps.bat.
+    what happens, notes are the warnings about it (not those the line already says). lost: the game's actions
+    that stay on their key in the file but stop working there because another change took it (Crouch, when
+    Run moves onto the controller's LT), and under "menus", {key: sentence} for each key a menus pair takes
+    from its own jobs in menus (Backspace standing for Enter no longer goes back). lines are the warnings
+    about no entry; warnings all of them, as Apply says them; launcher whether anything needs Play with key
+    remaps.bat.
     """
     if in_game:
         native, rest, notes = native_plan(merged)
@@ -683,6 +696,21 @@ def describe(merged, in_game=True, reserved=None):
             elif device == "keyboard" and k in send and send[k] != k:
                 lost[device][action] = (f"With {LAUNCHER}, {label(k)} stands for {label(send[k])}, so it no longer "
                                         f"{does(action)}. Give {say(action)} another key.")
+    # The keys a menus pair takes from their own jobs in menus (Backspace standing for Enter no longer goes
+    # back): said on the In menus card, by the key.
+    lost["menus"] = {}
+    working = {src: _key(merged["menus"][src]) for src, row in rows["menus"].items() if row["status"] in ("game", "launcher")}
+    for src, d in working.items():
+        s = _key(src)
+        gone = [] if s in MOUSE else _pair_lost(s, d, "menu")
+        if gone:
+            how = (f"in menus it does what {label(d)} does now" if rows["menus"][src]["status"] == "game"
+                   else f"with {LAUNCHER} it stands for {label(d)} there")
+            # Another key standing for one that does them (U for Enter) already does: no advice for those.
+            done = {c for other, k in working.items() if other != src for c in KEY_COMMANDS.get(k, [])}
+            missing = [c for c in gone if c not in done]
+            lost["menus"][s] = (f"{_cap(label(s))} no longer {jobs(gone)}: {how}."
+                                + (f" Give {_and(say(c) for c in missing)} another key." if missing else ""))
     # Keys that wcmods or a mod listens on itself do their own job too, whatever the game does.
     for section, found in rows.items():
         for name, row in found.items():
@@ -693,6 +721,8 @@ def describe(merged, in_game=True, reserved=None):
     lines = []
     for note in notes:
         placed = [r for r in note.rows if r[1] in rows.get(r[0], {})]
+        if placed and getattr(note, "line_says", False):
+            continue   # the rows' own line says it; Apply says it from "warnings"
         for section, name in placed:
             row = rows[section][name]
             if row["line"].rstrip(".") != note and str(note) not in row["notes"]:
@@ -709,9 +739,10 @@ def _move_line(device, action, new, play):
     native = _native(device, new)
     lost = [c for c in native if new in drops.get(c, [])]
     keeps = [c for c in native if c not in lost and c not in sends.get(new, [])]
-    line = f"{_cap(label(new))} {does(action)}"
+    menu_key = device == "keyboard" and new in ("Enter", "BackSpace")   # a move works in menus too: said for these
+    line = f"{_cap(label(new))} {does(action)}" + (", in menus as well" if menu_key else "")
     if lost:
-        line += f" and no longer {jobs(lost)}"
+        line += f"{',' if menu_key else ''} and no longer {jobs(lost)}"
     if keeps:
         line += f", and still {jobs(keeps)}"
     said = [line + "."]
@@ -723,15 +754,27 @@ def _move_line(device, action, new, play):
     return " ".join(said)
 
 
+def _pair_lost(s, d, where):
+    """What a key standing for another stops doing: its actions while you explore (where "play"), or its jobs
+    in menus (where "menu": Backspace standing for Enter no longer goes back). The game's developer tools are
+    left out."""
+    prefix = "Player_" if where == "play" else "Button_"
+    return [c for c in KEY_COMMANDS.get(s, []) if c.startswith(prefix) and c not in KEY_COMMANDS.get(d, [])
+            and NAMES.get(c, True) is not None]
+
+
 def _pair_line(s, d, while_you=None):
-    """A key standing for another, said: "H does what E does while you explore (Interact)."."""
+    """A key standing for another, said: "H does what E does while you explore (Interact).", and what it stops
+    doing: "In menus, Backspace does what Enter does (Confirm and Skip), and no longer goes back in menus."."""
     commands = [c for c in KEY_COMMANDS.get(d, []) if NAMES.get(c, True) is not None]
     if while_you:
         names = _and(say(c) for c in _exploring(commands))
-        lost = [c for c in KEY_COMMANDS.get(s, []) if c.startswith("Player_") and c not in commands]
         line = f"{_cap(label(s))} does what {label(d)} does while you {while_you}" + (f" ({names})" if names else "")
-        if lost:
-            line += f", and no longer {jobs(lost)}"
-        return line + "."
-    names = _and(say(c) for c in commands)
-    return f"In menus, {label(s)} does what {label(d)} does" + (f" ({names})" if names else "") + "."
+        lost = _pair_lost(s, d, "play")
+    else:
+        names = _and(say(c) for c in commands)
+        line = f"In menus, {label(s)} does what {label(d)} does" + (f" ({names})" if names else "")
+        lost = _pair_lost(s, d, "menu")
+    if lost:
+        line += f", and no longer {jobs(lost)}"
+    return line + "."

@@ -155,7 +155,9 @@ def keys_in_use(cfg, mods):
             add(key, "switches mouse look off and on", "Mouse look", "refuse")
     for m in enabled:
         anims = _read(m, "animations.json")
-        for a in (anims or {}).get("animations", []) if isinstance(anims, dict) else []:
+        listed = anims.get("animations", []) if isinstance(anims, dict) else []
+        # Not a list ("animations": 5): no emote keys to read; the Animations section says what's wrong with it.
+        for a in listed if isinstance(listed, list) else []:
             if isinstance(a, dict) and a.get("emote") and isinstance(a.get("key"), str):
                 add(a["key"], f"plays the emote {a.get('name') or a.get('id')}", m.name, "warn")
         if m.id == EMOTE_WHEEL:
@@ -191,14 +193,20 @@ def check(text_or_data, mod_id, mods, cfg):
     merged with the other enabled mods' at their priorities (mod_id counts as on, since saving turns it on),
     said by keymap.describe. Returns describe's answer plus "in_use" (keys_in_use), "ue4ss", and "others":
     sentences about entries another mod also sets, and "lower": the entries a lower-priority enabled mod sets
-    ([section, name] pairs), for which the page writes the game's key explicitly when it puts it back."""
+    ([section, name] pairs), for which the page writes the game's key explicitly when it puts it back.
+    A mod not made yet counts where Save will put it: Save makes it with mods.create at priority 0, and mods
+    go by (priority, id), so it's checked in that place and the check and Apply agree."""
     data = controls.parse(text_or_data if not isinstance(text_or_data, str) else json.loads(text_or_data))
     sec, datas, lower, others = ControlsSection(), [], set(), []
     names = {m.id: m.name for m in mods}
+    order = list(mods)   # priority order
+    if mod_id not in names:   # None stands for the mod Save will make
+        at = next((i for i, m in enumerate(order) if (m.priority, m.id) > (0, mod_id)), len(order))
+        order.insert(at, None)
     above = False
     by_mod = []
-    for m in mods:   # priority order
-        if m.id == mod_id:
+    for m in order:
+        if m is None or m.id == mod_id:
             datas.append(data)
             above = True
             continue
@@ -212,8 +220,6 @@ def check(text_or_data, mod_id, mods, cfg):
         by_mod.append((m, theirs, above))
         if not above:
             lower |= {(section, name) for section, entries in theirs.items() for name in entries}
-    if not any(m.id == mod_id for m in mods):   # a mod not made yet: the page's Save makes it, last
-        datas.append(data)
     for m, theirs, later in by_mod:
         for section, entries in theirs.items():
             for name, key in entries.items():

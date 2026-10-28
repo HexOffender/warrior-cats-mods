@@ -194,7 +194,7 @@ def test_describe_says_pairs_in_play_and_in_menus():
 def test_describe_says_which_unchanged_actions_lose_their_key():
     # Run onto the controller's LT: Crouch, still on LT in the file's eyes, stops working there.
     said = keymap.describe({"gamepad": {"Player_Run": "LT"}})
-    assert said["lost"] == {"keyboard": {}, "gamepad": {
+    assert said["lost"] == {"keyboard": {}, "menus": {}, "gamepad": {
         "Player_Crouch": "The controller's LT no longer crouches: it runs now. Give Crouch another button."}}
     # Moved elsewhere too, it has its own row: nothing lost.
     assert keymap.describe({"gamepad": {"Player_Run": "LT", "Player_Crouch": "RB"}})["lost"]["gamepad"] == {}
@@ -203,6 +203,44 @@ def test_describe_says_which_unchanged_actions_lose_their_key():
     assert keymap.describe({"keys": {"I": "W"}}, in_game=False)["lost"]["keyboard"] == {
         "Player_Show_Inventory": "With Play with key remaps.bat, I stands for W, so it no longer opens the inventory. "
                                  "Give Inventory another key."}
+
+
+def test_a_menus_pair_says_what_the_pressed_key_stops_doing_in_menus():
+    # Backspace standing for Enter in menus: it confirms there, and no longer goes back.
+    plan, _, warns = keymap.native_plan({"menus": {"BackSpace": "Enter"}})
+    assert plan["menu"]["drop"] == {"Button_B": ["BackSpace"], "Button_Back": ["BackSpace"]}
+    assert warns == ["In menus, Backspace now does what Enter does, so it no longer goes back in menus"]
+    said = keymap.describe({"menus": {"BackSpace": "Enter"}})
+    row = rows(said, "menus")["BackSpace"]
+    assert row["line"] == "In menus, Backspace does what Enter does (Confirm and Skip), and no longer goes back in menus."
+    assert row["notes"] == []   # the line says it; Apply says the warning
+    assert said["warnings"] == warns
+    assert said["lost"]["menus"] == {
+        "BackSpace": "Backspace no longer goes back in menus: in menus it does what Enter does now. Give Back another key."}
+    # Enter standing for Backspace while U stands for Enter: Confirm is still on U, so no advice for it.
+    said = keymap.describe({"menus": {"Enter": "BackSpace", "U": "Enter"}})
+    assert said["lost"]["menus"] == {"Enter": "Enter no longer confirms in menus and skips dialogue: in menus it does "
+                                              "what Backspace does now."}
+    # A second key that had no job in menus loses nothing.
+    assert keymap.describe({"menus": {"U": "Enter"}})["lost"]["menus"] == {}
+    # With the old key remapper, which holds the pressed key back: said with its name.
+    said = keymap.describe({"menus": {"BackSpace": "Enter"}}, in_game=False)
+    assert rows(said, "menus")["BackSpace"]["notes"] == [
+        "In menus, with Play with key remaps.bat, Backspace stands for Enter, so it no longer goes back in menus"]
+    assert said["lost"]["menus"]["BackSpace"].startswith("Backspace no longer goes back in menus: with Play with key "
+                                                         "remaps.bat it stands for Enter there.")
+
+
+def test_the_pause_row_says_escape_once():
+    # Pause on P: the row's line says Escape stops pausing; the same warning is Apply's, not the row's again.
+    said = keymap.describe({"keyboard": {"Player_Pause": "P"}})
+    row = rows(said, "keyboard")["Player_Pause"]
+    assert row["line"].endswith("Escape no longer opens the pause menu.") and row["notes"] == []
+    assert said["warnings"] == ["Escape will no longer open the pause menu"]
+    # Pause on Enter: in menus as well, said in the line.
+    row = rows(keymap.describe({"keyboard": {"Player_Pause": "Enter"}}), "keyboard")["Player_Pause"]
+    assert row["line"] == ("Enter opens the pause menu, in menus as well, and still confirms in menus and skips dialogue. "
+                           "Escape no longer opens the pause menu.") and row["notes"] == []
 
 
 def test_describe_flags_a_reserved_key_once():
@@ -243,6 +281,14 @@ def test_keys_in_use_falls_back_to_each_mods_key_when_mouse_look_wont_merge(stud
     assert found == ["F6", "F7"]
 
 
+def test_keys_in_use_skips_an_animations_json_whose_animations_isnt_a_list(studio):
+    make_mod(studio, "odd", files={"animations.json": {"animations": 5}})
+    make_mod(studio, "waves", files={"animations.json": {"animations": [
+        {"id": "Wave", "name": "Wave", "file": "a.glb", "emote": True, "key": "G"}]}})
+    found = section.keys_in_use(studio.ctx.cfg, modlib.discover(studio.ctx.mods_root))
+    assert [e["from"] for e in found if e["key"] == "G" and e["taken"]] == ["Waves"]
+
+
 # ---------- /controls/check ----------
 def test_controls_check_route_merges_with_other_mods_and_says_who_wins(studio):
     make_mod(studio, "low", {"priority": 1}, files={"controls.json": {"keyboard": {"Player_Interact": "G", "Player_Run": "V"}}})
@@ -257,6 +303,27 @@ def test_controls_check_route_merges_with_other_mods_and_says_who_wins(studio):
     assert "Low also changes Interact, and this mod wins: it comes later." in r["others"]
     assert r["lower"] == [["keyboard", "Player_Interact"], ["keyboard", "Player_Run"]]
     assert r["ue4ss"] is False and r["launcher"] is True
+
+
+def test_controls_check_route_places_a_mod_not_made_yet_where_save_will_make_it(studio):
+    # Save makes the mod with mods.create at priority 0, and mods go by (priority, id): an enabled mod at
+    # priority 50 comes after it and wins, before Save as after it.
+    make_mod(studio, "keys", {"priority": 50, "name": "Key pack"}, files={"controls.json": {"keyboard": {"Player_Interact": "G"}}})
+    make_mod(studio, "aaa", {"priority": 0}, files={"controls.json": {"keyboard": {"Player_Run": "V"}}})   # before my-mods
+    make_mod(studio, "zzz", {"priority": 0}, files={"controls.json": {"keyboard": {"Player_Drop": "B"}}})  # after my-mods
+    page = {"mod": "my-mods", "controls": {"keyboard": {"Player_Interact": "F", "Player_Run": "N", "Player_Drop": "Z"}}}
+    before = call(studio, "POST", "controls/check", page)
+    assert before["rows"]["keyboard"]["Player_Interact"]["status"] == "overridden"
+    assert "Key pack changes this too and wins" in before["rows"]["keyboard"]["Player_Interact"]["notes"][0]
+    assert "Key pack also changes Interact, and wins: it comes after this mod." in before["others"]
+    assert before["rows"]["keyboard"]["Player_Drop"]["status"] == "overridden"
+    assert before["rows"]["keyboard"]["Player_Run"]["line"].startswith("N runs")   # over aaa
+    assert "this mod wins: it comes later" in " ".join(before["others"])
+    assert before["lower"] == [["keyboard", "Player_Run"]]   # only the mods really below it
+    # Saved: the same answer from the mod as it is.
+    modlib.create(studio.ctx.mods_root, "my-mods", enabled=True)
+    after = call(studio, "POST", "controls/check", page)
+    assert {k: after[k] for k in ("rows", "others", "lower")} == {k: before[k] for k in ("rows", "others", "lower")}
 
 
 def test_controls_check_route_refuses_broken_text_with_a_sentence(studio):

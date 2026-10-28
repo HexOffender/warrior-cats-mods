@@ -98,8 +98,9 @@ game closes.
 - **Help** (top right) opens the guide in a panel: how the studio works, your mods folder, saving,
   applying, the log, and where your files are ([docs/guide/](docs/guide/README.md)).
 - **If Clan Mod Studio is updated while it's open**, "Restart the studio" appears at the top: press it,
-  and a fresh studio opens in a new window while the page comes back by itself. If the studio's black
-  window is closed, the page says so and comes back when you open Clan Mod Studio again.
+  and a fresh studio opens in a new window while the page comes back by itself (it waits until your
+  changes are saved). If the studio's black window is closed, the page says so and carries on when you
+  open Clan Mod Studio again, with anything unsaved still on it.
 - **The rest:** each mod's More has its priority, its folder, Save as .zip (to share it) and Remove.
 - **Mod packs**, the next page: a set of mods shared and played together as one experience (a story
   with its cats, quests and items, the colours and names that suit it). Make one from your mods; its
@@ -110,8 +111,10 @@ game closes.
   Put it back does that), "Take all mods out of the game", and starting an empty mod of your own.
 
 The pages under **Make mods** are for making your own; each edits a file in a mod folder. **Save to
-mod** checks the file the way Apply would and says under the Editing mod bar what would keep it out of
-the game; the page asks before you switch mods or close it with unsaved changes.
+mod** reads the file as Apply first does and says under the Editing mod bar what in it would keep it out
+of the game; what only shows once the mods are put together (a table's rows and columns, a model or a
+picture, two mods changing the same thing) is still found at Apply. The page asks before you switch
+mods, import a file over your changes or close it with unsaved changes.
 
 | Page | What you change | Stored as | Reaches the game through |
 |---|---|---|---|
@@ -213,19 +216,19 @@ written into your save only after a backup.
    the keyboard, start the game with `Play with key remaps.bat`; for the sticks, use Steam's controller
    settings.
 4. If a key already does something else, the page says what it will stop doing before you save, and so does
-   Apply; the mod menu's key and button (Insert and View unless you changed them), mouse look's key (F6) and
-   F11 are taken, and the page's "Which keys are free?" lists the rest.
+   Apply; the mod menu's key and button (Insert and View unless you changed them), mouse look's key (F6, while
+   mouse look is on) and F11 are taken, and the page's "Which keys are free?" lists the rest.
 5. Controller buttons, the side mouse buttons and the wheel haven't been tried in the game yet.
 
 | What you change | After Apply | Note |
 |---|---|---|
 | An action (Interact, Pounce, Run, Crouch, Scent tracking, Drop, Talk to a friend, Place a den decoration, Return to camp, Reset the camera, Pause menu, Inventory, Quest log, Map, Meow) on a key, mouse button or controller button | works in the game | the old key keeps its other jobs; Inventory, Quest log, Map and Meow have no controller button |
 | A second key for an action | works in the game while you explore | it does what the game's key does there |
-| A second key for Confirm, Back or the tabs in menus | works in the game | letters still type on the name screen |
+| A second key for Confirm, Back or the tabs in menus | works in the game | the key you add gives up its own job in menus; letters still type on the name screen |
 | Moving and the camera, on the keyboard | only with `Play with key remaps.bat` | deprecated, keyboard and mouse only |
 | The sticks | no | Steam's controller settings |
 | Mouse look | works in the game | its own card on the Controls page; needs the script loader |
-| Anything, without the script loader | keyboard and mouse only, with `Play with key remaps.bat` | Get set up installs the loader |
+| Without the script loader | only with `Play with key remaps.bat`: the keyboard's actions, second keys and keys in menus | not Inventory, Quest log, Map, Meow, the menus' own commands or the controller; Get set up installs the loader |
 
 How it works inside the game, the old key remapper and its command line, and what hasn't been checked yet:
 [docs/remapping.md](docs/remapping.md). The file itself: [formats.md, controls.json](docs/formats.md#controlsjson).
@@ -239,7 +242,7 @@ in groups):
 python wcmods.py status      # game, save, UE4SS, and your mods
 python wcmods.py selftest    # checks every file format against your install (writes nothing)
 python wcmods.py install     # builds the enabled mods and installs them (game closed)
-python wcmods.py play        # starts the game with the old key remapper (deprecated; see Remapping keys)
+python wcmods.py play        # starts the game with the old key remapper (deprecated; see docs/remapping.md)
 python wcmods.py uninstall   # removes them again
 ```
 

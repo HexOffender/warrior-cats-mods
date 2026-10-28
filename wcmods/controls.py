@@ -3,8 +3,8 @@
 The game stores each binding as "<kind>,<Action>,<Key>,<Scale>.1" under Shared.InputKeyboard
 or Shared.InputGamepad, e.g. "0,Player_Interact,E,1.000000.1" (kind 0 = button, 1 = axis; the game
 writes them with the format "%d,%s,%s,%f.1"). It doesn't apply edited ones, though: remaps
-written here had no effect in game, so the controls section no longer writes them (see README,
-"Remapping keys"). read_bindings and apply stay for inspecting and testing the save format.
+written here had no effect in game, so the controls section no longer writes them (see
+docs/remapping.md). read_bindings and apply stay for inspecting and testing the save format.
 Key names are Unreal FKey names (SpaceBar, LeftShift, F, ThumbMouseButton, Gamepad_FaceButton_Left...).
 """
 import json

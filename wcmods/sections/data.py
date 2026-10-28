@@ -26,7 +26,7 @@ class DataSection(Section):
             if not table.endswith(".csv") or not isinstance(edits, dict):
                 raise ValueError(f"data.json: '{table}' should be a table name ending in .csv mapped to edits")
             if not ctx.game.exists(ctx.data_path(table)):
-                raise ValueError(f"data.json: the game has no table '{table}' (try `wcmods files \"*.csv\"`)")
+                raise ValueError(f"data.json: the game has no table '{table}' (the Game data page lists the ones it has)")
             out[table] = edits
         return out or None
 

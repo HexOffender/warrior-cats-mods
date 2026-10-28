@@ -87,8 +87,28 @@ test("normalize accepts L2 and {key: F}, drops null, and keeps notes", () => {
   const s = fresh({ _help: "mine", keyboard: { Player_Interact: { key: "f" }, Player_Run: null, Player_Crouch: ["C"] },
     gamepad: { Player_Run: "L2", Player_Drop: "circle" }, keys: { _x: "y", t: "W" }, menus: { keys: { u: "Enter" } } });
   assert.deepEqual(json(s), { _help: "mine", keyboard: { Player_Interact: "F" },
-    gamepad: { Player_Run: "Gamepad_LeftTrigger", Player_Drop: "Gamepad_FaceButton_Right" }, keys: { T: "W" }, menus: { keys: { U: "Enter" } } });
+    gamepad: { Player_Run: "Gamepad_LeftTrigger", Player_Drop: "Gamepad_FaceButton_Right" }, keys: { _x: "y", T: "W" }, menus: { keys: { U: "Enter" } } });
   assert.deepEqual(json(fresh(["not", "an", "object"])), {});
+});
+
+test("notes inside each section are kept, and what the build can't read is said before a save drops it", () => {
+  const file = { _help: "top", keyboard: { _why: "for left-handers", Player_Interact: "F", Player_Run: null },
+    gamepad: { _note: "pad" }, keys: { _x: 1, T: "W", Y: [1] }, menus: { _m: "outer", keys: { _k: "inner", U: "Enter" }, extra: 1 },
+    mouse: { Player_Pounce: "LeftMouseButton" } };
+  const s = fresh(file);
+  assert.deepEqual(json(s), { _help: "top", keyboard: { _why: "for left-handers", Player_Interact: "F" }, gamepad: { _note: "pad" },
+    keys: { _x: 1, T: "W" }, menus: { _m: "outer", keys: { _k: "inner", U: "Enter" } } });
+  const name = a => (game.names[a] || [a])[0];
+  assert.deepEqual(M.droppedSaid(s, name), [
+    'The part called "mouse": the game reads only keyboard, gamepad, keys and menus.',
+    "Run (keyboard): null isn't a key's name.",
+    '"Y" in "keys": [1] isn\'t a key\'s name.',
+    'In "menus", "extra": the menus part holds only "keys".',
+  ]);
+  // Notes alone keep their section; a file with nothing left out says nothing.
+  assert.deepEqual(json(fresh({ menus: { _m: "only" } })), { menus: { _m: "only" } });
+  assert.deepEqual(M.droppedSaid(fresh({ keyboard: { Player_Interact: "F" } })), []);
+  assert.deepEqual(M.droppedSaid(fresh({ keyboard: 5 })), ['The part called "keyboard", which should hold keys by name and doesn\'t.']);
 });
 
 test("keys T:W and Y:W round-trip (row T, extra pair Y)", () => {
@@ -176,6 +196,55 @@ test("a second key for Drop shows on Talk to a friend too, since C does both", (
   const s = fresh();
   M.addSecond(s, "keys", M.gameKey(game, "keyboard", "Player_Drop"), "V");
   assert.deepEqual(M.secondKeys(s, "keys", M.gameKey(game, "keyboard", "Player_Friend_Talk")), ["V"]);
+});
+
+test("a key that stands for another isn't taken over: the dialog says where it is", () => {
+  // H as a second Interact, then as a second Drop: refused, and H still interacts.
+  const s = fresh();
+  const E = M.gameKey(game, "keyboard", "Player_Interact"), C = M.gameKey(game, "keyboard", "Player_Drop");
+  assert.equal(M.addSecond(s, "keys", E, "H"), true);
+  assert.equal(M.pairTaken(s, game, "keys", "h", C), "H is already a second key for Interact; remove it there first.");
+  assert.equal(M.addSecond(s, "keys", C, "H"), false);
+  assert.deepEqual(json(s), { keys: { H: "E" } });
+  assert.equal(M.pairTaken(s, game, "keys", "H", E), null, "the same pair again is nothing to refuse");
+  // As a moving key: the same.
+  assert.match(M.pairTaken(s, game, "keys", "H", "W"), /^H is already a second key for Interact/);
+  assert.equal(M.setRaw(s, "W", "H"), false);
+  assert.deepEqual(json(s), { keys: { H: "E" } });
+  // A moving key, then a second key on it; a second key for C names both of C's actions.
+  M.setRaw(s, "W", "T");
+  assert.equal(M.pairTaken(s, game, "keys", "T", E), "T is already the key for Move forward; give that another key first.");
+  M.addSecond(s, "keys", C, "V");
+  assert.equal(M.pairTaken(s, game, "keys", "V", E), "V is already a second key for Drop and Talk to a friend; remove it there first.");
+  // For mod makers' pair, whose game key comes next: any pair the key already makes.
+  M.addSecond(s, "keys", "Enter", "J");
+  assert.equal(M.pairTaken(s, game, "keys", "J", null), "J already stands for Enter while you explore; remove it under For mod makers first.");
+  // In menus: Confirm also on U, then U for Back.
+  M.addSecond(s, "menus", "Enter", "U");
+  assert.equal(M.pairTaken(s, game, "menus", "U", "BackSpace", k => wc.input.keyLabel(k)),
+    "U is already a second key for Confirm in menus; remove it there first.");
+  assert.equal(M.addSecond(s, "menus", "BackSpace", "U"), false);
+  assert.equal(M.pairTaken(s, game, "menus", "H", "BackSpace"), null, "a menus pair is its own: H in play doesn't count");
+});
+
+test("Undo puts back what the file had, not the game's key", () => {
+  // A mod loaded with Interact on F, changed to G: Undo gives F back, and Save keeps it.
+  const s = fresh({ keyboard: { Player_Interact: "F" }, keys: { T: "W" } });
+  const loaded = M.clone(s);
+  M.set(s, game, "keyboard", "Player_Interact", "G");
+  assert.equal(M.differs(s, loaded, "keyboard", "Player_Interact"), true);
+  assert.equal(M.revert(s, loaded, "keyboard", "Player_Interact"), true);
+  assert.deepEqual(json(s), { keyboard: { Player_Interact: "F" }, keys: { T: "W" } });
+  assert.equal(M.differs(s, loaded, "keyboard", "Player_Interact"), false);
+  // A row the file didn't have: Undo takes the entry away.
+  M.set(s, game, "keyboard", "Player_Run", "B");
+  M.revert(s, loaded, "keyboard", "Player_Run");
+  assert.ok(!("Player_Run" in json(s).keyboard));
+  // A moving key: back to the file's T.
+  M.setRaw(s, "W", "Y");
+  assert.equal(M.differsRaw(s, loaded, "W"), true);
+  assert.equal(M.revertRaw(s, loaded, "W"), true);
+  assert.deepEqual(json(s).keys, { T: "W" });
 });
 
 test("confirm also on U writes a menus pair", () => {
