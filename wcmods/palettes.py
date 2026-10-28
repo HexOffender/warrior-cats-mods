@@ -42,8 +42,12 @@ GROWABLE = ("pattern", "marking")     # sections whose tables can take slots pas
 
 
 def load(path):
+    """The palette in a palette.json, its colours parsed. ValueError says what's wrong with one (it's never
+    anything else: the studio lists a mod with a bad palette.json, with the problem on its card)."""
     with open(path, encoding="utf-8-sig") as f:
         raw = json.load(f)
+    if not isinstance(raw, dict):
+        raise ValueError(f'{path}: a palette is an object of sections, e.g. {{"fur": {{"3": "#ff7a1a"}}}}')
     out = {}
     for section, entries in raw.items():
         if section.startswith("_") or section in ("name", "description"):
@@ -53,6 +57,10 @@ def load(path):
         if section == "coats":
             out["coats"] = _coats(entries, path)
             continue
+        if not isinstance(entries, dict):
+            raise ValueError(f'{path}: {section} should be an object of colours by slot, e.g. {{"3": "#ff7a1a"}}'
+                             if section != "eyes" else f'{path}: eyes should be an object of colours by slot name, '
+                             'e.g. {"Amber": "#ffb300"}')
         parsed = {}
         for key, spec in entries.items():
             if str(key).startswith("_"):

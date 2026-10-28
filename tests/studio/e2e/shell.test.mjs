@@ -1,0 +1,154 @@
+// Clan Mod Studio in a real browser: `python wcmods.py studio --no-browser --port 0` on a folder of its own
+// (WCMODS_DATA, with a made-up game folder named in its wcmods.json), driven headless over the DevTools
+// protocol (lib/browser.mjs). Skipped, with a reason, when no Chromium is found: set WC_BROWSER to one.
+import { test, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { findBrowser, launch } from "../lib/browser.mjs";
+import { REPO } from "../lib/dom.mjs";
+
+const EXE = "Wrc-Win64-ShippingDRM.exe";   // config.EXE_NAME: what makes a folder the game's
+const browserPath = findBrowser();
+const skip = browserPath ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// A studio started on a free port over `data`; its URL is on the first line it prints.
+async function startStudio(data, env = {}) {
+  const python = process.env.PYTHON || "python";
+  const proc = spawn(python, ["-I", "wcmods.py", "studio", "--no-browser", "--port", "0"],
+    { cwd: REPO, env: { ...process.env, WCMODS_DATA: data, ...env }, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "", err = "";
+  proc.stdout.on("data", d => { out += d; });
+  proc.stderr.on("data", d => { err += d; });
+  // On Windows `python` may be a launcher with the real interpreter under it: the whole tree goes.
+  const stop = () => {
+    if (proc.exitCode !== null) return;
+    if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(proc.pid), "/T", "/F"], { stdio: "ignore" });
+    else proc.kill();
+  };
+  const end = Date.now() + 30000;
+  for (;;) {
+    const m = /running at (http:\/\/127\.0\.0\.1:\d+\/)/.exec(out);
+    if (m) return { url: m[1], proc, stop, output: () => out + err };
+    if (proc.exitCode !== null) throw new Error(`the studio ended (${proc.exitCode}): ${out}${err}`);
+    if (Date.now() > end) { stop(); throw new Error(`the studio didn't say where it runs in 30 s: ${out}${err}`); }
+    await sleep(50);
+  }
+}
+
+// A folder of the player's own, with wcmods.json naming a game folder (empty: not the game yet) and a saves
+// folder, both made up, so neither Steam's game nor the real save is ever looked at.
+function dataFolder() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wc-e2e-"));
+  const game = path.join(root, "Game"), saves = path.join(root, "Saves"), data = path.join(root, "data");
+  for (const d of [game, saves, data]) fs.mkdirSync(d, { recursive: true });
+  fs.writeFileSync(path.join(data, "wcmods.json"), JSON.stringify({ game_dir: game, save_dir: saves }));
+  return { root, game, saves, data };
+}
+
+function makeGame(game) {
+  const win64 = path.join(game, "Wrc", "Binaries", "Win64");
+  fs.mkdirSync(path.join(win64, "ue4ss", "Mods"), { recursive: true });
+  fs.mkdirSync(path.join(game, "Wrc", "Content", "Paks"), { recursive: true });
+  fs.writeFileSync(path.join(win64, EXE), "");
+}
+
+let browser, studio, folders;
+
+before(async () => {
+  if (skip) return;
+  folders = dataFolder();
+  // One after the other, each kept as soon as it's up, so `after` can end whatever started if the other fails.
+  studio = await startStudio(folders.data);
+  browser = await launch({ browser: browserPath });
+});
+
+after(async () => {
+  if (studio) studio.stop();
+  if (browser) await browser.close();
+  if (folders) for (let i = 0; i < 5; i++) {
+    try { fs.rmSync(folders.root, { recursive: true, force: true }); break; } catch (e) { await sleep(300); }
+  }
+});
+
+test("the studio opens with no console errors, its status chips and its pages", { skip }, async () => {
+  const page = await browser.page();
+  await page.goto(studio.url);
+  await page.waitFor("#nav button");
+  await page.waitFor(() => document.querySelectorAll("#status .chip").length > 0);
+  await page.waitFor(() => document.querySelector("#main .section h1"));
+  assert.deepEqual(page.consoleErrors(), []);
+  assert.equal(await page.evaluate("document.title"), "Mods · Clan Mod Studio");
+  const chips = await page.evaluate(() => [...document.querySelectorAll("#status .chip")].map(c => c.dataset.said));
+  assert.deepEqual(chips, ["Game closed", "No script loader", "No save yet", "Nothing installed"]);
+  const pages = await page.evaluate(() => [...document.querySelectorAll("#nav button")].map(b => b.textContent));
+  assert.deepEqual(pages, ["Mods", "Mod packs", "Settings and repair", "Palettes", "Your cat", "Controls", "Names", "Items",
+    "Animations", "Characters", "Questlines", "Game data", "Save"]);
+  assert.equal(await page.evaluate(() => document.querySelector("#nav button[aria-current]").textContent), "Mods");
+  assert.equal(await page.text("#playBtn"), "Play");
+  await page.close();
+});
+
+test("Get set up asks where the game is, and finds it once the folder holds the game", { skip }, async () => {
+  const page = await browser.page();
+  await page.goto(studio.url + "#mods");
+  await page.waitFor(".setup .steps li");
+  const steps = async () => page.evaluate(() => [...document.querySelectorAll(".setup .step strong")].map(s => s.textContent.replace(/^(Done|To do): /, "")));
+  assert.deepEqual(await steps(), ["Where's the game?", "Start the game once", "Install the script loader", "Add the menu's pages"]);
+  assert.equal(await page.evaluate(() => document.querySelector(".setup .step.done")), null);
+  makeGame(folders.game);
+  await page.reload();
+  await page.waitFor(".setup .steps li");
+  assert.deepEqual(await steps(), ["Found the game", "Start the game once", "Install the script loader", "Add the menu's pages"]);
+  assert.equal(await page.text(".setup .step.done .mono"), folders.game);
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
+test("a mod made from a Make page's Editing-mod bar shows on the Mods page", { skip }, async () => {
+  const page = await browser.page();
+  await page.goto(studio.url + "#npcs");   // Characters: a Make page that opens without the game's files
+  // The bar is laid out for good once the mod list is in its select (the New mod button moves with it).
+  await page.waitFor(() => document.querySelector('.target select[aria-label="Mod that stores npcs.json"]')?.options.length > 0);
+  await page.click({ text: "New mod…" });
+  await page.waitFor(() => { const i = document.querySelector('input[aria-label="New mod folder name"]'); return i && i.getClientRects().length > 0; });
+  await page.type('input[aria-label="New mod folder name"]', "e2e-mod");
+  await page.click({ text: "Create" });
+  await page.waitFor(() => [...document.querySelectorAll(".target select option")].some(o => o.value === "e2e-mod"));
+  assert.equal(await page.evaluate(() => document.querySelector(".target select").value), "e2e-mod");
+  await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes("Created mod e2e-mod")));
+  assert.ok(fs.existsSync(path.join(folders.data, "mods", "e2e-mod", "mod.json")), "the mod's folder is there");
+  await page.goto(studio.url + "#mods");
+  await page.waitFor('[data-key="mod:e2e-mod"]');
+  assert.equal(await page.text('[data-key="mod:e2e-mod"] label strong'), "E2E Mod");
+  assert.equal(await page.evaluate(() => document.querySelector("#mod-on-e2e-mod").checked), true);
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
+test("Apply and Play wait while the game is running", { skip }, async () => {
+  makeGame(folders.game);   // with the game found, only the running game holds Apply back
+  const running = await startStudio(folders.data, { WCMODS_FAKE_RUNNING: "1" });
+  try {
+    const page = await browser.page();
+    await page.goto(running.url);
+    await page.waitFor(() => [...document.querySelectorAll("#status .chip")].some(c => c.dataset.said === "Game running"));
+    assert.equal(await page.evaluate(() => document.getElementById("installBtn").disabled), true);
+    assert.equal(await page.evaluate(() => document.getElementById("installBtn").title), "Close the game first");
+    assert.equal(await page.text("#playBtn"), "Playing");
+    assert.equal(await page.evaluate(() => document.getElementById("playBtn").disabled), true);
+    await page.close();
+  } finally {
+    running.stop();
+  }
+  // And not otherwise: the first studio, with the same game folder, offers to apply.
+  const page = await browser.page();
+  await page.goto(studio.url);
+  await page.waitFor(() => [...document.querySelectorAll("#status .chip")].some(c => c.dataset.said === "Game closed"));
+  await page.waitFor(() => !document.getElementById("installBtn").disabled);
+  assert.equal(await page.evaluate(() => document.getElementById("installBtn").title), "Build your mods and put them in the game");
+  await page.close();
+});

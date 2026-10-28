@@ -8,7 +8,9 @@ export const SANDBOX_URL = "https://github.com/HexOffender/wcmods-sandbox/releas
 
 // "Mossfoot" -> "mossfoot", unique among `taken`.
 export function slug(text, taken = [], fallback = "thing") {
-  let base = (text || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || fallback;
+  // NFKD splits an accented letter into the letter and its accent, which then goes ("é" -> "e").
+  let base = (text || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "").slice(0, 40) || fallback;
   if (!/^[a-z0-9]/.test(base)) base = fallback;
   let id = base, n = 2;
   while (taken.includes(id)) id = `${base}-${n++}`;

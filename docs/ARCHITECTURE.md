@@ -16,7 +16,7 @@ A map of the code for anyone changing it. What each part does for a player is in
 | `wcmods/templates/` | What `wcmods new --kind ...` copies |
 | `studio/` | Clan Mod Studio's front end: `index.html`, `app.js` (the shell: side bar, Apply and Play, the log drawer), `lib/wc.js` (the helpers every page uses), `sections/*.js` (one module per page) |
 | *(not in the repository)* | The player's own files: `mods/`, `wcmods.json` and `backups/`, in `%LOCALAPPDATA%\WCMods` (`config.data_dir()`, `WCMODS_DATA` to move it), so `git pull` or a new download never touches them. Older versions kept them here; `userdata.migrate` moves them out on the first start |
-| `tests/` | `unit/` (pytest, no game), `game/` (in-game, run by `agent test`), `cpp-sdk/` (a C++ test mod), `kraken/` (fixtures for the decoder) |
+| `tests/` | `unit/` (pytest, no game: the formats, the Lua, mods, and the studio's API and HTTP handler over temporary folders), `studio/` (`node --test`: the studio's JavaScript helpers under a DOM shim, and `e2e/`, the studio in a headless Chromium driven over the DevTools protocol by `lib/browser.mjs`), `game/` (in-game, run by `agent test`), `cpp-sdk/` (a C++ test mod), `kraken/` (fixtures for the decoder) |
 | `tools/` | Generators (`make_palettes.py` for wcmods-examples, `make_kraken_fixtures.py`) and `re/`, the reverse-engineering scripts behind [reverse-engineering.md](reverse-engineering.md) |
 | `docs/` | The documentation ([docs/README.md](README.md) lists it) |
 
@@ -83,6 +83,8 @@ C++ SDK's comments follow it, and the Menu pages mod puts its pages in them by i
 ## Checks
 
 - `python -m pytest`: `tests/unit/`, no game needed (CI runs this).
+- `node --test "tests/studio/**/*.test.mjs"`: the studio's JavaScript, and the studio end to end in a headless
+  Chromium (CI runs this too; without a Chromium the end-to-end tests skip).
 - `python wcmods.py selftest`: every format against the installed game, writes only to a temp folder.
 - `python wcmods.py agent test`: the in-game tests, with pictures ([agent.md](agent.md)).
 

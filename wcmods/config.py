@@ -212,6 +212,11 @@ def steam_elsewhere_text(steam, game_dir, fix=True):
 
 
 def game_running():
+    """Whether the game's process is running. WCMODS_FAKE_RUNNING (1 or 0) stands in for the answer, only
+    with WCMODS_DATA set: the studio's tests, in a folder of their own, never a player's."""
+    fake = os.environ.get("WCMODS_FAKE_RUNNING")
+    if fake in ("0", "1") and os.environ.get(DATA_ENV):
+        return fake == "1"
     try:
         out = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {EXE_NAME}", "/NH"],
                              capture_output=True, text=True, timeout=15).stdout
