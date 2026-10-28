@@ -1,7 +1,13 @@
-// A Clan Mod Studio for the end-to-end tests (e2e/*.test.mjs): `python wcmods.py studio --no-browser --port 0` on
-// folders of its own (WCMODS_DATA, with a made-up game folder and saves folder named in its wcmods.json, and a
-// temp folder), so the real game folder and the real save are never used, run from a copy of wcmods, and the
-// browser that drives it.
+// What the end-to-end tests (e2e/*.test.mjs) share: a Clan Mod Studio, `python wcmods.py studio --no-browser
+// --port 0`, started over folders of the test's own (WCMODS_DATA, with a made-up game folder and saves folder named
+// in its wcmods.json, and a temp folder), so the real game folder and the real save are never used, run from a
+// copy of wcmods of its own, and the browser that drives it (lib/browser.mjs).
+//
+//   const folders = dataFolder();
+//   const studio = await startStudio(folders);    // studio.url, studio.stop()
+//   makeGame(folders.game);                        // the folder holds "the game" now
+//   writeMod(folders, "my-mod", { name: "My mod" }, { "npcs.json": {...} });
+//   await removeFolders(folders);                  // at the end
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -21,11 +27,14 @@ export function browserChoice() {
   return { browserPath, skip: browserPath || required ? false : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)" };
 }
 export const NO_BROWSER = "WC_REQUIRE_BROWSER=1, and no Chromium was found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)";
+// The same, found once for a file: `browserPath` (null when there's none), `skip` (the reason, or false).
+export const { browserPath, skip } = browserChoice();
+export const required = process.env.WC_REQUIRE_BROWSER === "1";
 
 // wcmods as the studio runs it (wcmods.py, wcmods/, studio/ and docs/), copied to a folder of its own. Started
 // from the repository, the studio would take it for wcmods' folder and move a mods/, wcmods.json or backups/
 // kept there (a supported way to keep them) into the test's folder, which is deleted.
-function appCopy() {
+export function appCopy() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "wc-e2e-app-"));
   const skipCache = src => !src.split(path.sep).includes("__pycache__");
   for (const d of ["wcmods", "studio", "docs"]) fs.cpSync(path.join(REPO, d), path.join(root, d), { recursive: true, filter: skipCache });
@@ -73,20 +82,21 @@ export async function warmUp(browser, url) {
 }
 
 // A folder of the player's own, with wcmods.json naming a game folder (empty: not the game yet) and a saves
-// folder, both made up, so the real game folder and the real save are never used, and a temp folder. Steam
-// is still read (its registry key and library list, read only): once the made-up folder holds the game,
-// Get set up and the Mods page say whether Steam starts another copy, and nothing here depends on the answer.
+// folder, both made up, so the real game folder and the real save are never used, a temp folder, and a copy
+// of wcmods to run the studio from. `settings` go in wcmods.json too. Steam is still read (its registry key
+// and library list, read only): once the made-up folder holds the game, Get set up and the Mods page say
+// whether Steam starts another copy, and nothing here depends on the answer.
 // `app` is the copy of wcmods a studio over these folders runs from; removeFolders takes both away.
-export function dataFolder() {
+export function dataFolder(settings = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "wc-e2e-"));
   const game = path.join(root, "Game"), saves = path.join(root, "Saves"), data = path.join(root, "data");
   const temp = path.join(root, "temp");
   for (const d of [game, saves, data, temp]) fs.mkdirSync(d, { recursive: true });
-  fs.writeFileSync(path.join(data, "wcmods.json"), JSON.stringify({ game_dir: game, save_dir: saves }));
+  fs.writeFileSync(path.join(data, "wcmods.json"), JSON.stringify({ game_dir: game, save_dir: saves, ...settings }));
   return { root, game, saves, data, temp, app: appCopy() };
 }
 
-// The game's folder as the studio looks for it: the exe, the script loader's mods folder and the paks folder.
+// The folder holds the game now: its exe, UE4SS's mods folder and the paks folder (no paks).
 export function makeGame(game) {
   const win64 = path.join(game, "Wrc", "Binaries", "Win64");
   fs.mkdirSync(path.join(win64, "ue4ss", "Mods"), { recursive: true });
@@ -103,14 +113,29 @@ export function writeSave(saves, data) {
   if (r.status !== 0) throw new Error(`couldn't write the save: ${r.stderr}`);
 }
 
-// Take a folder away, trying again while Windows still holds a file in it.
-export async function removeFolder(dir) {
+// A mod in the player's mods folder: mod.json (on, unless `meta` says) and files ({name: text or JSON-able}).
+export function writeMod(folders, id, meta = {}, files = {}) {
+  const dir = path.join(folders.data, "mods", id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "mod.json"), JSON.stringify({ name: id, enabled: true, ...meta }));
+  for (const [name, value] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+    fs.writeFileSync(path.join(dir, name), typeof value === "string" ? value : JSON.stringify(value, null, 2));
+  }
+  return dir;
+}
+export const readJson = file => JSON.parse(fs.readFileSync(file, "utf8"));
+
+// Remove a folder, trying again while a studio that used it lets go of its files (Windows).
+export async function remove(folder) {
   for (let i = 0; i < 5; i++) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); return; } catch (e) { await sleep(300); }
+    try { fs.rmSync(folder, { recursive: true, force: true }); return; } catch (e) { await sleep(300); }
   }
 }
+export const removeFolder = remove;
 // A dataFolder's folders, and the copy of wcmods its studios ran from.
 export async function removeFolders(folders) {
-  await removeFolder(folders.root);
-  await removeFolder(folders.app);
+  if (!folders) return;
+  await remove(folders.root);
+  await remove(folders.app);
 }

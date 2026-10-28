@@ -9,6 +9,9 @@ panel.
   action, keys in menus, and what the page says before you apply.
 - [Names](names.md): renaming the cats in your save, the parts of clan names, rogue names, the ban list
   and any name the game shows; what to do when a cat shows as Cat 1.
+- [Characters](characters.md): cats of your own for Sandbox mode, their looks, where they stand and what
+  they say, and getting Sandbox mode.
+- [Questlines](questlines.md): quests with those cats, step by step, with rewards, and starting them over.
 
 The rest of what wcmods can do is written up in the repository's docs, which open on GitHub:
 the [README](../../README.md) (getting set up, the mod menu in game, remapping keys), the

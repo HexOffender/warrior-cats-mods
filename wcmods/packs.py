@@ -18,8 +18,9 @@ def is_pack(mod):
 
 
 def contents(found, pack):
-    """The mods a pack carries: what it requires, and what they require in turn (ids, missing ones too)."""
-    return modlib.needed(found, pack.id)
+    """The mods a pack carries: what it requires, and what they require in turn (ids, missing ones too), and
+    the mods they use that are in the mods folder (mods.carried)."""
+    return modlib.carried(found, pack.id)
 
 
 def describe(cfg, found):

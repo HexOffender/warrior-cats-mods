@@ -20,6 +20,14 @@ test("slug makes an id from a name, unique among the ids taken", () => {
   assert.equal(story.slug("🐱"), "thing");
 });
 
+test("story.js spells the accents slug() drops as escapes, not as the characters themselves", async () => {
+  // An accent on its own is invisible in an editor, and a tool can turn the escapes into them unseen:\u0300-\u036f stays written so.
+  const { readFileSync } = await import("node:fs");
+  const text = readFileSync(new URL("../../studio/lib/story.js", import.meta.url), "utf8");
+  assert.doesNotMatch(text, /[\u0300-\u036f]/);
+  assert.ok(text.includes(String.raw`/[\u0300-\u036f]/g`));
+});
+
 test("ownItems gives a mod's items.json the tags the game gives them", () => {
   const items = { items: [
     { id: "moss", kind: "material", name: "Moss" },
@@ -93,13 +101,52 @@ test("field wraps an input with its label and an optional hint", () => {
   assert.equal(story.field("Name", input).children.length, 2);
 });
 
-test("sandboxNote says to get the Sandbox mode mod, or to turn it on, or nothing", async () => {
-  dom.routes = { "GET /mods": () => [] };
-  assert.match((await story.sandboxNote()).textContent, /You'll need the Sandbox mode mod/);
-  dom.routes = { "GET /mods": () => [{ id: story.SANDBOX, enabled: false }] };
-  assert.match((await story.sandboxNote()).textContent, /Sandbox mode is off/);
-  dom.routes = { "GET /mods": () => [{ id: story.SANDBOX, enabled: true }] };
-  assert.equal(await story.sandboxNote(), null);
-  dom.routes = {};
-  assert.match((await story.sandboxNote()).textContent, /You'll need/);   // the list couldn't be read: as if none
+test("listEditor redraws one list button in place, and holds Add back until the page is ready", () => {
+  const added = [];
+  const ed = story.listEditor({ noun: "cat", empty: "None", label: c => c.name, add: () => added.push(1) });
+  const cats = [{ name: "Mossfoot" }, { name: "Sparrowpaw" }];
+  ed.render(cats, (box, c) => box.append(c.name));
+  const buttons = () => ed.element.querySelectorAll("button.pick");
+  const first = buttons()[0];
+  cats[0].name = "Mossfoot the Elder";
+  ed.relabel(0);
+  assert.equal(buttons()[0], first, "the same button, not a new one");
+  assert.equal(first.textContent, "Mossfoot the Elder");
+  const add = ed.element.querySelectorAll("button").find(b => b.textContent === "Add a cat");
+  ed.ready(false);
+  assert.equal(add.disabled, true);
+  ed.ready(true);
+  add.click();
+  assert.deepEqual(added, [1]);
+});
+
+test("wherePicker gives a spot only once all three numbers are in, rounded, and names each number", () => {
+  const got = [];
+  const picker = story.wherePicker({ at: null }, spot => got.push(spot));
+  const inputs = picker.querySelectorAll("input");
+  assert.deepEqual(inputs.map(i => i.getAttribute("aria-label")), ["X, across the map", "Y, along the map", "Z, height"]);
+  const type = (i, v) => { inputs[i].value = v; inputs[i].dispatch("input"); };
+  type(0, "1"); type(2, "3");
+  assert.deepEqual(got.at(-1), { at: null });
+  type(1, "2.6");
+  assert.deepEqual(got.at(-1), { at: [1, 3, 3] });
+  assert.equal(story.levelWords("L_WorldMap_01_P"), "the forest");
+  assert.equal(story.levelWords("L_Other"), "L_Other");
+});
+
+test("wherePicker shows the studio's sentence alone when the spot can't be read, and the level in words when it can", async () => {
+  const toasts = dom.byId.toasts;
+  dom.routes = { "POST /game/where": () => { throw { status: 400, error: "The game is closed: press Play, stand where you want the cat and press this again" }; } };
+  const got = [];
+  const picker = story.wherePicker({}, spot => got.push(spot));
+  const grab = picker.querySelectorAll("button").find(b => b.textContent === "Use where my cat is standing");
+  grab.click();
+  await new Promise(r => setTimeout(r, 10));
+  assert.equal(toasts.children.at(-1).children[0].textContent, "The game is closed: press Play, stand where you want the cat and press this again");
+  dom.routes = { "POST /game/where": () => ({ at: [10, 20, 30], yaw: 90, level: "L_WorldMap_01_P" }) };
+  grab.click();
+  await new Promise(r => setTimeout(r, 10));
+  assert.deepEqual(got.at(-1), { at: [10, 20, 30], yaw: 90, level: "L_WorldMap_01_P" });
+  assert.equal(toasts.children.at(-1).children[0].textContent, "Got your cat's spot in the forest.");
+  assert.ok(picker.textContent.includes("in the forest"));
 });

@@ -1,8 +1,10 @@
 """Cats and questlines as data (story.py, sections/story.py), mod packs (packs.py) and mods made in the
 studio noting the game's build. No game needed."""
+import io
 import json
 import os
 import re
+import shutil
 import zipfile
 
 import pytest
@@ -160,6 +162,34 @@ def test_a_mod_pack_carries_its_mods_and_plays_on_its_own(tmp_path):
     assert "mod pack" in next(s for s in seen if s["id"] == "moonlit")["kinds"]
     modzip.add_zip(str(zpath), str(other), str(tmp_path / "backups"))
     assert {m.id for m in modlib.discover(str(other)) if m.enabled} == {"moonlit", "story", "sandbox"}
+
+
+def test_a_pack_carries_and_keeps_the_mods_its_mods_use(tmp_path):
+    data = str(tmp_path / "data")
+    cfg = Config(str(tmp_path), data)
+    root = cfg.mods_root
+    _mod(root, "sandbox", enabled=False)
+    story_folder = _mod(root, "story", uses=["sandbox", "mod-menu"])   # as the studio saves it now
+    with open(os.path.join(story_folder, "npcs.json"), "w", encoding="utf-8") as f:
+        json.dump(NPCS, f)
+    _mod(root, "mine")
+    p = packs.save(root, modlib.discover(root), "moonlit", "Moonlit", ["story"])
+    found = modlib.discover(root)
+    assert packs.contents(found, p) == ["story", "sandbox"]
+    desc = packs.describe(cfg, found)["packs"][0]
+    assert [(m["id"], m["direct"], m["enabled"]) for m in desc["mods"]] == [("story", True, True), ("sandbox", False, False)]
+    # Played on its own, Sandbox mode comes on with it; its .zip carries it.
+    packs.play(cfg, found, "moonlit")
+    assert {m.id for m in modlib.discover(root) if m.enabled} == {"moonlit", "story", "sandbox"}
+    found = modlib.discover(root)
+    with zipfile.ZipFile(io.BytesIO(modzip.pack(next(m for m in found if m.id == "moonlit"), found))) as z:
+        assert {n.split("/")[0] for n in z.namelist()} == {"moonlit", "story", "sandbox"}
+    # Without Sandbox mode in the mods folder, the pack still plays and packs: it only works with it.
+    packs.stop(cfg, modlib.discover(root))
+    shutil.rmtree(os.path.join(root, "sandbox"))
+    found = modlib.discover(root)
+    assert packs.contents(found, next(m for m in found if m.id == "moonlit")) == ["story"]
+    assert packs.play(cfg, found, "moonlit")["on"] == ["moonlit"]
 
 
 def test_mods_made_in_the_studio_note_the_games_build(tmp_path):

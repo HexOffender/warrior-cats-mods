@@ -293,6 +293,10 @@ export default {
           : "Runs code, so it stays off until you allow mods that run code (Options, on the Settings and repair page). Only do that for mods from people you trust." }));
         const needs = m.requires.filter(i => !mods.some(x => x.id === i));
         if (m.requires.length) notes.push(el("li", { class: needs.length ? "warn" : "", text: `Needs ${m.requires.map(nameOf).join(", ")}${needs.length ? ", which you don't have: add it too" : " (turned on with it)"}.` }));
+        // Mods it works with (not the mod menu, which is wcmods' own): it goes in without them.
+        const uses = (m.uses || []).filter(i => i !== "mod-menu" && !m.requires.includes(i));
+        const missingUses = uses.filter(i => !mods.some(x => x.id === i) && !r.mods.some(x => x.id === i));
+        if (uses.length) notes.push(el("li", { class: missingUses.length ? "warn" : "", text: `Works with ${uses.map(nameOf).join(", ")}${missingUses.length ? ", which you don't have: it goes in without it, but add it too to see everything it does" : " (turned on with it)"}.` }));
         if (m.menu_page) notes.push(el("li", { text: "Adds a page to the in-game mod menu." }));
         addBox.append(el("div", { class: "mod preview" },
           r.mods.length > 1 ? pick : null,
@@ -313,7 +317,7 @@ export default {
             const added = res.added;
             const also = [...new Set(added.flatMap(a => a.also_on || []))];
             toast(`Added ${added.map(a => a.name).join(", ")}.`
-              + (also.length ? ` Also on, because ${added.length > 1 ? "they need" : "it needs"} them: ${also.join(", ")}.` : "")
+              + (also.length ? ` Also on with ${added.length > 1 ? "them" : "it"}: ${also.join(", ")}.` : "")
               + (on.checked ? " Press Play to play with it." : ""));
             inboxShown = false;
             renderAdd();
@@ -330,7 +334,7 @@ export default {
         const r = await api.post(`/mods/${encodeURIComponent(m.id)}/switch`, { on, cascade });
         if (r.blocked_by.length) { renderList({ blocked: m.id, by: r.blocked_by }); return; }
         const also = r.changed.filter(c => c.id !== m.id).map(c => c.name).join(", ");
-        toast(`${m.name} ${on ? "on" : "off"}.` + (also ? (on ? ` Also on, because it needs them: ${also}.` : ` Also off, because they need it: ${also}.`) : ""));
+        toast(`${m.name} ${on ? "on" : "off"}.` + (also ? (on ? ` Also on with it: ${also}.` : ` Also off, because they need it: ${also}.`) : ""));
         await refresh();
       } catch (e) { toast(e.message, "bad"); renderList(); }
     }
@@ -345,6 +349,10 @@ export default {
       const lines = [];
       if (m.requires.length) lines.push(el("li", { text: `Needs ${m.requires_names.join(", ")}.` }));
       for (const p of m.problems) lines.push(el("li", { class: "bad", text: p.replace(/^needs/, "Needs") + "." }));
+      // A mod it works with that's off or not here: said, never a problem (it goes in without it).
+      for (const w of m.works_with || []) {
+        lines.push(el("li", { class: "muted", text: `Works with ${w.name}, which ${w.state === "off" ? "is off" : "you don't have yet"}: it goes in, but some of it shows only with ${w.name} on.` }));
+      }
       if (m.code && !(settings && settings.allow_code_mods)) lines.push(el("li", { class: "warn", text: "Runs code, so the game won't get it until you allow mods that run code (Options, on the Settings and repair page)." }));
       if (m.enabled && m.needed_by.length) lines.push(el("li", { class: "muted", text: `${m.needed_by.join(", ")} ${m.needed_by.length > 1 ? "need" : "needs"} it.` }));
       // Made for an older build of the game (gamebuild.py): left out unless the player uses it anyway.

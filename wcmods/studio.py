@@ -151,7 +151,29 @@ def plain_summary(manifest, checked=False):
     else:
         said = (f"Put {len(ids)} mod{'s' if len(ids) != 1 else ''} in the game: {listed}."
                 if ids else "Put the mod menu in the game, with no mods on.")
-    return said + (f" {warnings} warning{'s' if warnings != 1 else ''}." if warnings else "")
+    return said + story_sentence(manifest) + (f" {warnings} warning{'s' if warnings != 1 else ''}." if warnings else "")
+
+
+def story_sentence(manifest):
+    """The cats and questlines a build put in, and whether Sandbox mode will show them, for the summary (the
+    story section's notes): " 2 cats and 1 questline from My mods; Sandbox mode 0.5 will show them.", or ""
+    with none. The page's log and last-apply.log both show it (task_summary)."""
+    notes = (manifest.get("notes") or {}).get("story") or {}
+    made = notes.get("story") or {}
+    cats = sum(len(v.get("npcs", [])) for v in made.values())
+    quests = sum(len(v.get("quests", [])) for v in made.values())
+    if not cats and not quests:
+        return ""
+    parts = [f"{n} {word}{'s' if n != 1 else ''}" for n, word in ((cats, "cat"), (quests, "questline")) if n]
+    names = manifest.get("names") or {}
+    sandbox = notes.get("sandbox") or {}
+    if sandbox.get("state") == "on":
+        then = f"Sandbox mode{' ' + sandbox['version'] if sandbox.get('version') else ''} will show them"
+    elif sandbox.get("state") == "held-back":   # on, but a game update left it out of this build
+        then = "they're waiting for Sandbox mode, left out since the game's update (Use it anyway, on the Mods page)"
+    else:
+        then = "they're waiting for Sandbox mode"
+    return f" {' and '.join(parts)} from {', '.join(names.get(i, i) for i in made)}; {then}."
 
 
 def manifest_of(result):
@@ -259,7 +281,8 @@ class Studio:
             # gets CHECK_LATER while they can't be read.
             game = self.ctx.game if self.ctx.cfg.game_dir else _NoGame()
             ctx = BuildContext(self.ctx.cfg, game, os.path.join(tempfile.gettempdir(), "wcmods-studio"), lambda m: None)
-            ctx.mods = [m for m in self.mods() if m.enabled]
+            ctx.found = self.mods()
+            ctx.mods = [m for m in ctx.found if m.enabled]
             sec.collect(mod, ctx)
         except KeyError as e:
             # A key a file lacks (str is the key in quotes), or a game file the reader hasn't got.
@@ -276,6 +299,38 @@ class Studio:
             said = str(e).strip()
             return [f"{file} couldn't be checked{': ' + said if said else ''}"]
         return []
+
+    def story_saved(self, mod):
+        """After a save of npcs.json or quests.json: a mod with cats or quests says it uses Sandbox mode (soft:
+        it's never left out for want of it), and Sandbox mode, when it's in the mods folder but off, is turned
+        on. A "requires" an older studio wrote moves to "uses", unless the mod has code of its own (a script
+        calling Sandbox mode's API really needs it). Returns the names of the mods it turned on."""
+        # What mod.json itself says (Mod reads an older studio's "sandbox" in "requires" as a use already).
+        meta_requires, meta_uses = mod.written("requires"), mod.written("uses")
+        requires, uses = list(meta_requires), list(meta_uses)
+        sid = story.SANDBOX_ID
+        if sid in requires and not mod.has_code():
+            requires.remove(sid)
+            if sid not in uses:
+                uses.append(sid)
+        has_any = story.has_any(mod.folder)   # a file emptied of them leaves "uses" as it is: it blocks nothing
+        if has_any and sid not in uses and sid not in requires:
+            uses.append(sid)
+        changes = {k: v for k, v, was in (("requires", requires, meta_requires), ("uses", uses, meta_uses)) if v != was}
+        if changes:
+            mod.update(**changes)
+        if not has_any:
+            return []
+        found = self.mods()
+        sandbox = next((x for x in found if x.id == sid), None)
+        if sandbox is None or sandbox.enabled or sandbox.problem:
+            return []
+        try:
+            changed, _ = mods.switch(found, sid, True)
+        except ValueError:   # it needs a mod that isn't there: the Mods page and the story pages say so
+            return []
+        names = {x.id: x.name for x in found}
+        return [names.get(i, i) for i, on in changed if on]
 
     def restart(self):
         """Start a fresh Clan Mod Studio (in its own window) and stop this one, for the page's Restart the
@@ -491,9 +546,15 @@ class Studio:
                 for problem in (m.problem, mods.palette_problem(m)):
                     if problem:
                         unmet.setdefault(m.id, []).append(problem)
+            by_id = {m.id: m for m in found}
+            known = {story.SANDBOX_ID: story.SANDBOX_NAME}   # a mod's name for a studio that hasn't got it
             return [{**m.to_dict(), "problems": unmet.get(m.id, []),
                      "needed_by": [titles[i] for i in mods.needing(found, m.id)],
                      "requires_names": [titles.get(i, i) for i in m.requires if i != mods.MENU_ID],
+                     # The mods it works with that aren't on: said on its card, never a reason to leave it out.
+                     "works_with": [{"id": i, "name": titles.get(i) or known.get(i, i),
+                                     "state": "off" if i in by_id else "missing"}
+                                    for i in m.uses if i != mods.MENU_ID and not (i in by_id and by_id[i].enabled)],
                      "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id),
                      "menu_pages": m.id == menupages.ID} for m in found]
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "allow-outdated" and method == "POST":
@@ -604,19 +665,24 @@ class Studio:
                 with self.lock:   # two pages saving the same file at once: one after the other, never interleaved
                     with open(path, "w", encoding="utf-8", newline="\n") as f:
                         f.write(text if text.endswith("\n") else text + "\n")
-                    # Cats and questlines come into the game with the Sandbox mode mod: turning this mod on turns
-                    # that one on, and a shared .zip says it's needed. A mod.json that can't be read can't say so:
-                    # the file is saved all the same, and the problem said with it.
-                    if name in story.FILES and story.SANDBOX_ID not in m.requires:
+                    # Cats and questlines come into the game with the Sandbox mode mod: the mod says it works with
+                    # it (story_saved). A mod.json that can't be read can't say so: the file is saved all the same,
+                    # and the problem said with it.
+                    turned_on = None
+                    if name in story.FILES:
                         try:
                             if m.problem:
                                 raise ValueError(m.problem)
-                            m.update(requires=m.requires + [story.SANDBOX_ID])
+                            turned_on = self.story_saved(m)
                         except ValueError as e:
-                            noted.append("The mod can't note that it needs the Sandbox mode mod, and stays off, until "
-                                         f"its mod.json is fixed: {m.problem or e}")
+                            turned_on = []
+                            noted.append("The mod can't note that it works with the Sandbox mode mod, and stays off, "
+                                         f"until its mod.json is fixed: {m.problem or e}")
                 # A file half made still saves; what would keep it out of the game is said now, not at Apply.
-                return {"saved": name, "requires": m.requires, "problems": noted + self.check_file(m, name)}
+                said = {"saved": name, "requires": m.requires, "problems": noted + self.check_file(m, name)}
+                if turned_on is not None:   # cats and quests: the mods they work with, and what came on for them
+                    said.update(uses=m.uses, turned_on=turned_on)
+                return said
             if method == "DELETE":
                 if os.path.isfile(path):
                     os.remove(path)
@@ -733,18 +799,30 @@ class Studio:
             # An item's icon (or a texture's) as a small PNG, recoloured with ?tint=#rrggbb, for the Items page.
             return Download(self.icon((query or {}).get("of", ""), (query or {}).get("tint")), "icon.png", "image/png")
         if parts == ["game", "where"] and method == "POST":
-            # Where your cat stands in the game, for a cat or a quest's place (through the game bridge).
+            # Where your cat stands in the game, for a cat or a quest's place (through the game bridge), with a
+            # sentence that says what to press when it can't be read.
             if not cfg.data.get("allow_code_mods"):
-                raise PermissionError("reading where your cat is goes through the game bridge, which runs code: allow "
-                                      "mods that run code first (Options, on the Settings and repair page)")
+                raise PermissionError(WHERE_NO_CODE)
             try:
                 reply = Bridge(cfg).run(WHERE_LUA, timeout=10)
             except BridgeError as e:
-                raise RuntimeError(str(e)) from None
+                raise RuntimeError(where_problem(e)) from None
             spot = (reply.get("result") or [None])[0]
             if not reply.get("ok") or not isinstance(spot, dict):
-                raise RuntimeError(reply.get("error") or "your cat isn't in the world: go into the forest first")
+                raise RuntimeError("Your cat isn't in the forest yet: go into the forest, stand where you want the cat "
+                                   "and press this again")
             return spot
+        if parts == ["story", "sandbox"] and method == "GET":
+            # What Sandbox mode can show of the cats and questlines, for the Characters and Questlines pages: a
+            # Sandbox mode held back after a game update (until "Use it anyway") shows nothing either.
+            found = self.mods()
+            return story.sandbox(found, bool(cfg.data.get("allow_code_mods")), gamebuild.held_back(cfg, found))
+        if parts == ["story", "progress"] and method == "DELETE":
+            # Every sandbox cat's questlines back to the start (Sandbox mode keeps them beside the game's saves).
+            if game_running():
+                raise RuntimeError("Close the game first, then press this again: the game keeps its own copy of "
+                                   "how far each cat has got while it runs")
+            return story.start_over(pipeline.saved_folder(cfg))
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "picture" and method == "POST":
             # A picture for the mod (an item's icon), sent as the body: kept in the mod's pictures/ folder.
             return self.add_picture(self.mod(parts[1]), (query or {}).get("name", ""), upload)
@@ -1422,6 +1500,26 @@ def sentence(e):
     if isinstance(e, PermissionError) and getattr(e, "filename", None):
         return f"{os.path.basename(str(e.filename))} is in use (is the game running?)"
     return None
+
+
+# What the studio says when it can't talk to the running game (the game bridge), in the order to press things:
+# the same words wherever the studio asks the game something.
+BRIDGE_CLOSED = "The game is closed: press Play"
+BRIDGE_MISSING = ("The game is running without the studio's connection to it: close the game, press Apply to game, "
+                  "then Play")
+BRIDGE_QUIET = "The game is running but not answering: it may be loading, or held still behind another window"
+# "Use where my cat is standing": the same, with what to do once the game is up.
+WHERE_THEN = ", stand where you want the cat and press this again"
+WHERE_NO_CODE = ("This needs mods that run code: allow them on Settings and repair, then Apply to game and Play"
+                 + WHERE_THEN)
+
+
+def where_problem(e):
+    """A BridgeError from reading where your cat is, as the sentence the page shows: what to press next."""
+    text = str(e)
+    if "no reply within" in text or "another wcmods command" in text:
+        return BRIDGE_QUIET + ": press this again in a moment"
+    return (BRIDGE_MISSING if game_running() else BRIDGE_CLOSED) + WHERE_THEN
 
 
 # Where your cat is, through the game bridge: a place and level for a cat or a quest's step.

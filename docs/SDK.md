@@ -79,9 +79,13 @@ Only `mod.json`'s `name` is needed; the rest is what Clan Mod Studio shows and h
 - **`requires`:** the mods it can't work without, by folder name. Turning it on turns them on.
   While one is missing or off, building leaves this mod out and says why (installing stops, as for
   any mod that didn't build, unless `--force`).
-- **`uses`:** mods it works with when they're on. `mod-menu` means the mod menu, for a page in it:
-  that's wcmods' own, so it's always there (in `requires` too). Nothing is turned on for them; the
-  studio just shows it.
+- **`uses`:** mods it works with when they're on, and goes in without. Turning it on turns on the
+  ones that are in the mods folder (and a mod pack carries them in its .zip and keeps them on), but a
+  missing or off one never keeps it out, and switching one off is never refused for it; its card on the
+  Mods page says "Works with ..." while one is off or missing. Clan Mod Studio writes `"sandbox"` here
+  for a mod with cats or questlines ([formats.md](formats.md#npcsjson)); a `"sandbox"` an older studio
+  wrote in `requires` counts as a use too, for a mod with no code of its own. `mod-menu` means the mod
+  menu, for a page in it: that's wcmods' own, so it's always there (in `requires` too).
 - **`game_builds`:** the builds of the game it was made for (a mod without it was made for
   24847281). After a game update, a mod that doesn't list the new build is left out until it's
   updated, or you choose "Use it anyway" for that build. See [updating.md](updating.md).

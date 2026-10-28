@@ -530,16 +530,20 @@ export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
       if (onSaved) onSaved(value);
       const found = (r && r.problems) || (r && r.problem ? [r.problem] : []);
       showProblems(found);
+      // Mods the save turned on too (Sandbox mode, for a file of cats or quests).
+      const also = r && r.turned_on && r.turned_on.length ? ` Turned ${r.turned_on.join(" and ")} on too.` : "";
       // Whether the mod is on is read afresh: another page may have switched it since this list was made.
       mods = await api.get("/mods");
       const now = mods.find(m => m.id === current);
       if (found.length) {
-        toast(`Saved, but it can't go in the game yet: ${found[0]}`, "bad");
+        toast(`Saved, but it can't go in the game yet: ${found[0]}${also}`, "bad");
       } else if (now && !now.enabled && !now.problem) {
         await api.patch(`/mods/${encodeURIComponent(current)}`, { enabled: true });
-        if (!quiet) toast(`Saved and turned on ${now.name}. Apply to game to use it.`);
+        if (!quiet) toast(`Saved and turned on ${now.name}.${also} Apply to game to use it.`);
       } else if (!quiet) {
-        toast(`Saved ${file} in ${current}. Apply to game to use it.`);
+        toast(`Saved ${file} in ${current}.${also} Apply to game to use it.`);
+      } else if (also) {
+        toast(also.trim());
       }
       bus.emit("mods-changed");
       // The list again (the mod may be new, or on now), not the file: the page holds what it saved.
@@ -663,9 +667,14 @@ export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
       fields.author.value = m ? m.author || "" : "";
       fields.version.value = m ? m.version || "" : "";
       fields.description.value = m ? m.description || "" : "";
-      const req = m ? m.requires || [] : [];
-      needs.textContent = req.length ? `It needs ${req.map(i => (mods.find(x => x.id === i) || {}).name || i).join(", ")}: whoever adds it is asked to add that too (their Mods page says so).` : "";
-      needs.hidden = !req.length;
+      // A mod it works with that isn't here is named by the studio's list (works_with), as its card names it.
+      const nameOf = i => (mods.find(x => x.id === i) || {}).name || ((m && m.works_with) || []).find(w => w.id === i)?.name || i;
+      const req = m ? m.requires || [] : [], uses = (m ? m.uses || [] : []).filter(i => i !== "mod-menu");
+      needs.textContent = [
+        req.length ? `It needs ${req.map(nameOf).join(", ")}: whoever adds it is asked to add that too (their Mods page says so).` : "",
+        uses.length ? `It works with ${uses.map(nameOf).join(", ")}: whoever adds it sees all of it once they have that too (their Mods page says so).` : "",
+      ].filter(Boolean).join(" ");
+      needs.hidden = !needs.textContent;
     }
     return { element, show };
   }

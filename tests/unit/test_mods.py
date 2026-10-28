@@ -1,10 +1,12 @@
 """Mods and setup without the game: downloaded .zips and what's refused, the key remapper's presses, menu
-remaps, the agent controller's parts, and getting set up in temporary folders."""
+remaps, the agent controller's parts, getting set up in temporary folders, and what mods need ("requires")
+and only use ("uses")."""
+import json
 import sys
 
 import pytest
 
-from wcmods import selftest
+from wcmods import mods as modlib, selftest
 
 
 def test_adding_a_downloaded_mod_from_a_zip_and_refusing_unsafe_ones():
@@ -58,3 +60,68 @@ def test_cpp_mod_dll_goes_in_with_its_settings_and_bad_dlls_are_refused():
 def test_cpp_sdk_headers_documented_and_tested():
     ok, detail = selftest._cpp_sdk()
     assert ok, detail
+
+
+# ---------- what mods need, and what they only use ----------
+def _mods(tmp_path, specs):
+    """Mod folders from {id: mod.json}, found as the studio finds them."""
+    for mod_id, meta in specs.items():
+        (tmp_path / mod_id).mkdir()
+        (tmp_path / mod_id / "mod.json").write_text(json.dumps({"enabled": False, **meta}), encoding="utf-8")
+    return modlib.discover(str(tmp_path))
+
+
+def test_version_key_orders_versions():
+    key = modlib.version_key
+    assert key("0.5") == key("0.5.0") == key("v0.5")
+    assert key("0.4") < key("0.5") < key("0.10") < key("1.0")
+    assert key("0.5.1") > key("0.5")
+    assert key("V1.2") == (1, 2, 0) and key(" 0.4 ") == (0, 4, 0)
+    # Anything that isn't a plain dotted number is no version at all: callers leave it out before comparing.
+    for junk in ("", None, "beta", "0.5-beta", "one.two", "v", "0..5", "1.2."):
+        assert key(junk) is None, junk
+
+
+def test_switching_on_turns_on_used_mods_that_are_there(tmp_path):
+    _mods(tmp_path, {"story": {"uses": ["sandbox", "mod-menu", "not-here", "broken"], "requires": ["herbs"]},
+                     "herbs": {"uses": ["palette"]}, "sandbox": {}, "palette": {}, "broken": {}})
+    (tmp_path / "broken" / "mod.json").write_text("{not json", encoding="utf-8")   # can't be read: stays off
+    found = modlib.discover(str(tmp_path))
+    # Never the menu (wcmods' own), never one that isn't there.
+    assert modlib.used(found, "story") == ["sandbox", "broken", "palette"]
+    changed, blocked = modlib.switch(found, "story", True)
+    assert blocked == [] and [i for i, _ in changed] == ["story", "herbs", "sandbox", "palette"]
+    assert {m.id for m in modlib.discover(str(tmp_path)) if m.enabled} == {"story", "herbs", "sandbox", "palette"}
+
+
+def test_a_used_mod_never_blocks_switching_off(tmp_path):
+    found = _mods(tmp_path, {"story": {"enabled": True, "uses": ["sandbox"]}, "sandbox": {"enabled": True}})
+    changed, blocked = modlib.switch(found, "sandbox", False)
+    assert blocked == [] and changed == [("sandbox", False)]
+    assert modlib.needing(found, "sandbox") == [] and modlib.unmet(modlib.discover(str(tmp_path))) == {}
+
+
+def test_an_older_studios_sandbox_requirement_is_a_use_for_a_mod_without_code(tmp_path):
+    # A story mod an older Clan Mod Studio saved, downloaded and never saved here: Sandbox mode missing never
+    # keeps it (or its items) out of Apply, and turning it on turns Sandbox mode on once it's there.
+    _mods(tmp_path, {"story": {"enabled": True, "requires": ["sandbox", "herbs"]}, "herbs": {"enabled": True},
+                     "scripted": {"enabled": True, "requires": ["sandbox"]},
+                     "pack": {"enabled": True, "pack": True, "requires": ["sandbox"]}})
+    (tmp_path / "story" / "npcs.json").write_text('{"npcs": []}', encoding="utf-8")
+    (tmp_path / "scripted" / "scripts").mkdir()
+    (tmp_path / "scripted" / "scripts" / "main.lua").write_text("print('hi')\n", encoding="utf-8")
+    found = modlib.discover(str(tmp_path))
+    story = next(m for m in found if m.id == "story")
+    assert story.requires == ["herbs"] and story.uses == ["sandbox"]
+    assert story.written("requires") == ["sandbox", "herbs"]   # the file itself is left as it is
+    unmet = modlib.unmet(found)
+    assert "story" not in unmet
+    # A mod with code of its own may call Sandbox mode's API, and a pack's "requires" are its mods: both still need it.
+    assert unmet["scripted"] == ["needs sandbox, which isn't in your mods"] and "pack" in unmet
+    (tmp_path / "sandbox").mkdir()
+    (tmp_path / "sandbox" / "mod.json").write_text('{"enabled": false}', encoding="utf-8")
+    found = modlib.discover(str(tmp_path))
+    assert sorted(modlib.needing(found, "sandbox")) == ["pack", "scripted"]
+    modlib.switch(found, "story", False)
+    changed, _ = modlib.switch(modlib.discover(str(tmp_path)), "story", True)
+    assert ("sandbox", True) in changed

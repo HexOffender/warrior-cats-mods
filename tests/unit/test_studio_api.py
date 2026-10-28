@@ -390,13 +390,13 @@ def test_a_mods_file_is_only_one_the_studio_edits_and_only_valid_json(studio):
     assert get(studio, "mods/mine/file/data.json")["exists"] is False
 
 
-def test_saving_cats_or_quests_needs_the_sandbox_mod_and_says_what_keeps_a_quest_out(studio):
+def test_saving_cats_or_quests_uses_the_sandbox_mod_and_says_what_keeps_a_quest_out(studio):
     make_mod(studio, "story")
     r = call(studio, "PUT", "mods/story/file/npcs.json", {"text": json.dumps({"npcs": [{"id": "moss", "name": "Mossfoot"}]})})
-    assert r["requires"] == ["sandbox"] and r["problems"] == []
+    assert r["requires"] == [] and r["uses"] == ["sandbox"] and r["problems"] == []
     quests = {"quests": [{"id": "q", "title": "Q", "giver": "nobody", "steps": [{"do": "talk", "lines": ["Hi"]}]}]}
     r = call(studio, "PUT", "mods/story/file/quests.json", {"text": json.dumps(quests)})
-    assert r["requires"] == ["sandbox"] and "isn't one of this mod's cats" in r["problems"][0]
+    assert r["uses"] == ["sandbox"] and "isn't one of this mod's cats" in r["problems"][0]
     assert get(studio, "mods/story/file/quests.json")["exists"]   # saved all the same, to be fixed on the page
 
 

@@ -282,24 +282,34 @@ every animal of the kind, fitted to its length. Every key is in
 ```
 Cats of the mod's own, made on Clan Mod Studio's Characters page. The
 [Sandbox mode](https://github.com/HexOffender/wcmods-sandbox) mod brings them into the forest with a
-sandbox cat, so a mod with them needs it (`"requires": ["sandbox"]`, which the studio adds).
+sandbox cat, so a mod with them works with it: `"uses": ["sandbox"]` in its `mod.json`, which the studio
+writes when it saves cats or quests ([SDK.md](SDK.md#mod-folder)). Turning the mod on turns Sandbox mode
+on when it's there, and without it the mod still goes in (its items, palettes and names too), its cats
+waiting for Sandbox mode. A mod an older studio saved says `"requires": ["sandbox"]` instead; for a mod
+with no code of its own (no scripts, C++ mod, `section.py` or studio page) wcmods reads that as `uses`
+too, so it never keeps the mod out, and saving it again on either page writes it as `uses`. A mod with
+code of its own keeps it as a real need. Fixed looks need Sandbox mode 0.5 or newer; an older one makes
+the look up each time (the page and Apply say so).
 - `id`: small letters, digits and dashes; quests name the cat by it. `name` and `title` (smaller, above
   the name) show over its head.
 - `colours`: any of `fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears`; the rest are the
   game's. `eyes` is an iris colour slot (0 to 24), `size` the cat's size (0.3 to 1.5; the game's are about
   0.4 to 1.1). Left out, it's 0.85, a grown cat, as the Characters page shows it.
-- Its look: with no `look` or `slots`, the game makes it up each time the cat appears, as it does for its
-  own clan cats (its shape, pattern and colour slots; `colours` go on top). `look` fixes the shape, as
-  `cats.json`'s does: `body`, `fur`, `tail`, `ears`, `eyes` (their shape), `whiskers` and `face` each one
-  of the game's 10 (0–9), `pattern` and `marking` one of its 21 (0–20). `slots` fixes the colour slots it
-  wears: `fur` 0–24 (its nose, paws, ears and whiskers go with it), `pattern` and `marking` any slot,
-  including new ones a palette adds. A part left out of both (and the eye colour, without `eyes`) is
-  made up again each time it appears. The Characters page's **Fixed** look fills in all of them at
-  random, to keep or change.
+- Its look: with no `look` or `slots`, the game makes it up anew whenever it puts the cat in the forest,
+  as it does for its own clan cats (its shape, pattern and colour slots; `colours` go on top). `look`
+  fixes the shape, as `cats.json`'s does: `body`, `fur`, `tail`, `ears`, `eyes` (their shape), `whiskers`
+  and `face` each one of the game's 10 (0–9), `pattern` and `marking` one of its 21 (0–20). `slots` fixes
+  the colour slots it wears: `fur` 0–24 (its nose, paws, ears and whiskers go with it), `pattern` and
+  `marking` any slot, including new ones a palette adds (while that palette is on: Apply warns about one
+  no palette that's on adds). A part left out of both (and the eye colour, without `eyes`) is made up
+  again each time; an empty `look` is the same as none. The Characters page's **Same look every time**
+  (the default for a new cat) fills in all of them at random, to keep or change.
 - Where it stands: with no `at`, beside the sandbox cat the first time it comes into the forest, and there
   for that cat after. `"at": [x, y, z]` (cm, with `yaw` in degrees and `level`) puts it in one place for
-  every cat; the studio fills it in from where your cat stands.
-- `lines`: what it says when you talk to it (G, or the d-pad's up) and no quest wants it.
+  every cat; the studio fills it in from where your cat stands. `"at": null` is the page's **At one spot**
+  with no spot filled in yet: until it is, the cat stands beside your cat (the page says so).
+- `lines`: what it says when you walk up to it and use the game's *Talk* prompt (the Interact key, E or
+  A on a controller; Interact or Enter shows the next line) and no quest wants it.
 
 ### `quests.json`
 ```json
@@ -313,20 +323,39 @@ sandbox cat, so a mod with them needs it (`"requires": ["sandbox"]`, which the s
       { "do": "talk", "npc": "mossfoot", "lines": ["Thank you!"] } ],
     "reward": { "Gameplay.Inventory.Consumable.SmallHealingHerb": 2 } } ] }
 ```
-Questlines with the mod's own cats, made on the Questlines page, run by Sandbox mode.
-- A quest starts once the quests in `after` (this mod's) are done, at once with none. `giver` is one of
-  the mod's cats: a talk step with no `npc` is with them.
+Questlines with the mod's own cats, made on the Questlines page, run by Sandbox mode (`"uses":
+["sandbox"]`, as for `npcs.json`).
+- A quest starts once the quests in `after` (this mod's) are done, at once with none; quests that wait
+  for each other in a circle are refused. `giver` is one of the mod's cats: a talk step with no `npc` is
+  with them, and the giver wears the game's quest mark while the quest waits for you.
+- `description`: a sentence about the quest, shown under its title on the mod menu's Questlines page
+  (Sandbox mode 0.5 or newer).
 - Its `steps` go in order. `talk`: the cat says its `lines`, and the step is done after the last.
   `collect`: pick up `count` of `item` (its whole tag; a mod's own item is
   `Gameplay.Inventory.Consumable.<id>` or `...Materials.<id>`) from the step's start. `visit`: go within
-  `radius` cm (400) of `at`, or of the nearest `place` (`medicine-cat`).
-- `objective` is what the quest panel says for a step (the studio writes one when it's left empty).
+  `radius` cm (400) of `at`, or of the nearest `place` (`medicine-cat`). A visit with a `level` is done
+  only in that level.
+- `objective` is what the game's objective panel says for a step. Left out, Apply fills it in with the
+  names the cat and the item have then: "Talk to Mossfoot", "Find 2 Moss", "Visit the nearest medicine
+  cat", "Go to the marked place". (A file an older studio saved has those words written in; the page
+  takes them out on its next save, so they follow renames.)
 - `reward`: items dropped at the cat's paws when the last step is done.
-- How far each sandbox cat has got is kept in `sandbox-story.json` beside the game's saves.
+- How far each sandbox cat has got is kept by Sandbox mode in `sandbox-story.json` beside the game's
+  saves, one record per sandbox cat. From Sandbox mode 0.5, a record belongs to the cat that was in the
+  save slot when it was written (the registry's `made` stamp), so a new sandbox cat made in the slot of a
+  deleted one starts every questline from the beginning, with its cats beside it; a record 0.4 wrote stays
+  that cat's. Each quest's record keeps its shape too (its steps' `do`, with a `collect` step's `item` and
+  `count`): a quest a cat hasn't finished starts over when its shape changes (a step added or taken out, a
+  step's `do` changed, a `collect` step's `item` or `count` changed), with a log line and the game's
+  update banner. New `lines`, objectives, a new `title` or another spot don't restart it, and a finished
+  quest stays finished (its reward isn't dropped again). The mod menu's Questlines page starts one quest
+  over, and the Questlines page's **Start every questline over** (with the game closed) clears every mod's
+  quests for every sandbox cat and keeps where its cats stand.
 
 wcmods checks both files at install and puts every enabled mod's together into one UE4SS mod,
 `WCModsStory`, which shares them as JSON text in the UE4SS shared variable `WCMods.story`
-(`{"format": 1, "mods": [{"id", "name", "npcs", "quests"}]}`), for any script to read.
+(`{"format": 1, "mods": [{"id", "name", "npcs", "quests"}], "icons": {item tag: texture}}`), for any
+script to read; every step has its `objective` there, filled in at install when the file left it out.
 
 ### Mod packs
 ```json

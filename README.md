@@ -149,9 +149,14 @@ the example is [game-tweaks](https://github.com/HexOffender/wcmods-examples/tree
 
 **Stories without code:** Items, Characters and Questlines make a whole story with no code. The
 cats and quests come into the game with the [Sandbox mode](https://github.com/HexOffender/wcmods-sandbox)
-mod (a mod that saves cats or quests needs it, so turning it on turns that on too); items are real items,
-in story games as well. "Use where my cat is standing" fills in a place from the game while it runs (it
-goes through the game bridge, so it needs mods that run code allowed).
+mod, in its sandbox games: download `sandbox-<version>.zip` from its releases and drop it on the Mods
+page, and allow mods that run code (it's a script). A mod that saves cats or quests works with it
+(`"uses"`): turning the mod on turns Sandbox mode on when it's there, and without it the mod still goes
+in, its cats waiting for it. Characters' fixed looks need Sandbox mode 0.5 or newer. The strip at the top
+of both pages says what Sandbox mode can show and what to press; the guide's Characters and Questlines
+pages (How this works) walk through a first cat and a first quest. Items are real items, in story games
+as well. "Use where my cat is standing" fills in a place from the game while it runs (it goes through the
+game bridge, so it needs mods that run code allowed).
 
 **Sharing what you make:** every page under Make mods has a **Share** part: the mod's name, author,
 version and description, **Save as .zip** for others to add on their Mods page, and **Export** and
