@@ -256,6 +256,8 @@ button.chip[aria-pressed="true"], button.chip[aria-selected="true"] { border-col
 #pal-panel .card { border-radius: 10px; box-shadow: none; }      /* the Palettes page's 190px colour cards: plain, so the uneven corners don't read as a glitch */
 .field { display: grid; gap: 4px; }
 .field label, .lbl { font-weight: 500; font-size: 0.92rem; }
+.field .needed { font-weight: 400; color: var(--muted); }                  /* story.js field(..., { required }) */
+.field-problem { color: var(--bad); font-size: 0.88rem; }                  /* what a needed field is missing */
 input[type="text"], input[type="number"], input[type="search"], select, textarea {
   border: 1px solid var(--field); background: var(--raised); color: var(--ink); border-radius: 8px; padding: 7px 10px; min-width: 0; box-shadow: inset 0 1px 2px rgba(42,32,23,.06);
 }

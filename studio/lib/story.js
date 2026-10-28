@@ -17,31 +17,56 @@ export function slug(text, taken = [], fallback = "thing") {
   return id;
 }
 
-// A list on the left (pick one to edit, add one), the editor on the right. render() draws both again.
+// A list on the left (pick one to edit, add one), the editor on the right. render() draws both again;
+// relabel(i) draws one pick button's label again (after its name was typed), leaving the editor and its focus
+// alone. The editor's pane is data-key "editor:<noun>", so focus finds its way back after a redraw.
 export function listEditor({ noun, label, add, empty }) {
   const list = el("div", { class: "pick-list", role: "list", "aria-label": `${noun}s` });
-  const editor = el("div", { class: "stack" });
+  const editor = el("div", { class: "stack", "data-key": `editor:${noun}` });
   const addBtn = el("button", { class: "btn", text: `Add ${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun}`, onclick: add });
   const element = el("div", { class: "split" }, el("div", { class: "stack" }, list, addBtn), editor);
   let things = [], chosen = 0, draw = null;
+  const pick = (t, i) => el("button", { class: "pick", "aria-current": i === chosen ? "true" : false, "data-focus": `pick:${i}`,
+    onclick: () => { chosen = i; render(things); } }, ...[].concat(label(t, i)));
   function render(all, drawEditor) {
     things = all;
     draw = drawEditor || draw;
     chosen = Math.min(chosen, Math.max(0, things.length - 1));
     clear(list);
-    things.forEach((t, i) => list.append(el("div", { role: "listitem" },
-      el("button", { class: "pick", "aria-current": i === chosen ? "true" : false, "data-focus": `pick:${i}`,
-        onclick: () => { chosen = i; render(things); } }, ...[].concat(label(t, i))))));
+    things.forEach((t, i) => list.append(el("div", { role: "listitem" }, pick(t, i))));
     clear(editor);
     if (!things.length) editor.append(el("div", { class: "empty", text: empty }));
     else draw(editor, things[chosen], chosen);
   }
-  return { element, render, choose: i => { chosen = i; }, get chosen() { return chosen; } };
+  function relabel(i = chosen) {
+    const item = list.children[i];
+    if (!item || !things[i]) return;
+    clear(item).append(pick(things[i], i));
+  }
+  return { element, render, relabel, choose: i => { chosen = i; }, get chosen() { return chosen; } };
 }
 
-// A labelled field.
-export function field(label, input, hint) {
-  return el("label", { class: "field" }, el("span", { class: "lbl", text: label }), input,
+// What the last Apply said about one mod's part of a page, from the "installed" event's result (the build's
+// manifest, or {manifest}): {on: whether the mod went in at all, said: [{id, why}]}, the warnings the build
+// section `section` gave about that mod's things ("items: my-mod: MoonHerb: ..." is {id: "MoonHerb", why: ...};
+// one about the mod as a whole has id null). null for a result without a manifest.
+export function lastApply(result, section, modId) {
+  const m = result && (result.sections ? result : result.manifest && result.manifest.sections ? result.manifest : null);
+  if (!m) return null;
+  const prefix = `${section}: ${modId}: `;
+  const said = (m.warnings || []).filter(w => w.startsWith(prefix)).map(w => {
+    const rest = w.slice(prefix.length), at = rest.indexOf(": ");
+    return at > 0 && /^[A-Za-z][A-Za-z0-9]*$/.test(rest.slice(0, at)) ? { id: rest.slice(0, at), why: rest.slice(at + 2) } : { id: null, why: rest };
+  });
+  return { on: (m.mods || []).includes(modId), said };
+}
+
+// A labelled field. required: it's needed for the thing to go in the game; the label says so, and so does
+// aria-required for a screen reader.
+export function field(label, input, hint, { required = false } = {}) {
+  if (required) input.setAttribute("aria-required", "true");
+  return el("label", { class: "field" },
+    el("span", { class: "lbl", text: label }, required ? el("span", { class: "needed", text: " (needed)" }) : null), input,
     hint ? el("span", { class: "muted", style: { fontSize: "0.85rem" }, text: hint }) : null);
 }
 

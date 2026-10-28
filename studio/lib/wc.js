@@ -22,10 +22,17 @@
 //   installedEvent(target, fn)   bus.on("installed", fn) that skips fn while target has unsaved changes: for
 //                  a page that reloads its file after an Apply (wc.bus.on("installed", ...) runs regardless).
 //   openHelp(page) opens a page of the guide (docs/guide/<page>.md) in the help panel; no page, the index.
+//   captureKey({title, pad, reserved, ...})   the dialog that asks for a key or a controller button (below);
+//                  resolves to the game's name for it, or null when cancelled.
 //   bus            events between pages: "mods-changed" (a mod was made, changed, switched or removed),
 //                  "installed" (an Apply, Play or Check finished; the manifest), "sections-changed" (the
 //                  side bar's pages may have changed), "focus" (the window came back).
-//   el, clear, toast, announce, confirmButton, codePanel, copy, color, input, getPath, saveFile, docLink.
+//   input          the game's names for keys and buttons (lib/keys.js: keyFromEvent, keyLabel...).
+//   el, clear, toast, announce, confirmButton, codePanel, copy, color, getPath, saveFile, docLink.
+
+import { input } from "./keys.js";
+
+export { input };
 
 // The page's token: from its <meta> at first, then whatever the studio's page says after a restart (reconnect).
 let token = document.querySelector('meta[name="wc-token"]')?.content || "";
@@ -668,61 +675,129 @@ export async function copy(text) {
   catch (e) { toast("Couldn't copy; select the text and press Ctrl+C", "bad"); }
 }
 
-// ---------- input names (Unreal FKey) ----------
-const CODE_TO_KEY = {
-  Space: "SpaceBar", Enter: "Enter", NumpadEnter: "Enter", Escape: "Escape", Tab: "Tab", Backspace: "BackSpace",
-  CapsLock: "CapsLock", ShiftLeft: "LeftShift", ShiftRight: "RightShift", ControlLeft: "LeftControl",
-  ControlRight: "RightControl", AltLeft: "LeftAlt", AltRight: "RightAlt", ArrowUp: "Up", ArrowDown: "Down",
-  ArrowLeft: "Left", ArrowRight: "Right", Insert: "Insert", Delete: "Delete", Home: "Home", End: "End",
-  PageUp: "PageUp", PageDown: "PageDown", Backquote: "Tilde", Minus: "Hyphen", Equal: "Equals",
-  BracketLeft: "LeftBracket", BracketRight: "RightBracket", Backslash: "Backslash", Semicolon: "Semicolon",
-  Quote: "Apostrophe", Comma: "Comma", Period: "Period", Slash: "Slash", NumpadMultiply: "Multiply",
-  NumpadAdd: "Add", NumpadSubtract: "Subtract", NumpadDecimal: "Decimal", NumpadDivide: "Divide",
-};
-const DIGITS = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
-function keyFromEvent(e) {
-  const c = e.code;
-  if (/^Key[A-Z]$/.test(c)) return c.slice(3);
-  if (/^Digit\d$/.test(c)) return DIGITS[+c.slice(5)];
-  if (/^Numpad\d$/.test(c)) return "NumPad" + DIGITS[+c.slice(6)];
-  if (/^F\d{1,2}$/.test(c)) return c;
-  return CODE_TO_KEY[c] || null;
+// ---------- asking for a key ----------
+// The dialog that asks for a key, a mouse button or a controller button, for the Controls page's rebinding and
+// the Animations page's emote key. Resolves to the game's name for it ("F7", "Gamepad_DPad_Up"), or null when
+// it was cancelled: Escape, Cancel, a click outside it (unless clicks bind mouse buttons) or leaving the page.
+// One is open at a time: opening another cancels the first.
+//   title     its heading;  label: what a screen reader calls it ("Rebind Interact"), the title by default
+//   message   the first line (what to press); the dialog says more there as keys are pressed
+//   pad       a controller button (true), with a chip for each; axis: a stick instead
+//   mouse     clicks and the wheel inside it bind mouse buttons (the Controls page); else a click outside cancels
+//   chips     keys offered as buttons too (ones the dialog uses itself, like Escape and Tab)
+//   reserved  {key: why}: a key that's taken says why, and a second press of it uses it anyway
+//   style     the controller's glyphs (input.GLYPHS)
+// Focus starts on the dialog itself; Tab moves among its buttons; Enter and Space press a focused button, and
+// bind themselves while the dialog itself has focus. Focus goes back where it was afterwards.
+let capturing = null;   // the open dialog's cancel()
+export function captureKey({ title, label, message, pad = false, axis = false, mouse = false, chips = [], reserved = {}, style = "xbox" } = {}) {
+  if (capturing) capturing();
+  return new Promise(resolve => {
+    const back = keepPlace();
+    const msg = el("p", { id: "capture-msg", "aria-live": "polite", text: message || (pad
+      ? (axis ? "Move a stick on your controller, or pick one below." : "Press a button on your controller, or pick one below.")
+      : "Press a key. Escape cancels.") });
+    const padNote = el("p", { class: "muted", style: { fontSize: "0.9rem" } });
+    const choices = pad ? (axis ? input.PAD_AXES : input.PAD_BUTTONS) : chips;
+    const card = el("div", { class: "card", tabindex: "-1", style: { width: "min(560px, 100%)" } },
+      el("h2", { id: "capture-title", text: title || "Press a key" }), msg, padNote,
+      choices.length ? el("div", { class: "row" }, ...choices.map(k => el("button", { class: "chip", type: "button",
+        text: input.keyLabel(k, style), title: k, "aria-label": `Use ${input.keyLabel(k, style)}`, onclick: () => choose(k) }))) : null,
+      el("div", { class: "row" }, el("button", { class: "btn", type: "button", text: "Cancel", onclick: () => finish(null) })));
+    const overlay = el("div", {
+      class: "capture", role: "dialog", "aria-modal": "true", "aria-label": label || title || "Press a key", "aria-describedby": "capture-msg",
+      style: { position: "fixed", inset: "0", background: "rgba(10,16,13,.55)", display: "grid", placeItems: "center", zIndex: "40", padding: "16px" },
+    }, card);
+    document.body.append(overlay);
+    let raf = 0, done = false, pending = null;
+    function choose(k) {
+      if (reserved[k] && pending !== k) {
+        pending = k;
+        msg.textContent = `${reserved[k]}. Press ${input.keyLabel(k, style)} again to use it anyway, or another one.`;
+        return;
+      }
+      finish(k);
+    }
+    const buttons = () => [...overlay.querySelectorAll("button")];
+    const onKey = e => {
+      if (e.key === "Escape" || e.code === "Escape") { e.preventDefault(); e.stopPropagation(); return finish(null); }
+      // Tab stays in the dialog, among its buttons.
+      if (e.key === "Tab") {
+        e.preventDefault(); e.stopPropagation();
+        const bs = buttons(), at = bs.indexOf(document.activeElement);
+        const next = at < 0 ? (e.shiftKey ? bs.length - 1 : 0) : (at + (e.shiftKey ? -1 : 1) + bs.length) % bs.length;
+        bs[next].focus();
+        return;
+      }
+      const onButton = document.activeElement && document.activeElement.tagName === "BUTTON" && overlay.contains(document.activeElement);
+      if (onButton && (e.key === "Enter" || e.key === " ")) return;   // pressing the button that has focus
+      if (pad) return;
+      e.preventDefault(); e.stopPropagation();
+      const k = input.keyFromEvent(e);
+      if (k) choose(k);
+      else msg.textContent = "That key isn't one the game knows. Try a letter, a number, an F key or an arrow.";
+    };
+    const onMouse = e => {
+      if (e.target.closest && e.target.closest("button")) return;
+      if (mouse && !pad) {
+        e.preventDefault();
+        if (input.MOUSE[e.button]) choose(input.MOUSE[e.button]);
+      } else if (e.target === overlay) {
+        finish(null);   // a click outside the dialog
+      }
+    };
+    const onWheel = e => {
+      if (!mouse || pad || !e.deltaY) return;
+      e.preventDefault();
+      choose(e.deltaY < 0 ? "MouseScrollUp" : "MouseScrollDown");
+    };
+    const onLeave = () => finish(null);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("hashchange", onLeave);
+    overlay.addEventListener("mousedown", onMouse);
+    overlay.addEventListener("contextmenu", e => e.preventDefault());
+    overlay.addEventListener("wheel", onWheel, { passive: false });
+    if (pad && typeof requestAnimationFrame === "function") {
+      let base = null;
+      const poll = () => {
+        if (done) return;
+        let pads = [];
+        try { pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); }
+        catch (e) { padNote.textContent = "This browser window can't read controllers; pick a button above."; return; }
+        if (!pads.length) padNote.textContent = "No controller detected yet. Press any button on it once, or pick a button above.";
+        else padNote.textContent = `Listening to ${pads[0].id.replace(/\s*\(.*\)$/, "")}`;
+        const now = pads.map(p => ({ b: p.buttons.map(b => b.pressed || b.value > 0.6), a: [...p.axes] }));
+        if (base === null) base = now;
+        for (let i = 0; i < now.length; i++) {
+          if (axis) {
+            for (let x = 0; x < Math.min(4, now[i].a.length); x++) if (Math.abs(now[i].a[x]) > 0.7) return choose(input.PAD_AXES[x]);
+          } else {
+            for (let b = 0; b < Math.min(16, now[i].b.length); b++) {
+              if (now[i].b[b] && !(base[i] && base[i].b[b])) return choose(input.PAD_BUTTONS[b]);
+            }
+          }
+        }
+        raf = requestAnimationFrame(poll);
+      };
+      raf = requestAnimationFrame(poll);
+    }
+    card.focus();
+    announce(`${title || "Press a key"}. ${msg.textContent}`);
+    function finish(key) {
+      if (done) return;
+      done = true;
+      if (capturing === cancel) capturing = null;
+      if (raf && typeof cancelAnimationFrame === "function") cancelAnimationFrame(raf);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("hashchange", onLeave);
+      overlay.remove();
+      back();
+      resolve(key || null);
+    }
+    const cancel = () => finish(null);
+    capturing = cancel;
+  });
 }
-const MOUSE = ["LeftMouseButton", "MiddleMouseButton", "RightMouseButton", "ThumbMouseButton", "ThumbMouseButton2"];
-// Standard Gamepad API layout -> Unreal names.
-const PAD_BUTTONS = ["Gamepad_FaceButton_Bottom", "Gamepad_FaceButton_Right", "Gamepad_FaceButton_Left",
-  "Gamepad_FaceButton_Top", "Gamepad_LeftShoulder", "Gamepad_RightShoulder", "Gamepad_LeftTrigger",
-  "Gamepad_RightTrigger", "Gamepad_Special_Left", "Gamepad_Special_Right", "Gamepad_LeftThumbstick",
-  "Gamepad_RightThumbstick", "Gamepad_DPad_Up", "Gamepad_DPad_Down", "Gamepad_DPad_Left", "Gamepad_DPad_Right"];
-const PAD_AXES = ["Gamepad_LeftX", "Gamepad_LeftY", "Gamepad_RightX", "Gamepad_RightY"];
-const GLYPHS = {
-  xbox: { Bottom: "A", Right: "B", Left: "X", Top: "Y", LeftShoulder: "LB", RightShoulder: "RB", LeftTrigger: "LT",
-    RightTrigger: "RT", Special_Left: "View", Special_Right: "Menu", LeftThumbstick: "LS click", RightThumbstick: "RS click" },
-  playstation: { Bottom: "✕", Right: "○", Left: "□", Top: "△", LeftShoulder: "L1", RightShoulder: "R1", LeftTrigger: "L2",
-    RightTrigger: "R2", Special_Left: "Create", Special_Right: "Options", LeftThumbstick: "L3", RightThumbstick: "R3" },
-  switch: { Bottom: "B", Right: "A", Left: "Y", Top: "X", LeftShoulder: "L", RightShoulder: "R", LeftTrigger: "ZL",
-    RightTrigger: "ZR", Special_Left: "−", Special_Right: "+", LeftThumbstick: "L-stick click", RightThumbstick: "R-stick click" },
-};
-const KEY_LABELS = {
-  SpaceBar: "Space", LeftShift: "Left Shift", RightShift: "Right Shift", LeftControl: "Left Ctrl", RightControl: "Right Ctrl",
-  LeftAlt: "Left Alt", RightAlt: "Right Alt", Up: "↑", Down: "↓", Left: "←", Right: "→", BackSpace: "Backspace",
-  LeftMouseButton: "Left mouse", RightMouseButton: "Right mouse", MiddleMouseButton: "Middle mouse",
-  ThumbMouseButton: "Mouse 4", ThumbMouseButton2: "Mouse 5", MouseScrollUp: "Wheel up", MouseScrollDown: "Wheel down",
-  Tilde: "`", Hyphen: "-", Equals: "=", LeftBracket: "[", RightBracket: "]", Semicolon: ";", Apostrophe: "'",
-  Comma: ",", Period: ".", Slash: "/", Backslash: "\\",
-  Gamepad_LeftX: "Left stick ↔", Gamepad_LeftY: "Left stick ↕", Gamepad_RightX: "Right stick ↔", Gamepad_RightY: "Right stick ↕",
-  Gamepad_DPad_Up: "D-pad ↑", Gamepad_DPad_Down: "D-pad ↓", Gamepad_DPad_Left: "D-pad ←", Gamepad_DPad_Right: "D-pad →",
-};
-function keyLabel(key, style = "xbox") {
-  if (!key) return "—";
-  const m = /^Gamepad_(?:FaceButton_)?(.+)$/.exec(key);
-  if (m && GLYPHS[style][m[1]]) return GLYPHS[style][m[1]];
-  if (KEY_LABELS[key]) return KEY_LABELS[key];
-  if (key.startsWith("NumPad")) return "Num " + DIGITS.indexOf(key.slice(6));
-  const d = DIGITS.indexOf(key);
-  return d >= 0 ? String(d) : key;
-}
-export const input = { keyFromEvent, MOUSE, PAD_BUTTONS, PAD_AXES, GLYPHS, keyLabel };
 
 // ---------- small save-path helpers ----------
 export function getPath(obj, path) {

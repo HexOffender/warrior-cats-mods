@@ -93,6 +93,48 @@ test("field wraps an input with its label and an optional hint", () => {
   assert.equal(story.field("Name", input).children.length, 2);
 });
 
+test("a needed field says so in its label and to a screen reader", () => {
+  const input = dom.document.createElement("input");
+  const f = story.field("Description", input, null, { required: true });
+  assert.equal(f.children[0].textContent, "Description (needed)");
+  assert.equal(input.getAttribute("aria-required"), "true");
+  const other = dom.document.createElement("input");
+  story.field("Name", other);
+  assert.equal(other.getAttribute("aria-required"), null);
+});
+
+test("listEditor relabels one pick without drawing the editor again, and keys its pane for focus", () => {
+  const things = [{ name: "Moss" }, { name: "Fern" }];
+  let drawn = 0;
+  const ed = story.listEditor({ noun: "item", empty: "none", add() {}, label: t => t.name });
+  ed.render(things, box => { drawn++; box.append(dom.document.createElement("input")); });
+  const [list, editor] = [ed.element.querySelector(".pick-list"), ed.element.querySelector('[data-key="editor:item"]')];
+  assert.ok(editor, "the editor's pane is data-key editor:item");
+  const field = editor.querySelector("input");
+  things[0].name = "Moss bed";
+  ed.relabel(0);
+  assert.equal(list.children[0].textContent, "Moss bed");
+  assert.equal(list.children[1].textContent, "Fern");
+  assert.equal(drawn, 1, "the editor wasn't drawn again");
+  assert.equal(editor.querySelector("input"), field, "so what was being typed in stays");
+  assert.equal(list.children[0].querySelector("button").getAttribute("aria-current"), "true");
+});
+
+test("lastApply reads what the build said about one mod's things", () => {
+  const manifest = { mods: ["mine", "other"], sections: {}, warnings: [
+    "items: mine: MoonHerb: the game already has an item called that; give yours another name",
+    "items: mine: recipes: the medicine cat has no recipe for X",
+    "items: other: Stone: it has no description, so it's left out of the game",
+    "animations: mine: Yawn: nothing chosen for it to play yet, so it's left out"] };
+  assert.deepEqual(story.lastApply(manifest, "items", "mine"), { on: true, said: [
+    { id: "MoonHerb", why: "the game already has an item called that; give yours another name" },
+    { id: "recipes", why: "the medicine cat has no recipe for X" }] });
+  assert.deepEqual(story.lastApply({ manifest }, "animations", "mine").said.map(s => s.id), ["Yawn"], "the result may hold the manifest");
+  assert.deepEqual(story.lastApply(manifest, "items", "gone"), { on: false, said: [] });
+  assert.equal(story.lastApply({ log: [] }, "items", "mine"), null);
+  assert.equal(story.lastApply(null, "items", "mine"), null);
+});
+
 test("sandboxNote says to get the Sandbox mode mod, or to turn it on, or nothing", async () => {
   dom.routes = { "GET /mods": () => [] };
   assert.match((await story.sandboxNote()).textContent, /You'll need the Sandbox mode mod/);

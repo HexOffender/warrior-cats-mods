@@ -307,88 +307,20 @@ export default {
     }
 
     // ---------- capture ----------
-    // onPick(key) receives the key instead of it being set on an action row (the key-pair lists).
-    function capture(dev, action, onPick) {
+    // The shared key dialog (wc.captureKey). onPick(key) receives the key instead of it being set on an action
+    // row (the key-pair lists).
+    async function capture(dev, action, onPick) {
       const pad = dev === "gamepad";
-      const choices = pad ? (action.axis ? input.PAD_AXES : input.PAD_BUTTONS) : [];
-      const back = wc.keepPlace();
-      const msg = el("p", { id: "capture-msg", "aria-live": "polite", text: pad
-        ? (action.axis ? "Move a stick on your controller, or pick one below." : "Press a button on your controller, or pick one below.")
-        : "Press a key, click a mouse button here, or scroll. Escape cancels; to use Escape itself, click the Escape button." });
-      const padNote = el("p", { class: "muted", style: { fontSize: "0.9rem" } });
-      const overlay = el("div", {
-        role: "dialog", "aria-modal": "true", "aria-label": `Rebind ${action.name}`, "aria-describedby": "capture-msg",
-        style: { position: "fixed", inset: "0", background: "rgba(10,16,13,.55)", display: "grid", placeItems: "center", zIndex: "40", padding: "16px" },
-      }, el("div", { class: "card", style: { width: "min(560px, 100%)" } },
-        el("h2", { text: `${action.name} · ${pad ? "controller" : "keyboard & mouse"}` }), msg, padNote,
-        pad ? el("div", { class: "row" }, ...choices.map(k => el("button", { class: "chip", type: "button", text: input.keyLabel(k, style), title: k, onclick: () => finish(k) }))) : null,
-        el("div", { class: "row" }, el("button", { class: "btn", type: "button", text: "Cancel", onclick: () => finish(null) }),
-          // Escape is a key worth binding (closing menus), but pressing it here cancels.
-          pad ? null : el("button", { class: "btn ghost", type: "button", text: "Escape", title: "Use the Escape key", onclick: () => finish("Escape") }))));
-      document.body.append(overlay);
-      let raf = 0, done = false;
-      const onKey = e => {
-        if (pad) {
-          if (e.key === "Escape") finish(null);
-          // Tab stays in the dialog.
-          if (e.key === "Tab") {
-            const bs = [...overlay.querySelectorAll("button")];
-            const at = bs.indexOf(document.activeElement);
-            e.preventDefault();
-            bs[(at + (e.shiftKey ? -1 : 1) + bs.length) % bs.length].focus();
-          }
-          return;
-        }
-        e.preventDefault(); e.stopPropagation();
-        if (e.code === "Escape") return finish(null);
-        const k = input.keyFromEvent(e);
-        if (k) finish(k); else msg.textContent = `That key (${e.code}) isn't one the game understands. Try another.`;
-      };
-      const onMouse = e => {
-        if (pad || e.target.closest("button")) return;
-        e.preventDefault();
-        if (input.MOUSE[e.button]) finish(input.MOUSE[e.button]);
-      };
-      const onWheel = e => { if (!pad) { e.preventDefault(); finish(e.deltaY < 0 ? "MouseScrollUp" : "MouseScrollDown"); } };
-      window.addEventListener("keydown", onKey, true);
-      overlay.addEventListener("mousedown", onMouse);
-      overlay.addEventListener("contextmenu", e => e.preventDefault());
-      overlay.addEventListener("wheel", onWheel, { passive: false });
-      if (pad) {
-        let base = null;
-        const poll = () => {
-          if (done) return;
-          let pads = [];
-          try { pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); }
-          catch (e) { padNote.textContent = "This browser window can't read controllers; pick a button above."; return; }
-          if (!pads.length) padNote.textContent = "No controller detected yet. Press any button on it once, or pick a button above.";
-          else padNote.textContent = `Listening to ${pads[0].id.replace(/\s*\(.*\)$/, "")}`;
-          const now = pads.map(p => ({ b: p.buttons.map(b => b.pressed || b.value > 0.6), a: [...p.axes] }));
-          if (base === null) base = now;
-          for (let i = 0; i < now.length; i++) {
-            if (action.axis) {
-              for (let x = 0; x < Math.min(4, now[i].a.length); x++) if (Math.abs(now[i].a[x]) > 0.7) return finish(input.PAD_AXES[x]);
-            } else {
-              for (let b = 0; b < Math.min(16, now[i].b.length); b++) {
-                if (now[i].b[b] && !(base[i] && base[i].b[b])) return finish(input.PAD_BUTTONS[b]);
-              }
-            }
-          }
-          raf = requestAnimationFrame(poll);
-        };
-        raf = requestAnimationFrame(poll);
-      }
-      overlay.querySelector("button").focus();
-      function finish(key) {
-        if (done) return;
-        done = true;
-        cancelAnimationFrame(raf);
-        window.removeEventListener("keydown", onKey, true);
-        overlay.remove();
-        if (key && onPick) onPick(key);
-        else if (key) { setKey(dev, action.id, key); toast(`${action.name}: ${input.keyLabel(key, style)}`); }
-        back();
-      }
+      const key = await wc.captureKey({
+        title: `${action.name} · ${pad ? "controller" : "keyboard & mouse"}`, label: `Rebind ${action.name}`,
+        pad, axis: !!action.axis, mouse: !pad, style,
+        // Escape is a key worth binding (closing menus), but pressing it here cancels: its chip binds it.
+        chips: pad ? [] : ["Escape"],
+        message: pad ? null : "Press a key, click a mouse button here, or scroll. Escape cancels; to use Escape itself, press its button below.",
+      });
+      if (!key) return;
+      if (onPick) onPick(key);
+      else { setKey(dev, action.id, key); toast(`${action.name}: ${input.keyLabel(key, style)}`); }
     }
 
     // ---------- using the remaps ----------
