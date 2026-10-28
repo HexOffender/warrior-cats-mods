@@ -403,7 +403,9 @@ export async function launch({ browser = findBrowser(), headless = true, timeout
       "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--disable-extensions",
       "--disable-background-networking", "--disable-sync", "--disable-features=Translate,OptimizationHints",
       "--window-size=1280,900", "about:blank"].filter(Boolean);
-    proc = spawn(browser, args, { stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
+    // Started in the system's temp folder, not the caller's (the repository, under node --test): whatever a
+    // browser, or a stand-in for one, writes to a relative path never lands among the repository's files.
+    proc = spawn(browser, args, { cwd: os.tmpdir(), stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
     let stderr = "", failed = null;
     proc.on("error", e => { failed = e; });   // it couldn't be started at all
     proc.stderr.on("data", d => { stderr += d; });

@@ -44,7 +44,8 @@ export function requireBrowser(browserPath) {
 
 // The end-to-end files take turns: node --test runs files side by side, and two studios with a Chromium each
 // make a small machine slow enough for the tests' waits to run out. Each file holds this lock from its `before`
-// to its `after` (takeTurn() resolves to the release); the holder touches it every few seconds while it holds
+// to its `after` (takeTurn() resolves to the release, which also fails when the file left anything new in the
+// repository's folder); the holder touches it every few seconds while it holds
 // it. A lock that's stale is taken over: its process is gone, it's empty (written by a run that died before it
 // said who it was), or nobody has touched it for STALE_MS (a run that hangs). One that stays held longer than
 // `wait` ms (WC_E2E_LOCK_WAIT_MIN minutes, 20 by default) gives up with an error that names the lock.
@@ -58,9 +59,14 @@ export async function takeTurn({ lock = LOCK, wait = Number(process.env.WC_E2E_L
       fs.writeFileSync(lock, String(process.pid), { flag: "wx" });
       const touch = setInterval(() => { try { const now = new Date(); fs.utimesSync(lock, now, now); } catch (e) { /* gone */ } }, TOUCH_MS);
       touch.unref();
+      const here = new Set(fs.readdirSync(REPO));   // what the repository's folder holds, to check at the release
       return () => {
         clearInterval(touch);
         try { if (fs.readFileSync(lock, "utf8") === String(process.pid)) fs.rmSync(lock); } catch (e) { /* gone */ }
+        // Every studio and browser here runs from folders of its own: one that left something in the repository's
+        // folder (a build/, folders named after a browser's switches) fails the file that did it.
+        const left = fs.readdirSync(REPO).filter(n => !here.has(n));
+        if (left.length) throw new Error(`the end-to-end tests left ${left.join(", ")} in the repository's folder (${REPO})`);
       };
     } catch (e) {
       if (e.code !== "EEXIST") throw e;

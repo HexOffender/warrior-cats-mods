@@ -1,6 +1,7 @@
 // lib/browser.mjs's launch() when the browser fails to start, whichever way it fails: nothing is left running
-// on its profile and the profile folder is gone. The browser is a fake (fixtures/fake-browser.mjs, run by
-// this node), and on Windows cmd.exe too, which ends at once with 1; no Chromium is needed.
+// on its profile, the profile folder is gone, and nothing was written where the tests run (the repository). The
+// browser is a fake (fixtures/fake-browser.mjs, run by this node), and on Windows cmd.exe too, which ends at once;
+// no Chromium is needed.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -72,12 +73,21 @@ test("a browser whose port nothing answers on: the connection fails, and nothing
   assert.deepEqual(r.left, []);
 });
 
-// cmd.exe reads no commands (its input is empty) and ends at once, with 1 or with 0 depending on how it was
-// named: as a browser that failed, or as a launcher that handed off and never said where it listens.
-test("cmd.exe as the browser leaves no profile", { skip: process.platform !== "win32" && "Windows only" }, async () => {
-  for (const cmd of [path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe"), "C:/Windows/System32/cmd.exe"]) {
-    const r = await failedLaunch("cmd", { browser: cmd, timeout: 2000 });
-    assert.match(String(r.error), /the browser ended \(1\)|the browser didn't start in 2 s/, cmd);
-    assert.deepEqual(r.left, [], cmd);
-  }
+// cmd.exe reads no commands (its input is empty) and ends at once with 0, as a launcher that handed off and never
+// said where it listens. Not "C:/Windows/System32/cmd.exe": cmd reads the "/cmd.exe" in its own name as
+// "/c md.exe ...", and runs md with the browser's arguments, making a folder for each switch where it was started
+// (which is why launch() starts the browser in the temp folder).
+test("cmd.exe as the browser leaves no profile, and nothing where the tests run", { skip: process.platform !== "win32" && "Windows only" }, async () => {
+  const here = fs.readdirSync(process.cwd());
+  const r = await failedLaunch("cmd", { browser: path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe"), timeout: 2000 });
+  assert.match(String(r.error), /the browser ended \(1\)|the browser didn't start in 2 s/);
+  assert.deepEqual(r.left, []);
+  assert.deepEqual(fs.readdirSync(process.cwd()).filter(n => !here.includes(n)), [], "nothing new where the tests run");
+});
+
+// A browser named with forward slashes (as WC_BROWSER may be written): found and started all the same.
+test("a browser path written with forward slashes is started as it is", async () => {
+  const r = await failedLaunch("slashes", { ...fake("ends"), browser: process.execPath.split(path.sep).join("/") });
+  assert.match(String(r.error), /the browser ended \(3\)/);
+  assert.deepEqual(r.left, []);
 });
