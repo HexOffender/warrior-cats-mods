@@ -61,3 +61,17 @@ def test_teleport(agent):
         assert abs(now[0] - (start[0] + 300)) < 60, (start, now)
     finally:
         agent.teleport(*start)
+
+
+def test_enums_are_read_from_the_game(agent):
+    """Game.enums' numbers come from the game's own enums, by name (docs/reverse-engineering.md, "The game's
+    enums"): every enum wcmods/game.py ENUMS names is at its path, with the names build 26184573's exe has, in
+    order; ECommands gives the Talk prompt's Interact; a missing enum is nil, not a crash."""
+    from wcmods import game
+    for key, path, names in game.ENUMS:
+        assert agent.lua(f'local _, order = Game.enumNames("{path}") return order') == names, key
+    assert agent.lua('local t = Game.enumNames("/Script/SwtEngine.ECommands") '
+                     "return { t.NoCommand, t.Player_Interact, t.TOTAL, t.ECommands_MAX == nil }") == [0, 67, 110, True]
+    assert agent.lua('return Game.enumNames("/Script/SwtEngine.ENoSuchEnum") == nil') is True
+    got = agent.lua("local e = Game.enums return { e.status.Poisoned, e.clan.Total, e.characterType[25] }")
+    assert got == [3, 5, "BossDog"]

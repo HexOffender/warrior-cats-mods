@@ -145,3 +145,7 @@ which aren't instructions.
 4. Remake the signatures on the new build (`game signatures make`), set `gamebuild.VERIFIED_BUILD` to
    it (`game.HIDDEN` holds one layout, so it's one build), and note it in `docs/reverse-engineering.md`.
 5. Add an `ANCHORS` entry for any class that has none, so it can be found automatically next time.
+6. Run `python tools/re/uht.py <exe> lua`. In game, scripts read the game's enums by name (`Game.enums`, the
+   Talk prompt's Interact, the in-game remap's commands), so a renumbered enum is followed there, but the
+   numbers the Lua falls back on when that read fails are the old build's. Bring each one it reports into
+   line: `game.ENUMS`' lists, and the constants whose comment names the value (`-- ECommands::Player_Interact`).

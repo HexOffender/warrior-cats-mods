@@ -42,7 +42,8 @@ question from *Open questions* when it's answered.
 - **Reflection data:** UHT's property tables survive in the exe. Each entry is: name pointer at
   +0, RepNotify pointer at +8, flags (u64) at +16, generator flags (u8) at +24, array dimension
   (u16) at +48 and offset (u16) at +50. Find a pointer to a property's name and decode the table
-  around it. Enums are tables of `{const char* name, int64 value}`. `tools/re/uht.py` does both.
+  around it. Enums are tables of `{const char* name, int64 value}`. `tools/re/uht.py` does both, and
+  `uht.py <exe> lua` checks every enum number wcmods' Lua keeps against the exe (*The game's enums*).
 - **Disassembly:** `dumpbin /disasm:nobytes /range:<start>,<end>` from Visual Studio. Function
   starts follow `int 3` padding.
 - **From members to code:**
@@ -1040,6 +1041,67 @@ from `EPopupCheatsIds`:
   a parameter with `param:set()`, and the called function saw the new value. In a post-hook the
   parameters read empty. Two hooks on one function, both removed, left the game fine.
 
+## The game's enums
+
+Worked out on 2026-10-28 on build 26184573, from the exe and the class dump; the reading in game is written
+but not yet run there (docs/verified.md).
+
+- **Where they are.** Each of the game's enums is a native `UEnum` named after its C++ name in its module's
+  script package: `/Script/<Module>.<EnumName>`. The module is the `## [Module]` block of `api-index.txt`
+  whose `enum E...` lines list it (`ECommands` and `EGuiConsolesTypes` in `SwtEngine`, `EClanType` and the
+  quest enums in `SwtQuest`, the combat ones in `SwtAdventure`). `/Script/SwtEngine.ECommands` was found
+  this way in game (the in-game remap reads it; verified.md, 2026-10-27); the `SwtQuest` and `SwtAdventure`
+  packages are the ones `Game.hidden`'s classes are found in, but no enum in them has been looked up in
+  game yet.
+- **In the exe.** UHT's enum tables are `{const char* name, int64 value}` pairs. The game's own enums are
+  `enum class` or namespaced, so their names carry the type (`ECommands::Player_Interact`), and
+  `tools/re/uht.py <exe> enum <EnumName>` finds a table by that prefix and says where it is: `ECommands`'
+  111 names (NoCommand 0 … TOTAL 110) at 0x14987A870 (RVA 0x987A870), `EGuiConsolesTypes`' 11 at
+  0x14987D640. A plain enum's names have no prefix (Unreal's `EInputEvent`: `IE_Pressed` 0, `IE_Released`
+  1, `IE_Repeat` 2, `IE_DoubleClick` 3, `IE_Axis` 4, `IE_MAX` 5, its table at 0x1485A8BD0, found by hand
+  from the pointer to `"IE_Pressed"`).
+- **What patch 1.1 changed.** The class dump of build 24847281 lists 109 `ECommands` names, `Player_Interact`
+  the 66th (65). Build 26184573's table (above) has `Player_Mouse_Camera_Up` 64 and `Player_Mouse_Camera_Right`
+  65 after `Player_Camera_Right` 63, so `Player_Interact` is 67 and everything after it is 2 higher. Every
+  enum `Game.enums` names reads the same in both: the dump's lists and the exe's tables have the same names
+  in the same order.
+- **Reading one from Lua.** `StaticFindObject("/Script/SwtEngine.ECommands"):ForEachName(function(name,
+  value) ... end)` gives each name as an `FName` with its type in front (`ECommands::Player_Interact`) and
+  its value as a number (seen in game through the in-game remap, which sends the commands it gets this
+  way). A missing enum comes back as an invalid object, which must not be asked anything (that crashes the
+  game), and an error inside the callback goes to UE4SS's log and ends the listing without reaching a
+  `pcall` around it. The engine adds `<EnumName>_MAX` (one past the last value) to every enum that doesn't
+  declare one, when it builds the enum at start-up (`UEnum::SetEnums` with `bAddMaxKeyIfMissing`, from the
+  engine's code), so the game's lists probably end with it in game; the exe's tables don't have it. Not
+  yet seen in game.
+  `Game.enumNames(path)` (WCModsGame) and `enumNames(path)` in `WCModsRemap` do this.
+- **What wcmods reads this way:**
+  - **`Game.enums`:** each of its 17 lists is one enum (`wcmods/game.py` `ENUMS`: `clan` is `EClanType`,
+    `status` is `ESwtAdventureStatusType`, ...), matched to what each is used for by the dump (`ClanType`
+    is an `EClanType`, `CurrentPhase` an `EGamePhase`, `AlwaysHasFullResource` a
+    `TMap<EQuestResourceType, bool>`, `RemoveStatusType` takes an `ESwtAdventureStatusType`, ...). Each list
+    is read from the game the first time a script looks anything up in it. The shipped lists, numbered from
+    0, are the fallback, and are now each the whole enum: `clan` and `rank` gained `Total` (5) and
+    `resource` gained `Count` (6), which the old lists left out.
+  - **The Talk prompt's command:** `Player_Interact` in `ECommands`, read at the first prompt (it was the
+    number 67).
+  - **The in-game remap:** `NoCommand` from `ECommands` (it was 0), and `UI_PC` from `EGuiConsolesTypes`
+    (it was 1): the key of the PC's table in `URegisterButtonsMap.DataGamepadButtonsMap`
+    (`TMap<EGuiConsolesTypes, UDataTable*>`), whose pictures count as the keyboard's.
+- **Checked against the exe:** `python tools/re/uht.py <exe> lua` reads every `Game.enums` list and every
+  enum number the Lua keeps in a constant whose comment names it (`-- ECommands::Player_Interact`, or
+  `-- ESlateVisibility: Visible, Collapsed` after several), and compares them with the exe's tables. On
+  build 26184573: 36 of 36 match (the 17 lists, the 3 game numbers above, and 16 of Unreal's own:
+  `ESlateVisibility`, `ESlateSizeRule`, `EStretch`, `EUINavigationRule`, `EScrollWhenFocusChanges`,
+  `EAttachmentRule`), and the 2 `EInternalObjectFlags::Garbage` aren't in a table to check (that flag set
+  isn't reflected).
+- **Unreal's own enums stay numbers.** They're the engine's (Unreal 5.7), not the game's, so a game update
+  can't move them without a new engine, which would break much more than these. The inline ones were
+  checked by hand with `uht.py <exe> enum`: `SetCollisionEnabled(0)` is `ECollisionEnabled::NoCollision`,
+  `SetJustification(1)` is `ETextJustify::Center` (and draw.lua's `JUSTIFY` table is Left 0, Center 1,
+  Right 2), and the prompt's `v ~= 2` is `ESlateVisibility::Hidden`. `menu.lua`'s alignments
+  (`EHorizontalAlignment`, `EVerticalAlignment`) are plain enums, not checked.
+
 ## Items
 
 Worked out on 2026-10-24 and verified in game with a new herb and a new material (`items.json`).
@@ -1503,8 +1565,9 @@ Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`W
   to test `bShowMouseCursor`, which said "play" in every menu.
 - **`ECommands` moved in patch 1.1.** `Player_Mouse_Camera_Up` and `_Right` were added after
   `Player_Camera_Right`, so everything after them is 2 higher than in a class dump of the first release
-  (Interact 65 → 67). Read the numbers from the game:
-  `StaticFindObject("/Script/SwtEngine.ECommands"):ForEachName(function(name, value) … end)`.
+  (Interact 65 → 67; read from the exe's table, *The game's enums*). Read the numbers from the game:
+  `StaticFindObject("/Script/SwtEngine.ECommands"):ForEachName(function(name, value) … end)`, or
+  `Game.enumNames("/Script/SwtEngine.ECommands")` in a script.
 - **Commands can be sent and changed.**
   - **Sending:** `pc.InputComponent:OnListenCommandInternal(77, 0)` from Lua opened the inventory, as
     `pc:OnListenCommand(77, 0)` did. It reaches the controller's input listeners only, not the screens.

@@ -250,6 +250,21 @@ Fawnstar, as a player reported it showing "Cat 1"):
   they were; the Log page's Mods and Errors filters; the Inspector's Find refusing the widest classes; a
   setting's `_help_<key>` under its row and `_min_`/`_max_` bounding its number on the automatic page; a number
   written `12.0` read back by `Game.json.decode` as `12.0`.
+- **The game's enums read by name** (2026-10-28: `Game.enumNames`, `Game.enums` filled from the game, the Talk
+  prompt's Interact and the in-game remap's `NoCommand` and `UI_PC`; written and checked against the exe with
+  `tools/re/uht.py <exe> lua`, 36 of 36, but not run in the game). `tests/game/test_cat.py::test_enums_are_read_from_the_game`
+  checks the first two: every `wcmods/game.py` `ENUMS` path gives its names in order through
+  `Game.enumNames`, `ECommands` gives NoCommand 0, Player_Interact 67 and TOTAL 110, and a missing enum gives nil
+  without harm. By hand, with code mods allowed:
+  - `python wcmods.py lua "local e = Game.object('/Script/SwtQuest.EClanType') if not e then return 'no enum' end local n = {} e:ForEachName(function(k, v) n[#n + 1] = k:ToString() .. '=' .. tostring(v) end) return table.concat(n, ' ')"`
+    shows whether the engine's `EClanType::EClanType_MAX=6` is in the list (expected from the engine's code;
+    `Game.enumNames` leaves it out either way);
+  - a studio cat's Talk prompt (Sandbox mode) still shows the Interact key's picture, and UE4SS.log has no
+    "can't read Player_Interact" line;
+  - with an in-game remap installed, the key pictures still come out of the PC's table (Interact on F shows
+    F on the Travel prompt), and the log has no "can't read UI_PC" or "the game has no command NoCommand" line;
+  - after the next game update, UE4SS.log's "the game's enum ... isn't build 26184573's" lines (none on this
+    build) say what moved, and `python tools/re/uht.py <exe> lua` says which fallbacks to update.
 - **UE4SS's log format** that `scriptlog.py` (a script's card) and the Log page read: `Starting Lua mod '<name>'`
   and `[Lua] [<mod name>] ...`, as UE4SS 3.0.1 (Git SHA 83330635) writes them, read from the installed game's
   log on 2026-10-28. Other UE4SS versions are unchecked; a line the reader doesn't recognise is left out.

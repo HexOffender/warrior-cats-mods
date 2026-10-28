@@ -24,7 +24,10 @@ local PLAN = @PLAN@
 -- PLAN.icons.play and .menu: {command = {key, ...}}: the keys its pictures show now, the first that has one.
 
 local PRESSED, RELEASED = 0, 1   -- EInputEvent
-local NO_COMMAND = 0
+-- The game's own enum numbers this script needs, read by name from the game in setup(); these are build
+-- 26184573's, kept for when that read fails.
+local NO_COMMAND = 0   -- ECommands::NoCommand
+local UI_PC = 1        -- EGuiConsolesTypes::UI_PC: the PC's entry in the controller picture tables
 
 local function log(fmt, ...) print(string.format("[Remap] " .. fmt .. "\n", ...)) end
 local function debug(fmt, ...) if PLAN.debug then log(fmt, ...) end end
@@ -56,17 +59,21 @@ local function fkey(name)
     return k
 end
 
--- Command numbers by name, from the game's ECommands enum (its numbers moved in patch 1.1, so they're
--- never written down here).
-local function commands()
-    local e = StaticFindObject("/Script/SwtEngine.ECommands")
-    if not valid(e) then return nil end
+-- One of the game's enums by name ("/Script/SwtEngine.ECommands" -> {Player_Interact = 67, ...}), or nil when
+-- the game has no such enum. WCModsGame's Game.enumNames does the same; this script runs without it.
+local function enumNames(path)
+    local e = StaticFindObject(path)
+    if not valid(e) then return nil end   -- asking a missing object anything crashes the game
     local byName = {}
     e:ForEachName(function(name, value)
-        byName[(name:ToString():gsub("^ECommands::", ""))] = value
+        byName[(name:ToString():gsub("^.*::", ""))] = value
     end)
     return byName
 end
+
+-- Command numbers by name, from the game's ECommands enum (its numbers moved in patch 1.1, so they're
+-- never written down here).
+local function commands() return enumNames("/Script/SwtEngine.ECommands") end
 
 -- Which set applies to a listener. While you explore, the keys go to the controller and the HUD's two
 -- screens; with a menu open, only to the menu's screen; in a fight, to all of those and the fight's
@@ -221,7 +228,7 @@ local function readPictures(gm)
     read("keyboard", gm.DataKeysMap)
     gm.GamepadButtonsMap.DataGamepadButtonsMap:ForEach(function(console, dt)
         dt = dt:get()
-        read(console:get() == 1 and "keyboard" or dt:GetFName():ToString(), dt)
+        read(console:get() == UI_PC and "keyboard" or dt:GetFName():ToString(), dt)
     end)
     return { kinds = kinds, of = of }
 end
@@ -386,6 +393,17 @@ local HOOKS = {
 local function setup()
     local byName = commands()
     if not byName then return false end
+    if byName.NoCommand then
+        NO_COMMAND = byName.NoCommand
+    else
+        log("the game has no command NoCommand; using %d", NO_COMMAND)
+    end
+    local okConsoles, consoles = pcall(enumNames, "/Script/SwtEngine.EGuiConsolesTypes")
+    if okConsoles and consoles and consoles.UI_PC then
+        UI_PC = consoles.UI_PC
+    else
+        log("can't read UI_PC from the game's EGuiConsolesTypes; using %d, build 26184573's", UI_PC)
+    end
     local nkeys = 0
     for _, set in ipairs({ "play", "menu" }) do
         for key, names in pairs(PLAN[set].send) do

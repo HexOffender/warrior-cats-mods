@@ -107,7 +107,7 @@ function Menu.new(kind, owner)
 end
 local new = Menu.new
 
-local AUTO, FILL = 0, 1                  -- ESlateSizeRule
+local AUTO, FILL = 0, 1                  -- ESlateSizeRule: Automatic, Fill
 local H_FILL, H_LEFT, H_CENTER, H_RIGHT = 0, 1, 2, 3
 local V_FILL, V_TOP, V_CENTER = 0, 1, 2
 

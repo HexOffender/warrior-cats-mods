@@ -132,6 +132,7 @@ local Game = require("WCModsGame")   -- a script mod has it as Game already
 | `Game.call(o, "Function", ...)` | Call a function safely: `true, results...` or `false, error` |
 | `Game.find("Class")`, `Game.findAll("Class")` | One object of a class (kept while it lasts; never one on its way out, like the last level's HUD) or all of them; short class names, e.g. `"WrcRoamingEnemy"` |
 | `Game.object(path)`, `Game.load(path)` | An object by its path; load an asset, a mod's own too (`/Game/WCMods/<mod>/...`, which UE4SS's `LoadAsset` can't find) |
+| `Game.enumNames(path)` | One of the game's enums by its path (`"/Script/SwtEngine.ECommands"`): `{name = number}` and its names in order, or nil (see *JSON and enums*) |
 | `Game.library(name)` | A function library for static calls: `GameplayStatics`, `KismetSystemLibrary`, `KismetMathLibrary`, `BFLSwtQuest`, `QuestManager`, `SaveManager`, … (`Game.libraries`) |
 | `Game.className(o)`, `Game.name(o)`, `Game.fullName(o)`, `Game.parents(o)`, `Game.isA(o, "Class")` | What an object is |
 | `Game.str(v)` | The text of an FString, FName or FText |
@@ -442,8 +443,16 @@ others, so try each one.
   marked as one, so it's written `[]` again when empty; a byte order mark at the start is passed over), and
   `Game.json.list(t)` to write an empty table as `[]`.
 - **Enums:** `Game.enums.<name>` maps each way, name to number and number to name (`Game.enums.status.Poisoned
-  == 3`). The enums are `clan`, `rank`, `trait`, `stance`, `status`, `stat`, `resource`, `questStatus`,
-  `questResult`, `questType`, `objectiveStatus`, `phase`, `itemType` and `characterType`.
+  == 3`). The enums are `clan`, `rank`, `trait`, `stance`, `status`, `aiProfile`, `team`, `detectionRange`,
+  `stat`, `resource`, `questStatus`, `questResult`, `questType`, `objectiveStatus`, `phase`, `itemType` and
+  `characterType`, each one of the game's own (`clan` is `EClanType`; `wcmods/game.py` lists them all). The
+  numbers come from the game: each enum is read from it the first time a script looks anything up in it, so
+  a game update that renumbers one is followed. If the game's enum can't be read, the numbers are those of
+  build 26184573, and the log says so once; a name the game no longer has reads nil, also said once.
+- **Any of the game's enums:** `Game.enumNames("/Script/SwtQuest.EGiverRole")` gives `{name = number}` (and its
+  names in order as a second result), or nil when the game has no such enum. The path is the module the class
+  dump lists it under (`/Script/SwtEngine`, `/Script/SwtQuest`, `/Script/SwtAdventure`, `/Script/Wrc`) and the
+  enum's name.
 
 ### Mapped values
 

@@ -20,7 +20,7 @@
 local View = require("WCModsView")
 local Draw = {}
 
-local COLLAPSED, HIT_TEST_INVISIBLE = 1, 3               -- ESlateVisibility
+local COLLAPSED, HIT_TEST_INVISIBLE = 1, 3               -- ESlateVisibility: Collapsed, HitTestInvisible
 local JUSTIFY = { left = 0, center = 1, right = 2 }       -- ETextJustify
 local ALIGN_X = { left = 0, center = 0.5, right = 1 }
 local ALIGN_Y = { top = 0, middle = 0.5, bottom = 1 }

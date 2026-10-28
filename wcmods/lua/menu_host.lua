@@ -20,8 +20,8 @@ end
 local function log(fmt, ...) print(string.format("[WCModsMenu] " .. fmt .. "\n", ...)) end
 local C, THEME, new, add, text = Menu.color, Menu.theme, Menu.new, Menu.add, Menu.text
 
-local VISIBLE, COLLAPSED = 0, 1   -- ESlateVisibility
-local FILL = 1
+local VISIBLE, COLLAPSED = 0, 1   -- ESlateVisibility: Visible, Collapsed
+local FILL = 1                    -- ESlateSizeRule::Fill
 local USER_SPECIFIED = 7          -- EStretch::UserSpecified: scale by SetUserSpecifiedScale
 local NAV_WRAP = 2                -- EUINavigationRule::Wrap, for EUINavigation Left..Previous (0-5)
 local SCROLL_INSTANT = 1          -- EScrollWhenFocusChanges::InstantScroll

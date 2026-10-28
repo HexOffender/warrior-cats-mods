@@ -1149,36 +1149,117 @@ end
 registerHidden()
 
 -- ===================================================================================== enums
--- The game's enums, as name -> number (Game.enums.status.Poisoned == 3) and number -> name.
-local function enum(names, first)
-    local e, n = {}, first or 0
-    for _, name in ipairs(names) do
-        e[name], e[n] = n, name
-        n = n + 1
-    end
-    return e
+-- One of the game's enums by its path ("/Script/SwtQuest.EClanType"), as {name = number}, and its names in the
+-- game's order as a second result. The names are without the "EClanType::" in front, and without the
+-- EClanType_MAX the engine adds to every enum. Nil when the game has no such enum. The class dump lists them
+-- all (the `enum E...` lines at the end of each module's block in api-index.txt; the module is the path's
+-- package: /Script/SwtEngine, /Script/SwtQuest, /Script/SwtAdventure, /Script/Wrc).
+function Game.enumNames(path)
+    local e = Game.object(path)   -- checked first: asking a missing object anything crashes the game
+    if not e then return nil end
+    local max = (tostring(path):match("([%w_]+)$") or "") .. "_MAX"
+    local byName, order = {}, {}
+    pcall(function()
+        e:ForEachName(function(name, value)
+            -- An error in here wouldn't reach the pcall around the listing (UE4SS logs it and stops listing).
+            pcall(function()
+                local n = name:ToString():gsub("^.*::", "")
+                local v = type(value) == "number" and math.tointeger(value) or nil
+                if v and n ~= max and byName[n] == nil then
+                    byName[n] = v
+                    order[#order + 1] = n
+                end
+            end)
+        end)
+    end)
+    if #order == 0 then return nil end
+    return byName, order
 end
-Game.enums = {
-    clan = enum({ "None", "ThunderClan", "ShadowClan", "RiverClan", "WindClan" }),
-    rank = enum({ "None", "Apprentice", "Warrior", "Deputy", "Leader" }),
-    trait = enum({ "None", "Brave", "Ambitious", "Wise", "Energetic", "Curious", "Patient" }),
-    stance = enum({ "None", "Neutral", "Offensive", "Defensive", "Trick", "Sneaky", "Reckless" }),
-    status = enum({ "None", "Blinded", "Furious", "Poisoned", "Stressed" }),
-    aiProfile = enum({ "None", "Tier1", "Tier2", "Tier3", "Tier4", "Tier5", "Tier6", "Terrible", "Perfect" }),
-    team = enum({ "None", "Player", "Enemy" }),
-    detectionRange = enum({ "Tiny", "Small", "Medium", "Large" }),
-    stat = enum({ "None", "Prowess", "Strength", "Resilience", "Instinct", "Agility" }),
-    resource = enum({ "Health", "Level", "Stamina", "StaminaCombat", "Currency", "FreshKill" }),
-    questStatus = enum({ "None", "QuestAvailable", "OngoingQuest", "QuestComplete", "QuestTurnedIn", "DialogueProgress" }),
-    questResult = enum({ "Any", "Success", "Fail" }),
-    questType = enum({ "MainQuest", "SideQuest" }),
-    objectiveStatus = enum({ "NotStarted", "InProgress", "Failed", "FailedTimePressure", "Succeeded" }),
-    phase = enum({ "None", "PreCinematic", "CinematicIntro", "PreGame", "Game", "PostGame", "TutorialIntro" }),
-    itemType = enum({ "None", "Consumable", "Equipment", "Quest", "Collectible" }),
-    characterType = enum({ "None", "Cat", "BossCat", "WeakMice", "Mice", "WeakSquirrel", "Squirrel", "WeakRabbit", "Rabbit",
-                          "BossRabbit", "WeakBird", "Bird", "WeakRat", "Rat", "Snake", "ThreatSnake", "BossSnake", "Badger",
-                          "ThreatBadger", "BossBadger", "ThreatFox", "TitanFox", "BossFox", "ThreatDog", "TitanDog", "BossDog" }),
-}
+
+-- The game's enums for scripts, as name -> number (Game.enums.status.Poisoned == 3) and number -> name. Each is
+-- read from the game's own enum the first time it's used, so a game update that renumbers one is followed (patch
+-- 1.1 did, to ECommands). When the game's enum can't be read, the numbers are build 26184573's, said once in the
+-- log; a name the game no longer has reads nil, said once too.
+local ENUMS = @ENUMS@   -- { clan = { "/Script/SwtQuest.EClanType", { "None", ... } }, ... }: game.py ENUMS
+
+local function shippedEnum(t, shipped)
+    for i, name in ipairs(shipped) do
+        rawset(t, name, i - 1)
+        rawset(t, i - 1, name)
+    end
+end
+
+local function fillEnum(key, t, dropped)
+    local path, shipped = ENUMS[key][1], ENUMS[key][2]
+    local byName, order = Game.enumNames(path)
+    if not byName then
+        shippedEnum(t, shipped)
+        log("can't read the game's enum %s, so Game.enums.%s has build 26184573's numbers", path, key)
+        return
+    end
+    for _, name in ipairs(order) do
+        local n = byName[name]
+        rawset(t, name, n)
+        if rawget(t, n) == nil then rawset(t, n, name) end   -- a number with two names: the first, as the game gives
+    end
+    local changes, known = {}, {}
+    for i, name in ipairs(shipped) do
+        known[name] = true
+        if byName[name] == nil then
+            dropped[name] = true
+            changes[#changes + 1] = name .. " gone"
+        elseif byName[name] ~= i - 1 then
+            changes[#changes + 1] = string.format("%s %d -> %d", name, i - 1, byName[name])
+        end
+    end
+    for _, name in ipairs(order) do
+        if not known[name] then changes[#changes + 1] = string.format("%s %d new", name, byName[name]) end
+    end
+    if #changes > 0 then
+        log("the game's enum %s isn't build 26184573's: %s", path, table.concat(changes, ", "))
+    end
+end
+
+-- An enum table that fills itself in from the game the first time anything is looked up in it (or it's walked
+-- with pairs), which is usually from a script's timer, event or key, once the game is up. It may not be while a
+-- mod's Lua is still starting (the in-game remap waits for its first tick to read ECommands too).
+local function lazyEnum(key)
+    local filled, dropped = false, {}
+    local function fill(t)
+        if filled then return end
+        filled = true
+        local ok, err = pcall(fillEnum, key, t, dropped)
+        if not ok then
+            for k in pairs(dropped) do dropped[k] = nil end
+            for k in next, t do rawset(t, k, nil) end
+            shippedEnum(t, ENUMS[key][2])
+            log("can't read the game's enum for Game.enums.%s (%s), so it has build 26184573's numbers", key,
+                tostring(err))
+        end
+    end
+    return setmetatable({}, {
+        __index = function(t, k)
+            if not filled then
+                fill(t)
+                local v = rawget(t, k)
+                if v ~= nil then return v end
+            end
+            if dropped[k] == true then
+                dropped[k] = false
+                log("Game.enums.%s.%s: the game has no %s any more, so it reads nil", key, tostring(k), tostring(k))
+            end
+            return nil
+        end,
+        __pairs = function(t)
+            fill(t)
+            return next, t, nil
+        end,
+    })
+end
+
+Game.enums = {}
+for key in pairs(ENUMS) do Game.enums[key] = lazyEnum(key) end
+
 local function enumValue(e, v)
     if type(v) == "string" then return e[v] end
     return v
@@ -1932,8 +2013,24 @@ local LABEL_RANGE, REACH = 2000, 250      -- cm: the label shows within LABEL_RA
 local LABEL_ICONS = { available = "CanvasAvailable", ongoing = "CanvasOngoing", done = "CanvasCompleted" }
 local SHOWN, COLLAPSED = 4, 1             -- ESlateVisibility: SelfHitTestInvisible, Collapsed
 local ICON_ABOVE = -100                   -- the icon above the label's lines (the game moves it for its own cats)
-local INTERACT_COMMAND = 67               -- the action the game's own prompt glyph shows: Interact
+local INTERACT_COMMAND = 67               -- ECommands::Player_Interact in build 26184573, when the game's can't be read
 local PROMPT_MARGIN = 120                 -- px: how far in from the screen's edges a prompt stays
+
+-- The command whose key the prompt shows: Interact, by its name in the game's ECommands enum (patch 1.1 moved it
+-- from 65 to 67, and an update could again), read at the first prompt. When the enum can't be read, it's build
+-- 26184573's number, said once in the log.
+local interactCommand
+local function interactCommandNumber()
+    if interactCommand then return interactCommand end
+    local commands = Game.enumNames("/Script/SwtEngine.ECommands")
+    interactCommand = commands and commands.Player_Interact
+    if not interactCommand then
+        interactCommand = INTERACT_COMMAND
+        log("can't read Player_Interact from the game's ECommands, so the Talk prompt shows command %d's key (build " ..
+            "26184573's Interact)", INTERACT_COMMAND)
+    end
+    return interactCommand
+end
 
 local function labelWidgets(n)
     local a = n:actorOrNil()
@@ -2036,7 +2133,7 @@ local function promptWidget(h)
         slot:SetAutoSize(true)
         slot:SetAlignment({ X = 0.5, Y = 0.5 })
         slot:SetAnchors({ Minimum = { X = 0, Y = 0 }, Maximum = { X = 0, Y = 0 } })
-        made.mcGuiButtonAction.ActionCommand = INTERACT_COMMAND
+        made.mcGuiButtonAction.ActionCommand = interactCommandNumber()
         -- The game puts the key's picture on a prompt when it sets one up; made here, it needs asking.
         pcall(function() made.mcGuiButtonAction:OnSetupInputs() end)
         prompt.slot = slot
@@ -2516,7 +2613,7 @@ end
 -- say returns false (and why) when the box can't be made, for the script to draw its own instead.
 Game.dialogue = {}
 local DIALOGUE = "/Game/Art/UXD/Blueprints/QuestDialogs/WBP_QuestGiver_Dialogue"
-local HIDDEN_HIT, SELF_HIT, COLLAPSED = 3, 4, 1   -- ESlateVisibility
+local HIDDEN_HIT, SELF_HIT, COLLAPSED = 3, 4, 1   -- ESlateVisibility: HitTestInvisible, SelfHitTestInvisible, Collapsed
 local talk = { widget = nil, name = nil, text = nil, closing = 0 }
 -- One talk at a time across mods (each has its own Lua state, and its own box): the one talking holds a
 -- claim in a shared variable, renewed while its box is up.
