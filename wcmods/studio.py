@@ -158,6 +158,64 @@ def plain_summary(manifest):
     return said + (f" {warnings} warning{'s' if warnings != 1 else ''}." if warnings else "")
 
 
+def manifest_of(result):
+    """The build's manifest in a task's result: the result itself (a build, an install), or its "manifest"
+    (Play, which may install first); None for anything else."""
+    if isinstance(result, dict) and "sections" in result:
+        return result
+    if isinstance(result, dict) and isinstance(result.get("manifest"), dict) and "sections" in result["manifest"]:
+        return result["manifest"]
+    return None
+
+
+MAX_CELL_LINES = 20
+
+
+def table_words(table):
+    """A table's file name in words when data-titles.json hasn't one ("QuestObjectives.csv" -> "Quest
+    objectives", "NPC/EarType.csv" -> "NPC ear type"), as the Game data page says it (studio/lib/data.js)."""
+    stem = re.sub(r"\.csv$", "", table, flags=re.I)
+    spaced = re.sub(r"(?<=[a-z])(?=[A-Z0-9])|(?<=[0-9])(?=[A-Za-z])", " ", re.sub(r"[/_]+", " ", stem)).split()
+    return " ".join(w if re.fullmatch(r"[A-Z0-9]{2,}", w) else (w[:1].upper() + w[1:].lower()) if i == 0 else w.lower()
+                    for i, w in enumerate(spaced))
+
+
+def table_lines(manifest, words=None):
+    """The game's numbers a build changes, one line per cell, net of every source (the first value and the last;
+    a cell that ends where it began isn't listed): "Tuning: Running speed 390 -> 450 (My mods)". The data
+    tables only (the text tables names change are words, not numbers). Rows the Game data page's Quick changes
+    name get its words, tables its titles (words: {"quick": [...], "titles": {...}}); at most
+    MAX_CELL_LINES, then how many more."""
+    words = words or {}
+    titles, quick = words.get("titles") or {}, words.get("quick") or []
+    names = manifest.get("names") or {}
+    who = lambda by: ", ".join(names.get(part.strip(), part.strip()) for part in str(by).split(","))   # noqa: E731
+    out = []
+    for path, changes in (manifest.get("csv_changes") or {}).items():
+        if not path.startswith(NONASSET):
+            continue
+        table = path[len(NONASSET):]
+        cells = {}   # (row, column) -> [first value, last value, last source]
+        for c in changes:
+            if c.get("column") == "(row)":
+                continue
+            cell = cells.setdefault((c["row"], c["column"]), [c["from"], None, None])
+            cell[1], cell[2] = c["to"], c["by"]
+        title = (titles.get(table) or {}).get("title") or table_words(table)
+        for (row, column), (was, now, by) in cells.items():
+            if was == now:
+                continue
+            label = next((q["label"] for q in quick if q.get("table") == table and q.get("kind") == "value"
+                          and row in ([q["row"]] if q.get("row") else q.get("rows", []))
+                          and column.lower() in [c.lower() for c in q.get("columns") or [q.get("column", "")]]), None)
+            if label is None:
+                label = row if (titles.get(table) or {}).get("value") else f"{row}, {column}"
+            out.append(f"{title}: {label} {was} -> {now} ({who(by)})")
+    if len(out) > MAX_CELL_LINES:
+        out = out[:MAX_CELL_LINES] + [f"and {len(out) - MAX_CELL_LINES} more numbers"]
+    return out
+
+
 class Studio:
     def __init__(self, ctx):
         self.ctx = ctx
@@ -1268,7 +1326,8 @@ class Studio:
     def run(self, fn, title="Working", keep=False):
         """A task under the studio's lock (a build, an install, Play), with what it logs kept for GET /progress
         while it runs. With `keep`, the log goes to last-apply.log in your files' folder afterwards, headed by
-        the task, when it ran and what it did in plain words, for the page's Last apply button."""
+        the task, when it ran and what it did in plain words, for the page's Last apply button. A build's
+        manifest gets `cells_in_words`, the game's numbers it changes (table_lines), for the log's drawer."""
         with self.lock:
             self.progress = {"title": title, "lines": [], "running": True}
             lines = self.progress["lines"]
@@ -1280,20 +1339,36 @@ class Studio:
                 raise
             finally:
                 self.progress["running"] = False
+        manifest = manifest_of(result)
+        if manifest is not None:
+            manifest["cells_in_words"] = table_lines(manifest, self._data_words())
         if keep:
             self.keep_log(title, lines, result, None)
         return {"log": list(lines), "result": result}
 
+    def _data_words(self):
+        """The Game data page's own names for rows and tables (data-quick.json, data-titles.json), for
+        table_lines; {} where one can't be read."""
+        words = {}
+        for name in ("data-quick.json", "data-titles.json"):
+            try:
+                with open(os.path.join(self.static, "sections", name), encoding="utf-8-sig") as f:
+                    words[name] = json.load(f)
+            except (OSError, ValueError):
+                words[name] = {}
+        return {"quick": words["data-quick.json"].get("rows", []), "titles": words["data-titles.json"]}
+
     def keep_log(self, title, lines, result, error):
-        """last-apply.log: "<title> · <when>", a plain summary, the warnings, then the log."""
-        manifest = result if isinstance(result, dict) and "sections" in result else \
-            result.get("manifest") if isinstance(result, dict) and isinstance(result.get("manifest"), dict) else None
+        """last-apply.log: "<title> · <when>", a plain summary, the game's numbers it changed, the warnings,
+        then the log."""
+        manifest = manifest_of(result)
         head = [f"{title} · {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"]
         if error is not None:
             head.append(error.describe("press Apply the rest anyway", "what they put in the game before is removed", BLOCKED)
                         if isinstance(error, pipeline.InstallBlocked) else f"Couldn't finish: {error}")
         elif manifest:
             head.append(plain_summary(manifest))
+            head += manifest.get("cells_in_words", [])
             head += [f"warning: {w}" for w in manifest.get("warnings", [])]
         elif title == "Play":
             head.append("Started the game; nothing needed applying first.")

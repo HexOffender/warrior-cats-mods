@@ -66,6 +66,8 @@ test("dragging Running speed shows the edit in All tables and in data.json, and 
   await page.waitFor(() => document.querySelectorAll(".data-table tbody tr").length === 1);
   assert.match(await cellText(page, "Gameplay.Exploration.Player.MoveAndRun.Run.Speed", 1), /^600390$/);   // the value, and the game's under it
   assert.equal(await page.count(".data-table td.edited"), 1);
+  // The row's line from the mechanics notes, under its name.
+  assert.equal(await page.text(".data-table tbody th .row-note"), "Run: 390 (Player.MoveAndRun.Run.Speed), acceleration 175 (Player.MoveAndRun.Run.Acceleration)");
   // A factor row: every animal's XP, with the first ones in words.
   await page.evaluate(() => { const n = document.getElementById("quick-xp-fights"); n.value = "2"; n.dispatchEvent(new Event("change")); });
   await page.waitFor(() => document.querySelector('[data-key="quick:xp-fights"] .quick-preview').textContent.startsWith("Fish 10 -> 20, WeakMice 25 -> 50"));
@@ -223,6 +225,32 @@ test("a file's own row removals and additions, and a table the game hasn't got, 
   assert.deepEqual(saved["NPC/Scars.csv"]["-"], ["12"]);
   assert.deepEqual(saved["NPC/Scars.csv"]["+"], hand["NPC/Scars.csv"]["+"]);
   assert.deepEqual(saved["Nope.csv"], { A: 1 });
+  await page.close();
+});
+
+test("Your changes lists the mod's changes, and after an install the ones in the game say so", { skip }, async () => {
+  fs.mkdirSync(path.join(folders.data, "mods", "applied"), { recursive: true });
+  fs.writeFileSync(path.join(folders.data, "mods", "applied", "mod.json"), JSON.stringify({ name: "Applied", enabled: true }));
+  const page = await open();
+  await page.evaluate(() => { const s = document.querySelector(".target select"); s.value = "applied"; s.dispatchEvent(new Event("change")); });
+  await page.waitFor(() => document.querySelector("#data-yours p")?.textContent === "This mod doesn't change any table yet.");
+  await page.evaluate(() => { const n = document.getElementById("quick-run-speed"); n.value = "640"; n.dispatchEvent(new Event("change")); });
+  await page.evaluate(() => { document.getElementById("data-all").open = true; });
+  await page.waitFor(() => [...document.querySelectorAll("#data-yours li")].some(li => li.textContent.startsWith("Tuning: Gameplay.Exploration.Player.MoveAndRun.Run.Speed, MaxValue: 390 -> 640")));
+  // An Apply's manifest, as the shell hands it on: what it put in the game.
+  await page.evaluate(`(async () => { const wc = await import("/studio/lib/wc.js");
+    wc.bus.emit("installed", { mods: ["applied"], sections: {}, csv_changes: { "Wrc/Content/Gameplay/DataTables/NonAsset/TuningData.csv": [
+      { row: "Gameplay.Exploration.Player.MoveAndRun.Run.Speed", column: "MaxValue", from: "390", to: "640", by: "applied" }] } }); })()`);
+  await page.waitFor(() => /in the game since \d\d:\d\d$/.test(document.querySelector('[data-key="quick:run-speed"] .quick-now').textContent));
+  assert.match(await page.evaluate(() => [...document.querySelectorAll("#data-yours li")].find(li => li.textContent.includes("Run.Speed")).textContent),
+    /\(in the game since \d\d:\d\d\)/);
+  // Changed again since: not in the game yet. Normal on the line takes it out of the file.
+  await page.evaluate(() => { const n = document.getElementById("quick-run-speed"); n.value = "700"; n.dispatchEvent(new Event("change")); });
+  await page.waitFor(() => document.querySelector('[data-key="quick:run-speed"] .quick-now').textContent === "390 -> 700 · not in the game yet");
+  await page.evaluate(() => [...document.querySelectorAll("#data-yours li")].find(li => li.textContent.includes("Run.Speed")).querySelector("button").click());
+  await page.waitFor(() => document.querySelector('[data-key="quick:run-speed"] .quick-now').textContent === "Normal: 390");
+  assert.equal((await file(page))["TuningData.csv"], undefined);
+  assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });
 

@@ -344,6 +344,9 @@ input.switch:checked::after { left: 25px; }
 .fold > summary > .muted { font-weight: 400; font-size: 0.9rem; }
 .stack { display: grid; gap: 8px; }
 .line { border-top: 1px solid var(--line); padding-top: 8px; }
+/* A list of changes in words, each with its button (Save's Changes to make and Done so far, Game data's Your changes). */
+.changes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.changes > li.row { justify-content: space-between; }
 
 /* Check boxes, radio buttons and sliders big enough to hit (WCAG 2.2: 24px targets), in the accent colour. */
 input[type="checkbox"]:not(.switch), input[type="radio"] { width: 20px; height: 20px; min-width: 0; margin: 0; accent-color: var(--accent); flex: none; }

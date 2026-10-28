@@ -7,8 +7,6 @@
 .carry-row:last-child { border-bottom: 0; }
 .carry-row.gone { color: var(--muted); text-decoration: line-through; }
 .item-icon-small { width: 28px; height: 28px; object-fit: contain; }
-.changes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.changes > li.row { justify-content: space-between; }
 .changes.done > li { padding: 6px 0; border-bottom: 1px solid var(--line); }
 .changes.done > li:last-child { border-bottom: 0; }
 #save-share { margin-top: 6px; }

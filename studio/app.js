@@ -253,6 +253,9 @@ function summarize(manifest) {
     lines.push(`[${rep.status}] ${rep.title}: ${rep.mods.map(i => nameIn(manifest, i)).join(", ") || "no mods"}`);
     for (const e of rep.errors) lines.push(`    ${e}`);
   }
+  // The game's numbers it changes, one line a cell, in words (the server's studio.table_lines).
+  const cells = manifest.cells_in_words || [];
+  if (cells.length) lines.push("The game's numbers it changes:", ...cells.map(c => `    ${c}`));
   for (const w of manifest.warnings || []) lines.push(`warning: ${w}`);
   return lines;
 }

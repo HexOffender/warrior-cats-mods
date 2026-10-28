@@ -55,8 +55,8 @@ so a mistake is said at save time, under the Editing mod bar, not first at Apply
 
 While a build or install runs under the studio's lock, what it logs is kept for `GET /api/progress`,
 which the page polls to show the lines as they come; afterwards `last-apply.log` in the player's folder
-keeps them, headed by a plain summary from the manifest (`studio.plain_summary`), for the page's Last
-apply button.
+keeps them, headed by a plain summary from the manifest (`studio.plain_summary`) and the game's numbers it
+changed, one a line (`studio.table_lines`, in the log's panel too), for the page's Last apply button.
 
 The mod menu is wcmods' own and goes in with every build: `menu.host_script` writes the window's
 script with the build's manifest, its key, button and size (`wcmods.json`, `menusettings`) and its own

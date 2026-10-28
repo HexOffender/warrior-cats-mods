@@ -204,6 +204,58 @@ test("a chance factor over 1 is refused", () => {
   assert.deepEqual(D.quickWrite(quick("two-eyes"), TUNING, {}, 1.5), { error: "Two different eyes goes from 0 to 1" });
 });
 
+test("Your changes lists every change in words, the game's value beside yours", () => {
+  const sizes = { header: HEADERS["NPC/CatSize.csv"], rows: [["8", "Leader", "0.9", "1"]] };
+  const edits = { "CombatBaseExperience.csv": { "*": { BaseExperience: "x2" }, Mice: { BaseExperience: 30 } },
+    "NPC/CatSize.csv": { "8": { MaxScale: "x1.5" } }, "TuningData.csv": { "Run.Speed": { __first__: 450 } } };
+  const list = D.changeList(edits, { "NPC/Scars.csv": { "-": ["12"] } }, { "CombatBaseExperience.csv": XP, "NPC/CatSize.csv": sizes });
+  assert.deepEqual(list, [
+    { table: "CombatBaseExperience.csv", kind: "all", row: "*", column: "BaseExperience", said: "every BaseExperience × 2" },
+    { table: "CombatBaseExperience.csv", kind: "cell", row: "Mice", column: "BaseExperience", was: "25", now: "30" },
+    { table: "NPC/CatSize.csv", kind: "cell", row: "8", column: "MaxScale", was: "1", now: "1.5" },
+    { table: "TuningData.csv", kind: "cell", row: "Run.Speed", column: "value", was: null, now: "450" },   // not read yet
+    { table: "NPC/Scars.csv", kind: "rows", said: "1 row removed by hand" }]);
+  assert.equal(D.rowName(sizes, "8"), "8 (Leader)");
+  assert.equal(D.rowName(XP, "Mice"), "Mice");
+  assert.equal(D.rowName(undefined, "Mice"), "Mice");
+});
+
+test("what an Apply put in the game comes from its manifest's data tables", () => {
+  const at = "Wrc/Content/Gameplay/DataTables/NonAsset/";
+  const manifest = { mods: ["my-mods"], sections: {}, csv_changes: {
+    [`${at}CombatBaseExperience.csv`]: [{ row: "Mice", column: "BaseExperience", from: "25", to: "30", by: "my-mods" },
+      { row: "Owl", column: "(row)", from: "", to: "added", by: "my-mods" }],
+    "Wrc/Content/Gameplay/Strings/NonAsset/Strings_EN.csv": [{ row: "STR_X", column: "Text", from: "a", to: "b", by: "n" }] } };
+  const applied = D.inGameFrom(manifest, "15:30");
+  assert.equal(applied.when, "15:30");
+  assert.deepEqual([...applied.cells], [["CombatBaseExperience.csv|Mice|BaseExperience", "30"]]);
+  assert.deepEqual(applied.mods, ["my-mods"]);
+  assert.deepEqual([...D.inGameFrom({ manifest }, "15:31").cells.keys()], ["CombatBaseExperience.csv|Mice|BaseExperience"]);   // Play's result
+  assert.equal(D.inGameFrom({ restored: [] }, "15:32"), null);
+});
+
+test("a short key matches the one row ending with it and an ambiguous one matches none", () => {
+  const keys = ["Gameplay.Exploration.Player.MoveAndRun.Stamina.DrainRate", "Gameplay.Exploration.EnemyCat.MoveAndRun.Stamina.DrainRate",
+    "Gameplay.Exploration.Stamina.RegenRate", "Gameplay.Exploration.Level.2", "Gameplay.Exploration.Level.3", "Gameplay.Exploration.MaxLevel"];
+  assert.deepEqual(D.tokenRows("Stamina.RegenRate", keys), ["Gameplay.Exploration.Stamina.RegenRate"]);
+  assert.deepEqual(D.tokenRows("Player.MoveAndRun.Stamina.DrainRate", keys), [keys[0]]);
+  assert.deepEqual(D.tokenRows("MoveAndRun.Stamina.DrainRate", keys), [], "two rows end with it: neither");
+  assert.deepEqual(D.tokenRows("Gameplay.Exploration.Level.<n>", keys), ["Gameplay.Exploration.Level.2", "Gameplay.Exploration.Level.3"]);
+  assert.deepEqual(D.tokenRows("Level", keys), [], "a part of a key, not its end after a dot");
+  assert.deepEqual(D.tokenRows("CatSize.csv", keys), []);
+  assert.deepEqual(D.tokenTables("CatSize.csv", ["NPC/CatSize.csv", "CatSizes.csv"]), ["NPC/CatSize.csv"]);
+  assert.deepEqual(D.tokenTables("<Clan>NpcGenerator.csv", ["NPC/RiverClanNpcGenerator.csv", "NPC/Scars.csv"]), ["NPC/RiverClanNpcGenerator.csv"]);
+  const notes = { "Stamina.RegenRate": [{ doc: "exploration.md", heading: "Stamina", anchor: "#stamina", text: "Back when not running: 20 per second" }],
+    "TuningData.csv": [{ doc: "clan-life.md", heading: "Dens", anchor: "#dens", text: "Housing in TuningData" }], _help: "x" };
+  const told = D.notesFor("TuningData.csv", keys, notes);
+  assert.deepEqual(Object.keys(told.rows), ["Gameplay.Exploration.Stamina.RegenRate"]);
+  assert.equal(told.table[0].text, "Housing in TuningData");
+  // The search finds a row by its note's words, once the index has the rows.
+  const index = { "TuningData.csv": { rows: keys, descriptions: {} } };
+  assert.deepEqual(D.search("not running", { notes, index }), [{ kind: "row", text: "Gameplay.Exploration.Stamina.RegenRate",
+    where: "Back when not running: 20 per second (Tuning data)", table: "TuningData.csv", row: "Gameplay.Exploration.Stamina.RegenRate" }]);
+});
+
 test("search finds a row by a synonym", () => {
   const hits = D.search("mouse", { quick: QUICK.rows, titles: TITLES });
   assert.equal(hits[0].kind, "quick");

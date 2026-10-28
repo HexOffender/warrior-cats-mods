@@ -17,7 +17,9 @@ The page has three parts:
   the game's normal value and a **Normal** button that puts it back.
 - **Find a number:** a search across every table. Type what the number does ("run", "xp", "mouse",
   "scars", "build time") and pick it from the list.
-- **All tables:** every table, cell by cell, for anything Quick changes doesn't have.
+- **All tables:** every table, cell by cell, for anything Quick changes doesn't have. At its top, **Your
+  changes** lists every change in the mod in words, each with **Normal**. Under a row's name is what the
+  game's mechanics notes say about it, where they say anything; most rows have only their name.
 
 Every quick change is an ordinary change to a cell: it shows in All tables too, and in the file under
 **For mod makers**.
@@ -53,8 +55,11 @@ a cat is made, so cats already in your save keep theirs. A new game, or new kits
 
 - The page saves a change only when you press **Save to mod**, and the game gets it only when you
   **Apply to game** (or **Play**, which applies first).
-- After an Apply, the log says which mods went in. A warning there names a change the game didn't take,
+- After an Apply, the log says which mods went in, and lists the numbers they changed, one a line
+  ("Tuning: Running speed 390 -> 600 (My mods)"). A warning there names a change the game didn't take,
   with the mod it's in.
+- After an Apply from the studio, the page marks each change "in the game since" the time of that Apply,
+  and one you've made since "not in the game yet".
 - Running speed, walking, jumping and stamina are read by the game's own code. For the other quick changes
   the numbers come from the tables; that the game plays by them hasn't been seen in play yet, which the
   card says.
@@ -75,7 +80,8 @@ a cat is made, so cats already in your save keep theirs. A new game, or new kits
 
 ## Undo
 
-- **One change:** its **Normal** button in Quick changes, or type the game's value back into the cell.
+- **One change:** its **Normal** button in Quick changes or in Your changes, or type the game's value back
+  into the cell.
 - **A whole table:** **Put this table back**, above the table, in All tables.
 - **Not saved yet:** switch to another mod in the bar and choose **Switch without saving**, or close the
   page.

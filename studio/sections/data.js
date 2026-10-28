@@ -34,7 +34,7 @@ export default {
   async mount(root, wc) {
     const { el, api, clear, toast } = wc;
     let edits = {}, rowOps = {};
-    let names = [], kinds = {}, hidden = [], titles = {}, index = null, indexing = null;
+    let names = [], kinds = {}, hidden = [], titles = {}, notes = {}, index = null, indexing = null;
     const cache = {}, loading = {};   // table -> its rows (GET /game/data/<table>); the request on its way
     const views = {};                 // table -> what the grid had: its filter, the multiply choices, its scroll
     let current = null;               // the table open in All tables
@@ -59,8 +59,10 @@ export default {
     const quickBox = el("div", { class: "card", id: "data-quick" });
     const listBox = el("div", { class: "card data-list" });
     const tableBox = el("div", { class: "stack data-table", style: { minWidth: "0" } });
+    const yours = el("div", { class: "stack", id: "data-yours" });
     const allFold = el("details", { class: "card fold", id: "data-all" },
       el("summary", {}, el("h2", { text: "All tables" }), el("span", { class: "muted", text: "Every table the game plays by, cell by cell" })),
+      yours,
       el("div", { class: "data-grid" }, listBox, tableBox));
     const makersFold = el("details", { class: "card fold" },
       el("summary", {}, el("h2", { text: "For mod makers" }), el("span", { class: "muted", text: "The data.json this page writes" })),
@@ -87,8 +89,49 @@ export default {
       out.set(D.toJson(edits, rowOps, headers()));
       renderList();
       refreshQuick();
+      renderYours();
       if (rebuild && current && cache[current]) renderTable();
       else tableHook?.();
+    }
+
+    // ---------- Your changes, and what's in the game ----------
+    // applied: what the last Apply from this studio put in the game (its manifest's csv_changes), for "in the
+    // game since 15:30". It comes with the "installed" event (wc.bus.on: whether or not the page has unsaved
+    // changes), and nothing is read again for it. Before an Apply here, nothing is said either way.
+    let applied = null;
+    const since = (t, row, column, value) => applied && applied.mods.includes(target.current)
+      && applied.cells.get(`${t}|${row}|${column}`) === String(value) ? applied.when : null;
+    const said = when => (applied && applied.mods.includes(target.current) ? (when ? `in the game since ${when}` : "not in the game yet") : null);
+    const asked = new Set();   // tables Your changes has asked for, once each
+    function renderYours() {
+      const list = D.changeList(edits, rowOps, cache);
+      for (const c of list) {
+        if (cache[c.table] || !inGame(c.table) || asked.has(c.table)) continue;
+        asked.add(c.table);
+        getTable(c.table).then(() => renderYours()).catch(() => { /* its line says ? for the game's value */ });
+      }
+      clear(yours).append(el("h3", { text: "Your changes" }));
+      if (!list.length) { yours.append(el("p", { class: "muted", text: "This mod doesn't change any table yet." })); return; }
+      const ul = el("ul", { class: "changes" });
+      for (const c of list) {
+        let words, mark = null, undo;
+        if (c.kind === "cell") {
+          words = `${title(c.table)}: ${D.rowName(cache[c.table], c.row)}, ${c.column}: ${c.was ?? "?"} -> ${c.now}`;
+          mark = said(since(c.table, c.row, c.column, c.now));
+          undo = () => { D.unsetCell(edits, c.table, cache[c.table]?.header, c.row, c.column); changed(); };
+        } else if (c.kind === "all") {
+          words = `${title(c.table)}: ${c.said}`;
+          const any = applied && [...applied.cells.keys()].some(k => k.startsWith(`${c.table}|`) && k.endsWith(`|${c.column}`));
+          mark = said(any ? applied.when : null);
+          undo = () => { D.unsetCell(edits, c.table, cache[c.table]?.header, "*", c.column); changed(); };
+        } else {
+          words = `${title(c.table)}: ${c.said}`;
+          undo = () => { delete rowOps[c.table]; changed(); };
+        }
+        ul.append(el("li", { class: "row" }, el("span", { text: words }), mark ? el("span", { class: "muted", text: `(${mark})` }) : null,
+          el("button", { class: "btn ghost small", type: "button", text: c.kind === "rows" ? "Remove" : "Normal", "aria-label": `Put back ${words}`, onclick: undo })));
+      }
+      yours.append(ul);
     }
 
     // ---------- reading tables ----------
@@ -109,7 +152,7 @@ export default {
         indexing = api.get("/game/data/index").then(r => { index = r.tables; }).catch(() => { index = {}; })
           .finally(() => { indexing = null; if (findBox.value.trim()) find(); });
       }
-      const hits = D.search(q, { quick: quickRows(), titles, index: index || {} });
+      const hits = D.search(q, { quick: quickRows(), titles, notes, index: index || {} });
       clear(findResults);
       if (!q) return;
       for (const h of hits) {
@@ -187,6 +230,15 @@ export default {
         normalBtn.disabled = !edited;
         box.classList.toggle("edited", edited);
         now.textContent = edited ? `${q.kind === "factor" ? "×1" : normal} -> ${q.kind === "factor" ? "×" + value : value}` : `Normal: ${q.kind === "factor" ? "×1" : normal}`;
+        if (edited) {
+          // In the game when every cell it changes has, in the last Apply, the value it shows.
+          const all = D.quickCells(q, t).every(c => {
+            const v = D.valueFor(edits[q.table], t.header, t.rows.find(r => r[0] === c.row), c.index);
+            return !v || v.bad || since(q.table, c.row, c.column, v.value);
+          });
+          const mark = said(all ? applied?.when : null);
+          if (mark) now.textContent += ` · ${mark}`;
+        }
         preview.textContent = q.kind === "factor" ? D.quickPreview(q, t, value, q.names || {}) : "";
         preview.hidden = !preview.textContent;
       };
@@ -270,11 +322,17 @@ export default {
 
       const filterBox = el("input", { type: "search", id: "data-row-filter", placeholder: "Filter rows", "aria-label": "Filter rows", value: view.filter });
       const body = el("tbody");
+      // What the mechanics notes say about the table and its rows (data-notes.json).
+      const told = D.notesFor(n, rows.map(r => r[0]), notes);
+      const aboutTable = titles[n]?.what ? null : told.table[0];
+      const noted = Object.keys(told.rows).length;
       const card = el("div", { class: "card" },
         el("div", { class: "row spread" }, el("h2", {}, title(n), " ", el("span", { class: "muted mono file", text: n })),
           kindSaid ? el("span", { class: `chip ${kindCls}` }, el("i"), kindSaid) : null),
         titles[n]?.what ? el("p", { class: "note" }, titles[n].what, ". ", titles[n].doc ? wc.docLink(titles[n].doc, "How it works") : null) : null,
-        el("p", { class: "note", text: `${rows.length} rows. Press Enter on a value to change it, or click it; arrow keys move between values.${rows.some((r, i) => rows.findIndex(x => x[0] === r[0]) !== i) ? " Some row names repeat; a change applies to every row with that name." : ""}` }));
+        aboutTable ? el("p", { class: "note" }, aboutTable.text, " ", wc.docLink(`docs/mechanics/${aboutTable.doc}${aboutTable.anchor}`, "How it works")) : null,
+        el("p", { class: "note", text: `${rows.length} rows. Press Enter on a value to change it, or click it; arrow keys move between values.${rows.some((r, i) => rows.findIndex(x => x[0] === r[0]) !== i) ? " Some row names repeat; a change applies to every row with that name." : ""}` }),
+        noted ? el("p", { class: "muted", text: `The mechanics notes explain ${noted === rows.length ? "every row" : `${noted} of these rows`}: their line shows under the row's name.${noted < rows.length ? " The others show their name only." : ""}` }) : null);
 
       // The file's own row removals and additions, kept as they are.
       if (rowOps[n]) {
@@ -338,7 +396,8 @@ export default {
           return;
         }
         if (!ed) { clear(td).append(english(v)); return; }
-        clear(td).append(el("span", {}, english(ed.value), el("span", { class: "was", text: ed.bad ? `${ed.how}` : `${v}${ed.how !== "set" ? " · " + ed.how : ""}` })));
+        const mark = ed.bad ? null : said(since(n, row[0], header[i], ed.value));
+        clear(td).append(el("span", {}, english(ed.value), el("span", { class: "was", text: ed.bad ? `${ed.how}` : `${v}${ed.how !== "set" ? " · " + ed.how : ""}${mark ? " · " + mark : ""}` })));
       }
       // A value for a cell: the game's own takes the row's edit away, unless "*" covers the column (then it keeps
       // the row out of it); anything else is set. Only that cell (and its namesakes) is drawn again.
@@ -407,7 +466,11 @@ export default {
             const kind = colKinds[i];
             const td = el(i === 0 ? "th" : "td", { class: `${kind.kind === "number" ? "num" : ""} ${kind.kind}`, scope: i === 0 ? "row" : false, tabindex: "-1", "data-focus": `cell:${row[0]}:${i}` });
             cellRow.set(td, row);
-            if (i === 0) { td.append(texts[v] ? el("span", { title: v, text: texts[v] }) : el("span", { class: "mono", text: v })); }
+            if (i === 0) {
+              td.append(texts[v] ? el("span", { title: v, text: texts[v] }) : el("span", { class: "mono", text: v }));
+              const note = told.rows[v]?.[0];
+              if (note) td.append(el("span", { class: "row-note", text: note.text }));
+            }
             else if (kind.kind === "note") td.append(el("span", { class: "muted", text: v }));
             else show(td, row, i);
             if (!active && i > 0 && kind.kind !== "note") setActive(td);
@@ -459,9 +522,14 @@ export default {
     // After an Apply the file is read again (so the bar's list and the file are what the install saw), unless
     // the page has changes not saved yet.
     const off = wc.installedEvent(target, () => target.refresh().catch(() => { /* the bar says */ }));
-    const handle = { unmount() { clearTimeout(findTimer); off(); } };
+    // What that Apply put in the game, for "in the game since": kept whether or not the page has unsaved changes.
+    const offApplied = wc.bus.on("installed", d => {
+      const now = D.inGameFrom(d, new Date().toTimeString().slice(0, 5));
+      if (now) { applied = now; changed(false); }
+    });
+    const handle = { unmount() { clearTimeout(findTimer); off(); offApplied(); } };
     try {
-      [quickData, titles] = await Promise.all([staticJson("data-quick.json"), staticJson("data-titles.json")]);
+      [quickData, titles, notes] = await Promise.all([staticJson("data-quick.json"), staticJson("data-titles.json"), staticJson("data-notes.json")]);
     } catch (e) { toast(`Quick changes couldn't load: ${e.message}`, "bad"); }
     try {
       ({ tables: names, kinds, hidden = [] } = await api.get("/game/data"));

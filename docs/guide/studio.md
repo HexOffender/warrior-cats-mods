@@ -60,8 +60,9 @@ out again with **Take all mods out of the game** (Settings and repair).
 While the studio applies, the panel at the bottom right shows what it's doing, line by line, as it goes;
 when it's done, the line at the top says what happened in a sentence: which mods went in, or what kept
 one out. After Play the panel closes by itself unless there's a warning, in which case it stays until
-you close it. **Last apply**, at the top, opens the last one again; it's also kept as `last-apply.log` in
-your files' folder, for anyone helping you.
+you close it. When your mods change the game's numbers, the panel lists them too, one a line ("Tuning:
+Running speed 390 -> 450 (My mods)"), up to twenty. **Last apply**, at the top, opens the last one again;
+it's also kept as `last-apply.log` in your files' folder, for anyone helping you.
 
 If some mods can't be made ready, nothing goes in, and the panel says which and why. Fix or switch
 off those mods, or press **Apply the rest anyway** to put the others in; a mod that's skipped that way

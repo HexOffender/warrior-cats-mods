@@ -258,6 +258,79 @@ export function quickPreview(entry, table, value, rowNames = {}) {
   return said.join(", ") + (cells.length > 3 ? ", ..." : "");
 }
 
+// ---------- Your changes, and what's in the game ----------
+// A row's name in words: its key, with the next column's word beside a number ("8 (Leader)" in NPC/CatSize).
+export function rowName(table, key) {
+  const row = table?.rows.find(r => r[0] === key);
+  return row && /^\d+$/.test(key) && row[1] && !NUM.test(row[1]) ? `${key} (${row[1]})` : key;
+}
+// Every change in the file, for the Your changes card: { table, kind: "cell" | "all" | "rows", row, column,
+// was, now, said }. A cell's "now" is what the game gets (valueFor), its "was" the game's own; both null
+// while the table isn't read.
+export function changeList(edits, rowOps = {}, cache = {}) {
+  const out = [];
+  for (const [t, rows] of Object.entries(edits)) {
+    const table = cache[t];
+    for (const [row, cols] of Object.entries(rows)) {
+      for (const [col, value] of Object.entries(cols)) {
+        const column = col === "__first__" ? table?.header?.[1] ?? "value" : col;
+        if (row === "*") {
+          const n = multiplier(value);
+          out.push({ table: t, kind: "all", row, column, said: `every ${column} ${n !== null ? "× " + n : "= " + shown(value)}` });
+          continue;
+        }
+        const i = table ? table.header.findIndex(h => h.toLowerCase() === column.toLowerCase()) : -1;
+        const r = table?.rows.find(x => x[0] === row);
+        const seen = r && i > 0 ? valueFor({ [row]: { [column]: value } }, table.header, r, i) : null;
+        out.push({ table: t, kind: "cell", row, column: i > 0 ? table.header[i] : column, was: r && i > 0 ? r[i] : null,
+          now: seen ? seen.value : typeof value === "string" ? value : shown(value) });
+      }
+    }
+  }
+  for (const [t, ops] of Object.entries(rowOps)) out.push({ table: t, kind: "rows", said: rowOpsWords(ops) });
+  return out;
+}
+// What the last Apply put in the game, from its manifest's csv_changes: { when, cells: Map("table|row|column" ->
+// value) }, the data tables only; null when the manifest has none.
+export function inGameFrom(manifest, when, nonasset = "Wrc/Content/Gameplay/DataTables/NonAsset/") {
+  const m = manifest && (manifest.sections ? manifest : manifest.manifest);
+  if (!m || !m.csv_changes) return null;
+  const cells = new Map();
+  for (const [path, changes] of Object.entries(m.csv_changes)) {
+    if (!path.startsWith(nonasset)) continue;
+    for (const c of changes) if (c.column !== "(row)") cells.set(`${path.slice(nonasset.length)}|${c.row}|${c.column}`, c.to);
+  }
+  return { when, cells, mods: m.mods || [] };
+}
+
+// ---------- the mechanics notes (data-notes.json, from docs/mechanics by tools/re/mechanics_notes.py) ----------
+const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const parts = (token, part) => token.split(/<[^>]+>/).map(escapeRe).join(part);
+// The tables a table token names ("CatSize.csv" is NPC/CatSize.csv), by their file's name.
+export function tokenTables(token, tables) {
+  if (!/\.csv$/i.test(token)) return [];
+  const re = new RegExp(`(^|/)${parts(token, "[^/.]+")}$`, "i");
+  return tables.filter(t => re.test(t));
+}
+// The rows a key token names: a key that is the token, or ends with "." and the token; <x> stands for one part
+// of a key. A plain token that fits more than one row names none (it's ambiguous); a pattern names all it fits.
+export function tokenRows(token, keys) {
+  if (/\.csv$/i.test(token)) return [];
+  const re = new RegExp(`(^|\\.)${parts(token, "[^.]+")}$`);
+  const hits = keys.filter(k => re.test(k));
+  return /<[^>]+>/.test(token) || hits.length === 1 ? hits : [];
+}
+// A table's notes: { table: [notes about the table], rows: {key: [notes]} }.
+export function notesFor(table, keys, notes = {}) {
+  const out = { table: [], rows: {} };
+  for (const [token, list] of Object.entries(notes)) {
+    if (token.startsWith("_") || !Array.isArray(list)) continue;
+    if (tokenTables(token, [table]).length) { out.table.push(...list); continue; }
+    for (const key of tokenRows(token, keys)) (out.rows[key] ||= []).push(...list);
+  }
+  return out;
+}
+
 // A table's name in words: its title (data-titles.json), else its file's name split into words
 // ("QuestObjectives.csv" -> "Quest objectives", "NPC/EarType.csv" -> "NPC ear type").
 export function tableTitle(name, titles = {}) {
@@ -273,7 +346,7 @@ const has = (text, words) => { const low = text.toLowerCase(); return words.ever
 // Hits for a query: the quick rows (by their labels, words people use and what they do), the tables (by their
 // titles), then any row of any table (by its name and its description). Each { kind: "quick" | "table" | "row",
 // text, table, row, id }; at most `limit`.
-export function search(query, { quick = [], titles = {}, index = {}, limit = 30 } = {}) {
+export function search(query, { quick = [], titles = {}, index = {}, notes = {}, limit = 30 } = {}) {
   const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const out = [];
@@ -285,6 +358,17 @@ export function search(query, { quick = [], titles = {}, index = {}, limit = 30 
   }
   for (const [t, info] of Object.entries(titles)) {
     if (has([t, info.title, info.what].join(" "), words)) out.push({ kind: "table", text: info.title, where: info.what, table: t });
+  }
+  // The mechanics notes' lines, on the tables and rows they name (the rows once the index is in).
+  const tables = Object.keys(index);
+  for (const [token, list] of Object.entries(notes)) {
+    if (token.startsWith("_") || !Array.isArray(list)) continue;
+    const note = list.find(n => has(`${n.text} ${n.heading}`, words));
+    if (!note) continue;
+    for (const t of tokenTables(token, tables)) out.push({ kind: "table", text: title(t), where: note.text, table: t });
+    for (const t of tables) {
+      for (const row of tokenRows(token, index[t].rows || [])) out.push({ kind: "row", text: row, where: `${note.text} (${title(t)})`, table: t, row });
+    }
   }
   for (const [t, info] of Object.entries(index)) {
     for (const row of info.rows || []) {
