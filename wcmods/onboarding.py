@@ -6,44 +6,77 @@ The steps, in the order the studio shows them:
 2. a safety copy of the save, made the first time the studio sees one;
 3. UE4SS, the script loader most mods need: downloaded from its GitHub releases (or a .zip the player
    gives) and set up for players (ue4ss.install_loader);
-4. the mod menu's pages about the game, a mod of their own (Menu pages): downloaded from its GitHub
-   releases (or a .zip the player gives) into their mods (menupages.add), or skipped for now (wcmods.json
-   "skip_menu_pages").
+4. letting mods run their own scripts (wcmods.json "allow_code_mods", the same switch as Options on the
+   Settings and repair page), or not now ("skip_code");
+5. the mods that go with Clan Mod Studio (addons.py): Add all four, which the page does one by one, or not
+   now ("setup_addons": "added" or "not now"). An add-on with no release yet can't keep the step open: the
+   Add-ons card says what didn't arrive. An older studio's "Not now" for Menu pages alone
+   ("skip_menu_pages") counts as not now.
 """
 import json
 import os
 import tempfile
 import time
 
-from . import menupages, mods as modlib, pipeline, ue4ss
+from . import addons, menupages, mods as modlib, pipeline, ue4ss
 from .formats import save
-from .config import STEAM_APP_ID, game_running, is_game_dir as _game_ok, steam_elsewhere, steam_elsewhere_text
+from .config import (STEAM_APP_ID, Config, game_running, is_game_dir as _game_ok, steam_elsewhere,
+                     steam_elsewhere_text)
 
 INBOX = os.path.join(tempfile.gettempdir(), "wcmods-studio-inbox.json")
+STEPS = ("game", "save", "backup", "loader", "code", "addons")   # what "done" counts
+ADDON_CHOICES = ("added", "not now")
 
 
 def status(cfg, backups_root):
-    """{"game", "save", "backup", "loader", "pages", "running", "done"}: each step's state for the studio. The
-    game's "steam" is Steam's copy of the game when it isn't the one found (with "steam_text" saying what that
-    means): the Mods page offers to switch, whether or not every step is done."""
-    cfg.reload()
-    game = cfg.game_dir if _game_ok(cfg.game_dir) else None
-    win64 = cfg.win64_dir if game else None
-    save_found = os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME))
+    """{"game", "save", "backup", "loader", "code", "addons", "pages", "running", "done"}: each step's state
+    for the studio. The game's "steam" is Steam's copy of the game when it isn't the one found (with
+    "steam_text" saying what that means): the Mods page offers to switch, whether or not every step is done.
+
+    wcmods.json is read afresh into a Config of this call's own: the studio's shared one is never swapped
+    under an install that has noted something it hasn't saved yet."""
+    now = Config(cfg.root, cfg.data_dir)
+    data = now.data
+    game = now.game_dir if _game_ok(now.game_dir) else None
+    win64 = now.win64_dir if game else None
+    save_found = os.path.isfile(os.path.join(now.save_dir, save.SAV_NAME))
     backups = save.list_backups(backups_root)
-    steam = steam_elsewhere(cfg) if game else None
+    steam = steam_elsewhere(now) if game else None
+    missing = [a.id for a in addons.ADDONS if not addons.installed(now.mods_root, a)]
+    choice = data.get("setup_addons") if data.get("setup_addons") in ADDON_CHOICES else \
+        "not now" if data.get("skip_menu_pages") else None
     out = {"game": {"ok": bool(game), "dir": game, "steam": steam,
                     "steam_text": steam_elsewhere_text(steam, game, fix=False) if steam else None},
            "save": {"ok": save_found},
            "backup": {"ok": bool(backups), "latest": backups[-1] if backups else None},
            "loader": {"ok": ue4ss.loader_installed(win64), "page": ue4ss.RELEASE_PAGE},
-           "pages": menupages.status(cfg),
+           "code": {"ok": bool(data.get("allow_code_mods") or data.get("skip_code")),
+                    "allowed": bool(data.get("allow_code_mods")), "skipped": bool(data.get("skip_code"))},
+           # Done once Add all four has run (whatever came of each), or Not now, or with all four in.
+           "addons": {"ok": bool(choice) or not missing, "missing": missing, "choice": choice},
+           "pages": menupages.status(now),
            "running": game_running()}
-    # The pages step is done once they're in your mods (on or off, code allowed or not: the mod's card says
-    # what's missing), or skipped.
-    out["pages"]["ok"] = out["pages"]["installed"] or bool(cfg.data.get("skip_menu_pages"))
-    out["done"] = all(out[k]["ok"] for k in ("game", "save", "backup", "loader", "pages"))
+    out["pages"]["ok"] = out["pages"]["installed"] or bool(data.get("skip_menu_pages"))
+    out["done"] = all(out[k]["ok"] for k in STEPS)
     return out
+
+
+def skip_code(cfg):
+    """Get set up without letting mods run their own scripts for now (Options can still allow it)."""
+    cfg.reload()
+    cfg.data["skip_code"] = True
+    cfg.save()
+    return {"skipped": True}
+
+
+def addons_step(cfg, choice):
+    """The add-ons step done: "added" (Add all four has run) or "not now"."""
+    if choice not in ADDON_CHOICES:
+        raise ValueError(f'the add-ons step is "added" or "not now", not {choice!r}')
+    cfg.reload()
+    cfg.data["setup_addons"] = choice
+    cfg.save()
+    return {"choice": choice}
 
 
 def set_game_dir(cfg, folder):
@@ -143,18 +176,36 @@ def put_inbox(path):
         json.dump({"path": os.path.abspath(path), "time": time.time()}, f)
 
 
-def inbox():
-    """The .zip or folder waiting to be added (left within the last ten minutes), or None."""
+def _read_inbox():
     try:
         with open(INBOX, encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
         return None
+    return data if isinstance(data, dict) else None
+
+
+def inbox():
+    """The .zip or folder waiting to be added (left within the last ten minutes, or shown on the page since,
+    where its preview may wait as long as the player likes), or None."""
+    data = _read_inbox()
+    if data is None:
+        return None
     path = data.get("path")
-    if not path or time.time() - data.get("time", 0) > 600 or not os.path.exists(path):
+    old = time.time() - data.get("time", 0) > 600 and not data.get("shown")
+    if not path or old or not os.path.exists(path):
         clear_inbox()
         return None
     return path
+
+
+def shown_inbox():
+    """The page shows the waiting mod's preview: from now on it waits until it's added or cleared."""
+    data = _read_inbox()
+    if data and not data.get("shown"):
+        data["shown"] = True
+        with open(INBOX, "w", encoding="utf-8") as f:
+            json.dump(data, f)
 
 
 def clear_inbox():

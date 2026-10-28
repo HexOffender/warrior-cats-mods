@@ -52,9 +52,14 @@ def loader_identity(win64_dir):
     return {"commit": commit, "dll": digest}
 
 
+class NoRelease(RuntimeError):
+    """GitHub has no release of it (yet): its project hasn't published one."""
+
+
 def github_release(api, what, page, timeout=20):
     """A GitHub release, as its API gives it (its "tag_name" and "assets"), from its API address. Trouble
-    reaching GitHub is a RuntimeError saying so, with `page` for downloading `what` by hand."""
+    reaching GitHub is a RuntimeError saying so, with `page` for downloading `what` by hand; no release at
+    all is NoRelease, one of those."""
     import urllib.error
     import urllib.request
     req = urllib.request.Request(api, headers={"User-Agent": "wcmods", "Accept": "application/vnd.github+json"})
@@ -63,7 +68,7 @@ def github_release(api, what, page, timeout=20):
             return json.load(r)
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            raise RuntimeError(f"{what} has no release on GitHub yet ({page})") from None
+            raise NoRelease(f"{what} has no release on GitHub yet ({page})") from None
         if e.code in (403, 429):
             raise RuntimeError(f"GitHub is turning requests away for now (too many); try again in an hour, or "
                                f"download {what} from {page} and give the .zip to Clan Mod Studio") from None

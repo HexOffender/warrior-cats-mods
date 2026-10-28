@@ -117,6 +117,13 @@ def names_without_text(cfg, ctx, game):
 SHARED_LUA = (view, draw, world, menu, game_lua)
 
 
+def leave_out(cfg, mods, build=None):
+    """{mod id: why} for the mods that are on but that an install leaves out, with a warning instead of
+    stopping: made for an older version of the game (gamebuild.held_back), or needing a newer Clan Mod Studio
+    than this one (mods.too_new), and the mods that need those."""
+    return {**modlib.too_new(mods), **gamebuild.held_back(cfg, mods, build)}
+
+
 def build(cfg, mods, out_dir, log=print):
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
@@ -125,8 +132,9 @@ def build(cfg, mods, out_dir, log=print):
     # player chose to use it anyway on this build; the in-game module follows what the update moved.
     build = gamebuild.current(cfg)["build"]
     old = gamebuild.outdated(cfg, mods, build)
-    # Those mods, and the ones that need them: a game update alone doesn't stop installing.
-    left_out = gamebuild.held_back(cfg, mods, build)
+    # Those mods, and the ones that need them, and the mods that need a newer wcmods than this one (mod.json
+    # "wcmods"): left out with a warning, so neither a game update nor an older wcmods stops installing.
+    left_out = leave_out(cfg, mods, build)
     # A mod that needs another mod ("requires" in mod.json) which is missing or off is left out, and
     # the report says why, so installing stops until that's sorted (or --force leaves it out).
     unmet = modlib.unmet(mods, left_out)
@@ -217,7 +225,7 @@ def build(cfg, mods, out_dir, log=print):
     manifest = {"mods": [m.id for m in enabled], "names": titles, "sections": report, "outputs": [], "ue4ss_mods": [],
                 "ue4ss_shared": [], "save_ops": ctx.save_ops, "warnings": ctx.warnings, "notes": ctx.notes,
                 "csv_changes": csv_changes, "table_rows": table_changes, "files": sorted(ctx.files),
-                "built": datetime.datetime.now().isoformat(timespec="seconds")}
+                "built": datetime.datetime.now().isoformat(timespec="seconds"), "left_out": left_out}
     manifest["outdated"] = [{"id": i, "name": titles[i], "made_for": o["made_for"], "used": o["allowed"]}
                             for i, o in old.items()]
     for o in manifest["outdated"]:
@@ -377,24 +385,29 @@ def code_installed(data):
 
 def pending(cfg, mods):
     """How your mods differ from what's installed: {"installed" (ever), "on" and "off" (ids turned on or off
-    since), "changed" (on both times, with files changed since), "redo" (why the last install has to be
-    made again: it was made before UE4SS or the Oodle DLL was there, so it left parts out), "any"}. The
-    studio's Apply button shows it."""
+    since), "changed" (on both times, with files changed since), "left_out" ({id: why} for the mods that are
+    on but that an install leaves out: leave_out()), "redo" (why the last install has to be made again: it
+    was made before UE4SS or the Oodle DLL was there, so it left parts out), "any"}. The studio's Apply
+    button shows it. A left-out mod that's still in the game counts as a change: the next install takes it
+    out."""
     # wcmods.json read afresh, without touching the studio's Config: reloading that would throw away what an
     # install running at the same time has noted but not saved yet.
     try:
         data = cfg.peek()
     except (OSError, ValueError):   # not there yet, or being written this moment
         data = cfg.data
-    # What an install would put in: mods made for an older version of the game stay out (unless used anyway).
-    left_out = set(gamebuild.held_back(cfg, mods))
-    now = {m.id for m in mods if m.enabled} - left_out
+    # What an install would put in: mods made for an older version of the game stay out (unless used anyway),
+    # and so do mods that need a newer wcmods.
+    left_out = leave_out(cfg, mods)
+    switched_on = {m.id for m in mods if m.enabled}
+    now = switched_on - set(left_out)
     inst = data.get("installed")
     if not inst:
         # The mod menu's window goes in with every install, so with the script loader there one is worth
         # making even with no mods on.
         redo = ["the mod menu isn't in the game yet"] if not now and cfg.ue4ss_mods_dir else []
-        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "redo": redo, "any": bool(now or redo)}
+        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "left_out": left_out, "redo": redo,
+                "any": bool(now or redo)}
     was = set(inst.get("mods", []))
     try:
         built = datetime.datetime.fromisoformat(inst.get("built", "")).timestamp()
@@ -427,8 +440,11 @@ def pending(cfg, mods):
     # takes it out again.
     if not data.get("allow_code_mods") and code_installed(data):
         redo.append("the game has code from a test install, and mods that run code are off")
-    out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed, "redo": redo}
-    out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo)
+    # "off" is what was switched off; a mod left out while it's on is in left_out instead, and the install
+    # still has to take it out of the game while it's there.
+    out = {"installed": True, "on": sorted(now - was), "off": sorted(was - switched_on), "changed": changed,
+           "left_out": left_out, "redo": redo}
+    out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo or was & set(left_out))
     return out
 
 

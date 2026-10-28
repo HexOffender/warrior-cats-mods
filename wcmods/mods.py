@@ -6,6 +6,8 @@ A mod is a folder under mods/ (in your own folder, config.data_dir(); not wcmods
    "requires": ["menu-pages"],                  mods it can't work without: turned on with it
    "uses": ["mod-menu"],                        mods it works with when they're on ("mod-menu", the in-game
                                                 menu's window, for a page: wcmods' own, so always there)
+   "wcmods": "0.4.0",                           the oldest Clan Mod Studio (wcmods) that can build it; an
+                                                older one leaves it out and says to update (too_new)
    "pack": true}                                a mod pack: nothing of its own, its "requires" are its mods
                                                 (packs.py)
 and any of:
@@ -74,6 +76,9 @@ class Mod:
         self.author = str(meta.get("author") or "")
         self.requires = _ids(meta.get("requires"))
         self.uses = [i for i in _ids(meta.get("uses")) if i not in self.requires]
+        # The oldest wcmods that can build it ("wcmods": "0.4.0"); one that isn't a version is as good as none.
+        wanted = meta.get("wcmods")
+        self.wcmods_min = wanted.strip() if isinstance(wanted, str) and version_key(wanted) else None
 
     @classmethod
     def broken(cls, folder, problem):
@@ -82,7 +87,7 @@ class Mod:
         m = cls.__new__(cls)
         m.folder, m.id, m.problem, m.meta = folder, os.path.basename(folder), problem, {}
         m.name, m.description, m.enabled, m.priority = m.id, "", False, 0
-        m.version, m.author, m.requires, m.uses = "", "", [], []
+        m.version, m.author, m.requires, m.uses, m.wcmods_min = "", "", [], [], None
         return m
 
     def kinds(self):
@@ -132,7 +137,7 @@ class Mod:
                 "version": self.version, "author": self.author,
                 "requires": [i for i in self.requires if i != MENU_ID], "uses": self.uses,
                 "code": self.has_code(), "menu_page": self.menu_page(), "pack": bool(self.meta.get("pack")),
-                "problem": self.problem}
+                "wcmods": self.wcmods_min, "problem": self.problem}
 
 
 def file_problem(name, e):
@@ -151,6 +156,62 @@ def _ids(value):
     if isinstance(value, str):
         value = [value]
     return [v.strip() for v in value if isinstance(v, str) and v.strip()] if isinstance(value, list) else []
+
+
+VERSION = re.compile(r"^\d+(\.\d+)*$")
+
+
+def version_key(text):
+    """A dotted version ("0.4.0") as a tuple to compare, or None when it isn't digits and dots. Trailing
+    zeros don't count, so "0.4" and "0.4.0" are the same version, and "0.10" is above "0.9"."""
+    s = text.strip() if isinstance(text, str) else ""
+    if not VERSION.match(s):
+        return None
+    parts = [int(p) for p in s.split(".")]
+    while len(parts) > 1 and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
+
+
+def missing_name(mod_id):
+    """What to call a mod that isn't in your mods: a mod that goes with Clan Mod Studio by its name
+    (addons.py), any other by its folder name, the only name there is for it."""
+    from . import addons
+    addon = addons.find(mod_id)
+    return addon.name if addon else mod_id
+
+
+def with_dependents(mods, base, why):
+    """`base` ({mod id: why it's left out}) and the mods that are on and need one of them, which can't work
+    without them: "needs <names>, <why>"."""
+    out = dict(base)
+    if not base:
+        return out
+    names = {m.id: m.name for m in mods}
+    for m in mods:
+        if m.enabled and m.id not in base:
+            need = [i for i in needed(mods, m.id) if i in base]
+            if need:
+                out[m.id] = f"needs {', '.join(names.get(i, i) for i in need)}, {why}"
+    return out
+
+
+def needs_newer(wanted, have=None):
+    """Why a mod whose mod.json says "wcmods": `wanted` can't be built by this Clan Mod Studio (__version__,
+    or `have`), or None when it can (or it says nothing, or nothing that's a version)."""
+    from . import __version__
+    have = have or __version__
+    if not version_key(wanted) or version_key(wanted) <= version_key(have):
+        return None
+    return f"needs Clan Mod Studio {wanted.strip()} or newer; you have {have}: update it"
+
+
+def too_new(mods, have=None):
+    """{mod id: why} for the mods that are on and need a newer Clan Mod Studio than this one (mod.json
+    "wcmods" above __version__, or `have`), and the mods that need them. A build leaves them out with a
+    warning; nothing is refused."""
+    base = {m.id: needs_newer(m.wcmods_min, have) for m in mods if m.enabled and needs_newer(m.wcmods_min, have)}
+    return with_dependents(mods, base, "which needs a newer Clan Mod Studio")
 
 
 def needed(mods, mod_id):
@@ -175,7 +236,8 @@ def needing(mods, mod_id):
 
 def unmet(mods, left_out=None):
     """{mod id: [why]} for the mods that are on but need a mod that's missing, off, or in `left_out`
-    ({id: why}, e.g. made for an older version of the game)."""
+    ({id: why}, e.g. made for an older version of the game). Mods are named by their names; a missing one
+    that goes with Clan Mod Studio by the name it has there."""
     by_id = {m.id: m for m in mods}
     left_out = left_out or {}
     out = {}
@@ -185,11 +247,11 @@ def unmet(mods, left_out=None):
         why = []
         for i in needed(mods, m.id):
             if i not in by_id:
-                why.append(f"needs {i}, which isn't in your mods")
+                why.append(f"needs {missing_name(i)}, which isn't in your mods")
             elif not by_id[i].enabled:
-                why.append(f"needs {by_id[i].name} ({i}), which is off")
+                why.append(f"needs {by_id[i].name}, which is off")
             elif i in left_out:
-                why.append(f"needs {by_id[i].name} ({i}), which is left out: {left_out[i]}")
+                why.append(f"needs {by_id[i].name}, which is left out: {left_out[i]}")
         if why:
             out[m.id] = why
     return out
@@ -207,7 +269,8 @@ def switch(mods, mod_id, on, cascade=False):
     if on:
         missing = [i for i in needed(mods, mod_id) if i not in by_id]
         if missing:
-            raise ValueError(f"{by_id[mod_id].name} needs {', '.join(missing)}, which isn't in your mods; add it first")
+            raise ValueError(f"{by_id[mod_id].name} needs {', '.join(missing_name(i) for i in missing)}, which isn't in "
+                             "your mods; add it first")
         for i in [mod_id] + needed(mods, mod_id):
             if not by_id[i].enabled:
                 by_id[i].set_enabled(True)

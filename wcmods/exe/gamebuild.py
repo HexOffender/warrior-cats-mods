@@ -110,17 +110,8 @@ def held_back(cfg, mods, build=None):
     """{mod id: why} for the mods a build leaves out on this version of the game: the ones made for an
     older version (unless used anyway), and the ones that need them, which can't work without them."""
     from .. import mods as modlib
-    out = {i: "made for an older version of the game" for i, o in outdated(cfg, mods, build).items() if not o["allowed"]}
-    if not out:
-        return out
-    names = {m.id: m.name for m in mods}
-    base = dict(out)
-    for m in mods:
-        if m.enabled and m.id not in base:
-            need = [i for i in modlib.needed(mods, m.id) if i in base]
-            if need:
-                out[m.id] = f"needs {', '.join(names.get(i, i) for i in need)}, made for an older version of the game"
-    return out
+    base = {i: "made for an older version of the game" for i, o in outdated(cfg, mods, build).items() if not o["allowed"]}
+    return modlib.with_dependents(mods, base, "made for an older version of the game")
 
 
 # ---------- wcmods' own parts on a new build ----------
