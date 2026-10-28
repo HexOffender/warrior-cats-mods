@@ -33,8 +33,10 @@ the names black, white, red, green, blue, gold, silver, pink, purple, teal, oran
 lime and navy, or `[r, g, b]` from 0 to 255. Keys starting with `_`, and `name` and `description`,
 are notes: wcmods ignores them, and the Palettes page keeps them. Anything else the page can't show (a
 misspelt eye, a coat past 24, a part a palette hasn't got) it lists under its tabs, keeps as written
-and offers to remove. Save to mod says what would keep the file out of the game, and what Apply would
-leave out of it (an eye the game hasn't got is skipped, with a warning; the rest goes in).
+and offers to remove, until the page sets that colour itself. Save to mod says what would keep the
+file out of the game, and what Apply would leave out of it (an eye the game hasn't got is skipped,
+with a warning; the rest goes in). A colour named twice in one part (`"03"` and `"3"`, `"Amber"` and
+`"iris2"`) is the later one in the file; Save to mod says which.
 
 Where palettes that are on set the same colour, the one later in the Mods list wins, colour by
 colour, and eyes too, whatever each calls them (a name in one, a number in another). The Mods page
@@ -119,14 +121,14 @@ and the Your cat page show it (`"WindClan/Warrior/3"`, for one of two cats with 
 game you're playing, or with the game's slot first for another (`"2/Duskfang"`), as `names.json`'s
 `cats` picks them. Every cat called the name changes, with a warning when that's more than one. Mods
 apply in priority order, so a later mod's choice wins even when it names the cat another way.
-- **`colours`** go onto the cat's own materials while you play. That covers menus and portraits,
-  and every part is optional; a colour is written any way `palette.json` takes one (the Your cat page
-  writes `#RRGGBB`). No other cat changes, and any colour works, including paws, ears,
+- **`colours`** go onto the cat's own materials while you play. That covers menus and the HUD's
+  portrait (the cat choice's small pictures show the saved colours), and every part is optional. No other cat changes, and any colour works, including paws, ears,
   nose and whiskers, which have no slots at all. The game sets a cat's colours again whenever it
   sets the cat up, so the UE4SS script (`WCModsCatLook`) puts them back twice a second. Another cat's
   are found by its name, so they go on only in the game you're playing, and a cat with the same name
   gets them too (with a warning). A rank-up changes a cat's name (Gustpaw becomes Gust-something),
   so install again after one. Uninstalling brings the saved colours back.
+  A colour is written any way `palette.json` takes one (the Your cat page writes `#RRGGBB`).
 - **`slots`** picks which colour slot the cat wears, written into your save on install, after a
   backup: `fur` 0–24 (20–24 are the Feral Edition's, which the game swaps without it), `pattern`
   and `marking` any slot, including new ones a palette adds, and the eyes' colours 0–24:
@@ -151,9 +153,10 @@ apply in priority order, so a later mod's choice wins even when it names the cat
   still give new ones. The studio's **Your cat** page has a Scars card for them.
 
 Keys starting with `_` are notes, kept as they are. Anything else the Your cat page can't change (a
-part the build doesn't know, a number past the game's) it lists under "Things this page can't
-change" on its card, keeps as written and offers to remove; Save to mod says what would keep the file
-out of the game.
+part the build doesn't know, a number past the game's, a cat written as something other than a look,
+like `"player": "none"`) it lists under "Things this page can't change", keeps as written and offers
+to remove; a look chosen for that cat on the page takes its place. Save to mod says what would keep
+the file out of the game.
 
 ### `controls.json`
 ```json
