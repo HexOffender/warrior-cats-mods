@@ -369,34 +369,48 @@ def _cooked_table(io):
 
 
 def _dialogue_graphs(io):
-    """Every object of the game's dialogue graph packages decodes by its class and writes back the same, and the
-    Short story template walks from its root to its lines (the format: docs/reverse-engineering.md)."""
+    """Every object of the game's dialogue graph packages decodes by its class and writes back the same, each
+    package rebuilt from the re-encoded objects is the game's byte for byte, and the Short story template walks
+    from its root to its lines (the format: docs/reverse-engineering.md). A package wcmods can't read, after a
+    game update, fails the check rather than the self-test."""
     from . import dialogue
     from .formats import cooked
     paths = sorted(p for p in io.files if p.startswith(dialogue.QUESTS) and p.endswith(".uasset")
                    and p.split("/")[3] in ("NpcDialogues", "QuestDialogues", "StoryDialogues"))
-    objects = same = 0
+    objects = same = rebuilt = 0
     problems = []
+    unreadable = (KeyError, ValueError, IndexError, struct.error)     # an unknown class, a FormatError, short data
     for p in paths:
         try:
             data = io.read_file(p)
             pkg = cooked.ZenPackage(data)
             values = cooked._Values(pkg)
+            blobs, end = [], 0
             for i in range(pkg.export_count):
                 e = pkg.export_entry(i)
                 schema = dialogue.SCHEMA[dialogue.CLASS_OF[e.cls]]
                 blob = pkg.export_data[e.offset:e.offset + e.size]
                 objects += 1
-                same += values.write_object(values.read_object(blob, schema), schema) == blob
-        except (KeyError, ValueError) as ex:      # a class it doesn't know, or a FormatError
+                blobs.append(values.write_object(values.read_object(blob, schema), schema))
+                same += blobs[-1] == blob
+                end = max(end, e.offset + e.size)
+            # the exports one after another, then the package file tag, as the game's packages have them
+            rebuilt += pkg.rebuild(b"".join(blobs) + pkg.export_data[end:], [len(b) for b in blobs]) == data
+        except unreadable as ex:
             problems.append(f"{p.rsplit('/', 1)[-1]}: {type(ex).__name__} {ex}")
     lines = []
     short = dialogue.QUESTS + dialogue.STORY_TEMPLATES["Short"] + ".uasset"
-    if short in io.files:
-        [g] = dialogue.read_graphs(io.read_file(short), short, "StoryDialogue_Short_Template")
-        lines = [n.props.get("SubTag") for n in g.walk() if n.cls in dialogue.TALKING]
-    ok = bool(paths) and not problems and same == objects and lines[:2] == ["Context.1", "Question.1"]
-    return ok, f"{len(paths)} packages, {same} of {objects} objects" + (f"; {problems[:2]}" if problems else "")
+    try:
+        if short in io.files:
+            [g] = dialogue.read_graphs(io.read_file(short), short, "StoryDialogue_Short_Template")
+            lines = [n.props.get("SubTag") for n in g.walk() if n.cls in dialogue.TALKING]
+    except unreadable as ex:
+        problems.append(f"the Short template's walk: {type(ex).__name__} {ex}")
+    walked = lines[:2] == ["Context.1", "Question.1"]
+    ok = bool(paths) and not problems and same == objects and rebuilt == len(paths) and walked
+    return ok, (f"{len(paths)} packages ({rebuilt} rebuilt the same), {same} of {objects} objects"
+                + ("" if walked or problems else "; the Short template doesn't start Context.1, Question.1")
+                + (f"; {problems[:2]}" if problems else ""))
 
 
 def _png_file(width, height, ctype, depth, rows, palette=None, trns=None):

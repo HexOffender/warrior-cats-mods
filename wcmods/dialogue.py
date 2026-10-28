@@ -8,12 +8,14 @@ docs/reverse-engineering.md, "Dialogue graphs", has the format and how each part
     0 for "go on" and 1 to 4 for answer button 1 to 4, with the button's text, trait, score and clan bonding.
   * A line is a talking node (QuestDialogueTalkingNode and its subclasses): Paragraph (FText), TalkingSource
     (who says it), TalkingSourceText (the name shown), VOEvent (the voice).
-  * Every line in the graphs is a key of the string table SwtStrings, which the game loads from
-    Strings_<language>.csv, or a placeholder; never the English words themselves.
+  * Every line in the graphs the game plays is a key of the string table SwtStrings, which the game loads
+    from Strings_<language>.csv, or a placeholder; never the English words themselves. (The template
+    packages' saved copies of their graph, which nothing plays, do hold some inline key names and English.)
   * Story and quest conversations are templates the game fills in as it plays them ("autofill", read from
     the code): a node's SubTag (story) or AutoFillSuffix (quest) is joined to the conversation's tag, and that
     row of StoryDialogues.csv or QuestDialogues.csv gives the line's StringKey, speaker, voice, and an
-    answer's trait, score and clan bonding.
+    answer's trait, score and clan bonding. A key Strings_EN hasn't got shows the row's DebugText: older
+    English in StoryDialogues.csv, the key itself in QuestDialogues.csv.
 
 conversations(game) gives every conversation with its lines in order. Nothing here writes graphs.
 """
@@ -179,6 +181,9 @@ STORY_TYPES = [
     ("Gameplay.Dialogue.Activity.Transition", ["Activity_Transition"]),
 ]
 QUEST_TITLES = ("Title", "Title2", "Title_Alternative_1", "Title_Alternative_2")
+# The keys the game puts on a quest answer button its row left empty (0x141663B70): Decline for button 4, else
+# Accept; an answer with a trait gets "<the graph's AutoFillPrefix>.<Context|Return>.Answer.<Trait>.Short".
+DECLINE, ACCEPT = "STR_QUEST_DIALOGUE_DECLINE", "STR_QUEST_DIALOGUE_ACCEPT"
 # DT_QuestSequenceDialogues' rows (FSwtQuestSequenceDialoguesStruct): the tag PlaySequenceDialogue is given, the
 # dialogue box (EWidgetsIds) and the graph.
 SEQUENCE_ROW = [("SequenceDialogueId", "tag"), ("WidgetToUse", "u8"), ("DialogueToUse", "obj")]
@@ -313,20 +318,34 @@ def _strings(read_text):
 # ------------------------------------------------------------------------------------------------ lines
 class _Builder:
     """Turns a graph into lines. When a table fills the graph in, resolve(node) gives a talking node's row name
-    and its variants' row names, and resolve(edge, child) an answer's row name (None: the graph's own text)."""
+    and its variants' row names, and resolve(edge, child) an answer's row name (None: the graph's own text).
+    default(edge, child, trait) gives the key the game puts on an answer whose row shows nothing (quest talks)."""
 
-    def __init__(self, graph, strings, rows=None, resolve=None):
-        self.graph, self.strings, self.rows, self.resolve = graph, strings, rows or {}, resolve
+    def __init__(self, graph, strings, rows=None, resolve=None, default=None):
+        self.graph, self.strings, self.rows, self.resolve, self.default = graph, strings, rows or {}, resolve, default
 
     def row_line(self, name):
-        """(key, English, row, the row's columns) for a dialogue table row; the English falls back to the
-        row's DebugText when the key isn't in the strings, as the game's code does."""
+        """(key, English, row, the row's columns, fallback) for a dialogue table row, as the game's code shows it
+        (0x14162DC10): the Strings_EN words of the row's StringKey (fallback None). When the key is empty, or
+        Strings_EN hasn't got it or has it empty, the game shows the row's DebugText instead: fallback "debug",
+        with that text. In QuestDialogues.csv DebugText is the key itself (every row), so there the game shows
+        the raw key: fallback "key" and English None, not the key passed off as words."""
         row = self.rows.get(name)
         if row is None:
-            return None, None, None, None
+            return None, None, None, None, None
         key = row.get("StringKey") or None
         text = self.strings.get(key) if key else None
-        return key, text if text is not None else row.get("DebugText"), name, row
+        if text:
+            return key, text, name, row, None
+        debug = row.get("DebugText") or None
+        if debug is not None and debug == key:
+            return key, None, name, row, "key"
+        return key, debug, name, row, "debug"
+
+    def row_fields(self, name):
+        """{"key", "text", "row", "fallback"} of row_line."""
+        key, text, row, _, fallback = self.row_line(name)
+        return {"key": key, "text": text, "row": row, "fallback": fallback}
 
     def variants(self, obj):
         p = obj.props
@@ -342,7 +361,7 @@ class _Builder:
         for when, t in out:
             key, text = _text(t, self.strings)
             if key or text:
-                result.append({"when": when, "key": key, "text": text, "row": None})
+                result.append({"when": when, "key": key, "text": text, "row": None, "fallback": None})
         return result
 
     def line(self, node):
@@ -350,14 +369,13 @@ class _Builder:
         source = p.get("TalkingSource", 0)
         line = {"node": node.index, "speaker": SPEAKERS[source] if source < len(SPEAKERS) else None,
                 "speaker_key": text_key(p.get("TalkingSourceText")), "key": None, "text": None, "row": None,
-                "variants": [], "answers": [], "next": []}
+                "fallback": None, "variants": [], "answers": [], "next": []}
         filled = self.resolve(node) if self.resolve else None
         if filled:
             name, variants = filled
-            key, text, row, cols = self.row_line(name)
-            line.update(key=key, text=text, row=row)
-            line["variants"] = [dict(zip(("key", "text", "row"), self.row_line(v)[:3]), when=v[len(name) + 1:])
-                                for v in variants]
+            key, text, row, cols, fallback = self.row_line(name)
+            line.update(key=key, text=text, row=row, fallback=fallback)
+            line["variants"] = [dict(self.row_fields(v), when=v[len(name) + 1:]) for v in variants]
             source_row = cols or (self.rows.get(variants[0]) if variants else None) or {}
             line["speaker"] = TALKERS.get(source_row.get("Talker"), line["speaker"])
         else:
@@ -367,17 +385,20 @@ class _Builder:
 
     def answer(self, edge, child):
         p = edge.props
-        a = {"slot": p.get("EdgeType", 0), "key": None, "text": None, "row": None,
+        a = {"slot": p.get("EdgeType", 0), "key": None, "text": None, "row": None, "fallback": None,
              "trait": TRAITS[p.get("TraitType", 0)] if p.get("TraitType", 0) < len(TRAITS) else None,
              "score": p.get("Score", 0), "clan_bonding": p.get("ClanBonding", 0), "next": []}
         filled = self.resolve(edge, child) if self.resolve else None
         if filled:
-            key, text, row, cols = self.row_line(filled)
-            a.update(key=key, text=text, row=row)
+            key, text, row, cols, fallback = self.row_line(filled)
+            a.update(key=key, text=text, row=row, fallback=fallback)
             if cols:
                 trait = cols.get("Trait")
                 a["trait"] = trait if trait in TRAITS else a["trait"]
                 a["score"], a["clan_bonding"] = _int(cols.get("Score")), _int(cols.get("ClanBonding"))
+            if self.default and not text and fallback != "key":    # no row, or a row that shows nothing
+                k = self.default(edge, child, TRAITS.index(a["trait"]) if a["trait"] in TRAITS else 0)
+                a.update(key=k if k in self.strings else None, text=self.strings.get(k), fallback="default")
         else:
             a["key"], a["text"] = _text((p.get("Button") or {}).get("Text"), self.strings)
         return a
@@ -497,14 +518,31 @@ def _story_resolver(tag, under):
 
 
 def _quest_resolver(stem):
-    """resolve() for a quest template played for a quest stem: a node's or edge's AutoFillSuffix names its row
-    (bAllowAutoFill off keeps the graph's own text)."""
+    """resolve() for a quest template played for a quest stem, as the game's fill does (0x1416648D0 a node,
+    0x141663B70 an edge): with bAllowAutoFill on, the graph's own text is cleared and the row is
+    "<stem>.<AutoFillSuffix>", joined even when the suffix is empty (no row is named "<stem>.", so such a node
+    shows nothing and such an answer gets _quest_default's key); bAllowAutoFill off keeps the graph's own text."""
     def resolve(obj, child=None):
-        suffix = obj.props.get("AutoFillSuffix")
-        if not suffix or not _autofill(obj):
+        if not _autofill(obj):
             return None
-        return f"{stem}.{suffix}" if child is not None else (f"{stem}.{suffix}", [])
+        name = f"{stem}.{obj.props.get('AutoFillSuffix') or ''}"
+        return name if child is not None else (name, [])
     return resolve
+
+
+def _quest_default(graph):
+    """default() for a quest template: the key the game's edge fill (0x141663B70) puts on an answer button its
+    row left empty. With no trait, STR_QUEST_DIALOGUE_DECLINE for button 4 and STR_QUEST_DIALOGUE_ACCEPT for the
+    others. With one, "<AutoFillPrefix>.Context.Answer.<Trait>.Short" when the answer leads to a
+    ResolveAcceptQuest node, else "<AutoFillPrefix>.Return.Answer.<Trait>.Short", shown only if Strings_EN has it.
+    AutoFillPrefix is the graph's own (a key prefix such as QST_SideQuest.WinFights); the three templates leave it
+    empty as cooked, and whether the game sets it before filling wasn't traced."""
+    def default(edge, child, trait):
+        if trait:
+            part = "Context" if child is not None and child.cls == "QuestDialogueActionResolveAcceptQuest" else "Return"
+            return f"{graph.props.get('AutoFillPrefix') or ''}.{part}.Answer.{TRAITS[trait]}.Short"
+        return DECLINE if edge.props.get("EdgeType") == 4 else ACCEPT
+    return default
 
 
 def _suffixes(graph, field):
@@ -533,19 +571,28 @@ def conversations(game, strings=None):
                 game fills from StoryDialogues.csv or QuestDialogues.csv)
       package   the graph's package ("/Game/Quests/…"); graph: the graph's export name
       tag       the story tag or quest stem the template is filled for; for a cinematic, the tags that play it
-      title     a quest's title: {"key", "text", "row"}, or None
+      title     a quest's title: {"key", "text", "row", "fallback"}, or None
       plays     (npc) [{"when": quest tags, "story": story tag}]: the story talks its roots start
       used_by   (story) the npc conversations that play it ([]: none of the cats' graphs names the tag; a level's
                 quest component or the code may still play it)
       lines     in reading order; each {"id", "node", "talk", "speaker", "speaker_key", "key", "text", "row",
-                "variants", "answers", "next"}: id its place in lines; node its export index in the graph's
-                package; talk 1 the first time you talk, 2 the next, ...; speaker "npc", "player", "current" or
-                "custom"; speaker_key the graph's name text (TalkingSourceText); key the Strings_EN key the game
-                shows (None for inline words or a missing row); text its English (a row's DebugText when the key
-                isn't in Strings_EN, as the game's code does); row the table row it's filled from; variants
-                [{"when", "key", "text", "row"}]: the line instead, by bond, rank or at random; answers
-                [{"slot" 1-4, "key", "text", "row", "trait", "score", "clan_bonding", "next"}]; next the ids of
-                the lines that follow by a plain edge (an answer's next, those after the button).
+                "fallback", "variants", "answers", "next"}: id its place in lines; node its export index in the
+                graph's package; talk 1 the first time you talk, 2 the next, ...; speaker "npc", "player",
+                "current" or "custom"; speaker_key the graph's name text (TalkingSourceText); key the Strings_EN
+                key the game shows (None for inline words or a missing row); text its English, or None when
+                there's none; row the table row it's filled from; fallback what the game shows instead of the
+                key's Strings_EN words, by the code (0x14162DC10, 0x141663B70):
+                  None       the key's words (or the graph's own inline words), as text says
+                  "debug"    the key isn't in Strings_EN (or is empty there), so the row's DebugText: text is it
+                             (StoryDialogues.csv's DebugText is older English, often unlike Strings_EN's)
+                  "key"      the same, but the row's DebugText is the key itself (every QuestDialogues.csv row),
+                             so the game shows the raw key string: text is None, not the key passed off as words
+                  "default"  (a quest answer) its row is missing or shows nothing, so the game's own key:
+                             STR_QUEST_DIALOGUE_ACCEPT / _DECLINE or a trait's answer key (_quest_default)
+                variants [{"when", "key", "text", "row", "fallback"}]: the line instead, by bond, rank or at
+                random; answers [{"slot" 1-4, "key", "text", "row", "fallback", "trait", "score",
+                "clan_bonding", "next"}]; next the ids of the lines that follow by a plain edge (an answer's
+                next, those after the button).
     game is a GameFiles (exists/find/read/read_text); strings {key: English} (default: the game's Strings_EN)."""
     strings = _strings(game.read_text) if strings is None else strings
     story_rows = _table(game.read_text, TABLES + "StoryDialogues.csv")
@@ -607,10 +654,10 @@ def conversations(game, strings=None):
         if typ is None:
             continue
         g = quest_templates[typ]
-        lines = _Builder(g, strings, quest_rows, _quest_resolver(stem)).lines()
+        lines = _Builder(g, strings, quest_rows, _quest_resolver(stem), _quest_default(g)).lines()
         conv = _conversation(f"quest:{stem}", "quest", g, _numbered([(1, lines)]), tag=stem)
-        key, text, row, _ = _Builder(g, strings, quest_rows).row_line(f"{stem}.Title")
-        conv["title"] = {"key": key, "text": text, "row": row} if row else None
+        title = _Builder(g, strings, quest_rows).row_fields(f"{stem}.Title")
+        conv["title"] = title if title["row"] else None
         out.append(conv)
     return out
 
