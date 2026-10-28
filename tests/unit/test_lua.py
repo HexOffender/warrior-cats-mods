@@ -48,6 +48,18 @@ def test_game_module_stops_another_scripts_animation_only_while_it_plays():
     assert "GetCurrentActiveMontage" not in stop, "stop() never takes the current montage without the check"
 
 
+def test_the_in_game_checks_lua_in_verified_md_compiles():
+    # docs/verified.md's not-yet-confirmed checks give Lua to run in the game (e.g. the save's Hash); a missing
+    # `end` there would only show up as an error in game.
+    import os
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "verified.md")
+    with open(path, encoding="utf-8") as f:
+        blocks = re.findall(r"```lua\n(.*?)\n\s*```", f.read(), re.S)
+    assert len(blocks) >= 2
+    for lua in blocks:
+        assert not luacheck.check(lua), lua
+
+
 def test_names_module_with_the_games_own_text():
     lua = world.names_lua()
     assert not problems(lua)
@@ -59,6 +71,15 @@ def test_names_module_with_areas_and_quests():
     assert not problems(lua)
     assert '["R-05"] = "Willow-Weep"' in lua and '["Apprentice"] = "Moss for the dens"' in lua
     assert "function N.area(" in lua and "function N.quest(" in lua
+
+
+def test_world_scan_clears_the_label_cache():
+    """World.label keeps a label per actor address and class. A pickup that went can leave its address to
+    another item of its class, so each scan of the actor list starts the cache afresh."""
+    lua = world.lua()
+    assert lua.index("local actorLabels = {}") < lua.index("local function scan()")   # scan() sees it
+    scan = lua.split("local function scan()", 1)[1].split("\nend\n", 1)[0]
+    assert "actorLabels = {}" in scan and "local actorLabels" not in scan
 
 
 def test_game_module_names_the_saved_folder_the_install_makes():
@@ -559,3 +580,110 @@ def test_inspector_find_refuses_the_widest_classes_and_reads_names_once():
     assert "actor = true" in host and "userwidget = true" in host   # in small letters, as it's asked
     page = body(host, 'Menu.page("Inspector"', "end, { order = 90")
     assert "for _, e in ipairs(insp.found) do" in page and "Game.name(o)" not in page
+
+
+# ---------- the game's enums, read from the game by name (docs/reverse-engineering.md, "The game's enums") ----------
+def test_game_enum_names_checks_the_object_and_keeps_errors_in_the_listing():
+    lua = game.lua()
+    read = body(lua, "function Game.enumNames(path)", "\nend\n")
+    # A missing enum is an invalid object, and asking it anything crashes the game: it's checked before ForEachName.
+    assert (read.index("local e = Game.object(path)") < read.index("if not e then return nil end")
+            < read.index("e:ForEachName("))
+    assert "pcall(function()\n        e:ForEachName(function(name, value)" in read
+    # An error inside the callback ends the listing without reaching the outer pcall, so each name has its own.
+    assert "e:ForEachName(function(name, value)\n            -- An error in here" in read
+    assert "            pcall(function()\n                local n = name:ToString():gsub(\"^.*::\", \"\")" in read
+    assert 'local max = (tostring(path):match("([%w_]+)$") or "") .. "_MAX"' in read and "n ~= max" in read
+    assert "math.tointeger(value)" in read and "if #order == 0 then return nil end" in read
+    assert "return byName, order" in read
+    assert "local ok, o = pcall(StaticFindObject, path)\n    if ok and valid(o) then return o end" in lua
+
+
+def test_every_game_enum_names_its_path():
+    lua = game.lua()
+    keys = [k for k, _, _ in game.ENUMS]
+    # The enums scripts had before they were read from the game, none left out.
+    assert set(keys) == {"clan", "rank", "trait", "stance", "status", "aiProfile", "team", "detectionRange", "stat",
+                         "resource", "questStatus", "questResult", "questType", "objectiveStatus", "phase", "itemType",
+                         "characterType"}
+    assert len(keys) == len(set(keys))
+    for key, path, names in game.ENUMS:
+        module, _, enum = path.removeprefix("/Script/").partition(".")
+        assert module in ("SwtQuest", "SwtAdventure", "SwtEngine", "Wrc") and enum.startswith("E"), path
+        assert len(names) == len(set(names)) and all(n.isidentifier() for n in names), key
+        listed = ", ".join(f'"{n}"' for n in names)
+        assert f'    {key} = {{ "{path}", {{ {listed} }} }},' in lua
+    assert "local ENUMS = {\n    clan = {" in lua
+    assert "Game.enums = {}\nfor key in pairs(ENUMS) do Game.enums[key] = lazyEnum(key) end" in lua
+    assert "local function enum(names, first)" not in lua   # no list numbered by its position alone
+    # What the game's own code gives these numbers to and reads them from still goes through the tables.
+    assert "enumValue(Game.enums.status, s)" in lua
+    assert 'Game.enums.characterType[Game.get(self.actor, "CharacterType")]' in lua
+
+
+def test_game_enums_are_filled_from_the_game_the_first_time_theyre_used():
+    lua = game.lua()
+    fill = body(lua, "local function fillEnum(key, t, dropped)", "\n-- An enum table that fills itself")
+    assert "local byName, order = Game.enumNames(path)" in fill
+    # An enum that can't be read puts nothing in the table: the shipped numbers aren't kept in it.
+    assert "if not byName then return false end" in fill and "shippedEnum" not in lua
+    assert "rawset(t, name, n)" in fill and "if rawget(t, n) == nil then rawset(t, n, name) end" in fill
+    assert 'dropped[name] = true\n            changes[#changes + 1] = name .. " gone"' in fill
+    assert 'string.format("%s %d -> %d", name, i - 1, byName[name])' in fill
+    assert 'string.format("%s %d new", name, byName[name])' in fill
+    assert "log(\"the game's enum %s isn't build 26184573's: %s\", path, table.concat(changes, \", \"))" in fill
+    assert fill.rstrip().endswith("    end\n    return true\nend")
+    lazy = body(lua, "local function lazyEnum(key)", "\nGame.enums = {}")
+    # Build 26184573's numbers answer, both ways, while the game's can't be read; they're never put in the table.
+    assert "fallback[name] = i - 1\n        fallback[i - 1] = name" in lazy
+    # Read from the game on the first lookup, pairs or #; when it can't be, asked again ENUM_RETRY seconds later.
+    assert ("if mt.fromGame or (retryAt and os.clock() < retryAt) then return end\n"
+            "        local ok, read = pcall(fillEnum, key, t, dropped)\n"
+            "        if ok and read then\n            mt.fromGame = true") in lazy
+    assert "for k in next, t do rawset(t, k, nil) end\n        retryAt = os.clock() + ENUM_RETRY" in lazy
+    assert "local ENUM_RETRY = 5" in lua
+    assert "if not said then\n            said = true\n            log(\"can't read the game's enum %s%s" in lazy
+    assert "log(\"read the game's enum %s after all" in lazy
+    assert ("mt.__index = function(t, k)\n        if not mt.fromGame then\n            fill(t)\n"
+            "            if not mt.fromGame then return fallback[k] end") in lazy
+    assert "mt.__pairs = function(t)\n        fill(t)\n        return next, mt.fromGame and t or fallback, nil" in lazy
+    # # counts as a lookup too (before, an enum read 0 until something filled it).
+    assert "mt.__len = function(t)\n        fill(t)\n        return mt.fromGame and rawlen(t) or #fallback" in lazy
+    assert "local mt = { fromGame = false }" in lazy and "return setmetatable({}, mt)" in lazy
+    # A name the game dropped reads nil, said once.
+    assert "if dropped[k] == true then\n            dropped[k] = false\n            log(" in lazy
+    assert "rawset(" in lazy and "t[k] =" not in lazy   # nothing in here goes back through __index
+
+
+def test_interact_command_is_read_from_the_games_enum():
+    lua = game.lua()
+    assert "local INTERACT_COMMAND = 67               -- ECommands::Player_Interact in build 26184573" in lua
+    read = body(lua, "local function interactCommandNumber()", "\nend\n")
+    assert "if interactCommand then return interactCommand end" in read   # read once
+    assert 'local commands = Game.enumNames("/Script/SwtEngine.ECommands")' in read
+    assert "interactCommand = commands and commands.Player_Interact" in read
+    assert ("interactCommand = INTERACT_COMMAND\n"
+            "        log(\"can't read Player_Interact from the game's ECommands") in read
+    made = body(lua, "local function promptWidget(h)", "\nend\n")
+    assert "made.mcGuiButtonAction.ActionCommand = interactCommandNumber()" in made
+    assert "ActionCommand = INTERACT_COMMAND" not in lua
+
+
+def test_in_game_remap_reads_its_enum_numbers_by_name():
+    plan, _, _ = keymap.native_plan({"keyboard": {"Player_Interact": "F"}})
+    lua = gameremap.script(plan)
+    read = body(lua, "local function enumNames(path)", "\nend\n")
+    assert (read.index("local e = StaticFindObject(path)") < read.index("if not valid(e) then return nil end")
+            < read.index("e:ForEachName("))
+    assert 'byName[(name:ToString():gsub("^.*::", ""))] = value' in read
+    assert 'local function commands() return enumNames("/Script/SwtEngine.ECommands") end' in lua
+    assert "local NO_COMMAND = 0   -- ECommands::NoCommand" in lua
+    assert "local UI_PC = 1        -- EGuiConsolesTypes::UI_PC" in lua
+    setup = body(lua, "local function setup()", "\nend\n")
+    assert "if byName.NoCommand then\n        NO_COMMAND = byName.NoCommand\n    else\n        log(" in setup
+    assert 'local okConsoles, consoles = pcall(enumNames, "/Script/SwtEngine.EGuiConsolesTypes")' in setup
+    assert "UI_PC = consoles.UI_PC" in setup and "can't read UI_PC from the game's EGuiConsolesTypes" in setup
+    # The setup still waits for ECommands before anything else, as it did.
+    waits = setup.index("local byName = commands()\n    if not byName then return false end")
+    assert waits < setup.index("pcall(enumNames")
+    assert 'console:get() == UI_PC and "keyboard"' in lua and "console:get() == 1" not in lua

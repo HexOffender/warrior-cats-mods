@@ -928,6 +928,22 @@
    "text": "Main story: Quest.Main.<n>, Quest.Rank.<n> and the tutorial Quest.Chapter00.MQ<n> (QuestObjectives.csv has its fixed objectives)."
   }
  ],
+ "Quest.Main.1.0": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Dialogue answers and their scores",
+   "anchor": "#dialogue-answers-and-their-scores",
+   "text": "A cat's own talks are graphs the quest sublevels place: one root per quest state (Quest.Main.1.0, Quest.Main.1.Complete…), each starting a story talk by tag."
+  }
+ ],
+ "Quest.Main.1.Complete": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Dialogue answers and their scores",
+   "anchor": "#dialogue-answers-and-their-scores",
+   "text": "A cat's own talks are graphs the quest sublevels place: one root per quest state (Quest.Main.1.0, Quest.Main.1.Complete…), each starting a story talk by tag."
+  }
+ ],
  "Quest.Main.<n>": [
   {
    "doc": "quests-and-bonding.md",
@@ -966,6 +982,14 @@
    "heading": "Camera framing",
    "anchor": "#camera-framing",
    "text": "QuestCineCameraSettings.csv places the fight camera for each party size: 1v1 at (-258, 98, 36) with a 55 mm lens, 2v2 at 50 mm, 3v3 at 45 mm, all at f/16."
+  }
+ ],
+ "QuestDialogues.csv": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Dialogue answers and their scores",
+   "anchor": "#dialogue-answers-and-their-scores",
+   "text": "DebugText shows only when the key is missing: older English in StoryDialogues.csv, the key itself in QuestDialogues.csv (so the Escort and Recruit quests, whose keys Strings_EN lacks, would show raw keys)."
   }
  ],
  "QuestDynamicObjectives.MaxQuantity": [
@@ -1102,6 +1126,14 @@
    "heading": "Status conditions",
    "anchor": "#status-conditions",
    "text": "Poisoned: \"You lose 10% health at the end of every round\", StatusCondition.Poison.Damage 0.1"
+  }
+ ],
+ "StoryDialogues.csv": [
+  {
+   "doc": "quests-and-bonding.md",
+   "heading": "Dialogue answers and their scores",
+   "anchor": "#dialogue-answers-and-their-scores",
+   "text": "DebugText shows only when the key is missing: older English in StoryDialogues.csv, the key itself in QuestDialogues.csv (so the Escort and Recruit quests, whose keys Strings_EN lacks, would show raw keys)."
   }
  ],
  "SuffixName.csv": [

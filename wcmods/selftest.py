@@ -26,6 +26,8 @@ def run(cfg, oodle, log=print):
     check("unversioned property headers write back as they read", _unversioned_headers())
     ok, detail = _long_save()
     check("saves over 128 KiB: the game's archive per 128 KiB, read and written", ok, detail)
+    ok, detail = _save_hash()
+    check("the save's Hash and Version read and kept, and the game's formula for a new Hash", ok, detail)
     check("pictures: PNGs of every kind read, written back, DXT blocks and recolours", _pictures())
     lua = mouselook.script(mouselook.merge([mouselook.validate({"sensitivity": 1.5, "invert": True, "smoothing": 50})]))
     problems = luacheck.check(lua)
@@ -173,6 +175,9 @@ def run(cfg, oodle, log=print):
 
     ok, detail = _cooked_table(io)
     check("cooked item table: every row read and written back the same, and a new row added", ok, detail)
+    ok, detail = _dialogue_graphs(io)
+    check("dialogue graphs: every node and edge of the game's conversations read and written back the same",
+          ok, detail)
     ok, detail = _textures(io)
     check("new textures: a copy of the game's with the IDs the game would give it, new pixels in every mip",
           ok, detail)
@@ -249,6 +254,11 @@ def run(cfg, oodle, log=print):
                       and raw[s._data_start:s._data_start + 17] == new[again._data_start:again._data_start + 17]
                       and raw[len(raw) - tail:] == new[len(new) - tail:])
         check("save re-encode keeps structure and content", same_frame and again.json_text == s.json_text)
+        # Hash isn't a checksum (the game makes one from the clock at every write and never checks it), so
+        # there's nothing to verify: only that it's read and that wcmods writes it back unchanged.
+        check("save's Hash and Version read from its header, and kept by a re-encode",
+              s.hash is not None and s.version is not None and (again.hash, again.version) == (s.hash, s.version),
+              f"Version {s.version}")
         b = controls.read_bindings(s.json_text)
         want = "G" if b["keyboard"].get("Player_Interact") == "F" else "F"   # must differ from the current key
         new, applied, _ = controls.apply(s.json_text, {"keyboard": {"Player_Interact": want}})
@@ -284,15 +294,74 @@ def _unversioned_headers():
             and split_name("Foo_01") == ("Foo_01", 0) and split_name("Gameplay.Item") == ("Gameplay.Item", 0))
 
 
-def _gvas(archives):
+def _gvas(archives, head=b""):
     """A save file around the CompressedData property's archives: its tail is size (int32), flags (u8),
-    count (int32), the archives."""
-    return (b"GVAS" + bytes(20) + b"CompressedData" + bytes(1) + b"ArrayProperty" + bytes(1)
+    count (int32), the archives. `head` goes before it (_save_header's properties)."""
+    return (b"GVAS" + bytes(20) + head + b"CompressedData" + bytes(1) + b"ArrayProperty" + bytes(1)
             + struct.pack("<i", len(archives) + 4) + bytes(1) + struct.pack("<i", len(archives)) + archives + bytes(4))
 
 
-def _small_save(text):
-    """A save file holding `text` (under 128 KiB) in one archive, laid out as _long_save lays out the game's."""
+# The game's own Hash and Version tags, byte for byte, from a save it wrote (build 26184573, read from a copy
+# of WrcGame.sav): name and type as FStrings, the type's parameter count (0), the value's size (8 and 1),
+# flags (0), the value (Hash 0xE0621E33FF8139C3, Version 20). The GamerId tag between them, a Steam id, is
+# left out. _header_value is checked against these, not only against _save_header, which shares its layout.
+GAME_HASH_TAG = bytes.fromhex("05000000 4861736800 0f000000 55496e74363450726f706572747900"
+                              "00000000 08000000 00 c33981ff331e62e0")
+GAME_VERSION_TAG = bytes.fromhex("08000000 56657273696f6e00 0d000000 427974655072 6f706572747900"
+                                 "00000000 01000000 00 14")
+
+
+def _save_header(hash_value, version):
+    """The properties before CompressedData as the game writes them (UE 5.7 tags): name and type as FStrings,
+    the type's parameter count, the value's size, flags, the value."""
+    def tag(name, type_name, value):
+        def fstring(text):
+            return struct.pack("<i", len(text) + 1) + text.encode("ascii") + b"\0"
+        return fstring(name) + fstring(type_name) + struct.pack("<iiB", 0, len(value), 0) + value
+    gamer = struct.pack("<i", 18) + b"76561190000000000\0"
+    return (tag("Hash", "UInt64Property", struct.pack("<Q", hash_value)) + tag("GamerId", "StrProperty", gamer)
+            + tag("Version", "ByteProperty", bytes([version])))
+
+
+def _save_hash():
+    """The save's Hash and Version read from the header, and kept as they were when wcmods writes the save;
+    the game's formula for a new Hash (formats/save.py next_hash; docs/reverse-engineering.md "The save")."""
+    import datetime
+    from .formats import cityhash
+    from .formats import save as savelib
+    # CityHash64WithSeed(s) and WithSeeds(s) of no bytes, from Google's own tests (city-test.cc, kSeed0 =
+    # 1234567, kSeed1 = k0); CityHash64 itself is checked by _name_hashes.
+    if (cityhash.cityhash64_with_seed(b"", 1234567) != 0x75106DB890237A4A
+            or cityhash.cityhash64_with_seeds(b"", 1234567, cityhash.K0) != 0x3FEAC5F636039766):
+        return False, "CityHash64WithSeed doesn't match Google's test values"
+    game = SaveGame(_small_save("{\r\n}", GAME_HASH_TAG + GAME_VERSION_TAG))
+    if (game.hash, game.version) != (0xE0621E33FF8139C3, 20):
+        return False, f"read Hash {game.hash!r} and Version {game.version!r} from the game's own tags"
+    built = _save_header(0xE0621E33FF8139C3, 20)
+    if not (built.startswith(GAME_HASH_TAG) and built.endswith(GAME_VERSION_TAG)):
+        return False, "_save_header doesn't lay out its tags as the game does"
+    s = SaveGame(_small_save("{\r\n}", _save_header(0x0123456789ABCDEF, 20)))
+    if (s.hash, s.version) != (0x0123456789ABCDEF, 20):
+        return False, f"read Hash {s.hash!r} and Version {s.version!r} from the header"
+    s.json_text = '{\r\n\t"Shared": {}\r\n}'
+    again = SaveGame(s.to_bytes())
+    if (again.hash, again.version) != (s.hash, s.version) or again.json_text != s.json_text:
+        return False, "an edited save didn't keep its Hash and Version"
+    if SaveGame(_small_save("{\r\n}")).hash is not None:
+        return False, "a header without a Hash read as having one"
+    # The game's text for one write: the UTC time, an empty salt, the storage manager's address (%p).
+    when = datetime.datetime(2026, 10, 26, 12, 5, 9)
+    want = cityhash.cityhash64_with_seed(b"2026.10.26-12.05.09__000001E5C8A2B000", 0x0123456789ABCDEF)
+    if savelib.next_hash(0x0123456789ABCDEF, when, 0x1E5C8A2B000) != want:
+        return False, "next_hash doesn't hash the text the game builds"
+    if savelib.next_hash(0, when, 0x1E5C8A2B000) == want:
+        return False, "next_hash ignores the previous Hash"
+    return True, ""
+
+
+def _small_save(text, head=b""):
+    """A save file holding `text` (under 128 KiB) in one archive, laid out as _long_save lays out the game's,
+    with `head` (_save_header) before CompressedData."""
     import zlib
     from .formats import save as savelib
     body = text.encode("utf-8")
@@ -300,7 +369,7 @@ def _small_save(text):
                + struct.pack("<I", len(body)))
     packed = zlib.compress(payload)
     return _gvas(savelib.ARCHIVE_TAG + struct.pack("<q", 0x20000) + bytes([3])
-                 + struct.pack("<qq", len(packed), len(payload)) * 2 + packed)
+                 + struct.pack("<qq", len(packed), len(payload)) * 2 + packed, head)
 
 
 def _long_save():
@@ -364,6 +433,51 @@ def _cooked_table(io):
              and "ItemRarity" not in row and row["ItemGroupIcon"] == 1 and back.check_encoder() and back.pkg.check_hashes(len(back.pkg.names))
              and back.rows[:-1] == dt.rows[:-1] and refused)
     return ok and added, f"{count} rows" + ("" if same else "; rebuilt package differs")
+
+
+def _dialogue_graphs(io):
+    """Every object of the game's dialogue graph packages decodes by its class and writes back the same, each
+    package rebuilt from the re-encoded objects is the game's byte for byte, and the Short story template walks
+    from its root to its lines (the format: docs/reverse-engineering.md). A package wcmods can't read, after a
+    game update, fails the check rather than the self-test."""
+    from . import dialogue
+    from .formats import cooked
+    paths = sorted(p for p in io.files if p.startswith(dialogue.QUESTS) and p.endswith(".uasset")
+                   and p.split("/")[3] in ("NpcDialogues", "QuestDialogues", "StoryDialogues"))
+    objects = same = rebuilt = 0
+    problems = []
+    unreadable = (KeyError, ValueError, IndexError, struct.error)     # an unknown class, a FormatError, short data
+    for p in paths:
+        try:
+            data = io.read_file(p)
+            pkg = cooked.ZenPackage(data)
+            values = cooked._Values(pkg)
+            blobs, end = [], 0
+            for i in range(pkg.export_count):
+                e = pkg.export_entry(i)
+                schema = dialogue.SCHEMA[dialogue.CLASS_OF[e.cls]]
+                blob = pkg.export_data[e.offset:e.offset + e.size]
+                objects += 1
+                blobs.append(values.write_object(values.read_object(blob, schema), schema))
+                same += blobs[-1] == blob
+                end = max(end, e.offset + e.size)
+            # the exports one after another, then the package file tag, as the game's packages have them
+            rebuilt += pkg.rebuild(b"".join(blobs) + pkg.export_data[end:], [len(b) for b in blobs]) == data
+        except unreadable as ex:
+            problems.append(f"{p.rsplit('/', 1)[-1]}: {type(ex).__name__} {ex}")
+    lines = []
+    short = dialogue.QUESTS + dialogue.STORY_TEMPLATES["Short"] + ".uasset"
+    try:
+        if short in io.files:
+            [g] = dialogue.read_graphs(io.read_file(short), short, "StoryDialogue_Short_Template")
+            lines = [n.props.get("SubTag") for n in g.walk() if n.cls in dialogue.TALKING]
+    except unreadable as ex:
+        problems.append(f"the Short template's walk: {type(ex).__name__} {ex}")
+    walked = lines[:2] == ["Context.1", "Question.1"]
+    ok = bool(paths) and not problems and same == objects and rebuilt == len(paths) and walked
+    return ok, (f"{len(paths)} packages ({rebuilt} rebuilt the same), {same} of {objects} objects"
+                + ("" if walked or problems else "; the Short template doesn't start Context.1, Question.1")
+                + (f"; {problems[:2]}" if problems else ""))
 
 
 def _png_file(width, height, ctype, depth, rows, palette=None, trns=None):
@@ -1827,7 +1941,7 @@ def _signatures(cfg):
     if not gamebuild.current(cfg)["verified"]:
         return True, f"decoder fine; build {gamebuild.current(cfg)['build']} isn't one wcmods was checked on, so the layout isn't compared"
     res = signatures.check(exe, log=lambda m: None)
-    bad = [f"{gamebuild.describe(c + ':' + n)} {f['status']}" for c, rep in res["classes"].items()
+    bad = [f"{gamebuild.name(c + ':' + n)} {f['status']}" for c, rep in res["classes"].items()
            for n, f in rep["fields"].items() if f["status"] not in ("same", "kept")]
     missing = [c.rsplit(".", 1)[-1] for c, rep in res["classes"].items() if not rep["found"]]
     signed = sum(1 for rep in res["classes"].values() for f in rep["fields"].values() if f["status"] == "same")
@@ -1865,14 +1979,21 @@ def _update_safety(cfg):
     fields = {f"{c.rsplit('.', 1)[-1]}.{n}": f for c, rep in res["classes"].items() for n, f in rep["fields"].items()}
     if fields["SwtQuestResourceComponent.WCM_Max"]["status"] != "unsure":
         problems.append("one site moved Max")
-    if fields["SwtQuestResourceComponent.WCM_Value"]["status"] != "same":
+    # Found by its signatures: where it was, or (after a real update that moved it) where it went.
+    if fields["SwtQuestResourceComponent.WCM_Value"]["status"] not in ("same", "moved"):
         problems.append("Value not found")
     if fields["SwtQuestResourceComponent.WCM_ResourceType"]["now"] is not None:
         problems.append("ResourceType kept beside a member that may have moved")
-    kept = [k for k, f in fields.items() if k.startswith(("TurnBasedCombat", "SwtAdventureGameplayGameState",
-                                                          "SwtAdventureLevelComponent")) and f["now"] is not None]
+    kept = [k for k, f in fields.items() if k.startswith(("TurnBasedCombat", "SwtAdventureGameplayGameState"))
+            and f["now"] is not None]
     if kept:
         problems.append("kept with no evidence: " + ", ".join(kept))
+    # The level component's own signatures find it on an exe they weren't made on (it had none before):
+    # "same" on the build they were made on, "moved" on one where an update moved it.
+    unsigned = [k for k, f in fields.items() if k.startswith("SwtAdventureLevelComponent")
+                and f["status"] not in ("same", "moved")]
+    if unsigned:
+        problems.append("the level component not found by its signatures: " + ", ".join(unsigned))
     if res["same"]:
         problems.append("reported the same")
     if game.hidden({}) or game.hidden({k: -16 for k in gamebuild._members()}):
