@@ -205,10 +205,13 @@ export class Page {
     if (!ok) throw new Error(`couldn't focus ${JSON.stringify(target)}`);
     await this.send("Input.insertText", { text });
   }
+  // A key pressed and let go: a letter, or Enter, Escape or Tab (which moves focus as a person's Tab would).
   async press(key) {
     const text = key.length === 1 ? key : undefined;
-    await this.send("Input.dispatchKeyEvent", { type: "keyDown", key, text, windowsVirtualKeyCode: key === "Enter" ? 13 : key === "Escape" ? 27 : 0 });
-    await this.send("Input.dispatchKeyEvent", { type: "keyUp", key, windowsVirtualKeyCode: key === "Enter" ? 13 : key === "Escape" ? 27 : 0 });
+    const code = { Enter: 13, Escape: 27, Tab: 9 }[key] || 0;
+    const named = key === "Tab" ? { code: "Tab" } : {};
+    await this.send("Input.dispatchKeyEvent", { type: "keyDown", key, text, windowsVirtualKeyCode: code, ...named });
+    await this.send("Input.dispatchKeyEvent", { type: "keyUp", key, windowsVirtualKeyCode: code, ...named });
   }
   // Give a file input files from disk, as choosing them would.
   async setFiles(selector, paths) {

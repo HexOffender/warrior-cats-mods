@@ -51,6 +51,7 @@ export class Element {
   removeAttribute(k) { delete this.attrs[k]; }
   hasAttribute(k) { return k in this.attrs; }
   append(...kids) { for (const k of kids) { if (typeof k !== "string") { k.parent = this; k.isConnected = true; } this.children.push(k); } }
+  replaceChildren(...kids) { for (const c of this.children) if (typeof c !== "string") c.parent = null; this.children = []; this.append(...kids); }
   appendChild(k) { this.append(k); return k; }
   after(...nodes) { if (!this.parent) return; const i = this.parent.children.indexOf(this); this.parent.children.splice(i + 1, 0, ...nodes); for (const n of nodes) if (typeof n !== "string") n.parent = this.parent; }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(c => c !== this); this.parent = null; this.isConnected = false; }
