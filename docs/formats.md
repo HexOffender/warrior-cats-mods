@@ -226,10 +226,17 @@ first column, then the columns to change:
   named rows, then additions. A named row's own value wins over `"*"`, so the file above doubles every
   animal's XP except mice, which stay at 25. A named row's own `"xN"` multiplies the cell as it was
   before this file's `"*"`, so the two never compound.
-- **Between mods**, each mod's file goes in priority order on what the one before left: two mods' `"*"`
-  `"x2"` make x4. When a second mod changes a cell a first one did, the build says which got its way.
+- **Between mods**, each mod's file goes in priority order on what the one before left, so multipliers
+  stack: two mods' `"*"` `"x2"` make x4, and nothing is said about it. When a later mod sets a plain value
+  in a cell an earlier one changed, the later one's value is what the game gets, and the build says so
+  once per table, column and pair of mods ("my-tweaks sets BaseExperience in CombatBaseExperience.csv
+  where double-xp changed it too (Mice): the game gets my-tweaks's value there").
 - **A table the game hasn't got** is left out with a warning, and the file's other tables still go in;
   so is a row it hasn't got.
+- **Keys starting with `_`** (`"_help"`, `"_note"`) are notes, at the top, in a table or in a row: the
+  build skips them and the Game data page keeps them as they are.
+- **Quests and talk** (QuestDialogues, StoryDialogues, QuestObjectives, QuestDynamicObjectives,
+  NarrativeRole) can be changed like any table, with a warning: a wrong value can stop a quest.
 
 In wcmods 0.3 and before the keys' order decided: a row written before `"*"` was multiplied by it too, which
 the Game data page never showed (it writes numbered rows before `"*"`). Such a file now builds to the row's
@@ -437,25 +444,38 @@ now makes the same changes straight away, without a mod.
   the whole save.
 - **`set`** changes a value the save has (a path it hasn't got is skipped, with a warning). **`add`** adds
   keys to an object, or sets them when the object has them already: an item to the inventory, by its tag.
-  **`remove`** takes keys (or list elements) out. Removals go after the sets and adds.
+  **`remove`** takes out an item carried (`<slot>/GameplayProgression/State/Inventory/<tag>`) or one
+  element of a list (a path ending in its number). Anything else is left out with a warning: never a
+  whole cat slot (`"2"`), `Shared` (the game's settings and controls) or a cat's
+  `<slot>/GameplayProgression`. Removals go after the sets and adds.
 - **Each change is made once per save.** What was made is kept in [`save-changes.json`](#save-changesjson),
   so the next Apply doesn't make it again over what the player has played since: a level set to 10 and
   played on to 14 stays 14. A mod whose value changes (Level 20 becomes 18) makes it again.
   `"always": true` makes every change at every install instead, as before.
+- **Once per slot, not per cat.** The record is by the save's account and the path, and a path names a
+  slot: a new cat started in a slot where a change was made doesn't get it. The Save page's Change my
+  save now makes it for that cat.
+- **Two mods changing one path:** the one with the higher priority is what the save gets. The other is
+  recorded as not made (`lost_to`), so it isn't made later in the winner's place either.
 - **Ranges:** a value outside what the game takes is left out with a warning: Level 1 to 20; Experience,
   health, stamina and counts of things carried 0 or more (whole numbers for Level, Experience and counts);
   the fresh-kill pile 0 to 100; a volume 0 to 1.
-- **Restoring a backup** (Settings and repair, or `wcmods restore`) forgets what was made since that
-  backup, because the save put back hasn't got it: the next Apply makes the mods' changes again.
+- **Restoring a backup** (Settings and repair, or `wcmods restore`) puts back the record that backup kept
+  with the save (every save backup has it, as `wcmods-save-changes.json` beside the save files), so the
+  next Apply makes again only what that save hasn't got. Restoring keeps a backup of the save you had
+  first ("before-restore"), with its record: restoring that undoes the restore. A backup made before
+  the record was kept (by wcmods 0.3) has none: the changes recorded since it are forgotten (made
+  again), the ones put back since count as made, and the ones made before the record was kept stay.
 - **A save that can't be read**, or no save yet, leaves the save edits out and the rest of the install goes
   in. Made before there was a save, they wait: once the game has made one, the studio's status says
   "save edits are waiting for a save" until the next Apply.
 
 Before wcmods 0.4 every `set` and `add` was made again at every install. The first install with this
 version makes no change for the mods that were in the last install: their changes are recorded as made
-already (unless a mod changed since that install), so nobody's progress is put back one last time. Turning
-a mod off leaves its changes in the save; the Save page's Done so far puts each one back. An older wcmods
-ignores `remove` and `always`.
+already (unless a mod changed since that install), so nobody's progress is put back one last time. When
+there was no save at that install (no backup of one from then, and the save file made since), nothing
+was made then, so the changes are made now. Turning a mod off leaves its changes in the save; the Save
+page's Done so far puts each one back. An older wcmods ignores `remove` and `always`.
 
 ### `save-changes.json`
 
@@ -468,5 +488,7 @@ folder (`wcmods/saverecord.py`). By the save's account, then by who made the cha
 ```
 `was` is what Put it back writes; `undone` says when it was put back, and keeps the record so a mod still
 on doesn't make the change again; `before` marks a change made before wcmods kept this record, which can't
-be put back from here. Delete the file and the next Apply treats the last install's mods as made, as on
-the first install with this version.
+be put back from here; `lost_to` marks a change another mod's change to the same path won over, which
+wasn't made. Every save backup keeps a copy of this file as it was then (`wcmods-save-changes.json`,
+`null` when there was none yet), which a restore puts back. Delete the file and the next Apply treats
+the last install's mods as made, as on the first install with this version.

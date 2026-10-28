@@ -406,7 +406,10 @@ export function settleNew(list, saved) {
 // A save doesn't read the file back: the page already holds what it saved, and a change made while it saved
 // stays (and stays unsaved). onSaved(value), when given, hears what was saved: a page whose new entries' ids
 // follow their names until they're saved settles them there (settleNew).
-export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
+// turnOn: false for a file whose mod the player may not want in their own game (the Save page's save.json,
+// which the next Apply would make in their own save): a new mod is made off, a mod that's off stays off, and
+// savedSays(mod) words the toast after a save (with the mod as it is now: whether it's on).
+export function modTarget({ file, onLoad, getValue, onSaved, share = true, turnOn = true, savedSays = null }) {
   const defaultId = "my-mods", defaultName = "My mods";
   const key = "wc-target";   // the mod last chosen, on whichever page
   const kind = file.replace(".json", "");
@@ -488,16 +491,17 @@ export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
   }
   // Saving to a mod means you want it applied: create it if it's new. A mod that exists but is off
   // is turned on only after its file has been written, so a failed save can't enable old content.
+  // With turnOn false, neither: a new mod is made off.
   async function ensureMod(id) {
     if (!mods.find(m => m.id === id)) {
-      await api.post("/mods", { id, name: id === defaultId ? defaultName : undefined, enabled: true });
+      await api.post("/mods", { id, name: id === defaultId ? defaultName : undefined, enabled: turnOn });
       bus.emit("mods-changed");
     }
   }
   async function create(id) {
     if (!id) return;
     try {
-      await api.post("/mods", { id, enabled: true });
+      await api.post("/mods", { id, enabled: turnOn });
       bus.emit("mods-changed");
       newBox.hidden = true; newId.value = "";
       if (dirty) {   // made, but the page's unsaved work isn't dropped for it: the same choice as switching
@@ -543,9 +547,10 @@ export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
         toast(`Saved, but it can't go in the game yet: ${found[0]}`, "bad");
       } else {
         // A part left out (notes) still lets the rest go in: the mod is turned on all the same.
-        const on = now && !now.enabled && !now.problem;
+        const on = turnOn && now && !now.enabled && !now.problem;
         if (on) await api.patch(`/mods/${encodeURIComponent(current)}`, { enabled: true });
         if (notes.length) toast(`Saved; this part will be left out: ${notes[0]}`, "bad");
+        else if (!quiet && savedSays && now) toast(savedSays(now));
         else if (!quiet) toast(on ? `Saved and turned on ${now.name}. Apply to game to use it.` : `Saved ${file} in ${current}. Apply to game to use it.`);
       }
       bus.emit("mods-changed");

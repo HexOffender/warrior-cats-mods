@@ -4,8 +4,15 @@
 // come from the server (GET /api/save: wcmods/sections/savedit.py WORDS and RANGES), one home for both.
 
 export const ITEM_ROOT = "Gameplay.Inventory.";
+// What Give herbs gives. Their tags aren't their names: the game's item table calls them Horsetail Stalks,
+// Marigold Petal, Comfrey Poultice and Lamb's Ear Leaves, which the page shows when it can read that table.
 export const HERBS = ["Consumable.SmallHealingHerb", "Consumable.MediumHealingHerb", "Consumable.BigHealingHerb", "Consumable.SmallCatnip"]
   .map(t => ITEM_ROOT + t);
+
+// Names in a sentence: "A", "A and B", "A, B and C".
+export function andList(names) {
+  return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
 
 export function getPath(obj, path) {
   let node = obj;

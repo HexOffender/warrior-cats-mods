@@ -63,10 +63,18 @@ a cat is made, so cats already in your save keep theirs. A new game, or new kits
 
 - **Text in a number column.** The page says "Use a number like 1.5" and keeps the box open. Use a point,
   not a comma: 1.5, not 1,5.
-- **A chance over 1.** Scars and two different eyes are chances from 0 (never) to 1 (always). The page
-  won't let one go over 1.
-- **Two mods changing the same number.** The one with the higher priority wins, and the log says which.
-  Two mods that both double XP make it four times.
+- **A chance over 1.** Scars, two different eyes and the other columns named Chance are chances from 0
+  (never) to 1 (always), and so are the fight AI's choices and a move's accuracy. The page won't let one
+  go over 1. Other columns whose numbers are all from 0 to 1 (the Clan cats' sizes, a rumble's length)
+  can go past 1: the page only checks that's what you meant.
+- **Two mods changing the same number.** Multipliers stack: two mods that both double XP make it four
+  times, and nothing is said. A number set outright by the mod with the higher priority wins over the
+  other mod's change, and the log says so once for each column.
+- **A Quick change over a number set by hand.** A file written by hand (or another page) may have set
+  the row's cells another way, say XP from fights set to 30 instead of multiplied. The row says "This row
+  is set by hand to 30, in data.json", and moving its slider asks before it replaces that.
+- **Quests and talk.** The quest and dialogue tables carry a **Story** chip: a wrong value there can stop
+  a quest, and the log warns about it.
 - **A table the game doesn't have.** A file written by hand, or made for an older version of the game, can
   name one. The page shows it under the list of tables with a **Remove**, and the rest of the file still
   goes in.

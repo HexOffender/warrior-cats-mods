@@ -26,12 +26,15 @@ the change.
 
 You can:
 - set your cat's level (1 to 20), its experience and the fresh-kill pile (0 to 100);
-- press **Max level** (level 20, experience 0), **Fill the fresh-kill pile** or **Give herbs** (five more of
-  each healing herb and of small catnip);
+- press **Max level** (level 20, experience 0), **Fill the fresh-kill pile** or **Give herbs** (five more
+  each of Horsetail Stalks, Marigold Petal, Comfrey Poultice and Lamb's Ear Leaves);
 - change how many of each thing your cat carries, take things out, and add things by name;
 - change anything else in the save under **Advanced**, where the whole save is, with a search;
 - keep the list as a mod to share, under **Keep it as a mod to share**: whoever installs it gets each
-  change once, in their own save.
+  change once, in their own save. A mod made there starts off, and saving doesn't turn it on, so your own
+  save isn't changed by it. While the mod is on (you turned it on, or it was on already), the next Apply
+  makes its changes in your own save too, once, and the fold says so. Turn it off on the Mods page if
+  it's only to share.
 
 You can't, here:
 - change your cat's rank: promotions come from the rank-up quests, so Max level leaves the rank as it is;
@@ -56,6 +59,9 @@ You can't, here:
   in play), the next Apply leaves 14 alone. To make it again, change it here again.
 - **The wrong cat.** The page changes the cat you play now. To change another, play it once, then come
   back.
+- **A new cat in the same slot.** A mod's change is made once for each save slot, not each cat: start a
+  new cat in a slot where it was made, and the new cat doesn't get it. Make it here, with **Change my save
+  now**.
 - **The combat stats.** When a fight starts the game works out stats from your level, so a change under
   Advanced may not last.
 
@@ -65,8 +71,9 @@ You can't, here:
 - **One change made:** **Put it back** in **Done so far** writes what it was before, after another copy of
   your save. If the save has moved on since (your cat is level 14 now), the page asks first.
 - **Everything:** **Settings and repair** keeps a copy of your save from before every change. Putting one
-  back puts the whole save back, and any change your mods make to your save is made again at the next
-  Apply.
+  back puts the whole save back, with the list of what had been changed in it then: the changes your mods
+  made since that copy are made again at the next Apply (if the mods are still on), and the ones it has
+  already aren't. A copy of the save you had is kept first, so putting that back undoes it.
 
 [How Clan Mod Studio works](studio.md) has Apply and the log. The file a mod shares is in
 [the file formats](../formats.md#savejson).

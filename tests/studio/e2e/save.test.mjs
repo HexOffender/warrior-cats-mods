@@ -5,6 +5,7 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { findBrowser, launch } from "../lib/browser.mjs";
 import { REPO } from "../lib/dom.mjs";
@@ -94,6 +95,10 @@ test("Change my save now writes the list and shows each change under Done so far
   assert.equal(await page.evaluate(() => document.querySelectorAll("#save-pending .changes li").length), 0, "the list is empty again");
   assert.ok((await done(page)).includes("your cat's fresh-kill pile: 62 -> 100"));
   await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => /^Done at \d\d:\d\d/.test(t.textContent)));
+  // The pile is full now: the preset says so, and adds nothing.
+  await page.click({ text: "Fill the fresh-kill pile" });
+  await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent === "The fresh-kill pile is already full."));
+  assert.equal(await page.evaluate(() => document.querySelectorAll("#save-pending .changes li").length), 0);
   await page.close();
 });
 
@@ -139,6 +144,29 @@ test("Tab from Level moves to Experience, and a level out of range is refused", 
   await page.close();
 });
 
+test("Tab from a count in What it carries moves on to its Remove, and the count goes in the list", { skip }, async () => {
+  const page = await open();
+  const moss = '[id="save-carry-Gameplay.Inventory.Materials.Moss"]';
+  await page.waitFor(moss);
+  // Give herbs names what it gives (by the game's names when its item table can be read; here, the tags in words).
+  assert.match(await page.evaluate(() => [...document.querySelectorAll("#save-cat .presets button")].find(b => b.textContent === "Give herbs").title),
+    /^Five more of each of Small Healing Herb, Medium Healing Herb, Big Healing Herb and Small Catnip\.$/);
+  await page.evaluate(`(n => { n.focus(); n.select(); })(document.querySelector(${JSON.stringify(moss)}))`);
+  await page.press("Backspace");
+  await page.type(moss, "9");
+  await page.press("Tab");
+  await page.waitFor(() => document.querySelectorAll("#save-pending .changes li").length === 1);
+  assert.deepEqual(await pending(page), ["your cat's Moss: 4 -> 9"]);
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute("aria-label")), "Remove Moss", "focus went on, not back or to the top");
+  assert.match(await page.text('[data-key="carry:Gameplay.Inventory.Materials.Moss"]'), /in your save now: 4/);
+  // Taking it out: the row is "taken out", with focus on its Keep it.
+  await page.press("Enter");
+  await page.waitFor(() => document.querySelector('[data-key="carry:Gameplay.Inventory.Materials.Moss"].gone'));
+  await page.waitFor(() => document.activeElement?.textContent === "Keep it");
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
 test("the tree keeps a typed decimal, keeps its groups open, and shows key bindings without changing them", { skip }, async () => {
   const page = await open();
   await page.click("#save-advanced > summary");
@@ -167,6 +195,30 @@ test("the tree keeps a typed decimal, keeps its groups open, and shows key bindi
   assert.equal(await page.count("#save-found .leaf input"), 0, "no box to type in");
   assert.match(await page.text("#save-found .leaf"), /The Controls page changes them/);
   assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
+test("Keep it as a mod to share makes a mod that's off, and says so when it's on", { skip }, async () => {
+  const page = await open();
+  await page.click({ text: "Fill the fresh-kill pile" });
+  await page.waitFor(() => document.querySelectorAll("#save-pending .changes li").length === 1);
+  await page.click("#save-share > summary");
+  await page.click({ text: "Save to mod" });
+  await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent === "Saved in My mods. It's off, so your own save isn't changed by it. Share it from the Mods page."));
+  const meta = JSON.parse(fs.readFileSync(path.join(folders.data, "mods", "my-mods", "mod.json"), "utf8"));
+  assert.equal(meta.enabled, false);
+  assert.ok(fs.existsSync(path.join(folders.data, "mods", "my-mods", "save.json")));
+  assert.equal(readSave(folders.saves).acct["1"].GameplayProgression.FreshKill.Value, 62, "your own save is as it was");
+  assert.equal(await page.count("#save-share-on"), 0);
+  // Turned on (on the Mods page): the fold says the next Apply makes its changes in your own save too.
+  await page.evaluate(async () => (await import("/studio/lib/wc.js")).api.patch("/mods/my-mods", { enabled: true }));
+  await page.click(`[aria-label="Remove your cat's fresh-kill pile from the list"]`);   // nothing left to ask about on leaving
+  await page.waitFor(() => document.querySelectorAll("#save-pending > .changes li").length === 0);   // the fold's own list stays
+  await page.reload();
+  await page.waitFor('.section[data-page="save"][data-ready]', 20000);
+  await page.waitFor("#save-share-on");
+  assert.match(await page.text("#save-share-on"), /^My mods is on: the next Apply makes its changes in your own save too, once\./);
+  await page.evaluate(async () => (await import("/studio/lib/wc.js")).api.patch("/mods/my-mods", { enabled: false }));
   await page.close();
 });
 

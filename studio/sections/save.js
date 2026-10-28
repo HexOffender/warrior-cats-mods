@@ -24,9 +24,16 @@ export default {
     const doneCard = el("div", { class: "card", id: "save-done" });
     const out = wc.codePanel("save.json");
     const modWords = el("div", { class: "stack" });
+    // A mod is made off here, and saving never turns one on: while it's on, the next Apply would make its changes
+    // in your own save too (once), which is what Change my save now is for.
     const target = wc.modTarget({
       file: "save.json", share: false,   // shared as a whole mod, from the Mods page
+      turnOn: false,
+      savedSays: m => m.enabled
+        ? `Saved in ${m.name}, which is on: the next Apply makes these changes in your own save too, once. Turn it off on the Mods page to only share it.`
+        : `Saved in ${m.name}. It's off, so your own save isn't changed by it. Share it from the Mods page.`,
       onLoad: obj => { modFile = obj ? S.fromSaveJson(obj) : null; drawModFile(); },
+      onSaved: obj => { modFile = S.fromSaveJson(obj); drawModFile(); },
       getValue: () => {
         if (S.isEmpty(list)) { toast("There are no changes in the list to keep in a mod yet", "bad"); return undefined; }
         return S.toSaveJson(list);
@@ -34,7 +41,8 @@ export default {
     });
     const shareFold = el("details", { class: "card fold", id: "save-share" },
       el("summary", {}, el("h3", { text: "Keep it as a mod to share" }), el("span", { class: "muted", text: "The list above, as a mod's save.json" })),
-      el("p", { class: "note", text: "Save to mod puts the list above in the mod's save.json, in place of what it had. Whoever installs the mod gets each change once, in their own save, after a copy of it is kept; playing on past a change is never undone. Your own save isn't changed by this." }),
+      el("p", { class: "note", text: "Save to mod puts the list above in the mod's save.json, in place of what it had. Whoever installs the mod gets each change once, in their own save, after a copy of it is kept; playing on past a change is never undone." }),
+      el("p", { class: "note", text: "A mod made here starts off, and saving doesn't turn it on, so your own save isn't changed by it. If you turn it on, the next Apply makes these changes in your own save too, once." }),
       target.element, modWords);
     const treeBox = el("div", { class: "stack" });
     const statsBox = el("div");
@@ -131,11 +139,14 @@ export default {
         if (typeof S.getPath(data, path) !== "number") continue;
         row.append(numberField(label, path));
       }
+      // The herbs by the names the game gives them (Horsetail Stalks, ...), from its item table when it can be read.
+      const herbs = S.HERBS.map(t => items.names[t] || S.itemWords(t));
       catCard.append(row,
         el("div", { class: "row presets" }, el("span", { class: "lbl", text: "Quick" }),
-          presetButton("Max level", "max-level", "Level 20, experience 0. Your rank stays as it is: promotions come from the rank-up quests."),
-          presetButton("Fill the fresh-kill pile", "fill-pile", "The pile to 100, the most it holds."),
-          presetButton("Give herbs", "give-herbs", "Five more of each healing herb and of small catnip.")),
+          presetButton("Max level", "max-level", "Level 20, experience 0. Your rank stays as it is: promotions come from the rank-up quests.",
+            "Your cat is at level 20 already."),
+          presetButton("Fill the fresh-kill pile", "fill-pile", "The pile to 100, the most it holds.", "The fresh-kill pile is already full."),
+          presetButton("Give herbs", "give-herbs", `Five more of each of ${S.andList(herbs)}.`, "Your cat can't carry anything yet.")),
         el("p", { class: "muted", text: "These only add to the list of changes below. Nothing changes in your save until you say so." }));
     }
     function numberField(label, path) {
@@ -156,9 +167,12 @@ export default {
       refresh();
       return el("div", { class: "field" }, el("label", { for: id, text: label }), inp, was);
     }
-    function presetButton(text, name, what) {
+    // already: what the toast says when the preset changes nothing (the save has it already).
+    function presetButton(text, name, what, already) {
       return el("button", { class: "btn small", type: "button", title: what, "aria-description": what, onclick: () => {
+        const before = JSON.stringify(list);
         S.preset(name, list, data, slot);
+        if (JSON.stringify(list) === before) { toast(already); return; }
         listChanged();
         toast(`${text}: added to the changes to make. Change my save now makes them.`);
       } }, text);
@@ -167,41 +181,61 @@ export default {
 
     // ---------- What it carries ----------
     const KIND_GROUPS = [["consumable", "Herbs"], ["material", "Materials"], ["accessory", "Accessories"]];
+    // The card is drawn again only when its rows change (an item added or taken out); a new count updates its
+    // row in place, so the box keeps focus and Tab goes on to the next one. Each row's parts are keyed by the
+    // item (ids and data-focus), so after a redraw focus comes back to the same item's box or button.
+    let carryShape = null;
+    const carryRows = [];   // each row's update: its count and "in your save now"
     function drawCarry() {
       const inv = `${slot}/GameplayProgression/State/Inventory`;
       const has = S.getPath(data, inv);
+      const added = list.add[inv] || {};
+      const tags = has && typeof has === "object"
+        ? [...new Set([...Object.keys(has), ...Object.keys(added)])].sort((a, b) => S.describe(`${inv}/${a}`, say).localeCompare(S.describe(`${inv}/${b}`, say)))
+        : [];
+      const gone = list.remove.filter(p => p.startsWith(`${inv}/`));
+      const shape = JSON.stringify([inv, !!has, tags, gone, items.problem, items.list.length]);
+      if (shape === carryShape) { for (const fn of carryRows) fn(); return; }
+      carryShape = shape;
+      carryRows.length = 0;
       clear(carryCard).append(el("h2", { text: "What it carries" }));
       if (!has || typeof has !== "object") { carryCard.hidden = true; return; }
       carryCard.hidden = false;
-      const added = list.add[inv] || {};
-      const tags = [...new Set([...Object.keys(has), ...Object.keys(added)])].sort((a, b) => S.describe(`${inv}/${a}`, say).localeCompare(S.describe(`${inv}/${b}`, say)));
       const rows = el("div", { class: "carry" });
       for (const tag of tags) {
         const path = `${inv}/${tag}`;
         if (list.remove.includes(path)) continue;
-        const name = items.names[tag] || S.itemWords(tag), id = nextId();
-        const now = S.after(list, data, path), was = S.getPath(data, path);
+        const name = items.names[tag] || S.itemWords(tag), id = `save-carry-${tag}`;
         const icon = el("img", { class: "item-icon-small", alt: "", width: "28", height: "28", hidden: true });
         if (!items.problem && items.names[tag]) api.image(`/game/icon?of=${encodeURIComponent(tag)}`).then(u => { icon.src = u; icon.hidden = false; }).catch(() => {});
-        const inp = el("input", { type: "number", id, min: "0", step: "1", value: String(now ?? 0), style: { width: "6rem" } });
+        const inp = el("input", { type: "number", id, min: "0", step: "1", style: { width: "6rem" } });
+        const note = el("span", { class: "muted" });
+        const update = () => {
+          const now = S.after(list, data, path), was = S.getPath(data, path);
+          if (document.activeElement !== inp) inp.value = String(now ?? 0);
+          note.textContent = was === undefined ? "new" : now !== was ? `in your save now: ${was}` : "";
+        };
         inp.addEventListener("change", () => {
           const v = Number(inp.value);
           if (inp.value.trim() === "" || !Number.isFinite(v)) { toast(`${name}: use a number`, "bad"); inp.value = String(S.after(list, data, path) ?? 0); return; }
           const why = S.rangeProblem(path, v, save.ranges);
           if (why) { toast(why, "bad"); inp.value = String(S.after(list, data, path) ?? 0); return; }
-          if (was === undefined) S.addKey(list, data, inv, tag, v); else S.setValue(list, data, path, v);
+          if (S.getPath(data, path) === undefined) S.addKey(list, data, inv, tag, v); else S.setValue(list, data, path, v);
           listChanged();
         });
+        carryRows.push(update);
+        update();
         rows.append(el("div", { class: "row carry-row", "data-key": `carry:${tag}` }, icon,
-          el("label", { for: id, text: name }),
-          el("span", { class: "muted", text: was === undefined ? "new" : now !== was ? `in your save now: ${was}` : "" }),
+          el("label", { for: id, text: name }), note,
           el("span", { style: { flex: "1" } }), inp,
-          el("button", { class: "btn ghost small", type: "button", text: "Remove", "aria-label": `Remove ${name}`,
+          el("button", { class: "btn ghost small", type: "button", text: "Remove", "aria-label": `Remove ${name}`, "data-focus": `carry-out:${tag}`,
             onclick: () => { S.removeKey(list, data, path); listChanged(); } })));
       }
-      for (const path of list.remove.filter(p => p.startsWith(`${inv}/`))) {
-        rows.append(el("div", { class: "row carry-row gone" }, el("span", { text: `${S.describe(path, say)}: taken out` }),
-          el("button", { class: "btn ghost small", type: "button", text: "Keep it", onclick: () => { S.forget(list, { kind: "remove", path }); listChanged(); } })));
+      for (const path of gone) {
+        const tag = path.slice(inv.length + 1);
+        rows.append(el("div", { class: "row carry-row gone", "data-key": `carry:${tag}` }, el("span", { text: `${S.describe(path, say)}: taken out` }),
+          el("button", { class: "btn ghost small", type: "button", text: "Keep it", "data-focus": `carry-out:${tag}`,
+            onclick: () => { S.forget(list, { kind: "remove", path }); listChanged(); } })));
       }
       carryCard.append(tags.length ? rows : el("p", { class: "muted", text: "Your cat isn't carrying anything." }));
       // Add: the game's items by name, grouped.
@@ -217,7 +251,7 @@ export default {
       const qty = el("input", { type: "number", id: "save-add-qty", min: "1", step: "1", value: "1", style: { width: "5rem" }, "aria-label": "How many" });
       if (pick.querySelector("option")) {
         carryCard.append(el("div", { class: "row" }, el("span", { class: "lbl", text: "Add" }), pick, qty,
-          el("button", { class: "btn small", type: "button", text: "Add to the list", onclick: () => {
+          el("button", { class: "btn small", type: "button", id: "save-add", text: "Add to the list", onclick: () => {
             const n = Number(qty.value);
             const why = S.rangeProblem(`${inv}/${pick.value}`, n, save.ranges) || (n < 1 ? "Add at least one" : null);
             if (why) return toast(why, "bad");
@@ -268,6 +302,11 @@ export default {
     // The share fold's mod: what its save.json changes, in words.
     function drawModFile() {
       clear(modWords);
+      // Whether the mod is on: if it is, its changes go in your own save too at the next Apply.
+      const mod = target.mods.find(m => m.id === target.current);
+      if (mod?.enabled && modFile && !S.isEmpty(modFile)) {
+        modWords.append(el("p", { class: "banner", id: "save-share-on", text: `${mod.name} is on: the next Apply makes its changes in your own save too, once. Turn it off on the Mods page if it's only to share.` }));
+      }
       if (!modFile || S.isEmpty(modFile)) { modWords.append(el("p", { class: "muted", text: "This mod has no save changes yet." })); return; }
       modWords.append(el("p", { class: "lbl", text: "In this mod's save.json now:" }),
         el("ul", { class: "changes" }, ...S.entries(modFile, data || {}, say).map(c =>
@@ -445,6 +484,7 @@ export default {
 
     // ---------- start, and after a change ----------
     function drawAll() {
+      carryShape = null;   // the save was read again: every row is drawn anew
       drawCat(); drawCarry(); drawPending(); drawTree(); drawStats(); drawModFile();
       out.set(S.toSaveJson(list));
     }
@@ -468,10 +508,11 @@ export default {
     const offFocus = wc.bus.on("focus", async () => {
       try { running((await api.get("/changes")).game_running); } catch (e) { /* the shell says */ }
     });
+    const offMods = wc.bus.on("mods-changed", () => drawModFile());   // turned on or off: the share fold says so
     // Leaving the studio with changes still in the list: the browser asks first.
     const beforeUnload = e => { if (!S.isEmpty(list)) { e.preventDefault(); e.returnValue = ""; } };
     window.addEventListener("beforeunload", beforeUnload);
     await start();
-    return { unmount() { off(); offFocus(); window.removeEventListener("beforeunload", beforeUnload); } };
+    return { unmount() { off(); offFocus(); offMods(); window.removeEventListener("beforeunload", beforeUnload); } };
   },
 };

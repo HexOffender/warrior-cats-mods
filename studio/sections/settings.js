@@ -111,7 +111,7 @@ export default {
       for (const n of backups.slice(0, 10)) {
         saves.append(el("div", { class: "row spread line" }, el("span", { class: "mono", text: n }),
           confirmButton("Restore", "Press again to restore", async () => {
-            try { const r = await api.post("/restore", { name: n }); toast(`Restored ${r.restored.join(", ")}. Any change your mods make to your save is made again at the next Apply.`); renderRepair(); }
+            try { const r = await api.post("/restore", { name: n }); toast(`Restored ${r.restored.join(", ")}. The changes your mods made to your save since that copy are made again at the next Apply, if they're still on.`); renderRepair(); }
             catch (e) { toast(e.message, "bad"); }
           }, "btn small")));
       }
