@@ -1,0 +1,6 @@
+{
+  "_help": "Noisy script's settings, for tests/game/test_scripts.py: a number to change and Save, and an empty list that has to stay a list.",
+  "keys": [],
+  "ratio": 0.1234567,
+  "speed": 1.5
+}
