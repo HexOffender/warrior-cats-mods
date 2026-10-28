@@ -4,11 +4,12 @@ import os
 import runpy
 import sys
 
-from . import runner
-from .controller import Agent, AgentError
+# The controller and the runner are imported when an agent command runs, not with this module: window.py loads
+# user32 as it's imported, and the main command line registers these commands on every run, off Windows too.
 
 
 def _agent(ctx):
+    from .controller import Agent
     return Agent(ctx.root)
 
 
@@ -201,6 +202,7 @@ def cmd_crash(ctx, args):
 
 
 def cmd_test(ctx, args):
+    from . import runner
     paths = args.paths or [os.path.join(ctx.root, "tests", "game")]
     if args.list:
         for t in runner.discover(paths, args.k):
@@ -216,6 +218,8 @@ def cmd_test(ctx, args):
 
 def cmd_run(ctx, args):
     """Run a Python script with `agent` ready in it (and AgentError, skip)."""
+    from . import runner
+    from .controller import AgentError
     agent = _agent(ctx)
     sys.argv = [args.script] + list(args.args)
     runpy.run_path(args.script, init_globals={"agent": agent, "AgentError": AgentError, "skip": runner.skip},

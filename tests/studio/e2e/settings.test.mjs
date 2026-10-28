@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, makeGame, makeMod, removeFolder, startStudio } from "../lib/studio.mjs";
+import { dataFolder, makeGame, makeMod, removeFolders, startStudio } from "../lib/studio.mjs";
 
 const browserPath = findBrowser();
 const required = process.env.WC_REQUIRE_BROWSER === "1";
@@ -43,7 +43,7 @@ Wrc_Win64_Shipping!UnknownFunction []</CallStack></RuntimeProperties></FGenericC
 after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
-  if (folders) await removeFolder(folders.root);
+  if (folders) await removeFolders(folders);
 });
 
 test("Back up now is disabled without a save", { skip }, async () => {

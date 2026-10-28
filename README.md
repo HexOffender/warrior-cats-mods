@@ -120,8 +120,9 @@ closes.
 - **Help** (top right) opens the guide in a panel: how the studio works, your mods folder, saving,
   applying, the log, and where your files are ([docs/guide/](docs/guide/README.md)).
 - **If Clan Mod Studio is updated while it's open**, "Restart the studio" appears at the top: press it,
-  and a fresh studio opens in a new window while the page comes back by itself. If the studio's black
-  window is closed, the page says so and comes back when you open Clan Mod Studio again.
+  and a fresh studio opens in a new window while the page comes back by itself (it waits until your
+  changes are saved). If the studio's black window is closed, the page says so and carries on when you
+  open Clan Mod Studio again, with anything unsaved still on it.
 - **The rest:** each mod's More has its priority, its folder, Save as .zip (to share it) and Remove.
 - **Mod packs**, the next page: a set of mods shared and played together as one experience (a story
   with its cats, quests and items, the colours and names that suit it). Make one from your mods; its
@@ -145,8 +146,10 @@ closes.
   Turn it off.
 
 The pages under **Make mods** are for making your own; each edits a file in a mod folder. **Save to
-mod** checks the file the way Apply would and says under the Editing mod bar what would keep it out of
-the game; the page asks before you switch mods or close it with unsaved changes.
+mod** reads the file as Apply first does and says under the Editing mod bar what in it would keep it out
+of the game; what only shows once the mods are put together (a table's rows and columns, a model or a
+picture, two mods changing the same thing) is still found at Apply. The page asks before you switch
+mods, import a file over your changes or close it with unsaved changes.
 
 | Page | What you change | Stored as | Reaches the game through |
 |---|---|---|---|
