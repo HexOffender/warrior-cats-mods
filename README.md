@@ -121,7 +121,7 @@ it has one, opens its page of the guide.
 | Page | What you change | Stored as | Reaches the game through |
 |---|---|---|---|
 | **Palettes** | eye, coat, pattern and marking colours on a live cat; new pattern and marking colours | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
-| **Your cat** | colours only your cat wears (coat, paws, ears, nose, whiskers); which colour slots it wears; its scars | `cats.json` | UE4SS script (colours); your save, on install (slots, scars) |
+| **Your cat** | colours only your cat wears (coat, paws, ears, nose, whiskers); which of the game's colours it wears; its shape and scars; the same for any cat in your save, drawn as you choose it | `cats.json` | UE4SS script (colours); your save, on install (the game's colours, shape, scars) |
 | **Controls** | keyboard, mouse and controller bindings; press-to-bind, conflicts, controller presets | `controls.json` | the game itself (`WCModsRemap`); movement and the camera only with the old key remapper (deprecated); see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert, smoothing | `mouselook.json` | UE4SS script |
 | **Names** | rename, add and remove name prefixes, suffixes and rogue names; the ban list; cameo cats and any shown name; the cats in your save | `names.json` | edited tables and text in the mod pak; cat renames in your save, on install |

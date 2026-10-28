@@ -73,6 +73,16 @@ async function press(page, scope, text, tag = "button") {
   await page.click(`[data-e2e="${mark}"]`);
 }
 const PAL = '[data-page="palettes"]', CATP = '[data-page="cat"]';
+// Close a page, saying yes to "Leave site?" when it has unsaved changes: a page left asking holds up the browser's
+// other pages of the studio, which the next test opens.
+async function leave(page) {
+  const off = page.c.on(msg => {
+    if (msg.sessionId === page.sessionId && msg.method === "Page.javascriptDialogOpening") {
+      page.send("Page.handleJavaScriptDialog", { accept: true }).catch(() => { /* already gone */ });
+    }
+  });
+  try { await page.close(); } finally { off(); }
+}
 // Save to mod, then wait for the page to have read its file back (it redraws `redrawn`, a selector inside the page):
 // a click before that could land on what the redraw replaces.
 async function saveAndSettle(page, scope, redrawn) {
@@ -99,8 +109,9 @@ async function openPalettes(page, url = studio.url) {
   // Laid out for good once the file is in (the Editing mod bar's list), the quick palettes are drawn above it and the
   // Start from row has its chips: clicks before that can land where a button was a moment ago.
   await page.waitFor(() => document.querySelector('[data-page="palettes"] .target select')?.options.length > 0
-    && [...document.querySelectorAll('[data-page="palettes"] h2')].some(h => h.textContent === "Quick palettes")
-    && document.querySelector('[data-page="palettes"] [data-focus="pal:from:game"]'));
+    && [...document.querySelectorAll('[data-page="palettes"] h2')].some(h => h.textContent === "Switch between ready-made palettes")
+    && document.querySelector('[data-page="palettes"] [data-focus="pal:from:game"]')
+    && document.querySelector('[data-page="palettes"] .pal-strip li'));
   await sleep(200);
 }
 const noNullText = scope => `[...document.querySelectorAll(${JSON.stringify(`${scope} *`)})].filter(n => [...n.childNodes].some(c => c.nodeType === 3 && c.textContent.trim() === "null")).length`;
@@ -125,7 +136,7 @@ test("Palettes opens without the game's files: the eyes say why, and the game's 
   await page.waitFor(() => !document.getElementById("help").hidden && document.querySelector("#helpBody h2"));
   assert.equal(await page.text("#helpTitle"), "Palettes");
   assert.deepEqual(page.consoleErrors(), []);
-  await page.close();
+  await leave(page);
 });
 
 test("the five-minute first try: a new pattern colour made on Palettes, worn on Your cat", { skip }, async () => {
@@ -151,7 +162,7 @@ test("the five-minute first try: a new pattern colour made on Palettes, worn on 
   const cats = await waitForFile(fileOf("my-mods", "cats.json"), c => c.player);
   assert.deepEqual(cats.player, { slots: { pattern: 25 } });
   assert.deepEqual(page.consoleErrors(), []);
-  await page.close();
+  await leave(page);
 });
 
 test("unsaved colours survive an Apply, and the bar says they aren't in the game yet", { skip }, async () => {
@@ -171,7 +182,7 @@ test("unsaved colours survive an Apply, and the bar says they aren't in the game
   await press(page, PAL, "Save to mod");
   await waitForFile(fileOf("my-mods", "palette.json"), p => p.pattern["26"]);
   await page.waitFor(() => document.querySelector('[data-page="palettes"] .target .dirty').textContent === "");
-  await page.close();
+  await leave(page);
 });
 
 test("Quick palettes' Apply saves the page first, and waits while the game runs", { skip }, async () => {
@@ -192,13 +203,14 @@ test("Quick palettes' Apply saves the page first, and waits while the game runs"
     const real = window.fetch;
     window.fetch = (url, init) => { window.calls.push(`${(init && init.method) || "GET"} ${url}`); return real(url, init); };
   });
+  await page.click(`${PAL} .pal-quick summary`);   // folded until it's wanted
   await press(page, PAL, "Apply 1 and install");   // My mods holds only a palette, so it's one of the quick palettes
   await page.waitFor(() => window.calls.includes("POST /api/palettes/apply"), 15000);
   const calls = await page.evaluate("window.calls");
   const put = calls.indexOf("PUT /api/mods/my-mods/file/palette.json");
   assert.ok(put >= 0 && put < calls.indexOf("POST /api/palettes/apply"), calls.join(", "));
   assert.equal(readJson(fileOf("my-mods", "palette.json")).fur["4"], "#445566");
-  await page.close();
+  await leave(page);
   // With the game running, the button waits, as the shell's Apply does.
   const running = await startStudio(folders, { WCMODS_FAKE_RUNNING: "1" });
   try {
@@ -246,7 +258,7 @@ test("Restyle, Undo and Reset tab change the game's colours and keep the new one
   assert.equal(options[3], `3 · ${TABLES.PatternMaskColors[3]}`);
   assert.equal(options[25], "25 (new) · #FF00CC");
   assert.deepEqual(page.consoleErrors(), []);
-  await page.close();
+  await leave(page);
 });
 
 test("what Palettes can't show is listed with a Remove, and Save says what keeps the file out of the game", { skip }, async () => {
@@ -271,7 +283,7 @@ test("what Palettes can't show is listed with a Remove, and Save says what keeps
   await page.waitFor(() => document.querySelector('[data-page="palettes"] .problems').hidden);
   saved = readJson(fileOf("my-mods", "palette.json"));
   assert.equal("hats" in saved, false);
-  await page.close();
+  await leave(page);
 });
 
 test("Save says when another palette adds the same new colour, and which one shows", { skip }, async () => {
@@ -287,7 +299,7 @@ test("Save says when another palette adds the same new colour, and which one sho
   await page.waitFor(() => !document.querySelector('[data-page="palettes"] .save-notes').hidden);
   assert.equal(await page.text(`${PAL} .save-notes li`),
     "Pattern colour 25 is also added by Dark Forest, which is later in the Mods list, so its colour shows");
-  await page.close();
+  await leave(page);
 });
 
 // ---------- Your cat ----------
@@ -313,7 +325,7 @@ test("Your cat opens on a save it can't read, then shows what the cat wears, and
   await page.waitFor(() => [...document.querySelectorAll('[data-page="cat"] h3')].find(h => h.textContent === "Coat colour").nextSibling.textContent === "5 (now 11)");
   assert.equal(await status(page, CATP), "Not in the game yet: Save to mod, then Apply");
   assert.deepEqual(page.consoleErrors(), []);
-  await page.close();
+  await leave(page);
 });
 
 test("a cats.json written by hand: colour names load, and what the page can't change is listed and removable", { skip }, async () => {
@@ -338,5 +350,129 @@ test("a cats.json written by hand: colour names load, and what the page can't ch
   await page.waitFor(() => document.querySelector('[data-page="cat"] .problems').hidden);
   assert.deepEqual(readJson(fileOf("my-mods", "cats.json")).player, { colours: { nose: "#FF0000" }, slots: { fur: 4 } });
   assert.deepEqual(page.consoleErrors(), []);
-  await page.close();
+  await leave(page);
+});
+
+// ---------- the colour code box, the drawn cat, and what reaches the game ----------
+const fill = (page, scope, part) => page.evaluate(`document.querySelector(${JSON.stringify(`${scope} .cat-stage [data-part="${part}"]`)}).getAttribute("fill")`);
+
+test("a colour's code box takes a name or a code, selects itself to copy, and the drawn cat follows", { skip }, async () => {
+  await fresh();
+  writeTables(folders.game, TABLES);
+  const page = await browser.page();
+  await openPalettes(page);
+  await page.click(`${PAL} #pal-tab-fur`);
+  const box = `${PAL} input[aria-label="Colour code for coat colour 3"]`;
+  await page.waitFor(box);
+  assert.equal(await page.evaluate(`document.querySelector('${box}').value`), TABLES.FurColors[3]);
+  // Clicked, its whole text is selected, ready for Ctrl+C.
+  await page.click(box);
+  assert.deepEqual(await page.evaluate(`(n => [n.selectionStart, n.selectionEnd])(document.querySelector('${box}'))`), [0, 7]);
+  await page.type(box, "orange");
+  await page.press("Enter");
+  await page.waitFor(() => document.querySelector('[data-page="palettes"] #pal-tab-fur .mono')?.textContent === " 1 changed");
+  assert.equal(await page.evaluate(`document.getElementById("pal-fur-3").value`), "#ff8c00");
+  await page.click(`${PAL} button[aria-label="Show coat colour 3 on the cat"]`);
+  await page.waitFor(() => document.querySelector('[data-page="palettes"] .cat-stage [data-part="coat"]').getAttribute("fill") === "#FF8C00");
+  // The cat shows the game's colours, to compare, and mine again.
+  await press(page, PAL, "the game's");
+  assert.equal(await fill(page, PAL, "coat"), TABLES.FurColors[3]);
+  await press(page, PAL, "my colours");
+  assert.equal(await fill(page, PAL, "coat"), "#FF8C00");
+  // Something that isn't a colour is said, and the box shows the colour again.
+  await page.click(box);
+  await page.type(box, "reddish");
+  await page.press("Enter");
+  await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes(`"reddish" isn't a colour`)));
+  assert.equal(await page.evaluate(`document.querySelector('${box}').value`), "#FF8C00");
+  assert.deepEqual(page.consoleErrors(), []);
+  await leave(page);
+});
+
+test("What reaches the game says what each kind of colour needs, and two ticked themes are warned about", { skip }, async () => {
+  await fresh();
+  makeMod("warm", { "palette.json": { fur: { 3: "#ff0000" } } });
+  makeMod("cool", { "palette.json": { fur: { 3: "#0000ff" } } });
+  const page = await browser.page();
+  await openPalettes(page);
+  const lines = () => page.evaluate(() => [...document.querySelectorAll('[data-page="palettes"] .pal-strip li')]
+    .map(li => `${li.querySelector(".chip").dataset.said}: ${li.querySelector("strong").textContent}: ${li.querySelector(".muted").textContent}`));
+  assert.deepEqual(await lines(), [
+    "ready: Eye colours: through the game's own files",
+    "ready: Coat, pattern and marking colours: through the script loader",
+    "not yet: New colours and coat presets in the cat maker: need the Creator palettes mod, added on the Mods page"]);
+  makeMod("creator-palettes", {}, { name: "Creator palettes", enabled: false });
+  await emit(page, "mods-changed");
+  await page.waitFor(() => /in your mods but off/.test(document.querySelectorAll('[data-page="palettes"] .pal-strip li')[2].textContent));
+  // Both ticked palettes change the coats: only one of them would show.
+  await page.click(`${PAL} .pal-quick summary`);
+  await page.waitFor(`${PAL} .pal-quick .heads-up`);
+  assert.match(await page.text(`${PAL} .pal-quick .heads-up`), /Two of the ticked palettes change the coats: only the one later in the Mods list shows/);
+  await page.click(`${PAL} #quick-warm`);
+  await page.waitFor(() => !document.querySelector('[data-page="palettes"] .pal-quick .heads-up'));
+  assert.deepEqual(page.consoleErrors(), []);
+  await leave(page);
+});
+
+test("Your cat's drawn cat wears the chosen coat and its scars, beside what the save holds now", { skip }, async () => {
+  await fresh();
+  writeTables(folders.game, TABLES);
+  await writeSave(folders.saves, SAVE(3));   // ScarEarId=1: the right ear torn
+  const page = await browser.page();
+  await page.goto(studio.url + "#cat", { timeout: SLOW });
+  await page.waitFor(`${CATP} [data-focus="slot:fur:3"]`, SLOW);
+  assert.equal(await fill(page, CATP, "coat"), TABLES.FurColors[3]);
+  assert.equal(await page.count(`${CATP} .cat-stage [data-scar="torn-right"]`), 1);
+  const nowText = await page.text(`${CATP} .cat-top .card:last-child ul`);
+  assert.match(nowText, /Colours: coat 3, pattern 5, markings 7/);
+  assert.match(nowText, /Scars: ears: torn, right/);
+  await page.click(`${CATP} [data-focus="slot:fur:5"]`);
+  await page.waitFor(() => document.querySelector('[data-page="cat"] .cat-stage [data-part="coat"]').getAttribute("fill") !== null);
+  assert.equal(await fill(page, CATP, "coat"), TABLES.FurColors[5]);
+  await page.evaluate(() => {
+    const s = document.querySelector('[data-page="cat"] select[aria-label="Ears scar"]');
+    s.value = "5";
+    s.dispatchEvent(new Event("change"));
+  });
+  assert.equal(await page.count(`${CATP} .cat-stage [data-scar="notch-left"]`), 1);
+  // Without the script loader, the colours card says what they need.
+  const loader = path.join(folders.game, "Wrc", "Binaries", "Win64", "ue4ss");
+  await remove(loader);
+  try {
+    await emit(page, "focus");
+    await page.waitFor(() => /They need the script loader/.test(document.querySelector('[data-page="cat"]').textContent));
+  } finally {
+    makeGame(folders.game);
+  }
+  assert.deepEqual(page.consoleErrors(), []);
+  await leave(page);
+});
+
+// A save whose cats are kept under Clans/, as the game keeps them: two warriors and a deputy.
+const CLAN_SAVE = { acct: {
+  0: { GameplayProgression: { "Gameplay.Combat.Character.Cat.Player": { Customization: CAT("Leader", "STR_CAT_NAME1", "_STAR", 3) } },
+    NPCData: { Clans: { WindClan: { Warrior: [CAT("Warrior", "STR_CAT_NAME2", "_LEAF", 4), CAT("Warrior", "STR_CAT_NAME3", "_LEAF", 6)],
+      Deputy: [CAT("Deputy", "STR_CAT_NAME4", "_FANG", 8)] } } } },
+  Shared: { General: { CurrentCatSlot: 0 } } } };
+
+test("a cat the file names by a shorter place is found as the build finds it, and the list can be narrowed", { skip }, async () => {
+  await fresh();
+  await writeSave(folders.saves, CLAN_SAVE);
+  makeMod("my-mods", { "cats.json": { cats: { "WindClan/Warrior/1": { look: { tail: 5 } } } } });
+  const page = await browser.page();
+  await page.goto(studio.url + "#cat", { timeout: SLOW });
+  const who = `${CATP} select[aria-label="Whose look"]`;
+  await page.waitFor(() => document.querySelectorAll('[data-page="cat"] select[aria-label="Whose look"] option').length > 3, SLOW);
+  const options = await page.evaluate(`[...document.querySelector('${who}').options].map(o => o.textContent)`);
+  assert.ok(options.includes('Clans/WindClan/Warrior/1, warrior, changed (in the file as "WindClan/Warrior/1")'), options.join(" | "));
+  assert.ok(!options.some(o => o.includes("not in your save")), "the key is on its cat, not left over");
+  await page.evaluate(`(s => { s.value = "cat:Clans/WindClan/Warrior/1"; s.dispatchEvent(new Event("change")); })(document.querySelector('${who}'))`);
+  await page.waitFor(() => document.querySelector('[data-page="cat"] select[aria-label="Tail"]')?.value === "5");
+  assert.match(await page.text(`${CATP} .cat-top .card:last-child ul`), /Colours: coat 6/, "what that cat has now");
+  // The filter box narrows the list to the cats it matches (the chosen one stays).
+  await page.type(`${CATP} input[aria-label="Find a cat by name, place or role"]`, "deputy");
+  const narrowed = await page.evaluate(`[...document.querySelector('${who}').options].map(o => o.textContent)`);
+  assert.deepEqual(narrowed, ["Your cat", "Clans/WindClan/Deputy/0, deputy", 'Clans/WindClan/Warrior/1, warrior, changed (in the file as "WindClan/Warrior/1")']);
+  assert.deepEqual(page.consoleErrors(), []);
+  await leave(page);
 });

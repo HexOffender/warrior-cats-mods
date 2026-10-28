@@ -35,7 +35,9 @@ Your cat now wears your new pattern colour, and no other cat does.
 
 You can:
 
-- give any of the game's eye, coat, pattern and marking colours a colour of your own, on its card;
+- give any of the game's eye, coat, pattern and marking colours a colour of your own, on its card: with
+  the colour box, or by typing in the box beside it. That box takes a code someone shared (`#FF8800`), a
+  name like "orange", or three numbers ("255, 136, 0"); click it and its code is selected, ready to copy;
 - give an eye **One colour** (it keeps the game's shading, dark at the pupil) or a **Gradient** of two
   to four colours spread from the pupil (left of the strip) to the rim (right);
 - add as many new pattern and marking colours as you like. Each keeps its number for good, so a cat set
@@ -44,8 +46,11 @@ You can:
   tab". On the Eyes tab they change every eye colour, the extra ones too, and leave the eye white alone;
 - start again from the game's colours, or from another palette you have (**Start from**). Both keep your
   new colours;
-- switch between ready-made palettes in one go with **Quick palettes**: tick the ones you want and press
-  Apply. That switches the ticked ones on, the other palette-only mods off, and puts them in the game.
+- switch between ready-made palettes in one go with **Switch between ready-made palettes** (open it
+  from its heading): tick the ones you want and press Apply. That switches the ticked ones on, the other
+  palettes that hold nothing else off, and puts them in the game;
+- compare with the game's own colours: **Cat shows: the game's**, beside the drawing, and back with
+  **my colours**.
 
 You can't:
 
@@ -67,6 +72,10 @@ new pattern or marking colour. The pieces that make them work have been, one by 
 
 ## Did it reach the game?
 
+- **What reaches the game**, at the top of the page, says it before you start: eye colours always go
+  in; coat, pattern and marking colours need the script loader; new colours and coat presets reach the
+  cat maker only with the Creator palettes mod, switched on, with mods that run code allowed. Each line
+  says "ready" or what's missing, and the last line says when your mods last went in the game.
 - After **Save to mod**, a line under the Editing mod bar says if anything would keep the file out of
   the game, and a grey list says what Apply would leave out (an eye name the game hasn't got) or where
   another palette wins (two palettes adding the same new colour number: the one later in the Mods list
@@ -80,8 +89,9 @@ new pattern or marking colour. The pieces that make them work have been, one by 
 
 - **Recolouring a coat to change just your cat.** Every cat with that coat number changes. For one cat,
   use Colours of its own on the Your cat page.
-- **Ticking two full themes** under Quick palettes. Only one of them shows (the one later in the Mods
-  list). Pick one theme; eyes-only or coats-only palettes go on top of it.
+- **Ticking two full themes** under Switch between ready-made palettes. Only one of them shows (the one
+  later in the Mods list), and the card says so. Pick one theme; eyes-only or coats-only palettes go on top
+  of it.
 - **Going by an eye's name.** Some of the game's names don't match the colour (Yellow is green). Go by
   the strip on the card.
 - **Applying with changes unsaved.** Apply puts in what's saved. If you apply with changes still on the

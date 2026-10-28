@@ -117,7 +117,8 @@ applied, and its `colours` go on whichever cat you play, in any save slot. **`ca
 way, each by its name (`"Duskfang"`, as it shows with your names mods) or its place as the Names page
 and the Your cat page show it (`"WindClan/Warrior/3"`, for one of two cats with the same name), in the
 game you're playing, or with the game's slot first for another (`"2/Duskfang"`), as `names.json`'s
-`cats` picks them. Every cat called the name changes, with a warning when that's more than one. Mods
+`cats` picks them. Both place forms work: `"Clans/WindClan/Warrior/1"` as the Your cat page writes it, and
+`"WindClan/Warrior/1"` as the Names page shows it; places match as written, names in any case. Every cat called the name changes, with a warning when that's more than one. Mods
 apply in priority order, so a later mod's choice wins even when it names the cat another way.
 - **`colours`** go onto the cat's own materials while you play. That covers menus and portraits,
   and every part is optional; a colour is written any way `palette.json` takes one (the Your cat page
