@@ -218,7 +218,7 @@ local function tick()
     if mine then remember(nameKey(mine)) end
     local others = next(OTHERS) ~= nil
     if known == "" and not others then return end
-    local inForest = pawn ~= nil
+    local inForest = mine ~= nil      -- your character's cat is there (a menu's pawn, if any, isn't a cat)
     if not inForest then retaken, due = {}, {} end
     local choice = not inForest and choiceCat() or nil
     local choiceAt = choice and choice:GetAddress()
