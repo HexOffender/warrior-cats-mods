@@ -893,8 +893,8 @@ class Studio:
         ops = every.plan_cats(cats)
         listed = names.cat_list(every, cats, ops)
         # For "Give it a game name": the name a mod-named cat had, as any mod's file says (one that's off too).
+        every_file = []
         if any(c["mod_named"] for c in listed):
-            every_file = []
             for m in self.mods():
                 try:
                     every_file.append(names.read_spec(m) or {})

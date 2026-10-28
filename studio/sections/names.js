@@ -118,11 +118,10 @@ export default {
           el("li", { text: "Turn the mod that named the cat back on, then Apply to game." }),
           el("li", { text: "Or give the cat a game name here: its row has Give it a game name. Save to mod, then Apply to game." }),
           el("li", { text: "Or put back a backup of your save from before (Settings and repair)." })),
-        el("p", { class: "note", text: "If every cat with a name of your own shows it, check that Apply to game finished, and that Get set up found the copy of the game Steam starts." }));
+        el("p", { class: "note", text: "If it happens with the mod on, check that Apply to game finished, and that Get set up found the copy of the game Steam starts." }));
     }
 
     // ---------- cats in your save ----------
-
     function renderCats() {
       const cats = view.cats || [];
       const box = cards.cats;
