@@ -227,11 +227,12 @@ def _existing(mods_root, mod_id, meta, files):
         name, have = mod_id, ""
     different = _signature(_folder_files(folder)) != _signature(files)
     new = str(meta.get("version") or "")
-    kn, kh = modlib.version_key(new), modlib.version_key(have)
-    newer = (kn > kh) if kn and kh else (bool(new) and not have)
+    kn, kh = modlib.version_key(new), modlib.version_key(have)   # None for one that isn't a version
+    both = kn is not None and kh is not None
+    newer = (kn > kh) if both else (bool(new) and not have)
     from . import addons
     keep = None
-    if addons.find(mod_id) and different and kn and kh and kh >= kn:
+    if addons.find(mod_id) and different and both and kh >= kn:
         keep = f"You have {name} {have}; this carries {new}: keeping yours"
     return {"name": name, "version": have, "different": different, "keep": keep,
             "take": different and not keep and (newer or (not new and not have))}
