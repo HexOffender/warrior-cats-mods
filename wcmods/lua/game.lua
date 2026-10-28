@@ -90,6 +90,15 @@ end
 -- Whether an object is there and staying: valid and not on its way out.
 function Game.alive(o) return valid(o) and not garbage(o) end
 
+-- Unreal's own enum numbers this module passes to the engine. They're the engine's (Unreal 5.7), not the game's,
+-- so a game update can't move them without a new engine; each comment names its value, which
+-- `python tools/re/uht.py <exe> lua` checks against the exe (docs/reverse-engineering.md, "The game's enums").
+local NO_COLLISION = 0     -- ECollisionEnabled::NoCollision
+local ALWAYS_SPAWN = 1     -- ESpawnActorCollisionHandlingMethod::AlwaysSpawn
+local ROOT_SCALE = 0       -- ESpawnActorScaleMethod::OverrideRootScale
+local PLAY_FORWARD = 0     -- EUMGSequencePlayMode::Forward
+local JUSTIFY_CENTER = 1   -- ETextJustify::Center
+
 -- The text of an FString, FName or FText (or a Lua string), else "".
 function Game.str(v)
     if type(v) == "string" then return v end
@@ -1166,36 +1175,135 @@ end
 registerHidden()
 
 -- ===================================================================================== enums
--- The game's enums, as name -> number (Game.enums.status.Poisoned == 3) and number -> name.
-local function enum(names, first)
-    local e, n = {}, first or 0
-    for _, name in ipairs(names) do
-        e[name], e[n] = n, name
-        n = n + 1
-    end
-    return e
+-- One of the game's enums by its path ("/Script/SwtQuest.EClanType"), as {name = number}, and its names in the
+-- game's order as a second result. The names are without the "EClanType::" in front, and without the
+-- EClanType_MAX the engine adds to an enum class (as the class dump taken in game shows it). A plain enum (four
+-- of the game's: EDataType, ESwtEngineChannel and ESwtServicesError in SwtEngine, EPopupCombatState in Wrc)
+-- keeps the <prefix>_MAX the engine adds to it when its names share a prefix (EPopupCombatState's ST_MAX,
+-- ESwtEngineChannel's ECC_MAX, ESwtServicesError's SWT_MAX; EDataType's share none, so its EDataType_MAX is left
+-- out): in game it can't be told from one the enum's code has itself (Unreal's EInputEvent's IE_MAX). Nil when
+-- the game has no such enum. The class dump lists them all (the `enum E...` lines at the end of each module's
+-- block in api-index.txt; the module is the path's package: /Script/SwtEngine, /Script/SwtQuest,
+-- /Script/SwtAdventure, /Script/SwtNativeAudio, /Script/Wrc).
+function Game.enumNames(path)
+    local e = Game.object(path)   -- checked first: asking a missing object anything crashes the game
+    if not e then return nil end
+    local max = (tostring(path):match("([%w_]+)$") or "") .. "_MAX"
+    local byName, order = {}, {}
+    pcall(function()
+        e:ForEachName(function(name, value)
+            -- An error in here wouldn't reach the pcall around the listing (UE4SS logs it and stops listing).
+            pcall(function()
+                local n = name:ToString():gsub("^.*::", "")
+                local v = type(value) == "number" and math.tointeger(value) or nil
+                if v and n ~= max and byName[n] == nil then
+                    byName[n] = v
+                    order[#order + 1] = n
+                end
+            end)
+        end)
+    end)
+    if #order == 0 then return nil end
+    return byName, order
 end
-Game.enums = {
-    clan = enum({ "None", "ThunderClan", "ShadowClan", "RiverClan", "WindClan" }),
-    rank = enum({ "None", "Apprentice", "Warrior", "Deputy", "Leader" }),
-    trait = enum({ "None", "Brave", "Ambitious", "Wise", "Energetic", "Curious", "Patient" }),
-    stance = enum({ "None", "Neutral", "Offensive", "Defensive", "Trick", "Sneaky", "Reckless" }),
-    status = enum({ "None", "Blinded", "Furious", "Poisoned", "Stressed" }),
-    aiProfile = enum({ "None", "Tier1", "Tier2", "Tier3", "Tier4", "Tier5", "Tier6", "Terrible", "Perfect" }),
-    team = enum({ "None", "Player", "Enemy" }),
-    detectionRange = enum({ "Tiny", "Small", "Medium", "Large" }),
-    stat = enum({ "None", "Prowess", "Strength", "Resilience", "Instinct", "Agility" }),
-    resource = enum({ "Health", "Level", "Stamina", "StaminaCombat", "Currency", "FreshKill" }),
-    questStatus = enum({ "None", "QuestAvailable", "OngoingQuest", "QuestComplete", "QuestTurnedIn", "DialogueProgress" }),
-    questResult = enum({ "Any", "Success", "Fail" }),
-    questType = enum({ "MainQuest", "SideQuest" }),
-    objectiveStatus = enum({ "NotStarted", "InProgress", "Failed", "FailedTimePressure", "Succeeded" }),
-    phase = enum({ "None", "PreCinematic", "CinematicIntro", "PreGame", "Game", "PostGame", "TutorialIntro" }),
-    itemType = enum({ "None", "Consumable", "Equipment", "Quest", "Collectible" }),
-    characterType = enum({ "None", "Cat", "BossCat", "WeakMice", "Mice", "WeakSquirrel", "Squirrel", "WeakRabbit", "Rabbit",
-                          "BossRabbit", "WeakBird", "Bird", "WeakRat", "Rat", "Snake", "ThreatSnake", "BossSnake", "Badger",
-                          "ThreatBadger", "BossBadger", "ThreatFox", "TitanFox", "BossFox", "ThreatDog", "TitanDog", "BossDog" }),
-}
+
+-- The game's enums for scripts, as name -> number (Game.enums.status.Poisoned == 3) and number -> name. Each is
+-- read from the game's own enum the first time it's used, so a game update that renumbers one is followed (patch
+-- 1.1 did, to ECommands). While the game's enum can't be read, the numbers are build 26184573's, said once in the
+-- log; a name the game no longer has reads nil, said once too.
+local ENUMS = @ENUMS@   -- { clan = { "/Script/SwtQuest.EClanType", { "None", ... } }, ... }: game.py ENUMS
+local ENUM_RETRY = 5    -- seconds: how long an enum that couldn't be read answers with the shipped numbers before
+                        -- the game is asked again
+
+-- Fill t with the game's own enum: true when it was read; false, with nothing put in t, when it can't be.
+local function fillEnum(key, t, dropped)
+    local path, shipped = ENUMS[key][1], ENUMS[key][2]
+    local byName, order = Game.enumNames(path)
+    if not byName then return false end
+    for _, name in ipairs(order) do
+        local n = byName[name]
+        rawset(t, name, n)
+        if rawget(t, n) == nil then rawset(t, n, name) end   -- a number with two names: the first, as the game gives
+    end
+    local changes, known = {}, {}
+    for i, name in ipairs(shipped) do
+        known[name] = true
+        if byName[name] == nil then
+            dropped[name] = true
+            changes[#changes + 1] = name .. " gone"
+        elseif byName[name] ~= i - 1 then
+            changes[#changes + 1] = string.format("%s %d -> %d", name, i - 1, byName[name])
+        end
+    end
+    for _, name in ipairs(order) do
+        if not known[name] then changes[#changes + 1] = string.format("%s %d new", name, byName[name]) end
+    end
+    if #changes > 0 then
+        log("the game's enum %s isn't build 26184573's: %s", path, table.concat(changes, ", "))
+    end
+    return true
+end
+
+-- An enum table that fills itself in from the game the first time anything is looked up in it (or it's walked
+-- with pairs or ipairs, or measured with #), which is usually from a script's timer, event or key, once the game
+-- is up. It may not be while a mod's Lua is still starting (the in-game remap waits for its first tick to read
+-- ECommands too): then the table answers with build 26184573's numbers, keeps none of them, and asks the game
+-- again on a lookup ENUM_RETRY seconds later, so a script that looks at an enum while it loads doesn't keep the
+-- old numbers for the session. Its metatable's fromGame says which it has: true once the game's own enum was read.
+local function lazyEnum(key)
+    local path, shipped = ENUMS[key][1], ENUMS[key][2]
+    local fallback = {}   -- build 26184573's numbers, both ways: what the table answers until the game's are read
+    for i, name in ipairs(shipped) do
+        fallback[name] = i - 1
+        fallback[i - 1] = name
+    end
+    local dropped, retryAt, said = {}, nil, false
+    local mt = { fromGame = false }
+    local function fill(t)
+        if mt.fromGame or (retryAt and os.clock() < retryAt) then return end
+        local ok, read = pcall(fillEnum, key, t, dropped)
+        if ok and read then
+            mt.fromGame = true
+            if said then log("read the game's enum %s after all: Game.enums.%s has its numbers now", path, key) end
+            return
+        end
+        -- Not read: nothing of it is kept, and the shipped numbers answer until the game is asked again.
+        for k in pairs(dropped) do dropped[k] = nil end
+        for k in next, t do rawset(t, k, nil) end
+        retryAt = os.clock() + ENUM_RETRY
+        if not said then
+            said = true
+            log("can't read the game's enum %s%s, so Game.enums.%s has build 26184573's numbers until it can", path,
+                ok and "" or " (" .. tostring(read) .. ")", key)
+        end
+    end
+    mt.__index = function(t, k)
+        if not mt.fromGame then
+            fill(t)
+            if not mt.fromGame then return fallback[k] end
+            local v = rawget(t, k)
+            if v ~= nil then return v end
+        end
+        if dropped[k] == true then
+            dropped[k] = false
+            log("Game.enums.%s.%s: the game has no %s any more, so it reads nil", key, tostring(k), tostring(k))
+        end
+        return nil
+    end
+    mt.__pairs = function(t)
+        fill(t)
+        return next, mt.fromGame and t or fallback, nil
+    end
+    mt.__len = function(t)
+        fill(t)
+        return mt.fromGame and rawlen(t) or #fallback
+    end
+    return setmetatable({}, mt)
+end
+
+Game.enums = {}
+for key in pairs(ENUMS) do Game.enums[key] = lazyEnum(key) end
+
 local function enumValue(e, v)
     if type(v) == "string" then return e[v] end
     return v
@@ -1575,7 +1683,7 @@ local function dressPickup(a, look)
     local ok, comp = pcall(function() return a:AddComponentByClass(cls, false, IDENTITY, false) end)
     if not ok or not valid(comp) then return false end
     pcall(function() comp:SetSkeletalMeshAsset(mesh) end)
-    pcall(function() comp:SetCollisionEnabled(0) end)
+    pcall(function() comp:SetCollisionEnabled(NO_COLLISION) end)
     local mat = comp:GetMaterial(0)
     if valid(mat) then
         local mid = comp:CreateDynamicMaterialInstance(0, mat, FName("WCModsGround"))
@@ -1589,7 +1697,7 @@ local function dressPickup(a, look)
     local own = a.StaticMeshComponent
     if valid(own) then
         pcall(function() own:SetVisibility(false, false) end)
-        pcall(function() own:SetCollisionEnabled(0) end)
+        pcall(function() own:SetCollisionEnabled(NO_COLLISION) end)
     end
     return true
 end
@@ -1615,13 +1723,15 @@ function Game.items.drop(tag, count, where)
     local xf = { Translation = { X = x, Y = y, Z = z }, Rotation = { X = 0, Y = 0, Z = 0, W = 1 },
                  Scale3D = { X = 1, Y = 1, Z = 1 } }
     local gs = Game.library("GameplayStatics")
-    local ok, a = pcall(function() return gs:BeginDeferredActorSpawnFromClass(Game.player() or Game.world(), cls, xf, 1, nil, 0) end)
+    local ok, a = pcall(function()
+        return gs:BeginDeferredActorSpawnFromClass(Game.player() or Game.world(), cls, xf, ALWAYS_SPAWN, nil, ROOT_SCALE)
+    end)
     if not ok or not valid(a) then return nil, ok and "couldn't spawn" or tostring(a) end
     pcall(function()
         a.bUseSaveData = false
         a.bUseUniqueIDPersistence = false
     end)
-    pcall(function() gs:FinishSpawningActor(a, xf, 0) end)
+    pcall(function() gs:FinishSpawningActor(a, xf, ROOT_SCALE) end)
     Game.setTagCounts(a.Reward, { [tag] = count })
     if look and look.mesh then pcall(dressPickup, a, look) end
     return a
@@ -1987,7 +2097,7 @@ local function spawnNpc(n)
     end)
     local xf = { Translation = n.at, Rotation = q, Scale3D = { X = 1, Y = 1, Z = 1 } }
     local gs = Game.library("GameplayStatics")
-    local ok, a = pcall(function() return gs:BeginDeferredActorSpawnFromClass(world, cls, xf, 1, nil, 0) end)
+    local ok, a = pcall(function() return gs:BeginDeferredActorSpawnFromClass(world, cls, xf, ALWAYS_SPAWN, nil, ROOT_SCALE) end)
     if not ok or not valid(a) then return false end
     pcall(function()
         -- Not one of the save's cats: no unique ID for the save to keep it by.
@@ -2006,7 +2116,7 @@ local function spawnNpc(n)
             d.bOverrideColors = true
         end
     end)
-    pcall(function() gs:FinishSpawningActor(a, xf, 0) end)
+    pcall(function() gs:FinishSpawningActor(a, xf, ROOT_SCALE) end)
     pcall(standOn, a, g)
     n.actor = a
     n.spawns = n.spawns + 1
@@ -2024,10 +2134,26 @@ end
 --   Game.npcs.onInteract(function(npc) ... end) -- the game's Interact key or button pressed there
 local LABEL_RANGE, REACH = 2000, 250      -- cm: the label shows within LABEL_RANGE, the prompt within REACH
 local LABEL_ICONS = { available = "CanvasAvailable", ongoing = "CanvasOngoing", done = "CanvasCompleted" }
-local SHOWN, COLLAPSED = 4, 1             -- ESlateVisibility: SelfHitTestInvisible, Collapsed
+local SHOWN, COLLAPSED, HIDDEN = 4, 1, 2  -- ESlateVisibility: SelfHitTestInvisible, Collapsed, Hidden
 local ICON_ABOVE = -100                   -- the icon above the label's lines (the game moves it for its own cats)
-local INTERACT_COMMAND = 67               -- the action the game's own prompt glyph shows: Interact
+local INTERACT_COMMAND = 67               -- ECommands::Player_Interact in build 26184573, when the game's can't be read
 local PROMPT_MARGIN = 120                 -- px: how far in from the screen's edges a prompt stays
+
+-- The command whose key the prompt shows: Interact, by its name in the game's ECommands enum (patch 1.1 moved it
+-- from 65 to 67, and an update could again), read at the first prompt. When the enum can't be read, it's build
+-- 26184573's number, said once in the log.
+local interactCommand
+local function interactCommandNumber()
+    if interactCommand then return interactCommand end
+    local commands = Game.enumNames("/Script/SwtEngine.ECommands")
+    interactCommand = commands and commands.Player_Interact
+    if not interactCommand then
+        interactCommand = INTERACT_COMMAND
+        log("can't read Player_Interact from the game's ECommands, so the Talk prompt shows command %d's key (build " ..
+            "26184573's Interact)", INTERACT_COMMAND)
+    end
+    return interactCommand
+end
 
 local function labelWidgets(n)
     local a = n:actorOrNil()
@@ -2130,7 +2256,7 @@ local function promptWidget(h)
         slot:SetAutoSize(true)
         slot:SetAlignment({ X = 0.5, Y = 0.5 })
         slot:SetAnchors({ Minimum = { X = 0, Y = 0 }, Maximum = { X = 0, Y = 0 } })
-        made.mcGuiButtonAction.ActionCommand = INTERACT_COMMAND
+        made.mcGuiButtonAction.ActionCommand = interactCommandNumber()
         -- The game puts the key's picture on a prompt when it sets one up; made here, it needs asking.
         pcall(function() made.mcGuiButtonAction:OnSetupInputs() end)
         prompt.slot = slot
@@ -2144,7 +2270,7 @@ end
 -- Whether the game's own prompt is up (a pickup, a tunnel or one of its cats in reach): then it wins.
 local function gamePromptUp(h)
     local ok, v = pcall(function() return h.mcGuiContextualMenu:GetVisibility() end)
-    return ok and v ~= COLLAPSED and v ~= 2
+    return ok and v ~= COLLAPSED and v ~= HIDDEN
 end
 
 -- Where a cat's prompt goes on screen (pixels), and whether the cat is in view: at its body when it is,
@@ -2454,7 +2580,7 @@ function Game.hud.objective(spec)
     return pcall(function()
         if not spec then
             if objective.on == h then
-                o:PlayAnimation(o.AniMessageHide, 0, 1, 0, 1, false)
+                o:PlayAnimation(o.AniMessageHide, 0, 1, PLAY_FORWARD, 1, false)
                 Game.after(0.5, function()
                     if objective.on ~= h and valid(o) then o:SetVisibility(COLLAPSED) end
                 end)
@@ -2482,7 +2608,7 @@ function Game.hud.objective(spec)
         end
         if objective.on ~= h then
             o:SetVisibility(SHOWN)
-            o:PlayAnimation(o.AniMessageShow, 0, 1, 0, 1, false)
+            o:PlayAnimation(o.AniMessageShow, 0, 1, PLAY_FORWARD, 1, false)
             objective.on = h
         end
     end)
@@ -2577,7 +2703,7 @@ function Game.mapMarker(where, opts)
         if type(where) == "table" then
             at = { X = where.X or where[1], Y = where.Y or where[2], Z = where.Z or where[3] }
             actor = gs:BeginDeferredActorSpawnFromClass(Game.player() or Game.world(), Game.object("/Script/Engine.Actor"),
-                                                        xform(at), 1, nil, 0)
+                                                        xform(at), ALWAYS_SPAWN, nil, ROOT_SCALE)
             m.owned = true
         end
         local c = actor:AddComponentByClass(Game.object(POI_CLASS), false, xform(m.owned and at or { X = 0, Y = 0, Z = 0 }), true)
@@ -2588,7 +2714,7 @@ function Game.mapMarker(where, opts)
         local mat = markerIcon(m.icon)
         if mat then c.CustomPOIIcon = mat end
         actor:FinishAddComponent(c, false, xform(m.owned and at or { X = 0, Y = 0, Z = 0 }))
-        if m.owned then gs:FinishSpawningActor(actor, xform(at), 0) end
+        if m.owned then gs:FinishSpawningActor(actor, xform(at), ROOT_SCALE) end
         m.actor, m.component = actor, c
     end)
     if not ok then return nil, tostring(err) end
@@ -2634,7 +2760,7 @@ end
 -- say returns false (and why) when the box can't be made, for the script to draw its own instead.
 Game.dialogue = {}
 local DIALOGUE = "/Game/Art/UXD/Blueprints/QuestDialogs/WBP_QuestGiver_Dialogue"
-local HIDDEN_HIT, SELF_HIT, COLLAPSED = 3, 4, 1   -- ESlateVisibility
+local HIDDEN_HIT, SELF_HIT, COLLAPSED = 3, 4, 1   -- ESlateVisibility: HitTestInvisible, SelfHitTestInvisible, Collapsed
 local talk = { widget = nil, name = nil, text = nil, closing = 0 }
 -- One talk at a time across mods (each has its own Lua state, and its own box): the one talking holds a
 -- claim in a shared variable, renewed while its box is up.
@@ -2670,7 +2796,7 @@ end
 local function layOut(w)
     w.CanvasPanelDialog:SetVisibility(SELF_HIT)
     w.mcGuiTextParagraph:SetVisibility(HIDDEN_HIT)
-    w.mcGuiTextParagraph:SetJustification(1)   -- centred, as the game's lines are
+    w.mcGuiTextParagraph:SetJustification(JUSTIFY_CENTER)   -- as the game's lines are
     w.mcGuiNext:SetVisibility(HIDDEN_HIT)
     for i = 1, 4 do w["mcButton" .. i]:SetVisibility(COLLAPSED) end
     w:SetVisibility(HIDDEN_HIT)
@@ -2718,7 +2844,7 @@ function Game.dialogue.say(name, text)
             w:AddToViewport(1500)
             added = true
             layOut(w)
-            w:PlayAnimation(w.AniScreenIn, 0, 1, 0, 1, false)
+            w:PlayAnimation(w.AniScreenIn, 0, 1, PLAY_FORWARD, 1, false)
         end
     end)
     if not ok then
@@ -2753,7 +2879,7 @@ function Game.dialogue.hide()
     talk.name, talk.text, talk.fading = nil, nil, true
     talk.closing = talk.closing + 1
     local mine = talk.closing
-    pcall(function() w:PlayAnimation(w.AniScreenOut, 0, 1, 0, 1, false) end)
+    pcall(function() w:PlayAnimation(w.AniScreenOut, 0, 1, PLAY_FORWARD, 1, false) end)
     Game.after(0.3, function()
         if talk.closing ~= mine then return end
         talk.fading = false

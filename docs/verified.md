@@ -271,6 +271,31 @@ Fawnstar, as a player reported it showing "Cat 1"):
   they were; the Log page's Mods and Errors filters; the Inspector's Find refusing the widest classes; a
   setting's `_help_<key>` under its row and `_min_`/`_max_` bounding its number on the automatic page; a number
   written `12.0` read back by `Game.json.decode` as `12.0`.
+- **The game's enums read by name** (2026-10-28: `Game.enumNames`, `Game.enums` filled from the game and asked
+  again after a failed read, `#` on one, the Talk prompt's Interact, the in-game remap's `NoCommand` and `UI_PC`,
+  and the agent's `Button_Confirm`; written and checked against the exe with `tools/re/uht.py <exe> lua`, 58 of
+  58, but not run in the game). `tests/game/test_cat.py::test_enums_are_read_from_the_game` checks the first
+  ones against the installed exe, read with `tools/re/uht.py` (so it holds after an update too): every
+  `wcmods/game.py` `ENUMS` path, `ECommands` and `EGuiConsolesTypes` give the exe's names and numbers in order
+  through `Game.enumNames`, without the engine's `_MAX`; the game's `EClanType` does end with `EClanType_MAX`
+  (the class dump taken in game on 24847281 lists it; this re-checks it on 26184573); a missing enum gives nil
+  without harm; and every `Game.enums` table has the exe's names and numbers both ways and `#`, with its
+  metatable's `fromGame` true (the game's own numbers, not build 26184573's fallback). By hand, with code mods
+  allowed:
+  - a studio cat's Talk prompt (Sandbox mode) still shows the Interact key's picture, and UE4SS.log has no
+    "can't read Player_Interact" line;
+  - with an in-game remap installed, the key pictures still come out of the PC's table (Interact on F shows
+    F on the Travel prompt), and the log has no "can't read UI_PC" or "the game has no command NoCommand" line;
+  - on this build, UE4SS.log has no "can't read the game's enum" line (or each is followed by its "read the
+    game's enum ... after all" line: a script that looked as it loaded) and no "the game's enum ... isn't
+    build 26184573's" line;
+  - a script that reads an enum as it loads, maybe before the game is up, has the game's numbers a little later.
+    A script mod whose `main.lua` is
+    `local early = Game.enums.clan.Total Game.after(15, function() local now = Game.enums.clan.Total local mt = getmetatable(Game.enums.clan) Game.log("clan Total %s at load, %s now; the game's own: %s", tostring(early), tostring(now), tostring(mt ~= nil and mt.fromGame == true)) end)`
+    logs "the game's own: true" (and, if its first read was too early, "can't read the game's enum
+    /Script/SwtQuest.EClanType" at load and "read the game's enum /Script/SwtQuest.EClanType after all" later);
+  - after the next game update, UE4SS.log's "the game's enum ... isn't build 26184573's" lines say what moved,
+    and `python tools/re/uht.py <exe> lua` says which fallbacks to update.
 - **UE4SS's log format** that `scriptlog.py` (a script's card) and the Log page read: `Starting Lua mod '<name>'`
   and `[Lua] [<mod name>] ...`, as UE4SS 3.0.1 (Git SHA 83330635) writes them, read from the installed game's
   log on 2026-10-28. Other UE4SS versions are unchecked; a line the reader doesn't recognise is left out.
