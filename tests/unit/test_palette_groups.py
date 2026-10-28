@@ -122,15 +122,16 @@ def test_palette_colours_load_in_every_form_the_docs_allow(tmp_path):
 
 
 @pytest.mark.parametrize("doc, why", [
-    ({"fur": {" 3": "#ffffff"}}, "slot numbers starting at 0, got ' 3'"),
-    ({"fur": {"3x": "#ffffff"}}, "slot numbers starting at 0"),
-    ({"fur": {"²": "#ffffff"}}, "slot numbers starting at 0"),
-    ({"fur": {"30": "#ffffff"}}, "only pattern and marking colours take new slots"),
+    ({"fur": {" 3": "#ffffff"}}, "fur keys are coat colour numbers, counted from 0; got ' 3'"),
+    ({"fur": {"3x": "#ffffff"}}, "coat colour numbers, counted from 0"),
+    ({"fur": {"²": "#ffffff"}}, "coat colour numbers, counted from 0"),
+    ({"fur": {"30": "#ffffff"}}, "fur has the game's coat colours 0-24 only; only pattern and marking colours take new ones"),
     ({"fur": {"3": ["#000000", "#ffffff"]}}, "gradients are eyes-only"),
     ({"eyes": {"Amber": []}}, "eyes.Amber"),
     ({"eyes": {"Amber": "#GGGGGG"}}, "not a colour"),
     ({"hats": {"0": "#ffffff"}}, "unknown part 'hats'"),
-    ({"pattern": ["#ffffff"]}, "should be an object of colours by slot"),
+    ({"pattern": ["#ffffff"]}, "pattern should be an object of pattern colours by colour number"),
+    ({"eyes": "Amber"}, "eyes should be an object of colours by the game's eye colour names"),
 ])
 def test_load_refuses_what_the_build_cant_use_with_a_sentence(tmp_path, doc, why):
     with pytest.raises(ValueError, match=re.escape(why)):

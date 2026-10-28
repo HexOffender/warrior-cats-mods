@@ -305,7 +305,7 @@ def test_a_palette_json_that_isnt_a_palette_is_a_problem_on_the_card_not_a_blank
         (problem,) = found[i]["problems"]
         assert problem.startswith("palette.json") and "Error" not in problem and studio.ctx.mods_root not in problem
     assert "should be an object with its parts in it" in found["a-list"]["problems"][0]
-    assert "fur should be an object of colours by slot" in found["a-string"]["problems"][0]
+    assert "fur should be an object of coat colours by colour number" in found["a-string"]["problems"][0]
     assert "isn't valid" in found["not-json"]["problems"][0] and "line 1" in found["not-json"]["problems"][0]
     for i in ("a-list", "a-string"):
         with pytest.raises(ValueError):
