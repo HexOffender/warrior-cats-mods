@@ -150,17 +150,93 @@ export function lookFor(looks, where, known) {
   const t = where === "player" ? "player" : where.startsWith("cats.") && !where.startsWith("cats._") ? where.slice(5) : null;
   return t !== null && has(t);
 }
-export function toJson(looks, fileExtra, known) {
+// last: keys of "cats" written after the others, in that order. The build reads a mod's cats in the file's order, a
+// later key winning part by part, so a cat's own entry goes after the other keys that reach it (a shared name, a
+// second place), and the page's choices for it win.
+export function toJson(looks, fileExtra, known, last = []) {
   const player = oneJson(looks.player || blank(), known), cats = {};
   for (const [k, v] of Object.entries(fileExtra)) if (k.startsWith("cats.")) cats[k.slice(5)] = v;
-  for (const [t, l] of Object.entries(looks)) {
-    if (t === "player") continue;
+  const entries = Object.entries(looks).filter(([t]) => t !== "player");
+  const at = t => last.indexOf(t);
+  entries.sort(([a], [b]) => (at(a) >= 0) - (at(b) >= 0) || at(a) - at(b));   // stable: the rest keep their order
+  for (const [t, l] of entries) {
     const o = oneJson(l, known);
-    if (Object.keys(o).length) cats[t] = o;   // over a "cats.X" written as something else
+    if (!Object.keys(o).length) continue;
+    if (at(t) >= 0) delete cats[t];   // a "cats.X" written as something else stays in its place, unless it goes last
+    cats[t] = o;
   }
   const rest = Object.fromEntries(Object.entries(fileExtra).filter(([k]) => !k.startsWith("cats.")
     && !((k === "player" || k === "cats") && lookFor(looks, k, known))));
   return { _help: HELP, ...(Object.keys(player).length ? { player } : {}), ...(Object.keys(cats).length ? { cats } : {}), ...rest };
+}
+
+// Which cats a cats.json key means, the way the build finds them (names.Plan._targets): a key with a "/" by its
+// places, as written; any other by its names, ignoring case. `cats` are GET /cat's, each with its aliases. A key
+// with a game's slot first ("2/Duskfang") means that game's cat: the one being played (`slot`, GET /cat's
+// current_slot) goes without it, and another game's cats aren't on the page. "player" is your cat, never another.
+// (tests/unit/test_studio_cat.py checks this rule against the build's for every shape of key.)
+export function catsFor(key, cats, slot = null) {
+  let k = String(key).trim();
+  const m = /^(\d+)\/(.*)$/.exec(k);
+  if (m) {
+    if (slot === null || slot === undefined || m[1] !== String(slot)) return [];
+    k = m[2];
+  }
+  if (k.toLowerCase() === "player") return [];
+  return cats.filter(c => (k.includes("/") ? (c.aliases?.places || []).includes(k) : (c.aliases?.names || []).includes(k.toLowerCase())));
+}
+// The key a cat's look is kept under: a key of the file's that means this cat alone (its own target first), else its
+// target, for a new entry. A key that means other cats too is never it: a change there would reach them as well.
+export function keyFor(cat, keys, cats, slot = null) {
+  const own = keys.filter(k => { const hits = catsFor(k, cats, slot); return hits.length === 1 && hits[0] === cat; });
+  return own.includes(cat.target) ? cat.target : own[0] || cat.target;
+}
+// Every key of the file's that reaches this cat, in the file's order: its own, a second place for it, a shared name.
+export function keysOn(cat, keys, cats, slot = null) {
+  return keys.filter(k => catsFor(k, cats, slot).includes(cat));
+}
+// The keys a cat's own entry is written after (toJson's `last`): for each cat another key also reaches, the key the
+// page keeps its look under, so the page's choices win in the build.
+export function ownLast(looks, cats, slot = null) {
+  const keys = Object.keys(looks).filter(t => t !== "player");
+  return cats.map(c => [keyFor(c, keys, cats, slot), keysOn(c, keys, cats, slot)])
+    .filter(([own, on]) => own in looks && on.some(k => k !== own)).map(([own]) => own);
+}
+// "medicine cat" for the save's "MedicineCat", "StarClan ancestor" for "StarClanAncestor".
+export const roleWords = role => String(role || "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().replace(/\bstar clan\b/g, "StarClan");
+
+// What one cat's entry chooses, in a few words ("ears 3, coat colour 4, nose #FF0000, no scars"), for a line
+// that says another key changes a cat too. Words come from the page (`words`: {colours|slots|look: {part: word}}),
+// else the part's own name.
+export function describe(l, known, words = {}) {
+  const o = oneJson(l, known), out = [];
+  const word = (key, part) => (words[key] || {})[part] || part;
+  for (const [k, v] of Object.entries(o)) {
+    if (k.startsWith("_")) continue;
+    if (k === "scars" && v === "none") { out.push("no scars"); continue; }
+    if (!isObject(v)) { out.push(`${k} ${JSON.stringify(v)}`); continue; }
+    for (const [part, x] of Object.entries(v)) {
+      if (part.startsWith("_")) continue;
+      out.push(k === "scars" ? `${word("scars", part)} scar ${typeof x === "string" ? x : JSON.stringify(x)}`
+        : `${word(k, part)} ${typeof x === "string" || typeof x === "number" ? x : JSON.stringify(x)}`);
+    }
+  }
+  return out.join(", ") || "nothing yet";
+}
+
+// What several cats have now, as one: each part they all have the same, and `differs` ({slots|scars|look: [part]})
+// naming those they don't, so a key that means them all shows no one cat's values as everyone's.
+export function common(currents) {
+  const out = { slots: {}, scars: {}, look: {}, differs: { slots: [], scars: [], look: [] } };
+  for (const key of ["slots", "scars", "look"]) {
+    const parts = new Set(currents.flatMap(c => Object.keys((c || {})[key] || {})));
+    for (const part of parts) {
+      const vals = currents.map(c => ((c || {})[key] || {})[part]);
+      if (vals.every(v => v === vals[0])) { if (vals[0] !== undefined) out[key][part] = vals[0]; }
+      else out.differs[key].push(part);
+    }
+  }
+  return out;
 }
 
 // What the page can't change about one cat (and, with fileExtra, about the file), for its lists: [{where, value,

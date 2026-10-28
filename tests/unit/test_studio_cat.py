@@ -2,11 +2,13 @@
 what Save to mod says about a cats.json (Studio.check_file and Studio.file_notes), over temporary folders."""
 import json
 import os
+import re
 
 import pytest
 
 from wcmods import studio as studio_mod
 from wcmods.formats.save import SAV_NAME
+from wcmods.names import Plan as RealPlan
 
 from unit_helpers import make_mod, write_save
 
@@ -35,7 +37,7 @@ SAVE5 = {"acct": {
 # ---------- GET /cat ----------
 def test_no_save_gives_empty_cats_and_says_to_start_the_game(studio):
     r = call(studio, "GET", "cat")
-    assert r["current"] == {} and r["cats"] == [] and r["scars"]["current"] == {}
+    assert r["current"] == {} and r["cats"] == [] and r["scars"]["current"] == {} and r["current_slot"] is None
     assert r["save_problem"] == studio_mod.SAVE_MISSING
     assert "start the game once" in r["save_problem"]
 
@@ -58,7 +60,7 @@ def test_a_save_that_cant_be_read_still_opens_the_page_and_says_why(studio, save
 def test_a_save_that_reads_has_no_problem_and_your_cats_slots_scars_and_shape(studio):
     write_save(studio.ctx.cfg.save_dir, SAVE5)
     r = call(studio, "GET", "cat")
-    assert r["save_problem"] is None
+    assert r["save_problem"] is None and r["current_slot"] == "5"
     assert r["current"]["fur"] == 11 and r["scars"]["current"]["ear"] == 4
     assert r["look"]["current"]["body"] == 6 and r["look"]["current"]["size"] == 0.45
     # Only the game being played: slot 2's cat is left out.
@@ -66,6 +68,144 @@ def test_a_save_that_reads_has_no_problem_and_your_cats_slots_scars_and_shape(st
     (other,) = r["cats"]
     assert other["current"]["slots"]["fur"] == 7 and other["current"]["look"]["tail"] == 3
     assert other["current"]["look"]["size"] is None, "a cat without CatSize has no size, not 0"
+
+
+# ---------- the keys a file may name a cat by ----------
+class NamesPlan:
+    """names.Plan's display, without the game's name tables: the name a cat shows now (final=False) and after the
+    names mods that are on (final), from the dicts below by its prefix."""
+    NOW = {"STR_CAT_NAME2": "Hawkleaf", "STR_CAT_NAME3": "Hawkleaf", "STR_CAT_NAME4": "Duskfang"}
+    AFTER = {**NOW, "STR_CAT_NAME4": "Mothfang"}   # a names mod renames Duskfang
+
+    def __init__(self, game, spec):
+        pass
+
+    def display(self, ids, final=True):
+        return (self.AFTER if final else self.NOW).get(ids.get("PrefixNameId"), "")
+
+
+def npc(prefix, role="Warrior"):
+    return f'(ClanType=WindClan,Role={role},PrefixNameId="{prefix}",SuffixNameId="_LEAF",FurColorIdx=1)'
+
+
+CLANS = {"acct": {
+    "0": {"GameplayProgression": {"Gameplay.Combat.Character.Cat.Player": {"Customization": cat("STR_CAT_NAME1", "FurColorIdx=1")}},
+          "NPCData": {"Clans": {"WindClan": {"Warrior": [npc("STR_CAT_NAME2"), npc("STR_CAT_NAME3")],
+                                             "Deputy": [npc("STR_CAT_NAME4", "Deputy")]}},
+                      "NarrativeRoles": {"TheDeputy": npc("STR_CAT_NAME4", "Deputy")}}},
+    "Shared": {"General": {"CurrentCatSlot": 0}}}}
+
+
+@pytest.fixture
+def clans(studio, fake_game, monkeypatch):
+    write_save(studio.ctx.cfg.save_dir, CLANS)
+    monkeypatch.setattr(studio_mod.names, "Plan", NamesPlan)
+    studio._names = object()   # the game's names, as if read: NamesPlan doesn't look at them
+    return {c["where"]: c for c in call(studio, "GET", "cat")["cats"]}
+
+
+def test_two_cats_with_one_name_are_picked_by_place_and_both_answer_to_the_name(clans):
+    first, second = clans["Clans/WindClan/Warrior/0"], clans["Clans/WindClan/Warrior/1"]
+    assert first["target"] == "Clans/WindClan/Warrior/0" and second["target"] == "Clans/WindClan/Warrior/1"
+    assert first["aliases"]["names"] == second["aliases"]["names"] == ["hawkleaf"]
+    assert first["clan"] == "WindClan" and first["role"] == "Warrior"
+
+
+def test_a_cats_places_are_every_key_the_build_takes_and_case_counts(clans):
+    places = clans["Clans/WindClan/Warrior/1"]["aliases"]["places"]
+    for key in ("Clans/WindClan/Warrior/1", "WindClan/Warrior/1", "Warrior/1", "NPCData/Clans/WindClan/Warrior/1",
+                "0/NPCData/Clans/WindClan/Warrior/1"):
+        assert key in places, key
+    assert "windclan/warrior/1" not in places, "the build matches places as written"
+    assert "1" not in places, "a key without a / is a name"
+
+
+def test_a_renamed_cat_answers_to_both_names_and_a_unique_name_is_its_key(clans, studio):
+    deputy = clans["Clans/WindClan/Deputy/0"]
+    assert deputy["target"] == "Mothfang" and deputy["name"] == "Mothfang"
+    assert deputy["aliases"]["names"] == ["duskfang", "mothfang"]
+    # A cat in a story role too is one cat, found by either place.
+    assert "NarrativeRoles/TheDeputy" in deputy["aliases"]["places"]
+    assert call(studio, "GET", "cat")["your_clan"] == "WindClan"
+
+
+class MatchPlan(NamesPlan):
+    """NamesPlan's names with the build's own matcher (names.Plan's _targets), as sections/cats.py's _others uses it."""
+    NOW = {**NamesPlan.NOW, "STR_CAT_NAME5": "Brackenfur", "STR_CAT_NAME6": "Hawkleaf"}
+    AFTER = {**NOW, "STR_CAT_NAME4": "Mothfang"}
+    _targets, cats_called, _called = RealPlan._targets, RealPlan.cats_called, RealPlan._called
+
+
+# Two Hawkleafs and a deputy in a story role too, a Warrior/0 in two clans, and game 2 with a Hawkleaf at the same
+# place as one of game 0's.
+MANY = {"acct": {
+    "0": {"GameplayProgression": {"Gameplay.Combat.Character.Cat.Player": {"Customization": cat("STR_CAT_NAME1", "FurColorIdx=1")}},
+          "NPCData": {"Clans": {"WindClan": {"Warrior": [npc("STR_CAT_NAME2"), npc("STR_CAT_NAME3")],
+                                             "Deputy": [npc("STR_CAT_NAME4", "Deputy")]},
+                                "ThunderClan": {"Warrior": [npc("STR_CAT_NAME5")]}},
+                      "NarrativeRoles": {"TheDeputy": npc("STR_CAT_NAME4", "Deputy")}}},
+    "2": {"NPCData": {"Clans": {"WindClan": {"Warrior": [npc("STR_CAT_NAME7"), npc("STR_CAT_NAME6")]}}}},
+    "Shared": {"General": {"CurrentCatSlot": 0}}}}
+
+
+def page_finds(key, cats, slot):
+    """lib/catlook.js's catsFor, written out: a key with the game being played's slot first goes without it (another
+    game's isn't on the page), "player" is no other cat, a place matches the cat's places as written, a name its
+    names in any case."""
+    k = key.strip()
+    m = re.match(r"^(\d+)/(.*)$", k)
+    if m:
+        if m.group(1) != slot:
+            return []
+        k = m.group(2)
+    if k.lower() == "player":
+        return []
+    return [c for c in cats if (k in c["aliases"]["places"] if "/" in k else k.lower() in c["aliases"]["names"])]
+
+
+def test_the_page_finds_every_key_shape_on_the_cats_the_build_changes(studio, fake_game, monkeypatch):
+    from wcmods.formats.savejson import SaveDoc
+    write_save(studio.ctx.cfg.save_dir, MANY)
+    monkeypatch.setattr(studio_mod.names, "Plan", MatchPlan)
+    studio._names = object()
+    r = call(studio, "GET", "cat")
+    assert r["current_slot"] == "0"
+    every = studio_mod.names.cats_in_save(SaveDoc(studio.save_text()[0]).data)
+    plan = MatchPlan(None, None)
+    keys = ["Clans/WindClan/Warrior/1", "WindClan/Warrior/1", "Warrior/1", "NPCData/Clans/WindClan/Warrior/1",
+            "0/NPCData/Clans/WindClan/Warrior/1", "0/Clans/WindClan/Warrior/1", "0/Warrior/1", " Warrior/1 ",
+            "Warrior/0", "Clans/ThunderClan/Warrior/0", "windclan/warrior/1", "Warrior/5", "NarrativeRoles/TheDeputy",
+            "0/NarrativeRoles/TheDeputy", "Deputy/0", "WindClan/Deputy/0", "2/Warrior/1", "2/Clans/WindClan/Warrior/0",
+            "hawkleaf", "HAWKLEAF", "0/Hawkleaf", "2/Hawkleaf", "duskfang", "Mothfang", "Brackenfur", "Nobody",
+            "player", "0/player"]
+    for key in keys:
+        # What the build changes (sections/cats.py's _others), in the game being played: the page lists only its cats.
+        target = key.strip()
+        hits = [c for c in plan.cats_called(target, every) if not c["player"]]
+        if studio_mod.names.slot_of(target) is None:
+            hits = [c for c in hits if c["current"]]
+        build = sorted(studio_mod.names.place(c["paths"][0]) for c in hits if c["current"])
+        assert sorted(c["where"] for c in page_finds(key, r["cats"], r["current_slot"])) == build, key
+    # And the shapes do find what they should: a place without its clan in every clan, a shared name on both.
+    assert len(page_finds("Warrior/0", r["cats"], "0")) == 2 and len(page_finds("hawkleaf", r["cats"], "0")) == 2
+    assert [c["where"] for c in page_finds("0/Warrior/1", r["cats"], "0")] == ["Clans/WindClan/Warrior/1"]
+
+
+def test_the_eye_colours_palettes_give_are_served_by_row_the_later_palette_winning(studio, fake_game, monkeypatch):
+    from unit_helpers import EYE_LABELS
+    monkeypatch.setattr(studio, "eyes", lambda: {"labels": EYE_LABELS, "rows": []})
+    make_mod(studio, "low", {"priority": 1}, {"palette.json": {"eyes": {"iris2": "#ff0000", "Sky": ["#000000", "#00e5ff"],
+                                                                         "Mint": ["#abcdef"]}}})
+    make_mod(studio, "high", {"priority": 2}, {"palette.json": {"eyes": {"amber": "#00ff00", "Ambre": "#123456"}}})
+    make_mod(studio, "off", {"enabled": False}, {"palette.json": {"eyes": {"Hazel": "#0000ff"}}})
+    eyes = call(studio, "GET", "cat")["eyes"]
+    # A list of one colour is that colour flat (apply_eyes), so it's sent as a gradient of two the same, as the
+    # Palettes page reads it: one colour alone would be drawn with the game's shading.
+    assert eyes == {"2": {"mode": "single", "colors": ["#00ff00"]}, "9": {"mode": "grad", "colors": ["#000000", "#00e5ff"]},
+                    "7": {"mode": "grad", "colors": ["#abcdef", "#abcdef"]}}
+    # Without the game's eye names there's nothing to put them on: the page shows the game's own eyes.
+    studio.ctx.cfg.data["game_dir"] = None
+    assert call(studio, "GET", "cat")["eyes"] == {}
 
 
 # ---------- Save to mod: what it says about a cats.json ----------

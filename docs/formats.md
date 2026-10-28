@@ -84,12 +84,13 @@ patterns, markings and eyes. The
 natural coats are a colour grade of the game's own, so every slot keeps its place from light to dark;
 the bright extras and the eyes get the theme's own colours.
 
-To switch quickly, tick palettes under **Quick palettes** on the Palettes page and press **Apply**,
+To switch quickly, tick palettes under **Switch between ready-made palettes** on the Palettes page and press **Apply**,
 with the game closed. That turns the ticked palettes on, turns the other palette-only mods off, and
 installs. If the install fails, the previous choice is put back. Mods that hold anything besides a
 palette are never touched.
 
-Pick one theme at a time; two themes together show only one of them. Eyes-only and coats-only
+Pick one theme at a time: where two palettes change the same colour, only the later one's shows (the
+Palettes page names them when both are ticked), so two themes show only the later one's coats and eyes. Eyes-only and coats-only
 palettes (Gemstone Eyes, Richer Coats, StarClan Glow Eyes) go on top of a theme, because the themes
 are priority -10. From the command line:
 
@@ -117,10 +118,15 @@ palette you've added is your own copy, so add it again to get the new one.
 `player` is your cat: its `slots`, `scars` and `look` go into the game you were playing when you
 applied, and its `colours` go on whichever cat you play, in any save slot. **`cats`** changes other cats in your save the same
 way, each by its name (`"Duskfang"`, as it shows with your names mods) or its place as the Names page
-and the Your cat page show it (`"WindClan/Warrior/3"`, for one of two cats with the same name), in the
-game you're playing, or with the game's slot first for another (`"2/Duskfang"`), as `names.json`'s
-`cats` picks them. Every cat called the name changes, with a warning when that's more than one. Mods
-apply in priority order, so a later mod's choice wins even when it names the cat another way.
+shows it (`"WindClan/Warrior/3"`, for one of two cats with the same name), in the game you're playing,
+or with the game's slot first for another (`"2/Duskfang"`), as `names.json`'s `cats` picks them. Both
+place forms work: `"Clans/WindClan/Warrior/1"` as the Your cat page shows and writes it, and
+`"WindClan/Warrior/1"` as the Names page shows it; places match as written, names in any case. A place
+without its clan (`"Warrior/1"`) means that place in every clan, so it changes each clan's cat there.
+Every cat called the name changes, with a warning when that's more than one. Mods apply in priority
+order, and within one file a later key wins, part by part, over an earlier one that finds the same cat,
+so a later choice wins even when it names the cat another way (the Your cat page writes a cat's own
+entry after the others that reach it).
 - **`colours`** go onto the cat's own materials while you play. That covers menus and the HUD's
   portrait (the cat choice's small pictures show the saved colours), and every part is optional. No other cat changes, and any colour works, including paws, ears,
   nose and whiskers, which have no slots at all. The game sets a cat's colours again whenever it

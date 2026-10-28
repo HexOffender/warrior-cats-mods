@@ -9,4 +9,12 @@
 /* The game's colour before the game has run with the script loader (and a new colour's empty "before" half):
    stripes, never a made-up colour. */
 .pal-unknown { background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--muted) 55%, transparent) 0 4px, transparent 4px 9px); }
-.pal-tables { border-left: 3px solid var(--changed); padding-left: 10px; }
+/* A colour's code beside its picker (codeBox): wide enough for #RRGGBB, in the code font. */
+.code-box { font-family: var(--mono); font-size: .86rem; width: 8.5em; padding: 4px 8px; }
+.pal-stop { gap: 4px; flex-wrap: nowrap; }
+/* What reaches the game: a chip and a line per kind of colour. */
+.pal-strip-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.pal-strip-lines .chip { min-width: 5.5em; justify-content: center; }
+/* A quick palette's rows of colours, each with its word in front. */
+.pal-dots { gap: 2px; }
+.pal-dots > .muted { font-size: .8rem; min-width: 3em; }

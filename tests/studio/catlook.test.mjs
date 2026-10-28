@@ -69,6 +69,37 @@ test("a size outside the game's scale isn't taken in, and is kept as written", (
   assert.deepEqual(C.parseOne({ look: { size: 0.45 } }, K).look, { size: 0.45 });
 });
 
+// Cats as GET /cat lists them: two called Hawkleaf, and Mothfang, called Duskfang before a names mod.
+const CATS = [
+  { target: "Clans/WindClan/Warrior/0", name: "Hawkleaf", aliases: { names: ["hawkleaf"],
+    places: ["Clans/WindClan/Warrior/0", "WindClan/Warrior/0", "Warrior/0", "NPCData/Clans/WindClan/Warrior/0"] } },
+  { target: "Clans/WindClan/Warrior/1", name: "Hawkleaf", aliases: { names: ["hawkleaf"],
+    places: ["Clans/WindClan/Warrior/1", "WindClan/Warrior/1", "Warrior/1", "NPCData/Clans/WindClan/Warrior/1"] } },
+  { target: "Mothfang", name: "Mothfang", aliases: { names: ["duskfang", "mothfang"],
+    places: ["Clans/WindClan/Deputy/0", "WindClan/Deputy/0", "Deputy/0", "NarrativeRoles/TheDeputy"] } },
+];
+
+test("a file's key lands on the cats the build would change: places as written, names in any case", () => {
+  assert.deepEqual(C.catsFor("WindClan/Warrior/1", CATS), [CATS[1]]);
+  assert.deepEqual(C.catsFor(" Warrior/1 ", CATS), [CATS[1]]);
+  assert.deepEqual(C.catsFor("windclan/warrior/1", CATS), [], "places keep their case, as the build matches them");
+  assert.deepEqual(C.catsFor("hawkleaf", CATS), [CATS[0], CATS[1]], "a name two cats share changes both");
+  assert.deepEqual(C.catsFor("DUSKFANG", CATS), [CATS[2]], "the name before a names mod's rename too");
+  assert.deepEqual(C.catsFor("NarrativeRoles/TheDeputy", CATS), [CATS[2]]);
+  assert.deepEqual(C.catsFor("2/Duskfang", CATS), [], "another game's cat");
+  assert.deepEqual(C.catsFor("Nobody", CATS), []);
+});
+
+test("a cat's look is kept under a key that means it alone", () => {
+  assert.equal(C.keyFor(CATS[1], ["WindClan/Warrior/1", "Hawkleaf"], CATS), "WindClan/Warrior/1");
+  assert.equal(C.keyFor(CATS[0], ["WindClan/Warrior/1", "Hawkleaf"], CATS), "Clans/WindClan/Warrior/0",
+    "the shared name isn't its own: a new entry by its place");
+  assert.equal(C.keyFor(CATS[2], ["duskfang", "Mothfang"], CATS), "Mothfang", "its own target first");
+  assert.equal(C.keyFor(CATS[2], ["duskfang"], CATS), "duskfang");
+  assert.equal(C.roleWords("MedicineCat"), "medicine cat");
+  assert.equal(C.roleWords(""), "");
+});
+
 test("the whole file round-trips: other cats, notes, the file's own keys, and a cat with nothing left goes", () => {
   const file = { _help: "old", version: 2, player: { look: { tail: 3 } },
     cats: { Hawkleaf: { slots: { fur: 4 } }, "WindClan/Warrior/1": { scars: "none" }, _comment: "two cats" } };
@@ -117,4 +148,48 @@ test("a cat's entry that isn't a look is kept as written and listed, until the p
   assert.deepEqual(C.toJson(l3, f3, K), { _help: C.HELP, cats: "none" });
   l3.Hawkleaf = C.parseOne({ slots: { fur: 1 } }, K);
   assert.deepEqual(C.toJson(l3, f3, K), { _help: C.HELP, cats: { Hawkleaf: { slots: { fur: 1 } } } });
+});
+
+test("a key with the game being played's slot first means that game's cat; another game's isn't on the page", () => {
+  assert.deepEqual(C.catsFor("0/Clans/WindClan/Warrior/1", CATS, "0"), [CATS[1]]);
+  assert.deepEqual(C.catsFor("0/Hawkleaf", CATS, "0"), [CATS[0], CATS[1]]);
+  assert.deepEqual(C.catsFor("2/Hawkleaf", CATS, "0"), []);
+  assert.deepEqual(C.catsFor("0/Warrior/1", CATS), [], "without the save's slot, no slot is the one being played");
+  assert.deepEqual(C.catsFor("player", CATS, "0"), [], "your cat is never one of the others");
+  assert.deepEqual(C.catsFor("0/player", CATS, "0"), []);
+});
+
+test("every key that reaches a cat, and the cat's own entry written after the others so the page's choices win", () => {
+  const file = { cats: { "Clans/WindClan/Deputy/0": { look: { tail: 2 } }, "WindClan/Deputy/0": { look: { ears: 3 } },
+    hawkleaf: { slots: { fur: 4 } }, "Clans/WindClan/Warrior/1": { look: { tail: 1 } } } };
+  const { looks, fileExtra } = C.load(file, K);
+  const keys = Object.keys(looks).filter(k => k !== "player");
+  assert.deepEqual(C.keysOn(CATS[2], keys, CATS), ["Clans/WindClan/Deputy/0", "WindClan/Deputy/0"]);
+  assert.deepEqual(C.keysOn(CATS[1], keys, CATS), ["hawkleaf", "Clans/WindClan/Warrior/1"]);
+  assert.equal(C.keyFor(CATS[2], keys, CATS), "Clans/WindClan/Deputy/0", "the first that means it alone");
+  // Each cat another key reaches has its own entry last: the deputy's, after its second place; the warrior's after
+  // the name it shares. Warrior/0 has only the shared name, so it has no entry of its own to move.
+  const last = C.ownLast(looks, CATS);
+  assert.deepEqual(last, ["Clans/WindClan/Warrior/1", "Clans/WindClan/Deputy/0"]);
+  assert.deepEqual(Object.keys(C.toJson(looks, fileExtra, K, last).cats),
+    ["WindClan/Deputy/0", "hawkleaf", "Clans/WindClan/Warrior/1", "Clans/WindClan/Deputy/0"]);
+  assert.deepEqual(Object.keys(C.toJson(looks, fileExtra, K).cats), Object.keys(file.cats), "without, the file's order");
+  // What another key changes, in a few words.
+  const words = { look: { ears: "ears", tail: "tail" }, slots: { fur: "coat colour" }, colours: { nose: "nose" } };
+  assert.equal(C.describe(looks["WindClan/Deputy/0"], K, words), "ears 3");
+  assert.equal(C.describe(C.parseOne({ slots: { fur: 4 }, colours: { nose: "red" }, scars: "none" }, K), K, words),
+    "nose #FF0000, coat colour 4, no scars");
+  assert.equal(C.describe(C.blank(), K, words), "nothing yet");
+});
+
+test("what several cats have now, as one: the parts they share, and which differ", () => {
+  const a = { slots: { fur: 3, pattern: 5 }, scars: { ear: 0 }, look: { tail: 1, size: 0.75 } };
+  const b = { slots: { fur: 3, pattern: 6 }, scars: { ear: 2 }, look: { tail: 1, size: null } };
+  assert.deepEqual(C.common([a, b]), { slots: { fur: 3 }, scars: {}, look: { tail: 1 },
+    differs: { slots: ["pattern"], scars: ["ear"], look: ["size"] } });
+});
+
+test("roles in words", () => {
+  assert.equal(C.roleWords("StarClanAncestor"), "StarClan ancestor");
+  assert.equal(C.roleWords("RogueCatLeader"), "rogue cat leader");
 });

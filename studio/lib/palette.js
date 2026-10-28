@@ -176,6 +176,49 @@ export function nextSlot(own, others, gameSlots) {
   return Math.max(gameSlots, ...past(own), ...past(others));
 }
 
+// Palettes switched on together ([{name, palette}], in the Mods list's order) that change the same colours, as the
+// build merges them (palettes.merge): the later one wins each coat, pattern and marking colour by its number, and
+// each eye by its row whatever each palette calls it. One entry for each pair where the later one's colours show
+// over the earlier's (and no palette later still takes them): {earlier, later, what: the colours in words ("coat 3",
+// "25 coats and 20 eyes"), onTop}. onTop: the earlier is a full theme (it changes the coats and the eyes) and the later
+// isn't, which is how a palette for just the eyes or just the coats is meant to be used. labels: the game's eye
+// names, or null while they can't be read (eyes then match by the name written).
+export function overlaps(list, labels) {
+  const keysOf = p => Object.fromEntries(["eyes", ...PARTS].map(part => {
+    const set = new Set();
+    for (const k of Object.keys(isObject(p[part]) ? p[part] : {})) {
+      if (k.startsWith("_")) continue;
+      if (part !== "eyes") { if (/^[0-9]+$/.test(k)) set.add(Number(k)); continue; }
+      if (!labels) set.add(k.trim().toLowerCase());
+      else if (eyeRow(labels, k) !== null) set.add(eyeRow(labels, k));   // one the build skips changes nothing
+    }
+    return [part, set];
+  }));
+  const keys = list.map(d => keysOf(isObject(d.palette) ? d.palette : {}));
+  const full = k => k.eyes.size > 0 && k.fur.size > 0;
+  const and = words => (words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}` : words[0]);
+  const eye = row => {
+    if (typeof row !== "number") return "an eye";
+    const w = eyeWord(labels, row, true);
+    return row === 0 || /^extra eye/.test(w) ? w : `the ${w} eye`;
+  };
+  const out = [];
+  list.forEach((a, i) => list.forEach((b, j) => {
+    if (j <= i) return;
+    const words = [];
+    for (const part of ["fur", "pattern", "marking", "eyes"]) {
+      const shared = [...keys[i][part]].filter(k => keys[j][part].has(k) && !keys.slice(j + 1).some(later => later[part].has(k)));
+      if (!shared.length) continue;
+      const n = shared.length, one = shared[0];
+      words.push(part === "eyes" ? (n === 1 ? eye(one) : `${n} eyes`)
+        : part === "fur" ? (n === 1 ? `coat ${one}` : `${n} coats`)
+        : n === 1 ? `${NOUN[part]} colour ${one}` : `${n} ${NOUN[part]} colours`);
+    }
+    if (words.length) out.push({ earlier: a.name, later: b.name, what: and(words), onTop: full(keys[i]) && !full(keys[j]) });
+  }));
+  return out;
+}
+
 // The eye rows in the page's three groups: the eye white (row 0), the extra eyes from a game add-on (the "Dlc" rows)
 // and the standard ones, from the game's names rather than counted.
 export function eyeGroups(labels) {

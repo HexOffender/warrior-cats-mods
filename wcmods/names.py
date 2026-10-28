@@ -132,6 +132,17 @@ def game_words(slot):
 
 def _cap(text):
     return text[:1].upper() + text[1:]
+def place_keys(paths):
+    """Every key without a slot that picks a cat with these save paths by its place, as Plan._targets takes
+    them (case kept): each path's place and the ends of it after a "/" ("Clans/WindClan/Warrior/1",
+    "WindClan/Warrior/1", "Warrior/1"), and each path whole and its ends ("NPCData/Clans/..."). Only keys
+    with a "/" in them: one without is a name. For the Your cat page, to put a file's key on its cat."""
+    keys = set()
+    for p in paths:
+        for whole in (place(p), p):
+            parts = whole.split("/")
+            keys.update("/".join(parts[i:]) for i in range(len(parts) - 1))
+    return sorted(keys)
 
 
 def _slot_order(slot):

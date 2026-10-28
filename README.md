@@ -121,7 +121,7 @@ it has one, opens its page of the guide.
 | Page | What you change | Stored as | Reaches the game through |
 |---|---|---|---|
 | **Palettes** | eye, coat, pattern and marking colours on a live cat; new pattern and marking colours | `palette.json` | eye atlas patch (eyes); UE4SS script (the rest) |
-| **Your cat** | colours only your cat wears (coat, paws, ears, nose, whiskers); which colour slots it wears; its scars | `cats.json` | UE4SS script (colours); your save, on install (slots, scars) |
+| **Your cat** | colours only your cat wears (coat, paws, ears, nose, whiskers); which of the game's colours it wears; its shape and scars; the same for any cat in your save, drawn as you choose it | `cats.json` | UE4SS script (colours); your save, on install (the game's colours, shape, scars) |
 | **Controls** | which key, mouse button or controller button does each action, second keys, keys in menus, controller presets; says what each change will do before you apply | `controls.json` | the game itself, through a small helper installed with your mods; moving and the camera only with `Play with key remaps.bat` (deprecated); see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert, smoothing | `mouselook.json` | UE4SS script |
 | **Names** | the cats in your save (a name of your own, or one that grows with rank, each row saying how it works out); rename, add and remove name prefixes, suffixes and rogue names; the ban list; cameo cats and any shown name, with what else each renames; areas, quest titles and items' names, from a list | `names.json` | edited tables and text in the mod pak; cat renames in your save, on install |

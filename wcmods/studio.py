@@ -1115,9 +1115,10 @@ class Studio:
         """Your cat's colour slots, scars and look in the save, the other cats of the game being played with
         theirs (for cats.json's "cats"), the colours each slot has with the enabled palettes (the game's
         tables, recoloured slots, and new slots palettes add), what each scar place can be, and the look's
-        parts with the highest each takes. A save that isn't there or can't be read leaves the cats out and
-        says why in save_problem (None when it reads), so the page still opens."""
-        current, scars, looks, others, save_problem = {}, {}, {}, [], None
+        parts with the highest each takes, and the slot of the game being played (current_slot: a key with it first
+        means that game's cat). A save that isn't there or can't be read leaves the cats out and says why in
+        save_problem (None when it reads), so the page still opens."""
+        current, scars, looks, others, save_problem, your_clan, slot = {}, {}, {}, [], None, None, None
 
         def read(raw):
             """(slots, scars, look) a cat's save text has; a field it leaves out is at its default, 0."""
@@ -1143,10 +1144,16 @@ class Studio:
             if doc is None:
                 raise LookupError(save_problem)
             cats = [c for c in names.cats_in_save(doc.data) if c["current"]]
+            slot = names.current_slot(doc.data)   # a key with it first ("0/Warrior/1") means this game's cat
             mine = [c for c in cats if c["player"]]
             if mine:
-                current, scars, looks = read(doc.get(mine[0]["paths"][0]))
-            shown = self.cat_namer()
+                raw = doc.get(mine[0]["paths"][0])
+                current, scars, looks = read(raw)
+                clan = re.search(r"(?<![A-Za-z0-9_])ClanType=(\w+)", raw)
+                your_clan = clan.group(1) if clan else None
+            # The cats' names as they show with the enabled names mods, and every name the build finds each by;
+            # without the game's name tables the cats are named by their places (cat_namers).
+            shown, called_as = self.cat_namers()
             called = {}
             for c in cats:
                 if not c["player"] and shown(c):
@@ -1157,22 +1164,27 @@ class Studio:
                 name, where = shown(c), names.place(c["paths"][0])
                 slots_now, scars_now, look_now = read(doc.get(c["paths"][0]))
                 # A name picks the cat while it's the only one called that; else its place does.
+                # Every key the build would find it by (names.Plan._targets): its names, matched ignoring case, and
+                # its places, matched as written, so the page puts a file's key on the cat it changes.
                 others.append({"target": name if name and called[name.lower()] == 1 else where, "name": name or where,
-                               "where": where, "role": c["ids"].get("Role", ""),
+                               "where": where, "role": c["ids"].get("Role", ""), "clan": _clan_of(where),
+                               "aliases": {"names": called_as(c), "places": names.place_keys(c["paths"])},
                                "current": {"slots": slots_now, "scars": scars_now, "look": look_now}})
         except LookupError:
             pass
         options = self.look_options()
-        return {"current": current, "save_problem": save_problem, "palette": options["palette"],
+        return {"current": current, "save_problem": save_problem, "palette": options["palette"], "eyes": options["eyes"],
                 "game_slots": options["game_slots"], "slot_parts": list(catcolours.SLOTS),
                 "feral_slots": options["feral_slots"], "parts": catcolours.PARTS,
                 "scars": {"current": scars, "types": catcolours.SCAR_TYPES},
                 "look": {"current": looks, "parts": options["parts"], "size": list(catcolours.SIZE[1:])},
-                "cats": others}
+                "cats": others, "your_clan": your_clan, "current_slot": slot}
 
-    def cat_namer(self):
-        """name(cat) for a cat of names.cats_in_save: its name as it shows with the enabled names mods, or "" without
-        the game's name tables (no game folder, a pak that won't read), where pages name cats by their places."""
+    def cat_namers(self):
+        """(shown, called_as) for cats of names.cats_in_save: shown(cat) is its name as it shows with the enabled
+        names mods, called_as(cat) every name the build finds it by, lowercased (names.Plan._targets). Without
+        the game's name tables (no game folder, a pak that won't read) "" and [], where pages name cats by their
+        places."""
         try:
             if self._names is None:
                 if not self.ctx.cfg.game_dir:   # not ctx.game, which ends the command line (SystemExit)
@@ -1183,9 +1195,14 @@ class Studio:
             except ValueError:
                 spec = names.merge([])
             plan = names.Plan(self._names, spec)
-            return lambda c: plan.display(c["ids"]) or plan.display(c["ids"], final=False)
+            names_of = lambda c: (plan.display(c["ids"]), plan.display(c["ids"], final=False))   # noqa: E731
+            return (lambda c: names_of(c)[0] or names_of(c)[1]), (lambda c: sorted({n.lower() for n in names_of(c) if n}))
         except Exception:       # noqa: BLE001 - the page still opens, with places for names
-            return lambda c: ""
+            return (lambda c: ""), (lambda c: [])
+
+    def cat_namer(self):
+        """shown(cat) of cat_namers: a cat's name as it shows, or "" without the game's name tables."""
+        return self.cat_namers()[0]
 
     def save_info(self):
         """Your save for the Save page: its account and data, the cat being played and the cats of the other
@@ -1284,8 +1301,32 @@ class Studio:
         merged = palettes.merge(enabled)
         slots = {part: {k: colors.hex_from_srgb(v) for k, v in merged.get(part, {}).items()}
                  for part in ("fur", "pattern", "marking")}
-        return {"palette": slots, "game_slots": palettes.GAME_SLOTS, "feral_slots": list(catcolours.FERAL_SLOTS),
-                "parts": {p: catcolours.LOOK_MAX.get(p, 9) for p in catcolours.LOOK}}
+        return {"palette": slots, "eyes": self._palette_eyes(enabled), "game_slots": palettes.GAME_SLOTS,
+                "feral_slots": list(catcolours.FERAL_SLOTS), "parts": {p: catcolours.LOOK_MAX.get(p, 9) for p in catcolours.LOOK}}
+
+    def _palette_eyes(self, loaded):
+        """The eye colours the enabled palettes give, by atlas row (str), the later palette's where two give one, as
+        the build resolves them: {"2": {"mode": "single" | "grad", "colors": ["#rrggbb", ...]}}. {} while the
+        game's eye names can't be read (there's nothing to resolve the keys against)."""
+        if not any(p.get("eyes") for p in loaded) or not self.ctx.cfg.game_dir:
+            return {}
+        try:
+            labels = self.eyes()["labels"]
+        except Exception:   # noqa: BLE001 - the game's files aren't readable now: the page shows the game's eyes
+            return {}
+        out = {}
+        for pal in loaded:
+            for key, spec in pal.get("eyes", {}).items():
+                try:
+                    row = eyeatlas.resolve(labels, key)
+                except KeyError:
+                    continue   # the build skips it too, and Save said so
+                listed = isinstance(spec, list)
+                hexes = [colors.hex_from_srgb(c) for c in (spec if listed else [spec])]
+                # A list of one is that colour flat, pupil to rim (palettes.apply_eyes): a gradient of two the same, as
+                # the Palettes page reads it, since one colour alone keeps the game's shading.
+                out[str(row)] = {"mode": "grad" if listed else "single", "colors": hexes * 2 if listed and len(hexes) == 1 else hexes}
+        return out
 
     def name_tables(self):
         """The game's name tables (names.GameNames), read once. Without a game folder this ends as the command
@@ -1808,6 +1849,13 @@ class Studio:
                 f.write("\n".join(head + [""] + list(lines)) + "\n")
         except OSError:
             pass
+
+
+def _clan_of(where):
+    """The clan a cat's place is in ("WindClan" for "Clans/WindClan/Warrior/1", the clan the save keeps it
+    under), else the place's first part ("Outsiders", "NarrativeRoles"), for the Your cat page's groups."""
+    parts = where.split("/")
+    return parts[1] if parts[0] == "Clans" and len(parts) > 1 else parts[0]
 
 
 def _accessory_look(of):

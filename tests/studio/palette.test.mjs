@@ -214,3 +214,29 @@ test("eyeRamp keeps a row's shading for one colour and spreads a gradient", () =
   assert.deepEqual(grad[0], [0, 0, 0]);
   assert.deepEqual(grad[63], [1, 1, 1]);
 });
+
+test("ticked palettes overlap only where they change the same colour, and the later one in the Mods list wins it", () => {
+  const theme = (name, extra = {}) => ({ name, palette: { fur: Object.fromEntries([...Array(25).keys()].map(i => [i, "#111111"])),
+    eyes: Object.fromEntries(LABELS.slice(1, 21).map(l => [l, "#222222"])), pattern: { 100: "#333333" }, ...extra } });
+  const eyesOnly = { name: "Gem eyes", palette: { eyes: { amber: "#ff0000", iris9: "#00ff00" }, _note: "eyes" } };
+  // A full theme, then a palette for just the eyes: the eyes it changes are the theme's too, on top, as meant.
+  assert.deepEqual(P.overlaps([theme("Forest"), eyesOnly], LABELS),
+    [{ earlier: "Forest", later: "Gem eyes", what: "2 eyes", onTop: true }]);
+  // The other way round, the theme hides them: a conflict, by row whatever each calls the eye.
+  assert.deepEqual(P.overlaps([{ name: "Amber", palette: { eyes: { iris2: "#ff0000" } } }, theme("Forest")], LABELS),
+    [{ earlier: "Amber", later: "Forest", what: "the Amber eye", onTop: false }]);
+  // Two themes: every coat and eye; their new colours have numbers of their own, so they don't meet.
+  assert.deepEqual(P.overlaps([theme("Forest"), theme("River", { pattern: { 125: "#444444" } })], LABELS),
+    [{ earlier: "Forest", later: "River", what: "25 coats and 20 eyes", onTop: false }]);
+  // A coats palette and an eyes palette change nothing in common; "03" is coat 3, as the build counts.
+  assert.deepEqual(P.overlaps([{ name: "Coats", palette: { fur: { 3: "#000000" } } }, eyesOnly], LABELS), []);
+  assert.deepEqual(P.overlaps([{ name: "A", palette: { fur: { "03": "#000000" }, marking: { 30: "#fff" } } },
+    { name: "B", palette: { fur: { 3: "#ffffff" }, marking: { 30: "#000" } } }], LABELS),
+    [{ earlier: "A", later: "B", what: "coat 3 and marking colour 30", onTop: false }]);
+  // Three themes: the last wins everything, so only it is said to show over the others.
+  assert.deepEqual(P.overlaps([theme("A"), theme("B"), theme("C")], LABELS).map(o => `${o.later} over ${o.earlier}`), ["C over A", "C over B"]);
+  // A misspelt eye changes nothing in the build; without the game's names, eyes match as written.
+  assert.deepEqual(P.overlaps([{ name: "A", palette: { eyes: { Ambre: "#000" } } }, { name: "B", palette: { eyes: { Ambre: "#fff" } } }], LABELS), []);
+  assert.deepEqual(P.overlaps([{ name: "A", palette: { eyes: { Amber: "#000" } } }, { name: "B", palette: { eyes: { amber: "#fff" } } }], null),
+    [{ earlier: "A", later: "B", what: "an eye", onTop: false }]);
+});
