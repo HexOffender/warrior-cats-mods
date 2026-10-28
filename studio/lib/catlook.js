@@ -149,6 +149,23 @@ export function toJson(looks, fileExtra, known) {
   return { _help: HELP, ...(Object.keys(player).length ? { player } : {}), ...(Object.keys(cats).length ? { cats } : {}), ...rest };
 }
 
+// Which cats a cats.json key means, the way the build finds them (names.Plan._targets): a key with a "/" by its
+// places, as written; any other by its names, ignoring case. `cats` are GET /cat's, each with its aliases. A key
+// with a game's slot first ("2/Duskfang") means a cat of another game, which the page doesn't list.
+export function catsFor(key, cats) {
+  const k = String(key).trim();
+  if (/^\d+\//.test(k)) return [];
+  return cats.filter(c => (k.includes("/") ? (c.aliases?.places || []).includes(k) : (c.aliases?.names || []).includes(k.toLowerCase())));
+}
+// The key a cat's look is kept under: a key of the file's that means this cat alone (its own target first), else its
+// target, for a new entry. A key that means other cats too is never it: a change there would reach them as well.
+export function keyFor(cat, keys, cats) {
+  const own = keys.filter(k => { const hits = catsFor(k, cats); return hits.length === 1 && hits[0] === cat; });
+  return own.includes(cat.target) ? cat.target : own[0] || cat.target;
+}
+// "medicine cat" for the save's "MedicineCat".
+export const roleWords = role => String(role || "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+
 // What the page can't change about one cat (and, with fileExtra, about the file), for its lists: [{where, value,
 // remove()}], each remove() taking the entry out.
 export function cantChange(l, fileExtra = null) {

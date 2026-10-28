@@ -69,6 +69,37 @@ test("a size outside the game's scale isn't taken in, and is kept as written", (
   assert.deepEqual(C.parseOne({ look: { size: 0.45 } }, K).look, { size: 0.45 });
 });
 
+// Cats as GET /cat lists them: two called Hawkleaf, and Mothfang, called Duskfang before a names mod.
+const CATS = [
+  { target: "Clans/WindClan/Warrior/0", name: "Hawkleaf", aliases: { names: ["hawkleaf"],
+    places: ["Clans/WindClan/Warrior/0", "WindClan/Warrior/0", "Warrior/0", "NPCData/Clans/WindClan/Warrior/0"] } },
+  { target: "Clans/WindClan/Warrior/1", name: "Hawkleaf", aliases: { names: ["hawkleaf"],
+    places: ["Clans/WindClan/Warrior/1", "WindClan/Warrior/1", "Warrior/1", "NPCData/Clans/WindClan/Warrior/1"] } },
+  { target: "Mothfang", name: "Mothfang", aliases: { names: ["duskfang", "mothfang"],
+    places: ["Clans/WindClan/Deputy/0", "WindClan/Deputy/0", "Deputy/0", "NarrativeRoles/TheDeputy"] } },
+];
+
+test("a file's key lands on the cats the build would change: places as written, names in any case", () => {
+  assert.deepEqual(C.catsFor("WindClan/Warrior/1", CATS), [CATS[1]]);
+  assert.deepEqual(C.catsFor(" Warrior/1 ", CATS), [CATS[1]]);
+  assert.deepEqual(C.catsFor("windclan/warrior/1", CATS), [], "places keep their case, as the build matches them");
+  assert.deepEqual(C.catsFor("hawkleaf", CATS), [CATS[0], CATS[1]], "a name two cats share changes both");
+  assert.deepEqual(C.catsFor("DUSKFANG", CATS), [CATS[2]], "the name before a names mod's rename too");
+  assert.deepEqual(C.catsFor("NarrativeRoles/TheDeputy", CATS), [CATS[2]]);
+  assert.deepEqual(C.catsFor("2/Duskfang", CATS), [], "another game's cat");
+  assert.deepEqual(C.catsFor("Nobody", CATS), []);
+});
+
+test("a cat's look is kept under a key that means it alone", () => {
+  assert.equal(C.keyFor(CATS[1], ["WindClan/Warrior/1", "Hawkleaf"], CATS), "WindClan/Warrior/1");
+  assert.equal(C.keyFor(CATS[0], ["WindClan/Warrior/1", "Hawkleaf"], CATS), "Clans/WindClan/Warrior/0",
+    "the shared name isn't its own: a new entry by its place");
+  assert.equal(C.keyFor(CATS[2], ["duskfang", "Mothfang"], CATS), "Mothfang", "its own target first");
+  assert.equal(C.keyFor(CATS[2], ["duskfang"], CATS), "duskfang");
+  assert.equal(C.roleWords("MedicineCat"), "medicine cat");
+  assert.equal(C.roleWords(""), "");
+});
+
 test("the whole file round-trips: other cats, notes, the file's own keys, and a cat with nothing left goes", () => {
   const file = { _help: "old", version: 2, player: { look: { tail: 3 } },
     cats: { Hawkleaf: { slots: { fur: 4 } }, "WindClan/Warrior/1": { scars: "none" }, _comment: "two cats" } };
