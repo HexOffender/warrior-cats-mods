@@ -112,9 +112,11 @@ game closes.
 
 The pages under **Make mods** are for making your own; each edits a file in a mod folder. **Save to
 mod** reads the file as Apply first does and says under the Editing mod bar what in it would keep it out
-of the game; what only shows once the mods are put together (a table's rows and columns, a model or a
-picture, two mods changing the same thing) is still found at Apply. The page asks before you switch
-mods, import a file over your changes or close it with unsaved changes.
+of the game, and what Apply would leave out of it; what only shows once the mods are put together (a
+table's rows and columns, a model or a picture, two mods changing the same thing) is still found at
+Apply. The page asks before you switch mods, import a file over your changes or close it with unsaved
+changes, and reads the file again when something else changed it. A page's **How this works**, where
+it has one, opens its page of the guide.
 
 | Page | What you change | Stored as | Reaches the game through |
 |---|---|---|---|

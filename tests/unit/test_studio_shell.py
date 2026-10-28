@@ -52,7 +52,7 @@ def make_mod(st, mod_id, meta=None, files=None):
 
 # ---------- A: what a save says about its file ----------
 @pytest.mark.parametrize("name, good, bad, said", [
-    ("palette.json", {"fur": {"0": "#f2e6d0"}}, {"fur": {"x": "#f2e6d0"}}, "slot numbers"),
+    ("palette.json", {"fur": {"0": "#f2e6d0"}}, {"fur": {"x": "#f2e6d0"}}, "colour numbers"),
     ("palette.json", {"eyes": {"Amber": ["#001018", "#00e5ff"]}}, {"fur": {"0": "not a colour"}}, "not a colour"),
     ("controls.json", {"keyboard": {"Player_Interact": "F"}}, {"nope": {}}, "should be one of"),
     ("mouselook.json", {"sensitivity": 1.0}, {"sensitivity": "high"}, "sensitivity"),
@@ -209,7 +209,7 @@ def test_a_mod_whose_mod_json_cant_be_read_is_listed_with_its_problem(studio):
 @pytest.mark.parametrize("text, said", [
     ("[1]", "should be an object"),
     ("{bad", "isn't valid"),
-    ('{"fur": "red"}', "fur should be an object of colours by slot"),
+    ('{"fur": "red"}', "fur should be an object of coat colours by colour number"),
     ('{"fur": {"0": "nope"}}', "not a colour"),
     ('{"fur": {"0": 12}}', "not a colour"),
     ('{"eyes": {"Amber": [1, "x"]}}', "eyes.Amber"),

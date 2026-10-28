@@ -8,6 +8,8 @@ import pytest
 from wcmods import luacheck
 from wcmods import palettes as P
 
+from unit_helpers import eye_atlas
+
 
 class Mod:
     def __init__(self, mod_id, name):
@@ -78,15 +80,20 @@ def test_coat_presets_are_listed_by_palette_with_their_ids(tmp_path):
 
 
 class Ctx:
-    """Just enough of the build context for the palettes section."""
+    """Just enough of the build context for the palettes section: what it adds, patches, notes and warns."""
     def __init__(self):
-        self.shared, self.notes, self.mods = {}, {}, {}
+        self.shared, self.notes, self.mods, self.patched, self.warnings, self.read = {}, {}, {}, {}, [], []
 
     def add_ue4ss_mod(self, name, files): self.mods[name] = files
     def add_ue4ss_shared(self, name, text): self.shared[name] = text
     def note(self, key, value): self.notes[key] = value
     def log(self, *a): pass
-    def warn(self, *a): pass
+    def warn(self, msg): self.warnings.append(msg)
+    def patch_package(self, path, data, source=None): self.patched[path] = data
+
+    def read_game_file(self, path):
+        self.read.append(path)
+        return b"the game's eye atlas"
 
 
 def test_a_coats_only_palette_installs(tmp_path):
@@ -100,3 +107,111 @@ def test_a_coats_only_palette_installs(tmp_path):
     lua = ctx.shared[P.GROUPS_LUA]
     assert '["id"] = "coats/Ash"' in lua and not luacheck.check(lua)
     assert not luacheck.check(ctx.mods[next(iter(ctx.mods))]["Scripts/main.lua"])
+
+
+# ---------- the colours a palette.json can say, and what it can't ----------
+def test_palette_colours_load_in_every_form_the_docs_allow(tmp_path):
+    pal = load(tmp_path, {"fur": {"0": "orange", "1": [255, 0, 0], "2": "#11223344", "3": "abc", "4": [0, 0, 255, 128],
+                                  "5": "  #A1B2C3 ", "6": [300, -5, 127.6]},
+                          "eyes": {"Amber": "teal", "Sky": ["#001018", [0, 229, 255]], "Sclera": "#f7f3e8ff"}})
+    assert {k: P.colors.hex_from_srgb(v) for k, v in pal["fur"].items()} == {
+        "0": "#ff8c00", "1": "#ff0000", "2": "#112233", "3": "#aabbcc", "4": "#0000ff", "5": "#a1b2c3", "6": "#ff0080"}
+    assert P.colors.hex_from_srgb(pal["eyes"]["Amber"]) == "#008080"
+    assert [P.colors.hex_from_srgb(c) for c in pal["eyes"]["Sky"]] == ["#001018", "#00e5ff"]
+    assert P.colors.hex_from_srgb(pal["eyes"]["Sclera"]) == "#f7f3e8"
+
+
+@pytest.mark.parametrize("doc, why", [
+    ({"fur": {" 3": "#ffffff"}}, "fur keys are coat colour numbers, counted from 0; got ' 3'"),
+    ({"fur": {"3x": "#ffffff"}}, "coat colour numbers, counted from 0"),
+    ({"fur": {"²": "#ffffff"}}, "coat colour numbers, counted from 0"),
+    ({"fur": {"30": "#ffffff"}}, "fur has the game's coat colours 0-24 only; only pattern and marking colours take new ones"),
+    ({"fur": {"3": ["#000000", "#ffffff"]}}, "gradients are eyes-only"),
+    ({"eyes": {"Amber": []}}, "eyes.Amber"),
+    ({"eyes": {"Amber": "#GGGGGG"}}, "not a colour"),
+    ({"hats": {"0": "#ffffff"}}, "unknown part 'hats'"),
+    ({"pattern": ["#ffffff"]}, "pattern should be an object of pattern colours by colour number"),
+    ({"eyes": "Amber"}, "eyes should be an object of colours by the game's eye colour names"),
+])
+def test_load_refuses_what_the_build_cant_use_with_a_sentence(tmp_path, doc, why):
+    with pytest.raises(ValueError, match=re.escape(why)):
+        load(tmp_path, doc)
+
+
+def test_load_ignores_notes_and_counts_leading_zeros_as_the_game_does(tmp_path):
+    pal = load(tmp_path, {"_help": "x", "name": "Dawn", "description": "Pinks", "fur": {"_note": "warm", "03": "#ffffff"},
+                          "pattern": {"025": "#ff00cc"}})
+    assert pal == {"fur": {"3": (1.0, 1.0, 1.0)}, "pattern": {"25": (1.0, 0.0, 0.8)}}
+    assert P.new_slots(pal) == {"pattern": [25]}
+
+
+# ---------- the palettes section's eyes, on a made-up atlas ----------
+RED, GREEN, BLUE = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
+
+
+@pytest.fixture
+def atlases(monkeypatch):
+    """The eye atlases the section reads, made up (conftest.eye_atlas): the list of those it made."""
+    import copy
+    from wcmods import eyeatlas
+    made, template = [], eye_atlas()
+
+    def fake(data):
+        made.append(copy.deepcopy(template))
+        return made[-1]
+    monkeypatch.setattr(eyeatlas, "EyeAtlas", fake)
+    return made
+
+
+def build(*items):
+    from wcmods.sections.palettes import PaletteSection
+    ctx = Ctx()
+    PaletteSection().build(ctx, [(Mod(i, i.title()), pal) for i, pal in items])
+    return ctx
+
+
+def rim(atlas, row):
+    return P.colors.hex_from_linear(atlas.row(row)[-1][:3])
+
+
+def test_the_highest_palette_wins_an_eye_named_two_ways(atlases):
+    from wcmods import eyeatlas
+    ctx = build(("low", {"eyes": {"iris2": RED}}), ("mid", {"eyes": {"Amber": GREEN}}), ("high", {"eyes": {"iris2": BLUE}}))
+    assert rim(atlases[0], 2) == "#0000ff"
+    assert [(n["row"], n["slot"], n["to"]) for n in ctx.notes["eyes"]] == [(2, "Amber", "#0000ff")]
+    assert eyeatlas.PATH in ctx.patched and ctx.warnings == []
+    build(("low", {"eyes": {"iris2": RED}}), ("high", {"eyes": {"amber": GREEN}}))
+    assert rim(atlases[1], 2) == "#00ff00"
+
+
+def test_a_misspelt_eye_in_one_mod_skips_only_that_entry(atlases):
+    ctx = build(("typo", {"eyes": {"Ambre": RED, "Hazel": GREEN}}), ("fine", {"eyes": {"Sky": BLUE}}))
+    assert len(ctx.warnings) == 1
+    assert ctx.warnings[0].startswith("typo: 'Ambre' isn't one of the game's eye colours (Sclera, Yellow, Amber")
+    assert ctx.warnings[0].endswith("; skipped it")
+    assert rim(atlases[0], 3) == "#00ff00" and rim(atlases[0], 9) == "#0000ff"
+
+
+def test_a_row_past_the_atlas_in_one_mod_skips_only_that_entry(atlases):
+    ctx = build(("far", {"eyes": {"row26": RED, "iris3": GREEN}}), ("fine", {"eyes": {"30": BLUE, "Sky": BLUE}}))
+    assert ctx.warnings == ["far: 'row26' is past the game's 26 eye colours (they're 0-25); skipped it",
+                            "fine: '30' is past the game's 26 eye colours (they're 0-25); skipped it"]
+    assert rim(atlases[0], 3) == "#00ff00" and rim(atlases[0], 9) == "#0000ff"
+
+
+def test_iris_ui_is_derived_from_the_new_rims_unless_the_file_sets_it(atlases):
+    from wcmods.config import UE4SS_MOD_NAME
+    ctx = build(("eyes", {"eyes": {"Amber": RED, "Hazel": GREEN}, "iris_ui": {"2": BLUE}}))
+    lua = ctx.mods[UE4SS_MOD_NAME]["Scripts/main.lua"]
+    # The cat maker's eye buttons are rows 1-25 in order: Amber (row 2) is button 1; button 2 is the file's own.
+    assert "IrisColors = { [1] = {1.0000, 0.0000, 0.0000}, [2] = {0.0000, 0.0000, 1.0000} }" in lua
+    assert ctx.notes["runtime_palette"]["iris_ui"] == ["1", "2"]
+    assert not luacheck.check(lua)
+
+
+def test_no_eyes_in_any_mod_patches_nothing(atlases):
+    ctx = build(("coats", {"fur": {"3": RED}}))
+    assert atlases == [] and ctx.read == [] and ctx.patched == {} and "eyes" not in ctx.notes
+    # Eyes that all miss: the atlas is read, and nothing is patched.
+    ctx = build(("typo", {"eyes": {"Ambre": RED}}))
+    assert len(atlases) == 1 and ctx.patched == {} and len(ctx.warnings) == 1

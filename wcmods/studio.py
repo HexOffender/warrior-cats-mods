@@ -10,6 +10,7 @@ import os
 import re
 import secrets
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,7 @@ import urllib.error
 import urllib.request
 import webbrowser
 import zipfile
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -39,6 +41,10 @@ from .sections import savedit
 from .sections.files import classify
 
 NO_GAME = "Clan Mod Studio hasn't found the game yet: Get set up, on the Mods page, asks where it is"
+# Why the Your cat page can't show what your cat wears now (cat_info's save_problem).
+SAVE_MISSING = "There's no save yet: start the game once, so there's a save, then come back"
+SAVE_UNREADABLE = ("Your save couldn't be read (it may be half written; try again in a moment), so the page can't "
+                   "show what your cat wears now")
 # What a saved file gets instead of a check while the game's files can't be read (check_file).
 CHECK_LATER = "It will be checked when you apply, because the game's files aren't readable now"
 # How the page says pipeline.InstallBlocked (the command line says "not installing because some mods didn't build").
@@ -122,6 +128,30 @@ class _NoGame:
 
     def __getattr__(self, name):
         raise Unreadable("the game's files aren't readable now")
+
+
+class _Notes:
+    """Where a build section's checks write their warnings (ctx.warn) when Studio.file_notes runs them alone."""
+
+    def __init__(self):
+        self.warnings = []
+
+    def warn(self, msg):
+        self.warnings.append(msg[:1].upper() + msg[1:])
+
+
+def _numbers(noun, numbers):
+    """'colour 25', or 'colours 25-27 and 30' for several (a run of three or more as a range)."""
+    runs, start = [], None
+    for i, n in enumerate(numbers):
+        start = n if start is None else start
+        if i + 1 == len(numbers) or numbers[i + 1] != n + 1:
+            runs.append(str(n) if n == start else f"{start}, {n}" if n == start + 1 else f"{start}-{n}")
+            start = None
+    if len(numbers) == 1:
+        return f"{noun} {runs[0]}"
+    head, _, last = ", ".join(runs).rpartition(", ")
+    return f"{noun}s {head} and {last}" if head else f"{noun}s {last}"
 
 
 def owner(file):
@@ -388,6 +418,103 @@ class Studio:
             return []
         names = {x.id: x.name for x in found}
         return [names.get(i, i) for i, on in changed if on]
+
+    def file_notes(self, mod, file):
+        """What Apply would warn about a file the studio just saved that check_file found fine, as sentences: an
+        entry it would leave out, or one another mod's file wins. The file still goes in. [] when there's
+        nothing to say, or when what the note needs can't be read now (the game's files, the save)."""
+        notes = _Notes()
+        try:
+            if file == "palette.json":
+                self._palette_notes(mod, notes)
+            elif file == "cats.json":
+                self._cats_notes(mod, notes)
+        except Exception as e:   # noqa: BLE001 - a note is a nicety: whatever stops one, the save still stands
+            self.log_error(f"notes on {mod.id}'s {file}", e)
+        return notes.warnings
+
+    def _palette_notes(self, mod, notes):
+        path = os.path.join(mod.folder, "palette.json")
+        data = palettes.load(path)
+        # An eye key that isn't one of the game's eye colours: the build skips it. Checked against the names the
+        # Palettes page already read (eyes()), only while the game's files can be read.
+        labels = None
+        if data.get("eyes") and self.ctx.cfg.game_dir:
+            try:
+                labels = self.eyes()["labels"]
+            except Exception:   # noqa: BLE001 - the game's files aren't readable now: Apply checks them
+                labels = None
+            for key in data["eyes"] if labels else ():
+                try:
+                    eyeatlas.resolve(labels, key)
+                except KeyError as e:
+                    notes.warn(f"eyes: {e.args[0]}, so Apply leaves it out")
+        # One colour named twice ("03" and "3", "Amber" and "iris2"): the build takes the later in the file, which the
+        # Palettes page can't always tell (it lists both as a conflict), so it's said here, from the file's own order.
+        with open(path, encoding="utf-8-sig") as f:
+            raw = json.load(f)
+        for part, at, keys in palettes.named_twice(raw, (lambda k: eyeatlas.resolve(labels, k)) if labels else None):
+            what = palettes.eye_word(labels, at) if part == "eyes" else f"{palettes.PLAIN[part]} colour {at}"
+            said = ", ".join(f'"{k}"' for k in keys[:-1]) + f' and "{keys[-1]}"'
+            both, later, rest = ("both", "the later", "the other") if len(keys) == 2 else ("all", "the last", "the others")
+            notes.warn(f'{part}: {said} {both} name {what}, and Apply uses "{keys[-1]}", {later} in the file: remove {rest}')
+        # A new colour another palette that's on adds too: the one later in the Mods list shows.
+        mine = palettes.new_slots(data)
+        found = self.mods() if mine else []
+        order = [m.id for m in found]
+        for other in found:
+            path = os.path.join(other.folder, "palette.json")
+            if other.id == mod.id or not other.enabled or not os.path.isfile(path):
+                continue
+            try:
+                theirs = palettes.new_slots(palettes.load(path))
+            except ValueError:
+                continue   # its own card says what's wrong with it
+            later = order.index(other.id) > order.index(mod.id)
+            for part, slots in mine.items():
+                both = sorted(set(slots) & set(theirs.get(part, [])))
+                if both:
+                    notes.warn(f"{part.title()} {_numbers('colour', both)} {'is' if len(both) == 1 else 'are'} also "
+                               f"added by {other.name}, which is {'later' if later else 'earlier'} in the Mods list, so "
+                               f"{'its colour shows' if later else 'this one shows'}")
+
+    def _cats_notes(self, mod, notes):
+        from .sections.cats import EMPTY, CatsSection, _new_slots
+        data = catcolours.validate(CatsSection.read_json(mod, "cats.json"))
+        enabled = [m for m in self.mods() if m.enabled or m.id == mod.id]
+        added = _new_slots(enabled)
+        # The build's own checks, with its own words: a new colour no palette adds, a Feral coat, a scar that
+        # shows nothing.
+        CatsSection._check(notes, "your cat", {**EMPTY, **data.get("player", {})}, added)
+        for target, one in data.get("cats", {}).items():
+            CatsSection._check(notes, target, {**EMPTY, **one}, added)
+        # Cats no key finds, or a name two cats share, found the way the build finds them (with the game's names,
+        # for the cats' names as they show).
+        if not data.get("cats"):
+            return
+        try:
+            text, _ = self.save_text()
+            cats = names.cats_in_save(SaveDoc(text).data)
+        except LookupError:
+            CatsSection._others(notes, None, [data["cats"]], [], False)
+            return
+        except (ValueError, OSError, struct.error, zlib.error, EOFError):
+            return   # a save being written: Apply finds the cats
+        if not self.ctx.cfg.game_dir:
+            return
+        try:
+            if self._names is None:
+                self._names = names.GameNames(lambda path: self.ctx.game.read_text(BuildContext.data_path(path)))
+            try:
+                spec = names.merge(names.mod_specs(enabled))
+            except ValueError:
+                spec = names.merge([])
+            plan = names.Plan(self._names, spec)
+            found = _Notes()
+            CatsSection._others(found, plan, [data["cats"]], cats, True)
+        except (Unreadable, OSError, LookupError):
+            return   # the game's names can't be read now: Apply finds the cats
+        notes.warnings += found.warnings
 
     def restart(self):
         """Start a fresh Clan Mod Studio (in its own window) and stop this one, for the page's Restart the
@@ -736,9 +863,13 @@ class Studio:
                             noted.append("The mod can't note that it works with the Sandbox mode mod, and stays off, "
                                          f"until its mod.json is fixed: {m.problem or e}")
                 # A file half made still saves; what would keep it, or part of it, out of the game is said now,
-                # not at Apply.
+                # not at Apply, and so is what Apply would leave out of a file that's fine (notes: the check's own
+                # warnings, then file_notes').
                 problems, notes = self.check_file(m, name)
-                said = {"saved": name, "requires": m.requires, "problems": noted + problems, "notes": notes}
+                problems = noted + problems
+                if not problems:
+                    notes = notes + [n for n in self.file_notes(m, name) if n not in notes]
+                said = {"saved": name, "requires": m.requires, "problems": problems, "notes": notes}
                 if turned_on is not None:   # cats and quests: the mods they work with, and what came on for them
                     said.update(uses=m.uses, turned_on=turned_on)
                 return said
@@ -788,14 +919,16 @@ class Studio:
         if parts == ["game", "eyes"]:
             return self.eyes()
         if parts == ["game", "tables"]:
+            # The game's colour tables, once the game has run with the script loader (its log), else the file
+            # `wcmods tables` writes; game_slots either way, so a page can show the game's colours by number.
             rep = ue4ss.read_reports(cfg.win64_dir) if cfg.game_dir else None
             if rep and rep["tables"]:
-                return {"tables": rep["tables"], "source": "game log"}
+                return {"tables": rep["tables"], "source": "game log", "game_slots": palettes.GAME_SLOTS}
             path = os.path.join(self.root, "colour_tables.json")
             if os.path.isfile(path):
                 with open(path, encoding="utf-8-sig") as f:
-                    return {"tables": json.load(f), "source": "colour_tables.json"}
-            return {"tables": None, "source": None}
+                    return {"tables": json.load(f), "source": "colour_tables.json", "game_slots": palettes.GAME_SLOTS}
+            return {"tables": None, "source": None, "game_slots": palettes.GAME_SLOTS}
         if parts == ["game", "bindings"]:
             # The save's copy of the bindings (the game ignores edits to it, and it puts Pause on Enter while the
             # game pauses on Escape): for mods' own pages. The Controls page uses /game/keys.
@@ -982,8 +1115,9 @@ class Studio:
         """Your cat's colour slots, scars and look in the save, the other cats of the game being played with
         theirs (for cats.json's "cats"), the colours each slot has with the enabled palettes (the game's
         tables, recoloured slots, and new slots palettes add), what each scar place can be, and the look's
-        parts with the highest each takes."""
-        current, scars, looks, others = {}, {}, {}, []
+        parts with the highest each takes. A save that isn't there or can't be read leaves the cats out and
+        says why in save_problem (None when it reads), so the page still opens."""
+        current, scars, looks, others, save_problem = {}, {}, {}, [], None
 
         def read(raw):
             """(slots, scars, look) a cat's save text has; a field it leaves out is at its default, 0."""
@@ -996,9 +1130,18 @@ class Studio:
                 rf"(?<![A-Za-z0-9_]){catcolours.SIZE[0]}=", raw) else None
             return ({part: num(field) for part, field in catcolours.SLOTS.items()},
                     {part: num(field) for part, field in catcolours.SCARS.items()}, look)
+        doc = None
         try:
             text, _ = self.save_text()
             doc = SaveDoc(text)
+        except LookupError:
+            save_problem = SAVE_MISSING
+        except (ValueError, OSError, struct.error, zlib.error, EOFError):
+            # Half written (read while the game saves), cut short, or held open: said, and the page still opens.
+            save_problem = SAVE_UNREADABLE
+        try:
+            if doc is None:
+                raise LookupError(save_problem)
             cats = [c for c in names.cats_in_save(doc.data) if c["current"]]
             mine = [c for c in cats if c["player"]]
             if mine:
@@ -1020,7 +1163,8 @@ class Studio:
         except LookupError:
             pass
         options = self.look_options()
-        return {"current": current, "palette": options["palette"], "game_slots": options["game_slots"],
+        return {"current": current, "save_problem": save_problem, "palette": options["palette"],
+                "game_slots": options["game_slots"], "slot_parts": list(catcolours.SLOTS),
                 "feral_slots": options["feral_slots"], "parts": catcolours.PARTS,
                 "scars": {"current": scars, "types": catcolours.SCAR_TYPES},
                 "look": {"current": looks, "parts": options["parts"], "size": list(catcolours.SIZE[1:])},
@@ -1901,8 +2045,11 @@ def make_handler(studio, port):
 
 class _Server(ThreadingHTTPServer):
     """One studio per port. HTTPServer turns on SO_REUSEADDR, which on Windows lets a second server
-    bind a port that's already in use, so two studios would silently share it."""
+    bind a port that's already in use, so two studios would silently share it. A page asks for its scripts,
+    styles and data all at once: room for that many to wait their turn (socketserver's 5 overflows on a busy
+    machine, which the browser says as ERR_NO_BUFFER_SPACE or a refused connection)."""
     allow_reuse_address = False
+    request_queue_size = 128
 
     def server_bind(self):
         if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):

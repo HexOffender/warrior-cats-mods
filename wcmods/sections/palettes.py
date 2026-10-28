@@ -16,17 +16,23 @@ class PaletteSection(Section):
         return palettes.load(os.path.join(mod.folder, "palette.json"))
 
     def build(self, ctx, items):
-        merged = palettes.merge([data for _, data in items])
-        if "eyes" in merged:
+        palettes_in = [data for _, data in items]
+        atlas = None
+        if any(data.get("eyes") for data in palettes_in):
             atlas = eyeatlas.EyeAtlas(ctx.read_game_file(eyeatlas.PATH))
-            # A misspelled slot in one mod skips just that entry, not every mod's palette.
+            # Each mod's eye keys as the rows they mean, so the later palette wins a row whatever each calls it
+            # ("Amber", "iris2"); a key that isn't one of the rows skips just that entry, not every mod's palette.
+            palettes_in = []
             for mod, data in items:
-                for key in data.get("eyes", {}):
+                rows = {}
+                for key, spec in data.get("eyes", {}).items():
                     try:
-                        atlas.slot(key)
-                    except KeyError:
-                        ctx.warn(f"{mod.id}: '{key}' isn't an eye slot (see `wcmods eyes`); skipped it")
-                        merged["eyes"].pop(key, None)
+                        rows[str(atlas.slot(key))] = spec
+                    except KeyError as e:
+                        ctx.warn(f"{mod.id}: {e.args[0]}; skipped it")
+                palettes_in.append({**data, "eyes": rows} if "eyes" in data else data)
+        merged = palettes.merge(palettes_in)
+        if "eyes" in merged:
             changes = palettes.apply_eyes(atlas, merged["eyes"])
             for _, label, old, new in changes:
                 ctx.log(f"  eyes: {label:14s} {old} -> {new}")

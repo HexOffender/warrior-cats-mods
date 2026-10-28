@@ -11,7 +11,7 @@ const dom = install();
 function fresh() {
   return {
     mods: [{ id: "a", name: "Mod A", enabled: true, kinds: ["names"], problem: null }, { id: "b", name: "Mod B", enabled: false, kinds: [], problem: null }],
-    files: { "a/names.json": { prefixes: { remove: ["Moon"] } } }, problems: [], puts: [], patches: [],
+    files: { "a/names.json": { prefixes: { remove: ["Moon"] } } }, problems: [], notes: [], puts: [], patches: [],
   };
 }
 function routes(state) {
@@ -268,6 +268,147 @@ test("closing the page with unsaved changes is asked about; installedEvent waits
   assert.equal(staying.defaultPrevented, false);
   t.wc.bus.emit("installed", {});
   assert.equal(heard, 2);
+});
+
+test("what Apply would leave out of a file that's fine shows under the bar until the next save", async () => {
+  const t = await setUp();
+  const notes = t.target.element.querySelector(".save-notes");
+  assert.equal(notes.hidden, true);
+  t.state.notes = ["Pattern colour 25 is also added by Dark Forest, which is later in the Mods list, so its colour shows"];
+  await t.target.save();
+  assert.equal(notes.hidden, false);
+  assert.equal(t.problems.hidden, true, "a note isn't a problem: the file goes in");
+  assert.deepEqual(notes.querySelectorAll("li").map(li => li.textContent), t.state.notes);
+  assert.equal(notes.getAttribute("role"), "status");
+  t.state.notes = [];
+  await t.target.save();
+  assert.equal(notes.hidden, true);
+});
+
+test("an Apply with unsaved changes says they aren't in the game yet, until they're saved", async () => {
+  const t = await setUp();
+  const status = () => t.target.element.querySelector(".dirty").textContent;
+  t.wc.bus.emit("installed", {});
+  assert.equal(status(), "", "nothing unsaved: nothing to say");
+  t.target.markDirty();
+  assert.equal(status(), "Unsaved changes");
+  t.wc.bus.emit("installed", {});
+  assert.equal(status(), "Not in the game yet: Save to mod, then Apply");
+  t.target.markDirty();   // another change: still not in the game
+  assert.equal(status(), "Not in the game yet: Save to mod, then Apply");
+  await t.target.save();
+  assert.equal(status(), "");
+  t.target.markDirty();
+  assert.equal(status(), "Unsaved changes", "the next change is just unsaved again");
+});
+
+test("coming back to the window re-reads a file changed outside the page, only while nothing is unsaved", async () => {
+  const t = await setUp();
+  t.wc.bus.emit("focus");
+  await tick(20);
+  assert.equal(t.loads.length, 1, "unchanged on disk: not loaded again");
+  t.state.files["a/names.json"] = { prefixes: { remove: ["Star"] } };   // the game's own menu saved it, say
+  t.target.markDirty();
+  t.wc.bus.emit("focus");
+  await tick(20);
+  assert.equal(t.loads.length, 1, "unsaved changes here: they stay, and Save decides");
+  await t.change("b");   // leave the changes behind, then come back to "a"
+  t.button("Switch without saving").click();
+  await tick(20);
+  await t.change("a");
+  await tick(20);
+  assert.deepEqual(t.loads.at(-1).obj, { prefixes: { remove: ["Star"] } });
+  t.state.files["a/names.json"] = { prefixes: { remove: ["Leaf"] } };
+  t.wc.bus.emit("focus");
+  await tick(20);
+  assert.deepEqual(t.loads.at(-1), { obj: { prefixes: { remove: ["Leaf"] } }, id: "a" }, "read again, as it is now");
+  assert.ok([...dom.byId.toasts.querySelectorAll("span")].some(s => s.textContent.includes("was changed outside this page")));
+});
+
+test("onSaved hears whether the page changed while it saved, and coming back doesn't take the saved file for changed outside", async () => {
+  const state = fresh();
+  dom.routes = routes(state);
+  for (const type of Object.keys(dom.windowListeners)) delete dom.windowListeners[type];
+  localStorage.clear();
+  localStorage.setItem("wc-target", "a");
+  // The studio writes the text as it's sent, with a newline at its end, and reads it back as it is on disk.
+  let disk = JSON.stringify(state.files["a/names.json"], null, 2) + "\n", release = null;
+  dom.routes["GET /mods/a/file/names.json"] = () => ({ exists: true, text: disk });
+  dom.routes["PUT /mods/a/file/names.json"] = async b => {
+    if (release) await new Promise(ok => { release = ok; });
+    disk = b.text.endsWith("\n") ? b.text : b.text + "\n";
+    return { saved: "names.json", requires: [], problems: [], notes: [] };
+  };
+  const wc = await import(dom.studio("lib/wc.js") + "?" + Math.random());
+  const loads = [], heard = [];
+  let value = { prefixes: { remove: ["Moon", "Sun"] } };
+  const target = wc.modTarget({ file: "names.json", share: false, onLoad: obj => loads.push(obj), getValue: () => value,
+    onSaved: (v, how) => heard.push([v, how]) });
+  dom.byId.main.append(target.element);
+  await target.refresh();
+  // Nothing changed while it saved: changed is false, and the page is clean.
+  target.markDirty();
+  assert.equal(await target.save(), true);
+  assert.deepEqual(heard, [[{ prefixes: { remove: ["Moon", "Sun"] } }, { changed: false }]]);
+  assert.equal(target.dirty, false);
+  // Back in the window: the file is as this page saved it, so it isn't read again, and nothing says it changed.
+  const outside = () => [...dom.byId.toasts.querySelectorAll("span")].filter(s => s.textContent.includes("was changed outside this page")).length;
+  const said = outside();
+  wc.bus.emit("focus");
+  await tick(20);
+  assert.equal(loads.length, 1, "not read again over the page");
+  assert.equal(outside(), said);
+  // A change while the PUT is under way: changed is true (the page keeps its state), and it's still to be saved.
+  release = () => {};
+  target.markDirty();
+  const saving = target.save();
+  while (release.length === 0) await tick(5);   // the PUT is waiting
+  value = { prefixes: { remove: ["Moon", "Sun", "Leaf"] } };
+  target.markDirty();
+  release();
+  assert.equal(await saving, true);
+  assert.deepEqual(heard.at(-1)[1], { changed: true });
+  assert.equal(target.dirty, true);
+  assert.equal(loads.length, 1);
+  // An Apply that finishes while it saves isn't a change on the page: the save settles it.
+  release = () => {};
+  const again = target.save();
+  while (release.length === 0) await tick(5);
+  wc.bus.emit("installed", {});
+  release();
+  assert.equal(await again, true);
+  assert.deepEqual(heard.at(-1), [{ prefixes: { remove: ["Moon", "Sun", "Leaf"] } }, { changed: false }]);
+  assert.equal(target.dirty, false);
+});
+
+test("a change made while the file is read again (after an Apply) stays on the page", async () => {
+  const t = await setUp();
+  const read = dom.routes["GET /mods/a/file/names.json"];
+  let reading = null;
+  dom.routes["GET /mods/a/file/names.json"] = async () => { await new Promise(r => { reading = r; }); return read(); };
+  try {
+    const refreshing = t.target.refresh();   // what installedEvent does on a page with nothing unsaved
+    while (!reading) await tick(5);
+    t.target.markDirty();                    // a click on the page just then
+    reading();
+    await refreshing;
+    assert.equal(t.loads.length, 1, "the page's state wasn't replaced by the file");
+    assert.equal(t.target.dirty, true, "and the change is still to be saved");
+  } finally {
+    dom.routes["GET /mods/a/file/names.json"] = read;
+  }
+});
+
+test("what a save wrote is the file as it is: coming back to the window doesn't read it again", async () => {
+  const t = await setUp();
+  t.setValue({ prefixes: { remove: ["Sun"] } });
+  t.target.markDirty();
+  await t.target.save();
+  const toasts = dom.byId.toasts.querySelectorAll("span").length;
+  t.wc.bus.emit("focus");
+  await tick(20);
+  assert.equal(t.loads.length, 1, "not loaded again");
+  assert.ok(![...dom.byId.toasts.querySelectorAll("span")].slice(toasts).some(s => s.textContent.includes("changed outside")));
 });
 
 const REFUSED = { ok: false, status: 403, statusText: "Forbidden", json: async () => ({ error: "missing or wrong studio token; reload the page" }) };

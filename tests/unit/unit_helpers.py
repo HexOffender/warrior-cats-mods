@@ -1,5 +1,5 @@
-"""What the unit tests share besides fixtures: the repository's folder, a small save, and the helpers that
-write a save or a mod into a test's folders. Imported by name (`from unit_helpers import make_mod`), which
+"""What the unit tests share besides fixtures: the repository's folder, a small save, a made-up eye atlas, and
+the helpers that write a save or a mod into a test's folders. Imported by name (`from unit_helpers import make_mod`), which
 works in any of pytest's import modes, as pyproject.toml puts tests/unit on the path; conftest.py is never
 imported that way, as importing it a second time would make a second stand-in for the player's folder.
 Nothing here runs anything as it's imported."""
@@ -31,6 +31,28 @@ def write_save(folder, data=SAVE):
     with open(path, "wb") as f:
         f.write(_small_save(json.dumps(data)))
     return path
+
+
+EYE_LABELS = ["Sclera", "Yellow", "Amber", "Hazel", "Copper", "Green", "Olive", "Mint", "Teal", "Sky", "Blue", "Ice",
+              "Grey", "Silver", "Violet", "Lilac", "Rose", "Red", "Brown", "Black", "White",
+              "Dlc1", "Dlc2", "Dlc3", "Dlc4", "Dlc5"]
+
+
+def eye_atlas(width=64, labels=EYE_LABELS):
+    """An eye atlas as wcmods.eyeatlas.EyeAtlas reads one, made up: a row per label, 64 half-float RGBA pixels
+    each. Row 0 (the eye white) is flat; the others ramp up from black at the pupil (x 0) to a colour of their
+    own at the rim, alpha 1 throughout. The pixels are its whole data, so pixel_offset is 0."""
+    import struct
+    from wcmods import eyeatlas
+    atlas = eyeatlas.EyeAtlas.__new__(eyeatlas.EyeAtlas)
+    atlas.labels, atlas.width, atlas.height, atlas.pixel_offset = list(labels), width, len(labels), 0
+    atlas.data = bytearray(width * len(labels) * 8)
+    for r in range(len(labels)):
+        rim = (0.8, 0.8, 0.75) if r == 0 else (0.02 * r, 0.5, 1.0 - 0.03 * r)
+        for x in range(width):
+            s = 1.0 if r == 0 else x / (width - 1)
+            struct.pack_into("<4e", atlas.data, (r * width + x) * 8, rim[0] * s, rim[1] * s, rim[2] * s, 1.0)
+    return atlas
 
 
 def make_mod(studio, mod_id, meta=None, files=None):

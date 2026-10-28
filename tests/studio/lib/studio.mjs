@@ -8,7 +8,12 @@
 //   makeGame(folders.game);                        // the folder holds "the game" now (no paks), or
 //   fixtureGame(folders);                          // the made-up game with a few tables, and the tests' save
 //   writeMod(folders, "my-mod", { name: "My mod" }, { "npcs.json": {...} });
+//   await writeSave(folders.saves, {...});         // WrcGame.sav holding that JSON
 //   await removeFolders(folders);                  // at the end (removeFolder(folders.root) does as well)
+//
+// Each e2e file is skipped, with a reason, when no Chromium is found (browserChoice, or e2eSkip): set WC_BROWSER
+// to one, or WC_REQUIRE_BROWSER=1 (as CI does) to fail instead of skipping (NO_BROWSER, or requireBrowser, in the
+// file's `before`).
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -31,6 +36,11 @@ export const NO_BROWSER = "WC_REQUIRE_BROWSER=1, and no Chromium was found (set 
 // The same, found once for a file: `browserPath` (null when there's none), `skip` (the reason, or false).
 export const { browserPath, skip } = browserChoice();
 export const required = process.env.WC_REQUIRE_BROWSER === "1";
+export const e2eSkip = browserPath => (browserPath || required ? false
+  : "no Chromium found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)");
+export function requireBrowser(browserPath) {
+  if (!browserPath) throw new Error(NO_BROWSER);
+}
 
 // wcmods as the studio runs it (wcmods.py, wcmods/, studio/ and docs/), copied into `root`/app (a folder of its
 // own when no root is given). Started from the repository, the studio would take it for wcmods' folder and move
@@ -106,13 +116,27 @@ export function makeGame(game) {
   fs.writeFileSync(path.join(win64, EXE), "");
 }
 
-// WrcGame.sav holding `data` (the save's JSON) in the saves folder, as the game lays it out (through wcmods'
-// own writer, the one tests/unit/unit_helpers.py's write_save uses).
+// WrcGame.sav in `saves`, holding `data` (the save's JSON), as the game lays it out (through wcmods' own writer,
+// the one tests/unit/unit_helpers.py's write_save uses); its path. Windows can hold a file for a moment after the
+// studio (or a virus scanner) read it: a few tries before giving up. Written by the time it returns, so a test
+// may await it or not.
+const pause = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 export function writeSave(saves, data) {
-  const code = "import os, sys; sys.path.insert(0, sys.argv[1]); from wcmods.selftest import _small_save; " +
-    "from wcmods.formats.save import SAV_NAME; open(os.path.join(sys.argv[2], SAV_NAME), 'wb').write(_small_save(sys.argv[3]))";
-  const r = spawnSync(python(), ["-I", "-c", code, REPO, saves, JSON.stringify(data)], { encoding: "utf8" });
-  if (r.status !== 0) throw new Error(`couldn't write the save: ${r.stderr}`);
+  const code = "import json, os, sys; sys.path.insert(0, sys.argv[1]); from wcmods.selftest import _small_save; " +
+    "from wcmods.formats.save import SAV_NAME; open(os.path.join(sys.argv[2], SAV_NAME), 'wb').write(_small_save(sys.stdin.read()))";
+  for (let i = 0; ; i++) {
+    const r = spawnSync(python(), ["-I", "-c", code, REPO, saves], { input: JSON.stringify(data), encoding: "utf8" });
+    if (r.status === 0) return path.join(saves, "WrcGame.sav");
+    if (i >= 10 || !/PermissionError/.test(r.stderr)) throw new Error(`couldn't write the save: ${r.stderr}`);
+    pause(300);
+  }
+}
+
+// The game's colour tables as the palettes script logs them after a launch with the script loader (UE4SS.log's
+// TABLE lines), for the pages that show them: `tables` is {FurColors: ["#RRGGBB", ...], ...}.
+export function writeTables(game, tables) {
+  const lines = Object.entries(tables).map(([t, hexes]) => `[12:00:00] [WCModsCore] TABLE ${t} ${hexes.length} ${hexes.join(" ")}`);
+  fs.writeFileSync(path.join(game, "Wrc", "Binaries", "Win64", "ue4ss", "UE4SS.log"), lines.join("\n") + "\n");
 }
 
 // A mod in the player's mods folder: mod.json (on, unless `meta` says) and files ({name: text or JSON-able}).
@@ -128,18 +152,25 @@ export function writeMod(folders, id, meta = {}, files = {}) {
 }
 export const readJson = file => JSON.parse(fs.readFileSync(file, "utf8"));
 
-// Remove a folder, trying again while a studio that used it lets go of its files (Windows).
-export async function remove(folder) {
-  for (let i = 0; i < 5; i++) {
-    try { fs.rmSync(folder, { recursive: true, force: true }); return; } catch (e) { await sleep(300); }
+// Take a file or folder away, trying again for a moment while Windows (a studio that used it, a virus scanner)
+// still holds it; anything else, or still held after that, is thrown.
+export async function remove(target) {
+  for (let i = 0; ; i++) {
+    try { fs.rmSync(target, { recursive: true, force: true }); return; } catch (e) {
+      if (i >= 10 || !["EPERM", "EBUSY", "ENOTEMPTY"].includes(e.code)) throw e;
+      await sleep(300);
+    }
   }
 }
-export const removeFolder = remove;
-// A dataFolder's folders, with the copy of wcmods its studios ran from.
+// The tests' folder, at the end: tried for a moment, then left for the temp folder's own clean-up.
+export async function removeFolder(folder) {
+  try { await remove(folder); } catch (e) { /* still held: it's in the temp folder */ }
+}
+// Everything dataFolder made: the player's folder stand-in, with the copy of wcmods its studios ran from.
 export async function removeFolders(folders) {
   if (!folders) return;
-  await remove(folders.root);
-  if (folders.app && fs.existsSync(folders.app)) await remove(folders.app);   // a copy made outside root
+  await removeFolder(folders.root);
+  if (folders.app && fs.existsSync(folders.app)) await removeFolder(folders.app);   // a copy made outside root
 }
 
 // The made-up game with a few of the game's tables (tests/studio/fixtures/game.py) and, with saves, the tests'

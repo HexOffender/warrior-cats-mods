@@ -247,7 +247,8 @@ Fawnstar, as a player reported it showing "Cat 1"):
   while a screen opens, and in den decorating, the name screen, cutscenes and minigames.
 - **The key remapper outside the game** with the new play state (only the state file was read; the
   agent's keys don't pass through Windows' keyboard hook).
-- **Parts of the mod menu.** Not yet checked: Save on the Mouse look and Your cat pages, cats'
+- **Parts of the mod menu.** Not yet checked: Save on the Mouse look and Your cat pages, and on the
+  Colours page (your cat's own colours, written into the cats.json of the last Apply), cats'
   own names in Nearby labels, god mode, game speed and teleport on the Cheats page, and the pause
   menu under the key remapper.
 - **Mods' own cooked paks (`paks/`).** They're installed as the game's own patch paks are named,

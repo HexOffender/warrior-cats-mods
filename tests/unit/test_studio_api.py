@@ -307,7 +307,7 @@ def test_a_palette_json_that_isnt_a_palette_is_a_problem_on_the_card_not_a_blank
         (problem,) = found[i]["problems"]
         assert problem.startswith("palette.json") and "Error" not in problem and studio.ctx.mods_root not in problem
     assert "should be an object with its parts in it" in found["a-list"]["problems"][0]
-    assert "fur should be an object of colours by slot" in found["a-string"]["problems"][0]
+    assert "fur should be an object of coat colours by colour number" in found["a-string"]["problems"][0]
     assert "isn't valid" in found["not-json"]["problems"][0] and "line 1" in found["not-json"]["problems"][0]
     for i in ("a-list", "a-string"):
         with pytest.raises(ValueError):
@@ -601,10 +601,11 @@ def test_a_game_folder_without_its_paks_says_its_files_cant_be_read(studio, fake
 
 
 def test_game_tables_come_from_the_games_log_or_the_tables_file_or_neither(studio, fake_game):
-    assert get(studio, "game/tables") == {"tables": None, "source": None}
+    assert get(studio, "game/tables") == {"tables": None, "source": None, "game_slots": 25}
     with open(os.path.join(studio.root, "colour_tables.json"), "w", encoding="utf-8") as f:
         json.dump({"FurColors": ["#111111"]}, f)
-    assert get(studio, "game/tables") == {"tables": {"FurColors": ["#111111"]}, "source": "colour_tables.json"}
+    assert get(studio, "game/tables") == {"tables": {"FurColors": ["#111111"]}, "source": "colour_tables.json",
+                                          "game_slots": 25}
 
 
 def test_anim_kinds_list_the_animals_an_animation_can_be_for(studio):

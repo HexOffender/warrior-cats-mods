@@ -157,12 +157,12 @@ class CatsSection(Section):
     def _check(ctx, who, one, added):
         slots, scars = one["slots"], one["scars"]
         if slots.get("fur") in catcolours.FERAL_SLOTS:
-            ctx.warn(f"{who}: coat slot {slots['fur']} is one of the Feral Edition's; without it the game gives "
+            ctx.warn(f"{who}: coat colour {slots['fur']} is one of the Feral Edition's; without it the game gives "
                      "another")
         for part in ("pattern", "marking"):
             slot = slots.get(part)
             if slot is not None and slot >= palettes.GAME_SLOTS and slot not in added.get(part, set()):
-                ctx.warn(f"{who}: {part} slot {slot} isn't added by any enabled palette, so it shows no colour")
+                ctx.warn(f"{who}: {part} colour {slot} is a new colour no palette that's on adds, so it shows none")
         for part, n in sorted(scars.items()):
             if n > len(catcolours.SCAR_TYPES[part]):
                 ctx.warn(f"{who}: {part} scar {n} seems to show nothing (the game has no scar for it); its scars "
