@@ -41,8 +41,10 @@ You can:
 - give your cat, or any cat in your save, colours of its own, a different coat, pattern, marking and
   eye colour, a different shape and size, and scars (or none);
 - pick a new pattern or marking colour a palette adds, which only the cats set to it wear;
-- change colours of its own while you play: the mod menu in the game (Insert) has a Colours page with
-  sliders, and its Save writes them back into the mod. It writes the cats.json of your last Apply with
+- change your cat's colours of its own while you play: the mod menu in the game (Insert) has a Colours
+  page with sliders, and its Save writes them back into a mod: the last one in the Mods list that's on
+  and has a cat's look in it, which the Colours of its own card names when your cat is chosen. Other
+  cats' colours aren't on that page. It writes the cats.json of your last Apply with
   the new colours in it, so apply again first, or edits saved on this page since then are overwritten.
   Nobody has watched that Save in the game yet: the [list of what's been checked](../verified.md) has
   it under "Not yet confirmed in game".
@@ -65,8 +67,13 @@ Good to know:
 - "Now" (the thinner ring, "now: 11 (kept)", and the In your save now card) is what your save holds. It's
   read again after every Apply, after a save on any page, and when you come back to the studio's window.
 - A cats.json written by hand may name a cat by a shorter place ("WindClan/Warrior/1" for
-  "Clans/WindClan/Warrior/1") or by a name in another case: the list puts it on the cat it changes, "in the
-  file as" that key. A name two cats share changes both, and the list shows it as its own entry.
+  "Clans/WindClan/Warrior/1"), with the game's slot first ("0/WindClan/Warrior/1", for the game you're
+  playing), or by a name in another case: the list puts it on the cat it changes, "in the file as" that
+  key. A place without its clan ("Warrior/1") means that place in every clan, and a name two cats share
+  changes both: the list shows each as its own entry, and In your save now lists every cat it changes.
+- When two keys of the file reach the same cat (two places for it, or a name it shares), the build applies
+  both. The cat's card lists the other one ("also changed by "WindClan/Deputy/0": ears 3"), with a
+  **Remove**, and Save writes the cat's own entry after it, so where both choose, this page's choice wins.
 - The drawing is a sketch of the cat's face: it shows the colours and the ear and eye scars, not the body
   shape, the back and chest scars or the paws.
 

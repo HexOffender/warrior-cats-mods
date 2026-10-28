@@ -29,6 +29,12 @@ const LOOK_PARTS = [
   { id: "whiskers", name: "Whiskers" }, { id: "face", name: "Face" }, { id: "pattern", name: "Pattern" },
   { id: "marking", name: "Markings" },
 ];
+// A cat's entry in a few words (lib/catlook.js's describe), in this page's words.
+const WORDS = {
+  colours: Object.fromEntries(PARTS.map(p => [p.id, p.name.toLowerCase()])),
+  slots: { ...Object.fromEntries(SLOT_PARTS.map(s => [s.id, s.name.toLowerCase()])), eyes: "eye colour" },
+  look: Object.fromEntries(LOOK_PARTS.map(p => [p.id, p.name.toLowerCase()])),
+};
 
 export default {
   title: "Your cat",
@@ -39,11 +45,12 @@ export default {
     // looks: each cat's choices, "player" for yours and the others by their cats.json key (lib/catlook.js says
     // what each holds); fileExtra: the file's other keys, kept as they are.
     let looks = { player: C.blank() }, fileExtra = {}, who = "player";
-    // GET /cat, the game's colour tables and eye colours (either may not be readable yet), and the studio's status
-    // (the script loader, the last Apply).
-    const [firstInfo, tablesRes, eyesRes, firstStatus] = await Promise.all([api.get("/cat"),
-      api.get("/game/tables").catch(() => ({ tables: null })), api.get("/game/eyes").catch(() => null), api.get("/info").catch(() => null)]);
-    let info = firstInfo, status = firstStatus;
+    // GET /cat, the game's colour tables and eye colours (either may not be readable yet), the studio's status (the
+    // script loader, the last Apply) and the mods (which one the in-game Colours page saves into).
+    const [firstInfo, tablesRes, eyesRes, firstStatus, firstMods] = await Promise.all([api.get("/cat"),
+      api.get("/game/tables").catch(() => ({ tables: null })), api.get("/game/eyes").catch(() => null), api.get("/info").catch(() => null),
+      api.get("/mods").catch(() => [])]);
+    let info = firstInfo, status = firstStatus, mods = firstMods;
     const TABLES = tablesRes.tables || {};
     const EYE_LIN = eyesRes ? eyesRes.rows.map(r => r.map(h => color.hexToLinear("#" + h))) : null;
     const known = () => C.knownFrom(info);
@@ -63,7 +70,7 @@ export default {
     const target = wc.modTarget({
       file: "cats.json",
       onLoad: obj => { ({ looks, fileExtra } = C.load(obj, known())); if (!looks[who]) who = "player"; render(); },
-      getValue: () => C.toJson(looks, fileExtra, known()),
+      getValue: () => json(),
       // Saved: the page reads what it wrote as it reads any file (a save doesn't read the file back), on the same
       // cat. Not when something changed while it saved: that stays on the page, still to be saved.
       onSaved: (saved, { changed }) => { if (changed) return; ({ looks, fileExtra } = C.load(saved, known())); render(); },
@@ -98,7 +105,7 @@ export default {
 
     function changed() {
       target.markDirty();
-      out.set(C.toJson(looks, fileExtra, known()));
+      out.set(json());
       drawCat();
       // A cat's entry kept as written ("player": "none") says beside it once a look set here takes its place.
       if (Object.keys(fileExtra).some(k => k === "player" || (k.startsWith("cats.") && !k.startsWith("cats._")))) renderWho();
@@ -121,16 +128,42 @@ export default {
     // ---------- whose look ----------
     const look = () => (looks[who] = looks[who] || C.blank());
     const mine = () => who === "player";
-    // The cat being changed: the one whose target the key is, else the first the key means (the build's way).
-    const other = () => others().find(c => c.target === who) || C.catsFor(who, others())[0];
+    // The cats a key means, as the build finds them, with the game being played's slot first or without it.
+    const slot = () => info.current_slot ?? null;
+    const hitsOf = k => C.catsFor(k, others(), slot());
+    const bare = k => String(k).trim().replace(/^\d+\//, "");
+    const byPlace = k => bare(k).includes("/");
+    // The cats being changed: the one whose target the key is, else every one the key means (the build's way).
+    const whoCats = () => { if (mine()) return []; const own = others().find(c => c.target === who); return own ? [own] : hitsOf(who); };
     const fileKeys = () => Object.keys(looks).filter(t => t !== "player");
     const changedLook = t => looks[t] && Object.keys(C.oneJson(looks[t], known())).length > 0;
-    const whoName = () => mine() ? "your cat" : (other() ? other().name : who);
-    // What the save has now for the cat chosen (null for a cat cats.json names that isn't in the save, or for a
-    // save that can't be read now).
+    // The cat in a sentence: a place that means cats in several clans is "each of these cats".
+    const whoName = () => {
+      if (mine()) return "your cat";
+      const cs = whoCats();
+      return cs.length === 1 ? cs[0].name : cs.length > 1 && !byPlace(who) ? cs[0].name : cs.length > 1 ? "each of these cats" : `"${who}"`;
+    };
+    const whose = () => (mine() ? "your cat's" : whoName() === "each of these cats" ? "each one's" : `${whoName()}'s`);
+    const capital = t => t[0].toUpperCase() + t.slice(1);
+    // The file as Save writes it: a cat's own entry after the other keys that reach it, so the page's choices win.
+    const lastKeys = () => {
+      const last = C.ownLast(looks, others(), slot());
+      if (!mine() && whoCats().length === 1 && who in looks && !last.includes(who)) last.push(who);
+      return last;
+    };
+    const json = () => C.toJson(looks, fileExtra, known(), lastKeys());
+    // What the save has now for the cat chosen: null for a cat cats.json names that isn't in the game being played,
+    // for your cat while that game has none yet, and for a save that can't be read now. For a key that means several
+    // cats, what they all have the same, `differs` naming the rest (lib/catlook.js's common).
     const saveRead = () => !info.save_problem;
-    const now = () => !saveRead() ? null : mine() ? { slots: info.current, scars: scars().current, look: (info.look || {}).current || {} }
-      : (other() || {}).current || null;
+    const now = () => {
+      if (!saveRead()) return null;
+      if (mine()) return Object.keys(info.current || {}).length ? { slots: info.current, scars: scars().current, look: (info.look || {}).current || {} } : null;
+      const cs = whoCats();
+      return cs.length === 1 ? cs[0].current || null : cs.length ? C.common(cs.map(c => c.current)) : null;
+    };
+    const differs = (key, part) => ((now() || {}).differs?.[key] || []).includes(part);
+    const itWord = () => (mine() ? "my cat" : whoCats().length > 1 ? "each" : "it");
 
     function renderSaveLine() {
       saveLine.hidden = saveRead();
@@ -146,11 +179,11 @@ export default {
       const cats = others(), keys = fileKeys(), f = filter.trim().toLowerCase(), chosen = whoValue();
       // The chosen cat stays in the list whatever the filter says, so the box never shows another one.
       const shown = c => !f || `cat:${c.target}` === chosen || [c.name, c.where, C.roleWords(c.role)].some(s => s.toLowerCase().includes(f));
+      // Changed by any key that reaches it (a shared name too); "in the file as" the keys that mean it alone.
       const optionFor = c => {
-        const key = C.keyFor(c, keys, cats), kept = key !== c.target && key in looks;
-        const shared = keys.filter(k => C.catsFor(k, cats).length > 1 && C.catsFor(k, cats).includes(c));
+        const on = C.keysOn(c, keys, cats, slot()), alone = on.filter(k => k !== c.target && hitsOf(k).length === 1);
         const label = [c.name, C.roleWords(c.role)].filter(Boolean).join(", ")
-          + (changedLook(key) || shared.some(changedLook) ? ", changed" : "") + (kept ? ` (in the file as "${key}")` : "");
+          + (on.some(changedLook) ? ", changed" : "") + (alone.length ? ` (in the file as ${alone.map(k => `"${k}"`).join(" and ")})` : "");
         return el("option", { value: `cat:${c.target}`, text: label, title: c.where });
       };
       const clans = [...new Set(cats.map(c => c.clan || ""))]
@@ -161,24 +194,25 @@ export default {
       });
       // Keys that mean two or more cats, or none the page lists.
       const anyNames = cats.some(c => (c.aliases?.names || []).length);
-      const loose = keys.filter(k => C.catsFor(k, cats).length !== 1).map(k => {
-        const hits = C.catsFor(k, cats);
-        const why = hits.length > 1 ? `changes ${hits.length} cats called ${hits[0].name}`
+      const otherGame = k => { const m = /^(\d+)\//.exec(String(k).trim()); return !!m && m[1] !== String(slot()); };
+      const loose = keys.filter(k => hitsOf(k).length !== 1).map(k => {
+        const hits = hitsOf(k);
+        const why = hits.length > 1 ? (byPlace(k) ? `changes ${hits.length} cats: ${hits.map(c => c.where).join(", ")}`
+            : `changes ${hits.length} cats called ${hits[0].name}`)
           : !saveRead() ? "your save can't be read now"
-          : /^\d+\//.test(k) ? "a cat in another game"
-          : !k.includes("/") && !anyNames ? "found by its name once the game's files can be read"
+          : otherGame(k) ? "a cat in another game"
+          : !byPlace(k) && !anyNames ? "found by its name once the game's files can be read"
           : "not in your save";
         return el("option", { value: `key:${k}`, text: `"${k}" (${why})` });
       });
       return [el("option", { value: "player", text: "Your cat" }), ...groups,
         loose.length ? el("optgroup", { label: "In the file" }, ...loose) : null];
     }
-    // The option that stands for `who`: your cat, the cat a key of its own means, else the key itself.
+    // The option that stands for `who`: your cat, the cat a key that means it alone stands for, else the key itself.
     function whoValue() {
       if (mine()) return "player";
-      const cats = others(), hits = C.catsFor(who, cats);
-      const own = cats.find(c => c.target === who) || (hits.length === 1 && C.keyFor(hits[0], fileKeys(), cats) === who ? hits[0] : null);
-      return own ? `cat:${own.target}` : `key:${who}`;
+      const cs = whoCats();
+      return cs.length === 1 ? `cat:${cs[0].target}` : `key:${who}`;
     }
     function renderWho() {
       const sel = el("select", { "aria-label": "Whose look" }, ...whoOptions());
@@ -186,7 +220,7 @@ export default {
       sel.addEventListener("change", () => {
         const v = sel.value;
         const cat = v.startsWith("cat:") && others().find(c => c.target === v.slice(4));
-        who = v === "player" ? "player" : cat ? C.keyFor(cat, fileKeys(), others()) : v.slice(4);
+        who = v === "player" ? "player" : cat ? C.keyFor(cat, fileKeys(), others(), slot()) : v.slice(4);
         render();
       });
       const find = el("input", { type: "search", value: filter, placeholder: "Find a cat", "aria-label": "Find a cat by name, place or role" });
@@ -196,13 +230,27 @@ export default {
         clear(sel).append(...whoOptions().filter(Boolean));
         sel.value = keep;
       });
-      const hits = mine() ? [] : C.catsFor(who, others());
+      const hits = whoCats(), places = hits.map(c => c.where).join(", ");
       const note = mine() ? "Your cat, in the game you're playing. Choose another cat to change its look the same way: it's found by its name (or its place, when two share a name), and only it changes."
-        : hits.length > 1 ? `"${who}" changes ${hits.length} cats called ${hits[0].name} (${hits.map(c => c.where).join(", ")}). Choose one of them above to change just it.`
-        : `${whoName()} is changed by ${/\//.test(who) ? "its place" : "its name"} (${who}). Its colours go on by its name, so a cat with the same name gets them too; a rank-up changes a cat's name: apply again after one to keep its colours on it.`;
+        : hits.length > 1 && byPlace(who) ? `"${who}" changes ${hits.length} cats: ${places}. A place without its clan means that place in every clan. Choose one of them above to change just it.`
+        : hits.length > 1 ? `"${who}" changes ${hits.length} cats called ${hits[0].name} (${places}). Choose one of them above to change just it.`
+        : `${whoName()} is changed by ${byPlace(who) ? "its place" : "its name"} (${who}). Its colours go on by its name, so a cat with the same name gets them too; a rank-up changes a cat's name: apply again after one to keep its colours on it.`;
+      // Other keys of the file that reach this cat too: the build applies them as well. Save writes this cat's own
+      // entry after them (lastKeys), so where both choose a part, this page's choice wins.
+      const also = hits.length === 1 ? C.keysOn(hits[0], fileKeys(), others(), slot()).filter(k => k !== who && changedLook(k)) : [];
       put(whoCard, el("h2", { text: "Whose look" }),
         el("div", { class: "row" }, find, sel),
-        el("p", { class: "note", text: note }));
+        el("p", { class: "note", text: note }),
+        also.length ? el("div", { class: "stack cat-also" },
+          el("strong", { text: "Other entries in the file for this cat" }),
+          el("p", { class: "note", text: "The build applies them too. Where this page chooses the same thing, this page's choice wins: Save writes it after them. Remove takes one out of the file." }),
+          el("ul", { class: "notes" }, ...also.map(k => {
+            const n = hitsOf(k).length;
+            return el("li", { class: "row" },
+              el("span", { text: `also changed by "${k}"${n > 1 ? ` (it changes ${n} cats)` : ""}: ${C.describe(looks[k], known(), WORDS)}` }),
+              el("button", { class: "btn ghost small", text: "Remove", "aria-label": `Remove "${k}"`,
+                onclick: () => { delete looks[k]; changed(); render(); } }));
+          }))) : null);
       // Yours lists the file's own keys too; another cat's, its own entry when the file has it as something else.
       const theirs = !mine() && `cats.${who}` in fileExtra ? { [`cats.${who}`]: fileExtra[`cats.${who}`] } : null;
       const raw = [...C.cantChange(look(), mine() ? fileExtra : null), ...(theirs ? C.cantChange(C.blank(), theirs) : [])]
@@ -218,7 +266,7 @@ export default {
 
     function render() {
       renderSaveLine(); renderWho(); renderNow(); renderLook(); renderColours(); renderSlots(); renderScars(); drawCat();
-      out.set(C.toJson(looks, fileExtra, known()));
+      out.set(json());
     }
 
     // ---------- the drawn cat, and what the save holds now ----------
@@ -236,22 +284,31 @@ export default {
       });
     }
     function renderNow() {
-      const cur = now(), name = mine() ? "your cat" : whoName();
+      const cur = now(), name = whoName(), cats = whoCats();
       const built = status && status.installed && status.installed.built;
       const when = built ? new Date(built).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : null;
       const line = (label, text) => el("li", {}, el("strong", { text: `${label}: ` }), text);
       const eye = slot => (eyeName(slot) ? `${eyeName(slot)} (${slot})` : String(slot));
-      const scarText = Object.entries(cur ? cur.scars || {} : {}).filter(([, n]) => n > 0)
-        .map(([part, n]) => `${SCAR_PARTS.find(s => s.id === part)?.name.toLowerCase() || part}: ${scarLabel(part, n).toLowerCase()}`);
-      const shape = cur ? LOOK_PARTS.filter(p => p.id in (cur.look || {})).map(p => `${p.name.toLowerCase()} ${cur.look[p.id]}`) : [];
+      // One cat's save values, as a list.
+      const list = c => {
+        const s = c.slots || {}, l = c.look || {};
+        const scarText = Object.entries(c.scars || {}).filter(([, n]) => n > 0)
+          .map(([part, n]) => `${SCAR_PARTS.find(p => p.id === part)?.name.toLowerCase() || part}: ${scarLabel(part, n).toLowerCase()}`);
+        const shape = LOOK_PARTS.filter(p => p.id in l).map(p => `${p.name.toLowerCase()} ${l[p.id]}`);
+        return el("ul", { class: "notes" },
+          line("Colours", `coat ${s.fur}, pattern ${s.pattern}, markings ${s.marking}`),
+          line("Eyes", `left ${eye(s.eye_left)}, right ${eye(s.eye_right)}`),
+          line("Scars", scarText.length ? scarText.join("; ") : "none"),
+          line("Shape", shape.join(", ") + (l.size != null ? `, size ${l.size}` : "")));
+      };
       put(nowCard, el("h2", { text: "In your save now" }),
         !saveRead() ? el("p", { class: "note", text: `Unknown: ${info.save_problem}.` })
+          : mine() && !cur ? el("p", { class: "note", text: "There's no cat of yours in the game being played yet: start one in the game, then come back here." })
+          : cats.length > 1 ? el("div", { class: "stack" },
+            el("p", { class: "note", text: `"${who}" changes ${cats.length} cats, each with its own:` }),
+            ...cats.map(c => el("div", {}, el("strong", { text: `${c.name}${c.name !== c.where ? `, ${c.where}` : ""}` }), list(c.current || {}))))
           : !cur ? el("p", { class: "note", text: `${name[0].toUpperCase()}${name.slice(1)} isn't in the game you're playing, so the save has nothing for it.` })
-          : el("ul", { class: "notes" },
-            line("Colours", `coat ${cur.slots.fur}, pattern ${cur.slots.pattern}, markings ${cur.slots.marking}`),
-            line("Eyes", `left ${eye(cur.slots.eye_left)}, right ${eye(cur.slots.eye_right)}`),
-            line("Scars", scarText.length ? scarText.join("; ") : "none"),
-            line("Shape", shape.join(", ") + (cur.look && cur.look.size != null ? `, size ${cur.look.size}` : ""))),
+          : list(cur),
         el("p", { class: "note", text: `${when ? `Last applied ${when}. ` : ""}It's read again after every Apply. Switching the mod off doesn't undo the game's colours, the shape or the scars: they stay in your save. To put them back, choose the old ones here and apply again, or put back the copy of your save the studio made (Backups and repair, on the Settings and repair page).` }));
     }
 
@@ -259,7 +316,7 @@ export default {
       const l = look(), cur = (now() || {}).look || {}, parts = (info.look || {}).parts || {};
       const rows = LOOK_PARTS.filter(p => p.id in parts).map(p => {
         const sel = el("select", { "aria-label": p.name },
-          el("option", { value: "", text: `Keep what ${mine() ? "my cat" : "it"} has now${p.id in cur ? ` (${cur[p.id]})` : saveRead() ? "" : " (unknown now)"}` }),
+          el("option", { value: "", text: `Keep what ${itWord()} has now${p.id in cur ? ` (${cur[p.id]})` : differs("look", p.id) ? " (not the same for each)" : saveRead() ? "" : " (unknown now)"}` }),
           ...[...Array(parts[p.id] + 1).keys()].map(n => el("option", { value: String(n), text: String(n) })));
         sel.value = p.id in l.look ? String(l.look[p.id]) : "";
         sel.addEventListener("change", () => { if (sel.value === "") delete l.look[p.id]; else l.look[p.id] = Number(sel.value); changed(); });
@@ -269,21 +326,25 @@ export default {
       const [lo, hi] = (info.look || {}).size || [0.05, 1.5];
       const on = "size" in l.look;
       const clampSize = v => Math.max(lo, Math.min(hi, Number(v) || 0.8));
-      // A slider with the game's sizes marked (a kit, a warrior, a leader), and the number beside it.
-      const marks = el("datalist", { id: "cat-size-marks" }, ...[[0.1, "kit"], [0.75, "warrior"], [1, "leader"]]
+      // A size as the file has it (0.873, not rounded to the slider's steps), with two decimals at least.
+      const sizeText = v => { const n = Math.round(Number(v) * 1000) / 1000; return n.toFixed(/\.\d{3}$/.test(String(n)) ? 3 : 2); };
+      // A slider with the game's sizes marked (a kit, an apprentice, a warrior, a leader), and the number beside it.
+      const marks = el("datalist", { id: "cat-size-marks" }, ...[[0.1, "kit"], [0.45, "apprentice"], [0.75, "warrior"], [1, "leader"]]
         .map(([v, label]) => el("option", { value: String(v), label })));
-      const size = el("input", { type: "range", min: String(lo), max: String(hi), step: "0.05", list: "cat-size-marks",
-        value: String(clampSize(l.look.size ?? cur.size)), "aria-label": "Size", disabled: !on, style: { width: "min(260px, 60vw)" } });
-      const shown = el("output", { class: "mono", text: Number(size.value).toFixed(2) });
+      const start = clampSize(l.look.size ?? cur.size);
+      const size = el("input", { type: "range", min: String(lo), max: String(hi), step: "0.01", list: "cat-size-marks",
+        value: String(start), "aria-label": "Size", disabled: !on, style: { width: "min(260px, 60vw)" } });
+      const shown = el("output", { class: "mono", text: sizeText(start) });   // the slider itself snaps to 0.01
       const box = el("input", { type: "checkbox", checked: on, "aria-label": "Change the size" });
-      size.addEventListener("input", () => { shown.textContent = Number(size.value).toFixed(2); });
-      size.addEventListener("change", () => { const v = clampSize(size.value); l.look.size = v; size.value = v; changed(); });
-      box.addEventListener("change", () => { if (box.checked) { l.look.size = clampSize(size.value); size.value = l.look.size; } else delete l.look.size; size.disabled = !box.checked; changed(); });
+      let exact = start;   // what the number says: the file's or the save's size until the slider moves
+      size.addEventListener("input", () => { exact = Number(size.value); shown.textContent = sizeText(exact); });
+      size.addEventListener("change", () => { const v = clampSize(size.value); exact = l.look.size = v; size.value = v; changed(); });
+      box.addEventListener("change", () => { if (box.checked) l.look.size = clampSize(exact); else delete l.look.size; size.disabled = !box.checked; changed(); });
       put(lookCard, el("h2", { text: "Shape" }),
-        el("p", { class: "note", text: `${mine() ? "Your cat's" : `${whoName()}'s`} body, fur, tail, ears, eyes, whiskers and face, each one of the game's 10 (the cat maker shows a clan's 7 of them), and its pattern and markings (21 each). They go into your save on Apply, after a backup.${mine() ? " Body, ears and face chose your cat's traits when it was made; the traits stay as they are." : ""}` }),
+        el("p", { class: "note", text: `${capital(whose())} body, fur, tail, ears, eyes, whiskers and face, each one of the game's 10 (the cat maker shows a clan's 7 of them), and its pattern and markings (21 each). They go into your save on Apply, after a backup.${mine() ? " Body, ears and face chose your cat's traits when it was made; the traits stay as they are." : ""}` }),
         ...rows,
         el("div", { class: "row" }, el("label", { class: "row", style: { minWidth: "150px" } }, box, el("strong", { text: "Size" })), size, shown, marks,
-          el("span", { class: "muted", text: `${cur.size != null ? `now ${cur.size}; ` : ""}a kit is about 0.1, a warrior 0.75, a leader 1.0${mine() ? ". The game sets your cat's size again when it ranks up" : ""}` })));
+          el("span", { class: "muted", text: `${cur.size != null ? `now ${cur.size}; ` : differs("look", "size") ? "each has its own size now; " : ""}a kit is about 0.1, an apprentice 0.45, a warrior 0.75, a leader 1.0${mine() ? ". The game sets your cat's size again when it ranks up" : ""}` })));
       const block = cantChange(rawOf("look"));
       if (block) lookCard.append(block);
     }
@@ -305,8 +366,15 @@ export default {
           inp, el("span", { class: "muted", text: p.note || "" }));
       });
       const noLoader = status && status.game_dir && !status.ue4ss;
+      // The in-game Colours page changes your cat's colours only, and its Save writes them into the mod that's on with
+      // a cats.json, the last of them in the Mods list (sections/cats.py): name it, as it may not be this one.
+      const top = mods.filter(m => m.enabled && (m.kinds.includes("cats") || m.id === target.current)).pop();
+      const saves = !top ? "the last mod in the Mods list with your cat's look in it (this one, once it's saved and on)"
+        : top.id === target.current ? `${top.name}, this mod (the last in the Mods list with a cat's look)`
+        : `${top.name}, the one later in the Mods list, not in this mod`;
       put(coloursCard, el("h2", { text: "Colours of its own" }),
-        el("p", { class: "note", text: `Tick a part to give ${whoName()} its own colour; unticked parts keep the game's. They show while you play, in menus and portraits, and go away if you turn the mod off. In the game, Insert opens the mod menu: its Colours page changes them while you play, and its Save keeps them in this mod.` }),
+        el("p", { class: "note", text: `Tick a part to give ${whoName()} its own colour; unticked parts keep the game's. They show while you play, in menus and portraits, and go away if you turn the mod off.` }),
+        mine() ? el("p", { class: "note cat-insert", text: `In the game, Insert opens the mod menu: its Colours page changes your cat's colours while you play, and its Save keeps them in ${saves}.` }) : null,
         noLoader ? el("p", { class: "note heads-up", text: "They need the script loader, which isn't installed yet: Get set up, on the Mods page, installs it." }) : null,
         ...rows);
       const block = cantChange(rawOf("colours"));
@@ -339,7 +407,7 @@ export default {
             picked ? el("span", { "aria-hidden": "true", style: { ...mark, top: "1px", left: "4px", fontSize: "0.85rem" }, text: "✓" }) : null,
             el("span", { "aria-hidden": "true", style: { ...mark, bottom: "1px", right: "3px", fontSize: "0.75rem" }, text: String(i) }));
         };
-        const nowText = !shown ? "unknown" : cur ?? "?";
+        const nowText = !shown ? "unknown" : differs("slots", s.id) ? "not the same for each" : cur ?? "?";
         const state = chosen === undefined ? `now: ${nowText} (kept)` : `${chosen}${cur !== undefined ? ` (now ${cur})` : ""}`;
         return el("div", { style: { display: "grid", gap: "6px" } },
           el("div", { class: "row spread" }, el("h3", { text: s.name }), el("span", { class: "muted", text: state })),
@@ -369,9 +437,10 @@ export default {
       const dropRaw = id => { for (const k of Object.keys(l.raw.scars)) if ((k === "body" ? "back" : k) === id) delete l.raw.scars[k]; };
       const rows = SCAR_PARTS.map(s => {
         const top = scarTypes(s.id).length;
-        const isNow = !saveRead() ? "unknown now" : s.id in current ? scarLabel(s.id, current[s.id]).toLowerCase() : "not in your save";
+        const isNow = !saveRead() ? "unknown now" : differs("scars", s.id) ? "not the same for each"
+          : s.id in current ? scarLabel(s.id, current[s.id]).toLowerCase() : "not in your save";
         const sel = el("select", { "aria-label": `${s.name} scar` },
-          el("option", { value: "", text: `Keep what ${mine() ? "my cat" : "it"} has now (${isNow})` }),
+          el("option", { value: "", text: `Keep what ${itWord()} has now (${isNow})` }),
           ...[...Array(top + 1).keys()].map(n => el("option", { value: String(n), text: scarLabel(s.id, n) })));
         sel.value = s.id in l.scars ? String(l.scars[s.id]) : "";
         sel.addEventListener("change", () => {
@@ -388,7 +457,7 @@ export default {
       const keep = el("button", { class: "btn", type: "button", text: "Keep the scars it has now", "data-focus": "scars:keep",
         onclick: () => { l.scars = {}; l.raw.scars = {}; changed(); renderScars(); } });
       put(scarsCard, el("h2", { text: "Scars" }),
-        el("p", { class: "note", text: `Choose ${whoName()}'s scars, or none. An eye scar shuts that eye; right and left are the cat's own. They go into your save on Apply, after a backup. A boss fight can still give new ones.` }),
+        el("p", { class: "note", text: `Choose ${whose()} scars, or none. An eye scar shuts that eye; right and left are the cat's own. They go into your save on Apply, after a backup. A boss fight can still give new ones.` }),
         el("p", { class: "note heads-up" }, "Scars show only with the game's Injury system on: ",
           el("a", { href: "#save", text: "the Save page" }), " has the switch, under the game's settings."),
         ...rows, el("div", { class: "row" }, none, keep));
@@ -401,7 +470,9 @@ export default {
     // page's own choices stay, unsaved ones too. The file itself is read again after an Apply only while nothing
     // here is unsaved (installedEvent); coming back re-reads it when it changed (the bar does that).
     async function readCat() {
-      try { [info, status] = await Promise.all([api.get("/cat"), api.get("/info").catch(() => status)]); } catch (e) { return; }
+      try {
+        [info, status, mods] = await Promise.all([api.get("/cat"), api.get("/info").catch(() => status), api.get("/mods").catch(() => mods)]);
+      } catch (e) { return; }
       render();
     }
     const offs = [
