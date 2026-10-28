@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, e2eSkip, makeGame, remove, removeFolder, requireBrowser, sleep, startStudio, warmUp, writeSave,
+import { dataFolder, e2eSkip, makeGame, remove, removeFolders, requireBrowser, sleep, startStudio, warmUp, writeSave,
   writeTables } from "../lib/studio.mjs";
 
 const browserPath = findBrowser();
@@ -28,7 +28,7 @@ before(async () => {
 after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
-  if (folders) await removeFolder(folders.root);
+  if (folders) await removeFolders(folders);
 });
 
 // ---------- the folder ----------

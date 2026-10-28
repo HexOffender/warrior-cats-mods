@@ -1,12 +1,13 @@
-// A Clan Mod Studio of the end-to-end tests' own (e2e/): `python wcmods.py studio --no-browser --port 0` over a
-// folder of its own (WCMODS_DATA), with a made-up game folder and saves folder named in its wcmods.json, so the
-// real game folder and the real save are never used.
+// A Clan Mod Studio of the end-to-end tests' own (e2e/): `python wcmods.py studio --no-browser --port 0`, run from
+// a copy of wcmods, over a folder of its own (WCMODS_DATA) with a made-up game folder and saves folder named in
+// its wcmods.json, so the real game folder and the real save are never used. (shell.test.mjs keeps the same
+// helpers of its own while its pull request is under way; they can come here once it's merged.)
 //
-//   const folders = dataFolder();                 // { root, game, saves, data, temp }
+//   const folders = dataFolder();                 // { root, game, saves, data, temp, app }
 //   const studio = await startStudio(folders);
 //   makeGame(folders.game);                       // the exe and folders, no paks: found, but nothing to read
 //   await writeSave(folders.saves, {...});        // WrcGame.sav holding that JSON
-//   studio.stop(); await removeFolder(folders.root);
+//   studio.stop(); await removeFolders(folders);
 //
 // Each e2e file is skipped, with a reason, when no Chromium is found (e2eSkip): set WC_BROWSER to one, or
 // WC_REQUIRE_BROWSER=1 (as CI does) to fail instead of skipping (requireBrowser, in the file's `before`).
@@ -26,16 +27,28 @@ export function requireBrowser(browserPath) {
   if (!browserPath) throw new Error("WC_REQUIRE_BROWSER=1, and no Chromium was found (set WC_BROWSER to msedge.exe, chrome.exe or chromium)");
 }
 
-// A studio started on a free port over the test's folders; its URL is on the first line it prints. The game
-// counts as closed (WCMODS_FAKE_RUNNING=0) unless `env` says otherwise, whether or not the real one is running
-// on this machine; its temp folder (the inbox a dropped mod waits in) is the test's, not the one a studio of
-// the player's would share.
-export async function startStudio(folders, env = {}) {
+// wcmods as the studio runs it (wcmods.py, wcmods/, studio/ and docs/), copied to a folder of its own. Started
+// from the repository, the studio would take it for wcmods' folder and move a mods/, wcmods.json or backups/
+// kept there (a supported way to keep them) into the test's folder, which is deleted.
+function appCopy() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "wc-e2e-app-"));
+  const skipCache = src => !src.split(path.sep).includes("__pycache__");
+  for (const d of ["wcmods", "studio", "docs"]) fs.cpSync(path.join(REPO, d), path.join(root, d), { recursive: true, filter: skipCache });
+  fs.copyFileSync(path.join(REPO, "wcmods.py"), path.join(root, "wcmods.py"));
+  return root;
+}
+
+// A studio started over the test's folders (on a free port, or `port`), from `root` (a copy of wcmods, the
+// folders' own unless said); its URL is on the first line it prints. The game counts as closed
+// (WCMODS_FAKE_RUNNING=0) unless `env` says otherwise, whether or not the real one is running on this machine;
+// its temp folder (the inbox a dropped mod waits in) is the test's, not the one a studio of the player's would
+// share.
+export async function startStudio(folders, env = {}, { root = folders.app, port = 0 } = {}) {
   const own = { ...process.env, WCMODS_DATA: folders.data, WCMODS_FAKE_RUNNING: "0", TEMP: folders.temp, TMP: folders.temp,
     TMPDIR: folders.temp, ...env };
   delete own.WCMODS_GAME_BUILD;   // a build number a developer set to try an update
-  const proc = spawn(python(), ["-I", "wcmods.py", "studio", "--no-browser", "--port", "0"],
-    { cwd: REPO, env: own, stdio: ["ignore", "pipe", "pipe"] });
+  const proc = spawn(python(), ["-I", "wcmods.py", "studio", "--no-browser", "--port", String(port)],
+    { cwd: root, env: own, stdio: ["ignore", "pipe", "pipe"] });
   let out = "", err = "";
   proc.stdout.on("data", d => { out += d; });
   proc.stderr.on("data", d => { err += d; });
@@ -65,7 +78,7 @@ export function dataFolder() {
   const temp = path.join(root, "temp");
   for (const d of [game, saves, data, temp]) fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(data, "wcmods.json"), JSON.stringify({ game_dir: game, save_dir: saves }));
-  return { root, game, saves, data, temp };
+  return { root, game, saves, data, temp, app: appCopy() };
 }
 
 export function makeGame(game) {
@@ -108,6 +121,11 @@ export async function remove(target) {
 // The tests' folder, at the end: tried for a moment, then left for the temp folder's own clean-up.
 export async function removeFolder(folder) {
   try { await remove(folder); } catch (e) { /* still held: it's in the temp folder */ }
+}
+// Everything dataFolder made: the player's folder stand-in and the copy of wcmods.
+export async function removeFolders(folders) {
+  await removeFolder(folders.root);
+  await removeFolder(folders.app);
 }
 
 // A studio's first page load, with time to spare: a cold browser and studio have taken 15 s on CI, and every
