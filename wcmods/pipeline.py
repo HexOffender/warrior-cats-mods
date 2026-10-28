@@ -98,21 +98,59 @@ def names_without_text(cfg, ctx, game):
         path = BuildContext.data_path(names.strings_path("EN"))
         strings = ctx.files[path][0].decode("utf-8") if path in ctx.files else game.read_text(path)
         keys = {r.fields[0] for r in Table(strings).rows if r.fields}
-        missing = names.without_text(names.cats_in_save(SaveDoc(text).data), ctx.save_ops, keys.__contains__)
+        missing = names.losing_text(names.cats_in_save(SaveDoc(text).data), ctx.save_ops, keys.__contains__)
     except Exception as e:   # said, so the check isn't skipped unseen
-        return [f"couldn't check your cats' names against the game's text ({type(e).__name__}: {e})"]
+        return [f"couldn't check your cats' names against the game's text ({e})"]
     if not missing:
         return []
-    shown = [f"{'your cat' if where == 'you' else where} ({key})" for where, key in missing[:5]]
-    if len(missing) > 5:
-        shown.append(f"{len(missing) - 5} more")
     them = "it" if len(missing) == 1 else "them"
     cats = "a cat in your save has" if len(missing) == 1 else f"{len(missing)} cats in your save have"
-    yours = ", and the HUD calls your cat Cat 1" if any(where == "you" for where, _ in missing) else ""
+    yours = ", and the HUD calls your cat Cat 1" if any(c["player"] and c["current"] for c, _, _ in missing) else ""
     return [f"{cats} a name a mod made, and no mod in this build gives the game its text, so the game will show "
-            f"{them} as <MISSING STRING TABLE ENTRY>{yours}: {', '.join(shown)}. Turn the mod that named {them} "
-            "back on (or, if it's left out as made for an older version of the game, use it anyway), or rename "
-            f"{them} on the Names page; Backups and repair puts your save back as it was before"]
+            f"{them} as <MISSING STRING TABLE ENTRY>{yours}: {say_cats([_losing_cat(c, ids) for c, ids, _ in missing])}. "
+            f"Turn the mod that named {them} back on (or, if it's left out as made for an older version of the game, "
+            f"use it anyway), or rename {them} on the Names page; Backups and repair puts your save back as it was "
+            "before"]
+
+
+def _losing_cat(cat, ids, plan=None):
+    """One of the cats losing_text finds, for the page and the log: its cats key, where it is, the name it had
+    (from the plan's text, else made from its IDs), and whether it's your cat."""
+    name = (plan.known_name(ids) if plan is not None else "") or names.guess_name(ids, plan)
+    return {"target": names.target_of(cat), "where": names.place(cat["paths"][0]), "name": name,
+            "player": cat["player"], "current": cat["current"]}
+
+
+def say_cats(cats, most=5):
+    """Cats from _losing_cat in a sentence: "your cat (Sparkle), Wrenheart, the cat at RiverClan · Warrior · 3 and
+    2 more"."""
+    words = []
+    for c in cats[:most]:
+        if c["player"]:
+            mine = "your cat" if c["current"] else f"your cat in cat slot {c['target'].split('/', 1)[0]}"
+            words.append(f"{mine} ({c['name']})" if c["name"] else mine)
+        else:
+            words.append(c["name"] or names.describe_target(c["target"]))
+    if len(cats) > most:
+        words.append(f"{len(cats) - most} more")
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+
+
+def cats_losing_text(cfg, plan=None):
+    """The cats in your save whose names are text only a mod gives (an ID with _WCM_ in it): with every mod
+    taken out of the game they show as <MISSING STRING TABLE ENTRY> (your cat as Cat 1), until the mods go
+    back in or the save does. Your cat first. Needs no game: the game's own texts never have such a key; `plan`
+    (names.Plan, the enabled mods') only names them better. [] with no save, or one that can't be read."""
+    sav = os.path.join(cfg.save_dir, SAV_NAME)
+    try:
+        text = SaveGame.load(sav).json_text if os.path.isfile(sav) else ""
+        if "_WCM_" not in text:
+            return []
+        cats = names.losing_text(names.cats_in_save(SaveDoc(text).data), (), lambda key: False)
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+    out = [_losing_cat(c, ids, plan) for c, ids, _ in cats]
+    return sorted(out, key=lambda c: not (c["player"] and c["current"]))
 # Shared Lua modules installed with any build, for UE4SS scripts to require (docs/SDK.md, "Overlays").
 SHARED_LUA = (view, draw, world, menu, game_lua)
 
@@ -643,9 +681,19 @@ def install_outdated(cfg):
         return False
 
 
-def uninstall(cfg, log=print):
+def uninstall(cfg, log=print, losing=None):
+    """Take everything wcmods put in the game out again. Returns the paths removed. First says which cats in the
+    save have names only the mods give (cats_losing_text, or `losing` when the caller has it already), since they
+    show as <MISSING STRING TABLE ENTRY> once the mods are out."""
     if game_running():
         raise RuntimeError("the game is running; close it before uninstalling mods")
+    losing = cats_losing_text(cfg) if losing is None else losing
+    if losing:
+        n = len(losing)
+        log(f"  warning: {'a cat' if n == 1 else f'{n} cats'} in your save {'has a name' if n == 1 else 'have names'} "
+            f"only your mods give: {say_cats(losing)}. With the mods out, {'it shows' if n == 1 else 'they show'} as "
+            "<MISSING STRING TABLE ENTRY> (your cat as Cat 1) until you put the mods back in, put a backup of your "
+            f"save back, or give {'it a game name' if n == 1 else 'them game names'} on the Names page and apply")
     cfg.reload()
     removed = remove_paks(cfg.mods_install_dir)
     mods_dir = cfg.ue4ss_mods_dir

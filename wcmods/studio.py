@@ -587,7 +587,10 @@ class Studio:
                 return pipeline.install(cfg, self.ctx.build_dir, self.ctx.backups, log, force=bool(body.get("force")))
             return self.run(go, "Apply to game", keep=True)
         if parts == ["uninstall"] and method == "POST":
-            return self.run(lambda log: {"removed": pipeline.uninstall(cfg, log)}, "Take mods out", keep=True)
+            def take_out(log):
+                losing = self.names_losing()   # read before: the names come from the mods going out
+                return {"removed": pipeline.uninstall(cfg, log, losing=losing), "losing": losing}
+            return self.run(take_out, "Take mods out", keep=True)
         if parts == ["backups"]:
             return save.list_backups(self.ctx.backups)[::-1]
         if parts == ["backup"] and method == "POST":
@@ -740,7 +743,10 @@ class Studio:
         if parts == ["names"] and method == "GET":
             return self.names_preview({})
         if parts == ["names", "preview"] and method == "POST":
-            return self.names_preview(names.validate(body.get("spec") or {}))
+            mod_id = body.get("mod")
+            return self.names_preview(names.validate(body.get("spec") or {}), mod_id if isinstance(mod_id, str) else None)
+        if parts == ["names", "losing"] and method == "GET":
+            return {"losing": self.names_losing()}
         raise LookupError("unknown API route")
 
     def cat_info(self):
@@ -824,25 +830,96 @@ class Studio:
         return {"palette": slots, "game_slots": palettes.GAME_SLOTS, "feral_slots": list(catcolours.FERAL_SLOTS),
                 "parts": {p: catcolours.LOOK_MAX.get(p, 9) for p in catcolours.LOOK}}
 
-    def names_preview(self, spec):
-        """The game's names, what a names.json (not yet saved) does to them, and the cats in the save."""
+    def name_tables(self):
+        """The game's name tables (names.GameNames), read once. Without a game folder this ends as the command
+        line would (SystemExit), which the handler says as NO_GAME; with one it can't read, Unreadable."""
         if self._names is None:
             self._names = names.GameNames(lambda path: self.ctx.game.read_text(BuildContext.data_path(path)))
-        plan = names.Plan(self._names, names.merge([spec]))
-        cats, slot = [], None
+        return self._names
+
+    def names_specs(self, spec=None, mod_id=None):
+        """The names.json of every enabled mod, in priority order, as the next Apply merges them, with `spec` (the
+        Names page's file, not saved yet) standing in for mod_id's own: that mod counts even while it's off, since
+        saving turns it on, and one not made yet (My mods before its first save) goes last. A file that can't be
+        used is left out, with a sentence for each in the second list."""
+        specs, left_out, placed = [], [], False
+        for m in self.mods():
+            if mod_id is not None and m.id == mod_id:
+                specs.append(spec or {})
+                placed = True
+                continue
+            if not m.enabled:
+                continue
+            try:
+                theirs = names.read_spec(m)
+            except (OSError, ValueError) as e:
+                left_out.append(f"{m.name}'s names.json is left out here, because it can't be used: {e}")
+                continue
+            if theirs is not None:
+                specs.append(theirs)
+        if mod_id is not None and not placed:
+            specs.append(spec or {})
+        return specs, left_out
+
+    def names_preview(self, spec, mod_id=None):
+        """The game's names, what a names.json not yet saved (`spec`, the Names page's, for mod `mod_id`) does to
+        them, and the cats in the save.
+
+        Two plans. The page's own, from `spec` alone, says what this file does: the cards' renamed parts ("final"),
+        "What this does" (changed_names, changed_texts, warnings) and what each "names" entry renames
+        (names_hits). The cats come from every enabled mod's names.json with `spec` in its mod's place
+        (names_specs), named as the next Apply would name them: the list, the renames this file makes, the
+        warnings about its own cats entries, and losing_text, the cats that would show as <MISSING STRING TABLE
+        ENTRY> if Apply ran now (their names are text a mod gives, and no mod in it gives that text). Each
+        warning is also in "notes" with the part of names.json it's about, for the page to put by its row. A save
+        that can't be read leaves the list empty, with save_problem saying why."""
+        game = self.name_tables()
+        own = names.Plan(game, names.merge([spec]))
+        specs, left_out = self.names_specs(spec, mod_id)
+        every = names.Plan(game, names.merge(specs))
+        cats, slot, problem = [], None, None
         try:
             text, _ = self.save_text()
             doc = SaveDoc(text)
             cats, slot = names.cats_in_save(doc.data), names.current_slot(doc.data)
         except LookupError:
-            pass
-        ops = plan.plan_cats(cats)
-        return {**self._names.summary(), "final": {"prefixes": [p["final"] for p in plan.prefixes],
-                                                   "suffixes": [s["final"] for s in plan.suffixes],
-                                                   "rogues": [r["final"] for r in plan.rogues]},
-                "cats": names.cat_list(plan, cats, ops), "current_slot": slot,
-                "renames": [{"from": a, "to": b} for a, b in plan.cat_renames],
-                "warnings": plan.warnings, "changed_texts": _changed_texts(plan.edits.get(names.strings_path("EN"), {}))}
+            pass   # no save yet: the page says so
+        except ValueError:   # cut short: the game may be writing it
+            problem = ("Couldn't read your save: it's cut short, or not laid out the way wcmods expects (the game may "
+                       "be writing it just now). The cats list is empty until it can be read")
+        except OSError as e:   # locked, or gone between looking and reading
+            problem = f"Couldn't open your save ({e.strerror or e}). The cats list is empty until it can be read"
+        ops = every.plan_cats(cats)
+        listed = names.cat_list(every, cats, ops)
+        mine, merged = spec.get("cats", {}), every.spec.get("cats", {})
+        renames = [{"target": t, "from": a, "to": b} for (a, b), t in zip(every.cat_renames, every.rename_targets)
+                   if t in mine and merged.get(t) == mine[t]]
+        notes = ([n for n in own.notes if not n[0].startswith("cats.")]
+                 + [n for n in every.notes if n[0].startswith("cats.") and n[0][len("cats."):] in mine])
+        shown = {c["target"]: c["name"] for c in listed}
+        losing = [{"target": names.target_of(c), "name": shown.get(names.target_of(c), ""), "key": key}
+                  for c, _, key in names.losing_text(cats, ops, every.final.__contains__)]
+        return {**game.summary(), "final": {"prefixes": [p["final"] for p in own.prefixes],
+                                            "suffixes": [s["final"] for s in own.suffixes],
+                                            "rogues": [r["final"] for r in own.rogues]},
+                "cats": listed, "current_slot": slot, "save_problem": problem,
+                "renames": renames, "losing_text": losing, "names_hits": own.names_hits,
+                "warnings": left_out + [text for _, text in notes],
+                "notes": [{"where": where, "text": text} for where, text in notes],
+                "changed_names": own.changed + len(renames),
+                "changed_texts": _changed_texts(own.edits.get(names.strings_path("EN"), {}))}
+
+    def names_losing(self):
+        """The cats in the save whose names are text only a mod gives (pipeline.cats_losing_text): what taking every
+        mod out of the game would leave as <MISSING STRING TABLE ENTRY>. Named with the enabled mods' names when
+        the game's tables can be read, else from their IDs."""
+        plan = None
+        try:
+            if self.ctx.cfg.game_dir:   # not ctx.game, which ends the command line (SystemExit)
+                plan = names.Plan(self.name_tables(), names.merge(self.names_specs()[0]))
+        except Exception:   # noqa: BLE001 - the names then come from the cats' IDs
+            plan = None
+        return pipeline.cats_losing_text(self.ctx.cfg, plan)
 
     def _reader(self):
         """A build context only for reading the game's tables (it never builds)."""

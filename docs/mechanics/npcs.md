@@ -95,10 +95,10 @@ order (the game's own indexes start at 0).
 
 ## Names
 
-- **Clan cats:** a prefix from `PreffixName.csv` (89, weighted per clan) and a suffix from
-  `SuffixName.csv` (26, one set per role: -kit, -paw, a warrior suffix, -star).
-- **Rogues:** a whole name from `RogueNames.csv` (22).
-- **Banned names:** `NameBanList.csv` keeps 30 canon names (Tigerstar, Jayfeather, Lionblaze …)
+- **Clan cats:** a prefix from `PreffixName.csv` (90, weighted per clan) and a suffix from
+  `SuffixName.csv` (27, one set per role: -kit, -paw, a warrior suffix, -star).
+- **Rogues:** a whole name from `RogueNames.csv` (23).
+- **Banned names:** `NameBanList.csv` keeps 31 canon names (Tigerstar, Jayfeather, Lionblaze …)
   from being generated.
 - **Your cat's name suggestions:** the name screen scores prefixes with `PrefixNameFilters.csv`
   (clan and looks) and suffixes with `SuffixNameFilters.csv` (traits too).

@@ -36,10 +36,15 @@ def item_names(ctx):
     return out
 
 
+QUEST_RANKS = ("Apprentice", "Warrior", "Deputy", "Leader")   # a quest title's rank segment, when it has one
+
+
 def place_names(read_text):
     """The game's area names and quest titles, from its text tables: ({area code: name} ("R-05" ->
     "Willow-Weep"), {quest tag: {rank: title}}), the rank being Apprentice, Warrior, Deputy or Leader (a
-    quest's title can change with your cat's rank). A table that can't be read leaves its names out."""
+    quest's title can change with your cat's rank), or "" for a title with no rank segment
+    (Quest.Procedural.Progression.RankUp.Title is RankUp's own title, whatever the rank). A table that can't
+    be read leaves its names out."""
     from .formats import csvdata
     areas, quests = {}, {}
     try:
@@ -57,6 +62,8 @@ def place_names(read_text):
             tag = r.fields[0] if r.fields else ""
             if tag.endswith(".Title") and len(r.fields) > key:
                 quest, _, rank = tag[:-len(".Title")].rpartition(".")
+                if rank not in QUEST_RANKS:
+                    quest, rank = tag[:-len(".Title")], ""
                 quests.setdefault(quest, {})[rank] = en.get(r.fields[key], r.fields[key])
     except Exception:   # no game data, or a table laid out differently: those names are left out
         pass

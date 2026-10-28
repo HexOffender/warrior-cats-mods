@@ -2059,7 +2059,7 @@ def _names_without_text():
     """Cats named with a mod's own text that a build doesn't give the game: found after the build's own
     renames (back to a game name clears one, to a mod's name makes one), a rogue by its name alone and an
     apprentice by its rank's suffix, never a cat with the game's names; the build's warning names them, and
-    reads the game's text only when the save has such a name."""
+    reads the game's text only when the save has such a name, and names them in words (made from their IDs)."""
     import json
     from . import names, pipeline
     from .config import Config
@@ -2114,7 +2114,7 @@ def _names_without_text():
         plain = pipeline.names_without_text(cfg, Build(), Game())
     return (ok and no_save == [] and fine == [] and plain == [] and Game.reads == reads == 1 and len(warned) == 1
             and warned[0].startswith("3 cats in your save have a name a mod made")
-            and all(k in warned[0] for _, k in gone) and "your cat (STR_CAT_NAME_WCM_FAWN_STAR)" in warned[0]
+            and ": your cat (Fawnstar), Moss and Odd. " in warned[0] and "STR_" not in warned[0]
             and "calls your cat Cat 1" in warned[0] and "use it anyway" in warned[0])
 
 
@@ -2139,7 +2139,7 @@ def _names_plan(read_text):
           and "STR_CAT_NAME27_FACE" not in added
           and plan.edits[names.PREFIXES].get("-") == [p["row"] for p in game.prefixes if p["text"] == "Pigeon"]
           and "-" not in plan.edits.get(names.SUFFIXES, {})
-          and any("only suffix for Kit" in w for w in plan.warnings)
+          and ("suffixes.remove.kit", "'kit' is the only suffix for kits, so it's kept") in plan.notes
           and plan.edits[names.BANNED]["+"][0]["PrefixID"] == "STR_CAT_NAME53")
 
     # Cats: a story role is a copy of a clan cat (renamed in both places); a place with "was" only
@@ -2161,8 +2161,10 @@ def _names_plan(read_text):
                and all(o["set"] == {"PrefixNameId": "STR_CAT_NAME_WCM_FIXED_SPARKLE"} for o in ops)
                and texts.get("STR_CAT_NAME_WCM_FIXED_SPARKLE_PAW") == "Sparkle"
                and texts.get("STR_CAT_NAME_WCM_GLIMMER_PAW") == "Glimmerpaw"
-               and [w for w in plan.warnings if w.startswith("cats:")] == [
-                   "cats: no cat in your save is called 'RiverClan/Warrior/1'", "cats: no cat in your save is called 'Nobody'"])
+               and [n for n in plan.notes if n[0].startswith("cats.")] == [
+                   ("cats.RiverClan/Warrior/1", "The cat at RiverClan · Warrior · 1 isn't called 'Someone' any more, "
+                                                "so it isn't renamed; rename it again from the list"),
+                   ("cats.Nobody", "No cat in your save is called 'Nobody'")])
     # Shown names: a cat already renamed to a mod's own text (Glow) is listed by that text, not blank, and a
     # rename is logged from the name the cat has; the in-game module gets a few added keys to check the game has.
     from . import world
@@ -2199,7 +2201,7 @@ def _names_plan(read_text):
                            ("0/NPCData/RiverClan/Warrior/2", "Prefixed", "0/RiverClan/Warrior/2"),
                            ("1/GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization", "Me", "you"),
                            ("1/NPCData/RiverClan/Warrior/0", "Sparkle", "RiverClan/Warrior/0")]
-              and [w for w in plan2.warnings if w.startswith("cats:")] == ["cats: no cat in your save is called '1/'"]
+              and [n for n in plan2.notes if n[0].startswith("cats.")] == [("cats.1/", "'1/' doesn't say which cat")]
               and [c["target"] for c in shown] == ["player", "RiverClan/Warrior/0", "0/player", "0/RiverClan/Warrior/0",
                                                    "0/RiverClan/Warrior/1", "0/RiverClan/Warrior/2"]
               and [c["where"] for c in shown[:3]] == ["you", "RiverClan/Warrior/0", "your cat"]

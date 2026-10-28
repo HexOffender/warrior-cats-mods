@@ -9,6 +9,9 @@ and any name the game shows, and rename cats in your save. See names.py for how 
       "names":    { "Brightheart": "Brightfur" },
       "cats":     { "player": "Mothheart", "Ripplestorm": { "fixed": "Sparkle" } }
     }
+
+A rename that would leave a cat with no text in the game is left out with a warning (names.Plan.plan_cats),
+so a cat never shows as <MISSING STRING TABLE ENTRY> because of this section.
 """
 import os
 
@@ -40,7 +43,7 @@ class NamesSection(Section):
                 doc = SaveDoc(SaveGame.load(sav).json_text)
                 ops = plan.plan_cats(names.cats_in_save(doc.data))
             else:
-                ctx.warn("cats: no save yet; start the game once, then install again to rename cats")
+                ctx.warn("No save yet, so no cats are renamed: start the game once, then apply again")
         for w in plan.warnings:
             ctx.warn(w)
         for table, edits in plan.edits.items():

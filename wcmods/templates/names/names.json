@@ -1,5 +1,5 @@
 {
-  "_help": "Cat names. Names are matched by their English text (any case) or ID; `python wcmods.py names` lists them and `names --cats` lists the cats in your save. Removing a prefix or suffix only stops the game handing it out; cats that have it keep their names. See README, \"names.json\", for every option.",
+  "_help": "Cat names. Names are matched by their English text (any case) or ID; `python wcmods.py names` lists them and `names --cats` lists the cats in your save. Removing a prefix or suffix only stops the game handing it out; cats that have it keep their names. See docs/formats.md, \"names.json\", for every option.",
   "_example": {
     "prefixes": { "rename": { "Otter": "Moth" }, "add": { "Sparrow": { "like": "Wren" } }, "remove": ["Pigeon"] },
     "suffixes": { "rename": { "pelt": "coat" }, "add": { "whisper": {} } },

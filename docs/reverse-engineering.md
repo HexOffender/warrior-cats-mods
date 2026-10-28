@@ -795,8 +795,8 @@ each part's options in groups, with the offset the position inside one. Not yet 
 
 From `wcmods/names.py` (checked against the tables and the save):
 - **A clan cat's name** is a prefix and a suffix.
-  - `NPC/PreffixName.csv` (the game's spelling) has 89 prefixes, with a weight per clan.
-  - `NPC/SuffixName.csv` has 26 suffixes, with a weight per rank: kits get -kit, apprentices
+  - `NPC/PreffixName.csv` (the game's spelling) has 90 prefixes, with a weight per clan (counted 2026-10-28).
+  - `NPC/SuffixName.csv` has 27 suffixes, with a weight per rank: kits get -kit, apprentices
     -paw, leaders -star.
 - **The name shown** is the English text under the key prefix ID + suffix ID
   (`STR_CAT_NAME53` + `_PAW` gives `STR_CAT_NAME53_PAW` = "Otterpaw"), in each language's
@@ -814,10 +814,10 @@ From `wcmods/names.py` (checked against the tables and the save):
   experience, the den, dilemma popups and the trait/name screen).
 - **Name screen suggestions:** `PrefixNameFilters.csv` and `SuffixNameFilters.csv` score names
   against a cat's clan, looks and (for suffixes) traits.
-- **Rogues** take a whole name from `NPC/RogueNames.csv` (`STR_ROGUE_CAT_NAME_<n>`; the table's
+- **Rogues** take a whole name from `NPC/RogueNames.csv` (23 of them, `STR_ROGUE_CAT_NAME_<n>`; the table's
   Name column is only a label).
 - **The nine canon cameo cats** use `STR_CAT_NAME_ICONIC_<n>`.
-- **`NPC/NameBanList.csv`** holds 30 combinations that are never handed out (canon names).
+- **`NPC/NameBanList.csv`** holds 31 combinations that are never handed out (canon names).
 
 ## Colours
 
