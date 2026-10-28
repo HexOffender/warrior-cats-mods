@@ -77,6 +77,11 @@ def _parse_target(target):
     return (m.group(1), m.group(2)) if m else (None, target)
 
 
+def slot_of(target):
+    """The game slot a cats key names first ("2" in "2/Duskfang"), or None for the game being played."""
+    return _parse_target(target)[0]
+
+
 def by_place(target):
     """Whether a cats key picks a cat by its place (Clans/RiverClan/Warrior/3) rather than its name."""
     return "/" in _parse_target(target)[1]

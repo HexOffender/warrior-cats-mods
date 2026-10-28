@@ -25,8 +25,10 @@ class CatsSection(Section):
         player = {**EMPTY, **merged.get("player", {})}
         sav = os.path.join(ctx.cfg.save_dir, SAV_NAME)
         cats = names.cats_in_save(SaveDoc(SaveGame.load(sav).json_text).data) if os.path.isfile(sav) else []
-        others = self._others(ctx, merged.get("cats", {}), cats, os.path.isfile(sav))
-        coloured = {catcolours.name_key(cat): one["colours"] for _, cat, one in others if one["colours"]}
+        per_mod = [data.get("cats", {}) for _, data in items if data.get("cats")]   # lowest priority first
+        plan = self._plan(ctx) if per_mod and cats else None
+        others = self._others(ctx, plan, per_mod, cats, os.path.isfile(sav))
+        coloured = self._coloured(ctx, plan, others, cats)
         if player["colours"] or coloured:
             if ctx.cfg.ue4ss_mods_dir:
                 key_file = os.path.join(ctx.cfg.ue4ss_mods_dir, catcolours.UE4SS_MOD_NAME, "yourcat.txt")
@@ -63,32 +65,84 @@ class CatsSection(Section):
             ctx.note("cats", sorted({f"{t} -> {names.place(c['paths'][0])}" for t, c, _ in others}))
 
     @staticmethod
-    def _others(ctx, wanted, cats, have_save):
-        """[(target, cat, look)] for cats.json's "cats": each name or place found in the save (every cat called
-        that, as names.json's "cats" finds them)."""
-        if not wanted:
+    def _plan(ctx):
+        """The cats' names after the enabled names mods (a cat one renames is found by its new name too)."""
+        game = names.GameNames(lambda path: ctx.game.read_text(ctx.data_path(path)))
+        try:
+            return names.Plan(game, names.merge(names.mod_specs(ctx.mods)))
+        except ValueError:          # a broken names.json, which the names section reports
+            return names.Plan(game, names.merge([]))
+
+    @staticmethod
+    def _others(ctx, plan, per_mod, cats, have_save):
+        """[(targets, cat, look)] for cats.json's "cats" (each mod's, lowest priority first): each name or place
+        found in the save (every cat called that, as names.json's "cats" finds them). Without a slot first, a
+        name or place means the game being played."""
+        if not per_mod:
             return []
         if not have_save:
-            ctx.warn(f"cats: no save yet, so {', '.join(sorted(wanted))} can't be found; start the game once, then "
-                     "install again")
+            wanted = sorted({t for m in per_mod for t in m})
+            ctx.warn(f"cats: no save yet, so {', '.join(wanted)} can't be found; start the game once, then install again")
             return []
-        plan = names.Plan(names.GameNames(lambda path: ctx.game.read_text(ctx.data_path(path))), names.merge([]))
-        found = {}    # a cat's first path -> (the targets that found it, the cat, its look): one edit a cat
-        for target, one in wanted.items():
-            hits = [c for c in plan.cats_called(target, cats) if not c["player"]]
-            if not hits:
-                ctx.warn(f"cats: no cat in your save is called '{target}' (the Names page lists them, with their places)")
-                continue
-            if len(hits) > 1 and not names.by_place(target):
-                ctx.warn(f"cats: {len(hits)} cats are called '{target}', and all of them change; name one by its "
-                         f"place to change just it ({', '.join(names.place(c['paths'][0]) for c in hits[:4])})")
-            for cat in hits:
-                # A cat a name and a place both find takes both, the later entry winning part by part.
-                targets, _, look = found.setdefault(cat["paths"][0], ([], cat, {k: {} for k in EMPTY}))
-                targets.append(target)
-                for key in EMPTY:
-                    look[key].update(one.get(key, {}))
+        found, said = {}, set()   # a cat's first path -> (the targets that found it, the cat, its look): one edit a cat
+        for wanted in per_mod:
+            for target, one in wanted.items():
+                hits = [c for c in plan.cats_called(target, cats) if not c["player"]]
+                if names.slot_of(target) is None:
+                    elsewhere = sorted({c["slot"] for c in hits if not c["current"]})
+                    hits = [c for c in hits if c["current"]]
+                    if not hits and elsewhere and target not in said:
+                        said.add(target)
+                        ctx.warn(f"cats: '{target}' isn't in the game you're playing; for game {elsewhere[0]}'s, put "
+                                 f"its slot first ('{elsewhere[0]}/{target}')")
+                        continue
+                if not hits:
+                    if target not in said:
+                        said.add(target)
+                        ctx.warn(f"cats: no cat in your save is called '{target}' (the Your cat page lists them, with "
+                                 "their places)")
+                    continue
+                if len(hits) > 1 and not names.by_place(target) and target not in said:
+                    said.add(target)
+                    ctx.warn(f"cats: {len(hits)} cats are called '{target}', and all of them change; name one by its "
+                             f"place to change just it ({', '.join(names.place(c['paths'][0]) for c in hits[:4])})")
+                for cat in hits:
+                    # A cat a name and a place both find takes both; a later mod wins part by part.
+                    targets, _, look = found.setdefault(cat["paths"][0], ([], cat, {k: {} for k in EMPTY}))
+                    if target not in targets:
+                        targets.append(target)
+                    for key in EMPTY:
+                        look[key].update(one.get(key, {}))
         return [(" and ".join(targets), cat, look) for targets, cat, look in found.values()]
+
+    @staticmethod
+    def _coloured(ctx, plan, others, cats):
+        """{name key: colours} for the script: the cats found in the game being played (the script tells cats
+        apart by their name IDs only, whatever the game), by the IDs they'll have after this install's renames."""
+        renamed = {}
+        if plan is not None and plan.renames:
+            for op in plan.plan_cats(cats):
+                if op.get("op") == "name":
+                    renamed[op["path"]] = op["set"]
+        key = lambda cat: catcolours.name_key({"ids": {**cat["ids"], **renamed.get(cat["paths"][0], {})}})   # noqa: E731
+        sharing = {}
+        for cat in cats:
+            if cat["current"] and not cat["player"]:
+                sharing.setdefault(key(cat), []).append(cat)
+        out = {}
+        for targets, cat, one in others:
+            if not one["colours"]:
+                continue
+            if not cat["current"]:
+                ctx.warn(f"cats: {targets}: colours go on only in the game being played, so game {cat['slot']}'s "
+                         "cat gets its slots, scars and shape but not its colours")
+                continue
+            k = key(cat)
+            if len(sharing.get(k, [])) > 1:
+                ctx.warn(f"cats: {targets}: its colours go on every cat with its name ({len(sharing[k])} in this game): "
+                         "the game tells them apart only by their names")
+            out[k] = one["colours"]
+        return out
 
     @staticmethod
     def _check(ctx, who, one, added):

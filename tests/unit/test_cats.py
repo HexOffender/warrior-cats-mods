@@ -64,18 +64,26 @@ CATS = [{"paths": ["5/GameplayProgression/Gameplay.Combat.Character.Cat.Player/C
         {"paths": ["5/NPCData/Clans/WindClan/Warrior/1"], "player": False, "current": True, "slot": "5",
          "ids": {"PrefixNameId": "STR_CAT_NAME12", "SuffixNameId": "_LEAF"}},
         {"paths": ["5/NPCData/Clans/WindClan/Warrior/2"], "player": False, "current": True, "slot": "5",
-         "ids": {"PrefixNameId": "STR_CAT_NAME12", "SuffixNameId": "_LEAF"}}]
-NAMES = {"STR_CAT_NAME38_PAW": "Fennelpaw", "STR_CAT_NAME11_FANG": "Duskfang", "STR_CAT_NAME12_LEAF": "Hawkleaf"}
+         "ids": {"PrefixNameId": "STR_CAT_NAME12", "SuffixNameId": "_LEAF"}},
+        {"paths": ["2/NPCData/Clans/WindClan/Apprentice/0"], "player": False, "current": False, "slot": "2",
+         "ids": {"PrefixNameId": "STR_CAT_NAME13", "SuffixNameId": "_PAW"}}]
+NAMES = {"STR_CAT_NAME38_PAW": "Fennelpaw", "STR_CAT_NAME11_FANG": "Duskfang", "STR_CAT_NAME12_LEAF": "Hawkleaf",
+         "STR_CAT_NAME13_PAW": "Gustpaw"}
 
 
 class FakePlan:
+    renames = []
+
     def __init__(self, game, spec):
         pass
 
     def cats_called(self, target, cats):
-        if "/" in target:
-            return [c for c in cats if any(p.endswith("/" + target) for p in c["paths"])]
-        return [c for c in cats if NAMES.get(c["ids"]["PrefixNameId"] + c["ids"]["SuffixNameId"], "").lower() == target.lower()]
+        slot, want = (target.split("/", 1) if target.split("/", 1)[0].isdigit() else (None, target))
+        if "/" in want:
+            hits = [c for c in cats if any(p.endswith("/" + want) for p in c["paths"])]
+        else:
+            hits = [c for c in cats if NAMES.get(c["ids"]["PrefixNameId"] + c["ids"]["SuffixNameId"], "").lower() == want.lower()]
+        return [c for c in hits if slot is None or c["slot"] == slot]
 
 
 class Ctx:
@@ -127,3 +135,41 @@ def test_other_cats_are_found_by_name_or_place_and_get_their_own_fields_and_colo
     assert any("no cat in your save is called 'Nobody'" in w for w in ctx.warnings)
     script = ctx.scripts[C.UE4SS_MOD_NAME]["Scripts/main.lua"]
     assert '["STR_CAT_NAME11|_FANG"]' in script and not luacheck.check(script)
+
+
+def build(tmp_path, monkeypatch, *mods):
+    (tmp_path / "WrcGame.sav").write_bytes(b"")
+    (tmp_path / "cats.json").write_text("{}")
+    monkeypatch.setattr(section, "SAV_NAME", "WrcGame.sav")
+    monkeypatch.setattr(section.SaveGame, "load", staticmethod(lambda path: type("S", (), {"json_text": "{}"})()))
+    monkeypatch.setattr(section, "SaveDoc", lambda text: type("D", (), {"data": {}})())
+    monkeypatch.setattr(section.names, "cats_in_save", lambda data: CATS)
+    monkeypatch.setattr(section.names, "Plan", FakePlan)
+    monkeypatch.setattr(section.names, "GameNames", lambda read: None)
+    ctx = Ctx(tmp_path)
+    section.CatsSection().build(ctx, [(type("Mod", (), {"id": f"m{i}", "folder": str(tmp_path)})(), C.validate(raw))
+                                      for i, raw in enumerate(mods)])
+    return ctx
+
+
+def test_a_name_means_the_game_being_played_and_a_slot_first_another(tmp_path, monkeypatch):
+    ctx = build(tmp_path, monkeypatch, {"cats": {"Gustpaw": {"look": {"tail": 1}}}})
+    assert not ctx.ops and ctx.warnings == ["cats: 'Gustpaw' isn't in the game you're playing; for game 2's, put its "
+                                            "slot first ('2/Gustpaw')"]
+    ctx = build(tmp_path, monkeypatch, {"cats": {"2/Gustpaw": {"look": {"tail": 1}, "colours": {"nose": "#000000"}}}})
+    assert [op["path"] for op in ctx.ops] == ["2/NPCData/Clans/WindClan/Apprentice/0"]
+    # Colours go on only in the game being played: the script can't tell games apart.
+    assert any("colours go on only in the game being played" in w for w in ctx.warnings)
+    assert C.UE4SS_MOD_NAME not in ctx.scripts
+
+
+def test_two_cats_with_one_name_share_its_colours_with_a_warning(tmp_path, monkeypatch):
+    ctx = build(tmp_path, monkeypatch, {"cats": {"WindClan/Warrior/1": {"colours": {"nose": "#000000"}}}})
+    assert any("its colours go on every cat with its name (2 in this game)" in w for w in ctx.warnings)
+
+
+def test_a_later_mod_wins_whichever_way_it_names_the_cat(tmp_path, monkeypatch):
+    ctx = build(tmp_path, monkeypatch, {"cats": {"Duskfang": {"look": {"tail": 1}}, "WindClan/Deputy/0": {"look": {"tail": 2}}}},
+                {"cats": {"Duskfang": {"look": {"tail": 3}}}})
+    sets = {op["path"]: op["set"] for op in ctx.ops}
+    assert sets["5/NPCData/Clans/WindClan/Deputy/0"] == {"TailIdx": 3}

@@ -79,16 +79,18 @@ palette you've added is your own copy, so add it again to get the new one.
             "WindClan/Warrior/3": { "scars": "none" } } }
 ```
 `player` is your cat, in the game you're playing. **`cats`** changes other cats in your save the same
-way, each by its name (`"Duskfang"`) or its place as the Names page and the Your cat page show it
-(`"WindClan/Warrior/3"`, for one of two cats with the same name), with the game's slot first for a
-game other than the one being played (`"2/Duskfang"`), as `names.json`'s `cats` picks them. Every cat
-called the name changes, with a warning when that's more than one.
+way, each by its name (`"Duskfang"`, as it shows with your names mods) or its place as the Names page
+and the Your cat page show it (`"WindClan/Warrior/3"`, for one of two cats with the same name), in the
+game you're playing, or with the game's slot first for another (`"2/Duskfang"`), as `names.json`'s
+`cats` picks them. Every cat called the name changes, with a warning when that's more than one. Mods
+apply in priority order, so a later mod's choice wins even when it names the cat another way.
 - **`colours`** go onto the cat's own materials while you play. That covers menus and portraits,
   and every part is optional. No other cat changes, and any colour works, including paws, ears,
   nose and whiskers, which have no slots at all. The game sets a cat's colours again whenever it
   sets the cat up, so the UE4SS script (`WCModsCatLook`) puts them back twice a second. Another cat's
-  are found by its name IDs: a rank-up changes those (Gustpaw becomes Gust-something), so install
-  again after one. Uninstalling brings the saved colours back.
+  are found by its name, so they go on only in the game you're playing, and a cat with the same name
+  gets them too (with a warning). A rank-up changes a cat's name (Gustpaw becomes Gust-something),
+  so install again after one. Uninstalling brings the saved colours back.
 - **`slots`** picks which colour slot the cat wears, written into your save on install, after a
   backup: `fur` 0–24 (20–24 are the Feral Edition's, which the game swaps without it), `pattern`
   and `marking` any slot, including new ones a palette adds, and the eyes' colours 0–24:

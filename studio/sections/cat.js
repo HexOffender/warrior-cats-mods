@@ -147,7 +147,7 @@ export default {
       clear(whoCard).append(el("h2", { text: "Whose look" }),
         el("div", { class: "row" }, sel),
         el("p", { class: "note", text: mine() ? "Your cat, in the game you're playing. Choose another cat to change its look the same way: it's found by its name (or its place, when two share a name), and only it changes."
-          : `${whoName()} is changed by ${/\//.test(who) ? "its place" : "its name"} (${who}). A rank-up changes a cat's name: install again after one to keep its colours on it.` }));
+          : `${whoName()} is changed by ${/\//.test(who) ? "its place" : "its name"} (${who}). Its colours go on by its name, so a cat with the same name gets them too; a rank-up changes a cat's name: install again after one to keep its colours on it.` }));
     }
 
     // The colour a slot shows with the enabled palettes: a palette's colour, else the game's.
@@ -168,16 +168,17 @@ export default {
       });
       const [lo, hi] = (info.look || {}).size || [0.05, 1.5];
       const on = "size" in l.look;
-      const size = el("input", { type: "number", min: String(lo), max: String(hi), step: "0.05", value: String(l.look.size ?? cur.size ?? 0.8),
+      const clampSize = v => Math.max(lo, Math.min(hi, Number(v) || 0.8));
+      const size = el("input", { type: "number", min: String(lo), max: String(hi), step: "0.05", value: String(clampSize(l.look.size ?? cur.size)),
         style: { width: "6em" }, "aria-label": "Size", disabled: !on });
       const box = el("input", { type: "checkbox", checked: on, "aria-label": "Change the size" });
-      size.addEventListener("change", () => { const v = Math.max(lo, Math.min(hi, Number(size.value) || 0.8)); l.look.size = v; size.value = v; changed(); });
-      box.addEventListener("change", () => { if (box.checked) l.look.size = Number(size.value); else delete l.look.size; size.disabled = !box.checked; changed(); });
+      size.addEventListener("change", () => { const v = clampSize(size.value); l.look.size = v; size.value = v; changed(); });
+      box.addEventListener("change", () => { if (box.checked) { l.look.size = clampSize(size.value); size.value = l.look.size; } else delete l.look.size; size.disabled = !box.checked; changed(); });
       clear(lookCard).append(el("h2", { text: "Shape" }),
         el("p", { class: "note", text: `${mine() ? "Your cat's" : `${whoName()}'s`} body, fur, tail, ears, eyes, whiskers and face, each one of the game's 10 (the cat maker shows a clan's 7 of them), and its pattern and markings (21 each). They go into your save on install, after a backup.${mine() ? " Body, ears and face chose your cat's traits when it was made; the traits stay as they are." : ""}` }),
         ...rows,
         el("div", { class: "row" }, el("label", { class: "row", style: { minWidth: "150px" } }, box, el("strong", { text: "Size" })), size,
-          el("span", { class: "muted", text: `${cur.size !== undefined ? `now ${cur.size}; ` : ""}a kit is about 0.1, a warrior 0.75, a leader 1.0${mine() ? ". The game sets your cat's size again when it ranks up" : ""}` })));
+          el("span", { class: "muted", text: `${cur.size != null ? `now ${cur.size}; ` : ""}a kit is about 0.1, a warrior 0.75, a leader 1.0${mine() ? ". The game sets your cat's size again when it ranks up" : ""}` })));
     }
 
     function renderColours() {
