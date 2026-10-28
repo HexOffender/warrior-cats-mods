@@ -409,10 +409,10 @@ def code_installed(data):
 def pending(cfg, mods):
     """How your mods differ from what's installed: {"installed" (ever), "on" and "off" (ids turned on or off
     since), "changed" (on both times, with files changed since), "left_out" ({id: why} for the mods that are
-    on but that an install leaves out: leave_out()), "redo" (why the last install has to be made again: it
-    was made before UE4SS or the Oodle DLL was there, so it left parts out), "any"}. The studio's Apply
-    button shows it. A left-out mod that's still in the game counts as a change: the next install takes it
-    out."""
+    on but that an install leaves out: leave_out()), "still_in" (those of them still in the game: the next
+    install takes them out, so each counts as a change), "redo" (why the last install has to be made again:
+    it was made before UE4SS or the Oodle DLL was there, so it left parts out; mods that run code were
+    allowed since), "any"}. The studio's Apply button shows it."""
     # wcmods.json read afresh, without touching the studio's Config: reloading that would throw away what an
     # install running at the same time has noted but not saved yet.
     try:
@@ -429,8 +429,8 @@ def pending(cfg, mods):
         # The mod menu's window goes in with every install, so with the script loader there one is worth
         # making even with no mods on.
         redo = ["the mod menu isn't in the game yet"] if not now and cfg.ue4ss_mods_dir else []
-        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "left_out": left_out, "redo": redo,
-                "any": bool(now or redo)}
+        return {"installed": False, "on": sorted(now), "off": [], "changed": [], "left_out": left_out, "still_in": [],
+                "redo": redo, "any": bool(now or redo)}
     was = set(inst.get("mods", []))
     try:
         built = datetime.datetime.fromisoformat(inst.get("built", "")).timestamp()
@@ -463,11 +463,18 @@ def pending(cfg, mods):
     # takes it out again.
     if not data.get("allow_code_mods") and code_installed(data):
         redo.append("the game has code from a test install, and mods that run code are off")
+    # The other way: installed while mods that run code weren't allowed, so a mod's scripts stayed out though
+    # the mod is in installed["mods"] (Menu pages, Sandbox mode); allowed now, an install puts them in. With
+    # code allowed, every install with the script loader there puts the bridge in, so code_installed is never
+    # empty after one.
+    elif data.get("allow_code_mods") and cfg.ue4ss_mods_dir and not code_installed(data) \
+            and any(m.id in now and m.has_code() for m in mods):
+        redo.append("mods that run code are allowed now")
     # "off" is what was switched off; a mod left out while it's on is in left_out instead, and the install
-    # still has to take it out of the game while it's there.
+    # still has to take it out of the game while it's there (still_in).
     out = {"installed": True, "on": sorted(now - was), "off": sorted(was - switched_on), "changed": changed,
-           "left_out": left_out, "redo": redo}
-    out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo or was & set(left_out))
+           "left_out": left_out, "still_in": sorted(was & set(left_out)), "redo": redo}
+    out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo or out["still_in"])
     return out
 
 

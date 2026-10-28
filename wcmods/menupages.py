@@ -54,8 +54,14 @@ def status(cfg):
 
 
 def find_release(timeout=20):
-    """The latest release's .zip: {"name", "url", "size", "version", "page"} from GitHub."""
-    return addons.find_release(addons.get(ID), timeout)
+    """The latest release's .zip: {"name", "url", "size", "version", "page"} from GitHub. No release at all
+    is ue4ss.NoRelease saying "no release yet" as every add-on's does (addons.no_release)."""
+    from .ue4ss import NoRelease
+    addon = addons.get(ID)
+    try:
+        return addons.find_release(addon, timeout)
+    except NoRelease:
+        raise NoRelease(addons.no_release(addon)) from None
 
 
 def add(cfg, zip_path=None, log=print):

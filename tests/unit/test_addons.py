@@ -129,7 +129,7 @@ def test_an_addon_equal_to_the_installed_version_is_unchanged(studio, github, tm
 def test_github_trouble_names_the_addon_and_its_page_and_leaves_no_folder(studio, monkeypatch):
     def not_found(req, timeout=20):
         raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
-    monkeypatch.setattr(urllib.request, "urlopen", not_found)
+    monkeypatch.setattr(ue4ss, "_open", not_found)
     with pytest.raises(ue4ss.NoRelease) as e:
         addons.add(studio.ctx.cfg, "emote-wheel", log=lambda m: None)
     said = str(e.value)
@@ -141,9 +141,21 @@ def test_github_trouble_names_the_addon_and_its_page_and_leaves_no_folder(studio
 
     def offline(req, timeout=20):
         raise urllib.error.URLError("no connection")
-    monkeypatch.setattr(urllib.request, "urlopen", offline)
-    with pytest.raises(RuntimeError, match="couldn't reach GitHub for Sandbox mode .*releases"):
+    monkeypatch.setattr(ue4ss, "_open", offline)
+    with pytest.raises(ue4ss.Offline, match="couldn't reach GitHub for Sandbox mode .*releases"):
         addons.add(studio.ctx.cfg, "sandbox", log=lambda m: None)
+    assert addons.latest(addons.get("sandbox"))["offline"] is True
+
+    def busy(req, timeout=20):   # GitHub's rate limit: an answer, not a lost connection
+        raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", {}, None)
+    monkeypatch.setattr(ue4ss, "_open", busy)
+    found = addons.latest(addons.get("sandbox"))
+    assert found["offline"] is False and "turning requests away" in found["error"] and not addons.answered(found)
+
+
+def test_menu_pages_with_no_release_says_no_release_yet(studio, github):
+    with pytest.raises(ue4ss.NoRelease, match=r"^Menu pages has no release yet; the owner of that mod"):
+        menupages.add(studio.ctx.cfg, log=lambda m: None)
 
 
 def test_a_zip_without_the_addon_is_refused_and_the_old_copy_kept(studio, tmp_path):
@@ -278,3 +290,142 @@ def test_the_setup_pages_route_is_still_menu_pages(studio, tmp_path):
     r = call(studio, "POST", "setup/pages", upload=pages)
     assert r["result"]["version"] == "1.1" and r["result"]["from"] == "menu-pages-1.1.zip"
     assert call(studio, "POST", "setup/pages", {"skip": True}) == {"result": {"skipped": True}}
+
+
+# ---------- what an add leaves alone, and GitHub out of reach ----------
+def test_an_addons_other_mods_never_replace_mods_of_yours_with_their_ids(studio, github, tmp_path):
+    # wcmods-examples' Dark Forest, added before: the same id as Creator palettes' theme, other colours.
+    make_mod(studio, "palette-dark-forest", {"name": "Dark Forest", "enabled": True}, {"palette.json": {"fur": {"1": "#ABCDEF"}}})
+    github.releases["HexOffender/wcmods-creator-palettes"] = ("v1.2.0", {
+        "creator-palettes-1.2.0.zip": palettes_zip(tmp_path / "p.zip")})
+    cfg = studio.ctx.cfg
+    done = addons.add(cfg, "creator-palettes", log=lambda m: None)
+    assert done["kept"] == [{"id": "palette-dark-forest", "name": "Dark Forest"}]
+    assert "palette-dark-forest" not in [d["id"] for d in done["added"]] and modzip.removed(cfg.backups_dir) == []
+    with open(os.path.join(studio.ctx.mods_root, "palette-dark-forest", "palette.json"), encoding="utf-8") as f:
+        assert json.load(f) == {"fur": {"1": "#ABCDEF"}}   # yours, untouched
+    # The themes it brought in are noted as its own, so the next release replaces them; yours stays yours.
+    def added_with(i):
+        with open(os.path.join(studio.ctx.mods_root, i, "mod.json"), encoding="utf-8") as f:
+            return json.load(f).get(addons.ADDED_WITH)
+    assert added_with("palette-pastel-kits") == "creator-palettes" and added_with("palette-dark-forest") is None
+    github.releases["HexOffender/wcmods-creator-palettes"] = ("v1.3.0", {
+        "creator-palettes-1.3.0.zip": palettes_zip(tmp_path / "p2.zip", "1.3.0")})
+    again = addons.add(cfg, "creator-palettes", log=lambda m: None)
+    replaced = {d["id"] for d in again["added"] if d["replaced"]}
+    assert {"creator-palettes", "palette-pastel-kits", "palette-vivid-clans", "palette-coat-presets"} <= replaced
+    assert again["kept"] == [{"id": "palette-dark-forest", "name": "Dark Forest"}]
+
+
+def test_an_addon_updated_from_its_zip_on_the_mods_page_keeps_your_settings(studio, tmp_path):
+    cfg = studio.ctx.cfg
+    addons.add(cfg, "emote-wheel", wheel_zip(tmp_path / "emote-wheel-1.0.zip"), log=lambda m: None)
+    folder = os.path.join(studio.ctx.mods_root, "emote-wheel")
+    with open(os.path.join(folder, "settings.json"), "w", encoding="utf-8") as f:
+        json.dump({"_help": "v1.0", "key": "B", "pause": True}, f)
+    newer = wheel_zip(tmp_path / "emote-wheel-1.1.zip", "1.1")
+    call(studio, "POST", "mods/add", query={"step": "add", "name": "emote-wheel-1.1.zip"}, upload=newer)
+    with open(os.path.join(folder, "settings.json"), encoding="utf-8") as f:
+        assert json.load(f) == {"_help": "v1.1", "key": "B", "pause": True}
+    # Dropped on the launcher (the inbox), the same.
+    onboarding.put_inbox(wheel_zip(tmp_path / "emote-wheel-1.2.zip", "1.2", key="T"))
+    call(studio, "POST", "mods/inbox/add", {})
+    with open(os.path.join(folder, "settings.json"), encoding="utf-8") as f:
+        assert json.load(f) == {"_help": "v1.2", "key": "B", "pause": True}
+
+
+def test_a_cached_download_is_used_only_for_the_same_upload_and_the_old_one_goes_after_the_new_lands(studio, github, tmp_path, monkeypatch):
+    cfg, addon = studio.ctx.cfg, addons.get("sandbox")
+    cache = os.path.join(cfg.data_dir, "cache", "downloads")
+    first = sandbox_zip(tmp_path / "a.zip", "0.4")
+    release = {"name": "sandbox-0.4.zip", "url": "https://example.invalid/sandbox-0.4.zip", "size": os.path.getsize(first),
+               "version": "0.4", "page": addon.page, "id": 1, "updated_at": "2026-10-01T00:00:00Z"}
+    github.releases["HexOffender/wcmods-sandbox"] = ("v0.4", {"sandbox-0.4.zip": first})
+    addons.download(cfg, addon, release, log=lambda m: None)
+    assert github.downloads == ["sandbox-0.4.zip"]
+    addons.download(cfg, addon, release, log=lambda m: None)
+    assert github.downloads == ["sandbox-0.4.zip"]   # the same upload: read from the cache
+    # Uploaded again under the same name and size (a fixed .zip): downloaded again.
+    addons.download(cfg, addon, {**release, "id": 2, "updated_at": "2026-10-02T00:00:00Z"}, log=lambda m: None)
+    assert github.downloads == ["sandbox-0.4.zip"] * 2
+    # A newer release whose download fails leaves the one that's there.
+    newer = {**release, "name": "sandbox-0.5.zip", "version": "0.5", "id": 3}
+    with pytest.raises(RuntimeError, match="download failed"):
+        addons.download(cfg, addon, newer, log=lambda m: None)
+    assert "sandbox-0.4.zip" in os.listdir(cache)
+    github.releases["HexOffender/wcmods-sandbox"] = ("v0.5", {"sandbox-0.5.zip": sandbox_zip(tmp_path / "b.zip", "0.5")})
+    newer["size"] = os.path.getsize(tmp_path / "b.zip")
+    addons.download(cfg, addon, newer, log=lambda m: None)
+    assert sorted(os.listdir(cache)) == ["sandbox-0.5.zip", "sandbox-0.5.zip.release"]
+
+
+def test_downloads_are_https_only_redirects_included(monkeypatch, tmp_path):
+    monkeypatch.delenv("WCMODS_RELEASES", raising=False)
+    plain = tmp_path / "x.zip"
+    plain.write_bytes(b"PK")
+    for url in (plain.as_uri(), "http://example.invalid/x.zip", "ftp://example.invalid/x.zip"):
+        with pytest.raises(RuntimeError, match="isn't an https address"):
+            ue4ss.download({"name": "x.zip", "url": url}, str(tmp_path), what="Sandbox mode")
+    # GitHub sending the download on to an http address: refused, before anything is read from it.
+    import urllib.request as ur
+    opener = ue4ss._https_only()
+    handler = next(h for h in opener.handlers if isinstance(h, ur.HTTPRedirectHandler))
+    req = ur.Request("https://github.com/x/releases/download/v1/x.zip")
+    with pytest.raises(RuntimeError, match="isn't https"):
+        handler.redirect_request(req, None, 302, "Found", {}, "http://objects.example.invalid/x.zip")
+    assert handler.redirect_request(req, None, 302, "Found", {}, "https://objects.example.invalid/x.zip").full_url \
+        == "https://objects.example.invalid/x.zip"
+    # The stand-in for GitHub (WCMODS_RELEASES) may hand out file: addresses.
+    monkeypatch.setenv("WCMODS_RELEASES", str(tmp_path))
+    out = tmp_path / "out"
+    out.mkdir()
+    assert os.path.isfile(ue4ss.download({"name": "x.zip", "url": plain.as_uri()}, str(out), what="Sandbox mode"))
+
+
+def test_check_for_newer_versions_keeps_only_answers_and_says_offline(studio, github, monkeypatch):
+    def offline(api, what, page, timeout=20):
+        github.asked.append(api)
+        raise ue4ss.Offline(f"couldn't reach GitHub for {what} (no connection); try again")
+    real = ue4ss.github_release
+    monkeypatch.setattr(ue4ss, "github_release", offline)
+    r = call(studio, "GET", "addons", query={"latest": "1"})
+    assert all(a["offline"] and a["error"] for a in r["addons"]) and r["checked"] is None
+    call(studio, "GET", "addons", query={"latest": "1"})
+    assert len(github.asked) == 8   # not kept: asked again
+    monkeypatch.setattr(ue4ss, "github_release", real)   # back online: answers, kept for the hour
+    r = call(studio, "GET", "addons", query={"latest": "1"})
+    assert len(github.asked) == 12 and r["checked"] and all(a["no_release"] and not a["offline"] for a in r["addons"])
+    call(studio, "GET", "addons", query={"latest": "1"})
+    assert len(github.asked) == 12
+
+
+def test_the_page_can_tell_offline_and_no_release_apart(studio, monkeypatch):
+    from wcmods import studio as studio_mod
+    import threading
+    server = studio_mod._Server(("127.0.0.1", 0), None)
+    port = server.server_address[1]
+    server.RequestHandlerClass = studio_mod.make_handler(studio, port)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    def ask(path):
+        req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", method="POST", data=b"{}",
+                                     headers={"Content-Type": "application/json", "X-WC-Token": studio.token})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, json.load(r)
+        except urllib.error.HTTPError as e:
+            return e.code, json.load(e)
+    try:
+        def offline(api, what, page, timeout=20):
+            raise ue4ss.Offline(f"couldn't reach GitHub for {what} (no connection); try again")
+        monkeypatch.setattr(ue4ss, "github_release", offline)
+        code, a = ask("/api/addons/sandbox")
+        assert code == 400 and a["offline"] is True and "no_release" not in a
+        def none(api, what, page, timeout=20):
+            raise ue4ss.NoRelease(f"{what} has no release on GitHub yet ({page})")
+        monkeypatch.setattr(ue4ss, "github_release", none)
+        code, a = ask("/api/addons/menu-pages")
+        assert code == 400 and a["no_release"] is True and "no release yet" in a["error"]
+    finally:
+        server.shutdown()
+        server.server_close()
