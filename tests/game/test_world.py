@@ -1,7 +1,25 @@
 """The world through WCModsGame: the clock and the fresh-kill pile."""
 
 
+def tweaks_clock_off(agent):
+    """The Tweaks in the same test install (tests/game/mods/all-tweaks) hold the clock, setting it back twice a
+    second: switch that off on their mod menu page while a test moves the clock. Returns what puts it back."""
+    there = any("Tweaks" in (p["id"], p["title"]) for p in agent.menu.pages())
+    if not there or not agent.menu.open("Tweaks").get("Hold the clock"):
+        agent.menu.close()
+        return lambda: None
+    agent.menu.set("Hold the clock", False)
+    agent.menu.close()
+
+    def back():
+        agent.menu.open("Tweaks")
+        agent.menu.set("Hold the clock", True)
+        agent.menu.close()
+    return back
+
+
 def test_time_round_trip(agent):
+    hold_again = tweaks_clock_off(agent)
     was = agent.lua("return Game.time.seconds()")
     try:
         agent.lua("Game.time.set(12, 0, 0)")
@@ -11,6 +29,7 @@ def test_time_round_trip(agent):
         assert h == 12, h
     finally:
         agent.lua(f"Game.time.setSeconds({was})")
+        hold_again()
 
 
 def test_fresh_kill(agent):

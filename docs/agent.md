@@ -293,7 +293,7 @@ The suite here has 80 tests:
   game's Yawn as an emote on F7, a claws-out copy of its Stretch on F8, and the sleep loop in the trot's
   place, all without a file; the tests press the keys and read the anim instance, and measure the head
   while the cat trots. It needs the mod installed first (`agent install --with tests/animations-mod`);
-  the tests say so and skip otherwise. Not run in the game yet.
+  the tests say so and skip otherwise. All three passed in the game on 2026-10-28.
 - **The mod menu:** `test_menu.py`. Every page draws without an error (with a picture of each), the
   Stats page matches your cat, the Health slider and Heal work, "Hold this time" holds the clock,
   and a Travel spot can be saved and forgotten. It also checks a jump and Back, the Items, Quests,

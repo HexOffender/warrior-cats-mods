@@ -6,9 +6,9 @@ both looping, and puts the sleep loop in the trot's place. It has to be installe
     python wcmods.py agent install --with tests/animations-mod
     python wcmods.py agent test -k animations --launch
 
-Not run yet: written with the change that added "game" (2026-10-28), for the next pass in the game. The emote
-script's montage lives in its own Lua state, so the bridge reads the anim instance (IsAnyMontagePlaying), as
-docs/reverse-engineering.md says.
+Written with the change that added "game" and first run in the game on 2026-10-28 (the overhaul's integration
+build, all three passing). The emote script's montage lives in its own Lua state, so the bridge reads the anim
+instance (IsAnyMontagePlaying), as docs/reverse-engineering.md says.
 """
 import threading
 import time
@@ -19,10 +19,11 @@ NEEDS = "world"
 MOD = "animations-mod"
 PLAYING = "Game.player().Mesh:GetAnimInstance():IsAnyMontagePlaying()"
 # How far the head is above the root bone, in cm (the sleep loop curls the cat up: under 3.5 cm while it
-# moves, against about 14 with the game's trot; docs/verified.md, 2026-10-27).
-HEAD_ABOVE_ROOT = """local m = Game.player().Mesh
+# moves, against about 14 with the game's trot; docs/verified.md, 2026-10-27), and how fast the cat goes (cm/s).
+HEAD_AND_SPEED = """local p = Game.player()
+local m, v = p.Mesh, p:GetVelocity()
 local h, r = m:GetSocketLocation(FName("head")), m:GetSocketLocation(FName("root"))
-return h.Z - r.Z"""
+return h.Z - r.Z, math.sqrt(v.X * v.X + v.Y * v.Y)"""
 
 
 def setup(agent):
@@ -67,19 +68,22 @@ def test_claws_out_on_a_game_animation(agent):
 
 
 def test_the_trot_can_be_another_game_animation(agent):
-    """With W held the cat trots, and the trot is now the game's sleep loop: its head stays low."""
+    """With W held the cat trots, and the trot is now the game's sleep loop: its head stays low while it moves at
+    the trot's speed. (Standing isn't compared: the game's idle has the head anywhere from about 7 to 14 cm up as
+    it shifts and sits, seen in game on 2026-10-28.)"""
+    agent.wait(lambda: not agent.lua("return " + PLAYING), timeout=5, what="no emote to be playing")
     start = agent.location()
-    heights = []
+    samples = []   # (head above the root, speed in cm/s)
     try:
-        standing = agent.lua(HEAD_ABOVE_ROOT)
-        walking = threading.Thread(target=agent.key, args=("W",), kwargs={"hold": 2.0})
+        walking = threading.Thread(target=agent.key, args=("W",), kwargs={"hold": 2.5})
         walking.start()
         time.sleep(0.8)
-        for _ in range(8):
-            heights.append(agent.lua(HEAD_ABOVE_ROOT))
+        for _ in range(10):
+            samples.append(agent.lua(HEAD_AND_SPEED))
             time.sleep(0.12)
         walking.join()
     finally:
         agent.teleport(*start)
-    assert standing > 10, f"standing, the head is {standing:.1f} cm above the root: not the game's idle"
-    assert max(heights) < 3.5 + 1.5, f"trotting, the head is {min(heights):.1f} to {max(heights):.1f} cm above the root"
+    trotting = [h for h, speed in samples if speed > 120]   # the walk's top speed is 175 cm/s
+    assert len(trotting) >= 4, f"the cat didn't trot with W held: {samples}"
+    assert max(trotting) < 3.5 + 1.5, f"trotting, the head is {min(trotting):.1f} to {max(trotting):.1f} cm above the root"

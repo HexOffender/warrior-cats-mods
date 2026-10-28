@@ -52,12 +52,13 @@ def test_fresh_kill_floor(agent):
 
 
 def test_heal_key(agent):
-    """The game's own input hears a key the agent posts to its window: F7 heals."""
+    """The game's own input hears a key the agent posts to its window: F4 heals (F7 and F8 are the animations test
+    mod's emotes, in the same install)."""
     if not agent.status()["foreground"]:
         skip("the game isn't in front, and the heal key listens to the game's own input")
     agent.lua("local c = Game.cat() c:setHealth(c:maxHealth() / 2)")
-    agent.key("F7")
-    agent.wait(lambda: agent.lua("local c = Game.cat() return c:health() >= c:maxHealth() - 0.01"), 3, "F7 to heal")
+    agent.key("F4")
+    agent.wait(lambda: agent.lua("local c = Game.cat() return c:health() >= c:maxHealth() - 0.01"), 3, "F4 to heal")
 
 
 def test_skip_scenes_is_on_for_the_hand_check(agent):
@@ -87,5 +88,8 @@ def test_the_tweaks_page_saves(agent):
     finally:
         with open(TWEAKS, "w", encoding="utf-8", newline="\n") as f:
             f.write(before)
+        # The page changed the tweaks in the game too: the clock held at 21:00 until they're put back.
+        agent.menu.open("Tweaks")
+        agent.menu.press("Back to installed")
         agent.lua("Game.time.set(9, 0, 0)")
         time.sleep(0.5)
