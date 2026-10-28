@@ -126,22 +126,31 @@ export function catKey(c, nameCount) {
   if (c.target === "player") return "player";
   return c.current && c.name_known !== false && (nameCount.get(low(c.name)) || 0) === 1 ? c.name : c.target;
 }
+// How many cats have each name, and (nameCount.ids) each set of IDs an older page named a cat by (c.ids).
 export function countNames(cats) {
   const m = new Map();
-  for (const c of cats) m.set(low(c.name), (m.get(low(c.name)) || 0) + 1);
+  m.ids = new Map();
+  for (const c of cats) {
+    m.set(low(c.name), (m.get(low(c.name)) || 0) + 1);
+    if (c.ids) m.ids.set(low(c.ids), (m.ids.get(low(c.ids)) || 0) + 1);
+  }
   return m;
 }
 
-// The key a cats entry for this cat is under in `entries`, or null: the key the page would write (catKey), else
-// the cat's name in another case, its place, or "player" for your cat by name, as an older page or a hand-written
-// file may have put it.
-export function entryKeyFor(c, entries, nameCount) {
+// Every key in `entries` that means this cat, in the file's order: the key the page would write (catKey), its
+// place, its name in another case, or the IDs an older page wrote for a cat whose name had no text (c.ids, from
+// the preview), when no other cat has those IDs.
+export function entryKeysFor(c, entries, nameCount) {
   const mine = catKey(c, nameCount);
-  if (mine in entries) return mine;
-  const keys = Object.keys(entries);
-  return keys.find(k => k === c.target)
-    || (c.current && c.name_known !== false && (nameCount.get(low(c.name)) || 0) === 1 ? keys.find(k => low(k) === low(c.name)) : null)
-    || null;
+  const byName = c.current && c.name_known !== false && (nameCount.get(low(c.name)) || 0) === 1;
+  const byIds = !!c.ids && (nameCount.ids?.get(low(c.ids)) || 0) <= 1;
+  return Object.keys(entries).filter(k => k === mine || k === c.target || (byName && low(k) === low(c.name))
+    || (byIds && low(k) === low(c.ids)));
+}
+// The key the cat's box shows, or null: the last of entryKeysFor, the one the build uses (two entries for one cat
+// rename it by the later). Writing the box takes the others out (names.js, write).
+export function entryKeyFor(c, entries, nameCount) {
+  return entryKeysFor(c, entries, nameCount).at(-1) ?? null;
 }
 
 // A cats entry as the box shows it: its text, and whether "grows with rank" is ticked. An entry written as
@@ -216,8 +225,10 @@ export function rankWords(role) {
   const s = String(role || "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
-// A story role in words: "TheAgingLeader" is "the aging leader", "ThunderClanDeputy" "ThunderClan deputy".
+// A story role in words: "TheAgingLeader" is "the aging leader", "ThunderClanDeputy" "ThunderClan deputy". A role
+// that's one word is a cameo cat's name (Brightheart, Tallstar), kept as it is.
 export function roleWords(role) {
+  if (/^[A-Z][a-z]+$/.test(String(role || ""))) return String(role);
   const words = String(role || "").match(/(?:Thunder|River|Shadow|Wind|Star)Clan|[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+/g) || [];
   return words.map(w => /Clan$/.test(w) ? w : w.toLowerCase()).join(" ");
 }

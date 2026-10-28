@@ -48,6 +48,22 @@ class InstallBlocked(RuntimeError):
         return list(dict.fromkeys(mod for _, mod, _ in self.problems if mod))
 
 
+def section_problems(rep):
+    """What went wrong in one section of a build's report, [(mod id or None, text)]; [] when its status is
+    "ok". Its "failed" lines up with its "errors", one for one; a report where it doesn't (an older wcmods
+    wrote only the errors' text, or added one without the other) is read from the errors, so nothing that
+    went wrong is ever missed. A section that isn't "ok" always has at least one."""
+    if rep.get("status") == "ok":
+        return []
+    errors = list(rep.get("errors") or [])
+    failed = rep.get("failed")
+    if isinstance(failed, list) and failed and len(failed) >= len(errors):
+        found = [(mod, text) for mod, text in failed]
+    else:
+        found = [(None, e) for e in errors]
+    return found or [(None, "it didn't build fully")]
+
+
 def user_paks(mod):
     """Cooked content a mod ships itself: {stem: {ext: path}} for mods/<id>/paks/<stem>.pak and the
     .utoc/.ucas/.sig beside it (made with Unreal Engine 5.7, see docs/SDK.md, "New content")."""
@@ -86,18 +102,20 @@ def remove_paks(folder):
 
 
 def names_without_text(cfg, ctx, game):
-    """Build warnings for cats in your save named with a mod's own text (an ID with _WCM_ in it) that this
-    build doesn't give the game, once the sections' CSV edits are in: the mod that named them is off or left
-    out, so the game would show <MISSING STRING TABLE ENTRY>. The game's text is only read when a cat has
-    such a name."""
+    """Build warnings for cats in your save named with a mod's own text (names.mod_given by their IDs: an ID
+    with _WCM_ in it, or one of the game's prefix IDs alone, as a rogue given that prefix has) that this build
+    doesn't give the game, once the sections' CSV edits are in: the mod that named them is off or left out, so
+    the game would show <MISSING STRING TABLE ENTRY>. The game's text is only read when a cat has such a
+    name."""
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     try:
         text = SaveGame.load(sav).json_text if os.path.isfile(sav) else ""
-        if "_WCM_" not in text:
+        cats = names.cats_in_save(SaveDoc(text).data) if "PrefixNameId=" in text else []
+        if not any(names.mod_given(key) for _, _, key in names.named_keys(cats, ctx.save_ops)):
             return []
         strings = built_text(ctx, game)(BuildContext.data_path(names.strings_path("EN")))
         keys = {r.fields[0] for r in Table(strings).rows if r.fields}
-        missing = names.losing_text(names.cats_in_save(SaveDoc(text).data), ctx.save_ops, keys.__contains__)
+        missing = names.losing_text(cats, ctx.save_ops, keys.__contains__)
     except Exception as e:   # said, so the check isn't skipped unseen
         return [f"couldn't check your cats' names against the game's text ({e})"]
     if not missing:
@@ -146,7 +164,7 @@ def say_cats(cats, most=5):
     words = []
     for c in cats[:most]:
         if c["player"]:
-            mine = "your cat" if c["current"] else f"your cat in cat slot {c['target'].split('/', 1)[0]}"
+            mine = "your cat" if c["current"] else f"your cat in {names.game_words(c['target'].split('/', 1)[0])}"
             words.append(f"{mine} ({c['name']})" if c["name"] else mine)
         else:
             words.append(c["name"] or names.describe_target(c["target"]))
@@ -156,16 +174,19 @@ def say_cats(cats, most=5):
 
 
 def cats_losing_text(cfg, plan=None):
-    """The cats in your save whose names are text only a mod gives (an ID with _WCM_ in it): with every mod
-    taken out of the game they show as <MISSING STRING TABLE ENTRY> (your cat as Cat 1), until the mods go
-    back in or the save does. Your cat first. Needs no game: the game's own texts never have such a key; `plan`
-    (names.Plan, the enabled mods') only names them better. [] with no save, or one that can't be read."""
+    """The cats in your save whose names are text only a mod gives (names.mod_given: an ID with _WCM_ in it, or a
+    key the game's own text doesn't have, such as the prefix ID alone a rogue given one of the game's prefixes
+    has): with every mod taken out of the game they show as <MISSING STRING TABLE ENTRY> (your cat as Cat 1),
+    until the mods go back in or the save does. Your cat first. `plan` (names.Plan, the enabled mods') brings the
+    game's own text to check against and names them better; without it, the IDs alone say. [] with no save, or
+    one that can't be read."""
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     try:
         text = SaveGame.load(sav).json_text if os.path.isfile(sav) else ""
-        if "_WCM_" not in text:
+        if "PrefixNameId=" not in text:
             return []
-        cats = names.losing_text(names.cats_in_save(SaveDoc(text).data), (), lambda key: False)
+        cats = names.losing_text(names.cats_in_save(SaveDoc(text).data), (), lambda key: False,
+                                 plan.game.text if plan is not None else None)
     except (OSError, ValueError, KeyError, TypeError):
         return []
     out = [_losing_cat(c, ids, plan) for c, ids, _ in cats]
@@ -241,23 +262,26 @@ def build(cfg, mods, out_dir, log=print):
         if getattr(m, "problem", None):
             ctx.warnings.append(f"{m.id} is left out: {m.problem}")
 
+    # What goes wrong after the sections ran goes in "failed" as well as "errors": install reads "failed", and a
+    # problem missing from it would let an install go ahead and remove what the section put in before.
+    def fail(sid, text):
+        rep = report[sid]
+        rep["errors"].append(text)
+        rep["failed"].append((None, text))
+        if rep["status"] == "ok":
+            rep["status"] = "partial"
+
     csv_changes, csv_failures = ctx.resolve_csv_edits()
     for path, section_ids, error in csv_failures:
         for sid in section_ids:
-            rep = report.get(sid)
-            if rep is not None:
-                rep["errors"].append(f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})")
-                if rep["status"] == "ok":
-                    rep["status"] = "partial"
+            if sid in report:
+                fail(sid, f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})")
 
     table_changes, table_failures = ctx.resolve_table_rows()
     for name, section_ids, error in table_failures:
         for sid in section_ids:
-            rep = report.get(sid)
-            if rep is not None:
-                rep["errors"].append(f"{name}: rows not added ({error})")
-                if rep["status"] == "ok":
-                    rep["status"] = "partial"
+            if sid in report:
+                fail(sid, f"{name}: rows not added ({error})")
     # A section's save edits go with its table edits: a cat's new name is an ID whose text the pak adds, and
     # a new item's inventory entry needs its rows. With a table of theirs left out, the save would point at
     # text or items the game hasn't got (the cat shows as "<MISSING STRING TABLE ENTRY>"), so they stay out too.
@@ -267,8 +291,7 @@ def build(cfg, mods, out_dir, log=print):
         ctx.save_ops = kept
         for sid in broken:
             if sid in report:
-                report[sid]["errors"].append("its save edits were left out too: they'd point at text or items "
-                                             "the game wouldn't have")
+                fail(sid, "its save edits were left out too: they'd point at text or items the game wouldn't have")
     # What else leaves a renamed cat without its text: a mod that named one is off now, or the mods go into a
     # copy of the game Steam doesn't start.
     ctx.warnings += names_without_text(cfg, ctx, game)
@@ -528,13 +551,8 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
     cfg.reload()
     # Installing replaces what's installed now, so a section that failed or skipped a mod would
     # silently remove that mod's previously installed changes.
-    problems = []
-    for rep in manifest["sections"].values():
-        if rep["status"] == "ok":
-            continue
-        failed = rep.get("failed")   # a manifest an older wcmods wrote has only the errors' text
-        problems += [(rep["title"], mod, text) for mod, text in failed] if failed is not None \
-            else [(rep["title"], None, err) for err in rep["errors"]]
+    problems = [(rep.get("title", sid), mod, text) for sid, rep in manifest["sections"].items()
+                for mod, text in section_problems(rep)]
     if problems and not force:
         raise InstallBlocked(problems)
     dest = cfg.mods_install_dir
@@ -717,7 +735,7 @@ def uninstall(cfg, log=print, losing=None):
     losing = cats_losing_text(cfg) if losing is None else losing
     if losing:
         n = len(losing)
-        log(f"  warning: {'a cat' if n == 1 else f'{n} cats'} in your save {'has a name' if n == 1 else 'have names'} "
+        log(f"warning: {'a cat' if n == 1 else f'{n} cats'} in your save {'has a name' if n == 1 else 'have names'} "
             f"only your mods give: {say_cats(losing)}. With the mods out, {'it shows' if n == 1 else 'they show'} as "
             "<MISSING STRING TABLE ENTRY> (your cat as Cat 1) until you put the mods back in, put a backup of your "
             f"save back, or give {'it a game name' if n == 1 else 'them game names'} on the Names page and apply")

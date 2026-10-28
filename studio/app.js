@@ -34,19 +34,34 @@ function setStatus(chips) {
 const installBtn = document.getElementById("installBtn");
 const playBtn = document.getElementById("playBtn");
 let busy = false;   // a build, install or Play is running: the buttons wait for it
-let gone = false;   // the studio's server stopped answering: the page waits for it and reloads
+let gone = false;   // the studio's server stopped answering: the page waits for it to come back
+let restarting = false;   // Restart the studio was pressed: the page waits for the new one, and nothing else asks
+let failure = null;   // why the last status refresh failed: "gone", "token" (the shell's own cards say those), "error"
 
-async function refreshStatus() {
+// One status refresh at a time: asked for while one is under way (the window coming back to the front, a save,
+// the 15 s tick), it's made once more when that one ends, never piled up beside it.
+let refreshing = null, refreshAgain = false;
+function refreshStatus() {
+  if (refreshing) { refreshAgain = true; return refreshing; }
+  refreshing = refreshStatusNow().finally(() => {
+    refreshing = null;
+    if (refreshAgain) { refreshAgain = false; refreshStatus(); }
+  });
+  return refreshing;
+}
+async function refreshStatusNow() {
+  if (restarting) return null;
   let changes = null;
   try {
     [info, changes] = await Promise.all([api.get("/info"), api.get("/changes").catch(() => null)]);
   } catch (e) {
-    if (e.code === "gone") serverGone();
-    else if (e.code !== "token") setStatus([chip("Studio not answering", "bad", e.message)]);
+    failure = e.code || "error";
+    if (e.code !== "token" && e.code !== "gone") setStatus([chip("Studio not answering", "bad", e.message)]);
     installBtn.disabled = playBtn.disabled = true;
     return null;
   }
-  if (gone) { location.reload(); return null; }   // it's back: this page is from before
+  if (restarting) return null;   // asked before Restart was pressed: the status says it's restarting now
+  if (gone) { back(); return null; }   // it answers again: this page is from before it went
   const waiting = changes ? changes.on.length + changes.off.length + changes.changed.length + (changes.redo || []).length : 0;
   setStatus([
     chip(info.game_running ? "Game running" : "Game closed", info.game_running ? "warn" : "good",
@@ -82,58 +97,88 @@ async function refreshStatus() {
 }
 
 // ---------- the server gone, or this page from before a restart ----------
-// Every API call that can't reach the server says so (wc.js): the buttons go off, a card says what to do, and
-// the page asks every 3 s until the server answers, then reloads (the new server has a new token).
+// A request that can't reach the server, and the same a few seconds later (wc.js says "server-gone" then, not
+// at the first): the buttons go off, a card says what to do, and the page asks every 3 s until the server
+// answers. Then a page with nothing unsaved reloads, to be the new studio's own; one with unsaved changes stays
+// as it is, with the new studio's token (wc.reconnect), so they can still be saved.
 let goneCard = null;
 function serverGone() {
-  if (gone) return;
+  if (gone || restarting) return;   // while restarting it's meant to be away: restartStudio says when it's too long
   gone = true;
   setStatus([chip("Studio closed", "bad", "Clan Mod Studio's black window was closed. Double-click Clan Mod Studio again; this page comes back by itself.")]);
   installBtn.disabled = playBtn.disabled = true;
   goneCard = el("div", { class: "error-card", role: "alert" },
     el("h2", { text: "Clan Mod Studio's black window was closed" }),
-    el("p", { text: "Double-click Clan Mod Studio again. This page comes back by itself once it's open." }));
+    el("p", { text: wc.anyDirty()
+      ? "Double-click Clan Mod Studio again. Your unsaved changes stay on this page: save them once it's open."
+      : "Double-click Clan Mod Studio again. This page comes back by itself once it's open." }));
   main.prepend(goneCard);
   const again = async () => {
-    if (await serverUp()) { location.reload(); return; }
+    if (!gone) return;
+    if (await wc.reconnect()) { back(); return; }
     setTimeout(again, 3000);
   };
   setTimeout(again, 3000);
 }
-async function serverUp() {
-  try { return (await fetch("/", { cache: "no-store" })).ok; } catch (e) { return false; }
+function back() {
+  if (!gone) return;   // the status refresh and the card's own asking can both find it back
+  if (!wc.anyDirty()) { location.reload(); return; }
+  gone = false;
+  goneCard?.remove();
+  goneCard = null;
+  statusSaid = null;
+  toast("Clan Mod Studio is open again. Your unsaved changes are still here: save them.");
+  refreshStatus();
 }
-// A 403 for the token means this page is older than the server (the studio restarted): reload once. The
-// moment is kept, so a page that's still refused after reloading doesn't loop.
+// A 403 for the token that reading the studio's page again didn't fix: reload once, unless that would lose
+// unsaved changes. The moment is kept, so a page that's still refused after reloading doesn't loop.
 let reloading = false;
 bus.on("token-lost", () => {
   if (reloading) return;
+  const stuck = () => setStatus([chip("Open the studio again", "bad", wc.anyDirty()
+    ? "The studio doesn't know this page any more, so it can't save it. Copy what you changed somewhere safe, then close the page and open Clan Mod Studio again."
+    : "This page isn't the one the studio knows. Close it and open Clan Mod Studio again.")]);
+  if (wc.anyDirty()) { stuck(); return; }
   reloading = true;
   let last = 0;
   try { last = Number(sessionStorage.getItem("wc-token-reload") || 0); sessionStorage.setItem("wc-token-reload", String(Date.now())); } catch (e) { /* storage blocked */ }
-  if (Date.now() - last < 15000) {
-    setStatus([chip("Open the studio again", "bad", "This page isn't the one the studio knows. Close it and open Clan Mod Studio again.")]);
-    return;
-  }
+  if (Date.now() - last < 15000) { stuck(); return; }
   location.reload();
 });
 bus.on("server-gone", serverGone);
 
 // Restart the studio (after wcmods was updated under it): the server starts a fresh one in a new window and
-// stops; this page waits for the new one, then reloads.
+// stops; this page waits for the new one, then reloads. Not over unsaved changes: the reload would lose them.
+// A new studio that hasn't answered in RESTART_WAIT is said as one that's gone.
+const RESTART_WAIT = 30000;
 async function restartStudio() {
+  const dirty = unsavedPages();
+  if (dirty.length) {
+    toast(`Save your changes first (${dirty.join(", ")}), then press Restart the studio: restarting reloads the page.`, "bad");
+    return;
+  }
   let r;
   try { r = await api.post("/restart"); } catch (e) { toast(e.message, "bad"); return; }
   if (!r || !r.restarting) return;
   toast("Restarting Clan Mod Studio… this page comes back by itself.");
   setStatus([chip("Restarting…", "warn", "A new Clan Mod Studio window is opening")]);
   installBtn.disabled = playBtn.disabled = true;
-  gone = true;   // nothing else reloads or complains while it's away
+  restarting = true;   // nothing else reloads or complains while it's away
+  const end = Date.now() + RESTART_WAIT;
   await new Promise(res => setTimeout(res, 1500));
-  for (;;) {
-    if (await serverUp()) { location.reload(); return; }
+  while (Date.now() < end) {
+    if (await wc.reconnect()) { location.reload(); return; }
     await new Promise(res => setTimeout(res, 1000));
   }
+  restarting = false;
+  serverGone();   // it didn't come back: the card says what to do, and the page goes on waiting for it
+}
+// The pages with unsaved changes, by their titles in the side bar.
+function unsavedPages() {
+  const bars = wc.dirtyTargets();
+  const titles = Object.entries(loaded).filter(([, entry]) => bars.some(t => entry.pane.contains(t.element)))
+    .map(([sid]) => (info.sections.find(s => s.id === sid) || {}).title || sid);
+  return bars.length && !titles.length ? ["this page"] : titles;
 }
 
 // The side bar: managing mods first, then the pages for making them. Made again only when the pages
@@ -257,33 +302,20 @@ function summarize(manifest) {
   return lines;
 }
 const nameIn = (manifest, id) => (manifest.names || {})[id] || id;
-// What the build did, in plain words: the mods that went in by name, or the first thing that kept one out.
-function plainSummary(manifest) {
-  const bad = [];
-  for (const rep of Object.values(manifest.sections || {})) {
-    if (rep.status === "ok") continue;
-    for (const [mod, text] of rep.failed || rep.errors.map(e => [null, e])) bad.push([mod ? nameIn(manifest, mod) : rep.title, text]);
-  }
-  if (bad.length) {
-    const more = bad.length > 1 ? ` (${bad.length - 1} more problem${bad.length > 2 ? "s" : ""} in the log)` : "";
-    return `Couldn't put ${bad[0][0]} in: ${bad[0][1]}${more}`;
-  }
-  const ids = manifest.mods || [], warnings = (manifest.warnings || []).length;
-  const said = ids.length ? `Put ${ids.length} mod${ids.length === 1 ? "" : "s"} in the game: ${ids.map(i => nameIn(manifest, i)).join(", ")}.`
-    : "Put the mod menu in the game, with no mods on.";
-  return said + (warnings ? ` ${warnings} warning${warnings === 1 ? "" : "s"}.` : "");
-}
 const manifestOf = r => r && r.result && (r.result.sections ? r.result : r.result.manifest && r.result.manifest.sections ? r.result.manifest : null);
 
-// While a task runs under the server's lock, what it has logged so far shows in the drawer.
+// While a task runs under the server's lock, what it has logged so far shows in the drawer. The task has an id
+// of the page's own, so while it waits for another (from another tab) the drawer says so, and never shows that
+// one's log, or the last one's, as this one's.
 let polling = null;
-function pollProgress() {
+function pollProgress(task) {
   const tick = async () => {
     let p;
     try { p = await api.get("/progress"); } catch (e) { return; }
     if (!polling) return;
-    if (p.lines.length) drawerLog.textContent = p.lines.join("\n");
-    else if (p.running) drawerLog.textContent = "Working…";
+    if (p.id !== task) drawerLog.textContent = p.running && p.title ? `Waiting for ${p.title} to finish…` : "Working…";
+    else if (p.lines.length) drawerLog.textContent = p.lines.join("\n");
+    else drawerLog.textContent = "Working…";
   };
   polling = setInterval(tick, 500);
 }
@@ -300,16 +332,20 @@ async function runTask(path, title, body = {}) {
   showDrawer();
   drawerLog.textContent = "Working…";
   drawer.querySelector(".force")?.remove();
-  pollProgress();
+  const task = Math.random().toString(36).slice(2, 10);
+  pollProgress(task);
   try {
-    const r = await api.post(path, body);
+    const r = await api.post(path, { ...body, task });
     stopPolling();
     const manifest = manifestOf(r);
     drawerLog.textContent = [...(manifest ? summarize(manifest) : []), "", ...r.log].join("\n").trim() || "Done.";
-    const trouble = manifest ? (manifest.warnings || []).length > 0 || Object.values(manifest.sections || {}).some(s => s.status !== "ok") : false;
-    drawerSummary.textContent = manifest ? plainSummary(manifest)
-      : path === "/play" ? "Started the game; nothing needed applying first."
-      : path === "/uninstall" ? `Took every mod out of the game. Your mods are still here.${r.result?.losing?.length ? ` ${r.result.losing.length === 1 ? "A cat's name shows" : `${r.result.losing.length} cats' names show`} as <MISSING STRING TABLE ENTRY> until they're back (the log says which).` : ""}` : "Done.";
+    // Something to read: a warning (the build's, or one Play logged itself), a part that didn't build, or
+    // remaps that need the old key remapper.
+    const trouble = (manifest ? (manifest.warnings || []).length > 0 || Object.values(manifest.sections || {}).some(s => s.status !== "ok") : false)
+      || r.log.some(line => line.startsWith("warning: ")) || !!(r.result && r.result.remaps && r.result.remaps.length);
+    // The sentence is the server's (studio.task_summary), as last-apply.log has it.
+    drawerSummary.textContent = r.summary
+      || (path === "/uninstall" ? "Took every mod out of the game. Your mods are still here." : "Done.");
     toast(path === "/play" ? "Starting the game…" : `${title}: done`);
     // After Play the log gets out of the way, unless it has something to say.
     if (path === "/play" && !trouble) hideLater = setTimeout(hideDrawer, 4000);
@@ -378,17 +414,20 @@ function sanitize(html) {
   walk(doc.body);
   return [...doc.body.childNodes];
 }
+// page may end in #heading (a link between the guide's pages): the panel opens there.
 async function openHelp(page = "") {
+  const [name, anchor] = String(page).split("#");
   let r;
-  try { r = await api.get(`/help/${encodeURIComponent(page || "index")}`); }
+  try { r = await api.get(`/help/${encodeURIComponent(name || "index")}`); }
   catch (e) { toast(e.message, "bad"); return; }
   helpTitle.textContent = r.title;
-  helpOpen.href = `/help/${encodeURIComponent(r.page)}`;
+  helpOpen.href = `/help/${encodeURIComponent(r.page)}${anchor ? "#" + encodeURIComponent(anchor) : ""}`;
   clear(helpBody).append(...sanitize(r.html));
   if (help.hidden) helpBack = wc.keepPlace();
   help.hidden = false;
   helpBody.scrollTop = 0;
   helpTitle.focus();
+  if (anchor) helpBody.querySelector(`[id="${CSS.escape(anchor)}"]`)?.scrollIntoView();
 }
 function hideHelp() {
   if (help.hidden) return;
@@ -400,7 +439,7 @@ helpBody.addEventListener("click", e => {
   const a = e.target.closest("a[href]");
   if (!a) return;
   const href = a.getAttribute("href");
-  if (href.startsWith("/help/")) { e.preventDefault(); openHelp(href.slice(6).split("#")[0]); }
+  if (href.startsWith("/help/")) { e.preventDefault(); openHelp(href.slice(6)); }
   else if (href.startsWith("#")) { e.preventDefault(); helpBody.querySelector(`[id="${CSS.escape(href.slice(1))}"]`)?.scrollIntoView(); }
 });
 document.getElementById("helpBtn").addEventListener("click", () => openHelp(""));
@@ -429,9 +468,9 @@ wc.keepFocus();
 document.querySelector(".skip").addEventListener("click", e => { e.preventDefault(); wc.focusMain(); });
 (async () => {
   if (!await refreshStatus()) {
-    if (!gone) {
-      main.append(el("div", { class: "error-card" }, el("h2", { text: "Can't reach the studio server" }),
-        el("p", { text: "Start it with: python wcmods.py studio" })));
+    if (failure === "error") {
+      main.append(el("div", { class: "error-card" }, el("h2", { text: "Clan Mod Studio isn't answering" }),
+        el("p", { text: "Double-click Clan Mod Studio (in the wcmods folder) to open it again, then reload this page." })));
     }
     return;
   }
@@ -445,9 +484,9 @@ document.querySelector(".skip").addEventListener("click", e => { e.preventDefaul
     if (id !== active && info.sections.some(s => s.id === id)) open(id);
   });
   setInterval(refreshStatus, 15000);
-  await checkSetup();
   // Coming back to the studio (after the game, or after dropping a mod on its launcher): look again.
   window.addEventListener("focus", () => { refreshStatus(); checkSetup(); bus.emit("focus"); });
+  await checkSetup();
 })();
 
 // Whatever page is open: the first safety copy of the save as soon as there's one, and a mod dropped on

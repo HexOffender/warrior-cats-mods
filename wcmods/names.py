@@ -106,7 +106,7 @@ def by_place(target):
 
 def describe_target(target):
     """A cats key in words, for a sentence: "your cat", "Blaze", "the cat at RiverClan · Warrior · 3", with "in
-    cat slot 2" after it for a cat in a game other than the one being played."""
+    your 3rd game" after it for a cat in a game other than the one being played (game_words)."""
     slot, want = _parse_target(target)
     if want.lower() == "player":
         who = "your cat"
@@ -114,7 +114,20 @@ def describe_target(target):
         who = "the cat at " + " · ".join(p for p in want.split("/") if p)
     else:
         who = want
-    return who + (f" in cat slot {slot}" if slot is not None else "")
+    return who + (f" in {game_words(slot)}" if slot is not None else "")
+
+
+def ordinal(n):
+    """1st, 2nd, 3rd, 4th, 11th, 21st."""
+    n = int(n)
+    end = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{end}"
+
+
+def game_words(slot):
+    """A cat slot as the Names page heads its games: slot "1" is "your 2nd game"."""
+    slot = str(slot)
+    return f"your {ordinal(int(slot) + 1) if slot.isdigit() else slot} game"
 
 
 def _cap(text):
@@ -205,9 +218,10 @@ def validate(raw, where="names.json"):
                 if op != "clear":
                     _check_names(v, f"banned.{op}", where)
         if key in ("names", "text"):
-            for old, new in value.items():
-                if isinstance(new, (list, dict)):
-                    raise ValueError(f"{where}: {key}.{old} should be the new text")
+            for old, new in value.items():   # null would be "None" in the game, a number its digits
+                if not isinstance(new, str) or not new.strip():
+                    raise ValueError(f"{where}: {key}.{old} should be the new text, "
+                                     f"{'not empty' if new is None or isinstance(new, str) else 'in quotes'}")
         if key == "cats":
             for target, how in value.items():
                 if isinstance(how, dict) and "was" in how and not isinstance(how["was"], str):
@@ -306,9 +320,11 @@ def cat_list(plan, cats, ops=()):
     text changes). The game being played comes first, your cat first in each.
 
     Also: how a rename in the plan works out for it ("how", one of HOWS, or None with no rename); whether its
-    name now is text a mod gives ("mod_named": an ID with _WCM_ in it); and whether that text is known
-    ("name_known"): when no mod in the plan gives it (that mod is off), "name" is made from the IDs
-    (guess_name), and "was" is the IDs themselves, which a cats entry's "was" can name it by."""
+    name now is text a mod gives ("mod_named": an ID with _WCM_ in it, or a key the game's own text doesn't
+    have, mod_given); and whether that text is known ("name_known"): when no mod in the plan gives it (that mod
+    is off), "name" is made from the IDs (guess_name), and "was" is the IDs themselves, which a cats entry's
+    "was" can name it by. "ids": the IDs an older page named such a cat by (Plan.id_name), "" for a cat with a
+    name of the game's, so the page finds an entry written that way."""
     renamed = {op["path"]: op["to"] for op in ops}
     out = []
     for cat in cats:
@@ -320,8 +336,9 @@ def cat_list(plan, cats, ops=()):
                     "where": "you" if cat["player"] and cat["current"] else "your cat" if cat["player"] else place(first),
                     "roles": roles, "role": ids.get("Role", "Player" if cat["player"] else ""),
                     "name": plan.current_name(ids), "with_mods": renamed.get(first, plan.display(ids)),
-                    "how": plan.cat_how.get(first), "mod_named": "_WCM_" in raw or "_WCM_" in lookup_key(ids),
-                    "name_known": bool(known), "was": known or raw})
+                    "how": plan.cat_how.get(first),
+                    "mod_named": "_WCM_" in raw or mod_given(lookup_key(ids), plan.game.text),
+                    "name_known": bool(known), "was": known or raw, "ids": plan.id_name(ids)})
     return out
 
 
@@ -439,6 +456,12 @@ class Plan:
         # (once renamed it no longer has its old name, and there may be no save at all).
         self.renames = [(target, _norm(how)) for target, how in sp.get("cats", {}).items()]
         for target, how in self.renames:
+            given = [k for k in _ENTRY_KINDS if how.get(k)]
+            if len(given) > 1:   # a hand-written entry: _new_ids takes the first of them
+                said = [f"a {_ENTRY_KINDS[k]} ('{how[k]}')" for k in given]
+                self._warn(f"cats.{target}", f"The rename of {describe_target(target)} gives "
+                                             f"{', '.join(said[:-1])} and {said[-1]}; only the {_ENTRY_KINDS[given[0]]} "
+                                             "is used")
             self._custom_texts(how, target)
         for old, new in sp.get("names", {}).items():
             keys = [k for k, v in self.final.items() if v == old]
@@ -664,12 +687,25 @@ class Plan:
         lists (from, to) per cat, self.rename_targets the cats key behind each, and self.cat_how how each
         cat's rename works out (HOWS), by its first path. A cat that already has its new name needs nothing.
         A rename the game would have no text for is left out, with a warning: the cat keeps its name rather
-        than showing as <MISSING STRING TABLE ENTRY>."""
+        than showing as <MISSING STRING TABLE ENTRY>. A cat two entries mean (an older page's entry by its IDs
+        and a newer one by its name, say) is renamed by the last of them, as the Names page shows it, and the
+        earlier one is said to be left out."""
         ops, self.cat_renames, self.rename_targets, self.cat_how = [], [], [], {}
         more_texts = False
-        for target, how in self.renames:
+        found = [(target, how, self._targets(target, how, cats)) for target, how in self.renames]
+        last = {}   # a cat's first path -> the last entry that renames it to something
+        for i, (_, how, hits) in enumerate(found):
+            for cat in hits if _new_name(how) else ():
+                last[cat["paths"][0]] = i
+        for i, (target, how, hits) in enumerate(found):
             where = f"cats.{target}"
-            hits = self._targets(target, how, cats)
+            later = [c for c in hits if last.get(c["paths"][0], i) != i]
+            for cat in later:
+                self._warn(where, f"{self.current_name(cat['ids'])} is renamed twice; only the later rename, to "
+                                  f"'{_new_name(found[last[cat['paths'][0]]][1])}', is used")
+            hits = [c for c in hits if last.get(c["paths"][0], i) == i]
+            if later and not hits:
+                continue
             if not hits:
                 if not any(self._has(c, how) for c in cats):
                     self._warn(where, self._not_found(target, how, cats))
@@ -709,17 +745,17 @@ class Plan:
     def _not_found(self, target, how, cats):
         """Why a cats entry found no cat, in words."""
         slot, want = _parse_target(target)
-        game = f" in cat slot {slot}" if slot is not None else ""
+        game = game_words(slot) if slot is not None else "your save"
         if not want:
             return f"'{target}' doesn't say which cat"
         if want.lower() == "player":
-            return f"Your cat isn't in your save{game} yet"
+            return f"Your cat isn't in {game} yet"
         if "/" in want:
             if how.get("was") and self._targets(target, {}, cats):
                 return (f"{_cap(describe_target(target))} isn't called '{how['was']}' any more, so it isn't renamed; "
                         "rename it again from the list")
-            return f"There's no cat at {' · '.join(p for p in want.split('/') if p)}{game} in your save"
-        return f"No cat in your save{game} is called '{want}'"
+            return f"There's no cat at {' · '.join(p for p in want.split('/') if p)} in {game}"
+        return f"No cat in {game} is called '{want}'"
 
     def _outcome(self, how, fields):
         """How a cats entry's new IDs work (one of HOWS but "none")."""
@@ -803,13 +839,20 @@ class Plan:
 
     def _called(self, cat, name):
         """Whether a cat goes by `name`: the name it shows, with this plan or the game alone; the name a mod
-        that's off gave it (guess_name, which its IDs say); or its IDs, as an older page or a hand-written
-        names.json named a cat whose name had no text (its prefix and suffix IDs, or the prefix ID alone)."""
+        that's off gave it (guess_name, which its IDs say); or its IDs (id_name), as an older page named a cat
+        whose name had no text. Never the prefix ID alone for a cat with a suffix: STR_CAT_NAME53, which an
+        older page wrote for a rogue given the prefix Otter, isn't Otterheart."""
         ids, low = cat["ids"], name.lower()
-        prefix = ids.get("PrefixNameId", "")
         said = {self.display(ids).lower(), self.display(ids, final=False).lower(), guess_name(ids, self).lower(),
-                (prefix + ids.get("SuffixNameId", "")).lower(), prefix.lower()}
+                self.id_name(ids).lower()}
         return low in said - {""}
+
+    def id_name(self, ids):
+        """A cat's IDs as an older Names page named a cat the game's own text has no name for (one a mod named):
+        its prefix ID and suffix ID as the save has them (STR_CAT_NAME_WCM_FIXED_SPARKLE_HEART, or STR_CAT_NAME53
+        for a rogue given the prefix Otter). "" for a cat with a name of the game's: such a cat was always named
+        by its name."""
+        return "" if self.display(ids, final=False) else ids.get("PrefixNameId", "") + ids.get("SuffixNameId", "")
 
     def _new_ids(self, how, ids, target):
         """The name IDs a cats entry gives this cat. The texts they need come from _custom_texts. A rogue
@@ -878,6 +921,10 @@ def _norm(how):
 def _new_name(how):
     """The name a cats entry asks for, for a sentence."""
     return str(how.get("name") or how.get("prefix") or how.get("fixed") or "")
+
+
+# The kinds of name a cats entry can give, in the order _new_ids takes them, in words.
+_ENTRY_KINDS = {"name": "name", "prefix": "prefix", "fixed": "fixed name"}
 
 
 def _own_prefix_id(name):
@@ -1024,24 +1071,44 @@ def _where(path, current=True):
     return where if current else f"{path.split('/', 1)[0]}/{'player' if is_player(path) else where}"
 
 
-def losing_text(cats, ops, has_text):
-    """Cats whose name is text a mod adds (an ID with _WCM_ in it, after the renames in ops: save ops as the
-    build makes them) that has_text(key) says the game won't have. The save keeps that ID whether or not the
-    mod is still on, so the game shows <MISSING STRING TABLE ENTRY>. [(cat, its IDs after ops, key)], in cats'
-    order; the key is the one the game looks up (lookup_key)."""
+_GAME_PREFIX_ID = re.compile(r"^STR_CAT_NAME\d+$")   # one of the game's prefix IDs, alone
+
+
+def mod_given(key, game_text=None):
+    """Whether the text under a cat's name key (lookup_key) is only ever a mod's: an ID wcmods made (_WCM_ in
+    it), or a key the game's own text (game_text: GameNames.text, or a set of its keys) doesn't have, such as
+    one of the game's prefix IDs alone, which a rogue or loner given that prefix has (the mod adds its text).
+    Without game_text the IDs say: _WCM_, or a game prefix's ID alone."""
+    if not key:
+        return False
+    if "_WCM_" in key:
+        return True
+    return key not in game_text if game_text is not None else bool(_GAME_PREFIX_ID.match(key))
+
+
+def named_keys(cats, ops=()):
+    """[(cat, its IDs after the renames in ops, the key the game looks its name up by)], in cats' order."""
     renamed = {op["path"]: op["set"] for op in ops if op.get("op") == "name"}
     out = []
     for cat in cats:
         ids = {**cat["ids"], **renamed.get(cat["paths"][0], {})}
-        key = lookup_key(ids)
-        if "_WCM_" in key and not has_text(key):
-            out.append((cat, ids, key))
+        out.append((cat, ids, lookup_key(ids)))
     return out
 
 
-def without_text(cats, ops, has_text):
+def losing_text(cats, ops, has_text, game_text=None):
+    """Cats whose name is text only a mod gives (mod_given, with the game's own text when there's game_text; after
+    the renames in ops: save ops as the build makes them) that has_text(key) says the game won't have. The save
+    keeps those IDs whether or not the mod is still on, so the game shows <MISSING STRING TABLE ENTRY>.
+    [(cat, its IDs after ops, key)], in cats' order; the key is the one the game looks up (lookup_key)."""
+    return [(cat, ids, key) for cat, ids, key in named_keys(cats, ops)
+            if mod_given(key, game_text) and not has_text(key)]
+
+
+def without_text(cats, ops, has_text, game_text=None):
     """losing_text as [(where, key)], where being "you" for your cat or the cat's place."""
-    return [(_where(cat["paths"][0], cat["current"]), key) for cat, _, key in losing_text(cats, ops, has_text)]
+    return [(_where(cat["paths"][0], cat["current"]), key)
+            for cat, _, key in losing_text(cats, ops, has_text, game_text)]
 
 
 def rename_struct(text, fields, expect):

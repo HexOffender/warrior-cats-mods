@@ -54,9 +54,11 @@ anyway. The studio runs the same `collect()` on one mod's file when a page saves
 so a mistake is said at save time, under the Editing mod bar, not first at Apply.
 
 While a build or install runs under the studio's lock, what it logs is kept for `GET /api/progress`,
-which the page polls to show the lines as they come; afterwards `last-apply.log` in the player's folder
-keeps them, headed by a plain summary from the manifest (`studio.plain_summary`), for the page's Last
-apply button.
+under the task's id (the page sends one), which the page polls to show the lines as they come; the answer
+carries a plain summary (`studio.task_summary`, from the manifest), and `last-apply.log` in the player's
+folder keeps the lines headed by the same summary, for the page's Last apply button. `install` reads what
+each section of the manifest got wrong through `pipeline.section_problems`, which never misses one that's
+only in a section's `errors`.
 
 The mod menu is wcmods' own and goes in with every build: `menu.host_script` writes the window's
 script with the build's manifest, its key, button and size (`wcmods.json`, `menusettings`) and its own

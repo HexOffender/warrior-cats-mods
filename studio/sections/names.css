@@ -14,5 +14,5 @@
 .names-note, .names-also { font-size: 0.84rem; margin-top: 3px; max-width: 46ch; }
 .names-note { color: var(--changed); }
 .names-bad { color: var(--bad); }
-.names-problem, .names-losing { margin: 6px 0; }
+.names-problem, .names-losing, .names-off { margin: 6px 0; }
 .names-earlier { margin-top: 10px; }
