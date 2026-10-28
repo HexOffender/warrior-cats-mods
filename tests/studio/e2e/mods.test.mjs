@@ -90,9 +90,11 @@ test("Get set up: five steps, Add all four says what has no release yet, Allow n
   assert.match(said, /Creator palettes and Emote wheel have no release yet: the owner of that mod has to publish one/);
   assert.match(said, /Let mods run their own scripts is the next step/);
   assert.doesNotMatch(said, /https?:/, "no addresses in the toast: the rows link to them");
-  await p.waitFor(() => document.querySelector('[data-key="addon:creator-palettes"] .chip')?.textContent === "No release yet");
+  // The card is drawn again once the page has read the add-ons after the last one: until then a row may still
+  // say "Adding …" from the draw during it.
+  await p.waitFor(() => document.querySelector('[data-key="addon:emote-wheel"] .chip')?.textContent === "No release yet");
+  assert.equal(await rowChip(p, "creator-palettes"), "No release yet");
   assert.equal(await rowChip(p, "menu-pages"), "Needs scripts allowed");
-  assert.equal(await rowChip(p, "emote-wheel"), "No release yet");
   assert.equal(await p.count('[data-key="addon:emote-wheel"] button'), 0, "nothing to press until a release exists");
   assert.ok(fs.existsSync(path.join(freshFolders.data, "mods", "sandbox", "mod.json")) && !fs.existsSync(path.join(freshFolders.data, "mods", "sandbox-story")));
   assert.equal(config(freshFolders).setup_addons, "added");
