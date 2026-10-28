@@ -46,6 +46,8 @@ You can:
   new colours;
 - switch between ready-made palettes in one go with **Quick palettes**: tick the ones you want and press
   Apply. That switches the ticked ones on, the other palette-only mods off, and puts them in the game.
+  Colours you haven't saved yet are saved first, and the palette you're editing is ticked too (a toast
+  says so), so they go in rather than being switched off;
 
 You can't:
 

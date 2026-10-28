@@ -216,6 +216,31 @@ test("Quick palettes' Apply saves the page first, and waits while the game runs"
   }
 });
 
+test("a first Quick Apply with colours unsaved makes My mods, ticks it and puts it in, rather than turning it off", { skip }, async () => {
+  await fresh();
+  const page = await browser.page();
+  await openPalettes(page);
+  assert.equal(await page.count(`${PAL} input[id^="quick-"]`), 0, "no quick palettes yet");
+  await page.click(`${PAL} #pal-tab-pattern`);
+  await page.waitFor(`${PAL} #pal-pattern-3`);
+  await page.evaluate(() => { const i = document.getElementById("pal-pattern-3"); i.value = "#123456"; i.dispatchEvent(new Event("input")); });
+  // Every request the page makes, in order, with what it sent.
+  await page.evaluate(() => {
+    window.calls = [];
+    const real = window.fetch;
+    window.fetch = (url, init) => { window.calls.push({ call: `${(init && init.method) || "GET"} ${url}`, body: init && init.body }); return real(url, init); };
+  });
+  await press(page, PAL, "Use the game's colours and install");
+  await page.waitFor(() => window.calls.some(c => c.call === "POST /api/palettes/apply"), 15000);
+  const sent = await page.evaluate(() => window.calls.find(c => c.call === "POST /api/palettes/apply").body);
+  assert.deepEqual(JSON.parse(sent).ids, ["my-mods"], "the palette just saved is one of those Apply turns on");
+  assert.equal(readJson(fileOf("my-mods", "palette.json")).pattern["3"], "#123456");
+  await page.waitFor(`${PAL} #quick-my-mods`);
+  assert.equal(await page.evaluate(`document.querySelector('${PAL} #quick-my-mods').checked`), true, "its tile is drawn, ticked");
+  assert.ok(await page.evaluate(() => [...document.querySelectorAll("#toasts span")].some(s => s.textContent === "Ticked My mods too, so the colours you just saved go in.")));
+  await page.close();
+});
+
 test("Restyle, Undo and Reset tab change the game's colours and keep the new ones", { skip }, async () => {
   await fresh();
   writeTables(folders.game, TABLES);
