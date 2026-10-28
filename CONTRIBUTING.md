@@ -51,8 +51,9 @@ runs `tests/studio/`: the studio's JavaScript helpers under a small DOM shim, an
 in `tests/studio/e2e/`, which start the studio on a free port and drive it in a headless Chromium over
 the DevTools protocol. Those need a Chromium: Edge or Chrome where they're usually installed, or any
 one named in `WC_BROWSER` (the path of `msedge.exe`, `chrome.exe` or `chromium`); without one they
-skip, saying so. `selftest` checks every file format against the installed game and writes only to a
-temp folder. `agent test` drives the running game through the in-game tests in `tests/game/`
+skip, saying so, or fail with `WC_REQUIRE_BROWSER=1` (CI sets it). `selftest` checks every file
+format against the installed game and writes only to a temp folder. `agent test` drives the running
+game through the in-game tests in `tests/game/`
 ([docs/agent.md](docs/agent.md)); it needs the game and UE4SS, and backs up the save first. CI runs the
 first two. A change to the Lua, the mod menu or a section wants all four; a change to a format, pytest
 and selftest; a change to a studio page, pytest and the node tests.
