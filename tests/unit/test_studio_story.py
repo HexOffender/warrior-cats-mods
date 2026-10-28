@@ -273,5 +273,10 @@ def test_the_apply_summary_says_the_cats_and_questlines_and_whether_sandbox_mode
     manifest["warnings"] = ["story: cats and questlines go in, but nothing shows them"]
     assert studio_mod.plain_summary(manifest).endswith(
         "2 cats and 1 questline from My mods; they're waiting for Sandbox mode. 1 warning.")
+    # On, but left out after a game update: nothing shows them, and the summary says what to press.
+    manifest["notes"]["story"]["sandbox"] = {"state": "held-back", "version": "0.5", "older": []}
+    assert studio_mod.plain_summary(manifest).endswith(
+        "2 cats and 1 questline from My mods; they're waiting for Sandbox mode, left out since the game's update "
+        "(Use it anyway, on the Mods page). 1 warning.")
     manifest["notes"] = {}
     assert studio_mod.plain_summary(manifest) == "Put 2 mods in the game: My mods, Palette. 1 warning."

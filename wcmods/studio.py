@@ -164,8 +164,12 @@ def story_sentence(manifest):
     parts = [f"{n} {word}{'s' if n != 1 else ''}" for n, word in ((cats, "cat"), (quests, "questline")) if n]
     names = manifest.get("names") or {}
     sandbox = notes.get("sandbox") or {}
-    then = (f"Sandbox mode{' ' + sandbox['version'] if sandbox.get('version') else ''} will show them"
-            if sandbox.get("state") == "on" else "they're waiting for Sandbox mode")
+    if sandbox.get("state") == "on":
+        then = f"Sandbox mode{' ' + sandbox['version'] if sandbox.get('version') else ''} will show them"
+    elif sandbox.get("state") == "held-back":   # on, but a game update left it out of this build
+        then = "they're waiting for Sandbox mode, left out since the game's update (Use it anyway, on the Mods page)"
+    else:
+        then = "they're waiting for Sandbox mode"
     return f" {' and '.join(parts)} from {', '.join(names.get(i, i) for i in made)}; {then}."
 
 
