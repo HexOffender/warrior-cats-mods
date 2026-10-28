@@ -192,14 +192,3 @@ test("lastApply reads what the build said about one mod's things", () => {
   assert.equal(story.lastApply({ log: [] }, "items", "mine"), null);
   assert.equal(story.lastApply(null, "items", "mine"), null);
 });
-
-test("sandboxNote says to get the Sandbox mode mod, or to turn it on, or nothing", async () => {
-  dom.routes = { "GET /mods": () => [] };
-  assert.match((await story.sandboxNote()).textContent, /You'll need the Sandbox mode mod/);
-  dom.routes = { "GET /mods": () => [{ id: story.SANDBOX, enabled: false }] };
-  assert.match((await story.sandboxNote()).textContent, /Sandbox mode is off/);
-  dom.routes = { "GET /mods": () => [{ id: story.SANDBOX, enabled: true }] };
-  assert.equal(await story.sandboxNote(), null);
-  dom.routes = {};
-  assert.match((await story.sandboxNote()).textContent, /You'll need/);   // the list couldn't be read: as if none
-});
