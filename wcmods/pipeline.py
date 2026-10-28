@@ -211,25 +211,43 @@ def build(cfg, mods, out_dir, log=print, trusted=()):
             ctx.warnings.append(f"{m.id} is left out: {m.problem}")
 
     # What goes wrong after the sections ran goes in "failed" as well as "errors": install reads "failed", and a
-    # problem missing from it would let an install go ahead and remove what the section put in before.
-    def fail(sid, text):
+    # problem missing from it would let an install go ahead and remove what the section put in before. `by`:
+    # the mods whose edits these were, in the section's "blame" ({text: [mod ids]}, [] when that isn't known),
+    # so the re-check after a game update (gamebuild.recheck) holds back only those.
+    def fail(sid, text, by=None):
         rep = report[sid]
         rep["errors"].append(text)
         rep["failed"].append((None, text))
+        if by is not None:
+            rep.setdefault("blame", {})[text] = by
         if rep["status"] == "ok":
             rep["status"] = "partial"
+
+    def editors(sid, sources):
+        """The section's mods whose edits these were ("a, b" for a section that merges several), or [] when one
+        of them isn't one of its mods (the source can't be told)."""
+        ids = {p.strip() for s in sources for p in str(s or "").split(",") if p.strip()}
+        return sorted(ids) if ids and ids <= set(report[sid]["mods"]) else []
+
+    blamed = {}   # section id -> the mods its failed files' edits were from; None once one of them is unknown
+
+    def failed_file(sid, text, by):
+        fail(sid, text, by)
+        blamed[sid] = None if not by or blamed.get(sid, set()) is None else blamed.get(sid, set()) | set(by)
 
     csv_changes, csv_failures = ctx.resolve_csv_edits()
     for path, section_ids, error in csv_failures:
         for sid in section_ids:
             if sid in report:
-                fail(sid, f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})")
+                failed_file(sid, f"{path.rsplit('/', 1)[-1]}: edits not applied ({error})",
+                            editors(sid, [src for _, s, src in ctx.csv_edits.get(path, []) if s == sid]))
 
     table_changes, table_failures = ctx.resolve_table_rows()
     for name, section_ids, error in table_failures:
         for sid in section_ids:
             if sid in report:
-                fail(sid, f"{name}: rows not added ({error})")
+                failed_file(sid, f"{name}: rows not added ({error})",
+                            editors(sid, [src for _, _, s, src in ctx.table_rows.get(name, []) if s == sid]))
     # A section's save edits go with its table edits: a cat's new name is an ID whose text the pak adds, and
     # a new item's inventory entry needs its rows. With a table of theirs left out, the save would point at
     # text or items the game hasn't got (the cat shows as "<MISSING STRING TABLE ENTRY>"), so they stay out too.
@@ -239,7 +257,8 @@ def build(cfg, mods, out_dir, log=print, trusted=()):
         ctx.save_ops = kept
         for sid in broken:
             if sid in report:
-                fail(sid, "its save edits were left out too: they'd point at text or items the game wouldn't have")
+                fail(sid, "its save edits were left out too: they'd point at text or items the game wouldn't have",
+                     sorted(blamed.get(sid) or []))
     # What else leaves a renamed cat without its text: a mod that named one is off now, or the mods go into a
     # copy of the game Steam doesn't start.
     ctx.warnings += names_without_text(cfg, ctx, game)
