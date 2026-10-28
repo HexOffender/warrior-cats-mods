@@ -336,12 +336,14 @@ export default {
     }
 
     function modCard(m, state) {
-      const toggle = el("input", { type: "checkbox", role: "switch", class: "switch", id: `mod-on-${m.id}`, checked: m.enabled, "aria-label": m.name });
+      // A mod whose mod.json can't be read is listed, off, with what's wrong; it can't be switched on until that's fixed.
+      const toggle = el("input", { type: "checkbox", role: "switch", class: "switch", id: `mod-on-${m.id}`, checked: m.enabled, "aria-label": m.name, disabled: !!m.problem });
       toggle.addEventListener("change", () => switchMod(m, toggle.checked));
       const flags = [];
       if (m.menu_page) flags.push(el("span", { class: "chip", title: "It has a page in the in-game mod menu (Insert)", text: "Page in the mod menu" }));
       for (const k of m.kinds) flags.push(el("span", { class: "chip", text: KIND[k] || k }));
       const lines = [];
+      if (m.problem) lines.push(el("li", { class: "bad", text: `${m.problem}. Fix the file in its folder (More, then Open its folder), or remove the mod.` }));
       if (m.requires.length) lines.push(el("li", { text: `Needs ${m.requires_names.join(", ")}.` }));
       for (const p of m.problems) lines.push(el("li", { class: "bad", text: p.replace(/^needs/, "Needs") + "." }));
       if (m.code && !(settings && settings.allow_code_mods)) lines.push(el("li", { class: "warn", text: "Runs code, so the game won't get it until you allow mods that run code (Options, on the Settings and repair page)." }));

@@ -1035,6 +1035,9 @@ def main(root, argv=None):
     _group_help(ap, sub)
     args = ap.parse_args(argv)
     try:
-        args.fn(Ctx(root), args)
+        ctx = Ctx(root)
+        if ctx.cfg.warning and args.cmd != "studio":   # the studio says it itself, in its window and its page
+            print(f"warning: {ctx.cfg.warning}", file=sys.stderr)
+        args.fn(ctx, args)
     except (RuntimeError, ValueError, LookupError, FileNotFoundError, zipfile.BadZipFile) as e:
         sys.exit(f"error: {e}")

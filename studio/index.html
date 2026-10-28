@@ -21,7 +21,8 @@
     </div>
     <div class="status" id="status" role="group" aria-label="Status"></div>
     <div class="actions">
-      <a class="btn ghost" id="helpLink" href="https://github.com/HexOffender/warrior-cats-mods/blob/main/docs/README.md" target="_blank" rel="noopener">Help</a>
+      <button class="btn ghost" id="helpBtn" type="button" aria-controls="help">Help</button>
+      <button class="btn ghost" id="lastApplyBtn" type="button" title="The log of the last Apply or Play" aria-controls="drawer">Last apply</button>
       <button class="btn" id="installBtn">Apply to game</button>
       <button class="btn primary" id="playBtn">Play</button>
     </div>
@@ -29,9 +30,17 @@
   <nav class="nav" id="nav" aria-label="Sections"></nav>
   <main class="main" id="main"></main>
 </div>
+<!-- The log of a build, install or Play: what it did in a sentence (read out as it changes), then the log. -->
 <section class="drawer" id="drawer" hidden aria-labelledby="drawerTitle">
   <div class="drawer-head"><h2 id="drawerTitle" tabindex="-1">Build log</h2><button class="btn ghost" id="drawerClose">Close</button></div>
-  <pre id="drawerLog" tabindex="0" aria-label="What happened"></pre>
+  <p class="summary" id="drawerSummary" aria-live="polite"></p>
+  <pre id="drawerLog" role="log" tabindex="0" aria-label="The log"></pre>
+</section>
+<!-- The guide (docs/guide/), a page at a time, in a panel like the log's. -->
+<section class="drawer help" id="help" hidden aria-labelledby="helpTitle">
+  <div class="drawer-head"><h2 id="helpTitle" tabindex="-1">Help</h2>
+    <span class="row"><a class="btn ghost small" id="helpOpen" href="/help/" target="_blank" rel="noopener">Open in a tab</a><button class="btn ghost" id="helpClose">Close</button></span></div>
+  <div class="help-body" id="helpBody" tabindex="0"></div>
 </section>
 <!-- Toasts show; screen readers hear them through the live regions (wc.announce). -->
 <div class="toasts" id="toasts" aria-hidden="true"></div>

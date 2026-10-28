@@ -42,32 +42,48 @@ GROWABLE = ("pattern", "marking")     # sections whose tables can take slots pas
 
 
 def load(path):
-    with open(path, encoding="utf-8-sig") as f:
-        raw = json.load(f)
+    """A palette.json as {part: {key: colour}} (and "coats": its presets), checked. Anything wrong with it
+    raises ValueError with a sentence that names the file (never its folder) and what to change."""
+    from .mods import file_problem
+    name = os.path.basename(path)
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            raw = json.load(f)
+    except (OSError, ValueError) as e:   # ValueError: not JSON, or not UTF-8
+        raise ValueError(file_problem(name, e)) from None
+    if not isinstance(raw, dict):
+        raise ValueError(f'{name} should be an object with its parts in it, like {{"fur": {{"0": "#f2e6d0"}}}}')
     out = {}
     for section, entries in raw.items():
         if section.startswith("_") or section in ("name", "description"):
             continue
         if section not in SECTIONS:
-            raise ValueError(f"{path}: unknown palette section '{section}' (use {', '.join(SECTIONS)})")
+            raise ValueError(f"{name}: unknown part '{section}' (it takes {', '.join(SECTIONS)})")
         if section == "coats":
-            out["coats"] = _coats(entries, path)
+            out["coats"] = _coats(entries, name)
             continue
+        if not isinstance(entries, dict):
+            what = "eye slot names" if section == "eyes" else "slot numbers"
+            raise ValueError(f'{name}: {section} should be an object of {what} to colours, like {{"0": "#f2e6d0"}}')
         parsed = {}
         for key, spec in entries.items():
             if str(key).startswith("_"):
                 continue
             if section != "eyes" and not str(key).isdigit():
-                raise ValueError(f"{path}: {section} keys are slot numbers starting at 0, got '{key}'")
+                raise ValueError(f"{name}: {section} keys are slot numbers starting at 0, got '{key}'")
             if section != "eyes" and int(key) >= GAME_SLOTS and section not in GROWABLE:
-                raise ValueError(f"{path}: {section} has slots 0-{GAME_SLOTS - 1}; only pattern and marking colours "
+                raise ValueError(f"{name}: {section} has slots 0-{GAME_SLOTS - 1}; only pattern and marking colours "
                                  "take new slots (to colour just your cat's coat, use cats.json)")
             if isinstance(spec, list) and spec and not isinstance(spec[0], (int, float)):
                 if section != "eyes":
-                    raise ValueError(f"{path}: {section}.{key} must be a single colour (gradients are eyes-only)")
-                parsed[str(key)] = [colors.parse(s) for s in spec]
+                    raise ValueError(f"{name}: {section}.{key} must be a single colour (gradients are eyes-only)")
+                colours = spec
             else:
-                parsed[str(key)] = colors.parse(spec)
+                colours = [spec]
+            try:
+                parsed[str(key)] = [colors.parse(s) for s in colours] if colours is spec else colors.parse(spec)
+            except (TypeError, ValueError) as e:
+                raise ValueError(f"{name}: {section}.{key}: {e}") from None
         out[section] = parsed
     return out
 
@@ -100,7 +116,7 @@ def _coats(entries, path):
             if part in spec:
                 try:
                     preset[part] = colors.parse(spec[part])
-                except ValueError as e:
+                except (TypeError, ValueError) as e:
                     raise ValueError(f"{where}.{part}: {e}") from None
         out[str(name)] = preset
     return out

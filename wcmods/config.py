@@ -1,5 +1,6 @@
 """Locate the game, its saves and UE4SS (and an optional Oodle DLL); persist overrides in wcmods.json.
 Locate your own files too: your mods, wcmods.json and backups are in a folder outside wcmods' (data_dir)."""
+import datetime
 import json
 import os
 import re
@@ -47,25 +48,54 @@ class Config:
         self.data_dir = data or data_dir()
         self.path = os.path.join(self.data_dir, "wcmods.json")
         self.data = {}
+        self.warning = None   # a damaged wcmods.json set aside by reload(): the studio shows it, the CLI prints it
         self.reload()
+
+    def peek(self):
+        """wcmods.json as it is on disk now, parsed, without touching this Config: for a check against what
+        another process wrote (pipeline.pending). Raises OSError or ValueError when it can't be read."""
+        with open(self.path, encoding="utf-8-sig") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("wcmods.json should be an object")
+        return data
 
     def reload(self):
         """Read wcmods.json again. The studio keeps one Config for its whole run, so anything that
         reads a value, changes it and saves (install, uninstall) reloads first; otherwise it would
-        write back what it read at startup over what the command line wrote since."""
-        if os.path.exists(self.path):
-            with open(self.path, encoding="utf-8-sig") as f:
-                self.data = json.load(f)
+        write back what it read at startup over what the command line wrote since.
+
+        A damaged file (not JSON, not an object) is set aside as wcmods.json.broken-<stamp> and the
+        settings start afresh, with `warning` saying so: the studio still opens, on Get set up."""
+        if not os.path.exists(self.path):
+            return
+        try:
+            self.data = self.peek()
+        except OSError:   # being written this moment, or not readable: keep what's loaded
+            return
+        except ValueError:
+            stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            aside = f"{self.path}.broken-{stamp}"
+            try:
+                os.replace(self.path, aside)
+            except OSError:
+                return
+            self.data = {}
+            self.warning = (f"Your settings file was damaged; it was set aside as {os.path.basename(aside)} and the "
+                            "studio starts afresh: check Get set up")
 
     def save(self):
-        """Write wcmods.json, with a _help line first saying what it is (docs/formats.md lists every key)."""
+        """Write wcmods.json, with a _help line first saying what it is (docs/formats.md lists every key). It's
+        written whole, then put in place, so nothing reading it (the studio, a command) sees half a file."""
         ordered = {"_help": HELP, **{k: v for k, v in self.data.items() if k != "_help"}}
         self.data.clear()   # in place: whoever holds this dict keeps it
         self.data.update(ordered)
         os.makedirs(self.data_dir, exist_ok=True)
-        with open(self.path, "w", encoding="utf-8") as f:
+        part = self.path + ".part"
+        with open(part, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=2)
             f.write("\n")
+        os.replace(part, self.path)
 
     # ---- locations ----
     @property

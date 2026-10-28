@@ -47,8 +47,11 @@ class Mod:
     def __init__(self, folder):
         self.folder = folder
         self.id = os.path.basename(folder)
+        self.problem = None   # what's wrong with its mod.json, for one discover() lists without reading it
         with open(os.path.join(folder, "mod.json"), encoding="utf-8-sig") as f:
             meta = json.load(f)
+        if not isinstance(meta, dict):
+            raise ValueError("mod.json should be an object, {\"name\": ..., \"enabled\": true}")
         self.meta = meta
         # A mistake in one mod's mod.json (a name that isn't text, a priority that isn't a number) falls
         # back to the default here, so it can't stop every other mod from being listed and built.
@@ -65,7 +68,19 @@ class Mod:
         self.requires = _ids(meta.get("requires"))
         self.uses = [i for i in _ids(meta.get("uses")) if i not in self.requires]
 
+    @classmethod
+    def broken(cls, folder, problem):
+        """A mod whose mod.json can't be read: listed by its folder's name, off, with nothing in it, and
+        `problem` saying what's wrong, so one damaged file can't stop the others from being listed."""
+        m = cls.__new__(cls)
+        m.folder, m.id, m.problem, m.meta = folder, os.path.basename(folder), problem, {}
+        m.name, m.description, m.enabled, m.priority = m.id, "", False, 0
+        m.version, m.author, m.requires, m.uses = "", "", [], []
+        return m
+
     def kinds(self):
+        if self.problem:
+            return []
         kinds = [kind for name, kind in CONTENT if os.path.exists(os.path.join(self.folder, name))]
         return ["mod pack"] + kinds if self.meta.get("pack") else kinds
 
@@ -82,6 +97,8 @@ class Mod:
         return "mouse look" in kinds or ("in-game script" in kinds and os.path.isfile(os.path.join(self.folder, "settings.json")))
 
     def update(self, **fields):
+        if self.problem:
+            raise ValueError(f"{self.name} can't be changed until its mod.json is fixed: {self.problem}")
         path = os.path.join(self.folder, "mod.json")
         with open(path, encoding="utf-8-sig") as f:
             meta = json.load(f)
@@ -101,7 +118,19 @@ class Mod:
                 "priority": self.priority, "kinds": self.kinds(), "preset": palette_only(self),
                 "version": self.version, "author": self.author,
                 "requires": [i for i in self.requires if i != MENU_ID], "uses": self.uses,
-                "code": self.has_code(), "menu_page": self.menu_page(), "pack": bool(self.meta.get("pack"))}
+                "code": self.has_code(), "menu_page": self.menu_page(), "pack": bool(self.meta.get("pack")),
+                "problem": self.problem}
+
+
+def file_problem(name, e):
+    """What's wrong with a JSON file, as a sentence: "mod.json isn't valid: Expecting ',' at line 3"."""
+    if isinstance(e, json.JSONDecodeError):
+        return f"{name} isn't valid: {e.msg} at line {e.lineno}"
+    if isinstance(e, UnicodeDecodeError):
+        return f"{name} isn't a text file wcmods can read (save it as UTF-8)"
+    if isinstance(e, OSError):
+        return f"{name} can't be read ({e.strerror or e})"
+    return f"{name} isn't right: {e}"
 
 
 def _ids(value):
@@ -217,13 +246,18 @@ def choose_palettes(mods, ids):
 
 
 def discover(mods_root):
+    """Every mod under mods_root, in priority order. One whose mod.json can't be read is listed all the
+    same (Mod.broken, with `problem` saying why), off and empty, rather than stopping the whole list."""
     mods = []
     if os.path.isdir(mods_root):
         for name in sorted(os.listdir(mods_root)):
             folder = os.path.join(mods_root, name)
             if name.startswith("_") or not os.path.isfile(os.path.join(folder, "mod.json")):
                 continue
-            mods.append(Mod(folder))
+            try:
+                mods.append(Mod(folder))
+            except (OSError, ValueError) as e:   # ValueError: not JSON, not UTF-8, or not an object
+                mods.append(Mod.broken(folder, file_problem("mod.json", e)))
     return sorted(mods, key=lambda m: (m.priority, m.id))
 
 
