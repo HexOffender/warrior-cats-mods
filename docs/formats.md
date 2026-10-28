@@ -409,6 +409,7 @@ keeps the last .zip of each of the mods that go with Clan Mod Studio fetched fro
 | `console` | Whether the game's `~` console (UE4SS's console enabler) is on |
 | `debug_cat_look` | `true` makes your cat's colours script log every cat it sees |
 | `installed`, `installed_ue4ss`, `installed_ue4ss_shared` | What the last install put in the game: the mods, when they were built, the game build, the mods folder they came from, the UE4SS mods and shared modules. The studio compares them with your mods; leave them alone |
+| `crash_after` | When the last install, or Take all mods out, happened: the studio's crash card shows only a game crash from after it (none at all before the first) |
 | `menu_key`, `menu_pad`, `menu_scale` | The mod menu's key (`INS`, `HOME`, `END`, `DEL`, `PAGE_UP`, `PAGE_DOWN`, `F1`-`F12` but F11), the controller button that opens it too (an Unreal key name, `""` for none) and its size (0.6 to 2.2). Options on the Settings and repair page; an install puts them in the game ([SDK.md, `WCModsMenu`](SDK.md#wcmodsmenu)) |
 | `skip_code` | `true` once Get set up's "Let mods run their own scripts" was told "Not now" (or mods that run code were turned off on the Settings and repair page): the step counts as done, and `allow_code_mods` stays as it is |
 | `setup_addons` | `"added"` once Get set up's "Add all four" has run (whatever came of each one; the Mods page's card of the mods that go with Clan Mod Studio says), or `"not now"` |

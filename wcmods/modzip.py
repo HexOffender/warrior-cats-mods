@@ -554,7 +554,10 @@ def removed(backups_root):
                 title = Mod(os.path.join(folder, d)).name
             except (OSError, ValueError):
                 title = m.group(3)
-            when = datetime.datetime.strptime(m.group(1), "%Y%m%d-%H%M%S").isoformat(timespec="minutes")
+            try:
+                when = datetime.datetime.strptime(m.group(1), "%Y%m%d-%H%M%S").isoformat(timespec="minutes")
+            except ValueError:   # a date that can't be: not one of ours, and no reason to fail the list
+                continue
             out.append({"name": d, "id": m.group(3), "why": m.group(2), "when": when, "title": title})
     return out
 

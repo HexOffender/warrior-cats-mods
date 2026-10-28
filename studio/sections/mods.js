@@ -34,8 +34,8 @@ export default {
         lede: "Add mods you've downloaded, switch them on or off, then press Play (top right)." }),
       crashBox, setupBox, changesBox, addonsBox, addBox, updateBox, listBox);
 
-    // The game's last crash since the last Apply (GET /crash), shown here until it's closed; Settings and repair
-    // shows it for as long as it's the last one. Closing it is remembered in this browser only.
+    // The game's last crash since the last Apply or Take all mods out (GET /crash), shown here until it's closed,
+    // here or on Settings and repair. Closing it is remembered in this browser only.
     async function renderCrash() {
       let c = null;
       try { c = (await api.get("/crash")).crash; } catch (e) { /* no card */ }

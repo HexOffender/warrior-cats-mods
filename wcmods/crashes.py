@@ -23,13 +23,19 @@ def crashes_dir():
 def latest(after=None):
     """The newest crash folder (its CrashContext.runtime-xml), or None; with `after` (a time), only one newer."""
     folder = crashes_dir()
-    if not os.path.isdir(folder):
+    try:
+        names = os.listdir(folder)
+    except OSError:   # not there (no crash yet), or not readable this moment
         return None
     best, best_time = None, after or 0
-    for name in os.listdir(folder):
+    for name in names:
         path = os.path.join(folder, name, "CrashContext.runtime-xml")
-        if os.path.isfile(path) and os.path.getmtime(path) > best_time:
-            best, best_time = path, os.path.getmtime(path)
+        try:
+            when = os.path.getmtime(path)
+        except OSError:   # no report in it, or one removed as it's read
+            continue
+        if when > best_time:
+            best, best_time = path, when
     return best
 
 

@@ -95,10 +95,20 @@ export default {
 
     // ---------- backups and repair ----------
     async function renderRepair() {
-      // The game's last crash since the last Apply, at the top, with the mod it was in when one was.
+      // The game's last crash since the last Apply (or Take all mods out), at the top, with the mod it was in when
+      // one was, until it's closed here or on the Mods page (remembered in this browser, as there).
       let crash = null;
       try { crash = (await api.get("/crash")).crash; } catch (e) { /* no card */ }
-      clear(repairBox).append(el("h2", { text: "Backups and repair" }), crash ? wc.crashCard(crash) : null);
+      const seen = crash ? `wc-crash-seen:${crash.path}:${crash.when}` : null;
+      try { if (seen && localStorage.getItem(seen)) crash = null; } catch (e) { /* storage blocked: shown */ }
+      clear(repairBox).append(el("h2", { text: "Backups and repair" }));
+      if (crash) {
+        const card = wc.crashCard(crash, { dismiss: () => {
+          try { localStorage.setItem(seen, "1"); } catch (e) { /* storage blocked */ }
+          card.remove();
+        } });
+        repairBox.append(card);
+      }
       if (settings && settings.data_dir) {
         repairBox.append(el("div", { class: "row" },
           el("span", { class: "muted" }, "Your mods, settings and backups are in ", el("span", { class: "mono", text: settings.data_dir }),

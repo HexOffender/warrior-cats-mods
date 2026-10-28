@@ -312,20 +312,28 @@ class Studio:
         base = modzip.safe_id(name or "my-mod")
         taken = {m.id for m in self.mods()} | set(os.listdir(self.ctx.mods_root) if os.path.isdir(self.ctx.mods_root) else [])
         mod_id, n = base, 2
-        while mod_id in taken:
-            mod_id, n = f"{base}-{n}", n + 1
+        while mod_id in taken:   # a folder name is at most 64 characters: the number fits inside them
+            suffix = f"-{n}"
+            mod_id, n = base[:64 - len(suffix)].rstrip("-._") + suffix, n + 1
         return mod_id
 
     def last_crash(self):
-        """GET /crash: the game's newest crash report from after the last Apply (crashes.summary), or None."""
+        """GET /crash: the game's newest crash report from after the last Apply or Take all mods out
+        (wcmods.json "crash_after", else the install's "built"), as crashes.summary says it; None without
+        either (a fresh folder: no crash of wcmods' to show), or when the crash folder can't be read right now
+        (a report being written or removed as it's read)."""
         from . import cppmods, crashes
-        built = (self.ctx.cfg.data.get("installed") or {}).get("built")
+        data = self.ctx.cfg.data
+        since = data.get("crash_after") or (data.get("installed") or {}).get("built")
         try:
-            after = datetime.datetime.fromisoformat(built).timestamp() if built else None
+            after = datetime.datetime.fromisoformat(str(since)).timestamp()
         except (TypeError, ValueError):
-            after = None
-        path = crashes.latest(after=after)
-        return {"crash": crashes.summary(path, self.mods(), cppmods.SDK_DIR) if path else None}
+            return {"crash": None}
+        try:
+            path = crashes.latest(after=after)
+            return {"crash": crashes.summary(path, self.mods(), cppmods.SDK_DIR) if path else None}
+        except OSError:
+            return {"crash": None}
 
     # ---- the mods that go with Clan Mod Studio (wcmods/addons.py) ----
     def ask_releases(self):

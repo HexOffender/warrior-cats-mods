@@ -1,5 +1,6 @@
 // Settings and repair in a real browser (lib/browser.mjs), on a studio of its own (lib/studio.mjs): Back up now
-// waits for a save, and the card of the game's last crash, there and once on the Mods page. The crash report
+// waits for a save, and the card of the game's last crash since the last Apply, there and on the Mods page until
+// it's closed on either. The crash report
 // is a made-up one in the layout Unreal writes, in the test's own crash folder (WCMODS_CRASHES). Skipped, with
 // a reason, when no Chromium is found: set WC_BROWSER to one, or WC_REQUIRE_BROWSER=1 (as CI does) to fail
 // instead of skipping.
@@ -32,6 +33,12 @@ before(async () => {
 <ErrorMessage>Unhandled Exception: EXCEPTION_ACCESS_VIOLATION reading address 0x10</ErrorMessage>
 <CallStack>main!MyTabs::on_draw() [${path.join(mod, "cpp", "src", "main.cpp")}:42]
 Wrc_Win64_Shipping!UnknownFunction []</CallStack></RuntimeProperties></FGenericCrashContext>`, "utf16le");
+  // An Apply an hour ago (wcmods.json's "crash_after", local time as Python writes it): the crash is since then.
+  // Without one, a fresh folder shows no crash at all.
+  const hourAgo = new Date(Date.now() - 3600e3);
+  const local = new Date(hourAgo.getTime() - hourAgo.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+  const conf = path.join(folders.data, "wcmods.json");
+  fs.writeFileSync(conf, JSON.stringify({ ...JSON.parse(fs.readFileSync(conf, "utf8")), crash_after: local }));
   studio = await startStudio(folders);
   browser = await launch({ browser: browserPath });
   const first = await browser.page();
@@ -62,26 +69,32 @@ test("Back up now is disabled without a save", { skip }, async () => {
   await p.close();
 });
 
-test("the crash card offers Turn it off and Copy the report, and shows once on the Mods page", { skip }, async () => {
+test("the crash card offers Turn it off, Copy the report and Close, on Settings and repair and the Mods page", { skip }, async () => {
   const p = await browser.page();
+  await p.goto(studio.url + "#settings");
+  await p.waitFor(".banner.crash");
+  assert.match(await p.text(".banner.crash"), /The game crashed last time.*EXCEPTION_ACCESS_VIOLATION.*It was in My tabs \(cpp\/src\/main\.cpp:42, MyTabs::on_draw\(\)\)\./s);
+  assert.deepEqual(await p.evaluate(() => [...document.querySelectorAll(".banner.crash button")].map(b => b.textContent)),
+    ["Copy the report", "Turn My tabs off", "Close"]);
+  await p.click({ text: "Turn My tabs off" });
+  await p.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.startsWith("My tabs is off.")));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(folders.data, "mods", "my-tabs", "mod.json"), "utf8")).enabled, false);
+  // The Mods page shows it too, until it's closed there or here.
+  await p.goto("about:blank");   // a fresh load: the page opens on the Mods page
   await p.goto(studio.url + "#mods");
   await p.waitFor("#mod-choose");
   await p.waitFor(".banner.crash");
-  assert.match(await p.text(".banner.crash"), /The game crashed last time.*EXCEPTION_ACCESS_VIOLATION.*It was in My tabs \(cpp\/src\/main\.cpp:42, MyTabs::on_draw\(\)\)\./s);
   await p.click({ text: "Close" });
   await p.waitFor(() => !document.querySelector(".banner.crash"));
   await p.reload();
   await p.waitFor('[data-key="mod:my-tabs"]');
   assert.equal(await p.count(".banner.crash"), 0, "closed on the Mods page stays closed");
-  // Settings and repair shows it for as long as it's the last crash.
-  await p.goto("about:blank");   // a fresh load: the page opens on Settings and repair
+  await p.goto("about:blank");
   await p.goto(studio.url + "#settings");
-  await p.waitFor(".banner.crash");
-  assert.deepEqual(await p.evaluate(() => [...document.querySelectorAll(".banner.crash button")].map(b => b.textContent)),
-    ["Copy the report", "Turn My tabs off"]);
-  await p.click({ text: "Turn My tabs off" });
-  await p.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.startsWith("My tabs is off.")));
-  assert.equal(JSON.parse(fs.readFileSync(path.join(folders.data, "mods", "my-tabs", "mod.json"), "utf8")).enabled, false);
+  await p.waitFor(() => [...document.querySelectorAll("h2")].some(h => h.textContent === "Backups and repair"));
+  assert.equal(await p.count(".banner.crash"), 0, "and on Settings and repair");
+  // No card, and no "null" where it would be (the DOM's own append prints one).
+  assert.doesNotMatch(await p.text("#main"), /\bnull\b/);
   assert.deepEqual(p.consoleErrors(), []);
   await p.close();
 });

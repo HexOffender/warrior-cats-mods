@@ -142,9 +142,9 @@ closes.
   name. Backups are listed in words ("Today 15:30, backed up by you"); restoring one keeps the save you had
   as another backup, and the next Apply puts your mods' save changes back (turn those mods off first to keep
   them out). Take all mods out leaves your mods on here, so Play puts them back: to play without mods, start
-  the game from Steam. When the game crashed since the last Apply, the page says so at the top of Backups and
-  repair (and the Mods page once), with the C++ mod it was in when one was on its stack, Copy the report and
-  Turn it off.
+  the game from Steam. When the game crashed since the last Apply (or Take all mods out), the page says so at
+  the top of Backups and repair and on the Mods page until it's closed, with the C++ mod that was running
+  when it crashed, if one was, Copy the report and Turn it off. A folder with no Apply yet shows no crash.
 
 The pages under **Make mods** are for making your own; each edits a file in a mod folder. **Save to
 mod** reads the file as Apply first does and says under the Editing mod bar what in it would keep it out

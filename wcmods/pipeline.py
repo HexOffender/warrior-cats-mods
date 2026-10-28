@@ -586,6 +586,9 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
     cfg.data["installed"] = {"mods": manifest["mods"], "built": manifest["built"], "ue4ss": bool(mods_dir),
                              "game_build": game_info.get("build"), "layout": game_info.get("layout"),
                              "mods_root": cfg.mods_root, "menu": manifest.get("menu"), "game_dir": cfg.game_dir}
+    # The studio's crash card shows only crashes from after this (studio.last_crash); taking every mod out
+    # moves it on too, so an older crash doesn't come back once "installed" is gone.
+    cfg.data["crash_after"] = manifest["built"]
     cfg.save()
     return manifest
 
@@ -726,6 +729,7 @@ def uninstall(cfg, log=print):
                 removed.append(gone)
         cfg.data["installed_ue4ss_shared"] = []
     cfg.data.pop("installed", None)
+    cfg.data["crash_after"] = datetime.datetime.now().isoformat(timespec="seconds")   # see install
     cfg.save()
     for p in removed:
         log(f"  removed {p}")

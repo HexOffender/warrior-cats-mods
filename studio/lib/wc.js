@@ -356,8 +356,9 @@ export function codeWarning(mods = []) {
     code.length ? el("ul", { class: "notes" }, ...code.map(m => el("li", { text: `${m.name}${m.author ? `, by ${m.author}` : ""}: ${what(m)}` }))) : null);
 }
 
-// The game's last crash since the last Apply (GET /crash's "crash"), as a card: when, what it said, the mod it
-// was in when a C++ mod's code was on its stack, Copy the report and Turn <mod> off. `dismiss` adds a Close.
+// The game's last crash since the last Apply or Take all mods out (GET /crash's "crash"), as a card: when, what
+// it said, the C++ mod that was running when it crashed (if one was), Copy the report and Turn <mod> off.
+// `dismiss` adds a Close.
 export function crashCard(c, { dismiss = null } = {}) {
   const when = new Date(c.when).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
   const off = c.mod ? el("button", { class: "btn small", type: "button", text: `Turn ${c.mod_name || c.mod} off`, onclick: async () => {
@@ -371,7 +372,7 @@ export function crashCard(c, { dismiss = null } = {}) {
     el("strong", { text: "The game crashed last time" }),
     el("span", { text: `${when}: ${c.message}` }),
     c.mod ? el("span", { text: `It was in ${c.mod_name || c.mod}${c.where ? ` (${c.where})` : ""}.` })
-      : c.where ? el("span", { text: `It was in ${c.where}.` }) : el("span", { class: "muted", text: "No C++ mod was on the game's stack, so this report doesn't say which mod it was, if any." }),
+      : c.where ? el("span", { text: `It was in ${c.where}.` }) : el("span", { class: "muted", text: "No C++ mod was running when it crashed, so this report doesn't say which mod it was, if any." }),
     el("div", { class: "row" },
       el("button", { class: "btn small", type: "button", text: "Copy the report", onclick: () => copy(c.readout) }),
       off,

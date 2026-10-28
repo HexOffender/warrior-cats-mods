@@ -98,3 +98,25 @@ def test_make_your_own_mod_takes_a_name(studio):
     assert call(studio, "POST", "mods", {"name": "ÉTOILE'S TWEAKS"})["id"] == "etoile-s-tweaks-2"
     with open(os.path.join(studio.ctx.mods_root, "etoile-s-tweaks", "mod.json"), encoding="utf-8") as f:
         assert json.load(f)["name"] == "Étoile's Tweaks"
+
+
+def test_a_long_name_taken_already_still_makes_a_mod(studio):
+    name = "A very long name for a mod about the moonlit cats of the riverside camp"
+    first = call(studio, "POST", "mods", {"name": name})["id"]
+    assert len(first) == 64
+    second = call(studio, "POST", "mods", {"name": name})["id"]
+    assert second.endswith("-2") and len(second) <= 64 and second != first
+    assert call(studio, "GET", "mods/new-id", query={"name": name})["id"].endswith("-3")
+
+
+def test_a_backup_folder_with_a_date_that_cant_be_is_skipped(studio, save):
+    from wcmods import modzip
+    from wcmods.formats import save as savefile   # `save` is the fixture here
+    backups = studio.ctx.backups
+    good = call(studio, "POST", "backup")["name"]
+    os.makedirs(os.path.join(backups, "20261399-256199-backed-up-by-you"))
+    assert savefile.list_backups(backups) == [good] and call(studio, "GET", "backups")
+    os.makedirs(os.path.join(backups, "mods", "20261399-256199-removed-ghost"))
+    with open(os.path.join(backups, "mods", "20261399-256199-removed-ghost", "mod.json"), "w", encoding="utf-8") as f:
+        json.dump({"name": "Ghost"}, f)
+    assert modzip.removed(backups) == []

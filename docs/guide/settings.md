@@ -25,9 +25,10 @@ You can:
 
 - Allow mods that run code (**Allow mods that run code**), after a warning that names your mods that do.
   Get set up asks the same thing once, on the Mods page.
-- See what crashed the game: when it crashed since your last Apply, **The game crashed last time** sits at the
-  top of Backups and repair, with what the game said, the mod it was in when a C++ mod was on its stack,
-  **Copy the report** (for whoever helps you) and **Turn <mod> off**.
+- See what crashed the game: when it crashed since your last Apply (or **Take all mods out of the game**),
+  **The game crashed last time** sits at the top of Backups and repair, with what the game said, the C++ mod
+  that was running when it crashed (if one was), **Copy the report** (for whoever helps you), **Turn <mod>
+  off** and **Close**. Before your first Apply there's nothing of your mods' to blame, so no card shows.
 - Choose the mod menu's key, the controller button that opens it too, and its size.
 - Switch the game's console on, and say whether Menu pages starts with cheats on.
 - Back up your save at any time, and put any backup back (**Restore**). Each backup is named in words: when,
@@ -50,7 +51,7 @@ You can't:
   in. The console and cheats change from the next time the game starts.
 - After allowing mods that run code, the Mods page's cards stop saying "Runs code, so the game won't get it
   until you allow mods that run code".
-- After **Restore**, the toast names the files put back.
+- After **Restore**, the toast says your save is back as it was, and names the copy kept of the one you had.
 - After **Take all mods out of the game**, the log at the bottom right says what came out.
 
 ## Common mistakes
@@ -66,5 +67,5 @@ You can't:
 
 - An option: change it back, then **Play**.
 - Allowing mods that run code: untick **Allow mods that run code**, then **Apply to game**: they come out.
-- A restore: the save you had is in the list too (its name ends in before-restore); **Restore** it.
+- A restore: the save you had is in the list too ("the save you had before a restore"); **Restore** it.
 - **Take all mods out of the game**: **Play** or **Apply to game** puts your mods back in.

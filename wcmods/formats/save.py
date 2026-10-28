@@ -163,15 +163,27 @@ def list_backups(backups_root):
     if not os.path.isdir(backups_root):
         return []
     return sorted(d for d in os.listdir(backups_root)
-                  if re.match(r"^\d{8}-\d{6}-", d) and os.path.isdir(os.path.join(backups_root, d)))
+                  if _backup_time(d) and os.path.isdir(os.path.join(backups_root, d)))
+
+
+def _backup_time(name):
+    """When a backup folder's name says it was made, or None for a name that isn't one (a date that can't
+    be, 20261399-250000-..., is no backup's: it's skipped rather than failing the whole list)."""
+    m = re.match(r"^(\d{8}-\d{6})-", name)
+    if not m:
+        return None
+    try:
+        return datetime.datetime.strptime(m.group(1), "%Y%m%d-%H%M%S")
+    except ValueError:
+        return None
 
 
 def backup_label(name, today=None):
     """A backup's name in words: "Today 15:30, backed up by you", "First safety copy, 27 Oct 2026 09:12"."""
     m = re.match(r"^(\d{8}-\d{6})-(.+?)(?:-\d+)?$", name)
-    if not m:
+    when = _backup_time(name)
+    if not m or not when:
         return name
-    when = datetime.datetime.strptime(m.group(1), "%Y%m%d-%H%M%S")
     today = today or datetime.date.today()
     day = ("Today" if when.date() == today else "Yesterday" if when.date() == today - datetime.timedelta(days=1)
            else f"{when.day} {when.strftime('%b %Y')}")
