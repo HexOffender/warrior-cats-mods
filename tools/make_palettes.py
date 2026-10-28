@@ -226,6 +226,11 @@ def main():
         sys.exit(f"{out} isn't a wcmods-examples checkout (its README.md starts \"# wcmods examples\"); "
                  "pass --force to write there anyway")
     tables, rims = game_colours()
+    from wcmods.config import Config
+    from wcmods.exe import gamebuild
+    game_build = gamebuild.current(Config(ROOT))["build"]   # the build they're made from (mod.json "game_builds")
+    if not game_build:
+        print("couldn't tell which build of the game is installed, so game_builds is left as it was")
     for index, (mod_id, theme) in enumerate(THEMES.items()):
         folder = os.path.join(out, "palette-" + mod_id)
         os.makedirs(folder, exist_ok=True)
@@ -239,6 +244,8 @@ def main():
         if os.path.isfile(meta_path):   # regenerating keeps whether it's on, its priority and any extras
             with open(meta_path, encoding="utf-8-sig") as f:
                 meta.update({k: v for k, v in json.load(f).items() if k not in ("name", "description")})
+        if game_build:                  # made from this build's colours, besides any it was made for before
+            meta["game_builds"] = sorted(set(meta.get("game_builds", [])) | {int(game_build)})
         with open(meta_path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(meta, f, indent=2)
             f.write("\n")
