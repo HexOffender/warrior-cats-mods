@@ -697,7 +697,7 @@
    "doc": "npcs.md",
    "heading": "Names",
    "anchor": "#names",
-   "text": "Banned names: NameBanList.csv keeps 30 canon names (Tigerstar, Jayfeather, Lionblaze …) from being generated."
+   "text": "Banned names: NameBanList.csv keeps 31 canon names (Tigerstar, Jayfeather, Lionblaze …) from being generated."
   }
  ],
  "NarrativeRole.csv": [
@@ -887,7 +887,7 @@
    "doc": "npcs.md",
    "heading": "Names",
    "anchor": "#names",
-   "text": "Clan cats: a prefix from PreffixName.csv (89, weighted per clan) and a suffix from SuffixName.csv (26, one set per role: -kit, -paw, a warrior suffix, -star)."
+   "text": "Clan cats: a prefix from PreffixName.csv (90, weighted per clan) and a suffix from SuffixName.csv (27, one set per role: -kit, -paw, a warrior suffix, -star)."
   }
  ],
  "PrefixNameFilters.csv": [
@@ -997,7 +997,7 @@
    "doc": "npcs.md",
    "heading": "Names",
    "anchor": "#names",
-   "text": "Rogues: a whole name from RogueNames.csv (22)."
+   "text": "Rogues: a whole name from RogueNames.csv (23)."
   }
  ],
  "Rotation.Rate.Min": [
@@ -1109,7 +1109,7 @@
    "doc": "npcs.md",
    "heading": "Names",
    "anchor": "#names",
-   "text": "Clan cats: a prefix from PreffixName.csv (89, weighted per clan) and a suffix from SuffixName.csv (26, one set per role: -kit, -paw, a warrior suffix, -star)."
+   "text": "Clan cats: a prefix from PreffixName.csv (90, weighted per clan) and a suffix from SuffixName.csv (27, one set per role: -kit, -paw, a warrior suffix, -star)."
   }
  ],
  "SuffixNameFilters.csv": [
