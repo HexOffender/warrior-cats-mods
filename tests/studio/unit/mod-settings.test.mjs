@@ -109,3 +109,55 @@ test("the Settings block on a script's card shows the rows and saves 12.0, in th
     assert.equal(puts.at(-1), file);   // F9 kept, and the switch as it's set here
   } finally { handle.unmount(); }
 });
+
+test("a key written twice counts as the last one, and a whole number past 2^53 stays as the file has it", async () => {
+  const s = await import(dom.studio("lib/scriptsettings.js"));
+  const text = `{\n  "speed": 1,\n  "seed": 12345678901234567890,\n  "speed": 2.5\n}\n`;
+  const data = s.read(text);
+  assert.deepEqual(data.twice, ["speed"]);
+  assert.deepEqual(data.order, ["seed", "speed"]);   // where the last one is
+  assert.equal(data.values.speed, 2.5);
+  assert.ok(data.floats.has("speed"));
+  assert.equal(s.write(data), `{\n  "seed": 12345678901234567890,\n  "speed": 2.5\n}\n`);   // once
+  assert.ok(!s.read(`{"a": 1.5, "a": 2}`).floats.has("a"), "the last one's kind of number");
+  const seed = s.rows(data).find(r => r.key === "seed");
+  assert.equal(seed.text, "12345678901234567890");
+  assert.equal(s.problem(seed, "12345678901234567890"), null, "left as it is");
+  assert.equal(s.problem(seed, "12345678901234567891"),
+    "Seed can't be changed here to a number that big (past 9007199254740991 it loses its last digits): change it in the file itself");
+  assert.equal(s.problem(seed, "42"), null);
+  // Another setting changed: the big one goes back as the file has it.
+  assert.equal(s.write({ ...data, values: { ...data.values, speed: 3 } }), `{\n  "seed": 12345678901234567890,\n  "speed": 3.0\n}\n`);
+});
+
+test("on the card: a key written twice is said, a big number shows as the file has it, and the toast names the mod", async () => {
+  const puts = [];
+  const file = `{\n  "speed": 1,\n  "seed": 12345678901234567890,\n  "speed": 2.5\n}\n`;
+  dom.routes = {
+    "GET /mods": () => [{ id: "game-tweaks", name: "Game Tweaks", description: "", enabled: true, priority: 0, kinds: ["in-game script"],
+      preset: false, version: "", author: "", requires: [], requires_names: [], uses: [], code: true, menu_page: true, pack: false,
+      problem: null, problems: [], needed_by: [], game_builds: [], outdated: null, menu_pages: false, script_problems: [],
+      script_run: null, settings_card: true }],
+    "GET /settings": () => ({ allow_code_mods: true, data_dir: "C:\\data" }),
+    "GET /mods/game-tweaks/file/settings.json": () => ({ exists: true, text: file }),
+    "GET /mods/game-tweaks/log": () => ({ log: null, lines: [] }),
+    "PUT /mods/game-tweaks/file/settings.json": b => { puts.push(b.text); return { saved: "settings.json", problems: [] }; },
+  };
+  const wc = await import(dom.studio("lib/wc.js") + "?" + Math.random());
+  const page = (await import(dom.studio("sections/mods.js"))).default;
+  const root = dom.document.createElement("div");
+  dom.body.append(root);
+  const handle = await page.mount(root, wc);
+  try {
+    root.querySelector('[aria-label="More about Game Tweaks"]').click();
+    await tick(); await tick();
+    const box = root.querySelector('[data-key="settings:game-tweaks"]');
+    assert.ok(box.all().some(n => n.textContent === 'settings.json has "speed" twice: the last one counts, as the script reads it, and Save settings keeps only that one.'));
+    const numbers = box.querySelectorAll("input").filter(i => i.attrs.type === "number");
+    assert.deepEqual(numbers.map(i => i.attrs.value), ["12345678901234567890", "2.5"]);
+    box.querySelectorAll("button").find(b => b.textContent === "Save settings").click();
+    await tick(); await tick();
+    assert.deepEqual(puts, [`{\n  "seed": 12345678901234567890,\n  "speed": 2.5\n}\n`]);
+    assert.ok(dom.document.getElementById("toasts").all().some(n => n.textContent === "Saved the settings of Game Tweaks. The script reads them when the game starts."));
+  } finally { handle.unmount(); }
+});

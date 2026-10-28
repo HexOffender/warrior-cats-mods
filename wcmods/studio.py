@@ -508,8 +508,12 @@ class Studio:
             return menusettings.options(cfg)
         if parts == ["tweaks"] and method == "GET":
             # What the Tweaks page offers (wcmods/tweaks.py): each tweak's default, the keys a heal can go on (not
-            # the mod menu's own), and whether the script loader is there to run them.
-            return {"defaults": tweaks.DEFAULTS, "heal_keys": tweaks.heal_keys(menusettings.menu_settings(cfg)["key"]),
+            # one something else in the build has you press: those are "taken", with what uses them), the tweaks
+            # not available yet and why, and whether the script loader is there to run them.
+            from .sections.tweaks import taken_keys
+            taken = taken_keys(cfg, self.mods())
+            return {"defaults": tweaks.DEFAULTS, "heal_keys": tweaks.heal_keys(taken),
+                    "taken": {k: taken[k] for k in tweaks.HEAL_KEYS if k in taken}, "unchecked": tweaks.unchecked(),
                     "ue4ss": bool(cfg.ue4ss_mods_dir)}
         if parts == ["game", "bridge"] and method == "GET":
             # Whether the game runs with the bridge (wcmods/bridge.py), for the Console's status strip: the

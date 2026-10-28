@@ -137,7 +137,7 @@ mods, import a file over your changes or close it with unsaved changes.
 | **Questlines** | quests with those cats, step by step (talk, pick things up, go somewhere), one after another, with rewards | `quests.json` | the Sandbox mode mod |
 | **Game data** | XP, costs, rewards, speeds and ~440 tuning values, in any runtime table | `data.json` | edited tables in the mod pak |
 | **Save** | level, XP, health, stamina, fresh-kill pile, stats, inventory, settings, anything else | `save.json` | your save, on install |
-| **Tweaks** | small changes while you play: stamina kept full, a heal key, the clock held, the fresh-kill pile kept up, the story's scenes skipped | `tweaks.json` | a UE4SS script wcmods writes (no mods that run code needed), with a Tweaks page in the mod menu |
+| **Tweaks** | small changes while you play: stamina kept full, a heal key, the clock held, the fresh-kill pile kept up | `tweaks.json` | a UE4SS script wcmods writes (no mods that run code needed), with a Tweaks page in the mod menu |
 
 **Scripting the game:** a mod's `scripts/main.lua` runs in the game with no Python, and its
 `settings.json` gets a page in the mod menu. The shared `WCModsGame` module covers a lot of the game:
