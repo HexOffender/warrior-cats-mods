@@ -57,7 +57,9 @@ install; say `"uses": ["mod-menu"]` in `mod.json` so Clan Mod Studio shows that 
 [game-tweaks](https://github.com/HexOffender/wcmods-examples/tree/main/game-tweaks), in wcmods-examples, is a complete one: it
 keeps stamina full, holds the time of day, keeps the fresh-kill pile up and heals on a key, with its
 settings on a page. Add it in the studio (or `wcmods add ../wcmods-examples/game-tweaks`), allow code
-mods, and apply.
+mods, and apply. Its tweaks are also on the studio's Tweaks page with no code at all
+([formats.md, `tweaks.json`](formats.md#tweaksjson)): a mod holds the settings, and `WCModsTweaks`, wcmods' own
+script, acts on them, so nothing has to be allowed.
 
 ```lua
 -- mods/my-mod/scripts/main.lua

@@ -279,7 +279,7 @@ def test_noon(agent):
 - **Clean up:** tests should put back what they change, as the ones here do: health, the clock,
   where your cat stands, a saved travel spot.
 
-The suite here has 68 tests:
+The suite here has 73 tests:
 
 - **The bridge, Lua and pictures:** `test_bridge.py`.
 - **Your cat and moving it:** `test_cat.py`.
@@ -300,6 +300,9 @@ The suite here has 68 tests:
   install (`agent install --with tests/game/mods/noisy-script --with tests/game/mods/broken-script --with
   tests/game/mods/late-page`) and skip without them.
 - **The studio's Try Lua in the game:** `test_studio_console.py`, its routes against the running game.
+- **Tweaks:** `test_tweaks.py`. Stamina kept full, the clock held, the fresh-kill pile kept up, the heal key, and
+  the mod menu's Tweaks page and its Save, with a throwaway mod in the test install (`agent install --with
+  tests/game/mods/all-tweaks`); they skip without it.
 
 ## What it changes, and what it won't do
 

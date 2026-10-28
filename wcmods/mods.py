@@ -14,6 +14,7 @@ and any of:
   palette.json        colour palette (sections/palettes.py)
   controls.json       button remaps (sections/controls.py)
   mouselook.json      mouse look settings (sections/mouselook.py)
+  tweaks.json         small changes while you play: stamina, a heal key, the clock... (sections/tweaks.py)
   data.json           gameplay data edits (sections/data.py)
   items.json          new herbs and materials (sections/items.py)
   npcs.json           cats of the mod's own, and quests.json, questlines with them (sections/story.py; the
@@ -35,7 +36,7 @@ import re
 # own; it's wcmods' now (menu.py), so it's always there: a mod needing it needs nothing more.
 MENU_ID = "mod-menu"
 CONTENT = (("files", "files"), ("paks", "cooked content"), ("palette.json", "palette"), ("controls.json", "controls"),
-           ("mouselook.json", "mouse look"), ("data.json", "data"), ("items.json", "items"),
+           ("mouselook.json", "mouse look"), ("tweaks.json", "tweaks"), ("data.json", "data"), ("items.json", "items"),
            ("animations.json", "animations"), ("npcs.json", "characters"), ("quests.json", "questlines"),
            ("names.json", "names"), ("cats.json", "cats"),
            ("save.json", "save"), ("scripts", "in-game script"), ("dlls", "C++ mod"), ("cpp", "C++ source"),
@@ -97,11 +98,12 @@ class Mod:
 
     def menu_page(self):
         """Whether it adds a page to the mod menu: it says it uses the menu, or it's something wcmods gives
-        one (mouse look, a script with settings)."""
+        one (mouse look, tweaks, a script with settings)."""
         if MENU_ID in self.requires or MENU_ID in self.uses:
             return True
         kinds = self.kinds()
-        return "mouse look" in kinds or ("in-game script" in kinds and os.path.isfile(os.path.join(self.folder, "settings.json")))
+        return ("mouse look" in kinds or "tweaks" in kinds
+                or ("in-game script" in kinds and os.path.isfile(os.path.join(self.folder, "settings.json"))))
 
     def update(self, **fields):
         if self.problem:

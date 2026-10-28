@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (animations, bridge, catcolours, colors, controls, eyeatlas, guide, menupages, menusettings, models, mods,
-               modzip, names, onboarding, packs, palettes, pipeline, recolor, scriptlog, story, ue4ss)
+               modzip, names, onboarding, packs, palettes, pipeline, recolor, scriptlog, story, tweaks, ue4ss)
 from .formats import cooked, csvdata, png, save, texture
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
@@ -46,8 +46,8 @@ LAST_APPLY = "last-apply.log"   # in your files' folder: what the last Apply, Pl
 STUDIO_LOG = "studio.log"       # there too: the details behind "Something went wrong"
 STUDIO_LOG_MAX = 1024 ** 2      # studio.log's size before it starts again (the one before is kept as studio.log.1)
 
-MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "items.json", "animations.json",
-             "names.json", "cats.json", "save.json", "settings.json") + story.FILES
+MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "tweaks.json", "data.json", "items.json",
+             "animations.json", "names.json", "cats.json", "save.json", "settings.json") + story.FILES
 PICTURES = "pictures"        # a mod's own pictures (an item's icon, an accessory's look), added on the Items page
 MODELS = "models"            # a mod's own models (an accessory's shape), added on the Items page
 ANIMATIONS = "animations"    # a mod's own animations (glTF), added on the Animations page
@@ -69,6 +69,7 @@ BUILTIN_SECTIONS = [
     {"id": "quests", "title": "Questlines", "module": "/studio/sections/quests.js", "group": "make"},
     {"id": "data", "title": "Game data", "module": "/studio/sections/data.js", "group": "make"},
     {"id": "save", "title": "Save", "module": "/studio/sections/save.js", "group": "make"},
+    {"id": "tweaks", "title": "Tweaks", "module": "/studio/sections/tweaks.js", "group": "make"},
 ]
 # Pages for code mods: only with "allow_code_mods" (the console runs Lua in the game), last in the side bar,
 # under Advanced.
@@ -505,6 +506,12 @@ class Studio:
                     return menusettings.set_options(cfg, console=body.get("console"), key=body.get("key"),
                                                     size=body.get("size"), pad=body.get("pad"), cheats=body.get("cheats"))
             return menusettings.options(cfg)
+        if parts == ["tweaks"] and method == "GET":
+            # What the Tweaks page offers (wcmods/tweaks.py): each tweak's default, the keys a heal can go on (not
+            # the mod menu's own), and whether the script loader is there to run them.
+            menu_key = menusettings.menu_settings(cfg)["key"]
+            return {"defaults": tweaks.DEFAULTS, "heal_keys": [k for k in tweaks.HEAL_KEYS if k != menu_key],
+                    "ue4ss": bool(cfg.ue4ss_mods_dir)}
         if parts == ["game", "bridge"] and method == "GET":
             # Whether the game runs with the bridge (wcmods/bridge.py), for the Console's status strip: the
             # bridge's own status, whether the game's process runs, whether the last install put the bridge in,

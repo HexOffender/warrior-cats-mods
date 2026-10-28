@@ -122,7 +122,7 @@ test("the studio opens with no console errors, its status chips and its pages", 
   assert.deepEqual(chips, ["Game closed", "No script loader", "No save yet", "Nothing installed"]);
   const pages = await page.evaluate(() => [...document.querySelectorAll("#nav button")].map(b => b.textContent));
   assert.deepEqual(pages, ["Mods", "Mod packs", "Settings and repair", "Palettes", "Your cat", "Controls", "Names", "Items",
-    "Animations", "Characters", "Questlines", "Game data", "Save"]);
+    "Animations", "Characters", "Questlines", "Game data", "Save", "Tweaks"]);
   assert.equal(await page.evaluate(() => document.querySelector("#nav button[aria-current]").textContent), "Mods");
   assert.equal(await page.text("#playBtn"), "Play");
   await page.close();

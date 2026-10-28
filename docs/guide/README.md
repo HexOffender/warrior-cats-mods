@@ -5,6 +5,8 @@ panel.
 
 - [How Clan Mod Studio works](studio.md): your mods folder, the Editing mod bar and My mods, Save to
   mod, Apply to game and Play, the log, what Undo means here, and where your files are. Start here.
+- [Tweaks](tweaks.md): small changes while you play, ticked on one page: stamina, a heal key, the clock, the
+  fresh-kill pile, the story's scenes.
 - [Try Lua in the game](console.md): for people who write scripts, running a line of Lua in the game
   while it plays. Not needed to make mods on the other pages.
 

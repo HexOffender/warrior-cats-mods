@@ -234,6 +234,11 @@ Fawnstar, as a player reported it showing "Cat 1"):
     states and the request withdrawn after a timeout are tested without it, over a made-up bridge folder;
   - the damage, quest-status and status events;
   - whether the game obeys each of its developer switches.
+- **Tweaks** (`tweaks.json`, the studio's Tweaks page, `WCModsTweaks`): written from Game Tweaks' calls (stamina,
+  the clock, the fresh-kill pile, seen working there) and Sandbox mode's skip (seen skipping the opening scenes of a
+  sandbox game), but not yet run in the game as Tweaks. Above all unchecked: the heal key through the game's own
+  input (`Game.pressed`), the skip in a story game (a fresh story cat, not a sandbox one), and the mod menu's Tweaks
+  page and its Save. `tests/game/test_tweaks.py` has the in-game tests.
 - **The runtime fixes of 2026-10-28** (written and checked by their shape and by luacheck, not yet run in the
   game; `tests/game/test_scripts.py` has the in-game tests for them): a script's errors with its mod's name,
   once then once a minute; a task that cancels itself and adds another; `Game.onKey` with a misspelt name

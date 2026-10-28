@@ -207,6 +207,26 @@ Known issues:
   game's own camera locks (`EInputRestriction::CameraRotationDisabled`) aren't visible to scripts,
   so the mouse may still turn the camera where the arrow keys can't.
 
+### `tweaks.json`
+```json
+{ "keep_stamina_full": true, "heal_key": "F5", "hold_time": true, "time_of_day": 6.5,
+  "min_fresh_kill": 20, "skip_scenes": false }
+```
+Small changes while you play, ticked on the studio's Tweaks page. Every key is optional, and a missing one is off:
+- `keep_stamina_full`: your cat's stamina topped up twice a second;
+- `heal_key`: a key, `F1` to `F12` but `F10` and `F11` (the game's own) and the mod menu's key, that fills your
+  cat's health and stamina, heard in the game's own input (while the game is in front); `""` for none;
+- `hold_time` and `time_of_day`: the clock held at that hour (0 to 24, `6.5` is 06:30);
+- `min_fresh_kill`: the camp's fresh-kill pile kept at least this full (0 to 100, the pile's own count);
+- `skip_scenes`: each of the story's scenes skipped as it starts, with the game's own hold-to-skip (as Sandbox
+  mode skips them for its cats).
+
+Keys starting with `_` are notes. With several mods, each tweak comes from the one with the highest priority that
+sets it. They go in as `WCModsTweaks`, wcmods' own UE4SS script (no mod's code runs, so no "Allow mods that run
+code"), which also adds a Tweaks page to the mod menu: its Save writes the top mod's `tweaks.json`, keeping its
+notes. The script carries the tweaks it was installed with, so a change saved in the game is a change to apply.
+The tweaks are Game Tweaks' (the example script in wcmods-examples), with no code to write.
+
 ### `data.json`
 ```json
 { "CombatBaseExperience.csv": { "*": { "BaseExperience": "x2" } },
