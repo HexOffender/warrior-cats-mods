@@ -498,8 +498,10 @@ class Studio:
             found = self.mods()
             p = pipeline.pending(cfg, found)
             titles = {m.id: m.name for m in found}
+            # held_back: mods that are on but that Apply leaves out (made for an older version of the game, or
+            # needing one that is), which the Controls page's line says aren't in the game.
             return {**p, "names": {i: titles.get(i, i) for i in p["on"] + p["off"] + p["changed"]},
-                    "game_running": game_running()}
+                    "held_back": sorted(gamebuild.held_back(cfg, found)), "game_running": game_running()}
         if len(parts) == 3 and parts[0] == "mods" and parts[2] == "switch" and method == "POST":
             # On: with the mods it requires. Off: refused while mods that are on need it, unless cascade.
             found = self.mods()

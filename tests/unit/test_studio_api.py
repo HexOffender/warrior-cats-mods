@@ -91,7 +91,7 @@ def test_settings_change_code_mods_and_refuse_anything_but_true_or_false(studio)
 
 def test_changes_name_the_mods_waiting_to_go_in(studio, sandbox):
     assert get(studio, "changes") == {"installed": False, "on": [], "off": [], "changed": [], "redo": [], "any": False,
-                                      "names": {}, "game_running": False}
+                                      "names": {}, "held_back": [], "game_running": False}
     make_mod(studio, "tweaks", {"name": "Tweaks"})
     sandbox.running = True
     r = get(studio, "changes")
@@ -279,7 +279,9 @@ def test_a_mod_made_for_an_older_game_is_used_anyway_on_this_build_only(studio, 
     monkeypatch.setenv("WCMODS_GAME_BUILD", "99999999")   # as if Steam had installed a newer build
     (m,) = get(studio, "mods")
     assert m["outdated"] == {"made_for": [24847281], "allowed": False} and m["game_builds"] == [24847281]
+    assert get(studio, "changes")["held_back"] == ["old"]   # on, but Apply leaves it out (the Controls page says so)
     assert post(studio, "mods/old/allow-outdated") == {"build": 99999999, "allowed": True}
+    assert get(studio, "changes")["held_back"] == []
     with open(studio.ctx.cfg.path, encoding="utf-8") as f:
         assert json.load(f)["allow_outdated"] == {"old": [99999999]}
     assert get(studio, "mods")[0]["outdated"] == {"made_for": [24847281], "allowed": True}

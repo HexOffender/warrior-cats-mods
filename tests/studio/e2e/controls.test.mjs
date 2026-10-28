@@ -266,6 +266,34 @@ test("the status line says not in the game yet after a save, and nothing while t
   await page.close();
 });
 
+test("the status line counts an Apply that has to be made again, and says when Apply leaves the mod out", { skip }, async () => {
+  const page = await browser.page();
+  await open(page);
+  await page.waitFor(() => { const w = document.querySelector(".controls-where"); return w && !w.hidden; }, 20000);
+  // /changes answered as the studio would after an Apply, after a game update (redo), and with this mod made for
+  // an older version of the game (held_back); each read again as a mod switched elsewhere makes the page do.
+  const answer = async changes => {
+    await page.evaluate(`(() => {
+      window.__changes = ${JSON.stringify(changes)};
+      if (window.__realFetch) return;
+      window.__realFetch = window.fetch;
+      window.fetch = (url, init) => String(url).endsWith("/api/changes")
+        ? Promise.resolve(new Response(JSON.stringify(window.__changes), { status: 200, headers: { "Content-Type": "application/json" } }))
+        : window.__realFetch(url, init);
+    })()`);
+    await page.evaluate(async () => (await import("/studio/lib/wc.js")).bus.emit("mods-changed"));
+  };
+  const base = { installed: true, on: [], off: [], changed: [], redo: [], any: false, names: {}, held_back: [], game_running: false };
+  await answer(base);
+  await page.waitFor(() => document.querySelector(".controls-where").textContent === "In the game since your last Apply.");
+  await answer({ ...base, redo: ["the game updated (build 99999999)"], any: true });
+  await page.waitFor(() => document.querySelector(".controls-where").textContent === "Saved, not in the game yet: Apply to game.");
+  await answer({ ...base, held_back: ["my-mods"] });
+  await page.waitFor(() => /^Not in the game: this mod was made for an older version of the game\./.test(document.querySelector(".controls-where").textContent));
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
 test("the Play drawer stays open when remaps need the launcher, and says so", { skip }, async () => {
   const page = await browser.page();
   await open(page);

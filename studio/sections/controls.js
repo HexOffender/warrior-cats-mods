@@ -57,8 +57,13 @@ export default {
       let changes;
       try { changes = await api.get("/changes"); } catch (e) { whereLine.hidden = true; return; }
       if (n !== whereAsked || target.dirty) return;
-      const waiting = changes.on.includes(id) || changes.changed.includes(id);
-      whereLine.textContent = waiting ? "Saved, not in the game yet: Apply to game." : "In the game since your last Apply.";
+      // Left out by Apply (made for an older version of the game): not in the game, whatever Apply does. Waiting:
+      // the mod is new or changed since the last Apply, or that Apply has to be made again (changes.redo: the
+      // game updated, the script loader came in), which the Apply button counts too.
+      const held = (changes.held_back || []).includes(id);
+      const waiting = held || changes.on.includes(id) || changes.changed.includes(id) || (changes.redo || []).length > 0;
+      whereLine.textContent = held ? "Not in the game: this mod was made for an older version of the game. The Mods page says how to use it anyway."
+        : waiting ? "Saved, not in the game yet: Apply to game." : "In the game since your last Apply.";
       whereLine.classList.toggle("waiting", waiting);
       whereLine.hidden = false;
     }
@@ -566,7 +571,7 @@ export default {
       const box = el("input", { type: "checkbox", id: "ml-debug", checked: !!setting("debug") });
       box.addEventListener("change", () => { look.settings.debug = box.checked; saveLook(); });
       return el("label", { class: "row", for: "ml-debug" }, box,
-        el("span", { text: "Mouse look: log what it does (in the script loader's log, UE4SS.log)" }));
+        el("span", { text: "Mouse look: log what it does (in the script loader's log)" }));
     }
 
     // ---------- the whole page ----------
