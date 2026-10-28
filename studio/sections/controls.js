@@ -132,89 +132,25 @@ export default {
     const focusOn = key => root.querySelector(`[data-focus="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
 
     // ---------- capture: press the key you want ----------
+    // The studio's key dialog (wc.captureKey), with this page's extras: the keys the dialog uses itself as buttons,
+    // a box where a click or the wheel picks a mouse button (not for a controller, nor in menus, where a mouse
+    // button is refused), and the alert line saying why a key can't be used.
     // opts: { title, dev ("keyboard" or "gamepad"), where ("play" or "menus"), taken(key): a sentence when the
     // key can't be used here (it already stands for another key), or null }. onPick(key) gets the key.
-    function capture(opts, onPick) {
+    async function capture(opts, onPick) {
       const pad = opts.dev === "gamepad", where = opts.where || "play";
-      const back = wc.keepPlace();
-      const msg = el("p", { id: "capture-msg", text: pad
-        ? "Press a button on your controller, or pick one below. Escape cancels."
-        : "Press the key you want. Escape cancels; to use Escape, Tab, Enter, Space or Backspace themselves, press its button below." });
-      const why = el("p", { class: "said warn", role: "alert", hidden: true });
-      const padNote = el("p", { class: "muted" });
-      const use = k => el("button", { class: "chip", type: "button", text: L(k), "aria-label": `Use ${L(k)}`, onclick: () => pick(k) });
-      const extra = pad ? input.PAD_BUTTONS
-        : ["Escape", "Tab", "Enter", "SpaceBar", "BackSpace", ...(where === "menus" ? [] : ["MiddleMouseButton", ...M.UNTRIED])];
-      const zone = pad || where === "menus" ? null
-        : el("div", { class: "capture-zone", text: "Or click a mouse button, or turn the wheel, here" });
-      const box = el("div", { class: "card capture", role: "dialog", "aria-modal": "true", "aria-labelledby": "capture-title",
-        "aria-describedby": "capture-msg", tabindex: "-1" },
-        el("h2", { id: "capture-title", text: opts.title }), msg, zone, why, padNote,
-        el("div", { class: "row" }, ...extra.map(use)),
-        el("div", { class: "row" }, el("button", { class: "btn", type: "button", text: "Cancel", onclick: () => finish(null) })));
-      const overlay = el("div", { class: "capture-overlay" }, box);
-      document.body.append(overlay);
-      let raf = 0, done = false;
-      const buttons = () => [...box.querySelectorAll("button")];
-      function move(backwards) {
-        const bs = buttons(), at = bs.indexOf(document.activeElement);
-        bs[at < 0 ? (backwards ? bs.length - 1 : 0) : (at + (backwards ? -1 : 1) + bs.length) % bs.length].focus();
-      }
-      function pick(k) {
-        const taken = opts.taken ? opts.taken(k) : null;
-        const no = taken ? { refuse: taken } : M.whyNot(k, check && check.in_use, where, L);
-        if (no && no.refuse) { why.hidden = false; why.textContent = no.refuse; wc.announce(no.refuse, "bad"); return; }
-        finish(k, no && no.warn);
-      }
-      const onKey = e => {
-        const onButton = document.activeElement && document.activeElement.tagName === "BUTTON" && box.contains(document.activeElement);
-        const act = M.captureKey(e, onButton, input.keyFromEvent);
-        if (act.do === "press") return;   // the button that has focus does its own job
-        e.preventDefault(); e.stopPropagation();
-        if (act.do === "cancel") return finish(null);
-        if (act.do === "move") return move(act.back);
-        if (pad) return;   // a controller's button is pressed on the controller
-        if (act.do === "unknown") { msg.textContent = "That key isn't one the game knows. Try a letter, a number, an F key or an arrow."; return; }
-        pick(act.key);
-      };
-      zone?.addEventListener("mousedown", e => { e.preventDefault(); if (input.MOUSE[e.button]) pick(input.MOUSE[e.button]); });
-      zone?.addEventListener("contextmenu", e => e.preventDefault());
-      zone?.addEventListener("wheel", e => {
-        e.preventDefault();
-        if (e.deltaY !== 0) pick(e.deltaY < 0 ? "MouseScrollUp" : "MouseScrollDown");   // a sideways wheel: nothing
-      }, { passive: false });
-      window.addEventListener("keydown", onKey, true);
-      if (pad) {
-        let base = null;
-        const poll = () => {
-          if (done) return;
-          let pads = [];
-          try { pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean); }
-          catch (e) { padNote.textContent = "This browser window can't read controllers; pick a button above."; return; }
-          padNote.textContent = pads.length ? `Listening to ${pads[0].id.replace(/\s*\(.*\)$/, "")}`
-            : "No controller found yet. Press any button on it once, or pick a button above.";
-          const now = pads.map(p => p.buttons.map(b => b.pressed || b.value > 0.6));
-          if (base === null) base = now;
-          for (let i = 0; i < now.length; i++) {
-            for (let b = 0; b < Math.min(16, now[i].length); b++) if (now[i][b] && !(base[i] && base[i][b])) return pick(input.PAD_BUTTONS[b]);
-          }
-          raf = requestAnimationFrame(poll);
-        };
-        raf = requestAnimationFrame(poll);
-      }
-      box.focus();
-      function finish(k, warning) {
-        if (done) return;
-        done = true;
-        cancelAnimationFrame(raf);
-        window.removeEventListener("keydown", onKey, true);
-        overlay.remove();
-        back();
-        if (k) {
-          onPick(k);
-          if (warning) toast(warning);
-        }
-      }
+      const k = await wc.captureKey({
+        title: opts.title, pad, where, style,
+        message: pad ? "Press a button on your controller, or pick one below. Escape cancels."
+          : "Press the key you want. Escape cancels; to use Escape, Tab, Enter, Space or Backspace themselves, press its button below.",
+        chips: pad ? [] : ["Escape", "Tab", "Enter", "SpaceBar", "BackSpace", ...(where === "menus" ? [] : ["MiddleMouseButton", ...M.UNTRIED])],
+        zone: !pad && where !== "menus",
+        why: key => {
+          const taken = opts.taken ? opts.taken(key) : null;
+          return taken ? { refuse: taken } : M.whyNot(key, check && check.in_use, where, L);
+        },
+      });
+      if (k) onPick(k);
     }
 
     // ---------- keys while you play ----------

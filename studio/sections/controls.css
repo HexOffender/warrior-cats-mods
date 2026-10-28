@@ -16,9 +16,4 @@
 .controls-where::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--good); margin-right: 8px; }
 .controls-where.waiting { color: var(--ink); }
 .controls-where.waiting::before { background: var(--changed); }
-.capture-overlay { position: fixed; inset: 0; background: rgba(10, 16, 13, .55); display: grid; place-items: center; z-index: 40; padding: 16px; }
-.capture { width: min(560px, 100%); }
-.capture:focus { outline: 3px solid var(--accent); outline-offset: 2px; }
-.capture-zone { border: 2px dashed var(--field); border-radius: 12px; padding: 18px; text-align: center; color: var(--muted); user-select: none; cursor: crosshair; }
-.capture-zone:hover { border-color: var(--accent); }
 @media (forced-colors: active) { .said.warn, .controls-table td.warned { border-left: 3px solid CanvasText; } }

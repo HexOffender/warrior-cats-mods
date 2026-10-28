@@ -11,13 +11,15 @@ const wc = await import(dom.studio("lib/wc.js"));
 const keys = await import(dom.studio("lib/keys.js"));
 
 const press = (code, key = code) => window.dispatchEvent({ type: "keydown", code, key, preventDefault() {}, stopPropagation() {} });
-const overlay = () => document.body.querySelector('[role="dialog"]');
+// The backdrop, with the dialog (the card, role "dialog") in it; a click on the backdrop is a click outside.
+const overlay = () => document.body.querySelector(".capture-overlay");
 const button = text => overlay().querySelectorAll("button").find(b => b.textContent === text);
 
 test("a key pressed in the dialog is the game's name for it, and the dialog goes", async () => {
   const got = wc.captureKey({ title: "The key for Yawn" });
   assert.ok(overlay(), "the dialog is open");
   assert.equal(document.activeElement, overlay().querySelector(".card"), "focus starts on the dialog itself");
+  assert.equal(document.activeElement.getAttribute("role"), "dialog");
   press("F7");
   assert.equal(await got, "F7");
   assert.equal(overlay(), null);

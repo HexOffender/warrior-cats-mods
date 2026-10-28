@@ -767,8 +767,9 @@ export async function copy(text) {
 //   where     "play" (the default) or "menus": in menus a mouse button is refused (a click there goes to the
 //             button under the cursor), and there's no zone
 //   style     the controller's glyphs (input.GLYPHS)
-// Focus starts on the dialog itself; Tab moves among its buttons; Enter and Space press a focused button, and
-// bind themselves while the dialog itself has focus. Focus goes back where it was afterwards.
+// Focus starts on the dialog itself (the card, role "dialog"; the overlay around it is the backdrop); Tab moves
+// among its buttons; Enter and Space press a focused button, and bind themselves while the dialog itself has
+// focus (input.dialogKey). Focus goes back where it was afterwards. The look is styles.css's .capture rules.
 const MENU_MOUSE = "In menus a click goes to the button under the cursor, so use a key there.";
 let capturing = null;   // the open dialog's cancel()
 export function captureKey({ title, label, message, pad = false, axis = false, mouse = false, zone = false, chips = [],
@@ -785,15 +786,13 @@ export function captureKey({ title, label, message, pad = false, axis = false, m
     const box = zone && !pad && where !== "menus"
       ? el("div", { class: "capture-zone", text: typeof zone === "string" ? zone : "Or click a mouse button, or turn the wheel, here" })
       : null;
-    const card = el("div", { class: "card capture", tabindex: "-1", style: { width: "min(560px, 100%)" } },
+    const card = el("div", { class: "card capture", tabindex: "-1", role: "dialog", "aria-modal": "true",
+      "aria-label": label || title || "Press a key", "aria-describedby": "capture-msg" },
       el("h2", { id: "capture-title", text: title || "Press a key" }), msg, box, whyLine, padNote,
       choices.length ? el("div", { class: "row" }, ...choices.map(k => el("button", { class: "chip", type: "button",
         text: input.keyLabel(k, style), title: k, "aria-label": `Use ${input.keyLabel(k, style)}`, onclick: () => choose(k) }))) : null,
       el("div", { class: "row" }, el("button", { class: "btn", type: "button", text: "Cancel", onclick: () => finish(null) })));
-    const overlay = el("div", {
-      class: "capture-overlay", role: "dialog", "aria-modal": "true", "aria-label": label || title || "Press a key", "aria-describedby": "capture-msg",
-      style: { position: "fixed", inset: "0", background: "rgba(10,16,13,.55)", display: "grid", placeItems: "center", zIndex: "40", padding: "16px" },
-    }, card);
+    const overlay = el("div", { class: "capture-overlay" }, card);
     document.body.append(overlay);
     let raf = 0, done = false, pending = null;
     const isMouse = k => input.MOUSE.includes(k) || k === "MouseScrollUp" || k === "MouseScrollDown";
@@ -818,22 +817,19 @@ export function captureKey({ title, label, message, pad = false, axis = false, m
     }
     const buttons = () => [...overlay.querySelectorAll("button")];
     const onKey = e => {
-      if (e.key === "Escape" || e.code === "Escape") { e.preventDefault(); e.stopPropagation(); return finish(null); }
-      // Tab stays in the dialog, among its buttons.
-      if (e.key === "Tab") {
-        e.preventDefault(); e.stopPropagation();
+      const onButton = !!document.activeElement && document.activeElement.tagName === "BUTTON" && overlay.contains(document.activeElement);
+      const act = input.dialogKey(e, onButton);
+      if (act.do === "press") return;   // the button that has focus does its own job
+      e.preventDefault(); e.stopPropagation();
+      if (act.do === "cancel") return finish(null);
+      if (act.do === "move") {   // Tab stays in the dialog, among its buttons
         const bs = buttons(), at = bs.indexOf(document.activeElement);
-        const next = at < 0 ? (e.shiftKey ? bs.length - 1 : 0) : (at + (e.shiftKey ? -1 : 1) + bs.length) % bs.length;
-        bs[next].focus();
+        bs[at < 0 ? (act.back ? bs.length - 1 : 0) : (at + (act.back ? -1 : 1) + bs.length) % bs.length].focus();
         return;
       }
-      const onButton = document.activeElement && document.activeElement.tagName === "BUTTON" && overlay.contains(document.activeElement);
-      if (onButton && (e.key === "Enter" || e.key === " ")) return;   // pressing the button that has focus
-      if (pad) return;
-      e.preventDefault(); e.stopPropagation();
-      const k = input.keyFromEvent(e);
-      if (k) choose(k);
-      else msg.textContent = "That key isn't one the game knows. Try a letter, a number, an F key or an arrow.";
+      if (pad) return;   // a controller's button is pressed on the controller
+      if (act.do === "unknown") { msg.textContent = "That key isn't one the game knows. Try a letter, a number, an F key or an arrow."; return; }
+      choose(act.key);
     };
     // Where a click or the wheel picks a mouse button: the whole dialog (mouse), its zone, or nowhere.
     const binds = target => !pad && (box ? box.contains(target) : mouse);

@@ -57,4 +57,16 @@ export function keyLabel(key, style = "xbox") {
   const d = DIGITS.indexOf(key);
   return d >= 0 ? String(d) : key;
 }
-export const input = { keyFromEvent, MOUSE, PAD_BUTTONS, PAD_AXES, GLYPHS, keyLabel };
+// What a key pressed in the key dialog (wc.captureKey) does. Escape cancels; Tab moves among the dialog's
+// buttons (back with Shift); Enter and Space press the button that has focus (and are the key to bind when the
+// dialog itself has focus); any other key is the key to bind, named as the game names it (keyFromEvent), or
+// unknown. {do: "cancel" | "move" (back) | "press" | "bind" (key) | "unknown"}.
+export function dialogKey(e, onButton, fromEvent = keyFromEvent) {
+  if (e.code === "Escape" || e.key === "Escape") return { do: "cancel" };
+  if (e.key === "Tab" || e.code === "Tab") return { do: "move", back: !!e.shiftKey };
+  if (onButton && ["Enter", "NumpadEnter", "Space"].includes(e.code)) return { do: "press" };
+  const key = fromEvent(e);
+  return key ? { do: "bind", key } : { do: "unknown" };
+}
+
+export const input = { keyFromEvent, MOUSE, PAD_BUTTONS, PAD_AXES, GLYPHS, keyLabel, dialogKey };

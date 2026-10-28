@@ -1,6 +1,7 @@
 // The Controls page's model: controls.json as the page holds it, and what each row shows and writes. Pure
 // functions over the game's keys as GET /game/keys gives them (wcmods/keymap.py game_keys: keyboard, gamepad,
-// aliases, names), importing nothing, so node:test loads it with no page (tests/studio/controls.test.mjs).
+// aliases, names), importing nothing but lib/keys.js (no page either), so node:test loads it with no page
+// (tests/studio/controls.test.mjs).
 //
 // The page's state is the file's shape, flattened: { keyboard: {action: key}, gamepad: {action: key},
 // keys: {key you press: game key}, menus: {key you press: game key}, notes: {"_help": ...}, inner: the "_"
@@ -281,16 +282,10 @@ export function whyNot(key, inUse, where = "play", label = k => k) {
   return null;
 }
 
-// What a key pressed in the capture dialog does. Escape cancels; Tab moves among the dialog's buttons; Enter
-// and Space press the button that has focus (and are the key to bind when the dialog itself has focus); any
-// other key is the key to bind. keyFromEvent: wc.input's, which names the key as the game does (null: unknown).
-export function captureKey(e, onButton, keyFromEvent) {
-  if (e.code === "Escape" || e.key === "Escape") return { do: "cancel" };
-  if (e.key === "Tab" || e.code === "Tab") return { do: "move", back: !!e.shiftKey };
-  if (onButton && ["Enter", "NumpadEnter", "Space"].includes(e.code)) return { do: "press" };
-  const key = keyFromEvent(e);
-  return key ? { do: "bind", key } : { do: "unknown" };
-}
+// What a key pressed in the key dialog does (Escape cancels, Tab moves, Enter and Space press a focused button or
+// are the key): the dialog is wc.captureKey, and its keys are lib/keys.js's dialogKey, named here as the page's
+// tests know it.
+export { dialogKey as captureKey } from "./keys.js";
 
 // ---------- mouse look ----------
 // Its saves, one at a time: changes made within `delay` ms of each other are one save (a slider dragged with the
