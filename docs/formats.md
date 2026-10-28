@@ -355,9 +355,10 @@ of this. Names are matched by their English text (any case) or ID.
 - **`text`:** sets any of the game's texts by its key, in English, for anything that isn't a cat's
   name: an area, a quest's title, an item's name. `{ "STR_RIVERCLAN_ZONE_5": "Willow Hollow",
   "QST_Gather.Apprentice.Title": "Gather for the elders", "STR_ITEM_CONSUMABLE_NAME_7": "Sunpetal" }`. The
-  Names page's Places, quests and items card lists them with their keys and writes this. The mod
-  menu's pages read the build's renamed texts, so they show the new names. A key the game hasn't got is
-  added, with a warning.
+  Names page's Places, quests and items card lists them and writes this, one row per text: some texts
+  are shared (one title for the Rest 1, 2 and 3 quests), and renaming one renames everything that shows
+  it. The mod menu's pages read the build's renamed texts, so they show the new names. A key the game
+  hasn't got is added, with a warning.
 - **`cats`:** renames cats in your save on install, after a backup. Each key picks a cat: `player`,
   its current name, or its place from `names --cats` (`RiverClan/Warrior/3`), with `"was"` for the
   name it has there (`{ "name": "Mothheart", "was": "Woodheart" }`), so the entry stops counting if

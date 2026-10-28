@@ -35,9 +35,24 @@ def test_place_names_without_the_text_table_gives_nothing():
 def test_place_texts_keeps_the_key_each_is_shown_from():
     texts = world.place_texts(reader(PLACES))
     assert texts["areas"] == [{"key": "STR_RIVERCLAN_ZONE_5", "code": "R-05", "text": "Willow-Weep"}]
-    assert texts["quests"][0] == {"key": "QST_Gather.Apprentice.Title", "tag": "Quest.Procedural.Survival.Gather",
-                                  "quest": "Gather", "rank": "Apprentice", "text": "Feathering the Nests"}
-    assert [q["quest"] for q in texts["quests"]] == ["Gather", "Gather", "RankUp", "Rest1"]
+    assert texts["quests"][0] == {"key": "QST_Gather.Apprentice.Title", "text": "Feathering the Nests", "quests": [
+        {"tag": "Quest.Procedural.Survival.Gather", "quest": "Gather", "rank": "Apprentice"}]}
+    assert [[q["quest"] for q in t["quests"]] for t in texts["quests"]] == [["Gather"], ["Gather"], ["RankUp"],
+                                                                            ["Rest1", "Rest2", "Rest3"]]
+
+
+def test_a_title_several_quests_share_is_one_row_that_names_them_all():
+    """The game's Rest quests share one title text (QST_Sleep.Apprentice.Title titles Rest1, Rest2 and Rest3): one
+    row, so the page has one box for it, and each quest still has its title for the mod menu."""
+    texts = world.place_texts(reader(PLACES))
+    rest = [t for t in texts["quests"] if t["key"] == "QST_Sleep.Apprentice.Title"]
+    assert len(rest) == 1 and rest[0]["text"] == "A Time to Rest"
+    assert [q["tag"] for q in rest[0]["quests"]] == [f"Quest.Procedural.Sleep.Rest{n}" for n in (1, 2, 3)]
+    _, quests = world.place_names(reader(PLACES))
+    assert all(quests[f"Quest.Procedural.Sleep.Rest{n}"] == {"": "A Time to Rest"} for n in (1, 2, 3))
+    # Renamed, every quest it titles reads the new text.
+    _, quests = world.place_names(reader({**PLACES, STRINGS: EN.replace("A Time to Rest", "Curl Up")}))
+    assert {quests[f"Quest.Procedural.Sleep.Rest{n}"][""] for n in (1, 2, 3)} == {"Curl Up"}
 
 
 def test_names_lua_takes_a_title_with_no_rank():

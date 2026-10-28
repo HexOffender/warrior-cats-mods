@@ -5,7 +5,7 @@
 import {
   KEEP, readNames, writeNames, splitName, catNames, catKey, countNames, entryKeyFor, entryKeysFor, entryText, catEntry,
   canGrow, outcomeLine, gameNameFor, rankWords, slotHeading, whereWords, clansWords, ranksWords, summary, notesAt,
-  textOf, questGroups, otherTexts, KIND_WORDS,
+  textOf, questDetail, itemDetail, otherTexts, KIND_WORDS,
 } from "./names-logic.js";
 
 const LEDE = "Rename your cats, the names new cats get, and the words the game shows.";
@@ -555,14 +555,18 @@ export default {
       }
       placeRows = [];
       const filter = el("input", { type: "search", placeholder: "Find a place, quest or item", "aria-label": "Find a place, quest or item", style: { minWidth: "16rem" } });
-      const row = (item, detail) => {
+      // One row per text: a title several quests share, or a name several items share, is one box.
+      const row = (item, detail, other = false) => {
         const said = el("div", { class: "names-said" });
+        const shown = () => (other ? otherText(item.key) : item.text);   // the game's text: typing it back takes the entry out
         const box = item.key ? el("input", { type: "text", value: s[item.key] || "", placeholder: item.text, "aria-label": `New text for ${item.text}`, spellcheck: "false",
-          onchange: e => { const v = e.target.value.trim(); if (!v || v === item.text) delete s[item.key]; else s[item.key] = v; changed(); renderPlacesCount(); } })
-          : el("span", { class: "muted", text: "written into the game's item table, so it can't be renamed here" });
+          onchange: e => { const v = e.target.value.trim(); if (!v || v === shown()) delete s[item.key]; else s[item.key] = v; changed(); renderPlacesCount(); } })
+          : el("span", { class: "muted", text: "Its name comes with the mod that adds it, so it can't be renamed here" });
+        // Another text this file renames: the game's text for it, its key only in the tooltip.
+        const name = el("strong", { text: item.text, ...(other ? { title: item.key } : {}) });
         const tr = el("tr", { "data-find": `${item.text} ${detail}`.toLowerCase() },
-          el("td", {}, el("strong", { text: item.text }), el("div", { class: "muted names-where", text: detail }), said), el("td", {}, box));
-        placeRows.push({ key: item.key, tr, said });
+          el("td", {}, name, el("div", { class: "muted names-where", text: detail }), said), el("td", {}, box));
+        placeRows.push({ key: item.key, tr, said, name, box, other, detail });
         return tr;
       };
       const table = trs => el("div", { class: "table-wrap" }, el("table", { class: "grid-table" },
@@ -570,10 +574,10 @@ export default {
       const part = (title, trs) => el("details", { class: "fold", "data-key": `names:places:${title}` },
         el("summary", {}, el("strong", { text: title }), el("span", { class: "muted", text: `${trs.length}` })), table(trs));
       const areas = texts.areas.map(a => row(a, `area ${a.code}`));
-      const quests = questGroups(texts.quests).flatMap(g => g.titles.map(q => row(q, `${g.quest} quest · ${q.rank ? `as ${q.rank.toLowerCase()}` : "any rank"}`)));
+      const quests = texts.quests.map(q => row(q, questDetail(q)));
       const kinds = [...new Set(texts.items.map(i => i.kind))];
-      const items = kinds.map(k => part(KIND_WORDS[k] || k, texts.items.filter(i => i.kind === k).map(i => row(i, k === "consumable" ? "herb" : k))));
-      const others = otherTexts(s, texts).map(key => row({ key, text: key }, "a text this file renames by its key"));
+      const items = kinds.map(k => part(KIND_WORDS[k] || k, texts.items.filter(i => i.kind === k).map(i => row(i, itemDetail(i)))));
+      const others = otherTexts(s, texts).map(key => row({ key, text: otherText(key) }, "other text in the game", true));
       filter.addEventListener("input", () => {
         const q = filter.value.trim().toLowerCase();
         for (const r of placeRows) r.tr.hidden = !!q && !r.tr.dataset.find.includes(q);
@@ -588,7 +592,7 @@ export default {
         el("p", { class: "note", text: "Each is a text the game shows. Renaming it changes it in English wherever the game uses it, and in the mod menu's pages. Not every game screen has been checked yet: if one still shows the old name, the mod menu shows yours." }),
         el("div", { class: "row" }, filter),
         part("Areas", areas), part("Quest titles", quests), ...items,
-        others.length ? part("Other text", others) : null);
+        ...(others.length ? [part("Other text", others)] : []));   // not null, which the page would show as "null"
       updatePlaces();
     }
     function renderPlacesCount() {
@@ -603,13 +607,29 @@ export default {
       cards.places.open = true;
       try { texts = await api.get("/names/texts"); }
       catch (e) {
-        cards.places.append(el("p", { class: "names-bad", role: "alert", text: `Couldn't read them: ${e.message}` }));
+        cards.places.append(el("div", { class: "banner names-problem", role: "alert" },
+          el("span", { text: `Couldn't read the game's areas, quests and items: ${e.message}` }),
+          el("button", { class: "btn small", type: "button", text: "Try again", onclick: () => openPlaces() })));
         return;
       }
       renderPlaces();
     }
+    // The game's text for a key a "text" entry renames (the preview's text_now); none when the game hasn't one.
+    function otherText(key) {
+      const now = view?.text_now?.[key];
+      return now === undefined ? "…" : now || "A text the game doesn't have yet";
+    }
     function updatePlaces() {
-      for (const r of placeRows) clear(r.said).append(...(r.key ? notesAt(view, `text.${r.key}`) : []).map(t => el("div", { class: "names-note", text: t })));
+      for (const r of placeRows) {
+        clear(r.said).append(...(r.key ? notesAt(view, `text.${r.key}`) : []).map(t => el("div", { class: "names-note", text: t })));
+        if (r.other) {
+          const text = otherText(r.key);
+          r.name.textContent = text;
+          r.box.setAttribute("aria-label", `New text for ${text}`);
+          r.box.setAttribute("placeholder", text);
+          r.tr.setAttribute("data-find", `${text} ${r.key} ${r.detail}`.toLowerCase());
+        }
+      }
     }
 
     // ---------- what this does ----------

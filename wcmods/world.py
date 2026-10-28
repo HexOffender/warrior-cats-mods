@@ -46,14 +46,16 @@ TABLES = "Wrc/Content/Gameplay/DataTables/NonAsset/"
 def place_texts(read_text):
     """The game's areas and quest titles with the text key each is shown from (which names.json's "text"
     renames): {"areas": [{"key", "code", "text"}] ("STR_RIVERCLAN_ZONE_5", "R-05", "Willow-Weep"), "quests":
-    [{"key", "tag", "quest", "rank", "text"}]}. A quest title's tag ends in its rank (Apprentice, Warrior,
-    Deputy or Leader: its title can change with your cat's rank), or has none (rank "": RankUp's title is
-    under Quest.Procedural.Progression.RankUp.Title whatever the rank); "quest" is the tag's last part
-    ("Gather"). Only .Title rows are titles (.Title2 is a line of the quest's). A title with no text in
-    Strings_EN (the Escort quests') is left out, so nothing shows its key; so is a row too short to say its
-    name, and a table that can't be read leaves its names out."""
+    [{"key", "text", "quests": [{"tag", "quest", "rank"}]}]}: one per text key, with every quest it titles
+    (QST_Sleep.Apprentice.Title is the title of Rest1, Rest2 and Rest3), so renaming the text renames them all.
+    A quest title's tag ends in its rank (Apprentice, Warrior, Deputy or Leader: its title can change with your
+    cat's rank), or has none (rank "": RankUp's title is under Quest.Procedural.Progression.RankUp.Title
+    whatever the rank); "quest" is the tag's last part ("Gather"). Only .Title rows are titles (.Title2 is a
+    line of the quest's). A title with no text in Strings_EN (the Escort quests') is left out, so nothing
+    shows its key; so is a row too short to say its name, and a table that can't be read leaves its names
+    out."""
     from .formats import csvdata
-    areas, quests = [], []
+    areas, quests, by_key = [], [], {}
     try:
         strings = csvdata.Table(read_text(STRINGS_EN))
         en = {r.fields[0]: r.fields[1] for r in strings.rows if len(r.fields) > 1}
@@ -73,8 +75,10 @@ def place_texts(read_text):
                     quest, rank = tag[:-len(".Title")], ""
                 key = r.fields[column]
                 if key in en:
-                    quests.append({"key": key, "tag": quest, "quest": quest.rsplit(".", 1)[-1], "rank": rank,
-                                   "text": en[key]})
+                    if key not in by_key:
+                        by_key[key] = {"key": key, "text": en[key], "quests": []}
+                        quests.append(by_key[key])
+                    by_key[key]["quests"].append({"tag": quest, "quest": quest.rsplit(".", 1)[-1], "rank": rank})
     except Exception:   # no game data, or a table laid out differently: those names are left out
         pass
     return {"areas": areas, "quests": quests}
@@ -86,8 +90,9 @@ def place_names(read_text):
     with no rank segment."""
     texts = place_texts(read_text)
     quests = {}
-    for q in texts["quests"]:
-        quests.setdefault(q["tag"], {})[q["rank"]] = q["text"]
+    for title in texts["quests"]:
+        for q in title["quests"]:
+            quests.setdefault(q["tag"], {})[q["rank"]] = title["text"]
     return {a["code"]: a["text"] for a in texts["areas"]}, quests
 
 

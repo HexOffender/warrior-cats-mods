@@ -984,6 +984,9 @@ class Studio:
                                             "rogues": [r["final"] for r in own.rogues]},
                 "cats": listed, "current_slot": slot, "save_problem": problem,
                 "renames": renames, "losing_text": losing, "mod_off": mod_off, "off_named": off_named,
+                # The game's own text under each key this file's "text" renames ("" for one the game hasn't),
+                # for the rows the page's lists don't have.
+                "text_now": {k: game.text.get(k, "") for k in spec.get("text", {})},
                 "names_hits": own.names_hits,
                 "warnings": left_out + [text for _, text in notes],
                 "notes": [{"where": where, "text": text} for where, text in notes],
@@ -993,25 +996,30 @@ class Studio:
     def names_texts(self):
         """What the Names page's Places, quests and items card lists, each with the text key names.json's "text"
         renames it by: the areas and quest titles (world.place_texts), and the items' names from the game's item
-        table, by kind. An item whose name is written in the table itself rather than under a key has no key
-        (the game's own items all have one; a row a mod adds may not): the page says it can't be renamed here."""
+        table, by kind. One row per text key, with every item it names ("tags": Rock and Rock2 share one name, so
+        renaming it renames both), as place_texts has one per quest title. An item whose name is written in the
+        table itself rather than under a key has no key (the game's own items all have one; a row a mod adds may
+        not): the page says it can't be renamed here."""
         if self._name_texts is None:
             b = self._reader()
             places = world.place_texts(lambda path: self.ctx.game.read_text(path))
-            items, seen = [], set()
+            items, by_key = [], {}
             for _, v in b.cooked_table("DT_QuestObjectsInfo"):
                 tag, name = v.get("itemTag") or "", v.get("Name") or {}
                 if not tag.startswith(ITEM_ROOT) or tag.count(".") < 3:
                     continue
                 kind = ITEM_KINDS.get(tag.split(".")[2], tag.split(".")[2].lower())
                 if name.get("key"):
-                    text = b.text(name["key"])
-                    if text == name["key"] or name["key"] in seen:   # no text, or listed already (one name, two items)
+                    if name["key"] in by_key:   # one name, two items
+                        by_key[name["key"]]["tags"].append(tag)
                         continue
-                    seen.add(name["key"])
-                    items.append({"key": name["key"], "tag": tag, "kind": kind, "text": text})
+                    text = b.text(name["key"])
+                    if text == name["key"]:   # no text: nothing to show
+                        continue
+                    by_key[name["key"]] = {"key": name["key"], "tags": [tag], "kind": kind, "text": text}
+                    items.append(by_key[name["key"]])
                 elif name.get("text"):
-                    items.append({"key": None, "tag": tag, "kind": kind, "text": name["text"]})
+                    items.append({"key": None, "tags": [tag], "kind": kind, "text": name["text"]})
             items.sort(key=lambda i: (i["kind"], i["text"].lower()))
             self._name_texts = {**places, "items": items}
         return self._name_texts

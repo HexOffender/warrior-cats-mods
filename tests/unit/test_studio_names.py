@@ -252,20 +252,29 @@ def test_texts_lists_areas_quests_and_items(studio, fake_game):
     studio._reader = lambda: Reader()
     r = call(studio, "GET", "names/texts")
     assert r["areas"] == [{"key": "STR_RIVERCLAN_ZONE_5", "code": "R-05", "text": "Willow-Weep"}]
-    assert [(q["quest"], q["rank"], q["text"]) for q in r["quests"]] == [
-        ("Gather", "Apprentice", "Feathering the Nests"), ("Gather", "Warrior", "Preparation is Readiness!"),
-        ("RankUp", "", "The Proving Grounds"), ("Rest1", "", "A Time to Rest")]
-    assert [(i["kind"], i["text"], i["key"]) for i in r["items"]] == [
-        ("accessory", "Big Leaf", "STR_CAT_ACCESSORY_HEAD_12"), ("accessory", "Odd Hat", None),
-        ("consumable", "Marigold", "STR_ITEM_CONSUMABLE_NAME_7"), ("material", "Rock", "STR_CRAFT_MATERIAL_NAME_20")]
+    # One row per text: a title several quests share lists them all.
+    assert [([q["quest"] for q in t["quests"]], [q["rank"] for q in t["quests"]], t["text"]) for t in r["quests"]] == [
+        (["Gather"], ["Apprentice"], "Feathering the Nests"), (["Gather"], ["Warrior"], "Preparation is Readiness!"),
+        (["RankUp"], [""], "The Proving Grounds"), (["Rest1", "Rest2", "Rest3"], ["", "", ""], "A Time to Rest")]
+    # And a name two items share (Rock and Rock2) is one row with both, not the second dropped.
+    assert [(i["kind"], i["text"], i["key"], i["tags"]) for i in r["items"]] == [
+        ("accessory", "Big Leaf", "STR_CAT_ACCESSORY_HEAD_12", ["Gameplay.Inventory.Cosmetic.Head.BigLeaf.1"]),
+        ("accessory", "Odd Hat", None, ["Gameplay.Inventory.Cosmetic.Head.Odd.1"]),
+        ("consumable", "Marigold", "STR_ITEM_CONSUMABLE_NAME_7", ["Gameplay.Inventory.Consumable.MediumHealingHerb"]),
+        ("material", "Rock", "STR_CRAFT_MATERIAL_NAME_20", ["Gameplay.Inventory.Materials.Rock", "Gameplay.Inventory.Materials.Rock2"])]
 
 
 def test_items_with_inline_text_have_no_key_to_rename_them_by(studio, fake_game):
     studio.ctx._game = type("Game", (), {"read_text": lambda self, path: (_ for _ in ()).throw(KeyError(path))})()
     studio._reader = lambda: Reader()
     items = call(studio, "GET", "names/texts")["items"]
-    assert [i for i in items if i["key"] is None] == [{"key": None, "tag": "Gameplay.Inventory.Cosmetic.Head.Odd.1",
+    assert [i for i in items if i["key"] is None] == [{"key": None, "tags": ["Gameplay.Inventory.Cosmetic.Head.Odd.1"],
                                                         "kind": "accessory", "text": "Odd Hat"}]
+
+
+def test_preview_gives_the_games_text_for_other_text_entries(names_studio):
+    r = call(names_studio, "POST", "names/preview", {"spec": {"text": {"STR_BOT_NAME_1": "Hi", "STR_NEW_ONE": "New"}}})
+    assert r["text_now"] == {"STR_BOT_NAME_1": "Someone", "STR_NEW_ONE": ""}
 
 
 def test_texts_without_a_game_ends_as_names_does(studio):

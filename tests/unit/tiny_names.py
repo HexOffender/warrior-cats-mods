@@ -105,7 +105,7 @@ QST_Gather.Apprentice.Title,Feathering the Nests
 QST_Gather.Apprentice.Title2,Feathering the Nests (again)
 QST_Gather.Warrior.Title,Preparation is Readiness!
 QST_RankUp.Apprentice.Title,The Proving Grounds
-QST_Rest1.Title,A Time to Rest
+QST_Sleep.Apprentice.Title,A Time to Rest
 STR_ITEM_CONSUMABLE_NAME_7,Marigold
 """
 LOCATIONS = """---,Code,LocationType,IdStrName
@@ -119,7 +119,10 @@ QUESTS = "\n".join([
     "Quest.Procedural.Survival.Gather.Apprentice.Title2,0,0,NPC,None,vo,QST_Gather.Apprentice.Title2,x",
     "Quest.Procedural.Survival.Gather.Warrior.Title,0,0,NPC,None,vo,QST_Gather.Warrior.Title,x",
     "Quest.Procedural.Progression.RankUp.Title,0,0,NPC,None,vo,QST_RankUp.Apprentice.Title,x",
-    "Quest.Procedural.Sleep.Rest1.Title,0,0,NPC,None,vo,QST_Rest1.Title,x",
+    # Three quests, one title text (as the game's Rest quests share theirs)
+    "Quest.Procedural.Sleep.Rest1.Title,0,0,NPC,None,vo,QST_Sleep.Apprentice.Title,x",
+    "Quest.Procedural.Sleep.Rest2.Title,0,0,NPC,None,vo,QST_Sleep.Apprentice.Title,x",
+    "Quest.Procedural.Sleep.Rest3.Title,0,0,NPC,None,vo,QST_Sleep.Apprentice.Title,x",
     "Quest.Procedural.Progression.Escort.Warrior.Title,0,0,NPC,None,vo,QST_Escort.Warrior.Title,x",
 ]) + "\n"
 

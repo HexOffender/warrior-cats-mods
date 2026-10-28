@@ -41,7 +41,8 @@ You can:
 - rename a cameo cat, or any name the game shows;
 - rename an area, a quest's title (each rank's, for a quest whose title changes as your cat ranks up)
   or an item, from **Places, quests and items** at the bottom of the page. Open it, find the one you
-  want, and type its new name.
+  want, and type its new name. Some quests share one title (Rest 1, 2 and 3): their row says so, and
+  the new title shows on all of them.
 
 You can't (yet):
 - make the game hand out a whole name of your own to new clan cats (Luna for a new kit). The game

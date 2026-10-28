@@ -264,17 +264,29 @@ export function summary(view) {
 export function questWords(quest) {
   return String(quest || "").replace(/([a-z])([A-Z0-9])/g, "$1 $2");
 }
-// The quest titles of GET /names/texts grouped by quest, in the order they come: [{ quest, tag, titles: [...] }].
-export function questGroups(quests) {
-  const groups = new Map();
-  for (const q of quests || []) {
-    if (!groups.has(q.tag)) groups.set(q.tag, { quest: questWords(q.quest), tag: q.tag, titles: [] });
-    groups.get(q.tag).titles.push(q);
-  }
-  return [...groups.values()];
+// "A, B and C".
+const listWords = words => words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : (words[0] || "");
+// What a quest title of GET /names/texts titles, under it: one row per text, so a title several quests share
+// (the Rest quests') is one box. "Gather quest · as apprentice", "Rest 1, Rest 2 and Rest 3 quests · any rank".
+export function questDetail(title) {
+  const quests = title?.quests || [];
+  const names = [...new Set(quests.map(q => questWords(q.quest)))];
+  const ranks = [...new Set(quests.map(q => q.rank ? `as ${q.rank.toLowerCase()}` : "any rank"))];
+  return `${listWords(names)} quest${names.length === 1 ? "" : "s"} · ${listWords(ranks)}`;
 }
 export const KIND_WORDS = { consumable: "Herbs", material: "Materials", accessory: "Accessories", decoration: "Decorations" };
-// The "text" entries none of the lists has: kept, and shown with their key so they can be changed or taken out.
+const KIND_ONE = { consumable: "herb", material: "material", accessory: "accessory", decoration: "decoration" };
+// What an item's name names, under it: its kind, and the items when one name is several's (Rock and Rock 2).
+export function itemDetail(item) {
+  const kind = KIND_ONE[item?.kind] || item?.kind || "";
+  const tags = item?.tags || [];
+  if (tags.length < 2) return kind;
+  // An item tag's own part, in words: Gameplay.Inventory.Materials.Rock2 is "Rock 2".
+  const words = tags.map(t => t.split(".").slice(3).map(questWords).join(" "));
+  return `${kind} · the name of ${tags.length} items: ${listWords(words)}`;
+}
+// The "text" entries none of the lists has: kept, and shown with the game's text for them so they can be changed or
+// taken out (their key in a tooltip).
 export function otherTexts(entries, texts) {
   const known = new Set([...(texts?.areas || []), ...(texts?.quests || []), ...(texts?.items || [])].map(x => x.key).filter(Boolean));
   return Object.keys(entries || {}).filter(k => !known.has(k));

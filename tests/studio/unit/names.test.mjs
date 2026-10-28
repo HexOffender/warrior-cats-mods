@@ -349,20 +349,24 @@ test("the prefix row a new part copies says the clans it's given out in", async 
   assert.deepEqual(p.json().prefixes.add, { Sparrow: { like: "Otter" } });
 });
 
+// GET /names/texts as Studio.names_texts answers: one row per text, with every quest or item it names.
+const Q = (key, text, ...quests) => ({ key, text, quests: quests.map(([tag, rank]) => ({ tag, quest: tag.split(".").at(-1), rank })) });
+const TEXTS = () => ({
+  areas: [{ key: "STR_RIVERCLAN_ZONE_5", code: "R-05", text: "Willow-Weep" }],
+  quests: [Q("QST_Gather.Apprentice.Title", "Feathering the Nests", ["Quest.Procedural.Survival.Gather", "Apprentice"]),
+           Q("QST_RankUp.Apprentice.Title", "The Proving Grounds", ["Quest.Procedural.Progression.RankUp", ""]),
+           Q("QST_Sleep.Apprentice.Title", "A Time to Rest", ["Quest.Procedural.Sleep.Rest1", ""], ["Quest.Procedural.Sleep.Rest2", ""],
+             ["Quest.Procedural.Sleep.Rest3", ""])],
+  items: [{ key: "STR_ITEM_CONSUMABLE_NAME_7", tags: ["Gameplay.Inventory.Consumable.MediumHealingHerb"], kind: "consumable", text: "Marigold" },
+          { key: "STR_CRAFT_MATERIAL_NAME_20", tags: ["Gameplay.Inventory.Materials.Rock", "Gameplay.Inventory.Materials.Rock2"], kind: "material", text: "Rock" },
+          { key: null, tags: ["Gameplay.Inventory.Cosmetic.Head.Odd.1"], kind: "accessory", text: "Odd Hat" }],
+});
+
 test("renaming an area, a quest title or an item writes text by key, from a list read when the card opens", async () => {
   const state = fresh({ file: { text: { STR_BOT_NAME_1: "Hi" } } });
   const p = await open(state);
   let asked = 0;
-  dom.routes["GET /names/texts"] = () => {
-    asked++;
-    return {
-      areas: [{ key: "STR_RIVERCLAN_ZONE_5", code: "R-05", text: "Willow-Weep" }],
-      quests: [{ key: "QST_Gather.Apprentice.Title", tag: "Quest.Procedural.Survival.Gather", quest: "Gather", rank: "Apprentice", text: "Feathering the Nests" },
-               { key: "QST_RankUp.Apprentice.Title", tag: "Quest.Procedural.Progression.RankUp", quest: "RankUp", rank: "", text: "The Proving Grounds" }],
-      items: [{ key: "STR_ITEM_CONSUMABLE_NAME_7", tag: "Gameplay.Inventory.Consumable.MediumHealingHerb", kind: "consumable", text: "Marigold" },
-              { key: null, tag: "Gameplay.Inventory.Cosmetic.Head.Odd.1", kind: "accessory", text: "Odd Hat" }],
-    };
-  };
+  dom.routes["GET /names/texts"] = () => { asked++; return TEXTS(); };
   const fold = p.q('[data-key="names:places"]');
   assert.equal(asked, 0, "folded at first, and nothing read for it");
   assert.match(fold.querySelector("summary").textContent, /Places, quests and items1 renamed/);
@@ -376,11 +380,51 @@ test("renaming an area, a quest title or an item writes text by key, from a list
   assert.match(fold.querySelector("summary").textContent, /3 renamed/);
   const rows = fold.querySelectorAll("tr").map(tr => tr.textContent);
   assert.ok(rows.some(t => t.startsWith("The Proving GroundsRank Up quest · any rank")), rows.join(" | "));
-  assert.ok(rows.some(t => t.startsWith("Odd Hat") && t.includes("can't be renamed here")));
-  assert.ok(rows.some(t => t.startsWith("STR_BOT_NAME_1a text this file renames by its key")), "a key no list has stays, with its key");
+  assert.ok(rows.some(t => t === "Odd Hataccessory" + "Its name comes with the mod that adds it, so it can't be renamed here"), rows.join(" | "));
+  // A title three quests share is one box that says all three; a name two items share, one that says both.
+  assert.equal(p.all('input[aria-label="New text for A Time to Rest"]').length, 1);
+  assert.ok(rows.some(t => t.startsWith("A Time to RestRest 1, Rest 2 and Rest 3 quests · any rank")), rows.join(" | "));
+  assert.ok(rows.some(t => t.startsWith("Rockmaterial · the name of 2 items: Rock and Rock 2")), rows.join(" | "));
   // Back to the game's own: the entry goes.
   await p.type(p.q('input[aria-label="New text for Willow-Weep"]'), "Willow-Weep");
   assert.equal(p.json().text.STR_RIVERCLAN_ZONE_5, undefined);
+});
+
+test("a text no list has shows the game's text for it, its key only in a tooltip", async () => {
+  const state = fresh({ file: { text: { STR_BOT_NAME_1: "Hi" } } });
+  const p = await open(state);
+  const base = dom.routes["POST /names/preview"];
+  dom.routes["POST /names/preview"] = async body => ({ ...await base(body), text_now: { STR_BOT_NAME_1: "Someone" } });
+  dom.routes["GET /names/texts"] = () => TEXTS();
+  await p.type(p.box("Otterpaw"), "Sparkle");   // a preview with the game's text for it
+  const fold = p.q('[data-key="names:places"]');
+  fold.open = true;
+  fold.dispatch("toggle");
+  await tick(20);
+  const other = p.q('[data-key="names:places:Other text"]');
+  const name = other.querySelector("strong[title]");
+  assert.equal(name.textContent, "Someone");
+  assert.equal(name.getAttribute("title"), "STR_BOT_NAME_1");
+  assert.doesNotMatch(other.querySelector("tbody").textContent, /STR_/);
+  assert.equal(other.querySelector("input").value, "Hi");
+  // Typed back to the game's text: the entry goes.
+  await p.type(p.q('input[aria-label="New text for Someone"]'), "Someone");
+  assert.equal(p.json().text, undefined);
+});
+
+test("the places card says when the game's lists can't be read, with Try again", async () => {
+  const p = await open();
+  let fail = true;
+  dom.routes["GET /names/texts"] = () => { if (fail) throw { status: 400, error: "the game's files can't be read" }; return TEXTS(); };
+  const fold = p.q('[data-key="names:places"]');
+  fold.open = true;
+  fold.dispatch("toggle");
+  await tick(20);
+  assert.match(fold.querySelector('[role="alert"]').textContent, /^Couldn't read the game's areas, quests and items: the game's files can't be read/);
+  fail = false;
+  fold.querySelectorAll("button").find(b => b.textContent === "Try again").click();
+  await tick(20);
+  assert.ok(p.q('input[aria-label="New text for Willow-Weep"]'), "the lists are there once they read");
 });
 
 // ---------- the logic ----------
@@ -480,6 +524,18 @@ test("ranks, story roles and games read as words", () => {
   assert.equal(logic.summary({ changed_names: 1, changed_texts: 1, renames: [{ from: "A", to: "B" }] }),
     "1 name and 1 text in the game change or are added; 1 cat renamed in your save: A → B.");
   assert.equal(logic.summary({}), "Nothing changes yet: rename something below.");
+});
+
+test("a quest title or item name says every quest or item it names", () => {
+  const [gather, , rest] = TEXTS().quests;
+  assert.equal(logic.questDetail(gather), "Gather quest · as apprentice");
+  assert.equal(logic.questDetail(rest), "Rest 1, Rest 2 and Rest 3 quests · any rank");
+  assert.equal(logic.questDetail(Q("k", "t", ["Quest.A.Gather", "Apprentice"], ["Quest.A.Gather", "Warrior"])), "Gather quest · as apprentice and as warrior");
+  const [marigold, rock, odd] = TEXTS().items;
+  assert.equal(logic.itemDetail(marigold), "herb");
+  assert.equal(logic.itemDetail(rock), "material · the name of 2 items: Rock and Rock 2");
+  assert.equal(logic.itemDetail({ ...odd, tags: [...odd.tags, "Gameplay.Inventory.Cosmetic.Head.BigLeaf.1"] }),
+    "accessory · the name of 2 items: Head Odd 1 and Head Big Leaf 1");
 });
 
 // ---------- Settings and repair: taking every mod out ----------
