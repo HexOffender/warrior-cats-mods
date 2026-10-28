@@ -5,8 +5,10 @@ import json
 import os
 import re
 import subprocess
+import time
 
 DATA_ENV = "WCMODS_DATA"
+SAVE_RETRIES = (0.05, 0.1, 0.2, 0.4)   # seconds between tries at putting wcmods.json in place (Config.save)
 STEAM_APP_ID = "3960600"
 GAME_FOLDER = "Warrior Cats Clans of the Forest"
 EXE_NAME = "Wrc-Win64-ShippingDRM.exe"
@@ -93,16 +95,32 @@ class Config:
 
     def save(self):
         """Write wcmods.json, with a _help line first saying what it is (docs/formats.md lists every key). It's
-        written whole, then put in place, so nothing reading it (the studio, a command) sees half a file."""
+        written whole, then put in place, so nothing reading it (the studio, a command) sees half a file; only
+        while something else keeps it open past a few tries is it written in place (peek's readers take a
+        half-written one in their stride)."""
         ordered = {"_help": HELP, **{k: v for k, v in self.data.items() if k != "_help"}}
         self.data.clear()   # in place: whoever holds this dict keeps it
         self.data.update(ordered)
         os.makedirs(self.data_dir, exist_ok=True)
+        text = json.dumps(self.data, indent=2) + "\n"
         part = self.path + ".part"
         with open(part, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
-            f.write("\n")
-        os.replace(part, self.path)
+            f.write(text)
+        # On Windows the file can't be replaced while anything has it open (the studio reads it every few
+        # seconds, a virus scanner looks at it): tried again a moment later, then, still held, written in place.
+        for wait in (0,) + SAVE_RETRIES:
+            time.sleep(wait)
+            try:
+                os.replace(part, self.path)
+                return
+            except PermissionError:
+                pass
+        with open(self.path, "w", encoding="utf-8") as f:
+            f.write(text)
+        try:
+            os.remove(part)
+        except OSError:
+            pass
 
     # ---- locations ----
     @property

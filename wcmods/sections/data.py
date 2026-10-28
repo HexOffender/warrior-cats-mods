@@ -48,6 +48,8 @@ class DataSection(Section):
                              "visible to or rejected by the server")
                 elif kind == "traits":
                     ctx.warn(f"{mod.id}: {table} changes which traits cats get")
+                elif kind == "story":
+                    ctx.warn(f"{mod.id}: {table} is quests and talk; a wrong value can stop a quest")
                 ctx.edit_csv(table, edits, source=mod.id)
                 tables.add(table)
         if tables:

@@ -128,7 +128,7 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.tuning(key)` / `ctx.tuning()` | A `TuningData.csv` value as a number, or all of them |
 | `ctx.tune({key: value}, source=mod.id)` | Change `TuningData` values (numbers or `"x1.5"`), merged with other mods' edits; warns about keys the table doesn't have |
 | `ctx.text("STR_ATTACK_QUICK_CLAW")` | A line of the game's English text (or `language="FR"`, …) |
-| `ctx.edit_csv(name, edits, source=mod.id)` | Queue cell edits (and row removals `"-"` / additions `"+"`, see `csvdata.py`); they merge with every other section's edits to the same table. Inside one call the order is fixed: removals, `"*"`, the named rows (a row's own value wins over `"*"`), additions; calls apply in priority order, each on what the one before left |
+| `ctx.edit_csv(name, edits, source=mod.id)` | Queue cell edits (and row removals `"-"` / additions `"+"`, see `csvdata.py`); they merge with every other section's edits to the same table. Inside one call the order is fixed: removals, `"*"`, the named rows (a row's own value wins over `"*"`), additions; calls apply in priority order, each on what the one before left (multipliers stack; a plain value over another source's change is warned about once per table, column and pair of sources) |
 | `ctx.add_file(path, data, source=mod.id)` | Add or replace a loose file in the mod pak |
 | `ctx.patch_package(path, data)` | Replace a cooked `.uasset` with patched bytes (goes into the IoStore mod container) |
 | `ctx.cooked_table("DT_QuestObjectsInfo")` | The rows of a cooked table wcmods can read (`cooked.TABLES`), as `[(row name, {field: value})]`, as the game ships them |
@@ -142,7 +142,7 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.add_ue4ss_mod(name, {"Scripts/main.lua": text})` | Ship a UE4SS Lua mod; installed and registered only when UE4SS is present. `.lua` files get a structure check (balanced blocks and brackets) and problems become build warnings |
 | `ctx.edit_save(path, value)` | Set an existing save value on install, e.g. `"0/GameplayProgression/Level"`, at every install (a `save.json`'s changes are made once per save instead: `ctx.save_op({..., "once": True})`, as `sections/savedit.py` queues them). A section's save ops are dropped when its table edits fail |
 | `ctx.add_save_key(object_path, key, value, only_new=False)` | Add a key to a save object, e.g. a new inventory item, at every install. With `only_new`, a key the save already has keeps its value (a mod's starting items, given once). A section's save ops are dropped when its table edits fail |
-| `ctx.save_op(op)` | Queue any save op: `{"op": "set", "path", "value"}`, `{"op": "insert", "path", "key", "value"}` or `{"op": "remove", "path"}`, with `"source": mod.id`, `"label"` (the change in words, for the log: "Fawnstar's level") and `"once": True` to make it once per save and record it in `save-changes.json` ([formats.md](formats.md#save-changesjson)) |
+| `ctx.save_op(op)` | Queue any save op: `{"op": "set", "path", "value"}`, `{"op": "insert", "path", "key", "value"}` or `{"op": "remove", "path"}`, with `"source": mod.id`, `"label"` (the change in words, for the log: "Fawnstar's level") and `"once": True` to make it once per save and record it in `save-changes.json` ([formats.md](formats.md#save-changesjson)). A remove of anything but an item carried or one element of a list is skipped (`savedit.remove_problem`) |
 | `ctx.warn(msg)` / `ctx.log(msg)` / `ctx.note(key, value)` | Report to the user / the build log / the build manifest (notes show on the mod menu's first page) |
 | `ctx.game`, `ctx.cfg`, `ctx.mods` | The game reader (`find`, `exists`, `data_tables`), the tool's configuration, and the enabled mods |
 
@@ -1411,10 +1411,11 @@ affecting the others.
 
 | Export | What it gives you |
 |---|---|
-| `api.get/post/put/patch/del(path)` | The studio API (token handled). Routes are listed below |
+| `api.get/post/put/patch/del(path)` | The studio API (token handled: a request refused for the token, after the studio restarted, takes up the new one and is made again). Routes are listed below |
+| `reconnect()`, `anyDirty()`, `dirtyTargets()` | Whether the studio answers (taking up its token); whether any page, and which Editing mod bars, have unsaved changes. The shell never reloads the page or restarts the studio over them |
 | `el(tag, attrs, ...children)`, `$`, `clear` | Small DOM helpers |
 | `toast(msg, "bad"?)`, `confirmButton(label, armedLabel, fn)` | Feedback, and two-step confirm |
-| `modTarget({file, onLoad, getValue, share})` | The "Editing mod: … Save to mod" bar the built-in pages use. It keeps unsaved work (the browser asks before the page closes, switching mods asks first, `refresh()` re-reads the mod list without reloading the file), and shows under itself what would keep a saved file out of the game (`problems` from the PUT) until a save that's fine. `target.dirty` says whether there's unsaved work |
+| `modTarget({file, onLoad, getValue, onSaved, share})` | The "Editing mod: … Save to mod" bar the built-in pages use. A save doesn't read the file back (the page holds what it saved; a change made while it saved stays, unsaved); `onSaved(value)` hears what was saved, and `settleNew(list, saved)` there keeps the ids of new entries that were saved. It keeps unsaved work (the browser asks before the page closes, switching mods and importing a file ask first, `refresh()` re-reads the mod list without reloading the file), and shows under itself what would keep a saved file out of the game (`problems` from the PUT) until a save that's fine. `target.dirty` says whether there's unsaved work |
 | `installedEvent(target, fn)` | `bus.on("installed", fn)` that skips `fn` while `target` has unsaved changes: for a page that reloads its file after an Apply |
 | `openHelp(page)`, `pageHead({eyebrow, title, lede, help})` | The help panel: `openHelp("studio")` opens `docs/guide/studio.md` in it (no page: the guide's index); `pageHead`'s `help: "help:<page>"` puts a "How this works" button in the page's head that does the same |
 | `codePanel(title)` | A copyable JSON preview |
@@ -1426,9 +1427,11 @@ affecting the others.
 API routes: `GET /info`, `GET|POST /mods`, `PATCH /mods/<id>`,
 `GET|PUT|DELETE /mods/<id>/file/<name>` (the built-in files plus the mod's `studio_files`; a PUT answers
 with `problems`, what would keep the file out of the game, from the build section that owns it),
-`POST /build`, `/install`, `/uninstall`, `/palettes/apply` (a build that some mods didn't make it
-through answers 409 with `blocked`, the facts behind Apply the rest anyway), `GET /progress` (what the
-task under way has logged so far), `GET /last-apply` (`last-apply.log`), `POST /restart`,
+`POST /build`, `/install`, `/uninstall`, `/palettes/apply`, `/play` (each takes a `task` id of the
+page's own and answers its `log`, `result` and `summary`, the sentence at the top of the log; a build that
+some mods didn't make it through answers 409 with `blocked`, the facts behind Apply the rest anyway),
+`GET /progress` (the `id` and `title` of the task under way, or waiting for the lock, and what it has
+logged so far), `GET /last-apply` (`last-apply.log`), `POST /restart`,
 `GET /help/<page>` (a page of the guide, rendered), `GET /backups`, `POST /backup`,
 `/restore`, `GET|PATCH /ingame` (the game console, cheats at start, the mod menu's key and size),
 `GET /game/bridge` (whether the game runs with the bridge), `POST /game/lua` `{code}` and
@@ -1442,4 +1445,7 @@ for the player; the traceback behind an unexpected one goes to the console windo
 `studio.log` in the player's folder. The studio runs the wcmods code it started with: if wcmods is
 updated while it's open, it refuses to build or install until it's restarted, and the "Restart the
 studio" chip at the top of the page is a button that does that (`POST /restart`: a fresh studio
-starts in its own window, this one stops, and the page reloads once the new one answers).
+starts in its own window, this one stops, and the page reloads once the new one answers; the page
+won't restart over unsaved changes, and says the studio is gone if the new one hasn't answered in 30
+seconds). A page whose studio was closed and opened again keeps going without reloading while it has
+unsaved changes: it reads the new studio's token from its page (`reconnect()`).

@@ -44,6 +44,7 @@ BLOCKED = "Nothing went in the game, because some mods couldn't be made ready"
 DEFAULT_PORT = 8765
 LAST_APPLY = "last-apply.log"   # in your files' folder: what the last Apply, Play or check logged
 STUDIO_LOG = "studio.log"       # there too: the details behind "Something went wrong"
+STUDIO_LOG_MAX = 1024 ** 2      # studio.log's size before it starts again (the one before is kept as studio.log.1)
 
 MOD_FILES = ("palette.json", "controls.json", "mouselook.json", "data.json", "items.json", "animations.json",
              "names.json", "cats.json", "save.json", "settings.json") + story.FILES
@@ -112,13 +113,6 @@ def code_stamp():
     return newest
 
 
-class Body(dict):
-    """The request's JSON. A key the page didn't send is a mistake to say in words, not a bare KeyError."""
-
-    def __missing__(self, key):
-        raise ValueError(f"the page didn't send {key!r}; reload the page and try again")
-
-
 class _NoGame:
     """The game's files while there's no game folder: anything read from them is Unreadable, as a pak that
     isn't there would be, so check_file says the check waits for Apply."""
@@ -137,30 +131,32 @@ def owner(file):
     return None
 
 
-def plain_summary(manifest):
+def plain_summary(manifest, checked=False):
     """What a build did, in a sentence or two, for the top of the log: which mods went in, by name, how many
-    warnings; or which mod couldn't go in and why."""
+    warnings; or which mod couldn't go in and why. `checked`: the build only checked the mods (Check my mods),
+    so nothing went in the game. app.js's plainSummary says the same for the page."""
     names = manifest.get("names") or {}
-    bad = []
-    for rep in manifest.get("sections", {}).values():
-        if rep.get("status") == "ok":
-            continue
-        for mod, text in rep.get("failed") or [(None, e) for e in rep.get("errors", [])]:
-            bad.append((names.get(mod, mod) if mod else rep.get("title", "a part of the build"), text))
+    bad = [(names.get(mod, mod) if mod else rep.get("title", "a part of the build"), text)
+           for rep in manifest.get("sections", {}).values() for mod, text in pipeline.section_problems(rep)]
     if bad:
         who, why = bad[0]
         more = f" ({len(bad) - 1} more problem{'s' if len(bad) > 2 else ''} in the log)" if len(bad) > 1 else ""
-        return f"Couldn't put {who} in: {why}{more}"
+        return f"{who} can't go in the game yet: {why}{more}" if checked else f"Couldn't put {who} in: {why}{more}"
     ids = manifest.get("mods", [])
     warnings = len(manifest.get("warnings", []))
-    said = (f"Put {len(ids)} mod{'s' if len(ids) != 1 else ''} in the game: {', '.join(names.get(i, i) for i in ids)}."
-            if ids else "Put the mod menu in the game, with no mods on.")
+    listed = ", ".join(names.get(i, i) for i in ids)
+    if checked:
+        said = (f"Checked {len(ids)} mod{'s' if len(ids) != 1 else ''}: {listed}. Apply to game puts "
+                f"{'them' if len(ids) != 1 else 'it'} in." if ids else "Checked: no mods are on.")
+    else:
+        said = (f"Put {len(ids)} mod{'s' if len(ids) != 1 else ''} in the game: {listed}."
+                if ids else "Put the mod menu in the game, with no mods on.")
     return said + (f" {warnings} warning{'s' if warnings != 1 else ''}." if warnings else "")
 
 
 def manifest_of(result):
-    """The build's manifest in a task's result: the result itself (a build, an install), or its "manifest"
-    (Play, which may install first); None for anything else."""
+    """The build's manifest in a task's result: the result itself (Check mods, Apply), or its "manifest" (Play,
+    which has one only when it applied first); else None."""
     if isinstance(result, dict) and "sections" in result:
         return result
     if isinstance(result, dict) and isinstance(result.get("manifest"), dict) and "sections" in result["manifest"]:
@@ -216,6 +212,19 @@ def table_lines(manifest, words=None):
     return out
 
 
+def task_summary(title, result, lines, checked=False):
+    """The sentence at the top of a task's log (the page's drawer, last-apply.log): what its build did
+    (plain_summary), or for a Play with nothing to apply, that the game started and how many warnings its log
+    has. None for a task with neither (the page words those itself)."""
+    manifest = manifest_of(result)
+    if manifest:
+        return plain_summary(manifest, checked)
+    if title == "Play":
+        n = sum(1 for line in lines if line.startswith("warning: "))
+        return "Started the game; nothing needed applying first." + (f" {n} warning{'s' if n != 1 else ''}." if n else "")
+    return None
+
+
 class Studio:
     def __init__(self, ctx):
         self.ctx = ctx
@@ -224,7 +233,8 @@ class Studio:
         self.static = os.path.join(ctx.root, "studio")
         self.token = secrets.token_urlsafe(24)
         self.lock = threading.Lock()
-        self.progress = {"title": None, "lines": [], "running": False}   # what the task under the lock has logged
+        self.log_lock = threading.Lock()   # studio.log: one handler thread writing (or starting it again) at a time
+        self.progress = {"id": None, "title": None, "lines": [], "running": False}   # what the task under the lock has logged
         self.server, self.port = None, None   # set by serve(): the server this studio answers from
         self.restarting = False
         self.dry_restart = bool(os.environ.get("WCMODS_NO_RESTART"))   # the tests: answer, but don't restart
@@ -276,12 +286,13 @@ class Studio:
                                "version. Press Restart the studio (at the top of the page), then apply.")
 
     def check_file(self, mod, file):
-        """What would keep a file the studio just saved out of the game, or part of it: the same check Apply
-        makes (the build section that owns the file reads it), on this mod alone, as sentences. Returns
-        (problems, notes): problems keep the file out ([] when it's fine); notes are what the check warned
-        about, a part it leaves out (data.json's table the game hasn't got). While the game's files can't be
-        read (no game folder yet, Steam updating it), one line says the check waits for Apply, since some
-        files are checked against the game's tables."""
+        """What would keep a file the studio just saved out of the game, or part of it: the first part of the
+        check Apply makes (the build section that owns the file reads it, collect()), on this mod alone, as
+        sentences. Returns (problems, notes): problems keep the file out ([] when it's fine); notes are what the
+        check warned about, a part it leaves out (data.json's table the game hasn't got). What Apply checks with
+        every mod together (a table's rows and columns, models and pictures, two mods changing the same thing)
+        is still said only then. While the game's files can't be read (no game folder yet, Steam updating it),
+        one line says the check waits for Apply, since some files are checked against the game's tables."""
         sec = owner(file)
         if sec is None or not sec.claims(mod):
             return [], []
@@ -302,8 +313,11 @@ class Studio:
             return [str(e)], []
         except (OSError, Unreadable):   # the game's pak isn't there, or won't open
             return [CHECK_LATER], []
+        except (AttributeError, TypeError):   # a list where an object goes, a number where text does: not a Python name
+            return [f"{file} isn't shaped the way the page writes it (docs/formats.md shows how it's laid out)"], []
         except Exception as e:   # noqa: BLE001 - said, not hidden, and never as a Python name
-            return [f"{file} couldn't be checked: {e}"], []
+            said = str(e).strip()
+            return [f"{file} couldn't be checked{': ' + said if said else ''}"], []
         # The warnings name the mod for the build's log; under the page's bar the mod is the one in view.
         lead = f"{mod.id}: "
         return [], [w[len(lead):] if w.startswith(lead) else w for w in ctx.warnings]
@@ -315,7 +329,7 @@ class Studio:
         if not self.server:
             raise RuntimeError("This studio isn't running from a window of its own, so it can't restart itself: "
                                "close it and open Clan Mod Studio again.")
-        how = "launcher" if self.port == DEFAULT_PORT and os.path.isfile(os.path.join(self.root, LAUNCHER)) else "python"
+        how = restart_command(self.root, self.port)[0]
         if not self.restarting:
             self.restarting = True
             if not self.dry_restart:
@@ -334,8 +348,13 @@ class Studio:
         print(text, file=sys.stderr)
         try:
             os.makedirs(self.ctx.cfg.data_dir, exist_ok=True)
-            with open(os.path.join(self.ctx.cfg.data_dir, STUDIO_LOG), "a", encoding="utf-8") as f:
-                f.write(text + "\n")
+            path = os.path.join(self.ctx.cfg.data_dir, STUDIO_LOG)
+            with self.log_lock:
+                # Kept small: past STUDIO_LOG_MAX it starts again, with the one before kept as studio.log.1.
+                if os.path.isfile(path) and os.path.getsize(path) > STUDIO_LOG_MAX:
+                    os.replace(path, path + ".1")
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(text + "\n")
         except OSError:
             pass
 
@@ -402,7 +421,7 @@ class Studio:
         if parts == ["progress"] and method == "GET":
             # What the build, install or Play under the lock has logged so far (the page polls while one runs).
             p = self.progress
-            return {"title": p["title"], "lines": list(p["lines"]), "running": p["running"]}
+            return {"id": p["id"], "title": p["title"], "lines": list(p["lines"]), "running": p["running"]}
         if parts == ["last-apply"] and method == "GET":
             path = os.path.join(cfg.data_dir, LAST_APPLY)
             if not os.path.isfile(path):
@@ -448,7 +467,8 @@ class Studio:
             return self.run(lambda log: onboarding.add_pages(cfg, upload, log), "Add the menu's pages")
         if parts == ["play"] and method == "POST":
             self.need_current_code()
-            return self.run(lambda log: onboarding.play(self.ctx, log, force=bool(body.get("force"))), "Play", keep=True)
+            return self.run(lambda log: onboarding.play(self.ctx, log, force=bool(body.get("force"))), "Play", keep=True,
+                            task=body.get("task"))
         if parts == ["mods", "inbox"] and method == "GET":
             waiting = onboarding.inbox()
             if not waiting:
@@ -623,17 +643,25 @@ class Studio:
                     json.loads(text)  # refuse to write broken JSON
                 except ValueError as e:
                     raise ValueError(mods.file_problem(name, e)) from None
+                noted = []
                 with self.lock:   # two pages saving the same file at once: one after the other, never interleaved
                     with open(path, "w", encoding="utf-8", newline="\n") as f:
                         f.write(text if text.endswith("\n") else text + "\n")
                     # Cats and questlines come into the game with the Sandbox mode mod: turning this mod on turns
-                    # that one on, and a shared .zip says it's needed.
+                    # that one on, and a shared .zip says it's needed. A mod.json that can't be read can't say so:
+                    # the file is saved all the same, and the problem said with it.
                     if name in story.FILES and story.SANDBOX_ID not in m.requires:
-                        m.update(requires=m.requires + [story.SANDBOX_ID])
+                        try:
+                            if m.problem:
+                                raise ValueError(m.problem)
+                            m.update(requires=m.requires + [story.SANDBOX_ID])
+                        except ValueError as e:
+                            noted.append("The mod can't note that it needs the Sandbox mode mod, and stays off, until "
+                                         f"its mod.json is fixed: {m.problem or e}")
                 # A file half made still saves; what would keep it, or part of it, out of the game is said now,
                 # not at Apply.
                 problems, notes = self.check_file(m, name)
-                return {"saved": name, "requires": m.requires, "problems": problems, "notes": notes}
+                return {"saved": name, "requires": m.requires, "problems": noted + problems, "notes": notes}
             if method == "DELETE":
                 if os.path.isfile(path):
                     os.remove(path)
@@ -645,19 +673,21 @@ class Studio:
             # Switching happens inside the lock too, so a second Apply can't change mods mid-build.
             if not body.get("install"):
                 return self.run(lambda log: dict(zip(("on", "off"), mods.choose_palettes(self.mods(), ids))),
-                                "Choose palettes")
+                                "Choose palettes", task=body.get("task"))
             return self.run(lambda log: pipeline.apply_palettes(
                 cfg, self.ctx.mods_root, ids, self.ctx.build_dir, self.ctx.backups, log,
-                force=bool(body.get("force")))[1], "Apply palettes", keep=True)
+                force=bool(body.get("force")))[1], "Apply palettes", keep=True, task=body.get("task"))
         if parts == ["build"] and method == "POST":
-            return self.run(lambda log: pipeline.build(cfg, self.mods(), self.ctx.build_dir, log), "Check mods")
+            return self.run(lambda log: pipeline.build(cfg, self.mods(), self.ctx.build_dir, log), "Check mods",
+                            task=body.get("task"), checked=True)
         if parts == ["install"] and method == "POST":
             def go(log):
                 pipeline.build(cfg, self.mods(), self.ctx.build_dir, log)
                 return pipeline.install(cfg, self.ctx.build_dir, self.ctx.backups, log, force=bool(body.get("force")))
-            return self.run(go, "Apply to game", keep=True)
+            return self.run(go, "Apply to game", keep=True, task=body.get("task"))
         if parts == ["uninstall"] and method == "POST":
-            return self.run(lambda log: {"removed": pipeline.uninstall(cfg, log)}, "Take mods out", keep=True)
+            return self.run(lambda log: {"removed": pipeline.uninstall(cfg, log)}, "Take mods out", keep=True,
+                            task=body.get("task"))
         if parts == ["backups"]:
             return save.list_backups(self.ctx.backups)[::-1]
         if parts == ["backup"] and method == "POST":
@@ -665,17 +695,14 @@ class Studio:
             # safety copy, which only happens while there's none).
             if not os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)):
                 raise ValueError("there's no save to back up yet; start the game once, and get into the forest")
-            where, files = save.backup(cfg.save_dir, self.ctx.backups, "studio")
+            where, files = saverecord.backup(cfg, self.ctx.backups, "studio")
             return {"name": os.path.basename(where), "files": files}
         if parts == ["restore"] and method == "POST":
             if game_running():
                 raise RuntimeError("close the game before restoring a save")
-            name = field(body, "name")
-            save.backup(cfg.save_dir, self.ctx.backups, "before-restore")
-            restored = save.restore(self.ctx.backups, name, cfg.save_dir)
-            # The save put back hasn't got the changes made since: the next Apply makes the mods' ones again.
-            saverecord.forget_since(cfg, name)
-            return {"restored": restored}
+            # The record of save edits comes back with the save: the next Apply makes again only the mods'
+            # changes that save hasn't got.
+            return {"restored": saverecord.restore(cfg, self.ctx.backups, field(body, "name"))}
         if parts == ["game", "eyes"]:
             return self.eyes()
         if parts == ["game", "tables"]:
@@ -946,6 +973,11 @@ class Studio:
                 op = {"op": "insert", "path": c["add"], "key": c["key"], "value": c.get("value")}
             elif "remove" in c:
                 full = c["remove"]
+                if not isinstance(full, str):
+                    raise ValueError("a remove should be a path")
+                problem = savedit.remove_problem(full, doc)
+                if problem:
+                    raise ValueError(problem[:1].upper() + problem[1:])
                 if not doc.exists(full):
                     raise ValueError(f"{say(full)}: your save hasn't got it any more")
                 op = {"op": "remove", "path": full}
@@ -974,6 +1006,8 @@ class Studio:
             return {"changes": []}
         out = []
         for e in saverecord.listing(record, doc.account):
+            if e.get("lost_to"):   # another mod's change there went in: nothing of this one was done
+                continue
             out.append({**e, "path": e["key"], "current": doc.get(e["key"]) if doc.exists(e["key"]) else None,
                         "can_undo": not e.get("before") and not e.get("undone")})
         return {"changes": out}
@@ -1323,14 +1357,21 @@ class Studio:
                           "rows": [[hex_from_linear(p)[1:] for p in atlas.row(r)] for r in range(atlas.height)]}
         return self._eyes
 
-    def run(self, fn, title="Working", keep=False):
+    def run(self, fn, title="Working", keep=False, task=None, checked=False):
         """A task under the studio's lock (a build, an install, Play), with what it logs kept for GET /progress
-        while it runs. With `keep`, the log goes to last-apply.log in your files' folder afterwards, headed by
-        the task, when it ran and what it did in plain words, for the page's Last apply button. A build's
-        manifest gets `cells_in_words`, the game's numbers it changes (table_lines), for the log's drawer."""
+        while it runs, under the task's id (`task`, which the page sends): a page whose task is waiting for the
+        lock sees whose log that is, never another task's as its own. While nothing else runs, /progress shows
+        this task (with no lines yet) from the moment it's asked for, not the last one's log. With `keep`, the
+        log goes to last-apply.log in your files' folder afterwards, headed by the task, when it ran and what it
+        did in plain words, for the page's Last apply button. `checked`: the task only checks the mods (Check my
+        mods), which the summary says. A build's manifest gets `cells_in_words`, the game's numbers it changes
+        (table_lines), for the log's drawer. The answer has the log, the result and that summary."""
+        mine = {"id": str(task or secrets.token_hex(6)), "title": title, "lines": [], "running": True}
+        if not self.progress["running"]:
+            self.progress = mine
         with self.lock:
-            self.progress = {"title": title, "lines": [], "running": True}
-            lines = self.progress["lines"]
+            self.progress = mine
+            lines = mine["lines"]
             try:
                 result = fn(lines.append)
             except Exception as e:
@@ -1338,13 +1379,14 @@ class Studio:
                     self.keep_log(title, lines, None, e)
                 raise
             finally:
-                self.progress["running"] = False
+                mine["running"] = False
         manifest = manifest_of(result)
         if manifest is not None:
             manifest["cells_in_words"] = table_lines(manifest, self._data_words())
+        summary = task_summary(title, result, lines, checked)
         if keep:
-            self.keep_log(title, lines, result, None)
-        return {"log": list(lines), "result": result}
+            self.keep_log(title, lines, result, None, summary)
+        return {"log": list(lines), "result": result, "summary": summary}
 
     def _data_words(self):
         """The Game data page's own names for rows and tables (data-quick.json, data-titles.json), for
@@ -1358,20 +1400,18 @@ class Studio:
                 words[name] = {}
         return {"quick": words["data-quick.json"].get("rows", []), "titles": words["data-titles.json"]}
 
-    def keep_log(self, title, lines, result, error):
+    def keep_log(self, title, lines, result, error, summary=None):
         """last-apply.log: "<title> · <when>", a plain summary, the game's numbers it changed, the warnings,
         then the log."""
         manifest = manifest_of(result)
         head = [f"{title} · {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"]
         if error is not None:
             head.append(error.describe("press Apply the rest anyway", "what they put in the game before is removed", BLOCKED)
-                        if isinstance(error, pipeline.InstallBlocked) else f"Couldn't finish: {error}")
-        elif manifest:
-            head.append(plain_summary(manifest))
-            head += manifest.get("cells_in_words", [])
-            head += [f"warning: {w}" for w in manifest.get("warnings", [])]
-        elif title == "Play":
-            head.append("Started the game; nothing needed applying first.")
+                        if isinstance(error, pipeline.InstallBlocked) else f"Couldn't finish: {sentence(error) or error}")
+        elif summary:
+            head.append(summary)
+            head += (manifest or {}).get("cells_in_words", [])
+            head += [f"warning: {w}" for w in (manifest or {}).get("warnings", [])]
         try:
             os.makedirs(self.ctx.cfg.data_dir, exist_ok=True)
             with open(os.path.join(self.ctx.cfg.data_dir, LAST_APPLY), "w", encoding="utf-8") as f:
@@ -1399,14 +1439,27 @@ def _view(positions, triangles):
     return {"p": [round(c, 2) for p in positions for c in p], "t": [i for t in triangles[::step] for i in t]}
 
 
+def _json_file(e):
+    """The name of the file a JSONDecodeError came from, when json.load read it (its `fp` is in the traceback),
+    else None."""
+    tb, name = e.__traceback__, None
+    while tb is not None:
+        fp = tb.tb_frame.f_locals.get("fp") if tb.tb_frame.f_code.co_name == "load" else None
+        if isinstance(getattr(fp, "name", None), str):
+            name = os.path.basename(fp.name)
+        tb = tb.tb_next
+    return name
+
+
 def sentence(e):
     """An exception the page gets as a sentence a non-technical person can act on; None for the ones the
     handler words itself (LookupError, ValueError, RuntimeError say their own)."""
     if isinstance(e, json.JSONDecodeError):
-        return f"A file isn't valid: {e.msg} at line {e.lineno}"
+        return mods.file_problem(_json_file(e) or "A file the studio reads", e)
     if isinstance(e, FileNotFoundError):
-        base = os.path.basename(str(e.filename or "")) or (str(e) if not e.errno else "")
-        return f"A file the studio needs is missing{': ' + base if base else ''} (is Steam updating the game?)"
+        if not e.filename:   # raised with words of its own ("no backup named ..."): those say it
+            return str(e) or "A file the studio needs is missing"
+        return f"A file the studio needs is missing: {os.path.basename(str(e.filename))} (is Steam updating the game?)"
     if isinstance(e, PermissionError) and getattr(e, "filename", None):
         return f"{os.path.basename(str(e.filename))} is in use (is the game running?)"
     return None
@@ -1482,7 +1535,6 @@ def make_handler(studio, port):
                         return self._send(400, {"error": f"request body isn't valid JSON: {e}"})
                     if not isinstance(body, dict):
                         return self._send(400, {"error": "request body must be a JSON object"})
-                body = Body(body)
                 parts = [p for p in path[5:].split("/") if p]
                 query = {k: v[-1] for k, v in parse_qs(url.query).items()}
                 where = f"{method} {path}"
@@ -1516,10 +1568,15 @@ def make_handler(studio, port):
                 except LookupError as e:
                     return self._send(404, {"error": str(e)})
                 except (ValueError, RuntimeError) as e:
-                    return self._send(400, {"error": str(e)})
+                    if str(e).strip():
+                        return self._send(400, {"error": str(e)})
+                    studio.log_error(where, e)   # nothing to say: the details are all there is
+                    return self._send(400, {"error": f"Something went wrong, with the details in {STUDIO_LOG}"})
                 except Exception as e:   # noqa: BLE001 - whatever it is, the page gets a sentence and the log the rest
                     studio.log_error(where, e)
-                    return self._send(500, {"error": f"Something went wrong: {e}, with the details in {STUDIO_LOG}"})
+                    said = str(e).strip()
+                    return self._send(500, {"error": f"Something went wrong{': ' + said if said else ''}, with the "
+                                                     f"details in {STUDIO_LOG}"})
                 finally:
                     if upload:
                         os.remove(upload)
@@ -1595,8 +1652,10 @@ PROBE_TIMEOUT = 3                   # seconds to wait for whatever holds a port 
 def other_studio(port):
     """Whether what holds a port is a Clan Mod Studio: asked for /api/info with no token, ours answers 403
     with its JSON saying so."""
+    # Straight to this machine: a proxy set for the system (HTTP_PROXY) never sees the question.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/info", timeout=PROBE_TIMEOUT):
+        with opener.open(f"http://127.0.0.1:{port}/api/info", timeout=PROBE_TIMEOUT):
             return False   # answered without a token: something else
     except urllib.error.HTTPError as e:
         try:
@@ -1608,19 +1667,49 @@ def other_studio(port):
         return False
 
 
-def start_again(root, port):
-    """A fresh studio in a window of its own: the launcher (which finds Python as a double-click does) when
-    it's there and the port is the usual one, else Python itself. It won't open another browser tab: the page
-    that asked reloads itself once the new studio answers."""
-    env = {**os.environ, "WCMODS_NO_BROWSER": "1"}
+# What a restarted studio runs under when it isn't the launcher: the studio, and when that ends with a problem
+# (its port taken, say), the window stays open with the message, as the launcher's does, instead of closing
+# before it can be read. Ctrl+C reaches the studio too, which stops by itself.
+RESTART_WRAPPER = """import subprocess, sys
+p = subprocess.Popen([sys.executable, "-I"] + sys.argv[1:])
+while True:
+    try:
+        code = p.wait()
+        break
+    except KeyboardInterrupt:
+        pass
+if code:
+    print()
+    print("Something went wrong; the message above says what.")
+    try:
+        input("Press Enter to close this window.")
+    except (EOFError, KeyboardInterrupt):
+        pass
+sys.exit(code)
+"""
+
+
+def restart_command(root, port):
+    """How start_again starts the fresh studio: (how, the command). The launcher (which finds Python as a
+    double-click does) when it's there and the port is the usual one: run by cmd /C, which closes its window
+    when the launcher ends (a later restart leaves no window behind at a prompt), with the launcher's path
+    quoted inside a second pair of quotes, which cmd takes off, so a folder with & or spaces in its name is
+    still one path. Else Python itself, under RESTART_WRAPPER."""
     bat = os.path.join(root, LAUNCHER)
-    if port == DEFAULT_PORT and os.path.isfile(bat):
-        subprocess.Popen(["cmd", "/c", "start", "", bat], cwd=root, env=env, close_fds=True)
-        return "launcher"
-    flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
-    subprocess.Popen([sys.executable, "-I", os.path.join(root, "wcmods.py"), "studio", "--port", str(port)],
-                     cwd=root, env=env, creationflags=flags, close_fds=True)
-    return "python"
+    if os.name == "nt" and port == DEFAULT_PORT and os.path.isfile(bat):
+        return "launcher", f'cmd.exe /C ""{bat}""'
+    return "python", [sys.executable, "-I", "-c", RESTART_WRAPPER, os.path.join(root, "wcmods.py"), "studio",
+                      "--port", str(port)]
+
+
+def start_again(root, port):
+    """A fresh studio in a window of its own (restart_command). It won't open another browser tab: the page
+    that asked finds the new studio by itself once it answers."""
+    env = {**os.environ, "WCMODS_NO_BROWSER": "1"}
+    how, command = restart_command(root, port)
+    subprocess.Popen(command, cwd=root, env=env, creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+                     close_fds=True)
+    return how
 
 
 def find_port(port):

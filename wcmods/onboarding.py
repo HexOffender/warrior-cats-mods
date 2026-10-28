@@ -67,7 +67,8 @@ def first_backup(cfg, backups_root):
     """A safety copy of the save, the first time there is one and no backup yet; its name, or None."""
     if save.list_backups(backups_root) or not os.path.isfile(os.path.join(cfg.save_dir, save.SAV_NAME)):
         return None
-    where, _ = save.backup(cfg.save_dir, backups_root, "first-run")
+    from . import saverecord
+    where, _ = saverecord.backup(cfg, backups_root, "first-run")   # with the record of save edits, for a restore
     return os.path.basename(where)
 
 

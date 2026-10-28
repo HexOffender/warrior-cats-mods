@@ -254,6 +254,73 @@ test("Your changes lists the mod's changes, and after an install the ones in the
   await page.close();
 });
 
+test("Every MaxScale × 1.5 in Cat sizes goes in, with a word that names the row by its role", { skip }, async () => {
+  const page = await open();
+  await table(page, "Cat sizes");
+  await page.evaluate(() => {
+    const c = document.getElementById("data-mul-col"); c.value = "MaxScale"; c.dispatchEvent(new Event("change"));
+    const b = document.getElementById("data-mul-by"); b.value = "1.5"; b.dispatchEvent(new Event("input"));
+  });
+  await page.click({ text: "Every MaxScale × 1.5" });
+  await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.startsWith("Elder's MaxScale is 1.125 now")));
+  assert.deepEqual((await file(page))["NPC/CatSize.csv"], { "*": { MaxScale: "x1.5" } }, "not refused as a chance");
+  assert.ok(![...await page.evaluate(() => [...document.querySelectorAll("#toasts .toast")].map(t => t.textContent))].some(t => /chance/.test(t)));
+  // A chance column (Scars' EarChance) is still refused, naming the row by its role.
+  await table(page, "Scars");
+  await page.evaluate(() => {
+    const c = document.getElementById("data-mul-col"); c.value = "EarChance"; c.dispatchEvent(new Event("change"));
+    const b = document.getElementById("data-mul-by"); b.value = "2"; b.dispatchEvent(new Event("input"));
+  });
+  await page.click({ text: "Every EarChance × 2" });
+  await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.startsWith("Deputy would be 1.5, and a chance can't go over 1")));
+  assert.equal((await file(page))["NPC/Scars.csv"]?.["*"], undefined, "refused: nothing on every row");
+  await page.close();
+});
+
+test("a dropdown cell keeps its choice on Enter, not on the first arrow key", { skip }, async () => {
+  const page = await open();
+  await table(page, "Fight moves");
+  await page.click(cell("1", 3));
+  await page.waitFor(`${cell("1", 3)} select`);
+  await page.press("ArrowUp");   // Offensive -> Defensive: still choosing
+  await page.waitFor(() => document.querySelector('.data-table [data-focus="cell:1:3"] select')?.value !== "Offensive");
+  assert.equal(await page.count(`${cell("1", 3)} select`), 1, "the box is still open");
+  assert.equal((await file(page))["AttackMove.csv"], undefined, "nothing kept yet");
+  const chosen = await page.evaluate(() => document.querySelector('.data-table [data-focus="cell:1:3"] select').value);
+  await page.press("Enter");
+  await page.waitFor(() => !document.querySelector(".data-table td select"));
+  assert.deepEqual((await file(page))["AttackMove.csv"], { "1": { Stance: chosen } });
+  await page.close();
+});
+
+test("a quick row over a number set by hand says so, asks before replacing it, and the file's notes stay", { skip }, async () => {
+  fs.mkdirSync(path.join(folders.data, "mods", "hand-xp"), { recursive: true });
+  fs.writeFileSync(path.join(folders.data, "mods", "hand-xp", "mod.json"), JSON.stringify({ name: "Hand XP", enabled: true }));
+  const hand = { _help: "My own words", _note: "flat XP", "CombatBaseExperience.csv": { _note: "30 for all", "*": { BaseExperience: 30 } } };
+  fs.writeFileSync(path.join(folders.data, "mods", "hand-xp", "data.json"), JSON.stringify(hand));
+  const page = await open();
+  await page.evaluate(() => { const s = document.querySelector('.target select'); s.value = "hand-xp"; s.dispatchEvent(new Event("change")); });
+  const now = () => document.querySelector('[data-key="quick:xp-fights"] .quick-now').textContent;
+  await page.waitFor(() => document.querySelector('[data-key="quick:xp-fights"] .quick-now').textContent === "This row is set by hand to 30, in data.json");
+  await page.evaluate(() => { document.querySelector('[data-key="quick:xp-fights"]').closest("details").open = true; });
+  await page.evaluate(() => { const n = document.getElementById("quick-xp-fights"); n.value = "2"; n.dispatchEvent(new Event("change")); });
+  await page.waitFor(() => !document.querySelector('[data-key="quick:xp-fights"] .quick-ask').hidden);
+  assert.equal(await page.text('[data-key="quick:xp-fights"] .quick-ask span'), "This row is set by hand to 30 in data.json. Replace that with ×2?");
+  assert.deepEqual((await file(page))["CombatBaseExperience.csv"], { _note: "30 for all", "*": { BaseExperience: 30 } }, "not replaced yet");
+  await page.click({ text: "Keep it" });
+  await page.waitFor(() => document.querySelector('[data-key="quick:xp-fights"] .quick-ask').hidden);
+  assert.equal(await page.evaluate(now), "This row is set by hand to 30, in data.json");
+  await page.evaluate(() => { const n = document.getElementById("quick-xp-fights"); n.value = "2"; n.dispatchEvent(new Event("change")); });
+  await page.click({ text: "Replace it" });
+  await page.waitFor(() => document.querySelector('[data-key="quick:xp-fights"] .quick-now').textContent === "×1 -> ×2");
+  await page.click({ text: "Save to mod" });
+  await page.waitFor(() => document.querySelector(".target .dirty")?.textContent === "");
+  const saved = JSON.parse(fs.readFileSync(path.join(folders.data, "mods", "hand-xp", "data.json"), "utf8"));
+  assert.deepEqual(saved, { _help: "My own words", _note: "flat XP", "CombatBaseExperience.csv": { _note: "30 for all", "*": { BaseExperience: "x2" } } });
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
 test("with the game's files unreadable the page says so, and still shows its file", { skip }, async () => {
   const empty = dataFolder();
   makeGame(empty.game);   // the exe and the folders, no paks

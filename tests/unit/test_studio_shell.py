@@ -4,38 +4,40 @@ restart route, a damaged wcmods.json set aside, the guide's renderer, and the ha
 import json
 import os
 import socket
+import subprocess
+import sys
 import threading
+import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 
 from wcmods import config as config_mod, guide, mods as modlib, palettes, pipeline
 from wcmods import studio as studio_mod
-from wcmods.cli import Ctx
 from wcmods.config import Config
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+GAME = os.path.join(os.path.abspath(os.sep), "Game")   # a game folder's path, in this system's own way
 NPCS = {"npcs": [{"id": "mossfoot", "name": "Mossfoot", "title": "Elder"}]}
 QUEST = {"quests": [{"id": "first", "title": "First", "giver": "mossfoot",
                      "steps": [{"do": "talk", "lines": ["Hello."]}]}]}
 
 
 @pytest.fixture
-def studio(tmp_path, monkeypatch):
-    """A Studio over its own data folder, with no game found (as on a computer without it in Steam)."""
-    monkeypatch.setattr(config_mod, "_find_game_dir", lambda: None)
-    data = tmp_path / "data"
-    (data / "mods").mkdir(parents=True)
-    ctx = Ctx(ROOT, str(data))
-    ctx.build_dir = str(tmp_path / "build")
-    st = studio_mod.Studio(ctx)
-    st.data = data
-    return st
+def studio(studio):
+    """The harness's studio (conftest.py: its root, data folder and saves all in the test's own folder, no game
+    found), with `data` its data folder. Never Ctx(ROOT, ...): that would move a mods/, wcmods.json or backups/
+    kept in the repository's folder into the test's, which is then deleted. The guide's tests point `root` at the
+    repository for its docs/guide, which is only read."""
+    studio.data = Path(studio.ctx.cfg.data_dir)
+    (studio.data / "mods").mkdir(exist_ok=True)
+    return studio
 
 
 def call(st, method, path, body=None, query=None):
-    return st.api(method, [p for p in path.split("/") if p], studio_mod.Body(body or {}), query)
+    return st.api(method, [p for p in path.split("/") if p], dict(body or {}), query)
 
 
 def make_mod(st, mod_id, meta=None, files=None):
@@ -95,6 +97,73 @@ def test_cats_and_quests_are_checked_together_and_need_the_sandbox_mod(studio):
     # The cat the quest's giver names goes: the quest's file is what's wrong now.
     r = call(studio, "PUT", "mods/story/file/npcs.json", {"text": json.dumps({"npcs": []})})
     assert r["problems"] and "mossfoot" in r["problems"][0]
+
+
+def test_a_file_shaped_wrong_is_said_without_python_names(studio, monkeypatch):
+    make_mod(studio, "mine")
+
+    class Reader:   # a section that trips over a list where it wants an object, as a file edited by hand can make it
+        def claims(self, mod):
+            return True
+
+        def collect(self, mod, ctx):
+            return [].get("x")
+    monkeypatch.setattr(studio_mod, "owner", lambda file: Reader())
+    r = call(studio, "PUT", "mods/mine/file/names.json", {"text": json.dumps({"prefixes": []})})
+    assert r["problems"] == ["names.json isn't shaped the way the page writes it (docs/formats.md shows how it's laid out)"]
+
+
+def test_cats_saved_into_a_mod_whose_mod_json_is_broken_are_saved_and_the_problem_said(studio):
+    make_mod(studio, "story", meta="broken")
+    r = call(studio, "PUT", "mods/story/file/npcs.json", {"text": json.dumps(NPCS)})
+    assert r["saved"] == "npcs.json" and r["requires"] == []
+    assert r["problems"][0].startswith("The mod can't note that it needs the Sandbox mode mod, and stays off, until its "
+                                       "mod.json is fixed: mod.json isn't valid")
+    assert json.loads((studio.data / "mods" / "story" / "npcs.json").read_text(encoding="utf-8")) == NPCS
+
+
+def test_studio_log_starts_again_past_its_size(studio, monkeypatch):
+    monkeypatch.setattr(studio_mod, "STUDIO_LOG_MAX", 200)
+    for i in range(3):
+        studio.log_error(f"GET /api/x{i}", ValueError("x" * 300))
+    log, old = studio.data / studio_mod.STUDIO_LOG, studio.data / (studio_mod.STUDIO_LOG + ".1")
+    assert old.exists() and "GET /api/x2" in log.read_text(encoding="utf-8")
+    assert "GET /api/x0" not in log.read_text(encoding="utf-8") + old.read_text(encoding="utf-8")   # two at most
+
+
+@pytest.fixture
+def planted():
+    """A mod in a mods/ folder in the repository's folder, as a player who keeps theirs there has (WCMODS_DATA
+    pointing at it, or from before they moved out of it); taken away again afterwards."""
+    folder = Path(ROOT) / "mods" / f"zz-wcmods-test-planted-{os.getpid()}"
+    made_mods = not folder.parent.exists()
+    folder.mkdir(parents=True)
+    (folder / "mod.json").write_text(json.dumps({"name": "Planted", "enabled": True}), encoding="utf-8")
+    try:
+        yield folder
+    finally:
+        for f in (folder.iterdir() if folder.exists() else []):
+            f.unlink()
+        if folder.exists():
+            folder.rmdir()
+        if made_mods and folder.parent.exists() and not any(folder.parent.iterdir()):
+            folder.parent.rmdir()
+
+
+def test_a_planted_mods_folder_in_the_repositorys_folder_is_left_where_it_is(planted, studio, tmp_path, monkeypatch):
+    """This module's `studio` (made after the folder was planted) and the command line start from a folder of
+    their own, so nothing moves the player's mods into a test's folder, which is deleted. (conftest.py checks
+    the same of the whole run.)"""
+    assert [m["id"] for m in call(studio, "GET", "mods")] == []
+    from wcmods.cli import main
+    monkeypatch.setenv(config_mod.DATA_ENV, str(tmp_path / "cli-data"))
+    (tmp_path / "cli-root").mkdir()
+    try:
+        main(str(tmp_path / "cli-root"), ["status"])
+    except SystemExit:
+        pass
+    assert (planted / "mod.json").is_file()
+    assert not (studio.data / "mods" / planted.name).exists() and not (tmp_path / "cli-data" / "mods" / planted.name).exists()
 
 
 def test_broken_json_isnt_written_and_is_said_in_words(studio):
@@ -166,7 +235,7 @@ def test_a_missing_palette_file_is_a_sentence_too(tmp_path):
 
 # ---------- C: progress and the last apply ----------
 def test_progress_shows_a_tasks_lines_while_it_runs_and_the_last_apply_keeps_them(studio):
-    assert call(studio, "GET", "progress") == {"title": None, "lines": [], "running": False}
+    assert call(studio, "GET", "progress") == {"id": None, "title": None, "lines": [], "running": False}
     with pytest.raises(LookupError, match="Nothing has been applied"):
         call(studio, "GET", "last-apply")
     started, go = threading.Event(), threading.Event()
@@ -179,21 +248,57 @@ def test_progress_shows_a_tasks_lines_while_it_runs_and_the_last_apply_keeps_the
         return {"sections": {"palettes": {"title": "Colour palettes", "status": "ok", "mods": ["pal"], "errors": [], "failed": []}},
                 "mods": ["pal"], "names": {"pal": "Pretty palette"}, "warnings": ["a thing to know"]}
     out = {}
-    t = threading.Thread(target=lambda: out.update(studio.run(task, "Apply to game", keep=True)))
+    t = threading.Thread(target=lambda: out.update(studio.run(task, "Apply to game", keep=True, task="t1")))
     t.start()
     assert started.wait(5)
     mid = call(studio, "GET", "progress")
-    assert mid == {"title": "Apply to game", "lines": ["reading your mods"], "running": True}
+    assert mid == {"id": "t1", "title": "Apply to game", "lines": ["reading your mods"], "running": True}
     go.set()
     t.join(5)
     done = call(studio, "GET", "progress")
     assert done["running"] is False and done["lines"] == ["reading your mods", "made the pak"]
     assert out["log"] == ["reading your mods", "made the pak"] and out["result"]["mods"] == ["pal"]
+    assert out["summary"] == "Put 1 mod in the game: Pretty palette. 1 warning."
     last = call(studio, "GET", "last-apply")
     assert last["title"] == "Apply to game" and last["when"]
     assert last["summary"] == ["Put 1 mod in the game: Pretty palette. 1 warning.", "warning: a thing to know"]
     assert last["log"] == "reading your mods\nmade the pak"
     assert (studio.data / studio_mod.LAST_APPLY).read_text(encoding="utf-8").startswith("Apply to game · ")
+
+
+def test_a_task_waiting_for_the_lock_never_shows_another_tasks_log_as_its_own(studio):
+    # The last task's log is still there when the next is asked for, while the lock is held by something else
+    # (a save, say): /progress shows the new task, with no lines yet, not the old log.
+    studio.run(lambda log: log("the last check's line"), "Check mods", task="old")
+    out = {}
+    with studio.lock:
+        t = threading.Thread(target=lambda: out.update(studio.run(lambda log: log("mine"), "Apply to game", task="new")))
+        t.start()
+        for _ in range(100):
+            if call(studio, "GET", "progress")["id"] == "new":
+                break
+            time.sleep(0.02)
+        assert call(studio, "GET", "progress") == {"id": "new", "title": "Apply to game", "lines": [], "running": True}
+    t.join(5)
+    assert out["log"] == ["mine"]
+    # While another task runs, a waiting one leaves its progress alone: the page sees whose log it is by the id.
+    started, go = threading.Event(), threading.Event()
+
+    def first(log):
+        log("first's line")
+        started.set()
+        go.wait(5)
+    a = threading.Thread(target=lambda: studio.run(first, "Apply to game", task="a"))
+    a.start()
+    assert started.wait(5)
+    b = threading.Thread(target=lambda: studio.run(lambda log: log("second's line"), "Check mods", task="b"))
+    b.start()
+    time.sleep(0.2)
+    assert call(studio, "GET", "progress") == {"id": "a", "title": "Apply to game", "lines": ["first's line"], "running": True}
+    go.set()
+    a.join(5)
+    b.join(5)
+    assert call(studio, "GET", "progress")["id"] == "b"
 
 
 def test_a_task_that_fails_is_kept_in_the_last_apply_with_what_blocked_it(studio):
@@ -224,6 +329,67 @@ def test_plain_summary_names_mods_and_the_first_problem():
     # A manifest an older wcmods wrote, without "failed".
     old = {"mods": [], "sections": {"save": {"title": "Save edits", "status": "failed", "mods": [], "errors": ["boom"]}}}
     assert studio_mod.plain_summary(old) == "Couldn't put Save edits in: boom"
+    # Check my mods puts nothing in the game, and says so.
+    assert studio_mod.plain_summary({"mods": ["pal", "cats"], "names": names, "sections": {}, "warnings": ["w"]}, checked=True) \
+        == "Checked 2 mods: Pretty palette, My cats. Apply to game puts them in. 1 warning."
+    assert studio_mod.plain_summary({"mods": [], "sections": {}, "warnings": []}, checked=True) == "Checked: no mods are on."
+    assert studio_mod.plain_summary(bad, checked=True) == "My cats can't go in the game yet: oh no (1 more problem in the log)"
+
+
+# A build whose sections all ran, but whose table edits then failed: the section's errors have it, and "failed"
+# (as a wcmods before the fix wrote it) is empty.
+PARTIAL = {"mods": ["tables"], "names": {"tables": "Tougher foxes"}, "warnings": [], "outputs": [], "ue4ss_mods": [], "save_ops": [],
+           "sections": {"data": {"title": "Game data", "status": "partial", "mods": ["tables"], "failed": [],
+                                 "errors": ["TuningData.csv: edits not applied (no row 'Fox')"]}}}
+
+
+def test_a_section_whose_failures_are_only_in_its_errors_still_stops_the_install(tmp_path, monkeypatch):
+    build = tmp_path / "build"
+    build.mkdir()
+    (build / "manifest.json").write_text(json.dumps(PARTIAL), encoding="utf-8")
+    monkeypatch.setattr(pipeline, "game_running", lambda: False)
+    cfg = Config(str(tmp_path), str(tmp_path))
+    with pytest.raises(pipeline.InstallBlocked) as got:
+        pipeline.install(cfg, str(build), str(tmp_path / "backups"), log=lambda m: None)
+    assert got.value.problems == [("Game data", None, "TuningData.csv: edits not applied (no row 'Fox')")]
+    assert studio_mod.plain_summary(PARTIAL) == "Couldn't put Game data in: TuningData.csv: edits not applied (no row 'Fox')"
+    # A section that isn't ok with nothing said at all is still a problem, never an install that goes ahead.
+    assert pipeline.section_problems({"title": "Names", "status": "failed", "errors": [], "failed": []}) == [(None, "it didn't build fully")]
+    assert pipeline.section_problems({"status": "ok", "errors": ["x"], "failed": []}) == []
+
+
+def test_a_builds_late_failures_go_in_failed_too(tmp_path, monkeypatch):
+    """pipeline.build itself: a CSV edit that can't be made after the sections ran is in the section's "failed",
+    and so are its save edits being left out, so the install stops."""
+    from wcmods.cli import Ctx
+    ctx = Ctx(str(tmp_path / "root"), str(tmp_path / "data"))
+
+    class Section:   # a section that edits a table and the save
+        id, title, owner = "data", "Game data", None
+
+        def claims(self, mod):
+            return True
+
+        def collect(self, mod, c):
+            return {}
+
+        def build(self, c, items):
+            c.save_ops.append({"op": "set", "path": "x", "value": 1, "section": "data"})
+    monkeypatch.setattr(pipeline, "load_sections", lambda cfg, mods, log: ([Section()], []))
+    monkeypatch.setattr(pipeline.BuildContext, "resolve_csv_edits",
+                        lambda self: ({}, [("Wrc/Content/Data/TuningData.csv", ["data"], "no row 'Fox'")]))
+    monkeypatch.setattr(pipeline.BuildContext, "resolve_table_rows", lambda self: ({}, []))
+    monkeypatch.setattr(pipeline, "names_without_text", lambda cfg, c, game: [])
+    monkeypatch.setattr(pipeline.gamebuild, "current", lambda cfg: {"build": None})
+    monkeypatch.setattr(pipeline.gamebuild, "layout", lambda cfg, log=None: {"status": "verified", "moved": [], "lost": [], "offsets": {}})
+    mod = studio_mod.mods.create(ctx.mods_root, "tables", "Tougher foxes", "", enabled=True)
+    try:
+        manifest = pipeline.build(ctx.cfg, [mod], str(tmp_path / "build"), log=lambda m: None)
+    except Exception as e:   # noqa: BLE001 - past the report, the build reads the game's files, which aren't here
+        pytest.skip(f"the build needs the game's files past its report here ({type(e).__name__}: {e})")
+    rep = manifest["sections"]["data"]
+    assert rep["status"] == "partial" and len(rep["failed"]) == len(rep["errors"]) == 2
+    assert [text for _, text in rep["failed"]] == rep["errors"]
 
 
 def test_install_blocked_has_the_facts_and_each_surface_words_them(tmp_path, monkeypatch):
@@ -255,7 +421,56 @@ def test_restart_refuses_without_a_window_of_its_own_and_answers_its_shape_other
     assert call(studio, "POST", "restart") == {"restarting": True, "how": "python", "port": 8792}
     assert call(studio, "POST", "restart")["restarting"] is True   # asked twice: still one restart
     studio.port = studio_mod.DEFAULT_PORT
-    assert call(studio, "POST", "restart")["how"] == ("launcher" if os.path.isfile(os.path.join(ROOT, studio_mod.LAUNCHER)) else "python")
+    assert call(studio, "POST", "restart")["how"] == "python"   # no launcher in its folder
+    (Path(studio.root) / studio_mod.LAUNCHER).write_text("@echo off\n", encoding="utf-8")
+    assert call(studio, "POST", "restart")["how"] == ("launcher" if os.name == "nt" else "python")
+
+
+def test_the_restarted_studio_starts_from_a_path_with_spaces_and_an_ampersand(tmp_path):
+    folder = tmp_path / "Mods & more" / "wc mods"
+    folder.mkdir(parents=True)
+    how, command = studio_mod.restart_command(str(folder), 8792)
+    assert how == "python" and command[:3] == [sys.executable, "-I", "-c"] and command[4:] == [
+        str(folder / "wcmods.py"), "studio", "--port", "8792"]   # a list: no shell between it and Python
+    if os.name != "nt":
+        return
+    # The launcher, run by cmd /C (its window closes when it ends), its path quoted inside quotes cmd takes off.
+    marker = tmp_path / "ran.txt"
+    (folder / studio_mod.LAUNCHER).write_text(f'@echo off\r\n> "{marker}" echo "%~dp0"\r\n', encoding="utf-8")
+    how, command = studio_mod.restart_command(str(folder), studio_mod.DEFAULT_PORT)
+    assert how == "launcher" and command == f'cmd.exe /C ""{folder / studio_mod.LAUNCHER}""'
+    r = subprocess.run(command, cwd=str(folder), stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert marker.read_text().strip() == f'"{folder}{os.sep}"'
+
+
+def test_a_restarted_studio_that_fails_keeps_its_window_open_with_the_message(tmp_path):
+    def wrapped(code):
+        script = tmp_path / f"exits{code}.py"
+        script.write_text(f"print('the studio says hello')\nraise SystemExit({code})\n", encoding="utf-8")
+        return subprocess.run([sys.executable, "-I", "-c", studio_mod.RESTART_WRAPPER, str(script)], input="\n",
+                              capture_output=True, text=True, timeout=30)
+    ok = wrapped(0)
+    assert ok.returncode == 0 and "the studio says hello" in ok.stdout and "Press Enter" not in ok.stdout
+    bad = wrapped(3)
+    assert bad.returncode == 3 and "Something went wrong; the message above says what." in bad.stdout
+    assert "Press Enter to close this window." in bad.stdout
+
+
+def test_settings_are_saved_while_something_reads_the_file(tmp_path):
+    """On Windows a file another program has open can't be replaced: wcmods.json is tried again a moment later,
+    then written in place, so an install's last save never fails because the studio was looking at it."""
+    cfg = Config(str(tmp_path), str(tmp_path))
+    cfg.data["game_dir"] = "first"
+    cfg.save()
+    with open(tmp_path / "wcmods.json", encoding="utf-8") as reader:   # the studio peeking at it, say
+        cfg.data["game_dir"] = "second"
+        cfg.save()
+        assert json.loads((tmp_path / "wcmods.json").read_text(encoding="utf-8"))["game_dir"] == "second"
+        assert reader.read()   # the reader is undisturbed
+    assert not any(n.endswith(".part") for n in os.listdir(tmp_path))
+    assert cfg.peek()["game_dir"] == "second"
 
 
 def test_the_code_changed_message_points_at_the_restart_button(studio):
@@ -298,8 +513,9 @@ def test_a_damaged_settings_file_is_set_aside_and_said(tmp_path, capsys, monkeyp
     from wcmods.cli import main
     (tmp_path / "wcmods.json").write_text("{broken", encoding="utf-8")
     monkeypatch.setenv(config_mod.DATA_ENV, str(tmp_path))
+    (tmp_path / "root").mkdir()   # wcmods' folder, as the command sees it: never the repository's (see `studio`)
     try:
-        main(ROOT, ["status"])
+        main(str(tmp_path / "root"), ["status"])
     except SystemExit:
         pass
     out = capsys.readouterr()
@@ -354,6 +570,7 @@ def test_the_guide_renders_its_markdown_and_nothing_else():
 
 
 def test_the_guides_pages_are_served_to_the_panel(studio):
+    studio.root = ROOT   # the repository's docs/guide, only read
     assert guide.pages(ROOT)[0] == "README" and "studio" in guide.pages(ROOT)
     r = call(studio, "GET", "help/studio")
     assert r["title"] == "How Clan Mod Studio works" and "<h2" in r["html"] and r["pages"] == guide.pages(ROOT)
@@ -395,6 +612,7 @@ def ask(studio, port, path, method="GET", body=None, token=True, raw=False):
 
 def test_the_page_and_the_guide_are_served_with_the_token_in_place(served):
     studio, port = served
+    studio.root = ROOT   # the repository's docs/guide, only read
     for path in ("/", "/index.html", "/studio/index.html"):
         code, html = ask(studio, port, path, raw=True)
         assert code == 200 and studio.token in html and "{{WC_TOKEN}}" not in html
@@ -425,11 +643,22 @@ def test_errors_reach_the_page_as_sentences_and_the_details_go_to_the_log(served
         if parts == ["info"]:
             raise TypeError("boom")
         if parts == ["changes"]:
-            raise FileNotFoundError(2, "No such file", r"C:\Game\Wrc\Content\Paks\pakchunk0-Windows.pak")
+            raise FileNotFoundError(2, "No such file", os.path.join(GAME, "Wrc", "Content", "Paks", "pakchunk0-Windows.pak"))
         if parts == ["setup"]:
-            raise PermissionError(13, "Permission denied", r"C:\Game\zzz_WCMods_P.ucas")
+            raise PermissionError(13, "Permission denied", os.path.join(GAME, "zzz_WCMods_P.ucas"))
         if parts == ["backups"]:
             raise json.JSONDecodeError("Expecting value", "{", 1)
+        if parts == ["mods", "removed"]:   # json.load of a file: the file is named
+            path = studio.data / "removed.json"
+            path.write_text("{oops", encoding="utf-8")
+            with open(path, encoding="utf-8") as fp:
+                json.load(fp)
+        if parts == ["last-apply"]:   # with words of its own
+            raise FileNotFoundError("no backup named 2026-10-27-1200-studio")
+        if parts == ["ingame"]:   # with none at all
+            raise RuntimeError() from KeyError()
+        if parts == ["cpp"]:
+            raise OSError()
         return real(method, parts, body, query, upload)
     monkeypatch.setattr(studio, "api", broken)
     code, a = ask(studio, port, "/api/info")
@@ -441,8 +670,16 @@ def test_errors_reach_the_page_as_sentences_and_the_details_go_to_the_log(served
     code, a = ask(studio, port, "/api/setup")
     assert code == 400 and a["error"] == "zzz_WCMods_P.ucas is in use (is the game running?)"
     code, a = ask(studio, port, "/api/backups")
-    assert code == 400 and a["error"] == "A file isn't valid: Expecting value at line 1"
-    for word in ("Error", "Traceback", "C:\\"):
+    assert code == 400 and a["error"] == "A file the studio reads isn't valid: Expecting value at line 1"
+    code, a = ask(studio, port, "/api/mods/removed")
+    assert code == 400 and a["error"].startswith("removed.json isn't valid: Expecting property name")
+    code, a = ask(studio, port, "/api/last-apply")
+    assert code == 400 and a["error"] == "no backup named 2026-10-27-1200-studio"
+    code, a = ask(studio, port, "/api/cpp")
+    assert code == 500 and a["error"] == "Something went wrong, with the details in studio.log"
+    code, a = ask(studio, port, "/api/ingame")
+    assert code == 400 and a["error"] == "Something went wrong, with the details in studio.log"
+    for word in ("Error", "Traceback", "Game"):
         assert word not in json.dumps([a])
 
 
@@ -473,7 +710,8 @@ def test_a_port_held_by_another_program_moves_the_studio_along(served, monkeypat
     try:
         assert studio_mod.other_studio(busy) is False
         server, tried, other = studio_mod.find_port(busy)
-        assert server is not None and tried == [busy] and other is None and server.server_address[1] != busy
+        # The next port may happen to be taken too (another program's): it moves past that one as well.
+        assert server is not None and tried[0] == busy and other is None and server.server_address[1] not in tried
         server.server_close()
     finally:
         held.close()

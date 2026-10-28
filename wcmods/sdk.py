@@ -415,18 +415,25 @@ class BuildContext:
                 changes, warnings = [], []
                 table = path.rsplit('/', 1)[-1]
                 touched = {}   # (row, column) -> the source that changed it last
+                over = {}      # (column, earlier source, later source) -> the rows the later one set over it
                 for edits, section, source in queue:
                     who = source or section
-                    text, applied, problems = csvdata.apply_edits(text, edits)
+                    how = {}
+                    text, applied, problems = csvdata.apply_edits(text, edits, how)
                     warnings += [f"{who}: {table}: {p}" for p in problems]
                     changes += [{"row": r, "column": c, "from": a, "to": b, "by": who} for r, c, a, b in applied]
                     for r, c, _, _ in applied:
                         if c == "(row)":
                             continue
-                        if touched.get((r, c), who) != who:   # two mods, or a page and a mod, on one cell
-                            warnings.append(f"{who} changed {r}.{c} in {table} after {touched[(r, c)]}; "
-                                            f"the game gets {who}'s")
+                        # Two mods (or a page and a mod) on one cell: multipliers stack, as documented; a plain
+                        # value from the later one replaces what the earlier one made, which is said.
+                        if touched.get((r, c), who) != who and not how.get((r, c)):
+                            over.setdefault((c, touched[(r, c)], who), []).append(r)
                         touched[(r, c)] = who
+                for (c, before, who), rows in over.items():   # one line per column and pair of mods
+                    named = ", ".join(rows[:3]) + (f" and {len(rows) - 3} more" if len(rows) > 3 else "")
+                    warnings.append(f"{who} sets {c} in {table} where {before} changed it too ({named}): the "
+                                    f"game gets {who}'s value{'s' if len(rows) > 1 else ''} there")
             except Exception as e:
                 failures.append((path, sorted({s for _, s, _ in queue}), f"{type(e).__name__}: {e}"))
                 continue

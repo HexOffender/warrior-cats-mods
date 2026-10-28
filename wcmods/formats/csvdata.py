@@ -202,11 +202,13 @@ def _row_names(spec):
     return None
 
 
-def apply_edits(text, edits):
+def apply_edits(text, edits, how=None):
     """Apply {row: value | {column: value}} edits in the fixed order (the module's docstring). Returns
     (new_text, applied, problems): applied is [(row, column, from, to)], one per cell changed (its first
     value and its last, so "*" then a row's own value is one change), problems are sentences; a mistake in
-    one edit never stops the others."""
+    one edit never stops the others. `how`, a dict when given, gets {(row, column): True} for a cell whose
+    last change was an "xN" multiplier, False for one set to a plain value. A key or column starting with
+    "_" is a note, not an edit."""
     table = Table(text)
     applied, problems = [], []
     cells = {}   # (row, column) -> [row key, column name, first value, last value]
@@ -228,7 +230,7 @@ def apply_edits(text, edits):
 
     def columns(key, spec):
         if isinstance(spec, dict):
-            return spec
+            return {c: v for c, v in spec.items() if not str(c).startswith("_")}
         if len(table.header) < 2:
             problems.append(f"{key}: this table has only its key column, so a value needs a column's name")
             return {}
@@ -244,6 +246,8 @@ def apply_edits(text, edits):
         if new != old:
             table.set(r, col, new)
             cells.setdefault((id(r), col), [r.fields[0], table.header[col], old, None])[3] = new
+            if how is not None:
+                how[(r.fields[0], table.header[col])] = multiplier(value) is not None
 
     def column(col_name):
         try:
@@ -315,6 +319,7 @@ def apply_edits(text, edits):
             problems.append('"+" should be a list of rows to add, each an object of column: value')
             adds = []
         for row in adds:
+            row = {c: v for c, v in row.items() if not str(c).startswith("_")}   # a "_note" is a note
             key = ""
             for col_name, value in row.items():
                 try:

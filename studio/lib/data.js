@@ -30,28 +30,30 @@ const shown = (v, original = "") => typeof v === "boolean" ? (v ? "TRUE" : "FALS
 // ---------- data.json in and out ----------
 // The page's model of a data.json: edits[table][row][column] = value ("__first__" for a {row: value} edit whose
 // column isn't known until the table is read), rowOps[table] = the file's own "-" and "+" (kept as they are),
-// and the entries skipped because they aren't a table's edits (named, so the page can say so).
+// notes = the file's own "_" keys (a "_help", a "_note"), at the top and in each table, kept as they are, and
+// the entries skipped because they aren't a table's edits (named, so the page can say so).
 export function clean(obj) {
-  const edits = {}, rowOps = {}, skipped = [];
-  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return { edits, rowOps, skipped };
+  const edits = {}, rowOps = {}, skipped = [], notes = { top: {}, tables: {} };
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return { edits, rowOps, skipped, notes };
   for (const [t, e] of Object.entries(obj)) {
-    if (t.startsWith("_")) continue;
+    if (t.startsWith("_")) { notes.top[t] = e; continue; }
     if (!e || typeof e !== "object" || Array.isArray(e)) { skipped.push(t); continue; }
     edits[t] = {};
     for (const [row, spec] of Object.entries(e)) {
-      if (row.startsWith("_")) continue;
+      if (row.startsWith("_")) { (notes.tables[t] ||= {})[row] = spec; continue; }
       if (row === "-" || row === "+") { (rowOps[t] ||= {})[row] = spec; continue; }
       edits[t][row] = spec && typeof spec === "object" && !Array.isArray(spec) ? { ...spec } : { __first__: spec };
     }
   }
-  return { edits, rowOps, skipped };
+  return { edits, rowOps, skipped, notes };
 }
-// Back to data.json: "-" first, then "*", the rows and "+" (the build's order; a reader sees it too). headers:
-// {table: its header}, for the tables read, so a {row: value} edit gets its column's name.
-export function toJson(edits, rowOps = {}, headers = {}) {
-  const o = { _help: HELP };
+// Back to data.json: the file's own "_" keys (its own _help, else the page's), then each table: its "_" keys,
+// "-", "*", the rows and "+" (the build's order; a reader sees it too). headers: {table: its header}, for the
+// tables read, so a {row: value} edit gets its column's name.
+export function toJson(edits, rowOps = {}, headers = {}, notes = { top: {}, tables: {} }) {
+  const o = { _help: HELP, ...(notes.top || {}) };
   for (const t of new Set([...Object.keys(edits), ...Object.keys(rowOps)])) {
-    const r = {}, ops = rowOps[t] || {};
+    const r = { ...(notes.tables?.[t] || {}) }, ops = rowOps[t] || {}, own = Object.keys(r).length;
     if ("-" in ops) r["-"] = ops["-"];
     const rows = edits[t] || {};
     for (const row of ["*", ...Object.keys(rows).filter(k => k !== "*")]) {
@@ -66,7 +68,8 @@ export function toJson(edits, rowOps = {}, headers = {}) {
       if (Object.keys(c).length) r[row] = c;
     }
     if ("+" in ops) r["+"] = ops["+"];
-    if (Object.keys(r).length) o[t] = r;
+    // Notes alone stay only for a table the file had with nothing else (Put this table back takes it out).
+    if (Object.keys(r).length > own || (own && edits[t] && !Object.keys(edits[t]).length)) o[t] = r;
   }
   return o;
 }
@@ -141,10 +144,19 @@ export function unsetCell(edits, table, header, rowKey, colName) {
 export function headerLabel(h, i) {
   return i === 0 && /^[\s\p{P}\p{S}]*$/u.test(h || "") ? "Row" : h;
 }
+// Columns that are chances though their names don't end in "Chance": every number column of AICombatChances,
+// and AttackMove's Accuracy (how likely a move is to hit).
+export const CHANCE_COLUMNS = { "AICombatChances.csv": "*", "AttackMove.csv": ["Accuracy"] };
+export function chanceColumn(table, name) {
+  const listed = CHANCE_COLUMNS[table];
+  return /chance$/i.test(name || "") || listed === "*" || (Array.isArray(listed) && listed.includes(name));
+}
 // What a column holds, so the page offers the right box: "key" (the first), "note" (a Description), "bool"
-// (TRUE/FALSE: a checkbox), "number" (with chance: every value from 0 to 1, with decimals), "choice" (at most
-// eight words, which repeat: a dropdown of them) or "text".
-export function columnKind(header, rows, i) {
+// (TRUE/FALSE: a checkbox), "number", "choice" (at most eight words, which repeat: a dropdown of them) or "text".
+// A number column is a chance by its name (chanceColumn), with every value from 0 to 1: nothing over 1 goes in.
+// Another whose values are all from 0 to 1, with decimals (CatSize's scales, a rumble's length), is `unit`:
+// a value past 1 is only asked about.
+export function columnKind(header, rows, i, table = "") {
   if (i === 0) return { kind: "key" };
   if (/^description$/i.test(header[i] || "")) return { kind: "note" };
   const values = rows.map(r => (r[i] ?? "").trim()).filter(Boolean);
@@ -152,7 +164,9 @@ export function columnKind(header, rows, i) {
   if (values.every(v => /^(true|false)$/i.test(v))) return { kind: "bool" };
   if (values.every(v => NUM.test(v))) {
     const nums = values.map(Number);
-    return { kind: "number", chance: nums.every(n => n >= 0 && n <= 1) && values.some(v => v.includes(".")) };
+    const unit = nums.every(n => n >= 0 && n <= 1);
+    const chance = unit && chanceColumn(table, header[i]);
+    return unit && !chance && values.some(v => v.includes(".")) ? { kind: "number", chance, unit: true } : { kind: "number", chance };
   }
   const words = [...new Set(values)];
   if (words.length >= 2 && words.length <= 8 && words.length < values.length && values.every(v => /^[A-Za-z][A-Za-z ]*$/.test(v))) {
@@ -160,23 +174,41 @@ export function columnKind(header, rows, i) {
   }
   return { kind: "text" };
 }
-// What a typed value becomes in a column of that kind: { value } or { error } in words.
+// What a typed value becomes in a column of that kind: { value } or { error } in words; { value, warn } for a
+// value past what a `unit` column has (it goes in, and the page says so).
 export function readCell(kind, raw) {
   if (kind.kind === "number") {
     const n = readNumber(raw);
     if (n === null) return { error: "Use a number like 1.5" };
     if (kind.chance && (n < 0 || n > 1)) return { error: "This is a chance: use a number from 0 to 1" };
+    if (kind.unit && (n < 0 || n > 1)) return { value: n, warn: `Every other value in this column is from 0 to 1; ${numberText(n)} goes in, if that's what you meant` };
     return { value: n };
   }
   if (kind.kind === "bool") return { value: raw === true || /^true$/i.test(String(raw)) };
   return { value: String(raw) };
 }
+// A row in words, for a message: its Role or Name (CatSize's row "3" is Elder), the English for a STR_ key
+// (texts: {key: English}), else its first column.
+export function rowLabel(header, row, texts = {}) {
+  const i = header.findIndex((h, k) => k > 0 && /^(role|name)$/i.test(h || ""));
+  const said = i > 0 ? String(row[i] ?? "").trim() : "";
+  if (said) return texts[said] || said;
+  return texts[row[0]] || row[0];
+}
 // Multiplying a column by f: refused with the first row it would break, for a chance column (over 1).
-export function multiplyProblem(kind, header, rows, col, f) {
+export function multiplyProblem(kind, header, rows, col, f, texts = {}) {
   if (!(f > 0)) return "Use a number above 0";
   if (!kind.chance) return null;
   const over = rows.find(r => isNumber(r[col] ?? "") && Number(r[col]) * f > 1);
-  return over ? `${over[0]} would be ${numberText(Number(over[col]) * f, over[col])}, and a chance can't go over 1` : null;
+  return over ? `${rowLabel(header, over, texts)} would be ${numberText(Number(over[col]) * f, over[col])}, and a chance can't go over 1` : null;
+}
+// Multiplying a `unit` column (every value from 0 to 1) past 1: it goes in, with this said; else null.
+export function multiplyWarning(kind, header, rows, col, f, texts = {}) {
+  if (!kind.unit || !(f > 0)) return null;
+  const over = rows.filter(r => isNumber(r[col] ?? "") && Number(r[col]) * f > 1);
+  if (!over.length) return null;
+  const first = over[0];
+  return `${rowLabel(header, first, texts)}'s ${header[col]} is ${numberText(Number(first[col]) * f, first[col])} now${over.length > 1 ? ` (and ${over.length - 1} more over 1)` : ""}; every value here was from 0 to 1, so check that's what you meant`;
 }
 
 // ---------- Quick changes ----------
@@ -206,22 +238,45 @@ export function quickNormal(entry, table) {
   const n = Number(first.original);
   return entry.negate ? -n : n;
 }
-// The value the row has now, with this mod's edits.
+// The value the row has now, with this mod's edits. A value row under an "xN" written by hand shows what the
+// game gets (390 × 1.5 is 585).
 export function quickCurrent(entry, table, tableEdits) {
   const first = quickCells(entry, table)[0];
   if (!first) return null;
   const spec = pick(tableEdits?.[entry.row === "*" ? "*" : first.row], first.column, first.index);
   if (entry.kind === "factor") return spec !== undefined && multiplier(spec) !== null ? multiplier(spec) : 1;
-  if (spec === undefined || multiplier(spec) !== null) return quickNormal(entry, table);
+  if (spec === undefined) return quickNormal(entry, table);
+  if (multiplier(spec) !== null) {
+    const row = table.rows.find(r => r[0] === first.row);
+    const shown = row && valueFor(tableEdits, table.header, row, first.index);
+    const n = shown && !shown.bad ? readNumber(shown.value) : null;
+    return n === null ? quickNormal(entry, table) : entry.negate ? -n : n;
+  }
   const n = typeof spec === "number" ? spec : readNumber(spec);
   return n === null ? quickNormal(entry, table) : entry.negate ? -n : n;
+}
+// The file's own edit of the row's cells, when it isn't one this row writes, in words ("set by hand to 0.08",
+// "set by hand to ×1.5"): a factor row over a plain value, a value row over an "xN" or a word, or cells set to
+// different values, or only some of them. null when the row's cells are as the row itself would write them.
+export function quickHand(entry, table, tableEdits) {
+  const cells = quickCells(entry, table);
+  const specs = cells.map(c => pick(tableEdits?.[entry.row === "*" ? "*" : c.row], c.column, c.index));
+  const set = specs.filter(s => s !== undefined);
+  if (!set.length) return null;
+  const said = s => multiplier(s) !== null ? `×${multiplier(s)}` : String(s);
+  const words = [...new Set(set.map(said))];
+  const fits = entry.kind === "factor" ? set.every(s => multiplier(s) !== null)
+    : set.every(s => multiplier(s) === null && (typeof s === "number" || readNumber(s) !== null));
+  if (fits && words.length === 1 && set.length === specs.length) return null;
+  return `set by hand to ${words.join(" and ")}`;
 }
 // Whether this mod has an edit on any of the row's cells.
 export function quickEdited(entry, table, tableEdits) {
   return quickCells(entry, table).some(c => pick(tableEdits?.[entry.row === "*" ? "*" : c.row], c.column, c.index) !== undefined);
 }
-// Write the row's value into edits (the game's own value takes its edits away). { ok } or { error } in words.
-export function quickWrite(entry, table, edits, value) {
+// Write the row's value into edits (the game's own value takes its edits away). { ok } or { error } in words;
+// { hand } (quickHand's words) when the file's own edit is there, which only replace: true writes over.
+export function quickWrite(entry, table, edits, value, { replace = false } = {}) {
   const n = typeof value === "number" ? value : readNumber(value);
   if (n === null || !Number.isFinite(n)) return { error: "Use a number like 1.5" };
   if (entry.min !== undefined && n < entry.min || entry.max !== undefined && n > entry.max) {
@@ -229,6 +284,8 @@ export function quickWrite(entry, table, edits, value) {
   }
   const cells = quickCells(entry, table);
   if (!cells.length) return { error: `The game's ${entry.table} hasn't got this row` };
+  const hand = replace ? null : quickHand(entry, table, edits[entry.table]);
+  if (hand) return { hand };
   const t = entry.table, header = table.header;
   if (entry.kind === "factor") {
     if (entry.chance) {
@@ -250,11 +307,23 @@ export function quickWrite(entry, table, edits, value) {
   }
   return { ok: true };
 }
-// A factor row's first cells, before and after: "Mice 25 -> 50, Fish 10 -> 20, ..."
-export function quickPreview(entry, table, value, rowNames = {}) {
+// A factor row's first cells, before and after: "Fish 10 -> 20, Mice 25 -> 25 (its own value), ...". The after is
+// what the game would get with the mod's other edits (tableEdits), as the build merges them: a row with a value
+// of its own keeps it under "*".
+export function quickPreview(entry, table, value, rowNames = {}, tableEdits = {}) {
   const cells = quickCells(entry, table).filter(c => isNumber(c.original));
+  const trial = { [entry.table]: JSON.parse(JSON.stringify(tableEdits || {})) };
+  const wrote = quickWrite(entry, table, trial, value, { replace: true });
+  const after = trial[entry.table] || {};
   const many = new Set(cells.map(c => c.row)).size > 1;
-  const said = cells.slice(0, 3).map(c => `${many ? rowNames[c.row] || c.row : c.column} ${c.original.trim()} -> ${numberText(Number(c.original) * value, c.original)}`);
+  const said = cells.slice(0, 3).map(c => {
+    const name = many ? rowNames[c.row] || c.row : c.column;
+    if (!wrote.ok) return `${name} ${c.original.trim()} -> ${numberText(Number(c.original) * value, c.original)}`;
+    const row = table.rows.find(r => r[0] === c.row);
+    const v = valueFor(after, table.header, row, c.index);
+    const own = v && v.own && entry.row === "*" ? " (its own value)" : "";
+    return `${name} ${c.original.trim()} -> ${v && !v.bad ? v.value : c.original.trim()}${own}`;
+  });
   return said.join(", ") + (cells.length > 3 ? ", ..." : "");
 }
 

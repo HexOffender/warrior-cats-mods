@@ -90,9 +90,10 @@ def built(tmp_path, *mods):
 def test_two_mods_same_table_queue_in_priority_order(tmp_path):
     low = Mod(tmp_path, "double-xp", {"CombatBaseExperience.csv": {"*": {"BaseExperience": "x2"}}})
     high = Mod(tmp_path, "more-xp", {"CombatBaseExperience.csv": {"*": {"BaseExperience": "x2"}}})
-    text, changes, _ = built(tmp_path, low, high)
+    text, changes, warnings = built(tmp_path, low, high)
     assert "Fish,40,0" in text and "Mice,100,0" in text   # x2 then x2: x4, as documented
     assert [c["by"] for c in changes] == ["double-xp", "double-xp", "more-xp", "more-xp"]
+    assert warnings == [], "multipliers stack: nothing to warn about"
 
 
 def test_same_cell_from_two_sources_warns(tmp_path):
@@ -100,9 +101,46 @@ def test_same_cell_from_two_sources_warns(tmp_path):
     b = Mod(tmp_path, "my-tweaks", {"CombatBaseExperience.csv": {"Mice": {"BaseExperience": 30}, "Nope": 1}})
     text, _, warnings = built(tmp_path, a, b)
     assert "Mice,30,0" in text and "Fish,20,0" in text
-    assert "my-tweaks changed Mice.BaseExperience in CombatBaseExperience.csv after double-xp; the game gets my-tweaks's" in warnings
+    assert ("my-tweaks sets BaseExperience in CombatBaseExperience.csv where double-xp changed it too (Mice): the game "
+            "gets my-tweaks's value there") in warnings
     # A problem names the mod it's in, not the section.
     assert "my-tweaks: CombatBaseExperience.csv: no row 'Nope'" in warnings
+
+
+def test_a_plain_value_over_many_rows_is_one_line_per_column_and_pair(tmp_path, monkeypatch):
+    path = "Wrc/Content/Gameplay/DataTables/NonAsset/CombatBaseExperience.csv"
+    rows = "".join(f"Prey{i},{10 + i},0\r\n" for i in range(6))
+    monkeypatch.setitem(TABLES, path, "Enemy,BaseExperience,DifficultyOffset\r\n" + rows)
+    a = Mod(tmp_path, "double-xp", {"CombatBaseExperience.csv": {"*": {"BaseExperience": "x2", "DifficultyOffset": 1}}})
+    b = Mod(tmp_path, "flat-xp", {"CombatBaseExperience.csv": {"*": {"BaseExperience": 50, "DifficultyOffset": 2}}})
+    c = Mod(tmp_path, "triple-xp", {"CombatBaseExperience.csv": {"*": {"BaseExperience": "x3"}}})
+    text, _, warnings = built(tmp_path, a, b, c)
+    assert "Prey0,150,2" in text   # set to 50 over the x2, then x3 on that: multipliers stack on what's there
+    assert warnings == [
+        "flat-xp sets BaseExperience in CombatBaseExperience.csv where double-xp changed it too (Prey0, Prey1, Prey2 and "
+        "3 more): the game gets flat-xp's values there",
+        "flat-xp sets DifficultyOffset in CombatBaseExperience.csv where double-xp changed it too (Prey0, Prey1, Prey2 "
+        "and 3 more): the game gets flat-xp's values there"]
+
+
+def test_story_tables_are_their_own_kind_and_warn(tmp_path):
+    from wcmods.sections.files import classify
+    base = "Wrc/Content/Gameplay/DataTables/NonAsset/"
+    assert [classify(base + t) for t in ("StoryDialogues.csv", "QuestDialogues.csv", "QuestObjectives.csv",
+                                         "NarrativeRole.csv", "OnlineGifts.csv", "TraitsFilters.csv",
+                                         "NPC/CatSize.csv", "TuningData.csv")] == \
+        ["story", "story", "story", "story", "online", "traits", "appearance", "gameplay"]
+    TABLES[base + "QuestObjectives.csv"] = "---,Count\nFindMoss,3\n"
+    try:
+        mod = Mod(tmp_path, "mine", {"QuestObjectives.csv": {"FindMoss": 2}})
+        c = ctx(tmp_path)
+        sec = DataSection()
+        c.begin("data")
+        sec.build(c, [(mod, sec.collect(mod, c))])
+        c.end()
+        assert "data: mine: QuestObjectives.csv is quests and talk; a wrong value can stop a quest" in c.warnings
+    finally:
+        del TABLES[base + "QuestObjectives.csv"]
 
 
 def test_one_files_star_then_its_row_is_not_a_conflict(tmp_path):

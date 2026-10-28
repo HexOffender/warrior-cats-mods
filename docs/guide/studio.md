@@ -2,9 +2,14 @@
 
 Clan Mod Studio is two things: the page you're reading this in, and the black window that opened with
 it. The black window is the studio itself (it runs on your computer and nowhere else); the page is how
-you talk to it. Close the black window and the page stops working, and says so. Close the page and the
-window keeps running: open the page again from the window's address, or double-click Clan Mod Studio
-again and it finds the one that's open.
+you talk to it. Close the black window and the page stops working, and says so; double-click Clan Mod
+Studio again and the page carries on by itself, with anything you hadn't saved still on it, ready to
+save. Close the page and the window keeps running: open the page again from the window's address, or
+double-click Clan Mod Studio again and it finds the one that's open.
+
+If the studio is updated while it's open, **Restart the studio** shows at the top: press it, and a fresh
+studio opens in a new window while the page comes back by itself. It waits until your changes are
+saved, since the page reloads; and if the new one hasn't answered in half a minute, the page says so.
 
 ## Your mods folder
 
@@ -32,13 +37,15 @@ The bar remembers your choice across pages: pick a mod on Palettes and the Names
 
 Nothing you change on a page is in the mod until you press **Save to mod**. "Unsaved changes" shows in
 the bar while there's something to save. If you switch to another mod in the bar with changes unsaved,
-the studio asks what to do with them (save them first, leave them behind, or stay); if you close the
-page, the browser asks too.
+or import a file over them (Share, at the foot of the page), the studio asks what to do with them (save
+them first, leave them behind, or stay); if you close the page, the browser asks too.
 
-Saving checks the file the same way applying would. If something in it would keep it out of the game,
-a line under the bar says what, and the file is saved all the same: fix it when you like, and the line
-goes when a save is fine. (When the studio can't read the game's files, say while Steam is updating it,
-the check waits for Apply.)
+Saving reads the file the way applying first does. If something in it would keep it out of the game (a
+colour that isn't one, a quest naming a cat the mod hasn't got), a line under the bar says what, and the
+file is saved all the same: fix it when you like, and the line goes when a save is fine. What only shows
+once all your mods are put together is still found when you apply: a table's rows and columns, a model
+or a picture, and two mods changing the same thing. (When the studio can't read the game's files, say
+while Steam is updating it, the whole check waits for Apply.)
 
 A mod that's off is switched on when you save into it: saving means you want it in the game.
 
@@ -91,7 +98,8 @@ Everything that's yours is in your files' folder, `%LOCALAPPDATA%\WCMods`:
   game again.
 - `backups\`: copies of your save game, and mods you removed or replaced.
 - `last-apply.log`: what the last Apply or Play did.
-- `studio.log`: the details behind a "Something went wrong" message, for anyone helping you.
+- `studio.log`: the details behind a "Something went wrong" message, for anyone helping you. It's kept
+  small: past about a megabyte it starts again, with the one before kept as `studio.log.1`.
 
 The studio's own folder (the one with `Clan Mod Studio.bat` in it) holds only the studio. Updating it,
 or getting a fresh copy, leaves all of the above alone.

@@ -49,6 +49,16 @@ test("a preset expands to the right paths and values", () => {
   const none = S.emptyList();
   S.preset("max-level", none, DATA, "0");
   assert.equal(S.isEmpty(none), true);
+  // A pile that's full already: nothing goes in the list (the page says "already full", not "added").
+  const full = S.emptyList(), at100 = JSON.parse(JSON.stringify(DATA));
+  at100["1"].GameplayProgression.FreshKill.Value = 100;
+  S.preset("fill-pile", full, at100, "1");
+  assert.equal(S.isEmpty(full), true);
+  // The herbs Give herbs names, in a sentence.
+  assert.equal(S.andList(["Horsetail Stalks", "Marigold Petal", "Comfrey Poultice", "Lamb's Ear Leaves"]),
+    "Horsetail Stalks, Marigold Petal, Comfrey Poultice and Lamb's Ear Leaves");
+  assert.equal(S.andList(["Moss"]), "Moss");
+  assert.equal(S.andList(["Moss", "Fern"]), "Moss and Fern");
 });
 
 test("describe turns a path into words", () => {

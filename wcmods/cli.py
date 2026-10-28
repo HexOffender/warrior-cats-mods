@@ -519,7 +519,8 @@ def cmd_uninstall(ctx, args):
 
 
 def cmd_backup(ctx, args):
-    where, files = save.backup(ctx.cfg.save_dir, ctx.backups, "manual")
+    from . import saverecord
+    where, files = saverecord.backup(ctx.cfg, ctx.backups, "manual")
     print(f"backed up {len(files)} file(s) -> {where}")
 
 
@@ -536,10 +537,9 @@ def cmd_restore(ctx, args):
         print("\nrun `wcmods restore <name>` (or `latest`) to restore one")
         return
     name = names[-1] if args.name == "latest" else args.name
-    save.backup(ctx.cfg.save_dir, ctx.backups, "before-restore")
-    restored = save.restore(ctx.backups, name, ctx.cfg.save_dir)
     from . import saverecord
-    saverecord.forget_since(ctx.cfg, name)   # the save put back hasn't got the changes made since
+    # After a backup of the save as it is ("before-restore"); the record of save edits comes back with the save.
+    restored = saverecord.restore(ctx.cfg, ctx.backups, name)
     print(f"restored {', '.join(restored)} from {name}")
 
 
