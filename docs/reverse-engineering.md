@@ -185,7 +185,14 @@ keys is found with xrefs.
   an index of the game's own modules.
 - **Game files:** `python wcmods.py files "<pattern>"` and `extract`. In cooked packages the name
   map is readable, but imports are hashes, so a Blueprint's parent class isn't stored by name. A
-  survey in game gets parents instead (*Game objects*).
+  survey in game gets parents instead (*Game objects*). A native class's import hash can be worked
+  out from its path, though (`anim.script_index`), so an export's class is known when the class dump
+  has it.
+- **Which packages hold or use something:** `tools/re/assetrefs.py <game folder> names <word>` lists the
+  packages whose name map has a name containing the word (a class name finds the packages with objects
+  of that class); `imports /Game/<path>` lists the packages that import objects of packages under a path.
+  It reads only the headers, about a minute for all 11,578 packages. From Git Bash, set
+  `MSYS_NO_PATHCONV=1` so `/Game/…` isn't turned into a Windows path.
 
 ## Files and formats
 
@@ -256,13 +263,274 @@ selftest check decodes all 412 rows, re-encodes them and rebuilds the package by
       FString); 0 is base text (namespace, key and source string, as FStrings).
     - A soft object path is the package FName, the asset FName and a sub-path FString.
     - Byte enums are one byte, left out when zero.
+    - The rest, worked out on the dialogue graphs (2026-10-28, below): a bool is one byte; an object
+      reference is an i32 `FPackageIndex` (export i is i + 1, import i is -i - 1, 0 is none); an
+      `FLinearColor` is four floats; an `FGameplayTagContainer` is serialized natively, an i32 count and
+      the tags' FNames; a `TArray` is an i32 count and the items; a `TMap` is an i32 count of keys to
+      remove (always 0) and an i32 count of pairs. **An enum used as a map key is its FName**
+      (`EBondingTypes::Positive`, in the name map), while an enum property on its own is its byte.
+    - An empty value isn't always marked zero. In the dialogue graphs (all 27,900 objects), 735 empty
+      FStrings are written out (length 0) instead: the `VOEvent` of the `FParagraphValues` in bond nodes'
+      `BondingRankParagraphs` (525) and `BondingTypesParagraphs` (210) maps. Why those and not others is a
+      guess (the string had memory allocated, so its bytes weren't all zero). No empty array, map or tag
+      container is written out anywhere in them. `cooked.Empty` keeps a written-out empty string apart so
+      the bytes come back the same; `cooked.EmptyList` does the same for a container, by analogy, untested
+      on the game's data.
 - **A DataTable export:**
   - the object's own properties: an unversioned header and `RowStruct` (an i32 import index);
   - a u32 `HasGuid` = 0, then an i32 row count;
   - each row: its FName and then the row struct.
   - The package file tag follows the export.
+- **Any other object** (an export that isn't a table) is its class's properties, unversioned, then a
+  u32 `HasGuid` = 0. **The properties are numbered from the object's own class first, then its base
+  class's, and so on up** (not base first). A `BondDialogue` graph sets fields 11 and 12: its own 3,
+  `NpcDialogue`'s 3, then `GenericGraph`'s `RootNodes` and `AllNodes` (its 6th and 7th). Confirmed by
+  decoding all 27,900 objects of the dialogue packages with nothing left over and writing each back
+  byte for byte (`cooked._Values.read_object`, the selftest's dialogue graph check).
+- **An export's class** is in its export map entry as an `FPackageObjectIndex`: the top two bits say
+  export (0), native "script" object (1), another package's object (2) or none (3). A script object's
+  value is CityHash64 of its lower-case path with `.` and `:` as `/`, in UTF-16, with the top two bits
+  set to 01: `/Script/SwtQuest.QuestDialogueTalkingNode` is `0x423BAE5FDC811ABA` (`anim.script_index`),
+  so a class is named from the class dump without the name map. Another package's object is that
+  package's index in `ImportedPackageNames` (<< 32) and the index of its public export hash
+  (`ZenPackage.resolve`).
 - **An empty FString** is written either as length 0 or as a length-1 lone terminator. Keep which,
   to get the same bytes back.
+
+### Dialogue graphs
+
+Worked out on 2026-10-28 (build 26184573) from the game's files and its exe, without running the game.
+`wcmods/dialogue.py` reads them (`conversations(game)`); nothing writes them. The selftest's dialogue graph
+check decodes every object of every package below, writes each back byte for byte, and rebuilds each
+package from the re-encoded objects byte for byte (`ZenPackage.rebuild`, as for the item table).
+
+**Where they are.** A scan of the name maps of all 11,312 `.uasset` packages (headers only,
+`tools/re/assetrefs.py names`) found the dialogue classes in 91 packages, all under `/Game/Quests`:
+
+| Folder | Packages | Graph | Used by (imports in all 11,312 packages and 266 `.umap`s, `assetrefs.py imports`) |
+|---|---|---|---|
+| `NpcDialogues/NPCUniques` | 49 | `NpcDialogue`, a cat's own talk | 44 by levels (`L_Gameplay_<Clan>_Quests`, `L_Sandbox_Gameplay_05_Quests` for the ThunderClan cats, a den), the gatekeepers', online and placeholder ones by quest giver Blueprints, `Dialogue_Test` by a test map |
+| `NpcDialogues/Cinematic` | 30 | `NpcDialogue` or `BondDialogue` | `DT_QuestSequenceDialogues`, by tag (below) |
+| `StoryDialogues` | 9 | `BondDialogue` templates | `BP_WrcQuestManager` |
+| `QuestDialogues` | 3 | `QuestDialogue` templates | `BP_WrcQuestManager` |
+
+The packages hold 27,900 objects of 34 classes. The template packages also hold 556 `QuestDialogue` and 22
+`BondDialogue` copies of their graph (`QuestDialogue_282`, `BondDialogue_7`; 167 of the quest ones filled in
+for one quest, so apparently copies the editor made while playing and saved) that nothing imports. Soft
+references weren't checked.
+
+**A graph** (the GenericGraph plugin; classes and property order from the class dump, the order an object
+numbers them from the decoding above):
+- The graph object is a top-level export. `UGenericGraph`: `Name`, `DataTable`, `NodeType`, `EdgeType`,
+  `GraphTags`, `RootNodes`, `AllNodes`, `bEdgeEnabled`. `UNpcDialogue` adds the two background colours and
+  `DialoguePartyTags`; `UBondDialogue` adds `DialogueTag`, `bShuffleOptions`, `WidgetId`; `UQuestDialogue`
+  adds `QuestName` (and alternatives), `QuestSecondaryTitle`, `QuestLongDescription`, `DialoguePartyTags`
+  and `AutoFillPrefix`.
+- **Nodes and edges are exports whose outer is the graph.** A node (`UGenericGraphNode`: `Graph`,
+  `EdgeTypeOverride`, `ParentNodes`, `ChildrenNodes`, `Edges`) lists its children and, in `Edges`, a map
+  from each child to the edge object leading to it. An edge (`UGenericGraphEdge`: `Graph`, `StartNode`,
+  `EndNode`) is a `UQuestDialogueEdge`: `EdgeType` (Simple 0 "go on", Option1–4: answer button 1–4),
+  `Button` (`FQuestCustomButton`: its `Text`), `TraitType` (`ECharacterTrait`), `Score`, `ClanBonding`,
+  `bAllowAutoFill`, `AutoFillSuffix`. A plain "go on" edge is 18 bytes: three object references.
+- **Roots:** `NpcDialogueRoot` (`QuestTags`: the quest states it's for, `Quest.Main.1.0`,
+  `Quest.Main.1.Complete`…; `RawTitle`), `QuestDialogueRoot` (`RootType`, an `EQuestStatus`: 1 when the
+  quest is offered, 3 when you come back with it done).
+- **Lines** are talking nodes, `UQuestDialogueTalkingNode`: `Paragraph` (FText), `ParagraphSingular`,
+  `TalkingSource` (`ETalkingSource`: NPC 0, Player 1, Current_Character 2, Custom 3: the cinematics'
+  narrator), `TalkingSourceText` (the name shown: `STR_QUEST_DIALOGUE_NPC_TALKER`, `STR_COMMON_NARRATOR`…),
+  three colours, `bSkipTalkMontage`, `VOEvent` (`vo_dialog_talk`…), `bVOEventFromParagraph`,
+  `bTalkingSourceWithColon`, `DialogueContext`, `ForcedTime`; and from `UQuestDialogueNode`
+  `bKeepShowingHud`, `bSkipConfirmation`, `TimeToWaitToNextNode`, `AutoFillSuffix`, `bAllowAutoFill`.
+  Subclasses: `QuestDialogueBondNode` (`SubTag`, and `FParagraphValues` for `DeathBoth`, `Traitor`,
+  `GiverRole`, per `EBondingRanks` and per `EBondingTypes`), `QuestDialogueBondingTypeNode` (`SubTag`,
+  `BondingTypesTexts`: a line per bond type), `QuestDialogueMultiTextTalkingNode` (`MultiParagraph`).
+- **Actions** are the other nodes: camera (`ActivateDialogueView`, `RestoreExplorationCamera`),
+  `StayInPlace`, `AllowMovement`, `CreateScreen` (`WidgetId`), `PlaySequence`, `NpcValidation`,
+  `SaveDialogueInteraction`, `StoryDialogue` (`StoryDialogueTag`: plays a story talk), the outcomes
+  (`ResolveAcceptQuest`, `ResolveConfirm`, `ResolveBondAnswer` with its `SubTag`, …) and SwtAdventure's
+  (`AdventureDialogueActionStartCombat`, `ClanRole`, `PhotoMode`, `SendGift`…). An action's own option edges
+  are presumably its outcomes, not buttons: an `NpcValidation`'s two carry only the default Accept and
+  Decline texts (a guess; `dialogue.py` follows them all).
+- `ActivateDialogueView.RelativeOffsetDistance` (an `FFloatRange`) is set nowhere, so its encoding isn't
+  known; reading refuses a node that sets it.
+
+**The words.** In the graphs the game plays (the 49 cats' own talks, the 30 cinematics and the 12
+templates), every text is empty or an FText of one of two kinds (all their objects read):
+- A **string table reference** (history 11) to the table `SwtStrings`, which the game loads from
+  `Strings_<language>.csv` (*Names*): 10,626 of them in all 91 packages, copies included. The cats' own
+  talks and the cinematics name their lines this way: 294 of their 299 lines and 69 of their 74 answer
+  buttons are keys, all of them in `Strings_EN.csv`.
+- **Inline text** (history 0), only as placeholders: `None.Context.1` (a story template's line before
+  it's filled), `<Answer 1>`, `<Trait 1 Answer>`, and three angle-bracket sample lines on the Encounter
+  template's bond nodes (`<My time is ending…>`), whose `SubTag`s (`Context.1` to `3`) have rows in all 7
+  Encounter talks. Shown as they are, the only inline lines are `NpcDialogue_DefenderGatekeeper`'s 4 lines
+  and 5 buttons in angle brackets (`<A 1 vs 1 duel>`) and `Dialogue_Test`'s one. No line of the game's
+  English is stored in these graphs.
+
+The template packages' **saved copies** (above; nothing plays them) are different. Besides 1,644
+placeholders (`<Answer 1>`…, `(Empty paragraph)`, `None.ActivityTransition.1`) they hold 359 inline texts
+that aren't:
+- 340 whose words are a key's name (`QST_Gather.Apprentice.Return.End`): the keys the editor filled in,
+  stored inline. The cross-check below counts them as keys.
+- 19 copies of one English line, "I should take this back to camp fast!" (the words of
+  `QST_Gather.Apprentice.ActivityTransition.1`), in 18 of `StoryDialogue_Monologue_ActivityTransition_Template`'s
+  `BondDialogue_N` copies.
+
+**Templates, filled in as they play** ("autofill"). The story and quest graphs have no words of their own:
+the game fills each line and answer from a row of `StoryDialogues.csv` or `QuestDialogues.csv`. Read from
+the code (addresses for build 26184573):
+- **The tables.** The quest manager's loader (`0x1416B3FA0`) reads `StoryDialogues.csv` into a map at
+  manager+0x280 and `QuestDialogues.csv` into one at +0x2D0, by row name. The row struct
+  (`FSwtQuestStoryDialoguesStruct`) is the columns: `Score`, `ClanBonding`, `Talker`, `Trait`, `VoiceOver`,
+  `StringKey`, `DebugText`. Lookups: `0x1416B2F30` (story), `0x1416B3240` (quest).
+- **A row's words** (`0x14162DC10`): `FText::FromStringTable("SwtStrings", StringKey)` through the game's
+  text-by-key helper `0x1412816E0` (264 callers; an empty table name means `SwtStrings`). When `StringKey`
+  is empty the row's `DebugText` is used instead (made into a text by `0x141A14CC0`). So it is when the looked-up text's
+  display string is empty or equals `<MISSING STRING TABLE ENTRY>`: `0x141A19320` returns a function-static
+  `FString` made from that UTF-16 literal (at `0x147E99740`), and `0x14162DC10` compares against it. So a key
+  `Strings_EN` hasn't got shows the row's `DebugText`.
+- **Quest talks:** `0x1416632B0` walks a `QuestDialogue` from its roots. For each node with
+  `bAllowAutoFill` (`0x1416648D0`) it clears `Paragraph` and `VOEvent`, then looks up the row
+  `<prefix>.<AutoFillSuffix>` and sets `Paragraph` from it, `TalkingSource` from `Talker` and `VOEvent` from
+  `VoiceOver`. The title comes from `%s.Title`, `%s.Title_Alternative_1`… (`0x141662BB0`). The walk is
+  called from five places in the quest code (`0x14164FA9A`…).
+- **A quest answer** (`0x141663B70`, for each edge): nothing for a plain edge (`EdgeType` 0) or with
+  `bAllowAutoFill` off. Otherwise it clears the button's text and, when the prefix isn't empty, formats
+  `%s.%s` from the prefix and the edge's `AutoFillSuffix`, even when the suffix is empty. That row
+  (`0x141662A50`: the lookup `0x1416B3240`, then the row's words as above) sets `TraitType`, `Score` and
+  `ClanBonding` when it exists, and the button when its text isn't empty or the missing-entry text. A
+  button still empty then gets, as the code reads:
+  - with `TraitType` 0: `STR_QUEST_DIALOGUE_DECLINE` for `EdgeType` 4, `STR_QUEST_DIALOGUE_ACCEPT` for
+    the others;
+  - with a trait (and a `QuestDialogue` graph): `<AutoFillPrefix>.Context.Answer.<Trait>.Short` when the
+    edge's end node is a `QuestDialogueActionResolveAcceptQuest` (`0x1416642E0` is that cast), else
+    `<AutoFillPrefix>.Return.Answer.<Trait>.Short` (`0x149AE6110`), the trait named by `ECharacterTrait`,
+    and only if that key isn't missing.
+
+  `AutoFillPrefix` is read from graph+0x110, where the class dump (`CXXHeaderDump/SwtQuest.hpp`) puts
+  `UQuestDialogue::AutoFillPrefix`. It holds a *key* prefix: the 6 saved copies that set it have
+  `QST_SideQuest.WinFights`, and `QST_SideQuest.WinFights.Context.Answer.Brave.Short` is a `Strings_EN`
+  key. The three templates leave it empty as cooked; whether the game sets it before the fill wasn't traced.
+- **The row prefix** isn't `AutoFillPrefix`. The walk and the title read it from graph+0x120, a 16-byte
+  field after the class's last reflected property (`UQuestDialogue` is 0x130 bytes), as an optional string:
+  nothing is filled when its capacity is -1 (that it's a `TOptional<FString>` is a guess from that test).
+  By the rows and the saved copies (below) it's the quest's tag and rank,
+  `Quest.Procedural.Survival.Gather.Apprentice`; who sets it wasn't traced (the five callers take the graph
+  from a virtual call).
+- **Story talks:** a story tag's row is `<tag>.<SubTag>`. A `ResolveBondAnswer` node (`0x141672870`)
+  joins its graph's `DialogueTag` and its `SubTag` (`%s.%s`) and takes that row's words; with no such row
+  it keeps the joined key as its text. The code that names the variant rows (`0x141673230`…) uses
+  `%s.%s.%s` with an `EBondingTypes` or `EBondingRanks` name, `%s.%s.Neutral`, `%s.%s.DeadBoth` and
+  `%s.%s.Traitor`; the Filler rows are named that way (`…Context.1.Positive`, `…Context.1.Warrior`).
+- **Which template a story tag plays** (`0x14168F4F0`), by the first of these parent tags it's under
+  (`MatchesTag`), and how many times you've had the talk:
+  - `Gameplay.Dialogue.Story.Long` or `.Short`: the Long or Short template the first time, `End` after.
+  - `…Story.Monologue.Interaction`: Interaction 1, 2 and 3 on the first three talks, then none.
+  - `…Story.Monologue.Filler`, `Filler2`, `Filler3`, `…Story.Monologue.Encounter` and
+    `Gameplay.Dialogue.Activity.Transition`: their own type, every time.
+- **The templates for each type** are `BP_WrcQuestManager`'s `StoryDialogueTemplates` and
+  `QuestDialogueTemplates` maps, read from its class defaults: an enum FName key and an import each (Short →
+  `StoryDialogue_Short_Template`, Monologue_Interaction_1 → `StoryDialogue_Monologue_Interaction_1_Template`,
+  …, End, Activity_Transition; MainQuest, SideQuest and UniqueQuest → the three `QuestDialogue_*_Template`s).
+  `Monologue_Filler_2` and `_3` have none.
+
+**Checked against the tables** (the files of build 26184573):
+- The Short and Long templates' `SubTag`s are exactly the row names under every Short (45) and Long (27)
+  story tag: no row left over, none missing.
+- QuestDialogues.csv's rows fall into 72 quest prefixes. Each one's suffixes fit exactly one template's
+  `AutoFillSuffix`es: 51 the main quest one, 12 the unique, 9 the side quest one. Left out are 78 extra
+  titles (`Title2`, `Title3`, the alternatives) and 50 `Context.End` rows no template asks for.
+- 167 of the 556 saved quest copies carry keys the editor filled in, as table references or as inline
+  text whose words are the key's name (*The words*, above). Of their 2,064 lines and answers that have a
+  row, 1,890 carry the row's `StringKey`. For 170 of the other 174, the copy's key isn't in
+  `Strings_EN.csv` while the row's is (`QST_Gather.Apprentice.Response.Brave` against
+  `…Context.Response.Brave`); for 4, neither is. That fits the game showing the row's key, not a key
+  baked into a graph.
+- `DebugText` is two different things:
+  - In `StoryDialogues.csv` it's an older English copy: of the 2,930 rows whose key is in
+    `Strings_EN.csv`, 1,210 have different words there. The aging leader's first answer is "I agree." in
+    `DebugText` and "Of course it will!" in `Strings_EN.csv`. This difference is the in-game check (in
+    *verified.md*).
+  - In `QuestDialogues.csv` it's the key itself, in all 1,214 rows (`QST_Gather.Apprentice.Context.1`).
+    So a quest line whose key is missing shows that raw key, not words. (With the 1,055 quest rows whose
+    key is in `Strings_EN.csv`, that makes 2,265 rows whose `DebugText` differs from the words shown.)
+- 90 keys the conversations show aren't in `Strings_EN.csv`, all with rows:
+  - 84 are the Escort and Recruit quests' (Escort Apprentice, Warrior, Deputy and Leader, Recruit Deputy and
+    Leader): 14 each, 11 lines and 3 answers (their titles' keys are missing too). By the code above, the
+    game would show those raw keys (`QST_Escort.Apprentice.Context.1`), since their `DebugText` is the key.
+  - 6 are the resentful elder's StarClan talk's variants,
+    `QST_Story.Monologue.Interaction.TheResentfulElder.StarClan.Context.1` to `3`, each `.CloseBond` and
+    `.Friend`. Their rows' `DebugText` is English ("It is one thing to regale others with dark tales…"),
+    which the game would show. That talk has no row for its lines outside those two bond ranks.
+- 8 story tags the cats' graphs play have no rows (`…Filler.Ivypool.StarClan`, …). One row is used by
+  nothing (`…Filler.Rescue.Unique.3`).
+
+**Cinematic talks** are played by tag (`PlaySequenceDialogue`): `DT_QuestSequenceDialogues`
+(`FSwtQuestSequenceDialoguesStruct`: `SequenceDialogueId`, `WidgetToUse`, `DialogueToUse`) maps 30 tags
+(`Gameplay.Narrative.RankUp.WindClan.Leader`…) to the 30 cinematic graphs, by import. Their lines are
+keys of `STR_Script…` and `QST_Story…` rows, with the narrator as `Custom`. Their `BondingTypeNode`s carry a
+line per bond type. The WindClan leader's rank-up button is ThunderClan's key
+(`STR_Script.ThunderClan.Deputy.Leader.Promotion.Player.1`).
+
+**A worked example: the aging leader's first talk.**
+- **The graph.** `NpcDialogue_TheAgingLeader` (16 objects, imported by `L_Sandbox_Gameplay_05_Quests`)
+  has five `NpcDialogueRoot`s, one per quest state. The first is for `Quest.Main.1.0`, `Quest.Main.1.1`
+  and `Quest.Main.1.Complete`. It leads by a plain edge to a `QuestDialogueActionStoryDialogue` with
+  `StoryDialogueTag` = `Gameplay.Dialogue.Story.Short.TheAgingLeader.Main.1`.
+- **The template.** That tag is under `…Story.Short`, so the first talk plays `StoryDialogue_Short_Template`
+  (a `BondDialogue`, 56 objects).
+- **The bytes of one node,** its `Question.1` bond node (154 bytes):
+  - The header is `00 02 | 05 02 | 11 02 | 01 07`: fields 0, 6, 24 and 26–28, that is `SubTag`,
+    `Paragraph`, `Graph`, `ParentNodes`, `ChildrenNodes`, `Edges`.
+  - `SubTag` is `"Question.1"`. `Paragraph` is base text `"None.Question.1"`, the placeholder.
+  - `ChildrenNodes` is three `ResolveBondAnswer`s. `Edges` maps each to an Option1–3 edge whose button
+    reads `<Answer 1>`…
+- **The walk,** with each row `<tag>.<SubTag>` giving the key `QST_Story.Short.TheAgingLeader.Main.1.<SubTag>`:
+  1. The camera and stay-in-place actions, then the leader says `Context.1` ("I'm troubled by this new
+     prophecy…") and `Question.1`.
+  2. Three answer buttons: `Right.1.Short` (Brave, Score 9, ClanBonding 2), `Wrong.1.Short`
+     (Ambitious, -3, -4) and `Neutral.1.Short` (Wise, 0, 0).
+  3. Each leads to your long line (`Right.1.Long`, Talker Player), then the leader's reply
+     (`Context.2.Right`/`Wrong`/`Neutral`), then `Question.2`.
+  4. Three more answers (`Right.2.Short`…), your long line, the reply (`Context.End.<Right|Wrong|Neutral>`)
+     and `End`.
+  5. A `SaveDialogueInteraction` and the camera back.
+- **Later talks** play the `End` template: just `…Main.1.End`.
+
+`conversations(game)` gives this as the conversation
+`story:Gameplay.Dialogue.Story.Short.TheAgingLeader.Main.1`: 17 lines in reading order (16 the first time,
+`End` after), each with its key, English (and `fallback`), row and speaker; the answers with their trait, score, clan bonding
+and the line they lead to; and `used_by` `npc:NpcDialogue_TheAgingLeader`.
+
+**Totals** (`conversations()` on build 26184573, 2 s):
+- 564 conversations: 49 cats' own talks, 30 cinematics, 413 story talks and 72 quest talks.
+- 4,062 distinct keys.
+- Of the story talks, 371 are played by a cat's graph. The other 42 (Fillers, Interactions, and the three
+  Long talks that `TheInsecureLeader`, `TheProudLoner` and `TheZealousWarrior` hold inline in their own
+  graph) are only known from the table. A level's quest component (`StoryDialoguesOnInteract`) or the
+  code may play them; that wasn't traced.
+
+**What the Lines card can rely on** (the names plan's card for rewriting what a cat says):
+- **Every line it can offer is a `Strings_EN` key.** The cats' own talks and the cinematics name the key in
+  the graph. Story and quest talks get it from their table row's `StringKey`, at the moment they play.
+  `names.json` `text` sets keys in that table, the mechanism seen working for names. That a rewritten
+  *dialogue* key shows in the dialogue box is the one thing not yet seen (*verified.md*).
+- **The card can show:** each conversation's lines in order, who says each, the answers and their trait,
+  score and clan bonding, and which cat's graph plays it under which quest state (`plays`, `used_by`).
+- **The card must not rely on:**
+  - The words in `DebugText`: they're shown only when the key is missing, and in `QuestDialogues.csv`
+    they're the key itself. `conversations()` marks each line a `DebugText` stands in for with `fallback`:
+    `"debug"` with its words, or `"key"` with no English when the game shows the raw key (the Escort and
+    Recruit quests).
+  - Which variant a Filler or bond line shows: the player's bond or rank picks it at run time.
+  - Which quest template a quest uses: it's matched by the quest's rows, and the game picks by the quest's
+    flow type, which wcmods doesn't read.
+- **What the card should warn about:**
+  - A key used in more than one place changes them all (`lines_by_key`).
+  - Placeholders like `{PLAYER}` and `{THE AGING LEADER}` (in 1,021 of the keys) and the rich text
+    `<B>…</>` (in 228) must stay.
+  - The gatekeeper's angle-bracket lines can't be changed through the text table.
+  - A line or answer can't be added (that needs graph writing).
 
 ### New packages and textures
 
@@ -1447,9 +1715,10 @@ Worked out on 2026-10-24 for `Game.npcs`, and checked in game with two cats.
     `CustomPOIIcon` takes the `MI_UI_Icon*` materials; `bStickPOIToBorder` keeps it at the minimap's edge.
     Textures and materials load with `LoadAsset` on their whole object path, not the package's.
   - **Dialogues** are `NpcDialogue` graphs (`GenericGraph`) of `QuestDialogueNode`s: camera actions,
-    `QuestDialogueTalkingNode`s with a `Paragraph` and a `TalkingSource` (0 the cat, 1 you; several "you"
-    children of one node are the answer choices) and screens (`QuestDialogueActionCreateScreen`). Giving a
-    spawned cat one didn't make the game talk with it, for the reason above.
+    `QuestDialogueTalkingNode`s with a `Paragraph` and a `TalkingSource` (0 the cat, 1 you) and screens
+    (`QuestDialogueActionCreateScreen`); the answer choices are a node's edges with an `EdgeType` of 1 to 4
+    (*Dialogue graphs* has the format). Giving a spawned cat one didn't make the game talk with it, for the
+    reason above.
 - **Keys:** the game's Interact (E) would also use whatever else is in reach (a travel tunnel opened
   the map). The examples talk on T and the controller's d-pad up, read from the game's own input
   (`WasInputKeyJustPressed`). That also works with keys the agent posts to the window, which UE4SS
@@ -1836,6 +2105,18 @@ The rules of play are in [mechanics/](mechanics/README.md):
 - **Progression and dialogue:**
   - Does a dialogue answer's `Score` go to your bond with that cat?
   - Do levels stop at a rank's cap until the rank-up quest?
+  - **Dialogue graphs** (*Dialogue graphs*):
+    - Which quest template a quest plays (its `EQuestFlowDialogueTypes`), and who sets a quest's row prefix
+      (`Quest.Procedural.Survival.Gather.Apprentice`: the graph's non-reflected string at +0x120, read by the
+      walk and the title) and whether anything sets the graph's `AutoFillPrefix` (+0x110, a key prefix that
+      only a trait answer's fallback key uses) before the fill. The quest graphs (`QuestGraphProcedural_*`,
+      `QuestLine_Main`) weren't decoded.
+    - Who plays the 42 story talks no cat's graph names (a level's `StoryDialoguesOnInteract`?), and the
+      8 tags the graphs name that have no rows.
+    - How `ActivateDialogueView.RelativeOffsetDistance` (an `FFloatRange`) is stored; nothing sets it.
+    - What a `ResolveBondAnswer` in an `NpcDialogue` (not a `BondDialogue`) shows, since its words come
+      from the graph's `DialogueTag`, which only a `BondDialogue` has; the three inline Long talks have
+      them.
 - **Clan life:**
   - Are den build times real hours?
   - What are `FreshKillPile.ResetCycles`, `Stamina.Bonus.Modifier.1..16` and the sunspot rewards?
