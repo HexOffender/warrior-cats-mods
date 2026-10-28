@@ -92,11 +92,13 @@ export default {
       file: "palette.json",
       onLoad: obj => { state = P.fromPalette(obj, { labels: LABELS, gameSlots: GAME }); undo = null; renderAll(); otherSlotsReady = loadOtherSlots(); },
       getValue: () => P.toPalette(state, LABELS),
-      // Saved: the page reads what it wrote as it reads any file (a save doesn't read the file back), and Undo goes.
-      // Not when something changed while it saved: that stays on the page, still to be saved.
+      // Saved: the last whole-tab change can't be undone past it, and the page reads what it wrote as it reads any
+      // file (a save doesn't read the file back), so what Save left out leaves the lists. Not when something changed
+      // while it saved: that stays on the page, still to be saved.
       onSaved: (saved, { changed }) => {
-        if (changed) return;
-        state = P.fromPalette(saved, { labels: LABELS, gameSlots: GAME }); undo = null; renderAll();
+        undo = null;
+        if (changed) { renderStyleRow(); return; }
+        state = P.fromPalette(saved, { labels: LABELS, gameSlots: GAME }); renderAll();
       },
     });
     // A change on the page: unsaved now, and the list of what the page can't show redrawn when an entry there is

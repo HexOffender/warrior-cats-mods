@@ -483,6 +483,7 @@ export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
   }
   // behind: an Apply or Play ran while there were unsaved changes, so the game has the saved file, not these.
   let behind = false;
+  const NOT_YET = "Not in the game yet: Save to mod, then Apply";
   function setDirty(v) {
     if (v) edits++;   // a change on the page (markDirty, an imported file): one made during a save or a read shows
     dirty = v;
@@ -491,7 +492,7 @@ export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
     if (v) unsaved.add(me); else unsaved.delete(me);
   }
   function showStatus() {
-    status.textContent = !dirty ? "" : behind ? "Not in the game yet: Save to mod, then Apply" : "Unsaved changes";
+    status.textContent = !dirty ? "" : behind ? NOT_YET : "Unsaved changes";
   }
   function showProblems(list) {
     clear(problems);
@@ -590,7 +591,10 @@ export function modTarget({ file, onLoad, getValue, onSaved, share = true }) {
     if (dirty || !current || !mods.some(m => m.id === current)) return;
     let r;
     try { r = await api.get(`/mods/${encodeURIComponent(current)}/file/${file}`); } catch (e) { return; }
-    if (dirty || (r.exists ? r.text : null) === loadedText) return;
+    // The same file whatever its spacing: what it says is what counts.
+    const said = t => { try { return JSON.stringify(JSON.parse(t)); } catch (e) { return t; } };
+    const same = (a, b) => (a == null || b == null ? a === b : said(a) === said(b));
+    if (dirty || same(r.exists ? r.text : null, loadedText)) return;
     await load(current);
     toast(`${file} in ${nameOf(current)} was changed outside this page, so the page shows it as it is now.`);
   });

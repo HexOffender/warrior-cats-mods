@@ -73,13 +73,6 @@ async function press(page, scope, text, tag = "button") {
   await page.click(`[data-e2e="${mark}"]`);
 }
 const PAL = '[data-page="palettes"]', CATP = '[data-page="cat"]';
-// Save to mod, then wait for the page to have read its file back (it redraws `redrawn`, a selector inside the page):
-// a click before that could land on what the redraw replaces.
-async function saveAndSettle(page, scope, redrawn) {
-  await page.evaluate(`document.querySelector(${JSON.stringify(`${scope} ${redrawn}`)}).dataset.before = "1"`);
-  await press(page, scope, "Save to mod");
-  await page.waitFor(`${scope} ${redrawn}:not([data-before])`);
-}
 const emit = (page, evt) => page.evaluate(`import("/studio/lib/wc.js").then(wc => { wc.bus.emit(${JSON.stringify(evt)}, {}); return true; })`);
 const status = (page, scope) => page.evaluate(`document.querySelector(${JSON.stringify(`${scope} .target .dirty`)}).textContent`);
 async function waitForFile(file, check) {
@@ -270,6 +263,10 @@ test("Restyle, Undo and Reset tab change the game's colours and keep the new one
   assert.equal(options.length, 26);
   assert.equal(options[3], `3 · ${TABLES.PatternMaskColors[3]}`);
   assert.equal(options[25], "25 (new) · #FF00CC");
+  // Saved, there's nothing to undo: the file is what the page shows.
+  await press(page, PAL, "Save to mod");
+  await page.waitFor(() => !document.querySelector('[data-page="palettes"] [data-focus="pal:undo"]'));
+  assert.deepEqual(readJson(fileOf("my-mods", "palette.json")).pattern, { 25: "#FF00CC" });
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
 });
@@ -284,12 +281,12 @@ test("what Palettes can't show is listed with a Remove, and Save says what keeps
   await page.click(`${PAL} .pal-unread summary`);
   await page.click(`${PAL} button[aria-label^='Remove Pattern "x"']`);
   await page.waitFor(() => !document.querySelector(`[data-page="palettes"] button[aria-label^='Remove Pattern "x"']`));
-  await saveAndSettle(page, PAL, ".pal-unread");
-  assert.equal(await page.evaluate(`document.querySelector('${PAL} .problems').hidden`), false);
+  await press(page, PAL, "Save to mod");
+  await page.waitFor(() => !document.querySelector('[data-page="palettes"] .problems').hidden);
   assert.match(await page.text(`${PAL} .problems`), /unknown part 'hats'/);
   let saved = readJson(fileOf("my-mods", "palette.json"));
   assert.deepEqual([saved.pattern, saved.hats], [{ 3: "#123456" }, { a: 1 }]);
-  assert.equal(await page.evaluate(`document.querySelector('${PAL} .pal-unread').open`), true, "the list stays open through the redraw");
+  assert.equal(await page.evaluate(`document.querySelector('${PAL} .pal-unread').open`), true, "the list stays open after the save");
   await page.click(`${PAL} button[aria-label^='Remove "hats"']`);
   await page.waitFor(() => !document.querySelector(`[data-page="palettes"] button[aria-label^='Remove "hats"']`));
   await press(page, PAL, "Save to mod");

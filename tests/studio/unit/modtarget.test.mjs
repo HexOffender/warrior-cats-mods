@@ -343,6 +343,36 @@ test("onSaved hears whether the page changed while it saved, and coming back doe
   assert.equal(target.dirty, false);
 });
 
+test("a change made while the file is read again (after an Apply) stays on the page", async () => {
+  const t = await setUp();
+  const read = dom.routes["GET /mods/a/file/names.json"];
+  let reading = null;
+  dom.routes["GET /mods/a/file/names.json"] = async () => { await new Promise(r => { reading = r; }); return read(); };
+  try {
+    const refreshing = t.target.refresh();   // what installedEvent does on a page with nothing unsaved
+    while (!reading) await tick(5);
+    t.target.markDirty();                    // a click on the page just then
+    reading();
+    await refreshing;
+    assert.equal(t.loads.length, 1, "the page's state wasn't replaced by the file");
+    assert.equal(t.target.dirty, true, "and the change is still to be saved");
+  } finally {
+    dom.routes["GET /mods/a/file/names.json"] = read;
+  }
+});
+
+test("what a save wrote is the file as it is: coming back to the window doesn't read it again", async () => {
+  const t = await setUp();
+  t.setValue({ prefixes: { remove: ["Sun"] } });
+  t.target.markDirty();
+  await t.target.save();
+  const toasts = dom.byId.toasts.querySelectorAll("span").length;
+  t.wc.bus.emit("focus");
+  await tick(20);
+  assert.equal(t.loads.length, 1, "not loaded again");
+  assert.ok(![...dom.byId.toasts.querySelectorAll("span")].slice(toasts).some(s => s.textContent.includes("changed outside")));
+});
+
 const REFUSED = { ok: false, status: 403, statusText: "Forbidden", json: async () => ({ error: "missing or wrong studio token; reload the page" }) };
 const OK = body => ({ ok: true, status: 200, statusText: "OK", json: async () => body });
 const PAGE = tok => ({ ok: true, status: 200, url: "", text: async () => `<html><head><meta name="wc-token" content="${tok}">` });

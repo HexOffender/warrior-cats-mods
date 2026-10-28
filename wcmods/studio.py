@@ -1569,8 +1569,11 @@ def make_handler(studio, port):
 
 class _Server(ThreadingHTTPServer):
     """One studio per port. HTTPServer turns on SO_REUSEADDR, which on Windows lets a second server
-    bind a port that's already in use, so two studios would silently share it."""
+    bind a port that's already in use, so two studios would silently share it. A page asks for its scripts,
+    styles and data all at once: room for that many to wait their turn (socketserver's 5 overflows on a busy
+    machine, which the browser says as ERR_NO_BUFFER_SPACE or a refused connection)."""
     allow_reuse_address = False
+    request_queue_size = 128
 
     def server_bind(self):
         if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
