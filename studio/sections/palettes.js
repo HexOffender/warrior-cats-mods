@@ -180,9 +180,13 @@ export default {
         el("strong", { text: what }), el("span", { class: "muted" }, ...said));
       const loader = !!(info && info.ue4ss), code = !!(info && info.allow_code_mods);
       const built = info && info.installed && info.installed.built;
+      // Eye colours go into the game's own eye picture, which Apply reads from the game's files, as this page does.
+      const found = !!(info && info.game_dir);
       put(strip, el("h2", { text: "What reaches the game" }),
         el("ul", { class: "pal-strip-lines" },
-          line("Eye colours", true, "through the game's own files"),
+          line("Eye colours", found && !!eyes, found && eyes ? "through the game's own files"
+            : !found ? "need the game: Get set up, on the Mods page, finds it"
+            : "the game's eye colours can't be read just now (is Steam updating the game?): open this page again in a moment"),
           line("Coat, pattern and marking colours", loader,
             loader ? "through the script loader" : "need the script loader: Get set up, on the Mods page, installs it"),
           line("New colours and coat presets in the cat maker", !!(creator && creator.enabled && loader && code),
@@ -202,6 +206,7 @@ export default {
         el("button", { class: "btn ghost", text: "Untick all", onclick: () => { quickPick?.clear(); drawQuick(); } }),
         why ? el("span", { class: "muted", text: why }) : null);
     }
+    const whose = name => (/s$/i.test(name) ? `${name}'` : `${name}'s`);   // "Gem eyes' colours", "Forest's colours"
     function drawQuick() {
       if (quickPick === null) return;   // not read yet
       const dot = (hex, round) => el("span", { class: "swatch", title: hex, style: { display: "inline-block", width: "13px", height: "13px",
@@ -227,17 +232,25 @@ export default {
           el("span", { class: "muted", style: { fontSize: "0.8rem" }, text: m.description || m.id }), ...swatches);
       });
       drawQuickButtons();
-      // Two ticked palettes that both change the coats, or both the eyes: only the later one's show.
-      const ticked = quickData.filter(d => d.palette && quickPick.has(d.mod.id));
-      const twice = part => ticked.filter(d => Object.keys(d.palette[part] || {}).some(k => !k.startsWith("_"))).length > 1;
+      // Ticked palettes that change the same colours: the later one in the Mods list wins each of them. One line for
+      // each palette that wins the same colours over several.
+      const overlaps = [];
+      for (const o of P.overlaps(quickData.filter(d => d.palette && quickPick.has(d.mod.id)).map(d => ({ name: d.mod.name, palette: d.palette })), LABELS)) {
+        const same = overlaps.find(x => x.later === o.later && x.what === o.what && x.onTop === o.onTop);
+        if (same) same.under.push(o.earlier); else overlaps.push({ ...o, under: [o.earlier] });
+      }
+      const and = names => (names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0]);
       put(quick, el("summary", {}, el("h2", { text: "Switch between ready-made palettes" }),
           el("span", { class: "muted", text: quickData.length ? `${quickData.length} palette mod${quickData.length === 1 ? "" : "s"}` : "none yet" })),
         el("p", { class: "note", text: "Tick the palettes to use, then Apply: it switches the ticked ones on and the other palettes that hold nothing else off, and puts them in the game. Mods with more than a palette in them, and palettes that only add new colours, aren't touched." }),
-        el("p", { class: "note", text: "Pick one full theme; a palette that changes only the eyes or only the coats goes on top of it. To change one, choose it under Editing mod below." }),
+        el("p", { class: "note", text: "Pick one full theme; a palette that changes only the eyes or only the coats goes on top of it when it's later in the Mods list. To change one, choose it under Editing mod below." }),
         tiles.length ? null : el("p", { class: "empty", text: "No palette mods yet. Ten themed palettes, and palettes for eyes and coats, are in wcmods-examples (Add a mod, on the Mods page, says where)." }),
         el("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: "10px" } }, ...tiles),
-        twice("fur") || twice("eyes") ? el("p", { class: "note heads-up", role: "status",
-          text: `Two of the ticked palettes change the ${twice("fur") ? "coats" : "eyes"}: only the one later in the Mods list shows. Untick one.` }) : null,
+        // A partial palette over a full theme is what the note above suggests: said, but not as a problem.
+        ...overlaps.map(o => (o.onTop
+          ? el("p", { class: "note pal-overlap", text: `${o.later} goes on top of ${and(o.under)}: for ${o.what}, ${whose(o.later)} colours show, as it's later in the Mods list.` })
+          : el("p", { class: "note heads-up pal-overlap", role: "status",
+            text: `${and([o.later, ...o.under])} ${o.under.length > 1 ? "all" : "both"} change ${o.what}: ${whose(o.later)} colours show there, as it's later in the Mods list. Untick ${o.under.length > 1 ? "all but one" : "one"}.` }))),
         quickButtons);
       quick.open = quickOpen;
     }
@@ -440,15 +453,17 @@ export default {
     const otherHex = (sec, i) => (slotsElsewhere[sec] || []).find(o => o.slot === i)?.hex;
     const cardBox = () => el("div", { class: "card", style: { padding: "10px", gap: "8px" } });
     // A colour's code as text, beside its picker: it shows the colour now, takes any colour a palette.json may
-    // hold (a code someone shared, a name like "orange", "255, 136, 0") on Enter or when it's left, and selects
-    // itself when clicked, ready to copy. sync() shows the colour again (not while it's being typed in).
+    // hold, any colour name a web page knows ("rebeccapurple", "peachpuff") and three numbers, "255, 136, 0" or
+    // "[255, 136, 0]", on Enter or when it's left, and selects itself when clicked, ready to copy. What it takes is
+    // written as a #RRGGBB code. sync() shows the colour again (not while it's being typed in).
     function codeBox(label, current, take) {
       const box = el("input", { type: "text", class: "code-box", spellcheck: "false", autocomplete: "off", size: "9", "aria-label": label });
       box.addEventListener("focus", () => box.select());
       const commit = () => {
         const text = box.value.trim();
         if (text === (current() || "")) return;   // nothing new (Enter, then leaving the box)
-        const c = color.parse(/^\d+\s*,\s*\d+\s*,\s*\d+$/.test(text) ? text.split(",").map(Number) : text);
+        const nums = /^\[?\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]?$/.exec(text);
+        const c = nums ? color.parse(nums.slice(1).map(Number)) : color.parse(text) || cssColour(text);
         if (!c) {
           toast(`"${text}" isn't a colour: try a code like #FF8800, or a name like orange`, "bad");
           box.value = current() || "";
@@ -461,6 +476,15 @@ export default {
       box.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); commit(); } });
       box.sync = () => { if (document.activeElement !== box) box.value = current() || ""; };
       return box;
+    }
+    // Any colour a web page knows, by the browser's own reading of it ("peachpuff", "rgb(10 20 30)"), as #RRGGBB; null
+    // for one it doesn't, and for one it can see through (the files' colours have no see-through part).
+    const probe = document.createElement("canvas").getContext("2d");
+    function cssColour(text) {
+      if (!probe || !text || /^(currentcolor|inherit|initial|unset|revert)$/i.test(text)) return null;
+      const read = start => { probe.fillStyle = start; probe.fillStyle = text; return probe.fillStyle; };
+      const a = read("#000000"), b = read("#ffffff");   // a colour it can't read leaves the one before
+      return a === b && /^#[0-9a-f]{6}$/i.test(a) ? a.toUpperCase() : null;
     }
     function tableCard(sec, i) {
       const isNew = i >= GAME;

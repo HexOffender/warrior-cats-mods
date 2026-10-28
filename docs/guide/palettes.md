@@ -37,7 +37,9 @@ You can:
 
 - give any of the game's eye, coat, pattern and marking colours a colour of your own, on its card: with
   the colour box, or by typing in the box beside it. That box takes a code someone shared (`#FF8800`), a
-  name like "orange", or three numbers ("255, 136, 0"); click it and its code is selected, ready to copy;
+  name like "orange" (any colour name a web page knows works, "peachpuff" too), or three numbers
+  ("255, 136, 0" or "[255, 136, 0]"); click it and its code is selected, ready to copy. What you type is
+  saved as its code;
 - give an eye **One colour** (it keeps the game's shading, dark at the pupil) or a **Gradient** of two
   to four colours spread from the pupil (left of the strip) to the rim (right);
 - add as many new pattern and marking colours as you like. Each keeps its number for good, so a cat set
@@ -74,8 +76,9 @@ new pattern or marking colour. The pieces that make them work have been, one by 
 
 ## Did it reach the game?
 
-- **What reaches the game**, at the top of the page, says it before you start: eye colours always go
-  in; coat, pattern and marking colours need the script loader; new colours and coat presets reach the
+- **What reaches the game**, at the top of the page, says it before you start: eye colours go in once
+  the studio has found the game and can read its eye colours; coat, pattern and marking colours need the
+  script loader (and Apply warns when it's missing); new colours and coat presets reach the
   cat maker only with the Creator palettes mod, switched on, with mods that run code allowed. Each line
   says "ready" or what's missing, and the last line says when your mods last went in the game.
 - After **Save to mod**, a line under the Editing mod bar says if anything would keep the file out of
@@ -91,9 +94,11 @@ new pattern or marking colour. The pieces that make them work have been, one by 
 
 - **Recolouring a coat to change just your cat.** Every cat with that coat number changes. For one cat,
   use Colours of its own on the Your cat page.
-- **Ticking two full themes** under Switch between ready-made palettes. Only one of them shows (the one
-  later in the Mods list), and the card says so. Pick one theme; eyes-only or coats-only palettes go on top
-  of it.
+- **Ticking two full themes** under Switch between ready-made palettes. Where two ticked palettes change
+  the same colour (the same coat number, or the same eye however each names it), only the one later in the
+  Mods list shows there, and the card names both and says to untick one. Pick one theme. A palette that
+  changes only the eyes or only the coats goes on top of it when it's later in the Mods list (the examples'
+  themes come first): the card says so too, as a plain line rather than a warning.
 - **Going by an eye's name.** Some of the game's names don't match the colour (Yellow is green). Go by
   the strip on the card.
 - **Applying with changes unsaved.** Apply puts in what's saved. If you apply with changes still on the
