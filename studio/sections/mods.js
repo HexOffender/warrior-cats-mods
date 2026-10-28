@@ -470,7 +470,9 @@ export default {
           input = el("input", { type: "checkbox", role: "switch", class: "switch", id: fieldId, checked: row.value });
           input.addEventListener("change", () => change(row.key, input.checked));
         } else if (row.kind === "number") {
-          input = el("input", { type: "number", id: fieldId, value: String(row.value), step: String(row.step), min: row.min, max: row.max, style: { width: "8rem" } });
+          // A number with a point keeps it in the box too (12.0, not 12).
+          const shown = !row.whole && Number.isInteger(row.value) ? row.value.toFixed(1) : String(row.value);
+          input = el("input", { type: "number", id: fieldId, value: shown, step: String(row.step), min: row.min, max: row.max, style: { width: "8rem" } });
           input.addEventListener("input", () => { if (!scriptSettings.problem(row, input.value)) change(row.key, Number(input.value)); });
           inputs.push([row, input]);
         } else if (row.kind === "colour") {
@@ -482,7 +484,7 @@ export default {
         }
         const line = row.kind === "nested"
           ? el("div", { class: "field" }, el("span", { class: "lbl", text: row.label }),
-            el("div", { class: "code" }, el("pre", { class: "log", text: JSON.stringify(row.value, null, 2) })),
+            el("div", { class: "code" }, el("pre", { class: "log", text: (data.raw || {})[row.key] ?? JSON.stringify(row.value) })),
             el("span", { class: "muted", text: "Change this one in the file itself (Open its folder)." }))
           : el("div", { class: "row" }, row.kind === "switch" ? input : null, el("label", { for: fieldId, class: "lbl", text: row.label }),
             row.kind === "switch" ? null : input,
