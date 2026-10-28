@@ -237,3 +237,22 @@ test("Apply with the game's files unreadable: a sentence at the top of the log, 
   assert.ok(!chips.includes("Restart the studio") && chips.includes("Not applied yet"), chips.join(", "));
   await page.close();
 });
+
+test("Names, while the game's files can't be read, says why in plain words with Try again, its look linked", { skip }, async () => {
+  makeGame(folders.game);   // the exe and folders, no paks: the game's name tables can't be read
+  const page = await browser.page();
+  await page.goto(studio.url + "#names");
+  const card = '#main .section[data-page="names"] .error-card';
+  await page.waitFor(card);
+  const said = await page.text(card);
+  assert.match(said, /^Names couldn't load/);
+  assert.match(said, /the game's files can't be read/);
+  assert.doesNotMatch(said, /Traceback|Error\b|SystemExit|Unreadable|STR_|--force/);
+  assert.equal(await page.evaluate(() => !!document.querySelector('link[href="/studio/sections/names.css"]')), true);
+  // The page's own stylesheet and modules loaded: no file of it failed (the API saying no isn't counted).
+  assert.ok(!page.consoleErrors().some(e => /Failed to load/.test(e)), page.consoleErrors().join("\n"));
+  await page.click({ text: "Try again" });
+  await page.waitFor(card);
+  assert.match(await page.text(card), /the game's files can't be read/);
+  await page.close();
+});

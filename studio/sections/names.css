@@ -1,0 +1,18 @@
+/* The Names page: the three rules under its head, the line under a cat's new name, the "no text" mark and the
+   planner's notes beside a row. Linked by app.js when the page opens; cards, chips, folds and tables are in
+   styles.css. */
+.names-rules { margin: 0; padding-left: 1.2rem; color: var(--muted); max-width: 68ch; display: grid; gap: 2px; }
+.names-missing > p, .names-missing > ol { max-width: 68ch; }
+.names-missing > ol { margin: 0; padding-left: 1.3rem; display: grid; gap: 2px; }
+.names-cats td { vertical-align: top; }
+.names-cats input[type="text"] { min-width: 11rem; }
+.names-where { font-size: 0.8rem; }
+.names-mod { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; font-size: 0.85rem; }
+.names-grows { flex-wrap: nowrap; gap: 6px; margin-top: 4px; font-size: 0.88rem; }
+.names-line { margin-top: 3px; font-size: 0.86rem; }
+.names-why { font-size: 0.8rem; margin-top: 2px; }
+.names-note, .names-also { font-size: 0.84rem; margin-top: 3px; max-width: 46ch; }
+.names-note { color: var(--changed); }
+.names-bad { color: var(--bad); }
+.names-problem, .names-losing { margin: 6px 0; }
+.names-earlier { margin-top: 10px; }

@@ -871,8 +871,9 @@ class Studio:
         (names_specs), named as the next Apply would name them: the list, the renames this file makes, the
         warnings about its own cats entries, and losing_text, the cats that would show as <MISSING STRING TABLE
         ENTRY> if Apply ran now (their names are text a mod gives, and no mod in it gives that text). Each
-        warning is also in "notes" with the part of names.json it's about, for the page to put by its row. A save
-        that can't be read leaves the list empty, with save_problem saying why."""
+        warning is also in "notes" with the part of names.json it's about, for the page to put by its row. A cat a
+        mod named has "before", the name it had as any mod's file says (for Give it a game name). A save that can't
+        be read leaves the list empty, with save_problem saying why."""
         game = self.name_tables()
         own = names.Plan(game, names.merge([spec]))
         specs, left_out = self.names_specs(spec, mod_id)
@@ -891,6 +892,17 @@ class Studio:
             problem = f"Couldn't open your save ({e.strerror or e}). The cats list is empty until it can be read"
         ops = every.plan_cats(cats)
         listed = names.cat_list(every, cats, ops)
+        # For "Give it a game name": the name a mod-named cat had, as any mod's file says (one that's off too).
+        if any(c["mod_named"] for c in listed):
+            every_file = []
+            for m in self.mods():
+                try:
+                    every_file.append(names.read_spec(m) or {})
+                except (OSError, ValueError):
+                    continue
+            every_file.append(spec)
+        for c, cat in zip(listed, cats):
+            c["before"] = names.name_before(cat["ids"], every_file) if c["mod_named"] else ""
         mine, merged = spec.get("cats", {}), every.spec.get("cats", {})
         renames = [{"target": t, "from": a, "to": b} for (a, b), t in zip(every.cat_renames, every.rename_targets)
                    if t in mine and merged.get(t) == mine[t]]

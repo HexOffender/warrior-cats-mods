@@ -932,6 +932,24 @@ def guess_name(ids, plan=None):
     return first + _suffix_words(suffix, plan) if first else ""
 
 
+def name_before(ids, specs):
+    """The name a cat had before a names.json gave it a name of its own, as that file says: the cats key it was
+    renamed by (Wrenheart in {"Wrenheart": {"fixed": "Sparkle"}}), or the entry's "was" for one renamed by its
+    place. specs: names.json files, any mod's, on or off; the last that says wins. "" when none says."""
+    prefix, found = ids.get("PrefixNameId", ""), ""
+    for spec in specs:
+        for target, how in (spec.get("cats") or {}).items():
+            how = _norm(how)
+            text = how.get("prefix") or how.get("fixed") or how.get("name")
+            if not text or prefix not in (_fixed_id(text), _own_prefix_id(text)):
+                continue
+            want = _parse_target(target)[1]
+            before = how.get("was") if "/" in want else ("" if want.lower() == "player" else want)
+            if isinstance(before, str) and before and not before.startswith("STR_"):
+                found = before
+    return found
+
+
 def is_name_key(key):
     """Whether a text key is a cat's name: a clan cat's prefix + suffix, a cameo cat's or a name a mod made
     (STR_CAT_NAME...), or a rogue's (STR_ROGUE_CAT_NAME...)."""
