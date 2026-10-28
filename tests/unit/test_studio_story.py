@@ -1,16 +1,17 @@
 """The studio's API for the Characters and Questlines pages (Studio.api over temporary folders, no game): a
 save of cats or quests makes the mod use Sandbox mode (never need it), turns an installed Sandbox mode on,
-what the pages are told about Sandbox mode, starting every questline over, and "Use where my cat is
-standing" when the game can't be asked."""
+what the pages are told about Sandbox mode, starting every questline over, "Use where my cat is standing"
+when the game can't be asked, and the guide's pages for the two pages."""
 import json
 import os
+import re
 
 import pytest
 
-from wcmods import bridge, mods as modlib, pipeline, story
+from wcmods import bridge, guide, mods as modlib, pipeline, story
 from wcmods import studio as studio_mod
 
-from conftest import make_mod
+from unit_helpers import REPO, make_mod
 
 CAT = {"npcs": [{"id": "mossfoot", "name": "Mossfoot", "lines": ["Hello."]}]}
 QUEST = {"quests": [{"id": "moss", "title": "Moss for Mossfoot", "giver": "mossfoot",
@@ -211,3 +212,20 @@ def test_where_gives_the_spot_and_says_when_the_cat_isnt_in_the_forest(studio, m
     assert call(studio, "POST", "game/where") == {"at": [1, 2, 3], "yaw": 90, "level": "L_WorldMap_01_P"}
     with pytest.raises(RuntimeError, match="isn't in the forest yet"):
         call(studio, "POST", "game/where")
+
+
+# ---------- the guide's pages for the two story pages ----------
+SIX = ["What it changes in the game", "A five-minute first try", "What you can and can't do", "Did it reach the game?",
+       "Common mistakes", "Undo"]
+
+
+@pytest.mark.parametrize("page, module", [("characters", "npcs.js"), ("questlines", "quests.js")])
+def test_the_story_guides_have_the_six_parts_and_the_pages_link_them(page, module):
+    text = guide.read(REPO, page)
+    assert [line[3:] for line in text.splitlines() if line.startswith("## ")] == SIX
+    steps = re.search(r"## A five-minute first try\n\n(.*?)\n\n(?!\d)", text, re.S).group(1)
+    assert len(re.findall(r"^\d+\. ", steps, re.M)) <= 8
+    for word in ("python", "wcmods.py", "--", "UE4SS", ".pak", "slot ", "G (", "| "):
+        assert word not in text, word
+    with open(os.path.join(REPO, "studio", "sections", module), encoding="utf-8") as f:
+        assert f'help: "help:{page}"' in f.read()

@@ -10,9 +10,12 @@ export default {
   title: "Questlines",
   async mount(root, wc) {
     const { el, api, toast, clear } = wc;
+    // Everything the drawing reads is declared here, before the first await: the file can come in (and the
+    // editor be drawn) while the rest of mount() still waits.
     let quests = [], extra = {}, cats = [], own = [];
     let game = { items: [] };
     let choices = itemChoices(game);
+    let showIssues = null;   // the open quest's "Not ready yet" note, said again as it changes
     const names = {
       cat: id => (cats.find(c => c.id === id) || {}).name || id,
       item: tag => choices.name(tag),
@@ -95,7 +98,6 @@ export default {
       clear(catsNote).append(el("strong", { text: "This mod has no cats yet" }),
         el("span", { text: "Talking steps and quest givers are cats of the same mod. Make some on the Characters page (with this mod chosen), then come back." }));
     }
-    let showIssues = null;   // the open quest's "Not ready yet" note, said again as it changes
     function changed() {
       target.markDirty();
       out.set(model.toJson(quests, extra));
@@ -117,7 +119,7 @@ export default {
         stepMarks.forEach((mark, n) => {
           const mine = p.filter(x => x.step === n);
           mark.hidden = !mine.length;
-          mark.textContent = mine.map(x => x.text.replace(/^Step \d+: /, "")).join(" ");
+          mark.textContent = mine.map(x => x.text.replace(/^Step \d+: (.)/, (_, c) => c.toUpperCase())).join(" ");
           mark.closest?.(".step-card")?.classList.toggle("not-ready", mine.length > 0);
         });
       };
