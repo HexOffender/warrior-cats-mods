@@ -124,8 +124,8 @@ the game; the page asks before you switch mods or close it with unsaved changes.
 | **Animations** | animations of your own, made in Blender from a start kit (the cat, or an animal, rigged to the game's own skeleton) and saved as glTF: emotes your cat plays from a key or the mod menu's Emotes page, or anything a script plays on a cat or an animal; loop, speed, claws out | `animations.json`, with the .glb files it names | new animation sequences in the mod pak; a list of them for `Game.anims`, and a UE4SS script that puts the emotes on keys and a menu page |
 | **Characters** | cats of your own: name, title, a random or fixed look, colours, eyes, size, where they stand, what they say | `npcs.json` | the [Sandbox mode](https://github.com/HexOffender/wcmods-sandbox) mod, in its sandbox games |
 | **Questlines** | quests with those cats, step by step (talk, pick things up, go somewhere), one after another, with rewards | `quests.json` | the Sandbox mode mod |
-| **Game data** | XP, costs, rewards, speeds and ~440 tuning values, in any runtime table | `data.json` | edited tables in the mod pak |
-| **Save** | level, XP, health, stamina, fresh-kill pile, stats, inventory, settings, anything else | `save.json` | your save, on install |
+| **Game data** | Quick changes in words (running speed, XP from fights, what prey is worth, cat sizes, scars...), a search for any number by what it does, and every runtime table cell by cell | `data.json` | edited tables in the mod pak |
+| **Save** | your cat's level, experience and fresh-kill pile, what it carries (by name), anything else in the save; each change made once, after a backup, and each one can be put back | none: Change my save now changes your save straight away; or `save.json`, to share | your save: at once, or when the mod is applied (once per save) |
 
 **Scripting the game:** a mod's `scripts/main.lua` runs in the game with no Python, and its
 `settings.json` gets a page in the mod menu. The shared `WCModsGame` module covers a lot of the game:
@@ -201,7 +201,9 @@ switch, or `python wcmods.py cheats on`, makes them start on from the next time 
 Some cheats can break a quest or a save, so back up first if you're unsure (Settings and repair).
 
 The original game files are never modified (uninstall takes everything out again), and save edits are
-written into your save only after a backup.
+written into your save only after a backup. Each save edit is made once: playing on past it is never
+undone by a later Apply, and turning its mod off leaves the save as it is (the Save page's Done so far
+puts a change back).
 
 ## Remapping keys
 
@@ -331,7 +333,7 @@ couldn't, and which mods were made for an older version. `allow-outdated <mod>` 
 this build. See [docs/updating.md](docs/updating.md).
 
 Also: `new <name> --kind palette|controls|files|data|items|names|save|script`, `eyes`,
-`tables`, `names [--cats] [--json]`, `controls [--json]`, `files <pattern>`, `extract <pattern>`,
+`tables` (the colour tables the game logged; the Game data tables are the Game data page), `names [--cats] [--json]`, `controls [--json]`, `files <pattern>`, `extract <pattern>`,
 `texture <item|accessory|/Game/...>` (one of the game's textures as a PNG), `model <accessory>` (an
 accessory and the cat as OBJ files, to make a model of your own on), `animation <cat|mouse|...>` (the cat or
 an animal rigged to the game's skeleton as a .glb to animate in Blender; `--check FILE` says what a file holds),
@@ -370,7 +372,7 @@ and some of these files, which the pages under Make mods write for you:
 | `animations.json` | animations of the mod's own for cats and animals: emotes, and ones scripts play |
 | `npcs.json`, `quests.json` | cats of the mod's own, and questlines with them (for Sandbox mode) |
 | `names.json` | cat name parts, rogue names, the ban list, the cats in your save |
-| `save.json` | edits to your save |
+| `save.json` | edits to your save, each made once per save |
 
 [docs/formats.md](docs/formats.md) describes each one with examples; `python wcmods.py new <name>
 --kind <palette|controls|data|items|names|save|files|script|cpp>` starts a mod from a template. Mods
