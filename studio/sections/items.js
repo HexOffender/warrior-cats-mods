@@ -122,8 +122,9 @@ export default {
       else lastBox.append(el("strong", { text: "Last Apply, about these items: " }),
         notes.said.map(n => `${n.id ? `${nameOf(n.id)}: ` : ""}${n.why}.`).join(" "));
     }
-    // The mod has to exist on disk before a file can go in its folder. Saving a new mod reads its file again,
-    // so the item a picker was opened for is found again by its id afterwards (live).
+    // The mod has to exist on disk before a file can go in its folder: a new one is saved first. The item a
+    // picker was opened for is found again by its id afterwards (live), in case the page's items were read
+    // again while it waited (the mod switched, a file imported).
     async function modReady() {
       return target.mods.some(m => m.id === target.current) || await target.save();
     }
