@@ -583,7 +583,7 @@ UE4SS script can `require` them, wcmods' or one written by hand:
 | `WCModsMenu` | Pages in the mod menu (Insert): buttons, switches, sliders, drop-downs, text boxes, colours, images |
 | `WCModsView` | What the camera sees: its matrices, and world-to-screen positions |
 | `WCModsWorld` | Finds things in the world (pickups, interactables, quest objectives, cats, creatures) and the game's managers |
-| `WCModsPalettes` | The new colour slots each enabled palette adds (`palette.json`, 25 and up): `{ { id, name, pattern = {slots}, marking = {slots} } }` in priority order, a slot two palettes set listed under the one that wins it. The Creator palettes mod shows them a palette at a time |
+| `WCModsPalettes` | The new colour slots and coat presets each enabled palette adds (`palette.json`: slots 25 and up, and `coats`): `{ { id, name, pattern = {slots}, marking = {slots}, coats = { { id, name, like, fur, nose, paws, whiskers, ears } } } }` in priority order, a slot two palettes set listed under the one that wins it. A preset's `id` is `"<mod id>/<name>"`, its colours `"#rrggbb"` (only the parts it sets). The Creator palettes mod shows them a palette at a time |
 | `WCModsNames` | Cats' names: every name part's text after your name mods, and `name(prefix id, suffix id)`, which falls back on the game's own text; items', areas' and quests' names: `item(tag)`, `area(code)` (`"R-05"` is `"Willow-Weep"`), `quest(tag, rank)` (a quest's title for a rank: `"Apprentice"`, `"Warrior"`, `"Deputy"` or `"Leader"`, or another rank's). Written on each install from the game's tables; `WCModsGame` and `WCModsWorld` use it |
 
 ### Shipping a script

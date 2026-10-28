@@ -44,4 +44,5 @@ class PaletteSection(Section):
         groups = palettes.slot_groups(items)
         ctx.add_ue4ss_shared(palettes.GROUPS_LUA, palettes.groups_module(groups))
         if groups:
-            ctx.note("new_colours", {g["id"]: {s: len(g[s]) for s in palettes.GROWABLE if g[s]} for g in groups})
+            ctx.note("new_colours", {g["id"]: {s: len(g[s]) for s in palettes.GROWABLE + ("coats",) if g[s]}
+                                     for g in groups})
