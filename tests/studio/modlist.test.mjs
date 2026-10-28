@@ -119,6 +119,11 @@ test("after a game update, mods are sorted by what the re-check made of them, an
   assert.equal(list.recheckSentence({ fine: [1, 2, 3], failed: [] }), "3 of your mods were checked on the new version and are fine.");
   assert.equal(list.recheckSentence({ fine: [], failed: [1, 2] }), "2 of your mods couldn't go in:");
   assert.equal(list.recheckSentence({ fine: [], failed: [] }), "");
+  // On the build wcmods was checked on, nothing "new": this version; and the heading says what's left out, or
+  // only that they were checked.
+  assert.equal(list.recheckSentence({ fine: [1], failed: [] }, false), "1 of your mods was checked on this version of the game and is fine.");
+  assert.equal(list.recheckHeading(s), "Some mods are left out on this version of the game");
+  assert.equal(list.recheckHeading({ fine: [1], failed: [], couldnt: [], maker: [], unchecked: [] }), "Your mods were checked on this version of the game");
 });
 
 test("an add-on button adds it, says so, and tells the other pages", async () => {

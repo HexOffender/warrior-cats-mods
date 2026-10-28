@@ -32,6 +32,7 @@ import stat
 import tempfile
 import unicodedata
 import zipfile
+import zlib
 
 from . import mods as modlib
 from .mods import CONTENT, VALID_ID, Mod
@@ -199,8 +200,9 @@ def _signature(files):
     return sorted((n, size) for n, size in files.items() if n != "mod.json")
 
 
-def _folder_files(folder):
-    """{name, folded as _fold does, with /: size} for the files in a mod's folder, as a .zip of it would hold them."""
+def _folder_files(folder, paths=None):
+    """{name, folded as _fold does, with /: size} for the files in a mod's folder, as a .zip of it would hold
+    them; `paths` (a dict), when given, gets each name's file on disk."""
     out = {}
     for d, dirs, names in os.walk(folder):
         dirs[:] = [x for x in dirs if x not in IGNORED]
@@ -208,15 +210,43 @@ def _folder_files(folder):
             if fn in IGNORED or fn.endswith(".pyc"):
                 continue
             full = os.path.join(d, fn)
-            out["/".join(_fold(os.path.relpath(full, folder).split(os.sep)))] = os.path.getsize(full)
+            key = "/".join(_fold(os.path.relpath(full, folder).split(os.sep)))
+            out[key] = os.path.getsize(full)
+            if paths is not None:
+                paths[key] = full
     return out
 
 
-def _existing(mods_root, mod_id, meta, files):
+def _crc(path):
+    """A file's CRC-32, as a .zip records it for each file it holds."""
+    crc = 0
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            crc = zlib.crc32(chunk, crc)
+    return crc & 0xFFFFFFFF
+
+
+def _same_files(folder, files, crc_of):
+    """Whether the mod in `folder` holds what `files` ({name: size}) does, mod.json aside: the same names and
+    sizes, then (only when those agree, so a different mod costs no reading) the same contents, its files'
+    CRC-32 against crc_of(name) (a .zip's own, or a folder's files read). A friend's palette with other colours
+    in a file of the same size is different."""
+    paths = {}
+    have = _folder_files(folder, paths)
+    if _signature(have) != _signature(files):
+        return False
+    try:
+        return all(_crc(paths[n]) == crc_of(n) for n in have if n != "mod.json")
+    except (OSError, KeyError):
+        return False
+
+
+def _existing(mods_root, mod_id, meta, files, crc_of):
     """The copy of a mod you have, beside the one being added: {"name", "version", "different" (it holds other
-    files than the new one), "take" (tick the new copy in a pack's preview: it's different and newer, or
-    neither says a version), "keep" (a sentence when the new copy is an older one of the mods that go with Clan
-    Mod Studio: a pack never downgrades one)}, or None."""
+    files, or other contents, than the new one: _same_files), "take" (tick the new copy in a pack's preview:
+    it's different and newer, or neither says a version), "keep" (a sentence when the new copy is an older one
+    of the mods that go with Clan Mod Studio: never ticked)}, or None. Versions compare with mods.version_key:
+    "0.4" is "0.4.0", and one that isn't a version compares with nothing."""
     folder = os.path.join(mods_root, mod_id)
     if not os.path.isfile(os.path.join(folder, "mod.json")):
         return None
@@ -225,7 +255,7 @@ def _existing(mods_root, mod_id, meta, files):
         name, have = old.name, old.version
     except (OSError, ValueError):
         name, have = mod_id, ""
-    different = _signature(_folder_files(folder)) != _signature(files)
+    different = not _same_files(folder, files, crc_of)
     new = str(meta.get("version") or "")
     kn, kh = modlib.version_key(new), modlib.version_key(have)   # None for one that isn't a version
     both = kn is not None and kh is not None
@@ -238,11 +268,11 @@ def _existing(mods_root, mod_id, meta, files):
             "take": different and not keep and (newer or (not new and not have))}
 
 
-def _found(mods_root, mod_id, meta, files, root):
+def _found(mods_root, mod_id, meta, files, root, crc_of):
     names = list(files)
     size = sum(files.values())
     kinds = _kinds(names)
-    existing = _existing(mods_root, mod_id, meta, files)
+    existing = _existing(mods_root, mod_id, meta, files, crc_of)
     req = meta.get("requires")
     uses = meta.get("uses")
     ids = lambda v: [x for x in ([v] if isinstance(v, str) else v if isinstance(v, list) else []) if isinstance(x, str)]
@@ -298,7 +328,9 @@ def _inspect(z, mods_root, name):
         if not isinstance(meta, dict):
             raise ValueError(f"{label}: mod.json should hold an object")
         mod_id = _identify(meta, r[-1] if r else os.path.splitext(name)[0], label, ids, mods_root, top=not r)
-        out.append(_found(mods_root, mod_id, meta, {"/".join(_fold(p)): i.file_size for p, i in files}, "/".join(r)))
+        crcs = {"/".join(_fold(p)): i.CRC for p, i in files}   # the .zip's own, read without unpacking
+        out.append(_found(mods_root, mod_id, meta, {"/".join(_fold(p)): i.file_size for p, i in files}, "/".join(r),
+                          crcs.get))
     return out
 
 
@@ -446,7 +478,9 @@ def inspect_folder(path, mods_root):
     """As inspect(), for a folder that is a mod or holds mod folders."""
     out = []
     for folder, mod_id, meta in _folder_plan(path, mods_root):
-        out.append(_found(mods_root, mod_id, meta, _folder_files(folder), ""))
+        paths = {}
+        files = _folder_files(folder, paths)
+        out.append(_found(mods_root, mod_id, meta, files, "", lambda n, paths=paths: _crc(paths[n])))
     return out
 
 
@@ -545,8 +579,11 @@ def pack(mod, found=()):
     """The mod as a .zip (its folder inside, named as it is), to share. Returns the bytes. A mod pack
     (packs.py) carries the mods in it too, each in its own folder, from `found` (the mods folder's mods).
     In a pack's .zip, My mods (DEFAULT_ID, which every player has one of) goes in as "<pack id>-mods", named
-    "<pack name>: its own content", with every requires and uses naming it rewritten, so whoever adds the
-    pack keeps their own My mods and plays the pack's; the folders here are left as they are."""
+    "<pack name>: its own content" ("-2" and so on after it while the pack holds a mod by that name already),
+    with every requires and uses naming it rewritten, so whoever adds the pack keeps their own My mods and
+    plays the pack's; the folders here are left as they are. Only mod.json's requires and uses are
+    rewritten: content that names my-mods itself (a script reading mods/my-mods, a coat preset's id made
+    from it) still says my-mods in the pack."""
     import io
     folders = [mod]
     rename = {}
@@ -557,7 +594,12 @@ def pack(mod, found=()):
             raise ValueError(f"{mod.name} needs {', '.join(missing)}, which isn't in your mods, so the pack can't carry it")
         folders += [by_id[i] for i in modlib.needed(list(found), mod.id)]
         if any(m.id == DEFAULT_ID for m in folders):
-            rename[DEFAULT_ID] = safe_id(f"{mod.id}-mods")
+            taken = {m.id for m in folders}
+            base = new_id = safe_id(f"{mod.id}-mods")
+            n = 2
+            while new_id in taken:   # never two folders under one name in the .zip
+                new_id, n = safe_id(f"{base[:58]}-{n}"), n + 1
+            rename[DEFAULT_ID] = new_id
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for m in folders:

@@ -591,12 +591,16 @@ class Studio:
             # mod it passed says so on its card until the next Apply.
             build = gamebuild.steam_build(cfg)
             results = gamebuild.checked(cfg, build) if build is not None else {}
+            check_warnings = gamebuild.check_warnings(cfg, build) if build is not None else {}
             rec = cfg.data.get("rechecked") if isinstance(cfg.data.get("rechecked"), dict) else {}
             since = str(rec.get("when", "")) > str((cfg.data.get("installed") or {}).get("built", ""))
             return [{**m.to_dict(), "problems": unmet.get(m.id, []),
                      "needed_by": [titles[i] for i in mods.needing(found, m.id)],
                      "requires_names": [titles.get(i) or mods.missing_name(i) for i in m.requires if i != mods.MENU_ID],
-                     "warnings": [w for w in [gamebuild.builds_problem(m)] if w],
+                     # A game_builds without a build number, and what the check after a game update warned of it
+                     # (while it's still held back, or until the next Apply puts it in).
+                     "warnings": [w for w in [gamebuild.builds_problem(m)] if w] +
+                                 (list(check_warnings.get(m.id) or []) if old.get(m.id) or (since and m.id in results) else []),
                      "checkable": gamebuild.checkable(m),
                      "rechecked": results.get(m.id), "rechecked_since_apply": since and m.id in results,
                      "game_builds": gamebuild.made_for(m), "outdated": old.get(m.id),

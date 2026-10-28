@@ -113,7 +113,8 @@ export default {
           draw();
         } catch (e) { toast(e.message, "bad"); }
       } });
-      clear(form).append(
+      // The DOM's own append prints a null as "null": what's left out is filtered first.
+      clear(form).append(...[
         el("h2", { text: p ? `Change ${p.name}` : "Make a mod pack" }),
         el("p", { class: "note", text: "Choose the mods that make the experience. Mods they need (Sandbox mode for characters and questlines, say) go in with them. Menu pages, Creator palettes and the Emote wheel stay on whatever pack plays, so a pack needn't carry them." }),
         el("div", { style: { display: "grid", gap: "10px", alignItems: "start", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" } },
@@ -123,7 +124,8 @@ export default {
         mods.length ? picks : el("div", { class: "empty", text: "No mods yet: make some on the pages under Make mods." }),
         dropped.length ? el("p", { class: "note warn-text", "data-key": "dropped",
           text: `Not in your mods: ${dropped.map(m => m.name).join(", ")}. ${dropped.length > 1 ? "They're" : "It's"} dropped from the pack when you save.` }) : null,
-        el("div", { class: "row" }, saveBtn, p ? el("button", { class: "btn ghost", text: "Cancel", onclick: () => { editing = null; draft = null; drawForm(); } }) : null));
+        el("div", { class: "row" }, saveBtn, p ? el("button", { class: "btn ghost", text: "Cancel", onclick: () => { editing = null; draft = null; drawForm(); } }) : null),
+      ].filter(Boolean));
     }
 
     async function run(path, said) {

@@ -4,7 +4,7 @@
 // What the page says and chooses without the page (search, requirements, the add-ons' states, toasts) is in
 // ../lib/modlist.js.
 import { ADDON_NAMES, addAllToast, addedToast, addonState, addonToast, allSet, changeParts, checkTrouble, matches,
-  needs, needsLine, recheckSentence, recheckSorted, sentence, worksWith } from "../lib/modlist.js";
+  needs, needsLine, recheckHeading, recheckSentence, recheckSorted, sentence, worksWith } from "../lib/modlist.js";
 
 export default {
   title: "Mods",
@@ -61,7 +61,10 @@ export default {
       recheckTried = true;
       rechecking = true;
       if (lastInfo) drawUpdate(lastInfo);   // said before it starts, however quick the check is
-      try { await api.post("/mods/recheck"); } catch (e) { toast(e.message, "bad"); }
+      const b = (lastInfo && lastInfo.game_build) || {};
+      bus.emit("working", `Checking your mods on ${b.build && !b.verified ? "the new version" : "this version of the game"}…`);
+      try { await api.post("/mods/recheck"); } catch (e) { toast(sentence(e.message), "bad"); }
+      bus.emit("working", null);
       rechecking = false;
       await refresh();
     }
@@ -84,16 +87,24 @@ export default {
       // was checked on too.
       if (!updated && !rechecking && !Object.values(sorted).some(list => list.length)) return;
       const lines = [];
-      if (rechecking) lines.push(el("span", { class: "muted", role: "status", text: "Checking your mods on the new version…" }));
-      const said = recheckSentence(sorted);
+      const where = updated ? "the new version" : "this version of the game";
+      if (rechecking) lines.push(el("span", { class: "muted", role: "status", text: `Checking your mods on ${where}…` }));
+      const said = recheckSentence(sorted, !!updated);
       if (said) lines.push(el("span", { text: said }));
       if (sorted.failed.length) {
         lines.push(el("ul", { class: "notes" }, ...sorted.failed.map(m => el("li", { class: "row" },
           el("span", { text: `${m.name}: ${m.rechecked}` }),
           m.enabled ? el("button", { class: "btn small", type: "button", "aria-label": `Turn ${m.name} off`, text: "Turn it off", onclick: () => switchMod(m, false) }) : null))));
       }
-      if (sorted.couldnt.length) {
-        lines.push(el("span", { text: `${sorted.couldnt.map(m => m.name).join(", ")} couldn't be checked on the new version: the game's files can't be read right now (is Steam updating it?). They're left out, and checked again the next time this page opens.` }));
+      // Couldn't be checked: the game's files unreadable (tried again next time), or a file whose edits can't be
+      // told apart (checked again when the mod changes).
+      const unreadable = sorted.couldnt.filter(m => /the game's files can't be read/.test(m.rechecked));
+      const other = sorted.couldnt.filter(m => !unreadable.includes(m));
+      if (unreadable.length) {
+        lines.push(el("span", { text: `${unreadable.map(m => m.name).join(", ")} couldn't be checked on ${where}: the game's files can't be read right now (is Steam updating it?). They're left out, and checked again the next time this page opens.` }));
+      }
+      for (const m of other) {
+        lines.push(el("span", { text: `${m.name} couldn't be checked on ${where} (${m.rechecked.replace(/^couldn't check: /, "")}), so it's left out; it's checked again when it changes.` }));
       }
       if (sorted.maker.length) {
         lines.push(el("span", { text: `${sorted.maker.map(m => m.name).join(", ")} ${sorted.maker.length > 1 ? "were" : "was"} made for the older version and can't be checked here (code, or the game's own kind of files): ${sorted.maker.length > 1 ? "their makers have" : "its maker has"} to update ${sorted.maker.length > 1 ? "them" : "it"}. Each card has "Use it anyway…".` }));
@@ -102,7 +113,7 @@ export default {
         lines.push(el("span", { text: `${sorted.unchecked.map(m => m.name).join(", ")} ${sorted.unchecked.length > 1 ? "are" : "is"} left out until checked on the new version.` }));
       }
       if (!updated) {
-        updateBox.append(el("div", { class: "banner" }, el("strong", { text: "Some mods are left out on this version of the game" }), ...lines));
+        updateBox.append(el("div", { class: "banner" }, el("strong", { text: rechecking ? "Checking your mods on this version of the game" : recheckHeading(sorted) }), ...lines));
         return;
       }
       if (!update) {
@@ -479,13 +490,16 @@ export default {
         // pack's are ticked, except mods the player has already. Each goes in on or off as it ships, unless changed.
         // In a pack, a mod you have already is ticked only when the pack's copy is different and newer (or neither
         // says a version), and never when it's an older copy of one of the mods that go with Clan Mod Studio.
-        const pick = el("input", { type: "checkbox", checked: !many || (!!pack && (!m.existing || !!m.existing.take)), id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
+        // An older copy of one of the mods that go with Clan Mod Studio than yours is never ticked, a .zip of it
+        // alone included: its box shows, unticked, for one who means to go back to it.
+        const keepYours = !!(m.existing && m.existing.keep);
+        const pick = el("input", { type: "checkbox", checked: !keepYours && (!many || (!!pack && (!m.existing || !!m.existing.take))), id: `pick-${m.id}`, "aria-label": `Add ${m.name}` });
         const on = el("input", { type: "checkbox", checked: m.enabled !== false, id: `on-${m.id}`, "aria-label": `${m.name} switched on` });
         picks.set(m.id, pick);
         ons.set(m.id, on);
         const notes = [];
         const had = m.existing;
-        if (had && had.keep) notes.push(el("li", { text: `${had.keep}.` }));
+        if (had && had.keep) notes.push(el("li", { text: `${had.keep}. Tick it to put this older copy in instead (yours is kept in backups).` }));
         else if (had && pack && !had.different) notes.push(el("li", { class: "muted", text: "You have this one already, the same." }));
         else if (had && pack) notes.push(el("li", { text: "You have a different mod with this name; tick it to use the pack's copy (yours is kept in backups)." }));
         else if (had) notes.push(el("li", { text: `Replaces the ${had.name}${had.version ? " " + had.version : ""} you have${m.version ? " with " + m.version : ""}. The old copy is kept in backups.` }));
@@ -504,7 +518,7 @@ export default {
         }
         if (m.menu_page) notes.push(el("li", { text: "Adds a page to the in-game mod menu." }));
         addBox.append(el("div", { class: "mod preview" },
-          many ? pick : null,
+          many || keepYours ? pick : null,
           el("div", { class: "mod-body" },
             el("label", { for: `pick-${m.id}` }, el("strong", { text: m.name }), m.version ? el("span", { class: "muted", text: ` ${m.version}` }) : null,
               m.author ? el("span", { class: "muted", text: ` · by ${m.author}` }) : null),
@@ -518,7 +532,7 @@ export default {
       addBox.append(el("div", { class: "row" },
         el("button", { class: "btn primary", text: many ? "Add these" : "Add to my mods", onclick: async () => {
           const ids = [...picks].filter(([, p]) => p.checked).map(([id]) => id);
-          if (!ids.length) { toast("Pick at least one.", "bad"); return; }
+          if (!ids.length) { toast(many ? "Pick at least one." : "Nothing to add: you're keeping yours. Tick it to put this copy in instead.", "bad"); return; }
           try {
             const res = await add(ids, ids.filter(id => ons.get(id).checked));
             toast(addedToast(res.added, addons));
@@ -593,12 +607,14 @@ export default {
               : el("button", { class: "btn", text: `Turn ${state.by.length > 1 ? "all" : "both"} off`, onclick: () => switchMod(m, false, true) }),
             el("button", { class: "btn ghost", text: state.remove ? `Keep ${m.name}` : `Keep ${m.name} on`, onclick: () => renderList() }))));
       }
-      if (failedCheck && m.enabled) {
-        // The build has just shown it fails on this version: no "Use it anyway", which would stop the Apply.
+      if (failedCheck && m.enabled && !(state && state.allow === m.id)) {
+        // The build has shown it fails on this version: Turn it off first; it's checked again once it changes,
+        // and "Use it anyway…" stays for a creator who knows better (the Apply then stops at what failed).
         card.append(el("div", { class: "row mod-wide" },
           el("button", { class: "btn small", "aria-label": `Turn ${m.name} off`, text: "Turn it off", onclick: () => switchMod(m, false) }),
-          el("span", { class: "muted", text: "Its maker has to update it for this version." })));
-      } else if (old && m.enabled) {
+          el("span", { class: "muted", text: "Its maker has to update it for this version. It's checked again when the mod changes." })));
+      }
+      if (old && m.enabled) {
         // One focus key for the button that asks and the warning's "Leave it out" (not "Use it anyway",
         // which a second press would confirm), so focus moves between them as the card changes.
         const key = `allow:${m.id}`;
@@ -617,7 +633,8 @@ export default {
                 el("button", { class: "btn ghost", "data-focus": key, text: "Leave it out", onclick: () => renderList() })))
             : el("div", { class: "row mod-wide" },
               el("button", { class: "btn small", "data-focus": key, text: "Use it anyway…", "aria-label": `Use ${m.name} anyway…`, onclick: () => renderList({ allow: m.id }) }),
-              el("span", { class: "muted", text: m.checkable ? "Or wait for its maker to update it." : "It can't be checked here (code, or the game's own kind of files): its maker has to update it." })));
+              el("span", { class: "muted", text: failedCheck ? "Using it anyway puts in what the check said fails: Apply stops at it until you choose Apply the rest anyway."
+                : m.checkable ? "Or wait for its maker to update it." : "It can't be checked here (code, or the game's own kind of files): its maker has to update it." })));
       }
       if (more) card.append(details(m));
       return card;

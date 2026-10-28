@@ -15,14 +15,21 @@ Mods page says what that means:
   that moved is followed, and anything it can't find again, or can't vouch for, is switched off
   instead of guessed: the mod menu shows those values as not available. This takes under a minute,
   once per update, and the next Play or Apply puts the result in.
-- **Your mods that are only data** (colours, names, game data, items, animations, controls: no code,
-  no cooked content in `paks/`, no replaced files in `files/`): when the Mods page opens, it builds each
-  one made for an older version on the new game, without putting anything in the game ("Checking your
-  mods on the new version…"). One that builds is marked as made for the new build too, in its own
-  mod.json, and goes in with the next Play; one that doesn't stays out, and its card and the banner say
-  why, with **Turn it off**. Each mod is checked once per game version. While the game's files can't be
-  read (Steam updating or checking the game), nothing is checked, and it's tried again the next time the
-  page opens. `python wcmods.py game build` runs the same check.
+- **Your mods that are only data** (palettes, controls, mouse look, game data, items, animations, names,
+  your cat's colours, save edits, characters and questlines: no code, no cooked content in `paks/`, no
+  replaced files in `files/`, not a mod pack): when the Mods page opens, it builds each one made for an
+  older version on the new game, with the mods it needs and no others, without putting anything in the
+  game ("Checking your mods on the new version…", at the top too: saving, switching mods and Play wait
+  for it). One that builds is marked as made for the new build too, in its own mod.json, and goes in
+  with the next Play; one that doesn't (its own file, a part of the build it's in failing, or a save edit
+  your save has no place for) stays out, and its card and the banner say why, with **Turn it off** and
+  **Use it anyway…**. What the check warned about shows on its card. Each mod is checked once per game
+  version, and again when it changes (fixed, or updated). One that needs a mod that's held back itself
+  (a story needing Sandbox mode, made for the older version) waits for that one. While the game's files
+  can't be read (Steam updating or checking the game), nothing is checked, and it's tried again the next
+  time the page opens. `python wcmods.py game build` runs the same check. Items with accessories or
+  models, and animations, change the game's own cooked files: building is as far as the check can go for
+  those, so whether they look right in the game is for you to see.
 - **Your other mods** (anything that runs code, cooked content, replaced game files): a mod made for an
   older version of the game is left out until its maker updates it, and so is a mod that needs it. Its
   card says so. **Use it anyway…** puts it back in, for this version only, after a warning: it may not

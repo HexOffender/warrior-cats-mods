@@ -322,8 +322,11 @@ off, but your own tools and the mods its mods `"uses"` that were on) and goes ba
 (`"pack_before"` in `wcmods.json` remembers them, and the pack's name, so going back works even after the
 pack is removed). A mod is one of your own tools when its mod.json says `"tool": true`, or it's Menu pages,
 Creator palettes or the Emote wheel. In a pack's .zip, My mods (`my-mods`) goes in as `<pack>-mods`, named
-"<pack name>: its own content", with every `requires` and `uses` naming it rewritten, so whoever adds it
-keeps their own My mods; the folders on your side are unchanged.
+"<pack name>: its own content" (`<pack>-mods-2` and so on when the pack holds a mod by that name already),
+with every `requires` and `uses` naming it rewritten, so whoever adds it keeps their own My mods; the
+folders on your side are unchanged. Only mod.json's `requires` and `uses` are rewritten: anything inside
+the mods that names `my-mods` itself (a script reading `mods/my-mods`, a coat preset's id made from it)
+still says `my-mods` in the pack, so give such content a mod of its own before packing it.
 
 ### `names.json`
 ```json
@@ -401,7 +404,7 @@ keeps the last .zip of each of the mods that go with Clan Mod Studio fetched fro
 | `oodle_dll` | An `oo2core_*_win64.dll` from another installed game, for faster decoding of the game's files (wcmods decodes them itself without one) |
 | `allow_code_mods` | `true` lets mods that carry code run it (build steps, in-game scripts, studio pages, C++): only for mods from people you trust. Options on the Settings and repair page |
 | `allow_outdated` | `{ "<mod>": [<build>, ...] }`: mods used anyway on game builds they weren't made for ("Use it anyway", `wcmods allow-outdated`) |
-| `rechecked` | `{ "build": <build>, "when": "<date and time>", "results": { "<mod>": "ok" or why it didn't build } }`: what the check after a game update found, for the installed build (`wcmods/exe/gamebuild.py`, `recheck`). A mod that passed is also marked in its own mod.json's `game_builds`; one marked "couldn't check" is tried again |
+| `rechecked` | `{ "build": <build>, "when": "<date and time>", "results": { "<mod>": "ok" or why it didn't build }, "signatures": { "<mod>": "<its version, file count, size and newest time>" }, "warnings": { "<mod>": ["<what the check's build warned of it>"] } }`: what the check after a game update found, for the installed build (`wcmods/exe/gamebuild.py`, `recheck`). A mod that passed is also marked in its own mod.json's `game_builds`; one marked "couldn't check: the game's files can't be read right now" is tried again, and so is any mod whose signature changed since |
 | `pack_before` | `{ "pack": "<pack>", "name": "<its name>", "on": ["<mod>", ...] }`: while a mod pack is played on its own, the mods that were on before it (the Mod packs page's Back to my mods) |
 | `console` | Whether the game's `~` console (UE4SS's console enabler) is on |
 | `debug_cat_look` | `true` makes your cat's colours script log every cat it sees |
