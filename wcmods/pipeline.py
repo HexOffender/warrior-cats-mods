@@ -23,6 +23,7 @@ from .formats.save import SAV_NAME, SaveGame, backup, write_save
 from .formats.savejson import SaveDoc
 from .sdk import BuildContext
 from .sections import load_sections
+from . import saverecord
 
 MARKER = "Wrc/WCMods/BuildInfo.json"
 PAK_PREFIX = "zzz_WCMods_"                  # every pak file wcmods installs starts with this
@@ -427,6 +428,9 @@ def pending(cfg, mods):
     # takes it out again.
     if not data.get("allow_code_mods") and code_installed(data):
         redo.append("the game has code from a test install, and mods that run code are off")
+    # Save edits made before there was a save were left out; now there is one, they're waiting.
+    if inst.get("save_pending") and os.path.isfile(os.path.join(cfg.save_dir, SAV_NAME)):
+        redo.append("save edits are waiting for a save")
     out = {"installed": True, "on": sorted(now - was), "off": sorted(was - now), "changed": changed, "redo": redo}
     out["any"] = bool(out["on"] or out["off"] or out["changed"] or redo)
     return out
@@ -513,52 +517,118 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
         if skipped:
             log(f"  NOTE: {' and '.join(skipped)} need the script loader (UE4SS), which isn't installed; skipped.")
 
+    save_pending = False
     if manifest["save_ops"]:
-        apply_save_ops(cfg, manifest["save_ops"], backups_root, log)
+        # The paks are in by now: a save edit that fails is said, and the install is still recorded.
+        try:
+            save_pending = apply_save_ops(cfg, manifest["save_ops"], backups_root, log)["no_save"]
+        except Exception as e:   # noqa: BLE001 - said in the log and the warnings, never lost
+            log(f"  save edits couldn't be made: {e}")
+            manifest["warnings"].append(f"your save edits couldn't be made ({e}); your save is as it was")
     # What the game had then: an install made without UE4SS left parts out, so pending() asks for
-    # another once it's there.
+    # another once it's there; one made before there was a save left its save edits out.
     game_info = manifest.get("game") or {}
     cfg.data["installed"] = {"mods": manifest["mods"], "built": manifest["built"], "ue4ss": bool(mods_dir),
                              "game_build": game_info.get("build"), "layout": game_info.get("layout"),
                              "mods_root": cfg.mods_root, "menu": manifest.get("menu"), "game_dir": cfg.game_dir}
+    if save_pending:
+        cfg.data["installed"]["save_pending"] = True
     cfg.save()
     return manifest
 
 
+def _said(value):
+    """A save value in a log line: none for a value that isn't there, else as JSON."""
+    return "none" if value is None else json.dumps(value, ensure_ascii=False)
+
+
 def apply_save_ops(cfg, ops, backups_root, log=print):
+    """Make the build's save edits in WrcGame.sav, after a backup when anything changes. An op with "once"
+    (a save.json's, unless it says "always") is made once per save: saverecord keeps what was made, and an op
+    recorded with the same value is skipped, so playing on past it isn't undone. One with "record" (the Save
+    page's) is always made and recorded. The others (renames, looks, controls, starting items) have guards of
+    their own. Returns {"changed": [lines for the log], "applied": [{"source", "path", "label", "was", "now"}],
+    "backup": the backup's name or None, "no_save": True when there's no save to change yet}."""
+    result = {"changed": [], "applied": [], "backup": None, "no_save": False}
     sav = os.path.join(cfg.save_dir, SAV_NAME)
     if not os.path.isfile(sav):
         log("  NOTE: no save yet; launch the game once, then install again to apply save edits.")
-        return []
+        result["no_save"] = True
+        return result
     save = SaveGame.load(sav)
     doc = SaveDoc(save.json_text)
-    changed = []
+    changed = result["changed"]
+    # The record of what's been made. With none yet (the first install since edits were made once), the mods
+    # of the last install have had theirs made at every install: they're recorded as made, without writing,
+    # so a save that has played on past them keeps what it has.
+    record = saverecord.load(cfg)
+    first = record is None
+    record = record or {}
+    last = cfg.data.get("installed") or {}
+    made_before = set()
+    if first and not last.get("save_pending"):
+        try:
+            built = datetime.datetime.fromisoformat(last.get("built", "")).timestamp()
+        except ValueError:
+            built = 0.0
+        # A mod changed since that install may have a new value, which that install never made: not counted.
+        made_before = {i for i in last.get("mods", [])
+                       if not _newest(os.path.join(cfg.mods_root, i)) > built + 1}
+    records = []   # (op, key, value, was): what to record once the save is written
+    write_record = first
+
+    def source(op):
+        return op.get("source") or op.get("section") or "?"
+
+    def wanted(op, key, value):
+        """Whether a once-per-save op is to be made now (False: it was, or it was made before this version)."""
+        nonlocal write_record
+        if not op.get("once"):
+            return True
+        had = saverecord.entry(record, doc.account, source(op), key)
+        if had is not None and had.get("op") == op["op"] and had.get("value") == value:
+            return False
+        if source(op) in made_before:
+            saverecord.note(record, doc.account, source(op), key, op=op["op"], value=value, was=None,
+                            label=op.get("label") or key, when=saverecord.now(), backup=None, before=True)
+            write_record = True
+            return False
+        return True
+
     # Consecutive "set" ops are applied together with one parse of the save. Keyed by path, so a
     # later (higher-priority) op replaces an earlier one, and whether anything changes is decided
     # against the save itself at flush time.
     pending = {}
     labels = {}   # path -> how a name change reads in the log ("Otterpaw -> Mothpaw")
+    said = {}     # path -> a set op's path in words ("Fawnstar's level")
+    owners = {}   # path -> the recorded ops that set it, the winner last
+    removes = []  # remove ops, made after the sets and inserts
 
     def flush():
         if not pending:
             return
-        items = [(p, v) for p, v in pending.items() if doc.get(p) != v]
-        olds = {p: doc.get(p) for p, _ in items}
+        olds = {p: doc.get(p) for p in pending}
+        items = [(p, v) for p, v in pending.items() if olds[p] != v]
+        settled = {p for p, v in pending.items() if olds[p] == v}   # already so: recorded, not written
         pending.clear()
-        if not items:
-            return
-        try:
-            doc.set_many(items)
-            done = items
-        except Exception:
-            done = []
-            for p, v in items:   # fall back to one at a time so one bad edit doesn't drop the rest
-                try:
-                    doc.set(p, v)
-                    done.append((p, v))
-                except Exception as e:
-                    log(f"  save edit skipped ({p}): {e}")
-        changed.extend(labels.get(p) or f"{p}: {json.dumps(olds[p])} -> {json.dumps(v)}" for p, v in done)
+        done = []
+        if items:
+            try:
+                doc.set_many(items)
+                done = items
+            except Exception:
+                for p, v in items:   # fall back to one at a time so one bad edit doesn't drop the rest
+                    try:
+                        doc.set(p, v)
+                        done.append((p, v))
+                    except Exception as e:
+                        log(f"  save edit skipped ({p}): {e}")
+        for p, v in done:
+            changed.append(labels.get(p) or f"{said.get(p) or p}: {_said(olds[p])} -> {_said(v)}")
+        for p in settled | {p for p, _ in done}:
+            for op in owners.pop(p, []):   # every op that set it, so a lower mod's isn't made next time instead
+                records.append((op, p, op["value"], olds[p]))
+        owners.clear()
 
     for op in ops:
         if op["op"] == "set":
@@ -567,7 +637,17 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
             except (KeyError, IndexError, ValueError, TypeError):
                 log(f"  save edit skipped ({op.get('section')}): your save has no value at {op['path']}")
                 continue
+            if not wanted(op, op["path"], op["value"]):
+                continue
             pending[op["path"]] = op["value"]
+            labels.pop(op["path"], None)
+            said[op["path"]] = op.get("label")
+            if op.get("once") or op.get("record"):
+                owners.setdefault(op["path"], []).append(op)
+            continue
+        if op["op"] == "remove":
+            if wanted(op, op["path"], None):
+                removes.append(op)
             continue
         if op["op"] == "name":
             # A cat's name lives inside its save text: change just the name IDs, and only if the cat
@@ -610,22 +690,93 @@ def apply_save_ops(cfg, ops, backups_root, log=print):
                 old = doc.get(full) if doc.exists(full) else None
                 if old is not None and op.get("only_new"):
                     continue
+                if not wanted(op, full, op["value"]):
+                    continue
                 if old != op["value"]:
                     doc.insert(op["path"], op["key"], op["value"])
-                    changed.append(f"{full}: {json.dumps(old)} -> {json.dumps(op['value'])}")
+                    changed.append(f"{op.get('label') or full}: {_said(old)} -> {_said(op['value'])}")
+                if op.get("once") or op.get("record"):
+                    records.append((op, full, op["value"], old))
         except (KeyError, IndexError, ValueError, TypeError) as e:
             log(f"  save edit skipped ({op.get('section')}): {e}")
     flush()
-    if not changed:
+    # Removals last, list elements from the highest index down so the others keep theirs.
+    def order(op):
+        last_part = op["path"].rstrip("/").rsplit("/", 1)[-1]
+        return (op["path"].rstrip("/").rsplit("/", 1)[0], -int(last_part) if last_part.isdigit() else 0)
+    for op in sorted(removes, key=order):
+        if not doc.exists(op["path"]):
+            records.append((op, op["path"], None, None))   # already gone: nothing to do, ever
+            continue
+        try:
+            old = doc.get(op["path"])
+            doc.delete(op["path"])
+            changed.append(f"{op.get('label') or op['path']}: {_said(old)} -> removed")
+            records.append((op, op["path"], None, old))
+        except (KeyError, IndexError, ValueError, TypeError) as e:
+            log(f"  save edit skipped ({op.get('section')}): {e}")
+    if changed:
+        where, _ = backup(cfg.save_dir, backups_root, "before-save-edits")
+        log(f"  backed up saves -> {where}")
+        save.json_text = doc.text
+        write_save(cfg.save_dir, save)
+        result["backup"] = os.path.basename(where)
+        for c in changed:
+            log(f"  save: {c}")
+    else:
         log("  save already matches; nothing to change")
-        return []
-    where, _ = backup(cfg.save_dir, backups_root, "before-save-edits")
-    log(f"  backed up saves -> {where}")
-    save.json_text = doc.text
-    write_save(cfg.save_dir, save)
-    for c in changed:
-        log(f"  save: {c}")
-    return changed
+    when = saverecord.now()   # after the backup, so restoring it forgets these (saverecord.forget_since)
+    for op, key, value, was in records:
+        made = was != value
+        if made:
+            result["applied"].append({"source": source(op), "path": key, "label": op.get("label") or key,
+                                      "was": was, "now": value, "op": op["op"]})
+        saverecord.note(record, doc.account, source(op), key, op=op["op"], value=value, was=was,
+                        label=op.get("label") or key, when=when, backup=result["backup"] if made else None)
+        write_record = True
+    if write_record:
+        saverecord.store(cfg, record)
+    return result
+
+
+def undo_save_change(cfg, source, key, backups_root, log=print):
+    """Put back what a recorded save change replaced (its "was"), after a backup, and mark the record undone,
+    so a mod that is still on doesn't make it again. Returns {"label", "before": what the save held just
+    before, "now": what it holds now, "backup"}."""
+    sav = os.path.join(cfg.save_dir, SAV_NAME)
+    if not os.path.isfile(sav):
+        raise LookupError("no save yet; start the game once")
+    save = SaveGame.load(sav)
+    doc = SaveDoc(save.json_text)
+    record = saverecord.load(cfg) or {}
+    entry = saverecord.entry(record, doc.account, source, key)
+    if entry is None:
+        raise LookupError("that change isn't in the record of changes to this save")
+    if entry.get("before"):
+        raise ValueError("that change was made before wcmods kept a record of them, so what it replaced isn't known; "
+                         "Settings and repair puts a whole backup back")
+    if entry.get("undone"):
+        raise ValueError("that change was put back already")
+    before = doc.get(key) if doc.exists(key) else None
+    was = entry.get("was")
+    parent, _, last = key.rstrip("/").rpartition("/")
+    if entry.get("op") == "insert" and was is None:   # an item that wasn't there: it goes again
+        if doc.exists(key):
+            doc.delete(key)
+    elif doc.exists(key):
+        doc.set(key, was)
+    elif was is not None:   # removed since (or by the change): it comes back
+        doc.insert(parent, last, was)
+    if doc.text != save.json_text:
+        where, _ = backup(cfg.save_dir, backups_root, "before-put-back")
+        log(f"  backed up saves -> {where}")
+        save.json_text = doc.text
+        write_save(cfg.save_dir, save)
+        entry["undone_backup"] = os.path.basename(where)
+    log(f"  save: {entry.get('label') or key}: {_said(before)} -> {_said(was)} (put back)")
+    entry["undone"] = saverecord.now()
+    saverecord.store(cfg, record)
+    return {"label": entry.get("label") or key, "before": before, "now": was, "backup": entry.get("undone_backup")}
 
 
 def install_outdated(cfg):

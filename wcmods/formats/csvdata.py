@@ -3,13 +3,20 @@
 Only rows you change are re-serialized; every other byte (quoting, line endings, BOM, a
 missing trailing newline) stays exactly as the game shipped it.
 
-Edits use the row key (first column) and the column name:
+Edits use the row key (first column) and the column name (matched without regard to case):
     {"Mice": {"BaseExperience": 50}}          set one cell
     {"Gameplay.X.Y": 2}                       key/value tables: sets the first value column
-    {"*": {"BaseExperience": "x2"}}           every row; "x2" multiplies the original number
-    {"-": ["53"]}                             remove rows by key
+    {"*": {"BaseExperience": "x2"}}           every row; "x2" multiplies the number in the cell
+    {"-": ["53"]}                             remove rows by key ("-": "53" is one row too)
     {"+": [{"#": "91", "Preffix": "Moth"}]}   add rows at the end (missing columns stay empty)
-Removals run first, then cell edits, then additions.
+Values are numbers, text, true/false (TRUE/FALSE) or "xN". Inside one set of edits the order is fixed,
+whatever order the keys come in: removals, then "*" on every row, then the named rows, then additions. A
+named row's plain value replaces what "*" made of that cell; its own "xN" multiplies the cell as it was
+before this set's "*", so the two never compound. Between sets (two mods) each applies to the text the
+one before left, so two mods' "x2" make x4.
+
+A number is written with at most six decimals. A cell that holds a number keeps it when the new value
+isn't one ('abc', '1,5'): that is a problem, not a change.
 """
 import re
 
@@ -142,77 +149,192 @@ _NUM = re.compile(r"^-?\d+(\.\d+)?$")
 _MULT = re.compile(r"^\s*[x*]\s*(-?\d+(\.\d+)?)\s*$", re.I)
 
 
+def is_number(text):
+    """True for a cell or a value that reads as a plain number ("25", " -1.5 "); not "1,5", "1e3" or ""."""
+    return isinstance(text, str) and bool(_NUM.match(text.strip()))
+
+
+def multiplier(value):
+    """N for an "xN" (or "*N") value, else None."""
+    m = _MULT.match(value) if isinstance(value, str) else None
+    return float(m.group(1)) if m else None
+
+
+def _number(v, original):
+    """A number in the style of the original cell: whole when it is whole and the cell had no decimals,
+    else with at most six decimals."""
+    v = float(v)
+    if v != v or v in (float("inf"), float("-inf")):
+        raise ValueError(f"{v} isn't a number the game can read")
+    if v.is_integer() and "." not in original:
+        return str(int(v))
+    s = f"{v:.6f}".rstrip("0").rstrip(".")
+    return s if s not in ("", "-0") else "0"
+
+
 def format_value(original, value):
-    """Render a new cell value in the style of the original cell."""
+    """Render a new cell value in the style of the original cell. A ValueError says why a value can't go in:
+    a multiplier on a cell that isn't a number, or text into a cell that holds a number (which keeps its
+    number)."""
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
     if isinstance(value, str):
-        m = _MULT.match(value)
-        if m:
-            if not _NUM.match(original.strip()):
-                raise ValueError(f"can't multiply '{original}' (not a number)")
-            value = float(original) * float(m.group(1))
-        else:
-            return value
+        n = multiplier(value)
+        if n is not None:
+            if not is_number(original):
+                raise ValueError(f"can't multiply '{original}' (not a number)" if original.strip()
+                                 else "can't multiply an empty cell")
+            return _number(float(original) * n, original)
+        if is_number(original) and not is_number(value):
+            raise ValueError(f"'{value}' isn't a number; kept {original.strip()}")
+        return value.strip() if is_number(value) else value
     if isinstance(value, (int, float)):
-        v = float(value)
-        if v.is_integer() and "." not in original:
-            return str(int(v))
-        s = f"{v:.6f}".rstrip("0").rstrip(".")
-        return s if s not in ("", "-0") else "0"
-    raise ValueError(f"unsupported value {value!r}")
+        return _number(value, original)
+    raise ValueError(f"{value!r} isn't a value a table can hold (use a number, text, true or false)")
+
+
+def _row_names(spec):
+    """The rows a "-" removes: a list of row names, or one name as a string. None for anything else."""
+    if isinstance(spec, (str, int)) and not isinstance(spec, bool):
+        return [str(spec)]
+    if isinstance(spec, list) and all(isinstance(k, (str, int)) and not isinstance(k, bool) for k in spec):
+        return [str(k) for k in spec]
+    return None
 
 
 def apply_edits(text, edits):
-    """Apply {row: value | {column: value}} edits. Returns (new_text, applied, problems)."""
+    """Apply {row: value | {column: value}} edits in the fixed order (the module's docstring). Returns
+    (new_text, applied, problems): applied is [(row, column, from, to)], one per cell changed (its first
+    value and its last, so "*" then a row's own value is one change), problems are sentences; a mistake in
+    one edit never stops the others."""
     table = Table(text)
     applied, problems = [], []
-    for key in edits.get("-", []):
-        rows = table.find_rows(str(key)) if key != "*" else []
-        if not rows:
-            problems.append(f"no row '{key}' to remove")
-        for r in rows:
-            table.remove(r)
-            applied.append((str(key), "(row)", "present", "removed"))
-    for key, spec in edits.items():
-        if str(key).startswith("_") or key in ("+", "-"):
+    cells = {}   # (row, column) -> [row key, column name, first value, last value]
+    if not isinstance(edits, dict):
+        return table.to_text(), applied, ["the edits for a table should be an object of rows"]
+    # 1. Removals.
+    if "-" in edits:
+        names = _row_names(edits["-"])
+        if names is None:
+            problems.append('"-" should be a list of the row names to remove')
+            names = []
+        for key in names:
+            rows = table.find_rows(key) if key != "*" else []
+            if not rows:
+                problems.append(f"no row '{key}' to remove")
+            for r in rows:
+                table.remove(r)
+                applied.append((key, "(row)", "present", "removed"))
+
+    def columns(key, spec):
+        if isinstance(spec, dict):
+            return spec
+        if len(table.header) < 2:
+            problems.append(f"{key}: this table has only its key column, so a value needs a column's name")
+            return {}
+        return {table.header[1]: spec}
+
+    def change(r, col, value, key, col_name, original=None):
+        old = r.fields[col] if col < len(r.fields) else ""
+        try:
+            new = format_value(old if original is None else original, value)
+        except ValueError as e:
+            problems.append(f"{key}.{col_name}: {e}")
+            return
+        if new != old:
+            table.set(r, col, new)
+            cells.setdefault((id(r), col), [r.fields[0], table.header[col], old, None])[3] = new
+
+    def column(col_name):
+        try:
+            col = table.column(col_name)
+        except KeyError as e:
+            problems.append(e.args[0])
+            return None
+        if col == 0:
+            problems.append(f"'{col_name}' is the row key and can't be changed")
+            return None
+        return col
+
+    keys = [k for k in edits if not str(k).startswith("_") and k not in ("+", "-")]
+    # 2. "*" on every row, keeping what each cell held before it, for a named row's own "xN".
+    before, star_cols = {}, {}
+    if "*" in edits:
+        for col_name, value in columns("*", edits["*"]).items():
+            col = column(col_name)
+            if col is None:
+                continue
+            star_cols[col] = value
+            skipped = 0
+            for r in table.rows:
+                old = before[(id(r), col)] = r.fields[col] if col < len(r.fields) else ""
+                if multiplier(value) is not None and not is_number(old):
+                    skipped += 1   # an empty or text cell: nothing to multiply, said once for the column below
+                    continue
+                change(r, col, value, "*", col_name)
+            if skipped:
+                problems.append(f"*.{table.header[col]}: {skipped} row{'s' if skipped != 1 else ''} with no number "
+                                "there, left as they are")
+    # 3. The named rows, over what "*" made.
+    star_at = keys.index("*") if "*" in keys else None
+    for i, key in enumerate(keys):
+        if key == "*":
             continue
         rows = table.find_rows(str(key))
         if not rows:
             problems.append(f"no row '{key}'")
             continue
-        cols = spec if isinstance(spec, dict) else {table.header[1]: spec}
-        for col_name, value in cols.items():
-            try:
-                col = table.column(col_name)
-            except KeyError as e:
-                problems.append(str(e))
-                continue
-            if col == 0:
-                problems.append(f"'{col_name}' is the row key and can't be changed")
+        for col_name, value in columns(key, edits[key]).items():
+            col = column(col_name)
+            if col is None:
                 continue
             for r in rows:
-                old = r.fields[col] if col < len(r.fields) else ""
-                try:
-                    new = format_value(old, value)
-                except ValueError as e:
-                    problems.append(f"{key}.{col_name}: {e}")
-                    continue
-                if new != old:
-                    table.set(r, col, new)
-                    applied.append((r.fields[0], table.header[col], old, new))
-    for row in edits.get("+", []):
-        key = str(row.get(table.header[0], ""))
-        if not key or table.find_rows(key):
-            problems.append(f"can't add row '{key}': " + ("it needs a key" if not key else "it already exists"))
-            continue
-        fields = [""] * len(table.header)
-        try:
+                was = before.get((id(r), col))
+                own = multiplier(value) is not None
+                if was is not None:
+                    # Until this version the keys' order decided: a row before "*" was multiplied by it, and a
+                    # row's own "xN" after it multiplied its result. Said for a release where the result moved.
+                    try:
+                        now = format_value(was, value)
+                        then = (format_value(now, star_cols[col]) if i < star_at
+                                else format_value(r.fields[col] if col < len(r.fields) else "", value))
+                        if then != now and own:
+                            problems.append(f'{key}.{table.header[col]}: this file\'s own "{value}" now multiplies '
+                                            f'the value from before its "*" ({now}, not {then})')
+                        elif then != now:
+                            problems.append(f"{key}.{table.header[col]}: this file's own value now wins over its "
+                                            f'"*" ({now}, not {then}); the Game data page always showed {now}')
+                    except ValueError:
+                        pass
+                change(r, col, value, key, col_name, original=was if own and was is not None else None)
+    applied += [tuple(c) for c in cells.values() if c[2] != c[3]]
+    # 4. Additions.
+    if "+" in edits:
+        adds = edits["+"]
+        if not isinstance(adds, list) or not all(isinstance(row, dict) for row in adds):
+            problems.append('"+" should be a list of rows to add, each an object of column: value')
+            adds = []
+        for row in adds:
+            key = ""
             for col_name, value in row.items():
-                fields[table.column(col_name)] = format_value("", value)
-        except (KeyError, ValueError) as e:
-            problems.append(f"can't add row '{key}': {e}")
-            continue
-        table.append(fields)
-        applied.append((key, "(row)", "", "added"))
+                try:
+                    if table.column(col_name) == 0:
+                        key = str(value)
+                except KeyError:
+                    pass
+            if not key or table.find_rows(key):
+                problems.append(f"can't add row '{key}': " + ("it needs a key" if not key else "it already exists"))
+                continue
+            fields = [""] * len(table.header)
+            try:
+                for col_name, value in row.items():
+                    fields[table.column(col_name)] = format_value("", value)
+            except KeyError as e:
+                problems.append(f"can't add row '{key}': {e.args[0]}")
+                continue
+            except ValueError as e:
+                problems.append(f"can't add row '{key}': {e}")
+                continue
+            table.append(fields)
+            applied.append((key, "(row)", "", "added"))
     return table.to_text(), applied, problems

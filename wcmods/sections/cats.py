@@ -20,12 +20,21 @@ class CatsSection(Section):
         return catcolours.validate(self.read_json(mod, "cats.json")) or None
 
     def build(self, ctx, items):
+        if not items:   # nothing to do, so the save isn't read (one wcmods can't read mustn't stop other mods)
+            return
         merged = catcolours.merge(data for _, data in items)
         source = ", ".join(mod.id for mod, _ in items)
         player = {**EMPTY, **merged.get("player", {})}
         sav = os.path.join(ctx.cfg.save_dir, SAV_NAME)
-        cats = names.cats_in_save(SaveDoc(SaveGame.load(sav).json_text).data) if os.path.isfile(sav) else []
-        per_mod = [data.get("cats", {}) for _, data in items if data.get("cats")]   # lowest priority first
+        unreadable = False
+        try:
+            cats = names.cats_in_save(SaveDoc(SaveGame.load(sav).json_text).data) if os.path.isfile(sav) else []
+        except (ValueError, OSError):
+            ctx.warn("your save couldn't be read, so the changes to cats in it were skipped (your cat's colours "
+                     "still go in)")
+            cats, unreadable = [], True
+        # Lowest priority first; none while the save can't be read (other cats are found in it).
+        per_mod = [data.get("cats", {}) for _, data in items if data.get("cats")] if not unreadable else []
         plan = self._plan(ctx) if per_mod and cats else None
         others = self._others(ctx, plan, per_mod, cats, os.path.isfile(sav))
         coloured = self._coloured(ctx, plan, others, cats)
@@ -41,11 +50,11 @@ class CatsSection(Section):
                 ctx.add_ue4ss_mod(catcolours.UE4SS_MOD_NAME, {"Scripts/main.lua": script, "enabled.txt": ""})
             else:
                 ctx.warn("cats' own colours need UE4SS, which isn't installed")
-            if player["colours"] and not cats:
+            if player["colours"] and not cats and not unreadable:
                 ctx.warn("your cat's colours: no save yet, so they show only once you're in the world")
         added = _new_slots(ctx.mods)
         self._check(ctx, "your cat", player, added)
-        if any(player[k] for k in ("slots", "scars", "look")):
+        if any(player[k] for k in ("slots", "scars", "look")) and not unreadable:
             if not os.path.isfile(sav):
                 ctx.warn("your cat's slots, scars or look: no save yet; start the game once, then install again")
             else:

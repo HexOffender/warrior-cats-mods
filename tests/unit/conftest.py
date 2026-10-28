@@ -104,6 +104,28 @@ def fake_game(tmp_path, studio):
     return str(game)
 
 
+def fixture_game():
+    """tests/studio/fixtures/game.py: the made-up game with a few data tables, shared with the e2e tests."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "wcmods_fixture_game", os.path.join(REPO, "tests", "studio", "fixtures", "game.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture
+def data_game(tmp_path, studio):
+    """The fake game with its base pak: a few of the game's data tables (fixture_game().TABLES) and its English
+    text, so the Game data routes and data.json's check read them. Returns the fixture module."""
+    game = fixture_game()
+    game.write_game(str(tmp_path / "Game"))
+    cfg = studio.ctx.cfg
+    cfg.data["game_dir"] = str(tmp_path / "Game")
+    cfg.save()
+    return game
+
+
 def write_save(folder, data=SAVE):
     """WrcGame.sav holding `data` in folder, laid out as the game lays out its saves."""
     from wcmods.selftest import _small_save

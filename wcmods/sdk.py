@@ -413,11 +413,20 @@ class BuildContext:
             try:
                 text = self.files[path][0].decode("utf-8") if path in self.files else self.game.read_text(path)
                 changes, warnings = [], []
+                table = path.rsplit('/', 1)[-1]
+                touched = {}   # (row, column) -> the source that changed it last
                 for edits, section, source in queue:
+                    who = source or section
                     text, applied, problems = csvdata.apply_edits(text, edits)
-                    warnings += [f"{section}: {path.rsplit('/', 1)[-1]}: {p}" for p in problems]
-                    changes += [{"row": r, "column": c, "from": a, "to": b, "by": source or section}
-                                for r, c, a, b in applied]
+                    warnings += [f"{who}: {table}: {p}" for p in problems]
+                    changes += [{"row": r, "column": c, "from": a, "to": b, "by": who} for r, c, a, b in applied]
+                    for r, c, _, _ in applied:
+                        if c == "(row)":
+                            continue
+                        if touched.get((r, c), who) != who:   # two mods, or a page and a mod, on one cell
+                            warnings.append(f"{who} changed {r}.{c} in {table} after {touched[(r, c)]}; "
+                                            f"the game gets {who}'s")
+                        touched[(r, c)] = who
             except Exception as e:
                 failures.append((path, sorted({s for _, s, _ in queue}), f"{type(e).__name__}: {e}"))
                 continue

@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import (animations, bridge, catcolours, colors, controls, eyeatlas, guide, menupages, menusettings, models, mods,
-               modzip, names, onboarding, packs, palettes, pipeline, recolor, story, ue4ss)
+               modzip, names, onboarding, packs, palettes, pipeline, recolor, saverecord, story, ue4ss)
 from .formats import cooked, csvdata, png, save, texture
 from .exe import gamebuild
 from .bridge import Bridge, BridgeError
@@ -33,6 +33,7 @@ from .config import game_running
 from .gamefiles import NONASSET, Unreadable
 from .formats.savejson import SaveDoc
 from .sdk import BuildContext
+from .sections import savedit
 from .sections.files import classify
 
 NO_GAME = "Clan Mod Studio hasn't found the game yet: Get set up, on the Mods page, asks where it is"
@@ -51,6 +52,8 @@ MODELS = "models"            # a mod's own models (an accessory's shape), added 
 ANIMATIONS = "animations"    # a mod's own animations (glTF), added on the Animations page
 MAX_PICTURE = 8 * 1024 ** 2
 ITEM_ROOT = "Gameplay.Inventory."
+STRINGS_EN = "Wrc/Content/Gameplay/Strings/NonAsset/Strings_EN.csv"   # the game's English text
+HIDDEN_TABLES = ("HeightMap/", "UniqueIds/")   # map data the Game data page doesn't list (GET /game/data says which)
 MAX_UPLOAD = modzip.MAX_BYTES   # a downloaded mod's .zip
 # The side bar: "play" is installing and managing mods, "make" the pages for making your own.
 BUILTIN_SECTIONS = [
@@ -178,6 +181,8 @@ class Studio:
         self._pictures = {}  # texture -> its full-size PNG, to paint over (the last few)
         self._anims = None   # the game's skeletons, read once for the Animations page
         self._sequences = {}  # kind -> the game's sequences an animation can replace, read once
+        self._english = None  # the game's English text by key, read once
+        self._data_index = None   # every data table's row names and descriptions, read once (data_index)
 
     # ---------- helpers ----------
     def mods(self):
@@ -213,13 +218,16 @@ class Studio:
                                "version. Press Restart the studio (at the top of the page), then apply.")
 
     def check_file(self, mod, file):
-        """What would keep a file the studio just saved out of the game: the same check Apply makes (the build
-        section that owns the file reads it), on this mod alone, as sentences. [] when it's fine. While the
-        game's files can't be read (no game folder yet, Steam updating it), one line says the check waits for
-        Apply, since some files are checked against the game's tables."""
+        """What would keep a file the studio just saved out of the game, or part of it: the same check Apply
+        makes (the build section that owns the file reads it), on this mod alone, as sentences. Returns
+        (problems, notes): problems keep the file out ([] when it's fine); notes are what the check warned
+        about, a part it leaves out (data.json's table the game hasn't got). While the game's files can't be
+        read (no game folder yet, Steam updating it), one line says the check waits for Apply, since some
+        files are checked against the game's tables."""
         sec = owner(file)
         if sec is None or not sec.claims(mod):
-            return []
+            return [], []
+        ctx = None
         try:
             # Most files are checked without the game's files; one that needs them (data.json's table names)
             # gets CHECK_LATER while they can't be read.
@@ -231,14 +239,16 @@ class Studio:
             # A key a file lacks (str is the key in quotes), or a game file the reader hasn't got.
             what = e.args[0] if len(e.args) == 1 else str(e)
             return [f"{file}: {what} is missing" if isinstance(what, str) and not str(what).startswith("game file")
-                    else CHECK_LATER]
+                    else CHECK_LATER], []
         except ValueError as e:
-            return [str(e)]
+            return [str(e)], []
         except (OSError, Unreadable):   # the game's pak isn't there, or won't open
-            return [CHECK_LATER]
+            return [CHECK_LATER], []
         except Exception as e:   # noqa: BLE001 - said, not hidden, and never as a Python name
-            return [f"{file} couldn't be checked: {e}"]
-        return []
+            return [f"{file} couldn't be checked: {e}"], []
+        # The warnings name the mod for the build's log; under the page's bar the mod is the one in view.
+        lead = f"{mod.id}: "
+        return [], [w[len(lead):] if w.startswith(lead) else w for w in ctx.warnings]
 
     def restart(self):
         """Start a fresh Clan Mod Studio (in its own window) and stop this one, for the page's Restart the
@@ -562,8 +572,10 @@ class Studio:
                     # that one on, and a shared .zip says it's needed.
                     if name in story.FILES and story.SANDBOX_ID not in m.requires:
                         m.update(requires=m.requires + [story.SANDBOX_ID])
-                # A file half made still saves; what would keep it out of the game is said now, not at Apply.
-                return {"saved": name, "requires": m.requires, "problems": self.check_file(m, name)}
+                # A file half made still saves; what would keep it, or part of it, out of the game is said now,
+                # not at Apply.
+                problems, notes = self.check_file(m, name)
+                return {"saved": name, "requires": m.requires, "problems": problems, "notes": notes}
             if method == "DELETE":
                 if os.path.isfile(path):
                     os.remove(path)
@@ -602,7 +614,10 @@ class Studio:
                 raise RuntimeError("close the game before restoring a save")
             name = field(body, "name")
             save.backup(cfg.save_dir, self.ctx.backups, "before-restore")
-            return {"restored": save.restore(self.ctx.backups, name, cfg.save_dir)}
+            restored = save.restore(self.ctx.backups, name, cfg.save_dir)
+            # The save put back hasn't got the changes made since: the next Apply makes the mods' ones again.
+            saverecord.forget_since(cfg, name)
+            return {"restored": restored}
         if parts == ["game", "eyes"]:
             return self.eyes()
         if parts == ["game", "tables"]:
@@ -619,15 +634,37 @@ class Studio:
             return {"bindings": controls.read_bindings(text), "save_time": mtime}
         if parts == ["game", "data"]:
             tables = self.ctx.game.data_tables()
-            return {"tables": tables, "kinds": {t: classify(NONASSET + t) for t in tables}}
+            return {"tables": tables, "kinds": {t: classify(NONASSET + t) for t in tables},
+                    "hidden": [t for t in tables if t.startswith(HIDDEN_TABLES)]}
+        if parts == ["game", "data", "index"] and method == "GET":
+            # Every table's row names and descriptions, for the Game data page's search (before the table route).
+            return {"tables": self.data_index()}
         if len(parts) >= 3 and parts[:2] == ["game", "data"]:
             name = "/".join(parts[2:])
+            if not self.ctx.game.exists(NONASSET + name):
+                raise ValueError(f"the game has no table '{name}'; the Game data page lists the ones it has")
             table = csvdata.Table(self.ctx.game.read_text(NONASSET + name))
-            return {"name": name, **table.as_dict()}
+            # The English for the game's text keys in it (STR_...), so the page never shows a key alone.
+            try:
+                english = self.english()
+            except KeyError:   # no English text in this game's files: the keys show as they are
+                english = {}
+            texts = {v: english[v] for r in table.rows for v in r.fields if v.startswith("STR_") and v in english}
+            return {"name": name, **table.as_dict(), "texts": texts}
         if parts == ["save"]:
-            text, mtime = self.save_text()
-            doc = SaveDoc(text)
-            return {"account": doc.account, "data": doc.data, "save_time": mtime}
+            return self.save_info()
+        if parts == ["save", "apply"] and method == "POST":
+            return self.save_apply(body.get("changes"))
+        if parts == ["save", "undo"] and method == "POST":
+            # Put it back, on the Save page: the value a recorded change replaced, after a backup.
+            if game_running():
+                raise RuntimeError("close the game before changing your save: it would write over the change")
+            source, path = field(body, "source"), field(body, "path")
+            done = self.run(lambda log: pipeline.undo_save_change(cfg, source, path, self.ctx.backups, log),
+                            "Put a change back")
+            return {"log": done["log"], **done["result"]}
+        if parts == ["save", "applied"] and method == "GET":
+            return self.save_applied()
         if parts == ["cat"] and method == "GET":
             return self.cat_info()
         if parts == ["cat", "options"] and method == "GET":
@@ -768,22 +805,7 @@ class Studio:
             mine = [c for c in cats if c["player"]]
             if mine:
                 current, scars, looks = read(doc.get(mine[0]["paths"][0]))
-            # The cats' names as they show with the enabled names mods; without the game's name tables (no game
-            # folder, a pak that won't read) the cats are named by their places.
-            shown = lambda c: ""     # noqa: E731
-            try:
-                if self._names is None:
-                    if not self.ctx.cfg.game_dir:   # not ctx.game, which ends the command line (SystemExit)
-                        raise LookupError(NO_GAME)
-                    self._names = names.GameNames(lambda path: self.ctx.game.read_text(BuildContext.data_path(path)))
-                try:
-                    spec = names.merge(names.mod_specs([m for m in self.mods() if m.enabled]))
-                except ValueError:
-                    spec = names.merge([])
-                plan = names.Plan(self._names, spec)
-                shown = lambda c: plan.display(c["ids"]) or plan.display(c["ids"], final=False)   # noqa: E731
-            except Exception:       # noqa: BLE001 - the page still opens, with places for names
-                pass
+            shown = self.cat_namer()
             called = {}
             for c in cats:
                 if not c["player"] and shown(c):
@@ -805,6 +827,98 @@ class Studio:
                 "scars": {"current": scars, "types": catcolours.SCAR_TYPES},
                 "look": {"current": looks, "parts": options["parts"], "size": list(catcolours.SIZE[1:])},
                 "cats": others}
+
+    def cat_namer(self):
+        """name(cat) for a cat of names.cats_in_save: its name as it shows with the enabled names mods, or "" without
+        the game's name tables (no game folder, a pak that won't read), where pages name cats by their places."""
+        try:
+            if self._names is None:
+                if not self.ctx.cfg.game_dir:   # not ctx.game, which ends the command line (SystemExit)
+                    raise LookupError(NO_GAME)
+                self._names = names.GameNames(lambda path: self.ctx.game.read_text(BuildContext.data_path(path)))
+            try:
+                spec = names.merge(names.mod_specs([m for m in self.mods() if m.enabled]))
+            except ValueError:
+                spec = names.merge([])
+            plan = names.Plan(self._names, spec)
+            return lambda c: plan.display(c["ids"]) or plan.display(c["ids"], final=False)
+        except Exception:       # noqa: BLE001 - the page still opens, with places for names
+            return lambda c: ""
+
+    def save_info(self):
+        """Your save for the Save page: its account and data, the cat being played and the cats of the other
+        slots by name (your cat in each; None where the game's names can't be read), whether the game runs,
+        and what the page words and checks values with (savedit.WORDS and RANGES, one home for both)."""
+        text, mtime = self.save_text()
+        doc = SaveDoc(text)
+        slot = names.current_slot(doc.data)
+        shown = self.cat_namer()
+        cats = {c["slot"]: shown(c) or None for c in names.cats_in_save(doc.data) if c["player"]}
+        return {"account": doc.account, "data": doc.data, "save_time": mtime,
+                "current_cat": {"slot": slot, "name": cats.get(slot)}, "cats": cats,
+                "game_running": game_running(), "words": savedit.WORDS, "ranges": savedit.RANGES}
+
+    def _save_words(self, doc, cats):
+        """savedit.label for this save, with the cats' names and the game's item names where they can be read."""
+        try:
+            items = {i["tag"]: i["name"] for i in self.game_items()["items"]} if self.ctx.cfg.game_dir else {}
+        except Exception:   # noqa: BLE001 - no item table: the tags in words
+            items = {}
+        current = names.current_slot(doc.data)
+        return lambda path: savedit.label(path, cats.get, items.get, current)
+
+    def save_apply(self, changes):
+        """The Save page's Change my save now: each change made in your save after a backup, and recorded (a
+        change to make is {"path", "value"}, {"add": object path, "key", "value"} or {"remove": path})."""
+        if game_running():
+            raise RuntimeError("close the game before changing your save: it would write over the change")
+        if not isinstance(changes, list) or not changes:
+            raise ValueError("there are no changes to make")
+        info = self.save_info()
+        doc = SaveDoc(self.save_text()[0])
+        say = self._save_words(doc, info["cats"])
+        ops = []
+        for c in changes:
+            if not isinstance(c, dict):
+                raise ValueError("a change should be an object")
+            if "add" in c:
+                full = f"{c['add']}/{c.get('key')}"
+                if not isinstance(c.get("key"), str) or not isinstance(doc.get(c["add"]) if doc.exists(c["add"]) else None, dict):
+                    raise ValueError(f"{say(full)}: your save has nowhere to add it")
+                op = {"op": "insert", "path": c["add"], "key": c["key"], "value": c.get("value")}
+            elif "remove" in c:
+                full = c["remove"]
+                if not doc.exists(full):
+                    raise ValueError(f"{say(full)}: your save hasn't got it any more")
+                op = {"op": "remove", "path": full}
+            elif "path" in c and "value" in c:
+                full = c["path"]
+                if not doc.exists(full):
+                    raise ValueError(f"{say(full)}: your save has no value there")
+                op = {"op": "set", "path": full, "value": c["value"]}
+            else:
+                raise ValueError("a change needs a path and a value, an add or a remove")
+            if op["op"] != "remove":
+                problem = savedit.range_problem(full, op["value"])
+                if problem:
+                    raise ValueError(f"{say(full)}: {problem}")
+            ops.append({**op, "source": saverecord.STUDIO, "section": "save", "record": True, "label": say(full)})
+        done = self.run(lambda log: pipeline.apply_save_ops(self.ctx.cfg, ops, self.ctx.backups, log), "Change my save")
+        return {"log": done["log"], "applied": done["result"]["applied"], "backup": done["result"]["backup"]}
+
+    def save_applied(self):
+        """The changes made to this save (by mods and by the Save page), newest first, each with what the save
+        holds there now and whether it can be put back."""
+        record = saverecord.load(self.ctx.cfg) or {}
+        try:
+            doc = SaveDoc(self.save_text()[0])
+        except LookupError:
+            return {"changes": []}
+        out = []
+        for e in saverecord.listing(record, doc.account):
+            out.append({**e, "path": e["key"], "current": doc.get(e["key"]) if doc.exists(e["key"]) else None,
+                        "can_undo": not e.get("before") and not e.get("undone")})
+        return {"changes": out}
 
     def look_options(self):
         """What a cat's look can be, with no save needed: the colours each slot has with the enabled palettes
@@ -847,6 +961,32 @@ class Studio:
     def _reader(self):
         """A build context only for reading the game's tables (it never builds)."""
         return BuildContext(self.ctx.cfg, self.ctx.game, os.path.join(tempfile.gettempdir(), "wcmods-studio"))
+
+    def english(self):
+        """The game's English text by its key (STR_...), read once."""
+        if self._english is None:
+            table = csvdata.Table(self.ctx.game.read_text(STRINGS_EN))
+            self._english = {r.fields[0]: r.fields[1] for r in table.rows if len(r.fields) > 1}
+        return self._english
+
+    def data_index(self):
+        """Every data table the Game data page lists, as {table: {"rows": [row names], "descriptions":
+        {row: text}}}, for its search across tables; read once. The map tables (HeightMap/, UniqueIds/) aren't
+        listed there, so they're left out here too."""
+        if self._data_index is None:
+            index = {}
+            for name in self.ctx.game.data_tables():
+                if name.startswith(HIDDEN_TABLES):
+                    continue
+                table = csvdata.Table(self.ctx.game.read_text(NONASSET + name))
+                low = [h.lower() for h in table.header]
+                desc = low.index("description") if "description" in low else None
+                rows = [r.fields[0] for r in table.rows if r.fields and r.fields[0]]
+                index[name] = {"rows": rows, "descriptions": {
+                    r.fields[0]: r.fields[desc] for r in table.rows
+                    if desc is not None and len(r.fields) > desc and r.fields[desc].strip()}}
+            self._data_index = index
+        return self._data_index
 
     def game_items(self):
         """The game's items for the Items and Questlines pages: tag, kind, name, description, and for herbs

@@ -536,6 +536,8 @@ def cmd_restore(ctx, args):
     name = names[-1] if args.name == "latest" else args.name
     save.backup(ctx.cfg.save_dir, ctx.backups, "before-restore")
     restored = save.restore(ctx.backups, name, ctx.cfg.save_dir)
+    from . import saverecord
+    saverecord.forget_since(ctx.cfg, name)   # the save put back hasn't got the changes made since
     print(f"restored {', '.join(restored)} from {name}")
 
 
