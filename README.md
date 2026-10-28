@@ -216,19 +216,19 @@ written into your save only after a backup.
    the keyboard, start the game with `Play with key remaps.bat`; for the sticks, use Steam's controller
    settings.
 4. If a key already does something else, the page says what it will stop doing before you save, and so does
-   Apply; the mod menu's key and button (Insert and View unless you changed them), mouse look's key (F6) and
-   F11 are taken, and the page's "Which keys are free?" lists the rest.
+   Apply; the mod menu's key and button (Insert and View unless you changed them), mouse look's key (F6, while
+   mouse look is on) and F11 are taken, and the page's "Which keys are free?" lists the rest.
 5. Controller buttons, the side mouse buttons and the wheel haven't been tried in the game yet.
 
 | What you change | After Apply | Note |
 |---|---|---|
 | An action (Interact, Pounce, Run, Crouch, Scent tracking, Drop, Talk to a friend, Place a den decoration, Return to camp, Reset the camera, Pause menu, Inventory, Quest log, Map, Meow) on a key, mouse button or controller button | works in the game | the old key keeps its other jobs; Inventory, Quest log, Map and Meow have no controller button |
 | A second key for an action | works in the game while you explore | it does what the game's key does there |
-| A second key for Confirm, Back or the tabs in menus | works in the game | letters still type on the name screen |
+| A second key for Confirm, Back or the tabs in menus | works in the game | the key you add gives up its own job in menus; letters still type on the name screen |
 | Moving and the camera, on the keyboard | only with `Play with key remaps.bat` | deprecated, keyboard and mouse only |
 | The sticks | no | Steam's controller settings |
 | Mouse look | works in the game | its own card on the Controls page; needs the script loader |
-| Anything, without the script loader | keyboard and mouse only, with `Play with key remaps.bat` | Get set up installs the loader |
+| Without the script loader | only with `Play with key remaps.bat`: the keyboard's actions, second keys and keys in menus | not Inventory, Quest log, Map, Meow, the menus' own commands or the controller; Get set up installs the loader |
 
 How it works inside the game, the old key remapper and its command line, and what hasn't been checked yet:
 [docs/remapping.md](docs/remapping.md). The file itself: [formats.md, controls.json](docs/formats.md#controlsjson).
@@ -242,7 +242,7 @@ in groups):
 python wcmods.py status      # game, save, UE4SS, and your mods
 python wcmods.py selftest    # checks every file format against your install (writes nothing)
 python wcmods.py install     # builds the enabled mods and installs them (game closed)
-python wcmods.py play        # starts the game with the old key remapper (deprecated; see Remapping keys)
+python wcmods.py play        # starts the game with the old key remapper (deprecated; see docs/remapping.md)
 python wcmods.py uninstall   # removes them again
 ```
 

@@ -25,7 +25,7 @@ Then:
 | A key that stands for another in menus, the "In menus" list (`"menus"`): I and K for Up and Down, F for Enter | **the game** (mouse buttons there: the old key remapper) |
 | Movement and the camera (Move back, Move left, Camera down, Camera left, and keys standing for W, D, Up or Right) | only **the old key remapper** outside the game (deprecated, below) |
 | The controller's sticks | **Steam Input** (in Steam, right-click the game, then Properties, Controller) |
-| Anything, without UE4SS | **the old key remapper**, for keyboard and mouse |
+| Without UE4SS: the keyboard's actions (not the Controls screen's Inventory, Quest, Map and Meow, or the menus' commands), and keys standing for others while you play and in menus | **the old key remapper**, keyboard and mouse only; the rest needs UE4SS |
 
 What the build will do with a `controls.json` is said before Apply, in the same words: `keymap.describe`
 runs the plans below on the mods' merged files and gives a sentence per entry, which the Controls page shows
@@ -42,7 +42,8 @@ and the script works on those:
   the map; with Pounce moved off Space, Space still confirms dialogue. A key that takes an action stops doing
   its own (with Interact on Q, Q no longer tracks scents; the build says so).
 - **A key standing for another** while you play (`keys`) or in menus (`menus`): it does all of that key's
-  jobs there, and none of its own. Menus are every screen but the HUD: the title and cat maker, the
+  jobs there, and none of its own (Backspace standing for Enter in menus no longer goes back; the build says
+  so, and the Controls page says it on the In menus row whose key it is). Menus are every screen but the HUD: the title and cat maker, the
   pause menu and its pages, the inventory, the map, photo mode, a fight's menu, and talking to a cat.
   Letters still type on the name screen, and do the other key's job there too (the build says so).
   A few screens read some keys directly, like movement: the map's zoom and move (arrows, WASD), photo

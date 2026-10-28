@@ -162,7 +162,9 @@ apply in priority order, so a later mod's choice wins even when it names the cat
 - **`menus`** is a separate set of key pairs used only in the game's menus (every screen but the HUD,
   a fight's menu included).
   Here `Escape` closes menus (it stands for Backspace); `{"I": "Up", "K": "Down", "F": "Enter"}` would
-  move through them with I and K and confirm with F. The game's own keys keep working too. A letter,
+  move through them with I and K and confirm with F. The game's own keys keep working too, but the key
+  you press does the other key's job there instead of its own (Backspace standing for Enter no longer goes
+  back), and the build says what it stops doing. A letter,
   digit or Space used here still types on the name screen and does the other key's job there too, and
   the build warns about it. A press finishes as it started: the Escape that closes a menu is released
   as Backspace. A pair standing for an arrow key or WASD also goes to the old key remapper, as the map
@@ -179,7 +181,8 @@ higher priority) winning per action or key. The build's warnings are sentences t
 change does and stops doing ("I now does Interact, so it no longer opens the inventory; give Inventory
 another key"); they're in the Apply drawer, and the Controls page shows the same ones on its rows
 before you apply (`keymap.describe`). Keys wcmods' own scripts listen on (the mod menu's key and
-controller button, mouse look's `toggle_key`) and F11 are kept free by the page, and a mod's keys (an
+controller button, mouse look's `toggle_key` while a mouse look mod is on) and F11 are kept free by the
+page, and a mod's keys (an
 emote's `key`, the Emote wheel's) are warned about. Two things carry the remaps out
 ([remapping.md](remapping.md) has the details):
 - **Inside the game**, the `WCModsRemap` UE4SS script (written by `wcmods/gameremap.py` from
