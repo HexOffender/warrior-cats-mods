@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, makeGame, makeLoader, makeMod, makeZip, removeFolder, sleep, startStudio } from "../lib/studio.mjs";
+import { dataFolder, makeGame, makeLoader, makeMod, makeZip, removeFolders, sleep, startStudio } from "../lib/studio.mjs";
 
 const browserPath = findBrowser();
 const required = process.env.WC_REQUIRE_BROWSER === "1";
@@ -58,7 +58,7 @@ before(async () => {
 after(async () => {
   for (const s of [fresh, page]) if (s) s.stop();
   if (browser) await browser.close();
-  for (const f of [freshFolders, pageFolders]) if (f) { await removeFolder(f.root); await removeFolder(f.app); }
+  for (const f of [freshFolders, pageFolders]) if (f) await removeFolders(f);
 });
 
 const stepTitles = p => p.evaluate(() => [...document.querySelectorAll(".setup .step strong")].map(s => s.textContent.replace(/^(Done|To do): /, "")));

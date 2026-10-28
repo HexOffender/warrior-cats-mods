@@ -1,12 +1,13 @@
 // What the end-to-end tests (e2e/) share: a Clan Mod Studio of their own, started on a free port over a
-// folder of the test's (`python wcmods.py studio --no-browser --port 0` with WCMODS_DATA), a made-up game in
-// it, and .zips made the way a download would be.
+// folder of the test's (`python wcmods.py studio --no-browser --port 0` with WCMODS_DATA), from a copy of
+// wcmods of their own, a made-up game in it, and .zips made the way a download would be.
 //
-//   const folders = dataFolder();          // data (the player's folder), game, saves, temp, under one root
+//   const folders = dataFolder();          // data (the player's folder), game, saves, temp, under one root,
+//                                          // and app, the copy of wcmods the studio runs from
 //   makeGame(folders.game);                // the exe and folders that make it the game's (no paks)
 //   const studio = await startStudio(folders, { WCMODS_RELEASES: dir });
 //   makeZip(path.join(dir, "sandbox-0.4.zip"), { "sandbox/mod.json": { name: "Sandbox mode" } });
-//   studio.stop(); await removeFolder(folders.root); await removeFolder(folders.app);
+//   studio.stop(); await removeFolders(folders);
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -61,9 +62,9 @@ export async function startStudio(folders, env = {}, { root = folders.app, port 
 
 // A folder of the player's own, with wcmods.json naming a game folder (empty: not the game yet) and a saves
 // folder, both made up, so the real game folder and the real save are never used, a temp folder, and a copy
-// of wcmods to run (app, a folder of its own: remove it too). Steam is still read (its registry key and
-// library list, read only): once the made-up folder holds the game, Get set up and the Mods page say whether
-// Steam starts another copy, and nothing here depends on the answer.
+// of wcmods to run the studio from (app). Steam is still read (its registry key and library list, read
+// only): once the made-up folder holds the game, Get set up and the Mods page say whether Steam starts
+// another copy, and nothing here depends on the answer.
 export function dataFolder() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "wc-e2e-"));
   const game = path.join(root, "Game"), saves = path.join(root, "Saves"), data = path.join(root, "data");
@@ -109,9 +110,15 @@ export function makeMod(data, id, meta = {}) {
   return folder;
 }
 
-// The test's folders gone, once the studio has let go of them.
-export async function removeFolder(root) {
+// A folder gone, once the studio has let go of it.
+export async function removeFolder(folder) {
   for (let i = 0; i < 5; i++) {
-    try { fs.rmSync(root, { recursive: true, force: true }); return; } catch (e) { await sleep(300); }
+    try { fs.rmSync(folder, { recursive: true, force: true }); return; } catch (e) { await sleep(300); }
   }
+}
+
+// The test's folders (dataFolder's) and its copy of wcmods, gone.
+export async function removeFolders(folders) {
+  await removeFolder(folders.root);
+  await removeFolder(folders.app);
 }

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { findBrowser, launch } from "../lib/browser.mjs";
-import { dataFolder, makeGame, removeFolder, sleep, startStudio } from "../lib/studio.mjs";
+import { dataFolder, makeGame, removeFolders, sleep, startStudio } from "../lib/studio.mjs";
 
 const browserPath = findBrowser();
 const required = process.env.WC_REQUIRE_BROWSER === "1";
@@ -33,10 +33,7 @@ before(async () => {
 after(async () => {
   if (studio) studio.stop();
   if (browser) await browser.close();
-  if (folders) {
-    await removeFolder(folders.root);
-    await removeFolder(folders.app);
-  }
+  if (folders) await removeFolders(folders);
 });
 
 test("the studio opens with no console errors, its status chips and its pages", { skip }, async () => {
@@ -101,7 +98,6 @@ test("a mod made from a Make page's Editing-mod bar shows on the Mods page", { s
   await page.type('input[aria-label="New mod folder name"]', "e2e-mod");
   await page.click({ text: "Create" });
   // The new mod is listed first (the bar reads the list again for "mods-changed"), then chosen.
-  await page.waitFor(() => [...document.querySelectorAll(".target select option")].some(o => o.value === "e2e-mod"));
   await page.waitFor(() => document.querySelector(".target select").value === "e2e-mod");
   await page.waitFor(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes("Created mod e2e-mod")));
   assert.ok(fs.existsSync(path.join(folders.data, "mods", "e2e-mod", "mod.json")), "the mod's folder is there");
@@ -243,8 +239,7 @@ test("unsaved changes outlast the studio's window closing: the page keeps them, 
     first.stop();
     if (second) second.stop();
     await page.close();
-    await removeFolder(d.root);
-    await removeFolder(d.app);
+    await removeFolders(d);
   }
 });
 
@@ -286,7 +281,6 @@ test("Restart the studio waits for unsaved changes to be saved, and a new studio
   } finally {
     s.stop();
     await page.close();
-    await removeFolder(d.root);
-    await removeFolder(d.app);
+    await removeFolders(d);
   }
 });
