@@ -11,21 +11,31 @@ local COLOURS = {
 local OTHERS = {
 @OTHERS@
 }
--- How your cat is found. In the world: your character, plus menu and portrait copies with its name IDs.
--- Before that (the main menu) there's no character, so menu copies are matched on the name's prefix
--- (a rank-up changes only the suffix), taken from the IDs your character last had (remembered in
--- KEY_FILE), or else from your save when the mods were installed.
+-- How your cat is found: your character in the world, plus menu and portrait copies with the name IDs your
+-- character last had (remembered in KEY_FILE), or else your save's from when the mods were installed. Before
+-- the world, the main menu's cat and the cat choice's own cat need only the same prefix (a rank-up changes
+-- only the suffix).
 local SAVE_KEY = @SAVE_KEY@
 local KEY_FILE = @KEY_FILE@
 local DEBUG = @DEBUG@
 local MESHES = { "SkelMeshComp", "FurSkelMeshComp", "TailSkelMeshComp", "EarSkelMeshComp" }
--- Actors that show a copy of your cat in menus, portraits and thumbnails (never cats in the world).
+-- Actors that show a copy of a cat in menus, portraits and thumbnails (never cats in the world).
 local MENU_ACTORS = { "CatCustomActor", "MainMenu", "Customization_Player" }
-local RETAKE_TICKS = 4   -- take a copy's pictures again at most every 2 seconds
+-- The menus' pictures of cats are taken by actors every cat they show shares. The cat choice takes each save's
+-- small picture with one, one cat after another, natively, as they load, and shows the cat it's on with another
+-- (its CatRef), live; an actor's picture target can belong to another cat than the one it holds. So out of the
+-- forest a picture actor is painted only as the cat choice's own cat (a cat's small picture there shows its
+-- saved colours), and in the forest only the HUD's picture is taken again.
+local PICTURE_ACTOR = "BP_UI_CatCustomActor_C"
+local MAIN_MENU_ACTOR = "BP_CatActorChild_MainMenu_C"
+local CAT_CHOICE = "WBP_GuiScreenSelectYourCat_C"
+local HUD_PICTURE = "RT_UI_Portrait_Exploration"
+local RETAKE_TICKS = 4   -- take the HUD's picture again at most every 2 seconds
 
 local function log(fmt, ...) print(string.format("[WCModsCatLook] " .. fmt .. "\n", ...)) end
 local function valid(o) return o ~= nil and o:IsValid() end
 local function str(v) local ok, s = pcall(function() return v:ToString() end) return ok and s or tostring(v) end
+local function className(o) return o:GetClass():GetFName():ToString() end
 
 local warned, said, seen, retaken, ticks = {}, false, {}, {}, 0
 local known = SAVE_KEY
@@ -50,7 +60,7 @@ end
 local function prefixOf(key) return key:match("^([^|]*)") or "" end
 
 local function isMenuActor(owner)
-    local cls = owner:GetClass():GetFName():ToString()
+    local cls = className(owner)
     for _, part in ipairs(MENU_ACTORS) do
         if cls:find(part, 1, true) then return true end
     end
@@ -63,39 +73,41 @@ local function playerPawn()
     end
 end
 
+-- The cat choice's own cat (the big one), while that screen shows.
+local function choiceCat()
+    for _, s in ipairs(FindAllOf(CAT_CHOICE) or {}) do
+        if valid(s) and s:IsVisible() then
+            local ok, cat = pcall(function() return s.CatRef end)
+            if ok and valid(cat) then return cat end
+        end
+    end
+end
+
 -- A cat is matched by its name IDs, so your cat's portrait and menu copies get your colours too.
 local function nameKey(comp)
     local d = comp.CustomData
     return str(d.PrefixNameId) .. "|" .. str(d.SuffixNameId)
 end
 
-local function paint(comp, colours)
-    local changed = 0
+-- A part's mesh with its model in: while the game sets a cat up (the cat choice loading its cats) a part can be
+-- without one for a moment, and asking it for a material then crashes the game.
+local function ready(mesh)
+    if not valid(mesh) then return false end
+    local ok, asset = pcall(function() return mesh.SkinnedAsset end)
+    return ok and valid(asset)
+end
+
+-- Each of a cat's dynamic materials, on every part: the ones the game colours.
+local function eachMaterial(comp, fn)
     for _, field in ipairs(MESHES) do
         local ok, mesh = pcall(function() return comp[field] end)
-        if ok and valid(mesh) then
+        if ok and ready(mesh) then
             for i = 0, mesh:GetNumMaterials() - 1 do
                 local mat = mesh:GetMaterial(i)
                 if valid(mat) then
-                    local cls = mat:GetClass():GetFName():ToString()
+                    local cls = className(mat)
                     if cls == "MaterialInstanceDynamic" then
-                        local todo = {}
-                        mat.VectorParameterValues:ForEach(function(_, e)
-                            local v = e:get()
-                            local pn = v.ParameterInfo.Name:ToString()
-                            local want = colours[pn]
-                            if want then
-                                local c = v.ParameterValue
-                                if math.abs(c.R - want[1]) > 0.002 or math.abs(c.G - want[2]) > 0.002 or math.abs(c.B - want[3]) > 0.002 then
-                                    todo[#todo + 1] = pn
-                                end
-                            end
-                        end)
-                        for _, pn in ipairs(todo) do
-                            local want = colours[pn]
-                            mat:SetVectorParameterValue(FName(pn), { R = want[1], G = want[2], B = want[3], A = 1.0 })
-                            changed = changed + 1
-                        end
+                        fn(mat)
                     elseif not warned[cls] then
                         warned[cls] = true
                         log("a %s on a cat can't be recoloured (it's a %s)", field, cls)
@@ -104,18 +116,88 @@ local function paint(comp, colours)
             end
         end
     end
+end
+
+-- The colours a material holds: { [parameter] = { R, G, B, A } }.
+local function held(mat)
+    local out = {}
+    mat.VectorParameterValues:ForEach(function(_, e)
+        local v = e:get()
+        local c = v.ParameterValue
+        out[v.ParameterInfo.Name:ToString()] = { R = c.R, G = c.G, B = c.B, A = c.A }
+    end)
+    return out
+end
+
+local function near(c, want)
+    return math.abs(c.R - want[1]) <= 0.002 and math.abs(c.G - want[2]) <= 0.002 and math.abs(c.B - want[3]) <= 0.002
+end
+
+-- Cats painted, by their mesh component's address: { who = whose colours (true for yours, else the cat's name
+-- key), orig = { [parameter] = the colour the game had set }, worn = { [parameter] = the colour painted } }.
+-- The menus' actors show one cat after another: when one moves on to a cat that gets no colours here, the
+-- game's go back on. The game doesn't always set them again itself (not when the next cat has the same coat:
+-- it doesn't set colours it thinks are there), so ours would stay on.
+local painted = {}
+
+-- The game's colours back on a cat painted here, on the parts still showing ours (any other, the game has set
+-- since). How many it set.
+local function unpaint(comp)
+    local at = comp:GetAddress()
+    local p = painted[at]
+    painted[at] = nil
+    if not p then return 0 end
+    local n = 0
+    eachMaterial(comp, function(mat)
+        local have = held(mat)
+        for pn, worn in pairs(p.worn) do
+            if p.orig[pn] and have[pn] and near(have[pn], worn) then
+                mat:SetVectorParameterValue(FName(pn), p.orig[pn])
+                n = n + 1
+            end
+        end
+    end)
+    return n
+end
+
+-- Put colours on a cat ({ [parameter] = { r, g, b } }), remembering the game's first; how many had to change.
+local function paint(comp, colours, who)
+    local at = comp:GetAddress()
+    if painted[at] and painted[at].who ~= who then unpaint(comp) end
+    local p = painted[at]
+    if not p then
+        p = { who = who, orig = {}, worn = {} }
+        painted[at] = p
+    end
+    local changed = 0
+    eachMaterial(comp, function(mat)
+        local have = held(mat)
+        for pn, want in pairs(colours) do
+            local c = have[pn]
+            if c then
+                if not p.orig[pn] then p.orig[pn] = c end
+                p.worn[pn] = want
+                if not near(c, want) then
+                    mat:SetVectorParameterValue(FName(pn), { R = want[1], G = want[2], B = want[3], A = 1.0 })
+                    changed = changed + 1
+                end
+            end
+        end
+    end)
     return changed
 end
 
--- Portraits and thumbnails are pictures the game takes of a copy of your cat; once that copy has your
--- colours, take them again.
-local function retake(owner)
-    for _, field in ipairs({ "CaptureComponent", "CaptureComponentInventory" }) do
-        pcall(function()
-            local cap = owner[field]
-            if valid(cap) then cap:CaptureScene() end
-        end)
-    end
+-- The HUD's picture of your cat is taken once, as you reach the forest: take it again once its actor has your
+-- colours. Only that one: another picture actor's target can belong to another cat.
+local function retakeHud(owner)
+    local cap = owner.CaptureComponent
+    if not valid(cap) then return end
+    local target = cap.TextureTarget
+    if not (valid(target) and target:GetFName():ToString() == HUD_PICTURE) then return end
+    local at = owner:GetAddress()
+    if retaken[at] and ticks - retaken[at] < RETAKE_TICKS then return end
+    retaken[at] = ticks
+    cap:CaptureScene()
 end
 
 local function tick()
@@ -131,41 +213,52 @@ local function tick()
     if mine then remember(nameKey(mine)) end
     local others = next(OTHERS) ~= nil
     if known == "" and not others then return end
-    local total, theirs = 0, 0
+    local inForest = pawn ~= nil
+    local choice = not inForest and choiceCat() or nil
+    local choiceAt = choice and choice:GetAddress()
+    local total, theirs, here = 0, 0, {}
     for _, comp in ipairs(comps) do
-        local owner = nil
-        pcall(function() owner = comp:GetOwner() end)
-        local yours = false
-        if known ~= "" and mine and comp:GetAddress() == mine:GetAddress() then
-            yours = true
-        elseif known ~= "" and valid(owner) and isMenuActor(owner) then
-            local ok, key = pcall(nameKey, comp)
-            -- In the world, a menu copy must have your full name IDs; before it, the same prefix.
-            yours = ok and (mine and key == known or (not mine and prefixOf(key) ~= "" and prefixOf(key) == prefixOf(known)))
-        end
-        -- Another cat cats.json names: its full name IDs, in the world or a menu (never your own cat).
-        local cols = nil
-        if not yours and others and not (mine and comp:GetAddress() == mine:GetAddress()) then
-            local ok, key = pcall(nameKey, comp)
-            if ok then cols = OTHERS[key] end
-        end
-        if DEBUG and not seen[comp:GetAddress()] then
-            seen[comp:GetAddress()] = true
-            local okk, k = pcall(nameKey, comp)
-            log("cat %s on %s: %s", okk and k or "?", valid(owner) and owner:GetClass():GetFName():ToString() or "?",
-                yours and "yours" or "not yours")
-        end
-        if yours or cols then
-            local n = paint(comp, cols or COLOURS)
-            if yours then total = total + n else theirs = theirs + n end
-            if n > 0 and valid(owner) and isMenuActor(owner) then
-                local at = owner:GetAddress()
-                if not retaken[at] or ticks - retaken[at] >= RETAKE_TICKS then
-                    retaken[at] = ticks
-                    retake(owner)
-                end
+        if valid(comp) then
+            local at = comp:GetAddress()
+            here[at] = true
+            local owner = nil
+            pcall(function() owner = comp:GetOwner() end)
+            local cls = valid(owner) and className(owner) or "?"
+            local ownerAt = valid(owner) and owner:GetAddress()
+            local isMine = mine ~= nil and at == mine:GetAddress()
+            -- Out of the forest a picture actor other than the cat choice's own cat is taking another cat's
+            -- picture: it gets no colours.
+            local off = not inForest and cls == PICTURE_ACTOR and ownerAt ~= choiceAt
+            local okKey, key = pcall(nameKey, comp)
+            if not okKey then key = nil end
+            local yours = false
+            if known ~= "" and isMine then
+                yours = true
+            elseif known ~= "" and key and not off and valid(owner) and isMenuActor(owner) then
+                -- A menu copy with your name IDs; before the world, the main menu's cat and the cat choice's may
+                -- have just the same prefix.
+                local loose = not inForest and (cls == MAIN_MENU_ACTOR or ownerAt == choiceAt)
+                yours = key == known or (loose and prefixOf(key) ~= "" and prefixOf(key) == prefixOf(known))
             end
+            -- Another cat cats.json names: its full name IDs, in the world or a menu (never your own cat).
+            local cols = nil
+            if not yours and others and not isMine and not off and key then cols = OTHERS[key] end
+            if DEBUG and not seen[at] then
+                seen[at] = true
+                log("cat %s on %s: %s", key or "?", cls, yours and "yours" or "not yours")
+            end
+            local n = 0
+            if yours or cols then
+                n = paint(comp, cols or COLOURS, yours or key)
+                if yours then total = total + n else theirs = theirs + n end
+            elseif painted[at] then
+                n = unpaint(comp)
+            end
+            if n > 0 and inForest and cls == PICTURE_ACTOR then pcall(retakeHud, owner) end
         end
+    end
+    for at in pairs(painted) do
+        if not here[at] then painted[at] = nil end      -- gone
     end
     if total + theirs > 0 and not said then
         said = true

@@ -54,6 +54,9 @@ def test_your_cats_colours_script_with_its_menu_page():
     lua = catcolours.script({"fur": (1.0, 0.5, 0.0)}, save={"path": "x", "file": "y", "doc": {"player": {"colours": {}}}})
     assert not problems(lua)
     assert '"#ff8000"' in lua
+    # Only the HUD's picture is taken again, and a part with no model is never asked for a material.
+    assert '"RT_UI_Portrait_Exploration"' in lua and "CaptureComponentInventory" not in lua
+    assert "mesh.SkinnedAsset" in lua
 
 
 def test_mod_menu_window_script_with_the_dev_pages():
