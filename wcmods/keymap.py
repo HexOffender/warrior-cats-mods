@@ -1,7 +1,7 @@
 """Unreal key names to Windows key codes, and the remap plans: the in-game remap script's (gameremap.py)
 and the key remapper's (remapper.py).
 
-The game ignores edited bindings (see README, "Remapping keys"), so it always listens for its own
+The game ignores edited bindings (see docs/remapping.md), so it always listens for its own
 keys. Each key it hears is sent on to its listeners as the game's commands (KEY_COMMANDS: Interact,
 Pounce, and the menus' Up, Confirm, Back...). Inside the game, a remap works on those commands: the
 in-game script sends a command when its new key is pressed, and drops the game's own when it comes
@@ -11,8 +11,11 @@ send the game E": it holds back F and sends E in its place. Actions in controls.
 such key pairs using the game's bindings below; the "keys" section maps keys directly (e.g. W, which
 no action lists). Both apply while you play. The "menus" section is a separate set of key pairs used
 only while a menu is open.
+
+Every warning is a sentence for the person who made the remap (the Apply drawer shows them, and describe()
+puts them on the Controls page's rows): commands by their names in NAMES, keys by label().
 """
-from .controls import KNOWN_KEYS, normalise_key
+from .controls import GAMEPAD_ALIASES, KNOWN_KEYS, normalise_key
 
 # What the game listens for on the keyboard (from the save; edits to it are ignored). Axis actions
 # list their negative key; the positive ones (W, D, Up, Right) are built in. The save puts Pause on
@@ -112,6 +115,146 @@ NEVER_HELD_BACK = ("Enter", "SpaceBar", "Escape", "BackSpace", "Tab")
 MOUSE = ("LeftMouseButton", "RightMouseButton", "MiddleMouseButton", "ThumbMouseButton", "ThumbMouseButton2",
          "MouseScrollUp", "MouseScrollDown")
 
+# The game's commands and jobs in plain words: [its name, what a key that does it does]. The name is the
+# Controls page's row label; the second is for sentences ("F does Interact", "Enter opens the pause menu").
+# "key:W" and the axis actions are the moving jobs, which only the key remapper outside the game can move.
+# None: a developer's tool of the game's, never said.
+NAMES = {
+    "Player_Interact": ["Interact", "does Interact"], "Player_Pounce": ["Pounce", "pounces"],
+    "Player_Run": ["Run", "runs"], "Player_Crouch": ["Crouch", "crouches"],
+    "Player_Scent_Tracking": ["Scent tracking", "tracks scents"], "Player_Drop": ["Drop", "drops what you carry"],
+    "Player_Friend_Talk": ["Talk to a friend", "talks to a friend"],
+    "Player_Den_Place": ["Place a den decoration", "places a den decoration"],
+    "Player_ReturnToCamp": ["Return to camp", "takes you back to camp"],
+    "Player_Camera_Reset": ["Reset the camera", "resets the camera"],
+    "Player_Pause": ["Pause menu", "opens the pause menu"],
+    "Player_Show_Inventory": ["Inventory", "opens the inventory"], "Player_Show_Quest": ["Quest log", "opens the quest log"],
+    "Player_Show_Map": ["Map", "opens the map"], "Player_Growl": ["Meow", "meows"],
+    "Player_Play": ["Play", "does the game's Play action"],
+    "Player_PhotoMode_Shoot": ["Take a photo", "takes a photo in photo mode"],
+    "Player_PhotoMode_Exit": ["Leave photo mode", "leaves photo mode"],
+    "Player_PhotoMode_HideUI": ["Hide photo mode's buttons", "hides photo mode's buttons"],
+    "Player_PhotoMode_Camera_Crane_Up": ["Photo mode's camera up", "raises photo mode's camera"],
+    "Player_PhotoMode_Camera_Crane_Down": ["Photo mode's camera down", "lowers photo mode's camera"],
+    "Player_Cinematic_Skip": ["Skip a cutscene", "skips cutscenes"],
+    "Player_ShowHideControls": ["Show or hide the controls", "shows or hides the controls"],
+    "Button_Up": ["Up", "moves up in menus"], "Button_Down": ["Down", "moves down in menus"],
+    "Button_Left": ["Left", "moves left in menus"], "Button_Right": ["Right", "moves right in menus"],
+    "Button_A": ["Confirm", "confirms in menus"], "Button_Confirm": ["Confirm", "confirms in menus"],
+    "Button_Skip": ["Skip", "skips dialogue"], "Button_B": ["Back", "goes back in menus"],
+    "Button_Back": ["Back", "goes back in menus"], "Button_X": ["the map's legend", "shows the map's legend"],
+    "Button_Y": ["the menus' Y button", "does the menus' Y button"],
+    "Button_Randomize": ["Randomize", "randomizes in the cat maker"],
+    "Button_Start": ["the game's Start button", "does the game's Start button"],
+    "Button_Select": ["the game's Select button", "does the game's Select button"],
+    "Button_StickL": ["the left stick's click", "does the left stick's click"],
+    "Button_StickR": ["the right stick's click", "does the right stick's click"],
+    "Button_ShoulderL": ["Previous tab", "goes to the previous tab"], "Button_ShoulderR": ["Next tab", "goes to the next tab"],
+    "Button_TriggerL": ["Previous page", "goes to the previous page of a tab"],
+    "Button_TriggerR": ["Next page", "goes to the next page of a tab"],
+    "Minigame_Button_A": ["a minigame's button", "presses a minigame's button"],
+    "Minigame_Button_B": ["a minigame's button", "presses a minigame's button"],
+    "Minigame_Button_X": ["a minigame's button", "presses a minigame's button"],
+    "Minigame_Button_Y": ["a minigame's button", "presses a minigame's button"],
+    "Player_Movement_Up": ["Move back", "moves you back"], "Player_Movement_Right": ["Move left", "moves you left"],
+    "Player_Camera_Up": ["Camera down", "moves the camera down"], "Player_Camera_Right": ["Camera left", "moves the camera left"],
+    "key:W": ["Move forward", "moves you forward"], "key:D": ["Move right", "moves you right"],
+    "key:Up": ["Camera up", "moves the camera up"], "key:Right": ["Camera right", "moves the camera right"],
+    "AnimTool_PreviousAnim": None, "AnimTool_NextAnim": None, "AnimTool_PlayLoopAnim": None, "AnimTool_StopAnim": None,
+    "AnimTool_PlayAnim": None,
+}
+for _d in ("L", "R"):
+    for _way in ("Up", "Down", "Left", "Right"):
+        NAMES[f"Button_Stick{_d}_{_way}"] = [f"the {'left' if _d == 'L' else 'right'} stick {_way.lower()}",
+                                             f"pushes the {'left' if _d == 'L' else 'right'} stick {_way.lower()} in menus"]
+# The job each movement key does (the game reads them itself, every frame).
+AXIS_JOB = {"W": "key:W", "S": "Player_Movement_Up", "A": "Player_Movement_Right", "D": "key:D",
+            "Up": "key:Up", "Down": "Player_Camera_Up", "Left": "Player_Camera_Right", "Right": "key:Right"}
+
+# Keys by the names a player knows them by, for sentences: Space, Left Shift, 1, Mouse 4, the controller's A.
+# Controller buttons are named as on an Xbox pad (the page shows PlayStation and Switch names too).
+_LABELS = {
+    "SpaceBar": "Space", "LeftShift": "Left Shift", "RightShift": "Right Shift", "LeftControl": "Left Ctrl",
+    "RightControl": "Right Ctrl", "LeftAlt": "Left Alt", "RightAlt": "Right Alt", "BackSpace": "Backspace",
+    "CapsLock": "Caps Lock", "PageUp": "Page Up", "PageDown": "Page Down", "Up": "the up arrow",
+    "Down": "the down arrow", "Left": "the left arrow", "Right": "the right arrow", "Tilde": "`", "Hyphen": "-",
+    "Equals": "=", "LeftBracket": "[", "RightBracket": "]", "Backslash": "\\", "Semicolon": ";", "Apostrophe": "'",
+    "Comma": ",", "Period": ".", "Slash": "/", "Multiply": "Num *", "Add": "Num +", "Subtract": "Num -",
+    "Decimal": "Num .", "Divide": "Num /",
+    "LeftMouseButton": "the left mouse button", "RightMouseButton": "the right mouse button",
+    "MiddleMouseButton": "the middle mouse button", "ThumbMouseButton": "Mouse 4", "ThumbMouseButton2": "Mouse 5",
+    "MouseScrollUp": "the wheel up", "MouseScrollDown": "the wheel down",
+    "Gamepad_FaceButton_Bottom": "the controller's A", "Gamepad_FaceButton_Right": "the controller's B",
+    "Gamepad_FaceButton_Left": "the controller's X", "Gamepad_FaceButton_Top": "the controller's Y",
+    "Gamepad_LeftShoulder": "the controller's LB", "Gamepad_RightShoulder": "the controller's RB",
+    "Gamepad_LeftTrigger": "the controller's LT", "Gamepad_RightTrigger": "the controller's RT",
+    "Gamepad_Special_Left": "the controller's View button", "Gamepad_Special_Right": "the controller's Menu button",
+    "Gamepad_LeftThumbstick": "the left stick's click", "Gamepad_RightThumbstick": "the right stick's click",
+    "Gamepad_DPad_Up": "the D-pad's up", "Gamepad_DPad_Down": "the D-pad's down",
+    "Gamepad_DPad_Left": "the D-pad's left", "Gamepad_DPad_Right": "the D-pad's right",
+    "Gamepad_LeftX": "the left stick", "Gamepad_LeftY": "the left stick", "Gamepad_RightX": "the right stick",
+    "Gamepad_RightY": "the right stick", "Gamepad_LeftTriggerAxis": "the controller's LT",
+    "Gamepad_RightTriggerAxis": "the controller's RT",
+}
+
+
+def label(key):
+    """A key as a player knows it: "Space", "1", "Num 5", "Mouse 4", "the controller's A"."""
+    if key in _LABELS:
+        return _LABELS[key]
+    if key in DIGITS:
+        return str(DIGITS.index(key))
+    if key.startswith("NumPad") and key[6:] in DIGITS:
+        return f"Num {DIGITS.index(key[6:])}"
+    return key
+
+
+def say(command):
+    """A command or job by its name ("Interact", "Inventory"); one NAMES doesn't know, by its words."""
+    return (NAMES.get(command) or [command.replace("_", " ")])[0]
+
+
+def does(command):
+    """What a key doing the command does, for a sentence: "opens the inventory"."""
+    found = NAMES.get(command)
+    return found[1] if found else f"does {command.replace('_', ' ')}"
+
+
+def _and(words):
+    words = list(dict.fromkeys(w for w in words if w))   # in order, each once
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1] if words else ""
+
+
+def _cap(text):
+    return text[:1].upper() + text[1:]
+
+
+def jobs(commands):
+    """The commands a key sends, each said once ("confirms in menus and skips dialogue"); the game's
+    developer tools left out."""
+    return _and(does(c) for c in commands if NAMES.get(c, True) is not None)
+
+
+class Note(str):
+    """A warning, in plain words, that knows which controls.json entries it's about: rows, a list of
+    (section, name), section "keyboard", "gamepad", "keys" or "menus" and name an action or a pressed key."""
+
+    def __new__(cls, text, rows=()):
+        note = super().__new__(cls, text)
+        note.rows = [tuple(r) for r in rows if r]
+        return note
+
+
+def game_keys():
+    """The game's own keys as the build knows them (one home for the studio's Controls page, which shows them
+    as each action's key, and for sentences about them): its keyboard actions with the Controls screen's
+    (Pause on Escape, whatever the save says), its controller buttons, the moving keys, what each key sends,
+    the controller's short names, and the names of the game's commands."""
+    return {"keyboard": {**GAME_KEYBOARD, **SCREEN_KEYBOARD}, "gamepad": dict(GAME_GAMEPAD),
+            "built_in": list(BUILT_IN_KEYS), "axes": list(AXES), "axis_keys": list(AXIS_KEYS),
+            "commands": {k: list(v) for k, v in KEY_COMMANDS.items()}, "aliases": dict(GAMEPAD_ALIASES),
+            "names": {c: list(n) for c, n in NAMES.items() if n}}
+
 
 def _key(name):
     return normalise_key("keyboard", name)
@@ -129,6 +272,19 @@ def _old_keys(device, action):
 
 
 DIGITS = ("Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine")
+LAUNCHER = "Play with key remaps.bat"
+STEAM = "change it in Steam's controller settings (right-click the game in Steam, then Properties, Controller)"
+
+
+def _stick(action):
+    return "the left stick" if action.startswith("Player_Movement") else "the right stick"
+
+
+def _native(device, key):
+    """What a key does in the game on its own: the commands it sends (a controller button, its actions)."""
+    if device == "gamepad":
+        return [a for a, k in GAME_GAMEPAD.items() if k == key and a not in AXES]
+    return [c for c in KEY_COMMANDS.get(key, []) if not c.startswith(("AnimTool_", "Minigame_"))]
 
 
 def native_plan(merged):
@@ -144,10 +300,13 @@ def native_plan(merged):
     rest is controls.json with only what the
     script can't do (movement and the camera, keys standing for them or for keys that send nothing, mouse
     buttons in menus, and menu pairs standing for the arrows or WASD, which the map reads itself), for
-    plan and menu_plan.
+    plan and menu_plan. warnings are Notes: sentences that know the entries they're about.
     """
     plans = {"play": ({}, {}), "menu": ({}, {})}
     rest, warnings, setters, moved = {}, [], {}, set()
+
+    def warn(text, *rows):
+        warnings.append(Note(text, rows))
 
     def send(where, key, command, setter):
         out = plans[where][0].setdefault(key, [])
@@ -161,49 +320,71 @@ def native_plan(merged):
             out.append(key)
 
     # Moving an action, or any of the game's commands: everywhere, in play and in menus.
+    landed = []   # actions moved onto Enter or BackSpace, which still confirm or go back in menus
     for device in ("keyboard", "gamepad"):
         for action, key in merged.get(device, {}).items():
+            row = (device, action)
             known = COMMANDS if device == "keyboard" else GAME_GAMEPAD
             if action in AXES or action not in known:
                 if device == "keyboard":
                     rest.setdefault("keyboard", {})[action] = key   # plan() moves it, or says it doesn't know it
                 elif action in AXES:
-                    warnings.append(f"gamepad: {action} is a stick, which only Steam Input can move")
+                    if normalise_key(device, key) != GAME_GAMEPAD[action]:   # the game's own stick: nothing to do
+                        warn(f"{_cap(_stick(action))} can't be moved by a mod; {STEAM}", row)
+                elif action in COMMANDS:
+                    warn(f"{say(action)} has no controller button in the game, so a mod can't put it on one", row)
                 else:
-                    warnings.append(f"gamepad: {action}: only the game's own actions can move to a controller "
-                                    f"button (known: {', '.join(a for a in GAME_GAMEPAD if a not in AXES)})")
+                    warn(f"The controller has no action called \"{action}\"; it has "
+                         f"{_and(say(a) for a in GAME_GAMEPAD if a not in AXES)}", row)
                 continue
             new = normalise_key(device, key)
             if new not in BUTTONS:
-                warnings.append(f"{device}: {action}: the game has no button named '{new}'")
+                warn(f"{say(action)}: the game has no key or button called \"{new}\"", row)
                 continue
             old = _old_keys(device, action)
             if old == [new]:
                 continue
             if not old:
-                warnings.append(f"{device}: no key sends {action} in the game; {new} will")
-            moved.add((device, action))
+                warn(f"No key does {say(action)} in the game; {label(new)} will", row)
+            moved.add(row)
             for where in plans:
-                send(where, new, action, action)
+                send(where, new, action, row)
                 for k in old:
                     if k != new:
                         drop(where, action, k)
             if new in AXIS_KEYS:
-                warnings.append(f"{new} now does {action}, and still moves you or the camera too: the game reads "
-                                f"those keys itself; move that job to another key under \"keys\"")
+                warn(f"{_cap(label(new))} now {does(action)}, and still {does(AXIS_JOB[new])} too: the game reads "
+                     f"that key itself", row)
+            if device == "keyboard" and new in ("Enter", "BackSpace"):
+                landed.append((row, new, action))
+    # Moves that change what a menu key or the pause key does, which nothing else on screen would say: a mod
+    # made with the studio's old "Keyboard defaults" button put Pause on Enter.
+    for row, new, action in landed:
+        text = f"{_cap(label(new))} now {does(action)}, in menus as well, and still {jobs(_native('keyboard', new))}"
+        if action == "Player_Pause":
+            text += "; Escape will no longer open the pause menu"
+        warn(text, row)
+    if ("keyboard", "Player_Pause") in moved and not any(a == "Player_Pause" for _, _, a in landed):
+        warn("Escape will no longer open the pause menu", ("keyboard", "Player_Pause"))
     # The key that takes an action stops doing the actions the game has on it, unless they move too.
     own = {"keyboard": {**GAME_KEYBOARD, **SCREEN_KEYBOARD}, "gamepad": GAME_GAMEPAD}
     for key, commands in list(plans["play"][0].items()):
+        lost = []
         for device, table in own.items():
             for action, k in table.items():
                 if k == key and action not in commands and action not in AXES and (device, action) not in moved:
                     for where in plans:
                         drop(where, action, key)
-                    warnings.append(f"{action} is on {key}, but {key} now does {', '.join(commands)}; move {action} too")
+                    lost.append(action)
+        if lost:
+            what = "button" if key.startswith("Gamepad_") else "key"
+            warn(f"{_cap(label(key))} now {jobs(commands)}, so it no longer {_and(does(a) for a in lost)}; give "
+                 f"{_and(say(a) for a in lost)} another {what}", *sorted(setters[("play", key)]))
     # A key that stands for another: while you play ("keys") or in menus ("menus"). It sends that key's
     # commands and stops sending its own, as with the key remapper outside the game.
     for section, where in (("keys", "play"), ("menus", "menu")):
         for src, dst in merged.get(section, {}).items():
+            row = (section, src)
             s, d = _key(src), _key(dst)
             commands = KEY_COMMANDS.get(d, [])
             if (s not in BUTTONS or not commands or (where == "play" and d in AXIS_KEYS)
@@ -213,28 +394,41 @@ def native_plan(merged):
             if s == d:
                 continue
             for command in commands:
-                send(where, s, command, f"{section}: {s}")
+                send(where, s, command, row)
+            lost = []
             for command in KEY_COMMANDS.get(s, []):
                 if command not in commands:
                     drop(where, command, s)
                     if where == "play" and command.startswith("Player_"):
-                        warnings.append(f"{command} is on {s}, but {s} now stands for {d}; move {command} too")
+                        lost.append(command)
+            if lost:
+                warn(f"{_cap(label(s))} now does what {label(d)} does while you explore, so it no longer "
+                     f"{_and(does(c) for c in lost)}", row)
+            if where == "play" and s in AXIS_KEYS:
+                warn(f"{_cap(label(s))} now does what {label(d)} does while you explore, and still "
+                     f"{does(AXIS_JOB[s])} too: the game reads that key itself", row)
             if where == "menu" and d in AXIS_KEYS:
                 # The map zooms and moves on those keys by reading them itself: only the key remapper can
                 # do that part. With it running it holds the key back, so the game sees d.
                 rest.setdefault("menus", {})[src] = dst
-                warnings.append(f"menus: {s} moves through menus as {d}, but zooming and moving the map with it "
-                                f"needs the old key remapper (deprecated; `wcmods play`)")
+                warn(f"In menus, {label(s)} moves as {label(d)} does, but zooming and moving the map with it works "
+                     f"only when the game is started with {LAUNCHER}", row)
             elif where == "menu" and (len(s) == 1 or s in DIGITS or s == "SpaceBar"):
-                warnings.append(f"menus: {s} still types on the name screen, and does {d}'s job there too")
+                warn(f"In menus, {label(s)} still types on the name screen, and does {label(d)}'s job there too", row)
     for (where, key), who in sorted(setters.items()):
         # A move shows in both play and menus; say so once.
-        if len(who) > 1 and (where == "play" or any(w.startswith("menus") for w in who)):
-            warnings.append(f"{key} is set for {' and '.join(plans[where][0][key])}; it does all of them")
-    outside = {_key(k) for k in rest.get("keys", {})} | {_key(k) for k in rest.get("keyboard", {}).values()}
-    for key in sorted(outside & set(plans["play"][0])):
-        warnings.append(f"{key} is set both for {', '.join(plans['play'][0][key])} and for moving you or the "
-                        f"camera; use another key for one of them")
+        if len(who) > 1 and (where == "play" or any(w[0] == "menus" for w in who)):
+            warn(f"{_cap(label(key))} is set for {_and(say(c) for c in plans[where][0][key])}; it does all of them",
+                 *sorted(who))
+    outside = {}
+    for src in rest.get("keys", {}):
+        outside.setdefault(_key(src), []).append(("keys", src))
+    for action, key in rest.get("keyboard", {}).items():
+        outside.setdefault(_key(key), []).append(("keyboard", action))
+    for key in sorted(set(outside) & set(plans["play"][0])):
+        warn(f"{_cap(label(key))} is set both for {_and(say(c) for c in plans['play'][0][key])} and for a change "
+             f"only {LAUNCHER} makes (moving you or the camera); use another key for one of them",
+             *(sorted(setters[("play", key)]) + outside[key]))
     # Where each of the game's actions that changed is now, for scripts that listen for it themselves.
     play_send, play_drop = plans["play"]
     keys = {}
@@ -264,55 +458,80 @@ def plan(merged):
 
     Returns (send, block, warnings). send maps a key you press to the game key it stands for. block
     holds game keys that no longer do anything, because their action moved and nothing else uses them.
+    warnings are Notes, said for the key remapper outside the game (Play with key remaps.bat).
     """
-    send, moved_from, warnings = {}, set(), []
+    send, moved_from, warnings, by, left = {}, {}, [], {}, {}
     # What you press for each of the game's jobs: its actions, plus the built-in keys, which count as
     # jobs of their own (moving W to T should stop W moving you, the same as moving an action).
     game_key = dict(GAME_KEYBOARD, **{f"key:{k}": k for k in BUILT_IN_KEYS})
     pressed = dict(game_key)
 
-    def move(job, new, old):
+    def warn(text, *rows):
+        warnings.append(Note(text, rows))
+
+    def move(new, old, row):
         if new == old:
             return
         if new in send and send[new] != old:
-            warnings.append(f"{new} is set for more than one game key; {job} wins")
+            warn(f"With {LAUNCHER}, {label(new)} is set for more than one key; it stands for {label(old)}",
+                 by[new], row)
         send[new] = old
-        moved_from.add(old)
+        by[new] = row
+        moved_from.setdefault(old, []).append(row)
 
     for action, key in merged.get("keyboard", {}).items():
+        row = ("keyboard", action)
         if action not in GAME_KEYBOARD:
-            warnings.append(f"keyboard: no action named {action} (known: {', '.join(GAME_KEYBOARD)})")
+            if action in COMMANDS:
+                warn(f"{say(action)} moves only with the script loader (Get set up, on the Mods page, installs it)", row)
+            else:
+                warn(f"There's no action called \"{action}\"", row)
             continue
         new = _key(key)
         if new not in VK and new not in MOUSE:
-            warnings.append(f"keyboard: {action}: the remapper can't use '{new}'")
+            warn(f"{say(action)}: {LAUNCHER} can't use {label(new)}", row)
             continue
         pressed[action] = new
-        move(action, new, GAME_KEYBOARD[action])
+        move(new, GAME_KEYBOARD[action], row)
     for src, dst in merged.get("keys", {}).items():
+        row = ("keys", src)
         s, d = _key(src), _key(dst)
         if s not in VK and s not in MOUSE:
-            warnings.append(f"keys: the remapper can't use '{s}'")
+            warn(f"{LAUNCHER} can't use {label(s)}", row)
             continue
         if d not in VK:
-            warnings.append(f"keys: '{s}' can only stand for a keyboard key, not '{d}'")
+            warn(f"{_cap(label(s))} can only stand for a keyboard key, not {label(d)}", row)
             continue
         if d in BUILT_IN_KEYS:
             pressed[f"key:{d}"] = s
         # Any other game key keeps working on its own key too, unless its action moves.
-        move(f"keys: {s}", s, d)
-    if merged.get("gamepad"):
-        warnings.append("gamepad: the remapper is keyboard and mouse only; remap controller buttons with Steam Input")
+        move(s, d, row)
+    pads = [("gamepad", a) for a, k in merged.get("gamepad", {}).items()
+            if normalise_key("gamepad", k) != GAME_GAMEPAD.get(a)]
+    if pads:
+        warn(f"Without the script loader, controller buttons can't change: {LAUNCHER} is keyboard and mouse only "
+             "(Get set up, on the Mods page, installs the loader)", *pads)
+    # What a key you press stops doing when it stands for another: the jobs on it (its actions, the moving
+    # keys), and the game's other commands it sends, such as Inventory on I.
     for job, key in pressed.items():
         if key in send and send[key] != game_key[job]:
-            warnings.append(f"{job} is on {key}, but {key} now stands for {send[key]}; move {job} too")
+            left.setdefault(key, []).append(job)
+    for key in send:
+        for command in KEY_COMMANDS.get(key, []):
+            if (command.startswith("Player_") and command not in pressed
+                    and command not in KEY_COMMANDS.get(send[key], [])):
+                left.setdefault(key, []).append(command)
+    for key, lost in left.items():
+        warn(f"With {LAUNCHER}, {label(key)} stands for {label(send[key])}, so it no longer "
+             f"{_and(does(j) for j in lost)}", by[key])
     in_use = set(pressed.values()) | set(send)
     block = {k for k in moved_from if k not in in_use}
     for key in sorted(block & set(NEVER_HELD_BACK)):
-        warnings.append(f"{key} still does its old job too: prompts and dialogue shown while you play may need it")
+        warn(f"With {LAUNCHER}, {label(key)} keeps its old job too: prompts and dialogue shown while you play may "
+             "need it", *moved_from[key])
     for key in sorted(set(send) & set(NEVER_HELD_BACK)):
-        warnings.append(f"{key} now sends {send[key]} while playing, so prompts and dialogue shown during play "
-                        f"won't get {key}")
+        warn(f"With {LAUNCHER}, {label(key)} stands for {label(send[key])} while you play, so prompts and dialogue "
+             f"shown then won't get {label(key)}", by[key])
     return send, block - set(NEVER_HELD_BACK), warnings
 
 
@@ -324,14 +543,154 @@ def menu_plan(merged):
     """
     send, warnings = {}, []
     for src, dst in merged.get("menus", {}).items():
+        row = [("menus", src)]
         s, d = _key(src), _key(dst)
         if s not in VK and s not in MOUSE:
-            warnings.append(f"menus: the remapper can't use '{s}'")
+            warnings.append(Note(f"In menus, {LAUNCHER} can't use {label(s)}", row))
         elif d not in VK:
-            warnings.append(f"menus: '{s}' can only stand for a keyboard key, not '{d}'")
+            warnings.append(Note(f"In menus, {label(s)} can only stand for a keyboard key, not {label(d)}", row))
         elif s != d:
             send[s] = d
-            if len(s) == 1 or s in ("Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
-                                    "SpaceBar"):
-                warnings.append(f"menus: typing {s} on the name screen sends {d} instead")
+            if len(s) == 1 or s in DIGITS or s == "SpaceBar":
+                warnings.append(Note(f"In menus, with {LAUNCHER}, typing {label(s)} on the name screen sends "
+                                     f"{label(d)} instead", row))
     return send, warnings
+
+
+def describe(merged, in_game=True, reserved=None):
+    """What the build will do with controls.json merged across mods, said entry by entry: for the Controls
+    page, before Apply, in the same words Apply uses. in_game: whether the script loader is there (without
+    it, everything goes to the key remapper outside the game, as sections.controls.split does). reserved:
+    {key: {"does", "from"}}, keys that wcmods or a mod listens on itself (sections.controls.keys_in_use).
+
+    Returns {"rows": {section: {name: row}}, "lost": {device: {action: sentence}}, "lines": [...],
+    "warnings": [...], "launcher": bool}. section is "keyboard" or "gamepad" (name an action) or "keys" or
+    "menus" (name the key you press). Each row is {"key", "status", "line", "notes"}: status "game" (Apply
+    puts it in the game), "launcher" (it works only when the game is started with Play with key remaps.bat),
+    "cannot" (nothing will do it; notes say why) or "same" (the game's own key: nothing changes); line says
+    what happens, notes are the warnings about it. lost: the game's actions that stay on their key in the
+    file but stop working there because another change took it (Crouch, when Run moves onto the controller's
+    LT). lines are the warnings about no entry; warnings all of them, as Apply says them; launcher whether
+    anything needs Play with key remaps.bat.
+    """
+    if in_game:
+        native, rest, notes = native_plan(merged)
+    else:
+        native, rest, notes = None, merged, []
+    send, block, plan_notes = plan(rest)
+    menu_send, menu_notes = menu_plan(rest)
+    notes = list(notes) + plan_notes + menu_notes
+    play = native["play"] if native else {"send": {}, "drop": {}}
+    menu = native["menu"] if native else {"send": {}, "drop": {}}
+    rows = {"keyboard": {}, "gamepad": {}, "keys": {}, "menus": {}}
+
+    def put(section, name, key, status, line=""):
+        rows[section][name] = {"key": key, "status": status, "line": line, "notes": []}
+
+    for device in ("keyboard", "gamepad"):
+        for action, key in merged.get(device, {}).items():
+            new = normalise_key(device, key)
+            if device == "gamepad" and action in AXES:
+                if new == GAME_GAMEPAD[action]:
+                    put(device, action, new, "same")
+                else:
+                    put(device, action, new, "cannot", f"{_cap(_stick(action))} can't be moved by a mod; {STEAM}.")
+            elif _old_keys(device, action) == [new]:
+                put(device, action, new, "same")
+            elif action in play["send"].get(new, []):
+                put(device, action, new, "game", _move_line(device, action, new, play))
+            elif device == "keyboard" and action in GAME_KEYBOARD and send.get(new) == GAME_KEYBOARD[action]:
+                put(device, action, new, "launcher",
+                    f"{_cap(label(new))} {does(action)} when the game is started with {LAUNCHER}.")
+            else:
+                put(device, action, new, "cannot")
+    for src, dst in merged.get("keys", {}).items():
+        s, d = _key(src), _key(dst)
+        if s == d:
+            put("keys", src, s, "same")
+        elif src not in rest.get("keys", {}) and s in play["send"]:
+            put("keys", src, s, "game", _pair_line(s, d, while_you="explore"))
+        elif send.get(s) == d:
+            what = does(AXIS_JOB[d]) if d in AXIS_JOB else f"does what {label(d)} does"
+            put("keys", src, s, "launcher", f"{_cap(label(s))} {what} while you explore, when the game is started "
+                                            f"with {LAUNCHER}.")
+        else:
+            put("keys", src, s, "cannot")
+    for src, dst in merged.get("menus", {}).items():
+        s, d = _key(src), _key(dst)
+        if s == d:
+            put("menus", src, s, "same")
+        elif s in menu["send"] and (src not in rest.get("menus", {}) or d in AXIS_KEYS):
+            put("menus", src, s, "game", _pair_line(s, d))
+        elif menu_send.get(s) == d:
+            put("menus", src, s, "launcher", f"In menus, {label(s)} does what {label(d)} does when the game is "
+                                             f"started with {LAUNCHER}.")
+        else:
+            put("menus", src, s, "cannot")
+    # The game's actions that keep their key, but lose it to another change: said on their own rows.
+    lost = {"keyboard": {}, "gamepad": {}}
+    for device, table in (("keyboard", {**GAME_KEYBOARD, **SCREEN_KEYBOARD}), ("gamepad", GAME_GAMEPAD)):
+        what = "button" if device == "gamepad" else "key"
+        for action, k in table.items():
+            mine = merged.get(device, {}).get(action)
+            if action in AXES or (mine is not None and normalise_key(device, mine) != k):
+                continue   # a stick, or moved elsewhere: its own row says where
+            if k in play["drop"].get(action, []):
+                now = play["send"].get(k, [])
+                lost[device][action] = (f"{_cap(label(k))} no longer {does(action)}" + (f": it {jobs(now)} now" if now else "")
+                                        + f". Give {say(action)} another {what}.")
+            elif device == "keyboard" and k in send and send[k] != k:
+                lost[device][action] = (f"With {LAUNCHER}, {label(k)} stands for {label(send[k])}, so it no longer "
+                                        f"{does(action)}. Give {say(action)} another key.")
+    # Keys that wcmods or a mod listens on itself do their own job too, whatever the game does.
+    for section, found in rows.items():
+        for name, row in found.items():
+            taken = (reserved or {}).get(row["key"])
+            if taken and row["status"] in ("game", "launcher"):
+                notes.append(Note(f"{_cap(label(row['key']))} also {taken['does']} ({taken['from']}), and will do "
+                                  "both; pick another key", [(section, name)]))
+    lines = []
+    for note in notes:
+        placed = [r for r in note.rows if r[1] in rows.get(r[0], {})]
+        for section, name in placed:
+            row = rows[section][name]
+            if row["line"].rstrip(".") != note and str(note) not in row["notes"]:
+                row["notes"].append(str(note))
+        if not placed:
+            lines.append(str(note))
+    return {"rows": rows, "lost": lost, "lines": lines, "warnings": [str(n) for n in notes],
+            "launcher": bool(send or block or menu_send)}
+
+
+def _move_line(device, action, new, play):
+    """A moved action, said: what the new key does now, and what the old key still does."""
+    sends, drops = play["send"], play["drop"]
+    native = _native(device, new)
+    lost = [c for c in native if new in drops.get(c, [])]
+    keeps = [c for c in native if c not in lost and c not in sends.get(new, [])]
+    line = f"{_cap(label(new))} {does(action)}"
+    if lost:
+        line += f" and no longer {jobs(lost)}"
+    if keeps:
+        line += f", and still {jobs(keeps)}"
+    said = [line + "."]
+    for old in _old_keys(device, action):
+        if old == new:
+            continue
+        left = [c for c in _native(device, old) if old not in drops.get(c, [])]
+        said.append(f"{_cap(label(old))} still {jobs(left)}." if left else f"{_cap(label(old))} no longer {does(action)}.")
+    return " ".join(said)
+
+
+def _pair_line(s, d, while_you=None):
+    """A key standing for another, said: "H does what E does while you explore (Interact)."."""
+    commands = [c for c in KEY_COMMANDS.get(d, []) if NAMES.get(c, True) is not None]
+    if while_you:
+        names = _and(say(c) for c in commands if c.startswith("Player_"))
+        lost = [c for c in KEY_COMMANDS.get(s, []) if c.startswith("Player_") and c not in commands]
+        line = f"{_cap(label(s))} does what {label(d)} does while you {while_you}" + (f" ({names})" if names else "")
+        if lost:
+            line += f", and no longer {jobs(lost)}"
+        return line + "."
+    names = _and(say(c) for c in commands)
+    return f"In menus, {label(s)} does what {label(d)} does" + (f" ({names})" if names else "") + "."

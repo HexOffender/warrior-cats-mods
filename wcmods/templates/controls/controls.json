@@ -1,5 +1,5 @@
 {
-  "_help": "List only the actions you want to change. Actions: Player_Movement_Up, Player_Movement_Right, Player_Camera_Up, Player_Camera_Right, Player_Pounce, Player_Drop, Player_Den_Place, Player_Interact, Player_ReturnToCamp, Player_Friend_Talk, Player_Crouch, Player_Scent_Tracking, Player_Camera_Reset, Player_Run, Player_Pause.",
+  "_help": "List only what you want to change; the Controls page in Clan Mod Studio writes this file for you and says what each change will do. Actions: Player_Pounce, Player_Interact, Player_Run, Player_Crouch, Player_Scent_Tracking, Player_Drop, Player_Friend_Talk, Player_Den_Place, Player_ReturnToCamp, Player_Camera_Reset, Player_Pause, Player_Show_Inventory, Player_Show_Quest, Player_Show_Map, Player_Growl (and Player_Movement_Up, Player_Movement_Right, Player_Camera_Up, Player_Camera_Right, which only Play with key remaps.bat can move). \"keys\": {\"H\": \"E\"} makes H a second Interact while you explore.",
   "keyboard": {
     "Player_Interact": "F"
   },

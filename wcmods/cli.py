@@ -363,6 +363,9 @@ def cmd_controls(ctx, args):
         print(f"{dev}:")
         for action, key in b[dev].items():
             print(f"  {action:24s} {key}")
+    # The save's copy is not what the game does (it ignores edits to it, and its Pause is on Enter).
+    print("\nThe game pauses on Escape, whatever the save says; Apply uses wcmods' own table "
+          "(the Controls page in Clan Mod Studio shows it).")
 
 
 def cmd_palette(ctx, args):

@@ -1432,7 +1432,12 @@ task under way has logged so far), `GET /last-apply` (`last-apply.log`), `POST /
 `GET /game/bridge` (whether the game runs with the bridge), `POST /game/lua` `{code}` and
 `/game/inspect` `{expr}` (run Lua in the game, or describe an object; code mods only),
 `GET /names`, `POST /names/preview`, `GET /cat`, `GET /game/eyes`, `/game/tables`,
-`/game/bindings`, `/game/data`, `/game/data/<table>`, `/save`.
+`/game/bindings` (the save's copy of the key bindings, which the game ignores; its Pause is on Enter while
+the game pauses on Escape), `GET /game/keys` (the game's own keys as the build knows them, the names of its
+commands, and whether the script loader is there; no save needed), `POST /controls/check` `{mod, controls}`
+(what Apply would do with a `controls.json` for that mod, merged with the other mods': a sentence per entry,
+the keys wcmods and mods listen on, and which other mod wins where both change the same),
+`/game/data`, `/game/data/<table>`, `/save`.
 
 The server listens on 127.0.0.1 only, and every API call needs the per-run token that the page
 gets when it loads. Other websites therefore can't drive it. An error is answered with a sentence

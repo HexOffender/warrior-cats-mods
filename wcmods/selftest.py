@@ -100,10 +100,11 @@ def run(cfg, oodle, log=print):
     problems = luacheck.check(palettes.ue4ss_script({}))
     check("palette script", not problems, "; ".join(problems[:3]))
     # Interact and Scent tracking move along F/E/Q, so Q goes quiet; X stays because Return to camp still
-    # uses it; forward moves to I, so W goes quiet.
+    # uses it; forward moves to I, so W goes quiet, and I stops opening the inventory (said once).
     send, block, warns = keymap.plan({"keyboard": {"Player_Interact": "F", "Player_Scent_Tracking": "E",
                                                    "Player_Den_Place": "Z"}, "keys": {"I": "W"}})
-    check("key remap plan", send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"} and not warns)
+    check("key remap plan", send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"}
+          and len(warns) == 1 and "no longer opens the inventory" in warns[0])
     check("key remapper presses", _remapper_presses())
     check("menu remaps", _menu_remaps())
     check("CSV rows added and removed in the file's own style", _csv_rows())

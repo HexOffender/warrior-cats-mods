@@ -64,13 +64,45 @@ def read_bindings(json_text):
     return out
 
 
-def key_of(change):
-    """A controls.json entry is a key name; {"key": ...} objects from older studio versions also work."""
+def key_of(change, name=None):
+    """A controls.json entry is a key name; {"key": ...} objects from older studio versions also work.
+    Anything else (null, a list, a number) is a ValueError that names the entry."""
+    what = f"controls.json: {name}" if name else "controls.json"
     if isinstance(change, dict):
         if "key" not in change:
-            raise ValueError(f"{change!r} needs a \"key\"")
-        return change["key"]
+            raise ValueError(f"{what} needs a \"key\", like {{\"key\": \"F\"}}")
+        change = change["key"]
+    if not isinstance(change, str) or not change.strip():
+        raise ValueError(f"{what} should be a key's name in quotes, like \"F\"")
     return change
+
+
+DEVICES = ("keyboard", "gamepad", "keys", "menus")
+
+
+def parse(raw):
+    """controls.json as the build reads it: {"keyboard": {action: key}, "gamepad": {...}, "keys": {key: key},
+    "menus": {key: key}}, with "menus"' {"keys": {...}} flattened so mods merge key by key, and every "_" key
+    (a note) left out. What can't be read is a ValueError that says where, in words."""
+    if not isinstance(raw, dict):
+        raise ValueError('controls.json should be an object like {"keyboard": {"Player_Interact": "F"}}')
+    out = {}
+    for device, mapping in raw.items():
+        if device.startswith("_"):
+            continue
+        if device not in DEVICES:
+            raise ValueError(f"controls.json: '{device}' should be one of {', '.join(DEVICES)}")
+        if not isinstance(mapping, dict):
+            raise ValueError(f"controls.json: '{device}' should be an object like {{\"Player_Interact\": \"F\"}}"
+                             if device != "menus" else 'controls.json: "menus" should look like {"keys": {"Escape": "BackSpace"}}')
+        if device == "menus":
+            extra = [k for k in mapping if k != "keys" and not k.startswith("_")]
+            if extra or not isinstance(mapping.get("keys", {}), dict):
+                raise ValueError('controls.json: "menus" should look like {"keys": {"Escape": "BackSpace"}}')
+            mapping = mapping.get("keys", {})
+        out[device] = {name: key_of(change, f"{device}: {name}") for name, change in mapping.items()
+                       if not name.startswith("_")}
+    return out
 
 
 def normalise_key(device, key):

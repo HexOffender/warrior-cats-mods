@@ -96,10 +96,12 @@ def test_palette_script():
 
 def test_key_remap_plan():
     # Interact and Scent tracking move along F/E/Q, so Q goes quiet; X stays because Return to camp still
-    # uses it; forward moves to I, so W goes quiet.
+    # uses it; forward moves to I, so W goes quiet, and I stops opening the inventory, which is said.
     send, block, warns = keymap.plan({"keyboard": {"Player_Interact": "F", "Player_Scent_Tracking": "E",
                                                    "Player_Den_Place": "Z"}, "keys": {"I": "W"}})
-    assert send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"} and not warns
+    assert send == {"F": "E", "E": "Q", "Z": "X", "I": "W"} and block == {"Q", "W"}
+    assert warns == ["With Play with key remaps.bat, I stands for W, so it no longer opens the inventory"]
+    assert warns[0].rows == [("keys", "I")]
 
 
 def test_in_game_remap_plan():
@@ -123,7 +125,9 @@ def test_in_game_remap_plan():
     assert plan["keys"]["Player_Interact"] == ["F", "LeftMouseButton", "Gamepad_FaceButton_Bottom"]
     assert plan["keys"]["Player_Crouch"] == ["LeftControl", "RightControl", "RightMouseButton"]
     assert rest == {"keyboard": {"Player_Movement_Up": "K"}, "keys": {"I": "W"}}
-    assert len(warns) == 2 and "Player_Crouch is on Gamepad_LeftTrigger" in warns[0] and "Player_Play is on J" in warns[1]
+    assert warns == ["The controller's LT now runs, so it no longer crouches; give Crouch another button",
+                     "J now does what C does while you explore, so it no longer does the game's Play action"]
+    assert [w.rows for w in warns] == [[("gamepad", "Player_Run")], [("keys", "J")]]
     # The game's key pictures show the new keys: a command can have one for each device, and the menu
     # pair's commands show Escape in menus only.
     icons = plan["icons"]
@@ -150,16 +154,22 @@ def test_in_game_menu_keys_and_any_command():
     assert rest == {"menus": {"I": "Up", "K": "Down", "ThumbMouseButton": "BackSpace"}}
     assert sum("zooming and moving the map" in w for w in warns) == 2
     assert sum("types on the name screen" in w for w in warns) == 1
+    # Pause leaving Escape for P is said too: nothing else on screen would.
+    assert "Escape will no longer open the pause menu" in warns
     _, _, warns = keymap.native_plan({"keyboard": {"Player_ShowHideControls": "H"}})
-    assert warns == ["keyboard: no key sends Player_ShowHideControls in the game; H will"]
+    assert warns == ["No key does Show or hide the controls in the game; H will"]
 
 
 def test_in_game_remap_warnings():
     _, _, warns = keymap.native_plan({"keyboard": {"Player_Interact": "Q", "Player_Pounce": "W"},
                                       "gamepad": {"Player_Camera_Up": "RB"}})
-    assert any("Player_Scent_Tracking is on Q" in w for w in warns)       # Q's own job stops
-    assert any(w.startswith("W now does Player_Pounce") for w in warns)   # W still walks too
-    assert any("is a stick" in w for w in warns)
+    assert "Q now does Interact, so it no longer tracks scents; give Scent tracking another key" in warns
+    assert "W now pounces, and still moves you forward too: the game reads that key itself" in warns
+    assert any(w.startswith("The right stick can't be moved by a mod; change it in Steam's controller settings")
+               for w in warns)
+    # The game's own stick, as the studio's old "Controller defaults" wrote it, is nothing to do and says nothing.
+    plan, _, warns = keymap.native_plan({"gamepad": {"Player_Camera_Up": "Gamepad_RightY", "Player_Movement_Right": "Gamepad_LeftX"}})
+    assert not gameremap.has_work(plan) and warns == []
     # The Controls screen's keys the save doesn't list move too, and a mouse button can take an action.
     plan, rest, warns = keymap.native_plan({"keyboard": {"Player_Show_Map": "N", "Player_Run": "ThumbMouseButton"}})
     assert plan["play"]["send"] == {"N": ["Player_Show_Map"], "ThumbMouseButton": ["Player_Run"]}
