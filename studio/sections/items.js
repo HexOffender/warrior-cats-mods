@@ -66,6 +66,7 @@ export default {
       file: "items.json",
       onLoad: obj => { load(obj); draw(); },
       getValue: () => toJson(items, extra),
+      onSaved: saved => wc.settleNew(items, saved.items),   // saved items keep their ids from now on
     });
     const out = wc.codePanel("items.json");
     const lastBox = el("div", { class: "banner", role: "status", hidden: true });
@@ -152,8 +153,9 @@ export default {
       else lastBox.append(el("strong", { text: `Last Apply${when}, about these items: ` }),
         notes.said.map(n => `${n.id ? `${nameOf(n.id)}: ` : ""}${n.why}.`).join(" "));
     }
-    // The mod has to exist on disk before a file can go in its folder. Saving a new mod reads its file again,
-    // so the item a picker was opened for is found again by its id afterwards (live).
+    // The mod has to exist on disk before a file can go in its folder: a new one is saved first. The item a
+    // picker was opened for is found again by its id afterwards (live), in case the page's items were read
+    // again while it waited (the mod switched, a file imported).
     async function modReady() {
       return target.mods.some(m => m.id === target.current) || await target.save();
     }

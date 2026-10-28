@@ -39,6 +39,7 @@ export default {
       file: "animations.json",
       onLoad: obj => { load(obj); draw(); },
       getValue: () => toJson(anims, extra),
+      onSaved: saved => wc.settleNew(anims, saved.animations),   // saved animations keep their ids from now on
     });
     const out = wc.codePanel("animations.json");
     const lastBox = el("div", { class: "banner", role: "status", hidden: true });
@@ -385,7 +386,7 @@ export default {
         const id = a.id;
         try {
           if (!await modReady()) return;
-          // Saving a new mod first reads its file again, so the animation is looked up again.
+          // Found again by its id, in case the page's animations were read again while the mod was saved.
           const live = anims.find(x => x.id === id) || a;
           toast(`Reading ${f.name}…`);
           const r = await api.upload(`/mods/${encodeURIComponent(target.current)}/animation?name=${encodeURIComponent(live.id)}` +
