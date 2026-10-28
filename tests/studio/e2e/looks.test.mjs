@@ -78,7 +78,11 @@ const PAL = '[data-page="palettes"]', CATP = '[data-page="cat"]';
 // other pages of the studio, which the next test opens. Whether it would ask: a test that ends with everything
 // saved checks it wouldn't. The browser shows the question only to a page someone has used, so that's asked of the
 // page itself, with a beforeunload event of its own, as well as watched for.
-async function leave(page) {
+async function leave(page, saved = false) {
+  // After Save to mod, the file is on disk before the page has the server's answer (the server checks the
+  // file first): wait for every "Unsaved changes" mark to go, or for the slow timeout, before asking.
+  if (saved) await page.waitFor(() => [...document.querySelectorAll(".target .dirty")].every(s => !s.textContent), SLOW)
+    .catch(() => { /* still unsaved: the assertion says so */ });
   let asked = await page.evaluate(`(() => { const e = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(e); return e.defaultPrevented; })()`).catch(() => false);
   let gone;
@@ -141,7 +145,7 @@ test("Palettes opens without the game's files: the eyes say why, and the game's 
   await page.waitFor(() => !document.getElementById("help").hidden && document.querySelector("#helpBody h2"));
   assert.equal(await page.text("#helpTitle"), "Palettes");
   assert.deepEqual(page.consoleErrors(), []);
-  assert.equal(await leave(page), false, SAVED);
+  assert.equal(await leave(page, true), false, SAVED);
 });
 
 test("the five-minute first try: a new pattern colour made on Palettes, worn on Your cat", { skip }, async () => {
@@ -167,7 +171,7 @@ test("the five-minute first try: a new pattern colour made on Palettes, worn on 
   const cats = await waitForFile(fileOf("my-mods", "cats.json"), c => c.player);
   assert.deepEqual(cats.player, { slots: { pattern: 25 } });
   assert.deepEqual(page.consoleErrors(), []);
-  assert.equal(await leave(page), false, SAVED);
+  assert.equal(await leave(page, true), false, SAVED);
 });
 
 test("unsaved colours survive an Apply, and the bar says they aren't in the game yet", { skip }, async () => {
@@ -187,7 +191,7 @@ test("unsaved colours survive an Apply, and the bar says they aren't in the game
   await press(page, PAL, "Save to mod");
   await waitForFile(fileOf("my-mods", "palette.json"), p => p.pattern["26"]);
   await page.waitFor(() => document.querySelector('[data-page="palettes"] .target .dirty').textContent === "");
-  assert.equal(await leave(page), false, SAVED);
+  assert.equal(await leave(page, true), false, SAVED);
 });
 
 test("Quick palettes' Apply saves the page first, and waits while the game runs", { skip }, async () => {
@@ -215,7 +219,7 @@ test("Quick palettes' Apply saves the page first, and waits while the game runs"
   const put = calls.indexOf("PUT /api/mods/my-mods/file/palette.json");
   assert.ok(put >= 0 && put < calls.indexOf("POST /api/palettes/apply"), calls.join(", "));
   assert.equal(readJson(fileOf("my-mods", "palette.json")).fur["4"], "#445566");
-  assert.equal(await leave(page), false, SAVED);
+  assert.equal(await leave(page, true), false, SAVED);
   // With the game running, the button waits, as the shell's Apply does.
   const running = await startStudio(folders, { WCMODS_FAKE_RUNNING: "1" });
   try {
@@ -293,7 +297,7 @@ test("Restyle, Undo and Reset tab change the game's colours and keep the new one
   await page.waitFor(() => !document.querySelector('[data-page="palettes"] [data-focus="pal:undo"]'));
   assert.deepEqual(readJson(fileOf("my-mods", "palette.json")).pattern, { 25: "#FF00CC" });
   assert.deepEqual(page.consoleErrors(), []);
-  assert.equal(await leave(page), false, SAVED);
+  assert.equal(await leave(page, true), false, SAVED);
 });
 
 test("what Palettes can't show is listed with a Remove, and Save says what keeps the file out of the game", { skip }, async () => {
@@ -318,7 +322,7 @@ test("what Palettes can't show is listed with a Remove, and Save says what keeps
   await page.waitFor(() => document.querySelector('[data-page="palettes"] .problems').hidden);
   saved = readJson(fileOf("my-mods", "palette.json"));
   assert.equal("hats" in saved, false);
-  assert.equal(await leave(page), false, SAVED);
+  assert.equal(await leave(page, true), false, SAVED);
 });
 
 test("one colour named twice is listed as a conflict, written back as it was, and Save says which one Apply uses", { skip }, async () => {
@@ -365,7 +369,7 @@ test("Save says when another palette adds the same new colour, and which one sho
   await page.waitFor(() => !document.querySelector('[data-page="palettes"] .save-notes').hidden);
   assert.equal(await page.text(`${PAL} .save-notes li`),
     "Pattern colour 25 is also added by Dark Forest, which is later in the Mods list, so its colour shows");
-  assert.equal(await leave(page), false, SAVED);
+  assert.equal(await leave(page, true), false, SAVED);
 });
 
 // ---------- Your cat ----------
@@ -416,7 +420,7 @@ test("a cats.json written by hand: colour names load, and what the page can't ch
   await page.waitFor(() => document.querySelector('[data-page="cat"] .problems').hidden);
   assert.deepEqual(readJson(fileOf("my-mods", "cats.json")).player, { colours: { nose: "#FF0000" }, slots: { fur: 4 } });
   assert.deepEqual(page.consoleErrors(), []);
-  assert.equal(await leave(page), false, SAVED);
+  assert.equal(await leave(page, true), false, SAVED);
 });
 
 // ---------- the colour code box, the drawn cat, and what reaches the game ----------
@@ -499,7 +503,7 @@ test("What reaches the game says what each kind of colour needs, and ticked pale
   assert.equal(await page.evaluate(`document.querySelector('${PAL} #quick-gem-eyes').checked`), true);
   assert.deepEqual(await said(), ["note: Gem eyes goes on top of cool: for an eye, Gem eyes' colours show, as it's later in the Mods list."]);
   assert.deepEqual(page.consoleErrors(), []);
-  assert.equal(await leave(page), false, SAVED);
+  assert.equal(await leave(page, true), false, SAVED);
 });
 
 test("Your cat's drawn cat wears the chosen coat and its scars, beside what the save holds now", { skip }, async () => {
@@ -562,7 +566,7 @@ test("a cat the file names by a shorter place is found as the build finds it, an
   const narrowed = await page.evaluate(`[...document.querySelector('${who}').options].map(o => o.textContent)`);
   assert.deepEqual(narrowed, ["Your cat", "Clans/WindClan/Deputy/0, deputy", 'Clans/WindClan/Warrior/1, warrior, changed (in the file as "WindClan/Warrior/1")']);
   assert.deepEqual(page.consoleErrors(), []);
-  assert.equal(await leave(page), false, SAVED);
+  assert.equal(await leave(page, true), false, SAVED);
 });
 
 // The clans' save, with a ThunderClan warrior at Warrior/0 too.
@@ -615,7 +619,7 @@ test("every key of the file is on the cats it reaches, and Save writes a cat's o
   assert.deepEqual(saved.cats["Clans/WindClan/Deputy/0"], { look: { tail: 6 } });
   await page.waitFor(() => document.querySelector('[data-page="cat"] .target .dirty').textContent === "");
   assert.deepEqual(page.consoleErrors(), []);
-  assert.equal(await leave(page), false, SAVED);
+  assert.equal(await leave(page, true), false, SAVED);
 });
 
 test("Your cat says when the game has no cat of yours yet, and names the mod the in-game Colours page saves into", { skip }, async () => {
@@ -637,5 +641,5 @@ test("Your cat says when the game has no cat of yours yet, and names the mod the
   await pick(page, "cat:Clans/WindClan/Warrior/0");
   await page.waitFor(() => !document.querySelector('[data-page="cat"] .cat-insert'));
   assert.deepEqual(page.consoleErrors(), []);
-  assert.equal(await leave(page), false, SAVED);
+  assert.equal(await leave(page, true), false, SAVED);
 });
