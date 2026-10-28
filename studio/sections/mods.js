@@ -584,8 +584,9 @@ export default {
       }
       // An in-game script: what's wrong with its files now (before any Apply), then how it did when the game last
       // started (UE4SS's log, read by the studio).
-      for (const p of m.script_problems || []) lines.push(el("li", { class: "bad", text: sentence(p) }));
-      if (m.script_run) lines.push(el("li", { class: RUN_CLASS[m.script_run.state] || "muted", "data-run": m.script_run.state, text: sentence(m.script_run.said) }));
+      // (As they're said: a script's problem starts with its file's name, which keeps its small letters.)
+      for (const p of m.script_problems || []) lines.push(el("li", { class: "bad", text: p + "." }));
+      if (m.script_run) lines.push(el("li", { class: RUN_CLASS[m.script_run.state] || "muted", "data-run": m.script_run.state, text: m.script_run.said + "." }));
       if (m.code && !(settings && settings.allow_code_mods)) lines.push(el("li", { class: "warn", text: "Runs code, so the game won't get it until you allow mods that run code (Get set up, or Options on the Settings and repair page)." }));
       if (m.enabled && m.needed_by.length) lines.push(el("li", { class: "muted", text: `${m.needed_by.join(", ")} ${m.needed_by.length > 1 ? "need" : "needs"} it.` }));
       for (const w of m.warnings || []) lines.push(el("li", { class: "warn", text: sentence(w) }));
