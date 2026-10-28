@@ -23,6 +23,10 @@ folders. `python wcmods.py selftest` checks, against your install:
   engine's own settings); every kind's start kit carries all its examples (49), and the game's Stretch
   and Idle (ACL), put in the cats' start kit and read back from it, give the same keys.
 - **Save editor:** changes only the values it's told to.
+- **Game update signatures:** on a build wcmods was checked on, every class and value it reads is where
+  `game.HIDDEN` says; and with the exe's fingerprint changed, as on another build, a class whose
+  signatures are taken away keeps nothing, and the level component's eight values are found by their
+  own signatures (since 2026-10-28; before, it had none).
 - **UE4SS scripts:** the generated Lua has balanced blocks and brackets (a light structure check;
   there's no Lua interpreter to fully parse it). Builds also warn if any UE4SS script fails it.
 
@@ -251,5 +255,17 @@ Fawnstar, as a player reported it showing "Cat 1"):
 - **Names beyond the text.** Renamed and added names reach the game's text table (Mothpaw,
   Sparrowheart, Mothwhisper and the rogue Moss were read back in game). Still unchecked: new cats
   getting added parts, removed parts and ban list changes, and the name screen's suggestions.
+- **Your cat's level and stats after a real game update.** The level component's signatures find it on
+  build 26184573 as if it were another build, and follow it when its code is moved in memory
+  (docs/reverse-engineering.md, "Game updates"), but no real update has come since. After the next
+  one: `python wcmods.py game signatures check` should list `SwtAdventureLevelComponent` with all
+  eight values `same` (or `moved`), none `lost`; then, with the new install, `python wcmods.py lua
+  "local c = Game.cat() return c:level(), c:stats().Prowess"` should print the cat's level and Prowess
+  (the mod menu's Cat page shows them too).
+- **+0x124 is the level cap, not a second copy of the level.** Read from the code (the level
+  component's start-up sets it from `Gameplay.Exploration.MaxLevel`, and the level setter compares the
+  level with it), but only seen in game on a level 20 cat, where the two are equal. To check, on a cat
+  below level 20: `python wcmods.py lua "local c = Game.cat():component('Level') return
+  Game.get(c, 'WCM_Level'), Game.get(c, 'WCM_LevelShown')"` should print the cat's level, then 20.
 
 After a game update, run `selftest` before installing again ([updating.md](updating.md)).

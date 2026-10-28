@@ -1798,7 +1798,7 @@ def _signatures(cfg):
     if not gamebuild.current(cfg)["verified"]:
         return True, f"decoder fine; build {gamebuild.current(cfg)['build']} isn't one wcmods was checked on, so the layout isn't compared"
     res = signatures.check(exe, log=lambda m: None)
-    bad = [f"{gamebuild.describe(c + ':' + n)} {f['status']}" for c, rep in res["classes"].items()
+    bad = [f"{gamebuild.name(c + ':' + n)} {f['status']}" for c, rep in res["classes"].items()
            for n, f in rep["fields"].items() if f["status"] not in ("same", "kept")]
     missing = [c.rsplit(".", 1)[-1] for c, rep in res["classes"].items() if not rep["found"]]
     signed = sum(1 for rep in res["classes"].values() for f in rep["fields"].values() if f["status"] == "same")
@@ -1840,10 +1840,14 @@ def _update_safety(cfg):
         problems.append("Value not found")
     if fields["SwtQuestResourceComponent.WCM_ResourceType"]["now"] is not None:
         problems.append("ResourceType kept beside a member that may have moved")
-    kept = [k for k, f in fields.items() if k.startswith(("TurnBasedCombat", "SwtAdventureGameplayGameState",
-                                                          "SwtAdventureLevelComponent")) and f["now"] is not None]
+    kept = [k for k, f in fields.items() if k.startswith(("TurnBasedCombat", "SwtAdventureGameplayGameState"))
+            and f["now"] is not None]
     if kept:
         problems.append("kept with no evidence: " + ", ".join(kept))
+    # The level component's own signatures find it on an exe they weren't made on (it had none before).
+    unsigned = [k for k, f in fields.items() if k.startswith("SwtAdventureLevelComponent") and f["status"] != "same"]
+    if unsigned:
+        problems.append("the level component not found by its signatures: " + ", ".join(unsigned))
     if res["same"]:
         problems.append("reported the same")
     if game.hidden({}) or game.hidden({k: -16 for k in gamebuild._members()}):

@@ -10,6 +10,7 @@ import os
 import struct
 
 IMAGE_REL_BASED_DIR64 = 10
+UNW_FLAG_CHAININFO = 4
 
 
 class Section:
@@ -54,7 +55,7 @@ class Image:
             flags = struct.unpack_from("<I", d, o + 36)[0]
             self.sections.append(Section(name, rva, vsize, raw, rawsize, flags, memoryview(d)[raw:raw + min(rawsize, vsize)]))
         self.text = self.section(".text")
-        self._functions = self._relocs = None
+        self._functions = self._relocs = self._entries = self._whole = None
 
     def section(self, name):
         return next((s for s in self.sections if s.name == name), None)
@@ -107,24 +108,76 @@ class Image:
         return {"size": len(self.raw), "timestamp": self.timestamp, "size_of_image": self.size_of_image,
                 "text_sha1": hashlib.sha1(self.text.data).hexdigest()}
 
-    def functions(self):
-        """[(begin RVA, end RVA)] from .pdata (every function with unwind data: nearly all of them)."""
-        if self._functions is None:
-            rva, size = self.dirs[3]
-            data = self.read(rva, size)
+    def _pdata(self):
+        """[(begin, end, unwind info RVA)] of .pdata's entries, sorted."""
+        if self._entries is None:
+            rva, size = self.dirs[3] if len(self.dirs) > 3 else (0, 0)
+            data = self.read(rva, size) if size else b""
             out = []
             for i in range(0, size - 11, 12):
-                b, e, _ = struct.unpack_from("<III", data, i)
+                b, e, u = struct.unpack_from("<III", data, i)
                 if b and e > b:
-                    out.append((b, e))
+                    out.append((b, e, u))
             out.sort()
-            self._functions = out
+            self._entries = out
+        return self._entries
+
+    def functions(self):
+        """[(begin RVA, end RVA)] of .pdata's entries (every function with unwind data: nearly all of them).
+        One function can have several: see whole_functions()."""
+        if self._functions is None:
+            self._functions = [(b, e) for b, e, _ in self._pdata()]
         return self._functions
 
+    def _continues(self, unwind):
+        """The begin of the entry an entry continues, from its unwind info (UNW_FLAG_CHAININFO, or an
+        unwind RVA with its low bit set, which points at that entry itself), or None for a first part."""
+        if unwind & 1:
+            return struct.unpack("<I", self.read(unwind & ~1, 4))[0]
+        head = self.read(unwind, 4)
+        if not (head[0] >> 3) & UNW_FLAG_CHAININFO:
+            return None
+        codes = head[2] + (head[2] & 1)                 # unwind codes are 2 bytes, padded to an even count
+        return struct.unpack("<I", self.read(unwind + 4 + 2 * codes, 4))[0]
+
+    def whole_functions(self):
+        """[(begin, end)] of whole functions. MSVC gives a function that saves registers in stages
+        (shrink-wrapping) several .pdata entries: the first with the prologue, then chained ones
+        (UNW_FLAG_CHAININFO), each saying which entry it continues. They come right after it (all 69,628
+        such functions in build 26184573's exe do), so a whole function is its first part's begin to its
+        last part's end (a part can continue one placed after it, as long as they're all together). A part
+        that isn't next to the rest stays a function of its own."""
+        if self._whole is None:
+            continues = {}   # an entry's begin -> the begin of the entry it continues
+            for b, _, u in self._pdata():
+                try:
+                    cont = self._continues(u)
+                except (ValueError, struct.error):   # unwind info outside the image: taken as a first part
+                    cont = None
+                if cont is not None and cont != b:
+                    continues[b] = cont
+
+            def first(b):
+                for _ in range(64):   # chains are short; a loop in broken data stops here
+                    if b not in continues:
+                        break
+                    b = continues[b]
+                return b
+            out, last = [], None
+            for b, e, _ in self._pdata():
+                root = first(b)
+                if out and out[-1][1] == b and root == last:
+                    out[-1] = (out[-1][0], e)
+                else:
+                    out.append((b, e))
+                    last = root
+            self._whole = out
+        return self._whole
+
     def function_at(self, rva):
-        """The (begin, end) of the function holding rva, or None."""
+        """The (begin, end) of the whole function holding rva (whole_functions()), or None."""
         import bisect
-        funcs = self.functions()
+        funcs = self.whole_functions()
         i = bisect.bisect_right(funcs, (rva, 1 << 40)) - 1
         if i >= 0 and funcs[i][0] <= rva < funcs[i][1]:
             return funcs[i]

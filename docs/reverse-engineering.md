@@ -26,11 +26,51 @@ question from *Open questions* when it's answered.
 - **Build 26184573, patch 1.1 (2026-10-26):** the patch adds mouse control of the camera, bug
   fixes and quality-of-life changes. Nothing wcmods reads moved: every class in `game.HIDDEN` is
   the same size, every signed member is where it was (`python wcmods.py game signatures check`),
-  and the level component, which has no signature, was read in game at its old offsets: the
-  level at +0x120 and +0x124 (20, 20) and the stats at +0x154–0x168 (233, 199, 189, 199, 180, 100)
-  matched the save's `Stats`. The anchor functions `signatures.py` keeps (combat, status and
-  detection code around `0x1417B8000`–`0x1417DC000`) each sit 0x260 later than on 24847281; the
-  code addresses elsewhere in these notes are still 24847281's and haven't been checked.
+  and the level component, which had no signature then, was read in game at its old offsets: the
+  level at +0x120 and the level cap at +0x124 (20, 20) and the stats at +0x154–0x168 (233, 199,
+  189, 199, 180, 100) matched the save's `Stats`. The anchor functions `signatures.py` keeps (combat,
+  status and detection code around `0x1417B8000`–`0x1417DC000`) each sit 0x260 later than on
+  24847281; the code addresses elsewhere in these notes are still 24847281's unless they say so.
+- **The level component signed (2026-10-28, on 26184573, from the exe alone):** until then it had no
+  signature, so every update would have switched your cat's level and stats off, moved or not. Two
+  reasons, both read from the code:
+  - **Functions come in parts.** MSVC gives a function that saves registers in stages several
+    `.pdata` entries: the first with the prologue, and the rest chained to it (`UNW_FLAG_CHAININFO`
+    in their unwind info). 221,277 of the exe's 563,063 entries are such parts, of 69,628 functions,
+    and every one of those functions' parts lie next to each other. `pe.Image.function_at` answered
+    the first part only, so the level component's own code was searched for 10, 15 and 81 bytes; its
+    stats function alone (`0x1417C6410`) is 1,400. It now joins the parts (`whole_functions()`), which
+    every class's search gets.
+  - **The level and its cap aren't the class's own.** +0x120 and +0x124 belong to its parent,
+    `USwtQuestLevelComponent` (SwtQuest), and only the parent's code reads them; a class's own code is
+    the virtuals it overrides. Its two anchors were fighter-stat functions (`0x1417D8270`,
+    `0x1417D70C0`) that touch none of its offsets: read whole, they have no `[reg+0x120]`, `+0x124` or
+    `+0x154`–`+0x168` operand. They're replaced by three of the parent's functions, found with
+    `xrefs.py` on `Gameplay.Exploration.MaxLevel` and `callers.py` on the level setter (*The level
+    component's code*, below).
+
+  More code searched showed false sites, some already in `signatures.json`. The level component's
+  start-up code reads +0x154 of the object behind the global at `0x14A8A6E08` (after an IsA check),
+  not its own Prowess; three of the combat component's Stance sites (in `0x141D0B220`) were
+  `lea rax,[rbp+0x1A0]`, a stack slot under a frame pointer (`lea rbp,[rsp-0x7D8]`); and the combat
+  component's code has vtable calls (`call [rax+0x1C8]`, in `0x141C67940`) at member offsets. `signatures.py` now leaves
+  out an access whose base register holds a stack address or a pointer read from a global, by a
+  straight read of the function (`_foreign`), and one wider than the member (`_access`). `make()`
+  refuses a class with no signature at all instead of writing it.
+
+  The result (`python wcmods.py game signatures make`): the level component has 15 signatures over
+  all eight members (Level 4, the cap 3, Prowess 3, Strength 4, Resilience 6, Instinct 4, Agility 2,
+  Stamina 2); 34 of the 45 members have one (23 before), and none lost theirs. How it was confirmed:
+  - `signatures.check()` on the installed exe with its fingerprint changed, so nothing counts as
+    the exe they were made on: all eight are found "same" by their signatures (with the old code and
+    file: all eight "lost"), and every other class as before or better.
+  - The 21 displacements those signatures capture moved by +4 in memory (the file untouched):
+    `check()` follows all eight (0x120→0x124 … 0x168→0x16C) and disturbs no other class.
+  - Each of the 15 sites read in the disassembly: every one's base register is `this` (rcx, or the
+    rbx/rsi it was copied to at the start).
+  - `tests/unit/test_signatures.py`, and the selftest's update check (`python wcmods.py selftest`).
+
+  Not seen yet: a real update moving it ([verified.md](verified.md#not-yet-confirmed-in-game)).
 
 ## How we find things
 
@@ -44,7 +84,10 @@ question from *Open questions* when it's answered.
   (u16) at +48 and offset (u16) at +50. Find a pointer to a property's name and decode the table
   around it. Enums are tables of `{const char* name, int64 value}`. `tools/re/uht.py` does both.
 - **Disassembly:** `dumpbin /disasm:nobytes /range:<start>,<end>` from Visual Studio. Function
-  starts follow `int 3` padding.
+  starts follow `int 3` padding. Without Visual Studio, `wcmods/exe/x64.py` decodes each
+  instruction's length and operands (its memory operand's base and displacement, RIP targets,
+  branches), though it doesn't name instructions. A function's `.pdata` entry can be only its first
+  part: `pe.Image.function_at` gives the whole function (*Game updates*).
 - **From members to code:**
   - `tools/re/storemap.py` maps keys to members for loaders that store straight to `this`.
   - `tools/re/dispscan.py <exe> 38C,390,394 2` finds code that uses several members of one
@@ -529,7 +572,7 @@ Where each one is:
 | `SwtQuestHealthComponent` | your cat | |
 | `SwtQuestStaminaComponent` | your cat | +0x11C: stamina back per second (20) |
 | `SwtCombatStaminaComponent` | your cat | fight stamina: 0.4 × Prowess + Stamina (193.2 for Prowess 233) |
-| `SwtAdventureLevelComponent` | the player state | value is XP; +0x120 and +0x124: the level (20, 20); +0x138: the stats struct, so `Prowess` +0x154, `Strength` +0x158, `Resilience` +0x15C, `Instinct` +0x160, `Agility` +0x164, `Stamina` +0x168 (all equal to the save's) |
+| `SwtAdventureLevelComponent` | the player state | value is XP, max the XP for the next level; +0x120: the level (20); +0x124: the level cap, `Gameplay.Exploration.MaxLevel` (20; read from the code, see below: `WCM_LevelShown` is an older name); +0x138: the stats struct, so `Prowess` +0x154, `Strength` +0x158, `Resilience` +0x15C, `Instinct` +0x160, `Agility` +0x164, `Stamina` +0x168 (all equal to the save's) |
 | `SwtAdventureFreshKillPileComponent` | the game state (`FreshKillPileComponent`) | +0x130: seconds since it last dropped (counts up in real seconds); +0x134: 90, `Decay.Time` |
 | `SwtAdventureStatusComponent` | every cat and animal (`StatusConditionComponent`) | +0xE0: the status condition (`ESwtAdventureStatusType`); +0x144: rounds it has lasted; +0x148: `SelfCure.Chance` 0.2; +0x14C: `Poison.Damage` 0.1 (read from `ApplyStatusType`, `0x141736CD0`, and the end-of-round code; watched in game) |
 | `TurnBasedCombatComponent` | every cat and animal (+0x848) | +0x1A1: its team; +0x1E0: its moves (a `TArray` of `AttackMove` rows, count at +0x1E8); +0x3F8: the AI's tier ([combat.md](mechanics/combat.md#the-combatant)) |
@@ -537,6 +580,21 @@ Where each one is:
 
 Writing them works: the values changed in memory, and the game's own code read them back. The HUD
 isn't told, so a bar may show the old value until something else updates it.
+
+**The level component's code** (build 26184573, read from the disassembly; the vtable slots are the
+level component's). `USwtAdventureLevelComponent` derives from `USwtQuestLevelComponent`, a resource
+component whose value is the XP; the level and the cap are the parent's, the stats its own.
+
+| Function | What it does | Found by |
+|---|---|---|
+| `0x141658C00` | The parent's start-up (vtable +0x3F8, presumably `BeginPlay`): the cap (+0x124) from `Gameplay.Exploration.MaxLevel`, then, for the player's component (`0x1416570E0`), a level and XP from `0x1416AF350` and `0x1416AF7A0`, each given the +0x154 of the object behind the global `0x14A8A6E08` (the save and a slot, presumably), then sets the level | `xrefs.py` on `Gameplay.Exploration.MaxLevel` |
+| `0x1417C6210` | The same, overridden by the level component, which then resets its stats struct | its vtable |
+| `0x141658870` | Sets the level: +0x120 = n, the XP bar's size from vtable +0x548, then the XP, or a full bar at the cap; for the player's, the XP and level go to `0x1416AF600` and `0x1416AF1B0` (the save, presumably); broadcasts the level (the delegate at +0x128); recomputes the stats (vtable +0x550) | `callers.py` (three calls) |
+| `0x141658A90` | Sets the XP (vtable +0x510): clamped between 0 and the bar (+0x110; +0x100 instead while the byte at +0x104 is set); below the cap, XP that reaches the bar sets level + 1 with what's over, which sets the XP again | calls `0x141658870` |
+| `0x141658D20` | The XP bar at level n (vtable +0x548): `Gameplay.Exploration.Level.%d` with n + 1 | `xrefs.py` on `Gameplay.Exploration.Level.` |
+| `0x1417C6410` | The level component's stats (vtable +0x550): the base stats for its level from `0x1418043E0` (with `PlayerCat`), then each Social trait's `Gameplay.Combat.<trait>.Strength/.Resilience/.Instinct` × (level − 1) × 0.05 added, then all six rounded (`FMath::RoundToInt`); then a resource component its owner hands back gets Prowess as its maximum and value (the health, presumably: in game health equals Prowess) | `dispscan.py` on the six stat offsets |
+
+`0x1418043E0` is called by the fight code too (`0x1417D5830`, `0x1417D5FC5`).
 
 **The clock:** the game state's +0x438 is a float, the seconds into the day. Setting it to 21600 made
 the game's own `GetDayClockTime` say 6:00.

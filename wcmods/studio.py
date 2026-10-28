@@ -196,8 +196,8 @@ class Studio:
             # How wcmods stands on a build it wasn't checked on (worked out once per game update, ~a minute).
             with self.lock:   # an install may be working it out too: once, not twice at the same time
                 fit = gamebuild.layout(cfg)
-            return {**fit, "moved": [gamebuild.describe(k) for k in fit["moved"]],
-                    "lost": [gamebuild.describe(k) for k in fit["lost"]], "offsets": None}
+            return {**fit, "moved": gamebuild.phrases(fit["moved"]), "lost": gamebuild.phrases(fit["lost"]),
+                    "offsets": None}
         if parts == ["setup"] and method == "GET":
             # "Get set up" on the Mods page (wcmods/onboarding.py), and a mod dropped on the launcher.
             waiting = onboarding.inbox()

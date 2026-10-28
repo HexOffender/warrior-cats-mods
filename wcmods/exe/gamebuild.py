@@ -210,7 +210,41 @@ def layout(cfg, log=print, refresh=False):
     return out
 
 
-def describe(key):
-    """"/Script/SwtQuest.SwtQuestResourceComponent:WCM_Value" as "SwtQuestResourceComponent.Value"."""
-    cls, _, name = key.partition(":")
-    return f"{cls.rsplit('.', 1)[-1]}.{name.replace('WCM_', '')}"
+# What the members of each class in game.HIDDEN are, in a player's words: what the Apply warning, `wcmods
+# game build` and the Mods page's banner say a game update moved or switched off.
+PLAIN = {
+    "SwtQuestResourceComponent": "your cat's health, stamina and experience, and the fresh-kill pile",
+    "SwtQuestStaminaComponent": "how fast your cat's stamina comes back",
+    "SwtAdventureLevelComponent": "your cat's level and stats",
+    "SwtAdventureFreshKillPileComponent": "the fresh-kill pile's timer",
+    "SwtAdventureGameplayGameState": "the time of day",
+    "TurnBasedCombatComponent": "the fighters' stats, moves and sides in a fight",
+    "SwtAdventureStatusComponent": "poison and the other status conditions",
+    "SwtAdventureDetectionComponent": "how far animals see and hear your cat",
+}
+
+
+def name(key):
+    """"/Script/SwtQuest.SwtQuestResourceComponent:WCM_Value" as "SwtQuestResourceComponent.Value", for
+    maintainers (the selftest)."""
+    cls, _, member = key.partition(":")
+    return f"{cls.rsplit('.', 1)[-1]}.{member.replace('WCM_', '')}"
+
+
+def phrases(keys):
+    """The plain words for members ("class:property" keys): one phrase per class (PLAIN), each once, in
+    the order the keys come; a class PLAIN doesn't know is named as name() does."""
+    out = []
+    for key in keys:
+        cls = key.partition(":")[0].rsplit(".", 1)[-1]
+        words = PLAIN.get(cls) or name(key)
+        if words not in out:
+            out.append(words)
+    return out
+
+
+def describe(keys):
+    """Members in a player's words, as one phrase: ["...SwtAdventureLevelComponent:WCM_Level",
+    "...SwtAdventureLevelComponent:WCM_Prowess"] is "your cat's level and stats"; several classes' phrases
+    are separated by semicolons (they have commas of their own). One key (a str) works too."""
+    return "; ".join(phrases([keys] if isinstance(keys, str) else keys))
