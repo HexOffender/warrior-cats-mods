@@ -68,12 +68,18 @@ def merge(items):
     return settings
 
 
-def script(settings, save=None):
+def heal_keys(menu_key=None):
+    """The keys a heal can go on, without the mod menu's own."""
+    return [k for k in HEAL_KEYS if k != menu_key]
+
+
+def script(settings, save=None, menu_key=None):
     """The in-game script with the settings in. save: where its page in the mod menu saves them, {"path": the
-    top mod's tweaks.json, "file": how to name it to the player, "keep": that file's own notes}, or None."""
+    top mod's tweaks.json, "file": how to name it to the player, "keep": that file's own notes}, or None.
+    menu_key: the mod menu's key, which its page doesn't offer for the heal."""
     from .sdk import lua_value
-    return LUA.replace("@SETTINGS@", lua_value({k: settings[k] for k in DEFAULTS})).replace("@SAVE@", lua_value(save)) \
-        .replace("@HEAL_KEYS@", lua_value(list(HEAL_KEYS)))
+    return (LUA.replace("@SETTINGS@", lua_value({k: settings[k] for k in DEFAULTS})).replace("@SAVE@", lua_value(save))
+            .replace("@HEAL_KEYS@", lua_value(heal_keys(menu_key))))
 
 
 LUA = lua_source("tweaks.lua")

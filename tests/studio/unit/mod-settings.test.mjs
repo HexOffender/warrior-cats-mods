@@ -50,13 +50,14 @@ test("written back, the file keeps its order, its untouched values as they were,
 
 test("the Settings block on a script's card shows the rows and saves 12.0, in the file's order", async () => {
   const puts = [];
+  let file = TEXT;   // what the file holds now
   dom.routes = {
     "GET /mods": () => [{ id: "game-tweaks", name: "Game Tweaks", description: "", enabled: true, priority: 0, kinds: ["in-game script"],
       preset: false, version: "", author: "", requires: [], requires_names: [], uses: [], code: true, menu_page: true, pack: false,
       problem: null, problems: [], needed_by: [], game_builds: [], outdated: null, menu_pages: false, script_problems: [],
       script_run: null, settings_card: true }],
     "GET /settings": () => ({ allow_code_mods: true, data_dir: "C:\\data" }),
-    "GET /mods/game-tweaks/file/settings.json": () => ({ exists: true, text: TEXT }),
+    "GET /mods/game-tweaks/file/settings.json": () => ({ exists: true, text: file }),
     "GET /mods/game-tweaks/log": () => ({ log: null, lines: [] }),
     "PUT /mods/game-tweaks/file/settings.json": b => { puts.push(b.text); return { saved: "settings.json", problems: [] }; },
   };
@@ -79,9 +80,12 @@ test("the Settings block on a script's card shows the rows and saves 12.0, in th
     sw.checked = true;
     sw.dispatch("change");
     assert.ok(box.all().some(n => n.textContent === "Unsaved changes"));
+    assert.equal(box.querySelectorAll("button").find(b => b.textContent === "Put back").disabled, false, "Put back can be pressed at once");
+    assert.equal(wc.anyDirty(), true, "the shell counts it as unsaved work");
     box.querySelectorAll("button").find(b => b.textContent === "Save settings").click();
     await tick(); await tick();
     assert.equal(puts.length, 1);
+    assert.equal(wc.anyDirty(), false);
     assert.equal(puts[0], TEXT.replace('"keep_stamina_full": false', '"keep_stamina_full": true'));
     // A number out of its bounds isn't saved.
     root.querySelector('[aria-label="More about Game Tweaks"]');
@@ -93,5 +97,15 @@ test("the Settings block on a script's card shows the rows and saves 12.0, in th
     again.querySelectorAll("button").find(b => b.textContent === "Save settings").click();
     await tick();
     assert.equal(puts.length, 1, "Time of day 30 is refused before it's saved");
+    // A change made elsewhere since (the game's own Save) to a setting not changed here is kept.
+    file = TEXT.replace('"heal_key": "F5"', '"heal_key": "F9"');
+    const sw2 = again.querySelectorAll("input").find(i => i.attrs.type === "checkbox");
+    sw2.checked = false;
+    sw2.dispatch("change");
+    wc.bus.emit("installed", {});   // the card reads the file again
+    await tick(); await tick(); await tick();
+    root.querySelector('[data-key="settings:game-tweaks"]').querySelectorAll("button").find(b => b.textContent === "Save settings").click();
+    await tick(); await tick();
+    assert.equal(puts.at(-1), file);   // F9 kept, and the switch as it's set here
   } finally { handle.unmount(); }
 });

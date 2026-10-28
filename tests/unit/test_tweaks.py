@@ -66,6 +66,9 @@ def test_heal_key_must_be_one_of_the_offered_keys():
             tweaks.validate({"heal_key": bad})
     with pytest.raises(ValueError, match="'heal_key' is F5, the mod menu's own key: pick another"):
         tweaks.validate({"heal_key": "F5"}, menu_key="F5")
+    # The mod menu's Tweaks page doesn't offer it either.
+    lua = tweaks.script(tweaks.merge([]), None, menu_key="F5")
+    assert 'local HEAL_KEYS = { "F1", "F2", "F3", "F4", "F6", "F7", "F8", "F9", "F12" }' in lua
 
 
 def test_higher_priority_mod_wins_each_key(studio, tmp_path):

@@ -21,7 +21,10 @@ export default {
     const RUN_CLASS = { loaded: "ok", errors: "warn", failed: "bad", "not-started": "bad", waiting: "muted" };
     const said = {};          // mod id -> what its script said when the game last started (More's What it said)
     const settingsOf = {};    // mod id -> its settings.json as read ({ text, data } or { error }), null while asking
-    const drafts = {};        // mod id -> its settings as changed on the card and not saved yet ({ values, order, floats })
+    const drafts = {};        // mod id -> the settings changed on its card and not saved yet ({ key: value })
+    // Those count as unsaved work, as an Editing-mod bar's does: the shell won't reload or restart over them.
+    const holders = {};
+    const markUnsaved = (id, on) => wc.markUnsaved(holders[id] ||= { element: root, file: "settings.json" }, on);
     let gameRunning = false;  // as /changes last said: a script's settings then were read when the game started
 
     const setupBox = el("div");
@@ -452,12 +455,18 @@ export default {
       const box = el("div", { class: "said settings", "data-key": `settings:${id}` }, el("strong", { text: "Settings" }));
       if (!s) return box.append(el("p", { class: "muted", role: "status", text: "Reading its settings.json…" })), box;
       if (s.error) return box.append(el("p", { class: "note bad", text: s.error })), box;
-      const data = drafts[id] || s.data;
+      // The file as read now, with what's changed here on top: a setting changed elsewhere since (the game's own
+      // Save, a hand edit) and not here keeps that change.
+      const data = { ...s.data, values: { ...s.data.values, ...(drafts[id] || {}) } };
       const unsaved = el("span", { class: "dirty", text: drafts[id] ? "Unsaved changes" : "" });
+      const putBack = el("button", { class: "btn ghost small", type: "button", text: "Put back",
+        onclick: () => { delete drafts[id]; markUnsaved(id, false); renderList(); } });
+      putBack.disabled = !drafts[id];
       const change = (key, value) => {
-        drafts[id] ||= { ...s.data, values: { ...s.data.values } };
-        drafts[id].values[key] = value;
+        drafts[id] = { ...(drafts[id] || {}), [key]: value };
         unsaved.textContent = "Unsaved changes";
+        putBack.disabled = false;
+        markUnsaved(id, true);
       };
       const inputs = [];   // [row, input] for the number boxes, checked before a save
       box.append(el("p", { class: "note", text: "The script reads these when the game starts. While you play, change them on its page in the mod menu (Insert)." }));
@@ -496,10 +505,11 @@ export default {
       const save = async () => {
         const wrong = inputs.map(([row, input]) => scriptSettings.problem(row, input.value)).find(Boolean);
         if (wrong) { toast(wrong + ".", "bad"); return; }
-        const text = scriptSettings.write(drafts[id] || s.data);
+        const text = scriptSettings.write({ ...s.data, values: { ...s.data.values, ...(drafts[id] || {}) } });
         try {
           const r = await api.put(`/mods/${encodeURIComponent(id)}/file/settings.json`, { text });
           delete drafts[id];
+          markUnsaved(id, false);
           if (r.problems && r.problems.length) toast(`Saved, but it can't go in the game yet: ${r.problems[0]}`, "bad");
           else toast(`Saved ${m.name}'s settings. The script reads them when the game starts.`);
           await refresh();
@@ -507,9 +517,7 @@ export default {
       };
       box.append(el("div", { class: "row" },
         el("button", { class: "btn primary small", type: "button", text: "Save settings", onclick: save }),
-        el("button", { class: "btn ghost small", type: "button", text: "Put back", disabled: !drafts[id],
-          onclick: () => { delete drafts[id]; renderList(); } }),
-        unsaved));
+        putBack, unsaved));
       return box;
     }
 
@@ -641,6 +649,6 @@ export default {
       bus.on("focus", () => renderSetup()),
     ];
     await refresh();
-    return { unmount() { off.forEach(f => f()); } };
+    return { unmount() { off.forEach(f => f()); Object.keys(holders).forEach(id => markUnsaved(id, false)); } };
   },
 };

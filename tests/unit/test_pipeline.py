@@ -36,8 +36,9 @@ def test_pending_says_the_script_loader_once_when_it_came_after_the_install(stud
 
 def test_pending_ignores_a_script_mods_settings_json_once_installed(studio, fake_game):
     # The script reads settings.json afresh each time the game starts: an in-game Save, or the studio's "Cheats on
-    # when the game starts", writing it needs no Apply. A script mod not in the game yet still asks, and so does
-    # any other file of an installed one.
+    # when the game starts", writing it needs no Apply. A script mod not in the game yet still asks, so does one
+    # installed with no settings.json to read (a file added since needs an install to be read at all), and so
+    # does any other file of an installed one.
     import os
     import time
     from unit_helpers import make_mod
@@ -46,22 +47,29 @@ def test_pending_ignores_a_script_mods_settings_json_once_installed(studio, fake
     cfg.data["allow_code_mods"] = True
     tweaks = make_mod(studio, "tweaks", files={"scripts/main.lua": "--", "settings.json": {"on": True}})
     other = make_mod(studio, "other", files={"scripts/main.lua": "--", "settings.json": {"on": True}})
+    late = make_mod(studio, "late", files={"scripts/main.lua": "--"})
     old = time.time() - 3600
-    for folder in (tweaks, other):
+    for folder in (tweaks, other, late):
         for root, _, files in os.walk(folder):
             for f in files:
                 os.utime(os.path.join(root, f), (old, old))
-    installed(cfg, ["WCModsMenuHost", bridge.NAME, scripts.ue4ss_name("tweaks")], mods=["tweaks", "other"],
-              built=time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(old + 60)))
+    # The scripts as the last install wrote them (their bootstraps' MOD): tweaks with its settings.json, late without.
+    for mod_id, settings_file in (("tweaks", '"C:/mods/tweaks/settings.json"'), ("late", "nil")):
+        folder = os.path.join(cfg.ue4ss_mods_dir, scripts.ue4ss_name(mod_id), "Scripts")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "main.lua"), "w", encoding="utf-8") as f:
+            f.write(f"MOD = {{\n    settingsFile = {settings_file},  -- where MOD.save() writes them, or nil\n}}\n")
+    installed(cfg, ["WCModsMenuHost", bridge.NAME, scripts.ue4ss_name("tweaks"), scripts.ue4ss_name("late")],
+              mods=["tweaks", "other", "late"], built=time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(old + 60)))
     found = studio.mods()
     assert pipeline.pending(cfg, found)["changed"] == []
-    for folder in (tweaks, other):
+    for folder in (tweaks, other, late):
         with open(os.path.join(folder, "settings.json"), "w", encoding="utf-8") as f:
             f.write('{"on": false}\n')
-    assert pipeline.pending(cfg, found)["changed"] == ["other"]   # its script isn't in the game: it asks
+    assert pipeline.pending(cfg, found)["changed"] == ["late", "other"]   # not read by the game as it is: they ask
     with open(os.path.join(tweaks, "scripts", "main.lua"), "w", encoding="utf-8") as f:
         f.write("-- changed\n")
-    assert pipeline.pending(cfg, found)["changed"] == ["other", "tweaks"]
+    assert pipeline.pending(cfg, found)["changed"] == ["late", "other", "tweaks"]
 
 
 def test_pending_asks_nothing_about_code_mods_without_the_script_loader(studio):

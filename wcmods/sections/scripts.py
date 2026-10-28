@@ -46,7 +46,7 @@ def settings_card(mod):
     page in the mod menu is the one wcmods makes for it (not "settings_page": false, as Menu pages and Sandbox
     mode have, which keep their settings on pages of their own)."""
     return (has_scripts(mod) and os.path.isfile(os.path.join(mod.folder, SETTINGS))
-            and mod.meta.get("settings_page", True) is not False)
+            and bool(mod.meta.get("settings_page", True)))   # as build() writes the page: any false value is none
 
 
 def read_settings(mod):

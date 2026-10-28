@@ -102,7 +102,7 @@ def test_mod_name_with_quotes_and_newline(studio, tmp_path):
     assert not luacheck.check(main)
     assert main.startswith("-- Written by wcmods: starts Say \"hi\" there's in-game script (mods/odd/scripts/main.lua)")
     assert 'name = "Say \\"hi\\"\\nthere"' in main
-    assert "settings = {  }" in main and "settingsFile = nil" in main
+    assert "settings = {  }" in main and "settingsFile = nil," in main   # (pipeline._reread looks for this)
 
 
 def test_code_mods_off_warns_notes_and_adds_nothing(studio, tmp_path):

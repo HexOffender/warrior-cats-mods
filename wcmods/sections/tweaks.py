@@ -21,5 +21,7 @@ class TweaksSection(Section):
         top = items[-1][0]
         save = {"path": os.path.abspath(os.path.join(top.folder, tweaks.FILE)), "file": f"mods/{top.id}/{tweaks.FILE}",
                 "keep": {k: v for k, v in self.read_json(top, tweaks.FILE).items() if k.startswith("_")}}
-        ctx.add_ue4ss_mod(tweaks.UE4SS_MOD_NAME, {"Scripts/main.lua": tweaks.script(settings, save), "enabled.txt": ""})
+        menu_key = menusettings.menu_settings(ctx.cfg)["key"]
+        ctx.add_ue4ss_mod(tweaks.UE4SS_MOD_NAME, {"Scripts/main.lua": tweaks.script(settings, save, menu_key),
+                                                  "enabled.txt": ""})
         ctx.note("on", {k: v for k, v in settings.items() if v != tweaks.DEFAULTS[k]})   # the Installed mods page's

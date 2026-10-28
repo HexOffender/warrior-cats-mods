@@ -393,14 +393,21 @@ def _newest(folder, skip=()):
     return newest
 
 
-def _reread(mod, installed_ue4ss):
+def _reread(mod, installed_ue4ss, mods_dir):
     """The files of a mod the game reads afresh each time it starts, so a change to them needs no install: a
     script mod's settings.json, once its script is in the game (an in-game Save, or the studio's "Cheats on when
-    the game starts", writes it)."""
+    the game starts", writes it). Only when the installed script has a settings.json to read: one added since
+    the install needs one, to be read at all."""
     from .sections import scripts
-    if scripts.has_scripts(mod) and scripts.ue4ss_name(mod.id) in installed_ue4ss:
-        return (scripts.SETTINGS,)
-    return ()
+    name = scripts.ue4ss_name(mod.id)
+    if not (mods_dir and scripts.has_scripts(mod) and name in installed_ue4ss):
+        return ()
+    try:
+        with open(os.path.join(mods_dir, name, "Scripts", "main.lua"), encoding="utf-8", errors="replace") as f:
+            installed = f.read()
+    except OSError:
+        return ()
+    return () if "settingsFile = nil," in installed else (scripts.SETTINGS,)   # script_bootstrap.lua's MOD
 
 
 def code_installed(data):
@@ -438,7 +445,7 @@ def pending(cfg, mods):
         built = 0.0
     in_game = set(data.get("installed_ue4ss") or [])
     changed = sorted(m.id for m in mods if m.enabled and m.id in was
-                     and _newest(m.folder, _reread(m, in_game)) > built + 1)
+                     and _newest(m.folder, _reread(m, in_game, cfg.ue4ss_mods_dir)) > built + 1)
     redo = []
     if inst.get("ue4ss") is False and cfg.ue4ss_mods_dir:   # the mod menu at least goes in now
         redo.append("the script loader (UE4SS) is in now")

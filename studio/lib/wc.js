@@ -13,7 +13,8 @@
 //   reconnect()    whether the studio answers, taking up its token when it does (the shell's way back after
 //                  "server-gone", which is said once a request couldn't reach it twice, a few seconds apart).
 //   anyDirty(), dirtyTargets()   whether any page has unsaved changes, and which bars have them: the shell
-//                  never reloads the page or restarts the studio over them.
+//                  never reloads the page or restarts the studio over them. markUnsaved(holder, on) counts
+//                  unsaved work that has no bar.
 //   modTarget      the "Editing mod" bar a page saves its file through (below). It keeps unsaved work: the
 //                  browser asks before the page closes, switching mods and importing a file ask first (save
 //                  them, go on without, or stay), and refresh() re-reads the mod list without reloading the
@@ -381,6 +382,9 @@ export const color = {
 // studio, never reloads the page over them, and the browser asks before the page closes.
 const unsaved = new Set();
 export const dirtyTargets = () => [...unsaved].filter(t => t.element.isConnected);
+// Unsaved work that isn't an Editing-mod bar's (a script's Settings on its mod's card): `holder` is
+// { element: what it's in, file }, counted until it's marked saved.
+export function markUnsaved(holder, on) { if (on) unsaved.add(holder); else unsaved.delete(holder); }
 export const anyDirty = () => dirtyTargets().length > 0;
 if (typeof window !== "undefined" && window.addEventListener) {
   window.addEventListener("beforeunload", e => { if (anyDirty()) { e.preventDefault(); e.returnValue = ""; } });
