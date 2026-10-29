@@ -93,6 +93,14 @@ def test_build_writes_one_script_for_every_mod(tmp_path):
     assert ctx.warnings == []
 
 
+def test_build_shares_patrol_data_with_the_game(tmp_path):
+    patrol = {"points": [{"x": 1, "y": 2, "z": 3, "wait": "none", "future": 7}],
+              "mode": "once", "future": {"runner_option": True}}
+    cats = {"npcs": [{"id": "mossfoot", "name": "Mossfoot", "patrol": patrol}]}
+    ctx = build(tmp_path, [mod(tmp_path, "mine", {"npcs.json": cats}), sandbox(tmp_path)])
+    assert shared(ctx)["mods"][0]["npcs"][0]["patrol"] == patrol
+
+
 def test_an_empty_file_collects_nothing(tmp_path):
     m = mod(tmp_path, "empty", {"npcs.json": {"npcs": []}, "quests.json": {"quests": []}})
     assert StorySection().collect(m, Ctx(tmp_path, [m])) is None

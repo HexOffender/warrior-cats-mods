@@ -63,6 +63,7 @@ comes on with it when it's in the mods folder, and a mod without it still goes i
 names with it), waiting for Sandbox mode to show its cats. sandbox() says what the installed one can show.
 """
 import json
+import math
 import os
 import re
 
@@ -96,7 +97,8 @@ SLOTS = ("fur", "pattern", "marking")
 # A cat's size when npcs.json leaves it out: a grown cat, as the Characters page shows it. The game's own
 # default for a spawned cat is 0.4, a kit's.
 DEFAULT_SIZE = 0.85
-NPC_KEYS = {"id", "name", "title", "colours", "eyes", "size", "look", "slots", "at", "yaw", "level", "lines"}
+NPC_KEYS = {"id", "name", "title", "colours", "eyes", "size", "look", "slots", "at", "yaw", "level", "lines",
+            "patrol"}
 QUEST_KEYS = {"id", "title", "description", "giver", "after", "steps", "reward"}
 STEP_KEYS = {"do", "objective", "npc", "lines", "item", "count", "at", "level", "place", "radius"}
 
@@ -149,6 +151,96 @@ def _at(obj, where):
             or not all(isinstance(n, (int, float)) and not isinstance(n, bool) and abs(n) < 1e7 for n in v)):
         raise ValueError(f"{where}: \"at\" should be a place, [x, y, z]")
     return [round(n) for n in v]
+
+
+def _patrol_number(value, where, key):
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or isinstance(value, float) and not math.isfinite(value)):
+        raise ValueError(f"{where}: \"patrol.{key}\" should be a number")
+    return value
+
+
+def _patrol_wait(value, where, key):
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        _patrol_number(value, where, key)
+    elif isinstance(value, str):
+        if value not in ("none", "release"):
+            raise ValueError(f"{where}: \"{key}\" should be a number, range, \"none\", \"release\" or an until object")
+    elif isinstance(value, list):
+        if len(value) != 2:
+            raise ValueError(f"{where}: \"{key}\" range should have two numbers")
+        lo, hi = (_patrol_number(n, where, key) for n in value)
+        if lo > hi:
+            raise ValueError(f"{where}: \"{key}\" range minimum should not exceed its maximum")
+    elif isinstance(value, dict):
+        if not value:
+            raise ValueError(f"{where}: \"{key}\" should not be an empty object")
+        if "min" in value or "max" in value:
+            if "min" not in value or "max" not in value:
+                raise ValueError(f"{where}: \"{key}\" range should have \"min\" and \"max\"")
+            lo, hi = (_patrol_number(value[k], where, key) for k in ("min", "max"))
+            if lo > hi:
+                raise ValueError(f"{where}: \"{key}\" range minimum should not exceed its maximum")
+        if "until" in value:
+            until = value["until"]
+            if not isinstance(until, dict) or not any(k in until for k in ("quest", "event", "release")):
+                raise ValueError(f"{where}: \"{key}\" until should name a quest, event or release")
+            for name in ("quest", "event", "release"):
+                if name in until and (not isinstance(until[name], str) or not until[name].strip()):
+                    raise ValueError(f"{where}: \"{key}\" until {name} should be text")
+            if "step" in until:
+                step = until["step"]
+                if isinstance(step, str):
+                    if not step.strip():
+                        raise ValueError(f"{where}: \"{key}\" until step should be text or a number")
+                else:
+                    _patrol_number(step, where, key)
+            if "timeout" in value:
+                _patrol_number(value["timeout"], where, key)
+        elif not ("min" in value or "max" in value):
+            # Unknown wait-object keys are kept for forward compatibility with the runner.
+            pass
+    else:
+        raise ValueError(f"{where}: \"{key}\" should be a number, range, \"none\", \"release\" or an until object")
+    return value
+
+
+def _patrol(raw, where):
+    if not isinstance(raw, dict):
+        raise ValueError(f"{where}: \"patrol\" should be an object")
+    mode = raw.get("mode")
+    if "mode" in raw and mode not in ("pingpong", "loop", "once"):
+        raise ValueError(f"{where}: \"patrol.mode\" should be pingpong, loop or once")
+    for key in ("speed", "retries"):
+        if key in raw:
+            _patrol_number(raw[key], where, key)
+    if "enabled" in raw and not isinstance(raw["enabled"], bool):
+        raise ValueError(f"{where}: \"patrol.enabled\" should be true or false")
+    if "wait" in raw:
+        _patrol_wait(raw["wait"], where, "patrol.wait")
+    if "points" in raw:
+        points = raw["points"]
+        if not isinstance(points, list):
+            raise ValueError(f"{where}: \"patrol.points\" should be a list")
+        for i, point in enumerate(points):
+            point_where = f"{where}: patrol point {i + 1}"
+            if isinstance(point, list):
+                if len(point) != 3:
+                    raise ValueError(f"{point_where} should be [x, y, z]")
+                for axis, value in zip("xyz", point):
+                    _patrol_number(value, point_where, axis)
+            elif isinstance(point, dict):
+                for axis in "xyz":
+                    if axis not in point:
+                        raise ValueError(f"{point_where}: \"{axis}\" is missing")
+                    _patrol_number(point[axis], point_where, axis)
+                if "level" in point and (not isinstance(point["level"], str) or not point["level"].strip()):
+                    raise ValueError(f"{point_where}: \"level\" should be text")
+                if "wait" in point:
+                    _patrol_wait(point["wait"], point_where, "wait")
+            else:
+                raise ValueError(f"{point_where} should be an object or [x, y, z]")
+    return dict(raw)
 
 
 def _parts(obj, key, where):
@@ -224,6 +316,8 @@ def npcs(raw):
             parts = _parts(npc, key, where)
             if parts:
                 cat[key] = parts
+        if "patrol" in npc:
+            cat["patrol"] = _patrol(npc["patrol"], where)
         at = _at(npc, where)
         if at:
             cat["at"] = at

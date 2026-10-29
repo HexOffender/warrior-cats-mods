@@ -65,6 +65,7 @@ export function toJson(cats, extra = {}) {
     for (const k of ["eyes", "size"]) if (c[k] !== undefined && c[k] !== null) o[k] = c[k];
     if (filled(c.look)) o.look = { ...c.look };
     if (filled(c.slots)) o.slots = { ...c.slots };
+    if (Object.hasOwn(c, "patrol")) o.patrol = c.patrol;
     if (c.at) {
       o.at = c.at;
       if (c.yaw !== undefined && c.yaw !== null) o.yaw = c.yaw;
