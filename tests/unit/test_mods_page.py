@@ -42,7 +42,7 @@ def card(st, mod_id):
 
 # ---------- the "wcmods" minimum ----------
 def test_versions_compare_as_numbers_and_trailing_zeros_dont_count():
-    assert __version__ == "0.4.0"
+    assert __version__ == "0.5.0"
     assert mods.version_key("0.4") == mods.version_key("0.4.0") == (0, 4, 0)
     assert mods.version_key("0.10") > mods.version_key("0.9") and mods.version_key("1") == (1, 0, 0)
     assert mods.version_key("v0.5") == mods.version_key("0.5.0") == mods.version_key(" V0.5 ")
