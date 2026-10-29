@@ -109,6 +109,25 @@ def test_a_patrol_passes_through_with_supported_point_and_wait_shapes():
     assert bundle["mods"][0]["npcs"][0]["patrol"] == patrol
 
 
+def test_a_patrol_as_the_characters_page_writes_it():
+    """Each wait the page's Wait choice makes (tests/studio/unit/npcs-model.test.mjs has the same patrol)."""
+    patrol = {
+        "points": [
+            {"x": 1, "y": 2, "z": 3, "wait": 4},
+            {"x": 5, "y": 6, "z": 7, "level": "L", "wait": {"min": 1, "max": 5}},
+            {"x": 8, "y": 9, "z": 10, "wait": {"until": {"quest": "moss", "step": 2, "event": "storm", "release": "gate"},
+                                              "timeout": 30}},
+            {"x": 0, "y": 0, "z": 0, "wait": "none"},
+        ],
+        "mode": "loop", "speed": 120, "retries": 0, "enabled": False, "wait": [2, 3],
+    }
+    cat, = story.npcs({"npcs": [{"id": "mossfoot", "name": "Mossfoot", "patrol": patrol}]})
+    assert cat["patrol"] == patrol
+    # A point the page added and nobody filled in yet (the page says so) is refused, as the runner would drop it.
+    with pytest.raises(ValueError, match='patrol point 1: "x" should be a number'):
+        story.npcs({"npcs": [{"id": "m", "name": "M", "patrol": {"points": [{"x": None, "y": None, "z": None}]}}]})
+
+
 @pytest.mark.parametrize("patrol, said", [
     ([], '"patrol" should be an object'),
     ({"points": {}}, '"patrol.points" should be a list'),

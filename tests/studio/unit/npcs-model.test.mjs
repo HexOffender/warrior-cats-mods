@@ -30,6 +30,101 @@ test("round_trip_keeps_patrol_data and its forward-compatible nested keys", () =
   assert.deepEqual(model.toJson(cats, extra).npcs[0].patrol, patrol);
 });
 
+test("a patrol's [x, y, z] points load as {x, y, z}, and a patrol the page can't show is kept as it is", () => {
+  const { cats } = model.load({ npcs: [{ id: "a", name: "A", patrol: { points: [[1, 2, 3], { x: 4, y: 5, z: 6, level: "L" }, "junk"], speed: 90 } },
+    { id: "b", name: "B", patrol: { points: "not a list", future: 1 } }, { id: "c", name: "C", patrol: [1, 2] }] });
+  assert.deepEqual(model.toJson(cats).npcs[0].patrol, { points: [{ x: 1, y: 2, z: 3 }, { x: 4, y: 5, z: 6, level: "L" }, { x: null, y: null, z: null }], speed: 90 });
+  assert.deepEqual(model.toJson(cats).npcs[1].patrol, { points: "not a list", future: 1 });
+  assert.deepEqual(model.toJson(cats).npcs[2].patrol, [1, 2]);
+  for (const c of cats.slice(1)) {
+    assert.deepEqual(model.problems(c), ["Their patrol isn't laid out as this page writes it, so they stand still: start a new route under Where they walk."]);
+  }
+});
+
+test("a new patrol starts where the cat stands, or with no points; the page's kept route isn't saved", () => {
+  assert.deepEqual(model.newPatrol({ at: [1, 2, 3], level: "L_WorldMap_01_P" }), { points: [{ x: 1, y: 2, z: 3, level: "L_WorldMap_01_P" }] });
+  assert.deepEqual(model.newPatrol({ at: [1, 2, 3] }), { points: [{ x: 1, y: 2, z: 3 }] });
+  const c = { id: "a", name: "A", lines: [], _patrol: { points: [] } };
+  assert.ok(!("_patrol" in model.toJson([c]).npcs[0]));
+  assert.ok(!("patrol" in model.toJson([c]).npcs[0]));
+});
+
+test("movePoint swaps a point with its neighbour, and not past either end", () => {
+  const patrol = { points: [{ x: 1 }, { x: 2 }, { x: 3 }] };
+  assert.equal(model.movePoint(patrol, 0, -1), false);
+  assert.equal(model.movePoint(patrol, 2, 1), false);
+  assert.equal(model.movePoint(patrol, 1, -1), true);
+  assert.deepEqual(patrol.points.map(p => p.x), [2, 1, 3]);
+});
+
+test("waitKind names every wait story.py takes", () => {
+  const cases = [[undefined, "default"], ["none", "none"], [0, "seconds"], [4.5, "seconds"], [[1, 3], "range"], [{ min: 1, max: 3 }, "range"],
+    ["release", "until"], [{ until: { quest: "q" }, timeout: 5 }, "until"], [{ timeout: 5 }, "other"], ["trigger", "other"], [null, "other"]];
+  for (const [w, kind] of cases) assert.equal(model.waitKind(w), kind, JSON.stringify(w));
+});
+
+test("waitAs changes a wait's kind, keeping its seconds and the keys it doesn't know", () => {
+  assert.equal(model.waitAs(7, "seconds"), 7, "the same kind is the same wait");
+  assert.deepEqual(model.waitAs(7, "range"), { min: 7, max: 12 });
+  assert.equal(model.waitAs([2, 9], "seconds"), 2);
+  assert.equal(model.waitAs({ min: 2, max: 9 }, "none"), "none");
+  assert.equal(model.waitAs("none", "seconds"), 5);
+  assert.equal(model.waitAs(7, "default"), undefined);
+  assert.deepEqual(model.waitAs({ min: 1, max: 2, future: true }, "until"), { future: true, until: {} });
+  assert.deepEqual(model.waitAs({ until: { event: "e" }, timeout: 3, future: true }, "range"), { future: true, min: 3, max: 8 });
+  // A range's numbers go back as they came: a list stays a list, an object keeps its keys.
+  assert.deepEqual(model.withRange([1, 2], 3, 4), [3, 4]);
+  assert.deepEqual(model.withRange({ min: 1, max: 2, future: 1 }, 3, 4), { min: 3, max: 4, future: 1 });
+  assert.deepEqual(model.rangeOf({ min: 1 }), [1, null]);
+});
+
+test("untilWait gives an until wait as an object to edit, the same one when it is one", () => {
+  assert.deepEqual(model.untilWait("release"), { until: { release: true } });
+  const w = { until: { quest: "q" }, timeout: 4, future: 1 };
+  assert.equal(model.untilWait(w), w);
+  assert.deepEqual(model.untilWait({ until: "x", future: 1 }), { until: {}, future: 1 });
+});
+
+test("a patrol as the page makes it round-trips with its waits", () => {
+  const patrol = { points: [{ x: 1, y: 2, z: 3, wait: 4 }, { x: 5, y: 6, z: 7, level: "L", wait: { min: 1, max: 5 } },
+    { x: 8, y: 9, z: 10, wait: { until: { quest: "moss", step: 2, event: "storm", release: "gate" }, timeout: 30 } }, { x: 0, y: 0, z: 0, wait: "none" }],
+  mode: "loop", speed: 120, retries: 0, enabled: false, wait: [2, 3] };
+  const { cats } = model.load({ npcs: [{ id: "a", name: "A", patrol }] });
+  assert.deepEqual(model.toJson(cats).npcs[0].patrol, patrol);
+  assert.deepEqual(model.problems(cats[0]), []);
+});
+
+test("a patrol with no points, or a point missing a number, is said", () => {
+  const cat = patrol => ({ id: "a", name: "A", lines: [], patrol });
+  assert.deepEqual(model.problems(cat({})), ["Their patrol has no points yet: add one under Where they walk. Until then they stand still."]);
+  assert.deepEqual(model.problems(cat({ points: [] })), ["Their patrol has no points yet: add one under Where they walk. Until then they stand still."]);
+  assert.deepEqual(model.problems(cat({ points: [{ x: 1, y: 2, z: 3 }, { x: 1, y: null, z: 3 }, { x: null, y: null, z: null }, { x: 1 }] })), [
+    "Patrol point 2 has no Y yet: use where your cat is standing, or type all three numbers. Until it has, Apply leaves this mod's cats and questlines out.",
+    "Patrol point 3 has no numbers yet: use where your cat is standing, or type all three numbers. Until it has, Apply leaves this mod's cats and questlines out.",
+    "Patrol point 4 has no Y or Z yet: use where your cat is standing, or type all three numbers. Until it has, Apply leaves this mod's cats and questlines out.",
+  ]);
+  assert.deepEqual(model.problems(cat({ points: [{ x: 1, y: 2, z: 3 }] })), [], "one point is a route");
+});
+
+test("a speed, tries or wait story.py refuses is said", () => {
+  const cat = patrol => ({ id: "a", name: "A", lines: [], patrol: { points: [{ x: 1, y: 2, z: 3 }], ...patrol } });
+  assert.deepEqual(model.problems(cat({ speed: 0, retries: 1.5 })), [
+    "Their walking speed should be more than 0: type another, or leave it empty for a cat's walk.",
+    "Tries before skipping a point should be a whole number, 0 or more: type another, or leave it empty for 2.",
+  ]);
+  assert.deepEqual(model.problems(cat({ wait: -1 })), ["The patrol's wait should be 0 seconds or more."]);
+  assert.deepEqual(model.problems(cat({ wait: { min: 5, max: 2 } })), ["The patrol's wait goes from 5 to 2 seconds: the first should be the smaller."]);
+  assert.deepEqual(model.problems(cat({ wait: { min: 5 } })), ["The patrol's wait is a random time, but it needs both numbers: from and to."]);
+  assert.deepEqual(model.problems(cat({ points: [{ x: 1, y: 2, z: 3, wait: { until: {}, timeout: 0 } }] })), [
+    "Patrol point 1's wait is Until…, but nothing is chosen to wait for: choose a quest, type an event, or tick Released by a script.",
+    "Patrol point 1's wait gives up after a time: it should be more than 0 seconds, or empty to wait as long as it takes.",
+  ]);
+  assert.deepEqual(model.problems(cat({ wait: { until: { quest: "q", step: 0 } } })),
+    ["The patrol's wait waits for a step of the quest: its number should be a whole number, 1 or more."]);
+  assert.deepEqual(model.problems(cat({ wait: { until: { event: "e", step: 2 } } })), ["The patrol's wait waits for a step, but of no quest: choose the quest."]);
+  assert.deepEqual(model.problems(cat({ wait: "release" })), []);
+});
+
 test("a cat with a new look each time writes no look or slots", () => {
   const { cats } = model.load({ npcs: [{ id: "a", name: "A" }] });
   assert.equal(model.isFixed(cats[0]), false);

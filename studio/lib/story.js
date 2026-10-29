@@ -93,16 +93,18 @@ export const levelWords = level => LEVELS[level] || level || "";
 const AXES = [["X", "across the map"], ["Y", "along the map"], ["Z", "height"]];
 
 // A place in the game: three numbers (cm), read from where your cat stands (the game bridge, so the game
-// must be running with your mods applied) or typed. onChange({at, yaw, level}): at is null until all three
-// are filled in.
-export function wherePicker(spot, onChange) {
+// must be running with your mods applied) or typed. onChange({at, nums, yaw, level}): at is null until all three
+// are filled in; nums is the three as they are, null for one not filled in. hint: false leaves out the line
+// that says how to use where your cat is standing (a list of places says it once).
+export function wherePicker(spot, onChange, { hint = true } = {}) {
   const at = spot.at || ["", "", ""];
   const inputs = AXES.map(([axis, words], i) => el("input", { type: "number", step: "1", value: at[i] ?? "",
     "aria-label": `${axis}, ${words}`, style: { width: "7.5em" }, oninput: () => send() }));
   const where = el("span", { class: "muted", text: spot.level ? `in ${levelWords(spot.level)}` : "" });
   function send(extra = {}) {
     const nums = inputs.map(i => i.value === "" ? null : Math.round(Number(i.value)));
-    onChange({ at: nums.every(n => n !== null && Number.isFinite(n)) ? nums : null, ...extra });
+    onChange({ at: nums.every(n => n !== null && Number.isFinite(n)) ? nums : null,
+      nums: nums.map(n => n !== null && Number.isFinite(n) ? n : null), ...extra });
   }
   const grab = el("button", { class: "btn small", type: "button", text: "Use where my cat is standing", onclick: async () => {
     grab.disabled = true;
@@ -119,7 +121,7 @@ export function wherePicker(spot, onChange) {
   } });
   return el("div", { class: "stack" },
     el("div", { class: "row" }, grab,
-      el("span", { class: "muted", style: { fontSize: "0.85rem" }, text: "With the game running: walk your cat there, then press it." })),
+      hint ? el("span", { class: "muted", style: { fontSize: "0.85rem" }, text: "With the game running: walk your cat there, then press it." }) : null),
     el("div", { class: "row" }, ...AXES.flatMap(([axis, words], i) => [
       el("span", { class: "lbl", title: words, text: `${axis} (${words})` }), inputs[i]]), where));
 }

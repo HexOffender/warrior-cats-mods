@@ -10,9 +10,10 @@ export const SLOT_PARTS = [["fur", "Coat colour", "FurColors", "fur"], ["pattern
   ["marking", "Markings colour", "MarkingMaskColors", "markings"]];
 export const MAX_LINES = 30, MAX_LINE = 400, MAX_NAME = 40;   // story.py's limits
 export const HELP = "Written by Clan Mod Studio (Characters). Cats of this mod's own, which the Sandbox mode mod brings into the game. See docs/formats.md, npcs.json.";
-const OWN_MARKS = ["_new", "_placing"];   // the page's own, never saved
+const OWN_MARKS = ["_new", "_placing", "_patrol"];   // the page's own, never saved
 
 const filled = o => !!o && typeof o === "object" && Object.keys(o).length > 0;
+const isObj = o => !!o && typeof o === "object" && !Array.isArray(o);
 // A fixed look: some part of the shape or a colour slot chosen. One with nothing chosen is the game's look.
 export const isFixed = c => filled(c.look) || filled(c.slots);
 
@@ -50,6 +51,8 @@ export function load(obj) {
     const cat = { ...c, colours: c.colours && typeof c.colours === "object" && !Array.isArray(c.colours) ? { ...c.colours } : {},
       lines: Array.isArray(c.lines) ? c.lines.filter(s => typeof s === "string") : [] };
     if (c.at === null) cat._placing = true;
+    // A patrol's points as the page edits them: an [x, y, z] becomes {x, y, z}; the rest is kept as it is.
+    if (patrolEditable(c.patrol) && Array.isArray(c.patrol.points)) cat.patrol = { ...c.patrol, points: c.patrol.points.map(point) };
     cats.push(cat);
   }
   return { cats, extra };
@@ -96,6 +99,114 @@ export function problems(c, { gameSlots = 25, addedSlots = null } = {}) {
         p.push(`They wear ${words} colour ${n}, which no palette that's on adds, so it shows no colour there. Choose another, or turn that palette on.`);
       }
     }
+  }
+  return p.concat(patrolProblems(c.patrol));
+}
+
+// ---------- patrols
+// A cat's "patrol": a route Sandbox mode (0.6 or newer) walks them along, with waits at its points. story.py's
+// _patrol checks it as Sandbox mode's runner (sandbox/scripts/patrol.lua) reads it; keys the page doesn't know
+// are kept as they are.
+export const PATROL_MODES = [["pingpong", "Back and forth", "to the last point, then back the way they came"],
+  ["loop", "Round and round", "from the last point straight back to the first"], ["once", "Once", "to the last point, then they stay there"]];
+export const WALK_SPEED = 175, RETRIES = 2;   // the runner's, when the patrol says nothing: a cat's walk, in cm a second
+export const AXES = ["x", "y", "z"];
+const AXIS_WORDS = { x: "X", y: "Y", z: "Z" };
+const num = v => typeof v === "number" && Number.isFinite(v) ? v : null;
+
+// A patrol the page can show: an object whose points, if it has any yet, are a list.
+export const patrolEditable = p => isObj(p) && (p.points === undefined || Array.isArray(p.points));
+// A point as the page edits it: {x, y, z} with null for a number not filled in, and its other keys.
+export function point(p) {
+  if (Array.isArray(p)) return { x: num(p[0]), y: num(p[1]), z: num(p[2]) };
+  return isObj(p) ? p : { x: null, y: null, z: null };
+}
+// A new patrol starts where the cat stands, when it stands at one spot.
+export function newPatrol(c) {
+  const first = c.at ? { x: c.at[0], y: c.at[1], z: c.at[2], ...(c.level ? { level: c.level } : {}) } : null;
+  return { points: first ? [first] : [] };
+}
+// Point i moved by one (-1 up, 1 down), or left where it is at the end of the list.
+export function movePoint(patrol, i, by) {
+  const j = i + by, pts = patrol.points;
+  if (j < 0 || j >= pts.length) return false;
+  [pts[i], pts[j]] = [pts[j], pts[i]];
+  return true;
+}
+
+// A wait: how long a cat stays at a point. kind is "default" (none given: a point's is the patrol's, the patrol's
+// is none), "none", "seconds", "range", "until" or "other" (a wait the page has no words for, kept as it is).
+export function waitKind(w) {
+  if (w === undefined) return "default";
+  if (w === "none") return "none";
+  if (typeof w === "number") return "seconds";
+  if (Array.isArray(w)) return "range";
+  if (w === "release") return "until";   // the same as {"until": {"release": true}}
+  if (isObj(w)) return "until" in w ? "until" : "min" in w || "max" in w ? "range" : "other";
+  return "other";
+}
+// A range's two numbers, [min, max] (null when one isn't filled in).
+export function rangeOf(w) {
+  if (Array.isArray(w)) return [num(w[0]), num(w[1])];
+  if (isObj(w)) return [num(w.min), num(w.max)];
+  return [null, null];
+}
+// The range with new numbers: a [min, max] stays one; an object keeps its other keys.
+export const withRange = (w, lo, hi) => Array.isArray(w) ? [lo, hi] : { ...(isObj(w) ? w : {}), min: lo, max: hi };
+// The wait as another kind, keeping what it can: its seconds, its range's, an object's keys of its own.
+export function waitAs(w, kind) {
+  if (kind === waitKind(w)) return w;
+  const own = isObj(w) ? Object.fromEntries(Object.entries(w).filter(([k]) => !["min", "max", "until", "timeout"].includes(k))) : {};
+  const secs = typeof w === "number" ? w : rangeOf(w)[0];
+  if (kind === "none") return "none";
+  if (kind === "seconds") return secs ?? 5;
+  if (kind === "range") return { ...own, min: secs ?? 3, max: (secs ?? 3) + 5 };
+  if (kind === "until") return { ...own, until: {} };
+  return undefined;   // default
+}
+// An "until" wait as an object to edit ("release" becomes {"until": {"release": true}}), its until an object.
+export function untilWait(w) {
+  if (w === "release") return { until: { release: true } };
+  return isObj(w) && isObj(w.until) ? w : { ...(isObj(w) ? w : {}), until: {} };
+}
+
+// What Sandbox mode would do other than meant with the patrol, in sentences: what its runner drops, and what
+// story.py won't take (Apply leaves the mod's cats and questlines out).
+function patrolProblems(patrol) {
+  if (patrol === undefined) return [];
+  if (!patrolEditable(patrol)) return ["Their patrol isn't laid out as this page writes it, so they stand still: start a new route under Where they walk."];
+  const p = [], points = patrol.points || [];
+  if (!points.length) p.push("Their patrol has no points yet: add one under Where they walk. Until then they stand still.");
+  points.forEach((pt, i) => {
+    const missing = AXES.filter(a => num(point(pt)[a]) === null);
+    if (missing.length) {
+      const what = missing.length === 3 ? "no numbers" : `no ${missing.map(a => AXIS_WORDS[a]).join(" or ")}`;
+      p.push(`Patrol point ${i + 1} has ${what} yet: use where your cat is standing, or type all three numbers. Until it has, Apply leaves this mod's cats and questlines out.`);
+    }
+  });
+  if (patrol.speed !== undefined && !(num(patrol.speed) > 0)) p.push("Their walking speed should be more than 0: type another, or leave it empty for a cat's walk.");
+  if (patrol.retries !== undefined && !(Number.isInteger(patrol.retries) && patrol.retries >= 0)) {
+    p.push("Tries before skipping a point should be a whole number, 0 or more: type another, or leave it empty for 2.");
+  }
+  p.push(...waitProblems(patrol.wait, "The patrol's wait"));
+  points.forEach((pt, i) => p.push(...waitProblems(isObj(pt) ? pt.wait : undefined, `Patrol point ${i + 1}'s wait`)));
+  return p;
+}
+function waitProblems(w, who) {
+  const p = [], kind = waitKind(w);
+  if (kind === "seconds" && !(w >= 0)) p.push(`${who} should be 0 seconds or more.`);
+  if (kind === "range") {
+    const [lo, hi] = rangeOf(w);
+    if (lo === null || hi === null) p.push(`${who} is a random time, but it needs both numbers: from and to.`);
+    else if (lo < 0 || hi < 0) p.push(`${who} should be 0 seconds or more.`);
+    else if (lo > hi) p.push(`${who} goes from ${lo} to ${hi} seconds: the first should be the smaller.`);
+  }
+  if (kind === "until" && w !== "release") {
+    const u = isObj(w.until) ? w.until : {};
+    if (!["quest", "event", "release"].some(k => k in u)) p.push(`${who} is Until…, but nothing is chosen to wait for: choose a quest, type an event, or tick Released by a script.`);
+    if ("step" in u && !("quest" in u)) p.push(`${who} waits for a step, but of no quest: choose the quest.`);
+    else if ("step" in u && !(Number.isInteger(u.step) && u.step >= 1)) p.push(`${who} waits for a step of the quest: its number should be a whole number, 1 or more.`);
+    if (w.timeout !== undefined && !(num(w.timeout) > 0)) p.push(`${who} gives up after a time: it should be more than 0 seconds, or empty to wait as long as it takes.`);
   }
   return p;
 }
