@@ -67,12 +67,19 @@ You can:
 - have it stand **Beside your cat** (beside your sandbox cat the first time it comes into the forest, and
   there after that) or **At one spot** for every sandbox cat; **Use where my cat is standing** reads the
   spot from the game while your cat is in the forest;
+- under **Where they walk**, have it **Walk a route**: points it walks to one after another (**Back and
+  forth**, **Round and round**, or **Once**), at a **Speed** of your choosing, with a **Wait** at each
+  point: **None**, some **Seconds**, a **Random time**, or **Until…** a quest of this mod reaches a step
+  (or is done), an event, or a release by a script. Each point's place comes from **Use where my cat is
+  standing** or its three numbers. Walking needs Sandbox mode 0.6;
 - give it up to 30 lines to say when it has no quest for you;
 - **Make a copy** of a cat, to start the next one from it.
 
 You can't, yet:
 
-- make a cat walk, follow you or patrol: it stands where it's put;
+- make a cat follow you;
+- raise an event or release a waiting cat from these pages: a mod's own script does that, with
+  `Sandbox.raise("event name")` or `Sandbox.patrol.release("my-mod/mossfoot")`;
 - make it smaller than an apprentice, or give it scars or accessories;
 - see its shape and pattern on the page: the drawing shows its colours only;
 - give it answers to choose from when you talk;
@@ -91,6 +98,8 @@ You can't, yet:
 - A cat with **Same look every time** that looks different each time means your Sandbox mode is older than
   0.5: press **Get the latest** on its row on the Mods page. The strip says so, and so does the build
   log after Apply.
+- A cat with a route that stands still means your Sandbox mode is older than 0.6 (the strip says so), or
+  **Walk it** is unticked.
 
 ## Common mistakes
 
@@ -99,6 +108,9 @@ You can't, yet:
 - At one spot, with no spot: until all three numbers are filled in, the cat stands beside your cat,
   and the **Not ready yet** note at the top of the cat says so. Press **Use where my cat is standing**
   with your cat in the forest, or type the numbers.
+- A route point with a number missing: until all three are filled in, Apply leaves this mod's cats and
+  questlines out, and the **Not ready yet** note says which point. A route with no points: the cat stands
+  still.
 - A palette's colour, with the palette off: a cat set to a pattern or markings colour that only a
   palette adds shows no colour there while that palette is off. The **Not ready yet** note says so. Turn
   the palette on, or choose another colour.

@@ -158,6 +158,56 @@ test("removing a cat a quest names says which quest to change", { skip }, async 
   await page.close();
 });
 
+test("a route made under Where they walk saves a patrol story.py takes, and comes back as it was", { skip }, async () => {
+  const choose = (selector, value) => page.evaluate(`(() => { const s = document.querySelector(${JSON.stringify(selector)});
+    s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event("change")); })()`);
+  const notReady = () => page.evaluate(() => [...document.querySelectorAll(".banner")].filter(b => !b.hidden).map(b => b.textContent).join(" "));
+  let page = await openCharacters();
+  await page.waitFor(() => document.querySelector(".pick strong")?.textContent === "Mossfoot");
+  await page.click('[data-focus="walk:route"]');
+  await page.waitFor(() => document.body.textContent.includes("Their patrol has no points yet"));
+  assert.match(await stripLine(page), /^Your patrols need Sandbox mode 0\.6 or newer; you have 0\.5/);
+  await page.click({ text: "Add a point" });
+  await page.waitFor(() => document.body.textContent.includes("Patrol point 1 has no numbers yet"));
+  for (const [n, nums] of [[1, ["100", "200", "0"]], [2, ["400", "200", "0"]]]) {
+    if (n === 2) await page.click({ text: "Add a point" });
+    await page.waitFor(new Function(`return document.querySelectorAll(".patrol-point").length === ${n}`));
+    for (const [k, axis] of ["X", "Y", "Z"].entries()) await page.type(`.patrol-point:nth-child(${n}) input[aria-label^="${axis},"]`, nums[k]);
+  }
+  assert.doesNotMatch(await notReady(), /Patrol point/);
+  // Point 2 waits until the quest that names Mossfoot reaches step 2; the route waits 3 to 8 seconds; round and round, at 120.
+  await choose('select[aria-label="Point 2: wait"]', "until");
+  await page.waitFor(() => [...document.querySelectorAll('select[aria-label="Point 2: until a quest"] option')].some(o => o.value === "moss"));
+  await choose('select[aria-label="Point 2: until a quest"]', "moss");
+  await page.type('input[aria-label="Point 2: until a step of the quest"]', "2");
+  assert.match(await page.text('[data-key="walk"]'), /Sandbox\.patrol\.release\("my-mods\/mossfoot"\)/);
+  await choose('select[aria-label="The route: wait"]', "range");
+  await choose('[data-focus="patrol:mode"]', "loop");
+  await page.type('[data-focus="patrol:speed"]', "120");
+  await page.click({ text: "Save to mod" });
+  await page.waitFor(() => !document.querySelector(".dirty").textContent);
+  assert.equal(await page.evaluate(() => document.querySelector(".problems").hidden), true, "story.py takes it");
+  const want = { points: [{ x: 100, y: 200, z: 0 }, { x: 400, y: 200, z: 0, wait: { until: { quest: "moss", step: 2 } } }],
+    wait: { min: 3, max: 8 }, mode: "loop", speed: 120 };
+  assert.deepEqual(readJson(path.join(folders.data, "mods", "my-mods", "npcs.json")).npcs[0].patrol, want);
+  await page.close();
+
+  // Opened again, the route is as it was saved; Stay put leaves it out, and Walk a route brings it back.
+  page = await openCharacters();
+  await page.waitFor(() => document.querySelectorAll(".patrol-point").length === 2);
+  await page.waitFor(() => document.querySelector('select[aria-label="Point 2: until a quest"]')?.value === "moss");
+  assert.equal(await page.evaluate(() => document.querySelector('input[aria-label="Point 2: until a step of the quest"]').value), "2");
+  assert.equal(await page.evaluate(() => document.querySelector('[data-focus="patrol:mode"]').value), "loop");
+  assert.doesNotMatch(await page.text('[data-key="walk"]'), /no questlines yet/, "said once the quests are read");
+  await page.click('[data-focus="walk:stay"]');
+  await page.waitFor(() => /^Sandbox mode 0\.5 is on/.test(document.querySelector(".sandbox-strip .banner").textContent));
+  await page.click('[data-focus="walk:route"]');
+  await page.waitFor(() => document.querySelectorAll(".patrol-point").length === 2);
+  assert.match(await stripLine(page), /^Your patrols need Sandbox mode 0\.6/);
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
 // The tests below choose other mods: the page opens on the last one chosen, so they come last.
 async function chooseMod(page, id, catName) {
   await page.evaluate(`(() => { const s = document.querySelector(".target select"); s.value = ${JSON.stringify(id)}; s.dispatchEvent(new Event("change")); })()`);

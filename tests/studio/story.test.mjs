@@ -127,9 +127,11 @@ test("wherePicker gives a spot only once all three numbers are in, rounded, and 
   assert.deepEqual(inputs.map(i => i.getAttribute("aria-label")), ["X, across the map", "Y, along the map", "Z, height"]);
   const type = (i, v) => { inputs[i].value = v; inputs[i].dispatch("input"); };
   type(0, "1"); type(2, "3");
-  assert.deepEqual(got.at(-1), { at: null });
+  assert.deepEqual(got.at(-1), { at: null, nums: [1, null, 3] }, "the numbers filled in so far, for a patrol point");
   type(1, "2.6");
-  assert.deepEqual(got.at(-1), { at: [1, 3, 3] });
+  assert.deepEqual(got.at(-1), { at: [1, 3, 3], nums: [1, 3, 3] });
+  assert.ok(picker.textContent.includes("walk your cat there"));
+  assert.ok(!story.wherePicker({ at: null }, () => {}, { hint: false }).textContent.includes("walk your cat there"), "a list of places says it once");
   assert.equal(story.levelWords("L_WorldMap_01_P"), "the forest");
   assert.equal(story.levelWords("L_Other"), "L_Other");
 });
@@ -146,7 +148,7 @@ test("wherePicker shows the studio's sentence alone when the spot can't be read,
   dom.routes = { "POST /game/where": () => ({ at: [10, 20, 30], yaw: 90, level: "L_WorldMap_01_P" }) };
   grab.click();
   await new Promise(r => setTimeout(r, 10));
-  assert.deepEqual(got.at(-1), { at: [10, 20, 30], yaw: 90, level: "L_WorldMap_01_P" });
+  assert.deepEqual(got.at(-1), { at: [10, 20, 30], nums: [10, 20, 30], yaw: 90, level: "L_WorldMap_01_P" });
   assert.equal(toasts.children.at(-1).children[0].textContent, "Got your cat's spot in the forest.");
   assert.ok(picker.textContent.includes("in the forest"));
 });

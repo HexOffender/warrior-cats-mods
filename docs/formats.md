@@ -422,7 +422,8 @@ the look up each time (the page and Apply say so).
 - `lines`: what it says when you walk up to it and use the game's *Talk* prompt (the Interact key, E or
   A on a controller; Interact or Enter shows the next line) and no quest wants it.
 - `patrol`: an optional object for Sandbox mode's NPC patrol runner (Sandbox mode 0.6 or newer; with an older one
-  the cat stands still, and the Characters page and Apply say so). Its fields and nested objects are passed
+  the cat stands still, and the Characters page and Apply say so); the page's **Where they walk** makes one,
+  with its points as `{x, y, z}` objects. Its fields and nested objects are passed
   through to the runner; unknown nested keys are kept for forward compatibility. For example:
   ```json
   { "patrol": {
