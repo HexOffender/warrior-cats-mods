@@ -111,8 +111,8 @@ class StorySection(Section):
 
     @staticmethod
     def _check_cat(ctx, mod, cat, added, state):
-        """What would make a cat look other than chosen: a palette's colour slot no palette that's on adds, or
-        a fixed look the installed Sandbox mode is too old for."""
+        """What would make a cat look or act other than chosen: a palette's colour slot no palette that's on adds,
+        or a fixed look or a patrol the installed Sandbox mode is too old for."""
         words = {"pattern": "pattern", "marking": "markings"}
         for part in ("pattern", "marking"):
             slot = cat.get("slots", {}).get(part)
@@ -120,8 +120,13 @@ class StorySection(Section):
                 ctx.warn(f"{mod.id}: {cat['name']} wears {words[part]} colour {slot}, which no palette that's on adds, "
                          "so it shows no colour there")
         older = [f for f in state["older"] if cat.get(f)]
-        wanted = [story.SANDBOX_NEEDS[f] for f in older if version_key(story.SANDBOX_NEEDS[f]) is not None]
-        if wanted and state["state"] != "missing":
-            need = max(wanted, key=version_key)
-            ctx.warn(f"{mod.id}: {cat['name']} has a fixed look, which needs Sandbox mode {need} or newer; you have "
-                     f"{state['version'] or 'an older one'}, so the game makes the look up each time")
+        if state["state"] == "missing":
+            return
+        for fields, what, without in ((("look", "slots"), "a fixed look", "the game makes the look up each time"),
+                                      (("patrol",), "a patrol", "it stands still")):
+            wanted = [story.SANDBOX_NEEDS[f] for f in older if f in fields
+                      and version_key(story.SANDBOX_NEEDS[f]) is not None]
+            if wanted:
+                need = max(wanted, key=version_key)
+                ctx.warn(f"{mod.id}: {cat['name']} has {what}, which needs Sandbox mode {need} or newer; you have "
+                         f"{state['version'] or 'an older one'}, so {without}")

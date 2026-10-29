@@ -121,21 +121,24 @@ def test_story_sandbox_says_each_state(studio):
         return call(studio, "GET", "story/sandbox")
     s = state()
     assert s["state"] == "missing" and s["version"] is None and s["older"] == [] and s["name"] == "Sandbox mode"
-    assert s["needs"] == {"look": "0.5", "slots": "0.5"} and s["releases"].startswith("https://github.com/")
+    assert s["needs"] == {"look": "0.5", "slots": "0.5", "patrol": "0.6"} and s["releases"].startswith("https://github.com/")
     make_mod(studio, "sandbox", {"name": "Sandbox mode", "enabled": False, "version": "0.4"})
     s = state()
-    assert s["state"] == "off" and s["version"] == "0.4" and s["older"] == ["look", "slots"]
+    assert s["state"] == "off" and s["version"] == "0.4" and s["older"] == ["look", "patrol", "slots"]
     call(studio, "POST", "mods/sandbox/switch", {"on": True})
     assert state()["state"] == "no-code"   # a script, kept out while mods that run code aren't allowed
     studio.ctx.cfg.data["allow_code_mods"] = True
     assert state()["state"] == "on"
     with open(os.path.join(studio.ctx.mods_root, "sandbox", "mod.json"), "w", encoding="utf-8") as f:
         json.dump({"name": "Sandbox mode", "enabled": True, "version": "0.5.0"}, f)
+    assert state()["older"] == ["patrol"]
+    with open(os.path.join(studio.ctx.mods_root, "sandbox", "mod.json"), "w", encoding="utf-8") as f:
+        json.dump({"name": "Sandbox mode", "enabled": True, "version": "0.6"}, f)
     assert state()["older"] == []
     # A version that isn't a plain number is older than any.
     with open(os.path.join(studio.ctx.mods_root, "sandbox", "mod.json"), "w", encoding="utf-8") as f:
         json.dump({"name": "Sandbox mode", "enabled": True, "version": "0.5-beta"}, f)
-    assert state()["older"] == ["look", "slots"]
+    assert state()["older"] == ["look", "patrol", "slots"]
 
 
 def test_story_sandbox_names_the_newest_release_only_once_github_has_said_it(studio):
@@ -146,7 +149,7 @@ def test_story_sandbox_names_the_newest_release_only_once_github_has_said_it(stu
     assert call(studio, "GET", "story/sandbox")["released"] is None
     studio.releases["sandbox"] = {"version": "0.4", "name": "sandbox-0.4.zip"}
     s = call(studio, "GET", "story/sandbox")
-    assert s["released"] == "0.4" and s["newest"] == "0.5"   # what the fields need, which isn't out
+    assert s["released"] == "0.4" and s["newest"] == "0.6"   # what the fields need (patrols), which isn't out
 
 
 def test_story_sandbox_says_a_sandbox_held_back_after_a_game_update(studio, monkeypatch):

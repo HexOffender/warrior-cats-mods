@@ -77,7 +77,7 @@ SANDBOX_ID = "sandbox"   # the mod that runs them: its folder name, what a mod g
 SANDBOX_NAME = "Sandbox mode"   # its name, for a studio that hasn't got it yet
 SANDBOX_RELEASES = "https://github.com/HexOffender/wcmods-sandbox/releases"
 # What a cat or a questline can say that a Sandbox mode older than this ignores: {field: version}.
-SANDBOX_NEEDS = {"look": "0.5", "slots": "0.5"}
+SANDBOX_NEEDS = {"look": "0.5", "slots": "0.5", "patrol": "0.6"}
 PROGRESS_FILE = "sandbox-story.json"   # Sandbox mode's record of each sandbox cat's quests, in Game.save.folder()
 SHARED_VARIABLE = "WCMods.story"   # what the game gets: every mod's cats and questlines, as JSON text
 
@@ -153,67 +153,79 @@ def _at(obj, where):
     return [round(n) for n in v]
 
 
-def _patrol_number(value, where, key):
+def _patrol_number(value, where, key, least=None, above=None, whole=False):
+    """A number of a patrol: `key` is how the message names it; least/above bound it (at least, more than)."""
     if (isinstance(value, bool) or not isinstance(value, (int, float))
             or isinstance(value, float) and not math.isfinite(value)):
-        raise ValueError(f"{where}: \"patrol.{key}\" should be a number")
+        raise ValueError(f"{where}: \"{key}\" should be a number")
+    if whole and value != int(value):
+        raise ValueError(f"{where}: \"{key}\" should be a whole number")
+    if least is not None and value < least:
+        raise ValueError(f"{where}: \"{key}\" should be {least} or more")
+    if above is not None and value <= above:
+        raise ValueError(f"{where}: \"{key}\" should be more than {above}")
     return value
 
 
 def _patrol_wait(value, where, key):
+    """A wait (seconds, a range, "none", "release" or an until object) as Sandbox mode's patrol.lua reads it."""
+    def seconds(n, name=key):
+        return _patrol_number(n, where, name, least=0)
+
+    def range_of(lo, hi):
+        if seconds(lo) > seconds(hi):
+            raise ValueError(f"{where}: \"{key}\" range minimum should not exceed its maximum")
+
     if isinstance(value, (int, float)) and not isinstance(value, bool):
-        _patrol_number(value, where, key)
+        seconds(value)
     elif isinstance(value, str):
         if value not in ("none", "release"):
             raise ValueError(f"{where}: \"{key}\" should be a number, range, \"none\", \"release\" or an until object")
     elif isinstance(value, list):
         if len(value) != 2:
             raise ValueError(f"{where}: \"{key}\" range should have two numbers")
-        lo, hi = (_patrol_number(n, where, key) for n in value)
-        if lo > hi:
-            raise ValueError(f"{where}: \"{key}\" range minimum should not exceed its maximum")
+        range_of(*value)
     elif isinstance(value, dict):
         if not value:
             raise ValueError(f"{where}: \"{key}\" should not be an empty object")
         if "min" in value or "max" in value:
             if "min" not in value or "max" not in value:
                 raise ValueError(f"{where}: \"{key}\" range should have \"min\" and \"max\"")
-            lo, hi = (_patrol_number(value[k], where, key) for k in ("min", "max"))
-            if lo > hi:
-                raise ValueError(f"{where}: \"{key}\" range minimum should not exceed its maximum")
+            range_of(value["min"], value["max"])
         if "until" in value:
             until = value["until"]
             if not isinstance(until, dict) or not any(k in until for k in ("quest", "event", "release")):
-                raise ValueError(f"{where}: \"{key}\" until should name a quest, event or release")
-            for name in ("quest", "event", "release"):
+                raise ValueError(f"{where}: \"{key}.until\" should name a quest, event or release")
+            for name in ("quest", "event"):
                 if name in until and (not isinstance(until[name], str) or not until[name].strip()):
-                    raise ValueError(f"{where}: \"{key}\" until {name} should be text")
+                    raise ValueError(f"{where}: \"{key}.until.{name}\" should be text")
+            if "release" in until and until["release"] is not True and (
+                    not isinstance(until["release"], str) or not until["release"].strip()):
+                raise ValueError(f"{where}: \"{key}.until.release\" should be true or a name")
             if "step" in until:
-                step = until["step"]
-                if isinstance(step, str):
-                    if not step.strip():
-                        raise ValueError(f"{where}: \"{key}\" until step should be text or a number")
-                else:
-                    _patrol_number(step, where, key)
-            if "timeout" in value:
-                _patrol_number(value["timeout"], where, key)
-        elif not ("min" in value or "max" in value):
-            # Unknown wait-object keys are kept for forward compatibility with the runner.
-            pass
+                if "quest" not in until:
+                    raise ValueError(f"{where}: \"{key}.until.step\" needs a quest")
+                # A quest's step by its number: steps have no names.
+                _patrol_number(until["step"], where, f"{key}.until.step", least=1, whole=True)
+        if "timeout" in value:
+            _patrol_number(value["timeout"], where, f"{key}.timeout", above=0)
+        # Other keys of a wait object are kept for forward compatibility with the runner.
     else:
         raise ValueError(f"{where}: \"{key}\" should be a number, range, \"none\", \"release\" or an until object")
     return value
 
 
 def _patrol(raw, where):
+    """A cat's "patrol" for Sandbox mode's patrol runner, checked as it reads it and passed on as written."""
     if not isinstance(raw, dict):
         raise ValueError(f"{where}: \"patrol\" should be an object")
     mode = raw.get("mode")
     if "mode" in raw and mode not in ("pingpong", "loop", "once"):
         raise ValueError(f"{where}: \"patrol.mode\" should be pingpong, loop or once")
-    for key in ("speed", "retries"):
-        if key in raw:
-            _patrol_number(raw[key], where, key)
+    if "speed" in raw:
+        _patrol_number(raw["speed"], where, "patrol.speed", above=0)
+    if "retries" in raw:
+        _patrol_number(raw["retries"], where, "patrol.retries", least=0, whole=True)
     if "enabled" in raw and not isinstance(raw["enabled"], bool):
         raise ValueError(f"{where}: \"patrol.enabled\" should be true or false")
     if "wait" in raw:
@@ -505,7 +517,7 @@ def needs_of(data):
     """{field: [names of the cats that use it]} for the fields of SANDBOX_NEEDS a mod's cats and quests use."""
     out = {}
     for cat in data["npcs"]:
-        for field in ("look", "slots"):
+        for field in ("look", "slots", "patrol"):
             if cat.get(field):
                 out.setdefault(field, []).append(cat["name"])
     return out

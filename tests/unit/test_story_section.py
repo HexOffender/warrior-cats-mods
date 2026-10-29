@@ -168,12 +168,12 @@ def test_broken_json_names_the_line_and_column(tmp_path):
 
 
 @pytest.mark.parametrize("found, allow, state", [
-    (lambda t: [sandbox(t)], True, {"state": "on", "version": "0.5", "older": []}),
-    (lambda t: [sandbox(t, enabled=False)], True, {"state": "off", "version": "0.5", "older": []}),
-    (lambda t: [sandbox(t)], False, {"state": "no-code", "version": "0.5", "older": []}),
+    (lambda t: [sandbox(t)], True, {"state": "on", "version": "0.5", "older": ["patrol"]}),
+    (lambda t: [sandbox(t, enabled=False)], True, {"state": "off", "version": "0.5", "older": ["patrol"]}),
+    (lambda t: [sandbox(t)], False, {"state": "no-code", "version": "0.5", "older": ["patrol"]}),
     (lambda t: [], True, {"state": "missing", "version": None, "older": []}),
-    (lambda t: [sandbox(t, version="0.4")], True, {"state": "on", "version": "0.4", "older": ["look", "slots"]}),
-    (lambda t: [sandbox(t, version="beta")], True, {"state": "on", "version": "beta", "older": ["look", "slots"]}),
+    (lambda t: [sandbox(t, version="0.4")], True, {"state": "on", "version": "0.4", "older": ["look", "patrol", "slots"]}),
+    (lambda t: [sandbox(t, version="beta")], True, {"state": "on", "version": "beta", "older": ["look", "patrol", "slots"]}),
 ])
 def test_the_note_says_the_sandbox_state(tmp_path, found, allow, state):
     ctx = build(tmp_path, [mod(tmp_path, "mine", {"npcs.json": CATS})] + found(tmp_path), allow_code=allow)
@@ -187,6 +187,16 @@ def test_build_warns_when_the_sandbox_is_too_old_for_fixed_looks(tmp_path):
     assert ctx.warnings == ["story: mine: Mossfoot has a fixed look, which needs Sandbox mode 0.5 or newer; you have 0.4, "
                             "so the game makes the look up each time"]
     assert build(tmp_path / "new", [mod(tmp_path / "new", "mine", {"npcs.json": cats}), sandbox(tmp_path / "new")]).warnings == []
+
+
+def test_build_warns_when_the_sandbox_is_too_old_for_patrols(tmp_path):
+    cats = {"npcs": [{"id": "mossfoot", "name": "Mossfoot", "patrol": {"points": [[1, 2, 3]]}},
+                     {"id": "sparrowpaw", "name": "Sparrowpaw", "look": {"body": 3}}]}
+    ctx = build(tmp_path, [mod(tmp_path, "mine", {"npcs.json": cats}), sandbox(tmp_path)])
+    assert ctx.warnings == ["story: mine: Mossfoot has a patrol, which needs Sandbox mode 0.6 or newer; you have 0.5, "
+                            "so it stands still"]
+    new = tmp_path / "new"
+    assert build(new, [mod(new, "mine", {"npcs.json": cats}), sandbox(new, version="0.6")]).warnings == []
 
 
 def test_build_warns_when_the_sandbox_is_missing(tmp_path):
@@ -206,7 +216,7 @@ def test_a_sandbox_held_back_after_a_game_update_shows_nothing_and_says_use_it_a
     # On, but made for the game's build before the update: the build leaves it out until "Use it anyway".
     held = {"sandbox": "made for an older version of the game"}
     ctx = build(tmp_path, [mod(tmp_path, "mine", {"npcs.json": CATS}), sandbox(tmp_path)], held_back=held)
-    assert ctx.notes["story"]["sandbox"] == {"state": "held-back", "version": "0.5", "older": []}
+    assert ctx.notes["story"]["sandbox"] == {"state": "held-back", "version": "0.5", "older": ["patrol"]}
     assert ctx.warnings == ["story: cats and questlines go in, but nothing shows them: Sandbox mode is left out since "
                             "the game's update, as it was made for an older version of the game (on the Mods page, its "
                             "card has Use it anyway…)"]

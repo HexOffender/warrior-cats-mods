@@ -89,6 +89,7 @@ export default {
     function usesFields() {
       const out = [];
       if (cats.some(c => model.isFixed(c))) out.push("look", "slots");
+      if (cats.some(c => c.patrol !== undefined)) out.push("patrol");
       return out;
     }
     function changed() {

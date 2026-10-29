@@ -74,6 +74,16 @@ test("a Sandbox mode too old for the fixed looks the cats use says so; one the c
   assert.match(story.stripWords({ ...later, released: "0.6" }, ["look"]).text, /download sandbox-0\.6\.zip/, "the newest release is the one to get");
 });
 
+test("patrols on a Sandbox mode too old for them say so, with fixed looks in the same line", () => {
+  const old = answer({ version: "0.5", needs: { look: "0.5", slots: "0.5", patrol: "0.6" }, newest: "0.6", older: ["patrol"] });
+  const said = story.stripWords(old, ["patrol"]);
+  assert.equal(said.title, "Your patrols need Sandbox mode 0.6 or newer; you have 0.5");
+  assert.match(said.text, /^Until then those cats stand still\./);
+  const both = story.stripWords({ ...old, version: "0.4", older: ["look", "patrol", "slots"] }, ["look", "slots", "patrol"]);
+  assert.equal(both.title, "Your fixed looks and patrols need Sandbox mode 0.6 or newer; you have 0.4");
+  assert.match(both.text, /^Until then the game makes their look up each time, and those cats stand still\./);
+});
+
 test("a Sandbox mode a game update holds back says Use it anyway on the Mods page", () => {
   const own = story.stripWords(answer({ state: "held-back", held: "made for an older version of the game" }));
   assert.equal(own.kind, "warn");
