@@ -1969,7 +1969,11 @@ function Cat:stopAnimation(blend) return Game.anims.stop(self.actor, blend) end
 --       look = { body = 6, tail = 7, pattern = 12 }, slots = { fur = 9 } })
 --   if npc:near(300) then ... end   -- your cat is within 3 m
 Game.npcs = {}
-local NPC_CLASS = "/Game/Gameplay/Blueprints/Quest/Givers/BP_Quest_Filler.BP_Quest_Filler_C"
+-- The game's own roaming clan cat: a Character with the AI controller (AIC_Wrc_WalkingNPC_Controller_C, which
+-- the engine makes and possesses it with on spawn) and a CharacterMovement, so it can walk (npc:walkTo).
+local NPC_CLASS = "/Game/Gameplay/Blueprints/Characters/ExplorationCharacters/BP_WalkingNPC_Character_Base.BP_WalkingNPC_Character_Base_C"
+local LABEL_CLASS = "/Game/Art/UXD/Blueprints/Controls/gui_actor_widgets/WBP_GuiQuestNpcWidgetsContainer.WBP_GuiQuestNpcWidgetsContainer_C"
+local WALK_SPEED = 175      -- cm/s, a cat's walk (the player's measured 174)
 local NPC_PARAMS = { fur = "Fur Color", pattern = "Pattern Mask Color", markings = "Markings Mask Color",
                      nose = "Nose Color", paws = "Paws Color", whiskers = "Whiskers Color", ears = "Ears Color" }
 -- A look's parts as the fields of the cat's customisation data each sets (catcolours.LOOK: the body sets
@@ -1982,7 +1986,7 @@ local NPC_LOOK = { body = { "BodyValue", "FurIdx" }, fur = { "FurValue" }, tail 
 local NPC_LOOK_MAX = { pattern = 20, marking = 20 }
 local NPC_SLOTS = { fur = "FurColorIdx", pattern = "Pattern01ColorIdx", marking = "Pattern02ColorIdx" }
 local NPC_SLOTS_MAX = { fur = 19, pattern = 24, marking = 24 }
-local NPC_MESHES = { "SkeletalMeshComponent", "Fur", "Tail", "Ears" }
+local NPC_MESHES = { "Mesh", "Fur", "Tail", "Ears" }
 local npcs = {}         -- every cat this script spawned, removed ones too (Game.npcs.all)
 local live = {}         -- the ones not removed, which the keeper and the prompts walk: a removed cat is let go
 local Npc = {}
@@ -2069,16 +2073,38 @@ local function npcLook(n)
     return out
 end
 
--- Put a cat's feet (its body's origin) on the ground at height g: the game's cats don't fall, so one
--- placed at another cat's middle, or above a slope, would float.
+-- Put a cat's feet (its body's origin) on the ground at height g: a cat placed at another cat's middle, or
+-- above a slope, would start off in the air.
 local function standOn(a, g)
     if not g then return end
-    local mesh = a.SkeletalMeshComponent
+    local mesh = a.Mesh
     if not valid(mesh) then return end
     local feet = mesh:K2_GetComponentLocation().Z
     if math.abs(g - feet) < 1 or math.abs(g - feet) > 500 then return end   -- there already, or a trace gone wrong
     local l = a:K2_GetActorLocation()
     a:K2_SetActorLocation({ X = l.X, Y = l.Y, Z = l.Z + g - feet }, false, {}, true)
+end
+
+-- The label's widget: the walking cats have no QuestWidgetComponent, so one is added and given the game's
+-- own label widget (the one the quest givers' components hold), drawn in screen space above the cat.
+local function addLabelComponent(n, a)
+    local ok, err = pcall(function()
+        local cls = Game.object("/Script/SwtQuest.QuestWidgetComponent")
+        local wcls = Game.object(LABEL_CLASS)
+        if not (cls and wcls) then pcall(LoadAsset, LABEL_CLASS:match("^[^.]+")); wcls = Game.object(LABEL_CLASS) end
+        local pc = Game.controller()
+        local c = a:AddComponentByClass(cls, false, { Translation = { X = 0, Y = 0, Z = 40 },
+            Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Scale3D = { X = 1, Y = 1, Z = 1 } }, false)
+        local w = Game.object("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(pc, wcls, pc)
+        c:SetWidget(w)
+        c:SetWidgetSpace(1)
+        c:SetDrawSize({ X = 500, Y = 500 })
+        -- Hidden until npc:label gives it something to say: the widget's own design-time text otherwise shows.
+        w.mcGuiActorName:SetRenderOpacity(0)
+        w.mcGuiActorStatus:SetRenderOpacity(0)
+        n.labelWidgets = w
+    end)
+    if not ok then n.labelWidgets = nil; log("npcs: no label widget on a walking cat: %s", tostring(err)) end
 end
 
 local function spawnNpc(n)
@@ -2095,35 +2121,63 @@ local function spawnNpc(n)
         local r = Game.library("KismetMathLibrary"):Conv_RotatorToQuaternion(Game.rotator(0, n.yaw, 0))
         q = { X = r.X, Y = r.Y, Z = r.Z, W = r.W }
     end)
-    local xf = { Translation = n.at, Rotation = q, Scale3D = { X = 1, Y = 1, Z = 1 } }
+    -- A little above the ground: the cat's body origin is put on it once it's there.
+    local xf = { Translation = { X = n.at.X, Y = n.at.Y, Z = (g or n.at.Z) + 30 }, Rotation = q, Scale3D = { X = 1, Y = 1, Z = 1 } }
     local gs = Game.library("GameplayStatics")
     local ok, a = pcall(function() return gs:BeginDeferredActorSpawnFromClass(world, cls, xf, ALWAYS_SPAWN, nil, ROOT_SCALE) end)
     if not ok or not valid(a) then return false end
+    -- Not one of the save's cats: no unique ID for the save to keep it by (every one it has, as the quest
+    -- givers' class has them, and the walking class's own), and nothing for the game to remember about it
+    -- being removed. Each on its own, so one the class doesn't have doesn't keep the others on.
     pcall(function()
-        -- Not one of the save's cats: no unique ID for the save to keep it by.
         local ids = a:K2_GetComponentsByClass(Game.object("/Script/SwtAdventure.SwtAdventureIUIDComponent"))
         for i = 1, #ids do ids[i]:get().bIsEnabled = false end
     end)
-    pcall(function()
-        local d = a.DefaultCustomData
+    pcall(function() a.InstancedUniqueIdentifierComponent.bIsEnabled = false end)
+    pcall(function() a.bAddsToRemovedLocalData = false end)
+    -- The game sets a walking cat's look up itself as it finishes spawning, so it is put on again once it has.
+    local look = n.look and npcLook(n)
+    local function dress()
+        local c = a.MeshCustomizationComponent
+        local d = c.CustomData
         if n.size then d.CatSize = n.size end
         if n.prefix then d.PrefixNameId = n.prefix end
         if n.suffix then d.SuffixNameId = n.suffix end
-        -- A look of its own: the game makes up a filler's look as it sets it up, unless it's told to keep
-        -- this one (seen in game: shape, pattern and colour slots all kept; changed later, they aren't drawn).
-        if n.look then
-            for field, v in pairs(npcLook(n)) do d[field] = v end
+        if look then
+            for field, v in pairs(look) do d[field] = v end
             d.bOverrideColors = true
         end
-    end)
+        return c
+    end
+    pcall(dress)
     pcall(function() gs:FinishSpawningActor(a, xf, ROOT_SCALE) end)
+    pcall(function()
+        local c = dress()
+        if look then c:RefreshShape() end
+    end)
+    pcall(function()
+        -- Its own controller walks it: the game's roaming cats walk at 50 cm/s until told otherwise, and a
+        -- fresh one at 3600.
+        local m = a.CharacterMovement
+        m.MaxWalkSpeed = WALK_SPEED
+        -- The game's own AI logic (its behaviour tree) also drives the cat, and the game aborted a few minutes
+        -- after one of these spawned; the script's walkTo is all that moves it.
+        pcall(function() a.Controller.BrainComponent:StopLogic("wcmods") end)
+        -- The walking cats use the player nav mesh (radius 1, height 25); the default agent (25, 50)
+        -- matches none, so the controller's pathfinding found no path.
+        m.NavAgentProps.AgentRadius, m.NavAgentProps.AgentHeight = 1, 25
+        -- Steer round other characters.
+        m.bUseRVOAvoidance, m.AvoidanceConsiderationRadius, m.AvoidanceWeight = true, 200, 0.5
+        if n.ground == false then m.GravityScale = 0 end
+    end)
     pcall(standOn, a, g)
     n.actor = a
+    n.walk = nil
     n.spawns = n.spawns + 1
+    addLabelComponent(n, a)
     paintNpc(n)
     return true
 end
-
 -- ------------------------------------------------------------------ the game's own label and Talk prompt
 -- A cat of the game's kind carries the game's label over its head (an icon, a line, its name and its role,
 -- as the quest givers show) and could take the game's Interact prompt, but the game only fills and shows
@@ -2132,7 +2186,8 @@ end
 --   npc:label({ name = "Brindlemoon", title = "Elder", extra = "A Soft Nest", icon = "available" })
 --   npc:prompt("Talk")                          -- the game's prompt, with its Interact glyph, when you're in reach
 --   Game.npcs.onInteract(function(npc) ... end) -- the game's Interact key or button pressed there
-local LABEL_RANGE, REACH = 2000, 250      -- cm: the label shows within LABEL_RANGE, the prompt within REACH
+local LABEL_RANGE, REACH = 1000, 250      -- cm: the label shows within LABEL_RANGE, the prompt within REACH
+local LABEL_FADE = 0.3                    -- the label fades out over this last fraction of its range
 local LABEL_ICONS = { available = "CanvasAvailable", ongoing = "CanvasOngoing", done = "CanvasCompleted" }
 local SHOWN, COLLAPSED, HIDDEN = 4, 1, 2  -- ESlateVisibility: SelfHitTestInvisible, Collapsed, Hidden
 local ICON_ABOVE = -100                   -- the icon above the label's lines (the game moves it for its own cats)
@@ -2158,23 +2213,45 @@ end
 local function labelWidgets(n)
     local a = n:actorOrNil()
     if not a then return nil end
-    local ok, c = pcall(function() return a.QuestWidgetComponent.WidgetsContainer end)
-    if not (ok and valid(c)) then return nil end
+    local c = n.labelWidgets
+    if not valid(c) then return nil end
     return c, c.mcGuiActorName, c.mcGuiActorStatus
 end
 
+-- Whether the cat's head can be seen from the camera: a line between them that hits something well short of
+-- the cat (a rock, a wall) means the label would float in the air over the scenery.
+local OCCLUDED_BY = 100      -- cm: a hit this far or more in front of the head is something in the way
+local function seen(n)
+    local ok, r = pcall(function()
+        local cm = Game.controller().PlayerCameraManager
+        local from = cm:GetCameraLocation()
+        local l = n:location()
+        local to = { X = l.X, Y = l.Y, Z = l.Z + 60 }
+        local hit = Game.trace({ X = from.X, Y = from.Y, Z = from.Z }, to)
+        if not hit then return true end
+        local dx, dy, dz = to.X - hit.X, to.Y - hit.Y, to.Z - hit.Z
+        return math.sqrt(dx * dx + dy * dy + dz * dz) < OCCLUDED_BY
+    end)
+    return not ok or r
+end
+
 -- Fill in the label (once for each label and each time the cat is spawned) and show it while your cat is
--- within its range. False when the cat has no label to show (it isn't in the world).
+-- within its range and the cat isn't behind scenery. False when the cat has no label to show (it isn't in
+-- the world).
 local function showLabel(n)
     local c, name, status = labelWidgets(n)
     if not c then return false end
     local l = n.labelSpec
     return pcall(function()
-        if not (l and n:near(l.range or LABEL_RANGE)) then
+        local range = l and (l.range or LABEL_RANGE)
+        local d = l and n:distance()
+        if not (d and d <= range and seen(n)) then
             name:SetRenderOpacity(0)
             status:SetRenderOpacity(0)
             return
         end
+        -- Fades out over the last part of its range rather than cutting off.
+        local fade = math.min(1, (range - d) / (range * LABEL_FADE))
         if n.labelSet ~= l or n.labelOn ~= c then
             name.mcGuiTextName:SetText(FText(l.name or ""))
             name.mcGuiTextRole:SetText(FText(l.title or ""))
@@ -2185,8 +2262,8 @@ local function showLabel(n)
             status:SetRenderTranslation({ X = 0, Y = ICON_ABOVE })
             n.labelSet, n.labelOn = l, c
         end
-        name:SetRenderOpacity(1)
-        status:SetRenderOpacity(l.icon and 1 or 0)
+        name:SetRenderOpacity(fade)
+        status:SetRenderOpacity(l.icon and fade or 0)
     end)
 end
 
@@ -2443,11 +2520,13 @@ function Game.npcs.spawn(opts)
             if not c.removed then
                 kept[#kept + 1] = c
                 if alive(c.actor) then
+                    if c.walk then pcall(function() local l = c:location(); c.at = { X = l.X, Y = l.Y, Z = l.Z } end) end
                     pcall(paintNpc, c)
                     if c.labelSpec then showLabel(c) end
                     -- Its map marker goes on the cat it is now (spawned again, it's a new actor).
                     if c.markerSpec and c.markerOn ~= c.actor then c:mapMarker(c.markerSpec.icon, c.markerSpec.opts) end
                 else
+                    if c.walk then c:stop() end
                     pcall(spawnNpc, c)
                 end
             end
@@ -2504,12 +2583,146 @@ end
 -- look (spawning it again makes up again whatever its look and slots leave out).
 function Npc:moveTo(x, y, z)
     if type(x) == "table" then x, y, z = x.X or x[1], x.Y or x[2], x.Z or x[3] end
+    self:stop()
     self.at = { X = x, Y = y, Z = z }
     local a = self:actorOrNil()
     if not a then return end
     local g = self.ground ~= false and Game.ground(x, y, z) or nil
     pcall(function() a:K2_SetActorLocation(self.at, false, {}, true) end)
     pcall(standOn, a, g)
+end
+
+-- Walking: the cat's own AI controller moves it with its character movement, so it walks (its walk animation,
+-- turning to where it goes, keeping to the ground) at `speed` cm/s (175). It follows the game's nav mesh
+-- round obstacles (avoid = true, the default; avoid = false walks a straight line) and steers round other cats.
+--   npc:walkTo(x, y, z, { speed = 175, radius = 30, avoid = true, done = function(npc, result) end })
+-- result is "arrived" (within `radius` cm across the ground), "blocked" (it stopped making progress, or its
+-- controller wouldn't start) or "cancelled" (npc:stop, npc:moveTo, another walkTo, npc:remove, or the cat was
+-- unloaded).
+-- npc:walking() says whether it's on its way, npc.walkResult is the last result.
+local walkWatch
+local function finishWalk(n, result)
+    local w = n.walk
+    n.walk, n.walkResult = nil, result
+    local a = n:actorOrNil()
+    if a and result ~= "arrived" then pcall(function() a.Controller:StopMovement() end) end
+    if a then
+        local l = n:location()
+        n.at = { X = l.X, Y = l.Y, Z = l.Z }
+    end
+    if w and w.done then
+        local ok, err = pcall(w.done, n, result)
+        if not ok then log("npc:walkTo done: %s", tostring(err)) end
+    end
+end
+
+-- Ask the controller to go to `to`: along the nav mesh when `avoid`, falling back to a straight line when
+-- the mesh has no path. Returns the controller's request result (0 is failed).
+local function issueMove(a, to, radius, avoid)
+    local r = a.Controller:MoveToLocation(to, radius, false, avoid, avoid, true, nil, true)
+    if avoid and r == 0 then r = a.Controller:MoveToLocation(to, radius, false, false, false, true, nil, true) end
+    return r
+end
+
+-- The nav mesh is built for a thin agent (radius 1) and the cat is 25 cm wide, so it can end up pressed
+-- against a rock or tree with the path still running past it. When it stops, step 150 cm to whichever side
+-- is clear (or back), then ask for the path again; after WALK_TRIES such stalls it's "blocked".
+local WALK_TRIES = 5
+local function stall(n, w, a, l)
+    w.tries = (w.tries or 0) + 1
+    if w.tries > WALK_TRIES then return finishWalk(n, "blocked") end
+    local fx, fy = w.to.X - l.X, w.to.Y - l.Y
+    local len = math.max(1, math.sqrt(fx * fx + fy * fy))
+    fx, fy = fx / len, fy / len
+    local side = (w.tries % 2 == 0) and -1 or 1
+    local best
+    for _, dir in ipairs({ { -fy * side, fx * side }, { fy * side, -fx * side }, { -fx, -fy } }) do
+        local to = { X = l.X + dir[1] * 150, Y = l.Y + dir[2] * 150, Z = l.Z }
+        if not Game.trace({ X = l.X, Y = l.Y, Z = l.Z + 20 }, { X = to.X, Y = to.Y, Z = l.Z + 20 }) then best = to; break end
+    end
+    best = best or { X = l.X - fx * 150, Y = l.Y - fy * 150, Z = l.Z }
+    w.detour = { to = best, till = os.clock() + 1.5 }
+    pcall(issueMove, a, best, 20, false)
+end
+
+local function stepWalk(n)
+    local w, a = n.walk, n:actorOrNil()
+    if not w then return end
+    if not a then return finishWalk(n, "cancelled") end
+    local l = a:K2_GetActorLocation()
+    local d = math.sqrt((w.to.X - l.X) ^ 2 + (w.to.Y - l.Y) ^ 2)
+    if d <= w.radius + 15 then
+        pcall(function() a.Controller:StopMovement() end)
+        return finishWalk(n, "arrived")
+    end
+    local now = os.clock()
+    if w.detour then
+        local dd = math.sqrt((w.detour.to.X - l.X) ^ 2 + (w.detour.to.Y - l.Y) ^ 2)
+        if dd > 35 and now < w.detour.till then return end
+        w.detour, w.mark = nil, nil
+        local ok = pcall(issueMove, a, w.to, w.radius, w.avoid)
+        if not ok then return finishWalk(n, "blocked") end
+        return
+    end
+    -- The controller ended the move itself (path following idle) without it being close, or it has
+    -- stood still for a second (standing and turning for less is fine): something's in the way.
+    local stopped = false
+    if now - w.started > 0.5 then
+        local ok, st = pcall(function() return a.Controller:GetMoveStatus() end)
+        stopped = ok and st == 0
+    end
+    if not w.mark or now - w.mark.t >= 1 then
+        if w.mark and math.sqrt((l.X - w.mark.x) ^ 2 + (l.Y - w.mark.y) ^ 2) < 15 then stopped = true end
+        w.mark = { t = now, x = l.X, y = l.Y }
+    end
+    -- Shuffling about without getting any closer (a goal on a ledge it can't climb to, say) is a stall too.
+    if d < w.best - 60 then w.best, w.bestAt, w.tries = d, now, nil
+    elseif now - w.bestAt > 8 then stopped, w.bestAt = true, now end
+    if stopped then
+        if not w.avoid then return finishWalk(n, "blocked") end
+        return stall(n, w, a, l)
+    end
+end
+
+function Npc:walkTo(x, y, z, opts)
+    if type(x) == "table" then x, y, z, opts = x.X or x[1], x.Y or x[2], x.Z or x[3], y end
+    opts = opts or {}
+    local a = self:actorOrNil()
+    if not a then return false, "it isn't in the world" end
+    if self.walk then finishWalk(self, "cancelled") end
+    local radius = opts.radius or 30
+    local avoid = opts.avoid ~= false
+    local ok, res = pcall(function()
+        a.CharacterMovement.MaxWalkSpeed = opts.speed or WALK_SPEED
+        return issueMove(a, { X = x, Y = y, Z = z }, radius, avoid)
+    end)
+    if not ok or res == 0 then
+        self.walkResult = "blocked"
+        if opts.done then pcall(opts.done, self, "blocked") end
+        return false, "the controller wouldn't start the move"
+    end
+    self.walk = { to = { X = x, Y = y, Z = z }, radius = radius, avoid = avoid, done = opts.done, started = os.clock(), best = math.huge, bestAt = os.clock() }
+    self.walkResult = nil
+    walkWatch = walkWatch or Game.every(0.1, function()
+        for _, c in ipairs(live) do
+            if c.walk then
+                local ok2, err = pcall(stepWalk, c)
+                if not ok2 then
+                    log("npc walk: %s", tostring(err))
+                    if c.walk then pcall(finishWalk, c, "blocked") end
+                    c.walk = nil
+                end
+            end
+        end
+    end)
+    return true
+end
+
+-- Whether it's on its way somewhere (npc:walkTo).
+function Npc:walking() return self.walk ~= nil end
+-- Stop where it is.
+function Npc:stop()
+    if self.walk then finishWalk(self, "cancelled") end
 end
 
 -- A place for a cat beside yours: `distance` cm away (220 by default), `side` degrees round from where
@@ -2538,8 +2751,9 @@ function Game.npcs.spot(distance, side)
     local at = { X = l.X + best[1] * d, Y = l.Y + best[2] * d, Z = l.Z }
     return at, math.deg(math.atan(l.Y - at.Y, l.X - at.X))
 end
--- Take it out of the world for good.
+-- Take it out of the world for good. A walk it's on ends, "cancelled".
 function Npc:remove()
+    self:stop()
     self.removed = true
     local a = self:actorOrNil()
     if a then pcall(function() a:K2_DestroyActor() end) end

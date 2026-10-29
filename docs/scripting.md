@@ -244,8 +244,9 @@ The game saves whatever it holds at its next save.
 
 ### Cats of a mod's own (`Game.npcs`)
 
-`Game.npcs.spawn(opts)` puts a cat of the mod's own in the world: one of the game's clan cats (its
-"filler" class, `BP_Quest_Filler_C`) with the colours, eyes and size you give it. wcmods keeps it
+`Game.npcs.spawn(opts)` puts a cat of the mod's own in the world: one of the game's roaming clan
+cats (`BP_WalkingNPC_Character_Base_C`, a Character with the game's own AI controller and character movement,
+so it can walk: `npc:walkTo`) with the colours, eyes and size you give it. wcmods keeps it
 there: the cat is spawned again when the game unloads it (a level change, an area far off), and its
 colours go back on whenever the game sets it up again. It isn't one of the save's cats, so it's gone
 when the script stops, and it never ends up in your save.
@@ -272,12 +273,14 @@ end)
 | `npc:valid()`, `npc:actorOrNil()` | Whether it's in the world now, and its actor |
 | `npc:location()`, `npc:distance()`, `npc:near(cm)` | Where it is; how far your cat is; whether your cat is within `cm` (300) |
 | `npc:face(target)`, `npc:moveTo(x, y, z)`, `npc:remove()` | Turn to a place or actor (your cat with none), which it keeps when it's spawned again; move it, onto the ground there; take it away for good (wcmods lets go of it; `Game.npcs.all()` still lists it, with `npc.removed` set) |
+| `npc:walkTo(x, y, z, opts)`, `npc:walking()`, `npc:stop()` | Walk there with the cat's own AI controller and character movement: its walk animation, turning to where it goes, kept on the ground, at `opts.speed` cm/s (175). `opts.radius` (30) is how close counts as there (give or take 15 cm, across the ground), and `opts.done = function(npc, result)` is called with `"arrived"`, `"blocked"` (it stopped short or stopped making progress) or `"cancelled"` (`npc:stop()`, `moveTo`, another `walkTo`, `npc:remove()`, the cat unloaded); `npc.walkResult` keeps the last. By default (`opts.avoid`, true) it follows the game's nav mesh round walls and rocks and steers round other cats with the movement's RVO avoidance; `avoid = false` walks a straight line. A stall (it stops, or shuffles without getting closer) is met by stepping aside and asking for the path again, up to five times, before `"blocked"`. 50 walking cats took the game from 60 to about 49 frames a second (measured against its 60 a second cap, so a rough figure); see [docs/plans/npc-walking-stress.md](plans/npc-walking-stress.md). A goal off the nav mesh falls back to a straight line, and an unreachable one ends "blocked". `npc:moveTo` is still a teleport and cancels a walk |
 | `Game.npcs.spot(cm, side)` | A place beside your cat with room for a cat (220 cm away, to its front left by default), and a yaw facing your cat: `local at, yaw = Game.npcs.spot()` |
 
 Move a cat with `npc:moveTo` rather than removing it and spawning it again: a new cat's look is made up
 again (all of it, or what its `look` and `slots` leave out), so a new one can look different. That also
 happens when the game unloads the cat and wcmods spawns it again. Give it a whole `look`, `slots` and
-`eyes` and it looks the same every time.
+`eyes` and it looks the same every time. (The shape fields set the cat's data, but the game picks a walking
+cat's tail and ear meshes itself, so those two can still differ from `look.tail` and `look.ears`.)
 
 `Game.trace(from, to)` gives where a straight line first hits something, and `Game.ground(x, y, z)`
 the height of the ground below a place.
@@ -298,7 +301,7 @@ end)
 
 | Call | |
 |---|---|
-| `npc:label({name, title, extra, icon, range})` | The game's label over its head: the name, the title under it, `extra` (a line above it, in the game's green), and `icon`, one of the game's quest marks: `"available"` (a new quest), `"ongoing"`, `"done"` (to hand in). It shows while your cat is within `range` cm (2000). `npc:label(nil)` takes it away |
+| `npc:label({name, title, extra, icon, range})` | The game's label over its head: the name, the title under it, `extra` (a line above it, in the game's green), and `icon`, one of the game's quest marks: `"available"` (a new quest), `"ongoing"`, `"done"` (to hand in). It shows while your cat is within `range` cm (1000), fading out over the last 30% of it, and only while nothing (a rock, a wall) is between the camera and the cat's head; it is checked twice a second. `npc:label(nil)` takes it away |
 | `npc:prompt(text, reach)` | The game's prompt ("Talk") while your cat is within `reach` cm (250), at the cat, or at the screen's edge on its side when it's out of view. The cat in view comes first, and the game's own prompt (a pickup, a tunnel, its own cats) wins over it. `npc:prompt(nil)` takes it away |
 | `Game.npcs.onInteract(fn)` | `fn(npc)` when the game's Interact is pressed with that cat's prompt showing; `fn(nil)` when it's pressed while this script's dialogue box is up, so the same key moves a talk on |
 | `Game.npcs.interactKeys()` | The keys Interact is on: the keyboard's and the controller's from your settings (`E`, `Gamepad_FaceButton_Bottom`), or where wcmods' in-game remap moved them (the shared variable `WCModsRemap.Player_Interact`), and the left mouse button, which the prompt shows |
