@@ -19,6 +19,7 @@ their tests and docs, what is deliberately not planned (and why), and the decisi
 | [story.md](story.md) | Stories: the Characters and Questlines pages with Sandbox mode |
 | [data-save.md](data-save.md) | Numbers: the Game data and Save pages |
 | [controls.md](controls.md) | Controls: the Controls page and remapping |
+| [npc-walking-stress.md](npc-walking-stress.md) | Walking NPCs: 50-cat stress test, limits, the probe ([npc-walking-stress.lua](npc-walking-stress.lua)) |
 | [console-lua.md](console-lua.md) | Scripts, the Console page and the in-game runtime |
 | [docs-guide.md](docs-guide.md) | The creator guide ("Making mods without code") and the docs |
 | [re-roadmap.md](re-roadmap.md) | Reverse-engineering roadmap: the facts about the game that would unlock the next creator features |
