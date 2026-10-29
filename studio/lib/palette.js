@@ -12,7 +12,9 @@
 import { color } from "./colour.js";
 
 export const PARTS = ["fur", "pattern", "marking"];       // the game's colour tables, by slot number
-export const GROWABLE = ["pattern", "marking"];           // the ones that take new colours (palettes.GROWABLE)
+// The ones that take new colours: pattern and marking as new slots (palettes.GROWABLE), and coats as coat presets
+// the cat maker offers the same way (palettes.fur_presets: the game's coat table can't grow).
+export const GROWABLE = ["fur", "pattern", "marking"];
 // The file's parts the page doesn't edit, kept as they were: the cat maker's eye buttons, coat presets, and the
 // palette's own name and description (palettes.SECTIONS, and what palettes.load skips).
 export const KEPT = new Set(["iris_ui", "coats", "name", "description"]);
@@ -115,8 +117,7 @@ export function fromPalette(p, { labels = null, gameSlots = 25 } = {}) {
       if (!/^[0-9]+$/.test(key)) { skip(sec, key, val, "not a colour number"); continue; }
       const i = Number(key);
       const c = isGradient(val) ? null : color.parse(val);
-      if (sec === "fur" && i >= gameSlots) skip(sec, key, val, `the game has coats 0-${gameSlots - 1} only`);
-      else if (isGradient(val)) skip(sec, key, val, "only eyes take more than one colour", i);
+      if (isGradient(val)) skip(sec, key, val, "only eyes take more than one colour", i);
       else if (!c) skip(sec, key, val, "not a colour this page reads", i);
       else {
         if (!byNumber.has(i)) byNumber.set(i, []);

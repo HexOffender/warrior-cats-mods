@@ -52,6 +52,27 @@ def test_coat_presets_load_with_the_game_coat_they_save_as(tmp_path):
     assert not P.adds_only({**pal, "fur": {"3": (0, 0, 0)}})
 
 
+def test_coat_colours_past_the_games_are_presets_saved_as_the_nearest_game_coat(tmp_path):
+    """A fur colour numbered 25 and up is written as a pattern one is, and becomes a coat preset: the game's coat
+    table never gets it (a cat on a coat past 24 crashes the game), and the save holds the game coat it's most like."""
+    pal = load(tmp_path, {"fur": {"3": "#112233", "100": "#9fb6e0", "101": "white", "102": "#f00cf0"},
+                          "coats": {"Ash": {"fur": "#9a9590", "like": 12}}})
+    assert P.fur_presets(pal) == {100: {"fur": P.colors.parse("#9fb6e0"), "like": 15},
+                                  101: {"fur": (1.0, 1.0, 1.0), "like": 10},
+                                  102: {"fur": P.colors.parse("#f00cf0"), "like": 18}}
+    # Never the Feral Edition's coats (20-24), which a game without it swaps: #F28EF3 is coat 21.
+    assert P.nearest_coat(P.colors.parse("#F28EF3")) < P.LIKE_SLOTS
+    assert P.merge([pal])["fur"] == {"3": P.colors.parse("#112233")}
+    assert "[100]" not in P.ue4ss_script(P.merge([pal]))
+    assert P.adds_only({"fur": {"100": (1, 1, 1)}}) and not P.adds_only(pal)
+    # Listed after the palette's named presets; a slot two palettes set is the later one's, as for patterns.
+    groups = P.slot_groups([(Mod("old", "Old"), {"fur": {"100": (0, 0, 0), "105": (0, 0, 0)}}), (Mod("mine", "Mine"), pal)])
+    assert groups[0]["coats"] == [{"id": "old/fur/105", "name": "Coat colour 105", "slot": 105, "like": 14, "fur": "#000000"}]
+    assert [c["id"] for c in groups[1]["coats"]] == ["mine/Ash", "mine/fur/100", "mine/fur/101", "mine/fur/102"]
+    assert groups[1]["coats"][1] == {"id": "mine/fur/100", "name": "Coat colour 100", "slot": 100, "like": 15, "fur": "#9fb6e0"}
+    assert not luacheck.check(P.groups_module(groups))
+
+
 @pytest.mark.parametrize("coats, why", [
     ({"Ash": {"like": 12}}, '"fur"'),
     ({"Ash": {"fur": "#9a9590"}}, '"like"'),
@@ -127,7 +148,8 @@ def test_palette_colours_load_in_every_form_the_docs_allow(tmp_path):
     ({"fur": {" 3": "#ffffff"}}, "fur keys are coat colour numbers, counted from 0; got ' 3'"),
     ({"fur": {"3x": "#ffffff"}}, "coat colour numbers, counted from 0"),
     ({"fur": {"²": "#ffffff"}}, "coat colour numbers, counted from 0"),
-    ({"fur": {"30": "#ffffff"}}, "fur has the game's coat colours 0-24 only; only pattern and marking colours take new ones"),
+    ({"iris_ui": {"30": "#ffffff"}}, "iris_ui has the game's cat maker eye button colours 0-24 only; only coat, pattern and "
+                                      "marking colours take new ones"),
     ({"fur": {"3": ["#000000", "#ffffff"]}}, "gradients are eyes-only"),
     ({"eyes": {"Amber": []}}, "eyes.Amber"),
     ({"eyes": {"Amber": "#GGGGGG"}}, "not a colour"),

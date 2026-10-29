@@ -46,7 +46,6 @@ test("what the page can't show is listed with why, and written back as it was", 
     'Eyes "Ambre": "#ffffff" (not one of the game\'s eye colours)',
     'Eyes "Amber": "not a colour" (not a colour this page reads)',
     'Coat "3": ["#000000","#ffffff"] (only eyes take more than one colour)',
-    'Coat "30": "#ffffff" (the game has coats 0-24 only)',
     'Coat "x": "#000000" (not a colour number)',
   ]);
   assert.deepEqual(s.kept, { iris_ui: { 1: "#ff0000" }, coats: { Ash: { fur: "#9a9590", like: 12 } }, name: "Dawn", _help: "old help" });
@@ -54,7 +53,8 @@ test("what the page can't show is listed with why, and written back as it was", 
   assert.equal(back._help, "old help", "a help line written by hand is kept, as every \"_\" key is");
   assert.equal(Object.keys(back)[0], "_help");
   assert.deepEqual(back.eyes, { Ambre: "#ffffff", Amber: "not a colour", _note: "mine", Hazel: "#00FF00" });
-  assert.deepEqual(back.fur, { 3: ["#000000", "#ffffff"], 30: "#ffffff", x: "#000000", _why: "warm", 4: "#123456" });
+  // A coat past the game's 25 is read like a new pattern colour: the build makes it a coat preset.
+  assert.deepEqual(back.fur, { 3: ["#000000", "#ffffff"], 30: "#FFFFFF", x: "#000000", _why: "warm", 4: "#123456" });
   assert.deepEqual(back.pattern, { 25: "#FF00CC" });
   assert.deepEqual(back.hats, { 0: "#ffffff" });
   assert.deepEqual(back.coats, file.coats);

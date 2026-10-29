@@ -60,8 +60,12 @@ palette's new pattern and marking slots, by mod. The themed palettes in wcmods-e
 range each (100-124, 125-149...), so they can all be on together.
 
 Coat colours can't take new slots. The game pairs each of its coat colours with paw, ear, nose and
-whisker colours it keeps in its code, and a coat slot past 24 has none, which crashes it. To give
-just your cat a coat colour of its own, use `cats.json`'s `colours`.
+whisker colours it keeps in its code, and a coat slot past 24 has none, which crashes it. A `fur`
+colour numbered 25 and up is still written as a pattern one is (`"fur": {"100": "#9fb6e0"}`), but it
+becomes a coat preset (below), never a slot of the game's: named "Coat colour 100", saved with the game
+coat (0–19) it looks most like, and keeping that coat's paw, ear, nose and whisker colours. Its id, for
+scripts, is `<mod id>/fur/100`. To give just your cat a coat colour of its own, use `cats.json`'s
+`colours`; `cats.json` can't set a coat number past 24.
 
 A palette can offer **coat presets** instead: painted on, not new slots.
 ```json

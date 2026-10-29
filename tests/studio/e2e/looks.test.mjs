@@ -174,6 +174,25 @@ test("the five-minute first try: a new pattern colour made on Palettes, worn on 
   assert.equal(await leave(page, true), false, SAVED);
 });
 
+test("a new coat colour is added like a pattern one, but Your cat never wears it as a coat slot", { skip }, async () => {
+  await fresh();
+  const page = await browser.page();
+  await openPalettes(page);
+  await page.click(`${PAL} #pal-tab-fur`);
+  await page.waitFor(() => { const b = document.getElementById("pal-add-fur"); return b && !b.disabled; });
+  assert.match(await page.text(`${PAL} #pal-panel`), /saved with the game's coat it looks most like/);
+  await page.click(`${PAL} #pal-add-fur`);
+  await page.waitFor(`${PAL} #pal-fur-25`);
+  await press(page, PAL, "Save to mod");
+  await waitForFile(fileOf("my-mods", "palette.json"), p => p.fur && p.fur["25"]);
+  // A cat set to coat 25 would crash the game: the coat is a preset, offered in the cat maker by Creator palettes.
+  await page.evaluate(() => { location.hash = "#cat"; });
+  await page.waitFor(`${CATP} [data-focus="slot:fur:3"]`, SLOW);
+  assert.equal(await page.count(`${CATP} [data-focus="slot:fur:25"]`), 0);
+  assert.deepEqual(page.consoleErrors(), []);
+  assert.equal(await leave(page, true), false, SAVED);
+});
+
 test("unsaved colours survive an Apply, and the bar says they aren't in the game yet", { skip }, async () => {
   await fresh();
   makeMod("my-mods", { "palette.json": { pattern: { 25: "#ff00cc" } } });

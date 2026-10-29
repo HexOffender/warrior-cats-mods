@@ -26,7 +26,7 @@ the order of the side bar.
 ## Make mods
 
 - [Palettes](palettes.md): the colours every cat picks from (eyes, coats, patterns and markings), and
-  new pattern and marking colours.
+  new coat, pattern and marking colours.
 - [Your cat](cat.md): one cat's look, yours or any cat in your save: colours only it wears, which of the
   game's colours it wears, its shape and its scars.
 - [Controls](controls.md): which key, mouse button or controller button does what in the game.

@@ -47,3 +47,18 @@ def hex_from_srgb(rgb):
 def luminance(rgb):
     r, g, b = rgb[:3]
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def to_lab(rgb):
+    """sRGB floats 0..1 -> CIE L*a*b* (D65), for how far apart two colours look."""
+    r, g, b = to_linear(rgb)
+    x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883
+    f = [t ** (1 / 3) if t > 216 / 24389 else (24389 / 27 * t + 16) / 116 for t in (x, y, z)]
+    return 116 * f[1] - 16, 500 * (f[0] - f[1]), 200 * (f[1] - f[2])
+
+
+def distance(a, b):
+    """How far apart two sRGB colours look (CIE76: the distance between their L*a*b*)."""
+    return sum((p - q) ** 2 for p, q in zip(to_lab(a), to_lab(b))) ** 0.5

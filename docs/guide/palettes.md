@@ -50,6 +50,11 @@ You can:
 - add as many new pattern and marking colours as you like, with the button under **New colours** on the
   Pattern and Markings tabs ("Add a new pattern colour"). Each keeps its number for good, so a cat set to
   one keeps it whatever else you switch on. The Your cat page shows them as dashed squares;
+- add new coat colours the same way, on the Coat tab ("Add a new coat colour"). The game can't take new
+  coats, so each one goes in the cat maker's Fur picker (with the Creator palettes mod) painted on: a cat
+  wearing it is saved with the game's coat it looks most like, and keeps that coat's paw, ear, nose and
+  whisker colours. Without the mod, that cat shows that game coat. Your cat can't wear one as its coat
+  number (use **Colours of its own** there);
 - restyle a whole tab at once with **Vivid**, **Pastel**, **Moonlit** or **Ember**, under
   **Restyle this tab**. On the Eyes tab they change every eye but the eye white. Your new colours stay
   as they are;
@@ -66,9 +71,8 @@ You can:
 
 You can't:
 
-- add new coat colours. The game pairs each coat with paw, ear, nose and whisker colours of its own,
-  and a coat without them crashes it. To give just your cat a coat colour nobody else has, use
-  **Colours of its own** on the Your cat page;
+- give a new coat colour paw, ear, nose and whisker colours of its own here: they're the game coat's it
+  looks most like. A palette.json's `coats` can (see the formats, under palette.json);
 - add new eye colours: the game has exactly 26;
 - pick a new colour in the game's cat maker without the Creator palettes mod, which needs
   [mods that run code](README.md#code-mods) allowed and the script loader;

@@ -93,7 +93,7 @@ export default {
 
     root.append(
       wc.pageHead({ eyebrow: "Appearance only", title: "Palettes",
-        lede: "Recolour the eyes, coats, patterns and markings every cat can wear, or add new pattern and marking colours. " +
+        lede: "Recolour the eyes, coats, patterns and markings every cat can wear, or add new coat, pattern and marking colours. " +
           "A cat keeps the colour it has (coat 3 stays coat 3), so its traits don't change. Eye colours go in through the " +
           "game's files; the rest need the script loader.",
         help: "help:palettes" }),
@@ -340,7 +340,7 @@ export default {
         const n = TABLE(sec.id).length || GAME;
         // The game's colours, then this palette's new ones, then those other palettes that are on add.
         const own = Object.keys(state[sec.id]).map(Number).filter(i => i >= GAME).sort((a, b) => a - b);
-        const theirs = sec.id === "fur" ? [] : (slotsElsewhere[sec.id] || []).filter(o => !own.includes(o.slot)).sort((a, b) => a.slot - b.slot);
+        const theirs = (slotsElsewhere[sec.id] || []).filter(o => !own.includes(o.slot)).sort((a, b) => a.slot - b.slot);
         sel(`pal-pick-${sec.id}`, sec.title, [
           ...[...Array(n).keys()].map(i => [i, `${i} · ${curHex(sec.id, i) || "the game's"}${state[sec.id][i] ? " (changed)" : ""}`]),
           ...own.map(i => [i, `${i} (new) · ${state[sec.id][i]}`]),
@@ -406,10 +406,6 @@ export default {
       const n = TABLE(sec.id).length || GAME;
       panel.append(group("Natural", `colours 0-${Math.min(15, n) - 1}`, range(0, Math.min(15, n)).map(i => tableCard(sec, i))));
       if (n > 15) panel.append(group("Bright extras", `colours 15-${n - 1}`, range(15, n).map(i => tableCard(sec, i))));
-      if (sec.id === "fur") {
-        panel.append(el("p", { class: "note", text: "Coats can't take new colours: the game pairs each coat with paw, ear and nose colours of its own. To give just your cat a coat colour of its own, use the Your cat page." }));
-        return;
-      }
       // New colours past the game's: only cats set to them wear them (the Your cat page), so the game's colours stay.
       const extra = Object.keys(state[sec.id]).map(Number).filter(i => i >= GAME).sort((a, b) => a - b);
       addBtn = el("button", { class: "btn small", id: `pal-add-${sec.id}`, text: `Add a new ${sec.noun} colour`,
@@ -423,7 +419,9 @@ export default {
         } });
       panel.append(el("div", { style: { display: "grid", gap: "8px" } },
         el("h3", {}, "New colours", el("span", { class: "eyebrow", style: { marginLeft: "8px" }, text: `colour ${GAME} and up` })),
-        el("p", { class: "note", text: `Adds ${sec.noun} colours without changing any of the game's, so other cats keep theirs. Each new colour keeps its number for good, so a cat set to it keeps it whatever else you turn on. Pick one for your cat on the Your cat page, or in the cat maker with the Creator palettes mod.` }),
+        el("p", { class: "note", text: sec.id === "fur"
+          ? "Adds coat colours to the cat maker's Fur picker (with the Creator palettes mod), without changing any of the game's. The game can't take new coats, so each one is painted on: a cat wearing it is saved with the game's coat it looks most like, and keeps that coat's paw, ear, nose and whisker colours. Without the mod, that cat shows that game coat."
+          : `Adds ${sec.noun} colours without changing any of the game's, so other cats keep theirs. Each new colour keeps its number for good, so a cat set to it keeps it whatever else you turn on. Pick one for your cat on the Your cat page, or in the cat maker with the Creator palettes mod.` }),
         extra.length ? grid(extra.map(i => tableCard(sec, i))) : null, el("div", { class: "row" }, addBtn)));
     }
     // New colours other palettes that are on already add, so a new one here doesn't take their number.
