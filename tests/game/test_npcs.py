@@ -2,6 +2,8 @@
 (Game.quests.report)."""
 import time
 
+import pytest
+
 SPAWN = """
 local me = Game.cat():location()
 WCMODS_TEST_NPC = Game.npcs.spawn({ at = { me.X + 150, me.Y + 150, me.Z }, yaw = 90, size = 0.8, eyes = 3,
@@ -165,7 +167,7 @@ def test_a_spawned_npc_has_the_games_own_ai_logic_off(agent):
 
 def test_a_label_shows_only_near_and_in_sight(agent):
     """The label's opacity is 0 beyond its range, and 1 (not faded) close by with a clear line; the default range is
-    1000 cm."""
+    1000 cm. A cat given no label shows none (its widget's own design-time text stays hidden)."""
     try:
         agent.lua("""
             local me = Game.cat():location()
@@ -173,15 +175,44 @@ def test_a_label_shows_only_near_and_in_sight(agent):
             WCMODS_TEST_NPC:label({ name = "Near" })
             WCMODS_FAR = Game.npcs.spawn({ at = { me.X + 150, me.Y + 150, me.Z } })
             WCMODS_FAR:label({ name = "Far", range = 50 })
+            WCMODS_BARE = Game.npcs.spawn({ at = { me.X - 150, me.Y + 150, me.Z } })
         """)
         time.sleep(1.5)
         op = "local ok, v = pcall(function() return %s.labelWidgets.mcGuiActorName:GetRenderOpacity() end) return v"
         assert agent.lua(op % "WCMODS_FAR") == 0
+        assert agent.lua(op % "WCMODS_BARE") == 0
+        # The same line the label's check draws, from the camera to the cat's head: a rock where the test runs
+        # can be in the way, and then the label is rightly hidden.
+        clear = agent.lua("""
+            local from = Game.controller().PlayerCameraManager:GetCameraLocation()
+            local l = WCMODS_TEST_NPC:location()
+            local to = { X = l.X, Y = l.Y, Z = l.Z + 60 }
+            local hit = Game.trace({ X = from.X, Y = from.Y, Z = from.Z }, to)
+            return hit == nil or math.sqrt((to.X - hit.X) ^ 2 + (to.Y - hit.Y) ^ 2 + (to.Z - hit.Z) ^ 2) < 100
+        """)
         near = agent.lua(op % "WCMODS_TEST_NPC")
-        # 0 when a rock happens to be in the way where the test runs, otherwise showing
-        assert near is not None and 0 <= near <= 1, near
+        if not clear:
+            assert near == 0, near
+            pytest.skip("something is between the camera and the near cat here, so its label is hidden")
+        assert near == 1, near
     finally:
-        agent.lua("if WCMODS_TEST_NPC then WCMODS_TEST_NPC:remove() end if WCMODS_FAR then WCMODS_FAR:remove() end")
+        agent.lua("for _, n in ipairs({ WCMODS_TEST_NPC, WCMODS_FAR, WCMODS_BARE }) do n:remove() end")
+
+
+def test_removing_a_walking_npc_ends_its_walk(agent):
+    """npc:remove() on a cat on its way ends the walk at once: done hears "cancelled" and walking() is false."""
+    try:
+        assert agent.lua(SPAWN) is True
+        agent.lua("""
+            WCMODS_WALK = nil
+            local l = WCMODS_TEST_NPC:location()
+            WCMODS_TEST_NPC:walkTo(l.X + 800, l.Y, l.Z, { done = function(n, r) WCMODS_WALK = r end })
+        """)
+        assert agent.lua("return WCMODS_TEST_NPC:walking()") is True
+        agent.lua("WCMODS_TEST_NPC:remove()")
+        assert agent.lua("return {WCMODS_WALK, WCMODS_TEST_NPC:walking()}") == ["cancelled", False]
+    finally:
+        agent.lua("if WCMODS_TEST_NPC then WCMODS_TEST_NPC:remove() end")
 
 
 def test_a_removed_npc_is_let_go_and_still_listed(agent):

@@ -19,8 +19,9 @@ and one cat crossing the player's cat. Speeds 90-450 cm/s, radii 15-120.
 | closest two cats / pair-samples under 40 cm | | 43 cm / 0 | 3 cm / 108 of about 160 000 |
 | cats that never moved | | 0 | 6 (3 unreachable, 2 head on, 1 `avoid = false`: all ended `blocked`) |
 
-- The cost is about 0.07 ms a cat per frame (movement, path following, RVO), nearly all the game's. wcmods' own
-  per-tick watch (`walkWatch`, every 0.1 s) is a few traces and a distance a cat: not measurable next to it.
+- The cost is about 0.07 ms a cat per frame (movement, path following, RVO), nearly all the game's. That is a
+  rough figure: the 0-cat run sits on the game's 60 frames a second cap, so the frame time it's taken from
+  isn't the frame's real cost. wcmods' own per-tick watch (`walkWatch`, every 0.1 s) is a few traces and a distance a cat: not measurable next to it.
 - Blocked walks are the intended ones (unreachable goals, `avoid = false` into rocks) plus goals on a ledge the nav
   mesh reaches but the cat can't climb to, or in a pocket a path leads into and the capsule won't enter.
 - Overlaps are brief (a pass-by under RVO), not pile-ups; nothing got stuck inside another cat.

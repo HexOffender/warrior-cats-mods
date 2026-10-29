@@ -2099,6 +2099,9 @@ local function addLabelComponent(n, a)
         c:SetWidget(w)
         c:SetWidgetSpace(1)
         c:SetDrawSize({ X = 500, Y = 500 })
+        -- Hidden until npc:label gives it something to say: the widget's own design-time text otherwise shows.
+        w.mcGuiActorName:SetRenderOpacity(0)
+        w.mcGuiActorStatus:SetRenderOpacity(0)
         n.labelWidgets = w
     end)
     if not ok then n.labelWidgets = nil; log("npcs: no label widget on a walking cat: %s", tostring(err)) end
@@ -2123,12 +2126,15 @@ local function spawnNpc(n)
     local gs = Game.library("GameplayStatics")
     local ok, a = pcall(function() return gs:BeginDeferredActorSpawnFromClass(world, cls, xf, ALWAYS_SPAWN, nil, ROOT_SCALE) end)
     if not ok or not valid(a) then return false end
+    -- Not one of the save's cats: no unique ID for the save to keep it by (every one it has, as the quest
+    -- givers' class has them, and the walking class's own), and nothing for the game to remember about it
+    -- being removed. Each on its own, so one the class doesn't have doesn't keep the others on.
     pcall(function()
-        -- Not one of the save's cats: no unique ID for the save to keep it by, and nothing for the game to
-        -- remember about it being removed.
-        a.InstancedUniqueIdentifierComponent.bIsEnabled = false
-        a.bAddsToRemovedLocalData = false
+        local ids = a:K2_GetComponentsByClass(Game.object("/Script/SwtAdventure.SwtAdventureIUIDComponent"))
+        for i = 1, #ids do ids[i]:get().bIsEnabled = false end
     end)
+    pcall(function() a.InstancedUniqueIdentifierComponent.bIsEnabled = false end)
+    pcall(function() a.bAddsToRemovedLocalData = false end)
     -- The game sets a walking cat's look up itself as it finishes spawning, so it is put on again once it has.
     local look = n.look and npcLook(n)
     local function dress()
@@ -2591,7 +2597,8 @@ end
 -- round obstacles (avoid = true, the default; avoid = false walks a straight line) and steers round other cats.
 --   npc:walkTo(x, y, z, { speed = 175, radius = 30, avoid = true, done = function(npc, result) end })
 -- result is "arrived" (within `radius` cm across the ground), "blocked" (it stopped making progress, or its
--- controller wouldn't start) or "cancelled" (npc:stop, npc:moveTo, another walkTo, or the cat was unloaded).
+-- controller wouldn't start) or "cancelled" (npc:stop, npc:moveTo, another walkTo, npc:remove, or the cat was
+-- unloaded).
 -- npc:walking() says whether it's on its way, npc.walkResult is the last result.
 local walkWatch
 local function finishWalk(n, result)
@@ -2700,7 +2707,11 @@ function Npc:walkTo(x, y, z, opts)
         for _, c in ipairs(live) do
             if c.walk then
                 local ok2, err = pcall(stepWalk, c)
-                if not ok2 then log("npc walk: %s", tostring(err)); c.walk = nil end
+                if not ok2 then
+                    log("npc walk: %s", tostring(err))
+                    if c.walk then pcall(finishWalk, c, "blocked") end
+                    c.walk = nil
+                end
             end
         end
     end)
@@ -2740,8 +2751,9 @@ function Game.npcs.spot(distance, side)
     local at = { X = l.X + best[1] * d, Y = l.Y + best[2] * d, Z = l.Z }
     return at, math.deg(math.atan(l.Y - at.Y, l.X - at.X))
 end
--- Take it out of the world for good.
+-- Take it out of the world for good. A walk it's on ends, "cancelled".
 function Npc:remove()
+    self:stop()
     self.removed = true
     local a = self:actorOrNil()
     if a then pcall(function() a:K2_DestroyActor() end) end

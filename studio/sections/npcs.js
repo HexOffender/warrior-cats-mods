@@ -207,7 +207,8 @@ export default {
               onclick: () => { if (open) showAdded.delete(p); else showAdded.add(p); drawLook(); } })) : null);
         });
         fineTune.replaceChildren(
-          el("p", { class: "note", text: "The drawing shows the colours only: the shape and the pattern show only in the game." }),
+          el("p", { class: "note", text: "The drawing shows the colours only: the shape and the pattern show only in the game. " +
+            "The game picks its walking cats' tail and ears itself, so those two can still differ from Tail and Ears here." }),
           el("div", { class: "colour-grid" }, ...parts),
           ...slotRows,
           el("div", { class: "row" },
