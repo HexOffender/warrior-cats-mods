@@ -23,6 +23,13 @@ test("round_trip_keeps_every_field", () => {
   assert.equal(back._help, model.HELP, "the page writes its own help");
 });
 
+test("round_trip_keeps_patrol_data and its forward-compatible nested keys", () => {
+  const patrol = { points: [{ x: 1, y: 2, z: 3, wait: { min: 1, max: 4, future: true } }],
+    mode: "pingpong", wait: { until: { event: "storm", future: "kept" } }, future: { enabled: true } };
+  const { cats, extra } = model.load({ npcs: [{ ...FULL, patrol }] });
+  assert.deepEqual(model.toJson(cats, extra).npcs[0].patrol, patrol);
+});
+
 test("a cat with a new look each time writes no look or slots", () => {
   const { cats } = model.load({ npcs: [{ id: "a", name: "A" }] });
   assert.equal(model.isFixed(cats[0]), false);

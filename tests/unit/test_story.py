@@ -86,6 +86,63 @@ def test_a_cats_look_is_the_games_choice_or_fixed():
     assert set(story.LOOK) == {"body", "fur", "tail", "ears", "eyes", "whiskers", "face", "pattern", "marking"}
 
 
+def test_a_patrol_passes_through_with_supported_point_and_wait_shapes():
+    patrol = {
+        "points": [
+            {"x": 1.5, "y": 2, "z": -3, "level": "L_WorldMap_01_P", "wait": [1, 4], "future": {"tag": 7}},
+            [5, 6, 7],
+        ],
+        "mode": "loop",
+        "speed": 120,
+        "retries": 2,
+        "enabled": True,
+        "wait": {"until": {"quest": "other/mod:quest", "step": 2}, "timeout": 30, "future": "kept"},
+        "future": {"runner_option": True},
+    }
+    cat, = story.npcs({"npcs": [{"id": "mossfoot", "name": "Mossfoot", "patrol": patrol}]})
+    assert cat["patrol"] == patrol
+    released = {"points": [[0, 0, 0]], "wait": {"until": {"release": True}}}
+    assert story.npcs({"npcs": [{"id": "m", "name": "M", "patrol": released}]})[0]["patrol"] == released
+    class Mod:
+        id, name = "mine", "Mine"
+    bundle = json.loads(story.bundle([(Mod, {"npcs": [cat], "quests": []})]))
+    assert bundle["mods"][0]["npcs"][0]["patrol"] == patrol
+
+
+@pytest.mark.parametrize("patrol, said", [
+    ([], '"patrol" should be an object'),
+    ({"points": {}}, '"patrol.points" should be a list'),
+    ({"points": [[1, "bad", 3]]}, "patrol point 1"),
+    ({"points": [{"x": 1, "z": 3}]}, '"y" is missing'),
+    ({"mode": "circle"}, '"patrol.mode"'),
+    ({"speed": True}, '"patrol.speed" should be a number'),
+    ({"enabled": 1}, '"patrol.enabled"'),
+    ({"wait": "forever"}, '"patrol.wait"'),
+    ({"points": [{"x": 1, "y": 2, "z": 3, "wait": [2, 1]}]}, "minimum should not exceed"),
+    # Each message names the field as it is in the file.
+    ({"wait": [1, "x"]}, '"patrol.wait" should be a number'),
+    ({"points": [[1, "bad", 3]]}, 'patrol point 1: "y" should be a number'),
+    ({"points": [{"x": 1, "y": 2, "z": 3, "wait": {"until": {"quest": "q", "step": True}}}]},
+     'patrol point 1: "wait.until.step" should be a number'),
+    # What Sandbox mode's runner would drop, refused here instead.
+    ({"wait": {"until": {"quest": "q", "step": "two"}}}, '"patrol.wait.until.step" should be a number'),
+    ({"wait": {"until": {"quest": "q", "step": 1.5}}}, '"patrol.wait.until.step" should be a whole number'),
+    ({"wait": {"until": {"quest": "q", "step": 0}}}, '"patrol.wait.until.step" should be 1 or more'),
+    ({"wait": {"until": {"event": "e", "step": 2}}}, '"patrol.wait.until.step" needs a quest'),
+    ({"wait": {"until": {"release": 3}}}, '"patrol.wait.until.release" should be true or a name'),
+    ({"wait": {"until": {"event": "e"}, "timeout": 0}}, '"patrol.wait.timeout" should be more than 0'),
+    ({"wait": -1}, '"patrol.wait" should be 0 or more'),
+    ({"speed": 0}, '"patrol.speed" should be more than 0'),
+    ({"retries": -1}, '"patrol.retries" should be 0 or more'),
+    ({"retries": 2.5}, '"patrol.retries" should be a whole number'),
+])
+def test_malformed_patrol_data_names_the_cat(patrol, said):
+    with pytest.raises(ValueError) as err:
+        story.npcs({"npcs": [{"id": "mossfoot", "name": "Mossfoot", "patrol": patrol}]})
+    assert str(err.value).startswith("npcs.json: mossfoot: ")
+    assert said in str(err.value)
+
+
 def test_the_game_module_knows_a_looks_parts():
     """Game.npcs.spawn's look and slots set the same fields of the cat's data as cats.json's do."""
     lua = game.lua()

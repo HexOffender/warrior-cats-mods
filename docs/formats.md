@@ -421,6 +421,28 @@ the look up each time (the page and Apply say so).
   with no spot filled in yet: until it is, the cat stands beside your cat (the page says so).
 - `lines`: what it says when you walk up to it and use the game's *Talk* prompt (the Interact key, E or
   A on a controller; Interact or Enter shows the next line) and no quest wants it.
+- `patrol`: an optional object for Sandbox mode's NPC patrol runner (Sandbox mode 0.6 or newer; with an older one
+  the cat stands still, and the Characters page and Apply say so). Its fields and nested objects are passed
+  through to the runner; unknown nested keys are kept for forward compatibility. For example:
+  ```json
+  { "patrol": {
+      "points": [
+        { "x": 100, "y": 200, "z": 0, "level": "L_WorldMap_01_P", "wait": [1, 3] },
+        [400, 200, 0]
+      ],
+      "mode": "pingpong", "speed": 120, "retries": 2, "enabled": true,
+      "wait": { "until": { "quest": "dandelions", "step": 2 }, "timeout": 60 }
+  } }
+  ```
+  `points` is a list of `{x, y, z, level?, wait?}` objects or `[x, y, z]` arrays. `mode` is `pingpong`
+  (the default, traveling back and forth), `loop` (wrap from the last point to the first), or `once`.
+  `speed` is in cm/s (more than 0); `retries` (a whole number, 0 or more: how often a blocked walk is tried
+  again before the point is skipped) and `enabled` control the runner. `wait` sets a default or per-point pause:
+  a number of seconds, `{ "min": seconds, "max": seconds }` or `[min, max]` for a random range, `"none"`
+  to pass through, `"release"` to wait for a script, or `{ "until": { "quest": "id", "step": 2 } }`.
+  An `until` can name a `quest` (an id or `mod/id`; with `step`, the step's number, 1 or more, is reached,
+  otherwise the quest is done), an in-game `event` raised by `Sandbox.raise(name)`, or a `release` (`true`, or
+  a name); `timeout` is optional and measured in seconds (more than 0).
 
 ### `quests.json`
 ```json

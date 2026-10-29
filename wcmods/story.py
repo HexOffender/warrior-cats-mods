@@ -63,6 +63,7 @@ comes on with it when it's in the mods folder, and a mod without it still goes i
 names with it), waiting for Sandbox mode to show its cats. sandbox() says what the installed one can show.
 """
 import json
+import math
 import os
 import re
 
@@ -76,7 +77,7 @@ SANDBOX_ID = "sandbox"   # the mod that runs them: its folder name, what a mod g
 SANDBOX_NAME = "Sandbox mode"   # its name, for a studio that hasn't got it yet
 SANDBOX_RELEASES = "https://github.com/HexOffender/wcmods-sandbox/releases"
 # What a cat or a questline can say that a Sandbox mode older than this ignores: {field: version}.
-SANDBOX_NEEDS = {"look": "0.5", "slots": "0.5"}
+SANDBOX_NEEDS = {"look": "0.5", "slots": "0.5", "patrol": "0.6"}
 PROGRESS_FILE = "sandbox-story.json"   # Sandbox mode's record of each sandbox cat's quests, in Game.save.folder()
 SHARED_VARIABLE = "WCMods.story"   # what the game gets: every mod's cats and questlines, as JSON text
 
@@ -96,7 +97,8 @@ SLOTS = ("fur", "pattern", "marking")
 # A cat's size when npcs.json leaves it out: a grown cat, as the Characters page shows it. The game's own
 # default for a spawned cat is 0.4, a kit's.
 DEFAULT_SIZE = 0.85
-NPC_KEYS = {"id", "name", "title", "colours", "eyes", "size", "look", "slots", "at", "yaw", "level", "lines"}
+NPC_KEYS = {"id", "name", "title", "colours", "eyes", "size", "look", "slots", "at", "yaw", "level", "lines",
+            "patrol"}
 QUEST_KEYS = {"id", "title", "description", "giver", "after", "steps", "reward"}
 STEP_KEYS = {"do", "objective", "npc", "lines", "item", "count", "at", "level", "place", "radius"}
 
@@ -149,6 +151,108 @@ def _at(obj, where):
             or not all(isinstance(n, (int, float)) and not isinstance(n, bool) and abs(n) < 1e7 for n in v)):
         raise ValueError(f"{where}: \"at\" should be a place, [x, y, z]")
     return [round(n) for n in v]
+
+
+def _patrol_number(value, where, key, least=None, above=None, whole=False):
+    """A number of a patrol: `key` is how the message names it; least/above bound it (at least, more than)."""
+    if (isinstance(value, bool) or not isinstance(value, (int, float))
+            or isinstance(value, float) and not math.isfinite(value)):
+        raise ValueError(f"{where}: \"{key}\" should be a number")
+    if whole and value != int(value):
+        raise ValueError(f"{where}: \"{key}\" should be a whole number")
+    if least is not None and value < least:
+        raise ValueError(f"{where}: \"{key}\" should be {least} or more")
+    if above is not None and value <= above:
+        raise ValueError(f"{where}: \"{key}\" should be more than {above}")
+    return value
+
+
+def _patrol_wait(value, where, key):
+    """A wait (seconds, a range, "none", "release" or an until object) as Sandbox mode's patrol.lua reads it."""
+    def seconds(n, name=key):
+        return _patrol_number(n, where, name, least=0)
+
+    def range_of(lo, hi):
+        if seconds(lo) > seconds(hi):
+            raise ValueError(f"{where}: \"{key}\" range minimum should not exceed its maximum")
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        seconds(value)
+    elif isinstance(value, str):
+        if value not in ("none", "release"):
+            raise ValueError(f"{where}: \"{key}\" should be a number, range, \"none\", \"release\" or an until object")
+    elif isinstance(value, list):
+        if len(value) != 2:
+            raise ValueError(f"{where}: \"{key}\" range should have two numbers")
+        range_of(*value)
+    elif isinstance(value, dict):
+        if not value:
+            raise ValueError(f"{where}: \"{key}\" should not be an empty object")
+        if "min" in value or "max" in value:
+            if "min" not in value or "max" not in value:
+                raise ValueError(f"{where}: \"{key}\" range should have \"min\" and \"max\"")
+            range_of(value["min"], value["max"])
+        if "until" in value:
+            until = value["until"]
+            if not isinstance(until, dict) or not any(k in until for k in ("quest", "event", "release")):
+                raise ValueError(f"{where}: \"{key}.until\" should name a quest, event or release")
+            for name in ("quest", "event"):
+                if name in until and (not isinstance(until[name], str) or not until[name].strip()):
+                    raise ValueError(f"{where}: \"{key}.until.{name}\" should be text")
+            if "release" in until and until["release"] is not True and (
+                    not isinstance(until["release"], str) or not until["release"].strip()):
+                raise ValueError(f"{where}: \"{key}.until.release\" should be true or a name")
+            if "step" in until:
+                if "quest" not in until:
+                    raise ValueError(f"{where}: \"{key}.until.step\" needs a quest")
+                # A quest's step by its number: steps have no names.
+                _patrol_number(until["step"], where, f"{key}.until.step", least=1, whole=True)
+        if "timeout" in value:
+            _patrol_number(value["timeout"], where, f"{key}.timeout", above=0)
+        # Other keys of a wait object are kept for forward compatibility with the runner.
+    else:
+        raise ValueError(f"{where}: \"{key}\" should be a number, range, \"none\", \"release\" or an until object")
+    return value
+
+
+def _patrol(raw, where):
+    """A cat's "patrol" for Sandbox mode's patrol runner, checked as it reads it and passed on as written."""
+    if not isinstance(raw, dict):
+        raise ValueError(f"{where}: \"patrol\" should be an object")
+    mode = raw.get("mode")
+    if "mode" in raw and mode not in ("pingpong", "loop", "once"):
+        raise ValueError(f"{where}: \"patrol.mode\" should be pingpong, loop or once")
+    if "speed" in raw:
+        _patrol_number(raw["speed"], where, "patrol.speed", above=0)
+    if "retries" in raw:
+        _patrol_number(raw["retries"], where, "patrol.retries", least=0, whole=True)
+    if "enabled" in raw and not isinstance(raw["enabled"], bool):
+        raise ValueError(f"{where}: \"patrol.enabled\" should be true or false")
+    if "wait" in raw:
+        _patrol_wait(raw["wait"], where, "patrol.wait")
+    if "points" in raw:
+        points = raw["points"]
+        if not isinstance(points, list):
+            raise ValueError(f"{where}: \"patrol.points\" should be a list")
+        for i, point in enumerate(points):
+            point_where = f"{where}: patrol point {i + 1}"
+            if isinstance(point, list):
+                if len(point) != 3:
+                    raise ValueError(f"{point_where} should be [x, y, z]")
+                for axis, value in zip("xyz", point):
+                    _patrol_number(value, point_where, axis)
+            elif isinstance(point, dict):
+                for axis in "xyz":
+                    if axis not in point:
+                        raise ValueError(f"{point_where}: \"{axis}\" is missing")
+                    _patrol_number(point[axis], point_where, axis)
+                if "level" in point and (not isinstance(point["level"], str) or not point["level"].strip()):
+                    raise ValueError(f"{point_where}: \"level\" should be text")
+                if "wait" in point:
+                    _patrol_wait(point["wait"], point_where, "wait")
+            else:
+                raise ValueError(f"{point_where} should be an object or [x, y, z]")
+    return dict(raw)
 
 
 def _parts(obj, key, where):
@@ -224,6 +328,8 @@ def npcs(raw):
             parts = _parts(npc, key, where)
             if parts:
                 cat[key] = parts
+        if "patrol" in npc:
+            cat["patrol"] = _patrol(npc["patrol"], where)
         at = _at(npc, where)
         if at:
             cat["at"] = at
@@ -411,7 +517,7 @@ def needs_of(data):
     """{field: [names of the cats that use it]} for the fields of SANDBOX_NEEDS a mod's cats and quests use."""
     out = {}
     for cat in data["npcs"]:
-        for field in ("look", "slots"):
+        for field in ("look", "slots", "patrol"):
             if cat.get(field):
                 out.setdefault(field, []).append(cat["name"])
     return out

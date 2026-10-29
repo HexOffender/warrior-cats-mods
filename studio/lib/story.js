@@ -158,7 +158,8 @@ export function ownItems(itemsJson) {
 
 // ---------- what Sandbox mode can show ----------
 // What each of Sandbox mode's newer fields is called on the pages, and what happens without it.
-const FIELDS = { look: ["fixed looks", "the game makes their look up each time"], slots: ["fixed looks", "the game makes their look up each time"] };
+const FIELDS = { look: ["fixed looks", "the game makes their look up each time"], slots: ["fixed looks", "the game makes their look up each time"],
+  patrol: ["patrols", "those cats stand still"] };
 
 // A version's numbers ("v0.10" -> [0, 10]), or null for text that isn't a plain dotted number; and the later
 // of two versions (one that isn't a version gives way to one that is).
@@ -193,7 +194,9 @@ export function stripWords(s, uses = []) {
   }
   const tooOld = uses.filter(f => (s.older || []).includes(f) && FIELDS[f]);
   if (tooOld.length) {
-    const [what, without] = FIELDS[tooOld[0]];
+    // Each field's words once (look and slots are both "fixed looks"): "fixed looks and patrols".
+    const words = [...new Map(tooOld.map(f => [FIELDS[f][0], FIELDS[f][1]])).entries()];
+    const what = words.map(w => w[0]).join(" and "), without = words.map(w => w[1]).join(", and ");
     // What the fields the cats use need (the newest of them), not the newest any field needs.
     const need = tooOld.map(f => (s.needs || {})[f]).reduce(laterVersion, null) || s.newest;
     const have = s.version || "an older one";
