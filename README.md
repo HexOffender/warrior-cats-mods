@@ -123,8 +123,9 @@ into the game through the Sandbox mode mod ([its page](https://github.com/HexOff
 - **A mod with cats or quests works with Sandbox mode**, rather than needing it: switching the mod on
   switches Sandbox mode on when you have it, and without it the mod still goes in, its cats waiting.
   Items are real items, in story games too.
-- **Same look every time** needs Sandbox mode 0.5 or newer. Sandbox mode 0.4, the newest release as
-  this is written, gives those cats a new look each time, and the Characters page says so.
+- **Same look every time** needs Sandbox mode 0.5 or newer, and **Where they walk** (a cat walking a
+  route of points, with a wait at each) needs 0.6. With an older one those cats get a new look each time,
+  or stand still, and the Characters page says so.
 - **Use where my cat is standing** fills in a place from the running game. It talks to the game
   through the studio's connection to it, so it needs mods that run code allowed.
 
@@ -163,6 +164,10 @@ These are built and tested without the game, but nobody has watched them in it y
 - **Controls:** controller buttons, the side mouse buttons and the wheel.
 - **Questlines:** a quest starting over by itself after you change its steps (with Sandbox mode 0.5),
   and **Start every questline over**.
+- **Characters:** a cat walking its route (**Where they walk**): a timed wait, an event, a release, the
+  walk back and a skipped point have run in the game, but not a cat stopping while you talk to it,
+  carrying on after its area loads again, or waiting on a quest. Since 0.5.0 every Character is the
+  game's walking cat: its label, *Talk* prompt and turning to you haven't been watched on it yet.
 - **Mods that go with Clan Mod Studio:** **Add all four** on a fresh install.
 - **Try Lua in the game:** the page itself with the game running (what it asks the game has been tried
   against it).

@@ -43,7 +43,7 @@ The strip under the Editing mod bar (on Questlines too) says where Sandbox mode 
 - "Your fixed looks need Sandbox mode 0.5": a fixed look is **Same look every time**. Your cats go in,
   but until you have 0.5 the game makes their look up each time
   ([Which versions are out](companion-mods.md#which-versions-are-out)). With an older one,
-  **Check for newer versions** on the Mods page shows "Newer one out: 0.5", and **Get the latest** brings
+  **Check for newer versions** on the Mods page shows "Newer one out: 0.6", and **Get the latest** brings
   it.
 
 Your mod goes in the game without Sandbox mode all the same (its items, palettes and names with it); only

@@ -42,7 +42,7 @@ You can:
   While Sandbox mode is missing, the Characters and Questlines pages have **Add Sandbox mode** in the
   strip at their top too, and Animations will have **Add the Emote wheel** once that one is out.
 - See where each one stands from its chip: **Not added**, "In, 0.4" (in your mods, on, and the newest
-  the studio knows of), **Off**, **Needs scripts allowed**, "Newer one out: 0.5",
+  the studio knows of), **Off**, **Needs scripts allowed**, "Newer one out: 0.6",
   **Needs a newer Clan Mod Studio** or **No release yet**. When all four are in, on and up to date, the
   card folds to one line, and **Show them** opens it.
 - Ask GitHub with **Check for newer versions**, then update one with **Get the latest** (on its row, or
@@ -68,16 +68,17 @@ You can't:
 ### Which versions are out
 
 - Menu pages 1.0 works with this Clan Mod Studio.
-- Sandbox mode 0.5 is the newest. It's the one a cat set to **Same look every time** needs (with 0.4
-  that cat gets a new look each time), and the one that starts a quest over when you change its steps.
-  If you have 0.4, **Check for newer versions** shows "Newer one out: 0.5": press **Get the latest**.
+- Sandbox mode 0.6 is the newest. It's the one a cat with a route (**Where they walk**) needs (with an
+  older one that cat stands still). A cat set to **Same look every time** needs 0.5 or newer (with 0.4 that
+  cat gets a new look each time), and so does starting a quest over when you change its steps. If you
+  have an older one, **Check for newer versions** shows "Newer one out: 0.6": press **Get the latest**.
 - Creator palettes 1.2.0 and the Emote wheel 1.0 are out. Creator palettes' coat presets need this
   Clan Mod Studio (0.4.0 or newer). The Emote wheel opens on G. Neither has been tried in the game in
   this version yet.
 
 ## Did it reach the game?
 
-- On the card, "In, 0.5" in green means it's in your mods and on. It reaches the game at your next
+- On the card, "In, 0.6" in green means it's in your mods and on. It reaches the game at your next
   **Play** or **Apply to game**; until then, "Not in the game yet", near the top of the Mods page, lists
   it ("Sandbox mode on").
 - Menu pages: Insert opens the mod menu, with Your cat, World, Story, Fight and Cheats in its side bar.
@@ -102,7 +103,8 @@ You can't:
 - The chip says "No release yet". Nothing to fix: that mod's owner hasn't published it yet.
 - The Characters page says your fixed looks need Sandbox mode 0.5. Press **Check for newer versions**
   on the Mods page, then **Get the latest** on Sandbox mode's row. Until then those cats get a new look
-  each time, and only their looks wait for it: everything else comes into the game with 0.4.
+  each time, and only their looks wait for it: everything else comes into the game with 0.4. A route
+  (**Where they walk**) says Sandbox mode 0.6 the same way: until then those cats stand still.
 
 ## Undo
 
