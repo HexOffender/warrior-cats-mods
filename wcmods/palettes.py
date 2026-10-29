@@ -26,6 +26,9 @@ slot wear it (a cat's Pattern01ColorIdx picks its pattern colour, Pattern02Color
 colour). The game checks those indexes against the tables' real size. Coat colours can't grow:
 the game pairs each coat slot with paw, ear, nose and whisker colours it keeps in code, and a coat
 slot without them crashes it, so cats.json colours just your cat's coat instead (see catcolours.py).
+A fur colour numbered 25 and up is written as pattern and marking ones are, but becomes a coat preset
+(below), never a slot of the game's: fur_presets() makes each one, saved as the game coat it looks most
+like, with that coat's paw, ear, nose and whisker colours.
 
 "coats" are coat presets instead, painted on rather than slots: a name, its coat colour and, if it
 likes, its nose, paw, whisker and ear colours, and "like", the game's coat a cat wearing it is saved
@@ -47,6 +50,13 @@ SECTIONS = ("eyes",) + tuple(RUNTIME_SECTIONS) + ("coats",)
 COAT_PARTS = ("fur", "nose", "paws", "whiskers", "ears")   # a coat preset's colours; "fur" is the one it needs
 GAME_SLOTS = 25                       # entries in each of the game's colour tables
 GROWABLE = ("pattern", "marking")     # sections whose tables can take slots past GAME_SLOTS
+# The game's coat colours on build 26184573 (FurColors, as the UE4SS script logs it before a palette changes it),
+# for the game coat a fur colour past GAME_SLOTS looks most like. 20-24 are the Feral Edition's, which a game
+# without it swaps for another coat, so a preset is never saved as one of those.
+GAME_FUR = ("#FBD5A7", "#FCBA66", "#F7940C", "#DD7D33", "#C04400", "#E1BE9D", "#B99075", "#926344", "#623618",
+            "#472712", "#F3F3F3", "#A5A09A", "#7C7469", "#555250", "#1F1F1F", "#61B3CB", "#8E9530", "#953C4C",
+            "#955593", "#4B5A7C", "#FBBC04", "#F28EF3", "#C5A2EF", "#1BC59A", "#D2014E")
+LIKE_SLOTS = 20                       # the game coats a preset can be saved as: 0-19
 # Each part's colours in the words the studio's pages use, for what load() says is wrong: "colour 3", not "slot 3".
 PLAIN = {"fur": "coat", "pattern": "pattern", "marking": "marking", "iris_ui": "cat maker eye button"}
 
@@ -85,10 +95,9 @@ def load(path):
                 raise ValueError(f"{name}: {section} keys are {PLAIN[section]} colour numbers, counted from 0; got '{key}'")
             if section != "eyes":
                 key = str(int(key))   # "03" is colour 3, as the game counts
-            if section != "eyes" and int(key) >= GAME_SLOTS and section not in GROWABLE:
+            if section != "eyes" and int(key) >= GAME_SLOTS and section not in GROWABLE + ("fur",):
                 raise ValueError(f"{name}: {section} has the game's {PLAIN[section]} colours 0-{GAME_SLOTS - 1} only; only "
-                                 f"pattern and marking colours take new ones, {GAME_SLOTS} and up (to colour just your cat's "
-                                 "coat, use cats.json)")
+                                 f"coat, pattern and marking colours take new ones, {GAME_SLOTS} and up")
             if isinstance(spec, list) and spec and not isinstance(spec[0], (int, float)):
                 if section != "eyes":
                     raise ValueError(f"{name}: {section}.{key} must be a single colour (gradients are eyes-only)")
@@ -135,6 +144,24 @@ def _coats(entries, path):
                     raise ValueError(f"{where}.{part}: {e}") from None
         out[str(name)] = preset
     return out
+
+
+def nearest_coat(rgb):
+    """The game coat (0-19) that looks most like `rgb` (sRGB floats): the one a fur preset is saved as."""
+    return min(range(LIKE_SLOTS), key=lambda i: (colors.distance(rgb, colors.parse(GAME_FUR[i])), i))
+
+
+def fur_presets(palette):
+    """{slot: {"fur": rgb, "like": n}} for a loaded palette's fur colours past the game's (25 and up): coat presets
+    the cat maker offers as it does new pattern and marking colours, each saved as the game coat it looks most like
+    (whose paw, ear, nose and whisker colours it keeps)."""
+    return {int(k): {"fur": c, "like": nearest_coat(c)} for k, c in palette.get("fur", {}).items() if int(k) >= GAME_SLOTS}
+
+
+def fur_preset_id(mod_id, slot):
+    """A fur colour's preset id: "<mod id>/fur/<slot>". A coats preset's is "<mod id>/<name>", and a name has no
+    "/", so the two never meet."""
+    return f"{mod_id}/fur/{slot}"
 
 
 def named_twice(raw, eye_row=None):
@@ -191,7 +218,7 @@ def added_slots(mods):
 
 def adds_only(palette):
     """True for a palette that only adds new slots or coat presets: it changes no colour the game already has."""
-    return bool(new_slots(palette) or palette.get("coats")) and not palette.get("eyes") and all(
+    return bool(new_slots(palette) or palette.get("coats") or fur_presets(palette)) and not palette.get("eyes") and all(
         int(k) >= GAME_SLOTS for s in RUNTIME_SECTIONS for k in palette.get(s, {}))
 
 
@@ -203,10 +230,12 @@ def slot_groups(items):
     each palette mod adds, for a script that shows them palette by palette (the Creator palettes mod). `items` is
     [(mod, loaded palette)] in priority order; a slot two palettes set is the one's that wins it (the later), as
     merge() keeps its colour. A coat preset is {"id": "<mod id>/<name>", "name", "like", "fur": "#rrggbb", and the
-    nose, paws, whiskers and ears it sets}. Mods that add none are left out."""
-    owner = {s: {} for s in GROWABLE}
+    nose, paws, whiskers and ears it sets}; a fur colour past the game's (fur_presets) comes after the palette's
+    named ones as {"id": "<mod id>/fur/<slot>", "name": "Coat colour <slot>", "slot", "like", "fur"}. Mods that add
+    none are left out."""
+    owner = {s: {} for s in GROWABLE + ("fur",)}
     for mod, pal in items:
-        for s in GROWABLE:
+        for s in GROWABLE + ("fur",):
             for k in pal.get(s, {}):
                 if int(k) >= GAME_SLOTS:
                     owner[s][int(k)] = mod.id
@@ -217,6 +246,9 @@ def slot_groups(items):
         group["coats"] = [{"id": f"{mod.id}/{name}", "name": name, "like": preset["like"],
                            **{part: colors.hex_from_srgb(preset[part]) for part in COAT_PARTS if part in preset}}
                           for name, preset in pal.get("coats", {}).items()]
+        group["coats"] += [{"id": fur_preset_id(mod.id, slot), "name": f"Coat colour {slot}", "slot": slot,
+                            "like": preset["like"], "fur": colors.hex_from_srgb(preset["fur"])}
+                           for slot, preset in sorted(fur_presets(pal).items()) if owner["fur"].get(slot) == mod.id]
         if any(group[s] for s in GROWABLE) or group["coats"]:
             out.append(group)
     return out
@@ -232,13 +264,16 @@ def groups_module(groups):
 
 def merge(palettes):
     """The colours every palette sets, the later one's where two set the same key. Coat presets aren't colours of
-    the game's: slot_groups() lists them, each under its own palette. Eye keys are merged as they're spelt, so a
+    the game's, and nor are fur colours past its 25 (presets too): slot_groups() lists them, each under its own
+    palette, and they never reach the game's coat table, where a cat wearing one would crash it. Eye keys are merged as they're spelt, so a
     caller with the atlas resolves them to rows first (sections/palettes.py does) for the later palette to win
     an eye however each names it."""
     merged = {s: {} for s in SECTIONS if s != "coats"}
     for pal in palettes:
         for section, entries in pal.items():
-            if section != "coats":
+            if section == "fur":
+                merged[section].update({k: c for k, c in entries.items() if int(k) < GAME_SLOTS})
+            elif section != "coats":
                 merged[section].update(entries)
     return {s: e for s, e in merged.items() if e}
 

@@ -2088,8 +2088,9 @@ def _csv_rows():
 
 
 def _colour_slots():
-    """Pattern and marking colours take new slots, coats can't; a palette that only adds slots isn't a
-    preset; your cat's colours and slots are checked and written as the game keeps them."""
+    """Pattern and marking colours take new slots; a coat colour past the game's is a coat preset, never a slot
+    of the game's table; a palette that only adds slots isn't a preset; your cat's colours and slots are checked
+    and written as the game keeps them."""
     from . import catcolours
     with tempfile.TemporaryDirectory() as tmp:
         def load(data):
@@ -2102,10 +2103,13 @@ def _colour_slots():
                 return "error"
         adds = load('{"pattern": {"25": "#ff00cc"}, "marking": {"30": "#00e5ff"}}')
         mixed = load('{"pattern": {"3": "#112233", "25": "#ff00cc"}}')
-        ok = (load('{"fur": {"25": "#ff00cc"}}') == "error" and adds != "error" and palettes.adds_only(adds)
+        coat = load('{"fur": {"25": "#ff00cc"}}')
+        ok = (coat != "error" and palettes.adds_only(coat) and palettes.fur_presets(coat) == {25: {"fur": (1.0, 0.0, 0.8), "like": 18}}
+              and adds != "error" and palettes.adds_only(adds)
               and not palettes.adds_only(mixed) and palettes.new_slots(adds) == {"pattern": [25], "marking": [30]})
-    lua = palettes.ue4ss_script(palettes.merge([adds]))
+    lua = palettes.ue4ss_script(palettes.merge([adds, coat]))
     ok = ok and not luacheck.check(lua) and "PatternMaskColors = { [25]" in lua and "GROW = { PatternMaskColors" in lua
+    ok = ok and "FurColors = {  }," in lua
     look = catcolours.validate({"player": {"colours": {"fur": "#ff6ec7", "nose": "#202020"}, "slots": {"fur": 3, "pattern": 25}}})
     script = catcolours.script(look["player"]["colours"])
     try:

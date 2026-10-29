@@ -18,11 +18,12 @@ def put(st, mod_id, doc):
     return call(st, "PUT", f"mods/{mod_id}/file/palette.json", {"text": json.dumps(doc)})
 
 
-def test_a_coat_colour_past_the_games_and_an_unknown_part_are_problems(studio):
+def test_an_eye_button_past_the_games_and_an_unknown_part_are_problems(studio):
     make_mod(studio, "mine")
-    r = put(studio, "mine", {"fur": {"30": "#fff"}})
-    assert r["problems"] == ["palette.json: fur has the game's coat colours 0-24 only; only pattern and marking colours "
-                             "take new ones, 25 and up (to colour just your cat's coat, use cats.json)"]
+    assert put(studio, "mine", {"fur": {"30": "#fff"}})["problems"] == []   # a coat colour past the game's is a preset
+    r = put(studio, "mine", {"iris_ui": {"30": "#fff"}})
+    assert r["problems"] == ["palette.json: iris_ui has the game's cat maker eye button colours 0-24 only; only coat, "
+                             "pattern and marking colours take new ones, 25 and up"]
     r = put(studio, "mine", {"pattern": {"25": "#fff"}, "hats": {}})
     assert len(r["problems"]) == 1 and "unknown part 'hats'" in r["problems"][0]
     assert r["notes"] == []

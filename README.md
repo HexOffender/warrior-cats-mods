@@ -88,7 +88,7 @@ guide. How a change reaches the game:
 
 | Page | What you change | Saved as | How it reaches the game |
 |---|---|---|---|
-| [**Palettes**](docs/guide/palettes.md) | the game's eye, coat, pattern and marking colours, which every cat picks from by number (its [slot](docs/guide/README.md#slot)); new pattern and marking colours | `palette.json` | the mod pak (eye colours); the script loader (the rest) |
+| [**Palettes**](docs/guide/palettes.md) | the game's eye, coat, pattern and marking colours, which every cat picks from by number (its [slot](docs/guide/README.md#slot)); new coat, pattern and marking colours | `palette.json` | the mod pak (eye colours); the script loader (the rest) |
 | [**Your cat**](docs/guide/cat.md) | your cat (in the game you're playing, or in one game you choose), or any cat in your save: colours of its own (coat, paw pads, inner ears, nose, whiskers); which of the game's colours it wears; its shape and size; its scars | `cats.json` | the script loader (colours of its own); your save (the game's colours, shape, size, scars) |
 | [**Controls**](docs/guide/controls.md) | which key, mouse button or controller button does each action; second keys; keys in menus; controller presets. The page says what each change will do before you apply | `controls.json` | a small helper that comes with your mods, through the script loader; moving and the camera only with `Play with key remaps.bat`, the old key remapper, which is on its way out (deprecated): see [Remapping keys](#remapping-keys) |
 | | mouse look: sensitivity, invert, smoothing, tilt limits and its on and off key | `mouselook.json` | the script loader |
