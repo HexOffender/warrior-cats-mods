@@ -356,6 +356,13 @@ test cat Emberpaw, the save's slot 8). The suite ran nine times on the way; on t
   `...Metrics.Cat.Player.Height` 15 with its description; `set_tuning(MaxLevel, 33)`, and the game's own lookup
   (its native `GetValue`, signed by its first instructions) gave 33, then 20 again once put back.
 
+**2026-11-04, build 26337109: the game's words** (the branch `claude/cpp-words`, `tests/game/test_cpp_sdk.py`:
+`test_words` passed): `SwtStrings` had 8,907 keys, 2,438 of them starting `STR_CAT_NAME`; `STR_CAT_NAME2_PAW` read
+"Emberpaw"; the Lamb's Ear Leaves' `Name` in its row was `SwtStrings` / `STR_ITEM_CONSUMABLE_NAME_7`; its words set
+to "WCMods Word Herb", the row's own text read the new words, and the HUD's message 1.5 s after one herb was added
+had them; put back, the key read "Lamb's Ear Leaves" again. A key the table hasn't got, and another table's name,
+gave nothing.
+
 ## Not yet confirmed in game
 
 - **Choosing a game (2026-10-28):** the Save page's changes to a game other than the one played last, made

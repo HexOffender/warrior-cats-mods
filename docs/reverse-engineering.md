@@ -1101,6 +1101,15 @@ game); the engine's own `InitializeStruct` and each `FProperty`'s `CopyCompleteV
 taken out with `RemoveRow` (the engine's `DestroyStruct`). A row's `Name` changed in place (an `FText`) was what
 the HUD's "OBTAINED" message showed for the item next.
 
+**The game's words** (build 26337109, 2026-11-04): `SwtStrings` is a string table registered from the CSV by the
+game's code (no `UStringTable` object), with 8,907 keys in English. The engine's reflected `KismetStringTableLibrary`
+reads it (`IsRegisteredTableEntry`, `GetKeysFromStringTable`) and `KismetTextLibrary` makes a text from a key
+(`TextFromStringTable`) or says which key a text came from (`StringTableIdAndKeyFromText`: an item's `Name` in
+`DT_QuestObjectsInfo` is `SwtStrings` / `STR_ITEM_CONSUMABLE_NAME_7` for the Lamb's Ear Leaves). Every text made
+from a key shares one display string, which UE4SS reaches through the text's data (`ITextData::GetDisplayString`,
+exported by UE4SS 3.0.1): writing it changed what the row's own text said and what the HUD's "OBTAINED" message
+showed for the item next, and writing the old words back restored both.
+
 **Tuning** (build 26337109, 2026-11-04): `TuningData.csv` is the tuning manager's native map at +0x50
 (`BP_WrcTuningManager_C`, 0x1290 bytes, its class `USwtTuningManager` 0x140): a `TMap<FString, row>` of 441
 0x38-byte slots, each the key (`FString`, +0x00), the row's vtable (+0x10), `MaxValue` (float, +0x18),

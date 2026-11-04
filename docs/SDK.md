@@ -1132,6 +1132,7 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/World.hpp` | what's nearby, the game's screens, input and commands, traces to the ground, the save and saving, your items live and adding to them, cats' names, clans and traits, the sky, the game's sounds and its own animations |
 | `WCMods/Story.hpp` | quests, fights, and the game's events as one list |
 | `WCMods/Tables.hpp` | the game's DataTables row by row (read, changed, rows added and taken out), and its tuning numbers (`TuningData.csv`), while it runs |
+| `WCMods/Words.hpp` | the game's words by their keys in its string table: read, changed and put back while it runs |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Ui.hpp` | the game's own UI: a tab of your own in its screens (the pause menu, the inventory, the settings), the HUD and its parts, overlays, every control the engine has |
 | `WCMods/UiLua.hpp` | the same for Lua mods, as `WCModsCpp.ui` ([scripting.md, The game's own menus and HUD](scripting.md#the-games-own-menus-and-hud)) |
@@ -1233,7 +1234,7 @@ for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards"))
 | Call | Does |
 |---|---|
 | `wcmods::get(object, L"Controller.PlayerState")` | A property's value by its path (names joined with dots, an element as `[2]`), as a `Value`: `kind` says what it is (`Bool`, `Int`, `Float`, `Text`, `Object`, `Enum`, `Struct`, `Array`, `Map`, `None` when there's no such property), with `boolean()`, `number()`, `string()`, `object`, an enum's name in `text`, the property's class in `type`, and `shown()` as text. `get(value, path)` goes on from a struct or object it gave |
-| `wcmods::set(object, path, value)` | Write a bool, a number (to an int, float or enum), text (to an FString or FName, or an enum's name) or an object; false when there's no such property or it isn't that kind |
+| `wcmods::set(object, path, value)` | Write a bool, a number (to an int, float or enum), text (to an FString, FName or FText, or an enum's name) or an object; false when there's no such property or it isn't that kind. Text written to an FText makes it plain text: it no longer follows its key in the string table (nor the language). To change a line everywhere it shows, change its key's words (`set_words`, Words.hpp) |
 | `wcmods::elements(object, path)`, `elements(value)` | An array's elements, each a `Value` |
 | `wcmods::map_entries(object, path)`, `map_entries(value)` | A map's pairs, each key and value a `Value` (the game's tag-count maps: a tag struct, whose `TagName` is the tag, and a count) |
 | `wcmods::describe(object)`, `describe(value)` | Every property of an object or struct, with its name, type and value now: `python wcmods.py inspect` in C++ |
@@ -1311,6 +1312,28 @@ wcmods::set_tuning(L"Gameplay.Exploration.MaxLevel", 30);
 | `Table::add_row(name, from)`, `add_row(name)`, `remove_row(name)` | A row of the mod's own, a copy of the row `from` or the struct's defaults (one with that name already is replaced), as a `Value`, or None when `from` isn't one of its rows; taking one out. The game finds an added row where it looks rows up by name, not in a list it built from the table before |
 | `wcmods::tuning(L"Gameplay.Exploration.MaxLevel")`, `set_tuning(key, value)` | A tuning key's number (`TuningData.csv`'s MaxValue: 20 for that one), or nullopt for a key the table hasn't got or when wcmods hasn't got the tuning manager's map on this build; changing it. The game's code reads its tuning through one lookup that goes to this map every time, so a change is what every later read gets; code that read its numbers before (most of the game reads them as a part starts) keeps what it read until it reads again, which wasn't timed for each part. A key can't be added: the game's code names the ones it reads. Keys match whatever their case, as the game's do |
 | `wcmods::tuning_keys()`, `tuning_description(key)` | Every key (441), and a key's description (its Description column; empty for most) |
+
+**The game's words (`Words.hpp`)**, game thread only:
+
+Every line the game shows is a key of its string table `SwtStrings`, loaded from `Strings_<language>.csv` (8,907
+keys in English): cats' names (`STR_CAT_NAME2_PAW` is "Emberpaw"), items' (`STR_ITEM_CONSUMABLE_NAME_7` is "Lamb's
+Ear Leaves"), talks' lines, the HUD's messages. Every text made from a key shows the one display string the engine
+keeps for that key, so changing it changes them all. A data mod changes the words for good (`names.json`'s `text`,
+in the pak); these change them while the game runs, until it closes.
+
+```cpp
+auto key = wcmods::words_key(wcmods::get(item_row, L"Name"));   // {"SwtStrings", "STR_ITEM_CONSUMABLE_NAME_7"}
+wcmods::set_words(key->second, L"Moonleaf");                     // the HUD says "Moonleaf OBTAINED" next
+wcmods::restore_words(key->second);
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::words(L"STR_CAT_NAME2_PAW")`, `words(key, table)` | A key's words as the game shows them now; nullopt for a key the table hasn't got. `table` is `wcmods::game_strings` (`SwtStrings`) unless you give another |
+| `wcmods::set_words(key, L"new words")`, `set_words(key, words, table)` | Change a key's words: a text the game holds reads them from then on (an item's name in its row read back the new words), and a screen, popup or line it makes after shows them (the HUD's "OBTAINED" message did); a text already on screen keeps the old words until it's laid out again (the HUD's own name line until the HUD is made again). False for a key the table hasn't got. The game's own words are kept, and go back when the mod is taken out |
+| `wcmods::restore_words(key)`, `restore_words(key, table)` | Put a key's words back as the game had them when `set_words` first changed them; false when it didn't. After the player changes the game's language they're the old language's words |
+| `wcmods::word_keys()`, `word_keys(L"STR_CAT_NAME")`, `word_keys(prefix, table)` | The table's keys, or those starting with a prefix, in the table's order |
+| `wcmods::words_key(get(row, L"Name"))` | Which table and key a text the game holds was made from (a text property's `Value`: an item's name in its row, a widget's text), or nullopt for a text that isn't from a string table |
 
 **When code runs (`Events.hpp`)**, everything calling back on the game thread:
 

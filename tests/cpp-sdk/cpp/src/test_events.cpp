@@ -82,6 +82,10 @@ namespace t
             {
                 run_tables_request();
             }
+            else if (what == "words")
+            {
+                run_words_request();
+            }
             else if (what == "unhook_loop")
             {
                 // 50 hooks on ClientRestart made and taken off at once; then 20 rounds, one a frame, of a hook on
