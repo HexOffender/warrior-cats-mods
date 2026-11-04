@@ -402,7 +402,9 @@ climb speeds, `set_sense(on)`.
 A last pass over the class dump: every manager and component class the game has gets a line in SDK.md's coverage
 table (the C++ call that reaches it, or why none does), the doc check (`selftest._cpp_sdk`, run by
 `tests/unit/test_mods.py::test_cpp_sdk_headers_documented_and_tested`) covers the new headers, the roadmap's statuses are brought up to date, and the remaining native functions any step needed are
-signed. Its proof is the whole in-game suite, run once on a fresh game.
+signed. It also takes step 2's static half: `tools/re/tuning_read.py` sorts TuningData's keys into those
+the code names, those built from a pattern, and those it doesn't name (`wcmods/exe/tuning_read.json`), for a
+call that says whether changing a key can do anything. Its proof is the whole in-game suite, run once on a fresh game.
 
 ## Not in this plan
 
@@ -419,8 +421,8 @@ Each step's pull request updates its line.
 
 | Step | State | Pull request |
 |---|---|---|
-| 1. Clean ground | done: the arrows on a tab's page; the crashes read (UE4SS's Lua runtime, not C++) and unhooking proved under load | this branch, `claude/cpp-tab-keys` |
-| 2. Tables, live | not started | |
+| 1. Clean ground | done: the arrows on a tab's page; the crashes read (UE4SS's Lua runtime, not C++) and unhooking proved under load | #116 |
+| 2. Tables, live | done: every DataTable's rows read, changed, added and taken out; TuningData read and changed, the game's own lookup signed. Which keys the code names (`tuning_read.json`) moved to step 16 | this branch, `claude/cpp-tables` |
 | 3. Words, live | not started | |
 | 4. Sounds and music | not started | |
 | 5. The sky's values | not started | |

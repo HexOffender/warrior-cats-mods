@@ -1128,6 +1128,7 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Reflect.hpp` | any property by its path, as the kind it is; arrays, maps and structs; what an object has; spawning actors |
 | `WCMods/World.hpp` | what's nearby, the game's screens, input and commands, traces to the ground, the save and saving, your items live and adding to them, cats' names, clans and traits, the sky, the game's sounds and its own animations |
 | `WCMods/Story.hpp` | quests, fights, and the game's events as one list |
+| `WCMods/Tables.hpp` | the game's DataTables row by row (read, changed, rows added and taken out), and its tuning numbers (`TuningData.csv`), while it runs |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Ui.hpp` | the game's own UI: a tab of your own in its screens (the pause menu, the inventory, the settings), the HUD and its parts, overlays, every control the engine has |
 | `WCMods/UiLua.hpp` | the same for Lua mods, as `WCModsCpp.ui` ([scripting.md, The game's own menus and HUD](scripting.md#the-games-own-menus-and-hud)) |
@@ -1279,6 +1280,34 @@ for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards"))
 | `wcmods::on(wcmods::Event::CombatStart, fn)` | `fn(info)` when the event happens: `Level`, `Player`, `Phase`, `CombatStart`, `CombatEnd`, `GenericEvent`, `QuestStatus`, `Damage`, `TurnEnded`, `Status`, each with what it carries in the `EventInfo` (`name`, `object`, `a`, `b`; Story.hpp lists them). False when the game hasn't got what the event listens to |
 
 The events of fights (`CombatStart`, `CombatEnd`, `Damage`, `TurnEnded`, `Status`) and quests (`QuestStatus`, `GenericEvent`) are checked as far as a test outside a fight can: their hooks are found on this build, and they're the same functions the Lua module's `Game.on` uses; `Level`, `Player` and `Phase` are seen firing.
+
+**The game's tables (`Tables.hpp`)**, game thread only:
+
+The game keeps much of what it is in DataTables: items (`DT_QuestObjectsInfo`), characters (`DT_Characters`), the
+fights it makes (`DT_Combat_Generator`), each animal's animations, the sky's presets (`DT_SkyBoxParams`), den
+decorations (`DB_Den_Decorations`), tutorials, and more (69 in memory in the forest on build 26337109; `tables()`
+lists them). A row is the game's own memory: a change is what the game reads from then on, while a copy it took
+earlier (a screen's list, a component's numbers) stays as it was. Its runtime tables (`TuningData.csv`,
+`AttackMove.csv` and the others under `Gameplay/DataTables/NonAsset`) aren't DataTables: the tuning is below, the
+rest are a data mod's (`data.json`).
+
+```cpp
+auto items = wcmods::table(L"DT_QuestObjectsInfo");
+for (auto& [name, row] : items.rows())
+    if (wcmods::get(row, L"itemTag.TagName").text == L"Gameplay.Inventory.Consumable.SmallCatnip")
+        wcmods::set(row, L"Name", L"Moonleaf");   // the HUD names it so from now on
+wcmods::set_tuning(L"Gameplay.Exploration.MaxLevel", 30);
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::tables()` | Every DataTable in memory, each a `TableInfo` (`name`, `path`, `row_struct`, `rows`). It goes through the game's objects: a few times a second at most |
+| `wcmods::table(L"DT_QuestObjectsInfo")`, `table(path)` | A DataTable by its name or its full path, as a `Table`; empty (false) when it isn't in memory. By name it looks through the game's objects, by path it doesn't |
+| `Table::name()`, `path()`, `row_struct()`, `row_struct_name()`, `size()`, `row_names()`, `has(name)` | The table: its name and path, the struct its rows are (`QuestObjectsInfoDataStruct`), how many rows and their names in order, whether it has one. False once the game has unloaded it |
+| `Table::row(name)`, `rows()` | A row as a struct `Value` (`get`, `set` and `describe` work on it; a `set` changes the game's row), None for one the table hasn't got; every row by name |
+| `Table::add_row(name, from)`, `add_row(name)`, `remove_row(name)` | A row of the mod's own, a copy of the row `from` or the struct's defaults (one with that name already is replaced), as a `Value`, or None when `from` isn't one of its rows; taking one out. The game finds an added row where it looks rows up by name, not in a list it built from the table before |
+| `wcmods::tuning(L"Gameplay.Exploration.MaxLevel")`, `set_tuning(key, value)` | A tuning key's number (`TuningData.csv`'s MaxValue: 20 for that one), or nullopt for a key the table hasn't got or when wcmods hasn't got the tuning manager's map on this build; changing it. The game's code reads its tuning through one lookup that goes to this map every time, so a change is what every later read gets; what started before keeps the number it read (the cat's run speed until a new level, an animal's senses until it's made again). A key can't be added: the game's code names the ones it reads. Keys match whatever their case, as the game's do |
+| `wcmods::tuning_keys()`, `tuning_description(key)` | Every key (441), and a key's description (its Description column; empty for most) |
 
 **When code runs (`Events.hpp`)**, everything calling back on the game thread:
 

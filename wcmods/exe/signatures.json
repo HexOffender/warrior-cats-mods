@@ -810,6 +810,60 @@
    "overrides": 7,
    "natives": 0,
    "parent": null
+  },
+  "/Script/SwtEngine.SwtTuningManager": {
+   "fields": {
+    "WCM_TuningData": 80
+   },
+   "found": true,
+   "anchors": [
+    {
+     "note": "loads TuningData.csv into the map at +0x50 (and two more tables into the maps after it)",
+     "was": "0x12BB510",
+     "pattern": "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 50 83 B9 ?? ?? ?? ?? 01"
+    }
+   ],
+   "sites": [
+    {
+     "from": "0x12438B0",
+     "at": "0x1243926",
+     "pattern": "48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8D 4B ?? E8 ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? 48 8B CB",
+     "captures": {
+      "13": 80
+     },
+     "widths": {
+      "13": 1
+     }
+    },
+    {
+     "from": "0x12BB510",
+     "at": "0x12BB544",
+     "pattern": "40 B7 01 44 8B 46 ?? 48 8D 4E ?? E8 ?? ?? ?? ?? 45 33 F6",
+     "captures": {
+      "10": 80
+     },
+     "widths": {
+      "10": 1
+     }
+    },
+    {
+     "from": "0x12BB510",
+     "at": "0x12BB562",
+     "pattern": "74 ?? 48 89 44 24 ?? 4C 8D 4E ?? 45 33 C0 44 89 74 24 ??",
+     "captures": {
+      "10": 80
+     },
+     "widths": {
+      "10": 1
+     }
+    }
+   ],
+   "size": 320,
+   "align": 8,
+   "vtable": 159909632,
+   "overrides": 12,
+   "natives": 0,
+   "parent": null
   }
  },
  "functions": {
@@ -817,6 +871,11 @@
    "note": "adds a count of an item to an inventory, or takes it away (a negative count; at 0 the item goes): (the component, the item's FGameplayTag by value, int32 count, bool show it on the HUD); then tells the component's listeners (the HUD's OnItemPickedUp) and writes the inventory into the save's state",
    "was": "0x1654430",
    "pattern": "44 89 44 24 ?? 48 89 54 24 ?? 55 57 41 56 48 8B EC 48 83 EC 40 48 8B 05 ?? ?? ?? ??"
+  },
+  "SwtTuningManager:GetValue": {
+   "note": "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, 0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData",
+   "was": "0x12BBA60",
+   "pattern": "48 89 5C 24 ?? 88 54 24 ?? 57 48 83 EC 60 48 63 59 ?? 48 8B 39 48 C7 44 24 ?? 00 00 00 00 89 5C 24 ?? 85 DB 75 ?? 89 5C 24 ?? EB ?? 48 8D 44 24 ?? BA 02 00 00 00 48 89 44 24 ?? 45 33 C9 48 8D 44 24 ?? 89 5C 24 ?? 44 8B C3 48 89 44 24 ?? 8B CA E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 4C 8B C3 4D 03 C0 48 8B D7 E8 ?? ?? ?? ?? 48 8D 44 24 ?? 48 C7 44 24 ?? 00 00 00 00 48 89 44 24 ?? 45 33 C9 48 8D 44 24 ?? C7 44 24 ?? 01 00 00 00 BA 08 00 00 00 48 89 44 24 ?? B9 10 00 00 00 C7 44 24 ?? 01 00 00 00 41 B8 01 00 00 00 E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 8D 54 24 ?? 41 B8 01 00 00 00 E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 45 33 C9 C7 44 24 ?? 00 00 00 00 48 8D 54 24 ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 8B 54 24 ??"
   }
  }
 }

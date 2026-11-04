@@ -23,6 +23,7 @@
 //                       reflection; spawning actors
 //   WCMods/World.hpp    what's nearby, the game's screens and input, traces, the save, items, cats' names
 //   WCMods/Story.hpp    quests, fights, and the game's events as one list
+//   WCMods/Tables.hpp   the game's DataTables row by row, and its tuning (TuningData.csv), while it runs
 //   WCMods/Events.hpp   every frame, timers, keys, hooks on the game's functions, level and player events,
 //                       other threads, settings that change on disk
 //   WCMods/Menu.hpp     pages in the mod menu (a settings page comes free), keys on its Overview, values
@@ -44,6 +45,7 @@
 #include <WCMods/Mod.hpp>
 #include <WCMods/Reflect.hpp>
 #include <WCMods/Story.hpp>
+#include <WCMods/Tables.hpp>
 #include <WCMods/Ui.hpp>
 #include <WCMods/UiLua.hpp>
 #include <WCMods/World.hpp>

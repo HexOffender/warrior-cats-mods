@@ -131,6 +131,11 @@ and a call to the wrong place closes the game. So wcmods signs them as it signs 
   there against the pattern (the exe's image from its PE headers), so an exe updated after the install
   gives nullptr and a line in the log, never a call into other code. `add_item` also calls it under a
   structured exception handler, so a fault is logged and returned as false.
+- **A member below 0x80** is reached with an 8-bit displacement (`lea rdx, [rsi+50h]`), the only form the
+  compiler gives it; above that only a 32-bit one counts as a member's (`signatures._access`). A site's
+  capture that isn't 4 bytes keeps its size in the site's `"widths"` (absent means 4), and `check()` reads it
+  as one signed byte: read as four it took the next instruction's bytes too, and the tuning manager's map
+  (+0x50, the first member below 0x80, 2026-11-04) conflicted.
 
 ## How we find things
 
@@ -1080,6 +1085,32 @@ streamed part of the world, whose outers lead to that part's own `UWorld`, not t
 bIsSound2D)`, on the class's default object, plays one by id: `ui_select` gave an `AudioComponent` playing
 `S_Cue_ui_select`, `vo_cat1_happy1` one playing `S_Cue_vo_cat1_happy1`, and an id it hasn't got nothing.
 Whether an `AudioEvents.csv` edit in a mod's pak changes `AudioEventsInfo` is still the roadmap's step 3.
+
+**The game's tables** (seen in game on build 26337109, 2026-11-04, with a C++ walk of the object list): 69
+DataTables were in memory in the forest, among them `DT_QuestObjectsInfo` (412 items), `DT_Characters` (27),
+`DT_Combat_Generator` (323 fight parties), `DT_Combat_Defender` (84), `DT_Combat_Bonding` (4), each animal's
+`DT_<Kind>_CombatAnimations`, `DT_SkyBoxParams` (13 rows of `WrcSkyBoxStruct`, the sky's presets),
+`DB_Den_Decorations` (60 `AdventureHousingDecorationStruct`), `DB_QuestGraphs` (174), the tutorials' and the key
+pictures' tables. A `UDataTable`'s rows are its `RowMap` at +0x30 (UE4SS's own layout for 5.x; the item table's
+row count read there was the cooked file's). The runtime tables under `Gameplay/DataTables/NonAsset`
+(`TuningData.csv`, `AttackMove.csv`...) aren't DataTables. UE4SS's `UDataTable::AddRow` copies a row through the
+struct's native copy (`ICppStructOps::Copy`), which UE4SS can't reach on this engine ("unavailable", thrown in
+game); the engine's own `InitializeStruct` and each `FProperty`'s `CopyCompleteValue` work, and so does a row
+taken out with `RemoveRow` (the engine's `DestroyStruct`). A row's `Name` changed in place (an `FText`) was what
+the HUD's "OBTAINED" message showed for the item next.
+
+**Tuning** (build 26337109, 2026-11-04): `TuningData.csv` is the tuning manager's native map at +0x50
+(`BP_WrcTuningManager_C`, 0x1290 bytes, its class `USwtTuningManager` 0x140): a `TMap<FString, row>` of 441
+0x38-byte slots, each the key (`FString`, +0x00), the row's vtable (+0x10), `MaxValue` (float, +0x18),
+`Description` (`FString`, +0x20) and the hash's links (+0x30). Every tuning read in the game builds the key as an
+`FString` and calls `0x1412BBA60` (`game.NATIVE`'s `SwtTuningManager:GetValue`: a static function, `(const
+FString*) -> float`, its second register unused), which calls `0x1412BBD80`: that reads the manager through a
+global (`0x14A851058`) and copies its whole map at +0x50 for each lookup. So a number changed in the map is
+what every later read gets, and the readers copy it into their own members as they start (the level
+component's cap at +0x124 from `Gameplay.Exploration.MaxLevel` at its start-up: `0x1416573A0`). The map is
+filled by `0x1412BB510`, which loads `Gameplay/DataTables/NonAsset/TuningData.csv` and two more tables into the
+maps after it (`lea rdx, [rsi+50h]`; the signatures' anchor). Read in game: 441 keys, `MaxLevel` 20,
+`Metrics.Cat.Player.Height` 15 with its description; `set_tuning(MaxLevel, 33)` and the game's own lookup gave 33.
 
 **The clock:** the game state's +0x438 is a float, the seconds into the day. Setting it to 21600 made
 the game's own `GetDayClockTime` say 6:00.

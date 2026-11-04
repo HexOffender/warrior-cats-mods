@@ -611,6 +611,32 @@ namespace wcmods
     // of its class. The SDK's own calls on them (add_item) do that for you.
     namespace detail
     {
+        // The elements in use of one of the engine's sets or maps (TSet, and TMap, which is a TSet of pairs), laid out
+        // as UE5's are (0x50 bytes): +0x00 the elements, +0x08 how many slots, +0x0C how many fit; +0x10 the bit
+        // array of the slots in use (four words inline, or +0x20's when longer), +0x28 its bits, +0x2C how many it
+        // holds; +0x34 how many slots are free. `element` is one slot's size (the key, the value and the hash's
+        // two links). False, with nothing, when what's there doesn't add up as a set (a game update that moved it):
+        // the slots in use must be the slots less the free ones.
+        inline auto set_slots(const uint8_t* set, size_t element, std::vector<const uint8_t*>& out) -> bool
+        {
+            out.clear();
+            if (!set || element == 0) return false;
+            auto read_i32 = [&](size_t at) { return *reinterpret_cast<const int32_t*>(set + at); };
+            const uint8_t* data = *reinterpret_cast<const uint8_t* const*>(set);
+            const int32_t num = read_i32(0x08), max = read_i32(0x0C), num_bits = read_i32(0x28), max_bits = read_i32(0x2C);
+            const int32_t num_free = read_i32(0x34);
+            if (num < 0 || max < num || max > (1 << 20) || num_free < 0 || num_free > num || num_bits < num || max_bits < num_bits) return false;
+            if (num > 0 && !data) return false;
+            const auto* heap_bits = *reinterpret_cast<const uint32_t* const*>(set + 0x20);
+            if (!heap_bits && num_bits > 128) return false;   // more slots than the four inline words hold
+            const auto* bits = heap_bits ? heap_bits : reinterpret_cast<const uint32_t*>(set + 0x10);
+            for (int32_t i = 0; i < num; ++i)
+                if ((bits[i / 32] >> (i % 32)) & 1u) out.push_back(data + static_cast<size_t>(i) * element);
+            if (out.size() == static_cast<size_t>(num - num_free)) return true;
+            out.clear();
+            return false;
+        }
+
         // Whether `size` bytes match a pattern as offsets.json writes it: hex bytes, "??" for any byte
         // ("48 8B ?? 05"). False for a pattern longer than the bytes, or one that isn't a pattern.
         inline auto pattern_matches(const uint8_t* bytes, size_t size, std::string_view pattern) -> bool

@@ -481,6 +481,7 @@ PLAIN = {
     "SwtAdventureStatusComponent": "poison and the other status conditions",
     "SwtAdventureDetectionComponent": "how far animals see and hear your cat",
     "SwtQuestInventoryComponent": "your items, for C++ mods",
+    "SwtTuningManager": "the game's tuning numbers, for C++ mods",
 }
 
 
