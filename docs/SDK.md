@@ -1133,6 +1133,7 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Story.hpp` | quests, fights, and the game's events as one list |
 | `WCMods/Tables.hpp` | the game's DataTables row by row (read, changed, rows added and taken out), and its tuning numbers (`TuningData.csv`), while it runs |
 | `WCMods/Words.hpp` | the game's words by their keys in its string table: read, changed and put back while it runs |
+| `WCMods/Npcs.hpp` | cats of the mod's own: spawned on the game's walking cat with a look, kept in the world, walked, labelled, with the game's Talk prompt and its Interact |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Ui.hpp` | the game's own UI: a tab of your own in its screens (the pause menu, the inventory, the settings), the HUD and its parts, overlays, every control the engine has |
 | `WCMods/UiLua.hpp` | the same for Lua mods, as `WCModsCpp.ui` ([scripting.md, The game's own menus and HUD](scripting.md#the-games-own-menus-and-hud)) |
@@ -1241,6 +1242,8 @@ for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards"))
 | `wcmods::struct_at(STR("/Script/SwtAdventure.SwtAdventureAttackMoveStruct"), bytes)`, `struct_at(type, bytes)` | A struct Value over bytes no property describes (a struct in one of the game's own arrays, as `Fighter::moves()` gives), by the struct's path or its `UStruct`; `get`, `set` and `describe` work on it. None without the type or the bytes |
 | `Value::of(x)` | A `Value` from a bool, number, text or object, for `set` |
 | `wcmods::call_reflected(object, STR("GetQuestStatus"), [&](wcmods::Params& p) { ... })` | Call a reflected function through its parameters by name or position (`p.set(L"Key", v)`, `p.set_nth(0, v)`, `p.raw(L"Start")` for a struct's bytes, `p.get(L"ReturnValue")`, `p.nth(i)`, `p.count()`, `p.has(name)`, `p.function()` and `p.bytes()` for the rest): for outputs that are structs, inputs that are arrays or strings, returns that are enums or texts, with no struct to lay out. nullopt when the object or function isn't there |
+| `wcmods::load(L"/Game/Path/Asset.Asset")` | One of the game's assets by its whole object path (a Blueprint's class `.../BP_X.BP_X_C`, a texture, a sound, an animation), loaded when it isn't yet (the engine's own `LoadAsset_Blocking`: it waits for the load, so a few at once, not every frame); nullptr for a path nothing is at |
+| `wcmods::enum_value(STR("/Script/SwtEngine.ECommands"), L"Player_Interact")` | One of an enum's values by its name, as the game has it; nullopt for an enum or name it hasn't got |
 | `wcmods::spawn(STR("/Script/Engine.Actor"), {x, y, z})`, `destroy(actor)` | An actor of a class at a place (plain actors; the game's own cats need more, see the Lua module's `Game.npcs`), and taking one out |
 
 **What's around, the game's input, the save, items and names (`World.hpp`)**, game thread only:
@@ -1317,6 +1320,35 @@ wcmods::set_tuning(L"Gameplay.Exploration.MaxLevel", 30);
 | `Table::add_row(name, from)`, `add_row(name)`, `remove_row(name)` | A row of the mod's own, a copy of the row `from` or the struct's defaults (one with that name already is replaced), as a `Value`, or None when `from` isn't one of its rows; taking one out. The game finds an added row where it looks rows up by name, not in a list it built from the table before |
 | `wcmods::tuning(L"Gameplay.Exploration.MaxLevel")`, `set_tuning(key, value)` | A tuning key's number (`TuningData.csv`'s MaxValue: 20 for that one), or nullopt for a key the table hasn't got or when wcmods hasn't got the tuning manager's map on this build; changing it. The game's code reads its tuning through one lookup that goes to this map every time, so a change is what every later read gets; code that read its numbers before (most of the game reads them as a part starts) keeps what it read until it reads again, which wasn't timed for each part. A key can't be added: the game's code names the ones it reads. Keys match whatever their case, as the game's do |
 | `wcmods::tuning_keys()`, `tuning_description(key)` | Every key (441), and a key's description (its Description column; empty for most) |
+
+**Cats of a mod's own (`Npcs.hpp`)**, game thread only:
+
+The game's own walking clan cat (`BP_WalkingNPC_Character_Base`), as Lua's `Game.npcs` makes them: spawned with a look
+the cat maker's way (the parts and colour slots given, the rest made up for each spawn), kept in the world (spawned
+again when its level loads again), walked by its own AI controller along the nav mesh, with the game's label over its
+head, the game's Talk prompt beside it, and the game's Interact heard for it. Not one of the save's cats: nothing of it
+is saved.
+
+```cpp
+wcmods::NpcSpec spec;
+spec.at = *wcmods::npc_spot();                  // 2.2 m from your cat, to its front left
+spec.look = {{L"body", 3}, {L"tail", 2}};
+spec.colours = {{L"fur", L"#ff8800"}};
+auto npc = wcmods::spawn_npc(spec);
+npc.set_label({.name = L"Brindlemoon", .title = L"Elder", .icon = L"available"});
+npc.set_prompt(L"Talk");
+wcmods::on_npc_interact([](wcmods::Npc n) { n.walk_to(*wcmods::npc_spot(600, 0)); });
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::spawn_npc(spec)` | A cat of the mod's own, as an `Npc`. `NpcSpec`: `at`, `yaw`, `size`, `prefix`/`suffix` (name ids: `STR_CAT_NAME<prefix><suffix>`), `look` (`body`, `fur`, `tail`, `ears`, `eyes`, `whiskers`, `face`, `pattern`, `marking`: the cat maker's parts), `slots` (`fur`, `pattern`, `marking`: colour slots), `eyes` (an eye colour), `colours` (`fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears` painted `"#rrggbb"`), `ground` (false: it floats where it's put). In a menu it appears once you're in the world. It goes when the mod is taken out |
+| `wcmods::npcs()`, `npc_spot(distance, side)` | Every cat the mod has and hasn't removed; a place on the ground `distance` cm from your cat, `side` degrees round from where it faces |
+| `Npc::actor()`, `spawns()`, `location()`, `distance()`, `within(cm)` | Its actor now (nullptr while it isn't in the world), how many times it's been spawned, where it is, how far from your cat across the ground, and whether that's within so many cm |
+| `Npc::face(at)`, `move_to(at)`, `walk_to(at, {speed, radius, avoid}, done)`, `walking()`, `walk_result()`, `stop()` | Turn to a place; put it there at once (on the ground); walk there (175 cm/s, within 30 cm, along the nav mesh round obstacles, or a straight line with `avoid` false), stepping round what it's pressed against, `done(WalkResult)` with `Arrived`, `Blocked` (no progress, after five tries) or `Cancelled`; whether it's on its way; how the last walk ended; stop |
+| `Npc::set_label({name, title, extra, icon, range})`, `set_prompt(L"Talk", reach)` | The game's label over its head (a name, a smaller title, an extra line in the game's green, an icon `available`, `ongoing` or `done`), shown within `range` cm (1000) and faded at its edge; the game's prompt with its Interact glyph while your cat is within `reach` cm (250) and nothing of the game's own is in reach. Empty takes either away |
+| `wcmods::on_npc_interact(fn)` | `fn(npc)` when the game's Interact (any key or button bound to it, as the player's controller hears it) is pressed while a cat's prompt shows. The game hears it too, with nothing of its own in reach then |
+| `Npc::remove()` | Take it out of the world for good |
 
 **The game's words (`Words.hpp`)**, game thread only:
 

@@ -606,6 +606,46 @@ namespace wcmods
         return w->SpawnActor(cls, &where, nullptr);
     }
 
+    // One of an enum's values by its name (L"Player_Interact" in /Script/SwtEngine.ECommands), as the game has it;
+    // nullopt for an enum or a name it hasn't got.
+    inline auto enum_value(const TCHAR* enum_path, std::wstring_view name) -> std::optional<int64_t>
+    {
+        UObject* o = object(enum_path);
+        if (!o || !o->IsA(RC::Unreal::UEnum::StaticClass())) return std::nullopt;
+        for (auto& pair : static_cast<RC::Unreal::UEnum*>(o)->ForEachName())
+            if (detail::short_enum_name(pair.Key.ToString()) == name) return pair.Value;
+        return std::nullopt;
+    }
+
+    // One of the game's assets by its whole object path (a class, a texture, a sound, an animation:
+    // L"/Game/Path/Asset.Asset", a Blueprint's class L"/Game/Path/BP_X.BP_X_C"), loaded when it isn't yet, as the
+    // engine's own LoadAsset_Blocking does (KismetSystemLibrary: the path made a soft reference, then loaded). It
+    // waits for the load: a few at once, not every frame. nullptr for a path nothing is at. Game thread only.
+    inline auto load(std::wstring_view path) -> UObject*
+    {
+        if (path.empty()) return nullptr;
+        if (UObject* already = object(std::wstring(path).c_str())) return already;
+        UObject* lib = object(STR("/Script/Engine.Default__KismetSystemLibrary"));
+        auto soft_path = call_reflected(lib, STR("MakeSoftObjectPath"), [&](Params& p) { p.set_nth(0, Value::of(path)); });
+        if (!soft_path) return nullptr;
+        // Each step's result copied into the next one's first parameter by the struct's own copy (its names and
+        // string copied whole).
+        auto copy = [](Params& into, Params& from) {
+            FProperty* dst = nullptr;
+            for (FProperty* p : detail::own_properties(into.function()))
+            {
+                dst = p;
+                break;
+            }
+            void* src = from.raw(L"ReturnValue");
+            if (dst && src) dst->CopySingleValue(dst->ContainerPtrToValuePtr<void>(into.bytes()), src);
+        };
+        auto soft_ref = call_reflected(lib, STR("Conv_SoftObjPathToSoftObjRef"), [&](Params& p) { copy(p, *soft_path); });
+        if (!soft_ref) return nullptr;
+        auto loaded = call_reflected(lib, STR("LoadAsset_Blocking"), [&](Params& p) { copy(p, *soft_ref); });
+        return loaded ? loaded->get(L"ReturnValue").object : nullptr;
+    }
+
     // Take an actor out of the world. False when it isn't there.
     inline auto destroy(UObject* actor) -> bool
     {

@@ -1095,6 +1095,27 @@ def test_sky_values(agent):
     assert v["skyv.night_row_fog_restored"] == fog and v["skyv.thunder_sun"] > 0, v
 
 
+def test_npcs(agent):
+    """Npcs.hpp in the game: a cat of the mod's own spawned 2 m from your cat (moved 8 m from the den entrance whose
+    Travel prompt would take the Interact) on the game's walking cat, with its look, size, name and fur colour; its
+    label (name, title, icon) and its Talk prompt showing; the game's Interact, given as its controls give it, heard
+    for it; moved, walked 5 m with its own AI controller, and removed. The loader and the enum lookup on the way."""
+    r = _request(agent, "npcs", timeout=40)
+    assert not _failed(r, "npcs"), _failed(r, "npcs")
+    v = r["values"]
+    assert v["npcs.moved"] is True and v["npcs.spot"] is True, v
+    assert v["npcs.class"] == "BP_WalkingNPC_Character_Base_C" and abs(v["npcs.distance"] - 200) < 50, v
+    assert (v["npcs.body"], v["npcs.tail"], v["npcs.fur_slot"], v["npcs.override"]) == (3, 2, 4, True), v
+    assert (v["npcs.label_name"], v["npcs.label_title"], v["npcs.label_opacity"]) == ("Brindlemoon", "Elder", 1), v
+    assert v["npcs.game_prompt_up"] is False and v["npcs.prompt_on"] is True and v["npcs.prompt_shown"] is True, v
+    assert v["npcs.prompt_text"] == "Talk", v
+    assert v["npcs.fur_r"] > 0.99 and v["npcs.fur_b"] < 0.01, v   # #ff8800
+    assert v["npcs.interact_sent"] is True and v["npcs.interacts"] == 1 and v["npcs.interacted_is_it"] is True, v
+    assert v["npcs.walk_started"] is True and v["npcs.walked"] > 400 and v["npcs.walk_result"] == 1, v   # Arrived
+    assert v["npcs.walking_after"] is False and v["npcs.walk_result_after"] == 1, v
+    assert v["npcs.removed_gone"] is True and v["npcs.left"] == 0, v
+
+
 def test_ui_arrow_units(agent):
     """Ui.hpp's rule for an arrow on a tab's page, at init without the game: its release is given to the screen
     again from a button or check box, never from a slider, number or text box, not when the page hasn't the

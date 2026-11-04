@@ -425,8 +425,8 @@ Each step's pull request updates its line.
 | 2. Tables, live | done: every DataTable's rows read, changed, added and taken out; TuningData read and changed, the game's own lookup signed. Which keys the code names (`tuning_read.json`) moved to step 16 | #117 |
 | 3. Words, live | done: any key's words read, changed (every text made from it shows them) and put back; the key a text came from. No signed global was needed (the engine's reflected string-table calls and UE4SS's text data reach it). The roadmap's step 2 in a talk moves to step 7, which plays talks | #118 |
 | 4. Sounds and music | done: an id's sound replaced, muted and put back (the game's own plays follow); the music read, played, stopped; volumes; the pause. The roadmap's step 3 answered: a data mod's `AudioEvents.csv` reaches the game. A sound by its asset path waits for a loader (step 10) | #119 |
-| 5. The sky's values | done: every preset's values read and changed live in the sky's own copy (a new hidden member), put back; the table they come from. The roadmap's step 7 answered: the day cycle doesn't rewrite them, the sky fades back to the area's preset (step 1 of #111) | this branch, `claude/cpp-sky` |
-| 6. Cats of a mod's own | not started | |
+| 5. The sky's values | done: every preset's values read and changed live in the sky's own copy (a new hidden member), put back; the table they come from. The roadmap's step 7 answered: the day cycle doesn't rewrite them, the sky fades back to the area's preset (step 1 of #111) | #120 |
+| 6. Cats of a mod's own | done: spawned with a look, kept, moved, walked (stall detours), labelled, prompted, Interact heard from the controller; an asset loader and an enum lookup with them. Map markers move to step 14 with the map | this branch, `claude/cpp-npcs` |
 | 7. Conversations | not started | |
 | 8. Bonds | not started | |
 | 9. Looks and the clan | not started | |
