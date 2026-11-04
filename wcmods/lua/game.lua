@@ -3232,7 +3232,7 @@ end
 Game.quests = {}
 function Game.quests.manager() return Game.manager("quests") end
 
--- A quest object's state as a table: { quest, type, status, result, tracked, xp, rewards }.
+-- A quest object's state as a table: { quest, id, tag, graph, class, type, status, result, tracked, xp, rewards }.
 function Game.quests.describe(q)
     if not valid(q) then return nil end
     -- A quest object is named after its class; the quest graph that holds it says which quest it is.

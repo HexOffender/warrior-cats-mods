@@ -523,6 +523,25 @@ def test_the_fights_objects_are_documented():
     assert "`cat.actor`" in cats
 
 
+def test_every_quest_call_is_documented():
+    """Game.quests.describe, objectives and manager weren't in scripting.md's Quests section. Every quest call in
+    game.lua is named there now, and describe's fields are the ones it gives."""
+    import os
+    lua = game.lua()
+    names = re.findall(r"^function Game\.quests\.(\w+)\(", lua, re.M)
+    assert {"describe", "objectives", "manager", "all", "reported", "chapter"} <= set(names)
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "scripting.md")
+    with open(path, encoding="utf-8") as f:
+        docs = f.read()
+    quests = docs[docs.index("### Quests"):docs.index("### Fights")]
+    for name in names:
+        assert f"Game.quests.{name}(" in quests or f".{name}(" in quests, name
+    fields = body(lua, "function Game.quests.describe(q)", "\nend\n")
+    for field in ("quest", "id", "tag", "graph", "class", "type", "status", "result", "tracked", "xp", "rewards"):
+        assert f"{field} = " in fields, field
+    assert "`{quest, id, tag, graph, class, type, status, result, tracked, xp, rewards}`" in quests
+
+
 def test_find_never_hands_back_an_object_on_its_way_out():
     lua = game.lua()
     find = body(lua, "function Game.find(className)", "\n-- Every object of a class")

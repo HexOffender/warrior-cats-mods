@@ -398,11 +398,14 @@ or hidden animal doesn't move its bones until it's in view (the engine's way), t
 
 | Call | Gives or does |
 |---|---|
-| `Game.quests.all()` | Every quest: `{quest, id, graph, type, status, result, tracked, xp, rewards}`. `id` comes from its quest graph: `"Tutorial"`, `"Deliver"`, `"RiverClan_Unique1"` |
-| `Game.quests.tracked()` | The quest being followed, or nil |
-| `Game.quests.report(id, {title, status, objective, progress, by, description})` | List a quest of the mod's own on the mod menu's Quests page: `status` is `"available"`, `"active"` or `"done"`; `by` the mod's name; `description` an optional sentence about it. Report again when it changes; `nil` takes it off. `Game.quests.reported()` reads them back, `description` `""` when there's none (a page from before it was a field shows the first five) |
+| `Game.quests.all()` | Every quest the quest manager holds, each as `describe` gives it |
+| `Game.quests.describe(q)` | A quest object as a table: `{quest, id, tag, graph, class, type, status, result, tracked, xp, rewards}`. `quest` is the object itself; `id` comes from its quest graph (`"Tutorial"`, `"Deliver"`, `"RiverClan_Unique1"`), `tag` is the graph's quest tag (nil without one), `graph` the graph's name and `class` the quest's class; `rewards` is `{tag = count}`. Nil for no quest |
+| `Game.quests.objectives(q)` | A quest's objectives, in order: `{objective, id, index, current, target, status, point}` (`current` and `target` count it up, `point` is where to go when it has one). [Costly](#how-it-reaches-the-game): it looks through every objective in the game |
+| `Game.quests.tracked()` | The quest being followed (the object, for `describe` and `objectives`), or nil |
+| `Game.quests.manager()` | The game's quest manager, for `Game.get` and `Game.call` on what these don't wrap |
+| `Game.quests.report(id, {title, status, objective, progress, by, description})` | List a quest of the mod's own on the mod menu's Quests page: `status` is `"available"`, `"active"` or `"done"`; `by` the mod's name; `description` an optional sentence about it. Report again when it changes; `nil` takes it off. `Game.quests.reported()` reads them back: `{id, title, status, objective, progress, by, description}` each, `description` `""` when there's none (a page from before it was a field shows the first five) |
 | `Game.quests.status(tag)`, `.result(tag)`, `.successes(tag)` | By quest tag: `"QuestAvailable"`, `"OngoingQuest"`, … |
-| `Game.quests.start(tag)`, `.give(tag)`, `.track(quest, on)` | The quest manager's own StartQuestOfTag, GiveQuestOfTag and SetTracked. Not tried yet; they can move the story on |
+| `Game.quests.start(tag)`, `.give(tag)`, `.track(quest, on)` | The quest manager's own StartQuestOfTag, GiveQuestOfTag and SetTracked: true, or false and the error. Not tried yet; they can move the story on |
 | `Game.quests.chapter()` | `"Chapter00"` |
 
 ### Fights
