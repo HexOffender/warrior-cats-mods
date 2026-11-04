@@ -97,8 +97,13 @@ Each step is one commit (or a small group) with its unit test and its docs, in t
 **Where it stands (2026-11-04).** Every step is done on the branch `claude/menu-pages-sdk-fixes-604058`, one commit
 each, with W6 before W7 (W7's "the game saved since" reads W6's `fileCache.size`). The unit tests pass, every Lua
 module wcmods writes compiles with `luac`, and the fixed functions were run against UE4SS stubs with a local Lua 5.4
-(not part of the suite: the unit tests run no Lua). None of the in-game tests below has been run yet. Left for later:
-the C++ SDK's halves of W6 and W7 (they need a C++ build to check), and W7's two questions for the game (below).
+(not part of the suite: the unit tests run no Lua). In game (build 26337109, with the test mods, all-tweaks and Menu
+pages' review branch): every new and extended test passes, `test_scripts.py` (16), `test_menu.py` (17, two skipped:
+Game Tweaks not installed, the window behind others), `test_tweaks.py`, `test_world.py`, `test_bridge.py`,
+`test_studio_console.py`, and `test_cat.py`'s teleport and GodMode tests. `test_npcs.py`'s
+`test_npc_walks_to_a_place` failed where the dev save's cat stands (the den's rock is in the way of its +Y walk) and
+passed from open ground 4 m off. Not run: `test_cpp_sdk.py`, which needs the C++ test mod built. Left for later: the
+C++ SDK's halves of W6 and W7 (they need a C++ build to check), and W7's two questions for the game (below).
 
 **In-game checks** run through the agent: `python wcmods.py agent test <file>`, after `agent install --with <mod
 folder>` for a throwaway mod. Two rules apply:
