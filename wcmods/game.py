@@ -12,6 +12,8 @@ offset (docs/mechanics/), the module maps it with UE4SS's RegisterCustomProperty
 write it like any other property. Everything else goes through what the game does reflect: its
 managers, the combat director, the quest and save managers.
 """
+import re
+
 from .lua import source as lua_source
 
 SHARED_NAME = "WCModsGame"
@@ -166,9 +168,18 @@ def offsets_json(offsets=None, build=None, functions=None):
     return {"game_build": build, "members": members, "functions": natives}
 
 
+def version_number(version):
+    """A wcmods version as the number scripts compare (Game.wcmodsNumber): major * 10000 + minor * 100 + patch,
+    "0.6.0" -> 600. Anything after the digits of a part ("0.6.0rc1") is left out."""
+    parts = [int(re.match(r"\d*", p).group() or 0) for p in str(version).split(".")[:3]]
+    parts += [0] * (3 - len(parts))
+    return parts[0] * 10000 + parts[1] * 100 + parts[2]
+
+
 def lua(offsets=None, saved=None):
     """The module's Lua; `offsets` as for hidden(); `saved`, the folder Game.save.folder() names (the one
-    an install makes, pipeline.saved_folder), or None for the usual one."""
+    an install makes, pipeline.saved_folder), or None for the usual one. Game.wcmods is this wcmods' version."""
+    from . import __version__
     from .sdk import lua_value
     rows = []
     for cls, fields in hidden(offsets):
@@ -177,4 +188,5 @@ def lua(offsets=None, saved=None):
             rows.append(f'    ["{cls}"] = {{ {items} }},')
     enums = "".join(f"\n    {key} = {{ {lua_value(path)}, {lua_value(names)} }}," for key, path, names in ENUMS)
     return (LUA.replace("@HIDDEN@", "{\n" + "\n".join(rows) + "\n}").replace("@SAVED@", lua_value(saved))
-            .replace("@ENUMS@", "{" + enums + "\n}"))
+            .replace("@ENUMS@", "{" + enums + "\n}").replace("@WCMODS@", lua_value(__version__))
+            .replace("@WCMODS_NUMBER@", str(version_number(__version__))))

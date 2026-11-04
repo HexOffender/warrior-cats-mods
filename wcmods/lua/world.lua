@@ -263,7 +263,10 @@ local function pickupLabel(actor)
     return table.concat(names, ", ")
 end
 
-local actorLabels = {}   -- "address|class" -> label, for labels that belong to one actor; scan() clears it
+-- "address|name" -> label, for labels that belong to one actor. The actor's own name has its instance number
+-- (BP_Pickup_Herb_1_C_2041), so a recycled address with an actor of the same class is another key; and each look at
+-- the actors again (scan(), a class query's) starts the cache afresh, so it doesn't grow for the whole session.
+local actorLabels = {}
 -- A readable name for an actor (kind, when known, helps: cats get their names, creatures their model).
 function World.label(actor, kind)
     local n = actor:GetClass():GetFName():ToString()
@@ -271,7 +274,7 @@ function World.label(actor, kind)
     local pickup = kind == "pickups" or (kind == nil and n:find("Pickup") ~= nil)
     local personal = pickup or kind == "cats" or kind == "questGivers" or kind == "creatures"
     if not personal then return base end
-    local key = tostring(actor:GetAddress()) .. "|" .. n
+    local key = tostring(actor:GetAddress()) .. "|" .. actor:GetFName():ToString()
     local hit = actorLabels[key]
     if hit then return hit end
     if pickup then
@@ -352,6 +355,7 @@ function World.find(kind)
     if World.kinds[kind] then return fresh()[kind] or {} end
     local c = byClass[kind]
     if not c or os.clock() - c.at >= World.refresh then
+        actorLabels = {}   -- as scan() does: an address in the last list can be another actor's now
         c = { at = os.clock(), list = FindAllOf(kind) or {} }
         byClass[kind] = c
     end

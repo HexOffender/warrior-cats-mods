@@ -2,6 +2,7 @@
 (Overview, Installed mods, Log, Menu, and the Inspector and Lua console with code mods allowed) are wcmods';
 the pages about the game are the Menu pages mod's, so their tests skip without it (python wcmods.py
 menu-pages, or Get set up in Clan Mod Studio, then install with code mods allowed)."""
+import os
 import time
 
 from wcmods import menupages
@@ -91,6 +92,34 @@ def test_stats_page_matches_the_cat(agent):
     assert page.find("Health").value == cat["health"]
 
 
+def test_opening_stats_changes_nothing(agent):
+    """Fractional and out-of-range values read the same after Stats and its two sections have been open a while:
+    Prowess 123.4, Agility 2345.5 (above its box's 2000), stamina back 612.5 a second (above 500) and half a point
+    of experience. Before Menu pages' review fixes (and ui.number's, in wcmods), opening the page rounded and
+    clamped them and wrote them back. Your cat's values are put back after."""
+    need_pages(agent)
+    read = """local c = Game.cat() local s = c:stats() or {}
+return { xp = c:xp(), regen = c:staminaRegen(), Prowess = s.Prowess, Agility = s.Agility }"""
+    was = agent.lua(read)
+    assert was.get("xp") is not None and was.get("Prowess") is not None, was
+    try:
+        agent.lua(f"""local c = Game.cat()
+c:setStat("Prowess", 123.4) c:setStat("Agility", 2345.5) c:setStaminaRegen(612.5) c:setXp({was["xp"]} + 0.5)
+return true""")
+        want = agent.lua(read)   # as the game holds them (its floats)
+        agent.menu.open("Stats")
+        agent.menu.section("Level and experience", open=True)
+        agent.menu.section("Stats", open=True)
+        time.sleep(1.5)
+        now = agent.lua(read)
+        assert all(abs((now.get(k) or 0) - v) < 1e-3 for k, v in want.items() if v is not None), (want, now)
+    finally:
+        regen = f"c:setStaminaRegen({was['regen']})" if was.get("regen") is not None else ""
+        agent.lua(f"""local c = Game.cat()
+c:setStat("Prowess", {was["Prowess"]}) c:setStat("Agility", {was["Agility"]}) c:setXp({was["xp"]}) {regen}
+return true""")
+
+
 def test_health_slider_and_heal(agent):
     need_pages(agent)
     page = agent.menu.open("Stats")
@@ -142,6 +171,52 @@ def test_travel_save_spot_and_forget(agent):
     assert not agent.menu.read().find("Go: " + name), "the spot should be gone"
 
 
+def test_travel_keeps_a_places_file_it_cant_read(agent):
+    """A places.json Travel can't read (half written, not a list, a list with more after it) is said on the page
+    and left as it is: Save this spot says it couldn't, the file is byte for byte the same, and no places.json.new is
+    left. (Before Menu pages' review fixes, its Save wrote a new list over the file.) The file is put back after."""
+    need_pages(agent)
+    path = agent.lua("return Game.save.folder()") + "\\places.json"
+    new = path + ".new"
+    had = None
+    if os.path.exists(path):
+        with open(path, "rb") as f:
+            had = f.read()
+
+    def says(*parts):
+        """A row of the page with every part in it (in small letters), so text left from the last file can't pass."""
+        def row():
+            page = agent.menu.read()
+            return any(all(p.lower() in str(r.value or "").lower() for p in parts) for r in page.rows) or None
+        return row
+    try:
+        agent.menu.open("Travel")
+        # Each with the reason the page gives for it: decode's own for broken JSON and for text after the list,
+        # Menu pages' for an object.
+        for bad, why in (('[{"name": "half', "unfinished string"), ('{"name": "not a list"}', "not one list of spots"),
+                         ("[] [1]", "text after the value")):
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(bad)
+            agent.menu.press("Read it again")
+            agent.wait(says("places.json couldn't be read", why), 5, f"the page to say it can't read {bad!r}")
+            agent.menu.press("Save this spot")
+            agent.wait(says("Couldn't save the spot", why), 5, f"Save this spot to say it couldn't, for {bad!r}")
+            with open(path, "rb") as f:
+                assert f.read() == bad.encode(), f"places.json was written over: it held {bad!r}"
+            assert not os.path.exists(new), "places.json.new was left behind"
+    finally:
+        if had is None:
+            if os.path.exists(path):
+                os.remove(path)
+        else:
+            with open(path, "wb") as f:
+                f.write(had)
+        if os.path.exists(new):
+            os.remove(new)
+        if agent.menu.is_open():
+            agent.menu.press("Read it again")
+
+
 def test_travel_jump_and_back(agent):
     need_pages(agent)
     page = agent.menu.open("Travel")
@@ -164,6 +239,39 @@ def test_travel_jump_and_back(agent):
     back = agent.location()
     assert sum((a - b) ** 2 for a, b in zip(back, start)) ** 0.5 < 300, f"Back didn't return: {start} -> {back}"
     agent.menu.section(sections[0], open=False)
+
+
+def test_another_scripts_status_line_stays_up(agent):
+    """A line each under the menu's title (Menu.status): on a page Menu pages doesn't own (Overview), a line another
+    script puts up stays up against Menu pages' own, which changes with the clock; on one of Menu pages' pages its
+    line wins and is live (it follows your cat's health while the other line is up, rather than standing still); and
+    once the other line is taken down, Menu pages' is back. (The one shared line was the last one set, so Menu pages'
+    took over within a second.) Your cat's health is put back after."""
+    need_pages(agent)
+    mine = scripts.ue4ss_name(menupages.ID)
+
+    def whose():
+        return (agent.menu.status_shown() or (None, None))[1]
+    hp = agent.lua("return Game.cat():health()")
+    agent.menu.open("Overview")
+    try:
+        agent.wait(lambda: whose() == mine, 5, "Menu pages' status line")
+        agent.menu.status("A line from the agent")
+        agent.wait(lambda: agent.menu.status_shown() == ("A line from the agent", "=wcmods"), 3, "the agent's line")
+        time.sleep(1.5)   # Menu pages updates its line twice a second
+        assert agent.menu.status_shown() == ("A line from the agent", "=wcmods"), agent.menu.status_shown()
+        agent.menu.open("At a glance")
+        agent.wait(lambda: whose() == mine, 3, "Menu pages' line on its own page")
+        before = agent.menu.status_shown()[0]
+        agent.lua(f"Game.cat():setHealth({max(1, hp - 10)}) return true")
+        agent.wait(lambda: whose() == mine and agent.menu.status_shown()[0] != before, 5,
+                   "Menu pages' line to follow the health (it stood still while another line was up)")
+        agent.menu.open("Overview")
+        agent.wait(lambda: whose() == "=wcmods", 3, "the agent's line again on Overview")
+    finally:
+        agent.menu.status(None)
+        agent.lua(f"Game.cat():setHealth({hp}) return true")
+    agent.wait(lambda: whose() == mine, 5, "Menu pages' line to come back")
 
 
 def test_items_page(agent):

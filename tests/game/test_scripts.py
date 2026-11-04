@@ -1,7 +1,7 @@
 """The script runtime in the game: a script's errors carry its mod's name and are said once, a misspelt key doesn't
-stop a script, another cat's level isn't yours, a task can cancel itself and add another, a script that doesn't
-start is named, a script's settings page saves and says so, and a page made from a timer is the only one. The
-throwaway mods (tests/game/mods/noisy-script, broken-script and late-page) go in with a test install:
+stop a script, another cat's level isn't yours, a fight with nobody there isn't your cat, a task can cancel itself
+and add another, a script that doesn't start is named, a script's settings page saves and says so, and a page made
+from a timer is the only one. The throwaway mods (tests/game/mods/noisy-script, broken-script and late-page) go in with a test install:
 
     python wcmods.py agent install --with tests/game/mods/noisy-script --with tests/game/mods/broken-script --with tests/game/mods/late-page
 
@@ -99,6 +99,44 @@ return { other = other:level(), xp = other:xp(), stats = other:stats(), set = ok
         agent.lua("if WCMODS_TEST_NPC then WCMODS_TEST_NPC:remove() WCMODS_TEST_NPC = nil end")
 
 
+def test_a_fight_with_no_one_there_is_not_your_cat(agent):
+    """Whose turn it is, the main enemy and a fighter's cat are nil when there's nobody there (they were your cat:
+    Game.cat(nil) is yours). Empty wrappers reach that path with no fight going on."""
+    r = agent.lua("""local f = setmetatable({}, Game.Fight) local x = setmetatable({}, Game.Fighter)
+return { mine = Game.cat() ~= nil, current = f:current() == nil, main = f:mainEnemy() == nil, cat = x:cat() == nil }""")
+    assert r == {"mine": True, "current": True, "main": True, "cat": True}, r
+
+
+def test_json_with_text_after_it_is_refused(agent):
+    """Game.json.decode("[] [1]") was an empty list, and a Save after lost the rest. The parentheses keep only the
+    first value (agent.lua gives nil, err back as a list)."""
+    assert agent.lua('return (Game.json.decode("[] [1]"))') is None
+    assert agent.lua('return #Game.json.decode("[1] \\n")') == 1   # white space after it is fine
+
+
+def test_the_save_file_is_kept_while_it_hasnt_changed(agent):
+    """Game.save.file() gives the same table 2.5 s later: it isn't decoded again while the file's size is the same.
+    It is every 30 s anyway, so a wait that crosses that is tried once more (two can't fall in 5 s); flaky only if the
+    game saves meanwhile."""
+    try:
+        for _ in range(2):
+            assert agent.lua("WCMODS_SAVE_FILE = Game.save.file() return WCMODS_SAVE_FILE ~= nil") is True
+            time.sleep(2.5)
+            same = agent.lua("return rawequal(Game.save.file(), WCMODS_SAVE_FILE)")
+            if same:
+                break
+        assert same is True
+    finally:
+        agent.lua("WCMODS_SAVE_FILE = nil return true")
+
+
+def test_game_says_which_wcmods_it_is(agent):
+    """Game.wcmods is the version the install was made with (this checkout's, when agent install ran from it)."""
+    from wcmods import __version__, game
+    assert agent.lua("return { v = Game.wcmods, n = Game.wcmodsNumber }") == {
+        "v": __version__, "n": game.version_number(__version__)}
+
+
 def test_a_script_that_doesnt_load_is_named(agent):
     """broken-script's main.lua is missing an end: the log says so by file and line, the studio's card would say
     "Didn't load", and the mod menu's Overview lists it in red."""
@@ -122,7 +160,9 @@ def test_report_has_the_scripts_runtime_error(agent):
 
 def test_save_on_the_settings_page_says_so_and_keeps_an_empty_list(agent):
     """Noisy script's automatic settings page: change a number, Save; the page says "Saved to settings.json.", and
-    the file keeps its empty list and its other numbers as they were. The file is put back after."""
+    the file keeps its empty list and its other numbers as they were: Count (12, above its _max_count of 10) and Far
+    (100.1, which the number box's 32-bit float reads back as 100.09999847...) aren't changed by being shown, and
+    Gone's null is saved as null. The file is put back after."""
     need(agent, "noisy-script")
     path = os.path.join(NOISY, "settings.json")
     with open(path, encoding="utf-8") as f:
@@ -130,6 +170,9 @@ def test_save_on_the_settings_page_says_so_and_keeps_an_empty_list(agent):
     try:
         page = agent.menu.open("script:noisy-script")
         assert page.find("Speed"), page.text()
+        time.sleep(0.5)   # a few frames: an untouched box that changed its value would have by now
+        page = agent.menu.read()
+        assert page.get("Count") == 12 and page.get("Far") == 100.1, page.text()
         agent.menu.set("Speed", 2.5)
         agent.menu.press("Save")
         page = agent.wait(lambda: (lambda p: p if p.has("Saved to settings.json.") else None)(agent.menu.read()), 5,
@@ -137,9 +180,15 @@ def test_save_on_the_settings_page_says_so_and_keeps_an_empty_list(agent):
         with open(path, encoding="utf-8") as f:
             saved = json.load(f)
         assert saved["keys"] == [] and saved["speed"] == 2.5 and saved["ratio"] == 0.1234567, saved
+        assert saved["count"] == 12 and saved["far"] == 100.1, saved
+        assert "gone" in saved and saved["gone"] is None, saved   # Game.json.null went back as {}
+        assert not os.path.exists(path + ".new") and not os.path.exists(path + ".old")
     finally:
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(before)
+        for left in (path + ".new", path + ".old"):   # (none, unless the Save failed part way)
+            if os.path.exists(left):
+                os.remove(left)
         agent.menu.close()
 
 
@@ -152,6 +201,31 @@ def test_a_page_made_from_a_timer_is_the_only_one(agent):
     page = agent.menu.open("script:late-page")
     assert page.has("Made from a timer") and not page.find("On"), page.text()
     agent.menu.close()
+
+
+def test_a_whole_number_box_gives_back_a_fraction_it_was_given(agent):
+    """late-page's Half is a whole-numbers box given 2.5, and its page writes back what the box gives: still 2.5
+    after a few frames (it went 3, the box's rounding taken for the player's change)."""
+    need(agent, "late-page")
+    agent.menu.open("script:late-page")
+    try:
+        time.sleep(0.5)
+        page = agent.menu.read()
+        assert page.get("Half") == 2.5, page.text()
+    finally:
+        agent.menu.close()
+
+
+def test_a_progress_bar_shows_its_text_as_given(agent):
+    """late-page's bars: ready-made text with a % in it, and a format that isn't a pattern, are shown as they are (the
+    first showed "50 50one", the second broke the page); a bar with neither shows its percent."""
+    need(agent, "late-page")
+    page = agent.menu.open("script:late-page")
+    try:
+        assert not page.errors(), page.errors()
+        assert (page.get("Done"), page.get("Full"), page.get("Plain")) == ("50% done", "100%", "25%"), page.text()
+    finally:
+        agent.menu.close()
 
 
 def test_the_settings_page_shows_help_under_its_row_and_bounds_a_number(agent):

@@ -8,7 +8,11 @@
 --
 -- Everything runs on the game thread. Call it from a timer, an event, a key, a menu page or a painter,
 -- not from LoopAsync (two threads in one Lua state crash the game). docs/scripting.md has every call.
-local Game = { version = 1 }
+-- Which wcmods wrote it, for a script that supports more than one: Game.wcmods is its version ("0.6.0"), and
+-- Game.wcmodsNumber one to compare (major * 10000 + minor * 100 + patch: 600). Both are nil on 0.5.0 and older (a
+-- build between releases says the last release's number), so `(Game.wcmodsNumber or 0) >= 600` asks for 0.6.0 or
+-- newer. (Game.version is the module's own, always 1.)
+local Game = { version = 1, wcmods = @WCMODS@, wcmodsNumber = @WCMODS_NUMBER@ }
 
 -- What the module says goes to UE4SS.log as "[<whose script>] ...": the mod's name once the script bootstrap has
 -- set Game.modName (every UE4SS mod has a Lua state, and so a copy of this module, of its own; the bridge and the
@@ -487,7 +491,8 @@ function Game.json.list(t) return setmetatable(t or {}, Game.json.listMeta) end
 function Game.json.encode(v) return encodeJson(v) end
 
 -- JSON text to Lua: objects and arrays become tables, null becomes Game.json.null. A UTF-8 byte order mark
--- at the start (Notepad's, on a file saved as UTF-8) is skipped.
+-- at the start (Notepad's, on a file saved as UTF-8) is skipped. Text after the value is an error, as for any
+-- other mistake: nil and why.
 local BOM = "\239\187\191"
 function Game.json.decode(text)
     local pos = 1
@@ -580,7 +585,13 @@ function Game.json.decode(text)
             return math.tointeger(tonumber(num)) or tonumber(num)
         end
     end
-    local ok, result = pcall(value)
+    -- One value and nothing after it: "[] [1]" would read as an empty list, and a Save after would lose the rest.
+    local ok, result = pcall(function()
+        local v = value()
+        ws()
+        if pos <= #text then fail("text after the value") end
+        return v
+    end)
     if not ok then return nil, result end
     return result
 end
@@ -938,6 +949,8 @@ end }
 -- ===================================================================================== the save's live data
 -- The game keeps its save as JSON in memory (the save manager); these read and write it while it runs.
 Game.save = {}
+-- Game.save.file()'s decoded save (below), and when and at what size it was read; Game.save.write drops it.
+local fileCache = { at = -1, data = nil, size = nil, checked = -1 }
 
 function Game.save.manager() return Game.manager("save") end
 
@@ -989,9 +1002,11 @@ function Game.save.setSetting(primary, sub, value)
     return pcall(function() sm:SetSettingsData(primary, sub or "", value) end)
 end
 
--- Write the save now (the game's own Save, which it also calls at checkpoints).
+-- Write the save now (the game's own Save, which it also calls at checkpoints). Game.save.file() reads the file
+-- again after it.
 function Game.save.write(context)
     local lib = Game.library("SaveManager")
+    fileCache.data = nil
     return pcall(function() lib:Save(context or "WCMods", false, false) end)
 end
 
@@ -1325,17 +1340,27 @@ function Game.save.folder()
     return base .. "\\Wrc\\Saved\\WCMods"
 end
 
-local fileCache = { at = -1, data = nil }
--- The whole save as of the game's last save, as a table (cached for a second).
+-- The whole save as of the game's last save, as a table. Decoding it takes about 40 ms (half a megabyte), so the
+-- table is kept while the file's size stays the same: the size is looked at at most 4 times a second, and the file
+-- is decoded again at least every 30 s (a save that rewrote it at the same size is seen that late). The file caught
+-- half written gives the last table read whole. (fileCache is declared with Game.save, so Game.save.write sees it.)
 function Game.save.file()
-    if fileCache.data and os.clock() - fileCache.at < 1 then return fileCache.data end
+    local now = os.clock()
+    if fileCache.data and now - fileCache.checked < 0.25 then return fileCache.data end
     local f = io.open(Game.save.path(), "rb")
     if not f then return nil, "no save file" end
+    local size = f:seek("end")
+    fileCache.checked = now
+    if fileCache.data and size == fileCache.size and now - fileCache.at < 30 then
+        f:close()
+        return fileCache.data
+    end
+    f:seek("set")
     local text = f:read("a")
     f:close()
     local data, err = Game.json.decode(text)
-    if not data then return nil, err end
-    fileCache.at, fileCache.data = os.clock(), data
+    if not data then return fileCache.data, err end
+    fileCache.at, fileCache.data, fileCache.size = now, data, size
     return data
 end
 
@@ -1509,7 +1534,8 @@ function Cat:location()
     if not ok then return nil end
     return { X = l.X, Y = l.Y, Z = l.Z }
 end
--- Move the cat: cat:teleport(x, y, z), cat:teleport({X, Y, Z}) or cat:teleport(anotherActor).
+-- Move the cat: cat:teleport(x, y, z), cat:teleport({X, Y, Z}) or cat:teleport(anotherActor). True, or false and why:
+-- the engine's K2_TeleportTo says false when there's no room there, and the cat stays where it was.
 function Cat:teleport(x, y, z)
     if not valid(self.actor) then return false, "the cat is gone" end
     local to
@@ -1521,7 +1547,10 @@ function Cat:teleport(x, y, z)
         if not ok then return false, "not a place" end
         to = { X = l.X, Y = l.Y, Z = l.Z + 50 }
     end
-    return pcall(function() self.actor:K2_TeleportTo(to, self.actor:K2_GetActorRotation()) end)
+    local ok, moved = pcall(function() return self.actor:K2_TeleportTo(to, self.actor:K2_GetActorRotation()) end)
+    if not ok then return false, tostring(moved) end
+    if moved == false then return false, "the game wouldn't move it there (no room)" end   -- (nil: UE4SS didn't say)
+    return true
 end
 function Cat:scale()
     if not valid(self.actor) then return nil end
@@ -1599,9 +1628,28 @@ function Cat:setRewards(counts) return Game.setTagCounts(Game.get(self.actor, "r
 
 -- ===================================================================================== items
 Game.items = {}
-local live = {}   -- tag -> total, from the HUD's pickup messages since the script started
+-- The HUD's pickup messages since the level loaded: tag -> total (live). They're stamped with the HUD that sent them
+-- (its address and its name, which has its instance number: a save loaded, or another cat, is a new HUD), and with
+-- the save file's size at the last one. Another HUD, or a save the game wrote since at another size (which has them
+-- then), drops them, and the save says again. A save rewritten at the same size isn't noticed: the pickups stay laid
+-- over it until the next load. (One table, not more locals: the main chunk is near Lua's 200.)
+local pickups = { live = {}, stamp = nil, size = nil, seen = nil, watching = false }
+-- A HUD's stamp, "<address>|<name>", or nil.
+function pickups.stampOf(h)
+    if not valid(h) then return nil end
+    local ok, stamp = pcall(function() return tostring(h:GetAddress()) .. "|" .. h:GetFName():ToString() end)
+    return ok and stamp or nil
+end
+function pickups.saveSize()
+    local f = io.open(Game.save.path(), "rb")
+    if not f then return nil end
+    local n = f:seek("end")
+    f:close()
+    return n
+end
 
--- Your items: { tagName = count } as of the game's last save, with any pickups since then.
+-- Your items: { tagName = count } as of the game's last save, with any pickups since the level loaded (and since
+-- that save).
 function Game.items.list()
     local out = {}
     local slot = Game.save.slotData()
@@ -1609,19 +1657,37 @@ function Game.items.list()
     if type(inv) == "table" then
         for k, v in pairs(inv) do out[k] = v end
     end
-    for k, v in pairs(live) do out[k] = v end
+    if next(pickups.live) ~= nil then
+        -- No HUD to go by (Game.find answers nil for a second after a load) keeps them.
+        local now = pickups.stampOf(Game.find("WBP_GuiHudGameWrc_C"))
+        local saved = false
+        if fileCache.at ~= pickups.seen then   -- once for each time the save is decoded, not each call
+            pickups.seen = fileCache.at
+            -- The save read above is the file as it is now, and the game wrote it after the last pickup.
+            saved = pickups.size ~= nil and fileCache.size ~= nil and fileCache.size ~= pickups.size
+                    and fileCache.size == pickups.saveSize()
+        end
+        if (now ~= nil and pickups.stamp ~= nil and now ~= pickups.stamp) or saved then
+            pickups.live, pickups.stamp, pickups.size = {}, nil, nil
+        end
+    end
+    for k, v in pairs(pickups.live) do out[k] = v end
     return out
 end
 
 function Game.items.count(tag) return Game.items.list()[tag] or 0 end
 
-local pickupWatch = false
 local function watchPickups()
-    if pickupWatch then return end
-    pickupWatch = true
-    Game.hook("/Script/Wrc.GuiHudWrc:OnItemPickedUp", function(_, tag, quantity, total)
+    if pickups.watching then return end
+    pickups.watching = true
+    -- The HUD that sends the message stamps it (GuiHudWrc's one class in game is WBP_GuiHudGameWrc_C, which
+    -- Game.items.list looks for).
+    Game.hook("/Script/Wrc.GuiHudWrc:OnItemPickedUp", function(hud, tag, quantity, total)
         local name = Game.tagName(tag)
-        live[name] = total
+        local s = pickups.stampOf(hud)
+        if s ~= nil and s ~= pickups.stamp then pickups.live, pickups.stamp = {}, s end
+        pickups.live[name] = total
+        pickups.size, pickups.seen = pickups.saveSize(), nil
         Game.emit("itemPickedUp", name, quantity, total)
     end)
 end
@@ -3129,6 +3195,11 @@ function Game.freshKill.level()
 end
 
 -- ===================================================================================== time of day
+-- UE4SS's shared variables, which every script's Lua state sees (the clock's hold, the quests scripts report).
+local function shared(name) local ok, v = pcall(function() return ModRef:GetSharedVariable(name) end) return ok and v or nil end
+local function share(name, v) pcall(function() ModRef:SetSharedVariable(name, v) end) end
+local function clean(s) return (tostring(s or ""):gsub("[\t\n]", " ")) end
+
 Game.time = {}
 -- The clock: hours, minutes, seconds.
 function Game.time.get()
@@ -3144,11 +3215,38 @@ function Game.time.seconds() return Game.get(Game.gameState(), "WCM_DayTime") en
 function Game.time.setSeconds(s) return Game.set(Game.gameState(), "WCM_DayTime", s % 86400) end
 function Game.time.set(h, m, s) return Game.time.setSeconds((h or 0) * 3600 + (m or 0) * 60 + (s or 0)) end
 
+-- One hold of the clock for every script, so two scripts holding it don't fight over the hour: a shared variable,
+-- "<seconds>\t<who>" ("" for none). The last script to hold it has it, and every script that has held it keeps the
+-- clock at that hour twice a second while your cat is in the world. Game.time.hold(seconds, who) holds it (who:
+-- the script's name, Game.modName by default) and gives back what setting the clock did; Game.time.hold(nil, who)
+-- lets go, of your own hold only. Game.time.held() is the hour held, in seconds, and whose it is; nil for none.
+-- (Game.time.set and setSeconds stay plain writes, which a hold puts back.)
+Game.time.holding = { key = "WCModsGame.clockHold", task = nil }
+function Game.time.held()
+    local s, who = tostring(shared(Game.time.holding.key) or ""):match("^([%d%.]+)\t(.*)$")
+    return tonumber(s), who
+end
+function Game.time.hold(s, who)
+    local h = Game.time.holding
+    who = clean(who or Game.modName or "a script")
+    if not s then
+        if select(2, Game.time.held()) == who then share(h.key, "") end
+        return true
+    end
+    s = math.floor(s + 0.5) % 86400   -- a whole second of the day: 86399.6 is 0, not 86400
+    share(h.key, string.format("%d\t%s", s, who))
+    h.task = h.task or Game.every(0.5, function()
+        local at = Game.time.held()
+        if at and Game.cat() then Game.time.setSeconds(at) end
+    end)
+    return Game.time.setSeconds(s)
+end
+
 -- ===================================================================================== quests
 Game.quests = {}
 function Game.quests.manager() return Game.manager("quests") end
 
--- A quest object's state as a table: { quest, type, status, result, tracked, xp, rewards }.
+-- A quest object's state as a table: { quest, id, tag, graph, class, type, status, result, tracked, xp, rewards }.
 function Game.quests.describe(q)
     if not valid(q) then return nil end
     -- A quest object is named after its class; the quest graph that holds it says which quest it is.
@@ -3207,9 +3305,6 @@ end
 -- again whenever it changes; nil takes it off the page. Each is one line of tab-separated fields: title,
 -- status, objective, progress, by, description (a reader that knows the first five ignores the sixth).
 local QUEST_PREFIX = "WCModsQuests."
-local function shared(name) local ok, v = pcall(function() return ModRef:GetSharedVariable(name) end) return ok and v or nil end
-local function share(name, v) pcall(function() ModRef:SetSharedVariable(name, v) end) end
-local function clean(s) return (tostring(s or ""):gsub("[\t\n]", " ")) end
 function Game.quests.report(id, q)
     id = clean(id)
     local ids, have = {}, false
@@ -3337,8 +3432,16 @@ function Fight:turnOrder()
     for _, a in ipairs(Game.list(Game.get(self.director, "TurnOrder"))) do out[#out + 1] = Game.cat(a) end
     return out
 end
-function Fight:current() return Game.cat(Game.get(self.director, "CurrentTurnAttackCharacter")) end
-function Fight:mainEnemy() return Game.cat(Game.get(self.director, "MainEnemyCombatCharacter")) end
+-- Whose turn it is, and the fight's main enemy, as cats; nil when it's nobody's turn, there's no main enemy, or its body
+-- can't be read (Game.cat(nil) would be your cat).
+function Fight:current()
+    local a = Game.get(self.director, "CurrentTurnAttackCharacter")
+    return a ~= nil and Game.cat(a) or nil
+end
+function Fight:mainEnemy()
+    local a = Game.get(self.director, "MainEnemyCombatCharacter")
+    return a ~= nil and Game.cat(a) or nil
+end
 function Fight:kind() return Game.className(self.director) end
 -- (There's no Fight:finish. The combat manager's EndCombat, tried in game, ends the fight but leaves
 -- your cat without a body and the fight menu on screen.)
@@ -3347,7 +3450,11 @@ function Fighter:actor()
     local ok, a = Game.call(self.component, "GetOwnerCharacter")
     return ok and valid(a) and a or nil
 end
-function Fighter:cat() return Game.cat(self:actor()) end
+-- The cat itself; nil when its body can't be read.
+function Fighter:cat()
+    local a = self:actor()
+    return a ~= nil and Game.cat(a) or nil
+end
 function Fighter:stats()
     local out = {}
     for _, s in ipairs(STATS) do out[s] = Game.get(self.component, "WCM_" .. s) end
@@ -3396,6 +3503,36 @@ function Game.dev.manager() return Game.manager("cheats") end
 function Game.dev.get(name) return Game.get(Game.dev.manager(), name) end
 function Game.dev.set(name, v) return Game.set(Game.dev.manager(), name, v) end
 -- Every plain setting (numbers and on/off switches) with its value.
+-- The enum (by its path) each of the switches that hold one of an enum's values is of, as the class dump has
+-- them; flags: a set of flags, the values added up (GodMode: InfiniteLife 1 + Combat 2 is 3). GodMode is a plain
+-- byte to reflection, so nothing in the game pairs it with EGodModeTypeFlag but its name. (EGodModeTypeFlag isn't
+-- in Game.enums: those fall back to numbering the names by their place, and its numbers are 0, 1, 2, 4, 8.)
+Game.dev.enums = {
+    GodMode = { path = "/Script/SwtQuest.EGodModeTypeFlag", flags = true },
+    ForceClan = { path = "/Script/SwtQuest.EClanType" },
+    ForcedRank = { path = "/Script/SwtQuest.ECharacterRank" },
+    ForcePlayWrcNarrativeSequence = { path = "/Script/SwtQuest.EWrcNarrativeSequencePlayed" },
+    ForcedLocationType = { path = "/Script/SwtQuest.ELocationsType" },
+    ForcedDifficulty = { path = "/Script/SwtAdventure.EAICombatProfile" },
+    ForcedAttackStatusType = { path = "/Script/SwtAdventure.ESwtAdventureStatusType" },
+    ForcedDilemma = { path = "/Script/SwtAdventure.ESwtAdventureDilemmaId" },
+    OverridePlatformType = { path = "/Script/SwtEngine.EPlatformType" },
+    OverrideLanguage = { path = "/Script/SwtEngine.ELanguage" },
+    DrawDebugTrace = { path = "/Script/Engine.EDrawDebugTrace" },
+}
+-- An enum switch's values by name, {InfiniteLife = 1, ...} (a copy), read from the game the first time (Game.enumNames)
+-- and kept; nil for a switch that isn't one, or while the game's enum can't be read (asked again 5 s later).
+function Game.dev.choices(name)
+    local e = Game.dev.enums[name]
+    if not e then return nil end
+    if e.read == nil or (e.read == false and os.clock() - e.at >= 5) then e.read, e.at = Game.enumNames(e.path) or false, os.clock() end
+    if not e.read then return nil end
+    local out = {}
+    for k, v in pairs(e.read) do out[k] = v end
+    return out
+end
+-- The cheats manager's switches: { name, type, value, owner }, and for one that holds an enum's value, enum (its path),
+-- choices (Game.dev.choices) and flags (true for a set of flags).
 function Game.dev.list()
     local out = {}
     local m = Game.dev.manager()
@@ -3403,7 +3540,10 @@ function Game.dev.list()
     for _, p in ipairs(Game.properties(m)) do
         if p.type == "BoolProperty" or p.type == "ByteProperty" or p.type == "IntProperty" or p.type == "FloatProperty"
             or p.type == "EnumProperty" then
-            out[#out + 1] = { name = p.name, type = p.type, value = p.value, owner = p.owner }
+            local row = { name = p.name, type = p.type, value = p.value, owner = p.owner }
+            local e = Game.dev.enums[p.name]
+            if e then row.enum, row.flags, row.choices = e.path, e.flags == true or nil, Game.dev.choices(p.name) end
+            out[#out + 1] = row
         end
     end
     return out

@@ -76,12 +76,18 @@ local function readAll(path)
     return s
 end
 
+-- A write cut short (a full disk) leaves no half a reply for wcmods to read: the .tmp file is checked, and only then
+-- takes the old one's place.
 local function writeWhole(path, text)
     local tmp = path .. ".tmp"
     local f = io.open(tmp, "wb")
     if not f then return false end
-    f:write(text)
-    f:close()
+    local wrote = f:write(text)
+    local closed = f:close()
+    if not wrote or not closed then
+        os.remove(tmp)
+        return false
+    end
     os.remove(path)
     return os.rename(tmp, path)
 end

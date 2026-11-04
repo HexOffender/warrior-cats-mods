@@ -231,6 +231,7 @@ agent.shot("noon", menu=True)
 | `menu.read()` | A `Page`: `rows`, `find(label, kind)`, `get(label)`, `has(text)`, `errors()`, `controls()`, `text()` |
 | `menu.press(label)`, `menu.set(label, value)`, `menu.section(title, open)`, `menu.act(label, value)` | Use a control; returns the row's (kind, label) |
 | `menu.scroll(to)`, `menu.region()`, `menu.shot(name)` | Scroll, where the window is, a picture of it |
+| `menu.status(text)`, `menu.status_shown()` | Put up a status line under the title as a script's `Menu.status` does (the agent's owner is `"=wcmods"`; `None` takes it down); the line shown and whose it is, `(line, owner)`, or `None` for the menu's own |
 
 `agent run script.py` runs a script with `agent` already made, for a quick check that's more than one
 command.

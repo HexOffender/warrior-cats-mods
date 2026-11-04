@@ -22,13 +22,43 @@ function MOD.save()
     if not MOD.settingsFile then return false, "this mod has no settings.json" end
     local ok, Menu = pcall(require, "WCModsMenu")
     if ok then return Menu.saveJson(MOD.settingsFile, MOD.settings) end
-    -- Without WCModsMenu (an install gone wrong), WCModsGame writes it.
+    -- Without WCModsMenu (an install gone wrong), WCModsGame writes it, whole or not at all as Menu.saveJson does:
+    -- to settings.json.new, checked, then in the old one's place (moved aside first: Windows won't rename over it).
     local okG, G = pcall(require, "WCModsGame")
     if not okG then return false, "neither WCModsMenu nor WCModsGame is installed" end
-    local f, err = io.open(MOD.settingsFile, "wb")
+    local okText, text = pcall(G.json.encode, MOD.settings)
+    if not okText then return false, tostring(text) end
+    local path, tmp, old = MOD.settingsFile, MOD.settingsFile .. ".new", MOD.settingsFile .. ".old"
+    local f, err = io.open(tmp, "wb")
     if not f then return false, tostring(err) end
-    f:write(G.json.encode(MOD.settings), "\n")
-    f:close()
+    local wrote, werr = f:write(text, "\n")
+    local closed, cerr = f:close()
+    if not wrote or not closed then
+        os.remove(tmp)
+        return false, tostring(werr or cerr)
+    end
+    -- The old file aside only when there is one: a settings.json.old with no settings.json is a stopped save's,
+    -- and is kept. A read-only settings.json isn't replaced.
+    local had = false
+    local cur = io.open(path, "rb")
+    if cur then
+        cur:close()
+        local rw = io.open(path, "r+b")
+        if not rw then os.remove(tmp) return false, path .. " can't be written (is it read-only?)" end
+        rw:close()
+        local gone, gerr, code = os.remove(old)
+        if not gone and code ~= 2 then os.remove(tmp) return false, "couldn't remove " .. old .. " (" .. tostring(gerr) .. ")" end
+        local aside, aerr = os.rename(path, old)
+        if not aside then os.remove(tmp) return false, "couldn't move " .. path .. " aside (" .. tostring(aerr) .. ")" end
+        had = true
+    end
+    local moved, merr = os.rename(tmp, path)
+    if not moved then
+        if had then os.rename(old, path) end
+        os.remove(tmp)
+        return false, "couldn't replace " .. path .. " (" .. tostring(merr) .. ")"
+    end
+    if had then os.remove(old) end
     return true
 end
 
@@ -90,15 +120,28 @@ end
 -- install is kept when the file can't be read.
 if okGame and MOD.settingsFile then
     local f = io.open(MOD.settingsFile, "rb")
+    if not f then
+        -- No settings.json but a settings.json.old: a Save that stopped between its two renames left the last
+        -- settings saved there, the only copy. They're read from it, and the next Save writes settings.json again.
+        f = io.open(MOD.settingsFile .. ".old", "rb")
+        if f then MOD.log("settings.json is missing; reading settings.json.old, which a save that stopped part way left") end
+    end
     if f then
         local text = f:read("a")
         f:close()
         if text:sub(1, 3) == BOM then text = text:sub(4) end
-        local ok, data = pcall(Game.json.decode, text)
-        if ok and type(data) == "table" then
+        -- Not a file holding just null either: that's Game.json.null, a table every null read in this Lua state shares,
+        -- and the first setting a page set would go into it.
+        local ok, data, err = pcall(Game.json.decode, text)
+        if not ok then
+            err = data
+        elseif err == nil and (type(data) ~= "table" or data == Game.json.null) then
+            err = "it doesn't hold an object"
+        end
+        if err == nil then
             MOD.settings = data
         else
-            MOD.log("couldn't read settings.json (%s); using the settings from the install", tostring(data))
+            MOD.log("couldn't read settings.json (%s); using the settings from the install", tostring(err))
         end
     end
 end

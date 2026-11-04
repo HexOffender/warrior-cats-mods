@@ -809,8 +809,8 @@ The menu works without a mouse too:
   option, are light with dark text, so they show without relying on colour.
 
 Under the title, a status line says how to open and close the menu, or what a script tells it
-(`Menu.status`): with Menu pages, your cat's name, level, rank, health and stamina, where it is, the
-time and the fresh-kill pile. The side bar lists the pages in groups; a group shows once a page is in
+(`Menu.status`, a line each; the line of the mod whose page is showing wins): with Menu pages, your
+cat's name, level, rank, health and stamina, where it is, the time and the fresh-kill pile. The side bar lists the pages in groups; a group shows once a page is in
 it:
 
 | Group | Pages |
@@ -906,10 +906,10 @@ change (more items, a section opened) rebuilds from the first row that differs. 
 | `ui.radio(label, value, options)` | One of a few options, as buttons; returns the chosen one |
 | `ui.choice(label, value, options)` | A drop-down list; returns the chosen option |
 | `ui.slider(label, value, lo, hi, {step, format, color})` | A slider with its value shown (`format` like `"%.2f"`); returns the value |
-| `ui.number(label, value, {min, max, step, whole})` | A number box you can drag or type in; returns the number (`whole`: whole numbers only, shown without decimals) |
+| `ui.number(label, value, {min, max, step, whole})` | A number box you can drag or type in; returns the number (`whole`: whole numbers only, shown without decimals). Until the player changes it, it returns `value` as it was given: a value outside `min`/`max` stretches the range to take it (to the next power of two, so there's room both ways), and a fraction given to a `whole` box stays a fraction |
 | `ui.input(label, value, {hint})` | A text box; returns its text |
 | `ui.color(label, "#rrggbb")` | A swatch with red, green and blue sliders; returns `"#rrggbb"` |
-| `ui.progress(label, fraction, {color, format})` | A bar from 0 to 1 |
+| `ui.progress(label, fraction, {color, text, format})` | A bar from 0 to 1, with text beside it: `text` as it is (`"3 / 5 found"`), else `format`, a `string.format` pattern given the percent (`"%d%%"`, the default; one that isn't a pattern, like `"100%"`, is shown as it is). Text with a `%` in it goes in `text` |
 | `ui.image(texture, w, h, {color})` | A picture: a texture object or its path |
 | `ui.section(title, fn, {open, id})` | A part that opens and closes with a click on its title; `fn(ui)` draws what's inside |
 
@@ -919,12 +919,21 @@ default, and a group of its own comes after `mods`). `order` sorts it within the
 first, 50 by default). `Menu.isOpen()` says whether the menu is open, `Menu.open(page)` opens it (on
 a page, by title or id) and `Menu.close()` closes it, e.g. from a script's own key.
 `Menu.key("F6", "Mouse look on and off")` lists a key a script uses on the Overview page
-(`Game.onKey`'s fourth argument does the same). `Menu.status(text)` sets the line under the window's
-title while the menu is open (one line; nil or `""` puts back the menu's own, and the last script to
-set it wins); the player can hide it on the Menu page.
+(`Game.onKey`'s fourth argument does the same). `Menu.status(text)` sets this script's line under the
+window's title while the menu is open (one line; nil or `""` takes it down). Each script has a line of
+its own, and the window shows one: the line of the mod whose page is showing, else the one that went up
+most recently. Changing a line that's up keeps its place, so a line that changes every second doesn't
+take over another script's. With no line up, the menu's own shows; the player can hide them on the Menu
+page. `Menu.statusShown()` gives the line shown and whose it is (the mod's folder under `Mods/`), or nil
+for the menu's own.
 `Menu.saveJson(path, value)` writes a Lua value as JSON (keys sorted, notes like `"_help"` first)
-and returns true, or false and why; `Menu.list(t)` marks a table as a JSON list, so an empty one is
-written `[]`. `Menu.json(value)` gives the JSON text, `Menu.color(hex)` the linear colour the game's
+and returns true, or false and why. It writes the whole file or nothing: the text goes to
+`<path>.new`, is read back, and only then takes the old file's place (moved aside to `<path>.old`
+meanwhile, as Windows won't rename over a file), so a full disk leaves the old file as it was. Files
+already called `<path>.new` or `<path>.old` are replaced, except a `<path>.old` with no `<path>`
+beside it, which a save that stopped part way left and is kept (a script mod's settings are read back
+from it). A read-only file is refused. `Game.json.null` (a `null` read from a file) is written `null`; `Menu.list(t)` marks a
+table as a JSON list, so an empty one is written `[]`. `Menu.json(value)` gives the JSON text, `Menu.color(hex)` the linear colour the game's
 UI wants, and `Menu.theme` the menu's colours.
 - **Colours:** text is at least 4.5:1 on what it's on, as drawn. `theme.danger` is for text;
   `theme.danger_fill`, `theme.good` and `theme.accent` are for buttons. A button's colour is a tint of
@@ -932,14 +941,19 @@ UI wants, and `Menu.theme` the menu's colours.
 - **Keyboard and controller, for a script's own widgets:** `Menu.clicked(state, key, button)` is true
   the frame a button is clicked, by the mouse or with focus. `Menu.ring(widget)` puts a focus ring
   round a widget, and `Menu.focused(widget)` says whether it, or something in it, has focus.
+- **The menu's own:** `Menu.classes()` (the UI classes the rows are built from) and the widget
+  helpers it goes with are the window's, not an API, and can change. For the engine's
+  GameplayStatics, a script asks `WCModsGame`: `Game.library("GameplayStatics")`.
 
 How it fits together: each UE4SS mod has a Lua state of its own, so the menu window belongs to a
 script wcmods installs with every build, `WCModsMenuHost`. It shares its content panel with the
 others through UE4SS's shared variables (`WCModsMenu.open`, `.page`, `.content`, `.tree`,
-`.generation`, `.pages`, `.keys`, `.request`). The script that owns the page on show builds its rows
-straight into that panel, so a page always runs next to the settings it changes. The same rows
-answer the agent controller (`wcmods agent menu ...`), which reads a page and uses its controls by
-label through `WCModsMenu.agent.*` (docs/agent.md, "The mod menu").
+`.generation`, `.pages`, `.keys`, `.request`, `.status`, `.status.lines`, `.status.shown`). They're the
+menu's own, and their names and shapes can change: a script uses the calls above (`Menu.status`,
+`Menu.statusShown`, `Menu.open`), not `Menu.shared` and `Menu.share`. The script that owns the page
+on show builds its rows straight into that panel, so a page always runs next to the settings it
+changes. The same rows answer the agent controller (`wcmods agent menu ...`), which reads a page and
+uses its controls by label through `WCModsMenu.agent.*` (docs/agent.md, "The mod menu").
 
 ## `WCModsView`
 
@@ -1240,7 +1254,7 @@ for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards"))
 | `wcmods::save_game(L"WCMods")`, `save_hash()` | Save now, as the game does at its checkpoints (`WrcGame.sav` and `WrcGame.json` are written); and the save's `Hash` as the game holds it, which it changes at every write (`WrcGame.sav`'s header has the same) |
 | `wcmods::inventory()`, `inventory_count("Gameplay.Inventory.Consumable.SmallCatnip")`, `inventory_component()` | Your items now, read from the inventory itself (a native map nothing reflects; where it sits is one of wcmods' hidden members): `{tag: count}` of every kind, which is what the game saves; null in menus or when wcmods hasn't got the map on this build. One's count (0 for none), and the player state's inventory component |
 | `wcmods::add_item(L"Gameplay.Inventory.Consumable.SmallCatnip", 2)`, `add_item(tag, n, false)`, `remove_item(tag, n)`, `is_item_tag(tag)` | Put items (a count of 1 or more) in your inventory as a pickup does, through the game's own code (its native `AddItem`): the count goes up, to the game's limit for one item; the HUD shows "*item* OBTAINED" through its `OnItemPickedUp` (which `on_function` sees; `false` leaves the popup out); quests that count items hear of it; and the next save has it. `remove_item` takes as many away as you have at most (at 0 the item goes), and nothing of an item you haven't got. False on another thread, in menus, for a tag that isn't an item's (`is_item_tag`: a registered tag under `Gameplay.Inventory`, a mod's new items included), or when wcmods hasn't got the function on this build |
-| `wcmods::items()`, `item_count(tag)`, `item_type(tag)`, `item_name(tag)` | Your items as `{tag: count}` from the last save with the pickups since, as Lua's `Game.items.list()` (call `items()` once early so they're counted; `inventory()` is the inventory itself), one's count, its kind, and its name after the mods that add items. The kind is `Consumable` (herbs and pouches), `Collectible` (materials), `Equipment` (accessories) or `Quest`: the quest manager's `GetItemType` where it answers, else from the tag (`Gameplay.Inventory.Consumable`, `.Materials`, `.Cosmetic`, `.Quest`), as the game's item stats table ships empty and that call says None for every item |
+| `wcmods::items()`, `item_count(tag)`, `item_type(tag)`, `item_name(tag)` | Your items as `{tag: count}` from the last save with the pickups since the mod started (Lua's `Game.items.list()` lets go of them when another save loads or the game saves; the C++ SDK does the same from warrior-cats-mods#113) (call `items()` once early so they're counted; `inventory()` is the inventory itself), one's count, its kind, and its name after the mods that add items. The kind is `Consumable` (herbs and pouches), `Collectible` (materials), `Equipment` (accessories) or `Quest`: the quest manager's `GetItemType` where it answers, else from the tag (`Gameplay.Inventory.Consumable`, `.Materials`, `.Cosmetic`, `.Quest`), as the game's item stats table ships empty and that call says None for every item |
 | `wcmods::cat_name(actor)`, `cat_clan(actor)`, `cat_traits()` | A cat's name as the game shows it (your name mods included: wcmods writes `names.json` beside `WCModsNames` on every install), its clan, and your cat's traits from the last save |
 | `wcmods::senses(animal)`, `detection_component(animal)` | A roaming animal's senses, as a `Senses` of pointers to read and write: `cone_angle`, `cone_distance`, `sound_radius`, `sound_speed`, `pounce_distance`, `proximity_distance`, `target_distance`, `walk_speed_roaming`, `walk_speed_chasing`, `zone_entry_distance`, `zone_exit_distance`, `react_to_chase`. They're the detection component's own copy of the tuning for its size class, so a change is this animal's alone; false for a cat |
 | `wcmods::sky()`, `set_sky(L"Night")`, `set_sky(preset, false)`, `sky_follow_area()` | The world's sky (`BP_DayNightSky_C`), and its presets (`ESkyboxPostProcessEnum`: `NeutralDay`, `Night`, `CinematicNight`, `CinematicNightMoonPool`, `ThunderClan`, `RiverClan`, `ShadowClan`, `WindClan`, `MoonPool`...), which set its light, fog and clouds: one on at once. The game fades back to the area's own sky by itself within about 5 s, so `set_sky` holds the preset (puts it on again at the end of every frame) until `sky_follow_area()`, another `set_sky` or a new level, and the game's own changes (the inventory's, a fight's) wait; `false` puts it on once and lets the game fade it. `sky_follow_area()` lets go and gives the area's sky back at once. False without the sky, or for a name the enum hasn't got |

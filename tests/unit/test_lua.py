@@ -99,6 +99,33 @@ def test_world_scan_clears_the_label_cache():
     assert "actorLabels = {}" in scan and "local actorLabels" not in scan
 
 
+def test_world_label_cache_is_per_actor_and_cleared_by_class_queries_too():
+    """The cache was keyed on address and class, and only kind queries (scan) cleared it: a script that only asked by
+    class kept it for the whole session, and a recycled address with another pickup of the same class showed the
+    earlier item's label. It's keyed on the actor's own name (with its instance number), and a class query that looks
+    again clears it."""
+    lua = world.lua()
+    label = body(lua, "function World.label(actor, kind)", "\nend\n")
+    assert 'local key = tostring(actor:GetAddress()) .. "|" .. actor:GetFName():ToString()' in label
+    find = body(lua, "function World.find(kind)", "\nend\n")
+    branch = find[find.index("if not c or os.clock() - c.at >= World.refresh then"):]
+    assert branch.index("actorLabels = {}") < branch.index("FindAllOf(kind)")
+    assert lua.index("local actorLabels = {}") < lua.index("function World.find(kind)")
+
+
+def test_game_module_says_which_wcmods_wrote_it():
+    """Scripts couldn't tell which wcmods they ran on, so one that supports an older wcmods kept every workaround.
+    Game.wcmods is wcmods/__init__.py's __version__ (the only place it lives), and Game.wcmodsNumber one to compare;
+    Game.version stays the module's own 1."""
+    from wcmods import __version__
+    lua = game.lua()
+    number = game.version_number(__version__)
+    assert f'local Game = {{ version = 1, wcmods = "{__version__}", wcmodsNumber = {number} }}' in lua
+    assert "@WCMODS" not in lua
+    assert game.version_number("0.6.0") == 600 and game.version_number("1.2.3") == 10203
+    assert game.version_number("0.6") == 600 and game.version_number("0.6.0rc1") == 600
+
+
 def test_game_module_names_the_saved_folder_the_install_makes():
     lua = game.lua(None, r"D:\Saves\WCMods")
     assert not problems(lua)
@@ -193,8 +220,41 @@ def test_mod_menu_window_script_with_the_dev_pages():
 
 
 def test_mod_menu_shows_a_scripts_status_line():
-    assert "function Menu.status(" in menu.lua()
-    assert 'Menu.shared("status")' in menu.host_script(MANIFEST, [])
+    """A line each: Menu.status keeps its script's line in "status.lines" (owner as Menu.page has it, and since when
+    it's been up, kept when it changes), and the host shows the line of the mod whose page is showing, else the one
+    that went up last, saying which in "status.shown" (Menu.statusShown). The one shared line was last-writer-wins: a
+    script whose line ticked took over everyone's. "status" is still written, for what read it before."""
+    lua = menu.lua()
+    status = body(lua, "function Menu.status(text)", "\nfunction Menu.statusShown()")
+    assert 'local line, owner = (tostring(text or ""):gsub("[\\r\\n\\t]+", " ")), caller(2)' in status
+    assert 'Menu.share("status", line)' in status and "ExecuteInGameThread(function()" in status
+    assert 'for l in (Menu.shared("status.lines") or ""):gmatch("[^\\n]+") do' in status
+    assert "if o == owner then since = s elseif o then" in status   # its place is kept
+    assert 'string.format("%.3f", os.clock())' in status and 'Menu.share("status.lines", table.concat(out))' in status
+    assert lua.index("local function caller(level)") < lua.index("function Menu.status(text)")
+    shown = body(lua, "function Menu.statusShown()", "\nend\n")
+    assert 'Menu.shared("status.shown")' in shown and "return line, owner" in shown
+    assert "Menu.ownerOf = ownerOf" in lua
+    host = menu.host_script(MANIFEST, [])
+    pick = body(host, "local line, owner, best = nil, nil, nil", 'pcall(function() win.status:SetText(FText(line or USAGE)) end)')
+    assert 'local showing = Menu.ownerOf(Menu.shared("pages") or "", tostring(Menu.shared("page") or ""))' in pick
+    assert 'Menu.shared("status.lines")' in pick
+    assert 'local rank = (showing and showing ~= "" and o == showing) and math.huge or (tonumber(since) or 0)' in pick
+    assert 'Menu.share("status.shown", shown)' in pick
+    assert 'Menu.shared("status")' not in host
+
+
+def test_menu_classes_are_the_menus_own_and_keep_statics():
+    """Menu.classes() was undocumented and scripts called GameplayStatics through its .statics: it's marked the menu's
+    own, SDK.md points scripts to Game.library("GameplayStatics"), and .statics stays for Menu pages 1.0."""
+    import os
+    lua = menu.lua()
+    note = lua[lua.index("-- ---------- the game's UI classes ----------"):lua.index("function Menu.classes()")]
+    assert "not a script's API" in note and 'Game.library("GameplayStatics")' in note
+    assert 'l.statics = StaticFindObject("/Script/Engine.Default__GameplayStatics")' in lua
+    with open(os.path.join(os.path.dirname(__file__), "..", "..", "docs", "SDK.md"), encoding="utf-8") as f:
+        sdk = f.read()
+    assert '`Menu.classes()`' in sdk and 'Game.library("GameplayStatics")' in sdk
 
 
 def test_mod_menu_opens_from_a_controller_too():
@@ -464,6 +524,68 @@ def test_level_component_is_only_your_cats():
     assert "NOT_YOURS" in body(lua, "function Cat:setStat(", "\nend")
 
 
+def test_a_fight_with_nobody_there_is_not_your_cat():
+    """Game.cat(nil) is your cat, so whose turn it is, the main enemy and a fighter's cat check for nil first: a
+    fight between turns gave the player's cat, and a Weaken button on it set the player's health to 1."""
+    lua = game.lua()
+    for start, end in (("function Fight:current()", "\nfunction Fight:mainEnemy()"),
+                       ("function Fight:mainEnemy()", "\nfunction Fight:kind()"),
+                       ("function Fighter:cat()", "\nfunction Fighter:stats()")):
+        assert "~= nil and Game.cat(a) or nil" in body(lua, start, end), start
+    assert "Game.cat(Game.get(self.director" not in lua and "return Game.cat(self:actor())" not in lua
+    from pathlib import Path
+    console = (Path(__file__).parents[2] / "studio" / "sections" / "console.js").read_text(encoding="utf-8")
+    assert "x:cat():kind()" not in console and "local c = x:cat()" in console   # its fight example
+
+
+def test_a_teleport_the_game_refused_says_so():
+    """K2_TeleportTo says false when there's no room; Cat:teleport threw that away and said true. A nil (UE4SS not
+    passing it on) keeps the old answer."""
+    tp = body(game.lua(), "function Cat:teleport(x, y, z)", "\nfunction Cat:scale()")
+    assert "local ok, moved = pcall(function() return self.actor:K2_TeleportTo(" in tp
+    assert "if not ok then return false, tostring(moved) end" in tp
+    assert 'if moved == false then return false, "the game wouldn\'t move it there (no room)" end' in tp
+    assert tp.rstrip().endswith("return true\nend")
+
+
+def test_the_fights_objects_are_documented():
+    """A fight's director, a fighter's actor() and component, and a cat's actor are what a script reaches the game's
+    own members through, and scripting.md said nothing of them (SDK.md does for C++). The tables are still built with
+    them, and the docs name them."""
+    import os
+    lua = game.lua()
+    assert "return setmetatable({ director = director }, Fight)" in lua
+    assert "return setmetatable({ component = comp }, Fighter)" in lua
+    assert "function Fighter:actor()" in lua and "return setmetatable({ actor = actor }, Cat)" in lua
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "scripting.md")
+    with open(path, encoding="utf-8") as f:
+        docs = f.read()
+    fights = docs[docs.index("### Fights"):docs.index("### The game's developer switches")]
+    for name in ("`fight.director`", "`Game.combatDirector()`", "`actor()`", "`fighter.component`"):
+        assert name in fights, name
+    cats = docs[docs.index("### Your cat (and other cats)"):docs.index("### Cats of a mod's own")]
+    assert "`cat.actor`" in cats
+
+
+def test_every_quest_call_is_documented():
+    """Game.quests.describe, objectives and manager weren't in scripting.md's Quests section. Every quest call in
+    game.lua is named there now, and describe's fields are the ones it gives."""
+    import os
+    lua = game.lua()
+    names = re.findall(r"^function Game\.quests\.(\w+)\(", lua, re.M)
+    assert {"describe", "objectives", "manager", "all", "reported", "chapter"} <= set(names)
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "scripting.md")
+    with open(path, encoding="utf-8") as f:
+        docs = f.read()
+    quests = docs[docs.index("### Quests"):docs.index("### Fights")]
+    for name in names:
+        assert f"Game.quests.{name}(" in quests or f".{name}(" in quests, name
+    fields = body(lua, "function Game.quests.describe(q)", "\nend\n")
+    for field in ("quest", "id", "tag", "graph", "class", "type", "status", "result", "tracked", "xp", "rewards"):
+        assert f"{field} = " in fields, field
+    assert "`{quest, id, tag, graph, class, type, status, result, tracked, xp, rewards}`" in quests
+
+
 def test_find_never_hands_back_an_object_on_its_way_out():
     lua = game.lua()
     find = body(lua, "function Game.find(className)", "\n-- Every object of a class")
@@ -506,6 +628,97 @@ def test_json_decode_skips_a_bom():
     lua = game.lua()
     assert 'local BOM = "\\239\\187\\191"' in lua
     assert 'if pos == 1 and type(text) == "string" and text:sub(1, 3) == BOM then pos = 4 end' in lua
+
+
+def test_the_save_file_is_decoded_again_only_when_it_changed():
+    """Game.save.file() decoded the whole save (about 40 ms) every second, changed or not: a page reading items had a
+    hitch a second. The table is kept while the file's size is the same (looked at 4 times a second, decoded again
+    every 30 s at least), a half-written file gives the last good table, and Game.save.write drops it, which needs
+    fileCache declared before it (out of scope, it would be a nil global, and every script's write would fail)."""
+    lua = game.lua()
+    read = body(lua, "function Game.save.file()", "\nfunction Game.save.slotData()")
+    assert "if fileCache.data and now - fileCache.checked < 0.25 then return fileCache.data end" in read
+    assert 'local size = f:seek("end")' in read and 'f:seek("set")' in read
+    assert "if fileCache.data and size == fileCache.size and now - fileCache.at < 30 then" in read
+    assert "if not data then return fileCache.data, err end" in read
+    assert "fileCache.at, fileCache.data, fileCache.size = now, data, size" in read
+    assert lua.count("local fileCache =") == 1
+    assert lua.index("Game.save = {}") < lua.index("local fileCache = {") < lua.index("function Game.save.write(")
+    assert "fileCache.data = nil" in body(lua, "function Game.save.write(", "\nend")
+
+
+def test_items_drop_the_pickups_of_another_save():
+    """Game.items laid the HUD's pickup totals over the save and never let go of them: Dandelion picked up to 6 in slot
+    A still said 6 in slot B (2). The pickups are stamped with the HUD that sent them (its address and name; not
+    Game.find's answer, which is nil for a second after a load, and not the save slot, which stays 0 whatever the cat),
+    and the save file's size at the last one; another HUD, or a save the game wrote after them, drops them. The save is
+    compared once a decode, and whenever there are pickups. No poller (the level poller in every Lua state has crashed
+    the game during loads), and no new main-chunk local: one table in live's place, declared before the NPC list's
+    own `local live` (which used to shadow it)."""
+    lua = game.lua()
+    assert "local pickups = { live = {}, stamp = nil, size = nil, seen = nil, watching = false }" in lua
+    assert lua.index("local fileCache =") < lua.index("function Game.items.list()")   # it reads fileCache.size
+    assert lua.index("local pickups = {") < lua.index("local live = {}")
+    assert lua.count("local live = {}") == 1 and "local pickupWatch" not in lua
+    stamp = body(lua, "function pickups.stampOf(h)", "\nend\n")
+    assert 'tostring(h:GetAddress()) .. "|" .. h:GetFName():ToString()' in stamp and "if not valid(h) then" in stamp
+    assert "Game.save.slot()" not in stamp and "pickups.session" not in lua
+    listing = body(lua, "function Game.items.list()", "\nfunction Game.items.count(")
+    assert listing.index("Game.save.slotData()") < listing.index("if next(pickups.live) ~= nil then")
+    assert 'local now = pickups.stampOf(Game.find("WBP_GuiHudGameWrc_C"))' in listing
+    assert "if fileCache.at ~= pickups.seen then" in listing
+    assert "saved = pickups.size ~= nil and fileCache.size ~= nil and fileCache.size ~= pickups.size" in listing
+    assert "and fileCache.size == pickups.saveSize()" in listing
+    assert "if (now ~= nil and pickups.stamp ~= nil and now ~= pickups.stamp) or saved then" in listing
+    assert "for k, v in pairs(pickups.live) do out[k] = v end" in listing
+    hook = body(lua, "local function watchPickups()", "\nend\n")
+    assert "function(hud, tag, quantity, total)" in hook and "local s = pickups.stampOf(hud)" in hook
+    assert "if s ~= nil and s ~= pickups.stamp then pickups.live, pickups.stamp = {}, s end" in hook
+    assert hook.index("pickups.live[name] = total") < hook.index("pickups.size, pickups.seen = pickups.saveSize(), nil")
+    assert 'Game.on("level"' not in listing + hook
+
+
+def test_the_clock_has_one_hold_for_every_script():
+    """Tweaks' Hold the clock and Menu pages' Hold this time each wrote the clock on their own timers, so with both on
+    it flipped between two hours, and with Tweaks' on Menu pages' Morning was undone in half a second. One hold now,
+    in a shared variable: the last to hold it has it, letting go lets go of your own only, and every script that held
+    it keeps the clock at the shared hour. The shared-variable helpers come before Game.time, which uses them."""
+    lua = game.lua()
+    assert lua.index("local function shared(name)") < lua.index("Game.time = {}") < lua.index("function Game.quests.report(")
+    assert lua.count("local function shared(name)") == 1 and lua.count("local function clean(s)") == 1
+    assert 'Game.time.holding = { key = "WCModsGame.clockHold", task = nil }' in lua
+    held = body(lua, "function Game.time.held()", "\nend\n")
+    assert 'tostring(shared(Game.time.holding.key) or ""):match("^([%d%.]+)\\t(.*)$")' in held
+    hold = body(lua, "function Game.time.hold(s, who)", "\n-- ====")
+    assert 'who = clean(who or Game.modName or "a script")' in hold
+    assert 'if select(2, Game.time.held()) == who then share(h.key, "") end' in hold   # only your own
+    assert "s = math.floor(s + 0.5) % 86400" in hold   # a whole second, never 86400 (%.0f rounded 86399.6 up)
+    assert 'share(h.key, string.format("%d\\t%s", s, who))' in hold
+    assert "h.task = h.task or Game.every(0.5, function()" in hold and "if at and Game.cat() then Game.time.setSeconds(at) end" in hold
+    # set and setSeconds stay plain writes
+    assert 'function Game.time.setSeconds(s) return Game.set(Game.gameState(), "WCM_DayTime", s % 86400) end' in lua
+
+
+def test_json_decode_refuses_text_after_the_value():
+    """"[] [ {...} ]" read as an empty list, and a Save after threw the rest away. What's left after the value is a
+    mistake, inside the pcall (Game.save.file and Game.save.state don't catch errors)."""
+    decode = body(game.lua(), "function Game.json.decode(text)", "\n-- ====")
+    tail = decode[decode.index("local ok, result = pcall(function()"):]
+    assert tail.index("local v = value()") < tail.index("ws()") < tail.index(
+        'if pos <= #text then fail("text after the value") end') < tail.index("return v")
+    assert "local ok, result = pcall(value)" not in decode
+
+
+def test_bootstrap_refuses_a_settings_file_of_null_and_says_why():
+    """A settings.json holding just null decoded to Game.json.null, a table, so MOD.settings became the sentinel every
+    null in that Lua state shares. It's refused now, and decode's own reason is logged (it said "(nil)"). Only this can
+    check it: the build refuses a settings.json that isn't an object, so a test mod can't ship one."""
+    from wcmods.sections import scripts
+    settings = body(scripts.BOOTSTRAP, "if okGame and MOD.settingsFile then", "\nend\n")
+    assert "local ok, data, err = pcall(Game.json.decode, text)" in settings
+    assert 'elseif err == nil and (type(data) ~= "table" or data == Game.json.null) then' in settings
+    assert "if err == nil then\n            MOD.settings = data" in settings
+    assert 'using the settings from the install", tostring(err))' in settings
 
 
 def test_json_decode_keeps_a_number_written_with_a_point_a_float():
@@ -580,6 +793,80 @@ def test_menu_keeps_one_page_per_id_and_writes_settings_back_as_they_were():
     assert "%.6g" not in lua
 
 
+def test_a_number_box_gives_back_an_untouched_value_as_it_was():
+    """ui.number: what the box made of the value (its 32-bit float, its clamping) is the base the player's change is
+    measured from, not the value; a value outside min/max stretches the range, past it to the next power of two;
+    agent input is clamped to that range. A whole box no longer rounds before the comparison (2.5 went 3). The stretch
+    comes from the script's own value only: a value the player made and the script wrote back keeps the range, which
+    doubled each time the player reached the top (so max was no limit), resetting the box mid-drag."""
+    number = body(menu.lua(), "function ui.number(", "\nfunction ui.input")
+    assert "local function past(v) return 2 ^ (math.floor(math.log(math.abs(v), 2)) + 1) end" in number
+    assert "if e.span == nil or e.spanFor ~= spanFor or not near(e.v, value) then" in number
+    assert "e.span = { opts.min and (value < opts.min and (value < 0 and -past(value) or 0) or opts.min) or nil," in number
+    assert "opts.max and (value > opts.max and past(value) or opts.max) or nil }" in number
+    assert "local lo, hi = e.span[1], e.span[2]" in number
+    assert number.index("local lo, hi = e.span[1], e.span[2]") < number.index('put(e, "range"')
+    assert "else e.s:ClearMinValue() e.s:ClearMinSliderValue() end" in number
+    assert "if e.v ~= nil and not near(now, e.base) then" in number
+    assert "e.v, e.base = opts.whole and math.floor(now + 0.5) or now, now" in number
+    given = number[number.index("elseif e.v == nil or not near(e.v, value) then"):]
+    assert given.index("e.s:SetValue(value)") < given.index("e.base = e.s:GetValue()")
+    assert "if lo then act = math.max(lo, act) end" in number and "if hi then act = math.min(hi, act) end" in number
+    assert "if opts.whole then now = math.floor(now + 0.5) end" not in number
+    assert "not near(now, e.v)" not in number
+
+
+def test_a_progress_bar_shows_ready_made_text_as_it_is():
+    """ui.progress ran opts.format through string.format, twice: callers pass ready-made text, so a stray % broke the
+    page ("invalid conversion") and "50% done" showed as "50 50one". opts.text is shown as it is; format is still a
+    pattern, formatted once, and shown as it is when it isn't one."""
+    bar = body(menu.lua(), "function ui.progress(", "\nlocal textures")
+    assert "local shown = opts.text" in bar
+    assert 'local ok, s = pcall(string.format, opts.format or "%d%%", math.floor(f * 100 + 0.5))' in bar
+    assert "shown = ok and s or opts.format" in bar
+    assert bar.count("string.format") == 1 and 'seen("progress", label, shown)' in bar
+
+
+def test_a_save_writes_the_whole_file_or_says_it_couldnt():
+    """Menu.saveJson opened the file with "wb" (emptying it), didn't look at f:write's or f:close's answers, and said
+    true: a full disk left half a settings file and "Saved". Now it encodes first, writes <path>.new, checks the write,
+    the close and what's on the disk, moves the old file aside (Windows' rename won't replace it), and puts it back
+    when the new one can't go in. A .old it can't remove, or a file it can't move aside, is said with the path (it
+    was a bare "File exists" on every later save); a read-only file is refused; and a .old with no file beside it (a
+    save that stopped between the renames left it, the only copy) is kept, and the script bootstrap reads a mod's
+    settings from it. MOD.save()'s fallback and the bridge's writeWhole check theirs too."""
+    lua = menu.lua()
+    save = body(lua, "function Menu.saveJson(path, value)", "\nreturn Menu")
+    assert save.index('local text = encode(value, 0) .. "\\n"') < save.index('local tmp = path .. ".new"')
+    assert "local wrote, werr = f:write(text)" in save and "local closed, cerr = f:close()" in save
+    assert "if not wrote or not closed then\n            os.remove(tmp)" in save
+    assert "if got ~= text then" in save
+    assert save.index('local cur = io.open(path, "rb")') < save.index("local aside, aerr = os.rename(path, old)") < \
+        save.index("local moved, merr = os.rename(tmp, path)")
+    assert 'if not gone and code ~= 2 then' in save and 'error("couldn\'t remove " .. old .. " (" .. tostring(gerr) .. ")", 0)' in save
+    assert 'local rw = io.open(path, "r+b")' in save and "can't be written (is it read-only?)" in save
+    assert "if had then os.rename(old, path) end" in save and "if had then os.remove(old) end" in save
+    assert 'os.remove(path .. ".old")' not in save   # never a .old with no file beside it
+    assert 'io.open(path, "wb")' not in save
+    # Game.json.null (a null read from a file) is written null, not {} (it's an empty table).
+    nully = body(lua, "local function nully(v)", "\nend\n")
+    assert "rawequal(v, G.json.null)" in nully and "local G = package.loaded.WCModsGame" in nully
+    assert 'if t == "nil" or nully(v) then return "null" end' in body(lua, "local function encode(v, indent)", "\nend\n")
+    from wcmods.sections import scripts
+    fallback = body(scripts.BOOTSTRAP, "function MOD.save()", "\nend\n")
+    assert "local okText, text = pcall(G.json.encode, MOD.settings)" in fallback
+    assert 'local f, err = io.open(tmp, "wb")' in fallback and "if not wrote or not closed then" in fallback
+    assert "if had then os.rename(old, path) end" in fallback and "if not gone and code ~= 2 then" in fallback
+    assert 'local rw = io.open(path, "r+b")' in fallback and 'os.remove(path .. ".old")' not in fallback
+    assert 'io.open(MOD.settingsFile, "wb")' not in fallback
+    read = body(scripts.BOOTSTRAP, "if okGame and MOD.settingsFile then", "\nend\n")
+    assert read.index('local f = io.open(MOD.settingsFile, "rb")') < read.index('f = io.open(MOD.settingsFile .. ".old", "rb")')
+    assert "reading settings.json.old, which a save that stopped part way left" in read
+    from wcmods import bridge
+    whole = body(bridge.LUA, "local function writeWhole(path, text)", "\nend\n")
+    assert "local wrote = f:write(text)" in whole and "if not wrote or not closed then" in whole
+
+
 def test_mod_menu_pages_say_a_left_out_script_and_filter_the_log_for_scripts():
     host = menu.host_script(MANIFEST, [], dev=True)
     assert 'ui.text(id .. ": left out, " .. tostring(note["left out"]), { color = THEME.danger })' in host
@@ -597,6 +884,48 @@ def test_inspector_find_refuses_the_widest_classes_and_reads_names_once():
     assert "actor = true" in host and "userwidget = true" in host   # in small letters, as it's asked
     page = body(host, 'Menu.page("Inspector"', "end, { order = 90")
     assert "for _, e in ipairs(insp.found) do" in page and "Game.name(o)" not in page
+
+
+def test_the_cheats_enum_settings_name_their_enum():
+    """Game.dev.list gave enum and bitmask settings as bare numbers, so a page could only offer number boxes (Menu
+    pages hard-codes the god-mode flags). Each enum setting names its enum's path, GodMode as flags, and its rows carry
+    the enum's names, read from the game and kept. EGodModeTypeFlag stays out of game.py's ENUMS, whose fallback
+    numbers are list positions (Stealth would be 3)."""
+    lua = game.lua()
+    enums = body(lua, "Game.dev.enums = {", "\n}\n")
+    assert 'GodMode = { path = "/Script/SwtQuest.EGodModeTypeFlag", flags = true },' in enums
+    assert set(_dev_enum_paths()) == {"GodMode", "ForceClan", "ForcedRank", "ForcePlayWrcNarrativeSequence",
+                                      "ForcedLocationType", "ForcedDifficulty", "ForcedAttackStatusType",
+                                      "ForcedDilemma", "OverridePlatformType", "OverrideLanguage", "DrawDebugTrace"}
+    assert enums.count("flags = true") == 1
+    assert "EGodModeTypeFlag" not in {path.rsplit(".", 1)[-1] for _, path, _ in game.ENUMS}
+    choices = body(lua, "function Game.dev.choices(name)", "\nend\n")
+    assert "e.read, e.at = Game.enumNames(e.path) or false, os.clock()" in choices
+    assert "(e.read == false and os.clock() - e.at >= 5)" in choices
+    listing = body(lua, "function Game.dev.list()", "\nend\n")
+    assert ("if e then row.enum, row.flags, row.choices = e.path, e.flags == true or nil, Game.dev.choices(p.name) end"
+            in listing)
+
+
+def _dev_enum_paths():
+    enums = body(game.lua(), "Game.dev.enums = {", "\n}\n")
+    return dict(re.findall(r"^    (\w+) = \{ path = \"([^\"]+)\"", enums, re.M))
+
+
+def test_the_cheats_enums_are_in_the_class_dump():
+    """Each enum path of the game's own modules is an enum in the class dump's index. The dump is local only
+    (vanilla/ isn't in git), so this skips without it; the engine's EDrawDebugTrace is left out, as the index lists
+    only the game's modules."""
+    import os
+    index = os.path.join(os.path.dirname(__file__), "..", "..", "vanilla", "sdk", "api-index.txt")
+    if not os.path.exists(index):
+        pytest.skip("vanilla/sdk/api-index.txt isn't here (the class dump is local only)")
+    with open(index, encoding="utf-8", errors="replace") as f:
+        listed = set(re.findall(r"^enum (E\w+):", f.read(), re.M))
+    for name, path in _dev_enum_paths().items():
+        module, enum = path.removeprefix("/Script/").split(".")
+        if module != "Engine":
+            assert enum in listed, (name, path)
 
 
 # ---------- the game's enums, read from the game by name (docs/reverse-engineering.md, "The game's enums") ----------

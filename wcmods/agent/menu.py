@@ -212,6 +212,17 @@ class MenuDriver:
     def section(self, title, open=True, timeout=10):
         return self.act(title, "open" if open else "close", timeout)
 
+    def status(self, text):
+        """Put up a line under the menu's title, as a script's Menu.status does: the agent's own (its owner is the
+        bridge's chunk, "=wcmods"). None or "" takes it down."""
+        self.agent.lua(f'require("WCModsMenu").status({lua_value(text or "")}) return true')
+
+    def status_shown(self):
+        """The line under the menu's title and whose it is, (line, owner): the owner is the UE4SS mod's folder whose
+        Menu.status it was ("=wcmods" for the agent's). None when the menu shows its own line."""
+        owner, sep, line = str(self._shared("status.shown") or "").partition("\t")
+        return (line, owner) if sep and line else None
+
     def scroll(self, to="top", timeout=10):
         """Scroll the page: "top", "end", a number of pixels, or a row's label to bring it into view."""
         value = str(to) if to in ("top", "end") or isinstance(to, (int, float)) else "row\t" + str(to)

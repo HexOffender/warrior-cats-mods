@@ -61,9 +61,13 @@ def test_walk_with_a_key(agent):
 
 
 def test_teleport(agent):
+    """A move with room says true; the engine's K2_TeleportTo gives a boolean, which Cat:teleport passes on (a refused
+    move said true before, and Menu pages' Travel said "Went to")."""
     start = agent.location()
     try:
-        agent.teleport(start[0] + 300, start[1], start[2] + 50)
+        assert agent.lua("local c = Game.cat() local l = c.actor:K2_GetActorLocation() "
+                         "return type(c.actor:K2_TeleportTo(l, c.actor:K2_GetActorRotation()))") == "boolean"
+        assert agent.lua(f"return Game.cat():teleport({start[0] + 300}, {start[1]}, {start[2] + 50})") is True
         now = agent.location()
         assert abs(now[0] - (start[0] + 300)) < 60, (start, now)
     finally:
@@ -97,6 +101,17 @@ for key, e in pairs(Game.enums) do
 end
 return out
 """
+
+
+def test_god_mode_names_its_flags(agent):
+    """The cheats' GodMode row carries EGodModeTypeFlag's names and numbers, as the installed exe has them, and says
+    it's a set of flags."""
+    exe = _exe_enums(agent, {"EGodModeTypeFlag"})["EGodModeTypeFlag"]
+    assert exe, "the exe has no table for EGodModeTypeFlag"
+    assert agent.lua('return Game.dev.choices("GodMode")') == exe
+    row = agent.lua('for _, r in ipairs(Game.dev.list()) do if r.name == "GodMode" then return r end end return nil')
+    assert row and row["flags"] is True and row["enum"] == "/Script/SwtQuest.EGodModeTypeFlag", row
+    assert row["choices"] == exe, row
 
 
 def test_enums_are_read_from_the_game(agent):

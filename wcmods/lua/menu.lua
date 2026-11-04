@@ -38,6 +38,8 @@ local function report(where, err)
 end
 
 -- ---------- shared with the host ----------
+-- The host's own: the window and the pages it draws talk through these. A script asks through the calls
+-- below (Menu.status, Menu.statusShown, Menu.open...), whose shared names can change.
 local PREFIX = "WCModsMenu."
 function Menu.shared(name)
     local ok, v = pcall(function() return ModRef:GetSharedVariable(PREFIX .. name) end)
@@ -73,6 +75,10 @@ local THEME = {
 Menu.theme = THEME
 
 -- ---------- the game's UI classes ----------
+-- The UMG classes the rows are built from, found once: the menu's own (with Menu.new, Menu.text and the rest of the
+-- widget helpers), not a script's API. The table is nil until every class is found. `.statics` stays, unchecked,
+-- because the released Menu pages 1.0 calls GameplayStatics through it; a script asks for that with
+-- Game.library("GameplayStatics").
 local NONE = FName("None")   -- lets the engine name each new object
 local lib
 function Menu.classes()
@@ -694,6 +700,8 @@ function ui.slider(label, value, lo, hi, opts)
 end
 
 -- A number box (drag it or type); returns its value. opts: min, max, step, whole (whole numbers only).
+-- Untouched, it gives back the value it was given, as it was: a value outside min and max, a fraction with
+-- `whole`, or one the box's float can't hold exactly (100.1) is not the player's change.
 function ui.number(label, value, opts)
     opts = opts or {}
     local e = row("number", function()
@@ -711,24 +719,39 @@ function ui.number(label, value, opts)
         end)
         e.v = nil
     end)
-    put(e, "range", tostring(opts.min) .. "," .. tostring(opts.max) .. "," .. tostring(opts.step), function()
-        if opts.min then e.s:SetMinValue(opts.min) e.s:SetMinSliderValue(opts.min) end
-        if opts.max then e.s:SetMaxValue(opts.max) e.s:SetMaxSliderValue(opts.max) end
+    -- The range, stretched past a value outside it to the next power of two: room to move it both ways, and the
+    -- range (and so the box) doesn't reset with each value written. (ui.slider stretches exactly.) It's worked out
+    -- from the script's own value: a value the player made, written back, keeps it, so reaching the top doesn't
+    -- double it (min and max stay the limit for what the player can do) or reset the box mid-drag.
+    local function past(v) return 2 ^ (math.floor(math.log(math.abs(v), 2)) + 1) end
+    local spanFor = tostring(opts.min) .. "," .. tostring(opts.max)
+    if e.span == nil or e.spanFor ~= spanFor or not near(e.v, value) then
+        e.span = { opts.min and (value < opts.min and (value < 0 and -past(value) or 0) or opts.min) or nil,
+                   opts.max and (value > opts.max and past(value) or opts.max) or nil }
+        e.spanFor = spanFor
+    end
+    local lo, hi = e.span[1], e.span[2]
+    put(e, "range", tostring(lo) .. "," .. tostring(hi) .. "," .. tostring(opts.step), function()
+        if lo then e.s:SetMinValue(lo) e.s:SetMinSliderValue(lo) else e.s:ClearMinValue() e.s:ClearMinSliderValue() end
+        if hi then e.s:SetMaxValue(hi) e.s:SetMaxSliderValue(hi) else e.s:ClearMaxValue() e.s:ClearMaxSliderValue() end
         if opts.step then e.s:SetDelta(opts.step) end
         e.v = nil
     end)
     local now = e.s:GetValue()
-    if opts.whole then now = math.floor(now + 0.5) end
-    if e.v ~= nil and not near(now, e.v) then
-        e.v = now
-    elseif e.v == nil or not near(e.v, value) then
+    if e.v ~= nil and not near(now, e.base) then          -- the player moved it
+        e.v, e.base = opts.whole and math.floor(now + 0.5) or now, now
+    elseif e.v == nil or not near(e.v, value) then          -- the script's value, given back as it is
         e.v = value
         e.s:SetValue(value)
+        e.base = e.s:GetValue()   -- what the box made of it (a float, clamped): not a change
     end
     local act = tonumber(seen("number", label, e.v, { opts.min, opts.max }, true, showFocus(e, "focus", e.r, e.s)) or "")
     if act then
+        if lo then act = math.max(lo, act) end
+        if hi then act = math.min(hi, act) end
         e.v = opts.whole and math.floor(act + 0.5) or act
         e.s:SetValue(e.v)
+        e.base = e.s:GetValue()
     end
     return e.v
 end
@@ -819,7 +842,9 @@ function ui.color(label, hex)
     return out
 end
 
--- A bar filled to `fraction` (0-1). opts.color, opts.format ("%d%%").
+-- A bar filled to `fraction` (0-1), with text beside it: opts.text as it is ("3 / 5 found"), else opts.format, a
+-- string.format pattern given the percent ("%d%%", the default); a format that isn't one is shown as it is.
+-- opts.color.
 function ui.progress(label, fraction, opts)
     opts = opts or {}
     local e = row("progress", function()
@@ -832,8 +857,14 @@ function ui.progress(label, fraction, opts)
     local f = math.max(0, math.min(1, fraction or 0))
     put(e, "f", math.floor(f * 1000), function() e.p:SetPercent(f) end)
     put(e, "color", opts.color or THEME.accent, function(v) e.p:SetFillColorAndOpacity(C(v)) end)
-    put(e, "shown", string.format(opts.format or "%d%%", math.floor(f * 100 + 0.5)), function(s) setText(e.vt, s) end)
-    seen("progress", label, string.format(opts.format or "%d%%", math.floor(f * 100 + 0.5)))
+    local shown = opts.text
+    if shown == nil then
+        local ok, s = pcall(string.format, opts.format or "%d%%", math.floor(f * 100 + 0.5))
+        shown = ok and s or opts.format   -- "100%" isn't a pattern ("invalid conversion"): shown as it is
+    end
+    shown = tostring(shown)
+    put(e, "shown", shown, function(s) setText(e.vt, s) end)
+    seen("progress", label, shown)
 end
 
 local textures = {}
@@ -930,6 +961,7 @@ local function ownerOf(list, id)
     end
     return nil
 end
+Menu.ownerOf = ownerOf   -- the host's: whose page is showing, for the status line
 
 local function register(p)
     local list = Menu.shared("pages") or ""
@@ -1022,10 +1054,34 @@ function Menu.open(page) Menu.share("request", "open\t" .. tostring(page or ""))
 function Menu.close() Menu.share("request", "close\t") end
 
 -- The line under the window's title, while the menu is open: one line of how things stand, e.g. your
--- cat's health and where it is. nil or "" puts back the menu's own line (how to open and close it). One
--- script's line at a time: the last one set shows. The player can hide it (Tools, Menu).
+-- cat's health and where it is. Each script has a line of its own, and the window shows one of them: the
+-- line of the mod whose page is showing, else the one that went up most recently. Changing a line that's up
+-- keeps its place, so a line that ticks (a clock) doesn't take over another's. nil or "" takes this script's
+-- line down; with none up, the menu's own line shows (how to open and close it). The player can hide them
+-- (Tools, Menu).
+-- The lines are shared as "status.lines", one "<owner>\t<since>\t<line>" each (the owner as Menu.page has
+-- it), changed on the game thread; the host says what it shows in "status.shown". "status" still has the
+-- last line set, for what read it before there was a line each.
 function Menu.status(text)
-    Menu.share("status", (tostring(text or ""):gsub("[\r\n]+", " ")))
+    local line, owner = (tostring(text or ""):gsub("[\r\n\t]+", " ")), caller(2)
+    Menu.share("status", line)
+    ExecuteInGameThread(function()
+        local out, since = {}, nil
+        for l in (Menu.shared("status.lines") or ""):gmatch("[^\n]+") do
+            local o, s = l:match("^([^\t]*)\t([^\t]*)\t")
+            if o == owner then since = s elseif o then out[#out + 1] = l .. "\n" end
+        end
+        if line ~= "" then out[#out + 1] = owner .. "\t" .. (since or string.format("%.3f", os.clock())) .. "\t" .. line .. "\n" end
+        Menu.share("status.lines", table.concat(out))
+    end)
+end
+
+-- The status line the window shows, and whose it is (the mod's folder under Mods/, as Menu.page has it); nil
+-- when it shows the menu's own line, or the player hid the lines.
+function Menu.statusShown()
+    local owner, line = tostring(Menu.shared("status.shown") or ""):match("^([^\t]*)\t(.+)$")
+    if not owner then return nil end
+    return line, owner
 end
 
 -- Tell the menu about a key a script uses, so its Overview page lists it: Menu.key("F6", "Mouse look on and off").
@@ -1055,9 +1111,16 @@ local function listy(v)
     return type(G) == "table" and type(G.json) == "table" and mt == G.json.listMeta
 end
 
+-- Whether a value is WCModsGame's Game.json.null (what Game.json.decode makes of a null in a file): an empty table,
+-- which would otherwise be written {}.
+local function nully(v)
+    local G = package.loaded.WCModsGame
+    return type(G) == "table" and type(G.json) == "table" and G.json.null ~= nil and rawequal(v, G.json.null)
+end
+
 local function encode(v, indent)
     local t = type(v)
-    if t == "nil" then return "null" end
+    if t == "nil" or nully(v) then return "null" end
     if t == "boolean" then return v and "true" or "false" end
     if t == "number" then
         if v ~= v or v == math.huge or v == -math.huge then return "null" end
@@ -1100,12 +1163,61 @@ end
 -- A Lua value as JSON text (objects get their keys sorted, notes like "_help" first).
 function Menu.json(value) return encode(value, 0) end
 
--- Write a Lua value to a JSON file; true, or false and why not.
+-- Write a Lua value to a JSON file; true, or false and why not. The file is written whole or not at all: the text
+-- goes to <path>.new first, is checked, and takes the old file's place only then (a full disk leaves the old file
+-- as it was and says so). Windows' os.rename won't replace a file, so the old one is moved aside to <path>.old
+-- first, and put back if the new one can't go in. A read-only file is refused, and a <path>.old left without a
+-- <path> (a save that stopped between the renames) is kept.
 function Menu.saveJson(path, value)
     local ok, err = pcall(function()
-        local f = assert(io.open(path, "wb"))   -- binary, so the file keeps \n line ends on Windows
-        f:write(encode(value, 0), "\n")
-        f:close()
+        local text = encode(value, 0) .. "\n"   -- first: a value that can't be written leaves nothing behind
+        local tmp = path .. ".new"
+        local f = assert(io.open(tmp, "wb"))    -- binary, so the file keeps \n line ends on Windows
+        local wrote, werr = f:write(text)
+        local closed, cerr = f:close()
+        if not wrote or not closed then
+            os.remove(tmp)
+            error(werr or cerr or "couldn't write " .. tmp, 0)
+        end
+        local back = io.open(tmp, "rb")         -- what's on the disk, in case the write came out short
+        local got = back and back:read("a")
+        if back then back:close() end
+        if got ~= text then
+            os.remove(tmp)
+            error("couldn't write " .. tmp .. " whole (is the disk full?)", 0)
+        end
+        -- The old file aside, only when there is one: a <path>.old with no <path> is what a save that stopped
+        -- between the two renames left, the only copy of what was saved, and it's left as it is.
+        local old = path .. ".old"
+        local had = false
+        local cur = io.open(path, "rb")
+        if cur then
+            cur:close()
+            local rw = io.open(path, "r+b")   -- a read-only file isn't replaced
+            if not rw then
+                os.remove(tmp)
+                error(path .. " can't be written (is it read-only?)", 0)
+            end
+            rw:close()
+            local gone, gerr, code = os.remove(old)
+            if not gone and code ~= 2 then   -- 2: there's no such file
+                os.remove(tmp)
+                error("couldn't remove " .. old .. " (" .. tostring(gerr) .. ")", 0)
+            end
+            local aside, aerr = os.rename(path, old)
+            if not aside then
+                os.remove(tmp)
+                error("couldn't move " .. path .. " aside (" .. tostring(aerr) .. ")", 0)
+            end
+            had = true
+        end
+        local moved, merr = os.rename(tmp, path)
+        if not moved then
+            if had then os.rename(old, path) end
+            os.remove(tmp)
+            error("couldn't replace " .. path .. " (" .. tostring(merr) .. ")", 0)
+        end
+        if had then os.remove(old) end
     end)
     if not ok then return false, tostring(err) end
     return true

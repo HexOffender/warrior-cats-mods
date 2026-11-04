@@ -17,6 +17,23 @@ end
 Game.modName = "Tweaks"   -- its errors in the log say so
 local S = SETTINGS
 
+-- The clock, held through Game.time.hold, the one hold every script shares (the last to hold it has it): asked
+-- for when the switch or the hour changes, let go when the switch goes off, and taken back once another script
+-- that held it has let go. While another holds it, Tweaks gives way.
+local clock = { asked = false }   -- the hour last asked for, in seconds (nil for none); false before the first ask
+local function holdClock()
+    local want = S.hold_time and math.floor(S.time_of_day * 3600 + 0.5) or nil
+    if want ~= clock.asked then
+        local first = clock.asked == false
+        clock.asked = want
+        -- At the start, another script's hold is up already: Tweaks gives way to it, as it does later.
+        local _, by = Game.time.held()
+        if not (first and want and by ~= nil and by ~= "Tweaks") then Game.time.hold(want, "Tweaks") end
+    elseif want and Game.time.held() == nil then
+        Game.time.hold(want, "Tweaks")
+    end
+end
+
 -- Twice a second: stamina topped up, the clock held, the fresh-kill pile kept up.
 Game.every(0.5, function()
     local cat = Game.cat()
@@ -25,7 +42,7 @@ Game.every(0.5, function()
         local max = cat:maxStamina()
         if max then cat:setStamina(max) end
     end
-    if S.hold_time then Game.time.setSeconds(math.floor(S.time_of_day * 3600 + 0.5)) end
+    holdClock()
     if S.min_fresh_kill > 0 then
         local pile = Game.freshKill.value()
         if pile and pile < S.min_fresh_kill then Game.freshKill.set(S.min_fresh_kill) end
@@ -123,6 +140,11 @@ if okMenu then pcall(function()
         S.heal_key = key == "none" and "" or key
         S.hold_time = ui.switch("Hold the clock", S.hold_time)
         S.time_of_day = ui.slider("At", S.time_of_day, 0, 24, { step = 0.25, format = "%.2f h" })
+        local heldAt, heldBy = Game.time.held()
+        if S.hold_time and heldAt and heldBy ~= "Tweaks" then
+            ui.note(string.format("Held by %s at %02d:%02d for now; Tweaks takes the clock back when it lets go.",
+                                  heldBy, math.floor(heldAt / 3600), math.floor(heldAt % 3600 / 60)))
+        end
         S.min_fresh_kill = math.floor(ui.slider("Keep the fresh-kill pile at least", S.min_fresh_kill, 0, 100,
                                                 { step = 1, format = "%.0f" }) + 0.5)
         -- (Only when the install turned it on: it isn't available yet, tweaks.UNCHECKED.)

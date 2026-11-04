@@ -295,7 +295,10 @@ Small changes while you play, ticked on the studio's Tweaks page. Every key is o
   on and off key (`toggle_key`, F6 unless a `mouselook.json` says otherwise), a key a `controls.json` remap puts
   an action or another key on. A file that has one anyway is warned about at Apply, by what else uses it; on the
   mod menu's key, the heal is left out (the menu keeps its key);
-- `hold_time` and `time_of_day`: the clock held at that hour (0 to 24, `6.5` is 06:30);
+- `hold_time` and `time_of_day`: the clock held at that hour (0 to 24, `6.5` is 06:30), through the hold every
+  script shares (`Game.time.hold`): while another mod holds the clock through it, Tweaks gives way, and takes the
+  clock back once that mod lets go. (Menu pages' Hold this time still sets the clock itself, so with both on, the
+  two still fight until it uses the shared hold);
 - `min_fresh_kill`: the camp's fresh-kill pile kept at least this full (0 to 100, the pile's own count);
 - `skip_scenes`: not available yet, and refused with `true` ("it hasn't been checked that skipping keeps the
   story's steps"): each of the story's scenes skipped as it starts, with the game's own hold-to-skip, as Sandbox

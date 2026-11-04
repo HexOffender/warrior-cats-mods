@@ -468,11 +468,24 @@ local function tick()
     showFocus()
     if os.clock() - statusAt >= 0.25 then
         statusAt = os.clock()
-        local line = HOST.statusOn and Menu.shared("status") or nil
-        if type(line) ~= "string" or line == "" then line = USAGE end
-        if line ~= statusShown then
-            statusShown = line
-            pcall(function() win.status:SetText(FText(line)) end)
+        -- One line of the scripts' (Menu.status, a line each): the line of the mod whose page is showing, else
+        -- the one that went up most recently.
+        local line, owner, best = nil, nil, nil
+        if HOST.statusOn then
+            local showing = Menu.ownerOf(Menu.shared("pages") or "", tostring(Menu.shared("page") or ""))
+            for l in tostring(Menu.shared("status.lines") or ""):gmatch("[^\n]+") do
+                local o, since, text = l:match("^([^\t]*)\t([^\t]*)\t(.*)$")
+                if o and text ~= "" then
+                    local rank = (showing and showing ~= "" and o == showing) and math.huge or (tonumber(since) or 0)
+                    if not best or rank > best then best, line, owner = rank, text, o end
+                end
+            end
+        end
+        local shown = line and (owner .. "\t" .. line) or ""
+        if shown ~= statusShown then
+            statusShown = shown
+            Menu.share("status.shown", shown)
+            pcall(function() win.status:SetText(FText(line or USAGE)) end)
         end
     end
     for _, key in ipairs({ "smaller", "bigger" }) do

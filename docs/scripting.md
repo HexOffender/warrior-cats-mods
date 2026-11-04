@@ -39,7 +39,7 @@ sets up two globals, then runs yours:
 | `MOD.` | What it is |
 |---|---|
 | `id`, `name`, `folder` | The mod's folder name, its name, and its folder on disk |
-| `settings` | `settings.json` as a table (empty without one), read from the file each time the game starts, so what `save()` wrote is back after a restart. Change it and the script sees the change at once |
+| `settings` | `settings.json` as a table (empty without one), read from the file each time the game starts, so what `save()` wrote is back after a restart. Change it and the script sees the change at once. A file that can't be read (broken JSON, something after the closing `}`, or just `null`) is said in the log, and the settings from the install are used |
 | `settingsFile` | Where `MOD.save()` writes, or nil |
 | `save()` | Write `MOD.settings` back to `settings.json`, for the next time the game starts and the next install. Returns true, or false and why |
 | `log(fmt, ...)` | Print `[Mod name] text` to `ue4ss\UE4SS.log`. It's `string.format` underneath, so a `%` in the text is written `%%` |
@@ -99,6 +99,13 @@ error says `scripts/main.lua:12: ...`.
 local Game = require("WCModsGame")   -- a script mod has it as Game already
 ```
 
+**Which wcmods:** `Game.wcmods` is the version of wcmods (Clan Mod Studio) that installed the module, `"0.6.0"`,
+and `Game.wcmodsNumber` a number to compare, major × 10000 + minor × 100 + patch (`600`). Both are nil on 0.5.0
+and older, which didn't have them. Between releases, a build of wcmods from its repository says the last release's
+number until the next release raises it, so a check for 600 takes the old way there. A script that supports older ones too takes a fixed call where it's there and its own way round where it
+isn't: `if (Game.wcmodsNumber or 0) >= 600 then ... end`. (`mod.json`'s `"wcmods"` refuses an older one
+outright instead; [SDK.md](SDK.md#mod-folder).)
+
 ### How it reaches the game
 
 - **Reflection:** most of what scripts use is what the game itself exposes to Unreal's reflection:
@@ -121,9 +128,11 @@ local Game = require("WCModsGame")   -- a script mod has it as Game already
   into nil (or your default).
 - **Objects last a level:** look things up again rather than keeping them. `Game.cat()` is cheap.
 - **One thread:** don't use `LoopAsync` in a script that uses these modules (see SDK.md).
-- **Some calls are costly every frame:** `Game.save.file()` and `Game.items.list()` read and decode the whole
-  save (kept for a second), and `Game.quests.objectives(q)` looks through every objective in the game each time.
-  Call them from `Game.every`, not `Game.onFrame`.
+- **Some calls are costly every frame:** `Game.quests.objectives(q)` looks through every objective in the game each
+  time; call it from `Game.every`, not `Game.onFrame`. `Game.save.file()` (and so `Game.items.list()`,
+  `cat:traits()` and the slot calls) decodes the whole save, about 40 ms, but only when the file has changed: it
+  keeps the table while the file's size stays the same, looking at most 4 times a second and decoding it again at
+  least every 30 s.
 
 ### Objects
 
@@ -215,7 +224,9 @@ Some limits:
 
 ### Your cat (and other cats)
 
-`Game.cat()` is yours. `Game.cat(actor)` wraps any cat or animal; it works on fighters too.
+`Game.cat()` is yours. `Game.cat(actor)` wraps any cat or animal; it works on fighters too. `cat.actor` is the
+game's own object for it (its character actor), for `Game.get`, `Game.call` and the game's members the
+wrapper doesn't have: `Game.get(cat.actor, "CharacterType")`.
 
 | Method | Gives or does | Tried in game |
 |---|---|---|
@@ -227,7 +238,7 @@ Some limits:
 | `combatStamina()`, `maxCombatStamina()`, `setCombatStamina(v)` | Fight stamina (the maximum is 0.4 × Prowess + Stamina) | read |
 | `level()`, `setLevel(n)`, `xp()`, `setXp(v)`, `xpNeeded()` | Level and experience (your cat: only your cat has a level component out of a fight, so another cat's are nil, and setting them gives false and why) | read |
 | `stats()`, `setStat(name, v)` | `{Prowess, Strength, Resilience, Instinct, Agility, Stamina}` (your cat, as above; a fight's own copy, any fighter's, is under `Game.fighter`) | read and set |
-| `location()`, `teleport(x, y, z)` / `teleport({X,Y,Z})` / `teleport(actor)` | Where it is; move it | yes |
+| `location()`, `teleport(x, y, z)` / `teleport({X,Y,Z})` / `teleport(actor)` | Where it is; move it: true, or false and why (`"the game wouldn't move it there (no room)"` when the engine refuses the move, and the cat stays where it was) | yes |
 | `scale()`, `setScale(f)` | Size (the same call as the menu's size cheat) | read |
 | `setTimeDilation(f)` | This cat's own time: 2 is twice as fast | no |
 | `kind()` | `"Cat"`, `"WeakMice"`, `"BossFox"`, … | yes |
@@ -336,7 +347,7 @@ questline on one.
 
 | Call | Gives or does |
 |---|---|
-| `Game.items.list()`, `Game.items.count(tag)` | Your items, `{["Gameplay.Inventory.Materials.Dandelion"] = 6, …}`: as of the game's last save (it writes `WrcGame.json` each time), with pickups since then from the HUD's pickup messages |
+| `Game.items.list()`, `Game.items.count(tag)` | Your items, `{["Gameplay.Inventory.Materials.Dandelion"] = 6, …}`: as of the game's last save (it writes `WrcGame.json` each time), with the pickups since the level loaded from the HUD's pickup messages. Loading a save or another cat (a new HUD), or the game saving after them, drops those pickups, and the save says again. A save the game rewrote at the same size isn't noticed: the pickups stay laid over it until the next load. Items used since the last save aren't seen until the next one |
 | `Game.items.drop(tag, count, where)` | A pickup holding the items on the ground by your cat (or below `where`), for the cat to pick up as usual. It returns the actor, or nil and why (a `tag` that isn't an item's tag in text, `"Gameplay.Inventory.Materials.Moss"`, is refused). A mod's herb or material lies there as its own model (items.json `model`), or as the game's pickup of the herb it's `like`. Seen in game: the cat collects it with Interact, and `itemPickedUp` fires |
 | `Game.items.info(tag)`, `Game.items.type(tag)` | What the quest manager knows of an item (nothing, as shipped: its item stats table is empty), and an item's kind: the quest manager's answer where it has one, else from the tag: `"Consumable"` (herbs and pouches), `"Collectible"` (materials), `"Equipment"` (accessories) or `"Quest"`; nil for a tag that isn't an item's |
 
@@ -379,6 +390,8 @@ or hidden animal doesn't move its bones until it's in view (the engine's way), t
 |---|---|
 | `Game.time.get()` | The clock: hours, minutes, seconds |
 | `Game.time.seconds()`, `Game.time.setSeconds(s)`, `Game.time.set(h, m, s)` | Seconds into the day (21600 is 6:00); set the clock |
+| `Game.time.hold(s, who)`, `Game.time.hold(nil, who)` | Hold the clock at `s` seconds into the day, for every script: one hold, shared between them, so two scripts holding it don't fight over the hour. The last script to hold it has it, and the clock is put back to that hour twice a second while your cat is in the world. `who` names the holder (the mod's name by default); `hold(nil, who)` lets go of your own hold only. Gives back what setting the clock did. Tweaks' Hold the clock gives way to another script's hold, and takes the clock back once that's let go |
+| `Game.time.held()` | The hour held, in seconds, and whose hold it is (`54000, "Menu pages"`); nil when nobody holds the clock |
 | `Game.freshKill.value()`, `.max()`, `.set(v)`, `.level()` | The camp's fresh-kill pile (0–100), and Full/Abundant/Good/Scarcity/Critical |
 | `Game.freshKill.timer()`, `.decayTime()`, `.setDecayTime(v)` | Seconds since it last went down, and how often it does (90) |
 
@@ -386,11 +399,14 @@ or hidden animal doesn't move its bones until it's in view (the engine's way), t
 
 | Call | Gives or does |
 |---|---|
-| `Game.quests.all()` | Every quest: `{quest, id, graph, type, status, result, tracked, xp, rewards}`. `id` comes from its quest graph: `"Tutorial"`, `"Deliver"`, `"RiverClan_Unique1"` |
-| `Game.quests.tracked()` | The quest being followed, or nil |
-| `Game.quests.report(id, {title, status, objective, progress, by, description})` | List a quest of the mod's own on the mod menu's Quests page: `status` is `"available"`, `"active"` or `"done"`; `by` the mod's name; `description` an optional sentence about it. Report again when it changes; `nil` takes it off. `Game.quests.reported()` reads them back, `description` `""` when there's none (a page from before it was a field shows the first five) |
+| `Game.quests.all()` | Every quest the quest manager holds, each as `describe` gives it |
+| `Game.quests.describe(q)` | A quest object as a table: `{quest, id, tag, graph, class, type, status, result, tracked, xp, rewards}`. `quest` is the object itself; `id` comes from its quest graph (`"Tutorial"`, `"Deliver"`, `"RiverClan_Unique1"`), `tag` is the graph's quest tag (nil without one), `graph` the graph's name and `class` the quest's class; `rewards` is `{tag = count}`. Nil for no quest |
+| `Game.quests.objectives(q)` | A quest's objectives, in order: `{objective, id, index, current, target, status, point}` (`current` and `target` count it up, `point` is where to go when it has one). [Costly](#how-it-reaches-the-game): it looks through every objective in the game |
+| `Game.quests.tracked()` | The quest being followed (the object, for `describe` and `objectives`), or nil |
+| `Game.quests.manager()` | The game's quest manager, for `Game.get` and `Game.call` on what these don't wrap |
+| `Game.quests.report(id, {title, status, objective, progress, by, description})` | List a quest of the mod's own on the mod menu's Quests page: `status` is `"available"`, `"active"` or `"done"`; `by` the mod's name; `description` an optional sentence about it. Report again when it changes; `nil` takes it off. `Game.quests.reported()` reads them back: `{id, title, status, objective, progress, by, description}` each, `description` `""` when there's none (a page from before it was a field shows the first five) |
 | `Game.quests.status(tag)`, `.result(tag)`, `.successes(tag)` | By quest tag: `"QuestAvailable"`, `"OngoingQuest"`, … |
-| `Game.quests.start(tag)`, `.give(tag)`, `.track(quest, on)` | The quest manager's own StartQuestOfTag, GiveQuestOfTag and SetTracked. Not tried yet; they can move the story on |
+| `Game.quests.start(tag)`, `.give(tag)`, `.track(quest, on)` | The quest manager's own StartQuestOfTag, GiveQuestOfTag and SetTracked: true, or false and the error. Not tried yet; they can move the story on |
 | `Game.quests.chapter()` | `"Chapter00"` |
 
 ### Fights
@@ -400,8 +416,9 @@ or hidden animal doesn't move its bones until it's in view (the engine's way), t
 | Fight | Gives |
 |---|---|
 | `players()`, `enemies()`, `all()` | The fighters |
-| `turnOrder()`, `current()`, `mainEnemy()` | Cats, in this round's order; whose turn it is |
+| `turnOrder()`, `current()`, `mainEnemy()` | Cats, in this round's order; whose turn it is, and the fight's main enemy (nil when it's nobody's turn, there's no main enemy, or its body can't be read) |
 | `kind()` | The director's class (story, boss, skirmish, defender…) |
+| `fight.director`, `Game.combatDirector()` | The fight's combat director, the game's own object the calls above read, for `Game.get` and `Game.call` on what they don't wrap: `Game.get(fight.director, "TurnOrder")`. `Game.combatDirector()` is nil with no fight going on |
 
 A fighter (`Game.fighter(cat or actor)`) is a cat's combat component, set up when a fight starts:
 
@@ -410,7 +427,8 @@ A fighter (`Game.fighter(cat or actor)`) is a cat's combat component, set up whe
 | `stats()`, `setStat(name, v)` | This fight's stats (the damage formula uses these) |
 | `level()`, `setLevel(n)`, `stance()` | Its level, and its stance now |
 | `move()`, `moveTag()`, `setMove({Damage = 80, Accuracy = 1})` | The move it picked (its AttackMove row), and changing it before it lands (not tried: no move was picked in testing) |
-| `targets()`, `cat()` | Who it's attacking; the cat itself (health, status…) |
+| `targets()`, `cat()` | Who it's attacking; the cat itself (health, status…), or nil when its body can't be read |
+| `actor()`, `fighter.component` | The fighter's character actor (nil when it can't be read), and its combat component, the game's own `TurnBasedCombatComponent` the calls here read, for `Game.get` and `Game.call` |
 | `team()`, `aiTier()`, `setAITier(t)`, `moveCount()` | Its team (`"Player"`, `"Enemy"`), the AI's tier for this fight (`"Tier1"`…`"Tier6"`; `"None"` for your cat) and how many moves it has to pick from: the game's own members, filled when the fight is set up (seen: a weak mouse at level 1, `"Tier1"`, 3 moves; your cat 3 moves and no tier) |
 
 **Seen in game** (a level 20 cat against a weak bird):
@@ -429,7 +447,8 @@ others, so try each one.
 
 | Call | Does |
 |---|---|
-| `Game.dev.list()` | Every on/off and number setting, with its value (about 50) |
+| `Game.dev.list()` | Every on/off and number setting, with its value (about 50): `{name, type, value, owner}`. A setting that holds one of an enum's values also has `enum` (the enum's path), `choices` (its names and numbers, `{InfiniteLife = 1, Combat = 2, ...}`) and, for a set of flags whose numbers are added up (`GodMode`), `flags = true`. The enum settings are `GodMode`, `ForceClan`, `ForcedRank`, `ForcePlayWrcNarrativeSequence`, `ForcedLocationType`, `ForcedDifficulty`, `ForcedAttackStatusType`, `ForcedDilemma`, `OverridePlatformType`, `OverrideLanguage` and `DrawDebugTrace` (`Game.dev.enums` has their paths) |
+| `Game.dev.choices(name)` | An enum setting's names and numbers, read from the game (`Game.dev.choices("GodMode")` is `{None = 0, InfiniteLife = 1, Combat = 2, Stealth = 4, AvoidCombat = 8}`); nil for another setting |
 | `Game.dev.get(name)`, `Game.dev.set(name, v)` | e.g. `bAlwaysSucceedAttack`, `bFastHousingCrafting`, `GodMode`, `bAllowCatSizeOverride`, `CatSizeOverride` |
 | `Game.dev.fullResource("Stamina", true)` | Keep a resource full: Health, Level, Stamina, StaminaCombat, Currency, FreshKill (the game's `AlwaysHasFullResource`; the switch was set in game, but whether the game obeys it wasn't checked) |
 
@@ -437,7 +456,7 @@ others, so try each one.
 
 | Call | Gives |
 |---|---|
-| `Game.save.file()`, `Game.save.slotData()` | The whole save as of the game's last save, as a table; this cat's slot in it (the one the file names as its current cat, `Shared.General.CurrentCatSlot`) |
+| `Game.save.file()`, `Game.save.slotData()` | The whole save as of the game's last save, as a table; this cat's slot in it (the one the file names as its current cat, `Shared.General.CurrentCatSlot`). The table is kept while the file's size stays the same, so a save that rewrote it at the same size (a count going from 6 to 7) is seen up to 30 s late; `Game.save.write()` drops it. Don't change the table: every call gets the same one |
 | `Game.save.write()` | Save now (the game's own Save) |
 | `Game.save.folder()` | A folder for a script's own files: `WCMods` in the game's Saved folder, beside its saves. Every install makes it, and updating a mod or wcmods leaves it alone |
 | `Game.save.slot()` | The save game's slot index (`CurrentSaveSlotIndex`), which isn't the cat's: it stayed 0 while the cat played was the file's slot 8 (`Game.save.slotData()` follows the file) |
@@ -447,8 +466,9 @@ others, so try each one.
 
 - **JSON:** `Game.json.encode(v)`, `Game.json.decode(text)` (null is `Game.json.null`; a number written with a
   point or an exponent, `12.0`, stays a number with a fraction, as Lua's `tonumber` has it; a list comes back
-  marked as one, so it's written `[]` again when empty; a byte order mark at the start is passed over), and
-  `Game.json.list(t)` to write an empty table as `[]`.
+  marked as one, so it's written `[]` again when empty; a byte order mark at the start is passed over; text after
+  the value, as in `[] [1]`, is a mistake like any other: nil and why), and `Game.json.list(t)` to write an empty
+  table as `[]`.
 - **Enums:** `Game.enums.<name>` maps each way, name to number and number to name (`Game.enums.status.Poisoned
   == 3`). The enums are `clan`, `rank`, `trait`, `stance`, `status`, `aiProfile`, `team`, `detectionRange`,
   `stat`, `resource`, `questStatus`, `questResult`, `questType`, `objectiveStatus`, `phase`, `itemType` and

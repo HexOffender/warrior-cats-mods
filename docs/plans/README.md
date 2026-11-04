@@ -23,6 +23,7 @@ their tests and docs, what is deliberately not planned (and why), and the decisi
 | [console-lua.md](console-lua.md) | Scripts, the Console page and the in-game runtime |
 | [docs-guide.md](docs-guide.md) | The creator guide ("Making mods without code") and the docs |
 | [re-roadmap.md](re-roadmap.md) | Reverse-engineering roadmap: the facts about the game that would unlock the next creator features |
+| [menu-pages-sdk.md](menu-pages-sdk.md) | What the Menu pages review found in the script runtime: menu controls, fights, saving and reading JSON, items, the clock hold, status lines, a runtime version |
 
 ## Work the plans build on
 
