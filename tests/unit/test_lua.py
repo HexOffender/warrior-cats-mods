@@ -682,19 +682,32 @@ def test_the_clock_has_one_hold_for_every_script():
     """Tweaks' Hold the clock and Menu pages' Hold this time each wrote the clock on their own timers, so with both on
     it flipped between two hours, and with Tweaks' on Menu pages' Morning was undone in half a second. One hold now,
     in a shared variable: the last to hold it has it, letting go lets go of your own only, and every script that held
-    it keeps the clock at the shared hour. The shared-variable helpers come before Game.time, which uses them."""
+    it keeps the clock at the shared hour. The shared-variable helpers come before Game.time, which uses them. The
+    holder's state says it's there twice a second, and a hold it hasn't for 3 s is none: a shared variable outlives a
+    restart of the mods, so a hold whose state went with it was held for good (and Tweaks gave way to it for good).
+    It's 3 s by the run of tasks before this one, so a long frame doesn't make every hold look old."""
     lua = game.lua()
     assert lua.index("local function shared(name)") < lua.index("Game.time = {}") < lua.index("function Game.quests.report(")
     assert lua.count("local function shared(name)") == 1 and lua.count("local function clean(s)") == 1
-    assert 'Game.time.holding = { key = "WCModsGame.clockHold", task = nil }' in lua
+    assert 'Game.time.holding = { key = "WCModsGame.clockHold", task = nil, who = nil, STALE = 3 }' in lua
+    read = body(lua, "function Game.time.holding.read()", "\nend\n")
+    assert 'match("^([%d%.]+)\\t([^\\t]*)\\t([%d%.]+)$")' in read and "return tonumber(s), who, tonumber(at)" in read
+    assert 'string.format("%d\\t%s\\t%.3f", s, who, os.clock())' in body(lua, "function Game.time.holding.write(s, who)", "\nend\n")
     held = body(lua, "function Game.time.held()", "\nend\n")
-    assert 'tostring(shared(Game.time.holding.key) or ""):match("^([%d%.]+)\\t(.*)$")' in held
+    assert "if s == nil or (ticks.before or os.clock()) - at > h.STALE then return nil end" in held
+    # ticks.before: when the run of tasks before this one began
+    run = body(lua, "local function runTasks()", "\nend\n")
+    assert "local ticks = { last = os.clock(), before = nil }" in lua and "lastFrame" not in lua
+    assert run.index("local dt = now - ticks.last") < run.index("ticks.before, ticks.last = ticks.last, now")
     hold = body(lua, "function Game.time.hold(s, who)", "\n-- ====")
     assert 'who = clean(who or Game.modName or "a script")' in hold
-    assert 'if select(2, Game.time.held()) == who then share(h.key, "") end' in hold   # only your own
+    assert 'if select(2, h.read()) == who then share(h.key, "") end' in hold   # only your own, kept up or not
     assert "s = math.floor(s + 0.5) % 86400" in hold   # a whole second, never 86400 (%.0f rounded 86399.6 up)
-    assert 'share(h.key, string.format("%d\\t%s", s, who))' in hold
+    assert "h.who = who\n    h.write(s, who)" in hold
     assert "h.task = h.task or Game.every(0.5, function()" in hold and "if at and Game.cat() then Game.time.setSeconds(at) end" in hold
+    # the heartbeat: the holder's state keeps its own hold's stamp up, whatever held() says of it
+    assert "if mine and whose == h.who then h.write(mine, whose) end" in hold
+    assert hold.index("local mine, whose = h.read()") < hold.index("local at = Game.time.held()")
     # set and setSeconds stay plain writes
     assert 'function Game.time.setSeconds(s) return Game.set(Game.gameState(), "WCM_DayTime", s % 86400) end' in lua
 

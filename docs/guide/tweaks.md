@@ -78,7 +78,7 @@ and the mod menu's Tweaks page, switching a tweak off and on, with its "Save" wr
   sets another time (a scene, say) shows for a moment.
 - The clock is at another hour than yours: another mod holds it. There's one hold for every mod that uses it,
   and the last to hold it has it. The Tweaks page on the mod menu says whose it is; Tweaks takes the clock back to
-  your hour once that mod lets go. (Menu pages' **Hold this time** doesn't use the shared hold yet, so with it and
+  your hour once that mod lets go or stops. (Menu pages' **Hold this time** doesn't use the shared hold yet, so with it and
   **Hold the clock at** both on, the clock jumps between the two hours: switch one off.)
 - The story doesn't go on: with the clock held, the day never turns, so a story step that waits for
   night or the next day may wait for ever. Untick **Hold the clock at** (or switch it off on the mod menu's

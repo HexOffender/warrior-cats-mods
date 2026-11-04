@@ -19,14 +19,16 @@ local S = SETTINGS
 
 -- The clock, held through Game.time.hold, the one hold every script shares (the last to hold it has it): asked
 -- for when the switch or the hour changes, let go when the switch goes off, and taken back once another script
--- that held it has let go. While another holds it, Tweaks gives way.
+-- that held it has let go, or has gone (its hold isn't kept up: Game.time.held() says nil for it). While another
+-- holds it, Tweaks gives way.
 local clock = { asked = false }   -- the hour last asked for, in seconds (nil for none); false before the first ask
 local function holdClock()
     local want = S.hold_time and math.floor(S.time_of_day * 3600 + 0.5) or nil
     if want ~= clock.asked then
         local first = clock.asked == false
         clock.asked = want
-        -- At the start, another script's hold is up already: Tweaks gives way to it, as it does later.
+        -- At the start, another script's hold is up already: Tweaks gives way to it, as it does later. (A hold left
+        -- by a state that's gone, through a restart of the mods, is nil within 3 s, and Tweaks takes the clock.)
         local _, by = Game.time.held()
         if not (first and want and by ~= nil and by ~= "Tweaks") then Game.time.hold(want, "Tweaks") end
     elseif want and Game.time.held() == nil then
@@ -142,7 +144,7 @@ if okMenu then pcall(function()
         S.time_of_day = ui.slider("At", S.time_of_day, 0, 24, { step = 0.25, format = "%.2f h" })
         local heldAt, heldBy = Game.time.held()
         if S.hold_time and heldAt and heldBy ~= "Tweaks" then
-            ui.note(string.format("Held by %s at %02d:%02d for now; Tweaks takes the clock back when it lets go.",
+            ui.note(string.format("Held by %s at %02d:%02d for now; Tweaks takes the clock back when it lets go or stops.",
                                   heldBy, math.floor(heldAt / 3600), math.floor(heldAt % 3600 / 60)))
         end
         S.min_fresh_kill = math.floor(ui.slider("Keep the fresh-kill pile at least", S.min_fresh_kill, 0, 100,

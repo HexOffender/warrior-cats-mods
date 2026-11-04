@@ -599,12 +599,15 @@ end
 -- ===================================================================================== scheduling
 -- One game-thread loop per Lua state runs every timer, frame function and polled event.
 local tasks, nextTask, started = {}, 1, false
-local lastFrame = os.clock()
+-- When this state's latest run of them began, and the one before (nil before the first): Game.time.held() goes by
+-- the one before, so a frame the game took long over (a level loading, the game behind another window) doesn't make
+-- another state's hold look old.
+local ticks = { last = os.clock(), before = nil }
 
 local function runTasks()
     local now = os.clock()
-    local dt = now - lastFrame
-    lastFrame = now
+    local dt = now - ticks.last
+    ticks.before, ticks.last = ticks.last, now
     -- The ids first, then each task that's still there when its turn comes: a callback may add tasks and cancel
     -- them (its own too), which pairs() can't take while it walks the table itself.
     local ids = {}
@@ -3216,26 +3219,43 @@ function Game.time.setSeconds(s) return Game.set(Game.gameState(), "WCM_DayTime"
 function Game.time.set(h, m, s) return Game.time.setSeconds((h or 0) * 3600 + (m or 0) * 60 + (s or 0)) end
 
 -- One hold of the clock for every script, so two scripts holding it don't fight over the hour: a shared variable,
--- "<seconds>\t<who>" ("" for none). The last script to hold it has it, and every script that has held it keeps the
--- clock at that hour twice a second while your cat is in the world. Game.time.hold(seconds, who) holds it (who:
--- the script's name, Game.modName by default) and gives back what setting the clock did; Game.time.hold(nil, who)
--- lets go, of your own hold only. Game.time.held() is the hour held, in seconds, and whose it is; nil for none.
+-- "<seconds>\t<who>\t<os.clock() when its holder last said so>" ("" for none). The last script to hold it has it,
+-- and every script that has held it keeps the clock at that hour twice a second while your cat is in the world.
+-- Game.time.hold(seconds, who) holds it (who: the script's name, Game.modName by default) and gives back what
+-- setting the clock did; Game.time.hold(nil, who) lets go, of your own hold only. Game.time.held() is the hour held,
+-- in seconds, and whose it is; nil for none. The holder's Lua state says it's there twice a second (the os.clock()),
+-- and a hold it hasn't for 3 s is no hold: UE4SS keeps a shared variable through a restart of the mods, and a hold
+-- whose state went with it would otherwise be held for good, with nobody keeping the clock at its hour.
 -- (Game.time.set and setSeconds stay plain writes, which a hold puts back.)
-Game.time.holding = { key = "WCModsGame.clockHold", task = nil }
+Game.time.holding = { key = "WCModsGame.clockHold", task = nil, who = nil, STALE = 3 }
+-- The hold as it's shared, old or not: its hour, whose it is, and when its holder last said so.
+function Game.time.holding.read()
+    local s, who, at = tostring(shared(Game.time.holding.key) or ""):match("^([%d%.]+)\t([^\t]*)\t([%d%.]+)$")
+    return tonumber(s), who, tonumber(at)
+end
+function Game.time.holding.write(s, who)
+    share(Game.time.holding.key, string.format("%d\t%s\t%.3f", s, who, os.clock()))
+end
 function Game.time.held()
-    local s, who = tostring(shared(Game.time.holding.key) or ""):match("^([%d%.]+)\t(.*)$")
-    return tonumber(s), who
+    local h = Game.time.holding
+    local s, who, at = h.read()
+    if s == nil or (ticks.before or os.clock()) - at > h.STALE then return nil end
+    return s, who
 end
 function Game.time.hold(s, who)
     local h = Game.time.holding
     who = clean(who or Game.modName or "a script")
     if not s then
-        if select(2, Game.time.held()) == who then share(h.key, "") end
+        if select(2, h.read()) == who then share(h.key, "") end
+        if h.who == who then h.who = nil end
         return true
     end
     s = math.floor(s + 0.5) % 86400   -- a whole second of the day: 86399.6 is 0, not 86400
-    share(h.key, string.format("%d\t%s", s, who))
+    h.who = who
+    h.write(s, who)
     h.task = h.task or Game.every(0.5, function()
+        local mine, whose = h.read()
+        if mine and whose == h.who then h.write(mine, whose) end   -- still here, while it's this state's hold
         local at = Game.time.held()
         if at and Game.cat() then Game.time.setSeconds(at) end
     end)

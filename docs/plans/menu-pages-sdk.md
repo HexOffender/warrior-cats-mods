@@ -297,6 +297,23 @@ puts back.
 **Menu pages then:** move Hold this time (and `P.setTime`) to `Game.time.hold` and `held()`. Until it does, it still
 writes the clock itself, so with Tweaks' hold on too the two still fight; the docs say so.
 
+**After the review: a hold whose state has gone.** UE4SS keeps a shared variable through a restart of the mods, so
+the hold could name a script whose new Lua state never holds again: no state kept the clock at its hour, and Tweaks,
+which gives way at the start to a hold that's up, gave way for good (it retakes the clock only when nobody holds it).
+The hold is now `"<seconds>\t<who>\t<os.clock()>"`: the holder's 0.5 s task writes the stamp again while the hold is
+its own, and `held()` says nil for a hold not kept up for 3 s (`Game.time.holding.STALE`), so Tweaks takes the
+clock back within about 3 s. The 3 s are counted from the start of the reader's run of tasks before this one
+(`ticks.before`, the scheduler's `lastFrame` made a table), not from now: a frame the game takes long over (a level
+loading, the game behind another window) stops every state at once, and the first to run after it would otherwise
+take every hold for gone. `os.clock()` is the process's, the same in every state, as the dialogue claim already
+uses it. A hold with no stamp is none.
+- Unit: the stamp's format, `held()`'s check, the heartbeat in the task, and `ticks.before`.
+- Run against stubs (not in the suite), two to four `game.lua` states sharing one store: a live hold is seen by
+  another state; after a 10 s frame the first state to run still sees it; a hold whose state stops is none within
+  3 s; Tweaks' own `holdClock` gives way to a fresh-looking hold left by a restart, then takes the clock within 4 s;
+  it gives way to a live hold and takes the clock back when it's let go.
+- In game: not yet (`test_world.py`'s hold test still passes as written: the agent's state keeps its hold up).
+
 ### 9. W4: one status line per script, and whose is up
 
 **Problem.** `Menu.status` writes one shared line with no owner, so a script whose line ticks takes over everyone
@@ -388,12 +405,10 @@ workarounds there; the docs say so. The release that brings this should be 0.6.0
 - **`ui.slider`'s float comparison** for values above 32 (40.1 reads back 1.5e-6 off). It has the same shape as
   W1's, but sliders take ranges the caller chose; worth a look if a slider is seen changing a value.
 - **Left from the review of #112**, each small and none a blocker:
-  - W5: a hold whose holder's Lua state is gone is never let go, and Tweaks gives way to it for the rest of the
-    session (every state that ever held keeps the clock at the shared hour).
   - W4: `Menu.statusShown()` is stale while the menu is closed and after the window is rebuilt; `caller(2)` names the
     wrong owner when `Menu.status` is called through `pcall` or as a tail call; and a line taken down and put back
-    up counts as new, so a script that takes its line down when the menu closes (Menu pages does) is the newest
-    each time it opens.
+    up counts as new, so a script that takes its line down when the menu closes is the newest each time it opens
+    (Menu pages 1.0 does; its PR #1 keeps the line up on a wcmods with `Menu.statusShown`).
   - W11: `Game.dev.choices` keeps its cache in the public `Game.dev.enums` entries, and drops the game's order of
     the names.
   - W6: `Game.save.write` drops the last good table, so a read that catches the file half written right after a
