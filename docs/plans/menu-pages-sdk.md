@@ -105,6 +105,11 @@ Game Tweaks not installed, the window behind others), `test_tweaks.py`, `test_wo
 passed from open ground 4 m off. Not run: `test_cpp_sdk.py`, which needs the C++ test mod built. Left for later: the
 C++ SDK's halves of W6 and W7 (they need a C++ build to check), and W7's two questions for the game (below).
 
+**After #112 merged,** a follow-up PR fixed four low findings from its review: the bootstrap reads a stopped Save's
+`settings.json.new` before its `.old` (step 3), a clock hold whose Lua state has gone is no hold (step 8), and two
+stale lines of docs (step 10 and `scripting.md`'s `held()` row). Both Lua changes were run against stubs with a
+local Lua 5.4, as before; not in game.
+
 **In-game checks** run through the agent: `python wcmods.py agent test <file>`, after `agent install --with <mod
 folder>` for a throwaway mod. Two rules apply:
 - check who launched a running game before an agent command sends it keys;
@@ -345,8 +350,10 @@ its PR #1:
 2. `test_travel_keeps_a_places_file_it_cant_read`: for three broken `places.json` files, the page says it couldn't
    read it, Save this spot says it couldn't save, the file is byte for byte the same, and no `places.json.new` is
    left.
-3. `test_status_line_steps_aside_for_another_script`: with W4, another script's line stays up on a page Menu pages
-   doesn't own, and Menu pages' line comes back once it's cleared.
+3. `test_another_scripts_status_line_stays_up`: checks wcmods' W4 with a live Menu pages line. On a page Menu pages
+   doesn't own (Overview), another script's line stays up against Menu pages' ticking one; on Menu pages' own page
+   its line wins and follows your cat's health; and once the other line is cleared, Menu pages' comes back. It passes
+   on Menu pages v1.0, and fails only on PR #1's commits before bd3abac, the ones that froze the line.
 
 Plus `agent.menu.status()` / `status_shown()` helpers in `wcmods/agent/menu.py`, in place of raw `ModRef` strings.
 The "God mode (nothing hurts you)" label assertion stays as it is.
