@@ -9,8 +9,9 @@
 -- Everything runs on the game thread. Call it from a timer, an event, a key, a menu page or a painter,
 -- not from LoopAsync (two threads in one Lua state crash the game). docs/scripting.md has every call.
 -- Which wcmods wrote it, for a script that supports more than one: Game.wcmods is its version ("0.6.0"), and
--- Game.wcmodsNumber one to compare (major * 10000 + minor * 100 + patch: 600). Both are nil before 0.6.0, so
--- `(Game.wcmodsNumber or 0) >= 600` asks for 0.6.0 or newer. (Game.version is the module's own, always 1.)
+-- Game.wcmodsNumber one to compare (major * 10000 + minor * 100 + patch: 600). Both are nil on 0.5.0 and older (a
+-- build between releases says the last release's number), so `(Game.wcmodsNumber or 0) >= 600` asks for 0.6.0 or
+-- newer. (Game.version is the module's own, always 1.)
 local Game = { version = 1, wcmods = @WCMODS@, wcmodsNumber = @WCMODS_NUMBER@ }
 
 -- What the module says goes to UE4SS.log as "[<whose script>] ...": the mod's name once the script bootstrap has

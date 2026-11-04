@@ -194,7 +194,8 @@ error and refuse `Game.json.null`.
   settings file can only be checked this way: the build refuses a `settings.json` that isn't an object.
 - In game: `Game.json.decode("[] [1]")` is nil.
 
-**Docs.** The changelog says a JSON file with something after its value no longer loads.
+**Docs.** `scripting.md` says so. The repository has no changelog: the release notes for the release that brings
+this should say that a JSON file with something after its value no longer loads (left for the release).
 
 **Menu pages can drop** `listEnd()` (with W18); it still checks for a list.
 
@@ -205,24 +206,28 @@ cleared. Pick up Dandelion (6) in slot A, load slot B (2), and `Game.items.count
 when a slot is reloaded without saving, and when the game saves after the items were used. The C++ SDK's
 `detail::Pickups::live` (`World.hpp:221-266`) has the same bug.
 
-**Fix.** Stamp the pickups with the save slot and the HUD they came from, and drop them when the stamp changes; and
-remember the save file's size (W6's `fileCache.size`) with them, dropping them when the game has written the save
+**Fix.** Stamp the pickups with the HUD that sent them (the hook's first argument: its address and its name, which
+has its instance number), and drop them when the HUD now is another; and remember the save file's size (W6's `fileCache.size`) with them, dropping them when the game has written the save
 since. No poller (`Game.on("level")` would start the level poller in every Lua state, which has crashed the game
 during loads), and no new main-chunk local: the state goes in one table that takes `live`'s place. The pickups are
 dropped for a save only when the save just read is the file as it is now and has another size than at the last
-pickup, so a save the game wrote just before a pickup, not yet read, doesn't drop it. The C++ `items()` has the same
-bug and isn't changed yet: it needs a C++ build to check. `test_cpp_sdk.py`'s Lua-against-C++ count check counts
+pickup, so a save the game wrote just before a pickup, not yet read, doesn't drop it; that's looked at whenever
+there are pickups, once each time the save is decoded. A save rewritten at the same size isn't noticed. The save slot
+isn't in the stamp: `Game.save.slot()` stays 0 whatever the cat (#111), and another cat is a new HUD. The review
+found the first stamp's holes (it went through `Game.find`, nil for a second after a load, and through the slot). The
+C++ `items()` has the same bug; it's fixed in #113, which needed a C++ build to check. `test_cpp_sdk.py`'s Lua-against-C++ count check counts
 tags, which agree while no pickup has happened.
 
 **Tests.**
-- Unit: `Game.items.list` drops the pickups when the stamp or the save's size changed; the hook stamps them; the C++
-  `items()` does the same.
+- Unit: `Game.items.list` drops the pickups when the HUD or the save's size changed; the hook stamps them with the
+  HUD that sent the message. (The C++ `items()` and its check are #113's.)
 - In game: not written. It needs picking up a dropped item with the Interact key, a way back to the main menu, and a
   test that quits and restores its own save; see "Not in this plan".
-- C++: `World.hpp`'s `detail::Pickups` and `items()`, the same stamp (the slot, the HUD that sent the message,
-  `call.self()`, and the save's size), once a C++ build can check it.
+- C++: `World.hpp`'s `detail::Pickups` and `items()`, the same stamp (the HUD that sent the message, `call.self()`,
+  and the save's size): #113.
 
-**Docs.** `scripting.md` and `SDK.md` say "pickups since the level loaded (or the game last saved)".
+**Docs.** `scripting.md` says "pickups since the level loaded", and that a same-size save isn't noticed. `SDK.md`'s
+C++ row says the C++ SDK keeps them since the mod started until #113.
 
 ### 6. W3: a refused move says so
 
@@ -279,6 +284,9 @@ puts back.
 
 **Docs.** `scripting.md`'s Time rows, `formats.md`'s tweaks row and `guide/tweaks.md`.
 
+**Menu pages then:** move Hold this time (and `P.setTime`) to `Game.time.hold` and `held()`. Until it does, it still
+writes the clock itself, so with Tweaks' hold on too the two still fight; the docs say so.
+
 ### 9. W4: one status line per script, and whose is up
 
 **Problem.** `Menu.status` writes one shared line with no owner, so a script whose line ticks takes over everyone
@@ -325,8 +333,8 @@ so `-k stats`, `-k travel` and `-k status` run them one at a time.
 **Fix.** `Game.wcmods = "0.6.0"` and `Game.wcmodsNumber` (a comparable number, `major * 10000 + minor * 100 +
 patch`), filled through new `@WCMODS@` and `@WCMODS_NUMBER@` tokens in `game.py`'s `lua()` from `wcmods/__init__.py`'s
 `__version__`. `Game.version` stays `1`. A script checks `(Game.wcmodsNumber or 0) >= 600`; on 0.5.0 both are nil.
-The docs say "nil before 0.6.0", so the release that brings this should be 0.6.0 (`__version__` is still 0.5.0 on
-the branch, as the release PR raises it; a build from the branch says 500, so a script keeps its workarounds there).
+`__version__` is still 0.5.0 (the release PR raises it), so a build between releases says 500 and a script keeps its
+workarounds there; the docs say so. The release that brings this should be 0.6.0.
 
 **Tests.** Unit: `game.lua()` has the version from `__version__` and no token left; in game, `Game.wcmods` matches
 `wcmods.__version__`.
@@ -363,12 +371,24 @@ the branch, as the release PR raises it; a build from the branch says 500, so a 
   that quits, restores its own save and relaunches (`restore_save` refuses while the game runs, and a test that
   leaves the game closed stops the run). Until then, W7 rests on its unit test and the two runtime questions below.
 - **Two runtime questions for W7:** that loading a save always makes a new HUD, and that moving between areas in
-  `L_WorldMap_01_P` keeps the same one. If the HUD outlives a load, the slot and the save's size still catch a
-  different slot and a save since.
+  `L_WorldMap_01_P` keeps the same one. If the HUD outlives a load, only the save's size still catches a save
+  since; another cat's pickups would stay laid over it.
 - **Menu pages' own changes.** Each step says what Menu pages can drop; that's its repository's work, after W18.
 - **wcmods-examples' game-tweaks clock.** It can move to `Game.time.hold` in its own repository.
 - **`ui.slider`'s float comparison** for values above 32 (40.1 reads back 1.5e-6 off). It has the same shape as
   W1's, but sliders take ranges the caller chose; worth a look if a slider is seen changing a value.
+- **Left from the review of #112**, each small and none a blocker:
+  - W5: a hold whose holder's Lua state is gone is never let go, and Tweaks gives way to it for the rest of the
+    session (every state that ever held keeps the clock at the shared hour).
+  - W4: `Menu.statusShown()` is stale while the menu is closed and after the window is rebuilt; `caller(2)` names the
+    wrong owner when `Menu.status` is called through `pcall` or as a tail call; and a line taken down and put back
+    up counts as new, so a script that takes its line down when the menu closes (Menu pages does) is the newest
+    each time it opens.
+  - W11: `Game.dev.choices` keeps its cache in the public `Game.dev.enums` entries, and drops the game's order of
+    the names.
+  - W6: `Game.save.write` drops the last good table, so a read that catches the file half written right after a
+    write gives nil.
+  - The bootstrap still takes a `settings.json` that holds a JSON list.
 
 ## Decisions for the owner
 
@@ -383,6 +403,7 @@ Each was taken as below on the branch; they're for the owner to confirm.
    that's let go. The plan takes both.
 4. **W6:** a same-size save change is seen up to 30 s late. The plan accepts it, and the docs say so.
 5. **W16:** a file with junk after its JSON value used to load and now won't (the bootstrap falls back to the mod's
-   defaults, as for any bad file). The plan accepts it, and the changelog says so.
+   defaults, as for any bad file). The plan accepts it; the release notes should say so (there's no changelog in the
+   repository).
 6. **W18:** a new field (`Game.wcmods`, `Game.wcmodsNumber`), leaving `Game.version` alone. The plan takes the new
    field: redefining `Game.version` changes the type of a field that's there.

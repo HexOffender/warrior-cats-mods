@@ -183,17 +183,24 @@ def test_travel_keeps_a_places_file_it_cant_read(agent):
         with open(path, "rb") as f:
             had = f.read()
 
-    def says(text):
-        return lambda: (lambda p: p if p.has(text) else None)(agent.menu.read())
+    def says(*parts):
+        """A row of the page with every part in it (in small letters), so text left from the last file can't pass."""
+        def row():
+            page = agent.menu.read()
+            return any(all(p.lower() in str(r.value or "").lower() for p in parts) for r in page.rows) or None
+        return row
     try:
         agent.menu.open("Travel")
-        for bad in ('[{"name": "half', '{"name": "not a list"}', "[] [1]"):
+        # Each with the reason the page gives for it: decode's own for broken JSON and for text after the list,
+        # Menu pages' for an object.
+        for bad, why in (('[{"name": "half', "unfinished string"), ('{"name": "not a list"}', "not one list of spots"),
+                         ("[] [1]", "text after the value")):
             with open(path, "w", encoding="utf-8", newline="\n") as f:
                 f.write(bad)
             agent.menu.press("Read it again")
-            agent.wait(says("places.json couldn't be read"), 5, f"the page to say it can't read {bad!r}")
+            agent.wait(says("places.json couldn't be read", why), 5, f"the page to say it can't read {bad!r}")
             agent.menu.press("Save this spot")
-            agent.wait(says("Couldn't save the spot"), 5, "Save this spot to say it couldn't")
+            agent.wait(says("Couldn't save the spot", why), 5, f"Save this spot to say it couldn't, for {bad!r}")
             with open(path, "rb") as f:
                 assert f.read() == bad.encode(), f"places.json was written over: it held {bad!r}"
             assert not os.path.exists(new), "places.json.new was left behind"
@@ -237,13 +244,15 @@ def test_travel_jump_and_back(agent):
 def test_another_scripts_status_line_stays_up(agent):
     """A line each under the menu's title (Menu.status): on a page Menu pages doesn't own (Overview), a line another
     script puts up stays up against Menu pages' own, which changes with the clock; on one of Menu pages' pages its
-    line wins; and once the other line is taken down, Menu pages' is back. (The one shared line was the last one
-    set, so Menu pages' took over within a second.)"""
+    line wins and is live (it follows your cat's health while the other line is up, rather than standing still); and
+    once the other line is taken down, Menu pages' is back. (The one shared line was the last one set, so Menu pages'
+    took over within a second.) Your cat's health is put back after."""
     need_pages(agent)
     mine = scripts.ue4ss_name(menupages.ID)
 
     def whose():
         return (agent.menu.status_shown() or (None, None))[1]
+    hp = agent.lua("return Game.cat():health()")
     agent.menu.open("Overview")
     try:
         agent.wait(lambda: whose() == mine, 5, "Menu pages' status line")
@@ -253,10 +262,15 @@ def test_another_scripts_status_line_stays_up(agent):
         assert agent.menu.status_shown() == ("A line from the agent", "=wcmods"), agent.menu.status_shown()
         agent.menu.open("At a glance")
         agent.wait(lambda: whose() == mine, 3, "Menu pages' line on its own page")
+        before = agent.menu.status_shown()[0]
+        agent.lua(f"Game.cat():setHealth({max(1, hp - 10)}) return true")
+        agent.wait(lambda: whose() == mine and agent.menu.status_shown()[0] != before, 5,
+                   "Menu pages' line to follow the health (it stood still while another line was up)")
         agent.menu.open("Overview")
         agent.wait(lambda: whose() == "=wcmods", 3, "the agent's line again on Overview")
     finally:
         agent.menu.status(None)
+        agent.lua(f"Game.cat():setHealth({hp}) return true")
     agent.wait(lambda: whose() == mine, 5, "Menu pages' line to come back")
 
 

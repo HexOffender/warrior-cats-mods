@@ -48,10 +48,12 @@ def test_cat_names_from_the_game(agent):
 
 def test_clock_hold_is_one_for_every_script(agent):
     """One hold of the clock for every script: held at 15:00 by the agent (the bridge's own Lua state), it stays there
-    for 3 s, Tweaks (all-tweaks holds 09:00) giving way; let go, Tweaks takes it back to 09:00. Without all-tweaks, only
-    the first half is checked."""
+    for 3 s, a hold Tweaks had (all-tweaks holds 09:00) giving way; let go, Tweaks takes it back to its own hour. With
+    no Tweaks hold up first, only the first half is checked. The clock is put back after."""
     was = agent.lua("return Game.time.seconds()")
-    tweaks_on = any("Tweaks" in (p["id"], p["title"]) for p in agent.menu.pages())
+    first = agent.lua("local s, who = Game.time.held() return { s = s, who = who }")
+    first = first if isinstance(first, dict) else {}   # nobody holding: an empty table, which comes back as []
+    tweaks_on = first.get("who") == "Tweaks"
     try:
         assert agent.lua('return (Game.time.hold(15 * 3600, "agent"))') is True   # (true, nil: the first only)
         time.sleep(3)
@@ -60,8 +62,9 @@ def test_clock_hold_is_one_for_every_script(agent):
         assert agent.lua('return Game.time.hold(nil, "agent")') is True
         if tweaks_on:
             agent.wait(lambda: agent.lua("return select(2, Game.time.held())") == "Tweaks", 3, "Tweaks to hold the clock again")
-            agent.wait(lambda: abs(agent.lua("return Game.time.seconds()") - 9 * 3600) < 120, 3, "the clock to go back to 09:00")
+            agent.wait(lambda: abs(agent.lua("return Game.time.seconds()") - first["s"]) < 120, 3,
+                       "the clock to go back to Tweaks' hour")
     finally:
         agent.lua('Game.time.hold(nil, "agent") return true')
-        if not tweaks_on:
-            agent.lua(f"Game.time.setSeconds({was})")
+        # Put back unless a hold has it (Tweaks' puts its own hour back).
+        agent.lua(f"if Game.time.held() == nil then Game.time.setSeconds({was}) end return true")

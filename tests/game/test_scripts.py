@@ -116,11 +116,16 @@ def test_json_with_text_after_it_is_refused(agent):
 
 def test_the_save_file_is_kept_while_it_hasnt_changed(agent):
     """Game.save.file() gives the same table 2.5 s later: it isn't decoded again while the file's size is the same.
-    (Flaky only if the game saves meanwhile.)"""
-    assert agent.lua("WCMODS_SAVE_FILE = Game.save.file() return WCMODS_SAVE_FILE ~= nil") is True
+    It is every 30 s anyway, so a wait that crosses that is tried once more (two can't fall in 5 s); flaky only if the
+    game saves meanwhile."""
     try:
-        time.sleep(2.5)
-        assert agent.lua("return rawequal(Game.save.file(), WCMODS_SAVE_FILE)") is True
+        for _ in range(2):
+            assert agent.lua("WCMODS_SAVE_FILE = Game.save.file() return WCMODS_SAVE_FILE ~= nil") is True
+            time.sleep(2.5)
+            same = agent.lua("return rawequal(Game.save.file(), WCMODS_SAVE_FILE)")
+            if same:
+                break
+        assert same is True
     finally:
         agent.lua("WCMODS_SAVE_FILE = nil return true")
 
@@ -181,6 +186,9 @@ def test_save_on_the_settings_page_says_so_and_keeps_an_empty_list(agent):
     finally:
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(before)
+        for left in (path + ".new", path + ".old"):   # (none, unless the Save failed part way)
+            if os.path.exists(left):
+                os.remove(left)
         agent.menu.close()
 
 
