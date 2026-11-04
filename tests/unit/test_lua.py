@@ -783,6 +783,48 @@ def test_inspector_find_refuses_the_widest_classes_and_reads_names_once():
     assert "for _, e in ipairs(insp.found) do" in page and "Game.name(o)" not in page
 
 
+def test_the_cheats_enum_settings_name_their_enum():
+    """Game.dev.list gave enum and bitmask settings as bare numbers, so a page could only offer number boxes (Menu
+    pages hard-codes the god-mode flags). Each enum setting names its enum's path, GodMode as flags, and its rows carry
+    the enum's names, read from the game and kept. EGodModeTypeFlag stays out of game.py's ENUMS, whose fallback
+    numbers are list positions (Stealth would be 3)."""
+    lua = game.lua()
+    enums = body(lua, "Game.dev.enums = {", "\n}\n")
+    assert 'GodMode = { path = "/Script/SwtQuest.EGodModeTypeFlag", flags = true },' in enums
+    assert set(_dev_enum_paths()) == {"GodMode", "ForceClan", "ForcedRank", "ForcePlayWrcNarrativeSequence",
+                                      "ForcedLocationType", "ForcedDifficulty", "ForcedAttackStatusType",
+                                      "ForcedDilemma", "OverridePlatformType", "OverrideLanguage", "DrawDebugTrace"}
+    assert enums.count("flags = true") == 1
+    assert "EGodModeTypeFlag" not in {path.rsplit(".", 1)[-1] for _, path, _ in game.ENUMS}
+    choices = body(lua, "function Game.dev.choices(name)", "\nend\n")
+    assert "e.read, e.at = Game.enumNames(e.path) or false, os.clock()" in choices
+    assert "(e.read == false and os.clock() - e.at >= 5)" in choices
+    listing = body(lua, "function Game.dev.list()", "\nend\n")
+    assert ("if e then row.enum, row.flags, row.choices = e.path, e.flags == true or nil, Game.dev.choices(p.name) end"
+            in listing)
+
+
+def _dev_enum_paths():
+    enums = body(game.lua(), "Game.dev.enums = {", "\n}\n")
+    return dict(re.findall(r"^    (\w+) = \{ path = \"([^\"]+)\"", enums, re.M))
+
+
+def test_the_cheats_enums_are_in_the_class_dump():
+    """Each enum path of the game's own modules is an enum in the class dump's index. The dump is local only
+    (vanilla/ isn't in git), so this skips without it; the engine's EDrawDebugTrace is left out, as the index lists
+    only the game's modules."""
+    import os
+    index = os.path.join(os.path.dirname(__file__), "..", "..", "vanilla", "sdk", "api-index.txt")
+    if not os.path.exists(index):
+        pytest.skip("vanilla/sdk/api-index.txt isn't here (the class dump is local only)")
+    with open(index, encoding="utf-8", errors="replace") as f:
+        listed = set(re.findall(r"^enum (E\w+):", f.read(), re.M))
+    for name, path in _dev_enum_paths().items():
+        module, enum = path.removeprefix("/Script/").split(".")
+        if module != "Engine":
+            assert enum in listed, (name, path)
+
+
 # ---------- the game's enums, read from the game by name (docs/reverse-engineering.md, "The game's enums") ----------
 def test_game_enum_names_checks_the_object_and_keeps_errors_in_the_listing():
     lua = game.lua()

@@ -3489,6 +3489,36 @@ function Game.dev.manager() return Game.manager("cheats") end
 function Game.dev.get(name) return Game.get(Game.dev.manager(), name) end
 function Game.dev.set(name, v) return Game.set(Game.dev.manager(), name, v) end
 -- Every plain setting (numbers and on/off switches) with its value.
+-- The enum (by its path) each of the switches that hold one of an enum's values is of, as the class dump has
+-- them; flags: a set of flags, the values added up (GodMode: InfiniteLife 1 + Combat 2 is 3). GodMode is a plain
+-- byte to reflection, so nothing in the game pairs it with EGodModeTypeFlag but its name. (EGodModeTypeFlag isn't
+-- in Game.enums: those fall back to numbering the names by their place, and its numbers are 0, 1, 2, 4, 8.)
+Game.dev.enums = {
+    GodMode = { path = "/Script/SwtQuest.EGodModeTypeFlag", flags = true },
+    ForceClan = { path = "/Script/SwtQuest.EClanType" },
+    ForcedRank = { path = "/Script/SwtQuest.ECharacterRank" },
+    ForcePlayWrcNarrativeSequence = { path = "/Script/SwtQuest.EWrcNarrativeSequencePlayed" },
+    ForcedLocationType = { path = "/Script/SwtQuest.ELocationsType" },
+    ForcedDifficulty = { path = "/Script/SwtAdventure.EAICombatProfile" },
+    ForcedAttackStatusType = { path = "/Script/SwtAdventure.ESwtAdventureStatusType" },
+    ForcedDilemma = { path = "/Script/SwtAdventure.ESwtAdventureDilemmaId" },
+    OverridePlatformType = { path = "/Script/SwtEngine.EPlatformType" },
+    OverrideLanguage = { path = "/Script/SwtEngine.ELanguage" },
+    DrawDebugTrace = { path = "/Script/Engine.EDrawDebugTrace" },
+}
+-- An enum switch's values by name, {InfiniteLife = 1, ...} (a copy), read from the game the first time (Game.enumNames)
+-- and kept; nil for a switch that isn't one, or while the game's enum can't be read (asked again 5 s later).
+function Game.dev.choices(name)
+    local e = Game.dev.enums[name]
+    if not e then return nil end
+    if e.read == nil or (e.read == false and os.clock() - e.at >= 5) then e.read, e.at = Game.enumNames(e.path) or false, os.clock() end
+    if not e.read then return nil end
+    local out = {}
+    for k, v in pairs(e.read) do out[k] = v end
+    return out
+end
+-- The cheats manager's switches: { name, type, value, owner }, and for one that holds an enum's value, enum (its path),
+-- choices (Game.dev.choices) and flags (true for a set of flags).
 function Game.dev.list()
     local out = {}
     local m = Game.dev.manager()
@@ -3496,7 +3526,10 @@ function Game.dev.list()
     for _, p in ipairs(Game.properties(m)) do
         if p.type == "BoolProperty" or p.type == "ByteProperty" or p.type == "IntProperty" or p.type == "FloatProperty"
             or p.type == "EnumProperty" then
-            out[#out + 1] = { name = p.name, type = p.type, value = p.value, owner = p.owner }
+            local row = { name = p.name, type = p.type, value = p.value, owner = p.owner }
+            local e = Game.dev.enums[p.name]
+            if e then row.enum, row.flags, row.choices = e.path, e.flags == true or nil, Game.dev.choices(p.name) end
+            out[#out + 1] = row
         end
     end
     return out

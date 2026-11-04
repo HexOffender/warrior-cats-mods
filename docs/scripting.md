@@ -439,7 +439,8 @@ others, so try each one.
 
 | Call | Does |
 |---|---|
-| `Game.dev.list()` | Every on/off and number setting, with its value (about 50) |
+| `Game.dev.list()` | Every on/off and number setting, with its value (about 50): `{name, type, value, owner}`. A setting that holds one of an enum's values also has `enum` (the enum's path), `choices` (its names and numbers, `{InfiniteLife = 1, Combat = 2, ...}`) and, for a set of flags whose numbers are added up (`GodMode`), `flags = true`. The enum settings are `GodMode`, `ForceClan`, `ForcedRank`, `ForcePlayWrcNarrativeSequence`, `ForcedLocationType`, `ForcedDifficulty`, `ForcedAttackStatusType`, `ForcedDilemma`, `OverridePlatformType`, `OverrideLanguage` and `DrawDebugTrace` (`Game.dev.enums` has their paths) |
+| `Game.dev.choices(name)` | An enum setting's names and numbers, read from the game (`Game.dev.choices("GodMode")` is `{None = 0, InfiniteLife = 1, Combat = 2, Stealth = 4, AvoidCombat = 8}`); nil for another setting |
 | `Game.dev.get(name)`, `Game.dev.set(name, v)` | e.g. `bAlwaysSucceedAttack`, `bFastHousingCrafting`, `GodMode`, `bAllowCatSizeOverride`, `CatSizeOverride` |
 | `Game.dev.fullResource("Stamina", true)` | Keep a resource full: Health, Level, Stamina, StaminaCombat, Currency, FreshKill (the game's `AlwaysHasFullResource`; the switch was set in game, but whether the game obeys it wasn't checked) |
 

@@ -103,6 +103,17 @@ return out
 """
 
 
+def test_god_mode_names_its_flags(agent):
+    """The cheats' GodMode row carries EGodModeTypeFlag's names and numbers, as the installed exe has them, and says
+    it's a set of flags."""
+    exe = _exe_enums(agent, {"EGodModeTypeFlag"})["EGodModeTypeFlag"]
+    assert exe, "the exe has no table for EGodModeTypeFlag"
+    assert agent.lua('return Game.dev.choices("GodMode")') == exe
+    row = agent.lua('for _, r in ipairs(Game.dev.list()) do if r.name == "GodMode" then return r end end return nil')
+    assert row and row["flags"] is True and row["enum"] == "/Script/SwtQuest.EGodModeTypeFlag", row
+    assert row["choices"] == exe, row
+
+
 def test_enums_are_read_from_the_game(agent):
     """Game.enums' numbers come from the game's own enums, by name (docs/reverse-engineering.md, "The game's
     enums"): every enum wcmods/game.py ENUMS names is at its path and gives the installed exe's names and numbers,
