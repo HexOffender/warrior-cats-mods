@@ -1052,6 +1052,33 @@ def test_words(agent):
     assert v["words.added"] is True and "WCMods Word Herb" in v["words.hud_texts"], v["words.hud_texts"]
 
 
+def test_sounds_and_music(agent):
+    """Sounds and music (World.hpp) in the game: the cat's steps (cat_step) made the menu's select sound, and while
+    the cat walks only that plays, from the game's own native play (no hook sees it); muted and put back; the
+    music read (the ShadowClan camp's track), another track played and stopped, and the game's again; the
+    volumes set and the sounds paused and going on."""
+    # The phase samples what plays for 4 s, so the walk goes on while it runs: the request is written here, and the
+    # results waited for after the walk.
+    before = _results(agent)
+    served = before.get("served", 0) if before else 0
+    with open(os.path.join(_folder(agent), "request.txt"), "w", encoding="utf-8") as f:
+        f.write("sounds")
+    time.sleep(0.6)
+    agent.key("W", hold=3.5)
+    end = time.time() + 20
+    r = _results(agent)
+    while not (r and r.get("served", 0) > served and "sounds" in r.get("done", [])) and time.time() < end:
+        time.sleep(0.3)
+        r = _results(agent)
+    assert r and r.get("served", 0) > served, "the sounds phase didn't finish"
+    assert not _failed(r, "sounds"), _failed(r, "sounds")
+    v = r["values"]
+    assert v["sounds.step_before"] == "S_Cue_cat_step" and v["sounds.ui_select_duration"] > 0.1, v
+    assert v["sounds.heard_walking"] == ["S_Cue_ui_select"], v["sounds.heard_walking"]   # the steps, and no step sound
+    assert v["sounds.music_sound"].startswith("MS_mus_") and v["sounds.music_id"], v
+    assert v["sounds.music_after_play"] == "MS_mus_camp" and v["sounds.music_after_stop"] is None, v
+
+
 def test_ui_arrow_units(agent):
     """Ui.hpp's rule for an arrow on a tab's page, at init without the game: its release is given to the screen
     again from a button or check box, never from a slider, number or text box, not when the page hasn't the

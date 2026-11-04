@@ -877,6 +877,195 @@ namespace wcmods
     inline auto play_sound(std::wstring_view id) -> UObject* { return detail::play_event(id, nullptr); }
     inline auto play_sound(std::wstring_view id, Vec3 at) -> UObject* { return detail::play_event(id, &at); }
 
+    // What the game plays for an id is the audio manager's AudioEventsMap (id -> the loaded sound, 389 on build
+    // 26337109), which its own code reads each time it plays one (natively: a hook on K2_PlayEventOf sees none of
+    // it). Changing an entry changes what the game plays for that id from the next time on: the cat's steps,
+    // a menu's sounds, a track the music triggers ask for.
+    namespace detail
+    {
+        inline auto sound_entry(std::wstring_view id) -> UObject**
+        {
+            for (auto& [key, sound] : map_entries(audio_manager(), L"AudioEventsMap"))
+                if (key.string() == id && sound.at) return static_cast<UObject**>(sound.at);
+            return nullptr;
+        }
+        // id -> the game's own sound, and whether wcmods put it in the root set. The map held the only reference to
+        // it, so while it's out of the map it's kept in the root set (else the engine's garbage collection could
+        // free it and restoring would write a freed object back).
+        struct KeptSound
+        {
+            UObject* sound{};
+            bool rooted{};
+        };
+        inline auto replaced_sounds() -> std::map<std::wstring, KeptSound>&
+        {
+            static std::map<std::wstring, KeptSound> kept;
+            return kept;
+        }
+        inline auto replace_entry(std::wstring_view id, UObject* with) -> bool
+        {
+            UObject** entry = sound_entry(id);
+            if (!entry || !with) return false;
+            auto [it, first] = replaced_sounds().try_emplace(std::wstring(id), KeptSound{*entry, false});
+            if (first && *entry && !(*entry)->IsRootSet())
+            {
+                (*entry)->SetRootSet();
+                it->second.rooted = true;
+            }
+            *entry = with;
+            return true;
+        }
+    } // namespace detail
+    // The sound the game plays for an id now (a SoundCue or MetaSound), or nullptr for an id it hasn't got.
+    inline auto sound_of(std::wstring_view id) -> UObject*
+    {
+        if (!assert_game_thread(L"sound_of")) return nullptr;
+        UObject** entry = detail::sound_entry(id);
+        return entry ? *entry : nullptr;
+    }
+    // Make the game play another of its sounds for an id (L"cat_step" as L"ui_select"), or a sound object the mod
+    // has: from the next time it plays that id. False for an id it hasn't got. The game's own is kept.
+    inline auto replace_sound(std::wstring_view id, std::wstring_view other_id) -> bool
+    {
+        if (!assert_game_thread(L"replace_sound")) return false;
+        UObject** other = detail::sound_entry(other_id);
+        return other && detail::replace_entry(id, *other);
+    }
+    inline auto replace_sound(std::wstring_view id, UObject* sound) -> bool
+    {
+        if (!assert_game_thread(L"replace_sound") || !is_a(sound, STR("/Script/Engine.SoundBase"))) return false;
+        return detail::replace_entry(id, sound);
+    }
+    // Silence an id: it plays the game's empty track (mus_empty) instead. False for an id it hasn't got.
+    inline auto mute_sound(std::wstring_view id) -> bool { return replace_sound(id, L"mus_empty"); }
+    // Give an id its own sound back; false when it wasn't replaced or muted.
+    inline auto restore_sound(std::wstring_view id) -> bool
+    {
+        if (!assert_game_thread(L"restore_sound")) return false;
+        auto& kept = detail::replaced_sounds();
+        auto it = kept.find(std::wstring(id));
+        if (it == kept.end()) return false;
+        UObject** entry = detail::sound_entry(id);
+        if (entry) *entry = it->second.sound;
+        if (it->second.rooted && it->second.sound) it->second.sound->ClearRootSet();
+        kept.erase(it);
+        return entry != nullptr;
+    }
+    namespace detail
+    {
+        // As the mod is taken out: every sound it replaced or muted goes back, so the change doesn't outlive it.
+        inline auto stop_sounds() -> void
+        {
+            std::vector<std::wstring> ids;
+            for (auto& [id, kept] : replaced_sounds()) ids.push_back(id);
+            for (auto& id : ids) restore_sound(id);
+        }
+    } // namespace detail
+    // How long an id's sound is, in seconds (a looping one's one pass); nullopt for an id the game hasn't got.
+    inline auto sound_duration(std::wstring_view id) -> std::optional<double>
+    {
+        UObject* s = sound_of(id);
+        if (!s) return std::nullopt;
+        auto r = call_reflected(object(STR("/Script/SwtNativeAudio.Default__SwtNativeAudioManager")), STR("GetAudioAssetDuration"),
+                                [&](Params& p) { p.set_nth(0, Value::of(s)); });
+        return r ? std::optional<double>(r->get(L"ReturnValue").number()) : std::nullopt;
+    }
+    // Stop a sound play_sound (or the game) started: false for nothing.
+    inline auto stop_sound(UObject* component) -> bool
+    {
+        if (!component || !is_a(component, STR("/Script/Engine.AudioComponent")) || !assert_game_thread(L"stop_sound")) return false;
+        return call_reflected(component, STR("Stop")).has_value();
+    }
+
+    // The music: the track playing now, on the audio component the game plays music on (one whose sound is of
+    // the manager's music classes, S_Class_Music). The game changes track as the cat moves between its music
+    // triggers (72 in the forest, each naming a track id, mus_shadowclan_b...) and in a fight; play_music() plays
+    // a track until the game next changes it (replace_sound on the track's id keeps the change).
+    struct Music
+    {
+        UObject* component{};   // nullptr when no music plays
+        std::wstring sound;     // its sound's name (MS_mus_camp_shadowclan)
+        std::wstring id;        // the id it's under in AudioEventsMap, when it's one of them
+    };
+    namespace detail
+    {
+        inline auto music_classes() -> std::vector<UObject*>
+        {
+            std::vector<UObject*> out;
+            for (Value& c : elements(get(audio_manager(), L"SoundMusicClasses")))
+                if (c.object) out.push_back(c.object);
+            return out;
+        }
+    } // namespace detail
+    inline auto music() -> Music
+    {
+        Music m;
+        if (!assert_game_thread(L"music")) return m;
+        auto classes = detail::music_classes();
+        for (UObject* c : find_all(STR("AudioComponent")))
+        {
+            UObject* s = get(c, L"Sound").object;
+            if (!s || std::find(classes.begin(), classes.end(), get(s, L"SoundClassObject").object) == classes.end()) continue;
+            auto playing = call_reflected(c, STR("IsPlaying"));
+            if (!playing || !playing->get(L"ReturnValue").boolean()) continue;
+            m.component = c;
+            m.sound = name(s);
+            for (auto& [key, sound] : map_entries(audio_manager(), L"AudioEventsMap"))
+                if (sound.object == s) m.id = key.string();
+            break;
+        }
+        return m;
+    }
+    // Play one of the game's tracks by its id now (L"mus_camp"), on the music's own component, in place of what
+    // plays; with no music playing, as a sound heard everywhere. False for an id the game hasn't got.
+    inline auto play_music(std::wstring_view id) -> bool
+    {
+        UObject* s = sound_of(id);
+        if (!s) return false;
+        Music now = music();
+        if (!now.component) return play_sound(id) != nullptr;
+        call_reflected(now.component, STR("SetSound"), [&](Params& p) { p.set_nth(0, Value::of(s)); });
+        return call_reflected(now.component, STR("Play"), [&](Params& p) { p.set_nth(0, Value::of(0.0)); }).has_value();
+    }
+    // Stop the music, fading over `seconds` (0: at once). False when none plays.
+    inline auto stop_music(double seconds = 1.0) -> bool
+    {
+        Music now = music();
+        if (!now.component) return false;
+        if (seconds <= 0) return call_reflected(now.component, STR("Stop")).has_value();
+        return call_reflected(now.component, STR("FadeOut"), [&](Params& p) {
+                   p.set_nth(0, Value::of(seconds));
+                   p.set_nth(1, Value::of(0.0));
+               }).has_value();
+    }
+
+    // The game's volumes, as its Audio settings set them (0 to 1); and every sound paused or going on.
+    enum class Volume
+    {
+        Master,
+        Music,
+        Effects,
+        VoiceOver
+    };
+    inline auto set_volume(Volume which, double level) -> bool
+    {
+        if (!assert_game_thread(L"set_volume")) return false;
+        const TCHAR* fn = which == Volume::Master ? STR("SetMasterVolume") : which == Volume::Music ? STR("SetMusicVolume")
+                        : which == Volume::Effects ? STR("SetEffectsVolume") : STR("SetVoiceOverVolume");
+        return call_reflected(object(STR("/Script/SwtNativeAudio.Default__SwtNativeAudioManager")), fn,
+                              [&](Params& p) { p.set_nth(0, Value::of(level)); }).has_value();
+    }
+    inline auto pause_sounds(bool paused) -> bool
+    {
+        if (!assert_game_thread(L"pause_sounds")) return false;
+        return call_reflected(audio_manager(), STR("PauseAllEvents"), [&](Params& p) { p.set_nth(0, Value::of(paused)); }).has_value();
+    }
+    inline auto sounds_paused() -> bool
+    {
+        auto r = call_reflected(audio_manager(), STR("IsPaused"));
+        return r && r->get(L"ReturnValue").boolean();
+    }
+
     // ============================================================================================ the game's own animations
     // Play one of the game's animations on a cat or an animal by its tag, as the game does: its
     // PlayMontageComponent plays that row of its animation table (your cat's: L"Animation.Exploration.Meow",

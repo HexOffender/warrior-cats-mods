@@ -423,8 +423,8 @@ Each step's pull request updates its line.
 |---|---|---|
 | 1. Clean ground | done: the arrows on a tab's page; the crashes read (UE4SS's Lua runtime, not C++) and unhooking proved under load | #116 |
 | 2. Tables, live | done: every DataTable's rows read, changed, added and taken out; TuningData read and changed, the game's own lookup signed. Which keys the code names (`tuning_read.json`) moved to step 16 | #117 |
-| 3. Words, live | done: any key's words read, changed (every text made from it shows them) and put back; the key a text came from. No signed global was needed (the engine's reflected string-table calls and UE4SS's text data reach it). The roadmap's step 2 in a talk moves to step 7, which plays talks | this branch, `claude/cpp-words` |
-| 4. Sounds and music | not started | |
+| 3. Words, live | done: any key's words read, changed (every text made from it shows them) and put back; the key a text came from. No signed global was needed (the engine's reflected string-table calls and UE4SS's text data reach it). The roadmap's step 2 in a talk moves to step 7, which plays talks | #118 |
+| 4. Sounds and music | done: an id's sound replaced, muted and put back (the game's own plays follow); the music read, played, stopped; volumes; the pause. The roadmap's step 3 answered: a data mod's `AudioEvents.csv` reaches the game. A sound by its asset path waits for a loader (step 10) | this branch, `claude/cpp-sounds` |
 | 5. The sky's values | not started | |
 | 6. Cats of a mod's own | not started | |
 | 7. Conversations | not started | |

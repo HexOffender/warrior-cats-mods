@@ -1086,7 +1086,16 @@ streamed part of the world, whose outers lead to that part's own `UWorld`, not t
 `AudioEventsMap` 389 loaded sounds. The static `USwtNativeAudioManager::K2_PlayEventOf(id, transform,
 bIsSound2D)`, on the class's default object, plays one by id: `ui_select` gave an `AudioComponent` playing
 `S_Cue_ui_select`, `vo_cat1_happy1` one playing `S_Cue_vo_cat1_happy1`, and an id it hasn't got nothing.
-Whether an `AudioEvents.csv` edit in a mod's pak changes `AudioEventsInfo` is still the roadmap's step 3.
+It plays them natively: a hook on `K2_PlayEventOf` and `K2_PlayEventOfAttached` saw no call in 10 s of menus and
+walking while the cat's steps played (seen in game, 2026-11-04). Its own plays read `AudioEventsMap` each time:
+with `cat_step`'s entry set to the select sound's, only `S_Cue_ui_select` played while the cat walked. A mod's
+`data.json` setting `AudioEvents.csv` row 78 (`cat_step`) to the select sound's path gave `AudioEventsMap`'s
+`cat_step` that sound in the game: the table in the pak is read at runtime (the roadmap's step 3). Music plays on
+an audio component outer'd to the `WorldSettings` (`MS_mus_camp_shadowclan` in the ShadowClan camp, its class
+`S_Class_Music`, the manager's only `SoundMusicClasses`); 72 `WrcMusicSourceTrigger`s in the forest each name a
+track id (`MusicTrackId` `mus_shadowclan_b`, `bReplaceDefaultMusic`, `bIsForCombat`, `MusicTransitionSpeed`), and
+the manager's `MusicTransitionSpeed` is 0.25. The forest's ambience is `AmbientSound` actors (birds, insects,
+water) of class `S_Class_Sfx`.
 
 **The game's tables** (seen in game on build 26337109, 2026-11-04, with a C++ walk of the object list): 69
 DataTables were in memory in the forest, among them `DT_QuestObjectsInfo` (412 items), `DT_Characters` (27),
