@@ -1627,18 +1627,17 @@ function Cat:setRewards(counts) return Game.setTagCounts(Game.get(self.actor, "r
 
 -- ===================================================================================== items
 Game.items = {}
--- The HUD's pickup messages since the level loaded: tag -> total (live). They're stamped with the save slot and the
--- HUD they came from ("<slot>|<HUD address>"), and the save file's size at the last one; loading a save (a new HUD),
--- another slot, or the game writing its save since (which has them then) drops them, and the save says again. (One
--- table, not more locals: the main chunk is near Lua's 200.)
-local pickups = { live = {}, stamp = nil, size = nil, watching = false }
--- "<slot>|<HUD address>" now, or nil with no HUD to go by (a level loading).
-function pickups.session()
-    local h = Game.find("WBP_GuiHudGameWrc_C")
-    if not h then return nil end
-    local ok, a = pcall(function() return h:GetAddress() end)
-    if not ok then return nil end
-    return tostring(Game.save.slot()) .. "|" .. tostring(a)
+-- The HUD's pickup messages since the level loaded: tag -> total (live). They're stamped with the HUD that sent them
+-- (its address and its name, which has its instance number: a save loaded, or another cat, is a new HUD), and with
+-- the save file's size at the last one. Another HUD, or a save the game wrote since at another size (which has them
+-- then), drops them, and the save says again. A save rewritten at the same size isn't noticed: the pickups stay laid
+-- over it until the next load. (One table, not more locals: the main chunk is near Lua's 200.)
+local pickups = { live = {}, stamp = nil, size = nil, seen = nil, watching = false }
+-- A HUD's stamp, "<address>|<name>", or nil.
+function pickups.stampOf(h)
+    if not valid(h) then return nil end
+    local ok, stamp = pcall(function() return tostring(h:GetAddress()) .. "|" .. h:GetFName():ToString() end)
+    return ok and stamp or nil
 end
 function pickups.saveSize()
     local f = io.open(Game.save.path(), "rb")
@@ -1657,12 +1656,19 @@ function Game.items.list()
     if type(inv) == "table" then
         for k, v in pairs(inv) do out[k] = v end
     end
-    if pickups.stamp ~= nil then
-        local now = pickups.session()
-        -- The save read above is the file as it is now, and the game wrote it after the last pickup.
-        local saved = pickups.size ~= nil and fileCache.size ~= nil and fileCache.size ~= pickups.size
-                      and fileCache.size == pickups.saveSize()
-        if (now ~= nil and now ~= pickups.stamp) or saved then pickups.live, pickups.stamp, pickups.size = {}, nil, nil end
+    if next(pickups.live) ~= nil then
+        -- No HUD to go by (Game.find answers nil for a second after a load) keeps them.
+        local now = pickups.stampOf(Game.find("WBP_GuiHudGameWrc_C"))
+        local saved = false
+        if fileCache.at ~= pickups.seen then   -- once for each time the save is decoded, not each call
+            pickups.seen = fileCache.at
+            -- The save read above is the file as it is now, and the game wrote it after the last pickup.
+            saved = pickups.size ~= nil and fileCache.size ~= nil and fileCache.size ~= pickups.size
+                    and fileCache.size == pickups.saveSize()
+        end
+        if (now ~= nil and pickups.stamp ~= nil and now ~= pickups.stamp) or saved then
+            pickups.live, pickups.stamp, pickups.size = {}, nil, nil
+        end
     end
     for k, v in pairs(pickups.live) do out[k] = v end
     return out
@@ -1673,12 +1679,14 @@ function Game.items.count(tag) return Game.items.list()[tag] or 0 end
 local function watchPickups()
     if pickups.watching then return end
     pickups.watching = true
-    Game.hook("/Script/Wrc.GuiHudWrc:OnItemPickedUp", function(_, tag, quantity, total)
+    -- The HUD that sends the message stamps it (GuiHudWrc's one class in game is WBP_GuiHudGameWrc_C, which
+    -- Game.items.list looks for).
+    Game.hook("/Script/Wrc.GuiHudWrc:OnItemPickedUp", function(hud, tag, quantity, total)
         local name = Game.tagName(tag)
-        local s = pickups.session()
+        local s = pickups.stampOf(hud)
         if s ~= nil and s ~= pickups.stamp then pickups.live, pickups.stamp = {}, s end
         pickups.live[name] = total
-        pickups.size = pickups.saveSize()
+        pickups.size, pickups.seen = pickups.saveSize(), nil
         Game.emit("itemPickedUp", name, quantity, total)
     end)
 end
