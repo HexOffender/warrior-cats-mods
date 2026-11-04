@@ -94,6 +94,12 @@ The details of each are in its step below.
 
 Each step is one commit (or a small group) with its unit test and its docs, in the order below, highest first.
 
+**Where it stands (2026-11-04).** Every step is done on the branch `claude/menu-pages-sdk-fixes-604058`, one commit
+each, with W6 before W7 (W7's "the game saved since" reads W6's `fileCache.size`). The unit tests pass, every Lua
+module wcmods writes compiles with `luac`, and the fixed functions were run against UE4SS stubs with a local Lua 5.4
+(not part of the suite: the unit tests run no Lua). None of the in-game tests below has been run yet. Left for later:
+the C++ SDK's halves of W6 and W7 (they need a C++ build to check), and W7's two questions for the game (below).
+
 **In-game checks** run through the agent: `python wcmods.py agent test <file>`, after `agent install --with <mod
 folder>` for a throwaway mod. Two rules apply:
 - check who launched a running game before an agent command sends it keys;
@@ -197,14 +203,19 @@ when a slot is reloaded without saving, and when the game saves after the items 
 **Fix.** Stamp the pickups with the save slot and the HUD they came from, and drop them when the stamp changes; and
 remember the save file's size (W6's `fileCache.size`) with them, dropping them when the game has written the save
 since. No poller (`Game.on("level")` would start the level poller in every Lua state, which has crashed the game
-during loads), and no new main-chunk local: the state goes in one table that takes `live`'s place. The C++ `items()`
-does the same, so `test_cpp_sdk.py`'s Lua-against-C++ count check still agrees.
+during loads), and no new main-chunk local: the state goes in one table that takes `live`'s place. The pickups are
+dropped for a save only when the save just read is the file as it is now and has another size than at the last
+pickup, so a save the game wrote just before a pickup, not yet read, doesn't drop it. The C++ `items()` has the same
+bug and isn't changed yet: it needs a C++ build to check. `test_cpp_sdk.py`'s Lua-against-C++ count check counts
+tags, which agree while no pickup has happened.
 
 **Tests.**
 - Unit: `Game.items.list` drops the pickups when the stamp or the save's size changed; the hook stamps them; the C++
   `items()` does the same.
 - In game: not written. It needs picking up a dropped item with the Interact key, a way back to the main menu, and a
   test that quits and restores its own save; see "Not in this plan".
+- C++: `World.hpp`'s `detail::Pickups` and `items()`, the same stamp (the slot, the HUD that sent the message,
+  `call.self()`, and the save's size), once a C++ build can check it.
 
 **Docs.** `scripting.md` and `SDK.md` say "pickups since the level loaded (or the game last saved)".
 
@@ -230,8 +241,8 @@ a 500 KB save), changed or not, so a page or `Game.onFrame` that reads items or 
 
 **Fix.** Keep the decoded table while the file's size hasn't changed: look at the size at most 4 times a second,
 and decode again at least every 30 s. A failed decode (the game caught mid-write) keeps the last good table. Move
-`fileCache` up to just after `Game.save = {}`, so `Game.save.write` can clear it. The C++ `save_file()` gets the same
-size check.
+`fileCache` up to just after `Game.save = {}`, so `Game.save.write` can clear it. The C++ `save_file()` still parses
+the file on every call; the same size check there is left for later, with W7's C++ half.
 
 **Tests.**
 - Unit: the body checks `f:seek("end")` against `fileCache.size`; `fileCache` is declared before
@@ -251,9 +262,10 @@ slider are undone within half a second. `test_cpp_sdk.py`'s clock check races Tw
 **Fix.** `Game.time.hold(seconds, who)` and `Game.time.held()`, one hold shared through a UE4SS shared variable
 (`"WCModsGame.clockHold"`, `"<seconds>\t<who>"`): the last script to hold it owns it, and letting go only lets go of
 your own. Every script that has asked for a hold keeps the clock at the shared hour. Tweaks asks for its hold when its
-setting is on and nobody else holds the clock, and takes it back once the other hold is let go; its page says who
-holds it. The `shared`, `share` and `clean` helpers move above `Game.time = {}`. `Game.time.set` and `setSeconds`
-stay plain writes.
+switch or hour changes (at the start too), lets go when the switch goes off, gives way while another script holds
+the clock, and takes it back once nobody holds it; its page says whose hold it is meanwhile. The `shared`, `share`
+and `clean` helpers move above `Game.time = {}`. `Game.time.set` and `setSeconds` stay plain writes, which a hold
+puts back.
 
 **Tests.**
 - Unit: both functions exist and `shared` is defined before `Game.time = {}`; `test_tweaks.py` checks Tweaks'
@@ -306,8 +318,10 @@ so `-k stats`, `-k travel` and `-k status` run them one at a time.
 ### 11. W18: the wcmods version, at runtime
 
 **Fix.** `Game.wcmods = "0.6.0"` and `Game.wcmodsNumber` (a comparable number, `major * 10000 + minor * 100 +
-patch`), filled through a new `@WCMODS@` token in `game.py`'s `lua()` from `wcmods/__init__.py`'s `__version__`.
-`Game.version` stays `1`. A script checks `(Game.wcmodsNumber or 0) >= 600`; on 0.5.0 both are nil.
+patch`), filled through new `@WCMODS@` and `@WCMODS_NUMBER@` tokens in `game.py`'s `lua()` from `wcmods/__init__.py`'s
+`__version__`. `Game.version` stays `1`. A script checks `(Game.wcmodsNumber or 0) >= 600`; on 0.5.0 both are nil.
+The docs say "nil before 0.6.0", so the release that brings this should be 0.6.0 (`__version__` is still 0.5.0 on
+the branch, as the release PR raises it; a build from the branch says 500, so a script keeps its workarounds there).
 
 **Tests.** Unit: `game.lua()` has the version from `__version__` and no token left; in game, `Game.wcmods` matches
 `wcmods.__version__`.
@@ -336,6 +350,9 @@ patch`), filled through a new `@WCMODS@` token in `game.py`'s `lua()` from `wcmo
 
 ## Not in this plan
 
+- **The C++ halves of W6 and W7.** `World.hpp`'s `save_file()` has no cache and `items()` keeps the pickups as the
+  Lua did. Both want a C++ build of the SDK's test mod to check (`python wcmods.py cpp build`, which builds all of
+  UE4SS the first time from a fresh checkout), and `test_cpp_sdk.py`'s world test run after.
 - **The W7 in-game test.** It needs three things the agent doesn't have: picking up a dropped item with
   `agent.key` on the Interact key, a way back to the main menu (`controller.py`'s `enter()` only goes in), and a test
   that quits, restores its own save and relaunches (`restore_save` refuses while the game runs, and a test that
@@ -349,6 +366,8 @@ patch`), filled through a new `@WCMODS@` token in `game.py`'s `lua()` from `wcmo
   W1's, but sliders take ranges the caller chose; worth a look if a slider is seen changing a value.
 
 ## Decisions for the owner
+
+Each was taken as below on the branch; they're for the owner to confirm.
 
 1. **W2:** guard the three wrappers (done), or also make an explicit `Game.cat(nil)` return nil. The plan keeps
    `Game.cat(nil)` as "mine": a script that passes a nil variable to mean "mine" would break, and the wrappers were
