@@ -504,6 +504,25 @@ def test_a_teleport_the_game_refused_says_so():
     assert tp.rstrip().endswith("return true\nend")
 
 
+def test_the_fights_objects_are_documented():
+    """A fight's director, a fighter's actor() and component, and a cat's actor are what a script reaches the game's
+    own members through, and scripting.md said nothing of them (SDK.md does for C++). The tables are still built with
+    them, and the docs name them."""
+    import os
+    lua = game.lua()
+    assert "return setmetatable({ director = director }, Fight)" in lua
+    assert "return setmetatable({ component = comp }, Fighter)" in lua
+    assert "function Fighter:actor()" in lua and "return setmetatable({ actor = actor }, Cat)" in lua
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "scripting.md")
+    with open(path, encoding="utf-8") as f:
+        docs = f.read()
+    fights = docs[docs.index("### Fights"):docs.index("### The game's developer switches")]
+    for name in ("`fight.director`", "`Game.combatDirector()`", "`actor()`", "`fighter.component`"):
+        assert name in fights, name
+    cats = docs[docs.index("### Your cat (and other cats)"):docs.index("### Cats of a mod's own")]
+    assert "`cat.actor`" in cats
+
+
 def test_find_never_hands_back_an_object_on_its_way_out():
     lua = game.lua()
     find = body(lua, "function Game.find(className)", "\n-- Every object of a class")

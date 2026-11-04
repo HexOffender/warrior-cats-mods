@@ -223,7 +223,9 @@ Some limits:
 
 ### Your cat (and other cats)
 
-`Game.cat()` is yours. `Game.cat(actor)` wraps any cat or animal; it works on fighters too.
+`Game.cat()` is yours. `Game.cat(actor)` wraps any cat or animal; it works on fighters too. `cat.actor` is the
+game's own object for it (its character actor), for `Game.get`, `Game.call` and the game's members the
+wrapper doesn't have: `Game.get(cat.actor, "CharacterType")`.
 
 | Method | Gives or does | Tried in game |
 |---|---|---|
@@ -412,6 +414,7 @@ or hidden animal doesn't move its bones until it's in view (the engine's way), t
 | `players()`, `enemies()`, `all()` | The fighters |
 | `turnOrder()`, `current()`, `mainEnemy()` | Cats, in this round's order; whose turn it is, and the fight's main enemy (nil when it's nobody's turn, there's no main enemy, or its body can't be read) |
 | `kind()` | The director's class (story, boss, skirmish, defender…) |
+| `fight.director`, `Game.combatDirector()` | The fight's combat director, the game's own object the calls above read, for `Game.get` and `Game.call` on what they don't wrap: `Game.get(fight.director, "TurnOrder")`. `Game.combatDirector()` is nil with no fight going on |
 
 A fighter (`Game.fighter(cat or actor)`) is a cat's combat component, set up when a fight starts:
 
@@ -421,6 +424,7 @@ A fighter (`Game.fighter(cat or actor)`) is a cat's combat component, set up whe
 | `level()`, `setLevel(n)`, `stance()` | Its level, and its stance now |
 | `move()`, `moveTag()`, `setMove({Damage = 80, Accuracy = 1})` | The move it picked (its AttackMove row), and changing it before it lands (not tried: no move was picked in testing) |
 | `targets()`, `cat()` | Who it's attacking; the cat itself (health, status…), or nil when its body can't be read |
+| `actor()`, `fighter.component` | The fighter's character actor (nil when it can't be read), and its combat component, the game's own `TurnBasedCombatComponent` the calls here read, for `Game.get` and `Game.call` |
 | `team()`, `aiTier()`, `setAITier(t)`, `moveCount()` | Its team (`"Player"`, `"Enemy"`), the AI's tier for this fight (`"Tier1"`…`"Tier6"`; `"None"` for your cat) and how many moves it has to pick from: the game's own members, filled when the fight is set up (seen: a weak mouse at level 1, `"Tier1"`, 3 moves; your cat 3 moves and no tier) |
 
 **Seen in game** (a level 20 cat against a weak bird):
