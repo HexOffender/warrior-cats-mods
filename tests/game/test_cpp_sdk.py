@@ -439,6 +439,58 @@ def test_world_matches_lua(agent):
         assert v["items.first_count"] == got[0] and v["items.first_type"] == got[1], (v["items.first_count"], v["items.first_type"], got)
 
 
+def test_items_follow_pickups_and_the_save(agent):
+    """World.hpp's save_file() and items() (W6, W7), with Lua's beside them. The save read 2.5 s apart is the same
+    parse while the file hasn't changed. A pickup message from the HUD lays its total over the save's in C++'s
+    items() and Lua's alike, and the game writing its save after it drops it in both, so the save's count is back.
+    The message is the HUD's own OnItemPickedUp sent from Lua, with no toast and a total the inventory hasn't got,
+    so the save written after it still has the real count. The save is C++'s save_game() (which drops the kept
+    parse), after two of an item the cat hasn't got go in through the game's AddItem, so the file grows: a save at
+    the same size as at the pickup keeps the pickups (the known limit). They're taken out and saved again after."""
+    _ready(agent, "world")
+    _close_screens(agent)
+    path = _save_path("WrcGame.json")
+    written = os.path.getmtime(path)
+    _request(agent, "items")
+    time.sleep(2.5)
+    v = _request(agent, "items")["values"]
+    if os.path.getmtime(path) == written:   # the game didn't save meanwhile
+        assert v["save.kept"] is True, ("parsed again", v["save.read_size"], os.path.getsize(path))
+    held = {t: n for t, n in v["items.now"].items() if isinstance(n, (int, float)) and n > 0}
+    if not held:
+        skip("this cat has no items to test with")
+    if held.get(ITEM):
+        skip(f"this cat has {ITEM} already, so adding it may not change the save's size")
+    tag = sorted(held)[0]
+    real, fake = held[tag], held[tag] + 5
+    agent.lua("Game.items.list() return true")   # Lua's watch is on (it starts with the module)
+    size = os.path.getsize(path)
+    sent = agent.lua("""
+        local hud = Game.find("WBP_GuiHudGameWrc_C")
+        if not hud then return "no HUD" end
+        local ok, err = Game.call(hud, "OnItemPickedUp", {TagName = FName(%r)}, 5, %d, false)
+        return ok or tostring(err)""" % (tag, fake))
+    assert sent is True, sent
+    laid = _request(agent, "items")["values"]["items.now"]
+    assert laid.get(tag) == fake and agent.lua("return Game.items.count(%r)" % tag) == fake, \
+        (laid.get(tag), agent.lua("return Game.items.count(%r)" % tag), fake)
+    added = _phase(agent, "inventory_add")
+    try:
+        assert added["add.after"] == added["add.before"] + 2, added
+        _phase(agent, "save")
+        assert _saved_inventory(agent).get(ITEM) == added["add.after"]
+        assert os.path.getsize(path) != size, ("the save didn't grow", size)
+        time.sleep(1)   # more than a quarter second since Lua last looked at the file's size
+        after = _request(agent, "items")["values"]["items.now"]
+        lua_after = agent.lua("return Game.items.count(%r), Game.items.count(%r)" % (tag, ITEM))
+        assert after.get(tag) == real and lua_after[0] == real, (after.get(tag), lua_after, real)
+        assert after.get(ITEM) == added["add.after"] == lua_after[1], (after.get(ITEM), lua_after, added["add.after"])
+    finally:
+        _phase(agent, "inventory_remove")
+        _phase(agent, "save")
+    assert _saved_inventory(agent).get(ITEM, 0) == added["add.before"]
+
+
 def test_story_matches_lua(agent):
     """Story.hpp: quests, the fight that isn't on, the events that fire outside a fight, and a quest
     reported to the mod menu."""

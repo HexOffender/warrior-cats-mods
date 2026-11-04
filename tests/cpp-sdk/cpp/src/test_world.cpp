@@ -13,6 +13,18 @@ namespace t
         std::string first_phase;
     }
 
+    // items() now, whole, and whether the save read is the very one read at the last ask (save_file() keeps its parse
+    // while the file's size is the same), with the size it was read at: test_items_follow_pickups_and_the_save.
+    auto snapshot_items() -> void
+    {
+        static std::shared_ptr<const Json> last;   // kept alive, so a new parse can't land at the same address
+        auto save = detail::read_save();
+        value("items.now", items());
+        value("save.kept", last != nullptr && save.data == last);
+        value("save.read_size", save.size ? Json(static_cast<double>(*save.size)) : Json());
+        last = save.data;
+    }
+
     auto run_world_more(UObject* actor) -> void
     {
         // ----- what's around
