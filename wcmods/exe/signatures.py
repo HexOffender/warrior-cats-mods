@@ -556,13 +556,12 @@ def _access(finder, rva, ins, offsets):
     return width is None or width <= offsets[ins.disp]
 
 
-def _bytes(finder, insns, lo, hi, offsets, foreign=()):
+def _bytes(finder, insns, lo, hi, offsets, foreign=(), widths=False):
     """A pattern of insns[lo..hi] with what a rebuild changes left out, and its captures: {position:
     offset} of the accesses to `offsets` ({offset: size}; _access) but the `foreign` indices' (_foreign).
-    The captures' displacement sizes, where one isn't 4 bytes (an 8-bit one), are in `_bytes.widths` after."""
+    With `widths`, also the captures' displacement sizes where one isn't 4 bytes (an 8-bit one): {position: size}."""
     tdata, base = finder.tdata, finder.text.rva
-    out, captures = [], {}
-    _bytes.widths = {}
+    out, captures, sizes = [], {}, {}
     for n, (r, ins) in enumerate(insns[lo:hi + 1], lo):
         p = r - base
         raw = list(tdata[p:p + ins.length])
@@ -572,14 +571,14 @@ def _bytes(finder, insns, lo, hi, offsets, foreign=()):
             if offsets and n not in foreign and _access(finder, r, ins, offsets):
                 captures[len(out) + ins.disp_at] = ins.disp
                 if ins.disp_size != 4:
-                    _bytes.widths[len(out) + ins.disp_at] = ins.disp_size
+                    sizes[len(out) + ins.disp_at] = ins.disp_size
         if ins.rel_at is not None:
             wild.update(range(ins.rel_at, ins.rel_at + ins.rel_size))
         for k in range(ins.length):
             if r + k in finder.relocs or any(r + k - j in finder.relocs for j in range(1, 8)):
                 wild.add(k)
         out += [None if k in wild else b for k, b in enumerate(raw)]
-    return out, captures
+    return (out, captures, sizes) if widths else (out, captures)
 
 
 def _regex(pattern):
@@ -666,8 +665,7 @@ def _sites(finder, search, offsets, per_field=3):
                 a, b = max(0, i - width), min(len(insns) - 1, i + width)
                 if insns[i][0] - insns[a][0] > WINDOW or insns[b][0] - insns[i][0] > WINDOW:
                     break
-                pat, caps = _bytes(finder, insns, a, b, offsets, foreign)
-                sizes = dict(_bytes.widths)
+                pat, caps, sizes = _bytes(finder, insns, a, b, offsets, foreign, widths=True)
                 if sum(x is not None for x in pat) < MIN_PATTERN:
                     continue
                 if len(_matches(finder, search, _regex(pat))) == 1:

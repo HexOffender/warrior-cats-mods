@@ -135,7 +135,9 @@ and a call to the wrong place closes the game. So wcmods signs them as it signs 
   compiler gives it; above that only a 32-bit one counts as a member's (`signatures._access`). A site's
   capture that isn't 4 bytes keeps its size in the site's `"widths"` (absent means 4), and `check()` reads it
   as one signed byte: read as four it took the next instruction's bytes too, and the tuning manager's map
-  (+0x50, the first member below 0x80, 2026-11-04) conflicted.
+  (+0x50, the first member below 0x80, 2026-11-04) conflicted. Such a member can't be followed past 0x7F: moved
+  there, its accesses take a 32-bit displacement, a different encoding, so its patterns stop matching and it's
+  reported lost rather than moved (wcmods needs updating then, as for any lost member).
 
 ## How we find things
 

@@ -70,6 +70,7 @@ namespace wcmods
         auto row_names() const -> std::vector<std::wstring>
         {
             std::vector<std::wstring> out;
+            if (!assert_game_thread(L"Table::row_names")) return out;
             if (auto* t = table())
                 for (auto& pair : t->GetRowMap()) out.push_back(pair.Key.ToString());
             return out;
@@ -88,7 +89,7 @@ namespace wcmods
             std::vector<std::pair<std::wstring, Value>> out;
             auto* t = table();
             auto* s = row_struct();
-            if (!t || !s) return out;
+            if (!t || !s || !assert_game_thread(L"Table::rows")) return out;
             for (auto& pair : t->GetRowMap()) out.emplace_back(pair.Key.ToString(), struct_at(s, pair.Value));
             return out;
         }
@@ -107,10 +108,21 @@ namespace wcmods
             // defaults), then filled property by property with the engine's own copies (texts, strings and soft
             // references copied whole). Not UE4SS's AddRow: it copies through the struct's native copy, which UE4SS
             // can't reach on this engine ("ICppStructOps::Copy is unavailable", seen in game on build 26337109).
+            // 16-byte aligned, as the engine's own allocator gives a row (UE4SS doesn't export a struct's own alignment).
             auto* fresh = static_cast<uint8_t*>(RC::Unreal::FMemory::Malloc(static_cast<size_t>(s->GetSize()), 16));
-            s->InitializeStruct(fresh);
-            if (source)
-                for (RC::Unreal::FProperty* p : detail::properties_in_chain(s)) p->CopyCompleteValue_InContainer(fresh, source);
+            try
+            {
+                s->InitializeStruct(fresh);
+                if (source)
+                    for (RC::Unreal::FProperty* p : detail::properties_in_chain(s)) p->CopyCompleteValue_InContainer(fresh, source);
+            }
+            catch (...)
+            {
+                // UE4SS throws when it can't reach one of the engine's functions on this build: no row then.
+                RC::Unreal::FMemory::Free(fresh);
+                log(L"can't make a row of {} on this game build", s->GetName());
+                return {};
+            }
             if (has(row_name)) remove_row(row_name);
             t->GetRowMap().Add(RC::Unreal::FName(std::wstring(row_name).c_str(), RC::Unreal::FNAME_Add), fresh);
             return row(row_name);
@@ -130,9 +142,10 @@ namespace wcmods
         {
             auto* t = table();
             if (!t || row_name.empty() || !t->GetRowStruct()) return nullptr;
-            // FNAME_Find: a name nobody has made can't be a row, and isn't added to the game's names to ask.
+            // FNAME_Find: a name nobody has made can't be a row, and isn't added to the game's names to ask. It
+            // gives None for those; a row really named None is looked up as None.
             RC::Unreal::FName key(std::wstring(row_name).c_str(), RC::Unreal::FNAME_Find);
-            if (key == RC::Unreal::FName()) return nullptr;
+            if (key == RC::Unreal::FName() && _wcsicmp(std::wstring(row_name).c_str(), L"None") != 0) return nullptr;
             return t->FindRowUnchecked(key);
         }
         UObject* m_object{};
@@ -151,6 +164,7 @@ namespace wcmods
     inline auto tables() -> std::vector<TableInfo>
     {
         std::vector<TableInfo> out;
+        if (!assert_game_thread(L"tables")) return out;
         for (UObject* o : find_all(STR("DataTable")))
         {
             Table t(o);
@@ -164,7 +178,7 @@ namespace wcmods
     // through the game's objects; by path it doesn't.
     inline auto table(std::wstring_view name_or_path) -> Table
     {
-        if (name_or_path.empty()) return {};
+        if (name_or_path.empty() || !assert_game_thread(L"table")) return {};
         if (name_or_path.front() == L'/')
         {
             UObject* o = wcmods::object(std::wstring(name_or_path).c_str());
@@ -179,8 +193,8 @@ namespace wcmods
     // TuningData.csv: 440 keys (Gameplay.Exploration.MaxLevel, Gameplay.Exploration.Player.MoveAndRun.Run.Speed...)
     // and a number each (its MaxValue column), which the game reads into its components' own members as they
     // start (a loader per part of the game), through one lookup that reads the tuning manager's map each time.
-    // A change here is what every later read gets: what started before keeps the number it read (the cat's run
-    // speed until a new level, an animal's senses until it's made again).
+    // A change here is what every later read gets: what read its numbers before keeps them until it reads again
+    // (most parts read theirs as they start; when each does wasn't timed).
     namespace detail
     {
         // One of the map's slots: the key (an FString), then the row {vtable, MaxValue float, Description FString},
@@ -224,11 +238,18 @@ namespace wcmods
                 if (std::towlower(a[i]) != std::towlower(b[i])) return false;
             return true;
         }
-        inline auto tuning_row(std::wstring_view key) -> std::optional<TuningRow>
+        // One key's slot, compared in place (the map's FString against `key`): no string is copied to look.
+        inline auto tuning_slot(std::wstring_view key) -> const uint8_t*
         {
-            for (auto& r : tuning_rows())
-                if (same_key(r.key, key)) return r;
-            return std::nullopt;
+            std::vector<const uint8_t*> slots;
+            if (!set_slots(tuning_map(), 0x38, slots)) return nullptr;
+            for (const uint8_t* e : slots)
+            {
+                const auto* text = *reinterpret_cast<const wchar_t* const*>(e);
+                const int32_t num = *reinterpret_cast<const int32_t*>(e + 8);
+                if (text && num == static_cast<int32_t>(key.size()) + 1 && same_key(std::wstring_view(text, key.size()), key)) return e;
+            }
+            return nullptr;
         }
     } // namespace detail
 
@@ -237,17 +258,17 @@ namespace wcmods
     inline auto tuning(std::wstring_view key) -> std::optional<float>
     {
         if (!assert_game_thread(L"tuning")) return std::nullopt;
-        auto r = detail::tuning_row(key);
-        return r ? std::optional<float>(*r->value) : std::nullopt;
+        const uint8_t* e = detail::tuning_slot(key);
+        return e ? std::optional<float>(*reinterpret_cast<const float*>(e + 0x18)) : std::nullopt;
     }
     // Change a key's number: what the game reads from then on (above: not what started before). False for a key
     // the table hasn't got (a key can't be added: the game's code names the ones it reads).
     inline auto set_tuning(std::wstring_view key, float value) -> bool
     {
         if (!assert_game_thread(L"set_tuning")) return false;
-        auto r = detail::tuning_row(key);
-        if (!r) return false;
-        *r->value = value;
+        const uint8_t* e = detail::tuning_slot(key);
+        if (!e) return false;
+        *reinterpret_cast<float*>(const_cast<uint8_t*>(e) + 0x18) = value;
         return true;
     }
     // Every key, in the table's order; and a key's description (its Description column; empty for most).
@@ -261,7 +282,7 @@ namespace wcmods
     inline auto tuning_description(std::wstring_view key) -> std::optional<std::wstring>
     {
         if (!assert_game_thread(L"tuning_description")) return std::nullopt;
-        auto r = detail::tuning_row(key);
-        return r ? std::optional<std::wstring>(r->description) : std::nullopt;
+        const uint8_t* e = detail::tuning_slot(key);
+        return e ? std::optional<std::wstring>(detail::fstring_at(e + 0x20)) : std::nullopt;
     }
 } // namespace wcmods
