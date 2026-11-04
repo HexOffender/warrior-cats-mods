@@ -324,8 +324,9 @@ test cat Emberpaw, the save's slot 8). The suite ran nine times on the way; on t
   `test_ui_lua`, `test_ui_widgets` and `test_ui_arrow_units` passed): the SDK tab's page had the keyboard on its
   button as it showed; with the right button of a row of two holding it, Left moved the keyboard to the left
   one and the tab stayed; Left again moved the game's tab to Bonds, and the next arrow reached the tab row
-  itself; with the slider holding it, Left lowered its value and the tab stayed; from the button, Left walked
-  back to General. In the inventory, Up from the item grid, then Right to the SDK tab and Left back to
+  itself; one Left from the button was Bonds and one Right back was the SDK tab; Up from the button (the page's
+  top) gave the keyboard back to the tab row and Down took it to the button again; with the slider holding it,
+  Left lowered its value and the tab stayed; from the button, Left walked back to General. In the inventory, Up from the item grid, then Right to the SDK tab and Left back to
   Consumable. From a Lua tab after the SDK tab, one Left stopped on the SDK tab (before the fix it went on to
   Bonds: the arrow's release came twice, below).
 - **Unhooking, hard** (`test_unhook_loop` passed): 50 hooks on `ClientRestart` made and taken off at once,

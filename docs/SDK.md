@@ -1425,8 +1425,12 @@ The keys on a page: since build 26337109 the arrows are the pause screen's tab k
 `Button_Right`), and they're also the keys the engine moves the keyboard between controls with. So, as on
 the game's own tabs, Left and Right move the game's tab, except along a row of controls (a `ui::row` of
 buttons, where they move between them and leave the tab from the row's ends) and on a slider, a number box
-or a text box, which use them for their value or caret. Up and Down move between the page's rows, Enter
-uses a control, Backspace closes the screen. (Tab doesn't move the keyboard in this game.) To do that, the
+or a text box, which use them for their value or caret. Up and Down move between the page's rows; Up from
+the page's top gives the keyboard back to the tab row, and Down from there takes it in again, to the
+page's first control of any kind (a page of sliders alone gets the keyboard that way). Enter uses a
+control, Backspace closes the screen. (Tab doesn't move the keyboard in this game.) An arrow held longer
+than 0.6 s that moved the keyboard along a row also moves the tab when it's let go: the SDK sees the
+press only by what it did. To do that, the
 SDK watches the screen's commands: the engine takes the press of an arrow while a page's control has the
 keyboard and only the release reaches the screen, so a release whose press the screen never got, and
 which didn't move the keyboard along a row, is given to the screen as a whole command (`ui::send`). The
@@ -1448,8 +1452,8 @@ shows, it takes the mouse (`mouse`, on unless you say otherwise): the cursor is 
 mode is set to game-and-UI, as the game's own menus leave it, and the game's fade widgets (which sit over
 its screens with a full-screen picture that would take every click) let the mouse through, so the page's
 controls, its scroll bar and the wheel answer it; the cursor goes back as it was and the fades take hits
-again when the page goes, and the keyboard goes back to the game. Held keys aren't let go of then: the
-arrow that moves the player off the tab is still held, and letting go of it sent its release twice.
+again when the page goes, and the keyboard goes back to the game. Held keys are let go of then, except
+when an arrow moved the player off the tab: it's still held, and letting go of it sent its release twice.
 Tabs of one mod on one screen are put away before the next is shown, whatever order they were made in,
 so a tab leaving never undoes what the next took; and while a page shows it keeps what it hid hidden and
 the mouse its own, looked at four times a second, so a panel the game shows again, or another mod's tab

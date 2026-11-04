@@ -297,15 +297,17 @@ namespace t
             expect("ui.arrows.row_place", !lp.left && !lp.right && !ap.left && ap.right && bp.left && bp.right && cp.left && !cp.right);
             expect("ui.arrows.row_place_nested", !dp.left && dp.right && gp.left && !gp.right);
         }
-        // Which controls take the keyboard and which keep Left and Right for themselves, as a tab's page decides
-        // whether an arrow moves the game's tab: a button doesn't; ui::slider's slider (no Enter lock), a number
-        // box and a text box do; a slider that must be locked with Enter first doesn't; text takes no keyboard.
+        // Which controls take the keyboard and which keep the arrows for themselves, as a tab's page decides
+        // whether an arrow moves the game's tab: a button doesn't; every slider (ui::slider's with no Enter lock,
+        // the engine's own once locked), a number box and a text box keep Left and Right; a number box Up and
+        // Down too; text takes no keyboard.
         {
             Widget locked = ui::widget(L"Slider");
             expect("ui.arrows.controls", ui::detail::keyboard_control(ui::button(L"b").object()) && !ui::detail::uses_arrows(ui::button(L"b").object())
                                              && ui::detail::uses_arrows(ui::slider(0).object()) && ui::detail::uses_arrows(ui::number(1).object())
                                              && ui::detail::uses_arrows(ui::input(L"x").object()) && !ui::detail::keyboard_control(ui::text(L"t").object())
-                                             && ui::detail::keyboard_control(locked.object()) && !ui::detail::uses_arrows(locked.object()));
+                                             && ui::detail::keyboard_control(locked.object()) && ui::detail::uses_arrows(locked.object())
+                                             && ui::detail::uses_up_down(ui::number(1).object()) && !ui::detail::uses_up_down(ui::slider(0).object()));
             expect("ui.slider.unlocked", !ui::slider(0).get(L"RequiresControllerLock").boolean() && locked.get(L"RequiresControllerLock").boolean());
         }
         float grow = ui::theme().control_scale;

@@ -735,7 +735,8 @@ def test_ui_tab(agent):
 
     The arrows (the tab keys since build 26337109) while the page has the keyboard: Left and Right move along a row
     of buttons and, from its ends or a control alone in its row, move the game's tab as on its own tabs; a slider
-    keeps them for its value; the keyboard goes back to the screen with the page."""
+    keeps them for its value; one arrow moves one tab; Up from the page's top gives the keyboard back to the tab
+    row and Down takes it in again; the keyboard goes back to the screen with the page."""
     assert _open_pause(agent), "the pause screen didn't open"
     try:
         v = _request(agent, "ui_snapshot")["values"]
@@ -786,6 +787,24 @@ def test_ui_tab(agent):
         assert v["ui.tab.active"] is False and v["ui.screen.current"] == "mcGuiTabBonds", (v["ui.tab.active"], v["ui.screen.current"])
         # The keyboard went back to the screen with the page: the next arrow reaches the game's tab row itself.
         agent.key(NEXT_TAB)
+        time.sleep(0.8)
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.tab.active"] is True and v["ui.page.focus"] == "button", (v["ui.tab.active"], v["ui.page.focus"])
+        # One arrow moves one tab, onto the page and off it: Left once from the button is Bonds, Right once is back.
+        agent.key(PREV_TAB)
+        time.sleep(0.8)
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.screen.current"] == "mcGuiTabBonds", v["ui.screen.current"]
+        agent.key(NEXT_TAB)
+        time.sleep(0.8)
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.tab.active"] is True and v["ui.screen.current"] != "mcGuiTabBonds", v["ui.screen.current"]
+        # Up from the page's top gives the keyboard back to the tab row; Down takes it into the page again.
+        agent.key("Up")
+        time.sleep(0.8)
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.tab.active"] is True and v["ui.page.focus"] is None, (v["ui.tab.active"], v["ui.page.focus"])
+        agent.key("Down")
         time.sleep(0.8)
         v = _request(agent, "ui_snapshot")["values"]
         assert v["ui.tab.active"] is True and v["ui.page.focus"] == "button", (v["ui.tab.active"], v["ui.page.focus"])
