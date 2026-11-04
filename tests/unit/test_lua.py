@@ -712,6 +712,11 @@ def test_the_clock_has_one_hold_for_every_script():
     assert "if ticks.askedFirst and ticks.runs < 2 then since = math.max(ticks.loaded, os.clock() - h.LOAD) end" in held
     assert held.index("ticks.askedFirst = true") < held.index("start()") < held.index("if ticks.askedFirst and")
     assert "if ticks.runs < 2 then" not in held
+    # a timer added before the first run clears it: a state that asked in its main chunk and then added its first
+    # timer got the bound in that timer's first run, and ahead of the holder after a long first load took it for gone
+    adds = body(lua, "local function add(t)", "\nend\n")
+    assert "if ticks.runs == 0 then ticks.askedFirst = false end" in adds
+    assert adds.index("ticks.askedFirst = false") < adds.index("start()")
     assert "ticks.before or os.clock()" not in held and "since = os.clock()" not in held   # never from now
     # ticks.before: when the run of tasks before this one began
     run = body(lua, "local function runTasks()", "\nend\n")

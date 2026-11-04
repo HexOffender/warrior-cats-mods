@@ -336,23 +336,27 @@ From #114's review: a state with no run of tasks yet (a script of hooks and keys
 the end of a long load took a live hold for gone; it now counts from when the state loaded and starts its runs. That
 first went on through the state's first run, whose "before" is the load, with no bound, so an orphan stamped since the
 state loaded read live however old it was (a hold 300 s dead, asked about through a 20 s load: live every time). Now,
-until its second run (`ticks.runs`), a state whose runs `held()` started (`ticks.askedFirst`) counts from when it
-loaded but no further back than 60 s (`Game.time.holding.LOAD`): a hook after a load of up to 60 s still sees a live
-hold, and a hold whose state went with a restart of the mods reads live for two frames from the first ask, or through
-a load that ask comes in, and never once it's about 63 s old. The other side: a first ask during or just after a load
-of more than about a minute sees a live hold as gone until the holder's first frame after the load. The bound first
-applied to every state until its second run, which brought back the case `ticks.before` is for: after a first load of
-more than about 63 s, a state with a timer from load that ran before the holder in the first frame saw the holder's
-load-time stamp as gone, and Tweaks, run first, took the clock for good (the holder's heartbeat stops once the hold
-isn't its own). A state with a timer counts from the load until its second run as before, with no bound: an orphan
-reads live to it for one run at most, and Tweaks takes the clock within 3 to 4 s anyway. On the LoopAsync fallback,
-each turn queued a run, and a stall's queue ran back to back, each run with no time since the last; one run waits at a
-time now (`ticks.queued`). And a stamp or an hour that isn't a number (`"54000\tX\t1.2.3"`, from the console or
-another mod) is no hold: `held()` raised on it, and with it Tweaks' 0.5 s task, every run. `read()` takes only a whole
-second of the day for the hour, so the heartbeat's `%d` can write it.
+until its second run (`ticks.runs`), a state whose runs `held()` started, with no timer by its first run
+(`ticks.askedFirst`, which `add()` clears before the first run), counts from when it loaded but no further back than
+60 s (`Game.time.holding.LOAD`): a hook after a load of up to 60 s still sees a live hold, and a hold whose state went
+with a restart of the mods reads live for two frames from the first ask, or through a load that ask comes in, and
+never once it's about 63 s old. The other side: a first ask shortly before, during or just after a load of more than
+about a minute sees a live hold as gone until the holder's first frame after the load. The bound first applied to
+every state until its second run, which brought back the case `ticks.before` is for: after a first load of more than
+about 63 s, a state with a timer from load that ran before the holder in the first frame saw the holder's load-time
+stamp as gone, and Tweaks, run first, took the clock for good (the holder's heartbeat stops once the hold isn't its
+own). A state with a timer counts from the load until its second run as before, with no bound: an orphan reads live to
+it until its second run (to its hooks, for as long as no frame comes), and Tweaks takes the clock within 3 to 4 s
+anyway. From #114's fourth check: a state that asked in its main chunk before it added its first timer kept
+`askedFirst`, so that timer's first run got the bound and, ahead of the holder after a first load of over 63 s, a
+script that takes the clock when `held()` says nil took it for good; `add()` clears the flag while there's been no
+run. On the LoopAsync fallback, each turn queued a run, and a stall's queue ran back to back, each run with no time
+since the last; one run waits at a time now (`ticks.queued`). And a stamp or an hour that isn't a number
+(`"54000\tX\t1.2.3"`, from the console or another mod) is no hold: `held()` raised on it, and with it Tweaks' 0.5 s
+task, every run. `read()` takes only a whole second of the day for the hour, so the heartbeat's `%d` can write it.
 - Unit: the stamp's format, `held()`'s check, the heartbeat in the task, and `ticks.before`; from the review, the
-  bad-stamp guard, the no-run count (`ticks.runs`, `LOAD`, only with `ticks.askedFirst`) and `start()`, and the one
-  queued run.
+  bad-stamp guard, the no-run count (`ticks.runs`, `LOAD`, only with `ticks.askedFirst`, which `add()` clears before
+  the first run) and `start()`, and the one queued run.
 - Run against stubs (not in the suite), two to four `game.lua` states sharing one store: a live hold is seen by
   another state; after a 10 s frame the first state to run still sees it; a hold whose state stops is none within
   3 s; Tweaks' own `holdClock` gives way to a fresh-looking hold left by a restart, then takes the clock within 4 s;

@@ -603,7 +603,7 @@ local tasks, nextTask, started = {}, 1, false
 -- the first; the first's is when it loaded): Game.time.held() goes by the one before, so a frame the game took long
 -- over (a level loading, the game behind another window) doesn't make another state's hold look old. runs: how many
 -- there have been. queued: a run is waiting for the game thread (LoopAsync's way only). askedFirst: Game.time.held()
--- started them (a script of hooks and keys only), not a timer of the state's own.
+-- started them, and no timer came before the first (add() clears it then).
 local ticks = { last = os.clock(), before = nil, runs = 0, queued = false, askedFirst = false }
 ticks.loaded = ticks.last
 
@@ -652,6 +652,7 @@ local function start()
 end
 
 local function add(t)
+    if ticks.runs == 0 then ticks.askedFirst = false end   -- a timer by the first run: no LOAD bound
     start()
     local id = nextTask
     nextTask = nextTask + 1
@@ -3256,14 +3257,16 @@ function Game.time.held()
     local s, who, at = h.read()
     -- From the start of this state's run of tasks before this one, or before its first run, from when it loaded:
     -- not from now, so neither a hook at the end of a long load nor the first run after it takes a hold the holder
-    -- couldn't stamp through the load for gone. A script of hooks and keys only has no runs until it first asks,
-    -- which starts them (askedFirst); until it has had two, it counts back no further than LOAD seconds, or a hold
+    -- couldn't stamp through the load for gone. A state with no timer has no runs until it first asks, which starts
+    -- them (askedFirst). If it still has no timer at its first run (a script of hooks and keys only, or one that adds
+    -- its first timer later), then until it has had two runs it counts back no further than LOAD seconds, or a hold
     -- whose state went with a restart of the mods would read live to it through a load however old it was. So to
     -- such a script an orphan (its last stamp a moment before this state loaded) reads live for two frames from the
     -- first ask, or through a load the first ask comes in, and never once it's LOAD + STALE seconds old; and a live
-    -- hold reads gone in that window when a load has kept its holder from stamping it for longer than that. A state
-    -- whose runs a timer of its own started has no bound: its first run after a load of any length sees a hold
-    -- stamped before it, and an orphan reads live to it until its second run.
+    -- hold reads gone in that window when a load has kept its holder from stamping it for longer than that (the
+    -- first ask shortly before, during or just after it). A state with a timer by its first run, added before the
+    -- first ask or after it, has no bound: its first run after a load of any length sees a hold stamped before it,
+    -- and an orphan reads live to it until its second run (to its hooks, for as long as no frame comes).
     local since = ticks.before or ticks.last
     if not started then
         ticks.askedFirst = true
