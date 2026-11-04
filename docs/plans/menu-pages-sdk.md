@@ -170,11 +170,21 @@ move the old file aside to `<path>.old` (Windows' `os.rename` won't replace a fi
 the old one back if that fails. `encode` writes `Game.json.null` as `null`, found through `package.loaded.WCModsGame`
 as `listy()` does. The bootstrap's fallback and the bridge's `writeWhole` check their writes the same way.
 
+**After the review.** A Save that stops between the two renames (the game closed) leaves no `settings.json`, the
+file before at `settings.json.old`, and the last Save at `settings.json.new`, already read back. The bootstrap read
+only the `.old`, and the next Save opened the `.new` with `"wb"`: the last Save was gone. With no `settings.json` it
+now reads the `.new` when that decodes to an object, else the `.old`, and logs which. And when the new file can't go
+in and the old one can't be put back either, the error says the old one is at `<path>.old` (in `Menu.saveJson` and
+the fallback both).
+
 **Tests.**
 - Unit: `Menu.saveJson` writes a `.new`, checks `f:write`'s and `f:close`'s results, renames, and puts the old file
   back on a failed rename; `encode` knows `json.null`; the fallback and `writeWhole` check their writes.
 - In game: `noisy-script`'s settings get `"gone": null`, and the settings Save test asserts the saved file has `null`.
   A short write can't be made on demand, so that path rests on the unit test.
+- After the review: the unit test checks the bootstrap reads the `.new` before the `.old`, and both saves' errors.
+  Run against stubs (not in the suite): a stopped Save's `.new` read, a half-written `.new` passed over for the
+  `.old`, a bad `settings.json` not passed over, and a failed restore's error naming the `.old`.
 
 **Menu pages can drop** its own `.new`/`.old` save in `world.lua`'s `savePlaces` (with W18).
 

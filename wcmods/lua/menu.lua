@@ -1166,8 +1166,9 @@ function Menu.json(value) return encode(value, 0) end
 -- Write a Lua value to a JSON file; true, or false and why not. The file is written whole or not at all: the text
 -- goes to <path>.new first, is checked, and takes the old file's place only then (a full disk leaves the old file
 -- as it was and says so). Windows' os.rename won't replace a file, so the old one is moved aside to <path>.old
--- first, and put back if the new one can't go in. A read-only file is refused, and a <path>.old left without a
--- <path> (a save that stopped between the renames) is kept.
+-- first, and put back if the new one can't go in (when that fails too, the error says the old one is at
+-- <path>.old). A read-only file is refused, and a <path>.old left without a <path> (a save that stopped between the
+-- renames) is kept.
 function Menu.saveJson(path, value)
     local ok, err = pcall(function()
         local text = encode(value, 0) .. "\n"   -- first: a value that can't be written leaves nothing behind
@@ -1187,7 +1188,7 @@ function Menu.saveJson(path, value)
             error("couldn't write " .. tmp .. " whole (is the disk full?)", 0)
         end
         -- The old file aside, only when there is one: a <path>.old with no <path> is what a save that stopped
-        -- between the two renames left, the only copy of what was saved, and it's left as it is.
+        -- between the two renames left (the file before it; <path>.new has what it saved), and it's left as it is.
         local old = path .. ".old"
         local had = false
         local cur = io.open(path, "rb")
@@ -1213,9 +1214,10 @@ function Menu.saveJson(path, value)
         end
         local moved, merr = os.rename(tmp, path)
         if not moved then
-            if had then os.rename(old, path) end
+            local restored = not had or os.rename(old, path)
             os.remove(tmp)
-            error("couldn't replace " .. path .. " (" .. tostring(merr) .. ")", 0)
+            error("couldn't replace " .. path .. " (" .. tostring(merr) .. ")" ..
+                  (restored and "" or "; the previous file is now at " .. old), 0)
         end
         if had then os.remove(old) end
     end)

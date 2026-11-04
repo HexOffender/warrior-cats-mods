@@ -716,9 +716,10 @@ def test_bootstrap_refuses_a_settings_file_of_null_and_says_why():
     from wcmods.sections import scripts
     settings = body(scripts.BOOTSTRAP, "if okGame and MOD.settingsFile then", "\nend\n")
     assert "local ok, data, err = pcall(Game.json.decode, text)" in settings
-    assert 'elseif err == nil and (type(data) ~= "table" or data == Game.json.null) then' in settings
-    assert "if err == nil then\n            MOD.settings = data" in settings
-    assert 'using the settings from the install", tostring(err))' in settings
+    assert "if not ok then return nil, tostring(data) end" in settings   # decode's own reason
+    assert 'if err == nil and (type(data) ~= "table" or data == Game.json.null) then err = "it doesn\'t hold an object" end' in settings
+    assert "if data ~= nil then\n        MOD.settings = data" in settings
+    assert 'using the settings from the install", from, err)' in settings
 
 
 def test_json_decode_keeps_a_number_written_with_a_point_a_float():
@@ -833,8 +834,11 @@ def test_a_save_writes_the_whole_file_or_says_it_couldnt():
     the close and what's on the disk, moves the old file aside (Windows' rename won't replace it), and puts it back
     when the new one can't go in. A .old it can't remove, or a file it can't move aside, is said with the path (it
     was a bare "File exists" on every later save); a read-only file is refused; and a .old with no file beside it (a
-    save that stopped between the renames left it, the only copy) is kept, and the script bootstrap reads a mod's
-    settings from it. MOD.save()'s fallback and the bridge's writeWhole check theirs too."""
+    save that stopped between the renames left it) is kept. That save's .new has what it saved, already read back,
+    so the script bootstrap reads a mod's settings from the .new when it holds an object (it read only the .old, and
+    the next Save wrote over the .new: the last Save gone), else from the .old. A new file that can't go in and an
+    old one that can't be put back say where the old one is. MOD.save()'s fallback and the bridge's writeWhole check
+    theirs too."""
     lua = menu.lua()
     save = body(lua, "function Menu.saveJson(path, value)", "\nreturn Menu")
     assert save.index('local text = encode(value, 0) .. "\\n"') < save.index('local tmp = path .. ".new"')
@@ -845,7 +849,8 @@ def test_a_save_writes_the_whole_file_or_says_it_couldnt():
         save.index("local moved, merr = os.rename(tmp, path)")
     assert 'if not gone and code ~= 2 then' in save and 'error("couldn\'t remove " .. old .. " (" .. tostring(gerr) .. ")", 0)' in save
     assert 'local rw = io.open(path, "r+b")' in save and "can't be written (is it read-only?)" in save
-    assert "if had then os.rename(old, path) end" in save and "if had then os.remove(old) end" in save
+    assert "local restored = not had or os.rename(old, path)" in save and "if had then os.remove(old) end" in save
+    assert '(restored and "" or "; the previous file is now at " .. old)' in save
     assert 'os.remove(path .. ".old")' not in save   # never a .old with no file beside it
     assert 'io.open(path, "wb")' not in save
     # Game.json.null (a null read from a file) is written null, not {} (it's an empty table).
@@ -856,12 +861,19 @@ def test_a_save_writes_the_whole_file_or_says_it_couldnt():
     fallback = body(scripts.BOOTSTRAP, "function MOD.save()", "\nend\n")
     assert "local okText, text = pcall(G.json.encode, MOD.settings)" in fallback
     assert 'local f, err = io.open(tmp, "wb")' in fallback and "if not wrote or not closed then" in fallback
-    assert "if had then os.rename(old, path) end" in fallback and "if not gone and code ~= 2 then" in fallback
+    assert "local restored = not had or os.rename(old, path)" in fallback and "if not gone and code ~= 2 then" in fallback
+    assert '(restored and "" or "; the previous file is now at " .. old)' in fallback
     assert 'local rw = io.open(path, "r+b")' in fallback and 'os.remove(path .. ".old")' not in fallback
     assert 'io.open(MOD.settingsFile, "wb")' not in fallback
     read = body(scripts.BOOTSTRAP, "if okGame and MOD.settingsFile then", "\nend\n")
-    assert read.index('local f = io.open(MOD.settingsFile, "rb")') < read.index('f = io.open(MOD.settingsFile .. ".old", "rb")')
-    assert "reading settings.json.old, which a save that stopped part way left" in read
+    assert read.index("local data, err = readSettings(MOD.settingsFile)") < \
+        read.index('data, newErr = readSettings(MOD.settingsFile .. ".new")') < \
+        read.index('data, err = readSettings(MOD.settingsFile .. ".old")')
+    assert "if data == nil and err == nil then" in read   # only with no settings.json: a bad one isn't passed over
+    assert "reading settings.json.new, the last Save" in read and "reading settings.json.old, the settings before" in read
+    assert 'MOD.log("couldn\'t read %s (%s); using the settings from the install", from, err)' in read
+    one = body(read, "local function readSettings(file)", "\n    end\n")
+    assert "data == Game.json.null" in one and 'if not f then return nil, nil end' in one
     from wcmods import bridge
     whole = body(bridge.LUA, "local function writeWhole(path, text)", "\nend\n")
     assert "local wrote = f:write(text)" in whole and "if not wrote or not closed then" in whole
