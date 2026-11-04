@@ -604,6 +604,7 @@ namespace wcmods
             std::vector<std::function<void()>> queue;
             std::atomic<bool> pending{};   // the hook's fast path: it fires for every ProcessEvent
             bool running{};                // a call it runs makes ProcessEvent calls of its own
+            bool registering{};            // the hook is asked for, at the end of the next frame
             std::optional<RC::Unreal::Hook::GlobalCallbackId> hook;
         };
         inline auto mid_frame() -> MidFrame&
@@ -618,13 +619,20 @@ namespace wcmods
                 std::lock_guard lock(ticks().lock);
                 if (ticks().stopped) return;
             }
-            bool hook;
+            bool register_now;
             {
                 std::lock_guard lock(m.lock);
                 m.queue.push_back(std::move(fn));
                 m.pending = true;
-                hook = !m.hook;
-                if (hook)
+                register_now = !m.hook && !m.registering;
+                m.registering = m.registering || register_now;
+            }
+            // Registered at the end of a frame (on_game_thread), not here: a call from a hook runs inside a
+            // ProcessEvent, while UE4SS goes through the very callbacks this would add to.
+            if (register_now) on_game_thread([] {
+                auto& m = mid_frame();
+                std::lock_guard lock(m.lock);
+                if (m.hook) return;
                 {
                     RC::Unreal::Hook::FCallbackOptions options{};
                     options.OwnerModName = mod().name;
@@ -647,7 +655,7 @@ namespace wcmods
                             },
                             options);
                 }
-            }
+            });
             hook_ticks();   // the game thread is known once a frame has run
         }
     } // namespace detail

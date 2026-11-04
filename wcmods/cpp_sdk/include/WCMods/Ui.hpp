@@ -1460,12 +1460,18 @@ namespace wcmods
                 };
                 if (tries <= 0 || !shown(screen.object())) return;
                 send(screen, L"Button_Back");
+                // Only while the game's window is behind: in front, the first Back closes it, and another could
+                // back out of a menu further than asked while the screen fades out.
+                HWND front = GetForegroundWindow();
+                DWORD pid = 0;
+                if (front) GetWindowThreadProcessId(front, &pid);
+                if (pid == GetCurrentProcessId()) return;
                 after(0.8, [screen, tries] { close_again(screen, tries - 1); });
             }
         } // namespace detail
 
-        // Close one of the game's screens as its Back button does, giving Back again while it's still up (three
-        // times at most, 0.8 s apart). False for an empty Widget.
+        // Close one of the game's screens as its Back button does. While the game's window is behind, Back is
+        // given again while the screen is still up (three times at most, 0.8 s apart). False for an empty Widget.
         inline auto close(const Widget& screen) -> bool
         {
             if (!detail::screen_command(screen, L"Button_Back", 0, false)) return false;

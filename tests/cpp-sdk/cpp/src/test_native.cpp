@@ -123,7 +123,8 @@ namespace t
         FakeMap empty({});
         expect("native.map.empty", detail::tag_counts(empty.map, pairs) && pairs.empty());
         // What doesn't add up as a map is refused, whole: free slots that disagree with the bits, a count past
-        // what fits, a negative count, no elements behind a count, and no map at all.
+        // what fits, a negative count, no elements behind a count, more slots than the inline bit words hold
+        // with no bit array on the heap, and no map at all.
         FakeMap wrong_free({true, true, false});
         wrong_free.set_i32(0x34, 0);
         FakeMap past_max({true});
@@ -132,9 +133,12 @@ namespace t
         negative.set_i32(0x08, -1);
         FakeMap no_data({true});
         std::memset(no_data.map, 0, 8);
+        FakeMap inline_too_many({true});
+        inline_too_many.set_i32(0x28, 200).set_i32(0x2C, 256);
         expect("native.map.refused", !detail::tag_counts(wrong_free.map, pairs) && pairs.empty()
                                          && !detail::tag_counts(past_max.map, pairs) && !detail::tag_counts(negative.map, pairs)
-                                         && !detail::tag_counts(no_data.map, pairs) && !detail::tag_counts(nullptr, pairs));
+                                         && !detail::tag_counts(no_data.map, pairs) && !detail::tag_counts(inline_too_many.map, pairs)
+                                         && !detail::tag_counts(nullptr, pairs));
 
         // ----- a name offsets.json hasn't got
         expect("native.unknown", native_address(L"NoSuchClass:NoSuchFunction") == nullptr
@@ -186,7 +190,7 @@ namespace t
             value("add.heard_total", picked_total.load());
             expect("add_item", added && before >= 0 && after == before + 2, std::to_string(before) + " -> " + std::to_string(after));
             expect("add_item.refused", !add_item(L"Gameplay.Inventory.Consumable.NoSuchHerb") && !add_item(L"Animation.Exploration.Meow")
-                                           && !add_item(ITEM, 0) && inventory_count(utf8(ITEM)).value_or(-1) == after);
+                                           && !add_item(ITEM, 0) && !add_item(ITEM, -1) && inventory_count(utf8(ITEM)).value_or(-1) == after);
             done("inventory_add");
             return true;
         }

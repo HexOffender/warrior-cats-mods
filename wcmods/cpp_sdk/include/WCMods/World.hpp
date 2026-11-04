@@ -130,8 +130,9 @@ namespace wcmods
     // One of the game's commands, as its controls give it (ECommands: L"Player_Show_Inventory",
     // L"Player_Pause", L"Player_Show_Map", L"Player_Show_Quest", L"Player_Interact", L"Player_Growl"...):
     // pressed, then released, through the player's input component, which hands it to what the game has
-    // bound it to, so the inventory or the pause screen opens as with its key. command(name, pressed) gives
-    // one half. False without a player, or for a name ECommands hasn't got. A screen that's open takes its
+    // bound it to, so the inventory or the pause screen opens as with its key: a tap, both halves in one frame.
+    // For one the game acts on while it's held (Player_Run), give the halves apart: command(name, true), then
+    // command(name, false) later. False without a player, or for a name ECommands hasn't got. A screen that's open takes its
     // own commands: ui::send (Ui.hpp).
     inline auto command(std::wstring_view name, bool pressed) -> bool
     {
@@ -329,6 +330,7 @@ namespace wcmods
             if (num < 0 || max < num || max > (1 << 20) || num_free < 0 || num_free > num || num_bits < num || max_bits < num_bits) return false;
             if (num > 0 && !data) return false;
             const auto* heap_bits = *reinterpret_cast<const uint32_t* const*>(map + 0x20);
+            if (!heap_bits && num_bits > 128) return false;   // more slots than the four inline words hold
             const auto* bits = heap_bits ? heap_bits : reinterpret_cast<const uint32_t*>(map + 0x10);
             for (int32_t i = 0; i < num; ++i)
             {
@@ -398,30 +400,37 @@ namespace wcmods
     // which on_function sees), quests that count items hear of it, and the save's state has it (written at
     // the next save). remove_item takes them away, as many as you have at most (an item at 0 goes), and
     // nothing of an item you haven't got (the game's code would add it at -1, tell the HUD, then drop it).
-    // False on another thread, in menus, for a tag that isn't an item's (is_item_tag), or when wcmods hasn't
-    // got the function on this build.
+    // False on another thread, in menus, for a count below 1 (remove_item takes items away), for a tag that
+    // isn't an item's (is_item_tag), or when wcmods hasn't got the function on this build.
+    namespace detail
+    {
+        inline auto add_native(std::wstring_view tag, int count, bool popup) -> bool
+        {
+            if (count == 0 || !assert_game_thread(L"add_item")) return false;
+            UObject* component = inventory_component();
+            if (!component || !is_item_tag(tag)) return false;
+            RC::Unreal::FName name(tag, RC::Unreal::FNAME_Find);
+            const uint32_t index = name.GetComparisonIndex().ToUnstableInt();
+            if (index == 0) return false;
+            void* fn = native_address(L"SwtQuestInventoryComponent:AddItem");
+            if (!fn) return false;
+            // The FGameplayTag is its FName: 8 bytes, passed by value in a register.
+            const uint64_t raw = index | (static_cast<uint64_t>(static_cast<uint32_t>(name.GetNumber())) << 32);
+            if (call_add_item(fn, component, raw, count, popup)) return true;
+            log(L"the game's AddItem failed for {}", tag);
+            return false;
+        }
+    } // namespace detail
     inline auto add_item(std::wstring_view tag, int count = 1, bool popup = true) -> bool
     {
-        if (count == 0 || !assert_game_thread(L"add_item")) return false;
-        UObject* component = inventory_component();
-        if (!component || !is_item_tag(tag)) return false;
-        RC::Unreal::FName name(tag, RC::Unreal::FNAME_Find);
-        const uint32_t index = name.GetComparisonIndex().ToUnstableInt();
-        if (index == 0) return false;
-        void* fn = native_address(L"SwtQuestInventoryComponent:AddItem");
-        if (!fn) return false;
-        // The FGameplayTag is its FName: 8 bytes, passed by value in a register.
-        const uint64_t raw = index | (static_cast<uint64_t>(static_cast<uint32_t>(name.GetNumber())) << 32);
-        if (detail::call_add_item(fn, component, raw, count, popup)) return true;
-        log(L"the game's AddItem failed for {}", tag);
-        return false;
+        return count > 0 && detail::add_native(tag, count, popup);
     }
     inline auto remove_item(std::wstring_view tag, int count = 1) -> bool
     {
         if (count <= 0) return false;
         auto have = inventory_count(utf8(tag));
         if (!have || *have <= 0) return false;
-        return add_item(tag, -std::min(count, *have), false);
+        return detail::add_native(tag, -std::min(count, *have), false);
     }
 
     // Your items: {tag: count} as of the game's last save, with any pickups since then, as the Lua module's
@@ -665,7 +674,6 @@ namespace wcmods
             std::mutex lock;
             TimerId timer{};
             UObject* sky{};
-            UClass* sky_class{};
         };
         inline auto sky_hold() -> SkyHold&
         {
@@ -703,15 +711,14 @@ namespace wcmods
         auto& h = detail::sky_hold();
         std::lock_guard lock(h.lock);
         h.sky = s;
-        h.sky_class = s->GetClassPrivate();
-        h.timer = every(0, [name = std::wstring(preset)] {
+        h.timer = every(0, [name = std::wstring(preset), cls = s->GetClassPrivate()] {
             auto& h = detail::sky_hold();
             UObject* held;
             {
                 std::lock_guard lock(h.lock);
                 held = h.sky;
             }
-            if (!detail::object_alive(held, detail::sky_hold().sky_class) || !detail::apply_sky(held, name)) detail::release_sky();
+            if (!detail::object_alive(held, cls) || !detail::apply_sky(held, name)) detail::release_sky();
         });
         return true;
     }
