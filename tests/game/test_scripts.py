@@ -1,7 +1,7 @@
 """The script runtime in the game: a script's errors carry its mod's name and are said once, a misspelt key doesn't
-stop a script, another cat's level isn't yours, a task can cancel itself and add another, a script that doesn't
-start is named, a script's settings page saves and says so, and a page made from a timer is the only one. The
-throwaway mods (tests/game/mods/noisy-script, broken-script and late-page) go in with a test install:
+stop a script, another cat's level isn't yours, a fight with nobody there isn't your cat, a task can cancel itself
+and add another, a script that doesn't start is named, a script's settings page saves and says so, and a page made
+from a timer is the only one. The throwaway mods (tests/game/mods/noisy-script, broken-script and late-page) go in with a test install:
 
     python wcmods.py agent install --with tests/game/mods/noisy-script --with tests/game/mods/broken-script --with tests/game/mods/late-page
 
@@ -97,6 +97,14 @@ return { other = other:level(), xp = other:xp(), stats = other:stats(), set = ok
         assert isinstance(r["mine"], int) and r["mine"] >= 1, r
     finally:
         agent.lua("if WCMODS_TEST_NPC then WCMODS_TEST_NPC:remove() WCMODS_TEST_NPC = nil end")
+
+
+def test_a_fight_with_no_one_there_is_not_your_cat(agent):
+    """Whose turn it is, the main enemy and a fighter's cat are nil when there's nobody there (they were your cat:
+    Game.cat(nil) is yours). Empty wrappers reach that path with no fight going on."""
+    r = agent.lua("""local f = setmetatable({}, Game.Fight) local x = setmetatable({}, Game.Fighter)
+return { mine = Game.cat() ~= nil, current = f:current() == nil, main = f:mainEnemy() == nil, cat = x:cat() == nil }""")
+    assert r == {"mine": True, "current": True, "main": True, "cat": True}, r
 
 
 def test_a_script_that_doesnt_load_is_named(agent):

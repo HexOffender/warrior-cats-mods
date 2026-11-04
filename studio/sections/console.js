@@ -14,7 +14,7 @@ export const EXAMPLES = [
   { label: "Fresh-kill", code: "return Game.freshKill.value(), Game.freshKill.level()",
     instead: "The Save page changes the pile without code." },
   { label: "Items", code: "return Game.items.list()" },
-  { label: "The fight", code: "local f = Game.fight()\nif not f then return \"no fight\" end\nlocal out = {}\nfor _, x in ipairs(f:all()) do out[#out + 1] = { kind = x:cat():kind(), level = x:level(), stats = x:stats() } end\nreturn out" },
+  { label: "The fight", code: "local f = Game.fight()\nif not f then return \"no fight\" end\nlocal out = {}\nfor _, x in ipairs(f:all()) do local c = x:cat() out[#out + 1] = { kind = c and c:kind(), level = x:level(), stats = x:stats() } end\nreturn out" },
 ];
 // (No example scans the world, World.nearby or Game.findAll: reading many objects through the bridge has crashed
 // the game just after a level loads. The mod menu's own Nearby page lists what's around.)

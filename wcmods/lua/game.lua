@@ -3332,8 +3332,16 @@ function Fight:turnOrder()
     for _, a in ipairs(Game.list(Game.get(self.director, "TurnOrder"))) do out[#out + 1] = Game.cat(a) end
     return out
 end
-function Fight:current() return Game.cat(Game.get(self.director, "CurrentTurnAttackCharacter")) end
-function Fight:mainEnemy() return Game.cat(Game.get(self.director, "MainEnemyCombatCharacter")) end
+-- Whose turn it is, and the fight's main enemy, as cats; nil when it's nobody's turn, there's no main enemy, or its body
+-- can't be read (Game.cat(nil) would be your cat).
+function Fight:current()
+    local a = Game.get(self.director, "CurrentTurnAttackCharacter")
+    return a ~= nil and Game.cat(a) or nil
+end
+function Fight:mainEnemy()
+    local a = Game.get(self.director, "MainEnemyCombatCharacter")
+    return a ~= nil and Game.cat(a) or nil
+end
 function Fight:kind() return Game.className(self.director) end
 -- (There's no Fight:finish. The combat manager's EndCombat, tried in game, ends the fight but leaves
 -- your cat without a body and the fight menu on screen.)
@@ -3342,7 +3350,11 @@ function Fighter:actor()
     local ok, a = Game.call(self.component, "GetOwnerCharacter")
     return ok and valid(a) and a or nil
 end
-function Fighter:cat() return Game.cat(self:actor()) end
+-- The cat itself; nil when its body can't be read.
+function Fighter:cat()
+    local a = self:actor()
+    return a ~= nil and Game.cat(a) or nil
+end
 function Fighter:stats()
     local out = {}
     for _, s in ipairs(STATS) do out[s] = Game.get(self.component, "WCM_" .. s) end

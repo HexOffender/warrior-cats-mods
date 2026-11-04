@@ -447,6 +447,20 @@ def test_level_component_is_only_your_cats():
     assert "NOT_YOURS" in body(lua, "function Cat:setStat(", "\nend")
 
 
+def test_a_fight_with_nobody_there_is_not_your_cat():
+    """Game.cat(nil) is your cat, so whose turn it is, the main enemy and a fighter's cat check for nil first: a
+    fight between turns gave the player's cat, and a Weaken button on it set the player's health to 1."""
+    lua = game.lua()
+    for start, end in (("function Fight:current()", "\nfunction Fight:mainEnemy()"),
+                       ("function Fight:mainEnemy()", "\nfunction Fight:kind()"),
+                       ("function Fighter:cat()", "\nfunction Fighter:stats()")):
+        assert "~= nil and Game.cat(a) or nil" in body(lua, start, end), start
+    assert "Game.cat(Game.get(self.director" not in lua and "return Game.cat(self:actor())" not in lua
+    from pathlib import Path
+    console = (Path(__file__).parents[2] / "studio" / "sections" / "console.js").read_text(encoding="utf-8")
+    assert "x:cat():kind()" not in console and "local c = x:cat()" in console   # its fight example
+
+
 def test_find_never_hands_back_an_object_on_its_way_out():
     lua = game.lua()
     find = body(lua, "function Game.find(className)", "\n-- Every object of a class")

@@ -400,7 +400,7 @@ or hidden animal doesn't move its bones until it's in view (the engine's way), t
 | Fight | Gives |
 |---|---|
 | `players()`, `enemies()`, `all()` | The fighters |
-| `turnOrder()`, `current()`, `mainEnemy()` | Cats, in this round's order; whose turn it is |
+| `turnOrder()`, `current()`, `mainEnemy()` | Cats, in this round's order; whose turn it is, and the fight's main enemy (nil when it's nobody's turn, there's no main enemy, or its body can't be read) |
 | `kind()` | The director's class (story, boss, skirmish, defender…) |
 
 A fighter (`Game.fighter(cat or actor)`) is a cat's combat component, set up when a fight starts:
@@ -410,7 +410,7 @@ A fighter (`Game.fighter(cat or actor)`) is a cat's combat component, set up whe
 | `stats()`, `setStat(name, v)` | This fight's stats (the damage formula uses these) |
 | `level()`, `setLevel(n)`, `stance()` | Its level, and its stance now |
 | `move()`, `moveTag()`, `setMove({Damage = 80, Accuracy = 1})` | The move it picked (its AttackMove row), and changing it before it lands (not tried: no move was picked in testing) |
-| `targets()`, `cat()` | Who it's attacking; the cat itself (health, status…) |
+| `targets()`, `cat()` | Who it's attacking; the cat itself (health, status…), or nil when its body can't be read |
 | `team()`, `aiTier()`, `setAITier(t)`, `moveCount()` | Its team (`"Player"`, `"Enemy"`), the AI's tier for this fight (`"Tier1"`…`"Tier6"`; `"None"` for your cat) and how many moves it has to pick from: the game's own members, filled when the fight is set up (seen: a weak mouse at level 1, `"Tier1"`, 3 moves; your cat 3 moves and no tier) |
 
 **Seen in game** (a level 20 cat against a weak bird):
