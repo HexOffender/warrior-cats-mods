@@ -923,8 +923,10 @@ a page, by title or id) and `Menu.close()` closes it, e.g. from a script's own k
 title while the menu is open (one line; nil or `""` puts back the menu's own, and the last script to
 set it wins); the player can hide it on the Menu page.
 `Menu.saveJson(path, value)` writes a Lua value as JSON (keys sorted, notes like `"_help"` first)
-and returns true, or false and why; `Menu.list(t)` marks a table as a JSON list, so an empty one is
-written `[]`. `Menu.json(value)` gives the JSON text, `Menu.color(hex)` the linear colour the game's
+and returns true, or false and why. It writes the whole file or nothing: the text goes to
+`<path>.new`, is read back, and only then takes the old file's place, so a full disk leaves the old
+file as it was. `Game.json.null` (a `null` read from a file) is written `null`; `Menu.list(t)` marks a
+table as a JSON list, so an empty one is written `[]`. `Menu.json(value)` gives the JSON text, `Menu.color(hex)` the linear colour the game's
 UI wants, and `Menu.theme` the menu's colours.
 - **Colours:** text is at least 4.5:1 on what it's on, as drawn. `theme.danger` is for text;
   `theme.danger_fill`, `theme.good` and `theme.accent` are for buttons. A button's colour is a tint of

@@ -595,6 +595,35 @@ def test_a_number_box_gives_back_an_untouched_value_as_it_was():
     assert "not near(now, e.v)" not in number
 
 
+def test_a_save_writes_the_whole_file_or_says_it_couldnt():
+    """Menu.saveJson opened the file with "wb" (emptying it), didn't look at f:write's or f:close's answers, and said
+    true: a full disk left half a settings file and "Saved". Now it encodes first, writes <path>.new, checks the write,
+    the close and what's on the disk, moves the old file aside (Windows' rename won't replace it), and puts it back
+    when the new one can't go in. MOD.save()'s fallback and the bridge's writeWhole check theirs too."""
+    lua = menu.lua()
+    save = body(lua, "function Menu.saveJson(path, value)", "\nreturn Menu")
+    assert save.index('local text = encode(value, 0) .. "\\n"') < save.index('local tmp = path .. ".new"')
+    assert "local wrote, werr = f:write(text)" in save and "local closed, cerr = f:close()" in save
+    assert "if not wrote or not closed then\n            os.remove(tmp)" in save
+    assert "if got ~= text then" in save
+    assert save.index('local had = os.rename(path, path .. ".old")') < save.index("local moved, merr = os.rename(tmp, path)")
+    assert 'if had then os.rename(path .. ".old", path) end' in save
+    assert 'io.open(path, "wb")' not in save
+    # Game.json.null (a null read from a file) is written null, not {} (it's an empty table).
+    nully = body(lua, "local function nully(v)", "\nend\n")
+    assert "rawequal(v, G.json.null)" in nully and "local G = package.loaded.WCModsGame" in nully
+    assert 'if t == "nil" or nully(v) then return "null" end' in body(lua, "local function encode(v, indent)", "\nend\n")
+    from wcmods.sections import scripts
+    fallback = body(scripts.BOOTSTRAP, "function MOD.save()", "\nend\n")
+    assert "local okText, text = pcall(G.json.encode, MOD.settings)" in fallback
+    assert 'local f, err = io.open(tmp, "wb")' in fallback and "if not wrote or not closed then" in fallback
+    assert 'if had then os.rename(path .. ".old", path) end' in fallback
+    assert 'io.open(MOD.settingsFile, "wb")' not in fallback
+    from wcmods import bridge
+    whole = body(bridge.LUA, "local function writeWhole(path, text)", "\nend\n")
+    assert "local wrote = f:write(text)" in whole and "if not wrote or not closed then" in whole
+
+
 def test_mod_menu_pages_say_a_left_out_script_and_filter_the_log_for_scripts():
     host = menu.host_script(MANIFEST, [], dev=True)
     assert 'ui.text(id .. ": left out, " .. tostring(note["left out"]), { color = THEME.danger })' in host

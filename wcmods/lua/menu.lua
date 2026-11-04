@@ -1065,9 +1065,16 @@ local function listy(v)
     return type(G) == "table" and type(G.json) == "table" and mt == G.json.listMeta
 end
 
+-- Whether a value is WCModsGame's Game.json.null (what Game.json.decode makes of a null in a file): an empty table,
+-- which would otherwise be written {}.
+local function nully(v)
+    local G = package.loaded.WCModsGame
+    return type(G) == "table" and type(G.json) == "table" and G.json.null ~= nil and rawequal(v, G.json.null)
+end
+
 local function encode(v, indent)
     local t = type(v)
-    if t == "nil" then return "null" end
+    if t == "nil" or nully(v) then return "null" end
     if t == "boolean" then return v and "true" or "false" end
     if t == "number" then
         if v ~= v or v == math.huge or v == -math.huge then return "null" end
@@ -1110,12 +1117,37 @@ end
 -- A Lua value as JSON text (objects get their keys sorted, notes like "_help" first).
 function Menu.json(value) return encode(value, 0) end
 
--- Write a Lua value to a JSON file; true, or false and why not.
+-- Write a Lua value to a JSON file; true, or false and why not. The file is written whole or not at all: the text
+-- goes to <path>.new first, is checked, and takes the old file's place only then (a full disk leaves the old file
+-- as it was and says so). Windows' os.rename won't replace a file, so the old one is moved aside to <path>.old
+-- first, and put back if the new one can't go in.
 function Menu.saveJson(path, value)
     local ok, err = pcall(function()
-        local f = assert(io.open(path, "wb"))   -- binary, so the file keeps \n line ends on Windows
-        f:write(encode(value, 0), "\n")
-        f:close()
+        local text = encode(value, 0) .. "\n"   -- first: a value that can't be written leaves nothing behind
+        local tmp = path .. ".new"
+        local f = assert(io.open(tmp, "wb"))    -- binary, so the file keeps \n line ends on Windows
+        local wrote, werr = f:write(text)
+        local closed, cerr = f:close()
+        if not wrote or not closed then
+            os.remove(tmp)
+            error(werr or cerr or "couldn't write " .. tmp, 0)
+        end
+        local back = io.open(tmp, "rb")         -- what's on the disk, in case the write came out short
+        local got = back and back:read("a")
+        if back then back:close() end
+        if got ~= text then
+            os.remove(tmp)
+            error("couldn't write " .. tmp .. " whole (is the disk full?)", 0)
+        end
+        os.remove(path .. ".old")
+        local had = os.rename(path, path .. ".old")   -- nil when there's no file yet
+        local moved, merr = os.rename(tmp, path)
+        if not moved then
+            if had then os.rename(path .. ".old", path) end
+            os.remove(tmp)
+            error(merr or "couldn't replace " .. path, 0)
+        end
+        os.remove(path .. ".old")
     end)
     if not ok then return false, tostring(err) end
     return true

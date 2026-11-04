@@ -131,8 +131,8 @@ def test_report_has_the_scripts_runtime_error(agent):
 def test_save_on_the_settings_page_says_so_and_keeps_an_empty_list(agent):
     """Noisy script's automatic settings page: change a number, Save; the page says "Saved to settings.json.", and
     the file keeps its empty list and its other numbers as they were: Count (12, above its _max_count of 10) and Far
-    (100.1, which the number box's 32-bit float reads back as 100.09999847...) aren't changed by being shown. The
-    file is put back after."""
+    (100.1, which the number box's 32-bit float reads back as 100.09999847...) aren't changed by being shown, and
+    Gone's null is saved as null. The file is put back after."""
     need(agent, "noisy-script")
     path = os.path.join(NOISY, "settings.json")
     with open(path, encoding="utf-8") as f:
@@ -151,6 +151,8 @@ def test_save_on_the_settings_page_says_so_and_keeps_an_empty_list(agent):
             saved = json.load(f)
         assert saved["keys"] == [] and saved["speed"] == 2.5 and saved["ratio"] == 0.1234567, saved
         assert saved["count"] == 12 and saved["far"] == 100.1, saved
+        assert "gone" in saved and saved["gone"] is None, saved   # Game.json.null went back as {}
+        assert not os.path.exists(path + ".new") and not os.path.exists(path + ".old")
     finally:
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(before)

@@ -22,13 +22,30 @@ function MOD.save()
     if not MOD.settingsFile then return false, "this mod has no settings.json" end
     local ok, Menu = pcall(require, "WCModsMenu")
     if ok then return Menu.saveJson(MOD.settingsFile, MOD.settings) end
-    -- Without WCModsMenu (an install gone wrong), WCModsGame writes it.
+    -- Without WCModsMenu (an install gone wrong), WCModsGame writes it, whole or not at all as Menu.saveJson does:
+    -- to settings.json.new, checked, then in the old one's place (moved aside first: Windows won't rename over it).
     local okG, G = pcall(require, "WCModsGame")
     if not okG then return false, "neither WCModsMenu nor WCModsGame is installed" end
-    local f, err = io.open(MOD.settingsFile, "wb")
+    local okText, text = pcall(G.json.encode, MOD.settings)
+    if not okText then return false, tostring(text) end
+    local path, tmp = MOD.settingsFile, MOD.settingsFile .. ".new"
+    local f, err = io.open(tmp, "wb")
     if not f then return false, tostring(err) end
-    f:write(G.json.encode(MOD.settings), "\n")
-    f:close()
+    local wrote, werr = f:write(text, "\n")
+    local closed, cerr = f:close()
+    if not wrote or not closed then
+        os.remove(tmp)
+        return false, tostring(werr or cerr)
+    end
+    os.remove(path .. ".old")
+    local had = os.rename(path, path .. ".old")
+    local moved, merr = os.rename(tmp, path)
+    if not moved then
+        if had then os.rename(path .. ".old", path) end
+        os.remove(tmp)
+        return false, tostring(merr)
+    end
+    os.remove(path .. ".old")
     return true
 end
 
