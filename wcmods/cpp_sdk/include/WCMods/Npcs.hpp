@@ -91,6 +91,8 @@ namespace wcmods
             std::map<std::wstring, UiColor> paint;              // material colours
             std::optional<NpcLabel> label;
             Widget label_widget;
+            std::optional<NpcLabel> label_set;   // the label last written into label_set_on
+            Widget label_set_on;
             std::wstring prompt;
             double reach{250};
             std::optional<WalkState> walk;
@@ -104,6 +106,7 @@ namespace wcmods
             HookId listen{};
             Widget prompt;              // the prompt widget on the HUD
             Widget prompt_hud;          // the HUD it was made on
+            Widget menu, menu_hud;      // the HUD's contextual menu (the game's own prompts), found once per HUD
             std::shared_ptr<NpcState> prompt_on;   // whose prompt shows
         };
         inline auto npcs_state() -> NpcsState&
@@ -194,9 +197,29 @@ namespace wcmods
             if (l) teleport(a, {l->x, l->y, l->z + dz});
         }
         // Colours and eyes onto every dynamic material of the cat's meshes.
-        inline auto paint_npc(NpcState& n) -> void
+        inline auto paint_npc(NpcState& n, bool check = false) -> void
         {
             if (n.paint.empty() && n.scalars.empty()) return;
+            // Kept on (check): looked at on the body's first material, and painted again only when the game has put
+            // its own back (the Lua's way), not every half second.
+            if (check && !n.paint.empty())
+            {
+                UObject* mesh = get(n.actor, L"Mesh").object;
+                auto m = mesh ? call_reflected(mesh, STR("GetMaterial"), [&](Params& p) { p.set_nth(0, Value::of(0)); }) : std::nullopt;
+                UObject* mat = m ? m->get(L"ReturnValue").object : nullptr;
+                auto& [param, colour] = *n.paint.begin();
+                auto now = mat ? call_reflected(mat, STR("K2_GetVectorParameterValue"),
+                                                [&](Params& p) { p.set_nth(0, Value::of(std::wstring_view(param))); })
+                               : std::nullopt;
+                if (now)
+                {
+                    auto want = detail::linear(colour);
+                    Value c = now->get(L"ReturnValue");
+                    if (std::abs(get(c, L"R").number() - want.r) < 0.002 && std::abs(get(c, L"G").number() - want.g) < 0.002
+                        && std::abs(get(c, L"B").number() - want.b) < 0.002)
+                        return;
+                }
+            }
             for (const wchar_t* field : {L"Mesh", L"Fur", L"Tail", L"Ears"})
             {
                 UObject* mesh = get(n.actor, field).object;
@@ -521,6 +544,13 @@ namespace wcmods
         inline auto update_prompt() -> void
         {
             auto& s = npcs_state();
+            bool any = std::any_of(s.all.begin(), s.all.end(), [](auto& n) { return !n->removed && !n->prompt.empty(); });
+            if (!any)
+            {
+                s.prompt_on.reset();
+                if (s.prompt) s.prompt.collapse();
+                return;
+            }
             Widget h = ui::hud();
             std::shared_ptr<NpcState> best;
             double best_d = 1e18;
@@ -531,7 +561,12 @@ namespace wcmods
                     auto d = Npc(n).distance();
                     if (d && *d <= n->reach && *d < best_d) best = n, best_d = *d;
                 }
-            Widget menu = h ? h.find(L"mcGuiContextualMenu") : Widget();
+            if (h && (!s.menu || !(s.menu_hud == h)))
+            {
+                s.menu = h.find(L"mcGuiContextualMenu");
+                s.menu_hud = h;
+            }
+            Widget menu = h ? s.menu : Widget();
             bool game_up = menu && menu.visibility() != Visibility::Collapsed && menu.visibility() != Visibility::Hidden;
             if (game_up) best.reset();
             s.prompt_on = best;
@@ -583,7 +618,7 @@ namespace wcmods
         inline auto keep_npcs() -> void
         {
             auto& s = npcs_state();
-            if (!player()) return;
+            if (s.all.empty() || !player()) return;   // no cats: nothing to keep (the timers stay, idle)
             std::erase_if(s.all, [](const std::shared_ptr<NpcState>& n) { return n->removed; });
             for (auto& n : s.all)
             {
@@ -595,7 +630,7 @@ namespace wcmods
                 }
                 if (n->walk)
                     if (auto l = location(n->actor)) n->spec.at = *l;
-                paint_npc(*n);
+                paint_npc(*n, true);
                 Widget w = n->label_widget;
                 if (!w) continue;
                 Widget name_part(get(w.object(), L"mcGuiActorName").object), status(get(w.object(), L"mcGuiActorStatus").object);
@@ -607,6 +642,14 @@ namespace wcmods
                     continue;
                 }
                 auto& l = *n->label;
+                bool fresh = !n->label_set || !(n->label_set_on == w) || n->label_set->name != l.name || n->label_set->title != l.title
+                          || n->label_set->extra != l.extra || n->label_set->icon != l.icon;
+                double fade = std::min(1.0, (l.range - *d) / (l.range * 0.3));
+                if (name_part) name_part.set_opacity(fade);
+                if (status) status.set_opacity(l.icon.empty() ? 0 : fade);
+                if (!fresh) continue;   // the texts are written once a label (and a spawn), as the Lua does
+                n->label_set = l;
+                n->label_set_on = w;
                 if (Widget t(get(name_part.object(), L"mcGuiTextName").object); t) t.set_text(l.name);
                 if (Widget t(get(name_part.object(), L"mcGuiTextRole").object); t)
                 {
@@ -623,9 +666,6 @@ namespace wcmods
                     if (Widget c(get(status.object(), canvas).object); c)
                         c.set_visibility(l.icon == key ? Visibility::SelfHitTestInvisible : Visibility::Collapsed);
                 if (status) status.set_translation(0, -100);   // the icon above the lines, as the game has it for its own
-                double fade = std::min(1.0, (l.range - *d) / (l.range * 0.3));
-                if (name_part) name_part.set_opacity(fade);
-                if (status) status.set_opacity(l.icon.empty() ? 0 : fade);
             }
         }
         inline auto start_npcs() -> void
@@ -718,16 +758,19 @@ namespace wcmods
     }
     namespace detail
     {
-        // As the mod is taken out: its cats leave the world with it.
+        // As the mod is taken out: its cats leave the world with it when that's on the game thread. Off it, they're
+        // left standing (destroying actors from another thread could break the world, and nothing can be queued for
+        // the game thread from a mod that's going).
         inline auto stop_npcs() -> void
         {
+            const bool here = on_game_thread_now();
             for (auto& n : npcs_state().all)
             {
                 n->removed = true;
-                if (npc_alive(*n)) destroy(n->actor);
+                if (here && npc_alive(*n)) destroy(n->actor);
             }
             npcs_state().all.clear();
-            if (npcs_state().prompt) npcs_state().prompt.remove();
+            if (here && npcs_state().prompt) npcs_state().prompt.remove();
         }
     } // namespace detail
     // A place for a cat beside yours: `distance` cm away, `side` degrees round from where your cat faces, on the
