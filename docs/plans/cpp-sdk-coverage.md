@@ -71,7 +71,7 @@ The reverse-engineering roadmap's open steps ([re-roadmap.md](re-roadmap.md)) fo
 Steps 4, 5, 6 and 10 of the roadmap are done (level signatures, the RE tools, enums from the game, the save hash).
 
 Two things found on 2026-11-03 are open too: the pause screen's tabs moved to the arrow keys and a mod's tab page
-keeps them (three UI tests fail), and UE4SS crashed four times in its own code (step 1).
+keeps them (three UI tests fail), and UE4SS crashed in its own code at least three times (step 1).
 
 ## How every step runs
 
@@ -102,7 +102,8 @@ the sky, items and dens use), then the parts with the most for a mod.
 **The gap.** Since build 26337109 the pause screen moves between its tabs with the arrow keys. A tab of a mod's own
 gives its page the keyboard (`focus`, on by default), and its controls take the arrows, so the player can't get
 back to the game's tabs. `test_ui_tab`, `test_ui_inventory_tab` and `test_ui_lua` fail. Separately, UE4SS crashed in
-its own code four times on 2026-11-03, two of them after the test mod took its `ClientRestart` hook off.
+its own code at least three times on 2026-11-03, with no mod's code on the stack (verified.md). The test mod hooks
+and unhooks `ClientRestart`, the first suspect.
 
 **Find out.**
 - How the game's own panels share the arrows with the tab row: `inspect` the pause screen's `NavControls` and a
@@ -281,13 +282,13 @@ store; whether the store is the live save state (`save_state(L"Bonding")`) or a 
 **The gap.** A cat's looks are a struct C++ can read by path but can't change in a way the mesh shows. The clan's
 cats (who they are, their roles, their looks) aren't reachable as a list.
 
-**Known.** `WrcCustomizableMeshComponent.CustomData` (`FCatCustomData`: clan, body, ears, fur colour, name ids,
+**Known.** The cat's `MeshCustomizationComponent` (`WrcCustomizableMeshComponent`) reflects `CustomData` (`FCatCustomData`: clan, body, ears, fur colour, name ids,
 size...). `UWrcNPCGenerationManager` reflects `NPCClansData` (role to looks), `NarrativeCustomDataMap`,
 `NarrativeRoleMap`, `FriendsDenCharacters`, `RemainingRogueNames`. The save's `NPCData` holds each cat. Accessories
 work through Lua's `models.lua` (#58).
 
-**Find out.** Which reflected call applies changed `CustomData` to the mesh (the component's functions, tried one by
-one on your cat); what `NPCData` holds beyond looks (the rest, 4: a save diff across a role change); whether the
+**Find out.** Which call applies changed `CustomData` to the mesh (the component reflects `RefreshShape`, a native
+event, and the `Validate*Index` checks; tried on your cat); what `NPCData` holds beyond looks (the rest, 4: a save diff across a role change); whether the
 generation manager's maps change the camp cats when they're made.
 
 **The calls.** `looks(cat)` (to `get`/`set`), `set_looks(cat, changes)` (applied), `wear(cat, accessory)`,
