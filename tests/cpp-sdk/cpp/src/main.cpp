@@ -91,6 +91,7 @@ class CppSdkTest : public wcmods::ModBase
         std::filesystem::remove(wcmods::mod().folder / L"results.json", ec);
         t::phase("init");
         t::run_core();
+        t::run_native_units();
         t::setup_events();
         t::setup_menu();
         t::setup_background();

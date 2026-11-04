@@ -455,10 +455,10 @@ others, so try each one.
 
 | Call | Gives |
 |---|---|
-| `Game.save.file()`, `Game.save.slotData()` | The whole save as of the game's last save, as a table; this cat's slot in it. The table is kept while the file's size stays the same, so a save that rewrote it at the same size (a count going from 6 to 7) is seen up to 30 s late; `Game.save.write()` drops it. Don't change the table: every call gets the same one |
+| `Game.save.file()`, `Game.save.slotData()` | The whole save as of the game's last save, as a table; this cat's slot in it (the one the file names as its current cat, `Shared.General.CurrentCatSlot`). The table is kept while the file's size stays the same, so a save that rewrote it at the same size (a count going from 6 to 7) is seen up to 30 s late; `Game.save.write()` drops it. Don't change the table: every call gets the same one |
 | `Game.save.write()` | Save now (the game's own Save) |
 | `Game.save.folder()` | A folder for a script's own files: `WCMods` in the game's Saved folder, beside its saves. Every install makes it, and updating a mod or wcmods leaves it alone |
-| `Game.save.slot()` | The save slot in use |
+| `Game.save.slot()` | The save game's slot index (`CurrentSaveSlotIndex`), which isn't the cat's: it stayed 0 while the cat played was the file's slot 8 (`Game.save.slotData()` follows the file) |
 | `Game.save.progression(primary, sub)`, `setProgression`, `setting`, `setSetting` | The save manager's number stores. What their keys are isn't worked out yet |
 
 ### JSON and enums

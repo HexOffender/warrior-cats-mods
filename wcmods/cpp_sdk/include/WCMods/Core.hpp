@@ -19,6 +19,8 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <DynamicOutput/DynamicOutput.hpp>
@@ -553,6 +555,25 @@ namespace wcmods
     }
 
     // ============================================================================================ the game's hidden members
+    namespace detail
+    {
+        // offsets.json (the members below, and the native functions after them), read once; never changed
+        // after, so the reference stays good.
+        inline auto offsets_file() -> const Json&
+        {
+            auto& s = state();
+            std::lock_guard lock(s.offsets_lock);
+            if (!s.offsets)
+            {
+                auto text = read_file(s.info.installed.parent_path() / L"shared" / L"WCModsGame" / L"offsets.json");
+                auto parsed = text ? Json::parse(*text) : std::nullopt;
+                s.offsets = parsed ? std::move(*parsed) : Json::object();
+                if (!parsed) log_line(s.info.name, L"Mods/shared/WCModsGame/offsets.json isn't there; install again with wcmods");
+            }
+            return *s.offsets;
+        }
+    } // namespace detail
+
     // Much of the game's own state isn't reflected, so UE4SS can't see it by name: your cat's health and
     // stamina, level and stats, the clock. wcmods knows where those members sit in their objects for the
     // installed game build, and writes them on every install (Mods/shared/WCModsGame/offsets.json, the same
@@ -561,16 +582,7 @@ namespace wcmods
     // nullopt when wcmods hasn't got it for this build (a game update moved it where wcmods can't find it).
     inline auto offset(std::wstring_view cls, std::wstring_view member) -> std::optional<int32_t>
     {
-        auto& s = detail::state();
-        std::lock_guard lock(s.offsets_lock);
-        if (!s.offsets)
-        {
-            auto text = read_file(s.info.installed.parent_path() / L"shared" / L"WCModsGame" / L"offsets.json");
-            auto parsed = text ? Json::parse(*text) : std::nullopt;
-            s.offsets = parsed ? std::move(*parsed) : Json::object();
-            if (!parsed) detail::log_line(s.info.name, L"Mods/shared/WCModsGame/offsets.json isn't there; install again with wcmods");
-        }
-        const Json& found = (*s.offsets)["members"][utf8(cls) + ":" + utf8(member)]["offset"];
+        const Json& found = detail::offsets_file()["members"][utf8(cls) + ":" + utf8(member)]["offset"];
         if (!found.is_number() || found.number() <= 0) return std::nullopt;
         return static_cast<int32_t>(found.number());
     }
@@ -584,5 +596,106 @@ namespace wcmods
         auto at = offset(cls, member_name);
         if (!at) return nullptr;
         return reinterpret_cast<T*>(reinterpret_cast<uint8_t*>(object) + *at);
+    }
+
+    // ============================================================================================ the game's native functions
+    // Some of what the game does is in code nothing reflects (adding an item to the inventory). wcmods finds
+    // those functions for the installed game build, as it does the hidden members, and writes each one's place
+    // in the exe beside them in offsets.json, with a pattern of its first instructions (wcmods/game.py's
+    // NATIVE; docs/reverse-engineering.md, "Game updates"). native_address gives one's address by its
+    // "class:name", once its code has been checked against that pattern; nullptr when wcmods hasn't got it on
+    // this build, or the code there isn't the function's (the game updated after the install: install again).
+    //   using AddItem = void (*)(UObject*, uint64_t, int32_t, bool);
+    //   if (auto add = wcmods::native<AddItem>(L"SwtQuestInventoryComponent:AddItem")) ...
+    // A native function trusts its caller: call it on the game thread, with the arguments it takes and objects
+    // of its class. The SDK's own calls on them (add_item) do that for you.
+    namespace detail
+    {
+        // Whether `size` bytes match a pattern as offsets.json writes it: hex bytes, "??" for any byte
+        // ("48 8B ?? 05"). False for a pattern longer than the bytes, or one that isn't a pattern.
+        inline auto pattern_matches(const uint8_t* bytes, size_t size, std::string_view pattern) -> bool
+        {
+            size_t n = 0;
+            for (size_t i = 0; i < pattern.size();)
+            {
+                if (pattern[i] == ' ')
+                {
+                    ++i;
+                    continue;
+                }
+                if (i + 1 >= pattern.size() || n >= size) return false;
+                std::string_view token = pattern.substr(i, 2);
+                i += 2;
+                if (token != "??")
+                {
+                    unsigned value{};
+                    auto [end, ec] = std::from_chars(token.data(), token.data() + 2, value, 16);
+                    if (ec != std::errc{} || end != token.data() + 2 || bytes[n] != value) return false;
+                }
+                ++n;
+            }
+            return n > 0;
+        }
+
+        // The game's exe in memory: where it starts, and how big its image is (from its PE headers).
+        inline auto game_image() -> std::pair<const uint8_t*, size_t>
+        {
+            auto* base = reinterpret_cast<const uint8_t*>(GetModuleHandleW(nullptr));
+            if (!base) return {nullptr, 0};
+            auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+            auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+            return {base, nt->OptionalHeader.SizeOfImage};
+        }
+
+        struct Natives
+        {
+            std::mutex lock;
+            std::unordered_map<std::wstring, void*> found;   // each name checked once
+        };
+        inline auto natives() -> Natives&
+        {
+            static Natives n;
+            return n;
+        }
+    } // namespace detail
+
+    inline auto native_address(std::wstring_view name) -> void*
+    {
+        auto& n = detail::natives();
+        std::wstring key(name);
+        {
+            std::lock_guard lock(n.lock);
+            if (auto it = n.found.find(key); it != n.found.end()) return it->second;
+        }
+        void* address = nullptr;
+        const Json& entry = detail::offsets_file()["functions"][utf8(name)];
+        auto [base, size] = detail::game_image();
+        double rva = entry["rva"].number();
+        std::string pattern = entry["pattern"].string();
+        if (!entry.is_object())
+        {
+            detail::log_line(mod().name, std::format(L"the game's {} isn't in offsets.json: wcmods hasn't found it on this "
+                                                     L"build, or the install is older than it", name));
+        }
+        else if (base && rva > 0 && rva + pattern.size() / 3 + 1 < size
+                 && detail::pattern_matches(base + static_cast<size_t>(rva), size - static_cast<size_t>(rva), pattern))
+        {
+            address = const_cast<uint8_t*>(base + static_cast<size_t>(rva));
+        }
+        else
+        {
+            detail::log_line(mod().name, std::format(L"the game's {} isn't where offsets.json says (the game updated "
+                                                     L"after the install?): install again", name));
+        }
+        std::lock_guard lock(n.lock);
+        n.found[key] = address;
+        return address;
+    }
+
+    template <typename Fn>
+    auto native(std::wstring_view name) -> Fn
+    {
+        static_assert(std::is_pointer_v<Fn> && std::is_function_v<std::remove_pointer_t<Fn>>, "native<Fn>: Fn is a function pointer type");
+        return reinterpret_cast<Fn>(native_address(name));
     }
 } // namespace wcmods

@@ -36,41 +36,56 @@ RSP = 4
 WINDOW = 40          # bytes of code either side of an access, at most
 MIN_PATTERN = 12     # bytes; shorter patterns match too easily
 MIN_FUNCTION_PATTERN = 20
-WIDTH = {"ByteProperty": 1, "IntProperty": 4, "FloatProperty": 4}   # a member's size in bytes, by its kind
+# A member's size in bytes, by its kind (a TMap is a TSet: its sparse array, bit array, free list and hash).
+WIDTH = {"ByteProperty": 1, "IntProperty": 4, "FloatProperty": 4, "MapProperty": 0x50}
+
+
+def _align(width):
+    """Where a member of that size may start: a multiple of its size, up to 8 (a map is aligned as a pointer)."""
+    return min(width, 8)
+
 
 # Functions the reverse-engineering notes tie to a class whose members its own code hardly touches
 # (docs/mechanics/combat.md, progression.md, docs/reverse-engineering.md): the starts of whole functions
-# (pe.Image.function_at), as RVAs on build 26184573 (the combat, status and detection ones each 0x260 past
-# where they were on 24847281). Each is found again in another build by a pattern of its first
-# instructions that's unique in the whole exe, then read like the class's own code.
+# (pe.Image.function_at), as RVAs on build 26337109 (each found there by its pattern from 26184573, about
+# 0x1750 to 0x1860 before where it was; the combat, status and detection ones were 0x260 past 24847281's on
+# 26184573). Each is found again in another build by a pattern of its first instructions that's unique in
+# the whole exe, then read like the class's own code. "A fighter's Prowess with its buffs" has no unique
+# pattern on either build (make() leaves it out); it's kept at the same distance from its neighbours.
 ANCHORS = {
+    # The inventory's own code is in functions its vtable doesn't hold: adding an item (game.NATIVE's AddItem)
+    # and the check before a pickup, both on the items map.
+    "/Script/SwtQuest.SwtQuestInventoryComponent": [
+        (0x1654430, "adds an item, or takes it away: the items map at +0x150"),
+        (0x16543D0, "its vtable's +0x4F0, on a tag: a QuestItem tag, else looked up in the items map"),
+    ],
     "/Script/SwtAdventure.TurnBasedCombatComponent": [
-        (0x17D8270, "builds a fighter's stats from its level"),
-        (0x17D8A00, "a fighter's Prowess with its buffs"),
-        (0x17D9A60, "a fighter's speed, from Agility and stamina"),
-        (0x17D70C0, "setting up a fighter: health and fight stamina from its stats"),
-        (0x17D6A30, "dynamic difficulty: an enemy's level, its AI tier and its moves"),
-        (0x17DB3E0, "hitting and missing: the defender's team looked up for a forced miss"),
+        (0x17D6AC0, "builds a fighter's stats from its level"),
+        (0x17D7250, "a fighter's Prowess with its buffs"),
+        (0x17D82B0, "a fighter's speed, from Agility and stamina"),
+        (0x17D5910, "setting up a fighter: health and fight stamina from its stats"),
+        (0x17D5280, "dynamic difficulty: an enemy's level, its AI tier and its moves"),
+        (0x17D9C30, "hitting and missing: the defender's team looked up for a forced miss"),
     ],
     "/Script/SwtAdventure.SwtAdventureStatusComponent": [
-        (0x17CE150, "the end of a round: the self-cure roll, and poison queued on the director"),
-        (0x17CDB40, "loads the status tuning"),
+        (0x17CC9A0, "the end of a round: the self-cure roll, and poison queued on the director"),
+        (0x17CC390, "loads the status tuning"),
     ],
     "/Script/SwtAdventure.SwtAdventureDetectionComponent": [
-        (0x17B8DB0, "loads the senses from the tuning for the size class"),
-        (0x17B80C0, "reads the senses"),
+        (0x17B7600, "loads the senses from the tuning for the size class"),
+        (0x17B6910, "reads the senses"),
     ],
     # Its own code already reaches the level and the cap, which are its parent's (USwtQuestLevelComponent's)
-    # members: its start-up override (0x17C6210) stores the cap and calls the parent's level setter, which
-    # class_code() takes in as a direct callee. make() without these anchors signs all eight members too
+    # members (the RVAs in this note are 26184573's): its start-up override (0x17C6210) stores the cap and
+    # calls the parent's level setter, which class_code() takes in as a direct callee. make() without these anchors signs all eight members too
     # (on 26184573). They're kept for redundancy: the XP setter adds a fourth separate instruction on the
     # level and a third on the cap, and the level setter is still searched if a rebuild stops 0x17C6210
     # calling it. The parent's start-up (0x1658C00) isn't one: its only access, the cap's store, is the
     # same bytes as 0x17C6210's as far as a signature reaches, so with both searched neither is unique,
     # and make() loses the cap's signature in 0x17C6210 (the cap in 2 instructions instead of 3).
     "/Script/SwtAdventure.SwtAdventureLevelComponent": [
-        (0x1658A90, "setting the XP: levels up while it reaches the next level's, below the cap"),
-        (0x1658870, "setting the level: the XP bar's size from the XP table, full at the cap"),
+        (0x1657230, "setting the XP: levels up while it reaches the next level's, below the cap"),
+        (0x1657010, "setting the level: the XP bar's size from the XP table, full at the cap"),
     ],
 }
 
@@ -309,24 +324,16 @@ class Finder:
             if sum(b is not None for b in pat) < MIN_FUNCTION_PATTERN:
                 continue
             whole = whole or self.tdata
-            hits = []
-            for m in _regex(pat).finditer(whole):
-                hits.append(self.text.rva + m.start())
-                if len(hits) > 1:
-                    break
+            hits = [self.text.rva + s for s in _starts(_regex(pat), whole)]
             if hits == [span[0]]:
                 return pat
         return None
 
     def find_function(self, pattern):
         """The function a function_signature() pattern matches (its begin RVA), or None when it doesn't
-        match exactly once."""
-        hits = []
-        for m in _regex(pattern).finditer(self.tdata):
-            hits.append(self.text.rva + m.start())
-            if len(hits) > 1:
-                return None
-        return hits[0] if hits else None
+        match exactly once (overlapping matches count)."""
+        hits = _starts(_regex(pattern), self.tdata)
+        return self.text.rva + hits[0] if len(hits) == 1 else None
 
     def callers(self, targets):
         """{target: [function begins]} of the functions with a direct call (E8) to each target."""
@@ -574,16 +581,29 @@ def _unhex(text):
     return [None if t == "??" else int(t, 16) for t in text.split()]
 
 
+def _starts(rx, data, limit=2):
+    """Where a pattern matches in data, overlapping matches included, up to `limit` of them. re's finditer
+    skips a match that overlaps the one before: code repeated a few bytes apart (a function clearing three
+    maps one after another) then looked unique, and the one match reported was another place's (2026-11-03,
+    the inventory's first site, made at its +0x150 map and matched at its +0x1A0 one)."""
+    out, m = [], rx.search(data)
+    while m and len(out) < limit:
+        out.append(m.start())
+        m = rx.search(data, m.start() + 1)
+    return out
+
+
 def _matches(finder, functions, rx):
-    """[(function begin, RVA of the match)] of a pattern inside the given functions."""
+    """[(function begin, RVA of the match)] of a pattern inside the given functions, overlapping ones
+    included; two at most."""
     out = []
     base = finder.text.rva
     for begin, end in functions:
         chunk = finder.tdata[begin - base:end - base]
-        for m in rx.finditer(chunk):
-            out.append((begin, begin + m.start()))
-            if len(out) > 1:
-                return out
+        for start in _starts(rx, chunk, 2 - len(out)):
+            out.append((begin, begin + start))
+        if len(out) > 1:
+            return out
     return out
 
 
@@ -661,16 +681,18 @@ class Unsigned(ValueError):
     their members, so a game update would switch every one of them off even when nothing moved."""
 
     def __init__(self, classes, result):
-        super().__init__(f"no signatures for {', '.join(classes)}: give each anchors in signatures.ANCHORS, "
-                         "functions that read its members (docs/reverse-engineering.md, \"Game updates\")")
+        super().__init__(f"no signatures for {', '.join(classes)}: give each class anchors in signatures.ANCHORS, "
+                         "functions that read its members, and each native function (game.NATIVE, \"class:name\") "
+                         "the RVA its code starts at (docs/reverse-engineering.md, \"Game updates\")")
         self.classes, self.result = classes, result
 
 
 def make(image_path, log=print):
-    """Signatures for every class in game.HIDDEN, from this exe (the build HIDDEN was found on):
-    {"made_on": the exe's fingerprint, "classes": {class: {"fields", "size", "parent", "anchors", "sites"}}}.
+    """Signatures for every class in game.HIDDEN and every function in game.NATIVE, from this exe (the build
+    HIDDEN was found on): {"made_on": the exe's fingerprint, "classes": {class: {"fields", "size", "parent",
+    "anchors", "sites"}}, "functions": {"class:name": {"note", "was", "pattern"}}}.
     Raises Unsigned when a class isn't found or gets no signature at all (a member with none of its own is
-    fine: check() keeps it while its classmates are found where they were)."""
+    fine: check() keeps it while its classmates are found where they were), or a function has no pattern."""
     img = pe.Image(image_path)
     finder = Finder(img)
     result = {"made_on": img.fingerprint(), "classes": {}}
@@ -710,6 +732,17 @@ def make(image_path, log=print):
             + (f"; one instruction only for {', '.join(alone)}" if alone else ""))
         if not entry["sites"]:
             unsigned.append(short)
+    # The native functions C++ mods call (game.NATIVE): each by a pattern of its first instructions that's
+    # unique in the exe, as the anchors are. One without is unsigned: check() could never find it again.
+    result["functions"] = {}
+    for name, rva, note in game.NATIVE:
+        span = img.function_at(rva)
+        pat = finder.function_signature(span[0]) if span and span[0] == rva else None
+        result["functions"][name] = {"note": note, "was": f"0x{rva:X}", "pattern": _hex(pat) if pat else None}
+        log(f"  {name}: " + (f"{len(pat)} bytes" if pat else "no unique pattern" if span and span[0] == rva
+                             else "not the start of a function"))
+        if not pat:
+            unsigned.append(name)
     if unsigned:
         raise Unsigned(unsigned, result)
     return result
@@ -743,6 +776,9 @@ def check(image_path, sigs=None, log=print):
     - "unsure": a single instruction says it moved; "conflict": they disagree, or two members land on the
       same offset, or the offset can't be one (outside the class, misaligned); "lost": none matched and it
       can't be kept. These mean its offset is None, so it's left out.
+    And "functions": {"class:name": its RVA in this exe, or None when its pattern doesn't match exactly once}
+    for the native functions signatures.json has. A function's code moving is no news (any rebuild moves
+    it), so they don't count towards "same".
     """
     from ..game import HIDDEN
     widths = {f"{c}:{n}": WIDTH.get(kind, 4) for c, fields in HIDDEN for n, _, kind in fields}
@@ -783,7 +819,7 @@ def check(image_path, sigs=None, log=print):
                 now = got[0]
                 if now == was:
                     status = "same"
-                elif not (0 < now and now + width <= size and now % width == 0):
+                elif not (0 < now and now + width <= size and now % _align(width) == 0):
                     now, status = None, "conflict"   # not an offset in this class
                 elif len(got) < MIN_MOVE_VOTES:
                     now, status = None, "unsure"
@@ -823,4 +859,9 @@ def check(image_path, sigs=None, log=print):
         for name, f in rep["fields"].items():
             out["offsets"][f"{cls}:{name}"] = f["now"]
     out["same"] = all(f["status"] in ("same", "kept") for c in out["classes"].values() for f in c["fields"].values())
+    out["functions"] = {}
+    for name, f in sigs.get("functions", {}).items():
+        now = finder.find_function(_unhex(f["pattern"])) if f.get("pattern") else None
+        out["functions"][name] = now
+        log(f"  {name}: " + ("not found" if now is None else f"0x{now:X}" + (" (moved)" if f"0x{now:X}" != f["was"] else "")))
     return out

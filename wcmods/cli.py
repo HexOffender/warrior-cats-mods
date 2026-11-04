@@ -719,8 +719,8 @@ def _game_build(ctx, args):
         print("every value wcmods reads was found again" +
               (": moved, and followed: " + gamebuild.describe(fit["moved"]) if fit["moved"] else ", none moved"))
     elif fit["status"] == "partial":
-        print(f"couldn't find {gamebuild.describe(fit['lost'])} again, so they stay off in the mod menu and "
-              "scripts until wcmods is updated; everything else works")
+        print(f"couldn't find {gamebuild.describe(fit['lost'])} again, so what uses them stays off until wcmods "
+              "is updated; everything else works")
         if fit["moved"]:
             print("moved, and followed: " + gamebuild.describe(fit["moved"]))
     found = mods.discover(ctx.mods_root)

@@ -277,6 +277,46 @@ wcmods-sandbox#4; the test save's sandbox cat Sharppaw, a level 1 ThunderClan ap
   studio cat's Talk prompt showed the game's own picture for Interact (the mouse button, as the game's Travel
   prompt does) and E started the talk.
 
+**2026-11-03, build 26337109 and the C++ SDK's native calls** (the update Steam put in that morning; the
+worktree `claude/cpp-sdk-native`, `tests/game/test_cpp_sdk.py`, its test mod built against UE4SS 83330635; the
+test cat Emberpaw, the save's slot 8). The suite ran nine times on the way; on the final build each of its eight new tests passed (the add test on a freshly started game, as an earlier test had left the HUD away), and in the seventh run every older test passed but the three tab tests (below); in the others a few failed or skipped while Windows wouldn't put the game in front, which slows it and has it open its pause screen.
+- **The update moved nothing wcmods reads.** `python wcmods.py game build` found all 45 of `game.HIDDEN`'s
+  members again by their signatures ("same", or "kept" beside them), the level component's eight among them,
+  every class the same size; `python tools/re/uht.py <exe> lua` found all 58 of the Lua's fallback enum numbers
+  unchanged; and the suite's reads and writes of the hidden members through C++ and Lua agreed
+  (`test_hidden_members_match_lua`, `test_writes_seen_by_lua`, `test_status_seen_by_cpp`).
+- **The game's native `AddItem`**, found by its signature, its code checked against the pattern before the call:
+  two Lamb's Ear Leaves (`Gameplay.Inventory.Consumable.SmallCatnip`) went into the bag (0 → 2), the game itself
+  told the HUD (`OnItemPickedUp(SmallCatnip, 2, 2)`, which showed "Lamb's Ear Leaves OBTAINED 2"), the
+  inventory screen showed them, and the next save's `WrcGame.json` had them; `remove_item` took them out again
+  (2 → 0) and the save followed. The inventory read from the component's own map was the save's, item for item,
+  after a save.
+- **The game's screens by its commands:** `command(L"Player_Show_Inventory")` opened the inventory as I does;
+  `ui::close` (Button_Back through the screen's own `OnListenCommand`, from inside a ProcessEvent, the release
+  0.3 s after the press) closed it, on its second Back: with the game's window behind, the screen took the
+  first without acting on it, from C++ as from Lua. Lua saw both.
+- **The sky's presets:** `set_sky(L"Night")` made the forest dark (fog density 1.8 → 0.028, the sun's
+  intensity 9 → 3) and held it: 3 s later Lua read the same, where alone the game fades back to the area's
+  sky in about 5 s; `sky_follow_area()` gave the area's back (1.8, 9).
+- **The tab keys moved.** In the pause screen the arrow keys move between tabs now (the row shows their
+  pictures), and 1 and 2 do nothing. The suite's three older tab tests (`test_ui_tab`, `test_ui_inventory_tab`,
+  `test_ui_lua`) walk to the SDK tab with the arrows since, and its page shows, but can't walk back: the page
+  holds the keyboard, and the arrows move among its controls. They fail on this build until that's settled.
+- **Not explained:** three crashes inside UE4SS's own code that day (no mod's code on the stack), two while
+  the game started into the forest and one while it sat idle in the forest with the player's Lua mods on.
+- **Sounds and the game's own montages:** `play_sound(L"ui_select")` played `S_Cue_ui_select` and
+  `play_sound(L"vo_cat1_happy1", at the cat)` `S_Cue_vo_cat1_happy1` (the audio manager holds 390 ids, as
+  Lua counts them); `play_montage(cat, L"Animation.Exploration.Meow")` played `AM_Meow`, which Lua saw as the
+  anim instance's current montage.
+- **The save's Hash formula** (read from the code on 26184573, [reverse-engineering.md](reverse-engineering.md#the-save)):
+  after `save_game`, the new Hash (`save_hash`, the same as `WrcGame.sav`'s header) was `next_hash` of the old
+  Hash, the UTC second of the write and the storage manager's address; the save manager's address gave none.
+- **Which slot is the cat's:** the save game's `CurrentSaveSlotIndex` (`Game.save.slot()`) was 0 while the cat
+  in play was `WrcGame.json`'s slot 8, the one its `Shared.General.CurrentCatSlot` names (its inventory was the
+  live one). So `Game.save.slotData()`, `Game.items.list()` and `Cat:traits()` (and the C++ SDK's `slot_data()`,
+  `items()` and `cat_traits()`) had read the first cat's slot for any other cat: Emberpaw's traits came back
+  Brave and Energetic, where the pause screen shows Ambitious and Curious. They follow the file now.
+
 ## Not yet confirmed in game
 
 - **Choosing a game (2026-10-28):** the Save page's changes to a game other than the one played last, made
@@ -333,6 +373,7 @@ wcmods-sandbox#4; the test save's sandbox cat Sharppaw, a level 1 ThunderClan ap
   and `[Lua] [<mod name>] ...`, as UE4SS 3.0.1 (Git SHA 83330635) writes them, read from the installed game's
   log on 2026-10-28. Other UE4SS versions are unchecked; a line the reader doesn't recognise is left out.
 - **The save's `Hash` and `Version`** (read from the code: [reverse-engineering.md](reverse-engineering.md#the-save)).
+  The formula was seen in game on 2026-11-03 (above), so the second check below is done; the first is not.
   Two checks would confirm it, both on a test cat and after a backup:
   - **Any `Hash` loads.** Turn Steam Cloud off for the game first (its Properties, General): the
     save folder has `steam_autocloud.vdf`, and the game has a cloud path of its own that writes the
@@ -429,9 +470,10 @@ wcmods-sandbox#4; the test save's sandbox cat Sharppaw, a level 1 ThunderClan ap
   or an item: the build writes the renamed text and the mod menu's pages read it, but whether the
   game's own screens follow (the area's name as you walk in, the quest log, the inventory) hasn't been
   looked at.
-- **Your cat's level and stats after a real game update.** The level component's signatures find it on
-  build 26184573 as if it were another build, and follow it when its code is moved in memory
-  (docs/reverse-engineering.md, "Game updates"), but no real update has come since. After the next
+- **Your cat's level and stats after a real game update that moves them.** The level component's signatures
+  find it on build 26184573 as if it were another build, and follow it when its code is moved in memory
+  (docs/reverse-engineering.md, "Game updates"). The real update to 26337109 (2026-11-03) moved nothing, and
+  `game build` found all eight "same", so a move hasn't been seen. After the next
   one: `python wcmods.py game signatures check` should list `SwtAdventureLevelComponent` with all
   eight values `same` (or `moved`), none `lost`; then, with the new install and your cat in the world,
   `python wcmods.py lua "local ps = Game.get(Game.controller(), 'PlayerState') local cls =

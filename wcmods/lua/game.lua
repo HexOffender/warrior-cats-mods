@@ -1369,7 +1369,12 @@ function Game.save.slotData()
     if not data then return nil, err end
     local account = select(2, next(data))
     if type(account) ~= "table" then return nil, "no account" end
-    local slot = Game.save.slot() or 0
+    -- The cat's slot is the one the file names as its current cat: the save game's CurrentSaveSlotIndex
+    -- (Game.save.slot) stayed 0 while the cat in play was the file's slot 8 (seen in game, 2026-11-03).
+    local slot
+    local shared = account.Shared
+    if type(shared) == "table" and type(shared.General) == "table" then slot = math.tointeger(shared.General.CurrentCatSlot) end
+    if slot == nil then slot = Game.save.slot() or 0 end
     return account[tostring(slot)], account
 end
 

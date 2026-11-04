@@ -8,4 +8,5 @@ wcmods_mod(${WCMODS_TARGET}
     src/test_reflect.cpp
     src/test_world.cpp
     src/test_ui.cpp
+    src/test_native.cpp
 )

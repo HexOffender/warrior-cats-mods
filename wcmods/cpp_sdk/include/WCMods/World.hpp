@@ -112,6 +112,37 @@ namespace wcmods
     inline auto pressed(std::wstring_view key) -> bool { return detail::input_key(STR("WasInputKeyJustPressed"), key); }
     inline auto key_down(std::wstring_view key) -> bool { return detail::input_key(STR("IsInputKeyDown"), key); }
 
+    namespace detail
+    {
+        // Call a reflected function only when `fill` could set what it needs (an enum's name it hasn't got
+        // leaves the call out): nullopt when the object, the function or a parameter isn't there.
+        inline auto call_if(UObject* object, const TCHAR* function, const std::function<bool(Params&)>& fill) -> std::optional<Params>
+        {
+            UFunction* fn = object ? object->GetFunctionByNameInChain(function) : nullptr;
+            if (!fn) return std::nullopt;
+            Params params(fn);
+            if (!fill(params)) return std::nullopt;
+            object->ProcessEvent(fn, params.bytes());
+            return params;
+        }
+    } // namespace detail
+
+    // One of the game's commands, as its controls give it (ECommands: L"Player_Show_Inventory",
+    // L"Player_Pause", L"Player_Show_Map", L"Player_Show_Quest", L"Player_Interact", L"Player_Growl"...):
+    // pressed, then released, through the player's input component, which hands it to what the game has
+    // bound it to, so the inventory or the pause screen opens as with its key: a tap, both halves in one frame.
+    // For one the game acts on while it's held (Player_Run), give the halves apart: command(name, true), then
+    // command(name, false) later. False without a player, or for a name ECommands hasn't got. A screen that's open takes its
+    // own commands: ui::send (Ui.hpp).
+    inline auto command(std::wstring_view name, bool pressed) -> bool
+    {
+        UObject* input = get(controller(), L"InputComponent").object;
+        return detail::call_if(input, STR("OnListenCommandInternal"), [&](Params& p) {
+                   return p.set_nth(0, Value::of(name)) && p.set_nth(1, Value::of(pressed ? 0 : 1));   // EInputEvent: IE_Pressed, IE_Released
+               }).has_value();
+    }
+    inline auto command(std::wstring_view name) -> bool { return command(name, true) && command(name, false); }
+
     // ============================================================================================ traces
     // Where a straight line from one place to another first hits the world, or nullopt.
     inline auto trace(Vec3 from, Vec3 to) -> std::optional<Vec3>
@@ -209,12 +240,35 @@ namespace wcmods
         auto parsed = text ? Json::parse(*text) : std::nullopt;
         return parsed ? *parsed : Json();
     }
+    // The cat's slot is the one the file names as its current cat (Shared.General.CurrentCatSlot): the save
+    // game's CurrentSaveSlotIndex (save_slot) stayed 0 while the cat in play was the file's slot 8 (seen in
+    // game, 2026-11-03), so it's the fallback only.
     inline auto slot_data() -> Json
     {
         Json file = save_file();
         if (!file.is_object() || file.size() == 0) return Json();
         const Json& account = file.values()[0];
-        return account[std::to_string(save_slot())];
+        const Json& current = account["Shared"]["General"]["CurrentCatSlot"];
+        const int slot = current.is_number() ? static_cast<int>(current.number()) : save_slot();
+        return account[std::to_string(slot)];
+    }
+    // Save now, as the game does at its checkpoints (its save manager's Save): WrcGame.sav and WrcGame.json
+    // are written, the state the save manager holds included. False without the save manager.
+    inline auto save_game(std::wstring_view context = L"WCMods") -> bool
+    {
+        return call_reflected(object(STR("/Script/SwtEngine.Default__SwtSaveManager")), STR("Save"), [&](Params& p) {
+                   p.set_nth(0, Value::of(context));
+                   p.set_nth(1, Value::of(false));   // NewBAsyncSave
+                   p.set_nth(2, Value::of(false));   // bNextTickSave
+               }).has_value();
+    }
+    // The save's Hash, as the game holds it (USwtSaveGame.Hash, also in WrcGame.sav's header), or nullopt
+    // without a save loaded. The game gives it a new value each time it writes the save.
+    inline auto save_hash() -> std::optional<uint64_t>
+    {
+        Value h = get(save_manager(), L"SaveGame.Hash");
+        if (h.kind != Value::Kind::Int) return std::nullopt;
+        return static_cast<uint64_t>(h.i);
     }
 
     // ============================================================================================ items
@@ -251,8 +305,137 @@ namespace wcmods
         }
     } // namespace detail
 
-    // Your items: {tag: count} as of the game's last save, with any pickups since then. Call it once early
-    // (on_unreal_init) so the pickups since get counted.
+    // ============================================================================================ the inventory, live
+    namespace detail
+    {
+        // One pair of a TMap<FGameplayTag, int32>: the tag's FName (its two numbers) and the count.
+        struct TagCount
+        {
+            uint32_t name_index{}, name_number{};
+            int32_t count{};
+        };
+        // The pairs of a TMap<FGameplayTag, int32> as the game lays one out (UE5's TSet, 0x50 bytes): +0x00 the
+        // elements (20 bytes each: the FName, the count, and the hash's two links), +0x08 how many slots, +0x0C
+        // how many fit; +0x10 the bit array of the slots in use (four words inline, or +0x20's when longer),
+        // +0x28 its bits; +0x34 how many slots are free. False, with nothing, when what's there doesn't add up
+        // as a map (a game update that moved it): the slots in use must be the slots less the free ones.
+        inline auto tag_counts(const uint8_t* map, std::vector<TagCount>& out) -> bool
+        {
+            out.clear();
+            if (!map) return false;
+            auto read_i32 = [&](size_t at) { return *reinterpret_cast<const int32_t*>(map + at); };
+            const uint8_t* data = *reinterpret_cast<const uint8_t* const*>(map);
+            const int32_t num = read_i32(0x08), max = read_i32(0x0C), num_bits = read_i32(0x28), max_bits = read_i32(0x2C);
+            const int32_t num_free = read_i32(0x34);
+            if (num < 0 || max < num || max > (1 << 20) || num_free < 0 || num_free > num || num_bits < num || max_bits < num_bits) return false;
+            if (num > 0 && !data) return false;
+            const auto* heap_bits = *reinterpret_cast<const uint32_t* const*>(map + 0x20);
+            if (!heap_bits && num_bits > 128) return false;   // more slots than the four inline words hold
+            const auto* bits = heap_bits ? heap_bits : reinterpret_cast<const uint32_t*>(map + 0x10);
+            for (int32_t i = 0; i < num; ++i)
+            {
+                if (!((bits[i / 32] >> (i % 32)) & 1u)) continue;
+                const uint8_t* e = data + static_cast<size_t>(i) * 20;
+                out.push_back({*reinterpret_cast<const uint32_t*>(e), *reinterpret_cast<const uint32_t*>(e + 4),
+                               *reinterpret_cast<const int32_t*>(e + 8)});
+            }
+            if (out.size() == static_cast<size_t>(num - num_free)) return true;
+            out.clear();
+            return false;
+        }
+
+        // The game's AddItem, called under a structured exception handler: a fault in it (a game update that
+        // changed what it takes, which the pattern check didn't catch) is logged and given back as false
+        // instead of closing the game. Nothing here may need unwinding (MSVC's __try rule).
+        inline auto call_add_item(void* fn, UObject* component, uint64_t tag, int32_t count, bool popup) -> bool
+        {
+            __try
+            {
+                reinterpret_cast<void (*)(UObject*, uint64_t, int32_t, bool)>(fn)(component, tag, count, popup);
+                return true;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return false;
+            }
+        }
+    } // namespace detail
+
+    // Your cat's inventory component (the player state's), or nullptr in menus.
+    inline auto inventory_component() -> UObject* { return get(controller(), L"PlayerState.InventoryComponent").object; }
+
+    // Your items now, from the inventory itself: {tag: count}, every kind (herbs, materials, accessories,
+    // quest items). Null when there's no inventory (menus) or wcmods hasn't got its map on this build.
+    inline auto inventory() -> Json
+    {
+        auto* map = member<uint8_t>(inventory_component(), L"/Script/SwtQuest.SwtQuestInventoryComponent", L"WCM_Items");
+        std::vector<detail::TagCount> pairs;
+        if (!detail::tag_counts(map, pairs)) return Json();
+        Json out = Json::object();
+        for (const auto& p : pairs) out.set(utf8(RC::Unreal::FName(p.name_index, p.name_number).ToString()), p.count);
+        return out;
+    }
+    // How many of an item you have now (0 for none), or nullopt when the inventory can't be read.
+    inline auto inventory_count(std::string_view tag) -> std::optional<int>
+    {
+        Json all = inventory();
+        if (!all.is_object()) return std::nullopt;
+        return static_cast<int>(all[tag].number(0));
+    }
+
+    // Whether a tag is one of the game's items: a registered tag under Gameplay.Inventory (a mod's new
+    // items are registered from their ini at startup). The inventory takes nothing else.
+    inline auto is_item_tag(std::wstring_view tag) -> bool
+    {
+        auto r = call_reflected(object(STR("/Script/GameplayTags.Default__BlueprintGameplayTagLibrary")), STR("MatchesTag"), [&](Params& p) {
+            set(p.nth(0), L"TagName", tag);
+            set(p.nth(1), L"TagName", std::wstring_view(L"Gameplay.Inventory"));
+            p.set_nth(2, Value::of(false));   // bExactMatch: a child tag matches
+        });
+        return r && r->get(L"ReturnValue").boolean();
+    }
+
+    // Put items in your inventory the way a pickup does, through the game's own code (game.py's NATIVE): the
+    // count goes up (to the game's limit per item), the HUD shows the pickup when `popup` (its OnItemPickedUp,
+    // which on_function sees), quests that count items hear of it, and the save's state has it (written at
+    // the next save). remove_item takes them away, as many as you have at most (an item at 0 goes), and
+    // nothing of an item you haven't got (the game's code would add it at -1, tell the HUD, then drop it).
+    // False on another thread, in menus, for a count below 1 (remove_item takes items away), for a tag that
+    // isn't an item's (is_item_tag), or when wcmods hasn't got the function on this build.
+    namespace detail
+    {
+        inline auto add_native(std::wstring_view tag, int count, bool popup) -> bool
+        {
+            if (count == 0 || !assert_game_thread(L"add_item")) return false;
+            UObject* component = inventory_component();
+            if (!component || !is_item_tag(tag)) return false;
+            RC::Unreal::FName name(tag, RC::Unreal::FNAME_Find);
+            const uint32_t index = name.GetComparisonIndex().ToUnstableInt();
+            if (index == 0) return false;
+            void* fn = native_address(L"SwtQuestInventoryComponent:AddItem");
+            if (!fn) return false;
+            // The FGameplayTag is its FName: 8 bytes, passed by value in a register.
+            const uint64_t raw = index | (static_cast<uint64_t>(static_cast<uint32_t>(name.GetNumber())) << 32);
+            if (call_add_item(fn, component, raw, count, popup)) return true;
+            log(L"the game's AddItem failed for {}", tag);
+            return false;
+        }
+    } // namespace detail
+    inline auto add_item(std::wstring_view tag, int count = 1, bool popup = true) -> bool
+    {
+        return count > 0 && detail::add_native(tag, count, popup);
+    }
+    inline auto remove_item(std::wstring_view tag, int count = 1) -> bool
+    {
+        if (count <= 0) return false;
+        auto have = inventory_count(utf8(tag));
+        if (!have || *have <= 0) return false;
+        return detail::add_native(tag, -std::min(count, *have), false);
+    }
+
+    // Your items: {tag: count} as of the game's last save, with any pickups since then, as the Lua module's
+    // Game.items.list() has them. Call it once early (on_unreal_init) so the pickups since get counted.
+    // inventory() reads the inventory itself.
     inline auto items() -> Json
     {
         detail::watch_pickups();
@@ -466,4 +649,144 @@ namespace wcmods
     // Whether an animal has noticed a cat, and the cat it's after (nullptr when none).
     inline auto npc_detected(UObject* actor) -> bool { return blackboard_bool(actor, L"Detected").value_or(false); }
     inline auto npc_target(UObject* actor) -> UObject* { return blackboard_object(actor, L"Target"); }
+
+    // ============================================================================================ the sky
+    // The world's sky (BP_DayNightSky_C, a WrcSkyboxActor) while you play, or nullptr. Its light, fog and
+    // clouds come from presets (ESkyboxPostProcessEnum): L"NeutralDay", L"Night", L"CinematicNight",
+    // L"CinematicNightMoonPool", L"ThunderClan", L"RiverClan", L"ShadowClan", L"WindClan", L"MoonPool"... The
+    // game picks one by the area your cat is in, and others while a fight, the inventory or a den is up.
+    inline auto sky() -> UObject*
+    {
+        // The one in the level, not the class's defaults or one going away. (It's in a streamed part of the
+        // world, whose outers lead to that part's own UWorld, not world(): seen in game.)
+        using namespace RC::Unreal;
+        const auto not_it = static_cast<EObjectFlags>(RF_ClassDefaultObject | RF_ArchetypeObject | RF_BeginDestroyed | RF_FinishDestroyed);
+        if (!player()) return nullptr;
+        for (UObject* a : find_all(STR("WrcSkyboxActor")))
+            if (a && !a->HasAnyFlags(not_it)) return a;
+        return nullptr;
+    }
+    namespace detail
+    {
+        // The preset set_sky holds: put on again at the end of every frame, on the sky it was put on.
+        struct SkyHold
+        {
+            std::mutex lock;
+            TimerId timer{};
+            UObject* sky{};
+        };
+        inline auto sky_hold() -> SkyHold&
+        {
+            static SkyHold h;
+            return h;
+        }
+        inline auto apply_sky(UObject* s, std::wstring_view preset) -> bool
+        {
+            return call_if(s, STR("ApplyStraight"), [&](Params& p) { return p.set_nth(0, Value::of(preset)); }).has_value();
+        }
+        inline auto release_sky() -> void
+        {
+            auto& h = sky_hold();
+            TimerId t;
+            {
+                std::lock_guard lock(h.lock);
+                t = h.timer;
+                h.timer = 0;
+                h.sky = nullptr;
+            }
+            if (t) cancel(t);
+        }
+    } // namespace detail
+
+    // Put a preset on, at once. The game fades back to the area's own sky by itself within about 5 s (its native
+    // code; seen in game, 2026-11-03), so with `hold` (the default) the preset is put on again at the end of
+    // every frame until sky_follow_area(), another set_sky, or a new level; the game's own changes (the
+    // inventory's, a fight's) wait meanwhile. False without the sky, or for a name the enum hasn't got.
+    inline auto set_sky(std::wstring_view preset, bool hold = true) -> bool
+    {
+        detail::release_sky();
+        UObject* s = sky();
+        if (!detail::apply_sky(s, preset)) return false;
+        if (!hold) return true;
+        auto& h = detail::sky_hold();
+        std::lock_guard lock(h.lock);
+        h.sky = s;
+        h.timer = every(0, [name = std::wstring(preset), cls = s->GetClassPrivate()] {
+            auto& h = detail::sky_hold();
+            UObject* held;
+            {
+                std::lock_guard lock(h.lock);
+                held = h.sky;
+            }
+            if (!detail::object_alive(held, cls) || !detail::apply_sky(held, name)) detail::release_sky();
+        });
+        return true;
+    }
+    // Let go of a held preset and give the area's sky back, at once.
+    inline auto sky_follow_area() -> bool
+    {
+        detail::release_sky();
+        return call_reflected(sky(), STR("DoZoneDetectionFunction"), [&](Params& p) { p.set_nth(0, Value::of(false)); }).has_value();
+    }
+
+    // ============================================================================================ sounds
+    // The game's sounds by their ids in its AudioEvents table (390 on build 26337109): music (L"mus_camp"),
+    // effects (L"cat_step"), menu sounds (L"ui_select"), and cats' voices (L"vo_cat1_happy1"). sound_ids()
+    // lists them, as the game's audio manager holds them.
+    inline auto audio_manager() -> UObject* { return manager(STR("audio")); }
+    inline auto sound_ids() -> std::vector<std::wstring>
+    {
+        std::vector<std::wstring> out;
+        for (auto& [id, sound] : map_entries(audio_manager(), L"AudioEventsInfo")) out.push_back(id.string());
+        return out;
+    }
+    namespace detail
+    {
+        inline auto play_event(std::wstring_view id, const Vec3* at) -> UObject*
+        {
+            auto r = call_reflected(object(STR("/Script/SwtNativeAudio.Default__SwtNativeAudioManager")), STR("K2_PlayEventOf"), [&](Params& p) {
+                p.set(L"EventType", id);
+                Value t = p.get(L"atTransform");
+                set(t, L"Rotation.W", 1.0);
+                for (const wchar_t* axis : {L"Scale3D.X", L"Scale3D.Y", L"Scale3D.Z"}) set(t, axis, 1.0);
+                if (at)
+                {
+                    set(t, L"Translation.X", at->x);
+                    set(t, L"Translation.Y", at->y);
+                    set(t, L"Translation.Z", at->z);
+                }
+                p.set(L"bIsSound2D", at == nullptr);
+            });
+            return r ? r->get(L"ReturnValue").object : nullptr;
+        }
+    } // namespace detail
+    // Play one as the game does: heard the same everywhere (as the menu's sounds are), or from a place.
+    // The audio component that plays it, or nullptr when the id isn't one of the game's.
+    inline auto play_sound(std::wstring_view id) -> UObject* { return detail::play_event(id, nullptr); }
+    inline auto play_sound(std::wstring_view id, Vec3 at) -> UObject* { return detail::play_event(id, &at); }
+
+    // ============================================================================================ the game's own animations
+    // Play one of the game's animations on a cat or an animal by its tag, as the game does: its
+    // PlayMontageComponent plays that row of its animation table (your cat's: L"Animation.Exploration.Meow",
+    // L"Animation.Exploration.Interaction.Dig", L"Animation.Exploration.Interaction.Sniff", L"Animation.Combat.Hit.1"...;
+    // docs/reverse-engineering.md, "How cats and animals are animated"), cutting off what it plays now.
+    // The montage, or nullptr (no component, or no such row).
+    inline auto play_montage(UObject* actor, std::wstring_view tag, double rate = 1.0) -> UObject*
+    {
+        auto r = call_reflected(get(actor, L"PlayMontageComponent").object, STR("K2_PlayMontageOfTag"), [&](Params& p) {
+            set(p.nth(0), L"TagName", tag);
+            p.set_nth(1, Value::of(rate));
+            p.set_nth(2, Value::of(true));    // bForceInterrupt
+            p.set_nth(3, Value::of(false));   // bQueueIfCurrentlyPlaying
+            p.set_nth(4, Value::of(false));   // bStopMontages
+        });
+        return r ? r->get(L"ReturnValue").object : nullptr;
+    }
+    // Whether any montage plays on an actor's mesh now (the game's own, or one a mod played).
+    inline auto montage_playing(UObject* actor) -> bool
+    {
+        auto anim = call_reflected(get(actor, L"Mesh").object, STR("GetAnimInstance"));
+        UObject* instance = anim ? anim->get(L"ReturnValue").object : nullptr;
+        return call<bool>(instance, STR("IsAnyMontagePlaying")).value_or(false);
+    }
 } // namespace wcmods

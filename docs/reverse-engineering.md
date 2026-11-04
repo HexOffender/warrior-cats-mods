@@ -15,14 +15,30 @@ question from *Open questions* when it's answered.
 
 | | |
 |---|---|
-| Game | Warrior Cats: Clans of the Forest, Steam app 3960600, build 26184573 (patch 1.1, 2026-10-26); the notes were made on build 24847281, the first release |
+| Game | Warrior Cats: Clans of the Forest, Steam app 3960600, build 26337109 (2026-11-03), the one wcmods is checked on now; before it 26184573 (patch 1.1, 2026-10-26); the notes were made on build 24847281, the first release |
 | Engine | Unreal Engine 5.7 (Shipping), project name `Wrc` |
-| Exe | `Wrc\Binaries\Win64\Wrc-Win64-ShippingDRM.exe`, 183,669,832 bytes, SHA-256 `cd8aafb4d2a423bd…` (on 24847281: 183,670,344 bytes, `f50eb374f8611e4e…`; its PE timestamp, 1974, is a placeholder) |
+| Exe | `Wrc\Binaries\Win64\Wrc-Win64-ShippingDRM.exe`, 183,319,112 bytes, SHA-256 `297de1db494a0312…` (on 26184573: 183,669,832 bytes, `cd8aafb4d2a423bd…`; on 24847281: 183,670,344 bytes, `f50eb374f8611e4e…`; its PE timestamp is a placeholder) |
 | Code | C++ classes are `Swt…` (the studio's shared framework) and `Wrc…` (this game), in `/Script/Wrc`; Blueprints are `BP_…_C`, widgets `WBP_…_C` |
 | UE4SS | v3.0.1 Beta, Git 83330635 (`experimental-latest`) |
 
 ### Game updates
 
+- **Build 26337109 (2026-11-03):** an update Steam put in that morning. The first real update since the
+  level component was signed, and nothing wcmods reads moved: `python wcmods.py game build` found every
+  one of `game.HIDDEN`'s 45 members again, the signed ones "same" by their signatures (the level
+  component's eight among them) and the rest "kept", every class the same size. The code moved: the
+  anchors sit 0x1750 to 0x1860 before where they were on 26184573, each found by its pattern ("a fighter's
+  Prowess with its buffs" has no unique pattern on either build, and was moved with its neighbours); code
+  addresses elsewhere in these notes are older builds' unless they say 26337109. `python tools/re/uht.py
+  <exe> lua` found all 58 of the Lua's fallback enum numbers unchanged, and the C++ SDK's in-game tests,
+  which read the hidden members through C++ and Lua and change several, ran on it (`docs/verified.md`).
+  `signatures.json` was made again on it (every class's sites as before, the same instructions captured,
+  plus the inventory's and the native functions below), and `gamebuild.VERIFIED_BUILD` is 26337109.
+  The selftest then caught a fault in how a pattern was judged unique: `re.finditer` skips a match that
+  overlaps the one before, so code repeated a few bytes apart looked unique and was matched at the other
+  place (the inventory's first site, made at its +0x150 map, matched at its +0x1A0 one, a "conflict").
+  `make()`, `check()` and the function patterns count overlapping matches now (`signatures._starts`); no
+  other class's sites changed when they were made again.
 - **Build 26184573, patch 1.1 (2026-10-26):** the patch adds mouse control of the camera, bug
   fixes and quality-of-life changes. Nothing wcmods reads moved: every class in `game.HIDDEN` is
   the same size, every signed member is where it was (`python wcmods.py game signatures check`),
@@ -94,6 +110,27 @@ question from *Open questions* when it's answered.
   - `tests/unit/test_signatures.py`, and the selftest's update check (`python wcmods.py selftest`).
 
   Not seen yet: a real update moving it ([verified.md](verified.md#not-yet-confirmed-in-game)).
+
+### Native functions
+
+Some of what the game does is only in native code that nothing reflects: adding an item to the inventory
+is the first wcmods calls. A C++ mod can call such a function, but its address moves with every build,
+and a call to the wrong place closes the game. So wcmods signs them as it signs the hidden members
+(2026-11-03, on 26337109):
+- `game.NATIVE` names each one (`"SwtQuestInventoryComponent:AddItem"`), with its RVA on the verified
+  build and what it takes.
+- `signatures.make()` signs it by a pattern of its first instructions that's unique in the exe
+  (`Finder.function_signature`, as for the anchors; AddItem's is 28 bytes), and refuses to write a
+  function it can't. `check()` finds it again on another build by that pattern (`find_function`), or
+  gives None when it matches nowhere or twice. A function moving is no news (a rebuild moves code), so
+  it doesn't count against "same"; one not found is "lost", and the Apply warning names it in words
+  (`gamebuild.PLAIN`).
+- An install writes each one found into `offsets.json`, beside the members: `"functions": {"class:name":
+  {"rva", "pattern"}}`.
+- The C++ SDK's `native_address` (Core.hpp) reads it, and before it gives the address checks the code
+  there against the pattern (the exe's image from its PE headers), so an exe updated after the install
+  gives nullptr and a line in the log, never a call into other code. `add_item` also calls it under a
+  structured exception handler, so a fault is logged and returned as false.
 
 ## How we find things
 
@@ -824,7 +861,10 @@ parent bone space), against the decode of that key:
   CompressedData`, which spell them as the code does; the file spells `SaveSlots` as `saveSlots`):
   `Hash` (uint64) at +0x28, `GamerId` +0x30, `Version` (uint8) +0x40, `ExportsName` +0x48,
   `JsonString` +0x58, `SaveSlots` +0x68, `CurrentSaveSlotIndex` +0x78, `CompressedData` +0x80; 0xA0
-  bytes in all (`GetPrivateStaticClass` at `0x141219820`). The save manager (`SwtSaveManager`, the
+  bytes in all (`GetPrivateStaticClass` at `0x141219820`). `CurrentSaveSlotIndex` isn't the cat's slot:
+  it stayed 0 while the cat in play was the JSON's slot 8, the one its `Shared/General/CurrentCatSlot`
+  names (seen in game, 2026-11-03; `Game.save.slotData()` and the C++ SDK's `slot_data()` follow the
+  JSON since, and read the first cat's items and traits for any cat before). The save manager (`SwtSaveManager`, the
   game instance's `SaveManager`) keeps it at +0x168 (`SaveGame`).
 - **Two managers.** The save manager holds the save game; the storage manager (`SwtStorageManager`,
   the game instance's `StorageManager` at +0x220, in game a `BP_WrcStorageManager_C`) reads and writes
@@ -847,7 +887,12 @@ parent bone space), against the decode of that key:
   comes from what the save holds, so it can't be worked out from the file, and nothing reads it except
   the next write, as its seed: the loader checks only `Version`. Keeping the original value works (seen
   in game). Any other value should load too (read from the code; not tried, see
-  [verified.md](verified.md#not-yet-confirmed-in-game)). Read from the code on build 26184573:
+  [verified.md](verified.md#not-yet-confirmed-in-game)). **The formula was seen in game** on 2026-11-03
+  (build 26337109), twice: the C++ SDK saved (`save_game`, the save manager's `Save`), and the new `Hash`
+  (`save_hash`, the same as `WrcGame.sav`'s header) was `next_hash` of the old one, the UTC second of
+  the write and the storage manager's address, so `%p` is the 16 upper-case digits below; the save
+  manager's address gave no match (`tests/game/test_cpp_sdk.py::test_save_and_its_hash`). Read from the
+  code on build 26184573:
   - **The writer** is the storage manager's virtual at `0x1412B8F00` (slot 0x390). No other vtable
     holds it, and there's no native class below `SwtStorageManager`. The save manager calls it on the
     storage manager's global, `rcx = [0x14A8A6E40]; call [vtable+0x390]`: in its slot 0x490 at
@@ -872,7 +917,7 @@ parent bone space), against the decode of that key:
     `__stdio_common_vswprintf` (its `api-ms-win-crt-stdio-l1-1-0` import). Called on this machine
     through ctypes with `%p`, that function gives 16 upper-case hex digits, zero-padded:
     `0x1E5C8A2B000` gives `000001E5C8A2B000` and `0x10` gives `0000000000000010`. Microsoft's docs
-    don't say which case or padding it uses, and it wasn't seen in the game.
+    don't say which case or padding it uses; the game's Hash, seen on 2026-11-03, agrees.
   - **Nothing checks it.** The loader is the storage manager's (`0x1412B9440`, slot 0x398). It reads
     `Version` (+0x40) and `CompressedData` (+0x80) or `JsonString` (+0x58), never +0x28. The cloud
     copy goes through the same loader. `SwtSaveManager`'s `CloudLoad` (its native thunk `0x14123CBB0`,
@@ -1015,6 +1060,26 @@ component whose value is the XP; the level and the cap are the parent's, the sta
 | `0x1417C6410` | The level component's stats (vtable +0x550): the base stats for its level from `0x1418043E0` (with `PlayerCat`), then each Social trait's `Gameplay.Combat.<trait>.Strength/.Resilience/.Instinct` × (level − 1) × 0.05 added, then all six rounded (`FMath::RoundToInt`); then a resource component its owner hands back gets Prowess as its maximum and value (the health, presumably: in game health equals Prowess) | `dispscan.py` on the six stat offsets |
 
 `0x1418043E0` is called by the fight code too (`0x1417D5830`, `0x1417D5FC5`).
+
+**The sky** (seen in game, 2026-11-03, the forest by day): the world's `BP_DayNightSky_C` (an
+`AWrcSkyboxActor`) puts a preset's light, fog and clouds on: `ApplyStraight(ESkyboxPostProcessEnum)` at
+once, `StartTransition` fading (it changed nothing in the one try, with the game's window behind).
+`ApplyStraight(Night)` made the forest dark, its exponential height fog's `FogDensity` 1.8 → 0.028 and its
+directional light's `Intensity` 9 → 3, and with no screen up the sky then went back to the area's preset by
+itself, evenly, in about 5 s (fog 0.07, 0.37, 0.64 … 1.8 at 0.7 s steps), with no reflected call (a hook on
+`DoZoneDetectionFunction`, `StartTransition`, `ApplyStraight`, `TransitionTimeFinished` and `Disable_PP` saw
+only the `ApplyStraight`): the actor's native code fades it. While the inventory is up the sky stays as it's
+put (3 s later the same). `DoZoneDetectionFunction(false)` gives the area's back at once (1.8 and 9). The
+C++ SDK's `set_sky` holds a preset by putting it on again at the end of every frame. With the inventory open the sky
+has a preset of its own (`PresetForInventory`, 11, `MainMenu`: fog 50, light 1.2). The actor sits in a
+streamed part of the world, whose outers lead to that part's own `UWorld`, not the controller's.
+
+**Sounds** (seen in game, 2026-11-03): the game instance's `NativeAudioManager` is a
+`BP_WrcAudioManager_C`. Its `AudioEventsInfo` held 390 entries, the rows of `AudioEvents.csv`, and its
+`AudioEventsMap` 389 loaded sounds. The static `USwtNativeAudioManager::K2_PlayEventOf(id, transform,
+bIsSound2D)`, on the class's default object, plays one by id: `ui_select` gave an `AudioComponent` playing
+`S_Cue_ui_select`, `vo_cat1_happy1` one playing `S_Cue_vo_cat1_happy1`, and an id it hasn't got nothing.
+Whether an `AudioEvents.csv` edit in a mod's pak changes `AudioEventsInfo` is still the roadmap's step 3.
 
 **The clock:** the game state's +0x438 is a float, the seconds into the day. Setting it to 21600 made
 the game's own `GetDayClockTime` say 6:00.
@@ -1159,6 +1224,10 @@ Seen in game on 2026-10-27 (build 26184573) and read from the class dump.
   `ear_R`, `Eyelid_R` and `cheeks_R` turned 180 degrees about themselves); the cat's `SK_CatMaster`
   only on the front legs (`Forearm_f` 1.2 degrees, `paw_f` and `Finger_f` 0.85 cm and 2 to 3 degrees);
   the other animals' are their skeletons' (read from the files, 2026-10-27).
+- **The game's own montages by tag from code:** your cat's `PlayMontageComponent:K2_PlayMontageOfTag(
+  Animation.Exploration.Meow, 1, true, false, false)` played `AM_Meow`, which the anim instance gave
+  back as its current montage (seen in game 2026-11-03, from Lua and from C++'s `play_montage`); a tag
+  the table hasn't got plays nothing.
 - **Out of view:** the animals' meshes (`VisibilityBasedAnimTickOption` 4) don't update their bones
   while they're not rendered: a montage on a far bird plays, but its bones stay put until it's seen.
 - **Lua states:** `Game.anims` keeps what each UE4SS script started in that script's own Lua state, so
@@ -1651,6 +1720,48 @@ Worked out on 2026-10-24 and verified in game with a new herb and a new material
 - **In the save:** `<slot>/GameplayProgression/State/Inventory/<tag>` = count, where `<slot>` is
   `Shared/General/CurrentCatSlot`.
 
+**The inventory itself** (read from the code on build 26337109, and seen in game on 2026-11-03 through the
+C++ SDK):
+- **The component:** the player state's `InventoryComponent` (reflected on `ASwtQuestPlayerState`; the
+  native callers read it at +0x388) is a `WrcInventoryComponent < SwtAdventureInventoryComponent <
+  SwtQuestInventoryComponent`, 0x390 bytes (`GetPrivateStaticClassBody` at `0x141867FB0`, class
+  constructor `0x14186B9D0`, vtable `0x149BFCA10`). Its vtable differs from its parent's in the
+  destructor only; the inventory's code is `SwtQuestInventoryComponent`'s (vtable `0x149A6FF98`).
+- **Its maps:** `SwtQuestInventoryComponent`'s constructor (`0x141613750`) makes three TSets, at +0x100,
+  +0x150 and +0x1A0, each 0x50 bytes laid out as UE5's: the elements (data +0x00, count +0x08, room
+  +0x0C), the bit array of the slots in use (four words inline at +0x10, a heap pointer at +0x20, bits
+  +0x28, room +0x2C, 128 to start), the free list (+0x30; +0x34 how many are free) and the hash (+0x38
+  inline, +0x40 on the heap, +0x48 its size). **+0x150 is the items**, a `TMap<FGameplayTag, int32>`:
+  each element 20 bytes, the tag's FName (its comparison index and number), the count, then the hash's
+  next and index; the lookup (`0x1412AD120`) indexes the elements by `i * 20` and hashes the name as
+  `GetTypeHash(index) + number`. It's `game.HIDDEN`'s `WCM_Items` (signed like the other members, from
+  the two functions below), C++ only: `RegisterCustomProperty` can't describe a map.
+- **Adding an item:** `0x141654430` (22 direct callers: pickups, rewards, bartering...) is
+  `AddItem(component, FGameplayTag tag, int32 count, bool popup)`: the tag by value in rdx (its 8 bytes),
+  the count in r8d and the popup in r9b; the callers take the component from `[player state+0x388]`.
+  - A tag matching the one at `[0x14A8615F0]+0x5B0` (else `[0x14A7215F0]`) goes to `0x1416547C0` instead
+    (13 callers), not looked at further.
+  - Otherwise a tag the map hasn't got is added with the count, and one it has gets the count added,
+    never below 0 and at most the limit at +0x240 (unless that's -1; the string beside the component's
+    is `Gameplay.Inventory.MaxQuantity`, presumably where it comes from).
+  - Then the multicast delegate at +0xC0 is broadcast with (tag, count, total, popup), which reaches
+    the HUD's `OnItemPickedUp(tag, quantity, total, popup)`; a count at 0 or below takes the item out of
+    the map (`0x1416563A0`); then the vtable's +0x508 (`0x141655F00`, which copies the map, for the save)
+    and +0x500 (with the tag).
+  - A negative count takes items away the same way. `0x1416545A0` does the same for the map at +0x1A0
+    (its popup always on); what that map holds isn't known.
+  - The vtable's +0x4F0 (`0x1416543D0`) takes a tag: true for a `QuestItem` tag, else after looking it up
+    in the items map.
+- **Seen in game** (2026-11-03, `tests/game/test_cpp_sdk.py`): the map read whole (Poppy 2, Horsetail
+  Stalks 2, Dandelion 2, a mouse 1, the save's after the next save exactly). Two Lamb's Ear Leaves
+  (`Gameplay.Inventory.Consumable.SmallCatnip`) added through `AddItem`: the count went 0 → 2, the game
+  told the HUD (SmallCatnip, 2, 2) and it showed "Lamb's Ear Leaves OBTAINED 2", the inventory screen
+  showed them, and the next save's `WrcGame.json` had them; taken away with -2, they left the map and
+  the next save. The save manager's `GetStateJsonDataAsString("Inventory")` stayed `{}` throughout: the
+  save takes the inventory from the component, not from the state the save manager keeps.
+- So items go straight into the bag from C++ (`wcmods::add_item`). From Lua there's still no way:
+  nothing reflected reaches `AddItem`.
+
 **The quest system's tables** hang off the CDO of `/Script/SwtQuest.SwtQuestConfig`:
 - `QuestGraphDB`, `QuestObjectsInfoDB`, `QuestNodeGraphDB` and `QuestObjectivePickupDB`;
 - `CharactersDB` (`DT_Characters`) and `CombatGeneratorDB`;
@@ -1869,6 +1980,27 @@ on the Gameplay settings panel) is `EnableScars`, which shows or hides them all.
 The clan cats in a save use eye 1–2, ear 1–6 and back 2–4, and none had a chest scar.
 
 ## The game's own UI
+
+**Opening and closing the game's screens** (seen in game, 2026-11-03). `USwtGuiManager` reflects no
+function that opens one, but the player's input component (the controller's `InputComponent`, a
+`WrcInputComponent < SwtAdventureInputComponent < SwtInputComponent`) reflects `OnListenCommandInternal(
+ECommands, EInputEvent)`, which the game's input reaches with each command. Called with
+`Player_Show_Inventory` (79 on 26337109), pressed then released, it opened the inventory as I does; with
+`Player_Pause` (93), the pause screen, even over the inventory. It works from Lua too
+(`ic:OnListenCommandInternal(79, 0)`). A screen that's up doesn't take commands that way (`Button_B` and
+`Button_Back` did nothing), nor through the GUI manager's `OnListenCommand`, but through its own
+`OnListenCommand(command, event, controller)`: `Button_Back` (25) closed the pause screen and the inventory.
+It acts on a release only when the press came in an earlier frame (both in one Lua call did nothing),
+and only for calls made where Lua's are, from inside one of the game's ProcessEvent calls (UE4SS runs
+`ExecuteInGameThread` from its ProcessEvent hook): the C++ SDK's same calls (the same screen, command,
+events and controller, as a hook on `SwtScreen:OnListenCommand` showed) made from the engine tick's post
+callback, at the end of a frame, never closed it, 0.1 s or 0.3 s apart, 1 s or 3 s after it opened. Nor did
+they from inside a ProcessEvent, once: the second Back did, from C++ as from Lua. Every Lua close that
+worked at once came with the game's window in front; with it behind, the screen took the first command
+it got after opening without acting on it. The tab row's
+keys changed in this update: on the keyboard the arrows move between tabs (the row shows their pictures),
+where 1 and 2 did on 26184573 and do nothing now. (The controls page also lists a new L for Meow.) (`Player_Show_Map`, 78, sent while the pause screen was
+up opened nothing; not tried alone.) The C++ SDK's `command` and `ui::send` are these.
 
 Worked out on 2026-10-25 for `Game.dialogue`, and checked in game with both example cats.
 
@@ -2181,8 +2313,9 @@ The rules of play are in [mechanics/](mechanics/README.md):
   play the cats' sequences; ACL's curves (the cat's ACL sequences keep theirs in ACL too, which wcmods
   doesn't read).
 - **Scripting:**
-  - **Items:** how to put items in the inventory from a script without a pickup (the inventory
-    is native; `Game.items.drop` leaves a pickup to collect).
+  - **Items:** how to put items in the inventory from Lua without a pickup (the inventory is native;
+    `Game.items.drop` leaves a pickup to collect). C++ does it through the game's own `AddItem`
+    (*Items*); nothing reflected reaches it.
   - **Accessories:** whether a new texture variation of an accessory (a 2nd or 3rd entry in
     `AccesoryVariations`) can be added and worn.
   - **Fights:** how to end one cleanly (`EndCombat` doesn't), and whether the combat director's

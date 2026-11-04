@@ -592,6 +592,74 @@ namespace wcmods
                 options);
     }
 
+    // ============================================================================================ inside a frame
+    namespace detail
+    {
+        // Calls run from inside the game's next ProcessEvent on the game thread, mid-frame, where UE4SS runs Lua's
+        // ExecuteInGameThread; the timers above run after the frame's work instead. The game's screens take a
+        // command there that they ignore at the end of a frame (ui::send; seen in game, 2026-11-03).
+        struct MidFrame
+        {
+            std::mutex lock;
+            std::vector<std::function<void()>> queue;
+            std::atomic<bool> pending{};   // the hook's fast path: it fires for every ProcessEvent
+            bool running{};                // a call it runs makes ProcessEvent calls of its own
+            bool registering{};            // the hook is asked for, at the end of the next frame
+            std::optional<RC::Unreal::Hook::GlobalCallbackId> hook;
+        };
+        inline auto mid_frame() -> MidFrame&
+        {
+            static MidFrame m;
+            return m;
+        }
+        inline auto in_process_event(std::function<void()> fn) -> void
+        {
+            auto& m = mid_frame();
+            {
+                std::lock_guard lock(ticks().lock);
+                if (ticks().stopped) return;
+            }
+            bool register_now;
+            {
+                std::lock_guard lock(m.lock);
+                m.queue.push_back(std::move(fn));
+                m.pending = true;
+                register_now = !m.hook && !m.registering;
+                m.registering = m.registering || register_now;
+            }
+            // Registered at the end of a frame (on_game_thread), not here: a call from a hook runs inside a
+            // ProcessEvent, while UE4SS goes through the very callbacks this would add to.
+            if (register_now) on_game_thread([] {
+                auto& m = mid_frame();
+                std::lock_guard lock(m.lock);
+                if (m.hook) return;
+                {
+                    RC::Unreal::Hook::FCallbackOptions options{};
+                    options.OwnerModName = mod().name;
+                    options.HookName = STR("wcmods inside a frame");
+                    m.hook = RC::Unreal::Hook::RegisterProcessEventPreCallback(
+                            [](auto&, RC::Unreal::UObject*, RC::Unreal::UFunction*, void*) {
+                                auto& m = mid_frame();
+                                if (!m.pending.load(std::memory_order_acquire) || GetCurrentThreadId() != ticks().game_thread_id) return;
+                                std::vector<std::function<void()>> run;
+                                {
+                                    std::lock_guard lock(m.lock);
+                                    if (m.running) return;
+                                    m.running = true;
+                                    run.swap(m.queue);
+                                    m.pending = false;
+                                }
+                                for (auto& fn : run) guarded(L"a call inside a frame", fn);
+                                std::lock_guard lock(m.lock);
+                                m.running = false;
+                            },
+                            options);
+                }
+            });
+            hook_ticks();   // the game thread is known once a frame has run
+        }
+    } // namespace detail
+
     // ============================================================================================ shutdown
     namespace detail
     {
@@ -611,6 +679,16 @@ namespace wcmods
             }
             // Outside the lock: a frame running now takes it in on_tick, and unregistering may wait for that frame.
             if (hook) RC::Unreal::Hook::UnregisterCallback(*hook);
+
+            auto& m = mid_frame();
+            std::optional<RC::Unreal::Hook::GlobalCallbackId> mid_hook;
+            {
+                std::lock_guard lock(m.lock);
+                mid_hook.swap(m.hook);
+                m.queue.clear();
+                m.pending = false;
+            }
+            if (mid_hook) RC::Unreal::Hook::UnregisterCallback(*mid_hook);
 
             auto& w = level_watch();
             std::optional<RC::Unreal::Hook::GlobalCallbackId> level_hook;

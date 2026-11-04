@@ -179,8 +179,11 @@ python wcmods.py game signatures make
 
 - **`game build`:** the installed build, what moved, and the mods made for older ones. `--refresh`
   looks again.
-- **`game signatures check`:** checks the installed exe, or `--exe <path>`, against the signatures.
-  `--json` prints all of it as JSON (what it looked at goes to stderr).
+- **`game signatures check`:** checks the installed exe, or `--exe <path>`, against the signatures:
+  the members, and where each native function C++ mods call (`game.NATIVE`) is now, found by the pattern
+  of its first instructions. `--json` prints all of it as JSON (what it looked at goes to stderr). A
+  function not found is left out of `offsets.json`, so the C++ calls that use it give false, and the
+  Apply warning names it like a member.
 - **`game signatures make`:** writes `wcmods/exe/signatures.json` from the installed exe, or `--exe <path>`
   with `--build <number>`. Only do this on a build whose `game.HIDDEN` offsets have been confirmed in
   game. It writes nothing when a class gets no signature at all ("not written: no signatures for ..."):
@@ -200,6 +203,11 @@ which aren't instructions.
 3. Run `python wcmods.py selftest` and `python wcmods.py agent test` on the new build.
 4. Remake the signatures on the new build (`game signatures make`), set `gamebuild.VERIFIED_BUILD` to
    it (`game.HIDDEN` holds one layout, so it's one build), and note it in `docs/reverse-engineering.md`.
+   First move the RVAs `signatures.ANCHORS` and `game.NATIVE` hold to the new build's: `make` reads the
+   functions at those RVAs, and code moves in every update (by 0x1750 to 0x1860 in 26337109's). Each one is
+   found again by the pattern `signatures.json` has for it (`Finder.find_function`; `game signatures check`
+   prints the native functions'); an anchor without a pattern (`"pattern": null`) is moved with its
+   neighbours.
 5. Add an `ANCHORS` entry for any class `make` says has no signatures, so it can be found automatically
    next time.
 6. Run `python tools/re/uht.py <exe> lua`. In game, scripts read the game's enums by name (`Game.enums`, the
