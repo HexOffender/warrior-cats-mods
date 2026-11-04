@@ -24,6 +24,7 @@ their tests and docs, what is deliberately not planned (and why), and the decisi
 | [docs-guide.md](docs-guide.md) | The creator guide ("Making mods without code") and the docs |
 | [re-roadmap.md](re-roadmap.md) | Reverse-engineering roadmap: the facts about the game that would unlock the next creator features |
 | [menu-pages-sdk.md](menu-pages-sdk.md) | What the Menu pages review found in the script runtime: menu controls, fights, saving and reading JSON, items, the clock hold, status lines, a runtime version |
+| [cpp-sdk-coverage.md](cpp-sdk-coverage.md) | The C++ SDK for all of the game: tables and words live, sounds and music, the sky, cats of a mod's own, conversations, bonds, looks and the clan, quests, fights, dens, the map and travel, effects; the roadmap's open steps folded in, one pull request a step |
 
 ## Work the plans build on
 
