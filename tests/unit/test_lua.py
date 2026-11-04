@@ -724,6 +724,17 @@ def test_a_number_box_gives_back_an_untouched_value_as_it_was():
     assert "not near(now, e.v)" not in number
 
 
+def test_a_progress_bar_shows_ready_made_text_as_it_is():
+    """ui.progress ran opts.format through string.format, twice: callers pass ready-made text, so a stray % broke the
+    page ("invalid conversion") and "50% done" showed as "50 50one". opts.text is shown as it is; format is still a
+    pattern, formatted once, and shown as it is when it isn't one."""
+    bar = body(menu.lua(), "function ui.progress(", "\nlocal textures")
+    assert "local shown = opts.text" in bar
+    assert 'local ok, s = pcall(string.format, opts.format or "%d%%", math.floor(f * 100 + 0.5))' in bar
+    assert "shown = ok and s or opts.format" in bar
+    assert bar.count("string.format") == 1 and 'seen("progress", label, shown)' in bar
+
+
 def test_a_save_writes_the_whole_file_or_says_it_couldnt():
     """Menu.saveJson opened the file with "wb" (emptying it), didn't look at f:write's or f:close's answers, and said
     true: a full disk left half a settings file and "Saved". Now it encodes first, writes <path>.new, checks the write,

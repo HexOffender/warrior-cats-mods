@@ -831,7 +831,9 @@ function ui.color(label, hex)
     return out
 end
 
--- A bar filled to `fraction` (0-1). opts.color, opts.format ("%d%%").
+-- A bar filled to `fraction` (0-1), with text beside it: opts.text as it is ("3 / 5 found"), else opts.format, a
+-- string.format pattern given the percent ("%d%%", the default); a format that isn't one is shown as it is.
+-- opts.color.
 function ui.progress(label, fraction, opts)
     opts = opts or {}
     local e = row("progress", function()
@@ -844,8 +846,14 @@ function ui.progress(label, fraction, opts)
     local f = math.max(0, math.min(1, fraction or 0))
     put(e, "f", math.floor(f * 1000), function() e.p:SetPercent(f) end)
     put(e, "color", opts.color or THEME.accent, function(v) e.p:SetFillColorAndOpacity(C(v)) end)
-    put(e, "shown", string.format(opts.format or "%d%%", math.floor(f * 100 + 0.5)), function(s) setText(e.vt, s) end)
-    seen("progress", label, string.format(opts.format or "%d%%", math.floor(f * 100 + 0.5)))
+    local shown = opts.text
+    if shown == nil then
+        local ok, s = pcall(string.format, opts.format or "%d%%", math.floor(f * 100 + 0.5))
+        shown = ok and s or opts.format   -- "100%" isn't a pattern ("invalid conversion"): shown as it is
+    end
+    shown = tostring(shown)
+    put(e, "shown", shown, function(s) setText(e.vt, s) end)
+    seen("progress", label, shown)
 end
 
 local textures = {}

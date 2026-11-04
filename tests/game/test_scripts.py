@@ -208,6 +208,18 @@ def test_a_whole_number_box_gives_back_a_fraction_it_was_given(agent):
         agent.menu.close()
 
 
+def test_a_progress_bar_shows_its_text_as_given(agent):
+    """late-page's bars: ready-made text with a % in it, and a format that isn't a pattern, are shown as they are (the
+    first showed "50 50one", the second broke the page); a bar with neither shows its percent."""
+    need(agent, "late-page")
+    page = agent.menu.open("script:late-page")
+    try:
+        assert not page.errors(), page.errors()
+        assert (page.get("Done"), page.get("Full"), page.get("Plain")) == ("50% done", "100%", "25%"), page.text()
+    finally:
+        agent.menu.close()
+
+
 def test_the_settings_page_shows_help_under_its_row_and_bounds_a_number(agent):
     """Noisy script's settings.json has "_help_speed" and "_min_speed"/"_max_speed": the help is under Speed (not a
     note at the top), and the bounds aren't rows of their own."""

@@ -909,7 +909,7 @@ change (more items, a section opened) rebuilds from the first row that differs. 
 | `ui.number(label, value, {min, max, step, whole})` | A number box you can drag or type in; returns the number (`whole`: whole numbers only, shown without decimals). Until the player changes it, it returns `value` as it was given: a value outside `min`/`max` stretches the range to take it (to the next power of two, so there's room both ways), and a fraction given to a `whole` box stays a fraction |
 | `ui.input(label, value, {hint})` | A text box; returns its text |
 | `ui.color(label, "#rrggbb")` | A swatch with red, green and blue sliders; returns `"#rrggbb"` |
-| `ui.progress(label, fraction, {color, format})` | A bar from 0 to 1 |
+| `ui.progress(label, fraction, {color, text, format})` | A bar from 0 to 1, with text beside it: `text` as it is (`"3 / 5 found"`), else `format`, a `string.format` pattern given the percent (`"%d%%"`, the default; one that isn't a pattern, like `"100%"`, is shown as it is). Text with a `%` in it goes in `text` |
 | `ui.image(texture, w, h, {color})` | A picture: a texture object or its path |
 | `ui.section(title, fn, {open, id})` | A part that opens and closes with a click on its title; `fn(ui)` draws what's inside |
 
