@@ -60,8 +60,11 @@ def test_the_saves_slot_is_the_files_current_cat():
     assert body.index("CurrentCatSlot") < body.index("Game.save.slot()"), "the file's current cat first"
     assert "if slot == nil then slot = Game.save.slot() or 0 end" in body
     hpp = open(os.path.join(os.path.dirname(game.__file__), "cpp_sdk", "include", "WCMods", "World.hpp"), encoding="utf-8").read()
-    cpp = hpp[hpp.index("inline auto slot_data() -> Json"):]
-    cpp = cpp[:cpp.index("\n    }\n")]
+    # slot_data() takes the slot from detail::slot_of, which items() uses too (on the kept parse of the save).
+    data = hpp[hpp.index("inline auto slot_data() -> Json"):]
+    assert "detail::slot_of(*save.data)" in data[:data.index("\n    }\n")]
+    cpp = hpp[hpp.index("inline auto slot_of(const Json& file) -> const Json&"):]
+    cpp = cpp[:cpp.index("\n        }\n")]
     assert 'account["Shared"]["General"]["CurrentCatSlot"]' in cpp and ": save_slot()" in cpp
 
 

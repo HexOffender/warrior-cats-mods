@@ -2,6 +2,7 @@
 remaps, the agent controller's parts, getting set up in temporary folders, and what mods need ("requires")
 and only use ("uses")."""
 import json
+import os
 import sys
 
 import pytest
@@ -82,6 +83,74 @@ def test_cpp_mod_dll_goes_in_with_its_settings_and_bad_dlls_are_refused():
 def test_cpp_sdk_headers_documented_and_tested():
     ok, detail = selftest._cpp_sdk()
     assert ok, detail
+
+
+def _hpp(name):
+    """A C++ SDK header's text (wcmods/cpp_sdk/include/WCMods/<name>); it's compiled only by `cpp build`."""
+    path = os.path.join(os.path.dirname(os.path.abspath(selftest.__file__)), "cpp_sdk", "include", "WCMods", name)
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def _between(text, start, end):
+    """The text from `start` up to `end` (both found in order)."""
+    i = text.index(start)
+    return text[i:text.index(end, i + len(start))]
+
+
+def test_cpp_save_file_is_parsed_again_only_when_it_changed():
+    """The C++ half of W6: save_file() parsed WrcGame.json (about 40 ms) on every call. As the Lua's fileCache, the parsed
+    save is kept while the file's size is the same (looked at 4 times a second, parsed again every 30 s at least), a
+    half-written file gives the last good one, save_game() drops it (as Game.save.write), and slot_data() and items()
+    read it without copying the whole save."""
+    hpp = _hpp("World.hpp")
+    read = _between(hpp, "inline auto read_save() -> SaveRead", "\n        }\n")
+    assert read.index("std::lock_guard lock(c.lock);") < read.index("read_file(save_path())")
+    assert "if (c.data && now - c.checked < 250ms) return {c.data, c.size, c.at};" in read
+    assert "if (c.data && size == c.size && now - c.at < 30s) return {c.data, c.size, c.at};" in read
+    assert "if (!parsed) return {c.data, c.size, c.at};" in read
+    assert "c.at = now;" in read and "c.size = size;" in read
+    assert "detail::read_save()" in _between(hpp, "inline auto save_file() -> Json", "\n    }\n")
+    assert "save_file()" not in _between(hpp, "inline auto slot_data() -> Json", "\n    }\n")
+    assert "slot_data()" not in _between(hpp, "inline auto items() -> Json", "\n    }\n")
+    write = _between(hpp, "inline auto save_game(", "\n    }\n")
+    assert write.index("c.data.reset();") < write.index('STR("Save")')
+    # The cat's slot is still the one the file names (#111), not the save game's slot index.
+    assert '["Shared"]["General"]["CurrentCatSlot"]' in _between(hpp, "inline auto slot_of(const Json& file)", "\n        }\n")
+
+
+def test_cpp_items_drop_the_pickups_of_another_save():
+    """The C++ half of W7: items() laid the HUD's pickup totals over the save and never let go of them. As the Lua's
+    pickups, they're stamped with the HUD that sent them (call.self(): its address and its name, which has the instance
+    number, so a recycled address is another stamp) and the save file's size at the last one. Another HUD drops them,
+    and so does a save the game wrote after them at another size, looked at once for each parse of the save. No HUD to
+    go by (a level loading) keeps them, and a save written just before a pickup but not read yet doesn't drop it. No slot
+    in the stamp (save_slot() stays 0 whatever the cat), no poller, and the mutex stays."""
+    hpp = _hpp("World.hpp")
+    hook = _between(hpp, 'on_function(STR("/Script/Wrc.GuiHudWrc:OnItemPickedUp")', "\n            });")
+    assert "UObject* hud = call.self();" in hook and "std::wstring hud_name = name(hud);" in hook
+    assert "auto size = save_size();" in hook and "std::lock_guard lock(p.lock);" in hook
+    assert "if (hud && (hud != p.hud || hud_name != p.hud_name))" in hook and "save_slot" not in hook
+    assert hook.index("drop_pickups(p);") < hook.index("p.live[tag] = total;") < hook.index("p.size = size;")
+    assert "p.seen.reset();" in hook
+    listing = _between(hpp, "inline auto items() -> Json", "\n    }\n")
+    assert listing.index("detail::read_save()") < listing.index("std::lock_guard lock(p.lock);")
+    assert "if (!p.live.empty())" in listing and "save_slot" not in listing
+    assert "bool other = hud && p.hud && (hud != p.hud || name(hud) != p.hud_name);" in listing
+    saved = _between(listing, "if (p.seen != save.at)", "\n            }")
+    assert "p.seen = save.at;" in saved
+    assert "saved = p.size && save.size && *save.size != *p.size && save.size == detail::save_size();" in saved
+    assert "if (other || saved) detail::drop_pickups(p);" in listing
+    assert listing.index("drop_pickups(p)") < listing.index("for (auto& [tag, total] : p.live)")
+    finder = _between(hpp, "inline auto pickups_hud(const Pickups& p) -> UObject*", "\n        }\n")
+    assert "if (object_staying(p.hud, p.hud_class)) return p.hud;" in finder
+    assert 'find_first(STR("WBP_GuiHudGameWrc_C"))' in finder and "object_staying(h, nullptr) ? h : nullptr" in finder
+    for poller in ("on_level", "every_frame", "every("):
+        assert poller not in listing + hook
+    # Staying: alive and not marked with UE 5's Garbage flag, which UE4SS's IsValid doesn't look at (the Lua's Game.alive).
+    staying = _between(_hpp("Game.hpp"), "inline auto object_staying(", "\n        }\n")
+    assert "0x00200000" in staying and "object_alive(o, was)" in staying
+    assert "inline auto object_alive(" not in _hpp("Ui.hpp")   # one copy, in Game.hpp
 
 
 # ---------- what mods need, and what they only use ----------

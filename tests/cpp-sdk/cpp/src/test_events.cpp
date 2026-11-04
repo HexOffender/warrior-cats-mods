@@ -67,6 +67,11 @@ namespace t
                 snapshot_fight();
                 done("fight");
             }
+            else if (what == "items")
+            {
+                snapshot_items();
+                done("items");
+            }
             else if (what == "ui")
             {
                 phase("ui");
