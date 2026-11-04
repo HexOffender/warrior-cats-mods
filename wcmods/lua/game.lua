@@ -1619,9 +1619,29 @@ function Cat:setRewards(counts) return Game.setTagCounts(Game.get(self.actor, "r
 
 -- ===================================================================================== items
 Game.items = {}
-local live = {}   -- tag -> total, from the HUD's pickup messages since the script started
+-- The HUD's pickup messages since the level loaded: tag -> total (live). They're stamped with the save slot and the
+-- HUD they came from ("<slot>|<HUD address>"), and the save file's size at the last one; loading a save (a new HUD),
+-- another slot, or the game writing its save since (which has them then) drops them, and the save says again. (One
+-- table, not more locals: the main chunk is near Lua's 200.)
+local pickups = { live = {}, stamp = nil, size = nil, watching = false }
+-- "<slot>|<HUD address>" now, or nil with no HUD to go by (a level loading).
+function pickups.session()
+    local h = Game.find("WBP_GuiHudGameWrc_C")
+    if not h then return nil end
+    local ok, a = pcall(function() return h:GetAddress() end)
+    if not ok then return nil end
+    return tostring(Game.save.slot()) .. "|" .. tostring(a)
+end
+function pickups.saveSize()
+    local f = io.open(Game.save.path(), "rb")
+    if not f then return nil end
+    local n = f:seek("end")
+    f:close()
+    return n
+end
 
--- Your items: { tagName = count } as of the game's last save, with any pickups since then.
+-- Your items: { tagName = count } as of the game's last save, with any pickups since the level loaded (and since
+-- that save).
 function Game.items.list()
     local out = {}
     local slot = Game.save.slotData()
@@ -1629,19 +1649,28 @@ function Game.items.list()
     if type(inv) == "table" then
         for k, v in pairs(inv) do out[k] = v end
     end
-    for k, v in pairs(live) do out[k] = v end
+    if pickups.stamp ~= nil then
+        local now = pickups.session()
+        -- The save read above is the file as it is now, and the game wrote it after the last pickup.
+        local saved = pickups.size ~= nil and fileCache.size ~= nil and fileCache.size ~= pickups.size
+                      and fileCache.size == pickups.saveSize()
+        if (now ~= nil and now ~= pickups.stamp) or saved then pickups.live, pickups.stamp, pickups.size = {}, nil, nil end
+    end
+    for k, v in pairs(pickups.live) do out[k] = v end
     return out
 end
 
 function Game.items.count(tag) return Game.items.list()[tag] or 0 end
 
-local pickupWatch = false
 local function watchPickups()
-    if pickupWatch then return end
-    pickupWatch = true
+    if pickups.watching then return end
+    pickups.watching = true
     Game.hook("/Script/Wrc.GuiHudWrc:OnItemPickedUp", function(_, tag, quantity, total)
         local name = Game.tagName(tag)
-        live[name] = total
+        local s = pickups.session()
+        if s ~= nil and s ~= pickups.stamp then pickups.live, pickups.stamp = {}, s end
+        pickups.live[name] = total
+        pickups.size = pickups.saveSize()
         Game.emit("itemPickedUp", name, quantity, total)
     end)
 end

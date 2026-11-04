@@ -532,6 +532,33 @@ def test_the_save_file_is_decoded_again_only_when_it_changed():
     assert "fileCache.data = nil" in body(lua, "function Game.save.write(", "\nend")
 
 
+def test_items_drop_the_pickups_of_another_save():
+    """Game.items laid the HUD's pickup totals over the save and never let go of them: Dandelion picked up to 6 in slot
+    A still said 6 in slot B (2). The pickups are stamped with the slot and the HUD they came from, and the save file's
+    size at the last one; another slot or HUD, or a save the game wrote after them, drops them. No poller (the level
+    poller in every Lua state has crashed the game during loads), and no new main-chunk local: one table in live's
+    place, declared before the NPC list's own `local live` (which used to shadow it)."""
+    lua = game.lua()
+    assert "local pickups = { live = {}, stamp = nil, size = nil, watching = false }" in lua
+    assert lua.index("local fileCache =") < lua.index("function Game.items.list()")   # it reads fileCache.size
+    assert lua.index("local pickups = {") < lua.index("local live = {}")
+    assert lua.count("local live = {}") == 1 and "local pickupWatch" not in lua
+    session = body(lua, "function pickups.session()", "\nend\n")
+    assert 'local h = Game.find("WBP_GuiHudGameWrc_C")' in session and "if not h then return nil end" in session
+    assert 'return tostring(Game.save.slot()) .. "|" .. tostring(a)' in session
+    listing = body(lua, "function Game.items.list()", "\nfunction Game.items.count(")
+    assert listing.index("Game.save.slotData()") < listing.index("local now = pickups.session()")
+    assert "local saved = pickups.size ~= nil and fileCache.size ~= nil and fileCache.size ~= pickups.size" in listing
+    assert "and fileCache.size == pickups.saveSize()" in listing
+    assert ("if (now ~= nil and now ~= pickups.stamp) or saved then pickups.live, pickups.stamp, pickups.size = {}, nil, "
+            "nil end") in listing
+    assert "for k, v in pairs(pickups.live) do out[k] = v end" in listing
+    hook = body(lua, "local function watchPickups()", "\nend\n")
+    assert "if s ~= nil and s ~= pickups.stamp then pickups.live, pickups.stamp = {}, s end" in hook
+    assert hook.index("pickups.live[name] = total") < hook.index("pickups.size = pickups.saveSize()")
+    assert 'Game.on("level"' not in listing + hook
+
+
 def test_json_decode_refuses_text_after_the_value():
     """"[] [ {...} ]" read as an empty list, and a Save after threw the rest away. What's left after the value is a
     mistake, inside the pcall (Game.save.file and Game.save.state don't catch errors)."""
