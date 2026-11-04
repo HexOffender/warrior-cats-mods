@@ -107,6 +107,13 @@ return { mine = Game.cat() ~= nil, current = f:current() == nil, main = f:mainEn
     assert r == {"mine": True, "current": True, "main": True, "cat": True}, r
 
 
+def test_json_with_text_after_it_is_refused(agent):
+    """Game.json.decode("[] [1]") was an empty list, and a Save after lost the rest. The parentheses keep only the
+    first value (agent.lua gives nil, err back as a list)."""
+    assert agent.lua('return (Game.json.decode("[] [1]"))') is None
+    assert agent.lua('return #Game.json.decode("[1] \\n")') == 1   # white space after it is fine
+
+
 def test_a_script_that_doesnt_load_is_named(agent):
     """broken-script's main.lua is missing an end: the log says so by file and line, the studio's card would say
     "Didn't load", and the mod menu's Overview lists it in red."""

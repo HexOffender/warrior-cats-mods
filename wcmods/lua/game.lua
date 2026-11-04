@@ -487,7 +487,8 @@ function Game.json.list(t) return setmetatable(t or {}, Game.json.listMeta) end
 function Game.json.encode(v) return encodeJson(v) end
 
 -- JSON text to Lua: objects and arrays become tables, null becomes Game.json.null. A UTF-8 byte order mark
--- at the start (Notepad's, on a file saved as UTF-8) is skipped.
+-- at the start (Notepad's, on a file saved as UTF-8) is skipped. Text after the value is an error, as for any
+-- other mistake: nil and why.
 local BOM = "\239\187\191"
 function Game.json.decode(text)
     local pos = 1
@@ -580,7 +581,13 @@ function Game.json.decode(text)
             return math.tointeger(tonumber(num)) or tonumber(num)
         end
     end
-    local ok, result = pcall(value)
+    -- One value and nothing after it: "[] [1]" would read as an empty list, and a Save after would lose the rest.
+    local ok, result = pcall(function()
+        local v = value()
+        ws()
+        if pos <= #text then fail("text after the value") end
+        return v
+    end)
     if not ok then return nil, result end
     return result
 end

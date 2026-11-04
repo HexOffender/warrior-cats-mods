@@ -505,6 +505,28 @@ def test_json_decode_skips_a_bom():
     assert 'if pos == 1 and type(text) == "string" and text:sub(1, 3) == BOM then pos = 4 end' in lua
 
 
+def test_json_decode_refuses_text_after_the_value():
+    """"[] [ {...} ]" read as an empty list, and a Save after threw the rest away. What's left after the value is a
+    mistake, inside the pcall (Game.save.file and Game.save.state don't catch errors)."""
+    decode = body(game.lua(), "function Game.json.decode(text)", "\n-- ====")
+    tail = decode[decode.index("local ok, result = pcall(function()"):]
+    assert tail.index("local v = value()") < tail.index("ws()") < tail.index(
+        'if pos <= #text then fail("text after the value") end') < tail.index("return v")
+    assert "local ok, result = pcall(value)" not in decode
+
+
+def test_bootstrap_refuses_a_settings_file_of_null_and_says_why():
+    """A settings.json holding just null decoded to Game.json.null, a table, so MOD.settings became the sentinel every
+    null in that Lua state shares. It's refused now, and decode's own reason is logged (it said "(nil)"). Only this can
+    check it: the build refuses a settings.json that isn't an object, so a test mod can't ship one."""
+    from wcmods.sections import scripts
+    settings = body(scripts.BOOTSTRAP, "if okGame and MOD.settingsFile then", "\nend\n")
+    assert "local ok, data, err = pcall(Game.json.decode, text)" in settings
+    assert 'elseif err == nil and (type(data) ~= "table" or data == Game.json.null) then' in settings
+    assert "if err == nil then\n            MOD.settings = data" in settings
+    assert 'using the settings from the install", tostring(err))' in settings
+
+
 def test_json_decode_keeps_a_number_written_with_a_point_a_float():
     # 12.0 stays 12.0 (a setting's page keeps steps of 0.1 for it, and its Save writes it back with the point).
     lua = game.lua()

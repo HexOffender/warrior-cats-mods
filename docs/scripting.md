@@ -39,7 +39,7 @@ sets up two globals, then runs yours:
 | `MOD.` | What it is |
 |---|---|
 | `id`, `name`, `folder` | The mod's folder name, its name, and its folder on disk |
-| `settings` | `settings.json` as a table (empty without one), read from the file each time the game starts, so what `save()` wrote is back after a restart. Change it and the script sees the change at once |
+| `settings` | `settings.json` as a table (empty without one), read from the file each time the game starts, so what `save()` wrote is back after a restart. Change it and the script sees the change at once. A file that can't be read (broken JSON, something after the closing `}`, or just `null`) is said in the log, and the settings from the install are used |
 | `settingsFile` | Where `MOD.save()` writes, or nil |
 | `save()` | Write `MOD.settings` back to `settings.json`, for the next time the game starts and the next install. Returns true, or false and why |
 | `log(fmt, ...)` | Print `[Mod name] text` to `ue4ss\UE4SS.log`. It's `string.format` underneath, so a `%` in the text is written `%%` |
@@ -447,8 +447,9 @@ others, so try each one.
 
 - **JSON:** `Game.json.encode(v)`, `Game.json.decode(text)` (null is `Game.json.null`; a number written with a
   point or an exponent, `12.0`, stays a number with a fraction, as Lua's `tonumber` has it; a list comes back
-  marked as one, so it's written `[]` again when empty; a byte order mark at the start is passed over), and
-  `Game.json.list(t)` to write an empty table as `[]`.
+  marked as one, so it's written `[]` again when empty; a byte order mark at the start is passed over; text after
+  the value, as in `[] [1]`, is a mistake like any other: nil and why), and `Game.json.list(t)` to write an empty
+  table as `[]`.
 - **Enums:** `Game.enums.<name>` maps each way, name to number and number to name (`Game.enums.status.Poisoned
   == 3`). The enums are `clan`, `rank`, `trait`, `stance`, `status`, `aiProfile`, `team`, `detectionRange`,
   `stat`, `resource`, `questStatus`, `questResult`, `questType`, `objectiveStatus`, `phase`, `itemType` and

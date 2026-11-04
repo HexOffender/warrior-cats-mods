@@ -111,11 +111,18 @@ if okGame and MOD.settingsFile then
         local text = f:read("a")
         f:close()
         if text:sub(1, 3) == BOM then text = text:sub(4) end
-        local ok, data = pcall(Game.json.decode, text)
-        if ok and type(data) == "table" then
+        -- Not a file holding just null either: that's Game.json.null, a table every null read in this Lua state shares,
+        -- and the first setting a page set would go into it.
+        local ok, data, err = pcall(Game.json.decode, text)
+        if not ok then
+            err = data
+        elseif err == nil and (type(data) ~= "table" or data == Game.json.null) then
+            err = "it doesn't hold an object"
+        end
+        if err == nil then
             MOD.settings = data
         else
-            MOD.log("couldn't read settings.json (%s); using the settings from the install", tostring(data))
+            MOD.log("couldn't read settings.json (%s); using the settings from the install", tostring(err))
         end
     end
 end
