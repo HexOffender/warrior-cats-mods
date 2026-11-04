@@ -200,19 +200,26 @@ namespace t
         // message read a moment later; the name and the herb put back after.
         if (!herb_row.empty())
         {
+            // set() writes a plain text, cut from the string table's key: the row's own text is kept whole in a copy
+            // of the row (add_row copies each property with the engine's copy), and copied back after, so the
+            // name follows its key (Words.hpp) again.
+            items.add_row(L"WCModsKeepRow", herb_row);
             Value r = items.row(herb_row);
-            std::wstring old_name = get(r, L"Name").shown();
             expect("tables.set_name", set(r, L"Name", std::wstring_view(L"WCMods Test Herb"))
                                           && get(items.row(herb_row), L"Name").shown() == L"WCMods Test Herb");
             int have = inventory_count(utf8(herb)).value_or(0);
             bool added = add_item(herb, 1);
             value("tables.herb.added", added);
-            after(1.5, [herb_row, old_name, herb, have, added] {
+            after(1.5, [herb_row, herb, have, added] {
                 value("tables.hud_texts", hud_texts_with(L"WCMods Test Herb"));
                 Table again = table(L"DT_QuestObjectsInfo");
-                set(again.row(herb_row), L"Name", std::wstring_view(old_name));
+                Value name_now = get(again.row(herb_row), L"Name"), kept = get(again.row(L"WCModsKeepRow"), L"Name");
+                if (name_now.property && name_now.at && kept.at) name_now.property->CopySingleValue(name_now.at, kept.at);
+                again.remove_row(L"WCModsKeepRow");
                 if (added) remove_item(herb, inventory_count(utf8(herb)).value_or(0) - have);
                 value("tables.herb.name_after", text(get(again.row(herb_row), L"Name").shown()));
+                auto key = words_key(get(again.row(herb_row), L"Name"));
+                value("tables.herb.name_key_after", key ? Json(text(key->second)) : Json());
                 done("tables");
             });
             return;

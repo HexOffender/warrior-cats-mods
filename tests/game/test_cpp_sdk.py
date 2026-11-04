@@ -1031,6 +1031,25 @@ def test_tables_and_tuning(agent):
     assert v["tables.herb.added"] is True
     assert any("WCMods Test Herb" in t for t in v["tables.hud_texts"]), v["tables.hud_texts"]
     assert v["tables.herb.name_after"] == "Lamb's Ear Leaves", v["tables.herb.name_after"]
+    # Put back whole, the name follows its string-table key again (set() had made it a plain text).
+    assert v["tables.herb.name_key_after"] == "STR_ITEM_CONSUMABLE_NAME_7", v["tables.herb.name_key_after"]
+
+
+def test_words(agent):
+    """Words.hpp in the game: the string table's keys, the test cat's name by its key, the key an item's name in its
+    row was made from, that key's words changed (the row's own text shows them, and so does the HUD's message when
+    the item is added) and put back; a key the table hasn't got is refused."""
+    r = _request(agent, "words", timeout=30)
+    assert not _failed(r, "words"), _failed(r, "words")
+    ran = {c["name"] for c in r["checks"] if c["phase"] == "words"}
+    assert {"words.missing", "words.not_set_yet", "words.key_of_plain_value", "words.set", "words.restore"} <= ran, ran
+    v = r["values"]
+    assert v["words.all_keys"] > 8000 and v["words.name_keys"] > 2000, (v["words.all_keys"], v["words.name_keys"])
+    assert v["words.ember"] == "Emberpaw", v["words.ember"]   # the test cat, STR_CAT_NAME2 + _PAW
+    assert (v["words.herb_table"], v["words.herb_key"]) == ("SwtStrings", "STR_ITEM_CONSUMABLE_NAME_7"), v
+    assert v["words.herb_before"] == "Lamb's Ear Leaves" and v["words.herb_after"] == "Lamb's Ear Leaves", v
+    assert v["words.row_text_after"] == "WCMods Word Herb", v["words.row_text_after"]
+    assert v["words.added"] is True and "WCMods Word Herb" in v["words.hud_texts"], v["words.hud_texts"]
 
 
 def test_ui_arrow_units(agent):
