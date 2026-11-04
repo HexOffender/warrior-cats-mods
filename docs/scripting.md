@@ -121,9 +121,11 @@ local Game = require("WCModsGame")   -- a script mod has it as Game already
   into nil (or your default).
 - **Objects last a level:** look things up again rather than keeping them. `Game.cat()` is cheap.
 - **One thread:** don't use `LoopAsync` in a script that uses these modules (see SDK.md).
-- **Some calls are costly every frame:** `Game.save.file()` and `Game.items.list()` read and decode the whole
-  save (kept for a second), and `Game.quests.objectives(q)` looks through every objective in the game each time.
-  Call them from `Game.every`, not `Game.onFrame`.
+- **Some calls are costly every frame:** `Game.quests.objectives(q)` looks through every objective in the game each
+  time; call it from `Game.every`, not `Game.onFrame`. `Game.save.file()` (and so `Game.items.list()`,
+  `cat:traits()` and the slot calls) decodes the whole save, about 40 ms, but only when the file has changed: it
+  keeps the table while the file's size stays the same, looking at most 4 times a second and decoding it again at
+  least every 30 s.
 
 ### Objects
 
@@ -437,7 +439,7 @@ others, so try each one.
 
 | Call | Gives |
 |---|---|
-| `Game.save.file()`, `Game.save.slotData()` | The whole save as of the game's last save, as a table; this cat's slot in it |
+| `Game.save.file()`, `Game.save.slotData()` | The whole save as of the game's last save, as a table; this cat's slot in it. The table is kept while the file's size stays the same, so a save that rewrote it at the same size (a count going from 6 to 7) is seen up to 30 s late; `Game.save.write()` drops it. Don't change the table: every call gets the same one |
 | `Game.save.write()` | Save now (the game's own Save) |
 | `Game.save.folder()` | A folder for a script's own files: `WCMods` in the game's Saved folder, beside its saves. Every install makes it, and updating a mod or wcmods leaves it alone |
 | `Game.save.slot()` | The save slot in use |

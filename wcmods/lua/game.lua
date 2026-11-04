@@ -945,6 +945,8 @@ end }
 -- ===================================================================================== the save's live data
 -- The game keeps its save as JSON in memory (the save manager); these read and write it while it runs.
 Game.save = {}
+-- Game.save.file()'s decoded save (below), and when and at what size it was read; Game.save.write drops it.
+local fileCache = { at = -1, data = nil, size = nil, checked = -1 }
 
 function Game.save.manager() return Game.manager("save") end
 
@@ -996,9 +998,11 @@ function Game.save.setSetting(primary, sub, value)
     return pcall(function() sm:SetSettingsData(primary, sub or "", value) end)
 end
 
--- Write the save now (the game's own Save, which it also calls at checkpoints).
+-- Write the save now (the game's own Save, which it also calls at checkpoints). Game.save.file() reads the file
+-- again after it.
 function Game.save.write(context)
     local lib = Game.library("SaveManager")
+    fileCache.data = nil
     return pcall(function() lib:Save(context or "WCMods", false, false) end)
 end
 
@@ -1332,17 +1336,27 @@ function Game.save.folder()
     return base .. "\\Wrc\\Saved\\WCMods"
 end
 
-local fileCache = { at = -1, data = nil }
--- The whole save as of the game's last save, as a table (cached for a second).
+-- The whole save as of the game's last save, as a table. Decoding it takes about 40 ms (half a megabyte), so the
+-- table is kept while the file's size stays the same: the size is looked at at most 4 times a second, and the file
+-- is decoded again at least every 30 s (a save that rewrote it at the same size is seen that late). The file caught
+-- half written gives the last table read whole. (fileCache is declared with Game.save, so Game.save.write sees it.)
 function Game.save.file()
-    if fileCache.data and os.clock() - fileCache.at < 1 then return fileCache.data end
+    local now = os.clock()
+    if fileCache.data and now - fileCache.checked < 0.25 then return fileCache.data end
     local f = io.open(Game.save.path(), "rb")
     if not f then return nil, "no save file" end
+    local size = f:seek("end")
+    fileCache.checked = now
+    if fileCache.data and size == fileCache.size and now - fileCache.at < 30 then
+        f:close()
+        return fileCache.data
+    end
+    f:seek("set")
     local text = f:read("a")
     f:close()
     local data, err = Game.json.decode(text)
-    if not data then return nil, err end
-    fileCache.at, fileCache.data = os.clock(), data
+    if not data then return fileCache.data, err end
+    fileCache.at, fileCache.data, fileCache.size = now, data, size
     return data
 end
 

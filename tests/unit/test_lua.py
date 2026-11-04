@@ -515,6 +515,23 @@ def test_json_decode_skips_a_bom():
     assert 'if pos == 1 and type(text) == "string" and text:sub(1, 3) == BOM then pos = 4 end' in lua
 
 
+def test_the_save_file_is_decoded_again_only_when_it_changed():
+    """Game.save.file() decoded the whole save (about 40 ms) every second, changed or not: a page reading items had a
+    hitch a second. The table is kept while the file's size is the same (looked at 4 times a second, decoded again
+    every 30 s at least), a half-written file gives the last good table, and Game.save.write drops it, which needs
+    fileCache declared before it (out of scope, it would be a nil global, and every script's write would fail)."""
+    lua = game.lua()
+    read = body(lua, "function Game.save.file()", "\nfunction Game.save.slotData()")
+    assert "if fileCache.data and now - fileCache.checked < 0.25 then return fileCache.data end" in read
+    assert 'local size = f:seek("end")' in read and 'f:seek("set")' in read
+    assert "if fileCache.data and size == fileCache.size and now - fileCache.at < 30 then" in read
+    assert "if not data then return fileCache.data, err end" in read
+    assert "fileCache.at, fileCache.data, fileCache.size = now, data, size" in read
+    assert lua.count("local fileCache =") == 1
+    assert lua.index("Game.save = {}") < lua.index("local fileCache = {") < lua.index("function Game.save.write(")
+    assert "fileCache.data = nil" in body(lua, "function Game.save.write(", "\nend")
+
+
 def test_json_decode_refuses_text_after_the_value():
     """"[] [ {...} ]" read as an empty list, and a Save after threw the rest away. What's left after the value is a
     mistake, inside the pcall (Game.save.file and Game.save.state don't catch errors)."""

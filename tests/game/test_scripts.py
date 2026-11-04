@@ -114,6 +114,17 @@ def test_json_with_text_after_it_is_refused(agent):
     assert agent.lua('return #Game.json.decode("[1] \\n")') == 1   # white space after it is fine
 
 
+def test_the_save_file_is_kept_while_it_hasnt_changed(agent):
+    """Game.save.file() gives the same table 2.5 s later: it isn't decoded again while the file's size is the same.
+    (Flaky only if the game saves meanwhile.)"""
+    assert agent.lua("WCMODS_SAVE_FILE = Game.save.file() return WCMODS_SAVE_FILE ~= nil") is True
+    try:
+        time.sleep(2.5)
+        assert agent.lua("return rawequal(Game.save.file(), WCMODS_SAVE_FILE)") is True
+    finally:
+        agent.lua("WCMODS_SAVE_FILE = nil return true")
+
+
 def test_a_script_that_doesnt_load_is_named(agent):
     """broken-script's main.lua is missing an end: the log says so by file and line, the studio's card would say
     "Didn't load", and the mod menu's Overview lists it in red."""
