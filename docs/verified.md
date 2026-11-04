@@ -363,6 +363,19 @@ to "WCMods Word Herb", the row's own text read the new words, and the HUD's mess
 had them; put back, the key read "Lamb's Ear Leaves" again. A key the table hasn't got, and another table's name,
 gave nothing.
 
+**2026-11-04, build 26337109: sounds and music** (the branch `claude/cpp-sounds`, `tests/game/test_cpp_sdk.py`:
+`test_sounds_and_music` passed):
+- **An id's sound replaced:** `cat_step` given the select sound's (`S_Cue_ui_select`), the cat walked 3.5 s, and the
+  only one of the two that played was `S_Cue_ui_select`; put back, `cat_step` was `S_Cue_cat_step` again. Muted,
+  `ui_select`'s cue had its `VolumeMultiplier` at 0, and its own volume back after. `ui_select` lasts 0.31 s; a sound played with
+  `play_sound` stopped with `stop_sound`.
+- **A data mod's AudioEvents.csv:** a throwaway mod's `data.json` set row 78 (`cat_step`) to the select sound's path;
+  installed, the game's `AudioEventsMap` had the select sound for `cat_step` (read by `sound_of`).
+- **Music:** the ShadowClan camp's `MS_mus_camp_shadowclan` (`mus_camp_shadowclan`); `play_music(L"mus_camp")` and a
+  second later `MS_mus_camp` played; `stop_music(0)` and none played; the camp's track again after.
+- **Volumes and the pause:** `set_volume(Music)` took 0.5 and 1; `pause_sounds(true)` and `sounds_paused()` said so,
+  `pause_sounds(false)` and it didn't.
+
 ## Not yet confirmed in game
 
 - **Choosing a game (2026-10-28):** the Save page's changes to a game other than the one played last, made

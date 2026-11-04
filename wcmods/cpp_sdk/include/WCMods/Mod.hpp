@@ -69,5 +69,6 @@ namespace wcmods
         ::wcmods::detail::stop_menu();                                                                         \
         ::wcmods::detail::stop_ui();                                                                           \
         ::wcmods::detail::stop_words();                                                                        \
+        ::wcmods::detail::stop_sounds();                                                                       \
         delete mod;                                                                                            \
     }
