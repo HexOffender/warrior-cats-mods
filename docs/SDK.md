@@ -809,8 +809,8 @@ The menu works without a mouse too:
   option, are light with dark text, so they show without relying on colour.
 
 Under the title, a status line says how to open and close the menu, or what a script tells it
-(`Menu.status`): with Menu pages, your cat's name, level, rank, health and stamina, where it is, the
-time and the fresh-kill pile. The side bar lists the pages in groups; a group shows once a page is in
+(`Menu.status`, a line each; the line of the mod whose page is showing wins): with Menu pages, your
+cat's name, level, rank, health and stamina, where it is, the time and the fresh-kill pile. The side bar lists the pages in groups; a group shows once a page is in
 it:
 
 | Group | Pages |
@@ -919,9 +919,13 @@ default, and a group of its own comes after `mods`). `order` sorts it within the
 first, 50 by default). `Menu.isOpen()` says whether the menu is open, `Menu.open(page)` opens it (on
 a page, by title or id) and `Menu.close()` closes it, e.g. from a script's own key.
 `Menu.key("F6", "Mouse look on and off")` lists a key a script uses on the Overview page
-(`Game.onKey`'s fourth argument does the same). `Menu.status(text)` sets the line under the window's
-title while the menu is open (one line; nil or `""` puts back the menu's own, and the last script to
-set it wins); the player can hide it on the Menu page.
+(`Game.onKey`'s fourth argument does the same). `Menu.status(text)` sets this script's line under the
+window's title while the menu is open (one line; nil or `""` takes it down). Each script has a line of
+its own, and the window shows one: the line of the mod whose page is showing, else the one that went up
+most recently. Changing a line that's up keeps its place, so a line that changes every second doesn't
+take over another script's. With no line up, the menu's own shows; the player can hide them on the Menu
+page. `Menu.statusShown()` gives the line shown and whose it is (the mod's folder under `Mods/`), or nil
+for the menu's own.
 `Menu.saveJson(path, value)` writes a Lua value as JSON (keys sorted, notes like `"_help"` first)
 and returns true, or false and why. It writes the whole file or nothing: the text goes to
 `<path>.new`, is read back, and only then takes the old file's place, so a full disk leaves the old
@@ -938,10 +942,12 @@ UI wants, and `Menu.theme` the menu's colours.
 How it fits together: each UE4SS mod has a Lua state of its own, so the menu window belongs to a
 script wcmods installs with every build, `WCModsMenuHost`. It shares its content panel with the
 others through UE4SS's shared variables (`WCModsMenu.open`, `.page`, `.content`, `.tree`,
-`.generation`, `.pages`, `.keys`, `.request`). The script that owns the page on show builds its rows
-straight into that panel, so a page always runs next to the settings it changes. The same rows
-answer the agent controller (`wcmods agent menu ...`), which reads a page and uses its controls by
-label through `WCModsMenu.agent.*` (docs/agent.md, "The mod menu").
+`.generation`, `.pages`, `.keys`, `.request`, `.status`, `.status.lines`, `.status.shown`). They're the
+menu's own, and their names and shapes can change: a script uses the calls above (`Menu.status`,
+`Menu.statusShown`, `Menu.open`), not `Menu.shared` and `Menu.share`. The script that owns the page
+on show builds its rows straight into that panel, so a page always runs next to the settings it
+changes. The same rows answer the agent controller (`wcmods agent menu ...`), which reads a page and
+uses its controls by label through `WCModsMenu.agent.*` (docs/agent.md, "The mod menu").
 
 ## `WCModsView`
 

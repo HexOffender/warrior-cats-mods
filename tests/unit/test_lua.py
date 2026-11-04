@@ -176,8 +176,28 @@ def test_mod_menu_window_script_with_the_dev_pages():
 
 
 def test_mod_menu_shows_a_scripts_status_line():
-    assert "function Menu.status(" in menu.lua()
-    assert 'Menu.shared("status")' in menu.host_script(MANIFEST, [])
+    """A line each: Menu.status keeps its script's line in "status.lines" (owner as Menu.page has it, and since when
+    it's been up, kept when it changes), and the host shows the line of the mod whose page is showing, else the one
+    that went up last, saying which in "status.shown" (Menu.statusShown). The one shared line was last-writer-wins: a
+    script whose line ticked took over everyone's. "status" is still written, for what read it before."""
+    lua = menu.lua()
+    status = body(lua, "function Menu.status(text)", "\nfunction Menu.statusShown()")
+    assert 'local line, owner = (tostring(text or ""):gsub("[\\r\\n\\t]+", " ")), caller(2)' in status
+    assert 'Menu.share("status", line)' in status and "ExecuteInGameThread(function()" in status
+    assert 'for l in (Menu.shared("status.lines") or ""):gmatch("[^\\n]+") do' in status
+    assert "if o == owner then since = s elseif o then" in status   # its place is kept
+    assert 'string.format("%.3f", os.clock())' in status and 'Menu.share("status.lines", table.concat(out))' in status
+    assert lua.index("local function caller(level)") < lua.index("function Menu.status(text)")
+    shown = body(lua, "function Menu.statusShown()", "\nend\n")
+    assert 'Menu.shared("status.shown")' in shown and "return line, owner" in shown
+    assert "Menu.ownerOf = ownerOf" in lua
+    host = menu.host_script(MANIFEST, [])
+    pick = body(host, "local line, owner, best = nil, nil, nil", 'pcall(function() win.status:SetText(FText(line or USAGE)) end)')
+    assert 'local showing = Menu.ownerOf(Menu.shared("pages") or "", tostring(Menu.shared("page") or ""))' in pick
+    assert 'Menu.shared("status.lines")' in pick
+    assert 'local rank = (showing and showing ~= "" and o == showing) and math.huge or (tonumber(since) or 0)' in pick
+    assert 'Menu.share("status.shown", shown)' in pick
+    assert 'Menu.shared("status")' not in host
 
 
 def test_mod_menu_opens_from_a_controller_too():

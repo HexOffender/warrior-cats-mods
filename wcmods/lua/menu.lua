@@ -38,6 +38,8 @@ local function report(where, err)
 end
 
 -- ---------- shared with the host ----------
+-- The host's own: the window and the pages it draws talk through these. A script asks through the calls
+-- below (Menu.status, Menu.statusShown, Menu.open...), whose shared names can change.
 local PREFIX = "WCModsMenu."
 function Menu.shared(name)
     local ok, v = pcall(function() return ModRef:GetSharedVariable(PREFIX .. name) end)
@@ -940,6 +942,7 @@ local function ownerOf(list, id)
     end
     return nil
 end
+Menu.ownerOf = ownerOf   -- the host's: whose page is showing, for the status line
 
 local function register(p)
     local list = Menu.shared("pages") or ""
@@ -1032,10 +1035,34 @@ function Menu.open(page) Menu.share("request", "open\t" .. tostring(page or ""))
 function Menu.close() Menu.share("request", "close\t") end
 
 -- The line under the window's title, while the menu is open: one line of how things stand, e.g. your
--- cat's health and where it is. nil or "" puts back the menu's own line (how to open and close it). One
--- script's line at a time: the last one set shows. The player can hide it (Tools, Menu).
+-- cat's health and where it is. Each script has a line of its own, and the window shows one of them: the
+-- line of the mod whose page is showing, else the one that went up most recently. Changing a line that's up
+-- keeps its place, so a line that ticks (a clock) doesn't take over another's. nil or "" takes this script's
+-- line down; with none up, the menu's own line shows (how to open and close it). The player can hide them
+-- (Tools, Menu).
+-- The lines are shared as "status.lines", one "<owner>\t<since>\t<line>" each (the owner as Menu.page has
+-- it), changed on the game thread; the host says what it shows in "status.shown". "status" still has the
+-- last line set, for what read it before there was a line each.
 function Menu.status(text)
-    Menu.share("status", (tostring(text or ""):gsub("[\r\n]+", " ")))
+    local line, owner = (tostring(text or ""):gsub("[\r\n\t]+", " ")), caller(2)
+    Menu.share("status", line)
+    ExecuteInGameThread(function()
+        local out, since = {}, nil
+        for l in (Menu.shared("status.lines") or ""):gmatch("[^\n]+") do
+            local o, s = l:match("^([^\t]*)\t([^\t]*)\t")
+            if o == owner then since = s elseif o then out[#out + 1] = l .. "\n" end
+        end
+        if line ~= "" then out[#out + 1] = owner .. "\t" .. (since or string.format("%.3f", os.clock())) .. "\t" .. line .. "\n" end
+        Menu.share("status.lines", table.concat(out))
+    end)
+end
+
+-- The status line the window shows, and whose it is (the mod's folder under Mods/, as Menu.page has it); nil
+-- when it shows the menu's own line, or the player hid the lines.
+function Menu.statusShown()
+    local owner, line = tostring(Menu.shared("status.shown") or ""):match("^([^\t]*)\t(.+)$")
+    if not owner then return nil end
+    return line, owner
 end
 
 -- Tell the menu about a key a script uses, so its Overview page lists it: Menu.key("F6", "Mouse look on and off").
