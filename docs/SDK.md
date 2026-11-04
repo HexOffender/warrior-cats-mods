@@ -1382,7 +1382,7 @@ left as it is.
 
 | Call | Does |
 |---|---|
-| `wcmods::ui::tab(L"WBP_GuiScreenPause_C", L"Mods", fn, {id, inset, hide_game_panels, scroll, focus, mouse})` | A tab of the mod's own in one of the game's screens, by the screen's class (`WBP_GuiScreenPause_C`, `WBP_GuiPopupInventory_C`, `WBP_GuiPopupGameSettings_C`, `WBP_GuiPopupSettings_C`...): a tab button like the screen's own after them, which the game's tab keys reach (the arrow keys since build 26337109, 1 and 2 before; a controller's shoulder buttons), and `fn(page)` filling its page (a column to add rows to) each time the screen opens. The game's panels hide while the page shows and come back after. Gives back the tab's id. Keep the title short, as the game's are |
+| `wcmods::ui::tab(L"WBP_GuiScreenPause_C", L"Mods", fn, {id, inset, hide_game_panels, scroll, focus, mouse})` | A tab of the mod's own in one of the game's screens, by the screen's class (`WBP_GuiScreenPause_C`, `WBP_GuiPopupInventory_C`, `WBP_GuiPopupGameSettings_C`, `WBP_GuiPopupSettings_C`...): a tab button like the screen's own after them, which the game's tab keys reach (the arrow keys since build 26337109, 1 and 2 before; a controller's shoulder buttons), and leave again from the page (below, "The keys on a page"), and `fn(page)` filling its page (a column to add rows to) each time the screen opens. The game's panels hide while the page shows and come back after. Gives back the tab's id. Keep the title short, as the game's are |
 | `wcmods::ui::tab_page(id)`, `tab_active(id)`, `remove_tab(id)`, `tabs()` | The tab's page while its screen is up (else empty), whether the game's navigation is on it, taking it out, and every tab's id |
 | `wcmods::ui::send(screen, L"Button_Back")`, `ui::close(screen)` | A command to one of the game's screens as its controls would give it, through the screen's own `OnListenCommand`: pressed in the next frame and released 0.3 s later, as a short press, each from inside one of the game's ProcessEvent calls as Lua's calls come (the inventory ignored the same calls made at the end of a frame, and a press and release in one call). `Button_Back` closes it (`close` gives it; while the game's window is behind, again while the screen is still up, three times at most, as a screen took the first command after opening without acting on it then), `Button_Confirm` uses what has the focus, `Button_Left` and `Button_Right` move along a row. Opening one is `wcmods::command`. False for an empty `Widget` or a name `ECommands` hasn't got |
 | `wcmods::ui::screen(L"WBP_GuiPopupInventory_C")`, `on_screen(type, fn)` | One of the game's screens while it shows (a base class works too, `GuiPopupCommonSettings`), and `fn(screen, shown)` when a screen of a class comes on the viewport and when it goes, looked for four times a second. `wcmods::screens()` (World.hpp) lists the ones showing |
@@ -1391,7 +1391,7 @@ left as it is.
 | `wcmods::ui::widget(L"ExpandableArea")` | Any of the engine's widgets by its class, plain: `TextBlock`, `Button`, `CheckBox`, `Slider`, `SpinBox`, `ComboBoxString`, `EditableTextBox`, `MultiLineEditableTextBox`, `EditableText`, `ProgressBar`, `Image`, `Border`, `SizeBox`, `Spacer`, `HorizontalBox`, `VerticalBox`, `ScrollBox`, `CanvasPanel`, `Overlay`, `GridPanel`, `UniformGridPanel`, `WrapBox`, `WidgetSwitcher`, `ScaleBox`, `ExpandableArea`, `BackgroundBlur`, `Throbber`, `CircularThrobber`, `RichTextBlock`, `InputKeySelector`, `ListView`... (any class in `/Script/UMG`), or by a full class path |
 | `wcmods::ui::game_widget(class)` | One of the game's own widget Blueprints, by its class or its path, made the way the game makes its widgets |
 | `wcmods::ui::text(L"Hi", {size, color, wrap, justify})`, `heading(str)`, `note(str)` | Text in the game's font; a heading; smaller grey text |
-| `wcmods::ui::button(label, color)`, `checkbox(on)`, `slider(value, lo, hi, step)`, `number(value, lo, hi, step)`, `input(text, hint)`, `choice({options}, selected)`, `progress(fraction, color)`, `image(texture path, w, h)`, `rect(color, w, h)` | The controls, styled: a button with a label, a check box, a slider, a number box you can drag or type in, a text box with a hint, a drop-down, a bar, a picture (a texture the game has loaded), a flat colour |
+| `wcmods::ui::button(label, color)`, `checkbox(on)`, `slider(value, lo, hi, step)`, `number(value, lo, hi, step)`, `input(text, hint)`, `choice({options}, selected)`, `progress(fraction, color)`, `image(texture path, w, h)`, `rect(color, w, h)` | The controls, styled: a button with a label, a check box, a slider (Left and Right move it once it has the keyboard, with no Enter first, as on a computer; the engine's own slider waits for Enter, made for a controller), a number box you can drag or type in, a text box with a hint, a drop-down, a bar, a picture (a texture the game has loaded), a flat colour |
 | `wcmods::ui::hbox()`, `vbox()`, `scroll()`, `border(color, padding)`, `box(w, h)`, `spacer(w, h)`, `canvas()`, `overlay_box()`, `grid()`, `uniform_grid()`, `wrap()`, `switcher()`, `scale(factor)` | Layouts: widgets side by side, one under another, a list that scrolls, a box around one widget, a fixed size, empty room, free placement, one over another, grids, a flow that wraps, one of several, and a scaled one |
 | `wcmods::ui::row({widgets}, gap)`, `labelled(label, control, width)`, `scaled(control, width)` | A row (the first widget takes the room left), a labelled control as the game's settings rows, and a control grown to the game's size: a check box by a render transform in a box of its drawn size, a number or text box or drop-down in a scale box with its text fitted, a button, text or layout as it is |
 | `Widget::add(child)`, `add({children})`, `remove(child)`, `remove()`, `clear()` | Put a widget in a panel (at the end) or in a content widget (as its one content), giving back its `Slot`; take one out; take this one out of wherever it is; take every child out |
@@ -1418,8 +1418,23 @@ controls in a row, listed in the screen's `NavControls` navigation, which the ta
 the mod's own is one more of the game's tab buttons (made from the class of the screen's own, so it looks
 the same), put after them in the row and appended to that list, so the game's own navigation selects it;
 the row is drawn smaller when the tabs no longer fit. While the navigation is on it, the page (a border
-over the panels' area, the panels hidden) shows and the keyboard goes to its first control: the arrows,
-Tab and Enter then move among and use the page's controls. The cat maker's categories are a circular
+over the panels' area, the panels hidden) shows and the keyboard goes to its first button, check box or
+drop-down, once the key that brought the player there is released (`focus`).
+
+The keys on a page: since build 26337109 the arrows are the pause screen's tab keys (its `Button_Left` and
+`Button_Right`), and they're also the keys the engine moves the keyboard between controls with. So, as on
+the game's own tabs, Left and Right move the game's tab, except along a row of controls (a `ui::row` of
+buttons, where they move between them and leave the tab from the row's ends) and on a slider, a number box
+or a text box, which use them for their value or caret. Up and Down move between the page's rows; Up from
+the page's top gives the keyboard back to the tab row, and Down from there takes it in again, to the
+page's first control of any kind (a page of sliders alone gets the keyboard that way). Enter uses a
+control, Backspace closes the screen. (Tab doesn't move the keyboard in this game.) An arrow held longer
+than 0.6 s that moved the keyboard along a row also moves the tab when it's let go: the SDK sees the
+press only by what it did. To do that, the
+SDK watches the screen's commands: the engine takes the press of an arrow while a page's control has the
+keyboard and only the release reaches the screen, so a release whose press the screen never got, and
+which didn't move the keyboard along a row, is given to the screen as a whole command (`ui::send`). The
+inventory can open with its item grid holding the selection; Up goes to its tab row. The cat maker's categories are a circular
 icon menu (`GuiCircularMenu`), not a tab row, so `tab()` doesn't reach it; its screen and parts are
 still there through `screen()`, `find()` and `add()`.
 
@@ -1436,8 +1451,9 @@ the state the page shows in your own variables, as the example does with the set
 shows, it takes the mouse (`mouse`, on unless you say otherwise): the cursor is shown, the game's input
 mode is set to game-and-UI, as the game's own menus leave it, and the game's fade widgets (which sit over
 its screens with a full-screen picture that would take every click) let the mouse through, so the page's
-controls, its scroll bar and the wheel answer it; the cursor goes back as it was, the fades take hits
-again and the input is flushed when the page goes. The keyboard goes to the page's first control (`focus`).
+controls, its scroll bar and the wheel answer it; the cursor goes back as it was and the fades take hits
+again when the page goes, and the keyboard goes back to the game. Held keys are let go of then, except
+when an arrow moved the player off the tab: it's still held, and letting go of it sent its release twice.
 Tabs of one mod on one screen are put away before the next is shown, whatever order they were made in,
 so a tab leaving never undoes what the next took; and while a page shows it keeps what it hid hidden and
 the mouse its own, looked at four times a second, so a panel the game shows again, or another mod's tab

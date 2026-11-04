@@ -419,7 +419,7 @@ Each step's pull request updates its line.
 
 | Step | State | Pull request |
 |---|---|---|
-| 1. Clean ground | not started | |
+| 1. Clean ground | done: the arrows on a tab's page; the crashes read (UE4SS's Lua runtime, not C++) and unhooking proved under load | this branch, `claude/cpp-tab-keys` |
 | 2. Tables, live | not started | |
 | 3. Words, live | not started | |
 | 4. Sounds and music | not started | |

@@ -2069,6 +2069,22 @@ the key talks.
   `IsInViewport()` and `IsVisible()` both true.
 - **Slate focus:** `SetKeyboardFocus` on a widget takes the keyboard away from the game's screens until
   `WidgetBlueprintLibrary:SetFocusToGameViewport()` or the game's own focus handling gives it back.
+- **The tab keys on build 26337109** (seen in game, 2026-11-04, a hook on `SwtScreen:OnListenCommand`,
+  `OnKeyPressed` and `OnNavigationChanged`): the pause screen's and the inventory's tabs move on
+  `Button_Left` and `Button_Right` (the arrows, and A and D), on the press; their tab rows show arrow
+  pictures. `Two` still sends `Button_ShoulderR`, which moves nothing there now. While a UMG control has
+  Slate's keyboard focus, Slate takes an arrow's press (moving the focus, or nowhere) and the screen gets
+  only the release (`Button_Left` with `IE_Released`), so the tab row doesn't move. Calling the screen's
+  `OnListenCommand(Button_Left, IE_Pressed, controller)` itself moves the tab even then.
+- **Releases sent twice:** taking the keyboard from the game's viewport while a key is held, or
+  `SetInputMode_GameAndUIEx` with `bFlushInput`, makes the engine let go of held keys: the screen gets the
+  held arrow's `IE_Released` at once, and the real release comes after it.
+- **Tab** (the key) doesn't move Slate's focus between controls in this game.
+- **The inventory** can open with its item grid holding the selection (`CurrentNav.CurrentControl` empty,
+  the arrows moving among the items, the tab row's arrow pictures dimmed); Up from the grid's top row goes to
+  the tab row (`mcGuiTabConsumable`).
+- **UMG's slider** (`USlider`) has `RequiresControllerLock` true: Left and Right move Slate's focus until
+  Enter locks it, then change its value.
 
 **The main menu** (worked out on build 26184573, 2026-10-26, for the Sandbox mode mod's button; seen
 in game):
