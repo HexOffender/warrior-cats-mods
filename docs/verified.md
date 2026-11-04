@@ -382,6 +382,13 @@ the table's, 0.028371, and Night put that on; with Night held, the copy's fog se
 the fog component's density was 0.28371; ThunderClan's sun 9; `SunColor.R` set and read back; what isn't there refused;
 the copy's numbers put back after, and the area's sky given back.
 
+**2026-11-04, build 26337109: cats of a mod's own** (the branch `claude/cpp-npcs`, `tests/game/test_cpp_sdk.py`:
+`test_npcs` passed): your cat moved 8 m from the den entrance (the game's Travel prompt there gone); a cat spawned
+2 m away on `BP_WalkingNPC_Character_Base_C`, its body 3, tail 2, fur slot 4 and `bOverrideColors` as given, its body's
+Fur Color the linear #ff8800; its label "Brindlemoon" / "Elder" at full opacity and the Talk prompt on the HUD;
+`command(L"Player_Interact")` reached `on_npc_interact` once, for that cat; moved half a metre, then walked 4.7 m and
+arrived; removed, its actor gone; your cat put back. The loader found the cat's class by its path.
+
 ## Not yet confirmed in game
 
 - **Choosing a game (2026-10-28):** the Save page's changes to a game other than the one played last, made

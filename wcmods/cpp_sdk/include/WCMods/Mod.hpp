@@ -71,5 +71,6 @@ namespace wcmods
         ::wcmods::detail::stop_words();                                                                        \
         ::wcmods::detail::stop_sounds();                                                                       \
         ::wcmods::detail::stop_sky();                                                                          \
+        ::wcmods::detail::stop_npcs();                                                                         \
         delete mod;                                                                                            \
     }

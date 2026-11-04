@@ -12,4 +12,5 @@ wcmods_mod(${WCMODS_TARGET}
     src/test_tables.cpp
     src/test_words.cpp
     src/test_sounds.cpp
+    src/test_npcs.cpp
 )
