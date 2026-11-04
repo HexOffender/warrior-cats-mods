@@ -82,6 +82,20 @@ def test_world_scan_clears_the_label_cache():
     assert "actorLabels = {}" in scan and "local actorLabels" not in scan
 
 
+def test_world_label_cache_is_per_actor_and_cleared_by_class_queries_too():
+    """The cache was keyed on address and class, and only kind queries (scan) cleared it: a script that only asked by
+    class kept it for the whole session, and a recycled address with another pickup of the same class showed the
+    earlier item's label. It's keyed on the actor's own name (with its instance number), and a class query that looks
+    again clears it."""
+    lua = world.lua()
+    label = body(lua, "function World.label(actor, kind)", "\nend\n")
+    assert 'local key = tostring(actor:GetAddress()) .. "|" .. actor:GetFName():ToString()' in label
+    find = body(lua, "function World.find(kind)", "\nend\n")
+    branch = find[find.index("if not c or os.clock() - c.at >= World.refresh then"):]
+    assert branch.index("actorLabels = {}") < branch.index("FindAllOf(kind)")
+    assert lua.index("local actorLabels = {}") < lua.index("function World.find(kind)")
+
+
 def test_game_module_says_which_wcmods_wrote_it():
     """Scripts couldn't tell which wcmods they ran on, so one that supports an older wcmods kept every workaround.
     Game.wcmods is wcmods/__init__.py's __version__ (the only place it lives), and Game.wcmodsNumber one to compare;
