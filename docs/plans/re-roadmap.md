@@ -9,6 +9,8 @@ Three branches already under way are referred to, not planned again: the test ha
 - story: the `gives` rewards and the dialogue answer buttons;
 - docs-guide: the creator guide pages.
 
+**Status, 2026-11-04.** Steps 4, 5, 6 and 10 are done; 1, 7 and 9 are half done; 2, 3 and 8 aren't checked. The open ones are folded into the C++ SDK plan, [cpp-sdk-coverage.md](cpp-sdk-coverage.md), whose status table says where each stands; the creator-facing cards here (Sounds and music, Sky, the TuningData line) wait for the studio's turn.
+
 ## What it is for
 
 A creator wants to change three kinds of thing without code:
