@@ -57,8 +57,11 @@ namespace t
                 if (s.find(L"cat_step") != std::wstring::npos || s.find(L"ui_select") != std::wstring::npos) list.push(text(s));
             value("sounds.heard_walking", list);
             expect("sounds.restore", restore_sound(L"cat_step") && name(sound_of(L"cat_step")) == L"S_Cue_cat_step" && !restore_sound(L"cat_step"));
-            expect("sounds.mute", mute_sound(L"ui_select") && name(sound_of(L"ui_select")) == L"MS_mus_empty" && restore_sound(L"ui_select")
-                                      && name(sound_of(L"ui_select")) == L"S_Cue_ui_select");
+            UObject* select = sound_of(L"ui_select");
+            double volume = get(select, L"VolumeMultiplier").number();
+            expect("sounds.mute", mute_sound(L"ui_select") && sound_of(L"ui_select") == select && get(select, L"VolumeMultiplier").number() == 0
+                                      && restore_sound(L"ui_select") && get(select, L"VolumeMultiplier").number() == volume && !restore_sound(L"ui_select"));
+            value("sounds.select_volume", volume);
 
             // The music: what plays, another track, stopped, and the game's track again.
             Music m = music();

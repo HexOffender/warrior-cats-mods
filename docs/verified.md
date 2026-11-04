@@ -367,7 +367,7 @@ gave nothing.
 `test_sounds_and_music` passed):
 - **An id's sound replaced:** `cat_step` given the select sound's (`S_Cue_ui_select`), the cat walked 3.5 s, and the
   only one of the two that played was `S_Cue_ui_select`; put back, `cat_step` was `S_Cue_cat_step` again. Muted,
-  `ui_select` was the empty track (`MS_mus_empty`), and back after. `ui_select` lasts 0.31 s; a sound played with
+  `ui_select`'s cue had its `VolumeMultiplier` at 0, and its own volume back after. `ui_select` lasts 0.31 s; a sound played with
   `play_sound` stopped with `stop_sound`.
 - **A data mod's AudioEvents.csv:** a throwaway mod's `data.json` set row 78 (`cat_step`) to the select sound's path;
   installed, the game's `AudioEventsMap` had the select sound for `cat_step` (read by `sound_of`).

@@ -936,20 +936,63 @@ namespace wcmods
         if (!assert_game_thread(L"replace_sound") || !is_a(sound, STR("/Script/Engine.SoundBase"))) return false;
         return detail::replace_entry(id, sound);
     }
-    // Silence an id: it plays the game's empty track (mus_empty) instead. False for an id it hasn't got.
-    inline auto mute_sound(std::wstring_view id) -> bool { return replace_sound(id, L"mus_empty"); }
-    // Give an id its own sound back; false when it wasn't replaced or muted.
+    namespace detail
+    {
+        // A sound's own volume: a cue's VolumeMultiplier, a wave's (and a MetaSound's) Volume.
+        inline auto volume_path(UObject* sound) -> const wchar_t*
+        {
+            if (is_a(sound, STR("/Script/Engine.SoundCue"))) return L"VolumeMultiplier";
+            if (is_a(sound, STR("/Script/Engine.SoundWave"))) return L"Volume";
+            return nullptr;
+        }
+        struct MutedSound
+        {
+            UObject* sound{};
+            double volume{};
+        };
+        inline auto muted_sounds() -> std::map<std::wstring, MutedSound>&   // id -> the sound turned down, and its volume
+        {
+            static std::map<std::wstring, MutedSound> muted;
+            return muted;
+        }
+        // restore_sound without the game-thread check, for the mod going (stop_sounds).
+        inline auto restore_now(std::wstring_view id) -> bool
+        {
+            bool did = false;
+            auto& muted = muted_sounds();
+            if (auto m = muted.find(std::wstring(id)); m != muted.end())
+            {
+                if (const wchar_t* path = volume_path(m->second.sound)) set(m->second.sound, path, m->second.volume);
+                muted.erase(m);
+                did = true;
+            }
+            auto& kept = replaced_sounds();
+            if (auto it = kept.find(std::wstring(id)); it != kept.end())
+            {
+                if (UObject** entry = sound_entry(id)) *entry = it->second.sound;
+                if (it->second.rooted && it->second.sound) it->second.sound->ClearRootSet();
+                kept.erase(it);
+                did = true;
+            }
+            return did;
+        }
+    } // namespace detail
+    // Silence an id: its sound's own volume set to 0 (a cue's VolumeMultiplier, a wave's Volume), so the game plays
+    // it unheard; another id that plays the same sound is silent too. False for an id the game hasn't got, or a
+    // sound with no volume of its own.
+    inline auto mute_sound(std::wstring_view id) -> bool
+    {
+        UObject* sound = sound_of(id);
+        const wchar_t* path = sound ? detail::volume_path(sound) : nullptr;
+        if (!path) return false;
+        detail::muted_sounds().try_emplace(std::wstring(id), detail::MutedSound{sound, get(sound, path).number()});
+        return set(sound, path, 0.0);
+    }
+    // Give an id its own sound back (and its volume, when it was muted); false when it wasn't replaced or muted.
     inline auto restore_sound(std::wstring_view id) -> bool
     {
         if (!assert_game_thread(L"restore_sound")) return false;
-        auto& kept = detail::replaced_sounds();
-        auto it = kept.find(std::wstring(id));
-        if (it == kept.end()) return false;
-        UObject** entry = detail::sound_entry(id);
-        if (entry) *entry = it->second.sound;
-        if (it->second.rooted && it->second.sound) it->second.sound->ClearRootSet();
-        kept.erase(it);
-        return entry != nullptr;
+        return detail::restore_now(id);
     }
     namespace detail
     {
@@ -958,7 +1001,8 @@ namespace wcmods
         {
             std::vector<std::wstring> ids;
             for (auto& [id, kept] : replaced_sounds()) ids.push_back(id);
-            for (auto& id : ids) restore_sound(id);
+            for (auto& [id, m] : muted_sounds()) ids.push_back(id);
+            for (auto& id : ids) restore_now(id);   // UE4SS may take a mod out off the game thread
         }
     } // namespace detail
     // How long an id's sound is, in seconds (a looping one's one pass); nullopt for an id the game hasn't got.
@@ -996,33 +1040,55 @@ namespace wcmods
                 if (c.object) out.push_back(c.object);
             return out;
         }
+        inline auto is_music(UObject* component, const std::vector<UObject*>& classes) -> bool
+        {
+            UObject* s = component ? get(component, L"Sound").object : nullptr;
+            return s && std::find(classes.begin(), classes.end(), get(s, L"SoundClassObject").object) != classes.end();
+        }
+        inline auto is_playing(UObject* component) -> bool
+        {
+            auto r = call_reflected(component, STR("IsPlaying"));
+            return r && r->get(L"ReturnValue").boolean();
+        }
+        // The component the music was last found on: looked at first, so music() goes through every audio
+        // component only when it has changed (a new level).
+        inline auto last_music() -> UObject*&
+        {
+            static UObject* last{};
+            return last;
+        }
+        inline auto music_component(bool playing_only) -> UObject*
+        {
+            auto classes = music_classes();
+            UObject*& last = last_music();
+            if (last && object_alive(last, nullptr) && is_music(last, classes) && (!playing_only || is_playing(last))) return last;
+            for (UObject* c : find_all(STR("AudioComponent")))
+                if (is_music(c, classes) && is_playing(c)) return last = c;
+            return playing_only || !(last && object_alive(last, nullptr)) ? nullptr : last;
+        }
     } // namespace detail
     inline auto music() -> Music
     {
         Music m;
         if (!assert_game_thread(L"music")) return m;
-        auto classes = detail::music_classes();
-        for (UObject* c : find_all(STR("AudioComponent")))
-        {
-            UObject* s = get(c, L"Sound").object;
-            if (!s || std::find(classes.begin(), classes.end(), get(s, L"SoundClassObject").object) == classes.end()) continue;
-            auto playing = call_reflected(c, STR("IsPlaying"));
-            if (!playing || !playing->get(L"ReturnValue").boolean()) continue;
-            m.component = c;
-            m.sound = name(s);
-            for (auto& [key, sound] : map_entries(audio_manager(), L"AudioEventsMap"))
-                if (sound.object == s) m.id = key.string();
-            break;
-        }
+        UObject* c = detail::music_component(true);
+        if (!c) return m;
+        UObject* s = get(c, L"Sound").object;
+        m.component = c;
+        m.sound = name(s);
+        for (auto& [key, sound] : map_entries(audio_manager(), L"AudioEventsMap"))
+            if (sound.object == s) m.id = key.string();
         return m;
     }
-    // Play one of the game's tracks by its id now (L"mus_camp"), on the music's own component, in place of what
-    // plays; with no music playing, as a sound heard everywhere. False for an id the game hasn't got.
+    // Play one of the game's tracks by its id now (L"mus_camp"), on the music's own component (the one it was last
+    // found on, even between tracks), in place of what plays; with none found, as a sound heard everywhere.
+    // False for an id the game hasn't got.
     inline auto play_music(std::wstring_view id) -> bool
     {
         UObject* s = sound_of(id);
-        if (!s) return false;
-        Music now = music();
+        if (!s || !assert_game_thread(L"play_music")) return false;
+        Music now;
+        now.component = detail::music_component(false);
         if (!now.component) return play_sound(id) != nullptr;
         call_reflected(now.component, STR("SetSound"), [&](Params& p) { p.set_nth(0, Value::of(s)); });
         return call_reflected(now.component, STR("Play"), [&](Params& p) { p.set_nth(0, Value::of(0.0)); }).has_value();
