@@ -602,8 +602,9 @@ local tasks, nextTask, started = {}, 1, false
 -- When this state's latest run of them began (when it loaded, before the first), and the one before (nil before
 -- the first; the first's is when it loaded): Game.time.held() goes by the one before, so a frame the game took long
 -- over (a level loading, the game behind another window) doesn't make another state's hold look old. runs: how many
--- there have been. queued: a run is waiting for the game thread (LoopAsync's way only).
-local ticks = { last = os.clock(), before = nil, runs = 0, queued = false }
+-- there have been. queued: a run is waiting for the game thread (LoopAsync's way only). askedFirst: Game.time.held()
+-- started them (a script of hooks and keys only), not a timer of the state's own.
+local ticks = { last = os.clock(), before = nil, runs = 0, queued = false, askedFirst = false }
 ticks.loaded = ticks.last
 
 local function runTasks()
@@ -3253,17 +3254,22 @@ end
 function Game.time.held()
     local h = Game.time.holding
     local s, who, at = h.read()
-    -- From the start of this state's run of tasks before this one. Until it has had two (a script of hooks and keys
-    -- only has none until it first asks, which starts them) there's no run before to count from, so it's from when
-    -- the state loaded, not now (a hook at the end of a long load would take every hold for gone), but no further
-    -- back than LOAD seconds. Meanwhile a hold stamped since then reads live even if its state has gone (one a
-    -- restart of the mods left, its last stamp a moment before this state loaded): for two frames from the first
-    -- ask, or through a load the first ask comes in, and never once it's LOAD + STALE seconds old.
-    local since = ticks.before
-    if ticks.runs < 2 then
-        since = math.max(ticks.loaded, os.clock() - h.LOAD)
+    -- From the start of this state's run of tasks before this one, or before its first run, from when it loaded:
+    -- not from now, so neither a hook at the end of a long load nor the first run after it takes a hold the holder
+    -- couldn't stamp through the load for gone. A script of hooks and keys only has no runs until it first asks,
+    -- which starts them (askedFirst); until it has had two, it counts back no further than LOAD seconds, or a hold
+    -- whose state went with a restart of the mods would read live to it through a load however old it was. So to
+    -- such a script an orphan (its last stamp a moment before this state loaded) reads live for two frames from the
+    -- first ask, or through a load the first ask comes in, and never once it's LOAD + STALE seconds old; and a live
+    -- hold reads gone in that window when a load has kept its holder from stamping it for longer than that. A state
+    -- whose runs a timer of its own started has no bound: its first run after a load of any length sees a hold
+    -- stamped before it, and an orphan reads live to it until its second run.
+    local since = ticks.before or ticks.last
+    if not started then
+        ticks.askedFirst = true
         start()
     end
+    if ticks.askedFirst and ticks.runs < 2 then since = math.max(ticks.loaded, os.clock() - h.LOAD) end
     if s == nil or at == nil or since - at > h.STALE then return nil end
     return s, who
 end

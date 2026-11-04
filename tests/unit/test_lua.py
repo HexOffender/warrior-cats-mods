@@ -683,16 +683,16 @@ def test_items_drop_the_pickups_of_another_save():
 
 def test_the_clock_has_one_hold_for_every_script():
     """Tweaks' Hold the clock and Menu pages' Hold this time each wrote the clock on their own timers, so with both on
-    it flipped between two hours, and with Tweaks' on Menu pages' Morning was undone in half a second. One hold now,
-    in a shared variable: the last to hold it has it, letting go lets go of your own only, and every script that held
-    it keeps the clock at the shared hour. The shared-variable helpers come before Game.time, which uses them. The
-    holder's state says it's there twice a second, and a hold it hasn't for 3 s is none: a shared variable outlives a
-    restart of the mods, so a hold whose state went with it was held for good (and Tweaks gave way to it for good).
-    It's 3 s by the run of tasks before this one, so a long frame doesn't make every hold look old; a state with no
-    run yet (hooks and keys only) counts from when it loaded and starts its runs (it counted from now, so a hook at
-    the end of a long load took a live hold for gone); and on LoopAsync's way one run waits at a time (a stall's
-    queued runs went back to back, each with no time since the last). A stamp or an hour that isn't a number is no
-    hold (held() raised on "54000\tX\t1.2.3", and Tweaks' task with it, every half second)."""
+    it flipped between two hours, and with Tweaks' on Menu pages' Morning was undone in half a second. One hold now, in
+    a shared variable: the last to hold it has it, letting go lets go of your own only, and every script that held it
+    keeps the clock at the shared hour. The shared-variable helpers come before Game.time, which uses them. The holder's
+    state says it's there twice a second, and a hold it hasn't for 3 s is none: a shared variable outlives a restart of
+    the mods, so a hold whose state went with it was held for good (and Tweaks gave way to it for good). It's 3 s by the
+    run of tasks before this one, so a long frame doesn't make every hold look old; a state with no run yet (hooks and
+    keys only) counts from when it loaded and starts its runs (it counted from now, so a hook at the end of a long load
+    took a live hold for gone), back 60 s at most until its second run; and on LoopAsync's way one run waits at a time
+    (a stall's queued runs went back to back, each with no time since the last). A stamp or an hour that isn't a number
+    is no hold (held() raised on "54000\tX\t1.2.3", and Tweaks' task with it, every half second)."""
     lua = game.lua()
     assert lua.index("local function shared(name)") < lua.index("Game.time = {}") < lua.index("function Game.quests.report(")
     assert lua.count("local function shared(name)") == 1 and lua.count("local function clean(s)") == 1
@@ -703,12 +703,19 @@ def test_the_clock_has_one_hold_for_every_script():
     assert 'string.format("%d\\t%s\\t%.3f", s, who, os.clock())' in body(lua, "function Game.time.holding.write(s, who)", "\nend\n")
     held = body(lua, "function Game.time.held()", "\nend\n")
     assert "if s == nil or at == nil or since - at > h.STALE then return nil end" in held   # a bad stamp: none
-    # until two runs: from the load, but no further back than LOAD (an orphan of any age read live through a load)
-    assert "local since = ticks.before\n    if ticks.runs < 2 then\n        since = math.max(ticks.loaded, os.clock() - h.LOAD)\n        start()\n    end" in held
+    # before the first run, from the load (a long first load: the first run still sees a hold stamped then)
+    assert "local since = ticks.before or ticks.last\n" in held
+    # a state whose runs held() started (hooks and keys only): until two runs no further back than LOAD (an orphan of
+    # any age read live to it through a load); not a state with a timer from load, whose first run after a load of
+    # over 63 s took the holder's load-time stamp for gone (and Tweaks took the clock for good)
+    assert "    if not started then\n        ticks.askedFirst = true\n        start()\n    end\n" in held
+    assert "if ticks.askedFirst and ticks.runs < 2 then since = math.max(ticks.loaded, os.clock() - h.LOAD) end" in held
+    assert held.index("ticks.askedFirst = true") < held.index("start()") < held.index("if ticks.askedFirst and")
+    assert "if ticks.runs < 2 then" not in held
     assert "ticks.before or os.clock()" not in held and "since = os.clock()" not in held   # never from now
     # ticks.before: when the run of tasks before this one began
     run = body(lua, "local function runTasks()", "\nend\n")
-    assert "local ticks = { last = os.clock(), before = nil, runs = 0, queued = false }\nticks.loaded = ticks.last\n" in lua
+    assert "local ticks = { last = os.clock(), before = nil, runs = 0, queued = false, askedFirst = false }\nticks.loaded = ticks.last\n" in lua
     assert "lastFrame" not in lua
     assert run.index("local dt = now - ticks.last") < run.index("ticks.before, ticks.last, ticks.runs = ticks.last, now, ticks.runs + 1")
     # LoopAsync's way: one run queued at a time
