@@ -102,8 +102,12 @@ pages' review branch): every new and extended test passes, `test_scripts.py` (16
 Game Tweaks not installed, the window behind others), `test_tweaks.py`, `test_world.py`, `test_bridge.py`,
 `test_studio_console.py`, and `test_cat.py`'s teleport and GodMode tests. `test_npcs.py`'s
 `test_npc_walks_to_a_place` failed where the dev save's cat stands (the den's rock is in the way of its +Y walk) and
-passed from open ground 4 m off. Not run: `test_cpp_sdk.py`, which needs the C++ test mod built. Left for later: the
-C++ SDK's halves of W6 and W7 (they need a C++ build to check), and W7's two questions for the game (below).
+passed from open ground 4 m off. The C++ SDK's halves of W6 and W7 came after: they build (`python wcmods.py cpp
+build tests/cpp-sdk`), and `test_cpp_sdk.py` passes on them in the game (27 with its new
+`test_items_follow_pickups_and_the_save`), but for the three tab tests that fail on that build anyway (the tabs
+moved to the arrow keys) and #111's `test_command_opens_a_screen_and_send_closes_it`, whose wait for the
+inventory to go times out at 5 s with the inventory closed and its leaves still falling, on a fresh game too.
+Left for later: W7's two questions for the game (below).
 
 **In-game checks** run through the agent: `python wcmods.py agent test <file>`, after `agent install --with <mod
 folder>` for a throwaway mod. Two rules apply:
@@ -215,19 +219,27 @@ pickup, so a save the game wrote just before a pickup, not yet read, doesn't dro
 there are pickups, once each time the save is decoded. A save rewritten at the same size isn't noticed. The save slot
 isn't in the stamp: `Game.save.slot()` stays 0 whatever the cat (#111), and another cat is a new HUD. The review
 found the first stamp's holes (it went through `Game.find`, nil for a second after a load, and through the slot). The
-C++ `items()` has the same bug; it's fixed in #113, which needed a C++ build to check. `test_cpp_sdk.py`'s Lua-against-C++ count check counts
-tags, which agree while no pickup has happened.
+C++ `items()` does the same (`detail::Pickups`, #113): the hook stamps with `call.self()`, by its address and its
+name, and the HUD now is theirs while it's there and not garbage, else the first `WBP_GuiHudGameWrc_C` that is
+(`detail::object_staying`, the Lua's `Game.alive`). `test_cpp_sdk.py`'s Lua-against-C++ count check counts tags,
+which agree while no pickup has happened.
 
 **Tests.**
 - Unit: `Game.items.list` drops the pickups when the HUD or the save's size changed; the hook stamps them with the
-  HUD that sent the message. (The C++ `items()` and its check are #113's.)
-- In game: not written. It needs picking up a dropped item with the Interact key, a way back to the main menu, and a
-  test that quits and restores its own save; see "Not in this plan".
+  HUD that sent the message; the C++ `items()` does the same (`test_mods.py`).
+- In game: a pickup message and a save, for Lua and C++ together (the C++ line below). Loading a save or another
+  cat isn't tried: it needs a way back to the main menu and a test that quits and restores its own save; see
+  "Not in this plan".
 - C++: `World.hpp`'s `detail::Pickups` and `items()`, the same stamp (the HUD that sent the message, `call.self()`,
-  and the save's size): #113.
+  by address and name, and the save's size): its shape in `test_mods.py`. In the game,
+  `test_cpp_sdk.py::test_items_follow_pickups_and_the_save` sends the HUD's own `OnItemPickedUp` from Lua (no
+  toast, a total the inventory hasn't got): C++'s `items()` and Lua's both show it, and both drop it once C++'s
+  `save_game()` has written a save that grew (two Small Catnip put in through the game's `AddItem` first, taken out
+  after), passed 2026-11-04. The same test checks W6: the save read 2.5 s apart is the same parse.
+  A new HUD (loading a save, another cat) still isn't tried in the game.
 
 **Docs.** `scripting.md` says "pickups since the level loaded", and that a same-size save isn't noticed. `SDK.md`'s
-C++ row says the C++ SDK keeps them since the mod started until #113.
+C++ row says the same of `wcmods::items()` (#113).
 
 ### 6. W3: a refused move says so
 
@@ -251,8 +263,9 @@ a 500 KB save), changed or not, so a page or `Game.onFrame` that reads items or 
 
 **Fix.** Keep the decoded table while the file's size hasn't changed: look at the size at most 4 times a second,
 and decode again at least every 30 s. A failed decode (the game caught mid-write) keeps the last good table. Move
-`fileCache` up to just after `Game.save = {}`, so `Game.save.write` can clear it. The C++ `save_file()` still parses
-the file on every call; the same size check there is left for later, with W7's C++ half.
+`fileCache` up to just after `Game.save = {}`, so `Game.save.write` can clear it. The C++ `save_file()` does the same
+(`detail::SaveFile`, its shape in `test_mods.py`), and `slot_data()` and `items()` read the kept save without
+copying all of it; `save_game()` drops it, as `Game.save.write` does.
 
 **Tests.**
 - Unit: the body checks `f:seek("end")` against `fileCache.size`; `fileCache` is declared before
@@ -363,13 +376,11 @@ workarounds there; the docs say so. The release that brings this should be 0.6.0
 
 ## Not in this plan
 
-- **The C++ halves of W6 and W7.** `World.hpp`'s `save_file()` has no cache and `items()` keeps the pickups as the
-  Lua did. Both want a C++ build of the SDK's test mod to check (`python wcmods.py cpp build`, which builds all of
-  UE4SS the first time from a fresh checkout), and `test_cpp_sdk.py`'s world test run after.
-- **The W7 in-game test.** It needs three things the agent doesn't have: picking up a dropped item with
-  `agent.key` on the Interact key, a way back to the main menu (`controller.py`'s `enter()` only goes in), and a test
-  that quits, restores its own save and relaunches (`restore_save` refuses while the game runs, and a test that
-  leaves the game closed stops the run). Until then, W7 rests on its unit test and the two runtime questions below.
+- **The rest of W7's in-game test.** A pickup message and a save are checked (`test_cpp_sdk.py`, the HUD's own
+  `OnItemPickedUp` sent from Lua in place of a real pickup). Loading a save or another cat needs two things the
+  agent doesn't have: a way back to the main menu (`controller.py`'s `enter()` only goes in), and a test that quits,
+  restores its own save and relaunches (`restore_save` refuses while the game runs, and a test that leaves the game
+  closed stops the run). Until then, that part rests on the unit tests and the two runtime questions below.
 - **Two runtime questions for W7:** that loading a save always makes a new HUD, and that moving between areas in
   `L_WorldMap_01_P` keeps the same one. If the HUD outlives a load, only the save's size still catches a save
   since; another cat's pickups would stay laid over it.

@@ -4,15 +4,18 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 #include <WCMods/Core.hpp>
@@ -234,28 +237,94 @@ namespace wcmods
         std::free(base);
         return local / L"Wrc" / L"Saved" / L"SaveGames" / L"WrcGame.json";
     }
+    namespace detail
+    {
+        // save_file()'s parsed save, and when and at what size it was read. Parsing it takes about 40 ms (half a
+        // megabyte), so it's kept while the file's size stays the same: the size is looked at at most 4 times a
+        // second, and the file is parsed again at least every 30 s (a save that rewrote it at the same size is
+        // seen that late). A file caught half written gives the last one parsed whole, and save_game() drops it.
+        // As the Lua's fileCache.
+        struct SaveFile
+        {
+            std::mutex lock;
+            std::shared_ptr<const Json> data;
+            std::optional<std::uintmax_t> size;   // the file's size when data was read
+            std::chrono::steady_clock::time_point at{}, checked{};
+        };
+        inline auto save_cache() -> SaveFile&
+        {
+            static SaveFile s;
+            return s;
+        }
+        // The save file's size now, or nullopt without one.
+        inline auto save_size() -> std::optional<std::uintmax_t>
+        {
+            std::error_code error;
+            std::uintmax_t n = std::filesystem::file_size(save_path(), error);
+            return error ? std::nullopt : std::optional<std::uintmax_t>(n);
+        }
+        // The save as read (null without a file), the file's size then, and when it was parsed: for items(), with
+        // no copy of it.
+        struct SaveRead
+        {
+            std::shared_ptr<const Json> data;
+            std::optional<std::uintmax_t> size;
+            std::chrono::steady_clock::time_point at{};
+        };
+        inline auto read_save() -> SaveRead
+        {
+            using namespace std::chrono_literals;
+            SaveFile& c = save_cache();
+            std::lock_guard lock(c.lock);
+            auto now = std::chrono::steady_clock::now();
+            if (c.data && now - c.checked < 250ms) return {c.data, c.size, c.at};
+            auto size = save_size();
+            if (!size) return {};
+            c.checked = now;
+            if (c.data && size == c.size && now - c.at < 30s) return {c.data, c.size, c.at};
+            auto text = read_file(save_path());
+            auto parsed = text ? Json::parse(*text) : std::nullopt;
+            if (!parsed) return {c.data, c.size, c.at};
+            c.data = std::make_shared<const Json>(std::move(*parsed));
+            c.at = now;
+            c.size = size;
+            return {c.data, c.size, c.at};
+        }
+        // This cat's slot in the save: the one the file names as its current cat (Shared.General.CurrentCatSlot).
+        // The save game's CurrentSaveSlotIndex (save_slot) stayed 0 while the cat in play was the file's slot 8
+        // (seen in game, 2026-11-03), so it's the fallback only.
+        inline auto slot_of(const Json& file) -> const Json&
+        {
+            static const Json none;
+            if (!file.is_object() || file.size() == 0) return none;
+            const Json& account = file.values()[0];
+            const Json& current = account["Shared"]["General"]["CurrentCatSlot"];
+            const int slot = current.is_number() ? static_cast<int>(current.number()) : save_slot();
+            return account[std::to_string(slot)];
+        }
+    } // namespace detail
+    // The whole save, parsed again only when the file has changed (see detail::SaveFile), as a copy of its own.
     inline auto save_file() -> Json
     {
-        auto text = read_file(save_path());
-        auto parsed = text ? Json::parse(*text) : std::nullopt;
-        return parsed ? *parsed : Json();
+        auto save = detail::read_save();
+        return save.data ? *save.data : Json();
     }
-    // The cat's slot is the one the file names as its current cat (Shared.General.CurrentCatSlot): the save
-    // game's CurrentSaveSlotIndex (save_slot) stayed 0 while the cat in play was the file's slot 8 (seen in
-    // game, 2026-11-03), so it's the fallback only.
+    // This cat's slot of it (detail::slot_of says which).
     inline auto slot_data() -> Json
     {
-        Json file = save_file();
-        if (!file.is_object() || file.size() == 0) return Json();
-        const Json& account = file.values()[0];
-        const Json& current = account["Shared"]["General"]["CurrentCatSlot"];
-        const int slot = current.is_number() ? static_cast<int>(current.number()) : save_slot();
-        return account[std::to_string(slot)];
+        auto save = detail::read_save();
+        return save.data ? detail::slot_of(*save.data) : Json();
     }
     // Save now, as the game does at its checkpoints (its save manager's Save): WrcGame.sav and WrcGame.json
-    // are written, the state the save manager holds included. False without the save manager.
+    // are written, the state the save manager holds included. False without the save manager. save_file()
+    // reads the file again after it (as the Lua's Game.save.write).
     inline auto save_game(std::wstring_view context = L"WCMods") -> bool
     {
+        {
+            detail::SaveFile& c = detail::save_cache();
+            std::lock_guard lock(c.lock);
+            c.data.reset();
+        }
         return call_reflected(object(STR("/Script/SwtEngine.Default__SwtSaveManager")), STR("Save"), [&](Params& p) {
                    p.set_nth(0, Value::of(context));
                    p.set_nth(1, Value::of(false));   // NewBAsyncSave
@@ -274,16 +343,44 @@ namespace wcmods
     // ============================================================================================ items
     namespace detail
     {
+        // The HUD's pickup messages since the level loaded: tag -> total (live). They're stamped with the HUD that
+        // sent them (its address and its name, which has its instance number: a save loaded, or another cat, is a new
+        // HUD), and with the save file's size at the last one. Another HUD, or a save the game wrote since at another
+        // size (which has them then), drops them, and the save says again. A save rewritten at the same size isn't
+        // noticed: the pickups stay laid over it until the next load. As the Lua's pickups table.
         struct Pickups
         {
             std::mutex lock;
-            std::map<std::string, double> live;   // tag -> total, from the HUD's pickup messages since the mod started
+            std::map<std::string, double> live;
+            UObject* hud{};                       // the HUD that sent them, of this class and by this name
+            UClass* hud_class{};
+            std::wstring hud_name;
+            std::optional<std::uintmax_t> size;   // the save file's size at the last one
+            std::optional<std::chrono::steady_clock::time_point> seen;   // the parse of the save last looked at
             bool watching{};
         };
         inline auto pickups() -> Pickups&
         {
             static Pickups p;
             return p;
+        }
+        inline auto drop_pickups(Pickups& p) -> void
+        {
+            p.live.clear();
+            p.hud = nullptr;
+            p.hud_class = nullptr;
+            p.hud_name.clear();
+            p.size.reset();
+            p.seen.reset();
+        }
+        // The HUD now (GuiHudWrc's one class in game is WBP_GuiHudGameWrc_C): the pickups' own while it's there and
+        // staying, else the first one that is, else nullptr: none for a moment after a load, which keeps them. As the
+        // Lua's Game.find, which keeps the one it found.
+        inline auto pickups_hud(const Pickups& p) -> UObject*
+        {
+            if (object_staying(p.hud, p.hud_class)) return p.hud;
+            UObject* h = find_first(STR("WBP_GuiHudGameWrc_C"));
+            return object_staying(h, nullptr) ? h : nullptr;
         }
         inline auto watch_pickups() -> void
         {
@@ -294,13 +391,26 @@ namespace wcmods
                 p.watching = true;
             }
             // The HUD's message: the tag, how many were picked up, and the total now (by position, as the Lua does).
+            // The HUD that sends it stamps it: a message from another HUD than the pickups' starts them again.
             on_function(STR("/Script/Wrc.GuiHudWrc:OnItemPickedUp"), [](Call& call) {
                 std::string tag = utf8(get(call.param(0), L"TagName").text);
                 double total = call.param(2).number();
                 if (tag.empty()) return;
+                UObject* hud = call.self();
+                std::wstring hud_name = name(hud);
+                auto size = save_size();
                 Pickups& p = pickups();
                 std::lock_guard lock(p.lock);
+                if (hud && (hud != p.hud || hud_name != p.hud_name))
+                {
+                    drop_pickups(p);
+                    p.hud = hud;
+                    p.hud_class = hud->GetClassPrivate();
+                    p.hud_name = std::move(hud_name);
+                }
                 p.live[tag] = total;
+                p.size = size;
+                p.seen.reset();
             });
         }
     } // namespace detail
@@ -433,19 +543,35 @@ namespace wcmods
         return detail::add_native(tag, -std::min(count, *have), false);
     }
 
-    // Your items: {tag: count} as of the game's last save, with any pickups since then, as the Lua module's
-    // Game.items.list() has them. Call it once early (on_unreal_init) so the pickups since get counted.
-    // inventory() reads the inventory itself.
+    // Your items: {tag: count} as of the game's last save, with the pickups since the level loaded (and since
+    // that save), as the Lua module's Game.items.list() has them. Call it once early (on_unreal_init) so the
+    // pickups get counted. inventory() reads the inventory itself.
     inline auto items() -> Json
     {
         detail::watch_pickups();
         Json out = Json::object();
-        Json slot = slot_data();
-        const Json& inv = slot["GameplayProgression"]["State"]["Inventory"];
-        if (inv.is_object())
-            for (size_t i = 0; i < inv.keys().size(); ++i) out.set(inv.keys()[i], inv.values()[i]);
+        auto save = detail::read_save();
+        if (save.data)
+        {
+            const Json& inv = detail::slot_of(*save.data)["GameplayProgression"]["State"]["Inventory"];
+            if (inv.is_object())
+                for (size_t i = 0; i < inv.keys().size(); ++i) out.set(inv.keys()[i], inv.values()[i]);
+        }
         detail::Pickups& p = detail::pickups();
         std::lock_guard lock(p.lock);
+        if (!p.live.empty())
+        {
+            UObject* hud = detail::pickups_hud(p);   // none to go by keeps them
+            bool other = hud && p.hud && (hud != p.hud || name(hud) != p.hud_name);
+            bool saved = false;
+            if (p.seen != save.at)   // once for each parse of the save, not each call
+            {
+                p.seen = save.at;
+                // The save read above is the file as it is now, and the game wrote it after the last pickup.
+                saved = p.size && save.size && *save.size != *p.size && save.size == detail::save_size();
+            }
+            if (other || saved) detail::drop_pickups(p);
+        }
         for (auto& [tag, total] : p.live) out.set(tag, total);
         return out;
     }
