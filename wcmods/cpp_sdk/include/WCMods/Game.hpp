@@ -21,6 +21,7 @@
 #include <Unreal/UObjectArray.hpp>
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UnrealCoreStructs.hpp>
+#include <Unreal/UnrealFlags.hpp>
 #include <Unreal/World.hpp>
 
 #include <WCMods/Core.hpp>
@@ -106,6 +107,14 @@ namespace wcmods
             auto* item = RC::Unreal::UObjectArray::IndexToObject(index);
             if (!item || item->GetUObject() != o || !item->IsValid(false)) return false;
             return !was || o->GetClassPrivate() == was;
+        }
+        // The same, and not marked as garbage either (destroyed, or left behind by a level that unloaded): UE4SS's
+        // IsValid looks at the engine's old PendingKill flag, not UE 5's Garbage, so it passes such an object until
+        // the engine collects it. The Lua's Game.alive.
+        inline auto object_staying(UObject* o, UClass* was) -> bool
+        {
+            constexpr auto garbage = static_cast<RC::Unreal::EInternalObjectFlags>(0x00200000);   // EInternalObjectFlags::Garbage
+            return object_alive(o, was) && !RC::Unreal::UObjectArray::IndexToObject(o->GetInternalIndex())->HasAnyFlags(garbage);
         }
     } // namespace detail
 
