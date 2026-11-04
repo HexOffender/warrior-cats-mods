@@ -75,6 +75,10 @@ local THEME = {
 Menu.theme = THEME
 
 -- ---------- the game's UI classes ----------
+-- The UMG classes the rows are built from, found once: the menu's own (with Menu.new, Menu.text and the rest of the
+-- widget helpers), not a script's API. The table is nil until every class is found. `.statics` stays, unchecked,
+-- because the released Menu pages 1.0 calls GameplayStatics through it; a script asks for that with
+-- Game.library("GameplayStatics").
 local NONE = FName("None")   -- lets the engine name each new object
 local lib
 function Menu.classes()

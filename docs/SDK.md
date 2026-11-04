@@ -938,6 +938,9 @@ UI wants, and `Menu.theme` the menu's colours.
 - **Keyboard and controller, for a script's own widgets:** `Menu.clicked(state, key, button)` is true
   the frame a button is clicked, by the mouse or with focus. `Menu.ring(widget)` puts a focus ring
   round a widget, and `Menu.focused(widget)` says whether it, or something in it, has focus.
+- **The menu's own:** `Menu.classes()` (the UI classes the rows are built from) and the widget
+  helpers it goes with are the window's, not an API, and can change. For the engine's
+  GameplayStatics, a script asks `WCModsGame`: `Game.library("GameplayStatics")`.
 
 How it fits together: each UE4SS mod has a Lua state of its own, so the menu window belongs to a
 script wcmods installs with every build, `WCModsMenuHost`. It shares its content panel with the

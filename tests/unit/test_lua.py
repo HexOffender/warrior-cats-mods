@@ -213,6 +213,19 @@ def test_mod_menu_shows_a_scripts_status_line():
     assert 'Menu.shared("status")' not in host
 
 
+def test_menu_classes_are_the_menus_own_and_keep_statics():
+    """Menu.classes() was undocumented and scripts called GameplayStatics through its .statics: it's marked the menu's
+    own, SDK.md points scripts to Game.library("GameplayStatics"), and .statics stays for Menu pages 1.0."""
+    import os
+    lua = menu.lua()
+    note = lua[lua.index("-- ---------- the game's UI classes ----------"):lua.index("function Menu.classes()")]
+    assert "not a script's API" in note and 'Game.library("GameplayStatics")' in note
+    assert 'l.statics = StaticFindObject("/Script/Engine.Default__GameplayStatics")' in lua
+    with open(os.path.join(os.path.dirname(__file__), "..", "..", "docs", "SDK.md"), encoding="utf-8") as f:
+        sdk = f.read()
+    assert '`Menu.classes()`' in sdk and 'Game.library("GameplayStatics")' in sdk
+
+
 def test_mod_menu_opens_from_a_controller_too():
     lua = menu.host_script(MANIFEST, [])
     assert '"Gamepad_Special_Left"' in lua and "(or View on a controller)" in lua
