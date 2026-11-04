@@ -1081,6 +1081,17 @@ C++ SDK's `set_sky` holds a preset by putting it on again at the end of every fr
 has a preset of its own (`PresetForInventory`, 11, `MainMenu`: fog 50, light 1.2). The actor sits in a
 streamed part of the world, whose outers lead to that part's own `UWorld`, not the controller's.
 
+**The sky's values** (build 26337109, 2026-11-04, a memory probe from the C++ test mod): `SkyParamsDB` is
+`DT_SkyBoxParams`, 13 rows of `WrcSkyBoxStruct` (`NeutralDay`, `Night`, `WindClan`, `ThunderClan`, `ShadowClan`,
+`RiverClan`, `Moonpool`, `MoonPoolNight`, `CatCreator`, `MainMenu`, `CinematicNight`, `CinematicNightMoonPool`,
+`MainMenuSwitch`: not quite the enum's names). Night's row has fog 0.028371, what Night puts on; but a row changed in
+the table didn't change what Night put on after. The sky copies the rows as it starts into a native
+`TMap<ESkyboxPostProcessEnum, FWrcSkyBoxStruct>` at +0x378 (13 entries, `0x168`-byte slots: the preset as a byte at
++0, the row from +8, its vtable first, so its reflected layout reads it in place), and `ApplyStraight` reads that:
+with Night held and its fog in the copy set ten times thicker, the fog component's density went from 0.0284 to
+0.2837. The actor (0x890 bytes) also holds one row's worth at +0x6A0 (the values on now, presumably). The class's
+own code reaches +0x378, which signs it (`WCM_Presets`, two sites).
+
 **Sounds** (seen in game, 2026-11-03): the game instance's `NativeAudioManager` is a
 `BP_WrcAudioManager_C`. Its `AudioEventsInfo` held 390 entries, the rows of `AudioEvents.csv`, and its
 `AudioEventsMap` 389 loaded sounds. The static `USwtNativeAudioManager::K2_PlayEventOf(id, transform,

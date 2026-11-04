@@ -77,6 +77,9 @@ HIDDEN = [
     # The tuning manager's TuningData.csv (TMap<FString, a row of {MaxValue float, Description FString}>, 0x38-byte
     # elements), which the game's tuning lookup reads on every call (docs/reverse-engineering.md, "Tuning").
     ("/Script/SwtEngine.SwtTuningManager", [("WCM_TuningData", 0x50, "MapProperty")]),
+    # The sky's copy of its presets (TMap<ESkyboxPostProcessEnum, FWrcSkyBoxStruct>, 0x168-byte elements: the preset
+    # at +0, its row from +8), made from SkyParamsDB as it starts; what putting a preset on reads.
+    ("/Script/Wrc.WrcSkyboxActor", [("WCM_Presets", 0x378, "MapProperty")]),
 ]
 
 # The kinds in HIDDEN only the C++ SDK reads (offsets.json): the Lua's Game.hidden leaves them out.

@@ -363,6 +363,7 @@ def test_offsets_json_gives_cpp_mods_each_function_with_its_pattern():
     assert moved["rva"] == rva + 0x40
     assert out["members"]["/Script/SwtQuest.SwtQuestInventoryComponent:WCM_Items"] == {"offset": 0x150, "type": "MapProperty"}
     assert out["members"]["/Script/SwtEngine.SwtTuningManager:WCM_TuningData"] == {"offset": 0x50, "type": "MapProperty"}
+    assert out["members"]["/Script/Wrc.WrcSkyboxActor:WCM_Presets"] == {"offset": 0x378, "type": "MapProperty"}
     assert out["functions"]["SwtTuningManager:GetValue"]["rva"] == 0x12BBA60
 
 
@@ -372,6 +373,7 @@ def test_the_lua_leaves_out_what_only_cpp_reads():
     text = game.lua()
     assert "WCM_Items" not in text and "SwtQuestInventoryComponent" not in text
     assert "WCM_TuningData" not in text and "SwtTuningManager" not in text
+    assert "WCM_Presets" not in text
     assert '"WCM_Value", 0x10C, "FloatProperty"' in text
 
 

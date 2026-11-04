@@ -87,7 +87,7 @@ namespace t
         auto object_text(UObject* o) -> Json { return o ? Json(text(name(o))) : Json(); }
 
         // The fog's density and the sun's brightness now, which the sky's presets set.
-        auto sky_values() -> Json
+        auto sky_now() -> Json
         {
             Json out = Json::object();
             auto fog = call_reflected(sky(), STR("GetExponentialHeightFog"));
@@ -240,18 +240,51 @@ namespace t
             phase("sky");
             UObject* s = sky();
             value("sky.class", text(class_name(s)));
-            value("sky.before", sky_values());
+            value("sky.before", sky_now());
             expect("set_sky.unknown", !set_sky(L"NoSuchPreset") && !set_sky(L"NoSuchPreset", false));
             expect("set_sky", set_sky(L"Night"));
-            value("sky.night", sky_values());
+            value("sky.night", sky_now());
             done("sky");
+            return true;
+        }
+        if (what == "sky_values")
+        {
+            // The presets' table, Night's fog read from its row, the fog held at Night, the row's fog made ten times
+            // thicker and the fog read again; a colour's part, what isn't there refused; all put back.
+            phase("sky_values");
+            Table presets = sky_presets();
+            value("skyv.table", text(presets.name()));
+            value("skyv.struct", text(presets.row_struct_name()));
+            Json rows = Json::array();
+            for (auto& r : presets.row_names()) rows.push(text(r));
+            value("skyv.rows", rows);
+            double row_fog = get(sky_values(L"Night"), L"FogDensity").number();
+            value("skyv.night_row_fog", row_fog);
+            value("skyv.night_table_fog", get(presets.row(L"Night"), L"FogDensity").number());
+            value("skyv.thunder_sun", get(sky_values(L"ThunderClan"), L"SunIntensity").number());
+            expect("skyv.missing", sky_values(L"NoSuchPreset").kind == Value::Kind::None && !set_sky_value(L"NoSuchPreset", L"FogDensity", 1)
+                                       && !set_sky_value(L"Night", L"NoSuchField", 1) && !set_sky_value(L"Night", L"SunColor", 1));
+            expect("skyv.held", set_sky(L"Night"));
+            after(0.5, [row_fog] {
+                value("skyv.fog_before", sky_now());
+                expect("skyv.set", set_sky_value(L"Night", L"FogDensity", row_fog * 10) && set_sky_value(L"Night", L"SunColor.R", 0.5)
+                                       && get(sky_values(L"Night"), L"SunColor.R").number() == 0.5);
+                after(0.5, [row_fog] {
+                    value("skyv.fog_after", sky_now());
+                    restore_sky_values();
+                    value("skyv.night_row_fog_restored", get(sky_values(L"Night"), L"FogDensity").number());
+                    expect("skyv.restored", get(sky_values(L"Night"), L"FogDensity").number() == row_fog);
+                    sky_follow_area();
+                    done("sky_values");
+                });
+            });
             return true;
         }
         if (what == "sky_area")
         {
             phase("sky_area");
             expect("sky_follow_area", sky_follow_area());
-            value("sky.area", sky_values());
+            value("sky.area", sky_now());
             done("sky_area");
             return true;
         }
