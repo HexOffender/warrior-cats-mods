@@ -532,7 +532,7 @@ Below the ten, in order, each with its one-line route so it is not planned twice
 5. **`UniqueIds` `SoftData` at runtime:** edit one pickup's `Rewards` and collect it.
 6. **The `GetMoodData` keys:** folded into step 8's hooks.
 7. **The five events never seen firing:** one scripted fight with all five handlers logging, using the narrow `FindAllOf("BP_Exploration_Character_Base_C")` the project's notes found safe, or by hand.
-8. **The native inventory add path:** `xrefs.py` on `OnItemPickedUp`, `callers.py` upward, then a C++ SDK call.
+8. **The native inventory add path:** `xrefs.py` on `OnItemPickedUp`, `callers.py` upward, then a C++ SDK call. *Done 2026-11-03, by another road: the inventory component's class registration, its constructor and vtable, to `AddItem` (`wcmods::add_item`).*
 9. **Den decoration packs:** `DecorationsDB` and a static-mesh package writer.
 10. **Two mechanics guesses:**
     - XP per level versus a running total (a save diff across a level-up);
@@ -562,10 +562,10 @@ These are known impossible, each with the reason, so nobody plans them again. Th
 - **A mod's own quest in the game's K list.** `UGuiHudQuest` works from native `UQuestBase` objects. Mod quests stay in the objective panel and the mod menu's Quests page. Only a new quest graph cooked into the pak could change that, and step 9's write half would have to reach it first.
 - **A new effect strength kind for herbs.** It needs a Blueprint container; the existing rows' numbers are editable.
 - **Ending a fight from a script.** `EndCombat` leaves the cat without a body.
-- **Opening one of the game's screens from Lua.** `USwtGuiManager` reflects no open function. A C++ mod calling the native code is a needs-RE route, after the inventory-add style of search.
+- **Opening one of the game's screens from Lua.** `USwtGuiManager` reflects no open function. A C++ mod calling the native code is a needs-RE route, after the inventory-add style of search. *Answered 2026-11-03: no native code needed. The player's input component reflects `OnListenCommandInternal`, which opens the inventory or the pause screen as their keys do, from Lua or C++ (`wcmods::command`), and a screen's own `OnListenCommand` closes it (`ui::close`); reverse-engineering.md, "The game's own UI".*
 - **Making Resilience reduce damage, giving Patient a real bonus, or adding a tuning key.** The code reads what it reads. These are Lua or code mods, not data.
 - **New coat or eye colour slots.** Coats are a native map on the manager, and eyes a 26-row atlas in the shader, per the project's notes.
-- **Items straight into the bag from Lua.** Nothing reflected adds to the inventory. That stays on the remainder list as a C++ route only.
+- **Items straight into the bag from Lua.** Nothing reflected adds to the inventory. That stays on the remainder list as a C++ route only. *The C++ route is done (2026-11-03): `wcmods::add_item` calls the game's own `AddItem`, signed per build like the hidden members (reverse-engineering.md, "Items" and "Native functions").*
 
 Owned by other plans: the in-game table check and the Game data page (data-save); `place_names` and the Lines card (names); bug 4 and the runtime fixes (console-lua); the `gives` rewards and the answer-button probe (story); the guide pages (docs-guide).
 

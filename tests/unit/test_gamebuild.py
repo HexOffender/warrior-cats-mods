@@ -328,6 +328,10 @@ def members():
     return [f"{cls}:{name}" for cls, fields in game.HIDDEN for name, _, _ in fields]
 
 
+def functions():
+    return [name for name, _, _ in game.NATIVE]
+
+
 def quiet(message):
     pass
 
@@ -335,7 +339,8 @@ def quiet(message):
 @pytest.fixture
 def moved_level(monkeypatch, tmp_path):
     """The game moved_level to a build wcmods wasn't checked on, its exe a file in tmp_path, and a check() that
-    counts its calls and finds the level component moved 4 bytes on, everything else where it was."""
+    counts its calls and finds the level component moved 4 bytes on, everything else where it was, and each
+    native function 0x100 on from where it was."""
     exe = tmp_path / "game.exe"
     exe.write_bytes(b"MZ")
     monkeypatch.setenv("WCMODS_GAME_BUILD", "99999998")
@@ -351,7 +356,8 @@ def moved_level(monkeypatch, tmp_path):
                 moved = cls == LEVEL
                 classes[cls]["fields"][name] = {"status": "moved" if moved else "same"}
                 offsets[f"{cls}:{name}"] = offset + 4 if moved else offset
-        return {"classes": classes, "offsets": offsets, "same": False}
+        return {"classes": classes, "offsets": offsets, "same": False,
+                "functions": {name: rva + 0x100 for name, rva, _ in game.NATIVE}}
 
     monkeypatch.setattr(signatures, "check", check)
     return SimpleNamespace(cfg=SimpleNamespace(root=str(tmp_path), game_dir=None), calls=calls)
@@ -364,7 +370,8 @@ def cache_of(cfg):
 def test_a_verified_build_needs_no_check(moved_level, monkeypatch):
     monkeypatch.setenv("WCMODS_GAME_BUILD", str(gamebuild.VERIFIED_BUILD))
     assert gamebuild.layout(moved_level.cfg, log=quiet) == {
-        "build": gamebuild.VERIFIED_BUILD, "status": "verified", "offsets": None, "moved": [], "lost": []}
+        "build": gamebuild.VERIFIED_BUILD, "status": "verified", "offsets": None, "functions": None, "moved": [],
+        "lost": []}
     assert moved_level.calls == []
     assert not os.path.exists(os.path.join(moved_level.cfg.root, gamebuild.CACHE_DIR))
 
@@ -374,6 +381,7 @@ def test_layout_caches_a_check(moved_level):
     assert fit["status"] == "adapted" and fit["lost"] == []
     assert fit["moved"] == [k for k in members() if k.startswith(LEVEL + ":")]
     assert fit["offsets"][f"{LEVEL}:WCM_Level"] == 0x124
+    assert fit["functions"] == {name: rva + 0x100 for name, rva, _ in game.NATIVE}
     assert gamebuild.layout(moved_level.cfg, log=quiet) == fit   # read back, not worked out again
     assert len(moved_level.calls) == 1
     with open(cache_of(moved_level.cfg), encoding="utf-8") as f:
@@ -399,7 +407,34 @@ def test_a_failing_check_leaves_everything_off(moved_level, monkeypatch):
         raise ValueError("an exe unlike any wcmods knows")
     monkeypatch.setattr(signatures, "check", broken)
     fit = gamebuild.layout(moved_level.cfg, log=quiet)
-    assert fit["status"] == "partial" and fit["moved"] == [] and fit["lost"] == members()
+    assert fit["status"] == "partial" and fit["moved"] == [] and fit["lost"] == members() + functions()
     assert set(fit["offsets"]) == set(members()) and set(fit["offsets"].values()) == {None}
+    assert fit["functions"] == {name: None for name in functions()}
     assert "an exe unlike any wcmods knows" in fit["why"]
     assert not os.path.exists(cache_of(moved_level.cfg))   # nothing kept: it's tried again next time
+
+
+def test_a_native_function_that_cant_be_found_is_lost(moved_level, monkeypatch):
+    """A function whose pattern no longer matches once is left out of offsets.json (C++ mods' calls on it give
+    false), and the Apply warning names it in words, like a member that couldn't be found."""
+    real = signatures.check
+
+    def check(path, sigs=None, log=print):
+        res = real(path, sigs, log)
+        res["functions"] = {name: None for name, _, _ in game.NATIVE}
+        return res
+    monkeypatch.setattr(signatures, "check", check)
+    fit = gamebuild.layout(moved_level.cfg, log=quiet)
+    assert fit["status"] == "partial" and set(fit["lost"]) == set(functions())
+    assert gamebuild.describe(fit["lost"]) == "your items, for C++ mods"
+    assert game.offsets_json(fit["offsets"], 1, fit["functions"])["functions"] == {}
+
+
+def test_a_layout_cached_before_functions_is_worked_out_again(moved_level):
+    """A cache written by a wcmods that didn't know native functions has none: it's worked out again."""
+    path = cache_of(moved_level.cfg)
+    os.makedirs(os.path.dirname(path))
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"build": 99999998, "status": "adapted", "offsets": {}, "moved": [], "lost": []}, f)
+    fit = gamebuild.layout(moved_level.cfg, log=quiet)
+    assert len(moved_level.calls) == 1 and fit["functions"]

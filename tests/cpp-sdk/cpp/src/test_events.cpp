@@ -83,6 +83,9 @@ namespace t
                 teardown_ui();
                 done("ui_teardown");
             }
+            else if (run_native_request(what))
+            {
+            }
         }
     } // namespace
 

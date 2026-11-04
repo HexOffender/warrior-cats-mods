@@ -9,7 +9,10 @@
   offset outside the class and two members on one offset are conflicts;
 - the level component's signatures as committed: code laid out the way their patterns say finds all eight
   members where they were on an exe they weren't made on, and follows them when the update moves them;
-- make() refuses a class it found no signature for, instead of shipping one a game update switches off.
+- make() refuses a class it found no signature for, instead of shipping one a game update switches off;
+- native functions (game.NATIVE): make() signs each by its first instructions and refuses one it can't, and
+  check() finds each again by that pattern, or gives None when it matches nowhere or twice;
+- a map member (the inventory's items) may move to any 8-byte boundary; not to a 4-byte one.
 The same on the installed game's exe is `python wcmods.py selftest` (docs/reverse-engineering.md, "Game
 updates", has what was run on build 26184573)."""
 import copy
@@ -243,10 +246,87 @@ def test_an_offset_outside_the_class_conflicts(monkeypatch):
         "B": ("conflict", None, 2)}    # not on a 4-byte boundary
 
 
+def test_a_map_member_moves_on_8_byte_boundaries(monkeypatch):
+    """A TMap member (WIDTH 0x50) is aligned as a pointer: two votes move it to +0x108, never to +0x10C."""
+    monkeypatch.setattr(signatures.game, "HIDDEN", [(THING, [("A", 0x100, "MapProperty"), ("B", 0x104, "IntProperty")])])
+    code, sites = reads((1, 0x100, 0x108), (2, 0x100, 0x108))
+    assert statuses(check_on(monkeypatch, code, thing(sites), 0x200))["A"] == ("moved", 0x108, 2)
+    code, sites = reads((1, 0x100, 0x10C), (2, 0x100, 0x10C))
+    assert statuses(check_on(monkeypatch, code, thing(sites), 0x200))["A"] == ("conflict", None, 2)
+
+
 def test_two_members_on_one_offset_conflict(monkeypatch):
     code, sites = reads((1, 0x100, 0x104), (2, 0x100, 0x104), (3, 0x104, 0x104))
     assert statuses(check_on(monkeypatch, code, thing(sites), 0x120)) == {
         "A": ("conflict", None, 2), "B": ("conflict", None, 1)}
+
+
+# ---------- native functions ----------
+DO = "Thing:Do"
+DO_CODE = bytes.fromhex("55 48 8B EC 48 83 EC 40 48 8B 05 11 22 33 44 C3")
+DO_PATTERN = "55 48 8B EC 48 83 EC 40 48 8B 05 ?? ?? ?? ?? C3"
+
+
+def with_function(pattern=DO_PATTERN):
+    sigs = thing([])
+    sigs["functions"] = {DO: {"note": "", "was": "0x2000", "pattern": pattern}}
+    return sigs
+
+
+def test_check_finds_a_native_function_by_its_pattern(monkeypatch):
+    """Its code moved (it was at 0x2000) and its relocated address changed: the wildcards take that."""
+    code = b"\xCC" * 0x30 + DO_CODE + b"\xCC" * 16
+    res = check_on(monkeypatch, code, with_function(), 0x120)
+    assert res["functions"] == {DO: TEXT + 0x30}
+
+
+def test_overlapping_matches_count_as_two(monkeypatch):
+    """A pattern found again a few bytes on, overlapping itself, isn't unique: re's finditer reported one match
+    there, and a site made at one place was matched at the other (the inventory's +0x150 and +0x1A0 maps)."""
+    rx = signatures._regex(signatures._unhex("48 8B ?? 48 8B"))
+    code = bytes.fromhex("48 8B 01 48 8B 02 48 8B")   # matches at 0 and at 3
+    assert [m.start() for m in rx.finditer(code)] == [0]   # what the old count saw
+    assert signatures._starts(rx, code) == [0, 3]
+    finder = SimpleNamespace(text=SimpleNamespace(rva=TEXT), tdata=memoryview(code))
+    assert len(signatures._matches(finder, [(TEXT, TEXT + len(code))], rx)) == 2
+    function = bytes.fromhex("55 55 55") + b"\xCC" * 8   # "55 55" at 0 and, overlapping, at 1
+    fake = SimpleNamespace(text=SimpleNamespace(rva=TEXT), tdata=memoryview(function))
+    assert len(list(signatures._regex([0x55, 0x55]).finditer(function))) == 1
+    assert signatures.Finder.find_function(fake, signatures._unhex("55 55")) is None
+
+
+def test_a_native_function_matching_twice_or_nowhere_is_none(monkeypatch):
+    twice = b"\xCC" * 16 + DO_CODE + b"\xCC" * 16 + DO_CODE + b"\xCC" * 16
+    assert check_on(monkeypatch, twice, with_function(), 0x120)["functions"] == {DO: None}
+    assert check_on(monkeypatch, b"\xCC" * 64, with_function(), 0x120)["functions"] == {DO: None}
+    assert check_on(monkeypatch, DO_CODE, with_function(None), 0x120)["functions"] == {DO: None}
+
+
+def test_every_native_function_has_a_pattern_as_committed():
+    """signatures.json signs each of game.NATIVE at the RVA it names, on the verified build."""
+    from wcmods import game
+    funcs = signatures.load()["functions"]
+    assert set(funcs) == {name for name, _, _ in game.NATIVE}
+    for name, rva, _ in game.NATIVE:
+        assert funcs[name]["was"] == f"0x{rva:X}" and len(signatures._unhex(funcs[name]["pattern"])) >= 20, name
+
+
+def test_offsets_json_gives_cpp_mods_each_function_with_its_pattern():
+    from wcmods import game
+    out = game.offsets_json(None, 1)
+    name, rva, _ = game.NATIVE[0]
+    assert out["functions"][name] == {"rva": rva, "pattern": signatures.load()["functions"][name]["pattern"]}
+    moved = game.offsets_json(None, 1, {name: rva + 0x40})["functions"][name]
+    assert moved["rva"] == rva + 0x40
+    assert out["members"]["/Script/SwtQuest.SwtQuestInventoryComponent:WCM_Items"] == {"offset": 0x150, "type": "MapProperty"}
+
+
+def test_the_lua_leaves_out_what_only_cpp_reads():
+    """RegisterCustomProperty can't describe a map: Game.hidden has no inventory, offsets.json has."""
+    from wcmods import game
+    text = game.lua()
+    assert "WCM_Items" not in text and "SwtQuestInventoryComponent" not in text
+    assert '"WCM_Value", 0x10C, "FloatProperty"' in text
 
 
 # ---------- the level component's signatures, as committed ----------
@@ -364,9 +444,9 @@ def test_every_class_has_signatures_and_the_build_they_were_made_on():
 
 
 # ---------- make() ----------
-def fake_maker(monkeypatch, unsigned=()):
+def fake_maker(monkeypatch, unsigned=(), no_pattern=()):
     """make() over a fake exe whose every class is found, and gets a site unless its short name is in
-    `unsigned`."""
+    `unsigned`; every function starts where it's asked for, with a pattern unless its RVA is in `no_pattern`."""
     class Image:
         def __init__(self, path):
             pass
@@ -390,7 +470,7 @@ def fake_maker(monkeypatch, unsigned=()):
             return list(infos)
 
         def function_signature(self, begin):
-            return [0x90] * 20
+            return None if begin in no_pattern else [0x90] * 20
 
     def sites(finder, search, offsets):
         short = next(c for c, fields in signatures.game.HIDDEN
@@ -416,3 +496,20 @@ def test_make_with_every_class_signed(monkeypatch):
     res = signatures.make("game.exe", log=lambda m: None)
     assert all(e["sites"] for e in res["classes"].values())
     assert len(res["classes"][LEVEL]["anchors"]) == len(signatures.ANCHORS[LEVEL])
+
+
+def test_make_signs_every_native_function(monkeypatch):
+    from wcmods import game
+    fake_maker(monkeypatch)
+    res = signatures.make("game.exe", log=lambda m: None)
+    assert {n: (f["was"], f["pattern"]) for n, f in res["functions"].items()} == \
+        {name: (f"0x{rva:X}", " ".join(["90"] * 20)) for name, rva, _ in game.NATIVE}
+
+
+def test_make_fails_a_native_function_with_no_pattern(monkeypatch):
+    from wcmods import game
+    name, rva, _ = game.NATIVE[0]
+    fake_maker(monkeypatch, no_pattern=(rva,))
+    with pytest.raises(signatures.Unsigned) as e:
+        signatures.make("game.exe", log=lambda m: None)
+    assert e.value.classes == [name] and e.value.result["functions"][name]["pattern"] is None

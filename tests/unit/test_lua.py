@@ -48,6 +48,23 @@ def test_game_module_stops_another_scripts_animation_only_while_it_plays():
     assert "GetCurrentActiveMontage" not in stop, "stop() never takes the current montage without the check"
 
 
+def test_the_saves_slot_is_the_files_current_cat():
+    """Game.save.slotData() (and so Game.items.list() and Cat:traits()) reads the slot WrcGame.json names as its
+    current cat, Shared.General.CurrentCatSlot; the save game's CurrentSaveSlotIndex (Game.save.slot()) stayed 0
+    while the cat in play was slot 8 (2026-11-03), so it's only the fallback. The C++ SDK's slot_data() the same."""
+    import os
+    lua = game.lua()
+    body = lua[lua.index("function Game.save.slotData()"):]
+    body = body[:body.index("\nend\n")]
+    assert "math.tointeger(shared.General.CurrentCatSlot)" in body
+    assert body.index("CurrentCatSlot") < body.index("Game.save.slot()"), "the file's current cat first"
+    assert "if slot == nil then slot = Game.save.slot() or 0 end" in body
+    hpp = open(os.path.join(os.path.dirname(game.__file__), "cpp_sdk", "include", "WCMods", "World.hpp"), encoding="utf-8").read()
+    cpp = hpp[hpp.index("inline auto slot_data() -> Json"):]
+    cpp = cpp[:cpp.index("\n    }\n")]
+    assert 'account["Shared"]["General"]["CurrentCatSlot"]' in cpp and ": save_slot()" in cpp
+
+
 def test_the_in_game_checks_lua_in_verified_md_compiles():
     # docs/verified.md's not-yet-confirmed checks give Lua to run in the game (e.g. the save's Hash); a missing
     # `end` there would only show up as an error in game.

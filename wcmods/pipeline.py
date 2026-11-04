@@ -469,10 +469,10 @@ def build(cfg, mods, out_dir, log=print, trusted=()):
         with open(os.path.join(shared, name + ".lua"), "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
         manifest["ue4ss_shared"].append(name)
-    # The same members for C++ mods (wcmods::member in WCMods.hpp), as found on this build, and the same
-    # names (wcmods::cat_name, item_name).
+    # The same members for C++ mods (wcmods::member in WCMods.hpp), as found on this build, with the game's
+    # native functions they call (wcmods::native), and the same names (wcmods::cat_name, item_name).
     with open(os.path.join(out_dir, "ue4ss_shared", game_lua.SHARED_NAME, "offsets.json"), "w", encoding="utf-8") as f:
-        json.dump(game_lua.offsets_json(fit["offsets"], build), f, indent=2)
+        json.dump(game_lua.offsets_json(fit["offsets"], build, fit.get("functions")), f, indent=2)
     with open(os.path.join(out_dir, "ue4ss_shared", world.NAMES_NAME, "names.json"), "w", encoding="utf-8") as f:
         json.dump(world.names_data(plan, item_labels, places), f, ensure_ascii=False)
 

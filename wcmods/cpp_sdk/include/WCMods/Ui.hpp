@@ -115,17 +115,6 @@ namespace wcmods
         inline auto linear(UiColor c) -> FLinearColor_ { return {linear_channel(c.r), linear_channel(c.g), linear_channel(c.b), c.a}; }
         inline auto from_linear(FLinearColor_ c) -> UiColor { return {srgb_channel(c.r), srgb_channel(c.g), srgb_channel(c.b), c.a}; }
 
-        // Whether an object the game may have destroyed is still the object it was: its slot in the engine's
-        // object array still holds it, it isn't on its way out, and it's still of the class it was.
-        inline auto object_alive(UObject* o, UClass* was) -> bool
-        {
-            if (!o) return false;
-            int32_t index = o->GetInternalIndex();
-            if (index < 0 || index >= RC::Unreal::UObjectArray::GetNumElements()) return false;
-            auto* item = RC::Unreal::UObjectArray::IndexToObject(index);
-            if (!item || item->GetUObject() != o || !item->IsValid(false)) return false;
-            return !was || o->GetClassPrivate() == was;
-        }
 
         inline auto umg_class(std::wstring_view kind) -> UClass*
         {
@@ -1423,6 +1412,72 @@ namespace wcmods
             }
             return {};
         }
+
+        namespace detail
+        {
+            // One half of a command to a screen, through its own OnListenCommand (`call` false: only whether it
+            // could be); false when the name isn't one of ECommands' or the screen has gone.
+            inline auto screen_command(const Widget& screen, const std::wstring& command, int event, bool call = true) -> bool
+            {
+                UObject* s = screen.object();
+                UFunction* fn = s ? s->GetFunctionByNameInChain(STR("OnListenCommand")) : nullptr;
+                if (!fn) return false;
+                Params p(fn);
+                if (!p.set_nth(0, Value::of(command)) || !p.set_nth(1, Value::of(event))) return false;   // EInputEvent
+                p.set_nth(2, Value::of(controller()));   // fromPlayer
+                if (call) s->ProcessEvent(fn, p.bytes());
+                return true;
+            }
+        } // namespace detail
+
+        // Give one of the game's screens a command as its controls would (ECommands: L"Button_Back" closes it,
+        // L"Button_Confirm" uses what has the focus, L"Button_Left" and L"Button_Right" move along a row...),
+        // through the screen's own OnListenCommand: pressed in the next frame and released 0.3 s later, as a
+        // short press, each from inside one of the game's ProcessEvent calls, as Lua's calls come (seen in game:
+        // the inventory ignored the same calls made at the end of a frame, and a press and release in one call).
+        // Opening one is wcmods::command (World.hpp): L"Player_Show_Inventory", L"Player_Pause". False for an
+        // empty Widget, or a name ECommands hasn't got.
+        inline auto send(const Widget& screen, std::wstring_view command) -> bool
+        {
+            std::wstring name(command);
+            if (!detail::screen_command(screen, name, 0, false)) return false;
+            wcmods::detail::in_process_event([screen, name] { detail::screen_command(screen, name, 0); });   // IE_Pressed
+            after(0.3, [screen, name] {   // IE_Released, if it's still there
+                wcmods::detail::in_process_event([screen, name] { detail::screen_command(screen, name, 1); });
+            });
+            return true;
+        }
+        namespace detail
+        {
+            // Back again until the screen goes: a screen took the first command it got after opening without
+            // acting on it, and closed on the second (seen in game while its window wasn't in front, 2026-11-03).
+            inline auto close_again(const Widget& screen, int tries) -> void
+            {
+                auto shown = [](UObject* s) {
+                    auto in = call_reflected(s, STR("IsInViewport"));
+                    auto visible = call_reflected(s, STR("IsVisible"));
+                    return in && in->get(L"ReturnValue").boolean() && visible && visible->get(L"ReturnValue").boolean();
+                };
+                if (tries <= 0 || !shown(screen.object())) return;
+                send(screen, L"Button_Back");
+                // Only while the game's window is behind: in front, the first Back closes it, and another could
+                // back out of a menu further than asked while the screen fades out.
+                HWND front = GetForegroundWindow();
+                DWORD pid = 0;
+                if (front) GetWindowThreadProcessId(front, &pid);
+                if (pid == GetCurrentProcessId()) return;
+                after(0.8, [screen, tries] { close_again(screen, tries - 1); });
+            }
+        } // namespace detail
+
+        // Close one of the game's screens as its Back button does. While the game's window is behind, Back is
+        // given again while the screen is still up (three times at most, 0.8 s apart). False for an empty Widget.
+        inline auto close(const Widget& screen) -> bool
+        {
+            if (!detail::screen_command(screen, L"Button_Back", 0, false)) return false;
+            detail::close_again(screen, 3);
+            return true;
+        }
         // The HUD while you play (the game's WBP_GuiHudGameWrc): its parts are its named widgets, through
         // find(): mcGuiMinimap, mcGuiEnergyBar, mcGuiHudCharacter, mcGuiQuestObjective, mcGuiContextualMenu,
         // mcGuiSenseControl, mcGuiAreaName...; its layers are CanvasExploration, CanvasCombat and CanvasOver,
@@ -1509,7 +1564,7 @@ namespace wcmods
         // ============================================================================================ tabs in the game's screens
         // The game's screens keep their tabs (the pause screen's General, Controls, Quest...; the inventory's
         // Consumable, Materials, Accessories; the settings' Audio, Gameplay...) in a navigation list the player
-        // moves along with the tab keys (1 and 2, a controller's shoulder buttons). A tab of the mod's own is one
+        // moves along with the tab keys (the arrows since build 26337109, 1 and 2 before; a controller's shoulder buttons). A tab of the mod's own is one
         // more of the game's tab buttons, in the same row and the same list, with a page of the mod's own that
         // shows while the game's navigation is on it; the game's panel for the tab before it is hidden then.
         struct TabOptions

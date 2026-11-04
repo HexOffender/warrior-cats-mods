@@ -1,10 +1,10 @@
 {
  "made_on": {
-  "size": 183669832,
-  "timestamp": 3539680621,
-  "size_of_image": 187576320,
-  "text_sha1": "e216a0dbfcaa2bde42de80c7edde36ad9fbf4360",
-  "build": 26184573
+  "size": 183319112,
+  "timestamp": 2887140557,
+  "size_of_image": 187203584,
+  "text_sha1": "9b4fc897de0a1472eeca561b4b4f8bf6989dd8d7",
+  "build": 26337109
  },
  "classes": {
   "/Script/SwtQuest.SwtQuestResourceComponent": {
@@ -18,40 +18,40 @@
    "anchors": [],
    "sites": [
     {
-     "from": "0x165B650",
-     "at": "0x165B671",
+     "from": "0x1659DF0",
+     "at": "0x1659E11",
      "pattern": "0F 28 F1 E8 ?? ?? ?? ?? F3 0F 10 8B ?? ?? ?? ?? 0F 57 FF 0F 2F CF",
      "captures": {
       "12": 268
      }
     },
     {
-     "from": "0x165B650",
-     "at": "0x165B6E6",
+     "from": "0x1659DF0",
+     "at": "0x1659E86",
      "pattern": "0F 2F 0C 18 73 ?? F3 0F 59 B3 ?? ?? ?? ?? 48 8B CB 48 8B 03",
      "captures": {
       "10": 276
      }
     },
     {
-     "from": "0x165B650",
-     "at": "0x165B6F7",
+     "from": "0x1659DF0",
+     "at": "0x1659E97",
      "pattern": "48 8B 03 F3 0F 58 B3 ?? ?? ?? ?? F3 0F 58 B3 ?? ?? ?? ?? 0F 28 CE FF 90 ?? ?? ?? ??",
      "captures": {
       "15": 268
      }
     },
     {
-     "from": "0x165B650",
-     "at": "0x165B735",
+     "from": "0x1659DF0",
+     "at": "0x1659ED5",
      "pattern": "EB ?? 40 84 FF 75 ?? 0F 2F BB ?? ?? ?? ?? 72 ?? 48 8B 03 48 8B CB",
      "captures": {
       "10": 268
      }
     },
     {
-     "from": "0x165B770",
-     "at": "0x165B795",
+     "from": "0x1659F10",
+     "at": "0x1659F35",
      "pattern": "48 8D B9 ?? ?? ?? ?? 48 8B C7 48 8D B1 ?? ?? ?? ?? 0F 28 C1 48 8B D9",
      "captures": {
       "13": 272
@@ -60,7 +60,7 @@
    ],
    "size": 288,
    "align": 8,
-   "vtable": 162330488,
+   "vtable": 162009112,
    "overrides": 14,
    "natives": 0,
    "parent": null
@@ -73,8 +73,8 @@
    "anchors": [],
    "sites": [
     {
-     "from": "0x165B5C0",
-     "at": "0x165B5CE",
+     "from": "0x1659D60",
+     "at": "0x1659D6E",
      "pattern": "0F 28 F1 E8 ?? ?? ?? ?? F3 0F 59 B3 ?? ?? ?? ?? 48 8B CB 48 8B 03",
      "captures": {
       "12": 284
@@ -83,8 +83,8 @@
    ],
    "size": 288,
    "align": 8,
-   "vtable": 162312384,
-   "overrides": 3,
+   "vtable": 161994920,
+   "overrides": 4,
    "natives": 0,
    "parent": "SwtQuestResourceComponent"
   },
@@ -103,27 +103,27 @@
    "anchors": [
     {
      "note": "setting the XP: levels up while it reaches the next level's, below the cap",
-     "was": "0x1658A90",
+     "was": "0x1657230",
      "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 50 0F 29 74 24 ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 44 24 ?? 80 B9 ?? ?? ?? ?? 00"
     },
     {
      "note": "setting the level: the XP bar's size from the XP table, full at the cap",
-     "was": "0x1658870",
+     "was": "0x1657010",
      "pattern": "40 53 48 83 EC 40 48 8B 01 48 8B D9 0F 29 74 24 ?? 0F 29 7C 24 ??"
     }
    ],
    "sites": [
     {
-     "from": "0x1658870",
-     "at": "0x1658881",
+     "from": "0x1657010",
+     "at": "0x1657021",
      "pattern": "0F 29 7C 24 ?? 0F 28 FA 89 91 ?? ?? ?? ?? FF 90 ?? ?? ?? ?? 48 8B CB",
      "captures": {
       "10": 288
      }
     },
     {
-     "from": "0x1658870",
-     "at": "0x16588AB",
+     "from": "0x1657010",
+     "at": "0x165704B",
      "pattern": "48 8B 03 48 8B CB 48 8B 90 ?? ?? ?? ?? 8B 83 ?? ?? ?? ?? 39 83 ?? ?? ?? ?? 7D ?? 0F 28 CF",
      "captures": {
       "15": 292,
@@ -131,16 +131,16 @@
      }
     },
     {
-     "from": "0x1658870",
-     "at": "0x1658942",
+     "from": "0x1657010",
+     "at": "0x16570E2",
      "pattern": "EB ?? BA FF FF FF FF 8B 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 7C 24 ??",
      "captures": {
       "9": 288
      }
     },
     {
-     "from": "0x1658A90",
-     "at": "0x1658B80",
+     "from": "0x1657230",
+     "at": "0x1657320",
      "pattern": "48 8B CB FF 90 ?? ?? ?? ?? 8B 93 ?? ?? ?? ?? 3B 93 ?? ?? ?? ?? 7D ?? F3 0F 10 07 48 8B CB",
      "captures": {
       "11": 288,
@@ -148,16 +148,16 @@
      }
     },
     {
-     "from": "0x17C6210",
-     "at": "0x17C6249",
+     "from": "0x17C4A60",
+     "at": "0x17C4A99",
      "pattern": "48 8B 4C 24 ?? F3 0F 2C C0 89 86 ?? ?? ?? ?? 48 85 C9 74 ??",
      "captures": {
       "11": 292
      }
     },
     {
-     "from": "0x17C6410",
-     "at": "0x17C6657",
+     "from": "0x17C4C60",
+     "at": "0x17C4EA7",
      "pattern": "F3 0F 59 DE F3 0F 58 8B ?? ?? ?? ?? F3 0F 58 93 ?? ?? ?? ??",
      "captures": {
       "8": 344,
@@ -165,8 +165,8 @@
      }
     },
     {
-     "from": "0x17C6410",
-     "at": "0x17C6663",
+     "from": "0x17C4C60",
+     "at": "0x17C4EB3",
      "pattern": "F3 0F 58 93 ?? ?? ?? ?? F3 0F 58 9B ?? ?? ?? ?? F3 0F 11 8B ?? ?? ?? ??",
      "captures": {
       "4": 348,
@@ -175,8 +175,8 @@
      }
     },
     {
-     "from": "0x17C6410",
-     "at": "0x17C6673",
+     "from": "0x17C4C60",
+     "at": "0x17C4EC3",
      "pattern": "F3 0F 11 8B ?? ?? ?? ?? F3 0F 11 93 ?? ?? ?? ?? F3 0F 11 9B ?? ?? ?? ??",
      "captures": {
       "4": 344,
@@ -185,24 +185,24 @@
      }
     },
     {
-     "from": "0x17C6410",
-     "at": "0x17C66F1",
+     "from": "0x17C4C60",
+     "at": "0x17C4F41",
      "pattern": "F3 0F 10 15 ?? ?? ?? ?? 48 8D 93 ?? ?? ?? ?? F3 0F 10 8B ?? ?? ?? ?? 48 8D 4D ?? F3 0F 58 C9",
      "captures": {
       "19": 340
      }
     },
     {
-     "from": "0x17C6410",
-     "at": "0x17C6710",
+     "from": "0x17C4C60",
+     "at": "0x17C4F60",
      "pattern": "F3 0F 58 CA F3 0F 2D C1 F3 0F 10 8B ?? ?? ?? ?? F3 0F 58 C9 D1 F8",
      "captures": {
       "12": 344
      }
     },
     {
-     "from": "0x17C6410",
-     "at": "0x17C672A",
+     "from": "0x17C4C60",
+     "at": "0x17C4F7A",
      "pattern": "F3 0F 58 CA 0F 5B C0 F3 0F 2D C1 F3 0F 10 8B ?? ?? ?? ?? F3 0F 58 C9 F3 0F 11 83 ?? ?? ?? ?? D1 F8",
      "captures": {
       "15": 348,
@@ -210,8 +210,8 @@
      }
     },
     {
-     "from": "0x17C6410",
-     "at": "0x17C674F",
+     "from": "0x17C4C60",
+     "at": "0x17C4F9F",
      "pattern": "66 0F 6E C0 0F 5B C0 F3 0F 2D C1 F3 0F 10 8B ?? ?? ?? ?? F3 0F 58 C9 F3 0F 11 83 ?? ?? ?? ?? D1 F8",
      "captures": {
       "15": 352,
@@ -219,8 +219,8 @@
      }
     },
     {
-     "from": "0x17C6410",
-     "at": "0x17C6774",
+     "from": "0x17C4C60",
+     "at": "0x17C4FC4",
      "pattern": "66 0F 6E C0 0F 5B C0 F3 0F 2D C1 F3 0F 10 8B ?? ?? ?? ?? F3 0F 11 83 ?? ?? ?? ?? F3 0F 58 C9 D1 F8",
      "captures": {
       "15": 356,
@@ -228,8 +228,8 @@
      }
     },
     {
-     "from": "0x17C6410",
-     "at": "0x17C6799",
+     "from": "0x17C4C60",
+     "at": "0x17C4FE9",
      "pattern": "F3 0F 58 CA 0F 5B C0 F3 0F 2D C1 F3 0F 10 8B ?? ?? ?? ?? F3 0F 11 83 ?? ?? ?? ?? F3 0F 58 C9 D1 F8",
      "captures": {
       "15": 360,
@@ -237,24 +237,24 @@
      }
     },
     {
-     "from": "0x17C6410",
-     "at": "0x17C67C2",
+     "from": "0x17C4C60",
+     "at": "0x17C5012",
      "pattern": "0F 5B C0 F3 0F 2D C1 F3 0F 11 83 ?? ?? ?? ?? D1 F8 66 0F 6E C0",
      "captures": {
       "11": 356
      }
     },
     {
-     "from": "0x17C6410",
-     "at": "0x17C67D3",
+     "from": "0x17C4C60",
+     "at": "0x17C5023",
      "pattern": "66 0F 6E C0 0F 5B C0 F3 0F 11 83 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ??",
      "captures": {
       "11": 360
      }
     },
     {
-     "from": "0x17C6410",
-     "at": "0x17C6926",
+     "from": "0x17C4C60",
+     "at": "0x17C5176",
      "pattern": "48 8B CF FF 50 ?? F3 0F 10 8B ?? ?? ?? ?? 48 8B C8 48 8B 10",
      "captures": {
       "10": 340
@@ -263,8 +263,8 @@
    ],
    "size": 368,
    "align": 8,
-   "vtable": 162899120,
-   "overrides": 6,
+   "vtable": 162583776,
+   "overrides": 5,
    "natives": 0,
    "parent": null
   },
@@ -277,24 +277,24 @@
    "anchors": [],
    "sites": [
     {
-     "from": "0x17C1440",
-     "at": "0x17C144E",
+     "from": "0x17BFC90",
+     "at": "0x17BFC9E",
      "pattern": "48 8B F9 E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8D 97 ?? ?? ?? ?? 45 33 C9 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 4D ?? 48 85 C9",
      "captures": {
       "27": 308
      }
     },
     {
-     "from": "0x17C1440",
-     "at": "0x17C1599",
+     "from": "0x17BFC90",
+     "at": "0x17BFDE9",
      "pattern": "48 8D 45 ?? 48 89 45 ?? F3 0F 11 87 ?? ?? ?? ?? 0F 1F 80 ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ??",
      "captures": {
       "12": 304
      }
     },
     {
-     "from": "0x17C1690",
-     "at": "0x17C1715",
+     "from": "0x17BFEE0",
+     "at": "0x17BFF65",
      "pattern": "80 BF ?? ?? ?? ?? 00 75 ?? F3 0F 58 B3 ?? ?? ?? ?? F3 0F 10 83 ?? ?? ?? ?? 0F 2F F0",
      "captures": {
       "13": 304,
@@ -302,8 +302,8 @@
      }
     },
     {
-     "from": "0x17C1690",
-     "at": "0x17C1726",
+     "from": "0x17BFEE0",
+     "at": "0x17BFF76",
      "pattern": "F3 0F 10 83 ?? ?? ?? ?? 0F 2F F0 F3 0F 11 B3 ?? ?? ?? ?? 72 ?? 8B 83 ?? ?? ?? ??",
      "captures": {
       "4": 308,
@@ -313,7 +313,7 @@
    ],
    "size": 408,
    "align": 8,
-   "vtable": 162768992,
+   "vtable": 162449200,
    "overrides": 4,
    "natives": 0,
    "parent": "SwtQuestResourceComponent"
@@ -326,16 +326,16 @@
    "anchors": [],
    "sites": [
     {
-     "from": "0x1721D30",
-     "at": "0x1721E44",
+     "from": "0x17204A0",
+     "at": "0x17205B4",
      "pattern": "B8 C5 B3 A2 91 48 89 7B ?? F3 0F 2C 8D ?? ?? ?? ?? F7 E9 03 D1",
      "captures": {
       "13": 1080
      }
     },
     {
-     "from": "0x17EBAF0",
-     "at": "0x17EBBDA",
+     "from": "0x17EA340",
+     "at": "0x17EA42A",
      "pattern": "74 ?? E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8D 97 ?? ?? ?? ?? 45 33 C9 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 4D ?? 48 85 C9",
      "captures": {
       "26": 1080
@@ -344,7 +344,7 @@
    ],
    "size": 1312,
    "align": 8,
-   "vtable": 162869376,
+   "vtable": 162546320,
    "overrides": 21,
    "natives": 4,
    "parent": null
@@ -369,63 +369,55 @@
    "anchors": [
     {
      "note": "builds a fighter's stats from its level",
-     "was": "0x17D8270",
+     "was": "0x17D6AC0",
      "pattern": "48 8B C4 48 89 58 ?? 48 89 70 ?? 48 89 78 ?? 4C 89 70 ?? 55 48 8D 68 ?? 48 81 EC C0 00 00 00 0F 29 70 ??"
     },
     {
      "note": "a fighter's Prowess with its buffs",
-     "was": "0x17D8A00",
+     "was": "0x17D7250",
      "pattern": null
     },
     {
      "note": "a fighter's speed, from Agility and stamina",
-     "was": "0x17D9A60",
+     "was": "0x17D82B0",
      "pattern": "40 53 48 83 EC 50 0F 29 74 24 ?? 48 8B D9 0F 29 7C 24 ?? 44 0F 29 44 24 ?? E8 ?? ?? ?? ?? 48 85 C0"
     },
     {
      "note": "setting up a fighter: health and fight stamina from its stats",
-     "was": "0x17D70C0",
+     "was": "0x17D5910",
      "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 60 48 8B 99 ?? ?? ?? ?? 8B FA 89 91 ?? ?? ?? ??"
     },
     {
      "note": "dynamic difficulty: an enemy's level, its AI tier and its moves",
-     "was": "0x17D6A30",
+     "was": "0x17D5280",
      "pattern": "48 89 54 24 ?? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC 18 01 00 00 4C 8B F9"
     },
     {
      "note": "hitting and missing: the defender's team looked up for a forced miss",
-     "was": "0x17DB3E0",
+     "was": "0x17D9C30",
      "pattern": "40 55 53 41 56 48 8D 6C 24 ?? 48 81 EC 00 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4"
     }
    ],
    "sites": [
     {
-     "from": "0x126CB80",
-     "at": "0x126CBEE",
-     "pattern": "48 63 4F ?? 8D 41 ?? 89 47 ?? 3B 82 ?? ?? ?? ?? 7D ?? 48 8B 82 ?? ?? ?? ?? 48 FF C1",
-     "captures": {
-      "12": 488
-     }
-    },
-    {
-     "from": "0x173E960",
-     "at": "0x173EA17",
+     "from": "0x173D0E0",
+     "at": "0x173D197",
      "pattern": "E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 93 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ??",
      "captures": {
       "19": 488
      }
     },
     {
-     "from": "0x17D6A30",
-     "at": "0x17D6AE3",
+     "from": "0x17D5280",
+     "at": "0x17D5333",
      "pattern": "0F 4F C1 48 8D 4C 24 ?? 41 89 87 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 4C 24 ??",
      "captures": {
       "11": 988
      }
     },
     {
-     "from": "0x17D6A30",
-     "at": "0x17D6DD7",
+     "from": "0x17D5280",
+     "at": "0x17D5627",
      "pattern": "89 1C 01 48 8D 4C 24 ?? 45 8B 8F ?? ?? ?? ?? 45 0F B6 87 ?? ?? ?? ?? E8 ?? ?? ?? ??",
      "captures": {
       "11": 988,
@@ -433,8 +425,8 @@
      }
     },
     {
-     "from": "0x17D6A30",
-     "at": "0x17D6E1D",
+     "from": "0x17D5280",
+     "at": "0x17D566D",
      "pattern": "48 89 58 ?? E8 ?? ?? ?? ?? 45 8B 8F ?? ?? ?? ?? 48 8D 4C 24 ?? 45 0F B6 87 ?? ?? ?? ??",
      "captures": {
       "12": 988,
@@ -442,72 +434,80 @@
      }
     },
     {
-     "from": "0x17D6A30",
-     "at": "0x17D6E7C",
+     "from": "0x17D5280",
+     "at": "0x17D56CC",
      "pattern": "8B F3 66 90 41 83 BF ?? ?? ?? ?? 04 7D ?? 48 39 1D ?? ?? ?? ??",
      "captures": {
       "7": 488
      }
     },
     {
-     "from": "0x17D70C0",
-     "at": "0x17D716A",
+     "from": "0x17D5280",
+     "at": "0x17D5704",
+     "pattern": "4C 8B E0 4D 8D 87 ?? ?? ?? ?? 41 8B 87 ?? ?? ?? ?? 41 3B 00 75 ??",
+     "captures": {
+      "13": 488
+     }
+    },
+    {
+     "from": "0x17D5910",
+     "at": "0x17D59BA",
      "pattern": "E8 ?? ?? ?? ?? F3 0F 59 05 ?? ?? ?? ?? 48 8B CF F3 0F 58 86 ?? ?? ?? ?? 0F 28 C8 FF D3 48 8B CE",
      "captures": {
       "20": 472
      }
     },
     {
-     "from": "0x17D70C0",
-     "at": "0x17D719F",
+     "from": "0x17D5910",
+     "at": "0x17D59EF",
      "pattern": "E8 ?? ?? ?? ?? F3 0F 59 05 ?? ?? ?? ?? 48 8B CF F3 0F 58 86 ?? ?? ?? ?? 0F 28 C8 FF D3 48 8B BE ?? ?? ?? ??",
      "captures": {
       "20": 472
      }
     },
     {
-     "from": "0x17D8270",
-     "at": "0x17D8463",
+     "from": "0x17D6AC0",
+     "at": "0x17D6CB3",
      "pattern": "40 B7 01 48 8B 05 ?? ?? ?? ?? 44 0F B6 B6 ?? ?? ?? ?? 48 85 C0 75 ??",
      "captures": {
       "14": 984
      }
     },
     {
-     "from": "0x17DB3E0",
-     "at": "0x17DB41D",
+     "from": "0x17D9C30",
+     "at": "0x17D9C6D",
      "pattern": "49 8D 8E ?? ?? ?? ?? 48 8D 55 ?? 41 88 86 ?? ?? ?? ?? 88 45 ?? E8 ?? ?? ?? ??",
      "captures": {
       "14": 416
      }
     },
     {
-     "from": "0x17DB3E0",
-     "at": "0x17DB437",
+     "from": "0x17D9C30",
+     "at": "0x17D9C87",
      "pattern": "49 8B CE E8 ?? ?? ?? ?? 41 80 BE ?? ?? ?? ?? 01 48 8B D0 75 ??",
      "captures": {
       "11": 417
      }
     },
     {
-     "from": "0x17DB3E0",
-     "at": "0x17DB447",
+     "from": "0x17D9C30",
+     "at": "0x17D9C97",
      "pattern": "48 8B D0 75 ?? 41 0F B6 86 ?? ?? ?? ?? 83 E8 03 74 ??",
      "captures": {
       "9": 416
      }
     },
     {
-     "from": "0x17DB3E0",
-     "at": "0x17DB62A",
+     "from": "0x17D9C30",
+     "at": "0x17D9E7A",
      "pattern": "48 8B 87 ?? ?? ?? ?? 49 8B CE 44 0F B6 B8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C 8B C0",
      "captures": {
       "14": 417
      }
     },
     {
-     "from": "0x17DB3E0",
-     "at": "0x17DB89A",
+     "from": "0x17D9C30",
+     "at": "0x17DA0EA",
      "pattern": "48 8B 02 48 8B 88 ?? ?? ?? ?? 0F B6 B1 ?? ?? ?? ?? 48 8B CA E8 ?? ?? ?? ??",
      "captures": {
       "13": 417
@@ -516,8 +516,8 @@
    ],
    "size": 1024,
    "align": 8,
-   "vtable": 163117416,
-   "overrides": 52,
+   "vtable": 162798304,
+   "overrides": 2,
    "natives": 12,
    "parent": null
   },
@@ -532,43 +532,43 @@
    "anchors": [
     {
      "note": "the end of a round: the self-cure roll, and poison queued on the director",
-     "was": "0x17CE150",
+     "was": "0x17CC9A0",
      "pattern": "48 89 5C 24 ?? 57 48 83 EC 20 0F B6 99 ?? ?? ?? ?? 48 8B F9 84 DB 0F 84 ?? ?? ?? ?? FF 15 ?? ?? ?? ??"
     },
     {
      "note": "loads the status tuning",
-     "was": "0x17CDB40",
+     "was": "0x17CC390",
      "pattern": "40 55 48 8B EC 48 83 EC 50 48 89 7C 24 ?? 48 8B F9 E8 ?? ?? ?? ?? 48 85 C0"
     }
    ],
    "sites": [
     {
-     "from": "0x1736EF0",
-     "at": "0x1736FAF",
+     "from": "0x1735670",
+     "at": "0x173572F",
      "pattern": "8B 44 8A ?? 83 F8 FF 75 ?? 38 9F ?? ?? ?? ?? 0F 84 ?? ?? ?? ?? 48 8B CF E8 ?? ?? ?? ??",
      "captures": {
       "11": 224
      }
     },
     {
-     "from": "0x1736EF0",
-     "at": "0x173700B",
+     "from": "0x1735670",
+     "at": "0x173578B",
      "pattern": "48 8B 74 24 ?? 48 8B CF 88 9F ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0",
      "captures": {
       "10": 224
      }
     },
     {
-     "from": "0x1736EF0",
-     "at": "0x1737033",
+     "from": "0x1735670",
+     "at": "0x17357B3",
      "pattern": "74 ?? 48 8B CF E8 ?? ?? ?? ?? 0F B6 9F ?? ?? ?? ?? 48 8B CF E8 ?? ?? ?? ?? 44 0F B6 C3",
      "captures": {
       "13": 224
      }
     },
     {
-     "from": "0x1736EF0",
-     "at": "0x1737053",
+     "from": "0x1735670",
+     "at": "0x17357D3",
      "pattern": "E8 ?? ?? ?? ?? 48 8B CF C7 87 ?? ?? ?? ?? 01 00 00 00 E8 ?? ?? ?? ?? 0F B6 87 ?? ?? ?? ??",
      "captures": {
       "10": 324,
@@ -576,40 +576,40 @@
      }
     },
     {
-     "from": "0x17CDB40",
-     "at": "0x17CDC9A",
+     "from": "0x17CC390",
+     "at": "0x17CC4EA",
      "pattern": "E8 ?? ?? ?? ?? 48 8B 4D ?? F3 0F 11 87 ?? ?? ?? ?? 48 85 C9 74 ??",
      "captures": {
       "13": 332
      }
     },
     {
-     "from": "0x17CDB40",
-     "at": "0x17CDCC9",
+     "from": "0x17CC390",
+     "at": "0x17CC519",
      "pattern": "E8 ?? ?? ?? ?? 48 8B 4D ?? F3 0F 11 87 ?? ?? ?? ?? 48 8B 7C 24 ?? 48 85 C9",
      "captures": {
       "13": 328
      }
     },
     {
-     "from": "0x17CE150",
-     "at": "0x17CE172",
+     "from": "0x17CC9A0",
+     "at": "0x17CC9C2",
      "pattern": "25 FF 7F 00 00 66 0F 6E C8 8B 87 ?? ?? ?? ?? 0F 5B C9 66 0F 6E C0",
      "captures": {
       "11": 324
      }
     },
     {
-     "from": "0x17CE150",
-     "at": "0x17CE188",
+     "from": "0x17CC9A0",
+     "at": "0x17CC9D8",
      "pattern": "F3 0F 59 0D ?? ?? ?? ?? 0F 5B C0 F3 0F 59 87 ?? ?? ?? ?? 0F 2F C8 77 ??",
      "captures": {
       "15": 328
      }
     },
     {
-     "from": "0x17CE150",
-     "at": "0x17CE1A3",
+     "from": "0x17CC9A0",
+     "at": "0x17CC9F3",
      "pattern": "E8 ?? ?? ?? ?? EB ?? FF C0 89 87 ?? ?? ?? ?? 0F B6 87 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? 48 8D 54 24 ??",
      "captures": {
       "11": 324,
@@ -619,7 +619,7 @@
    ],
    "size": 336,
    "align": 8,
-   "vtable": 163060272,
+   "vtable": 162738032,
    "overrides": 2,
    "natives": 4,
    "parent": null
@@ -643,19 +643,19 @@
    "anchors": [
     {
      "note": "loads the senses from the tuning for the size class",
-     "was": "0x17B8DB0",
+     "was": "0x17B7600",
      "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 55 48 8B EC 48 83 EC 40 48 8B 05 ?? ?? ?? ??"
     },
     {
      "note": "reads the senses",
-     "was": "0x17B80C0",
+     "was": "0x17B6910",
      "pattern": "40 53 48 83 EC 20 48 8B D9 E8 ?? ?? ?? ?? 48 8B 03 33 D2 48 8B CB FF 90 ?? ?? ?? ?? 48 8B 03"
     }
    ],
    "sites": [
     {
-     "from": "0x17B80C0",
-     "at": "0x17B8105",
+     "from": "0x17B6910",
+     "at": "0x17B6955",
      "pattern": "48 8B CB E8 ?? ?? ?? ?? F3 0F 10 8B ?? ?? ?? ?? 41 B0 01 F3 0F 5F 8B ?? ?? ?? ??",
      "captures": {
       "12": 1420,
@@ -663,8 +663,8 @@
      }
     },
     {
-     "from": "0x17B80C0",
-     "at": "0x17B8118",
+     "from": "0x17B6910",
+     "at": "0x17B6968",
      "pattern": "F3 0F 5F 8B ?? ?? ?? ?? 48 8B CB F3 0F 5F 8B ?? ?? ?? ?? F3 0F 5F 8B ?? ?? ?? ?? 48 83 C4 20",
      "captures": {
       "4": 1408,
@@ -673,8 +673,8 @@
      }
     },
     {
-     "from": "0x17B8520",
-     "at": "0x17B8C08",
+     "from": "0x17B6D70",
+     "at": "0x17B7458",
      "pattern": "F3 41 0F 5D C6 E8 ?? ?? ?? ?? 44 0F 2F 97 ?? ?? ?? ?? 0F 87 ?? ?? ?? ?? F3 0F 10 8F ?? ?? ?? ??",
      "captures": {
       "14": 1408,
@@ -682,72 +682,72 @@
      }
     },
     {
-     "from": "0x17B8520",
-     "at": "0x17B8C3E",
+     "from": "0x17B6D70",
+     "at": "0x17B748E",
      "pattern": "40 B6 01 EB ?? 44 0F 2F 97 ?? ?? ?? ?? 40 0F 96 C6 41 F6 04 24 02",
      "captures": {
       "9": 1408
      }
     },
     {
-     "from": "0x17B8520",
-     "at": "0x17B8C9C",
+     "from": "0x17B6D70",
+     "at": "0x17B74EC",
      "pattern": "F2 0F 59 C9 F2 0F 58 D0 F3 0F 10 87 ?? ?? ?? ?? 0F 5A C0 F2 0F 58 D1",
      "captures": {
       "12": 1424
      }
     },
     {
-     "from": "0x17B8520",
-     "at": "0x17B8CD6",
+     "from": "0x17B6D70",
+     "at": "0x17B7526",
      "pattern": "F6 81 ?? ?? ?? ?? 01 75 ?? 44 0F 2F 97 ?? ?? ?? ?? 0F 96 C0 EB ??",
      "captures": {
       "13": 1420
      }
     },
     {
-     "from": "0x17B8520",
-     "at": "0x17B8CEC",
+     "from": "0x17B6D70",
+     "at": "0x17B753C",
      "pattern": "32 C0 40 0A F0 44 0F 2F 97 ?? ?? ?? ?? 8B 83 ?? ?? ?? ?? 0F 96 C1",
      "captures": {
       "9": 1428
      }
     },
     {
-     "from": "0x17B8DB0",
-     "at": "0x17B8FF9",
+     "from": "0x17B7600",
+     "at": "0x17B7849",
      "pattern": "4C 0F 45 45 ?? E8 ?? ?? ?? ?? 48 8D B3 ?? ?? ?? ?? 45 33 C9 48 8B D6",
      "captures": {
       "13": 1436
      }
     },
     {
-     "from": "0x17B8DB0",
-     "at": "0x17B90F2",
+     "from": "0x17B7600",
+     "at": "0x17B7942",
      "pattern": "4C 8B C7 E8 ?? ?? ?? ?? 48 8D 93 ?? ?? ?? ?? 45 33 C9 48 8D 4D ??",
      "captures": {
       "11": 1452
      }
     },
     {
-     "from": "0x17B9180",
-     "at": "0x17B91D7",
+     "from": "0x17B79D0",
+     "at": "0x17B7A27",
      "pattern": "48 3B DD 75 ?? 0F 2F B6 ?? ?? ?? ?? 0F 87 ?? ?? ?? ?? 48 8B 86 ?? ?? ?? ??",
      "captures": {
       "8": 1444
      }
     },
     {
-     "from": "0x17B9180",
-     "at": "0x17B9315",
+     "from": "0x17B79D0",
+     "at": "0x17B7B65",
      "pattern": "48 3B DD 75 ?? E9 ?? ?? ?? ?? 0F 2F B6 ?? ?? ?? ?? 0F 86 ?? ?? ?? ?? 48 8B 86 ?? ?? ?? ?? 48 85 C0",
      "captures": {
       "13": 1448
      }
     },
     {
-     "from": "0x17B9580",
-     "at": "0x17B95CD",
+     "from": "0x17B7DD0",
+     "at": "0x17B7E1D",
      "pattern": "4C 39 04 C8 75 ?? 48 8B 8E ?? ?? ?? ?? 8B 87 ?? ?? ?? ?? 89 81 ?? ?? ?? ?? 4C 8D 9F ?? ?? ?? ?? 48 8B D3",
      "captures": {
       "15": 1436
@@ -756,10 +756,67 @@
    ],
    "size": 1568,
    "align": 16,
-   "vtable": 162809536,
+   "vtable": 162486472,
    "overrides": 7,
    "natives": 0,
    "parent": null
+  },
+  "/Script/SwtQuest.SwtQuestInventoryComponent": {
+   "fields": {
+    "WCM_Items": 336
+   },
+   "found": true,
+   "anchors": [
+    {
+     "note": "adds an item, or takes it away: the items map at +0x150",
+     "was": "0x1654430",
+     "pattern": "44 89 44 24 ?? 48 89 54 24 ?? 55 57 41 56 48 8B EC 48 83 EC 40 48 8B 05 ?? ?? ?? ??"
+    },
+    {
+     "note": "its vtable's +0x4F0, on a tag: a QuestItem tag, else looked up in the items map",
+     "was": "0x16543D0",
+     "pattern": "48 89 54 24 ?? 53 48 83 EC 30 48 8B D9 48 8D 15 ?? ?? ?? ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ??"
+    }
+   ],
+   "sites": [
+    {
+     "from": "0x16543D0",
+     "at": "0x1654408",
+     "pattern": "E8 ?? ?? ?? ?? 84 C0 75 ?? 48 8D 8B ?? ?? ?? ?? 48 8D 54 24 ?? E8 ?? ?? ?? ?? B0 01",
+     "captures": {
+      "12": 336
+     }
+    },
+    {
+     "from": "0x1654430",
+     "at": "0x1654496",
+     "pattern": "48 89 74 24 ?? 48 8D 55 ?? 48 8D B7 ?? ?? ?? ?? 48 8B CE E8 ?? ?? ?? ??",
+     "captures": {
+      "12": 336
+     }
+    },
+    {
+     "from": "0x1655350",
+     "at": "0x165535C",
+     "pattern": "57 48 83 EC 20 48 8D B1 ?? ?? ?? ?? 48 89 54 24 ?? 48 8B D9",
+     "captures": {
+      "8": 336
+     }
+    }
+   ],
+   "size": 592,
+   "align": 8,
+   "vtable": 161939352,
+   "overrides": 7,
+   "natives": 0,
+   "parent": null
+  }
+ },
+ "functions": {
+  "SwtQuestInventoryComponent:AddItem": {
+   "note": "adds a count of an item to an inventory, or takes it away (a negative count; at 0 the item goes): (the component, the item's FGameplayTag by value, int32 count, bool show it on the HUD); then tells the component's listeners (the HUD's OnItemPickedUp) and writes the inventory into the save's state",
+   "was": "0x1654430",
+   "pattern": "44 89 44 24 ?? 48 89 54 24 ?? 55 57 41 56 48 8B EC 48 83 EC 40 48 8B 05 ?? ?? ?? ??"
   }
  }
 }

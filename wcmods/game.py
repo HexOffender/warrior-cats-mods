@@ -18,7 +18,8 @@ SHARED_NAME = "WCModsGame"
 
 # Members the game doesn't reflect, found by reverse-engineering build 24847281 (docs/mechanics/,
 # docs/reverse-engineering.md) and confirmed unchanged on 26184573, patch 1.1 (the level component read in
-# game, the rest by signatures.py, which covers the level component too since 2026-10-28): class, then
+# game, the rest by signatures.py, which covers the level component too since 2026-10-28), and on 26337109
+# (2026-11-03, every one found again by signatures.py, none moved): class, then
 # (property name, offset in the object, type). Rendered into
 # the Lua as Game.hidden. They're offsets inside objects, so ASLR doesn't move them, but a game update
 # that changes a class's layout does: signatures.py finds them again in a new build, and lua() takes the
@@ -66,6 +67,26 @@ HIDDEN = [
         ("WCM_TargetDistance", 0x598, "FloatProperty"), ("WCM_WalkSpeedRoaming", 0x59C, "FloatProperty"),
         ("WCM_WalkSpeedChasing", 0x5A0, "FloatProperty"), ("WCM_ZoneEntryDistance", 0x5A4, "FloatProperty"),
         ("WCM_ZoneExitDistance", 0x5A8, "FloatProperty"), ("WCM_ReactToChase", 0x5AC, "FloatProperty")]),
+    # The player state's inventory component: its items, a native TMap<FGameplayTag, int32> (an item's tag to
+    # its count; the TSet's elements are 20 bytes: the tag's FName, the count, and the hash's two links), read
+    # from its constructor and the code that adds an item (NATIVE). C++ only (wcmods::inventory): UE4SS's
+    # RegisterCustomProperty can't describe a map, so the Lua leaves it out (CPP_ONLY).
+    ("/Script/SwtQuest.SwtQuestInventoryComponent", [("WCM_Items", 0x150, "MapProperty")]),
+]
+
+# The kinds in HIDDEN only the C++ SDK reads (offsets.json): the Lua's Game.hidden leaves them out.
+CPP_ONLY = {"MapProperty"}
+
+# The game's native functions the C++ SDK calls (wcmods::native, Core.hpp): "class:name", the function's RVA on
+# gamebuild.VERIFIED_BUILD, and what it takes. signatures.json keeps a pattern of each one's first instructions
+# that's unique in the exe (signatures.make), so another build finds it again (signatures.check); offsets.json
+# gives C++ mods its RVA on the installed build with that pattern, which the SDK checks the code against before
+# it calls anything. Found on 26337109 (docs/reverse-engineering.md, "Items").
+NATIVE = [
+    ("SwtQuestInventoryComponent:AddItem", 0x1654430,
+     "adds a count of an item to an inventory, or takes it away (a negative count; at 0 the item goes): "
+     "(the component, the item's FGameplayTag by value, int32 count, bool show it on the HUD); then tells the "
+     "component's listeners (the HUD's OnItemPickedUp) and writes the inventory into the save's state"),
 ]
 
 # The game's enums Game.enums gives scripts: the name scripts use, the enum's path in the game (its module's
@@ -124,12 +145,25 @@ def hidden(offsets=None):
     return out
 
 
-def offsets_json(offsets=None, build=None):
-    """The same members for C++ mods, written beside the module as offsets.json:
-    {"game_build", "members": {"class:property": {"offset", "type"}}}; `offsets` as for hidden()."""
+def offsets_json(offsets=None, build=None, functions=None):
+    """The same members for C++ mods, written beside the module as offsets.json, with the native functions:
+    {"game_build", "members": {"class:property": {"offset", "type"}}, "functions": {"class:name": {"rva",
+    "pattern"}}}; `offsets` as for hidden(). `functions` maps each of NATIVE's names to its RVA on the installed
+    build, or to None for one a game update took where it couldn't be found again (left out, as is one with no
+    pattern in signatures.json); without it, NATIVE's own (the verified build's)."""
+    from .exe import signatures
     members = {f"{cls}:{name}": {"offset": offset, "type": kind}
                for cls, fields in hidden(offsets) for name, offset, kind in fields}
-    return {"game_build": build, "members": members}
+    try:
+        patterns = {n: f.get("pattern") for n, f in signatures.load().get("functions", {}).items()}
+    except (OSError, ValueError):
+        patterns = {}
+    natives = {}
+    for name, rva, _ in NATIVE:
+        at = rva if functions is None else functions.get(name)
+        if isinstance(at, int) and at > 0 and patterns.get(name):
+            natives[name] = {"rva": at, "pattern": patterns[name]}
+    return {"game_build": build, "members": members, "functions": natives}
 
 
 def lua(offsets=None, saved=None):
@@ -138,8 +172,9 @@ def lua(offsets=None, saved=None):
     from .sdk import lua_value
     rows = []
     for cls, fields in hidden(offsets):
-        items = ", ".join(f'{{ "{n}", 0x{o:X}, "{k}" }}' for n, o, k in fields)
-        rows.append(f'    ["{cls}"] = {{ {items} }},')
+        items = ", ".join(f'{{ "{n}", 0x{o:X}, "{k}" }}' for n, o, k in fields if k not in CPP_ONLY)
+        if items:
+            rows.append(f'    ["{cls}"] = {{ {items} }},')
     enums = "".join(f"\n    {key} = {{ {lua_value(path)}, {lua_value(names)} }}," for key, path, names in ENUMS)
     return (LUA.replace("@HIDDEN@", "{\n" + "\n".join(rows) + "\n}").replace("@SAVED@", lua_value(saved))
             .replace("@ENUMS@", "{" + enums + "\n}"))
