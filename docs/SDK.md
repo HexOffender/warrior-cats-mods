@@ -906,7 +906,7 @@ change (more items, a section opened) rebuilds from the first row that differs. 
 | `ui.radio(label, value, options)` | One of a few options, as buttons; returns the chosen one |
 | `ui.choice(label, value, options)` | A drop-down list; returns the chosen option |
 | `ui.slider(label, value, lo, hi, {step, format, color})` | A slider with its value shown (`format` like `"%.2f"`); returns the value |
-| `ui.number(label, value, {min, max, step, whole})` | A number box you can drag or type in; returns the number (`whole`: whole numbers only, shown without decimals) |
+| `ui.number(label, value, {min, max, step, whole})` | A number box you can drag or type in; returns the number (`whole`: whole numbers only, shown without decimals). Until the player changes it, it returns `value` as it was given: a value outside `min`/`max` stretches the range to take it (to the next power of two, so there's room both ways), and a fraction given to a `whole` box stays a fraction |
 | `ui.input(label, value, {hint})` | A text box; returns its text |
 | `ui.color(label, "#rrggbb")` | A swatch with red, green and blue sliders; returns `"#rrggbb"` |
 | `ui.progress(label, fraction, {color, format})` | A bar from 0 to 1 |

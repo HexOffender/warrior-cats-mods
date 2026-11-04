@@ -563,6 +563,24 @@ def test_menu_keeps_one_page_per_id_and_writes_settings_back_as_they_were():
     assert "%.6g" not in lua
 
 
+def test_a_number_box_gives_back_an_untouched_value_as_it_was():
+    """ui.number: what the box made of the value (its 32-bit float, its clamping) is the base the player's change is
+    measured from, not the value; a value outside min/max stretches the range, past it to the next power of two;
+    agent input is clamped to that range. A whole box no longer rounds before the comparison (2.5 went 3)."""
+    number = body(menu.lua(), "function ui.number(", "\nfunction ui.input")
+    assert "local function past(v) return 2 ^ (math.floor(math.log(math.abs(v), 2)) + 1) end" in number
+    assert "local lo = opts.min and (value < opts.min and (value < 0 and -past(value) or 0) or opts.min) or nil" in number
+    assert "local hi = opts.max and (value > opts.max and past(value) or opts.max) or nil" in number
+    assert "else e.s:ClearMinValue() e.s:ClearMinSliderValue() end" in number
+    assert "if e.v ~= nil and not near(now, e.base) then" in number
+    assert "e.v, e.base = opts.whole and math.floor(now + 0.5) or now, now" in number
+    given = number[number.index("elseif e.v == nil or not near(e.v, value) then"):]
+    assert given.index("e.s:SetValue(value)") < given.index("e.base = e.s:GetValue()")
+    assert "if lo then act = math.max(lo, act) end" in number and "if hi then act = math.min(hi, act) end" in number
+    assert "if opts.whole then now = math.floor(now + 0.5) end" not in number
+    assert "not near(now, e.v)" not in number
+
+
 def test_mod_menu_pages_say_a_left_out_script_and_filter_the_log_for_scripts():
     host = menu.host_script(MANIFEST, [], dev=True)
     assert 'ui.text(id .. ": left out, " .. tostring(note["left out"]), { color = THEME.danger })' in host

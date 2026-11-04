@@ -122,7 +122,9 @@ def test_report_has_the_scripts_runtime_error(agent):
 
 def test_save_on_the_settings_page_says_so_and_keeps_an_empty_list(agent):
     """Noisy script's automatic settings page: change a number, Save; the page says "Saved to settings.json.", and
-    the file keeps its empty list and its other numbers as they were. The file is put back after."""
+    the file keeps its empty list and its other numbers as they were: Count (12, above its _max_count of 10) and Far
+    (100.1, which the number box's 32-bit float reads back as 100.09999847...) aren't changed by being shown. The
+    file is put back after."""
     need(agent, "noisy-script")
     path = os.path.join(NOISY, "settings.json")
     with open(path, encoding="utf-8") as f:
@@ -130,6 +132,9 @@ def test_save_on_the_settings_page_says_so_and_keeps_an_empty_list(agent):
     try:
         page = agent.menu.open("script:noisy-script")
         assert page.find("Speed"), page.text()
+        time.sleep(0.5)   # a few frames: an untouched box that changed its value would have by now
+        page = agent.menu.read()
+        assert page.get("Count") == 12 and page.get("Far") == 100.1, page.text()
         agent.menu.set("Speed", 2.5)
         agent.menu.press("Save")
         page = agent.wait(lambda: (lambda p: p if p.has("Saved to settings.json.") else None)(agent.menu.read()), 5,
@@ -137,6 +142,7 @@ def test_save_on_the_settings_page_says_so_and_keeps_an_empty_list(agent):
         with open(path, encoding="utf-8") as f:
             saved = json.load(f)
         assert saved["keys"] == [] and saved["speed"] == 2.5 and saved["ratio"] == 0.1234567, saved
+        assert saved["count"] == 12 and saved["far"] == 100.1, saved
     finally:
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(before)
@@ -152,6 +158,19 @@ def test_a_page_made_from_a_timer_is_the_only_one(agent):
     page = agent.menu.open("script:late-page")
     assert page.has("Made from a timer") and not page.find("On"), page.text()
     agent.menu.close()
+
+
+def test_a_whole_number_box_gives_back_a_fraction_it_was_given(agent):
+    """late-page's Half is a whole-numbers box given 2.5, and its page writes back what the box gives: still 2.5
+    after a few frames (it went 3, the box's rounding taken for the player's change)."""
+    need(agent, "late-page")
+    agent.menu.open("script:late-page")
+    try:
+        time.sleep(0.5)
+        page = agent.menu.read()
+        assert page.get("Half") == 2.5, page.text()
+    finally:
+        agent.menu.close()
 
 
 def test_the_settings_page_shows_help_under_its_row_and_bounds_a_number(agent):

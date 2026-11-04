@@ -694,6 +694,8 @@ function ui.slider(label, value, lo, hi, opts)
 end
 
 -- A number box (drag it or type); returns its value. opts: min, max, step, whole (whole numbers only).
+-- Untouched, it gives back the value it was given, as it was: a value outside min and max, a fraction with
+-- `whole`, or one the box's float can't hold exactly (100.1) is not the player's change.
 function ui.number(label, value, opts)
     opts = opts or {}
     local e = row("number", function()
@@ -711,24 +713,32 @@ function ui.number(label, value, opts)
         end)
         e.v = nil
     end)
-    put(e, "range", tostring(opts.min) .. "," .. tostring(opts.max) .. "," .. tostring(opts.step), function()
-        if opts.min then e.s:SetMinValue(opts.min) e.s:SetMinSliderValue(opts.min) end
-        if opts.max then e.s:SetMaxValue(opts.max) e.s:SetMaxSliderValue(opts.max) end
+    -- The range, stretched past a value outside it to the next power of two: room to move it both ways, and the
+    -- range (and so the box) doesn't reset with each value written. (ui.slider stretches exactly.)
+    local function past(v) return 2 ^ (math.floor(math.log(math.abs(v), 2)) + 1) end
+    local lo = opts.min and (value < opts.min and (value < 0 and -past(value) or 0) or opts.min) or nil
+    local hi = opts.max and (value > opts.max and past(value) or opts.max) or nil
+    put(e, "range", tostring(lo) .. "," .. tostring(hi) .. "," .. tostring(opts.step), function()
+        if lo then e.s:SetMinValue(lo) e.s:SetMinSliderValue(lo) else e.s:ClearMinValue() e.s:ClearMinSliderValue() end
+        if hi then e.s:SetMaxValue(hi) e.s:SetMaxSliderValue(hi) else e.s:ClearMaxValue() e.s:ClearMaxSliderValue() end
         if opts.step then e.s:SetDelta(opts.step) end
         e.v = nil
     end)
     local now = e.s:GetValue()
-    if opts.whole then now = math.floor(now + 0.5) end
-    if e.v ~= nil and not near(now, e.v) then
-        e.v = now
-    elseif e.v == nil or not near(e.v, value) then
+    if e.v ~= nil and not near(now, e.base) then          -- the player moved it
+        e.v, e.base = opts.whole and math.floor(now + 0.5) or now, now
+    elseif e.v == nil or not near(e.v, value) then          -- the script's value, given back as it is
         e.v = value
         e.s:SetValue(value)
+        e.base = e.s:GetValue()   -- what the box made of it (a float, clamped): not a change
     end
     local act = tonumber(seen("number", label, e.v, { opts.min, opts.max }, true, showFocus(e, "focus", e.r, e.s)) or "")
     if act then
+        if lo then act = math.max(lo, act) end
+        if hi then act = math.min(hi, act) end
         e.v = opts.whole and math.floor(act + 0.5) or act
         e.s:SetValue(e.v)
+        e.base = e.s:GetValue()
     end
     return e.v
 end
