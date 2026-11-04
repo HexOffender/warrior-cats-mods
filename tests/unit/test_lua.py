@@ -461,6 +461,16 @@ def test_a_fight_with_nobody_there_is_not_your_cat():
     assert "x:cat():kind()" not in console and "local c = x:cat()" in console   # its fight example
 
 
+def test_a_teleport_the_game_refused_says_so():
+    """K2_TeleportTo says false when there's no room; Cat:teleport threw that away and said true. A nil (UE4SS not
+    passing it on) keeps the old answer."""
+    tp = body(game.lua(), "function Cat:teleport(x, y, z)", "\nfunction Cat:scale()")
+    assert "local ok, moved = pcall(function() return self.actor:K2_TeleportTo(" in tp
+    assert "if not ok then return false, tostring(moved) end" in tp
+    assert 'if moved == false then return false, "the game wouldn\'t move it there (no room)" end' in tp
+    assert tp.rstrip().endswith("return true\nend")
+
+
 def test_find_never_hands_back_an_object_on_its_way_out():
     lua = game.lua()
     find = body(lua, "function Game.find(className)", "\n-- Every object of a class")

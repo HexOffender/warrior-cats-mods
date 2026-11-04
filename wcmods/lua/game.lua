@@ -1511,7 +1511,8 @@ function Cat:location()
     if not ok then return nil end
     return { X = l.X, Y = l.Y, Z = l.Z }
 end
--- Move the cat: cat:teleport(x, y, z), cat:teleport({X, Y, Z}) or cat:teleport(anotherActor).
+-- Move the cat: cat:teleport(x, y, z), cat:teleport({X, Y, Z}) or cat:teleport(anotherActor). True, or false and why:
+-- the engine's K2_TeleportTo says false when there's no room there, and the cat stays where it was.
 function Cat:teleport(x, y, z)
     if not valid(self.actor) then return false, "the cat is gone" end
     local to
@@ -1523,7 +1524,10 @@ function Cat:teleport(x, y, z)
         if not ok then return false, "not a place" end
         to = { X = l.X, Y = l.Y, Z = l.Z + 50 }
     end
-    return pcall(function() self.actor:K2_TeleportTo(to, self.actor:K2_GetActorRotation()) end)
+    local ok, moved = pcall(function() return self.actor:K2_TeleportTo(to, self.actor:K2_GetActorRotation()) end)
+    if not ok then return false, tostring(moved) end
+    if moved == false then return false, "the game wouldn't move it there (no room)" end   -- (nil: UE4SS didn't say)
+    return true
 end
 function Cat:scale()
     if not valid(self.actor) then return nil end

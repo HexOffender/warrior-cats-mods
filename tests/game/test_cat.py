@@ -61,9 +61,13 @@ def test_walk_with_a_key(agent):
 
 
 def test_teleport(agent):
+    """A move with room says true; the engine's K2_TeleportTo gives a boolean, which Cat:teleport passes on (a refused
+    move said true before, and Menu pages' Travel said "Went to")."""
     start = agent.location()
     try:
-        agent.teleport(start[0] + 300, start[1], start[2] + 50)
+        assert agent.lua("local c = Game.cat() local l = c.actor:K2_GetActorLocation() "
+                         "return type(c.actor:K2_TeleportTo(l, c.actor:K2_GetActorRotation()))") == "boolean"
+        assert agent.lua(f"return Game.cat():teleport({start[0] + 300}, {start[1]}, {start[2] + 50})") is True
         now = agent.location()
         assert abs(now[0] - (start[0] + 300)) < 60, (start, now)
     finally:

@@ -227,7 +227,7 @@ Some limits:
 | `combatStamina()`, `maxCombatStamina()`, `setCombatStamina(v)` | Fight stamina (the maximum is 0.4 × Prowess + Stamina) | read |
 | `level()`, `setLevel(n)`, `xp()`, `setXp(v)`, `xpNeeded()` | Level and experience (your cat: only your cat has a level component out of a fight, so another cat's are nil, and setting them gives false and why) | read |
 | `stats()`, `setStat(name, v)` | `{Prowess, Strength, Resilience, Instinct, Agility, Stamina}` (your cat, as above; a fight's own copy, any fighter's, is under `Game.fighter`) | read and set |
-| `location()`, `teleport(x, y, z)` / `teleport({X,Y,Z})` / `teleport(actor)` | Where it is; move it | yes |
+| `location()`, `teleport(x, y, z)` / `teleport({X,Y,Z})` / `teleport(actor)` | Where it is; move it: true, or false and why (`"the game wouldn't move it there (no room)"` when the engine refuses the move, and the cat stays where it was) | yes |
 | `scale()`, `setScale(f)` | Size (the same call as the menu's size cheat) | read |
 | `setTimeDilation(f)` | This cat's own time: 2 is twice as fast | no |
 | `kind()` | `"Cat"`, `"WeakMice"`, `"BossFox"`, … | yes |
