@@ -878,10 +878,30 @@ namespace wcmods
                 if (*e == static_cast<uint8_t>(want)) return const_cast<uint8_t*>(e) + 8;
             return nullptr;
         }
-        inline auto sky_changes() -> std::map<std::pair<std::wstring, std::wstring>, double>&   // (preset, field) -> the game's value
+        // (preset, field) -> the game's value, and the sky it was taken from: a new level's sky makes its own copy,
+        // so a value kept from another sky isn't written into it.
+        struct SkyChange
         {
-            static std::map<std::pair<std::wstring, std::wstring>, double> was;
-            return was;
+            double was{};
+            UObject* sky{};
+        };
+        inline auto sky_changes() -> std::map<std::pair<std::wstring, std::wstring>, SkyChange>&
+        {
+            static std::map<std::pair<std::wstring, std::wstring>, SkyChange> changes;
+            return changes;
+        }
+        // Each change back, in the sky it was made in (restore_sky_values, and the mod going).
+        inline auto restore_sky_now() -> void
+        {
+            auto changes = sky_changes();
+            sky_changes().clear();
+            UObject* now = sky();
+            for (auto& [where, change] : changes)
+            {
+                if (change.sky != now) continue;   // that sky has gone with its level, and its copy with it
+                uint8_t* row = sky_copy(where.first);
+                if (row) set(struct_at(STR("/Script/Wrc.WrcSkyBoxStruct"), row), where.second, change.was);
+            }
         }
     } // namespace detail
     // A preset's values as putting it on uses them (by ESkyboxPostProcessEnum's name: L"Night", L"ThunderClan"...), a
@@ -902,20 +922,20 @@ namespace wcmods
         if (row.kind != Value::Kind::Struct) return false;
         Value now = get(row, field);
         if (now.kind != Value::Kind::Float && now.kind != Value::Kind::Int) return false;
-        detail::sky_changes().try_emplace({std::wstring(preset), std::wstring(field)}, now.number());
-        return set(row, field, value);
+        const double was = now.number();
+        if (!set(row, field, value)) return false;
+        auto& changes = detail::sky_changes();
+        auto key = std::make_pair(std::wstring(preset), std::wstring(field));
+        auto it = changes.find(key);
+        if (it == changes.end() || it->second.sky != sky()) changes[key] = {was, sky()};   // the first change in this sky
+        return true;
     }
-    // Every value set_sky_value changed back to the game's.
+    // Every value set_sky_value changed back to the game's, in the sky it changed them in (a new level's sky has its
+    // own copy, from the table).
     inline auto restore_sky_values() -> void
     {
         if (!assert_game_thread(L"restore_sky_values")) return;
-        auto changes = detail::sky_changes();
-        detail::sky_changes().clear();
-        for (auto& [where, was] : changes)
-        {
-            Value row = sky_values(where.first);
-            if (row.kind == Value::Kind::Struct) set(row, where.second, was);
-        }
+        detail::restore_sky_now();
     }
 
     // ============================================================================================ sounds
@@ -1073,6 +1093,8 @@ namespace wcmods
     }
     namespace detail
     {
+        // As the mod is taken out: the sky's values it changed go back (UE4SS may do this off the game thread).
+        inline auto stop_sky() -> void { restore_sky_now(); }
         // As the mod is taken out: every sound it replaced or muted goes back, so the change doesn't outlive it.
         inline auto stop_sounds() -> void
         {
