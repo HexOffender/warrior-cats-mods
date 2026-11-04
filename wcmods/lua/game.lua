@@ -3232,8 +3232,8 @@ function Game.time.hold(s, who)
         if select(2, Game.time.held()) == who then share(h.key, "") end
         return true
     end
-    s = s % 86400
-    share(h.key, string.format("%.0f\t%s", s, who))
+    s = math.floor(s + 0.5) % 86400   -- a whole second of the day: 86399.6 is 0, not 86400
+    share(h.key, string.format("%d\t%s", s, who))
     h.task = h.task or Game.every(0.5, function()
         local at = Game.time.held()
         if at and Game.cat() then Game.time.setSeconds(at) end

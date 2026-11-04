@@ -692,7 +692,8 @@ def test_the_clock_has_one_hold_for_every_script():
     hold = body(lua, "function Game.time.hold(s, who)", "\n-- ====")
     assert 'who = clean(who or Game.modName or "a script")' in hold
     assert 'if select(2, Game.time.held()) == who then share(h.key, "") end' in hold   # only your own
-    assert 'share(h.key, string.format("%.0f\\t%s", s, who))' in hold
+    assert "s = math.floor(s + 0.5) % 86400" in hold   # a whole second, never 86400 (%.0f rounded 86399.6 up)
+    assert 'share(h.key, string.format("%d\\t%s", s, who))' in hold
     assert "h.task = h.task or Game.every(0.5, function()" in hold and "if at and Game.cat() then Game.time.setSeconds(at) end" in hold
     # set and setSeconds stay plain writes
     assert 'function Game.time.setSeconds(s) return Game.set(Game.gameState(), "WCM_DayTime", s % 86400) end' in lua
@@ -795,11 +796,16 @@ def test_menu_keeps_one_page_per_id_and_writes_settings_back_as_they_were():
 def test_a_number_box_gives_back_an_untouched_value_as_it_was():
     """ui.number: what the box made of the value (its 32-bit float, its clamping) is the base the player's change is
     measured from, not the value; a value outside min/max stretches the range, past it to the next power of two;
-    agent input is clamped to that range. A whole box no longer rounds before the comparison (2.5 went 3)."""
+    agent input is clamped to that range. A whole box no longer rounds before the comparison (2.5 went 3). The stretch
+    comes from the script's own value only: a value the player made and the script wrote back keeps the range, which
+    doubled each time the player reached the top (so max was no limit), resetting the box mid-drag."""
     number = body(menu.lua(), "function ui.number(", "\nfunction ui.input")
     assert "local function past(v) return 2 ^ (math.floor(math.log(math.abs(v), 2)) + 1) end" in number
-    assert "local lo = opts.min and (value < opts.min and (value < 0 and -past(value) or 0) or opts.min) or nil" in number
-    assert "local hi = opts.max and (value > opts.max and past(value) or opts.max) or nil" in number
+    assert "if e.span == nil or e.spanFor ~= spanFor or not near(e.v, value) then" in number
+    assert "e.span = { opts.min and (value < opts.min and (value < 0 and -past(value) or 0) or opts.min) or nil," in number
+    assert "opts.max and (value > opts.max and past(value) or opts.max) or nil }" in number
+    assert "local lo, hi = e.span[1], e.span[2]" in number
+    assert number.index("local lo, hi = e.span[1], e.span[2]") < number.index('put(e, "range"')
     assert "else e.s:ClearMinValue() e.s:ClearMinSliderValue() end" in number
     assert "if e.v ~= nil and not near(now, e.base) then" in number
     assert "e.v, e.base = opts.whole and math.floor(now + 0.5) or now, now" in number
@@ -825,15 +831,22 @@ def test_a_save_writes_the_whole_file_or_says_it_couldnt():
     """Menu.saveJson opened the file with "wb" (emptying it), didn't look at f:write's or f:close's answers, and said
     true: a full disk left half a settings file and "Saved". Now it encodes first, writes <path>.new, checks the write,
     the close and what's on the disk, moves the old file aside (Windows' rename won't replace it), and puts it back
-    when the new one can't go in. MOD.save()'s fallback and the bridge's writeWhole check theirs too."""
+    when the new one can't go in. A .old it can't remove, or a file it can't move aside, is said with the path (it
+    was a bare "File exists" on every later save); a read-only file is refused; and a .old with no file beside it (a
+    save that stopped between the renames left it, the only copy) is kept, and the script bootstrap reads a mod's
+    settings from it. MOD.save()'s fallback and the bridge's writeWhole check theirs too."""
     lua = menu.lua()
     save = body(lua, "function Menu.saveJson(path, value)", "\nreturn Menu")
     assert save.index('local text = encode(value, 0) .. "\\n"') < save.index('local tmp = path .. ".new"')
     assert "local wrote, werr = f:write(text)" in save and "local closed, cerr = f:close()" in save
     assert "if not wrote or not closed then\n            os.remove(tmp)" in save
     assert "if got ~= text then" in save
-    assert save.index('local had = os.rename(path, path .. ".old")') < save.index("local moved, merr = os.rename(tmp, path)")
-    assert 'if had then os.rename(path .. ".old", path) end' in save
+    assert save.index('local cur = io.open(path, "rb")') < save.index("local aside, aerr = os.rename(path, old)") < \
+        save.index("local moved, merr = os.rename(tmp, path)")
+    assert 'if not gone and code ~= 2 then' in save and 'error("couldn\'t remove " .. old .. " (" .. tostring(gerr) .. ")", 0)' in save
+    assert 'local rw = io.open(path, "r+b")' in save and "can't be written (is it read-only?)" in save
+    assert "if had then os.rename(old, path) end" in save and "if had then os.remove(old) end" in save
+    assert 'os.remove(path .. ".old")' not in save   # never a .old with no file beside it
     assert 'io.open(path, "wb")' not in save
     # Game.json.null (a null read from a file) is written null, not {} (it's an empty table).
     nully = body(lua, "local function nully(v)", "\nend\n")
@@ -843,8 +856,12 @@ def test_a_save_writes_the_whole_file_or_says_it_couldnt():
     fallback = body(scripts.BOOTSTRAP, "function MOD.save()", "\nend\n")
     assert "local okText, text = pcall(G.json.encode, MOD.settings)" in fallback
     assert 'local f, err = io.open(tmp, "wb")' in fallback and "if not wrote or not closed then" in fallback
-    assert 'if had then os.rename(path .. ".old", path) end' in fallback
+    assert "if had then os.rename(old, path) end" in fallback and "if not gone and code ~= 2 then" in fallback
+    assert 'local rw = io.open(path, "r+b")' in fallback and 'os.remove(path .. ".old")' not in fallback
     assert 'io.open(MOD.settingsFile, "wb")' not in fallback
+    read = body(scripts.BOOTSTRAP, "if okGame and MOD.settingsFile then", "\nend\n")
+    assert read.index('local f = io.open(MOD.settingsFile, "rb")') < read.index('f = io.open(MOD.settingsFile .. ".old", "rb")')
+    assert "reading settings.json.old, which a save that stopped part way left" in read
     from wcmods import bridge
     whole = body(bridge.LUA, "local function writeWhole(path, text)", "\nend\n")
     assert "local wrote = f:write(text)" in whole and "if not wrote or not closed then" in whole

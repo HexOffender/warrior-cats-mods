@@ -720,10 +720,17 @@ function ui.number(label, value, opts)
         e.v = nil
     end)
     -- The range, stretched past a value outside it to the next power of two: room to move it both ways, and the
-    -- range (and so the box) doesn't reset with each value written. (ui.slider stretches exactly.)
+    -- range (and so the box) doesn't reset with each value written. (ui.slider stretches exactly.) It's worked out
+    -- from the script's own value: a value the player made, written back, keeps it, so reaching the top doesn't
+    -- double it (min and max stay the limit for what the player can do) or reset the box mid-drag.
     local function past(v) return 2 ^ (math.floor(math.log(math.abs(v), 2)) + 1) end
-    local lo = opts.min and (value < opts.min and (value < 0 and -past(value) or 0) or opts.min) or nil
-    local hi = opts.max and (value > opts.max and past(value) or opts.max) or nil
+    local spanFor = tostring(opts.min) .. "," .. tostring(opts.max)
+    if e.span == nil or e.spanFor ~= spanFor or not near(e.v, value) then
+        e.span = { opts.min and (value < opts.min and (value < 0 and -past(value) or 0) or opts.min) or nil,
+                   opts.max and (value > opts.max and past(value) or opts.max) or nil }
+        e.spanFor = spanFor
+    end
+    local lo, hi = e.span[1], e.span[2]
     put(e, "range", tostring(lo) .. "," .. tostring(hi) .. "," .. tostring(opts.step), function()
         if lo then e.s:SetMinValue(lo) e.s:SetMinSliderValue(lo) else e.s:ClearMinValue() e.s:ClearMinSliderValue() end
         if hi then e.s:SetMaxValue(hi) e.s:SetMaxSliderValue(hi) else e.s:ClearMaxValue() e.s:ClearMaxSliderValue() end
@@ -1159,7 +1166,8 @@ function Menu.json(value) return encode(value, 0) end
 -- Write a Lua value to a JSON file; true, or false and why not. The file is written whole or not at all: the text
 -- goes to <path>.new first, is checked, and takes the old file's place only then (a full disk leaves the old file
 -- as it was and says so). Windows' os.rename won't replace a file, so the old one is moved aside to <path>.old
--- first, and put back if the new one can't go in.
+-- first, and put back if the new one can't go in. A read-only file is refused, and a <path>.old left without a
+-- <path> (a save that stopped between the renames) is kept.
 function Menu.saveJson(path, value)
     local ok, err = pcall(function()
         local text = encode(value, 0) .. "\n"   -- first: a value that can't be written leaves nothing behind
@@ -1178,15 +1186,38 @@ function Menu.saveJson(path, value)
             os.remove(tmp)
             error("couldn't write " .. tmp .. " whole (is the disk full?)", 0)
         end
-        os.remove(path .. ".old")
-        local had = os.rename(path, path .. ".old")   -- nil when there's no file yet
+        -- The old file aside, only when there is one: a <path>.old with no <path> is what a save that stopped
+        -- between the two renames left, the only copy of what was saved, and it's left as it is.
+        local old = path .. ".old"
+        local had = false
+        local cur = io.open(path, "rb")
+        if cur then
+            cur:close()
+            local rw = io.open(path, "r+b")   -- a read-only file isn't replaced
+            if not rw then
+                os.remove(tmp)
+                error(path .. " can't be written (is it read-only?)", 0)
+            end
+            rw:close()
+            local gone, gerr, code = os.remove(old)
+            if not gone and code ~= 2 then   -- 2: there's no such file
+                os.remove(tmp)
+                error("couldn't remove " .. old .. " (" .. tostring(gerr) .. ")", 0)
+            end
+            local aside, aerr = os.rename(path, old)
+            if not aside then
+                os.remove(tmp)
+                error("couldn't move " .. path .. " aside (" .. tostring(aerr) .. ")", 0)
+            end
+            had = true
+        end
         local moved, merr = os.rename(tmp, path)
         if not moved then
-            if had then os.rename(path .. ".old", path) end
+            if had then os.rename(old, path) end
             os.remove(tmp)
-            error(merr or "couldn't replace " .. path, 0)
+            error("couldn't replace " .. path .. " (" .. tostring(merr) .. ")", 0)
         end
-        os.remove(path .. ".old")
+        if had then os.remove(old) end
     end)
     if not ok then return false, tostring(err) end
     return true

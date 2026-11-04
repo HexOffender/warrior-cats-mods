@@ -928,8 +928,11 @@ page. `Menu.statusShown()` gives the line shown and whose it is (the mod's folde
 for the menu's own.
 `Menu.saveJson(path, value)` writes a Lua value as JSON (keys sorted, notes like `"_help"` first)
 and returns true, or false and why. It writes the whole file or nothing: the text goes to
-`<path>.new`, is read back, and only then takes the old file's place, so a full disk leaves the old
-file as it was. `Game.json.null` (a `null` read from a file) is written `null`; `Menu.list(t)` marks a
+`<path>.new`, is read back, and only then takes the old file's place (moved aside to `<path>.old`
+meanwhile, as Windows won't rename over a file), so a full disk leaves the old file as it was. Files
+already called `<path>.new` or `<path>.old` are replaced, except a `<path>.old` with no `<path>`
+beside it, which a save that stopped part way left and is kept (a script mod's settings are read back
+from it). A read-only file is refused. `Game.json.null` (a `null` read from a file) is written `null`; `Menu.list(t)` marks a
 table as a JSON list, so an empty one is written `[]`. `Menu.json(value)` gives the JSON text, `Menu.color(hex)` the linear colour the game's
 UI wants, and `Menu.theme` the menu's colours.
 - **Colours:** text is at least 4.5:1 on what it's on, as drawn. `theme.danger` is for text;

@@ -47,6 +47,9 @@ def test_the_clock_tweak_shares_the_one_hold():
     lua = tweaks.script(tweaks.merge([tweaks.validate({"hold_time": True, "time_of_day": 9})]))
     assert 'Game.time.hold(want, "Tweaks")' in lua and "elseif want and Game.time.held() == nil then" in lua
     assert "if want ~= clock.asked then" in lua and "holdClock()" in lua
+    # At the start too: another script's hold already up is kept (the first ask used to take it).
+    assert "local clock = { asked = false }" in lua
+    assert 'if not (first and want and by ~= nil and by ~= "Tweaks") then Game.time.hold(want, "Tweaks") end' in lua
     assert "Game.time.setSeconds(" not in lua
     assert 'if S.hold_time and heldAt and heldBy ~= "Tweaks" then' in lua and "Held by %s at %02d:%02d for now" in lua
 

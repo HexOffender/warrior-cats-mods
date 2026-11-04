@@ -20,12 +20,15 @@ local S = SETTINGS
 -- The clock, held through Game.time.hold, the one hold every script shares (the last to hold it has it): asked
 -- for when the switch or the hour changes, let go when the switch goes off, and taken back once another script
 -- that held it has let go. While another holds it, Tweaks gives way.
-local clock = { asked = nil }   -- the hour last asked for, in seconds; nil for none
+local clock = { asked = false }   -- the hour last asked for, in seconds (nil for none); false before the first ask
 local function holdClock()
     local want = S.hold_time and math.floor(S.time_of_day * 3600 + 0.5) or nil
     if want ~= clock.asked then
+        local first = clock.asked == false
         clock.asked = want
-        Game.time.hold(want, "Tweaks")
+        -- At the start, another script's hold is up already: Tweaks gives way to it, as it does later.
+        local _, by = Game.time.held()
+        if not (first and want and by ~= nil and by ~= "Tweaks") then Game.time.hold(want, "Tweaks") end
     elseif want and Game.time.held() == nil then
         Game.time.hold(want, "Tweaks")
     end
