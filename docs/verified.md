@@ -376,6 +376,12 @@ gave nothing.
 - **Volumes and the pause:** `set_volume(Music)` took 0.5 and 1; `pause_sounds(true)` and `sounds_paused()` said so,
   `pause_sounds(false)` and it didn't.
 
+**2026-11-04, build 26337109: the sky's values** (the branch `claude/cpp-sky`, `tests/game/test_cpp_sdk.py`:
+`test_sky_values` passed): `DT_SkyBoxParams` had 13 rows of `WrcSkyBoxStruct`; Night's fog in the sky's own copy was
+the table's, 0.028371, and Night put that on; with Night held, the copy's fog set to 0.28371 and half a second later
+the fog component's density was 0.28371; ThunderClan's sun 9; `SunColor.R` set and read back; what isn't there refused;
+the copy's numbers put back after, and the area's sky given back.
+
 ## Not yet confirmed in game
 
 - **Choosing a game (2026-10-28):** the Save page's changes to a game other than the one played last, made

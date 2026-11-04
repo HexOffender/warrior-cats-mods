@@ -22,6 +22,7 @@
 #include <WCMods/Events.hpp>
 #include <WCMods/Game.hpp>
 #include <WCMods/Reflect.hpp>
+#include <WCMods/Tables.hpp>
 
 namespace wcmods
 {
@@ -839,6 +840,82 @@ namespace wcmods
     {
         detail::release_sky();
         return call_reflected(sky(), STR("DoZoneDetectionFunction"), [&](Params& p) { p.set_nth(0, Value::of(false)); }).has_value();
+    }
+
+    // The presets' values. The sky's SkyParamsDB (DT_SkyBoxParams) is where they come from: a row per preset
+    // (NeutralDay, Night, ThunderClan...) of WrcSkyBoxStruct: the sun (SunIntensity, SunColor, SunHeight, SunRadius,
+    // SunBrightness), the skylight, the height fog (FogDensity, FogHeightFalloff, FogInscatteringColor,
+    // FogMaxOpacity, FogStartDistance...), the clouds, the horizon and zenith colours, the stars (StarsBrightness).
+    // As the sky starts it copies them into a map of its own by preset (one of wcmods' hidden members), and putting a
+    // preset on reads that copy: a row changed in the table later shows only in a sky made after (a new level),
+    // while sky_values() is the copy itself, so a change there shows the next time the preset goes on (seen in game).
+    inline auto sky_presets() -> Table
+    {
+        if (!assert_game_thread(L"sky_presets")) return {};
+        UObject* db = get(sky(), L"SkyParamsDB").object;
+        return db ? Table(db) : Table();
+    }
+    namespace detail
+    {
+        // ESkyboxPostProcessEnum's value for a preset's name, or -1.
+        inline auto sky_preset_value(std::wstring_view preset) -> int64_t
+        {
+            auto* e = static_cast<RC::Unreal::UEnum*>(wcmods::object(STR("/Script/Wrc.ESkyboxPostProcessEnum")));
+            if (!e) return -1;
+            for (auto& pair : e->ForEachName())
+                if (detail::short_enum_name(pair.Key.ToString()) == preset) return pair.Value;
+            return -1;
+        }
+        // The sky's copy of a preset's row: its map's 0x168-byte slots hold the preset (a byte, +0) and the row from +8
+        // (its vtable first, as the struct's reflected layout has it). nullptr without the sky, the map or the preset.
+        inline auto sky_copy(std::wstring_view preset) -> uint8_t*
+        {
+            const int64_t want = sky_preset_value(preset);
+            auto* map = member<uint8_t>(sky(), L"/Script/Wrc.WrcSkyboxActor", L"WCM_Presets");
+            std::vector<const uint8_t*> slots;
+            if (want < 0 || !set_slots(map, 0x168, slots)) return nullptr;
+            for (const uint8_t* e : slots)
+                if (*e == static_cast<uint8_t>(want)) return const_cast<uint8_t*>(e) + 8;
+            return nullptr;
+        }
+        inline auto sky_changes() -> std::map<std::pair<std::wstring, std::wstring>, double>&   // (preset, field) -> the game's value
+        {
+            static std::map<std::pair<std::wstring, std::wstring>, double> was;
+            return was;
+        }
+    } // namespace detail
+    // A preset's values as putting it on uses them (by ESkyboxPostProcessEnum's name: L"Night", L"ThunderClan"...), a
+    // struct Value that get and set work on (a colour's parts are L"SunColor.R", .G, .B, .A); None without the sky, for
+    // a preset it hasn't got, or when wcmods hasn't got the sky's map on this build.
+    inline auto sky_values(std::wstring_view preset) -> Value
+    {
+        if (!assert_game_thread(L"sky_values")) return {};
+        uint8_t* row = detail::sky_copy(preset);
+        return row ? struct_at(STR("/Script/Wrc.WrcSkyBoxStruct"), row) : Value{};
+    }
+    // Change one of a preset's numbers (a field, or a colour's part: L"FogDensity", L"SunColor.R"), keeping the game's
+    // for restore_sky_values. It shows when the preset next goes on: at once for one set_sky holds (it's put on again
+    // every frame). False without the sky, for a preset or field it hasn't got.
+    inline auto set_sky_value(std::wstring_view preset, std::wstring_view field, double value) -> bool
+    {
+        Value row = sky_values(preset);
+        if (row.kind != Value::Kind::Struct) return false;
+        Value now = get(row, field);
+        if (now.kind != Value::Kind::Float && now.kind != Value::Kind::Int) return false;
+        detail::sky_changes().try_emplace({std::wstring(preset), std::wstring(field)}, now.number());
+        return set(row, field, value);
+    }
+    // Every value set_sky_value changed back to the game's.
+    inline auto restore_sky_values() -> void
+    {
+        if (!assert_game_thread(L"restore_sky_values")) return;
+        auto changes = detail::sky_changes();
+        detail::sky_changes().clear();
+        for (auto& [where, was] : changes)
+        {
+            Value row = sky_values(where.first);
+            if (row.kind == Value::Kind::Struct) set(row, where.second, was);
+        }
     }
 
     // ============================================================================================ sounds

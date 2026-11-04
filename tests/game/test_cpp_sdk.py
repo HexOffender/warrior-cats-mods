@@ -1079,6 +1079,22 @@ def test_sounds_and_music(agent):
     assert v["sounds.music_after_play"] == "MS_mus_camp" and v["sounds.music_after_stop"] is None, v
 
 
+def test_sky_values(agent):
+    """The sky's preset values (World.hpp): its table (DT_SkyBoxParams, a row per preset), and the copy of it the sky
+    applies (a hidden member): Night's fog read from it is the table's and what Night puts on; with Night held, its
+    fog made ten times thicker there, the fog on screen is ten times thicker; a colour's part set; what isn't
+    there refused; all put back."""
+    r = _request(agent, "sky_values", timeout=15)
+    assert not _failed(r, "sky_values"), _failed(r, "sky_values")
+    v = r["values"]
+    assert (v["skyv.table"], v["skyv.struct"]) == ("DT_SkyBoxParams", "WrcSkyBoxStruct"), v
+    assert len(v["skyv.rows"]) == 13 and {"NeutralDay", "Night", "ThunderClan"} <= set(v["skyv.rows"]), v["skyv.rows"]
+    fog = v["skyv.night_row_fog"]
+    assert fog == v["skyv.night_table_fog"] and abs(v["skyv.fog_before"]["fog"] - fog) < 1e-6, v
+    assert abs(v["skyv.fog_after"]["fog"] - fog * 10) < 1e-4, (v["skyv.fog_after"], fog)
+    assert v["skyv.night_row_fog_restored"] == fog and v["skyv.thunder_sun"] > 0, v
+
+
 def test_ui_arrow_units(agent):
     """Ui.hpp's rule for an arrow on a tab's page, at init without the game: its release is given to the screen
     again from a button or check box, never from a slider, number or text box, not when the page hasn't the
