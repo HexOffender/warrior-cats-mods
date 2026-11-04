@@ -886,7 +886,15 @@ def test_a_save_writes_the_whole_file_or_says_it_couldnt():
         read.index('data, newErr = readSettings(MOD.settingsFile .. ".new")') < \
         read.index('data, err = readSettings(MOD.settingsFile .. ".old")')
     assert "if data == nil and err == nil then" in read   # only with no settings.json: a bad one isn't passed over
-    assert "reading settings.json.new, the last Save" in read and "reading settings.json.old, the settings before" in read
+    assert "read settings.json.new, the last Save" in read and "reading settings.json.old, the settings before" in read
+    # a .new that's read finishes the stopped Save: it's put in settings.json's place, so the next Save's own .new
+    # can't write over the only copy (it did, and a Save that then failed or stopped lost it)
+    new = read[read.index('data, newErr = readSettings(MOD.settingsFile .. ".new")'):read.index("        else\n")]
+    assert 'local moved, merr = os.rename(MOD.settingsFile .. ".new", MOD.settingsFile)' in new
+    assert '"; couldn\'t put it there (" .. tostring(merr) .. ")"' in new
+    assert 'os.remove(MOD.settingsFile .. ".old")' not in read   # left for the next Save
+    # both reasons when neither the .new nor the .old will do
+    assert 'err = err .. "; settings.json.new is no good either: " .. newErr' in read
     assert 'MOD.log("couldn\'t read %s (%s); using the settings from the install", from, err)' in read
     one = body(read, "local function readSettings(file)", "\n    end\n")
     assert "data == Game.json.null" in one and 'if not f then return nil, nil end' in one

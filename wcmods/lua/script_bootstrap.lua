@@ -139,13 +139,17 @@ if okGame and MOD.settingsFile then
     local from = "settings.json"
     if data == nil and err == nil then
         -- No settings.json: a Save that stopped between its two renames (the game closed, say) left the settings it
-        -- saved in settings.json.new, already written whole and read back, and the ones before it in
-        -- settings.json.old. The newer is read when it holds an object, else the older, and the next Save writes
-        -- settings.json again. (A .new that didn't get that far is half written, and doesn't decode.)
+        -- saved in settings.json.new, written whole (and, through Menu.saveJson, read back), and the ones before it
+        -- in settings.json.old. The newer is read when it holds an object, else the older. (A .new that didn't get
+        -- that far is half written, and doesn't decode.) A .new that's read is put in settings.json's place, which
+        -- finishes the stopped Save: the next Save writes a .new of its own first, and if that failed or stopped,
+        -- the last Save would go with it. The .old is left for the next Save to remove.
         local newErr
         data, newErr = readSettings(MOD.settingsFile .. ".new")
         if data ~= nil then
-            MOD.log("settings.json is missing; reading settings.json.new, the last Save, which stopped before it took settings.json's place")
+            local moved, merr = os.rename(MOD.settingsFile .. ".new", MOD.settingsFile)
+            MOD.log("settings.json is missing; read settings.json.new, the last Save, which stopped before it took settings.json's place%s",
+                    moved and ", and put it there" or ("; couldn't put it there (" .. tostring(merr) .. ")"))
         else
             from = "settings.json.old"
             data, err = readSettings(MOD.settingsFile .. ".old")
@@ -154,6 +158,8 @@ if okGame and MOD.settingsFile then
                         newErr and (" (settings.json.new is no good: " .. newErr .. ")") or "")
             elseif err == nil and newErr ~= nil then
                 from, err = "settings.json.new", newErr
+            elseif err ~= nil and newErr ~= nil then
+                err = err .. "; settings.json.new is no good either: " .. newErr
             end
         end
     end
