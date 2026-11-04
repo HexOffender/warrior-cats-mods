@@ -344,6 +344,18 @@ test cat Emberpaw, the save's slot 8). The suite ran nine times on the way; on t
   Blueprint's bytecode reads the caller's frame (SDK.md, "Hooks see every call"), and `Game.hook` reads
   every parameter before the callback; that's the first suspect for the Lua side's turn.
 
+**2026-11-04, build 26337109: the game's tables and its tuning** (the branch `claude/cpp-tables`,
+`tests/game/test_cpp_sdk.py`: `test_tables_units` and `test_tables_and_tuning` passed):
+- **Tables:** `tables()` listed 69 DataTables; `table()` found `DT_QuestObjectsInfo` by its name and by its path,
+  412 rows of `QuestObjectsInfoDataStruct`; the Lamb's Ear Leaves row (`NewRow_44`, its tag
+  `Gameplay.Inventory.Consumable.SmallCatnip`) read with its name "Lamb's Ear Leaves"; a copy of it and a row of
+  defaults added (413, 414 rows), the copy its own (its rarity changed, the original's not), both taken out (412).
+- **A row's change on screen:** that row's `Name` set to "WCMods Test Herb", one herb added with `add_item`, and
+  the HUD's message 1.5 s later had "WCMods Test Herb"; the name and the count put back after.
+- **Tuning:** 441 keys; `Gameplay.Exploration.MaxLevel` 20, `...Player.MoveAndRun.Run.Speed` 390,
+  `...Metrics.Cat.Player.Height` 15 with its description; `set_tuning(MaxLevel, 33)`, and the game's own lookup
+  (its native `GetValue`, signed by its first instructions) gave 33, then 20 again once put back.
+
 ## Not yet confirmed in game
 
 - **Choosing a game (2026-10-28):** the Save page's changes to a game other than the one played last, made

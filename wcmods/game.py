@@ -74,6 +74,9 @@ HIDDEN = [
     # from its constructor and the code that adds an item (NATIVE). C++ only (wcmods::inventory): UE4SS's
     # RegisterCustomProperty can't describe a map, so the Lua leaves it out (CPP_ONLY).
     ("/Script/SwtQuest.SwtQuestInventoryComponent", [("WCM_Items", 0x150, "MapProperty")]),
+    # The tuning manager's TuningData.csv (TMap<FString, a row of {MaxValue float, Description FString}>, 0x38-byte
+    # elements), which the game's tuning lookup reads on every call (docs/reverse-engineering.md, "Tuning").
+    ("/Script/SwtEngine.SwtTuningManager", [("WCM_TuningData", 0x50, "MapProperty")]),
 ]
 
 # The kinds in HIDDEN only the C++ SDK reads (offsets.json): the Lua's Game.hidden leaves them out.
@@ -89,6 +92,9 @@ NATIVE = [
      "adds a count of an item to an inventory, or takes it away (a negative count; at 0 the item goes): "
      "(the component, the item's FGameplayTag by value, int32 count, bool show it on the HUD); then tells the "
      "component's listeners (the HUD's OnItemPickedUp) and writes the inventory into the save's state"),
+    ("SwtTuningManager:GetValue", 0x12BBA60,
+     "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, "
+     "0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData"),
 ]
 
 # The game's enums Game.enums gives scripts: the name scripts use, the enum's path in the game (its module's

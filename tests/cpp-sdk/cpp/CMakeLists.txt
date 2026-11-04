@@ -9,4 +9,5 @@ wcmods_mod(${WCMODS_TARGET}
     src/test_world.cpp
     src/test_ui.cpp
     src/test_native.cpp
+    src/test_tables.cpp
 )

@@ -996,6 +996,43 @@ def test_unhook_loop(agent):
     assert agent.lua("return Game.cat() ~= nil")   # still playing
 
 
+def test_tables_units(agent):
+    """Tables.hpp's tuning map reader, at init without the game, on a map laid out as the game's: its keys, values
+    and descriptions in order past a free slot, a write through a row seen in the map, what doesn't add up refused,
+    and keys matched whatever their case."""
+    r = _ready(agent, "init")
+    ran = {c["name"] for c in r["checks"] if c["name"].startswith("tables.")}
+    assert {"tables.tuning_map.read", "tables.tuning_map.write", "tables.tuning_map.refused", "tables.tuning_map.none",
+            "tables.tuning.same_key"} <= ran, ran
+    assert not _failed(r, "init"), _failed(r, "init")
+
+
+def test_tables_and_tuning(agent):
+    """Tables.hpp in the game: every DataTable in memory, the item table by name and by path with its 412 rows, a row
+    read, rows added (a copy, and one of defaults) and taken out; TuningData's keys and numbers, one changed and read
+    back by the game's own lookup (its native GetValue, which every tuning read in the game goes through), and put
+    back; and an item's name changed in its row, then shown by the HUD when the item is added."""
+    r = _request(agent, "tables", timeout=30)
+    assert not _failed(r, "tables"), _failed(r, "tables")
+    v = r["values"]
+    assert v["tables.count"] >= 60, v["tables.count"]   # 69 in the forest on 26337109
+    info = v["tables.items_info"]
+    assert info["rows"] == 412 and info["struct"] == "QuestObjectsInfoDataStruct", info
+    assert info["path"] == "/Game/Gameplay/DataTables/Quests/DT_QuestObjectsInfo.DT_QuestObjectsInfo", info
+    assert v["tables.items.size"] == 412 and v["tables.items.names"] == 412, (v["tables.items.size"], v["tables.items.names"])
+    assert v["tables.herb.row"] and v["tables.herb.name"] == "Lamb's Ear Leaves", (v["tables.herb.row"], v["tables.herb.name"])
+    # TuningData.csv's numbers (Metrics.Cat.Player.Height 15 with its description; MaxLevel 20), all 441 keys.
+    assert v["tuning.keys"] == 441, v["tuning.keys"]
+    assert v["tuning.some"]["Gameplay.Exploration.Metrics.Cat.Player.Height"] == 15, v["tuning.some"]
+    assert v["tuning.some"]["Gameplay.Exploration.MaxLevel"] == 20, v["tuning.some"]
+    assert v["tuning.description"] == "The average height of the cat from the ground to its head.", v["tuning.description"]
+    assert v["tuning.lookup_found"] is True and v["tuning.game_before"] == 20 and v["tuning.game_after"] == 33, v
+    # The HUD named the added herb by the row's new name, and the name went back after.
+    assert v["tables.herb.added"] is True
+    assert any("WCMods Test Herb" in t for t in v["tables.hud_texts"]), v["tables.hud_texts"]
+    assert v["tables.herb.name_after"] == "Lamb's Ear Leaves", v["tables.herb.name_after"]
+
+
 def test_ui_arrow_units(agent):
     """Ui.hpp's rule for an arrow on a tab's page, at init without the game: its release is given to the screen
     again from a button or check box, never from a slider, number or text box, not when the page hasn't the

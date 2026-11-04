@@ -432,26 +432,12 @@ namespace wcmods
         inline auto tag_counts(const uint8_t* map, std::vector<TagCount>& out) -> bool
         {
             out.clear();
-            if (!map) return false;
-            auto read_i32 = [&](size_t at) { return *reinterpret_cast<const int32_t*>(map + at); };
-            const uint8_t* data = *reinterpret_cast<const uint8_t* const*>(map);
-            const int32_t num = read_i32(0x08), max = read_i32(0x0C), num_bits = read_i32(0x28), max_bits = read_i32(0x2C);
-            const int32_t num_free = read_i32(0x34);
-            if (num < 0 || max < num || max > (1 << 20) || num_free < 0 || num_free > num || num_bits < num || max_bits < num_bits) return false;
-            if (num > 0 && !data) return false;
-            const auto* heap_bits = *reinterpret_cast<const uint32_t* const*>(map + 0x20);
-            if (!heap_bits && num_bits > 128) return false;   // more slots than the four inline words hold
-            const auto* bits = heap_bits ? heap_bits : reinterpret_cast<const uint32_t*>(map + 0x10);
-            for (int32_t i = 0; i < num; ++i)
-            {
-                if (!((bits[i / 32] >> (i % 32)) & 1u)) continue;
-                const uint8_t* e = data + static_cast<size_t>(i) * 20;
+            std::vector<const uint8_t*> slots;
+            if (!set_slots(map, 20, slots)) return false;   // Core.hpp: the slots in use, checked
+            for (const uint8_t* e : slots)
                 out.push_back({*reinterpret_cast<const uint32_t*>(e), *reinterpret_cast<const uint32_t*>(e + 4),
                                *reinterpret_cast<const int32_t*>(e + 8)});
-            }
-            if (out.size() == static_cast<size_t>(num - num_free)) return true;
-            out.clear();
-            return false;
+            return true;
         }
 
         // The game's AddItem, called under a structured exception handler: a fault in it (a game update that

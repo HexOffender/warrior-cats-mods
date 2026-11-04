@@ -59,6 +59,11 @@ ANCHORS = {
         (0x1654430, "adds an item, or takes it away: the items map at +0x150"),
         (0x16543D0, "its vtable's +0x4F0, on a tag: a QuestItem tag, else looked up in the items map"),
     ],
+    # The tuning manager's maps are filled by a loader its vtable doesn't hold; the lookup every tuning read goes
+    # through (game.NATIVE's GetValue calls it) reaches the map with `add r12, 50h`, which isn't a member access.
+    "/Script/SwtEngine.SwtTuningManager": [
+        (0x12BB510, "loads TuningData.csv into the map at +0x50 (and two more tables into the maps after it)"),
+    ],
     "/Script/SwtAdventure.TurnBasedCombatComponent": [
         (0x17D6AC0, "builds a fighter's stats from its level"),
         (0x17D7250, "a fighter's Prowess with its buffs"),
@@ -540,18 +545,23 @@ def _width(finder, rva, ins):
 def _access(finder, rva, ins, offsets):
     """Whether the instruction at rva reads or writes one of `offsets` ({offset: the member's size}) the way
     a member is: [reg+disp32] (not through rsp), at most as wide as the member, or a lea of it. A wider
-    access at the same offset is another object's field (a pointer, or a vtable slot: call [rax+0x1C8])."""
-    if not (ins.memory() and ins.base not in (RSP, None) and ins.disp in offsets and ins.disp_size == 4):
+    access at the same offset is another object's field (a pointer, or a vtable slot: call [rax+0x1C8]). A
+    member below 0x80 is reached with an 8-bit displacement, the only form the compiler gives it (the tuning
+    manager's map at +0x50: lea rdx, [rsi+50h]); above that only a 32-bit one counts."""
+    if not (ins.memory() and ins.base not in (RSP, None) and ins.disp in offsets):
+        return False
+    if not (ins.disp_size == 4 or (ins.disp_size == 1 and 0 <= ins.disp < 0x80)):
         return False
     width = _width(finder, rva, ins)
     return width is None or width <= offsets[ins.disp]
 
 
-def _bytes(finder, insns, lo, hi, offsets, foreign=()):
+def _bytes(finder, insns, lo, hi, offsets, foreign=(), widths=False):
     """A pattern of insns[lo..hi] with what a rebuild changes left out, and its captures: {position:
-    offset} of the accesses to `offsets` ({offset: size}; _access) but the `foreign` indices' (_foreign)."""
+    offset} of the accesses to `offsets` ({offset: size}; _access) but the `foreign` indices' (_foreign).
+    With `widths`, also the captures' displacement sizes where one isn't 4 bytes (an 8-bit one): {position: size}."""
     tdata, base = finder.tdata, finder.text.rva
-    out, captures = [], {}
+    out, captures, sizes = [], {}, {}
     for n, (r, ins) in enumerate(insns[lo:hi + 1], lo):
         p = r - base
         raw = list(tdata[p:p + ins.length])
@@ -560,13 +570,15 @@ def _bytes(finder, insns, lo, hi, offsets, foreign=()):
             wild.update(range(ins.disp_at, ins.disp_at + ins.disp_size))
             if offsets and n not in foreign and _access(finder, r, ins, offsets):
                 captures[len(out) + ins.disp_at] = ins.disp
+                if ins.disp_size != 4:
+                    sizes[len(out) + ins.disp_at] = ins.disp_size
         if ins.rel_at is not None:
             wild.update(range(ins.rel_at, ins.rel_at + ins.rel_size))
         for k in range(ins.length):
             if r + k in finder.relocs or any(r + k - j in finder.relocs for j in range(1, 8)):
                 wild.add(k)
         out += [None if k in wild else b for k, b in enumerate(raw)]
-    return out, captures
+    return (out, captures, sizes) if widths else (out, captures)
 
 
 def _regex(pattern):
@@ -653,13 +665,16 @@ def _sites(finder, search, offsets, per_field=3):
                 a, b = max(0, i - width), min(len(insns) - 1, i + width)
                 if insns[i][0] - insns[a][0] > WINDOW or insns[b][0] - insns[i][0] > WINDOW:
                     break
-                pat, caps = _bytes(finder, insns, a, b, offsets, foreign)
+                pat, caps, sizes = _bytes(finder, insns, a, b, offsets, foreign, widths=True)
                 if sum(x is not None for x in pat) < MIN_PATTERN:
                     continue
                 if len(_matches(finder, search, _regex(pat))) == 1:
                     at = insns[a][0]
-                    sites.append({"from": f"0x{begin:X}", "at": f"0x{at:X}", "pattern": _hex(pat),
-                                  "captures": {str(k): v for k, v in caps.items()}})
+                    site = {"from": f"0x{begin:X}", "at": f"0x{at:X}", "pattern": _hex(pat),
+                            "captures": {str(k): v for k, v in caps.items()}}
+                    if sizes:   # a capture that isn't a 32-bit displacement: its size (absent means 4)
+                        site["widths"] = {str(k): v for k, v in sizes.items()}
+                    sites.append(site)
                     for k, v in caps.items():
                         seen.setdefault(v, set()).add(at + k)
                     break
@@ -807,9 +822,11 @@ def check(image_path, sigs=None, log=print):
                     continue
                 at = hits[0][1] - finder.text.rva
                 for k, was in site["captures"].items():
-                    # Overlapping sites capture the same instruction: it's one vote, not one per site.
+                    # Overlapping sites capture the same instruction: it's one vote, not one per site. An 8-bit
+                    # displacement (a member below 0x80; site["widths"]) is read as one signed byte.
                     p = at + int(k)
-                    votes.setdefault(was, {})[p] = struct.unpack_from("<i", finder.tdata, p)[0]
+                    form = "<b" if site.get("widths", {}).get(k) == 1 else "<i"
+                    votes.setdefault(was, {})[p] = struct.unpack_from(form, finder.tdata, p)[0]
         same_size = info is not None and info.size == entry.get("size")
         size = info.size if info else entry.get("size") or 0
         for name, was in entry["fields"].items():

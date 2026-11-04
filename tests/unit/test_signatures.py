@@ -161,6 +161,49 @@ def test_an_access_wider_than_the_member_is_not_it():
         [False, False, True, True, True, True, False]
 
 
+def test_a_member_below_0x80_counts_with_an_8_bit_displacement():
+    """The compiler reaches a member below 0x80 with an 8-bit displacement only (the tuning manager's map at +0x50:
+    lea rdx, [rsi+50h]); a member above it only with a 32-bit one, so a short displacement there is something else."""
+    code = bytes.fromhex(
+        "48 8D 56 50"               # lea rdx, [rsi+0x50]        disp8: the low member
+        "48 8D 96 50 00 00 00"      # lea rdx, [rsi+0x50]        disp32, as before
+        "8B 46 7C"                  # mov eax, [rsi+0x7C]        disp8, a member at +0x7C
+        "8B 86 00 01 00 00")        # mov eax, [rsi+0x100]       disp32 (a disp8 can't say 0x100)
+    finder, insns = finder_for(code)
+    offsets = {0x50: 0x50, 0x7C: 4, 0x100: 4}
+    assert [signatures._access(finder, r, ins, offsets) for r, ins in insns] == [True, True, True, True]
+    assert [ins.disp_size for _, ins in insns] == [1, 4, 1, 4]
+
+
+def test_a_site_records_an_8_bit_capture_and_check_reads_one_byte(monkeypatch):
+    """_sites keeps a capture's size when it isn't 4 bytes ("widths"), and check() reads that capture as one signed
+    byte: read as 4 it took the next instruction's bytes too, and the tuning map's sites conflicted."""
+    code = bytes.fromhex(
+        "B8 01 00 00 00"            # mov eax, 1
+        "48 8D 56 50"               # lea rdx, [rsi+0x50]
+        "B9 02 00 00 00"            # mov ecx, 2
+        "C3")
+    finder, _ = finder_for(code)
+    finder.relocs = set()
+    finder.insns = lambda begin, end: [(TEXT + p, ins) for p, ins in x64.instructions(code, begin - TEXT, end - TEXT)]
+    sites = signatures._sites(finder, [(TEXT, TEXT + len(code))], {0x50: 0x50})
+    assert sites and sites[0]["captures"] == {"8": 0x50} and sites[0]["widths"] == {"8": 1}
+    # check(): the same code with the member moved to +0x58, two sites on it.
+    pad = bytes([0xCC]) * 16
+    moved = (pad + bytes.fromhex("B8 01 00 00 00 48 8D 56 58 B9 02 00 00 00 C3") + pad
+             + bytes.fromhex("B8 03 00 00 00 48 8D 56 58 B9 04 00 00 00 C3") + pad)
+    sigs = thing([{"pattern": "B8 01 00 00 00 48 8D 56 ?? B9 02 00 00 00", "captures": {"8": 0x100}, "widths": {"8": 1}},
+                  {"pattern": "B8 03 00 00 00 48 8D 56 ?? B9 04 00 00 00", "captures": {"8": 0x100}, "widths": {"8": 1}}])
+    sigs["classes"][THING]["fields"]["A"] = 0x50
+    for site in sigs["classes"][THING]["sites"]:
+        site["captures"] = {"8": 0x50}
+    assert statuses(check_on(monkeypatch, moved, sigs, 0x120))["A"] == ("moved", 0x58, 2)
+    # Without its width the byte is read with the next instruction's three (58 B9 02 00): no offset in the class.
+    for site in sigs["classes"][THING]["sites"]:
+        del site["widths"]
+    assert statuses(check_on(monkeypatch, moved, sigs, 0x120))["A"][0] == "conflict"
+
+
 # ---------- sites, by separate instructions ----------
 def test_sites_count_separate_instructions():
     """A site around two neighbouring accesses captures both; the second gets no site of its own (it would
@@ -319,6 +362,8 @@ def test_offsets_json_gives_cpp_mods_each_function_with_its_pattern():
     moved = game.offsets_json(None, 1, {name: rva + 0x40})["functions"][name]
     assert moved["rva"] == rva + 0x40
     assert out["members"]["/Script/SwtQuest.SwtQuestInventoryComponent:WCM_Items"] == {"offset": 0x150, "type": "MapProperty"}
+    assert out["members"]["/Script/SwtEngine.SwtTuningManager:WCM_TuningData"] == {"offset": 0x50, "type": "MapProperty"}
+    assert out["functions"]["SwtTuningManager:GetValue"]["rva"] == 0x12BBA60
 
 
 def test_the_lua_leaves_out_what_only_cpp_reads():
@@ -326,7 +371,18 @@ def test_the_lua_leaves_out_what_only_cpp_reads():
     from wcmods import game
     text = game.lua()
     assert "WCM_Items" not in text and "SwtQuestInventoryComponent" not in text
+    assert "WCM_TuningData" not in text and "SwtTuningManager" not in text
     assert '"WCM_Value", 0x10C, "FloatProperty"' in text
+
+
+def test_the_tuning_map_is_signed_by_its_loader():
+    """The tuning manager's map at +0x50 is reached through 8-bit displacements in the loader that fills it (an
+    anchor): its sites, as committed, capture 0x50 three times, each with its width."""
+    entry = signatures.load()["classes"]["/Script/SwtEngine.SwtTuningManager"]
+    assert entry["fields"] == {"WCM_TuningData": 0x50}
+    assert [a["was"] for a in entry["anchors"]] == ["0x12BB510"]
+    assert signatures.instructions(entry) == {0x50: 3}
+    assert all(site.get("widths") == {k: 1 for k in site["captures"]} for site in entry["sites"])
 
 
 # ---------- the level component's signatures, as committed ----------

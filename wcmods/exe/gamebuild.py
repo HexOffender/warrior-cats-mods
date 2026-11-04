@@ -481,6 +481,10 @@ PLAIN = {
     "SwtAdventureStatusComponent": "poison and the other status conditions",
     "SwtAdventureDetectionComponent": "how far animals see and hear your cat",
     "SwtQuestInventoryComponent": "your items, for C++ mods",
+    "SwtTuningManager": "the game's tuning numbers, for C++ mods",
+    # A native function by its own "class:name" where its class's words would say too much: the tuning calls
+    # read the map (the member above), not the game's lookup, which only proves them.
+    "SwtTuningManager:GetValue": "the game's own tuning lookup (C++ mods' tuning calls don't need it)",
 }
 
 
@@ -497,7 +501,7 @@ def phrases(keys):
     out = []
     for key in keys:
         cls = key.partition(":")[0].rsplit(".", 1)[-1]
-        words = PLAIN.get(cls) or name(key)
+        words = PLAIN.get(key) or PLAIN.get(cls) or name(key)
         if words not in out:
             out.append(words)
     return out
