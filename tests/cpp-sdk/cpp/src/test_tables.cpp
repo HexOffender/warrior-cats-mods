@@ -203,6 +203,7 @@ namespace t
             // set() writes a plain text, cut from the string table's key: the row's own text is kept whole in a copy
             // of the row (add_row copies each property with the engine's copy), and copied back after, so the
             // name follows its key (Words.hpp) again.
+            items.remove_row(L"WCModsKeepRow");   // one a run cut short left
             items.add_row(L"WCModsKeepRow", herb_row);
             Value r = items.row(herb_row);
             expect("tables.set_name", set(r, L"Name", std::wstring_view(L"WCMods Test Herb"))

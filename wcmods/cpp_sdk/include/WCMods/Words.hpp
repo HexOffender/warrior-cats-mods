@@ -4,14 +4,16 @@
 // put them back. Game thread only. WCMods.hpp includes it; docs/SDK.md, "C++ mods", documents every call.
 #pragma once
 
+#include <algorithm>
+#include <cstring>
 #include <map>
-#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include <Unreal/FMemory.hpp>
 #include <Unreal/FString.hpp>
 #include <Unreal/FText.hpp>
 #include <Unreal/ITextData.hpp>
@@ -57,15 +59,35 @@ namespace wcmods
             fn(const_cast<RC::Unreal::FString&>(data->GetDisplayString()));
             return true;
         }
-        struct WordsState
+        // (table, key) -> the game's words, for restore_words and for the mod going (stop_words). Game thread only.
+        inline auto words_originals() -> std::map<std::pair<std::wstring, std::wstring>, std::wstring>&
         {
-            std::mutex lock;
-            std::map<std::pair<std::wstring, std::wstring>, std::wstring> originals;   // (table, key) -> the game's words
-        };
-        inline auto words_state() -> WordsState&
+            static std::map<std::pair<std::wstring, std::wstring>, std::wstring> originals;
+            return originals;
+        }
+        // Put new words into the shared display string without freeing what another thread may be reading: the
+        // engine can lay out or format a text off the game thread. The new characters go in a buffer at least as
+        // long as the old one (zeros after them), so whichever of the old and new pointer and count a reader
+        // sees, it reads inside a buffer; the old buffer is freed 10 s later, not at once.
+        inline auto replace_string(RC::Unreal::FString& s, std::wstring_view with) -> void
         {
-            static WordsState s;
-            return s;
+            struct Raw
+            {
+                wchar_t* data;
+                int32_t num;
+                int32_t max;
+            };
+            auto* raw = reinterpret_cast<Raw*>(&s);
+            const int32_t needed = static_cast<int32_t>(with.size()) + 1;
+            const int32_t room = std::max(needed, raw->num);
+            auto* fresh = static_cast<wchar_t*>(RC::Unreal::FMemory::Malloc(static_cast<size_t>(room) * sizeof(wchar_t), 0));
+            std::memset(fresh, 0, static_cast<size_t>(room) * sizeof(wchar_t));
+            std::memcpy(fresh, with.data(), with.size() * sizeof(wchar_t));
+            wchar_t* old = raw->data;
+            raw->data = fresh;
+            raw->num = needed;
+            raw->max = room;
+            if (old) after(10.0, [old] { RC::Unreal::FMemory::Free(old); });
         }
     } // namespace detail
 
@@ -86,26 +108,21 @@ namespace wcmods
     {
         if (!assert_game_thread(L"set_words")) return false;
         return detail::with_display(table, key, [&](RC::Unreal::FString& s) {
-            auto& st = detail::words_state();
-            std::lock_guard lock(st.lock);
-            st.originals.try_emplace({std::wstring(table), std::wstring(key)}, std::wstring(*s));
-            s = RC::Unreal::FString(std::wstring(new_words).c_str());
+            detail::words_originals().try_emplace({std::wstring(table), std::wstring(key)}, std::wstring(*s));
+            detail::replace_string(s, new_words);
         });
     }
-    // Put a key's words back as the game had them; false when set_words didn't change it.
+    // Put a key's words back as the game had them when set_words first changed them; false when set_words didn't
+    // change it. (After the player changes the game's language, these are the old language's words.)
     inline auto restore_words(std::wstring_view key, std::wstring_view table = game_strings) -> bool
     {
         if (!assert_game_thread(L"restore_words")) return false;
-        std::optional<std::wstring> was;
-        {
-            auto& st = detail::words_state();
-            std::lock_guard lock(st.lock);
-            auto it = st.originals.find({std::wstring(table), std::wstring(key)});
-            if (it == st.originals.end()) return false;
-            was = it->second;
-            st.originals.erase(it);
-        }
-        return detail::with_display(table, key, [&](RC::Unreal::FString& s) { s = RC::Unreal::FString(was->c_str()); });
+        auto& originals = detail::words_originals();
+        auto it = originals.find({std::wstring(table), std::wstring(key)});
+        if (it == originals.end()) return false;
+        std::wstring was = it->second;
+        originals.erase(it);
+        return detail::with_display(table, key, [&](RC::Unreal::FString& s) { detail::replace_string(s, was); });
     }
     // The table's keys, those starting with `prefix` when one is given (L"STR_CAT_NAME"), in the table's order.
     inline auto word_keys(std::wstring_view prefix = {}, std::wstring_view table = game_strings) -> std::vector<std::wstring>
@@ -135,4 +152,15 @@ namespace wcmods
         if (table.empty() || table == L"None" || key.empty()) return std::nullopt;
         return std::make_pair(table, key);
     }
+    namespace detail
+    {
+        // As the mod is taken out: the words it changed go back, so they don't outlive it.
+        inline auto stop_words() -> void
+        {
+            auto originals = words_originals();
+            words_originals().clear();
+            for (auto& [where, was] : originals)
+                with_display(where.first, where.second, [&](RC::Unreal::FString& s) { replace_string(s, was); });
+        }
+    } // namespace detail
 } // namespace wcmods

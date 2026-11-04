@@ -1327,8 +1327,8 @@ wcmods::restore_words(key->second);
 | Call | Does |
 |---|---|
 | `wcmods::words(L"STR_CAT_NAME2_PAW")`, `words(key, table)` | A key's words as the game shows them now; nullopt for a key the table hasn't got. `table` is `wcmods::game_strings` (`SwtStrings`) unless you give another |
-| `wcmods::set_words(key, L"new words")`, `set_words(key, words, table)` | Change a key's words: every text made from it shows them from then on, the texts the game already holds too (an item's name in its row read back the new words), and a screen, popup or line it makes after (the HUD's "OBTAINED" message did); a text already laid out on screen may keep the old words until it's made again. False for a key the table hasn't got. The game's own words are kept |
-| `wcmods::restore_words(key)`, `restore_words(key, table)` | Put a key's words back as the game had them; false when `set_words` didn't change it |
+| `wcmods::set_words(key, L"new words")`, `set_words(key, words, table)` | Change a key's words: a text the game holds reads them from then on (an item's name in its row read back the new words), and a screen, popup or line it makes after shows them (the HUD's "OBTAINED" message did); a text already on screen keeps the old words until it's laid out again (the HUD's own name line until the HUD is made again). False for a key the table hasn't got. The game's own words are kept, and go back when the mod is taken out |
+| `wcmods::restore_words(key)`, `restore_words(key, table)` | Put a key's words back as the game had them when `set_words` first changed them; false when it didn't. After the player changes the game's language they're the old language's words |
 | `wcmods::word_keys()`, `word_keys(L"STR_CAT_NAME")`, `word_keys(prefix, table)` | The table's keys, or those starting with a prefix, in the table's order |
 | `wcmods::words_key(get(row, L"Name"))` | Which table and key a text the game holds was made from (a text property's `Value`: an item's name in its row, a widget's text), or nullopt for a text that isn't from a string table |
 
