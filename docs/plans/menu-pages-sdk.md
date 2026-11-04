@@ -109,9 +109,10 @@ moved to the arrow keys) and #111's `test_command_opens_a_screen_and_send_closes
 inventory to go times out at 5 s with the inventory closed and its leaves still falling, on a fresh game too.
 Left for later: W7's two questions for the game (below).
 
-**After #112 merged,** a follow-up PR fixed four low findings from its review: the bootstrap reads a stopped Save's
-`settings.json.new` before its `.old` (step 3), a clock hold whose Lua state has gone is no hold (step 8), and two
-stale lines of docs (step 10 and `scripting.md`'s `held()` row). Both Lua changes were run against stubs with a
+**After #112 merged,** a follow-up PR (#114) fixed four low findings from its review: the bootstrap reads a
+stopped Save's `settings.json.new` before its `.old` and puts it in place (step 3), a clock hold whose Lua state
+has gone is no hold (step 8), and two stale lines of docs (step 10 and `scripting.md`'s `held()` row). #114's own
+review found nine more, fixed there too (steps 3 and 8 say which). Both Lua changes were run against stubs with a
 local Lua 5.4, as before; not in game.
 
 **In-game checks** run through the agent: `python wcmods.py agent test <file>`, after `agent install --with <mod
@@ -372,8 +373,8 @@ line that went up most recently. Updating a line keeps its place, so a ticking l
 
 ### 10. W15: Menu pages' release check covers its fixes
 
-**Fix.** Three tests in `test_menu.py`'s style (`need_pages`, try/finally restore), each failing on Menu pages before
-its PR #1:
+**Fix.** Three tests in `test_menu.py`'s style (`need_pages`, try/finally restore): the first two fail on Menu pages
+before its PR #1, the third on PR #1's commits before bd3abac:
 1. `test_opening_stats_changes_nothing`: fractional and out-of-range stats, XP and regen read the same after Stats
    and its sections are opened.
 2. `test_travel_keeps_a_places_file_it_cant_read`: for three broken `places.json` files, the page says it couldn't
