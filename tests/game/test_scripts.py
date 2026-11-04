@@ -125,6 +125,13 @@ def test_the_save_file_is_kept_while_it_hasnt_changed(agent):
         agent.lua("WCMODS_SAVE_FILE = nil return true")
 
 
+def test_game_says_which_wcmods_it_is(agent):
+    """Game.wcmods is the version the install was made with (this checkout's, when agent install ran from it)."""
+    from wcmods import __version__, game
+    assert agent.lua("return { v = Game.wcmods, n = Game.wcmodsNumber }") == {
+        "v": __version__, "n": game.version_number(__version__)}
+
+
 def test_a_script_that_doesnt_load_is_named(agent):
     """broken-script's main.lua is missing an end: the log says so by file and line, the studio's card would say
     "Didn't load", and the mod menu's Overview lists it in red."""

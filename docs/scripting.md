@@ -99,6 +99,12 @@ error says `scripts/main.lua:12: ...`.
 local Game = require("WCModsGame")   -- a script mod has it as Game already
 ```
 
+**Which wcmods:** `Game.wcmods` is the version of wcmods (Clan Mod Studio) that installed the module, `"0.6.0"`,
+and `Game.wcmodsNumber` a number to compare, major × 10000 + minor × 100 + patch (`600`). Both are nil before
+0.6.0. A script that supports older ones too takes a fixed call where it's there and its own way round where it
+isn't: `if (Game.wcmodsNumber or 0) >= 600 then ... end`. (`mod.json`'s `"wcmods"` refuses an older one
+outright instead; [SDK.md](SDK.md#mod-folder).)
+
 ### How it reaches the game
 
 - **Reflection:** most of what scripts use is what the game itself exposes to Unreal's reflection:

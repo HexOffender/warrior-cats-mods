@@ -82,6 +82,19 @@ def test_world_scan_clears_the_label_cache():
     assert "actorLabels = {}" in scan and "local actorLabels" not in scan
 
 
+def test_game_module_says_which_wcmods_wrote_it():
+    """Scripts couldn't tell which wcmods they ran on, so one that supports an older wcmods kept every workaround.
+    Game.wcmods is wcmods/__init__.py's __version__ (the only place it lives), and Game.wcmodsNumber one to compare;
+    Game.version stays the module's own 1."""
+    from wcmods import __version__
+    lua = game.lua()
+    number = game.version_number(__version__)
+    assert f'local Game = {{ version = 1, wcmods = "{__version__}", wcmodsNumber = {number} }}' in lua
+    assert "@WCMODS" not in lua
+    assert game.version_number("0.6.0") == 600 and game.version_number("1.2.3") == 10203
+    assert game.version_number("0.6") == 600 and game.version_number("0.6.0rc1") == 600
+
+
 def test_game_module_names_the_saved_folder_the_install_makes():
     lua = game.lua(None, r"D:\Saves\WCMods")
     assert not problems(lua)
