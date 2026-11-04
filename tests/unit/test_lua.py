@@ -688,20 +688,32 @@ def test_the_clock_has_one_hold_for_every_script():
     it keeps the clock at the shared hour. The shared-variable helpers come before Game.time, which uses them. The
     holder's state says it's there twice a second, and a hold it hasn't for 3 s is none: a shared variable outlives a
     restart of the mods, so a hold whose state went with it was held for good (and Tweaks gave way to it for good).
-    It's 3 s by the run of tasks before this one, so a long frame doesn't make every hold look old."""
+    It's 3 s by the run of tasks before this one, so a long frame doesn't make every hold look old; a state with no
+    run yet (hooks and keys only) counts from when it loaded and starts its runs (it counted from now, so a hook at
+    the end of a long load took a live hold for gone); and on LoopAsync's way one run waits at a time (a stall's
+    queued runs went back to back, each with no time since the last). A stamp or an hour that isn't a number is no
+    hold (held() raised on "54000\tX\t1.2.3", and Tweaks' task with it, every half second)."""
     lua = game.lua()
     assert lua.index("local function shared(name)") < lua.index("Game.time = {}") < lua.index("function Game.quests.report(")
     assert lua.count("local function shared(name)") == 1 and lua.count("local function clean(s)") == 1
     assert 'Game.time.holding = { key = "WCModsGame.clockHold", task = nil, who = nil, STALE = 3 }' in lua
     read = body(lua, "function Game.time.holding.read()", "\nend\n")
-    assert 'match("^([%d%.]+)\\t([^\\t]*)\\t([%d%.]+)$")' in read and "return tonumber(s), who, tonumber(at)" in read
+    assert 'match("^(%d+)\\t([^\\t]*)\\t([%d%.]+)$")' in read and "return s, who, tonumber(at)" in read
+    assert 'if s and (math.type(s) ~= "integer" or s >= 86400) then s = nil end' in read   # write's %d can take it
     assert 'string.format("%d\\t%s\\t%.3f", s, who, os.clock())' in body(lua, "function Game.time.holding.write(s, who)", "\nend\n")
     held = body(lua, "function Game.time.held()", "\nend\n")
-    assert "if s == nil or (ticks.before or os.clock()) - at > h.STALE then return nil end" in held
+    assert "if s == nil or at == nil or since - at > h.STALE then return nil end" in held   # a bad stamp: none
+    assert "local since = ticks.before\n    if since == nil then\n        since = ticks.last\n        start()\n    end" in held
+    assert "os.clock()" not in held
     # ticks.before: when the run of tasks before this one began
     run = body(lua, "local function runTasks()", "\nend\n")
-    assert "local ticks = { last = os.clock(), before = nil }" in lua and "lastFrame" not in lua
+    assert "local ticks = { last = os.clock(), before = nil, queued = false }" in lua and "lastFrame" not in lua
     assert run.index("local dt = now - ticks.last") < run.index("ticks.before, ticks.last = ticks.last, now")
+    # LoopAsync's way: one run queued at a time
+    starts = body(lua, "local function start()", "\nend\n")
+    assert "if not ticks.queued then\n                ticks.queued = true" in starts
+    assert starts.index("ticks.queued = false") < starts.index("runTasks()\n")
+    assert "ExecuteInGameThread(runTasks)" not in starts
     hold = body(lua, "function Game.time.hold(s, who)", "\n-- ====")
     assert 'who = clean(who or Game.modName or "a script")' in hold
     assert 'if select(2, h.read()) == who then share(h.key, "") end' in hold   # only your own, kept up or not

@@ -330,12 +330,23 @@ clock back within about 3 s. The 3 s are counted from the start of the reader's 
 loading, the game behind another window) stops every state at once, and the first to run after it would otherwise
 take every hold for gone. `os.clock()` is the process's, the same in every state, as the dialogue claim already
 uses it. A hold with no stamp is none.
-- Unit: the stamp's format, `held()`'s check, the heartbeat in the task, and `ticks.before`.
+
+From #114's review: a state with no run of tasks yet (a script of hooks and keys only) counted from now, so a hook at
+the end of a long load took a live hold for gone; it now counts from when the state loaded and starts its runs, so
+the next frames give it one to count from (its first call can only see a hold as live a moment longer, never gone
+early). On the LoopAsync fallback, each turn queued a run, and a stall's queue ran back to back, each run with no
+time since the last; one run waits at a time now (`ticks.queued`). And a stamp or an hour that isn't a number
+(`"54000\tX\t1.2.3"`, from the console or another mod) is no hold: `held()` raised on it, and with it Tweaks' 0.5 s
+task, every run. `read()` takes only a whole second of the day for the hour, so the heartbeat's `%d` can write it.
+- Unit: the stamp's format, `held()`'s check, the heartbeat in the task, and `ticks.before`; from the review, the
+  bad-stamp guard, the no-run count and `start()`, and the one queued run.
 - Run against stubs (not in the suite), two to four `game.lua` states sharing one store: a live hold is seen by
   another state; after a 10 s frame the first state to run still sees it; a hold whose state stops is none within
   3 s; Tweaks' own `holdClock` gives way to a fresh-looking hold left by a restart, then takes the clock within 4 s;
-  it gives way to a live hold and takes the clock back when it's let go.
-- In game: not yet (`test_world.py`'s hold test still passes as written: the agent's state keeps its hold up).
+  it gives way to a live hold and takes the clock back when it's let go. From the review, its own repros: a
+  hooks-only state's hook after an 8 s stall sees the live hold; the fallback's queue after a 10 s stall is one run,
+  which sees it, whichever state drains first; bad stamps give nil, and a bad stamp in the holder's own name heals.
+- In game: not run. `test_world.py`'s hold test should pass as written: the agent's state keeps its hold up.
 
 ### 9. W4: one status line per script, and whose is up
 

@@ -599,10 +599,11 @@ end
 -- ===================================================================================== scheduling
 -- One game-thread loop per Lua state runs every timer, frame function and polled event.
 local tasks, nextTask, started = {}, 1, false
--- When this state's latest run of them began, and the one before (nil before the first): Game.time.held() goes by
--- the one before, so a frame the game took long over (a level loading, the game behind another window) doesn't make
--- another state's hold look old.
-local ticks = { last = os.clock(), before = nil }
+-- When this state's latest run of them began (when it loaded, before the first), and the one before (nil before
+-- the first): Game.time.held() goes by the one before, so a frame the game took long over (a level loading, the
+-- game behind another window) doesn't make another state's hold look old. queued: a run is waiting for the game
+-- thread (LoopAsync's way only).
+local ticks = { last = os.clock(), before = nil, queued = false }
 
 local function runTasks()
     local now = os.clock()
@@ -633,8 +634,16 @@ local function start()
     if started then return end
     started = true
     if LoopInGameThreadAfterFrames == nil or not pcall(LoopInGameThreadAfterFrames, 1, runTasks) then
+        -- One run waiting at a time: while the game thread is stalled LoopAsync goes on every 16 ms, and the runs it
+        -- queued would go back to back after it, each with no time since the last (a hold would look old to them).
         LoopAsync(16, function()
-            ExecuteInGameThread(runTasks)
+            if not ticks.queued then
+                ticks.queued = true
+                ExecuteInGameThread(function()
+                    ticks.queued = false
+                    runTasks()
+                end)
+            end
             return false
         end)
     end
@@ -3228,10 +3237,14 @@ function Game.time.set(h, m, s) return Game.time.setSeconds((h or 0) * 3600 + (m
 -- whose state went with it would otherwise be held for good, with nobody keeping the clock at its hour.
 -- (Game.time.set and setSeconds stay plain writes, which a hold puts back.)
 Game.time.holding = { key = "WCModsGame.clockHold", task = nil, who = nil, STALE = 3 }
--- The hold as it's shared, old or not: its hour, whose it is, and when its holder last said so.
+-- The hold as it's shared, old or not: its hour, whose it is, and when its holder last said so. The hour is nil
+-- unless it's what hold() writes, a whole second of the day, and the stamp nil unless it's a number: what another
+-- mod or the console wrote there may be neither.
 function Game.time.holding.read()
-    local s, who, at = tostring(shared(Game.time.holding.key) or ""):match("^([%d%.]+)\t([^\t]*)\t([%d%.]+)$")
-    return tonumber(s), who, tonumber(at)
+    local s, who, at = tostring(shared(Game.time.holding.key) or ""):match("^(%d+)\t([^\t]*)\t([%d%.]+)$")
+    s = tonumber(s)
+    if s and (math.type(s) ~= "integer" or s >= 86400) then s = nil end
+    return s, who, tonumber(at)
 end
 function Game.time.holding.write(s, who)
     share(Game.time.holding.key, string.format("%d\t%s\t%.3f", s, who, os.clock()))
@@ -3239,7 +3252,15 @@ end
 function Game.time.held()
     local h = Game.time.holding
     local s, who, at = h.read()
-    if s == nil or (ticks.before or os.clock()) - at > h.STALE then return nil end
+    -- From the start of this state's run of tasks before this one. A state with no run yet (a script of hooks and
+    -- keys only) counts from when it loaded, not from now (a hook at the end of a long load would take every hold
+    -- for gone), and starts its runs, so the next frames give it one to count from.
+    local since = ticks.before
+    if since == nil then
+        since = ticks.last
+        start()
+    end
+    if s == nil or at == nil or since - at > h.STALE then return nil end
     return s, who
 end
 function Game.time.hold(s, who)
