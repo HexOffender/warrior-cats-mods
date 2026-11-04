@@ -109,6 +109,12 @@ moved to the arrow keys) and #111's `test_command_opens_a_screen_and_send_closes
 inventory to go times out at 5 s with the inventory closed and its leaves still falling, on a fresh game too.
 Left for later: W7's two questions for the game (below).
 
+**After #112 merged,** a follow-up PR (#114) fixed four low findings from its review: the bootstrap reads a
+stopped Save's `settings.json.new` before its `.old` and puts it in place (step 3), a clock hold whose Lua state
+has gone is no hold (step 8), and two stale lines of docs (step 10 and `scripting.md`'s `held()` row). #114's own
+review found nine more, fixed there too (steps 3 and 8 say which). Both Lua changes were run against stubs with a
+local Lua 5.4, as before; not in game.
+
 **In-game checks** run through the agent: `python wcmods.py agent test <file>`, after `agent install --with <mod
 folder>` for a throwaway mod. Two rules apply:
 - check who launched a running game before an agent command sends it keys;
@@ -174,11 +180,26 @@ move the old file aside to `<path>.old` (Windows' `os.rename` won't replace a fi
 the old one back if that fails. `encode` writes `Game.json.null` as `null`, found through `package.loaded.WCModsGame`
 as `listy()` does. The bootstrap's fallback and the bridge's `writeWhole` check their writes the same way.
 
+**After the review.** A Save that stops between the two renames (the game closed) leaves no `settings.json`, the
+file before at `settings.json.old`, and the last Save at `settings.json.new`, written whole (and, through
+`Menu.saveJson`, read back; `MOD.save()`'s fallback doesn't read it back). The bootstrap read only the `.old`, and
+the next Save opened the `.new` with `"wb"`: the last Save was gone. With no `settings.json` it now reads the `.new`
+when that decodes to an object, else the `.old`, and logs which (both reasons when neither will do). A `.new` it
+reads is renamed to `settings.json` there and then, which finishes the stopped Save: otherwise the next Save's own
+`.new` wrote over it first, and a Save that then failed or stopped lost it after all (#114's review). The `.old` is
+left for the next Save to remove. And when the new file can't go in and the old one can't be put back either, the
+error says the old one is at `<path>.old` (in `Menu.saveJson` and the fallback both).
+
 **Tests.**
 - Unit: `Menu.saveJson` writes a `.new`, checks `f:write`'s and `f:close`'s results, renames, and puts the old file
   back on a failed rename; `encode` knows `json.null`; the fallback and `writeWhole` check their writes.
 - In game: `noisy-script`'s settings get `"gone": null`, and the settings Save test asserts the saved file has `null`.
   A short write can't be made on demand, so that path rests on the unit test.
+- After the review: the unit test checks the bootstrap reads the `.new` before the `.old` and renames a `.new` it
+  read, and both saves' errors. Run against stubs (not in the suite): a stopped Save's `.new` read and put in place,
+  then a Save that fails or stops (a short write, a write cut off, a failed rename) loses nothing; a half-written
+  `.new` passed over for the `.old`; a bad `settings.json` not passed over; and a failed restore's error naming the
+  `.old`.
 
 **Menu pages can drop** its own `.new`/`.old` save in `world.lua`'s `savePlaces` (with W18).
 
@@ -300,6 +321,50 @@ puts back.
 **Menu pages then:** move Hold this time (and `P.setTime`) to `Game.time.hold` and `held()`. Until it does, it still
 writes the clock itself, so with Tweaks' hold on too the two still fight; the docs say so.
 
+**After the review: a hold whose state has gone.** UE4SS keeps a shared variable through a restart of the mods, so
+the hold could name a script whose new Lua state never holds again: no state kept the clock at its hour, and Tweaks,
+which gives way at the start to a hold that's up, gave way for good (it retakes the clock only when nobody holds it).
+The hold is now `"<seconds>\t<who>\t<os.clock()>"`: the holder's 0.5 s task writes the stamp again while the hold is
+its own, and `held()` says nil for a hold not kept up for 3 s (`Game.time.holding.STALE`), so Tweaks takes the
+clock back within about 3 s. The 3 s are counted from the start of the reader's run of tasks before this one
+(`ticks.before`, the scheduler's `lastFrame` made a table), not from now: a frame the game takes long over (a level
+loading, the game behind another window) stops every state at once, and the first to run after it would otherwise
+take every hold for gone. `os.clock()` is the process's, the same in every state, as the dialogue claim already
+uses it. A hold with no stamp is none.
+
+From #114's review: a state with no run of tasks yet (a script of hooks and keys only) counted from now, so a hook at
+the end of a long load took a live hold for gone; it now counts from when the state loaded and starts its runs. That
+first went on through the state's first run, whose "before" is the load, with no bound, so an orphan stamped since the
+state loaded read live however old it was (a hold 300 s dead, asked about through a 20 s load: live every time). Now,
+until its second run (`ticks.runs`), a state whose runs `held()` started, with no timer by its first run
+(`ticks.askedFirst`, which `add()` clears before the first run), counts from when it loaded but no further back than
+60 s (`Game.time.holding.LOAD`): a hook after a load of up to 60 s still sees a live hold, and a hold whose state went
+with a restart of the mods reads live for two frames from the first ask, or through a load that ask comes in, and
+never once it's about 63 s old. The other side: a first ask shortly before, during or just after a load of more than
+about a minute sees a live hold as gone until the holder's first frame after the load. The bound first applied to
+every state until its second run, which brought back the case `ticks.before` is for: after a first load of more than
+about 63 s, a state with a timer from load that ran before the holder in the first frame saw the holder's load-time
+stamp as gone, and Tweaks, run first, took the clock for good (the holder's heartbeat stops once the hold isn't its
+own). A state with a timer counts from the load until its second run as before, with no bound: an orphan reads live to
+it until its second run (to its hooks, for as long as no frame comes), and Tweaks takes the clock within 3 to 4 s
+anyway. From #114's fourth check: a state that asked in its main chunk before it added its first timer kept
+`askedFirst`, so that timer's first run got the bound and, ahead of the holder after a first load of over 63 s, a
+script that takes the clock when `held()` says nil took it for good; `add()` clears the flag while there's been no
+run. On the LoopAsync fallback, each turn queued a run, and a stall's queue ran back to back, each run with no time
+since the last; one run waits at a time now (`ticks.queued`). And a stamp or an hour that isn't a number
+(`"54000\tX\t1.2.3"`, from the console or another mod) is no hold: `held()` raised on it, and with it Tweaks' 0.5 s
+task, every run. `read()` takes only a whole second of the day for the hour, so the heartbeat's `%d` can write it.
+- Unit: the stamp's format, `held()`'s check, the heartbeat in the task, and `ticks.before`; from the review, the
+  bad-stamp guard, the no-run count (`ticks.runs`, `LOAD`, only with `ticks.askedFirst`, which `add()` clears before
+  the first run) and `start()`, and the one queued run.
+- Run against stubs (not in the suite), two to four `game.lua` states sharing one store: a live hold is seen by
+  another state; after a 10 s frame the first state to run still sees it; a hold whose state stops is none within
+  3 s; Tweaks' own `holdClock` gives way to a fresh-looking hold left by a restart, then takes the clock within 4 s;
+  it gives way to a live hold and takes the clock back when it's let go. From the review, its own repros: a
+  hooks-only state's hook after an 8 s stall sees the live hold; the fallback's queue after a 10 s stall is one run,
+  which sees it, whichever state drains first; bad stamps give nil, and a bad stamp in the holder's own name heals.
+- In game: not run. `test_world.py`'s hold test should pass as written: the agent's state keeps its hold up.
+
 ### 9. W4: one status line per script, and whose is up
 
 **Problem.** `Menu.status` writes one shared line with no owner, so a script whose line ticks takes over everyone
@@ -324,15 +389,17 @@ line that went up most recently. Updating a line keeps its place, so a ticking l
 
 ### 10. W15: Menu pages' release check covers its fixes
 
-**Fix.** Three tests in `test_menu.py`'s style (`need_pages`, try/finally restore), each failing on Menu pages before
-its PR #1:
+**Fix.** Three tests in `test_menu.py`'s style (`need_pages`, try/finally restore): the first two fail on Menu pages
+before its PR #1, the third on PR #1's commits before bd3abac:
 1. `test_opening_stats_changes_nothing`: fractional and out-of-range stats, XP and regen read the same after Stats
    and its sections are opened.
 2. `test_travel_keeps_a_places_file_it_cant_read`: for three broken `places.json` files, the page says it couldn't
    read it, Save this spot says it couldn't save, the file is byte for byte the same, and no `places.json.new` is
    left.
-3. `test_status_line_steps_aside_for_another_script`: with W4, another script's line stays up on a page Menu pages
-   doesn't own, and Menu pages' line comes back once it's cleared.
+3. `test_another_scripts_status_line_stays_up`: checks wcmods' W4 with a live Menu pages line. On a page Menu pages
+   doesn't own (Overview), another script's line stays up against Menu pages' ticking one; on Menu pages' own page
+   its line wins and follows your cat's health; and once the other line is cleared, Menu pages' comes back. It passes
+   on Menu pages v1.0, and fails only on PR #1's commits before bd3abac, the ones that froze the line.
 
 Plus `agent.menu.status()` / `status_shown()` helpers in `wcmods/agent/menu.py`, in place of raw `ModRef` strings.
 The "God mode (nothing hurts you)" label assertion stays as it is.
@@ -389,12 +456,10 @@ workarounds there; the docs say so. The release that brings this should be 0.6.0
 - **`ui.slider`'s float comparison** for values above 32 (40.1 reads back 1.5e-6 off). It has the same shape as
   W1's, but sliders take ranges the caller chose; worth a look if a slider is seen changing a value.
 - **Left from the review of #112**, each small and none a blocker:
-  - W5: a hold whose holder's Lua state is gone is never let go, and Tweaks gives way to it for the rest of the
-    session (every state that ever held keeps the clock at the shared hour).
   - W4: `Menu.statusShown()` is stale while the menu is closed and after the window is rebuilt; `caller(2)` names the
     wrong owner when `Menu.status` is called through `pcall` or as a tail call; and a line taken down and put back
-    up counts as new, so a script that takes its line down when the menu closes (Menu pages does) is the newest
-    each time it opens.
+    up counts as new, so a script that takes its line down when the menu closes is the newest each time it opens
+    (Menu pages 1.0 does; its PR #1 keeps the line up on a wcmods with `Menu.statusShown`).
   - W11: `Game.dev.choices` keeps its cache in the public `Game.dev.enums` entries, and drops the game's order of
     the names.
   - W6: `Game.save.write` drops the last good table, so a read that catches the file half written right after a

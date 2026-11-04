@@ -54,9 +54,10 @@ function MOD.save()
     end
     local moved, merr = os.rename(tmp, path)
     if not moved then
-        if had then os.rename(old, path) end
+        local restored = not had or os.rename(old, path)
         os.remove(tmp)
-        return false, "couldn't replace " .. path .. " (" .. tostring(merr) .. ")"
+        return false, "couldn't replace " .. path .. " (" .. tostring(merr) .. ")" ..
+                      (restored and "" or "; the previous file is now at " .. old)
     end
     if had then os.remove(old) end
     return true
@@ -119,30 +120,53 @@ end
 -- quest's progress, where a cat stands) is still there after the game restarts. The copy from the
 -- install is kept when the file can't be read.
 if okGame and MOD.settingsFile then
-    local f = io.open(MOD.settingsFile, "rb")
-    if not f then
-        -- No settings.json but a settings.json.old: a Save that stopped between its two renames left the last
-        -- settings saved there, the only copy. They're read from it, and the next Save writes settings.json again.
-        f = io.open(MOD.settingsFile .. ".old", "rb")
-        if f then MOD.log("settings.json is missing; reading settings.json.old, which a save that stopped part way left") end
-    end
-    if f then
+    -- A settings file's object; or nil and why not, or nil and nil when there's no such file. Not a file holding
+    -- just null either: that's Game.json.null, a table every null read in this Lua state shares, and the first
+    -- setting a page set would go into it.
+    local function readSettings(file)
+        local f = io.open(file, "rb")
+        if not f then return nil, nil end
         local text = f:read("a")
         f:close()
         if text:sub(1, 3) == BOM then text = text:sub(4) end
-        -- Not a file holding just null either: that's Game.json.null, a table every null read in this Lua state shares,
-        -- and the first setting a page set would go into it.
         local ok, data, err = pcall(Game.json.decode, text)
-        if not ok then
-            err = data
-        elseif err == nil and (type(data) ~= "table" or data == Game.json.null) then
-            err = "it doesn't hold an object"
-        end
-        if err == nil then
-            MOD.settings = data
+        if not ok then return nil, tostring(data) end
+        if err == nil and (type(data) ~= "table" or data == Game.json.null) then err = "it doesn't hold an object" end
+        if err ~= nil then return nil, tostring(err) end
+        return data
+    end
+    local data, err = readSettings(MOD.settingsFile)
+    local from = "settings.json"
+    if data == nil and err == nil then
+        -- No settings.json: a Save that stopped between its two renames (the game closed, say) left the settings it
+        -- saved in settings.json.new, written whole (and, through Menu.saveJson, read back), and the ones before it
+        -- in settings.json.old. The newer is read when it holds an object, else the older. (A .new that didn't get
+        -- that far is half written, and doesn't decode.) A .new that's read is put in settings.json's place, which
+        -- finishes the stopped Save: the next Save writes a .new of its own first, and if that failed or stopped,
+        -- the last Save would go with it. The .old is left for the next Save to remove.
+        local newErr
+        data, newErr = readSettings(MOD.settingsFile .. ".new")
+        if data ~= nil then
+            local moved, merr = os.rename(MOD.settingsFile .. ".new", MOD.settingsFile)
+            MOD.log("settings.json is missing; read settings.json.new, the last Save, which stopped before it took settings.json's place%s",
+                    moved and ", and put it there" or ("; couldn't put it there (" .. tostring(merr) .. ")"))
         else
-            MOD.log("couldn't read settings.json (%s); using the settings from the install", tostring(err))
+            from = "settings.json.old"
+            data, err = readSettings(MOD.settingsFile .. ".old")
+            if data ~= nil then
+                MOD.log("settings.json is missing; reading settings.json.old, the settings before a Save that stopped part way%s",
+                        newErr and (" (settings.json.new is no good: " .. newErr .. ")") or "")
+            elseif err == nil and newErr ~= nil then
+                from, err = "settings.json.new", newErr
+            elseif err ~= nil and newErr ~= nil then
+                err = err .. "; settings.json.new is no good either: " .. newErr
+            end
         end
+    end
+    if data ~= nil then
+        MOD.settings = data
+    elseif err ~= nil then
+        MOD.log("couldn't read %s (%s); using the settings from the install", from, err)
     end
 end
 

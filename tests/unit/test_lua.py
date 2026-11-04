@@ -683,21 +683,60 @@ def test_items_drop_the_pickups_of_another_save():
 
 def test_the_clock_has_one_hold_for_every_script():
     """Tweaks' Hold the clock and Menu pages' Hold this time each wrote the clock on their own timers, so with both on
-    it flipped between two hours, and with Tweaks' on Menu pages' Morning was undone in half a second. One hold now,
-    in a shared variable: the last to hold it has it, letting go lets go of your own only, and every script that held
-    it keeps the clock at the shared hour. The shared-variable helpers come before Game.time, which uses them."""
+    it flipped between two hours, and with Tweaks' on Menu pages' Morning was undone in half a second. One hold now, in
+    a shared variable: the last to hold it has it, letting go lets go of your own only, and every script that held it
+    keeps the clock at the shared hour. The shared-variable helpers come before Game.time, which uses them. The holder's
+    state says it's there twice a second, and a hold it hasn't for 3 s is none: a shared variable outlives a restart of
+    the mods, so a hold whose state went with it was held for good (and Tweaks gave way to it for good). It's 3 s by the
+    run of tasks before this one, so a long frame doesn't make every hold look old; a state with no run yet (hooks and
+    keys only) counts from when it loaded and starts its runs (it counted from now, so a hook at the end of a long load
+    took a live hold for gone), back 60 s at most until its second run; and on LoopAsync's way one run waits at a time
+    (a stall's queued runs went back to back, each with no time since the last). A stamp or an hour that isn't a number
+    is no hold (held() raised on "54000\tX\t1.2.3", and Tweaks' task with it, every half second)."""
     lua = game.lua()
     assert lua.index("local function shared(name)") < lua.index("Game.time = {}") < lua.index("function Game.quests.report(")
     assert lua.count("local function shared(name)") == 1 and lua.count("local function clean(s)") == 1
-    assert 'Game.time.holding = { key = "WCModsGame.clockHold", task = nil }' in lua
+    assert 'Game.time.holding = { key = "WCModsGame.clockHold", task = nil, who = nil, STALE = 3, LOAD = 60 }' in lua
+    read = body(lua, "function Game.time.holding.read()", "\nend\n")
+    assert 'match("^(%d+)\\t([^\\t]*)\\t([%d%.]+)$")' in read and "return s, who, tonumber(at)" in read
+    assert 'if s and (math.type(s) ~= "integer" or s >= 86400) then s = nil end' in read   # write's %d can take it
+    assert 'string.format("%d\\t%s\\t%.3f", s, who, os.clock())' in body(lua, "function Game.time.holding.write(s, who)", "\nend\n")
     held = body(lua, "function Game.time.held()", "\nend\n")
-    assert 'tostring(shared(Game.time.holding.key) or ""):match("^([%d%.]+)\\t(.*)$")' in held
+    assert "if s == nil or at == nil or since - at > h.STALE then return nil end" in held   # a bad stamp: none
+    # before the first run, from the load (a long first load: the first run still sees a hold stamped then)
+    assert "local since = ticks.before or ticks.last\n" in held
+    # a state whose runs held() started (hooks and keys only): until two runs no further back than LOAD (an orphan of
+    # any age read live to it through a load); not a state with a timer from load, whose first run after a load of
+    # over 63 s took the holder's load-time stamp for gone (and Tweaks took the clock for good)
+    assert "    if not started then\n        ticks.askedFirst = true\n        start()\n    end\n" in held
+    assert "if ticks.askedFirst and ticks.runs < 2 then since = math.max(ticks.loaded, os.clock() - h.LOAD) end" in held
+    assert held.index("ticks.askedFirst = true") < held.index("start()") < held.index("if ticks.askedFirst and")
+    assert "if ticks.runs < 2 then" not in held
+    # a timer added before the first run clears it: a state that asked in its main chunk and then added its first
+    # timer got the bound in that timer's first run, and ahead of the holder after a long first load took it for gone
+    adds = body(lua, "local function add(t)", "\nend\n")
+    assert "if ticks.runs == 0 then ticks.askedFirst = false end" in adds
+    assert adds.index("ticks.askedFirst = false") < adds.index("start()")
+    assert "ticks.before or os.clock()" not in held and "since = os.clock()" not in held   # never from now
+    # ticks.before: when the run of tasks before this one began
+    run = body(lua, "local function runTasks()", "\nend\n")
+    assert "local ticks = { last = os.clock(), before = nil, runs = 0, queued = false, askedFirst = false }\nticks.loaded = ticks.last\n" in lua
+    assert "lastFrame" not in lua
+    assert run.index("local dt = now - ticks.last") < run.index("ticks.before, ticks.last, ticks.runs = ticks.last, now, ticks.runs + 1")
+    # LoopAsync's way: one run queued at a time
+    starts = body(lua, "local function start()", "\nend\n")
+    assert "if not ticks.queued then\n                ticks.queued = true" in starts
+    assert starts.index("ticks.queued = false") < starts.index("runTasks()\n")
+    assert "ExecuteInGameThread(runTasks)" not in starts
     hold = body(lua, "function Game.time.hold(s, who)", "\n-- ====")
     assert 'who = clean(who or Game.modName or "a script")' in hold
-    assert 'if select(2, Game.time.held()) == who then share(h.key, "") end' in hold   # only your own
+    assert 'if select(2, h.read()) == who then share(h.key, "") end' in hold   # only your own, kept up or not
     assert "s = math.floor(s + 0.5) % 86400" in hold   # a whole second, never 86400 (%.0f rounded 86399.6 up)
-    assert 'share(h.key, string.format("%d\\t%s", s, who))' in hold
+    assert "h.who = who\n    h.write(s, who)" in hold
     assert "h.task = h.task or Game.every(0.5, function()" in hold and "if at and Game.cat() then Game.time.setSeconds(at) end" in hold
+    # the heartbeat: the holder's state keeps its own hold's stamp up, whatever held() says of it
+    assert "if mine and whose == h.who then h.write(mine, whose) end" in hold
+    assert hold.index("local mine, whose = h.read()") < hold.index("local at = Game.time.held()")
     # set and setSeconds stay plain writes
     assert 'function Game.time.setSeconds(s) return Game.set(Game.gameState(), "WCM_DayTime", s % 86400) end' in lua
 
@@ -719,9 +758,10 @@ def test_bootstrap_refuses_a_settings_file_of_null_and_says_why():
     from wcmods.sections import scripts
     settings = body(scripts.BOOTSTRAP, "if okGame and MOD.settingsFile then", "\nend\n")
     assert "local ok, data, err = pcall(Game.json.decode, text)" in settings
-    assert 'elseif err == nil and (type(data) ~= "table" or data == Game.json.null) then' in settings
-    assert "if err == nil then\n            MOD.settings = data" in settings
-    assert 'using the settings from the install", tostring(err))' in settings
+    assert "if not ok then return nil, tostring(data) end" in settings   # decode's own reason
+    assert 'if err == nil and (type(data) ~= "table" or data == Game.json.null) then err = "it doesn\'t hold an object" end' in settings
+    assert "if data ~= nil then\n        MOD.settings = data" in settings
+    assert 'using the settings from the install", from, err)' in settings
 
 
 def test_json_decode_keeps_a_number_written_with_a_point_a_float():
@@ -836,8 +876,11 @@ def test_a_save_writes_the_whole_file_or_says_it_couldnt():
     the close and what's on the disk, moves the old file aside (Windows' rename won't replace it), and puts it back
     when the new one can't go in. A .old it can't remove, or a file it can't move aside, is said with the path (it
     was a bare "File exists" on every later save); a read-only file is refused; and a .old with no file beside it (a
-    save that stopped between the renames left it, the only copy) is kept, and the script bootstrap reads a mod's
-    settings from it. MOD.save()'s fallback and the bridge's writeWhole check theirs too."""
+    save that stopped between the renames left it) is kept. That save's .new has what it saved, already read back,
+    so the script bootstrap reads a mod's settings from the .new when it holds an object (it read only the .old, and
+    the next Save wrote over the .new: the last Save gone), else from the .old. A new file that can't go in and an
+    old one that can't be put back say where the old one is. MOD.save()'s fallback and the bridge's writeWhole check
+    theirs too."""
     lua = menu.lua()
     save = body(lua, "function Menu.saveJson(path, value)", "\nreturn Menu")
     assert save.index('local text = encode(value, 0) .. "\\n"') < save.index('local tmp = path .. ".new"')
@@ -848,7 +891,8 @@ def test_a_save_writes_the_whole_file_or_says_it_couldnt():
         save.index("local moved, merr = os.rename(tmp, path)")
     assert 'if not gone and code ~= 2 then' in save and 'error("couldn\'t remove " .. old .. " (" .. tostring(gerr) .. ")", 0)' in save
     assert 'local rw = io.open(path, "r+b")' in save and "can't be written (is it read-only?)" in save
-    assert "if had then os.rename(old, path) end" in save and "if had then os.remove(old) end" in save
+    assert "local restored = not had or os.rename(old, path)" in save and "if had then os.remove(old) end" in save
+    assert '(restored and "" or "; the previous file is now at " .. old)' in save
     assert 'os.remove(path .. ".old")' not in save   # never a .old with no file beside it
     assert 'io.open(path, "wb")' not in save
     # Game.json.null (a null read from a file) is written null, not {} (it's an empty table).
@@ -859,12 +903,29 @@ def test_a_save_writes_the_whole_file_or_says_it_couldnt():
     fallback = body(scripts.BOOTSTRAP, "function MOD.save()", "\nend\n")
     assert "local okText, text = pcall(G.json.encode, MOD.settings)" in fallback
     assert 'local f, err = io.open(tmp, "wb")' in fallback and "if not wrote or not closed then" in fallback
-    assert "if had then os.rename(old, path) end" in fallback and "if not gone and code ~= 2 then" in fallback
+    assert "local restored = not had or os.rename(old, path)" in fallback and "if not gone and code ~= 2 then" in fallback
+    assert '(restored and "" or "; the previous file is now at " .. old)' in fallback
     assert 'local rw = io.open(path, "r+b")' in fallback and 'os.remove(path .. ".old")' not in fallback
     assert 'io.open(MOD.settingsFile, "wb")' not in fallback
     read = body(scripts.BOOTSTRAP, "if okGame and MOD.settingsFile then", "\nend\n")
-    assert read.index('local f = io.open(MOD.settingsFile, "rb")') < read.index('f = io.open(MOD.settingsFile .. ".old", "rb")')
-    assert "reading settings.json.old, which a save that stopped part way left" in read
+    assert read.index("local data, err = readSettings(MOD.settingsFile)") < \
+        read.index('data, newErr = readSettings(MOD.settingsFile .. ".new")') < \
+        read.index('data, err = readSettings(MOD.settingsFile .. ".old")')
+    assert "if data == nil and err == nil then" in read   # only with no settings.json: a bad one isn't passed over
+    assert "read settings.json.new, the last Save" in read and "reading settings.json.old, the settings before" in read
+    # a .new that's read finishes the stopped Save: it's put in settings.json's place, so the next Save's own .new
+    # can't write over the only copy (it did, and a Save that then failed or stopped lost it)
+    new = read[read.index('data, newErr = readSettings(MOD.settingsFile .. ".new")'):read.index("        else\n")]
+    # only once the .new has been read and holds an object: a rename before that would put a half-written one in place
+    assert new.index("if data ~= nil then") < new.index('os.rename(MOD.settingsFile .. ".new", MOD.settingsFile)')
+    assert 'local moved, merr = os.rename(MOD.settingsFile .. ".new", MOD.settingsFile)' in new
+    assert '"; couldn\'t put it there (" .. tostring(merr) .. ")"' in new
+    assert 'os.remove(MOD.settingsFile .. ".old")' not in read   # left for the next Save
+    # both reasons when neither the .new nor the .old will do
+    assert 'err = err .. "; settings.json.new is no good either: " .. newErr' in read
+    assert 'MOD.log("couldn\'t read %s (%s); using the settings from the install", from, err)' in read
+    one = body(read, "local function readSettings(file)", "\n    end\n")
+    assert "data == Game.json.null" in one and 'if not f then return nil, nil end' in one
     from wcmods import bridge
     whole = body(bridge.LUA, "local function writeWhole(path, text)", "\nend\n")
     assert "local wrote = f:write(text)" in whole and "if not wrote or not closed then" in whole

@@ -929,10 +929,13 @@ for the menu's own.
 `Menu.saveJson(path, value)` writes a Lua value as JSON (keys sorted, notes like `"_help"` first)
 and returns true, or false and why. It writes the whole file or nothing: the text goes to
 `<path>.new`, is read back, and only then takes the old file's place (moved aside to `<path>.old`
-meanwhile, as Windows won't rename over a file), so a full disk leaves the old file as it was. Files
-already called `<path>.new` or `<path>.old` are replaced, except a `<path>.old` with no `<path>`
-beside it, which a save that stopped part way left and is kept (a script mod's settings are read back
-from it). A read-only file is refused. `Game.json.null` (a `null` read from a file) is written `null`; `Menu.list(t)` marks a
+meanwhile, as Windows won't rename over a file), so a full disk leaves the old file as it was. If the
+new file can't take its place and the old one can't be put back either, the error says it's at
+`<path>.old`. Files already called `<path>.new` or `<path>.old` are replaced, except a `<path>.old`
+with no `<path>` beside it, which a save that stopped between the renames left and is kept. That save's
+`<path>.new` has what it saved, already read back: a script mod with no `settings.json` reads its
+settings from `settings.json.new` when that holds an object (and moves it into `settings.json`'s
+place), else from `settings.json.old`, and says which in the log. A read-only file is refused. `Game.json.null` (a `null` read from a file) is written `null`; `Menu.list(t)` marks a
 table as a JSON list, so an empty one is written `[]`. `Menu.json(value)` gives the JSON text, `Menu.color(hex)` the linear colour the game's
 UI wants, and `Menu.theme` the menu's colours.
 - **Colours:** text is at least 4.5:1 on what it's on, as drawn. `theme.danger` is for text;

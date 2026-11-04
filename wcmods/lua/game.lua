@@ -599,12 +599,18 @@ end
 -- ===================================================================================== scheduling
 -- One game-thread loop per Lua state runs every timer, frame function and polled event.
 local tasks, nextTask, started = {}, 1, false
-local lastFrame = os.clock()
+-- When this state's latest run of them began (when it loaded, before the first), and the one before (nil before
+-- the first; the first's is when it loaded): Game.time.held() goes by the one before, so a frame the game took long
+-- over (a level loading, the game behind another window) doesn't make another state's hold look old. runs: how many
+-- there have been. queued: a run is waiting for the game thread (LoopAsync's way only). askedFirst: Game.time.held()
+-- started them, and no timer came before the first (add() clears it then).
+local ticks = { last = os.clock(), before = nil, runs = 0, queued = false, askedFirst = false }
+ticks.loaded = ticks.last
 
 local function runTasks()
     local now = os.clock()
-    local dt = now - lastFrame
-    lastFrame = now
+    local dt = now - ticks.last
+    ticks.before, ticks.last, ticks.runs = ticks.last, now, ticks.runs + 1
     -- The ids first, then each task that's still there when its turn comes: a callback may add tasks and cancel
     -- them (its own too), which pairs() can't take while it walks the table itself.
     local ids = {}
@@ -630,14 +636,23 @@ local function start()
     if started then return end
     started = true
     if LoopInGameThreadAfterFrames == nil or not pcall(LoopInGameThreadAfterFrames, 1, runTasks) then
+        -- One run waiting at a time: while the game thread is stalled LoopAsync goes on every 16 ms, and the runs it
+        -- queued would go back to back after it, each with no time since the last (a hold would look old to them).
         LoopAsync(16, function()
-            ExecuteInGameThread(runTasks)
+            if not ticks.queued then
+                ticks.queued = true
+                ExecuteInGameThread(function()
+                    ticks.queued = false
+                    runTasks()
+                end)
+            end
             return false
         end)
     end
 end
 
 local function add(t)
+    if ticks.runs == 0 then ticks.askedFirst = false end   -- a timer by the first run: no LOAD bound
     start()
     local id = nextTask
     nextTask = nextTask + 1
@@ -3216,26 +3231,65 @@ function Game.time.setSeconds(s) return Game.set(Game.gameState(), "WCM_DayTime"
 function Game.time.set(h, m, s) return Game.time.setSeconds((h or 0) * 3600 + (m or 0) * 60 + (s or 0)) end
 
 -- One hold of the clock for every script, so two scripts holding it don't fight over the hour: a shared variable,
--- "<seconds>\t<who>" ("" for none). The last script to hold it has it, and every script that has held it keeps the
--- clock at that hour twice a second while your cat is in the world. Game.time.hold(seconds, who) holds it (who:
--- the script's name, Game.modName by default) and gives back what setting the clock did; Game.time.hold(nil, who)
--- lets go, of your own hold only. Game.time.held() is the hour held, in seconds, and whose it is; nil for none.
+-- "<seconds>\t<who>\t<os.clock() when its holder last said so>" ("" for none). The last script to hold it has it,
+-- and every script that has held it keeps the clock at that hour twice a second while your cat is in the world.
+-- Game.time.hold(seconds, who) holds it (who: the script's name, Game.modName by default) and gives back what
+-- setting the clock did; Game.time.hold(nil, who) lets go, of your own hold only. Game.time.held() is the hour held,
+-- in seconds, and whose it is; nil for none. The holder's Lua state says it's there twice a second (the os.clock()),
+-- and a hold it hasn't for 3 s is no hold: UE4SS keeps a shared variable through a restart of the mods, and a hold
+-- whose state went with it would otherwise be held for good, with nobody keeping the clock at its hour.
 -- (Game.time.set and setSeconds stay plain writes, which a hold puts back.)
-Game.time.holding = { key = "WCModsGame.clockHold", task = nil }
+Game.time.holding = { key = "WCModsGame.clockHold", task = nil, who = nil, STALE = 3, LOAD = 60 }
+-- The hold as it's shared, old or not: its hour, whose it is, and when its holder last said so. The hour is nil
+-- unless it's what hold() writes, a whole second of the day, and the stamp nil unless it's a number: what another
+-- mod or the console wrote there may be neither.
+function Game.time.holding.read()
+    local s, who, at = tostring(shared(Game.time.holding.key) or ""):match("^(%d+)\t([^\t]*)\t([%d%.]+)$")
+    s = tonumber(s)
+    if s and (math.type(s) ~= "integer" or s >= 86400) then s = nil end
+    return s, who, tonumber(at)
+end
+function Game.time.holding.write(s, who)
+    share(Game.time.holding.key, string.format("%d\t%s\t%.3f", s, who, os.clock()))
+end
 function Game.time.held()
-    local s, who = tostring(shared(Game.time.holding.key) or ""):match("^([%d%.]+)\t(.*)$")
-    return tonumber(s), who
+    local h = Game.time.holding
+    local s, who, at = h.read()
+    -- From the start of this state's run of tasks before this one, or before its first run, from when it loaded:
+    -- not from now, so neither a hook at the end of a long load nor the first run after it takes a hold the holder
+    -- couldn't stamp through the load for gone. A state with no timer has no runs until it first asks, which starts
+    -- them (askedFirst). If it still has no timer at its first run (a script of hooks and keys only, or one that adds
+    -- its first timer later), then until it has had two runs it counts back no further than LOAD seconds, or a hold
+    -- whose state went with a restart of the mods would read live to it through a load however old it was. So to
+    -- such a script an orphan (its last stamp a moment before this state loaded) reads live for two frames from the
+    -- first ask, or through a load the first ask comes in, and never once it's LOAD + STALE seconds old; and a live
+    -- hold reads gone in that window when a load has kept its holder from stamping it for longer than that (the
+    -- first ask shortly before, during or just after it). A state with a timer by its first run, added before the
+    -- first ask or after it, has no bound: its first run after a load of any length sees a hold stamped before it,
+    -- and an orphan reads live to it until its second run (to its hooks, for as long as no frame comes).
+    local since = ticks.before or ticks.last
+    if not started then
+        ticks.askedFirst = true
+        start()
+    end
+    if ticks.askedFirst and ticks.runs < 2 then since = math.max(ticks.loaded, os.clock() - h.LOAD) end
+    if s == nil or at == nil or since - at > h.STALE then return nil end
+    return s, who
 end
 function Game.time.hold(s, who)
     local h = Game.time.holding
     who = clean(who or Game.modName or "a script")
     if not s then
-        if select(2, Game.time.held()) == who then share(h.key, "") end
+        if select(2, h.read()) == who then share(h.key, "") end
+        if h.who == who then h.who = nil end
         return true
     end
     s = math.floor(s + 0.5) % 86400   -- a whole second of the day: 86399.6 is 0, not 86400
-    share(h.key, string.format("%d\t%s", s, who))
+    h.who = who
+    h.write(s, who)
     h.task = h.task or Game.every(0.5, function()
+        local mine, whose = h.read()
+        if mine and whose == h.who then h.write(mine, whose) end   -- still here, while it's this state's hold
         local at = Game.time.held()
         if at and Game.cat() then Game.time.setSeconds(at) end
     end)
