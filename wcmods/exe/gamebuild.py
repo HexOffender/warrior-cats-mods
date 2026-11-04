@@ -28,8 +28,8 @@ from . import pe
 
 # The build game.HIDDEN's offsets were confirmed on. HIDDEN holds one layout, so this is one build: after
 # checking a new one, update HIDDEN to it and put its number here.
-VERIFIED_BUILD = 26184573
-VERIFIED_LABEL = "patch 1.1, October 2026"
+VERIFIED_BUILD = 26337109
+VERIFIED_LABEL = "the update of November 2026"
 # What a mod.json without "game_builds" was made for: the build every mod before them was made on.
 ASSUMED_BUILDS = (24847281,)
 CACHE_DIR = "cache"
@@ -380,12 +380,18 @@ def _members():
     return [f"{cls}:{name}" for cls, fields in game.HIDDEN for name, _, _ in fields]
 
 
+def _functions():
+    """Every native function game.NATIVE names, as "class:name"."""
+    from .. import game
+    return [name for name, _, _ in game.NATIVE]
+
+
 def _version():
-    """What wcmods knows of the game's layout: game.HIDDEN and signatures.json. A layout worked out with
-    other ones is worked out again."""
+    """What wcmods knows of the game's layout: game.HIDDEN, game.NATIVE and signatures.json. A layout worked
+    out with other ones is worked out again."""
     from .. import game
     from . import signatures
-    h = hashlib.sha1(repr(game.HIDDEN).encode())
+    h = hashlib.sha1(repr((game.HIDDEN, game.NATIVE)).encode())
     try:
         with open(signatures.DATA, "rb") as f:
             h.update(f.read())
@@ -410,13 +416,14 @@ def _cache_path(cfg, key):
 
 def _all_off(build, status, why=None):
     off = _members()
-    return {"build": build, "status": status, "offsets": {k: None for k in off}, "moved": [], "lost": off,
-            "why": why}
+    return {"build": build, "status": status, "offsets": {k: None for k in off},
+            "functions": {k: None for k in _functions()}, "moved": [], "lost": off + _functions(), "why": why}
 
 
 def layout(cfg, log=print, refresh=False):
-    """How wcmods' in-game members stand on the installed game: {"build", "status", "offsets", "moved",
-    "lost"}. status:
+    """How wcmods' in-game members and native functions stand on the installed game: {"build", "status",
+    "offsets", "functions", "moved", "lost"}. "functions" maps each of game.NATIVE's names to its RVA (None on
+    the verified build: NATIVE's own; None for one that couldn't be found, which "lost" names too). status:
     - "verified": VERIFIED_BUILD; offsets None, so game.HIDDEN as it is;
     - "adapted": another build, every member found again (moved or not);
     - "partial": some couldn't be, or couldn't be vouched for: they're None in offsets and left out;
@@ -425,7 +432,8 @@ def layout(cfg, log=print, refresh=False):
     leaves everything out (and is tried again next time)."""
     info = current(cfg)
     if info["verified"]:
-        return {"build": info["build"], "status": "verified", "offsets": None, "moved": [], "lost": []}
+        return {"build": info["build"], "status": "verified", "offsets": None, "functions": None, "moved": [],
+                "lost": []}
     key = layout_key(cfg)
     if not key:
         return _all_off(info["build"], "unknown", "no game exe to read")
@@ -434,7 +442,7 @@ def layout(cfg, log=print, refresh=False):
         try:
             with open(path, encoding="utf-8") as f:
                 cached = json.load(f)
-            if isinstance(cached, dict) and isinstance(cached.get("offsets"), dict):
+            if isinstance(cached, dict) and isinstance(cached.get("offsets"), dict) and "functions" in cached:
                 return cached
         except (OSError, ValueError):   # not worked out yet, or cut short while it was written
             pass
@@ -447,10 +455,11 @@ def layout(cfg, log=print, refresh=False):
         return _all_off(info["build"], "partial", f"{type(e).__name__}: {e}")
     status = {f"{c}:{n}": f["status"] for c, rep in res["classes"].items() for n, f in rep["fields"].items()}
     offsets = {k: res["offsets"].get(k) for k in _members()}
+    functions = {k: (res.get("functions") or {}).get(k) for k in _functions()}
     moved = [k for k in offsets if status.get(k) == "moved"]
-    lost = [k for k, v in offsets.items() if v is None]
+    lost = [k for k, v in offsets.items() if v is None] + [k for k, v in functions.items() if v is None]
     out = {"build": info["build"], "status": "partial" if lost else "adapted", "offsets": offsets,
-           "moved": moved, "lost": lost}
+           "functions": functions, "moved": moved, "lost": lost}
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".part"
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
@@ -471,6 +480,7 @@ PLAIN = {
     "TurnBasedCombatComponent": "the fighters' stats, moves and sides in a fight",
     "SwtAdventureStatusComponent": "poison and the other status conditions",
     "SwtAdventureDetectionComponent": "how far animals see and hear your cat",
+    "SwtQuestInventoryComponent": "your items, for C++ mods",
 }
 
 

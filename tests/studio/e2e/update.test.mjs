@@ -12,7 +12,7 @@ import { launch } from "../lib/browser.mjs";
 import { browserChoice, dataFolder, makeGame, makeMod, removeFolders, requireBrowser, startStudio, takeTurn } from "../lib/studio.mjs";
 
 const { browserPath, skip } = browserChoice();
-const VERIFIED = 26184573;   // gamebuild.VERIFIED_BUILD
+const VERIFIED = 26337109;   // gamebuild.VERIFIED_BUILD
 
 let browser, verified, newer, verifiedFolders, newerFolders, release;
 

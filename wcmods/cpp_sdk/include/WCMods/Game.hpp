@@ -18,6 +18,7 @@
 #include <Unreal/FString.hpp>
 #include <Unreal/NameTypes.hpp>
 #include <Unreal/UObject.hpp>
+#include <Unreal/UObjectArray.hpp>
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/UnrealCoreStructs.hpp>
 #include <Unreal/World.hpp>
@@ -92,6 +93,21 @@ namespace wcmods
     {
         return RC::Unreal::UObjectGlobals::FindFirstOf(class_name);
     }
+
+    namespace detail
+    {
+        // Whether an object the game may have destroyed is still the object it was: its slot in the engine's
+        // object array still holds it, it isn't on its way out, and it's still of the class it was.
+        inline auto object_alive(UObject* o, UClass* was) -> bool
+        {
+            if (!o) return false;
+            int32_t index = o->GetInternalIndex();
+            if (index < 0 || index >= RC::Unreal::UObjectArray::GetNumElements()) return false;
+            auto* item = RC::Unreal::UObjectArray::IndexToObject(index);
+            if (!item || item->GetUObject() != o || !item->IsValid(false)) return false;
+            return !was || o->GetClassPrivate() == was;
+        }
+    } // namespace detail
 
     // Whether an object is of a class (by its path), or a subclass.
     inline auto is_a(UObject* o, const TCHAR* class_path) -> bool

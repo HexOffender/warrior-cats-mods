@@ -624,9 +624,14 @@ def _open_pause(agent):
     return False
 
 
-def _walk_to_tab(agent, title, tries=8, key="Two", screen=PAUSE):
-    """Press a tab key (Two for the next tab, One for the one before) until the screen's navigation is on the
-    tab with `title`."""
+# The game's keys for the next tab and the one before on the keyboard: the arrows since build 26337109 (its tab
+# row shows their pictures; 1 and 2 moved nothing, seen 2026-11-03), 1 and 2 before it.
+NEXT_TAB, PREV_TAB = "Right", "Left"
+
+
+def _walk_to_tab(agent, title, tries=8, key=NEXT_TAB, screen=PAUSE):
+    """Press a tab key (NEXT_TAB for the next tab, PREV_TAB for the one before) until the screen's navigation is
+    on the tab with `title`."""
     for _ in range(tries):
         name = _screen_current(agent, screen)
         if name and agent.lua(f'local s = {screen} local c = s.CurrentNav.CurrentControl return c.Text:ToString()') == title:
@@ -696,7 +701,7 @@ def test_ui_tab(agent):
         assert v["ui.texts"] >= 1 and v["ui.last_text"] == "Otterpaw", v
         # Back to the game's first tab: its panel shows again, the page is gone.
         for _ in range(8):
-            agent.key("One")
+            agent.key(PREV_TAB)
             time.sleep(0.3)
         v = _request(agent, "ui_snapshot")["values"]
         assert v["ui.tab.active"] is False and v["ui.screen.current"] == "mcGuiTabGeneral", v
@@ -729,7 +734,7 @@ def test_ui_inventory_tab(agent):
         state = _page_state(agent, INVENTORY)
         assert state["showing"] <= FIXTURES and state["cursor"] is True, state
         agent.shot("ui-inventory-tab", scale=0.5)
-        assert _walk_to_tab(agent, "Consumable", tries=8, key="One", screen=INVENTORY), _screen_current(agent, INVENTORY)
+        assert _walk_to_tab(agent, "Consumable", tries=8, key=PREV_TAB, screen=INVENTORY), _screen_current(agent, INVENTORY)
         time.sleep(0.5)
         state = _page_state(agent, INVENTORY)
         assert "CanvasGrids" in state["showing"] and state["cursor"] is False, state
@@ -795,7 +800,7 @@ def test_ui_lua(agent):
         agent.shot("ui-lua-tab", scale=0.5)
         # Back to the SDK tab with the tab key the other way, through whatever tabs other mods have between: the
         # tab leaving gives the mouse and the panels back, the one arriving takes them, and keeps them.
-        assert _walk_to_tab(agent, "SDK", tries=10, key="One"), _screen_current(agent)
+        assert _walk_to_tab(agent, "SDK", tries=10, key=PREV_TAB), _screen_current(agent)
         time.sleep(0.8)
         state = _page_state(agent)
         assert state["showing"] <= FIXTURES and state["cursor"] is True and set(state["fades"]) == {3}, state
@@ -804,3 +809,198 @@ def test_ui_lua(agent):
         time.sleep(1)
         agent.lua("WCModsCpp.ui.remove_tab('lua-tab') WCModsCpp.ui.remove_overlay('lua-test')")
     assert agent.lua("local t = WCModsCpp.ui.tabs() for _, id in ipairs(t) do if id == 'lua-tab' then return false end end return true")
+
+
+# ---------- the game's native functions, its commands, the sky, sounds, animations and saving (test_native.cpp) ----------
+ITEM = "Gameplay.Inventory.Consumable.SmallCatnip"   # added and taken away again
+SKY = ("local sky = Game.find('BP_DayNightSky_C') local f = sky:GetExponentialHeightFog() "
+       "local l = sky:GetDirectionLightComponent() return { fog = f.FogDensity, light = l.Intensity }")
+
+
+def _phase(agent, what):
+    """One of test_native.cpp's phases, run with none of its checks failing: its values."""
+    r = _request(agent, what)
+    assert not _failed(r, what), _failed(r, what)
+    return r["values"]
+
+
+def _offsets(agent):
+    with open(os.path.join(agent.cfg.ue4ss_mods_dir, "shared", "WCModsGame", "offsets.json"), encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_path(name):
+    return os.path.join(os.environ["LOCALAPPDATA"], "Wrc", "Saved", "SaveGames", name)
+
+
+def _saved_inventory(agent):
+    """The inventory in WrcGame.json, which the game writes at every save, for the cat in play: the slot the file
+    names as its current cat (not the save game's CurrentSaveSlotIndex, which stayed 0 for slot 8's cat)."""
+    with open(_save_path("WrcGame.json"), encoding="utf-8") as f:
+        account = next(iter(json.load(f).values()))
+    slot = account["Shared"]["General"]["CurrentCatSlot"]
+    assert agent.lua("return (Game.save.slotData() or {}).Meta ~= nil"), "Lua's slotData() found no slot"
+    return account[str(slot)]["GameplayProgression"]["State"].get("Inventory", {})
+
+
+def _close(a, b):
+    return all(abs(a[k] - b[k]) <= 1e-4 * max(1.0, abs(b[k])) for k in ("fog", "light"))
+
+
+def _close_screens(agent):
+    """No pause screen and no inventory up: a test that failed with one open leaves it for the next, which
+    then runs without the HUD (the game takes it away while a screen is up) and under the inventory's sky.
+    The inventory is closed as its Back does, the release in a later frame than the press."""
+    assert _close_pause(agent), "the pause screen stayed up"
+    for _ in range(3):
+        if agent.lua(f"return {INVENTORY} == nil"):
+            return
+        for event in (0, 1):
+            agent.lua(f"local s = {INVENTORY} if s then Game.call(s, 'OnListenCommand', 25, {event}, Game.controller()) end return true")
+            time.sleep(0.3)
+        time.sleep(1.0)
+    assert agent.lua(f"return {INVENTORY} == nil"), "the inventory stayed up"
+
+
+def test_native_units(agent):
+    """Core.hpp's pattern check and World.hpp's map reader, on bytes and a map laid out by hand, at init: the
+    code check native_address makes, and the TSet the inventory is, with its slots in use, a bit array on the
+    heap, and what doesn't add up as a map refused."""
+    r = _ready(agent, "init")
+    ran = {c["name"] for c in r["checks"] if c["name"].startswith("native.")}
+    assert {"native.pattern.exact", "native.pattern.wildcards", "native.pattern.differs", "native.pattern.longer_than_the_code",
+            "native.pattern.empty_and_junk", "native.map.in_use", "native.map.heap_bits", "native.map.empty",
+            "native.map.refused", "native.unknown"} <= ran, ran
+    assert not _failed(r, "init"), _failed(r, "init")
+
+
+def test_native_function_and_live_inventory(agent):
+    """native_address finds the game's AddItem where offsets.json says, its code checked against the signed
+    pattern; inventory() reads the game's own map, which is what the game saves: after save_game, WrcGame.json
+    holds those items and no others."""
+    _ready(agent, "world")
+    v = _phase(agent, "native")
+    assert v["native.add_item_rva"] == _offsets(agent)["functions"]["SwtQuestInventoryComponent:AddItem"]["rva"], v
+    assert v["native.inventory_class"] == agent.lua(
+        "return Game.className(Game.get(Game.get(Game.controller(), 'PlayerState'), 'InventoryComponent'))")
+    assert v["native.inventory"], v
+    _phase(agent, "save")
+    assert _saved_inventory(agent) == v["native.inventory"]
+
+
+def test_add_item_through_the_games_code(agent):
+    """add_item puts items in through the game's own AddItem: the count goes up, the HUD's OnItemPickedUp is told
+    by the game (tag, how many, the total) and shows the pickup, and the next save holds it; remove_item takes
+    them away again, and the save follows."""
+    _ready(agent, "world")
+    _close_screens(agent)
+    # The HUD hears the pickup: none while a screen or a travel's fade is up (the test cat stands by a den
+    # entrance, and a stray key from an earlier test can send it travelling).
+    agent.wait_lua("(function() for _, h in ipairs(FindAllOf('GuiHudWrc') or {}) do "
+                   "if h:IsValid() and h:IsInViewport() then return true end end return false end)()", timeout=30)
+    v = _phase(agent, "inventory_add")
+    agent.shot("cpp-sdk-add-item")   # the HUD's "<item> OBTAINED 2"
+    try:
+        assert v["add.after"] == v["add.before"] + 2, v
+        assert (v["add.heard"], v["add.heard_tag"], v["add.heard_quantity"], v["add.heard_total"]) == (1, ITEM, 2, v["add.after"]), v
+        _phase(agent, "save")
+        assert _saved_inventory(agent).get(ITEM) == v["add.after"]
+    finally:
+        r = _phase(agent, "inventory_remove")
+    assert r["remove.before"] == v["add.after"] and r["remove.after"] == v["add.before"], r
+    _phase(agent, "save")
+    assert _saved_inventory(agent).get(ITEM, 0) == v["add.before"]
+
+
+def test_command_opens_a_screen_and_send_closes_it(agent):
+    """command(L"Player_Show_Inventory") opens the inventory as its key does, through the player's input
+    component; ui::close (Button_Back through the screen's own OnListenCommand) closes it. Lua sees both."""
+    _ready(agent, "world")
+    _close_screens(agent)
+    try:
+        _phase(agent, "command_open")
+        agent.wait_lua(f"{INVENTORY} ~= nil", timeout=5)
+        time.sleep(1.0)   # its fade-in
+        agent.shot("cpp-sdk-command-inventory")
+        v = _phase(agent, "command_close")
+        assert v["command.shown"] is True
+        agent.wait_lua(f"{INVENTORY} == nil", timeout=5)
+    finally:
+        _close_screens(agent)
+
+
+def _settle_sky(agent, timeout=10):
+    """Wait until the sky stops changing: a screen closing fades the area's preset back in, and a preset put on
+    meanwhile is mixed into that fade."""
+    last, end = None, time.time() + timeout
+    while time.time() < end:
+        now = agent.lua(SKY)
+        if last and _close(now, last):
+            return
+        last = now
+        time.sleep(1.0)
+
+
+def _near(a, b, start, end):
+    """Each of fog and light within 5% of the way from `start` to `end` of b's."""
+    return all(abs(a[k] - b[k]) <= 0.05 * abs(end[k] - start[k]) for k in ("fog", "light"))
+
+
+def test_sky_presets(agent):
+    """set_sky(L"Night") puts the night preset on and holds it: 3 s later, when the game alone would have faded
+    back to the area's sky, Lua reads C++'s night fog and sun still; sky_follow_area() gives the area's back."""
+    _ready(agent, "world")
+    _close_screens(agent)
+    _settle_sky(agent)
+    v = _phase(agent, "sky")
+    try:
+        assert v["sky.class"] == "BP_DayNightSky_C", v
+        assert not _near(v["sky.night"], v["sky.before"], v["sky.before"], v["sky.night"]), v
+        time.sleep(3.0)
+        night = agent.lua(SKY)
+        assert _near(night, v["sky.night"], v["sky.night"], v["sky.before"]), (night, v["sky.night"], v["sky.before"])
+        agent.shot("cpp-sdk-sky-night")
+    finally:
+        a = _phase(agent, "sky_area")
+    area = agent.lua(SKY)
+    assert _close(area, a["sky.area"]) and _close(area, v["sky.before"]), (area, a, v)
+    agent.shot("cpp-sdk-sky-area")
+
+
+def test_sounds(agent):
+    """sound_ids are the audio manager's AudioEventsInfo (the AudioEvents table's rows), and play_sound plays
+    one by its id, heard everywhere or from a place; an id the game hasn't got plays nothing."""
+    _ready(agent, "world")
+    _close_screens(agent)
+    v = _phase(agent, "sound")
+    count = agent.lua("local n = 0 Game.get(Game.manager('audio'), 'AudioEventsInfo'):ForEach(function() n = n + 1 end) return n")
+    assert v["sound.count"] == count > 300, (v, count)
+    assert v["sound.manager"] == agent.lua("return Game.className(Game.manager('audio'))"), v
+    assert (v["sound.ui"], v["sound.ui_sound"], v["sound.ui_playing"]) == ("AudioComponent", "S_Cue_ui_select", True), v
+    assert v["sound.there_sound"] == "S_Cue_vo_cat1_happy1", v
+
+
+def test_montage(agent):
+    """play_montage plays a row of the cat's animation table by its tag: Lua sees the same montage playing."""
+    _ready(agent, "world")
+    _close_screens(agent)
+    v = _phase(agent, "montage")
+    seen = agent.lua("local ai = Game.player().Mesh:GetAnimInstance() local m = ai:GetCurrentActiveMontage() "
+                     "return { playing = ai:IsAnyMontagePlaying(), montage = m and m:IsValid() and Game.name(m) or false }")
+    assert v["montage.name"] == seen["montage"] == "AM_Meow" and v["montage.playing"] and seen["playing"], (v, seen)
+
+
+def test_save_and_its_hash(agent):
+    """save_game writes the save; save_hash is the Hash the game gave it, as WrcGame.sav's header has it
+    (formats/save.py); and that Hash is next_hash's: the previous Hash, the time of the write and the storage
+    manager's address (the formula read from the code, docs/reverse-engineering.md, "The save")."""
+    import datetime
+    from wcmods.formats import save
+    _ready(agent, "world")
+    v = _phase(agent, "save")
+    old, new = int(v["save.hash_before"]), int(v["save.hash_after"])
+    assert new != old and save.SaveGame.load(_save_path("WrcGame.sav")).hash == new, v
+    found = [(t, who) for t in range(int(v["save.time_before"]), int(v["save.time_after"]) + 1)
+             for who in ("save.storage_address", "save.save_manager_address")
+             if save.next_hash(old, datetime.datetime.fromtimestamp(t, datetime.timezone.utc), int(v[who])) == new]
+    assert [who for _, who in found] == ["save.storage_address"], (v, found)

@@ -38,6 +38,8 @@ namespace t
     auto run_ui() -> void;               // Ui.hpp: every widget, an overlay, the HUD, on the game thread when asked
     auto snapshot_ui() -> void;          // the tab's and page's state and the events so far, into values
     auto teardown_ui() -> void;          // the overlay and the HUD label off again
+    auto run_native_units() -> void;     // Core.hpp's pattern check and World.hpp's map reader, without the game (test_native.cpp)
+    auto run_native_request(const std::string& what) -> bool;   // native, inventory_add, command_open, sky, sound...: false for another
 
     // The after-hook that forges GetConsoleVariableFloatValue's result (test_events.cpp sets it up, run_writes
     // checks it and takes it out).
