@@ -53,7 +53,7 @@ def test_clock_hold_is_one_for_every_script(agent):
     was = agent.lua("return Game.time.seconds()")
     tweaks_on = any("Tweaks" in (p["id"], p["title"]) for p in agent.menu.pages())
     try:
-        assert agent.lua('return Game.time.hold(15 * 3600, "agent")') is True
+        assert agent.lua('return (Game.time.hold(15 * 3600, "agent"))') is True   # (true, nil: the first only)
         time.sleep(3)
         assert agent.lua("local s, who = Game.time.held() return { s = s, who = who }") == {"s": 54000, "who": "agent"}
         assert abs(agent.lua("return Game.time.seconds()") - 15 * 3600) < 120
