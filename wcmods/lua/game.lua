@@ -3178,6 +3178,11 @@ function Game.freshKill.level()
 end
 
 -- ===================================================================================== time of day
+-- UE4SS's shared variables, which every script's Lua state sees (the clock's hold, the quests scripts report).
+local function shared(name) local ok, v = pcall(function() return ModRef:GetSharedVariable(name) end) return ok and v or nil end
+local function share(name, v) pcall(function() ModRef:SetSharedVariable(name, v) end) end
+local function clean(s) return (tostring(s or ""):gsub("[\t\n]", " ")) end
+
 Game.time = {}
 -- The clock: hours, minutes, seconds.
 function Game.time.get()
@@ -3192,6 +3197,33 @@ end
 function Game.time.seconds() return Game.get(Game.gameState(), "WCM_DayTime") end
 function Game.time.setSeconds(s) return Game.set(Game.gameState(), "WCM_DayTime", s % 86400) end
 function Game.time.set(h, m, s) return Game.time.setSeconds((h or 0) * 3600 + (m or 0) * 60 + (s or 0)) end
+
+-- One hold of the clock for every script, so two scripts holding it don't fight over the hour: a shared variable,
+-- "<seconds>\t<who>" ("" for none). The last script to hold it has it, and every script that has held it keeps the
+-- clock at that hour twice a second while your cat is in the world. Game.time.hold(seconds, who) holds it (who:
+-- the script's name, Game.modName by default) and gives back what setting the clock did; Game.time.hold(nil, who)
+-- lets go, of your own hold only. Game.time.held() is the hour held, in seconds, and whose it is; nil for none.
+-- (Game.time.set and setSeconds stay plain writes, which a hold puts back.)
+Game.time.holding = { key = "WCModsGame.clockHold", task = nil }
+function Game.time.held()
+    local s, who = tostring(shared(Game.time.holding.key) or ""):match("^([%d%.]+)\t(.*)$")
+    return tonumber(s), who
+end
+function Game.time.hold(s, who)
+    local h = Game.time.holding
+    who = clean(who or Game.modName or "a script")
+    if not s then
+        if select(2, Game.time.held()) == who then share(h.key, "") end
+        return true
+    end
+    s = s % 86400
+    share(h.key, string.format("%.0f\t%s", s, who))
+    h.task = h.task or Game.every(0.5, function()
+        local at = Game.time.held()
+        if at and Game.cat() then Game.time.setSeconds(at) end
+    end)
+    return Game.time.setSeconds(s)
+end
 
 -- ===================================================================================== quests
 Game.quests = {}
@@ -3256,9 +3288,6 @@ end
 -- again whenever it changes; nil takes it off the page. Each is one line of tab-separated fields: title,
 -- status, objective, progress, by, description (a reader that knows the first five ignores the sixth).
 local QUEST_PREFIX = "WCModsQuests."
-local function shared(name) local ok, v = pcall(function() return ModRef:GetSharedVariable(name) end) return ok and v or nil end
-local function share(name, v) pcall(function() ModRef:SetSharedVariable(name, v) end) end
-local function clean(s) return (tostring(s or ""):gsub("[\t\n]", " ")) end
 function Game.quests.report(id, q)
     id = clean(id)
     local ids, have = {}, false

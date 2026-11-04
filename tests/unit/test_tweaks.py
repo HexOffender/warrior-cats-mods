@@ -40,6 +40,17 @@ def test_every_combination_builds_a_script_that_compiles():
     assert '["time_of_day"] = 18.0' in lua and '["hold_time"] = true' in lua and "local SAVE = nil" in lua
 
 
+def test_the_clock_tweak_shares_the_one_hold():
+    """Tweaks holds the clock through Game.time.hold (one hold for every script) rather than writing the hour on its own
+    timer: it asks when its setting changes, gives way to another's hold, takes the clock back once nobody holds it, and
+    its page says whose hold it is."""
+    lua = tweaks.script(tweaks.merge([tweaks.validate({"hold_time": True, "time_of_day": 9})]))
+    assert 'Game.time.hold(want, "Tweaks")' in lua and "elseif want and Game.time.held() == nil then" in lua
+    assert "if want ~= clock.asked then" in lua and "holdClock()" in lua
+    assert "Game.time.setSeconds(" not in lua
+    assert 'if S.hold_time and heldAt and heldBy ~= "Tweaks" then' in lua and "Held by %s at %02d:%02d for now" in lua
+
+
 def test_unknown_keys_and_bad_values_are_refused_in_words():
     assert tweaks.validate({"_help": "notes stay out", "hold_time": True, "time_of_day": 6}) == {"hold_time": True, "time_of_day": 6.0}
     cases = [

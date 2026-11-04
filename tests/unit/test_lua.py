@@ -559,6 +559,26 @@ def test_items_drop_the_pickups_of_another_save():
     assert 'Game.on("level"' not in listing + hook
 
 
+def test_the_clock_has_one_hold_for_every_script():
+    """Tweaks' Hold the clock and Menu pages' Hold this time each wrote the clock on their own timers, so with both on
+    it flipped between two hours, and with Tweaks' on Menu pages' Morning was undone in half a second. One hold now,
+    in a shared variable: the last to hold it has it, letting go lets go of your own only, and every script that held
+    it keeps the clock at the shared hour. The shared-variable helpers come before Game.time, which uses them."""
+    lua = game.lua()
+    assert lua.index("local function shared(name)") < lua.index("Game.time = {}") < lua.index("function Game.quests.report(")
+    assert lua.count("local function shared(name)") == 1 and lua.count("local function clean(s)") == 1
+    assert 'Game.time.holding = { key = "WCModsGame.clockHold", task = nil }' in lua
+    held = body(lua, "function Game.time.held()", "\nend\n")
+    assert 'tostring(shared(Game.time.holding.key) or ""):match("^([%d%.]+)\\t(.*)$")' in held
+    hold = body(lua, "function Game.time.hold(s, who)", "\n-- ====")
+    assert 'who = clean(who or Game.modName or "a script")' in hold
+    assert 'if select(2, Game.time.held()) == who then share(h.key, "") end' in hold   # only your own
+    assert 'share(h.key, string.format("%.0f\\t%s", s, who))' in hold
+    assert "h.task = h.task or Game.every(0.5, function()" in hold and "if at and Game.cat() then Game.time.setSeconds(at) end" in hold
+    # set and setSeconds stay plain writes
+    assert 'function Game.time.setSeconds(s) return Game.set(Game.gameState(), "WCM_DayTime", s % 86400) end' in lua
+
+
 def test_json_decode_refuses_text_after_the_value():
     """"[] [ {...} ]" read as an empty list, and a Save after threw the rest away. What's left after the value is a
     mistake, inside the pcall (Game.save.file and Game.save.state don't catch errors)."""

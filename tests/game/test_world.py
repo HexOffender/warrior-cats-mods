@@ -1,4 +1,5 @@
-"""The world through WCModsGame: the clock and the fresh-kill pile."""
+"""The world through WCModsGame: the clock, its hold, and the fresh-kill pile."""
+import time
 
 
 def tweaks_clock_off(agent):
@@ -43,3 +44,24 @@ def test_cat_names_from_the_game(agent):
     under prefix id + suffix id: "STR_CAT_NAME1_PAW" is "Woodpaw" (any name in it would do)."""
     got = agent.lua('local N = require("WCModsNames") return { N.name("STR_CAT_NAME1_PAW", ""), N.name("NOT_A_NAME", "_X") }')
     assert got and got[0] == "Woodpaw" and len(got) == 1, got
+
+
+def test_clock_hold_is_one_for_every_script(agent):
+    """One hold of the clock for every script: held at 15:00 by the agent (the bridge's own Lua state), it stays there
+    for 3 s, Tweaks (all-tweaks holds 09:00) giving way; let go, Tweaks takes it back to 09:00. Without all-tweaks, only
+    the first half is checked."""
+    was = agent.lua("return Game.time.seconds()")
+    tweaks_on = any("Tweaks" in (p["id"], p["title"]) for p in agent.menu.pages())
+    try:
+        assert agent.lua('return Game.time.hold(15 * 3600, "agent")') is True
+        time.sleep(3)
+        assert agent.lua("local s, who = Game.time.held() return { s = s, who = who }") == {"s": 54000, "who": "agent"}
+        assert abs(agent.lua("return Game.time.seconds()") - 15 * 3600) < 120
+        assert agent.lua('return Game.time.hold(nil, "agent")') is True
+        if tweaks_on:
+            agent.wait(lambda: agent.lua("return select(2, Game.time.held())") == "Tweaks", 3, "Tweaks to hold the clock again")
+            agent.wait(lambda: abs(agent.lua("return Game.time.seconds()") - 9 * 3600) < 120, 3, "the clock to go back to 09:00")
+    finally:
+        agent.lua('Game.time.hold(nil, "agent") return true')
+        if not tweaks_on:
+            agent.lua(f"Game.time.setSeconds({was})")

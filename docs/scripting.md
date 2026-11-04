@@ -381,6 +381,8 @@ or hidden animal doesn't move its bones until it's in view (the engine's way), t
 |---|---|
 | `Game.time.get()` | The clock: hours, minutes, seconds |
 | `Game.time.seconds()`, `Game.time.setSeconds(s)`, `Game.time.set(h, m, s)` | Seconds into the day (21600 is 6:00); set the clock |
+| `Game.time.hold(s, who)`, `Game.time.hold(nil, who)` | Hold the clock at `s` seconds into the day, for every script: one hold, shared between them, so two scripts holding it don't fight over the hour. The last script to hold it has it, and the clock is put back to that hour twice a second while your cat is in the world. `who` names the holder (the mod's name by default); `hold(nil, who)` lets go of your own hold only. Gives back what setting the clock did. Tweaks' Hold the clock gives way to another script's hold, and takes the clock back once that's let go |
+| `Game.time.held()` | The hour held, in seconds, and whose hold it is (`54000, "Menu pages"`); nil when nobody holds the clock |
 | `Game.freshKill.value()`, `.max()`, `.set(v)`, `.level()` | The camp's fresh-kill pile (0–100), and Full/Abundant/Good/Scarcity/Critical |
 | `Game.freshKill.timer()`, `.decayTime()`, `.setDecayTime(v)` | Seconds since it last went down, and how often it does (90) |
 
