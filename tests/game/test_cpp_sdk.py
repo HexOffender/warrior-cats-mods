@@ -627,8 +627,9 @@ FIXTURES = {"HorizontalBox_23", "CanvasTitle", "CanvasBackground", "mcGuiFooter"
 
 
 def _screen_current(agent, screen=PAUSE):
-    """The screen's current tab control's name, or None without the screen."""
-    return agent.lua(f'local s = {screen} if not s then return nil end return Game.name(s.CurrentNav.CurrentControl)')
+    """The screen's current tab control's name, or None without the screen or a current tab."""
+    return agent.lua(f'local s = {screen} if not s then return nil end local c = s.CurrentNav.CurrentControl '
+                     f'if not c or not c:IsValid() then return nil end return Game.name(c)')
 
 
 def _page_state(agent, screen=PAUSE):
@@ -683,13 +684,24 @@ NEXT_TAB, PREV_TAB = "Right", "Left"
 
 def _walk_to_tab(agent, title, tries=8, key=NEXT_TAB, screen=PAUSE):
     """Press a tab key (NEXT_TAB for the next tab, PREV_TAB for the one before) until the screen's navigation is
-    on the tab with `title`."""
+    on the tab with `title`. On build 26337109 the inventory can open with its item grid holding the selection
+    (no tab current, the arrows moving among the items): Up goes to its tab row first. Each press waits (2 s at
+    most) for the tab to change before the next: behind other windows the game ticks slowly, and a walk that
+    pressed again too soon went past the tab."""
     for _ in range(tries):
         name = _screen_current(agent, screen)
+        if name is None and agent.lua(f'return {screen} ~= nil'):
+            agent.key("Up")
+            time.sleep(0.4)
+            continue
         if name and agent.lua(f'local s = {screen} local c = s.CurrentNav.CurrentControl return c.Text:ToString()') == title:
             return True
         agent.key(key)
-        time.sleep(0.4)
+        end = time.time() + 2
+        time.sleep(0.3)
+        while time.time() < end and _screen_current(agent, screen) == name:
+            time.sleep(0.2)
+        time.sleep(0.2)
     return False
 
 
@@ -699,6 +711,8 @@ def test_ui_widgets(agent):
     assert _close_pause(agent), "the pause screen stayed up"   # ui::screen() is checked to find none
     r = _request(agent, "ui")
     assert not _failed(r, "ui"), _failed(r, "ui")
+    ran = {c["name"] for c in r["checks"]}
+    assert {"ui.arrows.row_place", "ui.arrows.row_place_nested", "ui.arrows.controls", "ui.slider.unlocked"} <= ran, ran
     v = r["values"]
     assert v["ui.widget.kinds"] >= 36, v["ui.widget.kinds"]
     assert v["ui.text.font"] == "Amarante", v["ui.text.font"]
@@ -717,7 +731,11 @@ def test_ui_widgets(agent):
 def test_ui_tab(agent):
     """A tab of the mod's own in the pause screen (Ui.hpp's ui::tab): the game's own tab key reaches it, its page
     shows with every kind of control, the game's panel is hidden meanwhile, the controls' events reach the mod
-    when Lua uses them, and leaving the tab puts the game's panel back."""
+    when Lua uses them, and leaving the tab puts the game's panel back.
+
+    The arrows (the tab keys since build 26337109) while the page has the keyboard: Left and Right move along a row
+    of buttons and, from its ends or a control alone in its row, move the game's tab as on its own tabs; a slider
+    keeps them for its value; the keyboard goes back to the screen with the page."""
     assert _open_pause(agent), "the pause screen didn't open"
     try:
         v = _request(agent, "ui_snapshot")["values"]
@@ -728,6 +746,7 @@ def test_ui_tab(agent):
         time.sleep(0.3)
         v = _request(agent, "ui_snapshot")["values"]
         assert v["ui.tab.active"] is True, v
+        assert v["ui.page.focus"] == "button", v["ui.page.focus"]   # the page has the keyboard: Slate takes the arrows' presses
         drawn = agent.lua(f"""local s = {PAUSE}
             local function drawn(w)
                 while w and w:IsValid() do local v = w:GetVisibility() if v == 1 or v == 2 then return false end w = w:GetParent() end
@@ -751,6 +770,37 @@ def test_ui_tab(agent):
         assert v["ui.toggles"] >= 1 and v["ui.last_toggle"] is False, v
         assert v["ui.changes"] >= 1 and abs(v["ui.last_change"] - 0.8) < 0.01, v
         assert v["ui.texts"] >= 1 and v["ui.last_text"] == "Otterpaw", v
+        # The arrows on the page. A row of two buttons: from the right one, Left moves to the left one and the tab
+        # stays; from the left one, Left leaves the tab for the one before it. (A focus given by a script or the
+        # mouse less than 0.6 s before an arrow counts as the arrow's own move: wait longer.)
+        agent.lua(f"StaticFindObject({v['ui.page.row_b']!r}):SetKeyboardFocus()")
+        time.sleep(0.8)
+        assert _request(agent, "ui_snapshot")["values"]["ui.page.focus"] == "row_b"
+        agent.key(PREV_TAB)
+        time.sleep(0.5)
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.tab.active"] is True and v["ui.page.focus"] == "row_a", (v["ui.tab.active"], v["ui.page.focus"])
+        agent.key(PREV_TAB)
+        time.sleep(0.8)
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.tab.active"] is False and v["ui.screen.current"] == "mcGuiTabBonds", (v["ui.tab.active"], v["ui.screen.current"])
+        # The keyboard went back to the screen with the page: the next arrow reaches the game's tab row itself.
+        agent.key(NEXT_TAB)
+        time.sleep(0.8)
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.tab.active"] is True and v["ui.page.focus"] == "button", (v["ui.tab.active"], v["ui.page.focus"])
+        # A slider keeps Left for its value: the tab stays and the value goes down.
+        agent.lua(f"StaticFindObject({v['ui.page.slider']!r}):SetKeyboardFocus()")
+        time.sleep(0.8)
+        before = v["ui.last_change"]
+        agent.key(PREV_TAB)
+        time.sleep(0.8)
+        v = _request(agent, "ui_snapshot")["values"]
+        assert v["ui.tab.active"] is True and v["ui.page.focus"] == "slider", (v["ui.tab.active"], v["ui.page.focus"])
+        assert v["ui.last_change"] < before - 0.01, (before, v["ui.last_change"])
+        # The button again: Left leaves the tab.
+        agent.lua(f"StaticFindObject({v['ui.page.button']!r}):SetKeyboardFocus()")
+        time.sleep(0.8)
         # Back to the game's first tab: its panel shows again, the page is gone.
         for _ in range(8):
             agent.key(PREV_TAB)
@@ -912,6 +962,30 @@ def _close_screens(agent):
             time.sleep(0.3)
         time.sleep(1.0)
     assert agent.lua(f"return {INVENTORY} == nil"), "the inventory stayed up"
+
+
+def test_unhook_loop(agent):
+    """Events.hpp's unhook, hard: 50 hooks on ClientRestart made and taken off at once, then 20 rounds of a hook on
+    K2_GetActorLocation (called from Blueprints many times a frame) that takes itself off from inside its own
+    callback. The game keeps running and every round's hook went (UE4SS frees a hook taken off later, not while
+    its callbacks run): the C++ SDK's unhook isn't what crashed UE4SS on 2026-11-03."""
+    r = _request(agent, "unhook_loop", timeout=60)
+    assert not _failed(r, "unhook_loop"), _failed(r, "unhook_loop")
+    ran = {c["name"] for c in r["checks"] if c["phase"] == "unhook_loop"}
+    assert {"unhook_loop.made", "unhook_loop.rounds"} <= ran, ran
+    assert r["values"]["unhook_loop.calls"] >= 60, r["values"]["unhook_loop.calls"]   # three calls a round, at least
+    assert agent.lua("return Game.cat() ~= nil")   # still playing
+
+
+def test_ui_arrow_units(agent):
+    """Ui.hpp's rule for an arrow on a tab's page, at init without the game: its release is given to the screen
+    again from a button or check box, never from a slider, number or text box, not when the page hasn't the
+    keyboard, not when the press moved the keyboard along a row, and not when the screen had the press."""
+    r = _ready(agent, "init")
+    ran = {c["name"] for c in r["checks"] if c["name"].startswith("ui.arrows.")}
+    assert {"ui.arrows.passed", "ui.arrows.value_control", "ui.arrows.no_keyboard", "ui.arrows.moved_along_row",
+            "ui.arrows.screen_had_press"} <= ran, ran
+    assert not _failed(r, "init"), _failed(r, "init")
 
 
 def test_native_units(agent):

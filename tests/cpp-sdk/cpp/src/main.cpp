@@ -92,6 +92,7 @@ class CppSdkTest : public wcmods::ModBase
         t::phase("init");
         t::run_core();
         t::run_native_units();
+        t::run_ui_units();
         t::setup_events();
         t::setup_menu();
         t::setup_background();

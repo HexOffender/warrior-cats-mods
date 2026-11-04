@@ -17,7 +17,7 @@ namespace t
         // The page's controls, named for the Python side (results.json carries their paths) to drive through Lua.
         struct Page
         {
-            Widget page, button, check, slider, number, input, choice, progress;
+            Widget page, button, check, slider, number, input, choice, progress, row_a, row_b;
             bool last_toggle{};
             double last_change{};
             std::wstring last_text;
@@ -67,10 +67,28 @@ namespace t
             page.add(ui::labelled(L"Pick", pg.choice));
             page.add(ui::labelled(L"Progress", pg.progress));
             page.add(ui::row({ui::text(L"Left"), ui::text(L"Right")}));
+            // Two buttons side by side: Left and Right move between them, and move the game's tab from the row's ends.
+            pg.row_a = ui::button(L"A");
+            pg.row_b = ui::button(L"B");
+            page.add(ui::row({pg.row_a, pg.row_b}, 20));
             page.add(ui::spacer(10, 30));
             page.add(ui::rect(UiColor::hex(L"#f0c846"), 400, 6));
         }
     } // namespace
+
+    // Whether an arrow's release that reached the screen while a page's control had the keyboard is given to the
+    // screen again, to move the game's tab: yes from a button or check box, never from a slider, number or text
+    // box (which use the arrows), not when the page hasn't the keyboard, not when the press moved the keyboard
+    // along a row, and not when the screen had the press itself (the arrow that brought the player to the tab).
+    auto run_ui_units() -> void
+    {
+        using ui::detail::passes_arrow;
+        expect("ui.arrows.passed", passes_arrow(false, true, false, false));
+        expect("ui.arrows.value_control", !passes_arrow(false, true, true, false));
+        expect("ui.arrows.no_keyboard", !passes_arrow(false, false, false, false) && !passes_arrow(false, false, true, false));
+        expect("ui.arrows.moved_along_row", !passes_arrow(false, true, false, true));
+        expect("ui.arrows.screen_had_press", !passes_arrow(true, true, false, false));
+    }
 
     // At init, off the game thread: registering is all that happens here.
     auto setup_ui() -> void
@@ -261,6 +279,35 @@ namespace t
         expect("set_active", sw.get(L"ActiveWidgetIndex").number() == 1);
         Widget rw = ui::row({ui::text(L"a"), ui::text(L"b")}, 10);
         expect("ui.row", rw.type() == L"HorizontalBox" && rw.count() == 2 && get(rw.child(1).slot().object(), L"Padding.Left").number() == 10);
+        // Where a control sits in its row, as a tab's page tells which controls stop the keyboard at a row's end: a
+        // labelled() control has nothing beside it; in a row of a button, text, a check box and a button, the
+        // middle ones have a control each side and the ends one; a check box grown by labelled() inside a row is
+        // still in the row, through its own box.
+        {
+            Widget col = ui::vbox();
+            Widget lone = ui::button(L"Lone");
+            Widget a = ui::button(L"a"), b = ui::checkbox(), c = ui::button(L"c");
+            col.add(ui::labelled(L"Alone", lone));
+            col.add(ui::row({a, ui::text(L"words"), b, c}));
+            Widget d = ui::button(L"d");
+            Widget grown = ui::checkbox();
+            col.add(ui::row({d, ui::labelled(L"Grown", grown)}));
+            auto place = [&](const Widget& w) { return ui::detail::row_place(col, w); };
+            auto lp = place(lone), ap = place(a), bp = place(b), cp = place(c), dp = place(d), gp = place(grown);
+            expect("ui.arrows.row_place", !lp.left && !lp.right && !ap.left && ap.right && bp.left && bp.right && cp.left && !cp.right);
+            expect("ui.arrows.row_place_nested", !dp.left && dp.right && gp.left && !gp.right);
+        }
+        // Which controls take the keyboard and which keep Left and Right for themselves, as a tab's page decides
+        // whether an arrow moves the game's tab: a button doesn't; ui::slider's slider (no Enter lock), a number
+        // box and a text box do; a slider that must be locked with Enter first doesn't; text takes no keyboard.
+        {
+            Widget locked = ui::widget(L"Slider");
+            expect("ui.arrows.controls", ui::detail::keyboard_control(ui::button(L"b").object()) && !ui::detail::uses_arrows(ui::button(L"b").object())
+                                             && ui::detail::uses_arrows(ui::slider(0).object()) && ui::detail::uses_arrows(ui::number(1).object())
+                                             && ui::detail::uses_arrows(ui::input(L"x").object()) && !ui::detail::keyboard_control(ui::text(L"t").object())
+                                             && ui::detail::keyboard_control(locked.object()) && !ui::detail::uses_arrows(locked.object()));
+            expect("ui.slider.unlocked", !ui::slider(0).get(L"RequiresControllerLock").boolean() && locked.get(L"RequiresControllerLock").boolean());
+        }
         float grow = ui::theme().control_scale;
         auto close_to = [](double a, double b) { return std::abs(a - b) < 1e-3; };   // floats the widgets store, doubles computed here
         Widget lb = ui::labelled(L"Label", ui::slider(0), 300);
@@ -386,6 +433,18 @@ namespace t
         value("ui.page.input", path_of(pg.input));
         value("ui.page.choice", path_of(pg.choice));
         value("ui.page.panel", path_of(pg.page));
+        value("ui.page.row_a", path_of(pg.row_a));
+        value("ui.page.row_b", path_of(pg.row_b));
+        // Which of the page's controls has the keyboard now (Slate's focus), by the name the Python side knows it by.
+        std::string focus;
+        for (auto& [label, w] : std::vector<std::pair<std::string, Widget>>{{"button", pg.button}, {"check", pg.check}, {"slider", pg.slider},
+                                                                            {"number", pg.number}, {"input", pg.input}, {"choice", pg.choice},
+                                                                            {"row_a", pg.row_a}, {"row_b", pg.row_b}})
+        {
+            auto r = w ? call_reflected(w.object(), STR("HasKeyboardFocus")) : std::nullopt;
+            if (r && r->get(L"ReturnValue").boolean()) focus = label;
+        }
+        value("ui.page.focus", focus.empty() ? Json() : Json(focus));
         value("ui.clicks", clicks.load());
         value("ui.toggles", toggles.load());
         value("ui.last_toggle", pg.last_toggle);

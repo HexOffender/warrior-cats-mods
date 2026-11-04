@@ -21,12 +21,14 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <functional>
 #include <initializer_list>
 #include <map>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -1102,6 +1104,9 @@ namespace wcmods
             s.set_range(lo, hi, step);
             s.set_value(value);
             s.set_tint(theme().accent);
+            // The engine's slider takes Left and Right only after Enter locks it (made for a controller); with the
+            // keyboard it moves at once, as a slider on a computer does.
+            s.set(L"RequiresControllerLock", Value::of(false));
             return s;
         }
         // A number box you can drag or type in.
@@ -1573,7 +1578,9 @@ namespace wcmods
             Margin inset{200, 440, 200, 340}; // the page's room from the screen's edges, in the game's units
             bool hide_game_panels{true};     // hide the game's panels while the page shows
             bool scroll{true};               // the page scrolls when it's taller than its room
-            bool focus{true};                // give the page the keyboard when it shows (its controls take arrows and Enter)
+            bool focus{true};                // give the page the keyboard when it shows (once the key that brought the player there
+                                             // is released): Up, Down and Enter move among and use its controls; Left and Right move
+                                             // along a row of them, else the game's tab (but on a slider, number or text box)
             bool mouse{true};                // show the cursor and let the page take the mouse while it shows (the game's
                                              // menus hide it); clicks, the wheel and the scroll bar work. Put back after
         };
@@ -1594,6 +1601,12 @@ namespace wcmods
                 bool active{};
                 std::vector<std::pair<Widget, Visibility>> hidden;   // the game's panels this page hid, and how they were
                 std::vector<std::pair<Widget, Visibility>> passed;   // the game's fade widgets letting the mouse through, and how they were
+                std::vector<Widget> ruled;   // the page's controls told not to move the keyboard out of their row (the arrows are the tab keys)
+                Widget keyboard;   // the page's control that had the keyboard at the end of the last frame
+                std::chrono::steady_clock::time_point keyboard_since{};   // when it took it (zero: the page gave it, showing)
+                std::chrono::steady_clock::time_point last_arrow{};       // the last arrow's release the screen got
+                bool focus_pending{};   // the page takes the keyboard once no arrow is held (see "the arrows on a page")
+                std::chrono::steady_clock::time_point focus_asked{};
                 bool cursor_was{};  // whether the game showed the cursor before the page took the mouse
                 int generation{};   // how many times it has been built (a new screen each time)
             };
@@ -1602,6 +1615,8 @@ namespace wcmods
                 std::mutex lock;
                 std::vector<std::shared_ptr<Tab>> tabs;
                 bool started{};
+                std::mutex presses_lock;
+                std::map<UObject*, std::set<std::wstring>> presses;   // per screen with a tab: arrows pressed, not yet released
             };
             inline auto tabs_state() -> Tabs&
             {
@@ -1636,6 +1651,154 @@ namespace wcmods
                     if (*reinterpret_cast<UObject**>(helper.GetRawPtr(i)) == control) helper.RemoveValues(i, 1);
             }
             inline auto nav_current(UObject* screen) -> UObject* { return get(screen, L"CurrentNav.CurrentControl").object; }
+
+            // ----- the arrows on a page
+            // Since build 26337109 the arrows are the pause screen's tab keys (the screen's Button_Left and
+            // Button_Right, its LinearNavigation of tabs moving on the press), and they're also the keys the engine
+            // (Slate) moves the keyboard between controls with. While a page's control has the keyboard, Slate takes
+            // every arrow's press and only the release reaches the screen, so the game's tab row stayed put and the
+            // player couldn't leave the page (seen in game, 2026-11-04). So Left and Right move along a row of the
+            // page's controls (a ui::row of buttons) and, from a row's end or a control alone in its row, move the
+            // game's tab as on its own tabs: the controls at a row's ends are told not to move the keyboard out of
+            // the row (Slate's navigation rule Stop, which also keeps it in the page), and the release of a Left or
+            // Right whose press the screen never got (Slate took it) and didn't move the keyboard is given to the
+            // screen again as a whole command (ui::send). The screen's commands are watched for the presses it gets:
+            // the release of the arrow that brought the player onto the tab, whose press the screen had, isn't
+            // passed on. Which control has the keyboard is looked at every frame while a page shows, as the presses
+            // Slate takes can't be seen. The page takes the keyboard only once the arrow that brought the player to
+            // the tab is released (1 s at most): taken while a key is held, the engine sends that key's release at
+            // once (it lets go of held keys when the game's viewport loses the keyboard) and the real release came
+            // after it, which looked like a press Slate took, and moved the tab a second time (seen in game).
+            // A control that uses Left and Right itself keeps them: a slider, a number box, a text box. Up and Down
+            // move between the page's rows, Enter uses. (Tab doesn't move the keyboard in this game.)
+
+            // A control that changes its value or moves its caret with Left and Right: a slider that needn't be
+            // locked with Enter first (ui::slider's), a number box, a text box.
+            inline auto uses_arrows(UObject* o) -> bool
+            {
+                if (wcmods::is_a(o, STR("/Script/UMG.Slider"))) return !get(o, L"RequiresControllerLock").boolean();
+                for (const TCHAR* c : {STR("/Script/UMG.SpinBox"), STR("/Script/UMG.EditableText"), STR("/Script/UMG.EditableTextBox"),
+                                       STR("/Script/UMG.MultiLineEditableText"), STR("/Script/UMG.MultiLineEditableTextBox")})
+                    if (wcmods::is_a(o, c)) return true;
+                return false;
+            }
+            // A control that takes the keyboard (Slate's focus): the engine's own, not the game's widgets.
+            inline auto keyboard_control(UObject* o) -> bool
+            {
+                for (const TCHAR* c : {STR("/Script/UMG.Button"), STR("/Script/UMG.CheckBox"), STR("/Script/UMG.ComboBoxString"),
+                                       STR("/Script/UMG.Slider"), STR("/Script/UMG.SpinBox"), STR("/Script/UMG.EditableText"),
+                                       STR("/Script/UMG.EditableTextBox"), STR("/Script/UMG.MultiLineEditableText"),
+                                       STR("/Script/UMG.MultiLineEditableTextBox"), STR("/Script/UMG.InputKeySelector")})
+                    if (wcmods::is_a(o, c)) return true;
+                return false;
+            }
+            // Whether another control sits left of one, and right of it, in any horizontal box around it inside the
+            // page (a ui::row of buttons, a row with a labelled() control in it); a labelled() row alone has only the
+            // one control.
+            struct RowPlace
+            {
+                bool left{};
+                bool right{};
+            };
+            inline auto row_place(const Widget& page, const Widget& control) -> RowPlace
+            {
+                auto has_control = [](const Widget& w) {
+                    if (w.visibility() == Visibility::Collapsed) return false;
+                    bool found = keyboard_control(w.object());
+                    if (!found)
+                        w.walk([&](const Widget& c) {
+                            if (c.visibility() != Visibility::Collapsed && keyboard_control(c.object())) found = true;
+                            return !found;
+                        });
+                    return found;
+                };
+                RowPlace place;
+                Widget child = control;
+                Widget up = control.parent();
+                for (int depth = 0; up && !(up == page) && depth < 32; ++depth)
+                {
+                    if (up.is_a(STR("/Script/UMG.HorizontalBox")))
+                    {
+                        bool past = false;
+                        for (const Widget& k : up.children())
+                        {
+                            if (k == child)
+                            {
+                                past = true;
+                                continue;
+                            }
+                            if (!has_control(k)) continue;
+                            (past ? place.right : place.left) = true;
+                        }
+                    }
+                    child = up;
+                    up = up.parent();
+                }
+                return place;
+            }
+            // The page's control that has the keyboard now, or an empty Widget.
+            inline auto focused_control(const Widget& page) -> Widget
+            {
+                if (!page || !page.focused()) return {};
+                Widget found;
+                page.walk([&](const Widget& w) {
+                    if (!keyboard_control(w.object())) return true;
+                    auto r = call_reflected(w.object(), STR("HasKeyboardFocus"));
+                    if (r && r->get(L"ReturnValue").boolean()) found = w;
+                    return !found;
+                });
+                return found;
+            }
+            // Whether the release of a Left or Right that reached the screen is given to it again as a whole
+            // command: when the screen never got its press (Slate took it), one of the page's controls has the
+            // keyboard, it isn't one that uses the arrows, and the press didn't move the keyboard (along a row).
+            inline auto passes_arrow(bool screen_got_press, bool page_has_keyboard, bool control_uses_arrows, bool press_moved_keyboard) -> bool
+            {
+                return !screen_got_press && page_has_keyboard && !control_uses_arrows && !press_moved_keyboard;
+            }
+            // Whether the keyboard moved since the arrow before (a Left or Right moving along a row): seen this
+            // frame (the press and release came in one frame), or by the look every frame since that arrow's
+            // release, within the last 0.6 s (longer ago it was the mouse or the mod, not this press).
+            inline auto press_moved(const Tab& t, const Widget& now_on, std::chrono::steady_clock::time_point now) -> bool
+            {
+                if (!(now_on == t.keyboard)) return true;
+                return t.keyboard_since > t.last_arrow && now - t.keyboard_since < std::chrono::milliseconds(600);
+            }
+            // Which control has the keyboard, looked at every frame while the page shows.
+            inline auto track_keyboard(Tab& t) -> void
+            {
+                Widget now_on = focused_control(t.page);
+                if (now_on == t.keyboard) return;
+                t.keyboard = now_on;
+                t.keyboard_since = std::chrono::steady_clock::now();
+            }
+            // The controls at a row's ends (and a control alone in its row) don't move the keyboard out of the row
+            // sideways (Slate's navigation rule Stop for Left or Right): done for the controls the page has now, and
+            // again for ones added later (keep_tab).
+            inline auto stop_at_row_ends(Tab& t) -> void
+            {
+                if (!t.page) return;
+                std::erase_if(t.ruled, [](const Widget& w) { return !w; });
+                std::vector<Widget> controls;
+                t.page.walk([&](const Widget& w) {
+                    if (keyboard_control(w.object())) controls.push_back(w);
+                    return true;
+                });
+                for (const Widget& c : controls)
+                {
+                    if (std::find(t.ruled.begin(), t.ruled.end(), c) != t.ruled.end()) continue;
+                    RowPlace place = row_place(t.page, c);
+                    auto stop = [&](const wchar_t* direction) {
+                        c.call(STR("SetNavigationRuleBase"), [&](Params& p) {
+                            p.set(L"Direction", Value::of(std::wstring_view(direction)));
+                            p.set(L"Rule", Value::of(std::wstring_view(L"Stop")));
+                        });
+                    };
+                    if (!place.left) stop(L"Left");
+                    if (!place.right) stop(L"Right");
+                    t.ruled.push_back(c);
+                }
+            }
 
             // What a page covers while it shows, to hide meanwhile: every child of the tab row's area that the screen
             // put there (the panels its tabs switch between, in whatever it keeps them in; what a tab adds beside
@@ -1755,6 +1918,7 @@ namespace wcmods
                 t.page = page;
                 t.active = false;
                 t.hidden.clear();
+                t.ruled.clear();
                 t.generation++;
                 if (t.build) wcmods::detail::guarded(L"a tab's page", [&] { t.build(page); });
                 return true;
@@ -1772,6 +1936,33 @@ namespace wcmods
                     p.set(L"bHideCursorDuringCapture", false);
                     p.set(L"bFlushInput", flush);
                 });
+            }
+
+            // Whether the screen got an arrow's press whose release hasn't come yet (an arrow held).
+            inline auto arrow_held(UObject* screen) -> bool
+            {
+                std::lock_guard lock(tabs_state().presses_lock);
+                auto it = tabs_state().presses.find(screen);
+                return it != tabs_state().presses.end() && !it->second.empty();
+            }
+            // The keyboard to the page's first control that takes it and leaves the arrows to the tab row: a button,
+            // a check box or a drop-down (a text box would take Backspace and the arrows as typing, a slider or
+            // number box Left and Right as its value); with none, it stays with the screen. Given once no arrow is
+            // held, or 1 s after the page showed whatever the keys.
+            inline auto give_keyboard_when_free(Tab& t) -> void
+            {
+                if (!t.focus_pending) return;
+                if (arrow_held(t.in_screen) && std::chrono::steady_clock::now() - t.focus_asked < std::chrono::seconds(1)) return;
+                t.focus_pending = false;
+                Widget first;
+                t.page.walk([&](const Widget& w) {
+                    UObject* o = w.object();
+                    if (keyboard_control(o) && !uses_arrows(o) && w.visibility() != Visibility::Collapsed) first = w;
+                    return !first;
+                });
+                if (first) first.focus();
+                t.keyboard = first;   // given by the page: not a move a press made
+                t.keyboard_since = {};
             }
 
             inline auto activate_tab(Tab& t, bool on) -> void
@@ -1813,24 +2004,22 @@ namespace wcmods
                         }
                     }
                     t.frame.show_passive();
+                    stop_at_row_ends(t);
                     if (t.options.focus)
                     {
-                        // The first control in the page that takes the keyboard without eating the screen's keys (a
-                        // text box would take Backspace and the tab keys as typing), else the page itself.
-                        Widget first;
-                        t.page.walk([&](const Widget& w) {
-                            UObject* o = w.object();
-                            if (wcmods::is_a(o, STR("/Script/UMG.Button")) || wcmods::is_a(o, STR("/Script/UMG.CheckBox")) || wcmods::is_a(o, STR("/Script/UMG.Slider"))
-                                || wcmods::is_a(o, STR("/Script/UMG.ComboBoxString")))
-                                first = w;
-                            return !first;
-                        });
-                        (first ? first : t.page).focus();
+                        t.focus_pending = true;
+                        t.focus_asked = std::chrono::steady_clock::now();
+                        give_keyboard_when_free(t);
                     }
                 }
                 else
                 {
+                    t.focus_pending = false;
+                    // The keyboard back to the game when the page had it, so the screen hears the keys again.
+                    bool had_keyboard = t.page && t.page.focused();
                     t.frame.collapse();
+                    if (had_keyboard)
+                        call_reflected(wcmods::object(STR("/Script/UMG.Default__WidgetBlueprintLibrary")), STR("SetFocusToGameViewport"));
                     for (auto& [p, was] : t.hidden) p.set_visibility(was);
                     t.hidden.clear();
                     if (t.options.mouse)
@@ -1838,7 +2027,10 @@ namespace wcmods
                         for (auto& [w, was] : t.passed) w.set_visibility(was);
                         t.passed.clear();
                         show_cursor(t.cursor_was);
-                        game_and_ui_input(true);
+                        // Not flushed: the arrow that moves the player off the tab is still held, and a flush sent its
+                        // release at once, before the real one, which then looked like a press the next page's control
+                        // took and moved the tab again (seen in game, 2026-11-04).
+                        game_and_ui_input(false);
                     }
                 }
             }
@@ -1871,6 +2063,7 @@ namespace wcmods
                         if (now == Visibility::Visible || now == Visibility::SelfHitTestInvisible) w.set_visibility(Visibility::HitTestInvisible);
                     }
                 }
+                stop_at_row_ends(t);   // controls the mod added to the page since it showed
             }
 
             inline auto tabs_tick(float dt) -> void
@@ -1906,17 +2099,28 @@ namespace wcmods
                         {
                             // The screen it was built in went (or its tab did): forget it, build again on the next.
                             if (t->active) activate_tab(*t, false);
+                            {
+                                std::lock_guard lock(tabs_state().presses_lock);
+                                tabs_state().presses.erase(t->in_screen);
+                            }
                             t->in_screen = nullptr;
                             t->button = t->frame = t->page = {};
                             t->active = false;
                             t->hidden.clear();
                             t->passed.clear();
+                            t->ruled.clear();
+                            t->keyboard = {};
                             continue;
                         }
                         bool on = nav_current(t->in_screen) == t->button.object();
                         if (!on) activate_tab(*t, false);
                         else if (!t->active) arriving.push_back(t);
-                        else if (search) keep_tab(*t);
+                        else
+                        {
+                            if (t->focus_pending) give_keyboard_when_free(*t);
+                            track_keyboard(*t);
+                            if (search) keep_tab(*t);
+                        }
                         continue;
                     }
                     if (!search) continue;
@@ -1936,7 +2140,52 @@ namespace wcmods
                     std::lock_guard lock(ts.lock);
                     if (!ts.started) ts.started = start = true;
                 }
-                if (start) every_frame([](float dt) { wcmods::detail::guarded(L"ui tabs", [&] { tabs_tick(dt); }); });
+                if (!start) return;
+                every_frame([](float dt) { wcmods::detail::guarded(L"ui tabs", [&] { tabs_tick(dt); }); });
+                // An arrow's release that reached a screen while one of its pages had the keyboard (see "the arrows on
+                // a page" above): given to the screen again as a whole command, as the press would have been.
+                on_function(STR("/Script/SwtEngine.SwtScreen:OnListenCommand"), [](Call& call) {
+                    UObject* screen = call.self();
+                    std::shared_ptr<Tab> active;
+                    bool ours = false;
+                    {
+                        std::lock_guard lock(tabs_state().lock);
+                        for (auto& t : tabs_state().tabs)
+                        {
+                            if (t->in_screen != screen || !t->page) continue;
+                            ours = true;
+                            if (t->active) active = t;
+                        }
+                    }
+                    if (!ours || !call.has_params()) return;   // not a screen with a tab of ours built in it
+                    int event = static_cast<int>(call.param(1).number());   // EInputEvent: IE_Pressed 0, IE_Released 1
+                    std::wstring command = call.param(0).text;
+                    bool side = command == L"Button_Left" || command == L"Button_Right";
+                    if (!side && command != L"Button_Up" && command != L"Button_Down") return;
+                    bool got_press = false;
+                    {
+                        std::lock_guard lock(tabs_state().presses_lock);
+                        auto& presses = tabs_state().presses;
+                        if (event == 0)
+                        {
+                            presses[screen].insert(command);
+                            return;
+                        }
+                        if (event != 1) return;
+                        auto it = presses.find(screen);
+                        if (it != presses.end())
+                        {
+                            got_press = it->second.erase(command) > 0;
+                            if (it->second.empty()) presses.erase(it);
+                        }
+                    }
+                    if (!active) return;
+                    auto now = std::chrono::steady_clock::now();
+                    Widget control = focused_control(active->page);
+                    bool moved = press_moved(*active, control, now);
+                    active->last_arrow = now;
+                    if (side && passes_arrow(got_press, bool(control), control && uses_arrows(control.object()), moved)) ui::send(Widget(screen), command);
+                });
             }
         } // namespace detail
 

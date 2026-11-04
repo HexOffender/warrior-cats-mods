@@ -5,6 +5,9 @@
 
 #include <atomic>
 #include <filesystem>
+#include <format>
+#include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -19,6 +22,9 @@ namespace t
         std::atomic<double> native_x{}, native_y{}, native_z{};   // the last ReturnValue read in the native hook, with inputs
         std::atomic<double> bytecode_x{}, bytecode_y{}, bytecode_z{};   // ... and from a bytecode call of the player's
         HookId native_hook{};
+        // The unhook stress: hooks on ClientRestart made and taken off at once, and hooks on a function the game
+        // calls many times a frame that take themselves off from inside their own callback, a round a frame.
+        std::atomic<int> loop_made{}, loop_rounds{}, loop_calls{}, loop_inside_unhooks{};
         std::atomic<bool> frames_on_game_thread{true}, dt_positive{true};
         TimerId cancelled_inside{}, cancelled_outside{};
         std::vector<std::string> levels;
@@ -71,6 +77,57 @@ namespace t
             {
                 snapshot_items();
                 done("items");
+            }
+            else if (what == "unhook_loop")
+            {
+                // 50 hooks on ClientRestart made and taken off at once; then 20 rounds, one a frame, of a hook on
+                // K2_GetActorLocation (called from Blueprints' bytecode many times a frame) that takes itself off
+                // from inside its own callback on its third call. UE4SS marks a hook taken off and frees it later
+                // (its callback garbage collector), so neither should touch freed memory.
+                phase("unhook_loop");
+                for (int i = 0; i < 50; ++i)
+                {
+                    HookId id = on_function(STR("/Script/Engine.PlayerController:ClientRestart"), [](Call&) {});
+                    if (id) loop_made++;
+                    unhook(id);
+                }
+                expect("unhook_loop.made", loop_made == 50, t::text(std::format(L"{} of 50", loop_made.load())));
+                auto round = std::make_shared<std::function<void()>>();
+                *round = [round] {
+                    if (loop_rounds >= 20)
+                    {
+                        expect("unhook_loop.rounds", loop_inside_unhooks == 20,
+                               t::text(std::format(L"{} of 20 taken off inside, {} calls", loop_inside_unhooks.load(), loop_calls.load())));
+                        value("unhook_loop.calls", loop_calls.load());
+                        done("unhook_loop");
+                        return;
+                    }
+                    loop_rounds++;
+                    // This round's hook, by its own id; the next round starts once it has taken itself off (1 s at most).
+                    auto id = std::make_shared<HookId>(0);
+                    auto seen = std::make_shared<int>(0);
+                    auto gone = std::make_shared<bool>(false);
+                    *id = on_function(STR("/Script/Engine.Actor:K2_GetActorLocation"), [id, seen, gone](Call&) {
+                        loop_calls++;
+                        if (++*seen != 3) return;
+                        unhook(*id);
+                        *gone = true;
+                        loop_inside_unhooks++;
+                    });
+                    auto started = std::make_shared<int>(0);
+                    auto wait = std::make_shared<std::function<void()>>();
+                    *wait = [round, gone, started, wait, id] {
+                        if (!*gone && ++*started < 20)
+                        {
+                            after(0.05, [wait] { (*wait)(); });
+                            return;
+                        }
+                        if (!*gone) unhook(*id);   // not called three times in a second: taken off from outside
+                        (*round)();
+                    };
+                    after(0.05, [wait] { (*wait)(); });
+                };
+                (*round)();
             }
             else if (what == "ui")
             {

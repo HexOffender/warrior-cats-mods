@@ -300,10 +300,11 @@ test cat Emberpaw, the save's slot 8). The suite ran nine times on the way; on t
   sky in about 5 s; `sky_follow_area()` gave the area's back (1.8, 9).
 - **The tab keys moved.** In the pause screen the arrow keys move between tabs now (the row shows their
   pictures), and 1 and 2 do nothing. The suite's three older tab tests (`test_ui_tab`, `test_ui_inventory_tab`,
-  `test_ui_lua`) walk to the SDK tab with the arrows since, and its page shows, but can't walk back: the page
-  holds the keyboard, and the arrows move among its controls. They fail on this build until that's settled.
-- **Not explained:** three crashes inside UE4SS's own code that day (no mod's code on the stack), two while
-  the game started into the forest and one while it sat idle in the forest with the player's Lua mods on.
+  `test_ui_lua`) walked to the SDK tab with the arrows since, and its page showed, but couldn't walk back: the
+  page held the keyboard, and the arrows moved among its controls. Settled on 2026-11-04 (below).
+- **Three crashes inside UE4SS's own code** that day (no mod's code on the stack), two while the game started
+  into the forest and one while it sat idle in the forest with the player's Lua mods on. Read on 2026-11-04
+  (below): inside UE4SS's Lua runtime.
 - **Sounds and the game's own montages:** `play_sound(L"ui_select")` played `S_Cue_ui_select` and
   `play_sound(L"vo_cat1_happy1", at the cat)` `S_Cue_vo_cat1_happy1` (the audio manager holds 390 ids, as
   Lua counts them); `play_montage(cat, L"Animation.Exploration.Meow")` played `AM_Meow`, which Lua saw as the
@@ -316,6 +317,31 @@ test cat Emberpaw, the save's slot 8). The suite ran nine times on the way; on t
   live one). So `Game.save.slotData()`, `Game.items.list()` and `Cat:traits()` (and the C++ SDK's `slot_data()`,
   `items()` and `cat_traits()`) had read the first cat's slot for any other cat: Emberpaw's traits came back
   Brave and Energetic, where the pause screen shows Ambitious and Curious. They follow the file now.
+
+**2026-11-04, build 26337109: the arrows on a tab's page, and unhooking** (the branch `claude/cpp-tab-keys`,
+`tests/game/test_cpp_sdk.py`, the test cat Emberpaw):
+- **A tab's page and the arrows** (`tests/game/test_cpp_sdk.py`: `test_ui_tab`, `test_ui_inventory_tab`,
+  `test_ui_lua`, `test_ui_widgets` and `test_ui_arrow_units` passed): the SDK tab's page had the keyboard on its
+  button as it showed; with the right button of a row of two holding it, Left moved the keyboard to the left
+  one and the tab stayed; Left again moved the game's tab to Bonds, and the next arrow reached the tab row
+  itself; with the slider holding it, Left lowered its value and the tab stayed; from the button, Left walked
+  back to General. In the inventory, Up from the item grid, then Right to the SDK tab and Left back to
+  Consumable. From a Lua tab after the SDK tab, one Left stopped on the SDK tab (before the fix it went on to
+  Bonds: the arrow's release came twice, below).
+- **Unhooking, hard** (`test_unhook_loop` passed): 50 hooks on `ClientRestart` made and taken off at once,
+  then 20 rounds of a hook on `K2_GetActorLocation` taking itself off from inside its own callback on its
+  third call (60 calls), and the game played on.
+- **The crashes of 2026-10-28 to 11-04** read from their minidumps with `cdb` (UE4SS 3.0.1's exports name
+  the frames roughly): each is inside UE4SS's Lua runtime. The one of 11-04 08:33: the game called a
+  function a hook was on (`Hook::StartCallbackGarbageCollector`, `HookUStructLink`), UE4SS called a Lua
+  script's callback (`LuaMadeSimple::Lua::call_function`), the Lua interpreter's frames, then one of UE4SS's
+  Lua bindings building a value for the script (`LuaType::auto_construct_object`) read address 0x99. Those
+  of 10-28 20:44 and 11-03 22:53 and 23:49 crashed under the same Lua binding call (UE4SS+0xb9ddd4 on each
+  stack), and four more (10-28 19:28, 19:32 and 20:21, 11-03 23:11) were aborts from inside the Lua runtime,
+  presumably a Lua error with nothing to catch it. No C++ mod's code was on any stack. Which script and which
+  value is unknown: the dumps have no heap. A Lua hook that reads the parameters of a call made from a
+  Blueprint's bytecode reads the caller's frame (SDK.md, "Hooks see every call"), and `Game.hook` reads
+  every parameter before the callback; that's the first suspect for the Lua side's turn.
 
 ## Not yet confirmed in game
 
