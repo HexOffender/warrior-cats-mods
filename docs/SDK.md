@@ -934,8 +934,8 @@ new file can't take its place and the old one can't be put back either, the erro
 `<path>.old`. Files already called `<path>.new` or `<path>.old` are replaced, except a `<path>.old`
 with no `<path>` beside it, which a save that stopped between the renames left and is kept. That save's
 `<path>.new` has what it saved, already read back: a script mod with no `settings.json` reads its
-settings from `settings.json.new` when that holds an object, and puts it in `settings.json`'s place,
-else from `settings.json.old`, and says which in the log. A read-only file is refused. `Game.json.null` (a `null` read from a file) is written `null`; `Menu.list(t)` marks a
+settings from `settings.json.new` when that holds an object (and moves it into `settings.json`'s
+place), else from `settings.json.old`, and says which in the log. A read-only file is refused. `Game.json.null` (a `null` read from a file) is written `null`; `Menu.list(t)` marks a
 table as a JSON list, so an empty one is written `[]`. `Menu.json(value)` gives the JSON text, `Menu.color(hex)` the linear colour the game's
 UI wants, and `Menu.theme` the menu's colours.
 - **Colours:** text is at least 4.5:1 on what it's on, as drawn. `theme.danger` is for text;

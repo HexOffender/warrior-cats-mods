@@ -696,19 +696,21 @@ def test_the_clock_has_one_hold_for_every_script():
     lua = game.lua()
     assert lua.index("local function shared(name)") < lua.index("Game.time = {}") < lua.index("function Game.quests.report(")
     assert lua.count("local function shared(name)") == 1 and lua.count("local function clean(s)") == 1
-    assert 'Game.time.holding = { key = "WCModsGame.clockHold", task = nil, who = nil, STALE = 3 }' in lua
+    assert 'Game.time.holding = { key = "WCModsGame.clockHold", task = nil, who = nil, STALE = 3, LOAD = 60 }' in lua
     read = body(lua, "function Game.time.holding.read()", "\nend\n")
     assert 'match("^(%d+)\\t([^\\t]*)\\t([%d%.]+)$")' in read and "return s, who, tonumber(at)" in read
     assert 'if s and (math.type(s) ~= "integer" or s >= 86400) then s = nil end' in read   # write's %d can take it
     assert 'string.format("%d\\t%s\\t%.3f", s, who, os.clock())' in body(lua, "function Game.time.holding.write(s, who)", "\nend\n")
     held = body(lua, "function Game.time.held()", "\nend\n")
     assert "if s == nil or at == nil or since - at > h.STALE then return nil end" in held   # a bad stamp: none
-    assert "local since = ticks.before\n    if since == nil then\n        since = ticks.last\n        start()\n    end" in held
-    assert "os.clock()" not in held
+    # until two runs: from the load, but no further back than LOAD (an orphan of any age read live through a load)
+    assert "local since = ticks.before\n    if ticks.runs < 2 then\n        since = math.max(ticks.loaded, os.clock() - h.LOAD)\n        start()\n    end" in held
+    assert "ticks.before or os.clock()" not in held and "since = os.clock()" not in held   # never from now
     # ticks.before: when the run of tasks before this one began
     run = body(lua, "local function runTasks()", "\nend\n")
-    assert "local ticks = { last = os.clock(), before = nil, queued = false }" in lua and "lastFrame" not in lua
-    assert run.index("local dt = now - ticks.last") < run.index("ticks.before, ticks.last = ticks.last, now")
+    assert "local ticks = { last = os.clock(), before = nil, runs = 0, queued = false }\nticks.loaded = ticks.last\n" in lua
+    assert "lastFrame" not in lua
+    assert run.index("local dt = now - ticks.last") < run.index("ticks.before, ticks.last, ticks.runs = ticks.last, now, ticks.runs + 1")
     # LoopAsync's way: one run queued at a time
     starts = body(lua, "local function start()", "\nend\n")
     assert "if not ticks.queued then\n                ticks.queued = true" in starts
@@ -902,6 +904,8 @@ def test_a_save_writes_the_whole_file_or_says_it_couldnt():
     # a .new that's read finishes the stopped Save: it's put in settings.json's place, so the next Save's own .new
     # can't write over the only copy (it did, and a Save that then failed or stopped lost it)
     new = read[read.index('data, newErr = readSettings(MOD.settingsFile .. ".new")'):read.index("        else\n")]
+    # only once the .new has been read and holds an object: a rename before that would put a half-written one in place
+    assert new.index("if data ~= nil then") < new.index('os.rename(MOD.settingsFile .. ".new", MOD.settingsFile)')
     assert 'local moved, merr = os.rename(MOD.settingsFile .. ".new", MOD.settingsFile)' in new
     assert '"; couldn\'t put it there (" .. tostring(merr) .. ")"' in new
     assert 'os.remove(MOD.settingsFile .. ".old")' not in read   # left for the next Save
