@@ -127,7 +127,9 @@ outright instead; [SDK.md](SDK.md#mod-folder).)
   object, and a property the object doesn't have comes back as a `TrivialObject`. `Game.get` turns both
   into nil (or your default).
 - **Objects last a level:** look things up again rather than keeping them. `Game.cat()` is cheap.
-- **One thread:** don't use `LoopAsync` in a script that uses these modules (see SDK.md).
+- **One thread:** don't use `LoopAsync`, `ExecuteWithDelay` or a `RegisterKeyBind` that does any work in a script
+  that uses these modules: use `Game.every`, `Game.after` and `Game.onKey` (see SDK.md, *Rules that keep the game
+  running*).
 - **Some calls are costly every frame:** `Game.quests.objectives(q)` looks through every objective in the game each
   time; call it from `Game.every`, not `Game.onFrame`. `Game.save.file()` (and so `Game.items.list()`,
   `cat:traits()` and the slot calls) decodes the whole save, about 40 ms, but only when the file has changed: it

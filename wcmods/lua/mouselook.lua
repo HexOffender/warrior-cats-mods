@@ -327,16 +327,23 @@ local function step()
     steer(cam, now, dt)
 end
 
+-- The toggle key's presses, counted by its key bind and acted on in the frame: UE4SS calls a key bind on its own
+-- thread, and two threads in one Lua state break it, so the bind allocates nothing and writes no table.
+local togglePresses, toggleSeen = 0, 0
+
 local function frame()
+    local presses = togglePresses
+    while toggleSeen < presses do
+        toggleSeen = toggleSeen + 1
+        enabled = not enabled
+        log("mouse look %s", enabled and "on" or "off")
+    end
     local ok, err = pcall(step)
     if not ok then report("update", err) end
 end
 
 if SETTINGS.toggle_key ~= "" and Key ~= nil and Key[SETTINGS.toggle_key] ~= nil then
-    RegisterKeyBind(Key[SETTINGS.toggle_key], function()
-        enabled = not enabled
-        log("mouse look %s", enabled and "on" or "off")
-    end)
+    RegisterKeyBind(Key[SETTINGS.toggle_key], function() togglePresses = togglePresses + 1 end)
 end
 
 if LoopInGameThreadAfterFrames == nil or not pcall(LoopInGameThreadAfterFrames, 1, frame) then

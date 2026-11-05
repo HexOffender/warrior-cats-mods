@@ -543,7 +543,24 @@ local function padButton()
     end
 end
 
+-- The menu's key and Escape, counted by their key binds (see below) and acted on here, on the game thread.
+local keyPresses, keySeen, escPresses, escSeen = 0, 0, 0, 0
+local function keys()
+    local presses = keyPresses
+    while keySeen < presses do
+        keySeen = keySeen + 1
+        local ok, err = pcall(function() if isOpen then closeMenu() else openMenu() end end)
+        if not ok then log("error: %s", tostring(err)) end
+    end
+    presses = escPresses
+    if escSeen < presses then
+        escSeen = presses
+        if isOpen then pcall(closeMenu) end
+    end
+end
+
 local function frame()
+    keys()
     local ok, err = pcall(tick)
     if not ok then log("error: %s", tostring(err)) end
     if PAD then
@@ -562,15 +579,11 @@ if LoopInGameThreadAfterFrames == nil or not pcall(LoopInGameThreadAfterFrames, 
 end
 
 local key = Key[SETTINGS.key] or Key.INS
-RegisterKeyBind(key, function()
-    ExecuteInGameThread(function()
-        local ok, err = pcall(function() if isOpen then closeMenu() else openMenu() end end)
-        if not ok then log("error: %s", tostring(err)) end
-    end)
-end)
-RegisterKeyBind(Key.ESCAPE, function()
-    ExecuteInGameThread(function() if isOpen then pcall(closeMenu) end end)
-end)
+-- UE4SS calls a key bind on its own thread, while the game thread runs this state's frame: two threads in one Lua
+-- state break it ("Ref was not function", then a crash). So a bind only counts the press, which allocates nothing
+-- and writes no table, and the frame acts on it.
+RegisterKeyBind(key, function() keyPresses = keyPresses + 1 end)
+RegisterKeyBind(Key.ESCAPE, function() escPresses = escPresses + 1 end)
 
 -- The window's own pages are in menu_host_pages.lua, pasted in here by menu.host_script:
 @PAGES@

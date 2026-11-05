@@ -160,11 +160,17 @@ local function tryPatch()
     end
 end
 
-LoopAsync(2000, function()
-    ExecuteInGameThread(function()
-        local ok, err = pcall(tryPatch)
-        if not ok then log("error: %%s", tostring(err)) end
+-- On the game thread (LoopInGameThreadWithDelay): LoopAsync would run this script's Lua on UE4SS's async thread
+-- while the game thread runs it too, and two threads in one Lua state break it ("Ref was not function", then
+-- a crash). LoopAsync only on a UE4SS without the game-thread loops.
+local function timer()
+    local ok, err = pcall(tryPatch)
+    if not ok then log("error: %%s", tostring(err)) end
+end
+if LoopInGameThreadWithDelay == nil or not pcall(LoopInGameThreadWithDelay, 2000, timer) then
+    LoopAsync(2000, function()
+        ExecuteInGameThread(timer)
+        return false
     end)
-    return false
-end)
+end
 log("loaded")

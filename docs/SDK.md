@@ -711,11 +711,20 @@ out any `WCMods...` script that no enabled mod ships any more, even if wcmods.js
 
 ### Rules that keep the game running
 
-- **One thread per script.** The shared modules run on the game thread
-  (`LoopInGameThreadAfterFrames`). In a script that uses them, don't also use `LoopAsync`: it runs
-  its callback on another thread in the same Lua state, and two threads in one Lua state at once
-  crash the game. For something every so often, count time in a painter or a menu page.
-  `RegisterKeyBind` is fine; do the work inside `ExecuteInGameThread`.
+- **One thread per script.** Run your Lua on the game thread only: `LoopInGameThreadAfterFrames`
+  or `LoopInGameThreadWithDelay` for a loop (the shared modules' `Game.onFrame` and `Game.every` are
+  these), never `LoopAsync` or `ExecuteWithDelay`. Those run their callback on another thread in the
+  same Lua state, and two threads in one Lua state at once break it: UE4SS logs
+  `[Lua::Registry::get_function_ref] Ref was not function` (with no traceback), errors appear in
+  code that can't fail, then the game crashes. Even a `LoopAsync` that only calls
+  `ExecuteInGameThread` does it, since the call itself is Lua on the other thread. A
+  `RegisterKeyBind` callback runs on UE4SS's own thread too, so make it only count the press
+  (`function() presses = presses + 1 end`: no table, no string, no call) and act on the count in
+  your game-thread loop, or use `Game.onKey`, which does that for you. A mod's script (`scripts/main.lua`)
+  is covered already: its bootstrap points `LoopAsync`, `ExecuteWithDelay` and `RegisterKeyBind` at the
+  game thread (`LoopInGameThreadWithDelay`, `ExecuteInGameThreadWithDelay`, `Game.onKey`). A UE4SS mod
+  of your own isn't. On a UE4SS without the game-thread loops (older than the one wcmods installs),
+  wcmods' modules fall back to `LoopAsync`, and the hazard with it.
 - **Objects last a level.** When the level changes, the game destroys its actors and widgets, and a
   destroyed object's slot can be taken by another object. Such an object can still look valid while
   being something else. Look things up again (the shared modules do this themselves), and check

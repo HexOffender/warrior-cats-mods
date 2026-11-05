@@ -56,15 +56,21 @@ local function playing()
 end
 
 write("menu")
-LoopAsync(100, function()
-    ExecuteInGameThread(function()
-        local ok, now = pcall(playing)
-        local state = (ok and now) and "play" or "menu"
-        if state ~= current then
-            current = state
-            write(state)
-        end
+-- On the game thread (LoopInGameThreadWithDelay): LoopAsync would run this script's Lua on UE4SS's async thread
+-- while the game thread runs it too, and two threads in one Lua state break it ("Ref was not function", then
+-- a crash). LoopAsync only on a UE4SS without the game-thread loops.
+local function timer()
+    local ok, now = pcall(playing)
+    local state = (ok and now) and "play" or "menu"
+    if state ~= current then
+        current = state
+        write(state)
+    end
+end
+if LoopInGameThreadWithDelay == nil or not pcall(LoopInGameThreadWithDelay, 100, timer) then
+    LoopAsync(100, function()
+        ExecuteInGameThread(timer)
+        return false
     end)
-    return false
-end)
+end
 log("loaded; writing to %s", STATE_FILE)

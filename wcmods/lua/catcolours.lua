@@ -291,13 +291,19 @@ local function tick()
     end
 end
 
-LoopAsync(500, function()
-    ExecuteInGameThread(function()
-        local ok, err = pcall(tick)
-        if not ok then log("error: %s", tostring(err)) end
+-- On the game thread (LoopInGameThreadWithDelay): LoopAsync would run this script's Lua on UE4SS's async thread
+-- while the game thread runs it too, and two threads in one Lua state break it ("Ref was not function", then
+-- a crash). LoopAsync only on a UE4SS without the game-thread loops.
+local function timer()
+    local ok, err = pcall(tick)
+    if not ok then log("error: %s", tostring(err)) end
+end
+if LoopInGameThreadWithDelay == nil or not pcall(LoopInGameThreadWithDelay, 500, timer) then
+    LoopAsync(500, function()
+        ExecuteInGameThread(timer)
+        return false
     end)
-    return false
-end)
+end
 log("loaded")
 
 -- A page in the mod menu (Insert): change your cat's colours while you play. A part you switch off

@@ -599,6 +599,8 @@ end
 -- ===================================================================================== scheduling
 -- One game-thread loop per Lua state runs every timer, frame function and polled event.
 local tasks, nextTask, started = {}, 1, false
+-- Each bound key's check (Game.onKey), run at the start of every run of the tasks.
+local keyChecks = {}
 -- When this state's latest run of them began (when it loaded, before the first), and the one before (nil before
 -- the first; the first's is when it loaded): Game.time.held() goes by the one before, so a frame the game took long
 -- over (a level loading, the game behind another window) doesn't make another state's hold look old. runs: how many
@@ -611,6 +613,7 @@ local function runTasks()
     local now = os.clock()
     local dt = now - ticks.last
     ticks.before, ticks.last, ticks.runs = ticks.last, now, ticks.runs + 1
+    for i = 1, #keyChecks do keyChecks[i]() end
     -- The ids first, then each task that's still there when its turn comes: a callback may add tasks and cancel
     -- them (its own too), which pairs() can't take while it walks the table itself.
     local ids = {}
@@ -727,13 +730,20 @@ function Game.onKey(key, fn, modifiers, help)
     local bind = binds[slot]
     if not bind then
         bind = { handlers = {} }
-        local function fire()
-            ExecuteInGameThread(function()
+        -- UE4SS calls a key bind on its own thread, while the game thread may be running this state's Lua: two
+        -- threads in one Lua state break it ("Ref was not function", then a crash). So the bind only counts the
+        -- press, which allocates nothing and writes no table, and the frame loop runs the handlers.
+        local presses, seen = 0, 0
+        local function fire() presses = presses + 1 end
+        local function check()
+            local now = presses
+            while seen < now do
+                seen = seen + 1
                 for _, h in ipairs({ table.unpack(bind.handlers) }) do
                     local ok, err = pcall(h)
                     if not ok then failed("key " .. name, err) end
                 end
-            end)
+            end
         end
         local ok, err
         if #mods > 0 then ok, err = pcall(RegisterKeyBind, code, mods, fire) else ok, err = pcall(RegisterKeyBind, code, fire) end
@@ -742,6 +752,8 @@ function Game.onKey(key, fn, modifiers, help)
             return false
         end
         binds[slot] = bind
+        keyChecks[#keyChecks + 1] = check
+        start()
     end
     bind.handlers[#bind.handlers + 1] = fn
     if help then listKey(name, help) end
@@ -3257,9 +3269,9 @@ function Game.time.held()
     local s, who, at = h.read()
     -- From the start of this state's run of tasks before this one, or before its first run, from when it loaded:
     -- not from now, so neither a hook at the end of a long load nor the first run after it takes a hold the holder
-    -- couldn't stamp through the load for gone. A state with no timer has no runs until it first asks, which starts
-    -- them (askedFirst). If it still has no timer at its first run (a script of hooks and keys only, or one that adds
-    -- its first timer later), then until it has had two runs it counts back no further than LOAD seconds, or a hold
+    -- couldn't stamp through the load for gone. A state with no timer and no key has no runs until it first asks,
+    -- which starts them (askedFirst); a key (Game.onKey) starts them as a timer does, its presses being read there.
+    -- If it still has no timer at its first run (a script of hooks only, or one that adds its first timer later), then until it has had two runs it counts back no further than LOAD seconds, or a hold
     -- whose state went with a restart of the mods would read live to it through a load however old it was. So to
     -- such a script an orphan (its last stamp a moment before this state loaded) reads live for two frames from the
     -- first ask, or through a load the first ask comes in, and never once it's LOAD + STALE seconds old; and a live

@@ -421,7 +421,7 @@ call that says whether changing a key can do anything. Its proof is the whole in
 
 ## Status
 
-Each step's pull request updates its line.
+Each step's pull request updates its line. What the steps left open is planned in [cpp-sdk-gaps.md](cpp-sdk-gaps.md).
 
 | Step | State | Pull request |
 |---|---|---|
