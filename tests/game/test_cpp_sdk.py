@@ -1162,7 +1162,7 @@ def test_talks(agent):
 def test_bonds(agent):
     """Bonds.hpp in the game, on the test cat (ShadowClan): the ranks by the tuning's thresholds; the clan's bond (67,
     the tuning's default) and one of the clan's story cats' (its role's base, 20) read through the game's own bond
-    code; added to and set (the game keeps a bond within 0 and 100); the pause screen's Bonds panel shows both (the
+    code; added to and set (set_bond refuses a value outside 0 to 100; the game's own add stops there); the pause screen's Bonds panel shows both (the
     clan bar's score and the cat's row); the game's save has them under the slot's Bonding; put back after (a bond
     can't be taken out of the save, so the slot keeps the two at their defaults)."""
     _close_screens(agent)

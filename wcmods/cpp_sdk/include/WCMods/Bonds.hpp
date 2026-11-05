@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -38,17 +39,25 @@ namespace wcmods
             bool clan{};
             uint8_t value{};
         };
+        // The two enums' names and values, read from the game once (they're fixed for a build).
+        inline auto bond_keys() -> const std::vector<std::pair<std::wstring, BondKey>>&
+        {
+            static std::vector<std::pair<std::wstring, BondKey>> keys;
+            if (keys.empty())
+            {
+                for (auto& [n, v] : enum_names(CLAN_TYPES))
+                    for (const wchar_t* c : BOND_CLANS)
+                        if (n == c) keys.push_back({n, BondKey{true, static_cast<uint8_t>(v)}});
+                for (auto& [n, v] : enum_names(NARRATIVE_ROLES))
+                    if (v > 0 && v <= 255) keys.push_back({n, BondKey{false, static_cast<uint8_t>(v)}});
+            }
+            return keys;
+        }
         inline auto bond_key(std::wstring_view key) -> std::optional<BondKey>
         {
-            for (const wchar_t* c : BOND_CLANS)
-                if (key == c)
-                {
-                    auto v = enum_value(CLAN_TYPES, key);
-                    return v ? std::optional<BondKey>(BondKey{true, static_cast<uint8_t>(*v)}) : std::nullopt;
-                }
-            auto v = enum_value(NARRATIVE_ROLES, key);
-            if (!v || *v <= 0 || *v > 255) return std::nullopt;
-            return BondKey{false, static_cast<uint8_t>(*v)};
+            for (auto& [n, k] : bond_keys())
+                if (n == key) return k;
+            return std::nullopt;
         }
 
         // The game's functions, each under a structured exception handler: a fault (a game update that changed what
@@ -126,10 +135,11 @@ namespace wcmods
         log(L"the game's bond change failed for {}", key);
         return false;
     }
-    // Set a bond to a value: what add_bond adds, from what bond() reads. False as for bond(), or when the game's code
-    // didn't end on it (it may keep a bond within its bounds).
+    // Set a bond to a value from 0 to 100: what add_bond adds, from what bond() reads. False, with nothing changed, for
+    // a value outside those (the game keeps a bond within them), or as for bond().
     inline auto set_bond(std::wstring_view key, int value) -> bool
     {
+        if (value < 0 || value > 100) return false;
         auto now = bond(key);
         if (!now) return false;
         if (*now == value) return true;
@@ -144,21 +154,41 @@ namespace wcmods
     // A clan's regard (EBondingTypes), by Gameplay.Progression.Bonding.Clan.Negative (33) and .Positive (67).
     enum class ClanBond { Neutral, Positive, Negative };
 
-    inline auto bond_rank(int value) -> BondRank
+    // The thresholds, read from the tuning now (a mod may change them while the game runs: Tables.hpp).
+    struct BondThresholds
     {
-        auto at = [](const wchar_t* key, float fallback) { return tuning(key).value_or(fallback); };
-        if (value >= at(L"Gameplay.Progression.Bonding.Personal.CloseBond", 73)) return BondRank::CloseBond;
-        if (value >= at(L"Gameplay.Progression.Bonding.Personal.Friend", 46)) return BondRank::Friend;
-        if (value >= at(L"Gameplay.Progression.Bonding.Personal.Friendly", 28)) return BondRank::Friendly;
-        if (value >= at(L"Gameplay.Progression.Bonding.Personal.Neutral", 10)) return BondRank::Neutral;
+        float neutral{10}, friendly{28}, friend_{46}, close{73}, clan_negative{33}, clan_positive{67};
+    };
+    inline auto bond_thresholds() -> BondThresholds
+    {
+        BondThresholds t;
+        auto at = [](const wchar_t* key, float& into) {
+            if (auto v = tuning(key)) into = *v;
+        };
+        at(L"Gameplay.Progression.Bonding.Personal.Neutral", t.neutral);
+        at(L"Gameplay.Progression.Bonding.Personal.Friendly", t.friendly);
+        at(L"Gameplay.Progression.Bonding.Personal.Friend", t.friend_);
+        at(L"Gameplay.Progression.Bonding.Personal.CloseBond", t.close);
+        at(L"Gameplay.Progression.Bonding.Clan.Negative", t.clan_negative);
+        at(L"Gameplay.Progression.Bonding.Clan.Positive", t.clan_positive);
+        return t;
+    }
+    inline auto bond_rank(int value, const BondThresholds& t) -> BondRank
+    {
+        if (value >= t.close) return BondRank::CloseBond;
+        if (value >= t.friend_) return BondRank::Friend;
+        if (value >= t.friendly) return BondRank::Friendly;
+        if (value >= t.neutral) return BondRank::Neutral;
         return BondRank::Unfriendly;
     }
-    inline auto clan_bond(int value) -> ClanBond
+    inline auto clan_bond(int value, const BondThresholds& t) -> ClanBond
     {
-        if (value >= tuning(L"Gameplay.Progression.Bonding.Clan.Positive").value_or(67)) return ClanBond::Positive;
-        if (value <= tuning(L"Gameplay.Progression.Bonding.Clan.Negative").value_or(33)) return ClanBond::Negative;
+        if (value >= t.clan_positive) return ClanBond::Positive;
+        if (value <= t.clan_negative) return ClanBond::Negative;
         return ClanBond::Neutral;
     }
+    inline auto bond_rank(int value) -> BondRank { return bond_rank(value, bond_thresholds()); }
+    inline auto clan_bond(int value) -> ClanBond { return clan_bond(value, bond_thresholds()); }
     inline auto bond_rank_name(BondRank r) -> const wchar_t*
     {
         static const wchar_t* names[] = {L"Unfriendly", L"Neutral", L"Friendly", L"Friend", L"CloseBond"};
@@ -174,8 +204,8 @@ namespace wcmods
     inline auto bond_roles() -> std::vector<std::wstring>
     {
         std::vector<std::wstring> out;
-        for (auto& [n, v] : enum_names(detail::NARRATIVE_ROLES))
-            if (v != 0) out.push_back(n);
+        for (auto& [n, k] : detail::bond_keys())
+            if (!k.clan) out.push_back(n);
         return out;
     }
     struct Bond
@@ -218,6 +248,7 @@ namespace wcmods
     {
         std::vector<Bond> out;
         if (!assert_game_thread(L"bonds") || !player()) return out;
+        const BondThresholds t = bond_thresholds();
         for (const wchar_t* c : BOND_CLANS)
             if (auto v = bond(c))
             {
@@ -225,14 +256,14 @@ namespace wcmods
                 b.key = c;
                 b.clan = true;
                 b.value = *v;
-                b.rank = clan_bond_name(clan_bond(*v));
+                b.rank = clan_bond_name(clan_bond(*v, t));
                 out.push_back(std::move(b));
             }
         for (Bond& b : detail::story_roles())
             if (auto v = bond(b.key))
             {
                 b.value = *v;
-                b.rank = bond_rank_name(bond_rank(*v));
+                b.rank = bond_rank_name(bond_rank(*v, t));
                 out.push_back(std::move(b));
             }
         return out;

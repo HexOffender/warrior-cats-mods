@@ -93,6 +93,9 @@ namespace t
     {
         phase("bonds");
         // ----- the ranks, by the tuning's thresholds
+        BondThresholds th = bond_thresholds();
+        expect("bonds.thresholds", th.neutral == 10 && th.friendly == 28 && th.friend_ == 46 && th.close == 73
+                                       && th.clan_negative == 33 && th.clan_positive == 67);
         expect("bonds.ranks", bond_rank(5) == BondRank::Unfriendly && bond_rank(10) == BondRank::Neutral && bond_rank(30) == BondRank::Friendly
                                   && bond_rank(46) == BondRank::Friend && bond_rank(80) == BondRank::CloseBond);
         expect("bonds.clan_ranks", clan_bond(20) == ClanBond::Negative && clan_bond(50) == ClanBond::Neutral && clan_bond(70) == ClanBond::Positive);
@@ -124,9 +127,11 @@ namespace t
         expect("bonds.set", set_bond(CLAN, 42) && set_bond(ROLE, 50));
         value("bonds.clan_after", num(bond(CLAN)));
         value("bonds.role_after", num(bond(ROLE)));
-        expect("bonds.set_high", !set_bond(ROLE, 150));   // the game keeps a bond within 100
+        // Outside 0 to 100: set_bond refuses and changes nothing; the game's own add stops at the bounds.
+        expect("bonds.set_out_of_range", !set_bond(ROLE, 150) && !set_bond(ROLE, -20) && bond(ROLE) == 50);
+        add_bond(ROLE, 200);
         value("bonds.role_high", num(bond(ROLE)));
-        expect("bonds.set_low", !set_bond(ROLE, -20));
+        add_bond(ROLE, -300);
         value("bonds.role_low", num(bond(ROLE)));
         set_bond(ROLE, 50);
         Json listed = Json::array();
