@@ -51,6 +51,8 @@ namespace t
     auto run_quests_request() -> void;   // Story.hpp: quests, scenes, dilemmas, in the game ("questline")
     auto run_fights_request() -> void;   // Story.hpp: fights started, won, fled and lost, in the game ("fights")
     auto run_dens_request() -> void;     // Dens.hpp: dens, hotspots, decorations placed, timed, taken off ("dens")
+    auto run_map_request() -> void;      // Map.hpp: the HUD's quest pieces, markers, the clock, travel, the camera ("map")
+    auto run_map_end_request() -> void;  // the markers taken off, the clock let go ("map_end")
     auto run_anims_request() -> void;    // Animations.hpp: mods' animations played and stopped, in the game ("anims")
     auto run_ui_units() -> void;         // Ui.hpp's rule for the arrows on a tab's page, without the game (test_ui.cpp)
     auto run_native_units() -> void;     // Core.hpp's pattern check and World.hpp's map reader, without the game (test_native.cpp)

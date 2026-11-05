@@ -1464,6 +1464,37 @@ def test_dens(agent):
     assert t2["saved_status"] == 3 and t2["saved_decoration"] == "Gameplay.Inventory.Decoration.36", t2
 
 
+def test_map_hud_and_travel(agent):
+    """Map.hpp in the game: the HUD's objective panel and a quest banner with a mod's words, read back from the HUD and
+    gone again; two map markers (at a place, and on your cat), one moved, both taken off; the clock held at 6:00:05;
+    the 22 places (the game's checkpoints) with your cat's camp unlocked, a locked one refused, and a travel back to
+    camp from 60 m off; the camera's distance and the field of view shown. A picture of the minimap with the markers."""
+    _close_screens(agent)
+    try:
+        r = _request(agent, "map", timeout=60)
+        agent.shot("cpp-sdk-map-markers", scale=0.5)
+    finally:
+        end = _request(agent, "map_end")   # the markers off and the clock let go, whatever happened
+    with open(os.path.join(agent.out_dir, "map-values.json"), "w", encoding="utf-8") as f:
+        json.dump({k: x for k, x in r["values"].items() if k.startswith("map")}, f, indent=1, ensure_ascii=False)
+    assert not _failed(r, "map"), _failed(r, "map")
+    assert not _failed(end, "map_end"), _failed(end, "map_end")
+    v, e = r["values"], end["values"]
+    assert v["map.objective.title"] == "WCMods Test" and v["map.objective.activity"] == "Find moss", v
+    assert v["map.objective.location"] == "Sandbox", v
+    assert v["map.objective.goals"] == ["Moss 1/2", "Feather 2/2 done"], v["map.objective.goals"]
+    words = v["map.banner.words"]
+    assert words.get("mcGuiTextQuestName") == "A Mod's Quest" and words.get("mcGuiTextQuestType") == "Side Quest", words
+    assert v["map.banner_gone"] is True and v["map.objective_gone"] is True, v   # the banner after its 3 s; the panel put away
+    assert v["map.markers_made"] == 2 and v["map.markers_after"] == v["map.markers_before"] + 2, v
+    assert v["map.marker_at"] < 50, v["map.marker_at"]
+    assert e["map_end.removed"] == 2 and e["map_end.still_valid"] == 0, e
+    assert 21605 <= v["map.time_held"] < 21608 and v["map.time_held_is"] == 21605, v   # set every frame
+    assert v["map.places"] == 22 and "Gameplay.Checkpoints.Shadowclan.0 S-09" in v["map.unlocked"], v
+    assert v["map.away_from_camp"] > 4000 and v["map.at_camp"] < 100, v
+    assert 30 < v["map.camera.distance"] < 2000 and 30 < v["map.camera.fov"] < 130, v
+
+
 def test_ui_arrow_units(agent):
     """Ui.hpp's rule for an arrow on a tab's page, at init without the game: its release is given to the screen
     again from a button or check box, never from a slider, number or text box, not when the page hasn't the
