@@ -1138,6 +1138,7 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Bonds.hpp` | your cat's bonds with the clans and the story cats, through the game's own bond code: read, added to, set; their ranks; your clan's story roles |
 | `WCMods/Items.hpp` | what each item is (name, icon, kind, and a herb's use through the game's own lookup), and pickups dropped on the ground for your cat to collect, as the game's pickup or a mod's own model |
 | `WCMods/Animations.hpp` | mods' own animations (`animations.json`) and the game's sequences, played, seen playing and stopped on any cat or animal |
+| `WCMods/Dens.hpp` | the clans' dens and their hotspots, the decorations: built at once or timed through the game's own build, taken off, read live and from the save; entering a den |
 | `WCMods/Looks.hpp` | cats' looks: read, changed and drawn on the model through the game's own setup, kept in your cat's save; accessories worn and taken off; the clans' cats from the save with their actors; a cat's role |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Ui.hpp` | the game's own UI: a tab of your own in its screens (the pause menu, the inventory, the settings), the HUD and its parts, overlays, every control the engine has |
@@ -1461,6 +1462,37 @@ wcmods::play_animation(npc, L"my-mod/Swim", {.loop = true});          // until s
 | `wcmods::play_animation(actor, id, options)` | Play a mod's animation by its id, or a game sequence by its object path (`L"/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Meow.A_CatMaster_Meow"`). `AnimationOptions`: `loop`, `speed`, `blend` (a mod's animation brings its own). The montage, or nullptr (with a line in the log) for an id the install hasn't got, an animal it isn't for, a sequence that won't load, or no AnimBlueprint |
 | `wcmods::animation_playing(actor)` | The mod's animation playing on an actor, by its id (whichever mod or script started it, Lua's `Game.anims` too: it's known by the sequence the actor's montage plays), or a game sequence's path this mod played; empty for none (the game's own montages never count) |
 | `wcmods::stop_animation(actor, blend = nullopt)` | Stop what `animation_playing` names, blending out (the animation's own time by default). False when it plays none of those: the game's own montages are never stopped |
+
+**Dens (`Dens.hpp`)**, game thread only:
+
+Each clan's camp has den doors, and each door leads to a den, a room the map keeps off to the side. In a den are
+hotspots, the places a decoration can be built. A clan has six shared dens and one per rank (apprentices, warriors, the
+deputy and the leader), the four behind one door that takes your cat to its rank's. Each clan has its own copy of the
+dens, with the same hotspot tags. Decorations are built through the hotspot's own functions, as the game's build screen
+does: the game shows them and writes them to your cat's slot of the save (`Housing/Houses/<hotspot tag>`), saving the
+file itself within a second.
+
+```cpp
+for (auto& den : wcmods::dens(L"ShadowClan"))
+    if (den.rank == L"Apprentice")
+        for (auto& spot : wcmods::hotspots(&den))
+            if (spot.tag == L"Gameplay.Den.Hotspot.Personal.1")
+                wcmods::place_decoration(spot.actor, L"Gameplay.Inventory.Decoration.12");   // Bunny Soft Down
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::decorations()` | Every decoration the dens can have (`DB_Den_Decorations`, 60): `Decoration` with `tag` (`Gameplay.Inventory.Decoration.12`), `name` (`STR_ITEM_DECORATION_<n>`'s words, "Bunny Soft Down"), and its model: `mesh`, or `skeletal` and the `animation` it plays. What one costs, its size and build time are `HousingCost.csv`'s, which the game keeps only in its tuning manager (`docs/mechanics/clan-life.md` lists them) |
+| `wcmods::dens(clan = {})` | The dens, every clan's or one's (`L"ShadowClan"`): `Den` with `door` (the camp's door actor), `clan`, `rank` (`L"Apprentice"`, `L"Warrior"`, `L"Deputy"`, `L"Leader"`; empty for a shared den) and `inside`, where the door brings you in. Ten a clan; empty outside the forest |
+| `wcmods::enter_den(den)` | Put your cat in a den, where its door brings you in: the game's den mode comes on there (its hotspots' markers show). False outside the world |
+| `wcmods::hotspots(den = nullptr)` | A den's hotspots (each is the den's whose way in is nearest, within 15 m), or every den's (240): `Hotspot` with `actor`, `tag`, `size` (`L"Tiny"`, `L"Pendant"`, `L"Medium"`, `L"Large"`, `L"Interactable"`), `rank`, the `decoration` built on it now (read from its model; empty for none), and from your cat's slot of the save file: `saved_status` (0 None, 1 InProgress, 2 ReadyToAdd, 3 Built), `saved_decoration` and `started` (a timed build's start, Unix seconds). The save's entry is your cat's clan's: the clans' copies of a hotspot share it |
+| `wcmods::hotspot(actor)` | One hotspot, read now as `hotspots()` reads them; nullopt for an actor that isn't one |
+| `wcmods::place_decoration(hotspot, tag)` | Build a decoration on a hotspot at once, nothing paid (the hotspot's `OnOptionPicked` with no cost and ready): it shows, and the save says Built. Whatever was there is replaced; the size isn't checked. False for a hotspot or decoration the game hasn't got |
+| `wcmods::build_decoration(hotspot, tag, seconds)` | Start a build the game times: InProgress, its start in the save, and the decoration shows by itself once `seconds` of real time have passed (seen with 4 s). Nothing is paid. False as `place_decoration`, or for no time |
+| `wcmods::remove_decoration(hotspot)` | Take the decoration off (the hotspot's `OnDelete`): nothing shows, and the save says None. False for an actor that isn't a hotspot |
+
+The game's minigames (`USwtAdventureMinigameComponent`, `EMinigameType`) aren't in Warrior Cats: no minigame class or
+screen ships with it, and no actor has the component, so the SDK has nothing for them.
 
 **Looks and the clans' cats (`Looks.hpp`)**, game thread only:
 

@@ -409,6 +409,17 @@ the clan bar "42/100" "Neutral" and a row at "50/100" among seven cats; the game
 `GameplayProgression/Bonding`; put back to 67 and 20 and saved again. The ranks matched the tuning's thresholds,
 `enum_names` gave EClanType in order, and `cat_name_of(L"STR_CAT_NAME2", L"_PAW")` was "Emberpaw".
 
+**2026-11-05, build 26337109: dens** (the branch `claude/cpp-dens`, `tests/game/test_cpp_sdk.py::test_dens` passed;
+the test backs the save up and puts it back after): `decorations()` read the 60 rows (all named, Decoration.12 "Bunny
+Soft Down" with `SM_GPE_BunnySDown`); `dens(L"ShadowClan")` gave ten (six shared, Apprentice, Warrior, Deputy,
+Leader), forty in all; the apprentices' den had its five hotspots (`Personal.1` Large to `.5` Pendant), of 240.
+`enter_den` put the ShadowClan test cat at the den's way in, its hotspots' markers showing. `place_decoration` built
+Decoration.12 on `Personal.1` at once (read back from its model, the save Built within a second); `build_decoration`
+of 4 s on `Personal.2` showed nothing at 1 s (the save InProgress, its start in Unix seconds) and the pebble at 6 s
+(Built); `remove_decoration` took `Personal.1`'s off (the save None); after `save_game`, `hotspot()` read all three
+back from the file. One run also logged a Lua "Ref was not function" error after the game was started again;
+it didn't come back in the two launches after.
+
 **2026-11-05, build 26337109: fights** (the branch `claude/cpp-fights`, `tests/game/test_cpp_sdk.py::test_fights`
 passed; the test backs the save up and puts it back after): four fights with the nearest roaming animal on the
 ShadowClan test cat, each started by `start_fight` (the pounce): a hit of the cat's multiplied ten times in a `Damage`

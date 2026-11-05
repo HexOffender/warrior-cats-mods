@@ -66,9 +66,9 @@ Inside, you build decorations on hotspots.
 
 **Building:** a decoration costs materials (`HousingCost.csv`) and takes its `BuildTime`:
 - Common ones are instant, and so is one rare one.
-- Uncommon take 4800, Rare 14400 and Mythic 57600: 1 hour 20 minutes, 4 hours and 16 hours, if these are
-  seconds.
-- They are probably seconds of real time, like the online den features, but that isn't checked.
+- Uncommon take 14400, Rare 43200 and Mythic 172800: 4, 12 and 48 hours.
+- They're seconds of real time: a hotspot given a build time of 4 s showed its decoration 4 s later, and the save
+  keeps the build's start in Unix seconds (`reverse-engineering.md`, *Dens from C++*).
 
 **Help from friends:** `Housing.Hotspot.Assist.Time` 86400 (a day) and `.Assist.Quote` 1800 (half
 an hour). A guess: a visitor's help takes 30 minutes off a build, once a day.
