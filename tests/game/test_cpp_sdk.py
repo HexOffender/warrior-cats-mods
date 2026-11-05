@@ -1357,6 +1357,42 @@ def test_quests(agent):
     assert v["questline.nosuch_status"] == "", v["questline.nosuch_status"]   # not asked: the game's call would add it
 
 
+def test_fights(agent):
+    """Story.hpp's fights in the game, four with the nearest roaming animal, each started the player's way
+    (start_fight: the cat behind it, the pounce): won by damage a Damage handler multiplied ten times (the hit
+    changed before the game applied it), with a poison given through the game's ApplyStatusType on the way (the
+    Status event); won with end_fight(true) after a rest (fight_rest, the turn back); fled; lost with end_fight(false) (the game's own defeat: the cat back at
+    its respawn spot). CombatStart, CombatEnd, Damage and TurnEnded counted. A dilemma at a
+    win's end (by chance) is read and answered. Fights give experience and rewards, so
+    the save is backed up first and put back after, the game closed and started again for it."""
+    _close_screens(agent)
+    backup = agent.backup_save("before-fight-test")
+    try:
+        r = _request(agent, "fights", timeout=240)
+    finally:
+        agent.quit(force=True)
+        try:
+            agent.restore_save(backup)
+        finally:
+            agent.launch(world=True)
+    assert not _failed(r, "fights"), _failed(r, "fights")
+    v = r["values"]
+    for fight in ("damage", "win", "flee", "lose"):
+        assert v[f"fights.{fight}.started"] is True and v[f"fights.{fight}.ended"] is True, (fight, v)
+    assert v["fights.status_events"] >= 1, v
+    assert v["fights.win.rested_turn"] is True, v   # after a rest, your cat's turn came back
+    boosted = [h for h in v["fights.hits"] if h.startswith("enemy ")]
+    assert boosted and all(int(h.split()[1]) * 10 == float(h.split()[-1]) for h in boosted), v["fights.hits"]
+    e = v["fights.lose.events"]
+    assert e["start"] == 4 and e["end"] == 4 and e["damage"] >= 1 and e["turn"] >= 1, e
+    assert v["fights.lose.moved"] > 300, v["fights.lose.moved"]   # sent back to its respawn spot
+    # A dilemma at a win's end comes by chance (Dilemma13 or 14, 15% each): each one that came was read (its choices'
+    # words as the menu's buttons' are read) and answered, and the fight ended after it (above).
+    assert [w.upper() for w in v["fights.menu_words"]] == ["ATTACK", "REST", "HERBS", "FLEE"], v["fights.menu_words"]
+    for d in v["fights.dilemmas"]:
+        assert d["question"] and d["answered"] and d["option1"] not in ("", "TXT") and d["option2"] not in ("", "TXT"), d
+
+
 def test_ui_arrow_units(agent):
     """Ui.hpp's rule for an arrow on a tab's page, at init without the game: its release is given to the screen
     again from a button or check box, never from a slider, number or text box, not when the page hasn't the

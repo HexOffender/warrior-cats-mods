@@ -49,6 +49,7 @@ namespace t
     auto run_looks_request() -> void;    // Looks.hpp: cats' looks and the clan's cats, in the game ("looks")
     auto run_items_request() -> void;    // Items.hpp: items, and pickups dropped and collected, in the game ("drop")
     auto run_quests_request() -> void;   // Story.hpp: quests, scenes, dilemmas, in the game ("questline")
+    auto run_fights_request() -> void;   // Story.hpp: fights started, won, fled and lost, in the game ("fights")
     auto run_anims_request() -> void;    // Animations.hpp: mods' animations played and stopped, in the game ("anims")
     auto run_ui_units() -> void;         // Ui.hpp's rule for the arrows on a tab's page, without the game (test_ui.cpp)
     auto run_native_units() -> void;     // Core.hpp's pattern check and World.hpp's map reader, without the game (test_native.cpp)

@@ -1247,6 +1247,41 @@ Read in a fight with a level 20 cat against a weak bird:
 - Calling the combat manager's `EndCombat` ended the fight but left the controller with no pawn and the
   fight menu on screen. Don't use it.
 
+**Fights from C++** (worked out on 2026-11-05, build 26337109, for the C++ SDK's fights):
+- **Starting one:** the cat put 1.5 m behind a roaming animal (`BP_Exploration_Character_Base_C`, its forward
+  vector), turned to face it (`K2_SetActorRotation` and the controller's `SetControlRotation`), and the
+  `Player_Pounce` command 0.6 s later started the game's fight: the fight menu, the director's parties. A pounce can
+  miss (the animal moves on); the next animal is tried.
+- **The fight menu** (`WBP_GuiPopupCombat_C`) has panels: `PanelCombatMenu` with Attack, Rest, Item (herbs) and Flee
+  in that order (its `NavControls.ControlsNavigation`), and `PanelCombatAttacks` with the moves
+  (`mcGuiButtonAttack1`–`4`). Attack is selected when the menu opens. Down presses sent in one frame don't move the
+  selection (it stayed on Attack); one every 0.3 s does. Confirm, Confirm, Confirm attacks with the first move and
+  confirms its target. The panels' own `OnUIPress`/`OnUIRelease(button)` didn't pick anything, and the screen's own
+  navigation (`CurrentNav`) is empty.
+- **How it ends:** health set to 0 doesn't end a fight by itself; the next action does. The enemy at 0 and an attack:
+  the game's win (its rewards: Horsetail Stalks, Mouse Fresh-kill), the cat exploring again. The cat at 0 and an
+  attack: the game's loss, the cat back at its respawn spot by the den, healed. Flee ended the fight at once.
+- **Damage:** the director's `OnRegisterDamage(FSwtAdventureReceiveDamageStruct)` (`Character`, `bMissed`, `Damage`,
+  `StanceMultiplier`, `StatusCondition`) runs before each hit is applied: `Damage` changed in a hook made a hit of 22
+  take 220. It fired once per hit seen.
+- **Status:** a fighter's status component's `ApplyStatusType(Poisoned)` called from C++ fired the hook (twice: the
+  game's own handling calls it again).
+- **Dilemmas** (`CombatDilemmas.csv`, `SwtAdventureDilemmaStruct`): they trigger at a fight's start, while choosing a
+  move, on an attack, at its end or at a boss's end, by chance (0.15; 1 for the bosses' and the narrative ones) and the
+  fighters' state. Most need a team mate; a solo fight's win can ask Dilemma13 (Honor or Loyalty) or Dilemma14
+  (Respect or Honor), and one did: the fight stayed on until its popup (`WBP_GuiPopupDilemma_C`: `mcGuiTextTitle`,
+  `mcGuiTextQuestion`, `mcGuiTextBonus`, `mcGuiOption1`/`2`, whose own `Text` reads "TXT": the words are in their
+  `mcGuiTextNormal`) was answered. Seen from C++: "A Final Show of Strength", "The fight is over. Your enemy lies
+  defenseless before you.", answered with the second choice by its keys, the fight then won. The popup's
+  `ShowDilemmaPopUp` works from a dilemma the fight has picked (`Gameplay.Combat.Camera.Dilemma.<type>` cameras), so
+  it can't show one on demand. A hook on the fight component's `OnDilemmaCompleted(ECombatWarriorCode)` didn't fire for
+  that answer. The adventure cheats manager's `ForcedDilemma` (Dilemma13) made no dilemma come in two wins.
+- **A crash that wasn't wcmods':** UE4SS's console enabler (`ConsoleEnablerMod`) takes its `ClientRestart` hook off
+  from inside that hook's callback once the console exists. UE4SS frees the callback, and the next `ClientRestart`
+  (a fight's start possesses another pawn; so does a respawn) crashed the game in UE4SS's code, four times, each a few
+  seconds after "Unregistering native pre-hook ... ClientRestart" in UE4SS.log. wcmods takes that line out of the
+  script at install (`ue4ss.fix_console_mod`); the hook stays and does nothing once the console is made.
+
 **The quests:** the quest manager's `Quests` is an array of `{Quest, Line, Node}`. Every quest object
 is named `SwtAdventureMultiObjectiveQuest_0`, and its outer, a `QuestDynamicGraph` such as
 `QuestGraph_Tutorial` or `QuestGraphProcedural_Deliver`, says which quest it is. There are 40 in
@@ -2599,8 +2634,8 @@ The rules of play are in [mechanics/](mechanics/README.md):
     (*Items*); nothing reflected reaches it.
   - **Accessories:** whether a new texture variation of an accessory (a 2nd or 3rd entry in
     `AccesoryVariations`) can be added and worn.
-  - **Fights:** how to end one cleanly (`EndCombat` doesn't), and whether the combat director's
-    `OnRegisterDamage` hook sees every hit.
+  - **Fights:** ending one cleanly and the damage hook are answered (*Fights from C++*); dilemmas come by chance and
+    can't be asked for.
   - **Save stores:** what the save manager's `Get/SetGameProgressionData` keys are (`"Level"` read
     0). They're account-wide (`Shared`), not a cat's.
 - **Mouse look:** whether the game ever overrides the root's yaw in free mode. An old build's

@@ -409,6 +409,18 @@ the clan bar "42/100" "Neutral" and a row at "50/100" among seven cats; the game
 `GameplayProgression/Bonding`; put back to 67 and 20 and saved again. The ranks matched the tuning's thresholds,
 `enum_names` gave EClanType in order, and `cat_name_of(L"STR_CAT_NAME2", L"_PAW")` was "Emberpaw".
 
+**2026-11-05, build 26337109: fights** (the branch `claude/cpp-fights`, `tests/game/test_cpp_sdk.py::test_fights`
+passed; the test backs the save up and puts it back after): four fights with the nearest roaming animal on the
+ShadowClan test cat, each started by `start_fight` (the pounce): a hit of the cat's multiplied ten times in a `Damage`
+handler won the first (a poison given with `apply_status` on the way fired `Status`); `end_fight(true)` won the second
+with its rewards; `flee` ended the third; `end_fight(false)` lost the fourth, the cat back at its respawn spot. Four
+`CombatStart` and four `CombatEnd`, with `Damage` and `TurnEnded` between. Four crashes in UE4SS at a fight's start
+before that came from UE4SS's console enabler unhooking itself; with its script fixed at install, none. In one run of ten a dilemma came at the second
+win's end ("A Final Show of Strength"): `dilemma()` read its title and question, `answer_dilemma(1)` answered it by its
+keys, and the fight ended won; its choices' words read "TXT" from their `Text` then, so they're read from the buttons'
+text blocks now, as the fight menu's are ("Attack", "Rest", "Herbs", "Flee", checked every run). The hook on
+`OnDilemmaCompleted` didn't fire for that answer, so there's no dilemma event. Ten runs of the four fights: no crash.
+
 **2026-11-05, build 26337109: quests** (the branch `claude/cpp-quests`, `tests/game/test_cpp_sdk.py::test_quests`
 passed; the test backs the save up and puts it back after): on the ShadowClan test cat, the quests listed with their
 story ids and the gather quest `Quest.Main.1` available by its alias; `start_quest` by its graph's tag made it

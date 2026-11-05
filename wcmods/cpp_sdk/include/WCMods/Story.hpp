@@ -3,6 +3,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -18,6 +19,7 @@
 #include <WCMods/Events.hpp>
 #include <WCMods/Game.hpp>
 #include <WCMods/Reflect.hpp>
+#include <WCMods/Ui.hpp>
 #include <WCMods/World.hpp>
 
 namespace wcmods
@@ -450,6 +452,162 @@ namespace wcmods
     inline auto fight_current() -> UObject* { return get(combat_director(), L"CurrentTurnAttackCharacter").object; }
     inline auto fight_main_enemy() -> UObject* { return get(combat_director(), L"MainEnemyCombatCharacter").object; }
 
+    // The roaming animals within `radius` cm of your cat that a fight can start with (BP_Exploration_Character_Base,
+    // not a scene's copy), nearest first.
+    inline auto fight_animals(double radius = 5000) -> std::vector<UObject*>
+    {
+        std::vector<UObject*> out;
+        if (!assert_game_thread(L"fight_animals")) return out;
+        for (const Nearby& n : nearby(Kind::Creatures, radius))
+        {
+            std::wstring full = full_name(n.actor);
+            if (full.find(L"MovieScene") == std::wstring::npos && full.find(L"Default__") == std::wstring::npos) out.push_back(n.actor);
+        }
+        return out;
+    }
+    // Start a fight with a roaming animal the player's way: your cat is put 1.5 m behind it, facing it, and the game's
+    // pounce is pressed a moment later; the game's own fight follows (combat_active(), the fight menu, CombatStart).
+    // False outside the world or for no animal; the fight starts about a second later.
+    inline auto start_fight(UObject* animal) -> bool
+    {
+        if (!assert_game_thread(L"start_fight") || !player() || !animal || combat_active()) return false;
+        auto at = location(animal);
+        auto fwd = call_reflected(animal, STR("GetActorForwardVector"));
+        if (!at || !fwd) return false;
+        const double fx = get(fwd->get(L"ReturnValue"), L"X").number(), fy = get(fwd->get(L"ReturnValue"), L"Y").number();
+        if (!teleport(player(), {at->x - fx * 150, at->y - fy * 150, at->z + 30})) return false;
+        const double yaw = std::atan2(fy, fx) * 180.0 / 3.14159265358979323846;
+        call_reflected(player(), STR("K2_SetActorRotation"), [&](Params& p) {
+            set(p.nth(0), L"Yaw", yaw);
+            p.set_nth(1, Value::of(false));
+        });
+        if (UObject* c = controller()) call_reflected(c, STR("SetControlRotation"), [&](Params& p) { set(p.nth(0), L"Yaw", yaw); });
+        after(0.6, [] { command(L"Player_Pounce"); });
+        return true;
+    }
+
+    namespace detail
+    {
+        inline auto fight_menu_screen() -> Widget { return ui::screen(L"WBP_GuiPopupCombat_C"); }
+        // Pick a button on one of the fight menu's panels (L"PanelCombatMenu": Attack, Rest, Item, Flee;
+        // L"PanelCombatAttacks": the moves) as its own keys do: Down from the one selected to it, a press every 0.3 s
+        // (presses in one frame don't move it), then Confirm, then `then`. The panel's own order is its NavControls'
+        // ControlsNavigation. False when the menu or the button isn't there.
+        inline auto fight_pick(const wchar_t* panel_name, std::wstring_view button, std::function<void()> then = {}) -> bool
+        {
+            Widget menu = fight_menu_screen();
+            UObject* panel = menu ? get(menu.object(), panel_name).object : nullptr;
+            if (!panel) return false;
+            std::vector<UObject*> order;
+            for (Value& c : elements(get(panel, L"NavControls").object, L"ControlsNavigation"))
+                if (c.object) order.push_back(c.object);
+            const int n = static_cast<int>(order.size());
+            int target = -1, now = 0;
+            UObject* selected = get(panel, L"ControlSelected").object;
+            for (int i = 0; i < n; ++i)
+            {
+                if (name(order[i]) == button) target = i;
+                if (order[i] == selected) now = i;
+            }
+            if (target < 0) return false;
+            const int downs = (target - now + n) % n;
+            for (int i = 0; i < downs; ++i) after(0.3 * (i + 1), [] { ui::send(fight_menu_screen(), L"Button_Down"); });
+            after(0.3 * (downs + 1), [then] {
+                ui::send(fight_menu_screen(), L"Button_Confirm");
+                if (then) then();
+            });
+            return true;
+        }
+    } // namespace detail
+
+    // The fight menu (WBP_GuiPopupCombat_C), shown on your cat's turn; an empty Widget when it isn't up.
+    inline auto fight_menu() -> Widget { return detail::fight_menu_screen(); }
+    // Your cat's turn, through the fight menu as its own keys pick: an attack (move 0 to 3, as the attack panel lists
+    // them; its target confirmed), a rest, or fleeing (the fight ends: CombatEnd). False when the menu isn't up (not
+    // your cat's turn) or hasn't got it; the turn plays out over the next seconds.
+    inline auto fight_attack(int move = 0) -> bool
+    {
+        if (!assert_game_thread(L"fight_attack") || move < 0 || move > 3) return false;
+        return detail::fight_pick(L"PanelCombatMenu", L"mcGuiButtonAttack", [move] {
+            after(0.6, [move] {   // the moves' panel, once it's open
+                detail::fight_pick(L"PanelCombatAttacks", L"mcGuiButtonAttack" + std::to_wstring(move + 1), [] {
+                    after(0.6, [] { ui::send(detail::fight_menu_screen(), L"Button_Confirm"); });   // the target, when it asks
+                });
+            });
+        });
+    }
+    inline auto fight_rest() -> bool { return assert_game_thread(L"fight_rest") && detail::fight_pick(L"PanelCombatMenu", L"mcGuiButtonRest"); }
+    inline auto flee() -> bool { return assert_game_thread(L"flee") && detail::fight_pick(L"PanelCombatMenu", L"mcGuiButtonFlee"); }
+    // End the fight the game's own way: the losing side's health set to 0 and your cat's turn taken (an attack), so the
+    // game sees the side fall and finishes the fight as it does: a win with its rewards, or a loss (your cat back at
+    // its respawn spot, healed). False outside a fight or when it isn't your cat's turn (the menu isn't up): call it
+    // again then. The game's EndCombat leaves the cat without a body: not used.
+    inline auto end_fight(bool won) -> bool
+    {
+        if (!assert_game_thread(L"end_fight") || !combat_active() || !fight_menu()) return false;
+        for (Fighter& f : won ? fight_enemies() : fight_players())
+        {
+            Resource hp = resource(f.actor(), STR("SwtQuestHealthComponent"));
+            if (hp) *hp.value = 0;
+        }
+        return fight_attack(0);
+    }
+    // A dilemma the fight is asking now (its popup, WBP_GuiPopupDilemma_C): its title, question, the bonus it shows,
+    // and the two choices' words. The game picks them from CombatDilemmas.csv at a fight's start, while choosing a
+    // move, on an attack, or at its end, by chance (0.15, 1 at a boss's end) and the fighters' state; a solo fight's
+    // win can ask Dilemma13 or 14. (The cheats manager's ForcedDilemma made no dilemma come in the release build.)
+    struct Dilemma
+    {
+        std::wstring title, question, bonus, option1, option2;
+    };
+    namespace detail
+    {
+        // A game button's words as shown (its text block; its own Text property holds a placeholder, "TXT").
+        inline auto button_words(UObject* button) -> std::wstring
+        {
+            Widget b(button);
+            std::wstring words = b.find(L"mcGuiTextNormal").text();
+            return words.empty() ? b.find(L"mcGuiTextSelected").text() : words;
+        }
+    } // namespace detail
+    inline auto dilemma() -> std::optional<Dilemma>
+    {
+        if (!assert_game_thread(L"dilemma")) return std::nullopt;
+        Widget popup = ui::screen(L"WBP_GuiPopupDilemma_C");
+        if (!popup) return std::nullopt;
+        UObject* p = popup.object();
+        Dilemma d;
+        d.title = get(p, L"mcGuiTextTitle.Text").string();
+        d.question = get(p, L"mcGuiTextQuestion.Text").string();
+        d.bonus = get(p, L"mcGuiTextBonus.Text").string();
+        d.option1 = detail::button_words(get(p, L"mcGuiOption1").object);
+        d.option2 = detail::button_words(get(p, L"mcGuiOption2").object);
+        return d;
+    }
+    // Answer the dilemma asking now, as its own keys do: the first choice (0) or the second (1), the selection moved
+    // over to it a press at a time, then Confirm; the fight then ends as the game does. False when none is asking.
+    // (The game's OnDilemmaCompleted hook didn't fire for an answer at a fight's end, so there's no event for it.)
+    inline auto answer_dilemma(int option) -> bool
+    {
+        if (!assert_game_thread(L"answer_dilemma") || option < 0 || option > 1 || !ui::screen(L"WBP_GuiPopupDilemma_C")) return false;
+        if (option == 1) after(0.3, [] { ui::send(ui::screen(L"WBP_GuiPopupDilemma_C"), L"Button_Right"); });
+        after(option == 1 ? 0.7 : 0.3, [] { ui::send(ui::screen(L"WBP_GuiPopupDilemma_C"), L"Button_Confirm"); });
+        return true;
+    }
+
+    // Give a fighter (its actor) a status condition (ESwtAdventureStatusType: L"Poisoned", L"Blinded", L"Furious",
+    // L"Stressed") through its status component's own ApplyStatusType: the game's Status event fires. False for no
+    // fighter or status component, or a name the enum hasn't got.
+    inline auto apply_status(UObject* actor, std::wstring_view status) -> bool
+    {
+        if (!assert_game_thread(L"apply_status") || !actor) return false;
+        UObject* sc = component(actor, STR("SwtAdventureStatusComponent"));
+        if (!sc) return false;
+        bool named = false;
+        auto r = call_reflected(sc, STR("ApplyStatusType"), [&](Params& p) { named = p.set_nth(0, Value::of(status)); });
+        return r.has_value() && named;
+    }
+
     // ============================================================================================ events
     // The game's events as one list, each with what it carries in an EventInfo:
     //   Level         name: the level loaded
@@ -458,7 +616,8 @@ namespace wcmods
     //   CombatStart   object: the combat director;  CombatEnd: nothing
     //   GenericEvent  name: the event's name (the game's own SwtGameUtil broadcasts)
     //   QuestStatus   object: the quest, a: its status (an enum), b: whether exact
-    //   Damage        a: the damage struct (Character, Damage...; its bytes last the callback)
+    //   Damage        a: the damage struct (Character, Damage...; its bytes last the callback): set(e.a, L"Damage", n)
+    //                 changes the hit before the game applies it (seen: 22 made 220)
     //   TurnEnded     nothing
     //   Status        object: the status component (its owner is the cat), a: the status type
     enum class Event { Level, Player, Phase, CombatStart, CombatEnd, GenericEvent, QuestStatus, Damage, TurnEnded, Status };
