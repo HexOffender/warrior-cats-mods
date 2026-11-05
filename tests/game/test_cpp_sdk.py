@@ -1550,8 +1550,11 @@ def test_map_travel(agent):
 def test_scenes(agent):
     """Story.hpp's scenes in the game: the 60 the sequencer manager has registered (the prophecy intros, rank-ups and
     endings among them), the sandbox's establishing shot (Quest.Chapter00, not a story scene) played by its tag through
-    the game's own PlaySequence, playing (ActiveSequences) with the game's skip popup up, skipped as holding the skip
-    button does, and play back after: none playing, no popup, your cat and the HUD there. A tag the game hasn't refused."""
+    the game's own PlaySequence, playing (ActiveSequences, its player at the rate asked) with the game's skip popup up,
+    skipped as holding the skip button does, and play back after: none playing, no popup, your cat and the HUD there.
+    Its 10 s made to last 5 (rate 2, whatever the rate asked); played at 4 and held at its end (out of ActiveSequences,
+    the popup still up) until skipped. A tag the game hasn't, a rate of 0, a length below 0 and a second scene while one
+    plays or is held, refused."""
     _close_screens(agent)
     r = _request(agent, "scenes", timeout=30)
     assert not _failed(r, "scenes"), _failed(r, "scenes")
@@ -1561,8 +1564,17 @@ def test_scenes(agent):
     assert tags["Gameplay.Narrative.Prophecy.Intro.ShadowClan"]["type"] == 3, tags["Gameplay.Narrative.Prophecy.Intro.ShadowClan"]
     assert tags["Quest.Chapter00"]["type"] == 7 and tags["Quest.Chapter00"]["sequence"] == "LS_Quest_SandboxG_EstablishingShot_1"
     assert v["scenes.playing_before"] == 0 and v["scenes.playing"] == ["Quest.Chapter00"] and v["scenes.skip_popup"] is True, v
+    assert v["scenes.hud"] is False, v
+    # 1 s in: made to last 5 s, its 10 played at twice the speed (the rate of 4 asked for not used)
+    assert v["scenes.duration"] == 10 and v["scenes.rate"] == 2 and 1.5 < v["scenes.time"] < 2.6, v
     assert v["scenes.playing_after"] == 0 and v["scenes.skip_popup_after"] is False, v
     assert v["scenes.player_after"] is True and v["scenes.hud_after"] is True, v
+    # at four times the speed: 1 s in, 4 s of it played
+    assert v["scenes.fast.playing"] == ["Quest.Chapter00"] and v["scenes.fast.rate"] == 4 and 3.0 < v["scenes.fast.time"] < 5.0, v
+    # held at its end: out of ActiveSequences, the skip popup and no HUD; skipped, play back
+    assert v["scenes.held.playing"] == [] and v["scenes.held.skip_popup"] is True and v["scenes.held.hud"] is False, v
+    assert v["scenes.held.playing_after"] == 0 and v["scenes.held.skip_popup_after"] is False, v
+    assert v["scenes.held.player_after"] is True and v["scenes.held.hud_after"] is True, v
 
 
 def test_photo_mode(agent):

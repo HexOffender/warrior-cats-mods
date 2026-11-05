@@ -1459,7 +1459,9 @@ is named `SwtAdventureMultiObjectiveQuest_0`, and its outer, a `QuestDynamicGrap
     execute (its vtable +0x2E8) call it.
   - **The struct**, from the talk action, whose reflected members fill it: +0x00 `bPauseAtEnd`; +0x08 an FString,
     the music to play (`mus_moonpool_a` from the intro, empty from the action); +0x18 `PlayRate`; +0x20 `ForcedTime`
-    (when `bForceTime`, else 0); +0x28 an empty `TMap` of actors to put in it (`FSwtMinPlaySequenceArguments`'
+    (when `bForceTime`, else 0), a length, not a start: the scene is made to last that long, its player's rate set to
+    fit whatever +0x18 says (seen: the 10 s establishing shot given 1 played at rate 10, given 5 at 2, given 5 and a
+    rate of 4 at 2); +0x28 an empty `TMap` of actors to put in it (`FSwtMinPlaySequenceArguments`'
     `ActorsToReplace`: its bit array's size word at +0x50 is 0x80 and its free index -1); +0x78 a byte the action sets
     to 1 and the intro to 0; +0x7C `SequenceType` (`ESwtEngineSequencerType`, int32: the intro's is 3, CutScene);
     +0x80 the tag.
@@ -1470,6 +1472,9 @@ is named `SwtAdventureMultiObjectiveQuest_0`, and its outer, a `QuestDynamicGrap
     game's skip popup (`WBP_GuiPopupSkip_C`, "Hold skip"), and ended by itself or by the skip held 2.5 s, play and
     the HUD back. ShadowClan's prophecy intro played and skipped the same way, with nothing the game does around it:
     the quests (40) and the save's seen scenes as they were, the HUD back a few seconds after the skip.
+  - **Held at its end** (+0x00 set): at its end the scene leaves `ActiveSequences`, but its last frame stays on
+    screen with the skip popup up and the HUD hidden, until the skip (seen: the establishing shot at rate 4, its last
+    black frame and "Hold skip" 4 s in; skipped, play and the HUD back).
 - **Dilemmas** are a fight's: the fight component reflects `OnDilemmaCheck` and `OnDilemmaCompleted(warriorCode)`,
   and `DT`'s `SwtAdventureDilemmaStruct` rows trigger on fight stats (a team member's health, a chance), with two
   choices and their warrior codes.

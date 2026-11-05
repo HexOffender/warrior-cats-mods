@@ -176,7 +176,7 @@ NATIVE = [
     ("SwtSequencerManager:PlaySequence", 0x12B2190,
      "plays a registered sequence: (the sequencer manager, const 0x88-byte arguments*) -> non-null when it started; "
      "the arguments: +0x00 pause at its end (bool), +0x08 a music track's name (FString, empty for none), +0x18 the "
-     "play rate (float), +0x20 the time to start at (float), +0x28 the actors to put in it (an empty TMap: its bit "
+     "play rate (float), +0x20 a length to fit it to, in seconds, setting its rate (float, 0 for its own), +0x28 the actors to put in it (an empty TMap: its bit "
      "array's size word at +0x50 is 0x80 and its free index at +0x58 is -1), +0x78 a flag the talk action sets and "
      "the prophecy intro doesn't, +0x7C its ESwtEngineSequencerType (int32), +0x80 its tag (FGameplayTag)"),
     ("Checkpoints:SetUnlocked", 0x16A7DE0,

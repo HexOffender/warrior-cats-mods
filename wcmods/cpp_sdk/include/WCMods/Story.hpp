@@ -312,7 +312,8 @@ namespace wcmods
         bool hides_hud{}, hides_actors{};
     };
     // Every scene the sequencer manager has: its RegisteredSequences, a table of rows (SwtEngineSequencersStruct)
-    // for each kind.
+    // for each kind. Most (39 of the 60 on build 26337109) are the fight cameras (type 6), which the game plays in a
+    // fight, filming its actors; a few are exploration shots (5). The story's are type 3.
     inline auto scenes() -> std::vector<Scene>
     {
         std::vector<Scene> out;
@@ -335,14 +336,14 @@ namespace wcmods
         }
         return out;
     }
-    // How play_scene plays one: from `start` seconds in, at `rate`, held on its last frame at its end (`pause_at_end`, as
-    // a talk's scene can be), and as the kind of scene it's registered as unless `type` says (scenes()).
+    // How play_scene plays one: at `rate` (2 is twice as fast), or made to last `length` seconds (the game sets the rate
+    // to fit, whatever `rate` says; 0 is the scene's own length), and held on its last frame at its end (`pause_at_end`,
+    // as a talk's scene can be) until skip_scene(): held, it's no longer in scenes_playing(), but the skip popup stays.
     struct PlayScene
     {
         double rate = 1.0;
-        double start = 0.0;
+        double length = 0.0;
         bool pause_at_end = false;
-        std::optional<int> type;
     };
     namespace detail
     {
@@ -355,9 +356,9 @@ namespace wcmods
         {
             PlaySequenceArgs a;
             a.bytes[0x00] = how.pause_at_end ? 1 : 0;
-            const float rate = static_cast<float>(how.rate), start = static_cast<float>(how.start);
+            const float rate = static_cast<float>(how.rate), length = static_cast<float>(how.length);
             std::memcpy(a.bytes + 0x18, &rate, 4);
-            std::memcpy(a.bytes + 0x20, &start, 4);
+            std::memcpy(a.bytes + 0x20, &length, 4);
             const uint32_t empty_map[4] = {0, 0x80, 0xFFFFFFFFu, 0};   // the actors to put in it: none
             std::memcpy(a.bytes + 0x50, empty_map, sizeof empty_map);
             const int32_t kind = type;
@@ -370,20 +371,27 @@ namespace wcmods
     // Play one of the game's scenes by its tag (scenes() lists them), through the sequencer manager's own PlaySequence
     // (signed): the camera, and the HUD and the world's actors hidden as the scene says, until it ends; scenes_playing()
     // has it meanwhile. A story scene (the prophecy intro, a rank-up) is only the film: what the game does around it
-    // (marking it seen, the ceremony after) isn't run. False for a tag the game hasn't, outside the world, or without the
-    // function on this build.
+    // (marking it seen, the ceremony after) isn't run. A fight camera (type 6) is a fight's: outside one it hasn't been
+    // tried. False for a tag scenes() hasn't, while another scene plays or is held at its end (scenes_playing(), the skip
+    // popup), for a rate that isn't above 0 or a length below 0, outside the world, or without the function on this
+    // build.
     //   wcmods::play_scene(L"Quest.Chapter00");   // the sandbox's establishing shot
     inline auto play_scene(std::wstring_view tag, const PlayScene& how = {}) -> bool
     {
         if (!assert_game_thread(L"play_scene") || !player()) return false;
+        if (!scenes_playing().empty() || ui::screen(L"GuiPopupSkip")) return false;
+        if (!(how.rate > 0.0) || !(how.length >= 0.0)) return false;
         UObject* mgr = manager(STR("sequencer"));
         using Play = void* (*)(UObject*, const void*);
         auto play = native<Play>(L"SwtSequencerManager:PlaySequence");
         if (!mgr || !play) return false;
-        int type = how.type.value_or(-1);
-        if (type < 0)
-            for (auto& s : scenes())
-                if (s.tag == tag) type = s.type;
+        int type = -1;   // the kind whose table has it: PlaySequence looks it up there
+        for (auto& s : scenes())
+            if (s.tag == tag)
+            {
+                type = s.type;
+                break;
+            }
         if (type < 0) return false;
         RC::Unreal::FName name(std::wstring(tag), RC::Unreal::FNAME_Find);
         if (name == RC::Unreal::FName(STR("None"), RC::Unreal::FNAME_Find)) return false;
@@ -391,9 +399,9 @@ namespace wcmods
         return play(mgr, args.bytes) != nullptr;
     }
 
-    // Skip the scene playing, as holding the skip button does: the game's skip popup (WBP_GuiPopupSkip_C) given its
-    // hold button's command, pressed and released 2.5 s later. False when the popup isn't up (a scene the game doesn't
-    // let you skip, or none playing).
+    // Skip the scene playing (or held at its end), as holding the skip button does: the game's skip popup
+    // (WBP_GuiPopupSkip_C) given its hold button's command, pressed and released 2.5 s later. False when the popup isn't
+    // up (a scene the game doesn't let you skip, or none playing).
     inline auto skip_scene() -> bool
     {
         if (!assert_game_thread(L"skip_scene")) return false;
