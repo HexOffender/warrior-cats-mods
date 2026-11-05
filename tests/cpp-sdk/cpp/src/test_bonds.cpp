@@ -266,15 +266,16 @@ namespace t
         Json traits = Json::array();
         for (auto& tr : cat_traits()) traits.push(Json(text(tr)));
         value("answers.cat_traits", traits);
-        static const wchar_t* trait_names[] = {L"None", L"Brave", L"Ambitious", L"Wise", L"Energetic", L"Curious", L"Patient"};
         auto has_trait = [](int trait) {
             for (auto& tr : cat_traits())
-                if (trait > 0 && trait < 7 && tr == trait_names[trait]) return true;
+                if (trait > 0 && tr == trait_name(trait)) return true;
             return false;
         };
         std::wstring tag, node;
         int choice = -1;
-        for (int pass = 0; pass < 2 && choice < 0; ++pass)
+        // Passes: one not given with your cat's trait, one not given, then (when every one has been: each run marks
+        // one for good) any.
+        for (int pass = 0; pass < 3 && choice < 0; ++pass)
             for (int main = 1; main <= 20 && choice < 0; ++main)
             {
                 std::wstring candidate = L"Gameplay.Dialogue.Story.Short." + role + L".Main." + std::to_wstring(main);
@@ -285,7 +286,7 @@ namespace t
                 {
                     const TalkAnswer& ans = q->answers[a];
                     std::wstring row = bond_answer_row(c, c.nodes[ans.to]);
-                    if (ans.trait == 0 || row.empty() || bond_node(row).value_or(true)) continue;
+                    if (ans.trait == 0 || row.empty() || (pass < 2 && bond_node(row).value_or(true))) continue;
                     if (pass == 0 && !has_trait(ans.trait)) continue;
                     tag = candidate;
                     node = row;
@@ -308,6 +309,9 @@ namespace t
         const int personal_before = bond(role).value_or(-1), clan_before = bond(clan).value_or(-1);
         value("answers.personal_before", Json(personal_before));
         value("answers.clan_before", Json(clan_before));
+        // A role that isn't a story cat's: refused with nothing changed (the node not marked).
+        expect("answers.bad_role", !answer_bond(node, L"ShadowClan") && !answer_bond(node, L"NoSuchRole")
+                                       && bond(role) == personal_before && bond(clan) == clan_before);
         value("answers.node_before", Json(bond_node(node).value_or(true)));
 
         // ----- played, the answer chosen: the game's bond answer as the talk passes it

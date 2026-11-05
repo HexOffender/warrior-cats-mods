@@ -1203,9 +1203,10 @@ def test_bond_answers(agent):
     and its first question's three answers with their traits, scores and bonding), and its End talk for the second
     time. Then a story cat of the clan's, one of its talks' answers not given yet played and chosen: the game's bond
     answer as the talk passes it, the cat's bond moved by the row's Score plus the trait bonus (1 when your cat has the
-    trait), the clan's regard by ClanBonding plus the bonus, the node marked. Given again: the clan's regard again, the
-    cat's bond not. A row without a trait does nothing, and nor does a talk played with the bonds off. Put back after
-    (the node stays)."""
+    trait), the clan's regard by ClanBonding plus the bonus, the node marked (once every answer has been given, an
+    answer already given: the clan's regard only). Given again: the clan's regard again, the cat's bond not. A role
+    that isn't a story cat's is refused, a row without a trait does nothing, and nor does a talk played with the bonds
+    off. Put back after (the node stays)."""
     _close_screens(agent)
     try:
         r = _request(agent, "bond_answers", timeout=60)
@@ -1233,15 +1234,17 @@ def test_bond_answers(agent):
 
     role, node, row = v["answers.role"], v["answers.node"], v["answers.chosen_row"]
     assert role and node.startswith(f"Gameplay.Dialogue.Story.Short.{role}.Main.") and row and row["trait"], v
-    assert v["answers.node_before"] is False and v["answers.question"] and v["answers.reply"], v
+    assert v["answers.question"] and v["answers.reply"], v
+    first = v["answers.node_before"] is False   # else every answer had been given: one given before was chosen
     traits = ["None", "Brave", "Ambitious", "Wise", "Energetic", "Curious", "Patient"]
     bonus = 1 if traits[row["trait"]] in v["answers.cat_traits"] else 0
+    personal = row["score"] + bonus if first else 0
     a = v["answers.on_bond"]
     assert v["answers.on_bond_count"] == 1 and a, v
-    assert (a["node"], a["trait"], a["bonus"], a["first"], a["role"]) == (node, row["trait"], bonus, True, role), a
-    assert (a["personal"], a["clan"], a["clan_change"]) == (row["score"] + bonus, v["answers.clan"], row["clan"] + bonus), a
+    assert (a["node"], a["trait"], a["bonus"], a["first"], a["role"]) == (node, row["trait"], bonus, first, role if first else ""), a
+    assert (a["personal"], a["clan"], a["clan_change"]) == (personal, v["answers.clan"], row["clan"] + bonus), a
     clamp = lambda n: max(0, min(100, n))  # noqa: E731 (the game keeps a bond within 0 and 100)
-    assert v["answers.personal_after"] == clamp(v["answers.personal_before"] + row["score"] + bonus), v
+    assert v["answers.personal_after"] == clamp(v["answers.personal_before"] + personal), v
     assert v["answers.clan_after"] == clamp(v["answers.clan_before"] + row["clan"] + bonus), v
     assert v["answers.node_after"] is True, v
     again = v["answers.again"]

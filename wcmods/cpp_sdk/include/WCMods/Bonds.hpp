@@ -439,10 +439,9 @@ namespace wcmods
         BondAnswer a;
         a.node = node;
         a.trait = row->trait;
-        static const wchar_t* traits[] = {L"None", L"Brave", L"Ambitious", L"Wise", L"Energetic", L"Curious", L"Patient"};
-        if (a.trait > 0 && a.trait < 7)
+        if (a.trait > 0)
             for (auto& t : cat_traits())
-                if (t == traits[a.trait])
+                if (t == trait_name(a.trait))
                     a.bonus = static_cast<int>(tuning(L"Gameplay.Progression.Bonding.TraitModifier").value_or(1.0f));
         a.clan = cat_clan(player());
         bool had = false;

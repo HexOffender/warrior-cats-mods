@@ -171,7 +171,10 @@ namespace wcmods
         UObject* graph{};
         std::vector<TalkNode> nodes;
         std::vector<int> roots;
-        std::wstring tag;   // a story talk's (a BondDialogue's DialogueTag, or story_talk's): its rows' prefix
+        // Its rows' prefix: a story talk's tag (a BondDialogue's DialogueTag, or story_talk's). A quest's talk has none of
+        // its own: the game uses the quest's row prefix (its tag and rank, L"Quest.Procedural.Survival.Gather.Apprentice",
+        // set as the quest plays it), so a mod playing one sets it for its answers to resolve the quest's rows.
+        std::wstring tag;
         explicit operator bool() const
         {
             return !roots.empty() && !nodes.empty() && roots.front() >= 0 && static_cast<size_t>(roots.front()) < nodes.size();
@@ -306,7 +309,8 @@ namespace wcmods
     }
 
     // The row a bond answer node resolves (QuestDialogueActionResolveBondAnswer, as the game's code joins it): the talk's
-    // tag (else the node's FallbackDialogueTag), a dot and its SubTag. Empty for any other node, or one with neither.
+    // tag (a story talk's; for a quest's talk the game's is the quest's row prefix, which `tag` must be given), else the
+    // node's FallbackDialogueTag, a dot and its SubTag. Empty for any other node, or one with neither.
     inline auto bond_answer_row(const Talk& talk, const TalkNode& n) -> std::wstring
     {
         if (n.kind != L"QuestDialogueActionResolveBondAnswer" || n.sub_tag.empty()) return {};
