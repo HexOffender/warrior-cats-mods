@@ -80,7 +80,7 @@ test("an older copy of one of the four, dropped on its own, isn't ticked: yours 
     "menu-pages/mod.json": { name: "Menu pages", version: "1.0" }, "menu-pages/scripts/main.lua": "-- older" });
   const p = await browser.page();
   await p.goto(studio.url + "#mods");
-  await p.waitFor("#mod-file");
+  await p.waitFor('.section[data-page="mods"][data-ready]');   // every card drawn: none moves the preview after
   await p.setFiles("#mod-file", [zip]);
   await p.waitFor("#pick-menu-pages");
   assert.equal(await p.evaluate(() => document.getElementById("pick-menu-pages").checked), false);
