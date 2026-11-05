@@ -53,6 +53,7 @@ namespace t
     auto run_dens_request() -> void;     // Dens.hpp: dens, hotspots, decorations placed, timed, taken off ("dens")
     auto run_map_request() -> void;      // Map.hpp: the HUD's quest pieces, markers, the clock, travel, the camera ("map")
     auto run_map_end_request() -> void;  // the markers taken off, the clock let go ("map_end")
+    auto run_camera_request() -> void;   // Map.hpp's camera settings: read, set, held, put back ("camera")
     auto run_effects_request() -> void;  // Effects.hpp: effects played and stopped, movement, the sense ("effects")
     auto run_anims_request() -> void;    // Animations.hpp: mods' animations played and stopped, in the game ("anims")
     auto run_ui_units() -> void;         // Ui.hpp's rule for the arrows on a tab's page, without the game (test_ui.cpp)

@@ -88,6 +88,19 @@ ANCHORS = {
     # calling it. The parent's start-up (0x1658C00) isn't one: its only access, the cap's store, is the
     # same bytes as 0x17C6210's as far as a signature reaches, so with both searched neither is unique,
     # and make() loses the cap's signature in 0x17C6210 (the cap in 2 instructions instead of 3).
+    # The exploration camera's settings are read by its BeginPlay (as offsets from the struct at +0x3F8, which a
+    # signature can't capture, and then whole from the actor) and by its update; neither is a function its vtable
+    # names directly.
+    "/Script/SwtAdventure.SwtAdventureCameraActor": [
+        (0x1760B30, "BeginPlay: the settings from the tuning, the interpolators started from them, the lag onto the arm"),
+        (0x17621A0, "the update: the arm's length, its tilt and the field of view from the settings, each frame"),
+    ],
+    # Your cat's exploration settings: loaded in its BeginPlay, read by the turning input.
+    "/Script/SwtAdventure.ExplorationControlComponent": [
+        (0x179DF80, "BeginPlay: the exploration settings from the tuning (speeds, stamina, jump, turning)"),
+        (0x17A4B80, "the turning input: yaw and pitch by the turn rates, within the pitch limits"),
+        (0x17AC120, "the turning input while aligning the camera behind the cat"),
+    ],
     "/Script/SwtAdventure.SwtAdventureLevelComponent": [
         (0x1657230, "setting the XP: levels up while it reaches the next level's, below the cap"),
         (0x1657010, "setting the level: the XP bar's size from the XP table, full at the cap"),

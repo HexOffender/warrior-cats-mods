@@ -3,6 +3,7 @@
 // "map_end" takes them off and lets the clock go.
 #include "checks.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -115,5 +116,75 @@ namespace t
         markers.clear();
         expect("map_end.release", hold_time(std::nullopt) && !time_held());
         done("map_end");
+    }
+
+    namespace
+    {
+        auto settings_json(const CameraSettings& s) -> Json
+        {
+            Json o = Json::object();
+            auto put = [&](const char* name, const std::optional<double>& v) { o.set(name, v ? Json(*v) : Json()); };
+            put("distance", s.distance);
+            put("fov", s.fov);
+            put("pitch", s.pitch);
+            put("speed_distance", s.speed_distance);
+            put("speed_fov", s.speed_fov);
+            put("lag", s.lag);
+            put("rotation_lag", s.rotation_lag);
+            put("turn_yaw", s.turn_yaw);
+            put("turn_pitch", s.turn_pitch);
+            put("pitch_min", s.pitch_min);
+            put("pitch_max", s.pitch_max);
+            return o;
+        }
+        // What shows: the camera's distance and field of view (camera()), the arm's length, the lens's pitch, and the
+        // arm's lag as the arm has it.
+        auto shown(const char* key) -> void
+        {
+            Json o = Json::object();
+            if (auto c = camera())
+            {
+                o.set("distance", Json(c->distance));
+                o.set("fov", Json(c->fov));
+                UObject* arm = get(c->actor, L"AdventureArmComponent").object;
+                UObject* lens = get(c->actor, L"CameraComponent").object;
+                o.set("arm", Json(get(arm, L"TargetArmLength").number()));
+                o.set("lag_on", Json(get(arm, L"bEnableCameraLag").boolean()));
+                o.set("lag_speed", Json(get(arm, L"CameraLagSpeed").number()));
+                // How far above your cat the lens is, as an angle: a tilt down raises it.
+                auto me = location(player());
+                auto r = call_reflected(lens, STR("K2_GetComponentLocation"));
+                if (me && r && c->distance > 0)
+                {
+                    const double dz = get(r->get(L"ReturnValue"), L"Z").number() - me->z;
+                    o.set("elevation", Json(std::asin(std::clamp(dz / c->distance, -1.0, 1.0)) * 180.0 / 3.14159265358979));
+                }
+            }
+            value(key, o);
+        }
+    } // namespace
+
+    auto run_camera_request() -> void
+    {
+        phase("camera");
+        auto before = camera_settings();
+        expect("camera.read", before.has_value());
+        if (!before) return done("camera");
+        value("camera.before", settings_json(*before));
+        shown("camera.shown_before");
+        expect("camera.set", set_camera({.distance = 300, .fov = 60, .pitch = -35, .lag = 0, .turn_yaw = 110, .pitch_max = 60}));
+        after(2.0, [] {
+            shown("camera.shown_set");
+            if (auto s = camera_settings()) value("camera.set_read", settings_json(*s));
+            // A second set keeps the first's "before": reset puts back the game's, not this.
+            expect("camera.set_again", set_camera({.speed_fov = 0}));
+            expect("camera.reset", reset_camera());
+            after(2.0, [] {
+                shown("camera.shown_reset");
+                if (auto s = camera_settings()) value("camera.reset_read", settings_json(*s));
+                expect("camera.reset_again", reset_camera());   // nothing to put back: true
+                done("camera");
+            });
+        });
     }
 } // namespace t

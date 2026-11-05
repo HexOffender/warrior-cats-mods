@@ -134,6 +134,10 @@ namespace t
             {
                 run_map_end_request();
             }
+            else if (what == "camera")
+            {
+                run_camera_request();
+            }
             else if (what == "effects")
             {
                 run_effects_request();

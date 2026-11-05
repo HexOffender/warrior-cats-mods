@@ -1500,6 +1500,30 @@ def test_map_hud_and_travel(agent):
     assert 30 < v["map.camera.distance"] < 2000 and 30 < v["map.camera.fov"] < 130, v
 
 
+def test_camera_settings(agent):
+    """Map.hpp's camera settings in the game: read as the game has them (TuningData's, on build 26337109), set (the
+    camera 300 cm off, a 60 degree lens, tilted 35 degrees down, no lag, faster turning, more room looking up), the
+    camera seen there 2 s later, and all put back by reset_camera."""
+    _close_screens(agent)
+    r = _request(agent, "camera", timeout=30)
+    with open(os.path.join(agent.out_dir, "camera-values.json"), "w", encoding="utf-8") as f:
+        json.dump({k: x for k, x in r["values"].items() if k.startswith("camera")}, f, indent=1)
+    assert not _failed(r, "camera"), _failed(r, "camera")
+    v = r["values"]
+    b = v["camera.before"]
+    assert (b["distance"], b["fov"], b["pitch"], b["lag"], b["rotation_lag"]) == (113, 90, -5, 10, 5), b
+    assert (b["turn_yaw"], b["turn_pitch"], b["pitch_min"], b["pitch_max"]) == (55, 120, -20, 23), b
+    s = v["camera.shown_set"]
+    assert abs(s["arm"] - 300) < 1 and abs(s["fov"] - 60) < 0.5, s   # eased there within the 2 s
+    assert 250 < s["distance"] < 350 and s["lag_on"] is False and s["lag_speed"] == 0, s
+    assert s["elevation"] > v["camera.shown_before"]["elevation"] + 15, (s, v["camera.shown_before"])   # tilted down
+    got = v["camera.set_read"]
+    assert (got["distance"], got["fov"], got["pitch"], got["turn_yaw"], got["pitch_max"]) == (300, 60, -35, 110, 60), got
+    assert v["camera.reset_read"] == b, (v["camera.reset_read"], b)
+    back = v["camera.shown_reset"]
+    assert abs(back["arm"] - 113) < 1 and abs(back["fov"] - 90) < 0.5 and back["lag_on"] is True and back["lag_speed"] == 10, back
+
+
 def test_effects_movement_and_sense(agent):
     """Effects.hpp in the game: the game's own effects by name (its VFX manager's: the buff, the statuses, a pickup's)
     and a Niagara system by its path, each seen playing, one stopped; bad names refused. Your cat's movement read

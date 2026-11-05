@@ -132,8 +132,8 @@ and marks the node.
 
 | Step | State | Pull request |
 |---|---|---|
-| 1. Lua on one thread | done: the error traced to Lua run on two threads in one state and reproduced; wcmods' timers on the game thread, key binds that only count; the rule in SDK.md and scripting.md | this branch, `claude/lua-one-thread` |
-| 2. The camera's setters | not started | |
+| 1. Lua on one thread | done: the error traced to Lua run on two threads in one state and reproduced; wcmods' timers on the game thread, key binds that only count; a script's own LoopAsync, ExecuteWithDelay and key binds pointed at the game thread by its bootstrap; the rule in SDK.md and scripting.md | #132 |
+| 2. The camera's setters | done: nothing had moved on 26337109 (the crash was a bad read of the interpolators' map); the camera's settings (distance, field of view, tilt, the speed's extra, lag) and your cat's turning and pitch limits as hidden members with signatures; `camera_settings`, `set_camera`, `reset_camera`, seen holding in game | this branch, `claude/cpp-camera` |
 | 3. Your cat's speeds | not started | |
 | 4. The world map's travel | not started | |
 | 5. Photo mode | not started | |
