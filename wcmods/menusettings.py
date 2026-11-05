@@ -73,12 +73,12 @@ def options(cfg):
             "pad": s["pad"], "pads": [[p, n] for p, n in menu.PAD_NAMES.items()]}
 
 
-def apply_console(cfg):
+def apply_console(cfg, log=None):
     """Make UE4SS's mods list match wcmods.json's "console" (when it says anything), and take the console mod's
     self-unhook out (ue4ss.fix_console_mod: it crashed the game at a fight's start)."""
     mods_dir = cfg.ue4ss_mods_dir
     if mods_dir and os.path.isdir(os.path.join(mods_dir, CONSOLE_MOD)):
-        ue4ss.fix_console_mod(mods_dir)
+        ue4ss.fix_console_mod(mods_dir, log=log)
         if "console" in cfg.data:
             ue4ss.set_registered(mods_dir, CONSOLE_MOD, bool(cfg.data["console"]))
 

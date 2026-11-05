@@ -420,6 +420,13 @@ win's end ("A Final Show of Strength"): `dilemma()` read its title and question,
 keys, and the fight ended won; its choices' words read "TXT" from their `Text` then, so they're read from the buttons'
 text blocks now, as the fight menu's are ("Attack", "Rest", "Herbs", "Flee", checked every run). The hook on
 `OnDilemmaCompleted` didn't fire for that answer, so there's no dilemma event. Ten runs of the four fights: no crash.
+After the review: a dilemma left up in one run (its single Confirm let go by, with the game's window behind), so
+`answer_dilemma` and the fight menu's picks now step, looking at the selection before each press. In the next
+dilemma that came, the choices read "You spare the opponent, showing mercy." and "Deliver the final blow to finish
+the enemy.", the first read as selected, and the second was answered. Which button is selected is read from its
+`CanvasSelected` being shown, checked every run on the fight menu against the panel's `ControlSelected`. In a fight,
+`player()` read nothing (the controller holds the fight's pawn): `fight_cat()`, the tier-0 fighter, found the cat and
+its three moves, and `fight_attack(3)` was turned down.
 
 **2026-11-05, build 26337109: quests** (the branch `claude/cpp-quests`, `tests/game/test_cpp_sdk.py::test_quests`
 passed; the test backs the save up and puts it back after): on the ShadowClan test cat, the quests listed with their

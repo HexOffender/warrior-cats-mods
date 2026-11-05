@@ -482,41 +482,85 @@ namespace wcmods
             p.set_nth(1, Value::of(false));
         });
         if (UObject* c = controller()) call_reflected(c, STR("SetControlRotation"), [&](Params& p) { set(p.nth(0), L"Yaw", yaw); });
-        after(0.6, [] { command(L"Player_Pounce"); });
+        after(0.6, [] {   // still in the world and not in a fight by then
+            if (player() && !combat_active()) command(L"Player_Pounce");
+        });
         return true;
     }
 
     namespace detail
     {
         inline auto fight_menu_screen() -> Widget { return ui::screen(L"WBP_GuiPopupCombat_C"); }
-        // Pick a button on one of the fight menu's panels (L"PanelCombatMenu": Attack, Rest, Item, Flee;
-        // L"PanelCombatAttacks": the moves) as its own keys do: Down from the one selected to it, a press every 0.3 s
-        // (presses in one frame don't move it), then Confirm, then `then`. The panel's own order is its NavControls'
-        // ControlsNavigation. False when the menu or the button isn't there.
-        inline auto fight_pick(const wchar_t* panel_name, std::wstring_view button, std::function<void()> then = {}) -> bool
+        // Where a button is on one of the fight menu's panels (L"PanelCombatMenu": Attack, Rest, Item, Flee;
+        // L"PanelCombatAttacks": the moves), in the panel's own order (its NavControls' ControlsNavigation), and
+        // where the selection is (ControlSelected). A target of -1 when the menu, the panel or the button isn't there.
+        struct FightSpot
         {
+            int target = -1, selected = 0;
+        };
+        inline auto fight_spot(const wchar_t* panel_name, std::wstring_view button) -> FightSpot
+        {
+            FightSpot s;
             Widget menu = fight_menu_screen();
             UObject* panel = menu ? get(menu.object(), panel_name).object : nullptr;
-            if (!panel) return false;
-            std::vector<UObject*> order;
-            for (Value& c : elements(get(panel, L"NavControls").object, L"ControlsNavigation"))
-                if (c.object) order.push_back(c.object);
-            const int n = static_cast<int>(order.size());
-            int target = -1, now = 0;
+            if (!panel) return s;
             UObject* selected = get(panel, L"ControlSelected").object;
-            for (int i = 0; i < n; ++i)
+            int i = 0;
+            for (Value& c : elements(get(panel, L"NavControls").object, L"ControlsNavigation"))
             {
-                if (name(order[i]) == button) target = i;
-                if (order[i] == selected) now = i;
+                if (!c.object) continue;
+                if (wcmods::name(c.object) == button) s.target = i;
+                if (c.object == selected) s.selected = i;
+                ++i;
             }
-            if (target < 0) return false;
-            const int downs = (target - now + n) % n;
-            for (int i = 0; i < downs; ++i) after(0.3 * (i + 1), [] { ui::send(fight_menu_screen(), L"Button_Down"); });
-            after(0.3 * (downs + 1), [then] {
+            return s;
+        }
+        // One step of a pick, 0.3 s after the last (presses in one frame don't move the selection): the selection
+        // read again, Up or Down toward the button (the panels aren't relied on to wrap round), or Confirm and then
+        // `then` once it's there. Read each time, as a screen can let a command go by (more so with the game's window
+        // behind). Given up after `tries` steps, or when the menu or the button has gone.
+        inline auto fight_step(const wchar_t* panel_name, std::wstring button, std::function<void()> then, int tries) -> void
+        {
+            after(0.3, [panel_name, button, then, tries] {
+                const FightSpot s = fight_spot(panel_name, button);
+                if (s.target < 0 || tries <= 0) return;
+                if (s.target != s.selected)
+                {
+                    ui::send(fight_menu_screen(), s.target < s.selected ? L"Button_Up" : L"Button_Down");
+                    return fight_step(panel_name, button, then, tries - 1);
+                }
                 ui::send(fight_menu_screen(), L"Button_Confirm");
                 if (then) then();
             });
+        }
+        // Pick a button on one of the fight menu's panels as its own keys do: the selection moved to it a press at a
+        // time, then Confirm, then `then` (fight_step). False when the menu or the button isn't there.
+        inline auto fight_pick(const wchar_t* panel_name, std::wstring_view button, std::function<void()> then = {}) -> bool
+        {
+            const FightSpot s = fight_spot(panel_name, button);
+            if (s.target < 0) return false;
+            const int distance = s.target > s.selected ? s.target - s.selected : s.selected - s.target;
+            fight_step(panel_name, std::wstring(button), std::move(then), distance + 4);
             return true;
+        }
+    } // namespace detail
+
+    // Your cat's fighter in the fight now: the player's side's one the AI doesn't play (its tier 0); its actor() is
+    // your cat. Empty outside a fight. (player() is nullptr during one: the controller holds the fight's own pawn.)
+    inline auto fight_cat() -> Fighter
+    {
+        for (Fighter& f : fight_players())
+            if (f.ai_tier() && *f.ai_tier() == 0) return f;
+        return {};
+    }
+    namespace detail
+    {
+        // How many moves your cat has in this fight (its fighter's moves), or -1 when that can't be read.
+        inline auto fight_move_count() -> int
+        {
+            Fighter me = fight_cat();
+            if (!me || !me.move_count()) return -1;
+            return static_cast<int>(me.moves().size());
         }
     } // namespace detail
 
@@ -524,10 +568,13 @@ namespace wcmods
     inline auto fight_menu() -> Widget { return detail::fight_menu_screen(); }
     // Your cat's turn, through the fight menu as its own keys pick: an attack (move 0 to 3, as the attack panel lists
     // them; its target confirmed), a rest, or fleeing (the fight ends: CombatEnd). False when the menu isn't up (not
-    // your cat's turn) or hasn't got it; the turn plays out over the next seconds.
+    // your cat's turn) or hasn't got it, or for a move your cat hasn't got (a young cat has fewer than four); the
+    // turn plays out over the next seconds.
     inline auto fight_attack(int move = 0) -> bool
     {
         if (!assert_game_thread(L"fight_attack") || move < 0 || move > 3) return false;
+        const int moves = detail::fight_move_count();
+        if (moves >= 0 && move >= moves) return false;
         return detail::fight_pick(L"PanelCombatMenu", L"mcGuiButtonAttack", [move] {
             after(0.6, [move] {   // the moves' panel, once it's open
                 detail::fight_pick(L"PanelCombatAttacks", L"mcGuiButtonAttack" + std::to_wstring(move + 1), [] {
@@ -544,7 +591,9 @@ namespace wcmods
     // again then. The game's EndCombat leaves the cat without a body: not used.
     inline auto end_fight(bool won) -> bool
     {
-        if (!assert_game_thread(L"end_fight") || !combat_active() || !fight_menu()) return false;
+        if (!assert_game_thread(L"end_fight") || !combat_active()) return false;
+        // The attack has to be there before anyone's health is touched.
+        if (detail::fight_spot(L"PanelCombatMenu", L"mcGuiButtonAttack").target < 0 || detail::fight_move_count() == 0) return false;
         for (Fighter& f : won ? fight_enemies() : fight_players())
         {
             Resource hp = resource(f.actor(), STR("SwtQuestHealthComponent"));
@@ -569,6 +618,41 @@ namespace wcmods
             std::wstring words = b.find(L"mcGuiTextNormal").text();
             return words.empty() ? b.find(L"mcGuiTextSelected").text() : words;
         }
+        // Whether a game button (a GuiButtonState: the fight menu's, a dilemma's choices) shows as selected: its
+        // CanvasSelected is shown. False for no button.
+        inline auto button_selected(UObject* button) -> bool
+        {
+            UObject* c = button ? get(button, L"CanvasSelected").object : nullptr;
+            if (!c) return false;
+            const Visibility v = Widget(c).visibility();
+            return v != Visibility::Collapsed && v != Visibility::Hidden;
+        }
+        // Which of a dilemma popup's choices shows as selected (0, 1), or -1 when neither does.
+        inline auto dilemma_selected(UObject* popup) -> int
+        {
+            if (button_selected(get(popup, L"mcGuiOption1").object)) return 0;
+            if (button_selected(get(popup, L"mcGuiOption2").object)) return 1;
+            return -1;
+        }
+        // One step of answering, `wait` s after the last, while the same popup is up: toward the choice (Right, Left)
+        // or Confirm once the selection is on it, as a screen can let a command go by. `assumed` is where the
+        // selection is taken to be when neither choice reads as selected (the first, at the start).
+        inline auto answer_step(UObject* popup, int option, int assumed, int tries, double wait) -> void
+        {
+            after(wait, [popup, option, assumed, tries] {
+                Widget now = ui::screen(L"WBP_GuiPopupDilemma_C");
+                if (!now || now.object() != popup || tries <= 0) return;
+                int at = dilemma_selected(popup);
+                if (at < 0) at = assumed;
+                if (at != option)
+                {
+                    ui::send(now, option == 1 ? L"Button_Right" : L"Button_Left");
+                    return answer_step(popup, option, option, tries - 1, 0.4);
+                }
+                ui::send(now, L"Button_Confirm");
+                answer_step(popup, option, option, tries - 1, 1.5);   // still up then: the Confirm went by
+            });
+        }
     } // namespace detail
     inline auto dilemma() -> std::optional<Dilemma>
     {
@@ -585,13 +669,15 @@ namespace wcmods
         return d;
     }
     // Answer the dilemma asking now, as its own keys do: the first choice (0) or the second (1), the selection moved
-    // over to it a press at a time, then Confirm; the fight then ends as the game does. False when none is asking.
-    // (The game's OnDilemmaCompleted hook didn't fire for an answer at a fight's end, so there's no event for it.)
+    // over to it (Right, Left) and then Confirm, a step at a time, each looking at which choice shows as selected,
+    // until the popup goes; the fight then ends as the game does. False when none is asking. (The game's
+    // OnDilemmaCompleted hook didn't fire for an answer at a fight's end, so there's no event for it.)
     inline auto answer_dilemma(int option) -> bool
     {
-        if (!assert_game_thread(L"answer_dilemma") || option < 0 || option > 1 || !ui::screen(L"WBP_GuiPopupDilemma_C")) return false;
-        if (option == 1) after(0.3, [] { ui::send(ui::screen(L"WBP_GuiPopupDilemma_C"), L"Button_Right"); });
-        after(option == 1 ? 0.7 : 0.3, [] { ui::send(ui::screen(L"WBP_GuiPopupDilemma_C"), L"Button_Confirm"); });
+        if (!assert_game_thread(L"answer_dilemma") || option < 0 || option > 1) return false;
+        Widget popup = ui::screen(L"WBP_GuiPopupDilemma_C");
+        if (!popup) return false;
+        detail::answer_step(popup.object(), option, 0, 8, 0.3);
         return true;
     }
 
@@ -602,7 +688,7 @@ namespace wcmods
     {
         if (!assert_game_thread(L"apply_status") || !actor) return false;
         UObject* sc = component(actor, STR("SwtAdventureStatusComponent"));
-        if (!sc) return false;
+        if (!sc || !enum_value(STR("/Script/SwtAdventure.ESwtAdventureStatusType"), status)) return false;
         bool named = false;
         auto r = call_reflected(sc, STR("ApplyStatusType"), [&](Params& p) { named = p.set_nth(0, Value::of(status)); });
         return r.has_value() && named;

@@ -221,6 +221,10 @@ Some limits:
 - **Only calls through Unreal fire hooks.** Unreal's function calls (Blueprints, delegates, Lua) fire
   them; native C++ calling C++ directly doesn't.
 - **Hooks are per script:** they come off when the script stops.
+- **Don't take a hook off from inside its own `fn`:** UE4SS frees the callback while it's running, and the game
+  crashed at the hooked function's next call (seen with UE4SS's own console enabler on `ClientRestart`, which a
+  fight's start calls: *Fights from C++* in `reverse-engineering.md`). Take it off a moment later instead:
+  `Game.after(0, function() Game.unhook(h) end)` (not tried in game yet).
 
 ### Your cat (and other cats)
 

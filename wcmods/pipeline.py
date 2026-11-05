@@ -664,7 +664,7 @@ def install(cfg, build_dir, backups_root, log=print, force=False):
         os.makedirs(saved_folder(cfg), exist_ok=True)
         if bridge.NAME in manifest["ue4ss_mods"]:
             os.makedirs(bridge.folder(cfg), exist_ok=True)
-        menusettings.apply_console(cfg)
+        menusettings.apply_console(cfg, log=log)
     else:
         skipped = []
         if any(manifest["notes"].get("palettes", {}).get("runtime_palette", {}).values()):

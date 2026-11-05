@@ -1255,9 +1255,12 @@ Read in a fight with a level 20 cat against a weak bird:
 - **The fight menu** (`WBP_GuiPopupCombat_C`) has panels: `PanelCombatMenu` with Attack, Rest, Item (herbs) and Flee
   in that order (its `NavControls.ControlsNavigation`), and `PanelCombatAttacks` with the moves
   (`mcGuiButtonAttack1`–`4`). Attack is selected when the menu opens. Down presses sent in one frame don't move the
-  selection (it stayed on Attack); one every 0.3 s does. Confirm, Confirm, Confirm attacks with the first move and
+  selection (it stayed on Attack); one every 0.3 s does, and `Button_Up` moves it back (the menu's keys: a pick
+  goes Up or Down to its button, not round the end). Confirm, Confirm, Confirm attacks with the first move and
   confirms its target. The panels' own `OnUIPress`/`OnUIRelease(button)` didn't pick anything, and the screen's own
   navigation (`CurrentNav`) is empty.
+- **Your cat in a fight:** the controller's pawn is the fight's own then, so `player()` reads nothing until it ends.
+  Your cat's actor is unchanged: it's the player's side's fighter with AI tier 0 (`fight_cat()`).
 - **How it ends:** health set to 0 doesn't end a fight by itself; the next action does. The enemy at 0 and an attack:
   the game's win (its rewards: Horsetail Stalks, Mouse Fresh-kill), the cat exploring again. The cat at 0 and an
   attack: the game's loss, the cat back at its respawn spot by the den, healed. Flee ended the fight at once.
@@ -1280,7 +1283,10 @@ Read in a fight with a level 20 cat against a weak bird:
   from inside that hook's callback once the console exists. UE4SS frees the callback, and the next `ClientRestart`
   (a fight's start possesses another pawn; so does a respawn) crashed the game in UE4SS's code, four times, each a few
   seconds after "Unregistering native pre-hook ... ClientRestart" in UE4SS.log. wcmods takes that line out of the
-  script at install (`ue4ss.fix_console_mod`); the hook stays and does nothing once the console is made.
+  script at install (`ue4ss.fix_console_mod`, which also tells the install's log when the script unhooks some
+  other way it doesn't know); the hook stays and does nothing once the console is made. Any mod's hook taken off
+  inside its own callback would do the same: Lua's `Game.unhook` calls `UnregisterHook` straight away, so
+  `scripting.md` says to take one off a moment later (making `Game.unhook` do that itself is for the Lua side).
 
 **The quests:** the quest manager's `Quests` is an array of `{Quest, Line, Node}`. Every quest object
 is named `SwtAdventureMultiObjectiveQuest_0`, and its outer, a `QuestDynamicGraph` such as

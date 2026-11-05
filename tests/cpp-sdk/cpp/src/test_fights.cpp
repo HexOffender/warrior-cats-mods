@@ -80,6 +80,7 @@ namespace t
                         x.set("question", Json(text(d->question)));
                         x.set("option1", Json(text(d->option1)));
                         x.set("option2", Json(text(d->option2)));
+                        x.set("selected_at_first", Json(detail::dilemma_selected(popup)));
                         x.set("answered", Json(answer_dilemma(label == "win" ? 1 : 0)));
                         dilemmas.push(x);
                     }
@@ -138,6 +139,13 @@ namespace t
             for (const wchar_t* b : {L"mcGuiButtonAttack", L"mcGuiButtonRest", L"mcGuiButtonItem", L"mcGuiButtonFlee"})
                 words.push(Json(text(detail::button_words(get(fight_menu().object(), std::wstring(L"PanelCombatMenu.") + b).object))));
             value("fights.menu_words", words);
+            // How answer_dilemma tells which choice is selected (detail::button_selected: the button's CanvasSelected
+            // shown), checked on the fight menu's buttons, which are the same kind, against the panel's own selection.
+            Json shown = Json::array();
+            for (const wchar_t* b : {L"mcGuiButtonAttack", L"mcGuiButtonRest", L"mcGuiButtonItem", L"mcGuiButtonFlee"})
+                shown.push(Json(detail::button_selected(get(fight_menu().object(), std::wstring(L"PanelCombatMenu.") + b).object)));
+            value("fights.menu_shown_selected", shown);
+            value("fights.menu_selected", detail::fight_spot(L"PanelCombatMenu", L"mcGuiButtonAttack").selected);
             auto enemies = fight_enemies();
             value("fights.damage.enemy_health", enemies.empty() ? Json() : Json(health_of(enemies.front())));
             expect("fights.status", !enemies.empty() && apply_status(enemies.front().actor(), L"Poisoned")
@@ -157,6 +165,14 @@ namespace t
                     after(3.0, [] {
                         when([] { return static_cast<bool>(fight_menu()) || !combat_active(); }, 20, [](bool) {
                             value("fights.win.rested_turn", static_cast<bool>(fight_menu()));
+                            // Where the selection is now: on Rest (1), end_fight's attack is picked with Up.
+                            value("fights.win.selected_after_rest", detail::fight_spot(L"PanelCombatMenu", L"mcGuiButtonAttack").selected);
+                            value("fights.win.move_count", detail::fight_move_count());
+                            // Your cat in a fight: fight_cat(), as player() is nullptr until it ends.
+                            value("fights.win.player_in_fight", player() != nullptr);
+                            value("fights.win.fight_cat", text(name(fight_cat().actor())));
+                            const int moves = detail::fight_move_count();
+                            if (moves > 0 && moves < 4) expect("fights.missing_move", !fight_attack(moves));
                             expect("fights.end_win", end_fight(true));
                         });
                     });

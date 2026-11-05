@@ -1375,12 +1375,19 @@ def test_fights(agent):
             agent.restore_save(backup)
         finally:
             agent.launch(world=True)
+    # The relaunch replaces results.json: the fights' values are kept beside the run's reports to look at.
+    with open(os.path.join(agent.out_dir, "fights-values.json"), "w", encoding="utf-8") as f:
+        json.dump({k: x for k, x in r["values"].items() if k.startswith("fights.")}, f, indent=1, ensure_ascii=False)
     assert not _failed(r, "fights"), _failed(r, "fights")
     v = r["values"]
     for fight in ("damage", "win", "flee", "lose"):
         assert v[f"fights.{fight}.started"] is True and v[f"fights.{fight}.ended"] is True, (fight, v)
     assert v["fights.status_events"] >= 1, v
     assert v["fights.win.rested_turn"] is True, v   # after a rest, your cat's turn came back
+    # Your cat's moves were read (fight_attack turns down a move it hasn't got: checked in the mod when it has
+    # fewer than four), and the selection after the rest was somewhere on the menu (Up picks Attack from Rest).
+    assert v["fights.win.move_count"] >= 1 and v["fights.win.selected_after_rest"] in (0, 1, 2, 3), v
+    assert v["fights.win.player_in_fight"] is False and v["fights.win.fight_cat"] == v["player.name"], v
     boosted = [h for h in v["fights.hits"] if h.startswith("enemy ")]
     assert boosted and all(int(h.split()[1]) * 10 == float(h.split()[-1]) for h in boosted), v["fights.hits"]
     e = v["fights.lose.events"]
@@ -1389,8 +1396,12 @@ def test_fights(agent):
     # A dilemma at a win's end comes by chance (Dilemma13 or 14, 15% each): each one that came was read (its choices'
     # words as the menu's buttons' are read) and answered, and the fight ended after it (above).
     assert [w.upper() for w in v["fights.menu_words"]] == ["ATTACK", "REST", "HERBS", "FLEE"], v["fights.menu_words"]
+    # A dilemma's selected choice is read as the menu's buttons show theirs: only the selected one shows CanvasSelected.
+    shown = v["fights.menu_shown_selected"]
+    assert shown.count(True) == 1 and shown.index(True) == v["fights.menu_selected"], (shown, v["fights.menu_selected"])
     for d in v["fights.dilemmas"]:
         assert d["question"] and d["answered"] and d["option1"] not in ("", "TXT") and d["option2"] not in ("", "TXT"), d
+        assert d["selected_at_first"] in (0, 1), d   # which choice is selected reads (answer_dilemma steps by it)
 
 
 def test_ui_arrow_units(agent):
