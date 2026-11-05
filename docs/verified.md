@@ -409,6 +409,13 @@ the clan bar "42/100" "Neutral" and a row at "50/100" among seven cats; the game
 `GameplayProgression/Bonding`; put back to 67 and 20 and saved again. The ranks matched the tuning's thresholds,
 `enum_names` gave EClanType in order, and `cat_name_of(L"STR_CAT_NAME2", L"_PAW")` was "Emberpaw".
 
+**2026-11-05, build 26337109: effects, movement, the scent sense** (the branch `claude/cpp-effects`,
+`tests/game/test_cpp_sdk.py::test_effects_movement_and_sense` passed): `game_effects()` named ten (Blinded, Buff,
+Climb, Debuff, Furious, Interactable, OnContact, PickUp, Poisoned, Stressed); the poison's and `NS_Buff` by its path
+were playing 0.3 s on, and the poison stopped; bad names refused. The test cat read 175 walking, 420 jumping, gravity
+1; a jump of 700 and gravity 0.8 held; its walk speed was refused; a roaming animal's walk speed held 111 higher.
+`use_sense` took the sense from 0 to 1 in 3 s.
+
 **2026-11-05, build 26337109: the HUD, markers, the clock, travel** (the branch `claude/cpp-map`,
 `tests/game/test_cpp_sdk.py::test_map_hud_and_travel` passed): the objective panel read back "WCMods Test", "Sandbox",
 "Find moss", the goals "Moss 1/2" and "Feather 2/2" (ticked), and was gone once put away; the Begin banner read

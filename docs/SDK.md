@@ -1140,6 +1140,7 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Animations.hpp` | mods' own animations (`animations.json`) and the game's sequences, played, seen playing and stopped on any cat or animal |
 | `WCMods/Dens.hpp` | the clans' dens and their hotspots, the decorations: built at once or timed through the game's own build, taken off, read live and from the save; entering a den |
 | `WCMods/Map.hpp` | the HUD's quest banner and objective panel with a mod's words, markers on the minimap and the world map, the clock held, the places your cat can travel to, the camera as it shows |
+| `WCMods/Effects.hpp` | visual effects (any Niagara system, the game's own by name) played and stopped, cats' and animals' movement values, your cat's scent sense |
 | `WCMods/Looks.hpp` | cats' looks: read, changed and drawn on the model through the game's own setup, kept in your cat's save; accessories worn and taken off; the clans' cats from the save with their actors; a cat's role |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Ui.hpp` | the game's own UI: a tab of your own in its screens (the pause menu, the inventory, the settings), the HUD and its parts, overlays, every control the engine has |
@@ -1516,6 +1517,23 @@ wcmods::hold_time(6 * 3600);                                                  //
 | `wcmods::hold_time(seconds)`, `time_held()` | Keep the clock at a time of day (seconds into it; 21600 is 6:00) while your cat is in the world, set every frame (the game's clock runs about 70 times real time); `hold_time(std::nullopt)` lets go. A Lua script's `Game.time.hold` is its own: don't hold from both |
 | `wcmods::places()`, `travel(place)` | The places your cat can travel to: the game's 22 checkpoints (each clan's camp and outposts, the Moonpool's, the island's), each a `Place` with `checkpoint` (its actor), `tag` (`Gameplay.Checkpoints.Shadowclan.0`), `zone` (`"S-09"`), `at`, `at_start` and `unlocked` (from your cat's slot of the save). `travel` puts your cat at one it has unlocked, where the game's travel brings it; false for a locked one, in a fight, or with one of the game's screens up. (The game's own travel is its world map's, which Interact at a checkpoint opens, with the place picked by the map's pointer: not reachable from code yet) |
 | `wcmods::camera()` | The exploration camera as it shows: `CameraView` with `actor`, `distance` from your cat (cm; about 114 on the test cat) and `fov`, the field of view shown (the engine camera manager's). The camera's arm length and field of view come from its own settings each frame, so there's no setter yet |
+
+**Effects, movement and the scent sense (`Effects.hpp`)**, game thread only:
+
+```cpp
+auto fx = wcmods::game_effect(L"Poisoned", *wcmods::location(wcmods::player()));   // fx.stop() ends it
+wcmods::set_jump_speed(wcmods::player(), 700);                                      // the cat jumps higher
+wcmods::use_sense();                                                                // the scent sense, as Q does
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::spawn_effect(system, at, scale = 1)` | Play a Niagara system (its object, or its object path, loaded if need be) at a place, the engine's own way (`NiagaraFunctionLibrary`'s `SpawnSystemAtLocation`), going by itself when it ends: an `Effect` with `playing()` and `stop()`. An empty one for something that isn't a Niagara system, or outside the world |
+| `wcmods::game_effects()`, `game_effect(name, at, scale = 1)` | The game's own effects by name, from its VFX manager: `Buff`, `Debuff`, `Climb`, the status conditions' (`Poisoned`, `Blinded`, `Furious`, `Stressed`) and a pickup's (`PickUp`, `Interactable`, `OnContact`); one played at a place. An empty `Effect` for a name it hasn't got |
+| `wcmods::movement(actor)` | A cat's or an animal's movement values (its `CharacterMovement`): `Movement` with `walk_speed` (175 cm/s on the test cat), `crouched_speed`, `acceleration`, `jump_speed` (420), `gravity` (1), `step_height` and `mode` (`L"MOVE_Walking"`...). Nullopt for an actor without one |
+| `wcmods::set_jump_speed(actor, speed)`, `set_gravity(actor, scale)` | How high it jumps and its gravity: the game leaves both as set, on your cat too |
+| `wcmods::set_walk_speed(actor, speed)` | How fast a mod's cat or an animal walks (it stays). False for your cat, in a fight too: the game sets its walk speed every frame from its own walk and run settings |
+| `wcmods::use_sense()`, `sense()` | Your cat's scent sense through the game's own command, as Q does: it comes on over about two seconds, lasts about ten and fades (true when the command was sent; while it's on, another does nothing); how much it shows now (0 off, 1 full) |
 
 **Looks and the clans' cats (`Looks.hpp`)**, game thread only:
 

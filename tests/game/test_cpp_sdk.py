@@ -1390,6 +1390,7 @@ def test_fights(agent):
     # fewer than four), and the selection after the rest was somewhere on the menu (Up picks Attack from Rest).
     assert v["fights.win.move_count"] >= 1 and v["fights.win.selected_after_rest"] in (0, 1, 2, 3), v
     assert v["fights.win.player_in_fight"] is False and v["fights.win.fight_cat"] == v["player.name"], v
+    assert v["fights.effect_playing"] is True, v   # an effect played in a fight (Effects.hpp)
     boosted = [h for h in v["fights.hits"] if h.startswith("enemy ")]
     assert boosted and all(int(h.split()[1]) * 10 == float(h.split()[-1]) for h in boosted), v["fights.hits"]
     e = v["fights.lose.events"]
@@ -1493,6 +1494,24 @@ def test_map_hud_and_travel(agent):
     assert v["map.places"] == 22 and "Gameplay.Checkpoints.Shadowclan.0 S-09" in v["map.unlocked"], v
     assert v["map.away_from_camp"] > 4000 and v["map.at_camp"] < 100, v
     assert 30 < v["map.camera.distance"] < 2000 and 30 < v["map.camera.fov"] < 130, v
+
+
+def test_effects_movement_and_sense(agent):
+    """Effects.hpp in the game: the game's own effects by name (its VFX manager's: the buff, the statuses, a pickup's)
+    and a Niagara system by its path, each seen playing, one stopped; bad names refused. Your cat's movement read
+    (175 cm/s walking, 420 jumping, gravity 1), its jump and gravity changed and kept, its walk speed refused (the
+    game sets it every frame), a roaming animal's walk speed kept. The scent sense used, full within 3 s."""
+    _close_screens(agent)
+    r = _request(agent, "effects", timeout=30)
+    assert not _failed(r, "effects"), _failed(r, "effects")
+    v = r["values"]
+    assert {"Buff", "Debuff", "Climb", "Poisoned", "Blinded", "PickUp"} <= set(v["effects.names"]), v["effects.names"]
+    assert v["effects.poison_playing"] is True and v["effects.buff_playing"] is True and v["effects.poison_stopped"] is True, v
+    m = v["effects.movement"]
+    assert (m["walk"], m["jump"], m["gravity"], m["mode"]) == (175, 420, 1, "MOVE_Walking"), m
+    assert v["effects.jump_after"] == 700 and abs(v["effects.gravity_after"] - 0.8) < 1e-6, v
+    assert v["effects.animal_walk_after"] == 111, v   # a roaming animal's stays (62 roam near the test cat)
+    assert v["effects.sense_before"] == 0 and v["effects.sense_3s"] > 0.9, v
 
 
 def test_ui_arrow_units(agent):

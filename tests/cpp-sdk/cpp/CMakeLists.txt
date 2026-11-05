@@ -21,4 +21,5 @@ wcmods_mod(${WCMODS_TARGET}
     src/test_fights.cpp
     src/test_dens.cpp
     src/test_map.cpp
+    src/test_effects.cpp
 )

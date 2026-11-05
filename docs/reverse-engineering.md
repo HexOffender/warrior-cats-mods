@@ -1364,6 +1364,22 @@ Read in a fight with a level 20 cat against a weak bird:
   camera actor and screen; the pause menu and a talk's action open it. `Player_Pause` pauses the game, and with it the
   SDK's timers.
 
+**Effects, movement and the scent sense from C++** (worked out on 2026-11-05, build 26337109, for the C++ SDK's
+`Effects.hpp`):
+- **The game's effects** are the VFX manager's (`BP_WrcVfxManager_C`, the game instance's): `BuffNiagaraSystem`
+  (`NS_Buff`), `DebuffNiagaraSystem`, `ClimbStartSystem` (`NS_JumpZone`), `StatusNiagaraSystems` (Blinded, Furious,
+  Poisoned, Stressed: `NS_Debuff_<status>`), `RewardNiagaraSystem` (Interactable, PickUp, OnContact), `HitNiagaraSystem`
+  (by animal: Cat, Mice, Rabbit, BossSnake...); `PickedNiagaraSystem` is empty. Any of them played through
+  `NiagaraFunctionLibrary:SpawnSystemAtLocation` (the world through your cat) gave a `NiagaraComponent` that was
+  active. (The effect manager's `LoadedEffects` are the game's gameplay effects, a herb's heal, not these.)
+- **Movement:** your cat's `CharacterMovement` walks at 175, accelerates at 175, jumps at 420. Its `MaxWalkSpeed`
+  written read 175 again a tenth of a second later: the game sets it every frame. `JumpZVelocity` and `GravityScale`
+  stayed as written, and so did a roaming animal's `MaxWalkSpeed`. `AddMovementInput` each frame moved the cat only
+  70 cm in 1.5 s, facing a rock.
+- **The scent sense:** `Player_Scent_Tracking` (Q) as a command turned it on: the player's
+  `BP_Exploration_SenseHandler` (a post-process component) on, its `BlendWeight` 0.3 at 1 s and 1 at 3 s, full until
+  about 10 s, then fading. A second command while it's on didn't turn it off.
+
 **The quests:** the quest manager's `Quests` is an array of `{Quest, Line, Node}`. Every quest object
 is named `SwtAdventureMultiObjectiveQuest_0`, and its outer, a `QuestDynamicGraph` such as
 `QuestGraph_Tutorial` or `QuestGraphProcedural_Deliver`, says which quest it is. There are 40 in
