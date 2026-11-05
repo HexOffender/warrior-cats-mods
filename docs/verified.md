@@ -409,6 +409,14 @@ the clan bar "42/100" "Neutral" and a row at "50/100" among seven cats; the game
 `GameplayProgression/Bonding`; put back to 67 and 20 and saved again. The ranks matched the tuning's thresholds,
 `enum_names` gave EClanType in order, and `cat_name_of(L"STR_CAT_NAME2", L"_PAW")` was "Emberpaw".
 
+**2026-11-05, build 26337109: the HUD, markers, the clock, travel** (the branch `claude/cpp-map`,
+`tests/game/test_cpp_sdk.py::test_map_hud_and_travel` passed): the objective panel read back "WCMods Test", "Sandbox",
+"Find moss", the goals "Moss 1/2" and "Feather 2/2" (ticked), and was gone once put away; the Begin banner read
+"Side Quest", "A Mod's Quest", "New Objective", and was gone after its 3 s. Two markers (at a place, on the cat) made
+196 from 194 and showed on the minimap; one moved to the place given; both taken off. The clock held read 21605
+exactly. `places()` gave 22, the camp's unlocked; a locked one was refused; `travel` from 60 m off put the cat 84 cm
+from the camp's checkpoint. `camera()` read 114 cm and 90°.
+
 **2026-11-05, build 26337109: dens** (the branch `claude/cpp-dens`, `tests/game/test_cpp_sdk.py::test_dens` passed;
 the test backs the save up and puts it back after): `decorations()` read the 60 rows (all named, Decoration.12 "Bunny
 Soft Down" with `SM_GPE_BunnySDown`); `dens(L"ShadowClan")` gave ten (six shared, Apprentice, Warrior, Deputy,

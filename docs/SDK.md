@@ -1139,6 +1139,7 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Items.hpp` | what each item is (name, icon, kind, and a herb's use through the game's own lookup), and pickups dropped on the ground for your cat to collect, as the game's pickup or a mod's own model |
 | `WCMods/Animations.hpp` | mods' own animations (`animations.json`) and the game's sequences, played, seen playing and stopped on any cat or animal |
 | `WCMods/Dens.hpp` | the clans' dens and their hotspots, the decorations: built at once or timed through the game's own build, taken off, read live and from the save; entering a den |
+| `WCMods/Map.hpp` | the HUD's quest banner and objective panel with a mod's words, markers on the minimap and the world map, the clock held, the places your cat can travel to, the camera as it shows |
 | `WCMods/Looks.hpp` | cats' looks: read, changed and drawn on the model through the game's own setup, kept in your cat's save; accessories worn and taken off; the clans' cats from the save with their actors; a cat's role |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Ui.hpp` | the game's own UI: a tab of your own in its screens (the pause menu, the inventory, the settings), the HUD and its parts, overlays, every control the engine has |
@@ -1493,6 +1494,28 @@ for (auto& den : wcmods::dens(L"ShadowClan"))
 
 The game's minigames (`USwtAdventureMinigameComponent`, `EMinigameType`) aren't in Warrior Cats: no minigame class or
 screen ships with it, and no actor has the component, so the SDK has nothing for them.
+
+**The HUD, the map, the clock and the camera (`Map.hpp`)**, game thread only:
+
+The game's quest pieces on the HUD and its markers, as Lua's `Game.hud` and `Game.mapMarker`: the game shows these only
+for its own quests and takes them back for those, so a mod puts its own away.
+
+```cpp
+wcmods::hud_objective({.title = L"A Soft Nest", .activity = L"Find moss", .goals = {{L"Moss", L"1/2"}}});
+wcmods::hud_banner(wcmods::Banner::Begin, {.kind = L"Side Quest", .title = L"A Soft Nest", .text = L"New Objective"});
+auto m = wcmods::map_marker(wcmods::Vec3{-16000, 13000, 1500}, L"search");   // m.remove() takes it off
+wcmods::hold_time(6 * 3600);                                                  // the clock stays at 6:00
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::hud_objective(objective)`, `hide_objective()`, `hud_objective_shown()` | The objective panel on the HUD's left: `HudObjective` with `title`, `location`, `activity` and up to three `HudGoal`s (`name`, `progress` ("1/2"), `icon`, a texture's object path, and `done`, its tick), shown with the game's animation the first time on a HUD; put away with its hide animation; read back as shown (nullopt while it's hidden). False without the HUD (in a menu, or loading) |
+| `wcmods::hud_banner(which, words)`, `hud_banner_shown(which)` | One of the game's quest banners with its particles (`Banner::Begin`, `Update`, `Done`, `Failed`), its words those given (`BannerText`: `kind`, `title`, `text`; each left as the game has it when empty) for `seconds` (4.5); its text blocks' words as shown, by name, or nullopt while it's hidden |
+| `wcmods::map_marker(at, icon, options)`, `map_marker(actor, icon, options)` | The game's own point of interest (`SwtAdventurePOIComponent`) on the minimap and the world map: at a place (an actor of its own there) or on an actor (it follows it). The icon is one of the game's by name (`L"search"`, `L"talk"`, `L"barter"`, `L"freshkill"`, `L"trainer"`, `L"den"`, `L"outpost"`, `L"skirmish"`, `L"madcat"`, or a clan's: `L"shadowclan"`...) or a material's path; `MarkerOptions`: `border` (kept at the minimap's edge when it's further off) and `on_map`. A `MapMarker`: `valid()`, `move_to(at)` (one at a place), `remove()`. An empty one outside the world |
+| `wcmods::map_marker_count()` | The markers in the world now: the game's own (its quest givers', dens'...) and mods' |
+| `wcmods::hold_time(seconds)`, `time_held()` | Keep the clock at a time of day (seconds into it; 21600 is 6:00) while your cat is in the world, set every frame (the game's clock runs about 70 times real time); `hold_time(std::nullopt)` lets go. A Lua script's `Game.time.hold` is its own: don't hold from both |
+| `wcmods::places()`, `travel(place)` | The places your cat can travel to: the game's 22 checkpoints (each clan's camp and outposts, the Moonpool's, the island's), each a `Place` with `checkpoint` (its actor), `tag` (`Gameplay.Checkpoints.Shadowclan.0`), `zone` (`"S-09"`), `at`, `at_start` and `unlocked` (from your cat's slot of the save). `travel` puts your cat at one it has unlocked, where the game's travel brings it; false for a locked one. (The game's own travel is its world map's, which Interact at a checkpoint opens, with the place picked by the map's pointer: not reachable from code yet) |
+| `wcmods::camera()` | The exploration camera as it shows: `CameraView` with `actor`, `distance` from your cat (cm; about 114 on the test cat) and `fov`, the field of view shown (the engine camera manager's). The camera's arm length and field of view come from its own settings each frame, so there's no setter yet |
 
 **Looks and the clans' cats (`Looks.hpp`)**, game thread only:
 

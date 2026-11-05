@@ -1336,6 +1336,34 @@ Read in a fight with a level 20 cat against a weak bird:
   (ChargeAndRelease, InputSequence, QuickReaction, PushForward, ReactiveBlock) are the engine's: no Blueprint or
   widget of theirs ships (`wcmods files`), and no actor in the forest has the component.
 
+**Travel, the HUD's pieces and the camera from C++** (worked out on 2026-11-05, build 26337109, for the C++ SDK's
+`Map.hpp`):
+- **The places to travel to** are the game's 22 checkpoints (`SwtQuestCheckpoint`: `BP_Checkpoint_ShadowClan_C`,
+  `_Thunderclan_C`, `_Moonpool_C`), each with a `CheckpointTag` (`Gameplay.Checkpoints.Shadowclan.0`), a `ZoneCode`
+  (`S-09`) and `bAvailableAtStart` (each clan's camp's). Your cat's slot keeps them in
+  `GameplayProgression/L_WorldMap_01_P/Checkpoints`, `[{UID, Unlocked}]`. The test cat had only its camp's.
+  - **Interact at one** (the "Travel" prompt by ShadowClan's camp is its checkpoint's) opened the world map
+    (`WBP_GuiPopupWorldMap_C`) in travel mode: the checkpoints as arches, Travel on Enter. The place is the
+    map item under the map's pointer (`CurrentWidgetOverlapping`, a `GuiItemCheckPointMap`); which checkpoint an item
+    is isn't reflected.
+  - **The game's code:** 0x1416A7DE0 logs "SetCheckpointUnlockState" and 0x1416A7D20 reads the `Checkpoints` key,
+    next to the bond functions; 0x141953890 and 0x141953C80 handle `CheckPointDiscovered` and `SunSpotDiscovered`.
+    None is signed yet.
+  - **`Player_ReturnToCamp`** (X) did nothing for the apprentice, sent as a command or pressed.
+- **The HUD's quest pieces** read back as the Lua's set them: the objective panel's title, place, activity and goals,
+  and the banner's `mcGuiTextQuestType`, `mcGuiTextQuestName` and `mcGuiTextObjective`, gone after its time.
+- **Markers:** a POI component added to a plain actor while it's spawned, or to your cat, showed on the minimap. A
+  destroyed one stays among the engine's objects, marked as garbage, until it's collected.
+- **The clock** runs about 70 times real time (35 game seconds in half a second), so a hold sets it every frame.
+- **The camera:** its spring arm's `TargetArmLength` (113 on the test cat) and its `CameraComponent`'s `FieldOfView`
+  (90) are the camera's own each frame: written once, or every frame from a mod's frame callback, nothing seen changed
+  (the camera 114 cm from the cat, the camera manager's `GetFOVAngle` 90). The engine camera manager's `LockedFOV`
+  isn't reflected. The old offsets of *The exploration camera* (from 2026-10-24) don't hold on 26337109: reading
+  the interpolator map at +0x490 crashed the game.
+- **Photo mode** has no reflected way in. The player's `PhotoModeControlComponent` (`BP_PhotoMode_Control`) holds its
+  camera actor and screen; the pause menu and a talk's action open it. `Player_Pause` pauses the game, and with it the
+  SDK's timers.
+
 **The quests:** the quest manager's `Quests` is an array of `{Quest, Line, Node}`. Every quest object
 is named `SwtAdventureMultiObjectiveQuest_0`, and its outer, a `QuestDynamicGraph` such as
 `QuestGraph_Tutorial` or `QuestGraphProcedural_Deliver`, says which quest it is. There are 40 in
@@ -1723,7 +1751,8 @@ From `wcmods/names.py` (checked against the tables and the save):
 ## The exploration camera
 
 Read from its code on 2026-10-24 (`SwtAdventureCameraActor`, used as `BP_AdventureCamera_C`,
-whose Blueprint holds only components).
+whose Blueprint holds only components). The game's update of 2026-11-03 (build 26337109) moved its members: reading
+the old +0x490 crashed the game (*Travel, the HUD's pieces and the camera from C++*).
 
 **Structure:**
 - root (turns left and right) → spring arm `AdventureArmComponent` (0x2B0,

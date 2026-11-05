@@ -126,6 +126,14 @@ namespace t
             {
                 run_dens_request();
             }
+            else if (what == "map")
+            {
+                run_map_request();
+            }
+            else if (what == "map_end")
+            {
+                run_map_end_request();
+            }
             else if (what == "time")
             {
                 // The day's seconds now: the world phase's read came as the cat arrived, before the game set the

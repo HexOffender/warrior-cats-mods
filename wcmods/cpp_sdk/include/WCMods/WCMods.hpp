@@ -33,6 +33,7 @@
 //   WCMods/Items.hpp    what each item is, and pickups dropped on the ground for your cat to collect
 //   WCMods/Animations.hpp mods' own animations and the game's sequences, played and stopped on any cat or animal
 //   WCMods/Dens.hpp     the clans' dens: their hotspots, and decorations built, timed and taken off
+//   WCMods/Map.hpp      the HUD's quest banner and objective, map markers, the clock held, places to travel, the camera
 //   WCMods/Events.hpp   every frame, timers, keys, hooks on the game's functions, level and player events,
 //                       other threads, settings that change on disk
 //   WCMods/Menu.hpp     pages in the mod menu (a settings page comes free), keys on its Overview, values
@@ -59,6 +60,7 @@
 #include <WCMods/Items.hpp>
 #include <WCMods/Animations.hpp>
 #include <WCMods/Dens.hpp>
+#include <WCMods/Map.hpp>
 #include <WCMods/Reflect.hpp>
 #include <WCMods/Story.hpp>
 #include <WCMods/Tables.hpp>
