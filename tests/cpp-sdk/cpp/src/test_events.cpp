@@ -138,6 +138,10 @@ namespace t
             {
                 run_camera_request();
             }
+            else if (what == "photo")
+            {
+                run_photo_request();
+            }
             else if (what == "map_travel")
             {
                 run_map_travel_request();

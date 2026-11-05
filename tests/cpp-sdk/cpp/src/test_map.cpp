@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cmath>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -265,5 +266,62 @@ namespace t
             });
         else
             map_trip("map_travel.out", c, a, [c, a, finish] { map_trip("map_travel.home", a, c, finish); });
+    }
+
+    namespace
+    {
+        auto photo_count() -> int
+        {
+            std::error_code error;
+            int n = 0;
+            for (auto& e : std::filesystem::directory_iterator(photos_folder(), error))
+                if (e.path().extension() == L".png") ++n;
+            return n;
+        }
+        auto photo_ui_shown() -> Json
+        {
+            UObject* p = ui::screen(L"GuiPopupPhotoMode").object();
+            UObject* over = get(p, L"CanvasOver").object;
+            if (!over) return Json();
+            const Visibility v = Widget(over).visibility();
+            return Json(v != Visibility::Collapsed && v != Visibility::Hidden);
+        }
+    } // namespace
+
+    // Photo mode the pause menu's way, its UI hidden and shown again, a photo of it, and back to play.
+    auto run_photo_request() -> void
+    {
+        phase("photo");
+        expect("photo.refused", !in_photo_mode() && !photo_mode_ui(false) && !photo_camera() && photo_mode(false));
+        const int before = photo_count();
+        value("photo.files_before", before);
+        expect("photo.on", photo_mode(true));
+        after(4.0, [before] {
+            value("photo.in", in_photo_mode());
+            UObject* cam = photo_camera();
+            value("photo.camera", cam ? Json(utf8(class_name(cam))) : Json());
+            value("photo.ui_before", photo_ui_shown());
+            expect("photo.ui_off", photo_mode_ui(false));
+            after(1.0, [before] {
+                value("photo.ui_hidden", photo_ui_shown());
+                expect("photo.take", take_photo());
+                after(2.0, [before] {
+                    value("photo.files_after", photo_count());
+                    expect("photo.ui_on", photo_mode_ui(true));
+                    after(1.0, [] {
+                        value("photo.ui_again", photo_ui_shown());
+                        expect("photo.off", photo_mode(false));
+                        after(2.0, [] {
+                            value("photo.out", in_photo_mode());
+                            Json shown = Json::array();
+                            for (auto& s : screens()) shown.push(Json(utf8(s)));
+                            value("photo.screens_after", shown);
+                            value("photo.player", player() != nullptr);
+                            done("photo");
+                        });
+                    });
+                });
+            });
+        });
     }
 } // namespace t

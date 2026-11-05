@@ -99,7 +99,7 @@ pause menu and a talk's `PhotoMode` action open it; its keys are `Player_PhotoMo
 
 **Find out.** What the pause menu's button calls, and whether a mod can call it from play.
 
-**The calls.** `photo_mode(on)`, `in_photo_mode()`, `take_photo()`.
+**The calls.** `photo_mode(on)`, `in_photo_mode()`, `photo_mode_ui(shown)`, `photo_camera()`, `take_photo()`.
 
 **Proof.** In game: photo mode open (its popup and camera), a photo taken, closed back to play.
 
@@ -135,7 +135,7 @@ and marks the node.
 | 1. Lua on one thread | done: the error traced to Lua run on two threads in one state and reproduced; wcmods' timers on the game thread, key binds that only count; a script's own LoopAsync, ExecuteWithDelay and key binds pointed at the game thread by its bootstrap; the rule in SDK.md and scripting.md | #132 |
 | 2. The camera's setters | done: nothing had moved on 26337109 (the crash was a bad read of the interpolators' map); the camera's settings (distance, field of view, tilt, the speed's extra, lag) and your cat's turning and pitch limits as hidden members with signatures; `camera_settings`, `set_camera`, `reset_camera`, seen holding in game | #133 |
 | 3. Your cat's speeds | done: unmoved too; the exploration component's walk and run speeds, accelerations, crouch and climb factors and how it's moving as hidden members, signed (the two speed getters are leaf functions .pdata leaves out: `Finder.span` reads them to their ret); `player_speeds`, `set_player_speeds`, `reset_player_speeds`, the game's own per-frame write seen taking them, and more ground walked. There's no sprint apart from running | #134 |
-| 4. The world map's travel | done: a place unlocked (and locked) through the game's own SetCheckpointUnlockState, signed (its last argument is the checkpoint, a world context, not a slot); the travel map opened by the checkpoint's Interact (the only way it comes in travel mode); the map moved to put a place under its pointer (its translation, found unreflected) and Travel (Confirm) pressed: the game's own travel there and back | this branch, `claude/cpp-map-travel` |
-| 5. Photo mode | not started | |
+| 4. The world map's travel | done: a place unlocked (and locked) through the game's own SetCheckpointUnlockState, signed (its last argument is the checkpoint, a world context, not a slot); the travel map opened by the checkpoint's Interact (the only way it comes in travel mode); the map moved to put a place under its pointer (its translation, found unreflected) and Travel (Confirm) pressed: the game's own travel there and back | #135 |
+| 5. Photo mode | done: on through the pause menu's own Photo Mode (its keys: the screen's OnUIPress didn't press it), off by its Exit, its UI hidden and shown (Hide UI), its camera; on PC the game takes no photo of its own (Take photo hidden), so a photo is the engine's HighResShot. With it, the save cache re-reads a file the game rewrote at the same size (by its write time), which had left `places()` a save behind | this branch, `claude/cpp-photo-mode` |
 | 6. Story scenes | not started | |
 | 7. A talk answer's bond | not started | |

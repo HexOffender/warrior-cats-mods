@@ -1547,6 +1547,20 @@ def test_map_travel(agent):
         assert same["flat"] < 400 and same["screens"] == ["WBP_GuiPopupWorldMap_C"], (trip, same)
 
 
+def test_photo_mode(agent):
+    """Map.hpp's photo mode in the game: on through the pause menu's own Photo Mode (its camera there), its UI hidden
+    and shown again (Hide UI), a photo saved as the engine's HighResShot (a new picture in Saved/Screenshots), and off,
+    back to play with no screen up; the calls refused outside photo mode."""
+    _close_screens(agent)
+    r = _request(agent, "photo", timeout=40)
+    assert not _failed(r, "photo"), _failed(r, "photo")
+    v = r["values"]
+    assert v["photo.in"] is True and v["photo.camera"] == "PhotoModeCameraActor", v
+    assert v["photo.ui_before"] is True and v["photo.ui_hidden"] is False and v["photo.ui_again"] is True, v
+    assert v["photo.files_after"] == v["photo.files_before"] + 1, v
+    assert v["photo.out"] is False and v["photo.screens_after"] == [] and v["photo.player"] is True, v
+
+
 def test_effects_movement_and_sense(agent):
     """Effects.hpp in the game: the game's own effects by name (its VFX manager's: the buff, the statuses, a pickup's)
     and a Niagara system by its path, each seen playing, one stopped; bad names refused. Your cat's movement read
