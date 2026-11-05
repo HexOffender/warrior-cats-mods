@@ -923,6 +923,16 @@
    "was": "0x169FBD0",
    "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 4C 89 74 24 ?? 55 48 8B EC 48 81 EC 80 00 00 00 48 8B 1D ?? ?? ?? ?? 44 8B F2"
   },
+  "SwtAdventureCustomizableMeshComponent:SetDefaultCustomData": {
+   "note": "sets a cat's look up on its model (\"SetDefaultCustomData\"): (the look component, const FCatCustomData*, bool); copies the look into the component's CustomData, makes up the colour slots unless bOverrideColors, and sets every part again (meshes, pattern atlas, colours, eyes, accessories, scars); does nothing unless the component's owner is a SwtAdventureCharacter that's a cat (its byte at +0x890 is 1 or 2)",
+   "was": "0x17AF7D0",
+   "pattern": "40 55 53 57 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC B0 01 00 00 45 0F B6 F8"
+  },
+  "Customization:SaveCatCustomData": {
+   "note": "keeps a look in the save (\"SaveCatCustomData\"): (const FCatCustomData*, FString key by value (the callee frees it; empty for your cat's, Gameplay.Combat.Character.Cat.Player), int32 slot: -1 for the cat played now); the struct's text written as the slot's GameplayProgression/<key>/Customization, which the game sets your cat up from",
+   "was": "0x18129C0",
+   "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 4C 89 74 24 ?? 55 48 8D 6C 24 ?? 48 81 EC B0 00 00 00 48 8B 3D ?? ?? ?? ??"
+  },
   "SwtTuningManager:GetValue": {
    "note": "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, 0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData",
    "was": "0x12BBA60",

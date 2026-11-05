@@ -1334,6 +1334,70 @@ kinds are built on:
 Colour fields: `FurColorIdx` picks the coat, `Pattern01ColorIdx` the pattern colour, and
 `Pattern02ColorIdx` the marking colour. `EyeLeftColorIdx` and `EyeRightColorIdx` pick the eyes.
 
+**The struct's defaults** (a quest actor's class default, read in game): every number 0 and `ClanType` and `Role`
+`None`, except `SuffixNameId` `"_PAW"`, `Gender` true, `CatSize` 0.4, and each accessory `"None"` with look 1. The
+save's text leaves out a field at its default, so a cat with no suffix is written `SuffixNameId=""`.
+
+### Setting a look up, and keeping it
+
+Worked out on 2026-11-04 (build 26337109) from the exe and in game, for the C++ SDK's `Looks.hpp`; the addresses are
+that build's, signed in `wcmods/exe/signatures.json`.
+
+- **`RefreshShape` only moves the body's shape.** It's the component's vtable +0x4F0 (`0x1417B30E0`) and copies
+  the shape values to the anim instance; it leaves the meshes, the pattern and the colours.
+- **`SetDefaultCustomData` (`0x1417AF7D0`, `game.NATIVE`'s `SwtAdventureCustomizableMeshComponent:SetDefaultCustomData`)
+  sets every part up.** It's named by its profiling stat ("SetDefaultCustomData Total Execution Time"). It takes
+  `(component, const FCatCustomData*, bool)`:
+  - it does nothing unless the component's owner is a `SwtAdventureCharacter` that's a cat (its byte at +0x890 is
+    1 or 2);
+  - it copies the look into the component's `CustomData` (+0x118);
+  - unless `bOverrideColors` is set, it makes up the shapes, tail, ears, colour slots, pattern, markings, eyes and
+    `Design`, and writes them into `CustomData`;
+  - then it sets up the meshes, the pattern atlas (`AtlasSample`), "Fur Color", the eyes
+    (`IndexIrisColorCurveRight`), the four accessories and the scars (`EnableScars`).
+- **Who calls it.** 35 places, among them the portrait actor's `SetCustomDataFromSave` (with false) and a story
+  cat's `UpdatedRole(narrative, role, look)`: when the role is the cat's own, its mesh is set up with the look and
+  the look is kept as its `DefaultCustomData` (+0x430). Your cat isn't a quest actor, so only the native function
+  reaches it.
+- **Seen in game** on the test cat with the look component's own `CustomData` passed:
+  - coat slot 13 to 18: "Fur Color" became slot 18's colour in the GUI manager's `FurColors` (168,168,106 as linear
+    0.392,0.392,0.144);
+  - tail 4 to 7: `SK_Tail_Tufted` to `SK_Tail_Tapered`;
+  - DogCollar look 2: `AccSkelNeckComp` got `SK_DogCollar` and showed, then hid again when the slot was `None`;
+  - everything back as it was when the old look was passed.
+- **Spawned cats.** A walking cat spawned with its look written into `CustomData` before and after it finishes
+  spawning was drawn with another look (its tail, fur mesh and coat weren't the ones written). `SetDefaultCustomData`
+  after the spawn draws the written one, so wcmods' C++ `spawn_npc` calls it.
+- **Painted colours give way.** A colour a script painted on the materials (wcmods' CatLook paints your cat's coat
+  once each time the game sets it up) is replaced by the slot's.
+- **The save keeps its own copy.** The game's save writes your cat's look from the slot's
+  `GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization`, not from the model: a look set this way
+  was gone from the next save.
+- **`SaveCatCustomData` (`0x1418129C0`, `game.NATIVE`'s `Customization:SaveCatCustomData`) writes that copy.** It's
+  named by its log label. It takes `(const FCatCustomData*, FString key, int32 slot)`:
+  - the key is passed by value, and the callee frees it; an empty one means your cat's;
+  - slot -1 is the cat played now;
+  - it exports the struct as text and sets it as the slot's `GameplayProgression/<key>/Customization`;
+  - it doesn't write the file: the next save does.
+  - Its reader (`0x141812C80`, slot -1) is what `SetCustomDataFromSave` sets the portrait cat up from.
+- **Other cats aren't kept in memory as a list here:** the NPC generation manager's `NPCClansData`,
+  `NarrativeCustomDataMap` and `FriendsDenCharacters` were empty in the forest. The save's `NPCData` is the list
+  (*The clans' cats in the save*, below).
+
+### The clans' cats in the save
+
+A cat's slot keeps its game's cats under `NPCData`:
+
+- `<group>/<role>/[i]`: the groups are the four clans and `OutOfClans`, the roles `EGiverRole`'s names, and each
+  cat is its look as struct text.
+- `NarrativeRoles/<role>`: each story role (`ENarrativeRole`) holds an exact copy of the text of the cat that plays
+  it. A cameo cat (Tawnypelt, Mapleshade) can sit in a clan's list too. A role not cast yet holds `""` or
+  `(SuffixNameId="")`.
+- `RemainingNames`: names not given out yet.
+
+On the ShadowClan test cat that was 26 cats, 20 of them out in the forest (walking cats and quest actors with the same
+clan, role and name ids).
+
 ### How cats and animals are animated
 
 Seen in game on 2026-10-27 (build 26184573) and read from the class dump.
@@ -2030,9 +2094,10 @@ Worked out on 2026-10-24 for `Game.npcs`, and checked in game with two cats.
     2026-10-27): the tail, ears and fur meshes, the body's shape, the pattern and marking textures, and the
     coat, pattern, marking and eye colours of the slots it names. A field left alone stays at its default,
     0 for all of them (`CatSize` 0.4). That's how `Game.npcs.spawn`'s `look` and `slots` go on.
-  - Changed after the spawn, the look isn't drawn: written into `MeshCustomizationComponent.CustomData`,
-    `RefreshShape` moved the anim instance's shape values (`ABP_CatMaker`'s `BodyShapeValue` and the rest)
-    but kept the meshes, the pattern texture and the colours.
+  - Changed after the spawn, the look isn't drawn by `RefreshShape`: written into
+    `MeshCustomizationComponent.CustomData`, it moved the anim instance's shape values (`ABP_CatMaker`'s
+    `BodyShapeValue` and the rest) but kept the meshes, the pattern texture and the colours. The game's
+    `SetDefaultCustomData` draws all of it (*Setting a look up, and keeping it*).
 - **Colours** are vector parameters on each part's dynamic material:
   - "Fur Color", "Pattern Mask Color", "Markings Mask Color", "Nose Color", "Paws Color" and
     "Whiskers Color", plus "Ears Color" on the ears.

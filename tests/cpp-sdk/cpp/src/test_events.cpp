@@ -102,6 +102,10 @@ namespace t
             {
                 run_bonds_request();
             }
+            else if (what == "looks")
+            {
+                run_looks_request();
+            }
             else if (what == "unhook_loop")
             {
                 // 50 hooks on ClientRestart made and taken off at once; then 20 rounds, one a frame, of a hook on

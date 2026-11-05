@@ -108,6 +108,17 @@ NATIVE = [
      "the tuning's Gameplay.Progression.Bonding.Clan.Default when it isn't set"),
     ("Bonding:AddClan", 0x169FBD0,
      "adds to a clan's regard (\"AddClanScore\"): (uint8 EClanType, int32 amount), on the cat played now"),
+    # A cat's look put on its model (docs/reverse-engineering.md, "Cat models"): named by its profiling stat.
+    ("SwtAdventureCustomizableMeshComponent:SetDefaultCustomData", 0x17AF7D0,
+     "sets a cat's look up on its model (\"SetDefaultCustomData\"): (the look component, const FCatCustomData*, bool); "
+     "copies the look into the component's CustomData, makes up the colour slots unless bOverrideColors, and sets "
+     "every part again (meshes, pattern atlas, colours, eyes, accessories, scars); does nothing unless the component's "
+     "owner is a SwtAdventureCharacter that's a cat (its byte at +0x890 is 1 or 2)"),
+    ("Customization:SaveCatCustomData", 0x18129C0,
+     "keeps a look in the save (\"SaveCatCustomData\"): (const FCatCustomData*, FString key by value (the callee frees "
+     "it; empty for your cat's, Gameplay.Combat.Character.Cat.Player), int32 slot: -1 for the cat played now); the "
+     "struct's text written as the slot's GameplayProgression/<key>/Customization, which the game sets your cat up "
+     "from"),
     ("SwtTuningManager:GetValue", 0x12BBA60,
      "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, "
      "0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData"),
