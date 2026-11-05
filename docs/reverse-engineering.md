@@ -1932,6 +1932,24 @@ from `EPopupCheatsIds`:
 - **Never mix `LoopAsync` with game-thread loops in one script.** `LoopAsync` runs its callback on
   another thread in the same Lua state. With per-frame Lua work going on, the game crashed
   (2026-10-24, access violation reading `0xa` inside UE4SS's Lua glue, a null closure).
+- **Lua runs on three threads, and only UE4SS's queues are locked** (read in its source at the installed build's
+  commit, `83330635`, on 2026-11-05): the game thread (hooks, `ExecuteInGameThread`, `LoopInGameThread*`), each Lua
+  mod's async thread (`LoopAsync`, `ExecuteWithDelay`) and UE4SS's event loop (`RegisterKeyBind`). The game thread
+  runs a mod's Lua without taking `m_thread_actions_mutex`, so any Lua the other two run in that mod's state can
+  overlap it. The log line `Error: [Lua::Registry::get_function_ref] Ref was not function` with `No traceback` is
+  that: a stored function reference (a hook's, a timer's) that C++ went to call held something else.
+  - **Reproduced** in the bridge's state: a per-frame loop building 400 small tables, and a `LoopAsync(1)` whose
+    callback made 50 strings and called `ExecuteInGameThread` with a function making 200. Within 2 s the log had
+    `Ref was not function` three times, `bad argument #1 to 'tostring' (value expected)` from `tostring(i)` in a
+    numeric `for`, `attempt to concatenate a function value`, then the game crashed. The same load with
+    `LoopInGameThreadWithDelay(1, ...)` in place of the `LoopAsync` ran clean (*Lua on one thread* in
+    `docs/plans/cpp-sdk-gaps.md` has the numbers).
+  - **wcmods' modules had it:** WCModsCatLook's `LoopAsync(500)` ran beside its mod menu page's per-frame loop, and
+    palettes, models and the play-state script each ran a `LoopAsync` that called `ExecuteInGameThread`. The error
+    showed now and then in test runs, and once in a game left idle for an hour and a half. Their timers are on the
+    game thread now (`LoopInGameThreadWithDelay`), and every key bind (`Game.onKey`, the mod menu's Insert and
+    Escape, mouse look's toggle) only adds 1 to a counter, which allocates nothing and writes no table, for the
+    module's frame loop to act on.
 - **A destroyed object's slot gets reused.** After a level change, a kept widget looked valid
   but was another object (`attempt to call a TrivialObject value (method 'IsInViewport')`). Check
   the class of anything kept across levels, or look it up again.

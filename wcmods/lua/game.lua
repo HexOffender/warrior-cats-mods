@@ -599,6 +599,8 @@ end
 -- ===================================================================================== scheduling
 -- One game-thread loop per Lua state runs every timer, frame function and polled event.
 local tasks, nextTask, started = {}, 1, false
+-- Each bound key's check (Game.onKey), run at the start of every run of the tasks.
+local keyChecks = {}
 -- When this state's latest run of them began (when it loaded, before the first), and the one before (nil before
 -- the first; the first's is when it loaded): Game.time.held() goes by the one before, so a frame the game took long
 -- over (a level loading, the game behind another window) doesn't make another state's hold look old. runs: how many
@@ -611,6 +613,7 @@ local function runTasks()
     local now = os.clock()
     local dt = now - ticks.last
     ticks.before, ticks.last, ticks.runs = ticks.last, now, ticks.runs + 1
+    for i = 1, #keyChecks do keyChecks[i]() end
     -- The ids first, then each task that's still there when its turn comes: a callback may add tasks and cancel
     -- them (its own too), which pairs() can't take while it walks the table itself.
     local ids = {}
@@ -727,13 +730,20 @@ function Game.onKey(key, fn, modifiers, help)
     local bind = binds[slot]
     if not bind then
         bind = { handlers = {} }
-        local function fire()
-            ExecuteInGameThread(function()
+        -- UE4SS calls a key bind on its own thread, while the game thread may be running this state's Lua: two
+        -- threads in one Lua state break it ("Ref was not function", then a crash). So the bind only counts the
+        -- press, which allocates nothing and writes no table, and the frame loop runs the handlers.
+        local presses, seen = 0, 0
+        local function fire() presses = presses + 1 end
+        local function check()
+            local now = presses
+            while seen < now do
+                seen = seen + 1
                 for _, h in ipairs({ table.unpack(bind.handlers) }) do
                     local ok, err = pcall(h)
                     if not ok then failed("key " .. name, err) end
                 end
-            end)
+            end
         end
         local ok, err
         if #mods > 0 then ok, err = pcall(RegisterKeyBind, code, mods, fire) else ok, err = pcall(RegisterKeyBind, code, fire) end
@@ -742,6 +752,8 @@ function Game.onKey(key, fn, modifiers, help)
             return false
         end
         binds[slot] = bind
+        keyChecks[#keyChecks + 1] = check
+        start()
     end
     bind.handlers[#bind.handlers + 1] = fn
     if help then listKey(name, help) end
