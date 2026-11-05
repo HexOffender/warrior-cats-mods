@@ -90,14 +90,23 @@ namespace t
             UObject* o = current_objective(q);
             value("questline.objective", o ? Json(text(full_name(o))) : Json());
             value("questline.targets_before", targets_json(o));
-            // ----- one target collected the player's way
-            UObject* target = nullptr;
+            // ----- one target collected the player's way: the first with nothing else in Interact's reach (the
+            // forest's gatherables grow back over the game's days, and one can stand by a target: collect_target
+            // refuses that one)
+            auto home = location(player());
+            bool collected = false;
+            int tried = 0;
             for (Objective& ob : objectives(q))
                 if (ob.objective == o)
                     for (QuestTarget& t : ob.targets)
-                        if (!t.actors.empty() && !target) target = t.actors.front();
-            auto home = location(player());
-            expect("questline.collect", collect_target(target));
+                        for (UObject* a : t.actors)
+                            if (!collected)
+                            {
+                                ++tried;
+                                collected = collect_target(a);
+                            }
+            value("questline.collect_tried", tried);
+            expect("questline.collect", collected);
             expect("questline.collect_refused", !collect_target(nullptr));
             after(3.0, [o, home] {
                 value("questline.hud_after_collect", hud_goal());

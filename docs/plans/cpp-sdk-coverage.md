@@ -23,9 +23,9 @@ A C++ mod should be able to do with the game what the game itself does:
 Where the game can't do something (a new area, a new trait, weather), the plan says so once, with the reason, so
 nobody plans it again.
 
-## Where it stands
+## Where it stood
 
-What the C++ SDK reaches today (SDK.md, "C++ mods"), all seen working in game:
+What the C++ SDK reached when the plan was written (2026-11-04; all sixteen steps are done since, and the Status table at the end says what each added; SDK.md's *What the SDK reaches* is the whole picture now), all seen working in game:
 
 | Part of the game | C++ today |
 |---|---|
@@ -439,5 +439,5 @@ Each step's pull request updates its line.
 | 12. Fights | done: fights started the player's way (the pounce), your cat's turn taken through the fight menu (attack, rest, flee), ended the game's own way (won with rewards, lost to the respawn), damage changed in the Damage event, a status given; the five events seen firing. A crash at a fight's start traced to UE4SS's console enabler and fixed at install. Dilemmas read and answered when the game asks one (by chance: it can't be made to) | #127 |
 | 13. Dens and clan life | done: the clans' dens (ten each: six shared, and four rank dens behind one door) and their hotspots; your cat taken into one; decorations built at once or timed in real seconds through the hotspot's own `OnOptionPicked`, taken off with its `OnDelete`, read live from the model and from the save (`Housing/Houses`). The game's minigames aren't in Warrior Cats (no class or screen ships, no actor has the component). A decoration's cost, size and build time through the game's own lookup (signed: `HousingCost.csv` lives only in the tuning manager) | #128 |
 | 14. The map, travel, the HUD, the camera | done: the HUD's objective panel and quest banners with a mod's words (read back), map markers at a place or on an actor, the clock held every frame, the 22 places (checkpoints) with your cat's unlocked ones and a travel to one, the camera's distance and field of view as shown. Left open: the camera's setters (its settings moved on 26337109), the map's own travel, photo mode (no reflected way in) | #129 |
-| 15. Effects, movement, senses | done: any Niagara system and the game's own effects by name played and stopped; movement values read, jump and gravity set on any cat, walk speed on a mod's cat or an animal; the scent sense used and read. Left open: your cat's walk, run, sprint and climb speeds (the game sets them every frame from its exploration settings, which moved on 26337109) | this branch, `claude/cpp-effects` |
-| 16. Every part accounted for | not started | |
+| 15. Effects, movement, senses | done: any Niagara system and the game's own effects by name played and stopped; movement values read, jump and gravity set on any cat, walk speed on a mod's cat or an animal; the scent sense used and read. Left open: your cat's walk, run, sprint and climb speeds (the game sets them every frame from its exploration settings, which moved on 26337109) | #130 |
+| 16. Every part accounted for | done: every manager and component class of the game's own modules (54 and 94) has a line in SDK.md's *What the SDK reaches*; the doc check covers the new headers (Dens, Map, Effects); TuningData's 441 keys sorted by what the code says of them (`tools/re/tuning_read.py`, `wcmods/exe/tuning_read.json`: 221 read, 141 from a pattern, 79 not named), installed for `tuning_named(key)`; the roadmap's status brought up to date. Left open across the plan: the camera's setters, your cat's walk/run/sprint/climb speeds, the world map's own travel, photo mode, playing a scene; and a Lua error ("Ref was not function", no traceback) logged now and then about 12 s after the game is started again, three times tonight, not traced | #131 |

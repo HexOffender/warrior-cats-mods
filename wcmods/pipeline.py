@@ -481,6 +481,10 @@ def build(cfg, mods, out_dir, log=print, trusted=()):
         json.dump(game_lua.offsets_json(fit["offsets"], build, fit.get("functions")), f, indent=2)
     with open(os.path.join(out_dir, "ue4ss_shared", world.NAMES_NAME, "names.json"), "w", encoding="utf-8") as f:
         json.dump(world.names_data(plan, item_labels, places), f, ensure_ascii=False)
+    # Which TuningData keys the game's code names (tools/re/tuning_read.py, for wcmods::tuning_named).
+    tuning_read = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exe", "tuning_read.json")
+    if os.path.isfile(tuning_read):
+        shutil.copyfile(tuning_read, os.path.join(out_dir, "ue4ss_shared", game_lua.SHARED_NAME, "tuning_read.json"))
 
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)

@@ -207,6 +207,12 @@ keys is found with xrefs.
   (`Gameplay.Exploration.Detection.%s`, found with `xrefs.py --prefix`), others are presumably read
   by Blueprints. A key the code asks for that the table lacks, though, is a real bug (see *What
   traits do*).
+  - `tools/re/tuning_read.py <exe> <TuningData.csv> --build N --out wcmods/exe/tuning_read.json`
+    sorts every key: read (the code points at it), built from a pattern (a format string the code
+    points at makes it, `Gameplay.Exploration.Level.%d`, or the code names its dotted prefix whole), or not named.
+    On build 26337109: 221 read, 141 from a pattern, 79 not named. The install puts the file beside
+    `offsets.json` for C++ mods' `tuning_named(key)`; a key that's not named is most likely read by
+    nothing.
 - **Data tables:** `tools/re/mechanics_tables.py` fills the generated tables in `mechanics/` from
   the extracted CSVs, with names from `Strings_EN.csv`.
 - **Crash dumps:** `cdb -z <crash folder>\UEMinidump.dmp -c ".ecxr; r; u @rip-0x30 L20; kn 12; q"`.

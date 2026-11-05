@@ -415,3 +415,65 @@ def test_xrefs_string_at(exe):
     assert xrefs.string_at(image, RDATA_VA + 0x18, "ascii") == "TurnBasedCombatComponent"
     assert xrefs.string_at(image, RDATA_VA + 0x64, "utf16") == "Turn"
     assert xrefs.string_at(image, RDATA_VA + 0x18, "ascii", limit=4) == "Turn"
+
+
+# --- tuning_read -----------------------------------------------------------------------------------------
+
+tuning_read = load("tuning_read")
+
+TUNING_RDATA = [
+    (0x10, b"A.B.Read\0"),            # a key the code names whole
+    (0x20, b"A.B.Level.%d\0"),        # a format string the code builds keys from
+    (0x30, b"A.B.Thing.%s.Scale\0"),  # one with text after its placeholder
+    (0x48, b"A.B.Det.%s\0"),          # one the code adds the rest to
+    (0x58, b"A.B.Lonely.Key\0"),      # in the data, but nothing points at it
+]
+
+
+@pytest.fixture
+def tuning_exe(tmp_path):
+    rdata = bytearray(0x200)
+    for off, data in TUNING_RDATA:
+        rdata[off:off + len(data)] = data
+    code = b"".join(rip(0x48, 0x8D, 0x0D, 7 * i, off) for i, (off, _) in enumerate(TUNING_RDATA[:4]))
+    return tiny_exe(tmp_path / "tuning.exe", code + b"\xc3", bytes(rdata))
+
+
+def test_tuning_read_marks_a_key_the_code_names(tuning_exe):
+    groups = tuning_read.sort(str(tuning_exe), ["A.B.Read"])
+    assert groups == {"read": ["A.B.Read"], "pattern": {}, "not_named": []}
+
+
+def test_tuning_read_marks_a_key_built_from_a_prefix(tuning_exe):
+    keys = ["A.B.Level.3", "A.B.Thing.Run.Scale", "A.B.Det.Tiny.Zone.Entry"]
+    groups = tuning_read.sort(str(tuning_exe), keys)
+    assert groups["pattern"] == {"A.B.Level.3": "A.B.Level.%d", "A.B.Thing.Run.Scale": "A.B.Thing.%s.Scale",
+                                 "A.B.Det.Tiny.Zone.Entry": "A.B.Det.%s"} and groups["read"] == []
+
+
+def test_tuning_read_leaves_an_unnamed_key(tuning_exe):
+    """Nothing points at "A.B.Lonely.Key"; "A.B.Thing.%s.Scale" can't make "...Run.Speed"; "%d" isn't a word."""
+    keys = ["A.B.Lonely.Key", "A.B.Thing.Run.Speed", "A.B.Level.x", "C.D.E.F"]
+    groups = tuning_read.sort(str(tuning_exe), keys)
+    assert groups["not_named"] == keys and groups["pattern"] == {} and groups["read"] == []
+
+
+def test_tuning_read_makes_and_reads_the_csv(tmp_path):
+    assert tuning_read.makes("A.Level.%d", "A.Level.12") and not tuning_read.makes("A.Level.%d", "A.Level.x")
+    assert tuning_read.makes("A.Det.%s", "A.Det.Tiny.Zone") and tuning_read.makes("A.P.%s.Scale", "A.P.Run.Scale")
+    assert not tuning_read.makes("A.P.%s.Scale", "A.P.Run.Speed") and tuning_read.makes("A.{0}", "A.B")
+    assert tuning_read.makes("A.B.%02d", "A.B.07") and tuning_read.makes("A.%%.%d", "A.%.3")   # a width; a literal %
+    assert tuning_read.prefixes("A.B.C.D") == ["A.B.C.", "A.B.C"]
+    path = tmp_path / "TuningData.csv"
+    path.write_text("﻿---,MaxValue,Description\nA.B.Read,1,one\nA.B.Level.3,2,two\n", encoding="utf-8")
+    assert tuning_read.keys_of(str(path)) == ["A.B.Read", "A.B.Level.3"]
+
+
+def test_tuning_read_json_is_this_builds():
+    """wcmods/exe/tuning_read.json, made from build 26337109's exe: every key in one group, none in two."""
+    import json
+    with open(RE.parents[1] / "wcmods" / "exe" / "tuning_read.json", encoding="utf-8") as f:
+        d = json.load(f)
+    groups = [set(d["read"]), set(d["pattern"]), set(d["not_named"])]
+    assert d["made_on"] == 26337109 and sum(map(len, groups)) == 441 and len(set().union(*groups)) == 441
+    assert "Gameplay.Exploration.MaxLevel" in d["read"] and d["pattern"]["Gameplay.Exploration.Level.2"] == "Gameplay.Exploration.Level.%d"
