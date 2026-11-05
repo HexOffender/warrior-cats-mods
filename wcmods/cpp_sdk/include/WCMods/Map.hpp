@@ -6,6 +6,7 @@
 //   wcmods::hud_banner(wcmods::Banner::Begin, {.kind = L"Main Quest", .title = L"A Soft Nest", .text = L"New HudObjective"});
 //   auto m = wcmods::map_marker(wcmods::Vec3{-16000, 13000, 1500}, L"search");   // m.remove() takes it off
 //   wcmods::hold_time(6 * 3600);                                                  // the clock stays at 6:00
+//   wcmods::set_camera({.distance = 300, .fov = 60});                             // the camera far and narrow
 #pragma once
 
 #include <cmath>
@@ -436,9 +437,7 @@ namespace wcmods
     // ============================================================================================ the camera
     // The exploration camera as it shows now: its actor (BP_AdventureCamera_C), how far it is from your cat (cm) and
     // the field of view shown (the engine's camera manager's, degrees). Its arm's length and the lens's field of view
-    // are what the camera's own settings make them each frame (TuningData's Gameplay.Exploration.Camera.*, read when
-    // it starts): writing them, even every frame, changed nothing seen (docs/reverse-engineering.md, "The exploration
-    // camera"), so there's no setter yet.
+    // are what the camera's own settings make them each frame (set_camera, below, changes those).
     struct CameraView
     {
         UObject* actor{};
@@ -460,5 +459,150 @@ namespace wcmods
         auto f = call_reflected(get(controller(), L"PlayerCameraManager").object, STR("GetFOVAngle"));
         view.fov = f ? f->get(L"ReturnValue").number() : 0;
         return view;
+    }
+
+    // The exploration camera's settings: what its update turns into the arm's length, its tilt and the lens's field of
+    // view each frame, and how it follows and turns. Each is the game's from TuningData (Gameplay.Exploration.Camera.*)
+    // until a mod sets it; the defaults on build 26337109 are in brackets. The camera eases to a new distance, tilt or
+    // field of view (its interpolators, about a second); lag takes at once.
+    struct CameraSettings
+    {
+        std::optional<double> distance;        // the arm's length while exploring, cm (113): BoomArmTargetLength
+        std::optional<double> fov;             // the lens's field of view, degrees (90): the camera's own, not a key
+        std::optional<double> pitch;           // the arm's tilt, degrees, below 0 looking down (-5): BoomArmRotation.Pitch
+        std::optional<double> speed_distance;  // added to the distance at a run (45): SpeedExtraArmTargetLength
+        std::optional<double> speed_fov;       // added to the field of view at a run (5): SpeedFov
+        std::optional<double> lag;             // how fast it catches up with your cat, 0 at once (10): Lag.Location.Vertical
+        std::optional<double> rotation_lag;    // how fast it turns after a turn, 0 at once (5): Lag.Rotation
+        // Turning with the mouse and stick, which your cat's exploration component does: degrees a second at full
+        // tilt (55 and 120), and the pitch it stays within (-20 and 23).
+        std::optional<double> turn_yaw, turn_pitch, pitch_min, pitch_max;
+    };
+
+    namespace detail
+    {
+        inline constexpr const wchar_t* camera_class = L"/Script/SwtAdventure.SwtAdventureCameraActor";
+        inline constexpr const wchar_t* exploration_class = L"/Script/SwtAdventure.ExplorationControlComponent";
+        // The exploration camera that follows your cat: one still in the world (a level change leaves the old one
+        // behind until it's collected) whose TargetActor is player().
+        inline auto exploration_camera() -> UObject*
+        {
+            UObject* me = player();
+            if (!me) return nullptr;
+            for (UObject* c : find_all(STR("SwtAdventureCameraActor")))
+                if (object_staying(c, nullptr) && get(c, L"TargetActor").object == me) return c;
+            return nullptr;
+        }
+        inline constexpr int camera_fields = 11;
+        // Each setting's member: the camera's, or (turning) the exploration component's. nullptr when this build's
+        // offsets.json hasn't got it, or there's no such object.
+        inline auto camera_member(UObject* cam, UObject* explore, int which) -> float*
+        {
+            switch (which)
+            {
+            case 0: return member<float>(cam, camera_class, L"WCM_ArmLength");
+            case 1: return member<float>(cam, camera_class, L"WCM_Fov");
+            case 2: return member<float>(cam, camera_class, L"WCM_ArmPitch");
+            case 3: return member<float>(cam, camera_class, L"WCM_SpeedArmLength");
+            case 4: return member<float>(cam, camera_class, L"WCM_SpeedFov");
+            case 5: return member<float>(cam, camera_class, L"WCM_LagVertical");
+            case 6: return member<float>(cam, camera_class, L"WCM_LagRotation");
+            case 7: return member<float>(explore, exploration_class, L"WCM_TurnYaw");
+            case 8: return member<float>(explore, exploration_class, L"WCM_TurnPitch");
+            case 9: return member<float>(explore, exploration_class, L"WCM_PitchMin");
+            case 10: return member<float>(explore, exploration_class, L"WCM_PitchMax");
+            }
+            return nullptr;
+        }
+        inline auto camera_field(CameraSettings& s, int which) -> std::optional<double>&
+        {
+            std::optional<double>* fields[camera_fields] = {&s.distance, &s.fov, &s.pitch, &s.speed_distance, &s.speed_fov,
+                                                            &s.lag, &s.rotation_lag, &s.turn_yaw, &s.turn_pitch,
+                                                            &s.pitch_min, &s.pitch_max};
+            return *fields[which];
+        }
+        // What the camera had before a mod first set it, for reset_camera: the camera, and every setting.
+        struct CameraKept
+        {
+            UObject* camera{};
+            CameraSettings before;
+        };
+        inline auto camera_kept() -> CameraKept&
+        {
+            static CameraKept kept;
+            return kept;
+        }
+        inline auto read_camera(UObject* cam, UObject* explore) -> CameraSettings
+        {
+            CameraSettings s;
+            for (int i = 0; i < camera_fields; ++i)
+                if (float* m = camera_member(cam, explore, i)) camera_field(s, i) = *m;
+            return s;
+        }
+        // The spring arm takes the lag once, in the camera's BeginPlay: lag on while either location lag isn't 0, at
+        // the vertical one's speed; rotation lag on while it isn't 0.
+        inline auto apply_lag(UObject* cam) -> void
+        {
+            UObject* arm = get(cam, L"AdventureArmComponent").object;
+            float* lag = member<float>(cam, camera_class, L"WCM_LagVertical");
+            float* side = member<float>(cam, camera_class, L"WCM_LagHorizontal");
+            float* turn = member<float>(cam, camera_class, L"WCM_LagRotation");
+            if (!arm || !lag || !side || !turn) return;
+            set(arm, L"bEnableCameraLag", *lag != 0 || *side != 0);
+            set(arm, L"CameraLagSpeed", static_cast<double>(*lag));
+            set(arm, L"bEnableCameraRotationLag", *turn != 0);
+            set(arm, L"CameraRotationLagSpeed", static_cast<double>(*turn));
+        }
+    } // namespace detail
+
+    // The camera's settings now (the turning ones too while your cat has its exploration component); nullopt with no
+    // exploration camera following your cat (in a fight, a scene, the menus) or on a build wcmods hasn't the camera's
+    // settings for.
+    inline auto camera_settings() -> std::optional<CameraSettings>
+    {
+        if (!assert_game_thread(L"camera_settings")) return std::nullopt;
+        UObject* cam = detail::exploration_camera();
+        if (!cam || !member<float>(cam, detail::camera_class, L"WCM_ArmLength")) return std::nullopt;
+        return detail::read_camera(cam, component(player(), STR("ExplorationControlComponent")));
+    }
+
+    // Set the settings given (the rest stay as they are) on the camera following your cat. The first set keeps what
+    // the camera had, for reset_camera. False with no exploration camera, or when a setting given has nowhere to go on
+    // this build (nothing is set then). Lasts while the camera does: a level's new camera starts from the game's again.
+    //   wcmods::set_camera({.distance = 300, .fov = 60, .pitch = -35});   // far, narrow, looking down
+    inline auto set_camera(const CameraSettings& settings) -> bool
+    {
+        if (!assert_game_thread(L"set_camera")) return false;
+        UObject* cam = detail::exploration_camera();
+        if (!cam) return false;
+        UObject* explore = component(player(), STR("ExplorationControlComponent"));
+        CameraSettings given = settings;
+        for (int i = 0; i < detail::camera_fields; ++i)
+            if (detail::camera_field(given, i) && !detail::camera_member(cam, explore, i)) return false;
+        auto& kept = detail::camera_kept();
+        if (kept.camera != cam) kept = {cam, detail::read_camera(cam, explore)};
+        for (int i = 0; i < detail::camera_fields; ++i)
+            if (auto& v = detail::camera_field(given, i)) *detail::camera_member(cam, explore, i) = static_cast<float>(*v);
+        if (settings.lag || settings.rotation_lag) detail::apply_lag(cam);
+        return true;
+    }
+
+    // Put back what the camera had before a mod first set it. True when there's nothing to put back (never set, or
+    // the camera it was set on is gone: a new one has the game's settings); false with no exploration camera.
+    inline auto reset_camera() -> bool
+    {
+        if (!assert_game_thread(L"reset_camera")) return false;
+        UObject* cam = detail::exploration_camera();
+        if (!cam) return false;
+        auto& kept = detail::camera_kept();
+        if (kept.camera != cam)
+        {
+            kept = {};
+            return true;
+        }
+        CameraSettings before = kept.before;
+        set_camera(before);
+        kept = {};
+        return true;
     }
 } // namespace wcmods

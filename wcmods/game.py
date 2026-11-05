@@ -80,6 +80,23 @@ HIDDEN = [
     # The sky's copy of its presets (TMap<ESkyboxPostProcessEnum, FWrcSkyBoxStruct>, 0x168-byte elements: the preset
     # at +0, its row from +8), made from SkyParamsDB as it starts; what putting a preset on reads.
     ("/Script/Wrc.WrcSkyboxActor", [("WCM_Presets", 0x378, "MapProperty")]),
+    # The exploration camera's settings (SwtAdventureCameraActor, BP_AdventureCamera_C): a struct at +0x3F8 its
+    # BeginPlay fills from TuningData's Gameplay.Exploration.Camera.*, and which its Tick reads every frame for the
+    # arm's length, the arm's tilt and the lens's field of view (docs/reverse-engineering.md, "The exploration
+    # camera"). The field of view at +0x3F8 isn't a tuning key: 90, the lens's own. Lag is copied onto the spring arm
+    # once, in BeginPlay. Its copies of the turn rates and pitch limits (+0x448 to +0x458) aren't read: the turning
+    # is the exploration component's.
+    ("/Script/SwtAdventure.SwtAdventureCameraActor", [
+        ("WCM_Fov", 0x3F8, "FloatProperty"), ("WCM_ArmPitch", 0x404, "FloatProperty"),
+        ("WCM_ArmLength", 0x408, "FloatProperty"), ("WCM_LagVertical", 0x410, "FloatProperty"),
+        ("WCM_LagHorizontal", 0x414, "FloatProperty"), ("WCM_LagRotation", 0x418, "FloatProperty"),
+        ("WCM_SpeedArmLength", 0x41C, "FloatProperty"), ("WCM_SpeedFov", 0x424, "FloatProperty")]),
+    # Your cat's exploration settings (ExplorationControlComponent, BP_Exploration_Control), filled by its BeginPlay
+    # from Gameplay.Exploration.*: the turning the mouse and stick do (the camera's input reads these, not the
+    # camera's own copies) and the pitch it allows.
+    ("/Script/SwtAdventure.ExplorationControlComponent", [
+        ("WCM_TurnYaw", 0x1CC, "FloatProperty"), ("WCM_TurnPitch", 0x1D0, "FloatProperty"),
+        ("WCM_PitchMin", 0x1D8, "FloatProperty"), ("WCM_PitchMax", 0x1DC, "FloatProperty")]),
 ]
 
 # The kinds in HIDDEN only the C++ SDK reads (offsets.json): the Lua's Game.hidden leaves them out.

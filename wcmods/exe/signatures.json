@@ -895,6 +895,238 @@
    "overrides": 4,
    "natives": 13,
    "parent": null
+  },
+  "/Script/SwtAdventure.SwtAdventureCameraActor": {
+   "fields": {
+    "WCM_Fov": 1016,
+    "WCM_ArmPitch": 1028,
+    "WCM_ArmLength": 1032,
+    "WCM_LagVertical": 1040,
+    "WCM_LagHorizontal": 1044,
+    "WCM_LagRotation": 1048,
+    "WCM_SpeedArmLength": 1052,
+    "WCM_SpeedFov": 1060
+   },
+   "found": true,
+   "anchors": [
+    {
+     "note": "BeginPlay: the settings from the tuning, the interpolators started from them, the lag onto the arm",
+     "was": "0x1760B30",
+     "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 55 57 41 54 41 56 41 57 48 8B EC 48 83 EC 50 0F 29 74 24 ??"
+    },
+    {
+     "note": "the update: the arm's length, its tilt and the field of view from the settings, each frame",
+     "was": "0x17621A0",
+     "pattern": "48 8B C4 F3 0F 11 48 ?? 48 89 48 ?? 55 53 56 57 41 55 41 56 48 8D A8 ?? ?? ?? ??"
+    }
+   ],
+   "sites": [
+    {
+     "from": "0x1760B30",
+     "at": "0x1760B5D",
+     "pattern": "48 8D 4D ?? E8 ?? ?? ?? ?? 48 8D 9E ?? ?? ?? ?? 45 33 C9 48 8D 93 ?? ?? ?? ??",
+     "captures": {
+      "12": 1016
+     }
+    },
+    {
+     "from": "0x1760B30",
+     "at": "0x176182A",
+     "pattern": "74 ?? E8 ?? ?? ?? ?? 0F 57 C0 48 8D 96 ?? ?? ?? ?? 0F 2E 86 ?? ?? ?? ?? 75 ?? 0F 2E 02",
+     "captures": {
+      "13": 1044,
+      "20": 1040
+     }
+    },
+    {
+     "from": "0x1760B30",
+     "at": "0x1761862",
+     "pattern": "41 0B C0 89 81 ?? ?? ?? ?? 8B 86 ?? ?? ?? ?? 48 8B 8E ?? ?? ?? ?? 89 81 ?? ?? ?? ??",
+     "captures": {
+      "11": 1040
+     }
+    },
+    {
+     "from": "0x1760B30",
+     "at": "0x1761890",
+     "pattern": "B8 40 00 00 00 48 8B 8E ?? ?? ?? ?? 0F 2E 86 ?? ?? ?? ?? 0F 45 D0 8B 81 ?? ?? ?? ??",
+     "captures": {
+      "15": 1048
+     }
+    },
+    {
+     "from": "0x1760B30",
+     "at": "0x17618B6",
+     "pattern": "89 81 ?? ?? ?? ?? 48 8B 8E ?? ?? ?? ?? 8B 86 ?? ?? ?? ?? 89 81 ?? ?? ?? ?? 48 8B 8E ?? ?? ?? ??",
+     "captures": {
+      "15": 1048
+     }
+    },
+    {
+     "from": "0x17621A0",
+     "at": "0x1762233",
+     "pattern": "44 89 B0 ?? ?? ?? ?? E9 ?? ?? ?? ?? 44 0F 2E 8F ?? ?? ?? ?? 48 8B 8F ?? ?? ?? ?? B8 40 00 00 00",
+     "captures": {
+      "16": 1048
+     }
+    },
+    {
+     "from": "0x17621A0",
+     "at": "0x1762271",
+     "pattern": "8B 87 ?? ?? ?? ?? 89 81 ?? ?? ?? ?? 44 0F 2E 8F ?? ?? ?? ?? 75 ?? 44 0F 2E 8F ?? ?? ?? ??",
+     "captures": {
+      "2": 1048,
+      "16": 1040,
+      "26": 1044
+     }
+    },
+    {
+     "from": "0x17621A0",
+     "at": "0x176318A",
+     "pattern": "48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? F3 0F 10 B7 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 8B 44 24 ??",
+     "captures": {
+      "19": 1016
+     }
+    },
+    {
+     "from": "0x17621A0",
+     "at": "0x176346E",
+     "pattern": "48 8D 4C 24 ?? F3 41 0F 10 B0 ?? ?? ?? ?? F3 0F 58 B7 ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 44 24 ??",
+     "captures": {
+      "18": 1032
+     }
+    },
+    {
+     "from": "0x17621A0",
+     "at": "0x176355D",
+     "pattern": "F3 0F 10 B2 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? F3 0F 58 B7 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ??",
+     "captures": {
+      "19": 1016
+     }
+    },
+    {
+     "from": "0x17621A0",
+     "at": "0x17636B4",
+     "pattern": "C6 40 ?? 00 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? F3 0F 10 B7 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? F3 0F 58 B7 ?? ?? ?? ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? 48 8D 54 24 ?? E8 ?? ?? ?? ?? 0F 2E 70 ?? 74 ??",
+     "captures": {
+      "38": 1032
+     }
+    },
+    {
+     "from": "0x17621A0",
+     "at": "0x1763813",
+     "pattern": "E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? F3 0F 10 B7 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? F3 0F 58 B7 ?? ?? ?? ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? 48 8D 54 24 ?? E8 ?? ?? ?? ?? 0F 2E 70 ?? 74 ??",
+     "captures": {
+      "39": 1032
+     }
+    },
+    {
+     "from": "0x17621A0",
+     "at": "0x17639C4",
+     "pattern": "F3 0F 10 B7 ?? ?? ?? ?? EB ?? F3 0F 10 B7 ?? ?? ?? ?? F3 0F 58 B7 ?? ?? ?? ?? E8 ?? ?? ?? ??",
+     "captures": {
+      "14": 1052,
+      "22": 1032
+     }
+    },
+    {
+     "from": "0x17621A0",
+     "at": "0x17639EE",
+     "pattern": "E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? F3 0F 10 B7 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? F3 0F 58 B7 ?? ?? ?? ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 0F 28 D6",
+     "captures": {
+      "24": 1060,
+      "39": 1016
+     }
+    }
+   ],
+   "size": 1248,
+   "align": 8,
+   "vtable": 159674768,
+   "overrides": 1,
+   "natives": 2,
+   "parent": null
+  },
+  "/Script/SwtAdventure.ExplorationControlComponent": {
+   "fields": {
+    "WCM_TurnYaw": 460,
+    "WCM_TurnPitch": 464,
+    "WCM_PitchMin": 472,
+    "WCM_PitchMax": 476
+   },
+   "found": true,
+   "anchors": [
+    {
+     "note": "BeginPlay: the exploration settings from the tuning (speeds, stamina, jump, turning)",
+     "was": "0x179DF80",
+     "pattern": "48 8B C4 55 48 8B EC 48 83 EC 60 48 89 58 ?? 48 89 70 ?? 48 89 78 ?? 48 8B F9 4C 89 60 ??"
+    },
+    {
+     "note": "the turning input: yaw and pitch by the turn rates, within the pitch limits",
+     "was": "0x17A4B80",
+     "pattern": "40 55 53 41 55 41 57 48 8D 6C 24 ?? 48 81 EC 28 01 00 00 4C 8B A9 ?? ?? ?? ??"
+    },
+    {
+     "note": "the turning input while aligning the camera behind the cat",
+     "was": "0x17AC120",
+     "pattern": "48 8B C4 48 89 58 ?? 48 89 48 ?? 55 56 57 41 54 41 55 41 56 41 57 48 8D A8 ?? ?? ?? ??"
+    }
+   ],
+   "sites": [
+    {
+     "from": "0x17A4B80",
+     "at": "0x17A4F4E",
+     "pattern": "0F 2E C7 74 ?? F3 0F 59 83 ?? ?? ?? ?? 48 8B 86 ?? ?? ?? ?? F3 41 0F 59 C3",
+     "captures": {
+      "9": 460
+     }
+    },
+    {
+     "from": "0x17A4B80",
+     "at": "0x17A50BB",
+     "pattern": "F2 0F 11 5D ?? 0F 10 10 F3 0F 10 8B ?? ?? ?? ?? F2 0F 10 40 ?? 0F 5A C9",
+     "captures": {
+      "12": 472
+     }
+    },
+    {
+     "from": "0x17A4B80",
+     "at": "0x17A5106",
+     "pattern": "48 8D 44 24 ?? F2 0F 11 5D ?? F3 0F 10 8B ?? ?? ?? ?? 0F 10 10 0F 5A C9",
+     "captures": {
+      "14": 476
+     }
+    },
+    {
+     "from": "0x17A4B80",
+     "at": "0x17A5124",
+     "pattern": "0F 2F F7 76 ?? F3 0F 59 B3 ?? ?? ?? ?? 0F 57 C0 48 8B 86 ?? ?? ?? ??",
+     "captures": {
+      "9": 464
+     }
+    },
+    {
+     "from": "0x17AC120",
+     "at": "0x17AC3F2",
+     "pattern": "88 44 24 ?? 0F 11 44 24 ?? F3 0F 10 83 ?? ?? ?? ?? F3 0F 11 44 24 ?? F3 0F 11 4D ??",
+     "captures": {
+      "13": 472
+     }
+    },
+    {
+     "from": "0x17AC120",
+     "at": "0x17AC5BE",
+     "pattern": "88 44 24 ?? 0F 11 44 24 ?? F3 0F 10 83 ?? ?? ?? ?? F3 0F 11 44 24 ?? F3 0F 11 55 ??",
+     "captures": {
+      "13": 472
+     }
+    }
+   ],
+   "size": 992,
+   "align": 16,
+   "vtable": 159674768,
+   "overrides": 1,
+   "natives": 2,
+   "parent": null
   }
  },
  "functions": {

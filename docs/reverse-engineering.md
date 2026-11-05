@@ -1364,8 +1364,7 @@ Read in a fight with a level 20 cat against a weak bird:
 - **The camera:** its spring arm's `TargetArmLength` (113 on the test cat) and its `CameraComponent`'s `FieldOfView`
   (90) are the camera's own each frame: written once, or every frame from a mod's frame callback, nothing seen changed
   (the camera 114 cm from the cat, the camera manager's `GetFOVAngle` 90). The engine camera manager's `LockedFOV`
-  isn't reflected. The old offsets of *The exploration camera* (from 2026-10-24) don't hold on 26337109: reading
-  the interpolator map at +0x490 crashed the game.
+  isn't reflected. The camera's settings, which make them, can be set (*The exploration camera*, "On 26337109").
 - **Photo mode** has no reflected way in. The player's `PhotoModeControlComponent` (`BP_PhotoMode_Control`) holds its
   camera actor and screen; the pause menu and a talk's action open it. `Player_Pause` pauses the game, and with it the
   SDK's timers.
@@ -1773,8 +1772,24 @@ From `wcmods/names.py` (checked against the tables and the save):
 ## The exploration camera
 
 Read from its code on 2026-10-24 (`SwtAdventureCameraActor`, used as `BP_AdventureCamera_C`,
-whose Blueprint holds only components). The game's update of 2026-11-03 (build 26337109) moved its members: reading
-the old +0x490 crashed the game (*Travel, the HUD's pieces and the camera from C++*).
+whose Blueprint holds only components), and again on build 26337109 (2026-11-05): nothing below moved. The crash that
+said otherwise came from reading +0x490 (the interpolators' map) as something it isn't.
+
+**On 26337109** (read from the code and in game, for the C++ SDK's `set_camera`):
+- BeginPlay is `0x141760B30`: the settings filled from the tuning (as offsets from the struct, `lea rbx,[rsi+3F8h]`),
+  the interpolators started from them, the lag put on the arm. The update that reads them is `0x1417621A0`.
+- The update reads the settings every frame: the arm's length target is the last camera modifier's +0x2B8 (an
+  extra length; the actor's `CameraModifiers` at +0x370) plus `BoomArmTargetLength` (+0x408); the field of view's
+  is +0x3F8 plus `SpeedFov` (+0x424) with speed; the arm's tilt is `BoomArmRotation.Pitch` (+0x404). A changed
+  target restarts its interpolator (elements 0x68 bytes: target +0x44, current +0x48).
+- **+0x3F8 is the field of view** (90), not a tuning key; +0x3FC (0.17) and +0x400 (8) aren't keys either.
+- **Written, they hold:** +0x408 at 300 and +0x3F8 at 60 gave an arm of 300 cm a second later and a field of view of
+  60 shown (the camera manager's), staying there; +0x404 at -35 tilted the view down. Put back, they went back.
+- **The turn rates and pitch limits** the camera keeps (+0x448 to +0x458) aren't read by its code: the turning is the
+  player's `ExplorationControlComponent`'s (`BP_Exploration_Control`), from its own copies (+0x1CC turn yaw 55,
+  +0x1D0 turn pitch 120, +0x1D8 and +0x1DC pitch -20 and 23).
+- `game.HIDDEN` has these members, with signatures (anchored on the two functions above, and the component's BeginPlay
+  `0x14179DF80` and turning `0x1417A4B80`, `0x1417AC120`), so another build's check finds them again.
 
 **Structure:**
 - root (turns left and right) → spring arm `AdventureArmComponent` (0x2B0,
