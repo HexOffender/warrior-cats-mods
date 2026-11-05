@@ -29,7 +29,7 @@ Clan Mod Studio sees to all of these: its launcher to Python, and Get set up to 
     **Use a .zip I downloaded…** takes that .zip from you instead. The game has to be closed.
   - **How it's set up:** its debug console windows are off. Its cheat-manager enabler is off too,
     because the Menu pages mod's Cheats page does that job and can switch cheats off again.
-  - **The game's own command window:** UE4SS's console enabler (`ConsoleEnablerMod`) is on, so `~` or
+  - **The game's own command window:** UE4SS's console enabler (`ConsoleEnablerMod`, with the line that unhooked itself and crashed the game at a fight's start taken out) is on, so `~` or
     F10 opens the game's console. **The game's own command window**, under **Options** on the Settings
     and repair page, switches it from the next time the game starts (so does the command line's
     `console off`).

@@ -189,11 +189,41 @@ def install_loader(zip_path, win64_dir, console=True, log=print):
                 shutil.copyfileobj(src, out, 1024 * 1024)
             written.append(dest)
     log(f"  UE4SS: {len(written)} files in {win64_dir}")
-    configure_loader(win64_dir, console=console)
+    configure_loader(win64_dir, console=console, log=log)
     return written
 
 
-def configure_loader(win64_dir, console=True):
+# UE4SS's console enabler takes its ClientRestart hook off from inside that hook's own callback once the console
+# exists. UE4SS frees the callback, and the next ClientRestart (a fight's start possesses another pawn) crashed the
+# game in UE4SS (seen four times on build 26337109, each a few seconds after that unhook). So the line goes: the hook
+# stays and does nothing once the console is made.
+CONSOLE_UNHOOK = 'UnregisterHook("/Script/Engine.PlayerController:ClientRestart", Pre, Post)'
+# The same call however it's spaced or quoted, so a UE4SS release that writes it a little differently is still fixed.
+CONSOLE_UNHOOK_PATTERN = re.compile(
+    r"""UnregisterHook\(\s*(["'])/Script/Engine\.PlayerController:ClientRestart\1\s*,\s*Pre\s*,\s*Post\s*\)""")
+CONSOLE_UNHOOK_KEPT = "-- wcmods: the hook stays (UnregisterHook from inside its callback crashed the game later)"
+
+
+def fix_console_mod(mods_dir, log=None):
+    """Take the console enabler's self-unhook out (CONSOLE_UNHOOK); True when its script was changed. A script that
+    still unhooks ClientRestart some other way is told to `log` (the fix didn't fit it: fights may crash)."""
+    script = os.path.join(mods_dir, "ConsoleEnablerMod", "Scripts", "main.lua")
+    if not os.path.isfile(script):
+        return False
+    with open(script, encoding="utf-8-sig") as f:
+        text = f.read()
+    fixed, n = CONSOLE_UNHOOK_PATTERN.subn(CONSOLE_UNHOOK_KEPT, text)
+    if not n:
+        if log and "UnregisterHook" in text and "ClientRestart" in text:
+            log(f"UE4SS's console enabler unhooks ClientRestart in a way wcmods doesn't know ({script}): "
+                "fights may crash the game")
+        return False
+    with open(script, "w", encoding="utf-8", newline="") as f:
+        f.write(fixed)
+    return True
+
+
+def configure_loader(win64_dir, console=True, log=None):
     """UE4SS set up for players: its debug console windows off, its cheat-manager enabler off (the Menu
     pages mod's Cheats page does that, and can switch cheats off again), and its console enabler (~ or F10
     opens the game's console) on or off."""
@@ -210,6 +240,7 @@ def configure_loader(win64_dir, console=True):
         set_registered(mods_dir, "CheatManagerEnablerMod", False)
         if os.path.isdir(os.path.join(mods_dir, "ConsoleEnablerMod")):
             set_registered(mods_dir, "ConsoleEnablerMod", console)
+            fix_console_mod(mods_dir, log=log)
 
 
 def download_and_install(win64_dir, console=True, log=print):
