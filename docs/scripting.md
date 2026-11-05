@@ -460,7 +460,7 @@ others, so try each one.
 | `Game.save.write()` | Save now (the game's own Save) |
 | `Game.save.folder()` | A folder for a script's own files: `WCMods` in the game's Saved folder, beside its saves. Every install makes it, and updating a mod or wcmods leaves it alone |
 | `Game.save.slot()` | The save game's slot index (`CurrentSaveSlotIndex`), which isn't the cat's: it stayed 0 while the cat played was the file's slot 8 (`Game.save.slotData()` follows the file) |
-| `Game.save.progression(primary, sub)`, `setProgression`, `setting`, `setSetting` | The save manager's number stores. What their keys are isn't worked out yet |
+| `Game.save.progression(primary, sub)`, `setProgression`, `setting`, `setSetting` | The save manager's number stores: the account-wide progression (`Shared/GameplayProgression/<primary>/<sub>`, not your cat's slot) and the settings. Reading a progression key that isn't there writes it into the save as 0 |
 
 ### JSON and enums
 
