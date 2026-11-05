@@ -77,6 +77,10 @@ HIDDEN = [
     # The tuning manager's TuningData.csv (TMap<FString, a row of {MaxValue float, Description FString}>, 0x38-byte
     # elements), which the game's tuning lookup reads on every call (docs/reverse-engineering.md, "Tuning").
     ("/Script/SwtEngine.SwtTuningManager", [("WCM_TuningData", 0x50, "MapProperty")]),
+    # The engine's behaviour tree component's stack of running trees (TArray<FBehaviorTreeInstance>: each starts with
+    # its root node and its active node), which nothing reflects: an AI's tree and what it's doing now
+    # (docs/reverse-engineering.md, "The game's AI").
+    ("/Script/AIModule.BehaviorTreeComponent", [("WCM_InstanceStack", 0x118, "ArrayProperty")]),
     # Its subclass's talk tables, StoryDialogues.csv and QuestDialogues.csv (TMap<FString,
     # FSwtQuestStoryDialoguesStruct>, 0x60-byte elements), which a bond talk's answer looks its row up in
     # (docs/reverse-engineering.md, "A bond talk's answer").
@@ -120,7 +124,7 @@ HIDDEN = [
 ]
 
 # The kinds in HIDDEN only the C++ SDK reads (offsets.json): the Lua's Game.hidden leaves them out.
-CPP_ONLY = {"MapProperty", "DoubleProperty"}
+CPP_ONLY = {"MapProperty", "DoubleProperty", "ArrayProperty"}
 
 # The game's native functions the C++ SDK calls (wcmods::native, Core.hpp): "class:name", the function's RVA on
 # gamebuild.VERIFIED_BUILD, and what it takes. signatures.json keeps a pattern of each one's first instructions

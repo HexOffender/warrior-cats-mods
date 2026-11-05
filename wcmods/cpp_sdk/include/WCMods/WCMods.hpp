@@ -49,6 +49,7 @@
 // Look objects up again rather than keeping them: the game destroys its actors when the level changes.
 #pragma once
 
+#include <WCMods/Ai.hpp>
 #include <WCMods/Core.hpp>
 #include <WCMods/Events.hpp>
 #include <WCMods/Game.hpp>

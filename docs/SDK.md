@@ -1144,6 +1144,7 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Words.hpp` | the game's words by their keys in its string table: read, changed and put back while it runs |
 | `WCMods/Npcs.hpp` | cats of the mod's own: spawned on the game's walking cat with a look, kept in the world, walked, labelled, with the game's Talk prompt and its Interact |
 | `WCMods/Talk.hpp` | the game's dialogue box with lines of the mod's own; the game's talks read from their graphs (lines, speakers, answers, actions), a story talk filled from the game's tables, played in it with a bond talk's answers doing what the game's do, or talks the mod makes |
+| `WCMods/Ai.hpp` | the game's AI: an animal's or a walking cat's tree and what it's doing now, its blackboard's keys read and written, its logic stopped and started again, the game's behaviour trees read as data |
 | `WCMods/Bonds.hpp` | your cat's bonds with the clans and the story cats, through the game's own bond code: read, added to, set; their ranks; your clan's story roles; the talk tables' rows and a bond talk's answer as the game gives it |
 | `WCMods/Items.hpp` | what each item is (name, icon, kind, and a herb's use through the game's own lookup), and pickups dropped on the ground for your cat to collect, as the game's pickup or a mod's own model |
 | `WCMods/Animations.hpp` | mods' own animations (`animations.json`) and the game's sequences, played, seen playing and stopped on any cat or animal |
@@ -1294,7 +1295,42 @@ for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards"))
 | `wcmods::sky_values(L"Night")`, `set_sky_value(L"Night", L"FogDensity", 0.3)`, `restore_sky_values()`, `sky_presets()` | A preset's values as putting it on uses them: the sun (`SunIntensity`, `SunColor`, `SunHeight`, `SunRadius`, `SunBrightness`), the skylight, the height fog (`FogDensity`, `FogHeightFalloff`, `FogInscatteringColor`, `FogMaxOpacity`, `FogStartDistance`...), the clouds, the horizon and zenith colours, the stars (`StarsBrightness`): a struct `Value` (`get`/`set`; a colour's parts `L"SunColor.R"`...), None for a preset the sky hasn't got. The sky copies them from its table as it starts and applies the copy, which this is, so a change shows the next time the preset goes on, at once for one `set_sky` holds (Night's fog set ten times thicker was ten times thicker on screen). `set_sky_value` keeps the game's number for `restore_sky_values` (which puts back only the sky it changed: a new level's sky has its own copy), and the mod going puts them back too. `sky_presets()` is the table they come from (`DT_SkyBoxParams`, a row per preset): a row changed there didn't change the sky already made, which copied it as it started (a data mod's change to the cooked table is what a sky starts with) |
 | `wcmods::play_sound(L"ui_select")`, `play_sound(L"vo_cat1_happy1", {x, y, z})`, `sound_ids()`, `audio_manager()` | Play one of the game's sounds by its id in its AudioEvents table (music `mus_camp`, effects `cat_step`, menu sounds `ui_select`, cats' voices `vo_cat1_happy1`), heard the same everywhere or from a place: the audio component that plays it, or `nullptr` for an id the game hasn't got. `sound_ids()` lists the ids (390), as the game's audio manager holds them |
 | `wcmods::play_montage(cat, L"Animation.Exploration.Meow")`, `play_montage(actor, tag, rate)`, `montage_playing(actor)` | Play one of the game's own animations on a cat or an animal by its tag, as the game does (its `PlayMontageComponent` plays that row of its animation table: `Animation.Exploration.Meow`, `...Interaction.Dig`, `...Interaction.Sniff`, `Animation.Combat.Hit.1`...), cutting off what it plays now: the montage, or `nullptr` for a tag it hasn't got. `montage_playing` says whether any montage plays on the actor's mesh |
-| `wcmods::npc_detected(animal)`, `npc_target(animal)`, `blackboard(animal)`, `blackboard_bool(animal, L"Hunted")`, `blackboard_float(...)`, `blackboard_object(...)` | What an animal's AI knows: whether it has noticed a cat and which, and its controller's blackboard by key (Detected, Target, StartLocation, RoamingLocation, DetectionRange, ChaseReactionTime, Hunted, HunterPawn, PointOfInterest, bShouldAllowMovement, ArrivedAtTarget; in a fight AffectedByCondition, IsExhausted, IsAlive, WeakestEnemy, SlowestEnemy, SelectedAttack). nullptr / nullopt without an AI controller |
+| `wcmods::npc_detected(animal)`, `npc_target(animal)`, `blackboard(animal)`, `blackboard_bool(animal, L"Hunted")`, `blackboard_float(...)`, `blackboard_object(...)` | What an animal's AI knows: whether it has noticed a cat and which, and its controller's blackboard by key (Detected, Target, StartLocation, RoamingLocation, DetectionRange, ChaseReactionTime, Hunted, HunterPawn, PointOfInterest, bShouldAllowMovement, ArrivedAtTarget; in a fight AffectedByCondition, IsExhausted, IsAlive, WeakestEnemy, SlowestEnemy, SelectedAttack). nullptr / nullopt without an AI controller. Writing them, and the rest of the AI: `Ai.hpp`, below |
+
+**The game's AI (`Ai.hpp`)**, game thread only:
+
+A roaming animal or a clan cat walking its path has an AI controller running one of the game's eight behaviour trees,
+which keeps what it knows on its blackboard: an animal runs `BT_Enemy` (and `BT_CombatEnemy` in its fights), a walking
+cat `BT_WalkingNPC`. A tree is a list of branches, each guarded by decorators on the blackboard's keys, so writing a
+key moves the AI to another branch at once. Read from the trees (`ai_tree_nodes`):
+- **`BT_Enemy`:** with `Hunted` set, the animal stands (only a debug text runs). Otherwise, with `Detected` set, it
+  chases `Target`: it waits `ChaseReactionTime`, then moves to it, while its detection service watches the cat; else
+  it idles, walks to a `RoamingLocation` it picks, or grazes; and it walks back to its `StartLocation` after a chase.
+- **`BT_WalkingNPC`:** the cat walks its path only while `bShouldAllowMovement` is set.
+- **`BT_Escort`:** walks to `PointOfInterest` while `bShouldAllowMovement` is set; `BT_Mentor` walks a path the same way.
+- **`BT_CombatEnemy` and `BT_AttackEnemy`:** a fighter cures itself or an ally, rests when exhausted, buffs or debuffs,
+  and attacks the weakest or the slowest cat with a move picked at random, by stance or by power, each choice behind
+  a chance check by its tier (`AICombatChances.csv`).
+
+```cpp
+for (UObject* animal : wcmods::fight_animals(2000))
+    wcmods::stop_ai(animal);                                       // the animals near your cat stand where they are
+wcmods::set_blackboard(walker, L"bShouldAllowMovement", false);    // a clan cat stops on its path
+for (auto& n : wcmods::ai_tree_nodes(wcmods::ai_tree_named(L"BT_Enemy")))
+    wcmods::log(L"{} {} {}", n.role, n.kind, n.name);              // the roaming animals' AI, node by node
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::ai_controller(actor)`, `ai_brain(actor)` | An actor's AI controller (a roaming animal's `AIC_Wrc_Enemy_Controller_C`, a walking cat's `AIC_Wrc_WalkingNPC_Controller_C`) and its behaviour tree component; nullptr for your cat or a cat standing in camp |
+| `wcmods::ai_tree(actor)`, `ai_task(actor)` | The tree its AI runs now (`BT_Enemy`), through the component's stack of trees (a hidden member, signed); what it's doing now, an `AiTask`: the active node's `name` in the tree (`L"Grazing"`, `L"Idle"`, `L"NPC Spline Walking"`, `L"Wait Blackboard Time"` in a chase) and `kind`, its class. nullptr and empty while its logic is stopped |
+| `wcmods::ai_running(actor)`, `ai_asleep(actor)` | Whether its logic runs, and whether it's asleep: the game pauses a roaming animal's while your cat is about 2,000 units away and wakes it as your cat comes back (seen: the animals beyond about 2,300 asleep, the nearer ones running). Walking cats don't sleep |
+| `wcmods::stop_ai(actor)`, `restart_ai(actor)` | Stop its logic (`StopLogic`): its tree stops and it stands where it is, its blackboard as it was; the game's sleep and wake leave it stopped (seen in game). Start it again from its tree's start (`RestartLogic`). False without an AI |
+| `wcmods::blackboard_keys(actor)` | Its blackboard's keys, `AiKey`s with `name` and `type` (`L"Bool"`, `L"Int"`, `L"Float"`, `L"Vector"`, `L"Object"`...): a roaming animal's and a walking cat's are `BB_Enemy`'s 14 (`SelfActor`, `Detected`, `StartLocation`, `Target`, `DetectionRange`, `RoamingLocation`, `bShouldAllowMovement`, `PointOfInterest`, `Hunted`, `ChaseReactionTime`, `ArrivedAtTarget`, `HunterPawn`, `SplineReference`, `CurrentIndexSpline`) |
+| `wcmods::blackboard_int(actor, key)`, `blackboard_vector(actor, key)` | An Int key's value; a Vector key's place (nullopt when it isn't set). With `blackboard_bool`, `blackboard_float` and `blackboard_object` above |
+| `wcmods::set_blackboard(actor, key, value)`, `clear_blackboard(actor, key)` | Write a key by the value's type: a `bool`, an `int`, a `double` (a Float key), a `Vec3` (a Vector key) or a `UObject*` (an Object key); the tree sees it at once. Clear one (a Vector key not set again, an Object key nullptr). False, with nothing written, when the AI hasn't a key of that name and type. Seen in game: an animal given `Detected` and `Target` went into its chase branch (waiting its `ChaseReactionTime`), and the game didn't clear them while it waited; a walking cat beside your cat stood still with `bShouldAllowMovement` cleared and walked on when it was set again |
+| `wcmods::ai_tree_nodes(tree)`, `ai_tree_named(name)`, `ai_tree_blackboard(tree)`, `AI_TREES` | A behaviour tree read as data: `AiNode`s from its root, each after the decorators that guard it, with `depth`, `role` (`L"composite"`, `L"task"`, `L"decorator"`, `L"service"`), `kind` (its class), `name` (its name in the tree) and `settings` (its own: `BlackboardKey` = `Detected`, `FlowAbortMode`, `TypeAction` = `Weakest`...). One of the game's eight trees by name (`L"BT_Enemy"`, `BT_ChaseOff_Enemy`, `BT_CombatEnemy`, `BT_BossEnemy`, `BT_AttackEnemy`, `BT_Escort`, `BT_Mentor`, `BT_WalkingNPC`), loaded; its blackboard's name |
+
 
 **Quests, fights and events (`Story.hpp`)**, game thread only:
 

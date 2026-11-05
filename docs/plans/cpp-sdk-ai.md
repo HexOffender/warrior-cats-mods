@@ -38,7 +38,9 @@ zone); which tree each kind of animal and cat runs.
 game's trees and blackboards listed.
 
 **Proof.** In game: an animal stopped while your cat walks past it and started again; `PointOfInterest` written and
-the animal going to check it; a key written and read back.
+the animal going to check it; a key written and read back. (`BT_Enemy` doesn't read `PointOfInterest`: the proof
+became a walking cat stopped and set walking again by `bShouldAllowMovement`, and an animal sent into its chase branch
+by `Detected` and `Target`.)
 
 ## 2. Moving an animal or a cat
 
@@ -130,7 +132,7 @@ it, and going on after.
 
 | Step | State | Pull request |
 |---|---|---|
-| 1. An AI's keys and logic | not started | |
+| 1. An AI's keys and logic | done: `Ai.hpp`: an AI's controller, brain, tree (the component's `InstanceStack`, a hidden member, signed) and active node; its blackboard's keys read and written by type; its logic stopped (it stays stopped through the game's sleep and wake) and restarted; the game's eight trees read as data, which say what each key does. Seen in game | this branch, `claude/cpp-ai-keys` |
 | 2. Moving an animal or a cat | not started | |
 | 3. Noticing and ignoring your cat | not started | |
 | 4. Swapping trees | not started | |
