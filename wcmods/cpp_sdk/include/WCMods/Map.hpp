@@ -9,7 +9,9 @@
 //   wcmods::set_camera({.distance = 300, .fov = 60});                             // the camera far and narrow
 #pragma once
 
+#include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <memory>
@@ -400,11 +402,17 @@ namespace wcmods
     };
     namespace detail
     {
-        // What unlock_place set this session, by the save slot it was set on and the place's tag: the save file has it
-        // only once the game saves, and places() reads the file.
-        inline auto unlocked_here() -> std::map<std::pair<int, std::wstring>, bool>&
+        // What unlock_place set this session, by the save slot it was set on and the place's tag, and when: the save
+        // file has it only once the game saves, and places() reads the file. A file written after it (the game saved
+        // since: with this, or with what the game did to the place after) has the last word.
+        struct UnlockedHere
         {
-            static std::map<std::pair<int, std::wstring>, bool> set;
+            bool unlocked{};
+            std::filesystem::file_time_type at{};
+        };
+        inline auto unlocked_here() -> std::map<std::pair<int, std::wstring>, UnlockedHere>&
+        {
+            static std::map<std::pair<int, std::wstring>, UnlockedHere> set;
             return set;
         }
     } // namespace detail
@@ -432,7 +440,13 @@ namespace wcmods
             auto it = open.find(p.tag);
             p.unlocked = it != open.end() ? it->second : p.at_start;
             auto here = detail::unlocked_here().find({save_slot(), p.tag});
-            if (here != detail::unlocked_here().end()) p.unlocked = here->second;
+            if (here != detail::unlocked_here().end())
+            {
+                std::error_code error;
+                auto written = std::filesystem::last_write_time(save_path(), error);
+                if (!error && written > here->second.at) detail::unlocked_here().erase(here);   // the game saved since
+                else p.unlocked = here->second.unlocked;
+            }
             out.push_back(std::move(p));
         }
         return out;
@@ -460,7 +474,7 @@ namespace wcmods
         if (!set_unlocked || !detail::object_staying(place.checkpoint, nullptr)) return false;
         RC::Unreal::FString tag(place.tag.c_str());
         set_unlocked(&tag, unlocked, place.checkpoint);
-        detail::unlocked_here()[{save_slot(), place.tag}] = unlocked;
+        detail::unlocked_here()[{save_slot(), place.tag}] = {unlocked, std::filesystem::file_time_type::clock::now()};
         return true;
     }
 
@@ -481,11 +495,26 @@ namespace wcmods
             if (dx == 0 || dy == 0) return {0, 0};
             return {c(L"MapOffsetX") + (at.y - c(L"WorldMinY")) / dy * w, c(L"MapOffsetY") + (c(L"WorldMaxX") - at.x) / dx * h};
         }
+        // Press Travel once the map's own hover has the item under its pointer, checking every 0.1 s, `tries` more
+        // times; when it never has (the map kept it off: a place at the map's edge, beyond its translation's limits),
+        // says so in the log.
+        inline auto press_travel(RC::Unreal::FWeakObjectPtr map, RC::Unreal::FWeakObjectPtr item, int tries) -> void
+        {
+            UObject* m = map.Get();
+            if (!m) return;
+            if (get(m, L"CurrentWidgetOverlapping").object == item.Get())
+                ui::send(Widget(m), L"Button_Confirm");
+            else if (tries > 0)
+                after(0.1, [map, item, tries] { press_travel(map, item, tries - 1); });
+            else
+                log(L"map_travel: the world map didn't bring the place under its pointer, so Travel wasn't pressed");
+        }
     } // namespace detail
 
     // Open the world map in travel mode as the game does: your cat's Interact, while it stands at an unlocked place's
-    // checkpoint (within its prompt's reach). False otherwise, or with a screen up; travel_map_item and map_travel need
-    // the map it opens.
+    // checkpoint (within its prompt's reach). True when Interact was sent: the map is up a moment later, unless
+    // something else in reach took the Interact (a cat to talk to); travel_map_item says whether it's there. False
+    // anywhere else, or with a screen up.
     inline auto open_travel_map() -> bool
     {
         if (!assert_game_thread(L"open_travel_map") || !player() || !screens().empty()) return false;
@@ -524,9 +553,11 @@ namespace wcmods
     // Travel to a place through the world map, the game's way: with the travel map up (open_travel_map), the map is
     // moved to put the place under its pointer, as moving it by hand does, and once the map has it there (its
     // CurrentWidgetOverlapping, a few frames on) Travel is pressed (Confirm: the map works out what's under its pointer
-    // every frame, so setting CurrentWidgetOverlapping alone is undone, and Button_A did nothing). The game fades out, loads the forest there and
-    // puts your cat at the checkpoint; for the place your cat is at, Travel is off and nothing happens. False without the
-    // map, for a place it hasn't (locked: unlock_place first), or on a build wcmods hasn't the map's members for.
+    // every frame, so setting CurrentWidgetOverlapping alone is undone; Button_A did nothing). The game fades out, loads
+    // the forest there and
+    // puts your cat at the checkpoint; for the place your cat is at, Travel is off and nothing happens. True when the map
+    // was moved (Travel follows within a second, or a line in the log says why not). False without the map or before it
+    // has drawn once, for a place it hasn't (locked: unlock_place first), or on a build wcmods hasn't the map's members for.
     inline auto map_travel(const Place& place) -> bool
     {
         if (!assert_game_thread(L"map_travel")) return false;
@@ -539,22 +570,13 @@ namespace wcmods
         double* ty = member<double>(map, cls, L"WCM_TranslationY");
         double* gx = member<double>(map, cls, L"WCM_TranslationToX");
         double* gy = member<double>(map, cls, L"WCM_TranslationToY");
-        if (!px || !py || !tx || !ty || !gx || !gy) return false;
+        if (!px || !py || !tx || !ty || !gx || !gy || (*px == 0 && *py == 0)) return false;   // 0, 0: not drawn yet
         const double ix = get(item, L"RenderTransform.Translation.X").number();
         const double iy = get(item, L"RenderTransform.Translation.Y").number();
         *tx = *gx = *px - ix;
         *ty = *gy = *py - iy;
         RC::Unreal::FWeakObjectPtr weak_map(map), weak_item(item);
-        auto press = std::make_shared<std::function<void(int)>>();
-        *press = [weak_map, weak_item, press](int tries) {
-            UObject* m = weak_map.Get();
-            if (!m) return;
-            if (get(m, L"CurrentWidgetOverlapping").object == weak_item.Get())
-                ui::send(Widget(m), L"Button_Confirm");
-            else if (tries > 0)
-                after(0.1, [press, tries] { (*press)(tries - 1); });
-        };
-        after(0.1, [press] { (*press)(10); });
+        after(0.1, [weak_map, weak_item] { detail::press_travel(weak_map, weak_item, 10); });
         return true;
     }
 

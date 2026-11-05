@@ -1528,7 +1528,8 @@ def test_map_travel(agent):
     """Map.hpp's travel through the world map in the game: a locked place (ShadowClan's checkpoint .2) unlocked through
     the game's SetCheckpointUnlockState, the map opened in travel mode by your cat's Interact at a checkpoint, moved to
     put the other place under its pointer and Travel pressed: your cat at that checkpoint after the game's fade, with
-    nothing on screen, and back the same way to the camp; the place locked again."""
+    nothing on screen, and back the same way to the camp; the place locked again. map_travel refused with no map up,
+    and to the place your cat is at it does nothing (Travel is off there)."""
     _close_screens(agent)
     r = _request(agent, "map_travel", timeout=90)
     with open(os.path.join(agent.out_dir, "map-travel-values.json"), "w", encoding="utf-8") as f:
@@ -1542,6 +1543,8 @@ def test_map_travel(agent):
         assert v[f"map_travel.{trip}.items"] >= 2, (trip, v)   # the camp's and .2's, as unlocked
         after = v[f"map_travel.{trip}.after"]
         assert after["flat"] < 400 and abs(after["dz"]) < 200 and after["screens"] == [], (trip, after)   # there, standing
+        same = v[f"map_travel.{trip}.same"]   # Travel to where your cat is: off, the map stays and so does your cat
+        assert same["flat"] < 400 and same["screens"] == ["WBP_GuiPopupWorldMap_C"], (trip, same)
 
 
 def test_effects_movement_and_sense(agent):

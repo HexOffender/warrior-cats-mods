@@ -210,19 +210,25 @@ namespace t
             o.set("screens", shown);
             value(key, o);
         }
-        // Travel through the map from where your cat stands (a checkpoint it has) to `to`, then `next`.
-        auto map_trip(const std::string& key, Place to, std::function<void()> next) -> void
+        // Travel through the map from where your cat stands (a checkpoint it has, `from`) to `to`, then `next`. First,
+        // map_travel to `from` itself: Travel is off there, so the map stays and your cat with it.
+        auto map_trip(const std::string& key, Place from, Place to, std::function<void()> next) -> void
         {
+            expect(key + ".refused_no_map", !map_travel(to));
             expect(key + ".open", open_travel_map());
-            after(2.0, [key, to, next] {
-                auto [map, item] = travel_map_item(to);
+            after(2.0, [key, from, to, next] {
+                expect(key + ".same_moved", map_travel(from));
+                after(2.0, [key, from, to, next] {
+                    where((key + ".same").c_str(), from);
+                    auto [map, item] = travel_map_item(to);
                 value(key + ".map", static_cast<bool>(map));
                 value(key + ".item", item ? Json(utf8(class_name(item))) : Json());
                 if (map) value(key + ".items", static_cast<int>(elements(map, L"HoverableWidgets").size()));
-                expect(key + ".travel", map_travel(to));
-                after(8.0, [key, to, next] {
-                    where((key + ".after").c_str(), to);
-                    next();
+                    expect(key + ".travel", map_travel(to));
+                    after(8.0, [key, to, next] {
+                        where((key + ".after").c_str(), to);
+                        next();
+                    });
                 });
             });
         }
@@ -254,10 +260,10 @@ namespace t
             done("map_travel");
         };
         if (at_away)
-            map_trip("map_travel.back", c, [c, a, finish] {   // from .2 to the camp first, then the test's two trips
-                map_trip("map_travel.out", a, [c, finish] { map_trip("map_travel.home", c, finish); });
+            map_trip("map_travel.back", a, c, [c, a, finish] {   // from .2 to the camp first, then the test's two trips
+                map_trip("map_travel.out", c, a, [c, a, finish] { map_trip("map_travel.home", a, c, finish); });
             });
         else
-            map_trip("map_travel.out", a, [c, finish] { map_trip("map_travel.home", c, finish); });
+            map_trip("map_travel.out", c, a, [c, a, finish] { map_trip("map_travel.home", a, c, finish); });
     }
 } // namespace t
