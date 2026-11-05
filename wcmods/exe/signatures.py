@@ -100,6 +100,9 @@ ANCHORS = {
         (0x179DF80, "BeginPlay: the exploration settings from the tuning (speeds, stamina, jump, turning)"),
         (0x17A4B80, "the turning input: yaw and pitch by the turn rates, within the pitch limits"),
         (0x17AC120, "the turning input while aligning the camera behind the cat"),
+        (0x17A5530, "each frame: the character's MaxWalkSpeed and MaxAcceleration from its vtable's +0x528 and +0x530"),
+        (0x17A55B0, "its vtable's +0x528, the speed: walk or run (the flags at +0x110), times the crouch or climb factor"),
+        (0x17A55F0, "its vtable's +0x530, the acceleration, the same way"),
     ],
     "/Script/SwtAdventure.SwtAdventureLevelComponent": [
         (0x1657230, "setting the XP: levels up while it reaches the next level's, below the cap"),
@@ -330,9 +333,30 @@ class Finder:
             rva = rva + 5 + struct.unpack_from("<i", self.tdata, p + 1)[0]
         return rva
 
+    def span(self, begin):
+        """The whole function at `begin` (a function's start: a vtable's entry, a call's target, an anchor):
+        pe.Image.function_at's, or, for a leaf function .pdata has no entry for (one that saves nothing, such as a
+        vtable's small getters), `begin` to the ret that int3 padding follows. None when neither is found within
+        64 instructions."""
+        fn = self.img.function_at(begin)
+        if fn:
+            return fn
+        p = begin - self.text.rva
+        if not (0 <= p < len(self.tdata)):
+            return None
+        for _ in range(64):
+            try:
+                ins = x64.decode(self.text.data, p)
+            except x64.DecodeError:
+                return None
+            p += ins.length
+            if self.tdata[p - ins.length] == 0xC3 and ins.length == 1 and (p >= len(self.tdata) or self.tdata[p] == 0xCC):
+                return (begin, self.text.rva + p)
+        return None
+
     def function_signature(self, begin):
         """A pattern of a function's first instructions that matches only it in the whole exe, or None."""
-        span = self.img.function_at(begin)
+        span = self.span(begin)
         if not span:
             return None
         insns = self.insns(span[0], span[1], limit=120)
@@ -390,7 +414,7 @@ class Finder:
             begins.discard(info.static_class)
             spans = set()
             for b in begins:
-                span = self.img.function_at(b)
+                span = self.span(b)
                 if span and span[1] - span[0] < 20000:   # not the engine's giant dispatchers
                     spans.add(span)
             info.functions = sorted(spans)
@@ -650,7 +674,7 @@ def _search(finder, found, cls, anchors):
         spans |= set(parent.functions)
         parent = _parent(found, parent)
     for rva in anchors:
-        span = finder.img.function_at(rva)
+        span = finder.span(rva)
         if span:
             spans.add(span)
     return sorted(spans)
@@ -741,7 +765,7 @@ def make(image_path, log=print):
         entry["parent"] = parent.name if parent else None
         anchors = []
         for rva, note in ANCHORS.get(cls, []):
-            span = img.function_at(rva)
+            span = finder.span(rva)
             pat = finder.function_signature(span[0]) if span else None
             entry["anchors"].append({"note": note, "was": f"0x{span[0]:X}" if span else None,
                                      "pattern": _hex(pat) if pat else None})

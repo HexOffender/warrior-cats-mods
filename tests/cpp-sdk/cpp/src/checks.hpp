@@ -55,6 +55,7 @@ namespace t
     auto run_map_end_request() -> void;  // the markers taken off, the clock let go ("map_end")
     auto run_camera_request() -> void;   // Map.hpp's camera settings: read, set, held, put back ("camera")
     auto run_effects_request() -> void;  // Effects.hpp: effects played and stopped, movement, the sense ("effects")
+    auto run_speeds_request() -> void;   // Effects.hpp: your cat's speeds read, set, taken by the game, put back ("speeds")
     auto run_anims_request() -> void;    // Animations.hpp: mods' animations played and stopped, in the game ("anims")
     auto run_ui_units() -> void;         // Ui.hpp's rule for the arrows on a tab's page, without the game (test_ui.cpp)
     auto run_native_units() -> void;     // Core.hpp's pattern check and World.hpp's map reader, without the game (test_native.cpp)

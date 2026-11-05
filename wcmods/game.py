@@ -93,8 +93,15 @@ HIDDEN = [
         ("WCM_SpeedArmLength", 0x41C, "FloatProperty"), ("WCM_SpeedFov", 0x424, "FloatProperty")]),
     # Your cat's exploration settings (ExplorationControlComponent, BP_Exploration_Control), filled by its BeginPlay
     # from Gameplay.Exploration.*: the turning the mouse and stick do (the camera's input reads these, not the
-    # camera's own copies) and the pitch it allows.
+    # camera's own copies) and the pitch it allows; and its speeds, which the component writes into its character's
+    # CharacterMovement every frame (MaxWalkSpeed: walk or, while running, run, times the crouch or climb factor;
+    # MaxAcceleration the same with the accelerations). How it's moving is the flags at +0x110: 4 running,
+    # 1 crouched, 2 climbing.
     ("/Script/SwtAdventure.ExplorationControlComponent", [
+        ("WCM_MoveFlags", 0x110, "IntProperty"),
+        ("WCM_WalkSpeed", 0x12C, "FloatProperty"), ("WCM_WalkAcceleration", 0x130, "FloatProperty"),
+        ("WCM_RunSpeed", 0x134, "FloatProperty"), ("WCM_RunAcceleration", 0x138, "FloatProperty"),
+        ("WCM_CrouchFactor", 0x148, "FloatProperty"), ("WCM_ClimbFactor", 0x150, "FloatProperty"),
         ("WCM_TurnYaw", 0x1CC, "FloatProperty"), ("WCM_TurnPitch", 0x1D0, "FloatProperty"),
         ("WCM_PitchMin", 0x1D8, "FloatProperty"), ("WCM_PitchMax", 0x1DC, "FloatProperty")]),
 ]

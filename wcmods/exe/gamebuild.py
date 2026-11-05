@@ -488,7 +488,7 @@ PLAIN = {
     "SwtAdventureCustomizableMeshComponent": "changing a cat's look, for C++ mods",
     "Customization": "changing a cat's look, for C++ mods",
     "SwtAdventureCameraActor": "the camera's distance, field of view, tilt and lag, for C++ mods",
-    "ExplorationControlComponent": "how your cat turns the camera, for C++ mods",
+    "ExplorationControlComponent": "how fast your cat moves and turns the camera, for C++ mods",
     # A native function by its own "class:name" where its class's words would say too much: the tuning calls
     # read the map (the member above), not the game's lookup, which only proves them.
     "SwtTuningManager:GetValue": "the game's own tuning lookup (C++ mods' tuning calls don't need it)",

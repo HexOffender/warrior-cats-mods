@@ -530,6 +530,9 @@ def fake_maker(monkeypatch, unsigned=(), no_pattern=()):
         def function_signature(self, begin):
             return None if begin in no_pattern else [0x90] * 20
 
+        def span(self, begin):
+            return self.img.function_at(begin)
+
     def sites(finder, search, offsets):
         short = next(c for c, fields in signatures.game.HIDDEN
                      if {o for _, o, _ in fields} == set(offsets)).rsplit(".", 1)[-1]
@@ -571,3 +574,25 @@ def test_make_fails_a_native_function_with_no_pattern(monkeypatch):
     with pytest.raises(signatures.Unsigned) as e:
         signatures.make("game.exe", log=lambda m: None)
     assert e.value.classes == [name] and e.value.result["functions"][name]["pattern"] is None
+
+
+def test_a_leaf_function_pdata_leaves_out_is_read_to_its_ret(tmp_path):
+    """Finder.span: a function .pdata has an entry for is pe's; one it hasn't (a leaf that saves nothing, as the
+    exploration component's speed getter at its vtable's +0x528 is) runs from its start to the ret int3 padding
+    follows, past an early ret; bytes that never reach such a ret give None."""
+    pdata, rdata = 0x3000, 0x2000
+    code = bytearray(b"\xCC" * 0x100)
+    code[0x00:0x08] = bytes.fromhex("4883EC28" "4883C428")             # sub rsp,28h / add rsp,28h (has .pdata)
+    code[0x08] = 0xC3
+    # the speed getter's shape: mov eax,[rcx+110h]; test al,4; je +1; ret (early); movss xmm0,[rcx+12Ch]; ret
+    leaf = bytes.fromhex("8B8110010000" "A804" "7401" "C3" "F30F10812C010000" "C3")
+    code[0x20:0x20 + len(leaf)] = leaf
+    code[0x40:0x44] = bytes.fromhex("8B811001")                         # cut short: no ret before the padding
+    table = struct.pack("<III", 0x1000, 0x1009, rdata)
+    path = tmp_path / "game.exe"
+    path.write_bytes(build_pe([(".text", 0x1000, bytes(code)), (".rdata", rdata, unwind()), (".pdata", pdata, table)],
+                              {3: (pdata, len(table))}))
+    finder = signatures.Finder(pe.Image(str(path)))
+    assert finder.span(0x1000) == (0x1000, 0x1009)
+    assert finder.span(0x1020) == (0x1020, 0x1020 + len(leaf))
+    assert finder.span(0x1040) is None
