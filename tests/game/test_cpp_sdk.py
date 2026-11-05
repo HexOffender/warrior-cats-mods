@@ -1495,6 +1495,24 @@ def test_map_hud_and_travel(agent):
     assert 30 < v["map.camera.distance"] < 2000 and 30 < v["map.camera.fov"] < 130, v
 
 
+def test_effects_movement_and_sense(agent):
+    """Effects.hpp in the game: the game's own effects by name (its VFX manager's: the buff, the statuses, a pickup's)
+    and a Niagara system by its path, each seen playing, one stopped; bad names refused. Your cat's movement read
+    (175 cm/s walking, 420 jumping, gravity 1), its jump and gravity changed and kept, its walk speed refused (the
+    game sets it every frame), a roaming animal's walk speed kept. The scent sense used, full within 3 s."""
+    _close_screens(agent)
+    r = _request(agent, "effects", timeout=30)
+    assert not _failed(r, "effects"), _failed(r, "effects")
+    v = r["values"]
+    assert {"Buff", "Debuff", "Climb", "Poisoned", "Blinded", "PickUp"} <= set(v["effects.names"]), v["effects.names"]
+    assert v["effects.poison_playing"] is True and v["effects.buff_playing"] is True and v["effects.poison_stopped"] is True, v
+    m = v["effects.movement"]
+    assert (m["walk"], m["jump"], m["gravity"], m["mode"]) == (175, 420, 1, "MOVE_Walking"), m
+    assert v["effects.jump_after"] == 700 and abs(v["effects.gravity_after"] - 0.8) < 1e-6, v
+    assert v["effects.animal_walk_after"] == 111, v   # a roaming animal's stays (62 roam near the test cat)
+    assert v["effects.sense_before"] == 0 and v["effects.sense_3s"] > 0.9, v
+
+
 def test_ui_arrow_units(agent):
     """Ui.hpp's rule for an arrow on a tab's page, at init without the game: its release is given to the screen
     again from a button or check box, never from a slider, number or text box, not when the page hasn't the

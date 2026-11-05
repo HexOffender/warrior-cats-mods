@@ -134,6 +134,10 @@ namespace t
             {
                 run_map_end_request();
             }
+            else if (what == "effects")
+            {
+                run_effects_request();
+            }
             else if (what == "time")
             {
                 // The day's seconds now: the world phase's read came as the cat arrived, before the game set the
