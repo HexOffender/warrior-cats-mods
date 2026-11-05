@@ -1354,7 +1354,30 @@ Read in a fight with a level 20 cat against a weak bird:
     is isn't reflected.
   - **The game's code:** 0x1416A7DE0 logs "SetCheckpointUnlockState" and 0x1416A7D20 reads the `Checkpoints` key,
     next to the bond functions; 0x141953890 and 0x141953C80 handle `CheckPointDiscovered` and `SunSpotDiscovered`.
-    None is signed yet.
+  - **Unlocking** (2026-11-05): `SetCheckpointUnlockState(const FString* UID, bool unlocked, UObject* context)`, signed
+    as `Checkpoints:SetUnlocked`. The UID is the checkpoint's tag (the save's `UID`), and the context is the checkpoint:
+    its world names the save's level key (`GameplayProgression/L_WorldMap_01_P/Checkpoints`). Passing -1 there, as the
+    bond functions take a slot, crashed the game reading 0xFFFFFFFF. It writes the entry through the save manager's
+    vtable +0x4B8, the Wrc save manager's `CheckPointDiscovered` code (0x141953890), and broadcasts the save
+    manager's checkpoint delegate (+0x170). The checkpoint's BeginPlay (0x1416357A0) reads its state (0x1416A7D20,
+    `(UID, the checkpoint) -> int32`: -1 no entry, 0 locked, 1 unlocked) and writes it the same way. The reader has
+    no unique pattern (the bond reads' shape), so it isn't signed.
+  - **The world map in travel mode** is only the checkpoint's Interact's (`Player_Interact`, ECommands 67 on
+    26337109: the header dump's numbers are an older build's): the map key (`Player_Show_Map`, 78) opens it with
+    "Show info" where Travel is. Nothing in the popup's own memory says which mode it's in.
+  - **Its items:** the popup's `HoverableWidgets` are one `WBP_GuiItemCheckPointMap_C` per unlocked place, at their
+    `RenderTransform.Translation` on the 4096-pixel map: `x = (worldY - WorldMinY) / (WorldMaxY - WorldMinY) * 4096`,
+    `y = (WorldMaxX - worldX) / (WorldMaxX - WorldMinX) * 4096` (`MapCoordinates`: X -66831 to 7338, Y -16463 to
+    57706). Their canvas slots are at 0,0.
+  - **The pointer:** each frame the popup works out `CurrentWidgetOverlapping` from what's under its pointer, so a
+    write to it lasts no longer than the frame. The popup keeps the pointer's spot in its layers' space at +0x618/+0x620
+    (doubles, 1914.5 and 894.1) and the layers' translation at +0x628/+0x630 (and again at +0x638/+0x640), which moving
+    the map changes and the popup puts on `CanvasLayers` each frame. A translation of the pointer's spot less an item's
+    place put that item under the pointer, and lit Travel.
+  - **Travel** is Confirm (`Button_Confirm`, 26) to the popup; `Button_A` did nothing. Pressed with the right item under
+    the pointer, it took the cat from the camp to ShadowClan's .2 (Moss-Hollow Sink) and back: the game's fade, the
+    forest loaded there, the cat 1.5 m from the checkpoint. A plain teleport there had left the cat falling through the
+    world (Z -121,687), the area not loaded.
   - **`Player_ReturnToCamp`** (X) did nothing for the apprentice, sent as a command or pressed.
 - **The HUD's quest pieces** read back as the Lua's set them: the objective panel's title, place, activity and goals,
   and the banner's `mcGuiTextQuestType`, `mcGuiTextQuestName` and `mcGuiTextObjective`, gone after its time.

@@ -104,10 +104,18 @@ HIDDEN = [
         ("WCM_CrouchFactor", 0x148, "FloatProperty"), ("WCM_ClimbFactor", 0x150, "FloatProperty"),
         ("WCM_TurnYaw", 0x1CC, "FloatProperty"), ("WCM_TurnPitch", 0x1D0, "FloatProperty"),
         ("WCM_PitchMin", 0x1D8, "FloatProperty"), ("WCM_PitchMax", 0x1DC, "FloatProperty")]),
+    # The world map (GuiPopupWorldMap, WBP_GuiPopupWorldMap_C): where its pointer is in the map's layers (the
+    # pointer's spot, which doesn't move) and the layers' translation (doubles; a second copy at +0x638), which moving
+    # the map changes and the map puts on CanvasLayers each frame. The place under the pointer is the item at the
+    # pointer's spot less the translation. C++ only: UE4SS's custom properties have no double.
+    ("/Script/Wrc.GuiPopupWorldMap", [
+        ("WCM_PointerX", 0x618, "DoubleProperty"), ("WCM_PointerY", 0x620, "DoubleProperty"),
+        ("WCM_TranslationX", 0x628, "DoubleProperty"), ("WCM_TranslationY", 0x630, "DoubleProperty"),
+        ("WCM_TranslationToX", 0x638, "DoubleProperty"), ("WCM_TranslationToY", 0x640, "DoubleProperty")]),
 ]
 
 # The kinds in HIDDEN only the C++ SDK reads (offsets.json): the Lua's Game.hidden leaves them out.
-CPP_ONLY = {"MapProperty"}
+CPP_ONLY = {"MapProperty", "DoubleProperty"}
 
 # The game's native functions the C++ SDK calls (wcmods::native, Core.hpp): "class:name", the function's RVA on
 # gamebuild.VERIFIED_BUILD, and what it takes. signatures.json keeps a pattern of each one's first instructions
@@ -160,6 +168,15 @@ NATIVE = [
     ("SwtTuningManager:GetValue", 0x12BBA60,
      "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, "
      "0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData"),
+    # The places to travel to (docs/reverse-engineering.md, "Travel, the HUD's pieces and the camera from C++"): a static
+    # function beside the bond code, on the save manager (a global). Its reader beside it (0x16A7D20: (UID, the
+    # checkpoint) -> -1 no entry, 0 locked, 1 unlocked) has no unique pattern: its code is the bond reads' shape.
+    ("Checkpoints:SetUnlocked", 0x16A7DE0,
+     "unlocks a checkpoint or locks it again (\"SetCheckpointUnlockState\"): (const FString* the checkpoint's UID, its "
+     "tag; bool unlocked; UObject* the checkpoint, a world context: the save keeps checkpoints under its level's name), "
+     "on the cat played now; writes GameplayProgression/<level>/Checkpoints (the save manager's vtable +0x4B8) and "
+     "broadcasts the save manager's checkpoint delegate (+0x170) with the UID, which the map's checkpoint markers and "
+     "the checkpoint actors hear. The checkpoint's BeginPlay calls it so (0x1416357A0)"),
 ]
 
 # The game's enums Game.enums gives scripts: the name scripts use, the enum's path in the game (its module's

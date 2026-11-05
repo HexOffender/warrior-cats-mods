@@ -493,6 +493,8 @@ PLAIN = {
     # read the map (the member above), not the game's lookup, which only proves them.
     "SwtTuningManager:GetValue": "the game's own tuning lookup (C++ mods' tuning calls don't need it)",
     "SwtAdventureTuningManager:GetHousingCost": "what den decorations cost, for C++ mods",
+    "Checkpoints": "the places your cat can travel to, for C++ mods",
+    "GuiPopupWorldMap": "travelling through the world map, for C++ mods",
 }
 
 
