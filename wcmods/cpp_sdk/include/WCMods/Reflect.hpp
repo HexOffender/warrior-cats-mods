@@ -28,6 +28,7 @@
 #include <Unreal/CoreUObject/UObject/UnrealType.hpp>
 #include <Unreal/FString.hpp>
 #include <Unreal/FText.hpp>
+#include <Unreal/FWeakObjectPtr.hpp>
 #include <Unreal/NameTypes.hpp>
 #include <Unreal/Property/FEnumProperty.hpp>
 #include <Unreal/Property/FTextProperty.hpp>
@@ -192,6 +193,13 @@ namespace wcmods
                 v.kind = Value::Kind::Object;
                 v.object = *static_cast<UObject**>(at);
             }
+            else if (t == L"WeakObjectProperty")
+            {
+                // A TWeakObjectPtr: the object while it's still the one it pointed at (its slot's serial number),
+                // else nullptr. Read only: write() leaves it alone.
+                v.kind = Value::Kind::Object;
+                v.object = static_cast<RC::Unreal::FWeakObjectPtr*>(at)->Get();
+            }
             else if (t == L"StructProperty")
             {
                 v.kind = Value::Kind::Struct;
@@ -341,7 +349,7 @@ namespace wcmods
                 else return false;
                 return true;
             case Value::Kind::Object:
-                if (value.kind != Value::Kind::Object) return false;
+                if (value.kind != Value::Kind::Object || t == L"WeakObjectProperty") return false;   // a weak one is read only
                 *static_cast<UObject**>(target.at) = value.object;
                 return true;
             default:

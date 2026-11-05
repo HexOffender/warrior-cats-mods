@@ -114,6 +114,10 @@ namespace t
             {
                 run_anims_request();
             }
+            else if (what == "questline")
+            {
+                run_quests_request();
+            }
             else if (what == "unhook_loop")
             {
                 // 50 hooks on ClientRestart made and taken off at once; then 20 rounds, one a frame, of a hook on

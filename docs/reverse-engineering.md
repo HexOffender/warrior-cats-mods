@@ -1252,6 +1252,42 @@ is named `SwtAdventureMultiObjectiveQuest_0`, and its outer, a `QuestDynamicGrap
 `QuestGraph_Tutorial` or `QuestGraphProcedural_Deliver`, says which quest it is. There are 40 in
 `/Game/Quests/QuestLines/QuestLine_Main`.
 
+**A quest's progress** (worked out on 2026-11-04, build 26337109, for the C++ SDK's quests):
+- **Its id.** Each quest graph has a `questTag` (`Quest.Procedural.Survival.Gather`) and a `QuestAlias`, its place in
+  the story (`Quest.Main.1`). The save keeps progress by the alias (`QuestProgression/Chapter00/Quest.Main.1`:
+  `Status`, `Result`, `Tracked`...), and so do the quest manager's `GetQuestStatus`/`GetQuestResult`.
+- **Asking adds.** `GetQuestStatus` with an id the story hasn't got (`Quest.WCModsTest.NoSuch`) added it to the slot's
+  `QuestProgression` at the next save, as the save manager's progression reads add keys, and `GetObjectiveStatus`
+  does the same with an objective's id. The C++ test of quests had been asking by a graph's tag, a made-up tag and
+  the tutorial's objective, so the dev save's test cat has those three ids too (inert). Lua's `Game.quests.status`
+  asks whatever it's given.
+- **The quest object's own `QuestStatus` stays None** while the quest is under way (it read QuestTurnedIn only for
+  the finished tutorial); the manager by alias said `OngoingQuest`.
+- **Starting one.** `StartQuestOfTag(questTag, controller)` started the gather quest: its begin banner ("Main
+  Quest / Feathering the Nests / New Objective") and the HUD's objective ("Track and collect: Bedding Moss 0/3"). It
+  stayed started after a restart (the save had it `Status` 2, `Tracked`).
+- **The live objective** is the quest line's copy (`QuestLine_Main:QuestGraphProcedural_Gather.QuestGraphNode_0.
+  GatherObjective_0`, its `QuestBase` the quest): a `GatherObjective`'s `Targets` (`TMap<FName, FQuestTargetStruct>`:
+  `ActorsTag` `Quest.Collectable.Item.Apprentice.Moss`, `CurrentCount`, `TargetCount`, `AllActors`, weak pointers to
+  the three `BP_Quest_Items_Apprentice_Moss_C` in the world) hold what the HUD shows.
+- **What counts a target:** collecting it the player's way. The cat put on a target and the game's Interact pressed
+  made the HUD "1/3" (once "2/3": another target lay in reach), the target count 1 and the quest manager's status
+  event fire; the collected target stays in `AllActors`, hidden.
+- **What doesn't:** the objective's `OnObjectiveDestroyed(target)`, destroying a target (it left `AllActors`, the
+  count stayed 0), `SetCurrentCountOnData(n, true)` (only the saved count, `GetCurrentCountFromData`, changed), and
+  adding the material Moss to the inventory (the quest wants its own item).
+- **Finishing.** `SetObjectiveFinished(Succeeded)` on the live objective made the quest `QuestComplete` with
+  `Success` (three status events), and the game asked "Return to the Camp now?" as after a real finish.
+- **Story scenes by tag** weren't found a reflected way to play: the sequencer managers reflect only
+  `PlaySequenceDialogue` (a talk, step 7) and the skip popup's show and hide; their own virtuals that read
+  `RegisteredSequences` (+0xB0) and write `ActiveSequences` (+0x100) weren't traced.
+- **Dilemmas** are a fight's: the fight component reflects `OnDilemmaCheck` and `OnDilemmaCompleted(warriorCode)`,
+  and `DT`'s `SwtAdventureDilemmaStruct` rows trigger on fight stats (a team member's health, a chance), with two
+  choices and their warrior codes.
+- **Mood:** the save manager's `Get/Set/HasMoodData(primary, sub)` keep whole numbers under `MoodData`
+  (`0x1412A4AF0` returns the key's name); the game's keys are set by Blueprints, not native code. `HasMoodData` asks
+  without adding a key.
+
 Seen in game on build 26184573 (2026-10-26), building the Sandbox mode mod:
 - **Loading a cat:** the game state (`SwtQuestGameplayGameState`) goes through phases 1 → 4 while a
   cat loads, set by `Server_SetPhase`. The quests are built from `QuestLine_Main` between the quest

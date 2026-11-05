@@ -117,11 +117,12 @@ namespace t
             value("quests.first.type", text(q.type));
             value("quests.first.tracked", q.tracked);
             expect("describe_quest", q.quest != nullptr && !q.graph.empty() && !q.status.empty());
-            if (!q.tag.empty())
+            if (!q.alias.empty())   // by its story id: the game's own calls add an id they're asked about to the save
             {
-                value("quests.first.status_by_tag", text(quest_status(q.tag)));
-                value("quests.first.result_by_tag", text(quest_result(q.tag)));
-                auto n = quest_successes(q.tag);
+                value("quests.first.alias", text(q.alias));
+                value("quests.first.status_by_tag", text(quest_status(q.alias)));
+                value("quests.first.result_by_tag", text(quest_result(q.alias)));
+                auto n = quest_successes(q.alias);
                 value("quests.first.successes", n ? Json(*n) : Json());
             }
             auto obs = objectives(q.quest);
@@ -135,7 +136,7 @@ namespace t
         expect("quest_manager", quest_manager() != nullptr);
         expect("track_quest", (tracked ? track_quest(tracked, true) : true) && !track_quest(nullptr));
         value("quests.chapter", text(chapter()));
-        value("quests.nosuch_status", text(quest_status(L"Quest.NoSuchQuestAnywhere")));   // the game answers for any tag
+        expect("quests.nosuch_status", quest_status(L"Quest.NoSuchQuestAnywhere").empty());   // not asked: it would go into the save
         // Starting and handing out take a tag the game hasn't got: the calls go through, and nothing happens.
         expect("start_quest", start_quest(L"Quest.NoSuchQuestAnywhere") && give_quest(L"Quest.NoSuchQuestAnywhere"));
 

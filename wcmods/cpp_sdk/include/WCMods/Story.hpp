@@ -18,6 +18,7 @@
 #include <WCMods/Events.hpp>
 #include <WCMods/Game.hpp>
 #include <WCMods/Reflect.hpp>
+#include <WCMods/World.hpp>
 
 namespace wcmods
 {
@@ -25,14 +26,23 @@ namespace wcmods
     struct Quest
     {
         UObject* quest{};
-        std::wstring id;       // "Main_03": the quest graph's name without its prefix
-        std::wstring tag;      // its gameplay tag ("Quest.Main.3"), or empty
+        std::wstring id;       // "Gather": the quest graph's name without its prefix
+        std::wstring tag;      // its graph's gameplay tag ("Quest.Procedural.Survival.Gather"), or empty
+        std::wstring alias;    // its place in the story ("Quest.Main.1"), which the game keeps its progress by, or empty
         std::wstring graph;    // the quest graph object's name
         std::wstring type;     // "MainQuest", "SideQuest"
         std::wstring status;   // "QuestAvailable", "OngoingQuest", "QuestComplete", "QuestTurnedIn"...
         std::wstring result;   // "Any", "Success", "Fail"
         bool tracked{};
         double xp{};
+    };
+    // What an objective has its cat gather, track or visit (a gather objective's Targets): the targets' tag, how
+    // many count so far of how many (the HUD's "1/3"), and the target actors in the world now.
+    struct QuestTarget
+    {
+        std::wstring tag;
+        int current{}, target{};
+        std::vector<UObject*> actors;
     };
     struct Objective
     {
@@ -42,9 +52,50 @@ namespace wcmods
         std::optional<double> current, target;
         std::wstring status;   // "NotStarted", "InProgress", "Failed", "Succeeded"...
         UObject* point{};      // where to go, when it has one
+        std::vector<QuestTarget> targets;
     };
 
     inline auto quest_manager() -> UObject* { return manager(STR("quests")); }
+
+    namespace detail
+    {
+        // The quest manager's calls that take a tag: the tag goes into the first parameter.
+        inline auto quest_call(const TCHAR* function, std::wstring_view tag, const std::function<void(Params&)>& more = {}) -> std::optional<Params>
+        {
+            return call_reflected(quest_manager(), function, [&](Params& p) {
+                set(p.nth(0), L"TagName", tag);
+                if (more) more(p);
+            });
+        }
+        // Whether one of the manager's quests has this alias. The game's status calls add the id they're asked about
+        // to the save's QuestProgression (seen in game), so they're only asked about the story's own.
+        inline auto known_alias(std::wstring_view alias) -> bool
+        {
+            if (alias.empty() || alias == L"None") return false;
+            for (Value& e : elements(quest_manager(), L"Quests"))
+            {
+                UObject* q = get(e, L"Quest").object;
+                if (q && get(q->GetOuterPrivate(), L"QuestAlias.TagName").string() == alias) return true;
+            }
+            return false;
+        }
+    } // namespace detail
+
+    // A quest's status and result by its story id, its alias (quest_status(L"Quest.Main.1") -> L"OngoingQuest"), as the
+    // game keeps them; empty for an id none of the manager's quests has (the game's own call would add it to the
+    // save). (A quest object's own QuestStatus stays None while it's under way.)
+    inline auto quest_status(std::wstring_view alias) -> std::wstring
+    {
+        if (!detail::known_alias(alias)) return {};
+        auto r = detail::quest_call(STR("GetQuestStatus"), alias);
+        return r ? r->get(L"ReturnValue").string() : std::wstring{};
+    }
+    inline auto quest_result(std::wstring_view alias) -> std::wstring
+    {
+        if (!detail::known_alias(alias)) return {};
+        auto r = detail::quest_call(STR("GetQuestResult"), alias);
+        return r ? r->get(L"ReturnValue").string() : std::wstring{};
+    }
 
     // A quest object described: it's named after its class, and the quest graph that holds it says which
     // quest it is.
@@ -61,15 +112,21 @@ namespace wcmods
         if (out.id.empty()) out.id = name(q);
         out.tag = get(graph, L"questTag.TagName").string();
         if (out.tag == L"None") out.tag.clear();
+        out.alias = get(graph, L"QuestAlias.TagName").string();
+        if (out.alias == L"None") out.alias.clear();
         out.type = get(q, L"questType").text;
-        out.status = get(q, L"QuestStatus").text;
-        out.result = get(q, L"QuestResult").text;
+        // The game keeps a quest's progress by its alias; the object's own fields are only right before and after.
+        out.status = out.alias.empty() ? std::wstring{} : quest_status(out.alias);
+        if (out.status.empty() || out.status == L"None") out.status = get(q, L"QuestStatus").text;
+        out.result = out.alias.empty() ? std::wstring{} : quest_result(out.alias);
+        if (out.result.empty()) out.result = get(q, L"QuestResult").text;
         out.tracked = get(q, L"bTracked").boolean();
         out.xp = get(q, L"ExperienceReward").number();
         return out;
     }
 
-    // Every quest the manager holds (its Quests list holds {Quest, Line, Node} entries).
+    // Every quest the manager holds (its Quests list holds {Quest, Line, Node} entries), each with its live status:
+    // two calls to the quest manager a quest, so a few times a second at most, not every frame.
     inline auto quests() -> std::vector<Quest>
     {
         std::vector<Quest> out;
@@ -88,32 +145,10 @@ namespace wcmods
         return r ? r->get(L"ReturnValue").object : nullptr;
     }
 
-    namespace detail
+    inline auto quest_successes(std::wstring_view alias) -> std::optional<double>
     {
-        // The quest manager's calls that take a tag: the tag goes into the first parameter.
-        inline auto quest_call(const TCHAR* function, std::wstring_view tag, const std::function<void(Params&)>& more = {}) -> std::optional<Params>
-        {
-            return call_reflected(quest_manager(), function, [&](Params& p) {
-                set(p.nth(0), L"TagName", tag);
-                if (more) more(p);
-            });
-        }
-    } // namespace detail
-
-    // A quest's status and result by its tag: quest_status(L"Quest.Main.3") -> L"OngoingQuest"; empty when unknown.
-    inline auto quest_status(std::wstring_view tag) -> std::wstring
-    {
-        auto r = detail::quest_call(STR("GetQuestStatus"), tag);
-        return r ? r->get(L"ReturnValue").string() : std::wstring{};
-    }
-    inline auto quest_result(std::wstring_view tag) -> std::wstring
-    {
-        auto r = detail::quest_call(STR("GetQuestResult"), tag);
-        return r ? r->get(L"ReturnValue").string() : std::wstring{};
-    }
-    inline auto quest_successes(std::wstring_view tag) -> std::optional<double>
-    {
-        auto r = detail::quest_call(STR("GetCurrentSuccessCount"), tag);
+        if (!detail::known_alias(alias)) return std::nullopt;
+        auto r = detail::quest_call(STR("GetCurrentSuccessCount"), alias);
         if (!r) return std::nullopt;
         Value v = r->get(L"ReturnValue");
         return v ? std::optional<double>(v.number()) : std::nullopt;
@@ -134,12 +169,30 @@ namespace wcmods
                         }).has_value();
     }
 
-    // A quest's objectives, in order.
+    namespace detail
+    {
+        // The quest and objective ids your cat's save holds (QuestProgression/<chapter>/<id>), as of the last save: the
+        // game's GetObjectiveStatus adds an id it's asked about, so it's only asked about these.
+        inline auto saved_quest_ids() -> std::set<std::wstring>
+        {
+            std::set<std::wstring> ids;
+            auto save = read_save();
+            if (!save.data) return ids;
+            const Json& chapters = slot_of(*save.data)["QuestProgression"];
+            for (const Json& chapter : chapters.values())
+                for (const std::string& id : chapter.keys()) ids.insert(wide(id));
+            return ids;
+        }
+    } // namespace detail
+
+    // A quest's objectives, in order. `status` is the game's for an objective your cat's save has (empty for the
+    // rest: the game's call would add the id); it said NotStarted for a gather objective under way.
     inline auto objectives(UObject* quest) -> std::vector<Objective>
     {
         std::vector<Objective> out;
         if (!quest) return out;
         UObject* qm = quest_manager();
+        const std::set<std::wstring> saved = detail::saved_quest_ids();
         for (UObject* o : find_all(STR("ObjectiveBase")))
         {
             if (get(o, L"QuestBase").object != quest) continue;
@@ -149,16 +202,142 @@ namespace wcmods
             ob.index = static_cast<int>(get(o, L"ObjectiveIdx").number());
             if (auto n = call<int32_t>(o, STR("GetCurrentNumber"))) ob.current = *n;
             if (auto n = call<int32_t>(o, STR("GetTargetNumber"))) ob.target = *n;
-            if (!ob.id.empty())
+            if (!ob.id.empty() && saved.contains(ob.id))
             {
                 auto r = call_reflected(qm, STR("GetObjectiveStatus"), [&](Params& p) { p.set_nth(0, Value::of(std::wstring_view(ob.id))); });
                 if (r) ob.status = r->get(L"ReturnValue").string();
             }
             ob.point = get(o, L"ObjectivePoint").object;
+            for (auto& [key, t] : map_entries(o, L"Targets"))   // a gather objective's targets (others have none)
+            {
+                QuestTarget qt;
+                qt.tag = get(t, L"ActorsTag").string();
+                qt.current = static_cast<int>(get(t, L"CurrentCount").number());
+                qt.target = static_cast<int>(get(t, L"TargetCount").number());
+                for (Value& w : elements(get(t, L"AllActors")))
+                    if (w.object) qt.actors.push_back(w.object);
+                ob.targets.push_back(std::move(qt));
+            }
             out.push_back(ob);
         }
         std::sort(out.begin(), out.end(), [](const Objective& a, const Objective& b) { return a.index < b.index; });
         return out;
+    }
+
+    // The objective a quest is on: the one whose targets are out in the world (a gather objective's), else the first
+    // the game says is in progress; nullptr when neither (the quest not started or done, or an objective without
+    // targets: the game's GetObjectiveStatus read NotStarted for a live one, so a fight's or an escort's isn't found).
+    inline auto current_objective(UObject* quest) -> UObject*
+    {
+        UObject* in_progress = nullptr;
+        for (Objective& o : objectives(quest))
+        {
+            for (QuestTarget& t : o.targets)
+                if (!t.actors.empty()) return o.objective;
+            if (!in_progress && o.status == L"InProgress") in_progress = o.objective;
+        }
+        return in_progress;
+    }
+    // Finish an objective as the game does when its last target is in (SetObjectiveFinished): succeeded or failed.
+    // The quest goes on to its next objective, or is complete (its status QuestComplete, its result Success), and
+    // the game's own flow follows (the "Return to the Camp now?" question, the giver's turn-in).
+    inline auto finish_objective(UObject* objective, bool succeeded = true) -> bool
+    {
+        if (!assert_game_thread(L"finish_objective") || !objective) return false;
+        return call_reflected(objective, STR("SetObjectiveFinished"), [&](Params& p) {
+                   p.set_nth(0, Value::of(std::wstring_view(succeeded ? L"Succeeded" : L"Failed")));
+               }).has_value();
+    }
+    // Collect one of an objective's targets (a QuestTarget's actor) the way the player does: your cat is put on it,
+    // the game's Interact is pressed a moment later, so the game's own pickup counts it (the HUD's "1/3", the quest's
+    // events, and any other target in reach), and your cat is put back where it was. Calling the objective's handlers
+    // instead doesn't count. False with no cat or target, or when a den entrance or another interactable is within 2 m
+    // of it (Interact would use that instead); the count changes about a second later.
+    inline auto collect_target(UObject* target) -> bool
+    {
+        if (!assert_game_thread(L"collect_target") || !player() || !target) return false;
+        auto at = location(target);
+        auto home = location(player());
+        if (!at || !home) return false;
+        for (Kind k : {Kind::Dens, Kind::Interactables, Kind::QuestGivers})
+            for (const Nearby& n : nearby(k, 200, target))
+                if (n.actor != target)
+                {
+                    log(L"collect_target: {} is in reach of it, so Interact could use that: not collected", n.name);
+                    return false;
+                }
+        if (!teleport(player(), {at->x, at->y, at->z + 40})) return false;
+        after(0.8, [] { command(L"Player_Interact"); });   // once the game has seen the cat in its reach
+        after(1.6, [home] {
+            if (player()) teleport(player(), *home);
+        });
+        return true;
+    }
+
+    // ============================================================================================ the story
+    // The story scenes your cat has watched, by the save's names (L"ProphecyIntro", L"RankUpApprentice"), as of the last
+    // save.
+    inline auto scenes_seen() -> std::vector<std::wstring>
+    {
+        std::vector<std::wstring> out;
+        auto save = detail::read_save();   // the cached parse, not a copy of it
+        if (!save.data) return out;
+        const Json& seen = detail::slot_of(*save.data)["Sequences"];
+        for (size_t i = 0; i < seen.keys().size(); ++i)
+            if (seen.values()[i].boolean()) out.push_back(wide(seen.keys()[i]));
+        return out;
+    }
+    // The scenes playing now (the sequencer manager's ActiveSequences), by tag.
+    inline auto scenes_playing() -> std::vector<std::wstring>
+    {
+        std::vector<std::wstring> out;
+        if (!assert_game_thread(L"scenes_playing")) return out;
+        for (auto& [tag, s] : map_entries(manager(STR("sequencer")), L"ActiveSequences"))
+            out.push_back(get(tag, L"TagName").string());
+        return out;
+    }
+    // A value of your cat's progression in the save, by its path under the slot's GameplayProgression
+    // (L"Chapter00/L_WorldMap_01_P", L"FreshKill/Cycle"), as of the last save; null when it isn't there.
+    inline auto progression(std::wstring_view path) -> Json
+    {
+        auto save = detail::read_save();
+        if (!save.data) return Json();
+        const Json* at = &detail::slot_of(*save.data)["GameplayProgression"];
+        size_t start = 0;
+        while (start <= path.size())
+        {
+            size_t end = path.find(L'/', start);
+            std::wstring_view part = path.substr(start, end == std::wstring_view::npos ? std::wstring_view::npos : end - start);
+            if (!part.empty()) at = &(*at)[utf8(part)];
+            if (end == std::wstring_view::npos) break;
+            start = end + 1;
+        }
+        return *at;
+    }
+    // A mood value the game keeps (the save manager's MoodData: a whole number under a primary and a sub key), or
+    // nullopt when it hasn't got one. It asks HasMoodData first: the game's GetMoodData writes a missing key into
+    // the save as 0, as its other progression reads do.
+    inline auto mood(std::wstring_view primary, std::wstring_view sub) -> std::optional<int>
+    {
+        if (!assert_game_thread(L"mood")) return std::nullopt;
+        UObject* sm = save_manager();
+        auto keys = [&](Params& p) {
+            p.set_nth(0, Value::of(primary));
+            p.set_nth(1, Value::of(sub));
+        };
+        auto has = call_reflected(sm, STR("HasMoodData"), keys);
+        if (!has || !has->get(L"ReturnValue").boolean()) return std::nullopt;
+        auto r = call_reflected(sm, STR("GetMoodData"), keys);
+        return r ? std::optional<int>(static_cast<int>(r->get(L"ReturnValue").number())) : std::nullopt;
+    }
+    inline auto set_mood(std::wstring_view primary, std::wstring_view sub, int value) -> bool
+    {
+        if (!assert_game_thread(L"set_mood")) return false;
+        return call_reflected(save_manager(), STR("SetMoodData"), [&](Params& p) {
+                   p.set_nth(0, Value::of(primary));
+                   p.set_nth(1, Value::of(sub));
+                   p.set_nth(2, Value::of(value));
+               }).has_value();
     }
 
     // The chapter the story is in ("Chapter00"), or empty.
