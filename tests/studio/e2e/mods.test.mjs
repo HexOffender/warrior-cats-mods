@@ -62,6 +62,13 @@ after(async () => {
   if (release) release();
 });
 
+// The Mods page, once every card it reads at the start is drawn (its data-ready). Before that a card can still
+// come in above what a test is about to click and move it out from under the click: under load, Switch it on was
+// missed that way and the mod went in on.
+async function openMods(p, url) {
+  await p.goto(url + "#mods");
+  await p.waitFor('.section[data-page="mods"][data-ready]');
+}
 const stepTitles = p => p.evaluate(() => [...document.querySelectorAll(".setup .step strong")].map(s => s.textContent.replace(/^(Done|To do): /, "")));
 const toasts = p => p.evaluate(() => [...document.querySelectorAll("#toasts .toast")].map(t => t.textContent).join(" | "));
 const rowChip = (p, id) => p.evaluate(`document.querySelector('[data-key="addon:${id}"] .chip')?.textContent`);
@@ -76,7 +83,7 @@ const spy = p => p.evaluate(() => {
 
 test("Get set up: five steps, Add all four says what has no release yet, Allow names the code mods, and the card folds", { skip }, async () => {
   const p = await browser.page();
-  await p.goto(fresh.url + "#mods");
+  await openMods(p, fresh.url);
   await p.waitFor(() => document.querySelectorAll(".setup .steps li").length === 5);
   await p.waitFor(() => [...document.querySelectorAll(".setup .step.done strong")].some(s => s.textContent.includes("Your save is backed up")));
   assert.deepEqual(await stepTitles(p), ["Found the game", "Your save is backed up", "The script loader is installed",
@@ -122,7 +129,7 @@ test("Get set up: five steps, Add all four says what has no release yet, Allow n
 
 test("Not now on the add-ons step leaves an Add button on each row of the add-ons card", { skip }, async () => {
   const p = await browser.page();
-  await p.goto(page.url + "#mods");
+  await openMods(p, page.url);
   await p.waitFor(() => [...document.querySelectorAll(".setup .step strong")].some(s => s.textContent.includes("Get the mods that go with Clan Mod Studio")));
   const step = await p.evaluate(() => {
     const li = [...document.querySelectorAll(".setup .step")].find(s => s.textContent.includes("Get the mods that go with Clan Mod Studio"));
@@ -141,7 +148,7 @@ test("Not now on the add-ons step leaves an Add button on each row of the add-on
 
 test("a focus doesn't ask GitHub about the add-ons; Check for newer versions does", { skip }, async () => {
   const p = await browser.page();
-  await p.goto(page.url + "#mods");
+  await openMods(p, page.url);
   await p.waitFor(() => document.querySelectorAll(".addons .addon").length === 4);
   await spy(p);
   // The shell listens for the window's focus once it has opened the page: focus it until it's heard.
@@ -157,7 +164,7 @@ test("a focus doesn't ask GitHub about the add-ons; Check for newer versions doe
 
 test("typing Dark Forest keeps the space and the capitals and matches", { skip }, async () => {
   const p = await browser.page();
-  await p.goto(page.url + "#mods");
+  await openMods(p, page.url);
   await p.waitFor('[data-key="mod:moonlight"]');
   await p.type("#mod-search", "D");
   for (const ch of "ark Forest") await p.send("Input.insertText", { text: ch });   // a key at a time, as typing would
@@ -169,7 +176,7 @@ test("typing Dark Forest keeps the space and the capitals and matches", { skip }
 
 test("clicking a mod's name does not switch it", { skip }, async () => {
   const p = await browser.page();
-  await p.goto(page.url + "#mods");
+  await openMods(p, page.url);
   await p.waitFor('[data-key="mod:clicky"]');
   await spy(p);
   await p.click('[data-key="mod:clicky"] .mod-name strong');
@@ -188,8 +195,7 @@ test("a pack preview does not warn about mods inside the zip, and offers to add 
     "moonlit-colours/mod.json": { name: "Moonlit colours" },
   });
   const p = await browser.page();
-  await p.goto(page.url + "#mods");
-  await p.waitFor("#mod-file");
+  await openMods(p, page.url);
   await p.setFiles("#mod-file", [zip]);
   await p.waitFor(() => document.querySelectorAll(".mod.preview").length === 3);
   const notes = await p.evaluate(() => Object.fromEntries([...document.querySelectorAll(".mod.preview")].map(m =>
@@ -207,8 +213,7 @@ test("the preview's Add sends only the ticked mods, each on or off as its box sa
   const zip = makeZip(path.join(pageFolders.root, "three.zip"), {
     "alpha/mod.json": { name: "Alpha" }, "beta/mod.json": { name: "Beta", enabled: false }, "gamma/mod.json": { name: "Gamma" } });
   const p = await browser.page();
-  await p.goto(page.url + "#mods");
-  await p.waitFor("#mod-file");
+  await openMods(p, page.url);
   await p.setFiles("#mod-file", [zip]);
   await p.waitFor(() => document.querySelectorAll(".mod.preview").length === 3);
   // Each "Switched on" box starts as the mod ships.
@@ -230,8 +235,7 @@ test("the preview's Add sends only the ticked mods, each on or off as its box sa
 test("one mod with Switch it on unticked goes in switched off, named without its version", { skip }, async () => {
   const zip = makeZip(path.join(pageFolders.root, "Quiet Mod v2.zip"), { "mod.json": { name: "Quiet mod", version: "2" } });
   const p = await browser.page();
-  await p.goto(page.url + "#mods");
-  await p.waitFor("#mod-file");
+  await openMods(p, page.url);
   await p.setFiles("#mod-file", [zip]);
   await p.waitFor("#add-on");
   assert.equal(await p.evaluate(() => document.getElementById("add-on").checked), true, "on, as it ships");

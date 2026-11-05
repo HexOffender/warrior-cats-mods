@@ -888,7 +888,7 @@ export default {
     }
 
     renderAdd();
-    renderCrash();
+    const crashRead = renderCrash();
     const off = [
       // After an Apply, and when the game starts or closes, the cards say again how each script did.
       bus.on("installed", () => refresh({ notify: false })),
@@ -897,7 +897,11 @@ export default {
       // Coming back to the window: the steps and the add-ons as they are now (GitHub isn't asked).
       bus.on("focus", () => { renderSetup(); renderAddons(); }),
     ];
-    await refresh();
+    await Promise.all([refresh(), crashRead]);
+    // For the end-to-end tests: every card the page reads at the start is drawn. The cards above the add box and
+    // the list come in as their requests answer, and one drawn after a test found what it clicks there moves it
+    // out from under the click.
+    root.dataset.ready = "true";
     return { unmount() { off.forEach(f => f()); Object.keys(holders).forEach(id => markUnsaved(id, false)); } };
   },
 };
