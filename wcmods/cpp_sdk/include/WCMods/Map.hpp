@@ -127,8 +127,9 @@ namespace wcmods
         {
             detail::play_widget_animation(o.object(), L"AniMessageHide");
             UObject* panel = o.object();
-            after(0.5, [panel] {
-                if (detail::objective_state().on != ui::hud().object()) Widget(panel).collapse();
+            UClass* was = panel->GetClassPrivate();
+            after(0.5, [panel, was] {   // the HUD can go in the meantime (a level change): only while it's still there
+                if (detail::object_staying(panel, was) && detail::objective_state().on != ui::hud().object()) Widget(panel).collapse();
             });
         }
         state.on = nullptr;
@@ -199,8 +200,9 @@ namespace wcmods
         call_reflected(b.object(), STR("SequenceEvent"));
         const uint64_t mine = ++detail::banner_shows()[static_cast<int>(which)];
         UObject* banner = b.object();
-        after(words.seconds, [banner, which, mine] {
-            if (detail::banner_shows()[static_cast<int>(which)] == mine) Widget(banner).collapse();
+        UClass* was = banner->GetClassPrivate();
+        after(words.seconds, [banner, was, which, mine] {   // only while the HUD is still there (a level change takes it)
+            if (detail::banner_shows()[static_cast<int>(which)] == mine && detail::object_staying(banner, was)) Widget(banner).collapse();
         });
         return true;
     }
@@ -306,7 +308,8 @@ namespace wcmods
     inline auto map_marker(UObject* actor, std::wstring_view icon = L"search", MarkerOptions options = {}) -> MapMarker
     {
         MapMarker m;
-        if (!assert_game_thread(L"map_marker") || !actor || !location(actor)) return m;
+        // An actor kept from earlier may be gone (a level change): calling into it would crash the game.
+        if (!assert_game_thread(L"map_marker") || !detail::object_staying(actor, nullptr) || !location(actor)) return m;
         m.component = detail::add_poi(actor, {0, 0, 0}, icon, options);
         if (!m.component) return m;
         m.actor = actor;
@@ -397,7 +400,9 @@ namespace wcmods
     {
         std::vector<Place> out;
         if (!assert_game_thread(L"places")) return out;
-        const Json slot = slot_data();
+        const auto save = detail::read_save();   // the file's data, held, not copied
+        static const Json none;
+        const Json& slot = save.data ? detail::slot_of(*save.data) : none;
         std::map<std::wstring, bool> open;
         for (auto& level : slot["GameplayProgression"].values())
             for (auto& c : level["Checkpoints"].values()) open[c["UID"].wstring()] = c["Unlocked"].number() != 0;
@@ -419,10 +424,12 @@ namespace wcmods
         return out;
     }
     // Take your cat to a place it has (unlocked), where the game's travel brings it: the checkpoint. False for one it
-    // hasn't got, or outside the world. (A put, not the map's travel: there's no loading screen; the forest streams in.)
+    // hasn't got, outside the world or in a fight (player() is nullptr then), or with one of the game's screens up (the
+    // map, a menu, a den's popup: the game travels only from its map, which closes first). (A put, not the map's
+    // travel: there's no loading screen; the forest streams in.)
     inline auto travel(const Place& place) -> bool
     {
-        if (!assert_game_thread(L"travel") || !player() || !place.checkpoint || !place.unlocked) return false;
+        if (!assert_game_thread(L"travel") || !player() || !place.checkpoint || !place.unlocked || !screens().empty()) return false;
         return teleport(player(), {place.at.x, place.at.y, place.at.z + 50});
     }
 

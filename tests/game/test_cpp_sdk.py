@@ -1470,9 +1470,11 @@ def test_map_hud_and_travel(agent):
     the 22 places (the game's checkpoints) with your cat's camp unlocked, a locked one refused, and a travel back to
     camp from 60 m off; the camera's distance and the field of view shown. A picture of the minimap with the markers."""
     _close_screens(agent)
-    r = _request(agent, "map", timeout=60)
-    agent.shot("cpp-sdk-map-markers", scale=0.5)
-    end = _request(agent, "map_end")
+    try:
+        r = _request(agent, "map", timeout=60)
+        agent.shot("cpp-sdk-map-markers", scale=0.5)
+    finally:
+        end = _request(agent, "map_end")   # the markers off and the clock let go, whatever happened
     with open(os.path.join(agent.out_dir, "map-values.json"), "w", encoding="utf-8") as f:
         json.dump({k: x for k, x in r["values"].items() if k.startswith("map")}, f, indent=1, ensure_ascii=False)
     assert not _failed(r, "map"), _failed(r, "map")
