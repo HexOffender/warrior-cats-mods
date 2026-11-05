@@ -64,6 +64,7 @@ namespace t
         Quest before = describe_quest(gather_quest());
         value("questline.before", text(before.status));
         value("questline.alias_status", text(quest_status(ALIAS)));
+        value("questline.nosuch_status", text(quest_status(L"Quest.WCModsTest.NoSuch")));   // saved below: not added?
         // ----- the scenes, mood, progression
         Json seen = Json::array();
         for (auto& s : scenes_seen()) seen.push(Json(text(s)));
@@ -106,6 +107,7 @@ namespace t
                 // ----- the objective finished: the quest is complete
                 expect("questline.finish", finish_objective(o) && !finish_objective(nullptr));
                 after(2.0, [] {
+                    save_game(L"WCMods quest test");   // the save is put back after the test
                     Quest done_q = describe_quest(gather_quest());
                     value("questline.finished", text(done_q.status));
                     value("questline.finished_result", text(done_q.result));
@@ -113,7 +115,10 @@ namespace t
                     std::wstring all;
                     for (auto& s : screens()) all += s + L" ";
                     value("questline.screens", text(all));
-                    done("questline");
+                    after(2.0, [] {
+                        value("questline.saved_quests", slot_data()["QuestProgression"]);
+                        done("questline");
+                    });
                 });
             });
         });

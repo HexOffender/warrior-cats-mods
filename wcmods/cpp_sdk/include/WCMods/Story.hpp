@@ -67,18 +67,33 @@ namespace wcmods
                 if (more) more(p);
             });
         }
+        // Whether one of the manager's quests has this alias. The game's status calls add the id they're asked about
+        // to the save's QuestProgression (seen in game), so they're only asked about the story's own.
+        inline auto known_alias(std::wstring_view alias) -> bool
+        {
+            if (alias.empty() || alias == L"None") return false;
+            for (Value& e : elements(quest_manager(), L"Quests"))
+            {
+                UObject* q = get(e, L"Quest").object;
+                if (q && get(q->GetOuterPrivate(), L"QuestAlias.TagName").string() == alias) return true;
+            }
+            return false;
+        }
     } // namespace detail
 
     // A quest's status and result by its story id, its alias (quest_status(L"Quest.Main.1") -> L"OngoingQuest"), as the
-    // game keeps them; empty when unknown. (A quest object's own QuestStatus stays None while it's under way.)
-    inline auto quest_status(std::wstring_view tag) -> std::wstring
+    // game keeps them; empty for an id none of the manager's quests has (the game's own call would add it to the
+    // save). (A quest object's own QuestStatus stays None while it's under way.)
+    inline auto quest_status(std::wstring_view alias) -> std::wstring
     {
-        auto r = detail::quest_call(STR("GetQuestStatus"), tag);
+        if (!detail::known_alias(alias)) return {};
+        auto r = detail::quest_call(STR("GetQuestStatus"), alias);
         return r ? r->get(L"ReturnValue").string() : std::wstring{};
     }
-    inline auto quest_result(std::wstring_view tag) -> std::wstring
+    inline auto quest_result(std::wstring_view alias) -> std::wstring
     {
-        auto r = detail::quest_call(STR("GetQuestResult"), tag);
+        if (!detail::known_alias(alias)) return {};
+        auto r = detail::quest_call(STR("GetQuestResult"), alias);
         return r ? r->get(L"ReturnValue").string() : std::wstring{};
     }
 
@@ -110,7 +125,8 @@ namespace wcmods
         return out;
     }
 
-    // Every quest the manager holds (its Quests list holds {Quest, Line, Node} entries).
+    // Every quest the manager holds (its Quests list holds {Quest, Line, Node} entries), each with its live status:
+    // two calls to the quest manager a quest, so a few times a second at most, not every frame.
     inline auto quests() -> std::vector<Quest>
     {
         std::vector<Quest> out;
@@ -129,9 +145,10 @@ namespace wcmods
         return r ? r->get(L"ReturnValue").object : nullptr;
     }
 
-    inline auto quest_successes(std::wstring_view tag) -> std::optional<double>
+    inline auto quest_successes(std::wstring_view alias) -> std::optional<double>
     {
-        auto r = detail::quest_call(STR("GetCurrentSuccessCount"), tag);
+        if (!detail::known_alias(alias)) return std::nullopt;
+        auto r = detail::quest_call(STR("GetCurrentSuccessCount"), alias);
         if (!r) return std::nullopt;
         Value v = r->get(L"ReturnValue");
         return v ? std::optional<double>(v.number()) : std::nullopt;
@@ -152,12 +169,30 @@ namespace wcmods
                         }).has_value();
     }
 
-    // A quest's objectives, in order.
+    namespace detail
+    {
+        // The quest and objective ids your cat's save holds (QuestProgression/<chapter>/<id>), as of the last save: the
+        // game's GetObjectiveStatus adds an id it's asked about, so it's only asked about these.
+        inline auto saved_quest_ids() -> std::set<std::wstring>
+        {
+            std::set<std::wstring> ids;
+            auto save = read_save();
+            if (!save.data) return ids;
+            const Json& chapters = slot_of(*save.data)["QuestProgression"];
+            for (const Json& chapter : chapters.values())
+                for (const std::string& id : chapter.keys()) ids.insert(wide(id));
+            return ids;
+        }
+    } // namespace detail
+
+    // A quest's objectives, in order. `status` is the game's for an objective your cat's save has (empty for the
+    // rest: the game's call would add the id); it said NotStarted for a gather objective under way.
     inline auto objectives(UObject* quest) -> std::vector<Objective>
     {
         std::vector<Objective> out;
         if (!quest) return out;
         UObject* qm = quest_manager();
+        const std::set<std::wstring> saved = detail::saved_quest_ids();
         for (UObject* o : find_all(STR("ObjectiveBase")))
         {
             if (get(o, L"QuestBase").object != quest) continue;
@@ -167,7 +202,7 @@ namespace wcmods
             ob.index = static_cast<int>(get(o, L"ObjectiveIdx").number());
             if (auto n = call<int32_t>(o, STR("GetCurrentNumber"))) ob.current = *n;
             if (auto n = call<int32_t>(o, STR("GetTargetNumber"))) ob.target = *n;
-            if (!ob.id.empty())
+            if (!ob.id.empty() && saved.contains(ob.id))
             {
                 auto r = call_reflected(qm, STR("GetObjectiveStatus"), [&](Params& p) { p.set_nth(0, Value::of(std::wstring_view(ob.id))); });
                 if (r) ob.status = r->get(L"ReturnValue").string();
@@ -189,8 +224,9 @@ namespace wcmods
         return out;
     }
 
-    // The objective a quest is on: the one whose targets are out in the world, else the first in progress; nullptr
-    // when none is (the quest not started, or done).
+    // The objective a quest is on: the one whose targets are out in the world (a gather objective's), else the first
+    // the game says is in progress; nullptr when neither (the quest not started or done, or an objective without
+    // targets: the game's GetObjectiveStatus read NotStarted for a live one, so a fight's or an escort's isn't found).
     inline auto current_objective(UObject* quest) -> UObject*
     {
         UObject* in_progress = nullptr;
@@ -212,16 +248,29 @@ namespace wcmods
                    p.set_nth(0, Value::of(std::wstring_view(succeeded ? L"Succeeded" : L"Failed")));
                }).has_value();
     }
-    // Collect one of an objective's targets (a QuestTarget's actor) the way the player does: your cat is put on it
-    // and the game's Interact is pressed a moment later, so the game's own pickup counts it (the HUD's "1/3", the
-    // quest's events). Calling the objective's handlers instead doesn't count. False with no cat or target; the
-    // count changes about a second later.
+    // Collect one of an objective's targets (a QuestTarget's actor) the way the player does: your cat is put on it,
+    // the game's Interact is pressed a moment later, so the game's own pickup counts it (the HUD's "1/3", the quest's
+    // events, and any other target in reach), and your cat is put back where it was. Calling the objective's handlers
+    // instead doesn't count. False with no cat or target, or when a den entrance or another interactable is within 2 m
+    // of it (Interact would use that instead); the count changes about a second later.
     inline auto collect_target(UObject* target) -> bool
     {
         if (!assert_game_thread(L"collect_target") || !player() || !target) return false;
         auto at = location(target);
-        if (!at || !teleport(player(), {at->x, at->y, at->z + 40})) return false;
+        auto home = location(player());
+        if (!at || !home) return false;
+        for (Kind k : {Kind::Dens, Kind::Interactables, Kind::QuestGivers})
+            for (const Nearby& n : nearby(k, 200, target))
+                if (n.actor != target)
+                {
+                    log(L"collect_target: {} is in reach of it, so Interact could use that: not collected", n.name);
+                    return false;
+                }
+        if (!teleport(player(), {at->x, at->y, at->z + 40})) return false;
         after(0.8, [] { command(L"Player_Interact"); });   // once the game has seen the cat in its reach
+        after(1.6, [home] {
+            if (player()) teleport(player(), *home);
+        });
         return true;
     }
 
@@ -231,8 +280,9 @@ namespace wcmods
     inline auto scenes_seen() -> std::vector<std::wstring>
     {
         std::vector<std::wstring> out;
-        const Json slot = slot_data();
-        const Json& seen = slot["Sequences"];
+        auto save = detail::read_save();   // the cached parse, not a copy of it
+        if (!save.data) return out;
+        const Json& seen = detail::slot_of(*save.data)["Sequences"];
         for (size_t i = 0; i < seen.keys().size(); ++i)
             if (seen.values()[i].boolean()) out.push_back(wide(seen.keys()[i]));
         return out;
@@ -250,8 +300,9 @@ namespace wcmods
     // (L"Chapter00/L_WorldMap_01_P", L"FreshKill/Cycle"), as of the last save; null when it isn't there.
     inline auto progression(std::wstring_view path) -> Json
     {
-        const Json slot = slot_data();
-        const Json* at = &slot["GameplayProgression"];
+        auto save = detail::read_save();
+        if (!save.data) return Json();
+        const Json* at = &detail::slot_of(*save.data)["GameplayProgression"];
         size_t start = 0;
         while (start <= path.size())
         {

@@ -1256,6 +1256,11 @@ is named `SwtAdventureMultiObjectiveQuest_0`, and its outer, a `QuestDynamicGrap
 - **Its id.** Each quest graph has a `questTag` (`Quest.Procedural.Survival.Gather`) and a `QuestAlias`, its place in
   the story (`Quest.Main.1`). The save keeps progress by the alias (`QuestProgression/Chapter00/Quest.Main.1`:
   `Status`, `Result`, `Tracked`...), and so do the quest manager's `GetQuestStatus`/`GetQuestResult`.
+- **Asking adds.** `GetQuestStatus` with an id the story hasn't got (`Quest.WCModsTest.NoSuch`) added it to the slot's
+  `QuestProgression` at the next save, as the save manager's progression reads add keys, and `GetObjectiveStatus`
+  does the same with an objective's id. The C++ test of quests had been asking by a graph's tag, a made-up tag and
+  the tutorial's objective, so the dev save's test cat has those three ids too (inert). Lua's `Game.quests.status`
+  asks whatever it's given.
 - **The quest object's own `QuestStatus` stays None** while the quest is under way (it read QuestTurnedIn only for
   the finished tutorial); the manager by alias said `OngoingQuest`.
 - **Starting one.** `StartQuestOfTag(questTag, controller)` started the gather quest: its begin banner ("Main

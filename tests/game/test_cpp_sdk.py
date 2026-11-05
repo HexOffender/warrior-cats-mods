@@ -506,7 +506,8 @@ def test_story_matches_lua(agent):
         if first then
             out.first = { id = first.id, tag = first.tag, status = first.status, type = first.type, tracked = first.tracked,
                           objectives = #Game.quests.objectives(first.quest),
-                          status_by_tag = first.tag and Game.quests.status(first.tag) or nil }
+                          alias = first.quest:GetOuter().QuestAlias.TagName:ToString() }
+            if out.first.alias ~= "None" then out.first.status_by_tag = Game.quests.status(out.first.alias) end
         end
         return out""")
     # A Lua nil is a missing key here.
@@ -518,8 +519,8 @@ def test_story_matches_lua(agent):
         assert v["quests.first.id"] == f["id"] and (v["quests.first.tag"] or None) == f.get("tag"), (v["quests.first.id"], v["quests.first.tag"], f)
         assert v["quests.first.status"] == f.get("status") and v["quests.first.type"] == f.get("type"), (v["quests.first.status"], v["quests.first.type"], f)
         assert v["quests.first.tracked"] == bool(f.get("tracked")) and v["quests.first.objectives"] == f["objectives"], (v, f)
-        if f.get("tag"):
-            assert v["quests.first.status_by_tag"] == f.get("status_by_tag"), (v["quests.first.status_by_tag"], f.get("status_by_tag"))
+        if f.get("status_by_tag"):   # by its story id, as C++ asks
+            assert v["quests.first.alias"] == f["alias"] and v["quests.first.status_by_tag"] == f["status_by_tag"], (v, f)
     assert lua["combat"] is False
     e = _request(agent, "events")["values"]
     assert e["events.level"] >= 1 and e["events.player"] >= 1, e
@@ -1331,8 +1332,10 @@ def test_quests(agent):
         r = _request(agent, "questline", timeout=40)
     finally:
         agent.quit(force=True)
-        agent.restore_save(backup)
-        agent.launch(world=True)
+        try:
+            agent.restore_save(backup)
+        finally:
+            agent.launch(world=True)   # the next tests need the game, whatever happened
     assert not _failed(r, "questline"), _failed(r, "questline")
     v = r["values"]
     assert any(q.startswith("Quest.Main.1 Quest.Procedural.Survival.Gather ") for q in v["questline.listed"]), v["questline.listed"]
@@ -1348,6 +1351,10 @@ def test_quests(agent):
     assert (v["questline.finished"], v["questline.finished_result"]) == ("QuestComplete", "Success"), v
     assert v["questline.events"] > v["questline.events_after_collect"], v
     assert "ProphecyIntro" in v["questline.scenes_seen"] and v["questline.scenes_playing"] == 0, v
+    # The game saved after it: the quest complete there, and asking about a made-up quest didn't add it.
+    saved = v["questline.saved_quests"]["Chapter00"]
+    assert saved["Quest.Main.1"]["Status"] == 3 and not any("WCModsTest" in k for k in saved), saved.get("Quest.Main.1")
+    assert v["questline.nosuch_status"] == "", v["questline.nosuch_status"]   # not asked: the game's call would add it
 
 
 def test_ui_arrow_units(agent):
