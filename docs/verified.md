@@ -418,7 +418,13 @@ Decoration.12 on `Personal.1` at once (read back from its model, the save Built 
 of 4 s on `Personal.2` showed nothing at 1 s (the save InProgress, its start in Unix seconds) and the pebble at 6 s
 (Built); `remove_decoration` took `Personal.1`'s off (the save None); after `save_game`, `hotspot()` read all three
 back from the file. One run also logged a Lua "Ref was not function" error after the game was started again;
-it didn't come back in the two launches after.
+it didn't come back in the two launches after. After the review: `decorations()` read each one's `HousingCost.csv`
+row through the game's own lookup (signed `SwtAdventureTuningManager:GetHousingCost`): Bunny Soft Down Large, Mythic,
+28800 s, one at most, its materials; the Golden Hay Nest Medium, Common, 0 s, any number. The 60 decorations have 60
+different models. All sixteen rank dens' hotspots are their rank's, but one: ThunderClan's leader's den's `Personal.3`
+is set for apprentices. The placed ones now get their own row (materials taken out). A 60 s `build_decoration`, saved
+and the game started again at once, was still under way 75 s on: past a restart the game times it by the row's
+own build time. The build times in `clan-life.md` were an older build's: 26337109 has 1, 2 and 8 hours.
 
 **2026-11-05, build 26337109: fights** (the branch `claude/cpp-fights`, `tests/game/test_cpp_sdk.py::test_fights`
 passed; the test backs the save up and puts it back after): four fights with the nearest roaming animal on the

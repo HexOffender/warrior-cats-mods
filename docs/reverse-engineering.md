@@ -1298,6 +1298,8 @@ Read in a fight with a level 20 cat against a weak bird:
     `DestinationComponent` is the apprentices' den (`Personal.1` Large, `.2`/`.3` Tiny, `.4` Interactable, `.5`
     Pendant), and its `Warrior`, `Deputy` and `LeaderDestinationComponent` the others', about 6 m apart.
   - **The same tags:** each clan has its own copy of every hotspot, so the save keeps a hotspot by its tag alone.
+  - **Each rank den's hotspots are its rank's,** in all four clans, but one: ThunderClan's leader's den has a
+    `Personal.3` (Tiny) whose `RequiredRank` is Apprentice.
   - **Every door's `RequiredRank` read Apprentice.** A door in `L_Den_Scene` sits at 0,0,0.
 - **The save:** your cat's slot has `Housing/Houses`, 144 hotspot tags, each `{Status, DecorationTag}` and, for a
   timed build, `StartTime` (Unix seconds). `Status` is `EAdventureHousingHotspotStatus`: 0 None, 1 InProgress,
@@ -1320,7 +1322,14 @@ Read in a fight with a level 20 cat against a weak bird:
     the file.
 - **Costs** (`HousingCost.csv`: materials, `BuildTime`, `Size`, `MaxQuantity`, the interaction's `MontageToPlay`)
   aren't in a DataTable while the game runs; only `DB_Den_Decorations` (tag, mesh or skeletal mesh and its
-  animation) and `DT_HousingTutorial` are.
+  animation) and `DT_HousingTutorial` are. The adventure tuning manager's table loader (0x14181EB00) puts them in
+  a map at +0x6E0 (0x68-byte elements, the row at +0x10), next to `Consumables.csv`'s at +0x780. The game's lookup
+  is 0x14181E520, `FAdventureHousingCost* (FAdventureHousingCost* out, const FString* tag)`: the row copied, or a
+  default one for a tag it hasn't got. `game.NATIVE` signs it (`SwtAdventureTuningManager:GetHousingCost`): the SDK
+  reads costs through it and gives `OnOptionPicked` the decoration's own row with `Cost` emptied.
+- **A timed build past a restart:** the save keeps only `StartTime`. A 60 s build (`BuildTime` 60 given), saved and
+  the game started again at once, was still InProgress 75 s after it started: the game times it again by the row's
+  own `BuildTime` (7200 for that decoration).
 - **Entering:** your cat put at a door's `DestinationComponent` is in the den, the game's den mode on (the hotspots'
   markers show).
 - **Minigames:** none in this game. `USwtAdventureMinigameComponent` and its `EMinigameType` classes

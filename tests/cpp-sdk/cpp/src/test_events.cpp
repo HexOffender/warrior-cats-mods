@@ -126,6 +126,15 @@ namespace t
             {
                 run_dens_request();
             }
+            else if (what == "time")
+            {
+                // The day's seconds now: the world phase's read came as the cat arrived, before the game set the
+                // save's time of day.
+                phase("time");
+                auto secs = day_seconds();
+                value("time.now", secs ? Json(*secs) : Json());
+                done("time");
+            }
             else if (what == "unhook_loop")
             {
                 // 50 hooks on ClientRestart made and taken off at once; then 20 rounds, one a frame, of a hook on

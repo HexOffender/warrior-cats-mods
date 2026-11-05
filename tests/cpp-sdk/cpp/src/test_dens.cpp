@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <memory>
+#include <set>
 #include <string>
 
 namespace t
@@ -43,20 +44,33 @@ namespace t
         // ----- the decorations
         auto decos = decorations();
         value("dens.decorations", static_cast<int>(decos.size()));
-        for (auto& d : decos)
-            if (d.tag == BUNNY)
-            {
-                value("dens.bunny.name", Json(text(d.name)));
-                value("dens.bunny.mesh", Json(text(d.mesh)));
-            }
-        int skeletal = 0, named = 0;
+        auto deco_json = [](const Decoration& d) {
+            Json o = Json::object();
+            o.set("name", Json(text(d.name)));
+            o.set("mesh", Json(text(d.mesh)));
+            o.set("size", Json(text(d.size)));
+            o.set("rarity", Json(text(d.rarity)));
+            o.set("cost", Json(text(d.cost)));
+            o.set("build_seconds", Json(d.build_seconds));
+            o.set("max", Json(d.max));
+            o.set("hidden", Json(d.hidden));
+            return o;
+        };
+        int skeletal = 0, named = 0, sized = 0;
+        std::set<std::wstring> models;
         for (auto& d : decos)
         {
+            if (d.tag == BUNNY) value("dens.bunny", deco_json(d));
+            if (d.tag == L"Gameplay.Inventory.Decoration.1") value("dens.hay", deco_json(d));
             skeletal += !d.skeletal.empty();
             named += !d.name.empty();
+            sized += !d.size.empty();
+            models.insert(d.mesh.empty() ? d.skeletal : d.mesh);
         }
         value("dens.skeletal", skeletal);
         value("dens.named", named);
+        value("dens.sized", sized);
+        value("dens.models", static_cast<int>(models.size()));   // each decoration its own model: read back by it
         // ----- ShadowClan's dens, and the apprentices'
         auto mine = dens(L"ShadowClan");
         value("dens.shadowclan", static_cast<int>(mine.size()));
@@ -69,6 +83,31 @@ namespace t
             if (d.rank == L"Apprentice") apprentice = &d;
         }
         value("dens.ranks", ranks);
+        // Every clan's rank dens: each one's hotspots are that rank's (dens() names a multi-rank door's own way in
+        // the apprentices', seen on ShadowClan's).
+        int rank_dens = 0, empty_rank_dens = 0, wrong_rank = 0;
+        Json wrong = Json::array();
+        for (auto& d : dens())
+        {
+            if (d.rank.empty()) continue;
+            ++rank_dens;
+            auto in = hotspots(&d);
+            empty_rank_dens += in.empty();
+            for (auto& s : in)
+                if (s.rank != d.rank)
+                {
+                    ++wrong_rank;
+                    auto at = location(s.actor);
+                    wrong.push(Json(text(d.clan + L" " + d.rank + L" den: " + s.tag + L" " + s.size + L" " + s.rank + L" at "
+                                         + (at ? std::to_wstring(std::lround(at->x)) + L"," + std::to_wstring(std::lround(at->y)) : L"")
+                                         + L", den in at " + std::to_wstring(std::lround(d.inside.x)) + L","
+                                         + std::to_wstring(std::lround(d.inside.y)))));
+                }
+        }
+        value("dens.wrong_rank_spots", wrong);
+        value("dens.rank_dens", rank_dens);
+        value("dens.empty_rank_dens", empty_rank_dens);
+        value("dens.wrong_rank", wrong_rank);
         if (!apprentice) return done("dens");
         auto spots = hotspots(apprentice);
         Json tags = Json::array();

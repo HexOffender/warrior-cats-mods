@@ -938,6 +938,11 @@
    "was": "0x181DFE0",
    "pattern": "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 20 48 8B 1D ?? ?? ?? ?? 48 8B FA"
   },
+  "SwtAdventureTuningManager:GetHousingCost": {
+   "note": "a decoration's HousingCost.csv row: (FAdventureHousingCost* out, 0x50 bytes; const FString* the decoration's tag) -> out, the row copied with the game's allocator (its FStrings: MontageToPlay, BoneToAttach, Cost), or a default row for a tag it hasn't got; reads the tuning manager (a global) and its map at +0x6E0 (0x68-byte elements, the row at +0x10)",
+   "was": "0x181E520",
+   "pattern": "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 20 48 8B 3D ?? ?? ?? ?? 48 8B F2 48 8B D9 48 85 FF 0F 84 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 57 ?? 4C 8D 40 ?? 48 63 40 ?? 3B 42 ?? 0F 8F ?? ?? ?? ?? 48 8B C8 48 8B 42 ?? 4C 39 04 C8 75 ??"
+  },
   "SwtTuningManager:GetValue": {
    "note": "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, 0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData",
    "was": "0x12BBA60",

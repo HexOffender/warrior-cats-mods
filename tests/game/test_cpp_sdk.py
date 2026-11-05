@@ -180,7 +180,9 @@ def test_world_reads_match_lua(agent):
     assert v["cat.stat.Strength"] == lua["strength"] and v["cat.stat.Agility"] == lua["agility"], v
     assert v["cat.scale"] == lua["scale"], v
     assert all(abs(a - b) < 100 for a, b in zip(v["cat.location"], lua["at"])), (v["cat.location"], lua["at"])
-    assert v["time.seconds"] <= lua["seconds"] < v["time.seconds"] + 7200, (v["time.seconds"], lua["seconds"])
+    # The world phase's time came as your cat arrived, before the game set the save's time of day: read again now.
+    now = _request(agent, "time")["values"]["time.now"]
+    assert abs(now - lua["seconds"]) < 600, (now, lua["seconds"])
     assert v["fresh_kill.max"] == lua["fk_max"] and v["fresh_kill.decay.period"] == lua["fk_period"], v
     assert (v["game_instance.class"], v["game_state.class"], v["game_mode.class"]) == (lua["gi"], lua["gs"], lua["gm"]), v
     assert v["manager.quests.class"] == lua["quests"] and v["component.health.class"] == lua["health_comp"], v
@@ -1425,11 +1427,23 @@ def test_dens(agent):
         json.dump({k: x for k, x in r["values"].items() if k.startswith("dens.")}, f, indent=1, ensure_ascii=False)
     assert not _failed(r, "dens"), _failed(r, "dens")
     v = r["values"]
-    assert v["dens.decorations"] == 60 and v["dens.named"] == 60, v
-    assert v["dens.bunny.mesh"] == "SM_GPE_BunnySDown" and v["dens.bunny.name"] == "Bunny Soft Down", v
+    assert v["dens.decorations"] == 60 and v["dens.named"] == 60 and v["dens.sized"] == 60 and v["dens.models"] == 60, v
+    # The tables' rows and HousingCost.csv's through the game's lookup (the CSV on build 26337109: 28800 s, Mythic,
+    # one at most).
+    b = v["dens.bunny"]
+    assert b["mesh"] == "SM_GPE_BunnySDown" and b["name"] == "Bunny Soft Down", b
+    assert (b["size"], b["rarity"], b["build_seconds"], b["max"]) == ("Large", "Mythic", 28800, 1), b
+    assert b["cost"].startswith("Gameplay.Inventory.Materials.Fur,2;"), b
+    h = v["dens.hay"]
+    assert (h["size"], h["rarity"], h["build_seconds"], h["max"]) == ("Medium", "Common", 0, -1), h
     # A clan's six shared dens and its four rank dens (behind one door); the four clans' the same; 60 hotspots each.
     assert sorted(v["dens.ranks"]) == [""] * 6 + ["Apprentice", "Deputy", "Leader", "Warrior"], v["dens.ranks"]
     assert v["dens.all"] == 40 and v["dens.every_hotspot"] == 240, v
+    # The four clans' rank dens each hold that rank's hotspots, but for one the game's own data gets wrong: ThunderClan's
+    # leader's den has a Personal.3 set for apprentices (ThunderClan's apprentices' den is 29 m away).
+    assert (v["dens.rank_dens"], v["dens.empty_rank_dens"], v["dens.wrong_rank"]) == (16, 0, 1), v
+    assert v["dens.wrong_rank_spots"][0].startswith(
+        "ThunderClan Leader den: Gameplay.Den.Hotspot.Personal.3 Tiny Apprentice"), v["dens.wrong_rank_spots"]
     assert sorted(v["dens.apprentice_hotspots"]) == [
         "Gameplay.Den.Hotspot.Personal.1 Large", "Gameplay.Den.Hotspot.Personal.2 Tiny",
         "Gameplay.Den.Hotspot.Personal.3 Tiny", "Gameplay.Den.Hotspot.Personal.4 Interactable",
