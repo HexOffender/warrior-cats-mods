@@ -409,6 +409,18 @@ the clan bar "42/100" "Neutral" and a row at "50/100" among seven cats; the game
 `GameplayProgression/Bonding`; put back to 67 and 20 and saved again. The ranks matched the tuning's thresholds,
 `enum_names` gave EClanType in order, and `cat_name_of(L"STR_CAT_NAME2", L"_PAW")` was "Emberpaw".
 
+**2026-11-04, build 26337109: looks and the clans' cats** (the branch `claude/cpp-looks`, `tests/game/test_cpp_sdk.py`:
+`test_looks` and `test_npcs` passed): on the ShadowClan test cat, `Look`'s defaults were a quest actor's class
+default's, and the save's text read back as the cat's look. Through the game's own `SetDefaultCustomData`, coat slot
+13 to 18 drew slot 18's colour from the game's table on the body (0.392,0.392,0.144) and tail 4 to 7 changed
+`SK_Tail_Tufted` to `SK_Tail_Tapered`; DogCollar look 2 put `SK_DogCollar` on the neck and showed it, and taking it
+off hid it; the old look put back drew slot 13 and the tufted tail again. A clan name the game hasn't got was refused
+with nothing changed. The game's save kept the old look until `keep_look` (the game's `SaveCatCustomData`) and a
+save, then had coat 18 and tail 7, and the cat's own after it was put back. A cat spawned with `spawn_npc` was drawn
+from its look (its coat its slot's colour), and changing its coat and ears changed only those. `clan_cats()` listed
+the save's 26 cats (each cast story role on one cat; the leader `ShadowClanLeader` on Briarstar), 20 of them matched
+to the cats out in the forest, their `role_of` giving clan, role and story role (a quest actor's `CurrentRank` isn't its rank: the leader's read Apprentice).
+
 ## Not yet confirmed in game
 
 - **Choosing a game (2026-10-28):** the Save page's changes to a game other than the one played last, made

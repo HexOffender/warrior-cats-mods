@@ -1188,6 +1188,78 @@ def test_bonds(agent):
     assert v["bonds.saved_after"].get("ShadowClan") == 67 and v["bonds.saved_after"].get(role) == 20, v["bonds.saved_after"]
 
 
+def _save_npc_data(agent):
+    """The test cat's NPCData as the game last saved it."""
+    with open(os.path.join(os.environ["LOCALAPPDATA"], "Wrc", "Saved", "SaveGames", "WrcGame.json"), encoding="utf-8") as f:
+        account = next(iter(json.load(f).values()))
+    return account[str(account["Shared"]["General"]["CurrentCatSlot"])]["NPCData"]
+
+
+def _linear(rgb):
+    """"r,g,b" bytes (an sRGB FColor) as the "r,g,b" linear colour a material parameter holds, to 3 places."""
+    def one(c):
+        c = int(c) / 255
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    return [one(c) for c in rgb.split(",")]
+
+
+def _drawn(colour, rgb):
+    """Whether a material's colour is a slot's FColor, as the game draws it."""
+    return all(abs(float(a) - b) < 0.006 for a, b in zip(colour.split(","), _linear(rgb)))
+
+
+def test_looks(agent):
+    """Looks.hpp in the game, on the test cat (Emberpaw, ShadowClan): the look struct's defaults are the game's; the
+    save's text read; the fur colour slot and the tail changed through the game's own SetDefaultCustomData, and the
+    model follows (the body's Fur Color is the slot's colour from the game's table, the tail's mesh changes), then put
+    back; kept in the save through the game's SaveCatCustomData and back; a collar worn (its mesh shows) and taken off;
+    a spawned cat's look changed the same way; the clan's cats as many as the save's NPCData holds, each cast story
+    role placed once, the ones out now matched to their actors."""
+    _close_screens(agent)
+    r = _request(agent, "looks", timeout=60)
+    assert not _failed(r, "looks"), _failed(r, "looks")
+    v = r["values"]
+    me = v["looks.player"]
+    assert (me["ClanType"], me["PrefixNameId"], me["SuffixNameId"]) == ("ShadowClan", "STR_CAT_NAME2", "_PAW"), me
+    assert v["looks.role"] == "ShadowClan/None/", v["looks.role"]
+    before, after, restored = v["looks.model_before"], v["looks.model_after"], v["looks.model_restored"]
+    assert v["looks.after"]["FurColorIdx"] == (me["FurColorIdx"] + 5) % 19 and v["looks.after"]["TailIdx"] == (me["TailIdx"] + 3) % 9
+    # The model drew the slot's own colour from the game's table, and another tail (the test cat's own colour, painted
+    # by CatLook, isn't the slot's: it's gone until CatLook paints again).
+    assert _drawn(after["fur"], after["fur_slot"]) and after["tail"] and after["tail"] != before["tail"], (before, after)
+    assert _drawn(restored["fur"], restored["fur_slot"]) and restored["tail"] == before["tail"], (before, restored)
+    assert v["looks.restored"] == me, (me, v["looks.restored"])
+    # The game's 44 accessories; the collar on the neck, in look 2, its mesh shown, then hidden again.
+    assert v["looks.accessories"] == 44 and v["looks.dog_collar"].startswith("Neck/"), (v["looks.accessories"], v["looks.dog_collar"])
+    assert (v["looks.worn"]["AccesoryNeckId"], v["looks.worn"]["AccesoryNeckVar"]) == ("DogCollar", 2), v["looks.worn"]
+    assert v["looks.model_worn"]["neck"] and v["looks.model_worn"]["neck_visible"] is True, v["looks.model_worn"]
+    assert v["looks.model_taken_off"]["neck_visible"] is False, v["looks.model_taken_off"]
+    # The save: the changed look kept, then the cat's own again.
+    changed = ("FurColorIdx=%d," % ((me["FurColorIdx"] + 5) % 19), "TailIdx=%d," % ((me["TailIdx"] + 3) % 9))
+    assert all(c in v["looks.saved_changed"] for c in changed), v["looks.saved_changed"]
+    assert v["looks.saved_restored"] == v["looks.saved_text"], (v["looks.saved_text"], v["looks.saved_restored"])
+    # A cat of the mod's own: drawn from its look as it spawns (spawn_npc sets it up with the game's own call), and a
+    # change moves only what changed (the coat and the ears, not the tail or the fur's mesh).
+    nb, na = v["looks.npc_model_before"], v["looks.npc_model_after"]
+    assert _drawn(nb["fur"], nb["fur_slot"]) and _drawn(na["fur"], na["fur_slot"]) and na["fur"] != nb["fur"], (nb, na)
+    assert na["ears"] and na["ears"] != nb["ears"] and (na["tail"], na["fur_mesh"]) == (nb["tail"], nb["fur_mesh"]), (nb, na)
+    changed = {k for k in v["looks.npc_before"] if v["looks.npc_before"][k] != v["looks.npc_after"][k]}
+    assert changed == {"EarIdx", "FurColorIdx"}, changed
+    # The clan's cats against the save's NPCData.
+    npcs = _save_npc_data(agent)
+    kept = [c for g, roles in npcs.items() if g not in ("NarrativeRoles", "RemainingNames")
+            for cats in roles.values() for c in cats]
+    cats = v["looks.clan_cats"]
+    listed = [c for c in cats if c["index"] >= 0]
+    assert len(listed) == len(kept), (len(listed), len(kept))
+    story = sorted(s for c in cats for s in c["story"])
+    cast = sorted(k for k, text in npcs["NarrativeRoles"].items() if "PrefixNameId=" in text)
+    assert story == cast, (story, cast)
+    assert all(c["name"] for c in cats), [c for c in cats if not c["name"]]
+    leader = [c for c in cats if "ShadowClanLeader" in c["story"]]
+    assert len(leader) == 1 and leader[0]["clan"] == "ShadowClan" and leader[0]["role"] == "Leader", leader
+
+
 def test_ui_arrow_units(agent):
     """Ui.hpp's rule for an arrow on a tab's page, at init without the game: its release is given to the screen
     again from a button or check box, never from a slider, number or text box, not when the page hasn't the

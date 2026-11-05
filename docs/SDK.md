@@ -1136,6 +1136,7 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Npcs.hpp` | cats of the mod's own: spawned on the game's walking cat with a look, kept in the world, walked, labelled, with the game's Talk prompt and its Interact |
 | `WCMods/Talk.hpp` | the game's dialogue box with lines of the mod's own; the game's talks read from their graphs (lines, speakers, answers, actions) and played in it, or talks the mod makes |
 | `WCMods/Bonds.hpp` | your cat's bonds with the clans and the story cats, through the game's own bond code: read, added to, set; their ranks; your clan's story roles |
+| `WCMods/Looks.hpp` | cats' looks: read, changed and drawn on the model through the game's own setup, kept in your cat's save; accessories worn and taken off; the clans' cats from the save with their actors; a cat's role |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Ui.hpp` | the game's own UI: a tab of your own in its screens (the pause menu, the inventory, the settings), the HUD and its parts, overlays, every control the engine has |
 | `WCMods/UiLua.hpp` | the same for Lua mods, as `WCModsCpp.ui` ([scripting.md, The game's own menus and HUD](scripting.md#the-games-own-menus-and-hud)) |
@@ -1345,7 +1346,7 @@ wcmods::on_npc_interact([](wcmods::Npc n) { n.walk_to(*wcmods::npc_spot(600, 0))
 
 | Call | Does |
 |---|---|
-| `wcmods::spawn_npc(spec)` | A cat of the mod's own, as an `Npc`. `NpcSpec`: `at`, `yaw`, `size`, `prefix`/`suffix` (name ids: `STR_CAT_NAME<prefix><suffix>`), `look` (`body`, `fur`, `tail`, `ears`, `eyes`, `whiskers`, `face`, `pattern`, `marking`: the cat maker's parts), `slots` (`fur`, `pattern`, `marking`: colour slots), `eyes` (an eye colour), `colours` (`fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears` painted `"#rrggbb"`), `ground` (false: it floats where it's put). In a menu it appears once you're in the world. It goes when the mod is taken out |
+| `wcmods::spawn_npc(spec)` | A cat of the mod's own, as an `Npc`. `NpcSpec`: `at`, `yaw`, `size`, `prefix`/`suffix` (name ids: `STR_CAT_NAME<prefix><suffix>`), `look` (`body`, `fur`, `tail`, `ears`, `eyes`, `whiskers`, `face`, `pattern`, `marking`: the cat maker's parts), `slots` (`fur`, `pattern`, `marking`: colour slots), `eyes` (an eye colour), `colours` (`fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears` painted `"#rrggbb"`), `ground` (false: it floats where it's put). Its look is set up by the game's own `SetDefaultCustomData`, as `set_look` does, so the model shows every part given. In a menu it appears once you're in the world. It goes when the mod is taken out |
 | `wcmods::npcs()`, `npc_spot(distance, side)` | Every cat the mod has and hasn't removed; a place on the ground `distance` cm from your cat, `side` degrees round from where it faces |
 | `Npc::actor()`, `spawns()`, `location()`, `distance()`, `within(cm)` | Its actor now (nullptr while it isn't in the world), how many times it's been spawned, where it is, how far from your cat across the ground, and whether that's within so many cm |
 | `Npc::face(at)`, `move_to(at)`, `walk_to(at, {speed, radius, avoid}, done)`, `walking()`, `walk_result()`, `stop()` | Turn to a place; put it there at once (on the ground); walk there (175 cm/s, within 30 cm, along the nav mesh round obstacles, or a straight line with `avoid` false), stepping round what it's pressed against, `done(WalkResult)` with `Arrived`, `Blocked` (no progress, after five tries) or `Cancelled`; whether it's on its way; how the last walk ended; stop |
@@ -1405,6 +1406,40 @@ wcmods::set_bond(L"TheAmbitiousApprentice", 50);           // Friend
 | `wcmods::bonds()` | `Bond`s: the four clans', then each story role the game set up for your clan in this game (the NPC generation manager's `NarrativeRoleMap`), each with `key`, `clan`, `value`, `rank` (a clan's `ClanBond` or a cat's `BondRank` name), `base` (the role's base bond), `giver_role` and `giver_index` (which of your clan's cats plays it: `EGiverRole` and its number), `cat_name` (an iconic cat's own name; the others' come with the clan's cats) |
 | `wcmods::bond_rank(value)`, `clan_bond(value)`, `bond_thresholds()`, `bond_rank_name(r)`, `clan_bond_name(c)` | A story cat's `BondRank` (Unfriendly, Neutral from 10, Friendly from 28, Friend from 46, CloseBond from 73: the tuning's `Gameplay.Progression.Bonding.Personal.*`); a clan's `ClanBond` (Negative to 33, Positive from 67: `...Bonding.Clan.*`); the six thresholds read once (`BondThresholds`, to pass to `bond_rank(value, t)` and `clan_bond(value, t)` for many); their names |
 | `wcmods::bond_roles()`, `BOND_CLANS` | Every narrative role's name (`ENarrativeRole`, 104 of them); the four clans |
+
+**Looks and the clans' cats (`Looks.hpp`)**, game thread only:
+
+A cat's look is the game's `FCatCustomData`: the shapes, the tail, ears and fur meshes, the colour slots, the pattern
+and markings, the eyes, the name's ids, the size, the four accessories and the scars. Every cat has one on its look
+component (`MeshCustomizationComponent.CustomData`), and the save keeps one per cat as text. `Look` mirrors it field
+for field, by the game's own names; a change is drawn through the game's own `SetDefaultCustomData` (found for the
+installed build like the inventory's `AddItem`), which sets every part up again from it.
+
+```cpp
+UObject* me = wcmods::player();
+if (auto l = wcmods::look(me))
+{
+    l->FurColorIdx = 18;              // a coat colour slot (the GUI manager's FurColors)
+    l->TailIdx = 7;
+    wcmods::set_look(me, *l);         // drawn now
+    wcmods::keep_look(*l);            // and kept: the game's next save writes it
+}
+wcmods::wear(me, L"DogCollar", 2);
+for (auto& c : wcmods::clan_cats())
+    wcmods::log(L"{}: {} {}{}", c.name, c.clan, c.role, c.actor ? L" (out now)" : L"");
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::Look` | `ClanType`, `Role` (`EGiverRole`) and `CombatStats` (a tag) by name; `BodyOffset`...`WhiskerOffset`; the shapes `BodyValue`, `FaceValue`, `FurValue`, `EyeValue`, `WhiskerValue`; the meshes `TailIdx`, `EarIdx`, `FurIdx`; the colour slots `FurColorIdx`, `Pattern01ColorIdx`, `Pattern02ColorIdx`; the textures `PatternIdx`, `MarkingIdx`; `EyeLeftColorIdx`, `EyeRightColorIdx`; `bOverrideColors`; `Design`; `PrefixNameId`, `SuffixNameId`; `Gender`; `CatSize`; `AccesoryNeckId`/`PawId`/`HeadId`/`BodyId` (an `EAccesoryIds` name, `L"None"` for nothing) with their `...Var` (the look, from 1); `ScarEyeId`, `ScarEarId`, `ScarBodyId`, `ScarChestId`. Its defaults are the game's for the struct; `==` compares two |
+| `wcmods::look(cat)` | A cat's look now (your cat, any cat's actor, or a look component); nullopt for what hasn't one |
+| `wcmods::set_look(cat, look)` | Put a look on a cat: written into its `CustomData` and set up again by the game's `SetDefaultCustomData`, so the meshes, shape, pattern, colours, eyes, accessories and scars all follow. `bOverrideColors` is set (without it the game makes up the shape, tail, ears, colours and pattern again). A story or camp cat's `DefaultCustomData` changes with it. For this actor only: a cat the game makes again (a new area) has the look its save keeps, and your cat's comes back with `keep_look`. Colours a mod painted on the materials (wcmods' CatLook, an `Npc`'s `colours`) give way to the slots' until it paints them again. False, with a line in the log, for no look component, a field the struct can't take (an enum name it hasn't got; nothing is changed), or when wcmods hasn't got the game's function |
+| `wcmods::keep_look(look)` | Keep a look as your cat's in its save slot (the game's own `SaveCatCustomData`, `GameplayProgression/Gameplay.Combat.Character.Cat.Player/Customization`): the game's next save writes it (`save_game()` for now), and the game sets your cat up with it from then on. It doesn't draw it: `set_look` does. False in menus, as `set_look` for a field, or without the game's function |
+| `wcmods::look_from_text(text, base = {})` | A look from the save's text for one (`"(ClanType=ShadowClan,Role=Leader,TailIdx=8,...)"`): the fields it names, the rest `base`'s |
+| `wcmods::accessories()` | The game's accessories (`Accessory`: `id`, `slot` (`L"Neck"`, `L"Paw"`, `L"Head"`, `L"Body"`), `variations`), from the GUI manager: 44 |
+| `wcmods::wear(cat, id, variation = 1)`, `take_off(cat, slot)` | Put an accessory on in its own slot (what was there comes off), or take off what's in a slot, through `set_look`. False for an accessory, look or slot the game hasn't got; `take_off` is true for an empty slot. Head accessories show look 1 whatever the number ([reverse-engineering.md, "Accessories"](reverse-engineering.md)) |
+| `wcmods::clan_cats()` | `ClanCat`s, as of the last save (the slot's `NPCData`): each clan's cats by role, the cats outside the clans (`L"OutOfClans"`), then story cats kept only as their role (a cameo cat, `index` -1; a role not cast yet isn't one). Each with `clan`, `role`, `index`, `name`, `look`, `story_roles` (the story roles it plays) and `actor` (the cat out in the world now, matched by its clan, role and name ids, or nullptr). Empty in menus |
+| `wcmods::role_of(cat)` | A cat's `CatRole`: `clan`, `role` (`EGiverRole`), and for a story or camp cat its `story_role` (`ENarrativeRole`, or empty). nullopt for what has no look component |
 
 **The game's words (`Words.hpp`)**, game thread only:
 

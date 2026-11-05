@@ -63,7 +63,7 @@ The reverse-engineering roadmap's open steps ([re-roadmap.md](re-roadmap.md)) fo
 | 9. The dialogue graphs | done: read in game by reflection and played in the talk box; the game's own player by tag tried and set aside (it crashes when ended early) | step 7 |
 | The rest, 1: `quests.start` on the game's quests | untried | step 11 |
 | The rest, 3: the talk box's answer buttons | done: they show answers' words; clicking them runs the box's own graph code, so a mod takes answers by number | step 7 |
-| The rest, 4: `NPCData` beyond looks | not started | step 9 |
+| The rest, 4: `NPCData` beyond looks | done: it's only looks (each clan's cats by role, story roles as copies of their cat's text, names left); read as `clan_cats()` | step 9 |
 | The rest, 6: the mood and progression keys | not started | step 11 |
 | The rest, 7: the five events never seen firing | not seen | step 12 |
 | The rest, 9 and 10: den decorations, build times | not started | step 13 |
@@ -428,8 +428,8 @@ Each step's pull request updates its line.
 | 5. The sky's values | done: every preset's values read and changed live in the sky's own copy (a new hidden member), put back; the table they come from. The roadmap's step 7 answered: the day cycle doesn't rewrite them, the sky fades back to the area's preset (step 1 of #111) | #120 |
 | 6. Cats of a mod's own | done: spawned with a look, kept, moved, walked (stall detours), labelled, prompted, Interact heard from the controller; an asset loader and an enum lookup with them. Map markers move to step 14 with the map | #121 |
 | 7. Conversations | done: the box with a mod's lines and answers' words; any of the game's talks read from its graph (lines, speakers, bonding variants, answers, actions) and played in that box, answers chosen, a mod's own talks too; an edited line shows in a talk. The game's own player (`PlaySequenceDialogue`) crashes the game when its box is closed any way but by its scene, so it isn't used (reverse-engineering.md, "Talks in game"). Answers come by number from the mod's keys, not the box's buttons | #122 |
-| 8. Bonds | done: every clan's and story cat's bond read, added to and set through the game's own bond code (four native functions signed), the ranks from the tuning, your clan's story roles; the Bonds panel and the save show a change. The save manager's reflected progression calls turned out to be account-wide (and a read adds a key): documented and the test's stray key fixed. What a talk's answer adds is left open | this branch, `claude/cpp-bonds` |
-| 9. Looks and the clan | not started | |
+| 8. Bonds | done: every clan's and story cat's bond read, added to and set through the game's own bond code (four native functions signed), the ranks from the tuning, your clan's story roles; the Bonds panel and the save show a change. The save manager's reflected progression calls turned out to be account-wide (and a read adds a key): documented and the test's stray key fixed. What a talk's answer adds is left open | #123 |
+| 9. Looks and the clan | done: any cat's look read and changed and drawn whole by the game's own `SetDefaultCustomData` (signed), your cat's kept in the save by its `SaveCatCustomData` (signed); accessories worn and taken off; the clans' cats from the save's `NPCData` with their actors; a cat's role. `spawn_npc` now draws its look the same way (it hadn't been). Other cats' looks last only while their actor does | this branch, `claude/cpp-looks` |
 | 10. Ground items, a mod's animations | not started | |
 | 11. Quests and the story | not started | |
 | 12. Fights | not started | |

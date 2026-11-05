@@ -20,6 +20,7 @@
 #include <WCMods/Core.hpp>
 #include <WCMods/Events.hpp>
 #include <WCMods/Game.hpp>
+#include <WCMods/Looks.hpp>
 #include <WCMods/Reflect.hpp>
 #include <WCMods/Ui.hpp>
 #include <WCMods/World.hpp>
@@ -320,7 +321,10 @@ namespace wcmods
                 transform_of(p, L"SpawnTransform", at, n.spec.yaw);
                 p.set_nth(2, Value::of(0));
             });
-            if (UObject* c = dress()) call_reflected(c, STR("RefreshShape"));   // the game set its look up as it finished
+            // The game set a look up as it finished, not this one: set up again from it (the game's SetDefaultCustomData;
+            // RefreshShape, the fallback, moves only the body's shape).
+            if (UObject* c = dress())
+                if (!detail::draw_look(c)) call_reflected(c, STR("RefreshShape"));
             if (UObject* m = get(a, L"CharacterMovement").object)
             {
                 set(m, L"MaxWalkSpeed", 175.0);
