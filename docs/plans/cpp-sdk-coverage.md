@@ -23,9 +23,9 @@ A C++ mod should be able to do with the game what the game itself does:
 Where the game can't do something (a new area, a new trait, weather), the plan says so once, with the reason, so
 nobody plans it again.
 
-## Where it stands
+## Where it stood
 
-What the C++ SDK reaches today (SDK.md, "C++ mods"), all seen working in game:
+What the C++ SDK reached when the plan was written (2026-11-04; all sixteen steps are done since, and the Status table at the end says what each added; SDK.md's *What the SDK reaches* is the whole picture now), all seen working in game:
 
 | Part of the game | C++ today |
 |---|---|
