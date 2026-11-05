@@ -443,10 +443,25 @@ namespace wcmods
         UObject* actor{};
         double distance{}, fov{};
     };
+    namespace detail
+    {
+        // The exploration camera that follows your cat: one still in the world (a level change leaves the old one
+        // behind until it's collected) whose TargetActor is player().
+        inline auto exploration_camera() -> UObject*
+        {
+            UObject* me = player();
+            if (!me) return nullptr;
+            for (UObject* c : find_all(STR("SwtAdventureCameraActor")))
+                if (object_staying(c, nullptr) && get(c, L"TargetActor").object == me) return c;
+            return nullptr;
+        }
+        // Your cat's exploration component (the character reflects it as ExplorationControl).
+        inline auto exploration_control() -> UObject* { return get(player(), L"ExplorationControl").object; }
+    } // namespace detail
     inline auto camera() -> std::optional<CameraView>
     {
         if (!assert_game_thread(L"camera")) return std::nullopt;
-        UObject* cam = find_first(STR("SwtAdventureCameraActor"));
+        UObject* cam = detail::exploration_camera();
         UObject* lens = cam ? get(cam, L"CameraComponent").object : nullptr;
         auto me = location(player());
         auto r = lens ? call_reflected(lens, STR("K2_GetComponentLocation")) : std::nullopt;
@@ -483,16 +498,6 @@ namespace wcmods
     {
         inline constexpr const wchar_t* camera_class = L"/Script/SwtAdventure.SwtAdventureCameraActor";
         inline constexpr const wchar_t* exploration_class = L"/Script/SwtAdventure.ExplorationControlComponent";
-        // The exploration camera that follows your cat: one still in the world (a level change leaves the old one
-        // behind until it's collected) whose TargetActor is player().
-        inline auto exploration_camera() -> UObject*
-        {
-            UObject* me = player();
-            if (!me) return nullptr;
-            for (UObject* c : find_all(STR("SwtAdventureCameraActor")))
-                if (object_staying(c, nullptr) && get(c, L"TargetActor").object == me) return c;
-            return nullptr;
-        }
         inline constexpr int camera_fields = 11;
         // Each setting's member: the camera's, or (turning) the exploration component's. nullptr when this build's
         // offsets.json hasn't got it, or there's no such object.
@@ -521,11 +526,15 @@ namespace wcmods
                                                             &s.pitch_min, &s.pitch_max};
             return *fields[which];
         }
-        // What the camera had before a mod first set it, for reset_camera: the camera, and every setting.
+        // What the camera had before a mod first set it, for reset_camera: the camera (weakly: a level's new camera can
+        // take the old one's address), and every setting. A mod's own: two mods that both set the camera each keep
+        // theirs.
         struct CameraKept
         {
-            UObject* camera{};
+            RC::Unreal::FWeakObjectPtr camera;
+            bool set{};
             CameraSettings before;
+            auto is(UObject* cam) const -> bool { return set && camera.Get() == cam; }
         };
         inline auto camera_kept() -> CameraKept&
         {
@@ -540,18 +549,18 @@ namespace wcmods
             return s;
         }
         // The spring arm takes the lag once, in the camera's BeginPlay: lag on while either location lag isn't 0, at
-        // the vertical one's speed; rotation lag on while it isn't 0.
-        inline auto apply_lag(UObject* cam) -> void
+        // the vertical one's speed; rotation lag on while it isn't 0. False when the arm didn't take one of them.
+        inline auto apply_lag(UObject* cam) -> bool
         {
             UObject* arm = get(cam, L"AdventureArmComponent").object;
             float* lag = member<float>(cam, camera_class, L"WCM_LagVertical");
             float* side = member<float>(cam, camera_class, L"WCM_LagHorizontal");
             float* turn = member<float>(cam, camera_class, L"WCM_LagRotation");
-            if (!arm || !lag || !side || !turn) return;
-            set(arm, L"bEnableCameraLag", *lag != 0 || *side != 0);
-            set(arm, L"CameraLagSpeed", static_cast<double>(*lag));
-            set(arm, L"bEnableCameraRotationLag", *turn != 0);
-            set(arm, L"CameraRotationLagSpeed", static_cast<double>(*turn));
+            if (!arm || !lag || !side || !turn) return false;
+            bool ok = set(arm, L"bEnableCameraLag", *lag != 0 || *side != 0);
+            ok = set(arm, L"CameraLagSpeed", static_cast<double>(*lag)) && ok;
+            ok = set(arm, L"bEnableCameraRotationLag", *turn != 0) && ok;
+            return set(arm, L"CameraRotationLagSpeed", static_cast<double>(*turn)) && ok;
         }
     } // namespace detail
 
@@ -563,45 +572,50 @@ namespace wcmods
         if (!assert_game_thread(L"camera_settings")) return std::nullopt;
         UObject* cam = detail::exploration_camera();
         if (!cam || !member<float>(cam, detail::camera_class, L"WCM_ArmLength")) return std::nullopt;
-        return detail::read_camera(cam, component(player(), STR("ExplorationControlComponent")));
+        return detail::read_camera(cam, detail::exploration_control());
     }
 
     // Set the settings given (the rest stay as they are) on the camera following your cat. The first set keeps what
     // the camera had, for reset_camera. False with no exploration camera, or when a setting given has nowhere to go on
-    // this build (nothing is set then). Lasts while the camera does: a level's new camera starts from the game's again.
+    // this build (nothing is set then), or the spring arm didn't take the lag. Lasts while the camera does: a level's
+    // new camera starts from the game's again.
     //   wcmods::set_camera({.distance = 300, .fov = 60, .pitch = -35});   // far, narrow, looking down
     inline auto set_camera(const CameraSettings& settings) -> bool
     {
         if (!assert_game_thread(L"set_camera")) return false;
         UObject* cam = detail::exploration_camera();
         if (!cam) return false;
-        UObject* explore = component(player(), STR("ExplorationControlComponent"));
+        UObject* explore = detail::exploration_control();
         CameraSettings given = settings;
         for (int i = 0; i < detail::camera_fields; ++i)
             if (detail::camera_field(given, i) && !detail::camera_member(cam, explore, i)) return false;
         auto& kept = detail::camera_kept();
-        if (kept.camera != cam) kept = {cam, detail::read_camera(cam, explore)};
+        if (!kept.is(cam))
+        {
+            kept.camera = cam;
+            kept.set = true;
+            kept.before = detail::read_camera(cam, explore);
+        }
         for (int i = 0; i < detail::camera_fields; ++i)
             if (auto& v = detail::camera_field(given, i)) *detail::camera_member(cam, explore, i) = static_cast<float>(*v);
-        if (settings.lag || settings.rotation_lag) detail::apply_lag(cam);
-        return true;
+        return !(settings.lag || settings.rotation_lag) || detail::apply_lag(cam);
     }
 
-    // Put back what the camera had before a mod first set it. True when there's nothing to put back (never set, or
-    // the camera it was set on is gone: a new one has the game's settings); false with no exploration camera.
+    // Put back what the camera had before this mod first set it. True when there's nothing to put back (never set, or
+    // the camera it was set on is gone: a new one has the game's settings); false with no exploration camera, or when
+    // what it had can't all go back now (kept for another try).
     inline auto reset_camera() -> bool
     {
         if (!assert_game_thread(L"reset_camera")) return false;
         UObject* cam = detail::exploration_camera();
         if (!cam) return false;
         auto& kept = detail::camera_kept();
-        if (kept.camera != cam)
+        if (!kept.is(cam))
         {
             kept = {};
             return true;
         }
-        CameraSettings before = kept.before;
-        set_camera(before);
+        if (!set_camera(kept.before)) return false;
         kept = {};
         return true;
     }
