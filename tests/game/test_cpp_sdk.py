@@ -11,6 +11,7 @@ the mod to make changes that Lua then confirms. It has to be built and installed
 """
 import filecmp
 import json
+import math
 import os
 import time
 
@@ -1194,6 +1195,56 @@ def test_bonds(agent):
     assert v["bonds.saved"].get("ShadowClan") == 42 and v["bonds.saved"].get(role) == 50, v["bonds.saved"]
     assert (v["bonds.clan_restored"], v["bonds.role_restored"]) == (67, 20), v
     assert v["bonds.saved_after"].get("ShadowClan") == 67 and v["bonds.saved_after"].get(role) == 20, v["bonds.saved_after"]
+
+
+def test_ai(agent):
+    """Ai.hpp in the game (the AI plan's step 1): the game's eight behaviour trees loaded and read as data (BT_Enemy's
+    26 nodes on BB_Enemy with its Hunted and Detected branches and its wait on ChaseReactionTime; BT_WalkingNPC walking
+    while bShouldAllowMovement is set); your cat has no AI; a roaming animal's AI (AIC_Wrc_Enemy_Controller_C running
+    BT_Enemy, what it's doing now, BB_Enemy's 14 keys) and a walking cat's; keys of each kind written and read back, a
+    vector cleared, the wrong type and a key it hasn't refused; the animal sent into its tree's chase branch by Detected
+    and Target (waiting its reaction time, set to 30 s, with Detected kept) and back to its roaming; its logic stopped,
+    staying stopped through the game's sleep (your cat 6000 units away) and wake, and started again; the walking cat,
+    with your cat beside it, walking, standing still with bShouldAllowMovement cleared, and walking on."""
+    _close_screens(agent)
+    r = _request(agent, "ai", timeout=90)
+    assert not _failed(r, "ai"), _failed(r, "ai")
+    v = r["values"]
+    trees = v["ai.trees"]
+    assert len(trees) == 8 and all(t["loaded"] and t["nodes"] for t in trees.values()), {n: t["nodes"] for n, t in trees.items()}
+    assert (trees["BT_Enemy"]["blackboard"], trees["BT_Enemy"]["nodes"]) == ("BB_Enemy", 26), trees["BT_Enemy"]["nodes"]
+    enemy = trees["BT_Enemy"]["lines"]
+    assert enemy[0].startswith("0 composite BTComposite_Selector"), enemy[0]
+    assert any("BlackboardKey=Hunted" in line for line in enemy) and any("BlackboardKey=Detected" in line for line in enemy), enemy
+    assert any("BTTask_WaitBlackboardTime" in line and "BlackboardKey=ChaseReactionTime" in line for line in enemy), enemy
+    assert any("BlackboardKey=bShouldAllowMovement" in line for line in trees["BT_WalkingNPC"]["lines"]), trees["BT_WalkingNPC"]
+    assert (trees["BT_CombatEnemy"]["blackboard"], trees["BT_Escort"]["blackboard"]) == ("BB_CombatEnemy", "BB_Escort"), trees
+    assert any("TypeAction=Weakest" in line for line in trees["BT_AttackEnemy"]["lines"]), trees["BT_AttackEnemy"]
+
+    assert (v["ai.animal_controller"], v["ai.animal_brain"]) == ("AIC_Wrc_Enemy_Controller_C", "BehaviorTreeComponent"), v
+    s = v["ai.animal_state"]
+    assert s["running"] and not s["asleep"] and s["tree"] == "BT_Enemy" and s["task_kind"].startswith("BTTask_"), s
+    assert v["ai.animal_keys"] == ["SelfActor:Object", "Detected:Bool", "StartLocation:Vector", "Target:Object",
+                                   "DetectionRange:Float", "RoamingLocation:Vector", "bShouldAllowMovement:Bool",
+                                   "PointOfInterest:Vector", "Hunted:Bool", "ChaseReactionTime:Float", "ArrivedAtTarget:Bool",
+                                   "HunterPawn:Object", "SplineReference:Object", "CurrentIndexSpline:Int"], v["ai.animal_keys"]
+    assert v["ai.walker_controller"] == "AIC_Wrc_WalkingNPC_Controller_C" and v["ai.walker_state"]["tree"] == "BT_WalkingNPC", v
+
+    for k in ("ai.chasing_1", "ai.chasing_3"):
+        assert v[k]["task_kind"] == "BTTask_WaitBlackboardTime" and v[k]["running"], (k, v[k])
+    assert v["ai.detected_1"] is True and v["ai.detected_3"] is True, v
+    assert v["ai.calmed"]["running"] and v["ai.calmed"]["task_kind"] != "BTTask_WaitBlackboardTime", v["ai.calmed"]
+
+    stopped = [v[k] for k in ("ai.stopped", "ai.stopped_away", "ai.stopped_back")]
+    assert all(not s["running"] and s["tree"] == "" and s["task"] == "" for s in stopped), stopped
+    assert v["ai.stopped_away"]["asleep"] is True and v["ai.stopped_back"]["asleep"] is False, stopped
+    assert v["ai.restarted"]["running"] and v["ai.restarted"]["tree"] == "BT_Enemy", v["ai.restarted"]
+
+    def moved(a, b):
+        return math.hypot(v[b]["x"] - v[a]["x"], v[b]["y"] - v[a]["y"])
+    assert v["ai.near_0"]["task"] == "NPC Spline Walking" and moved("ai.near_0", "ai.near_3") > 50, (v["ai.near_0"], v["ai.near_3"])
+    assert v["ai.near_stopped_4"]["task"] == "" and moved("ai.near_stopped_1", "ai.near_stopped_4") < 1, (v["ai.near_stopped_1"], v["ai.near_stopped_4"])
+    assert v["ai.near_walking_3"]["task"] == "NPC Spline Walking" and moved("ai.near_stopped_4", "ai.near_walking_3") > 50, v["ai.near_walking_3"]
 
 
 def test_bond_answers(agent):

@@ -483,6 +483,7 @@ PLAIN = {
     "SwtQuestInventoryComponent": "your items, for C++ mods",
     "SwtTuningManager": "the game's tuning numbers, for C++ mods",
     "SwtQuestTuningManager": "story talks and what their answers do, for C++ mods",
+    "BehaviorTreeComponent": "which tree an animal's AI runs and what it's doing, for C++ mods",
     "SwtAdventureTuningManager": "what herbs do, for C++ mods",
     "WrcSkyboxActor": "the sky's preset values, for C++ mods",
     "Bonding": "your cat's bonds, for C++ mods",

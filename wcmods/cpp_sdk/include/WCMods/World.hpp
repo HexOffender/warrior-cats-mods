@@ -805,7 +805,8 @@ namespace wcmods
     // IsExhausted, IsAlive, AllyWithStatus, AllyWithLowHealth, WeakestEnemy, SlowestEnemy and SelectedAttack.
     // nullptr / nullopt without an AI controller (your cat); a key the board hasn't got reads as false, 0
     // or nullptr, as the engine answers. Each call walks to the board and calls into it by reflection: a few
-    // times a second for the animals you watch, not every frame for every animal.
+    // times a second for the animals you watch, not every frame for every animal. Writing keys, and the rest of an AI:
+    // Ai.hpp.
     inline auto blackboard(UObject* actor) -> UObject* { return get(actor, L"Controller.Blackboard").object; }
     namespace detail
     {

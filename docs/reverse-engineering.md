@@ -623,6 +623,48 @@ does: `true` shows the next line, `false` hides it; after the last line `true` l
   each); the box's answer buttons show the answers' words but aren't clickable (their own code goes through the
   graph's node, which that box hasn't got).
 
+### The game's AI
+
+Worked out on 2026-11-05 (build 26337109) in game and from the header dump, for the C++ SDK's `Ai.hpp`
+(docs/plans/cpp-sdk-ai.md).
+
+**What runs.** A roaming animal (`BP_Exploration_Character_Base_C`) has `AIC_Wrc_Enemy_Controller_C` (an
+`ASwtAdventureAIController`, whose `BehaviorTree` is `BT_Enemy` and `CombatBehaviorTree` `BT_CombatEnemy`); a clan cat
+walking its path (`BP_WalkingNPC_Character_Base_C`) has `AIC_Wrc_WalkingNPC_Controller_C` running `BT_WalkingNPC`. Both
+brains are the engine's `BehaviorTreeComponent`, both blackboards `BB_Enemy`. The tree running isn't reflected: the
+component's `InstanceStack` (+0x118, `TArray<FBehaviorTreeInstance>`, just before the reflected `NodeInstances` at
++0x138) holds it, each element starting with the tree's root node (whose `TreeAsset` is the tree) and its active node.
+
+**Asleep.** The game pauses (`IsPaused`) a roaming animal's logic while your cat is away and resumes it as your cat
+comes back: of 16 animals within 9,000 units, the two at 2,023 and 2,259 ran and the rest, from 3,657, were paused.
+An animal whose logic a mod stopped (`StopLogic`) was paused with the rest when your cat went 6,000 units away, and
+was still stopped (its stack empty) when your cat came back: the wake doesn't restart it. Walking cats 5,000 units
+away were running.
+
+**The trees** (read in game from each tree's `RootNode`, `Children` and decorators, all reflected):
+- `BT_Enemy` (26 nodes): a selector. With `Hunted` set, only a "Hunted" debug text. Else, with `Detected` not set, a
+  sequence under a detection service (`BTService_DetectionTask`, sound and cone vision, every 0.001 s): Idle, Walking,
+  then `SwtAdventureCalculateRoaming` and a move to `RoamingLocation`; or Grazing. With `Detected` set, a chase under a
+  detection service with pursuit: `BTTask_WaitBlackboardTime` on `ChaseReactionTime`, then a move to `Target`. Last, a
+  move back to `StartLocation` and `BTTask_FlushDetectedCharacter`. `PointOfInterest` isn't read.
+- `BT_ChaseOff_Enemy` (13): while `bShouldAllowMovement`, detection and spline walking; with `ArrivedAtTarget`, it
+  runs `BT_BossEnemy` (4: Idle, Grazing).
+- `BT_CombatEnemy` (39) on `BB_CombatEnemy`: while alive, cure its status (an antidote, a chance check), heal (below
+  30% health, a health item), rest when exhausted, support an ally with a status or low health; then run
+  `BT_AttackEnemy` (44): rest without the stamina for an attack, attack at random when Furious or Blinded, buff
+  itself or debuff the strongest cat, then pick a target (the weakest below 20%, the slowest, else the healthiest)
+  and a move (an ancestral move for a boss every 3 rounds, at random, by stance...), each behind a `ChanceCheck` by
+  `EAICombatTypeChance`.
+- `BT_WalkingNPC` (5): while `bShouldAllowMovement`, `BTTask_NPCSplineWalking` (back to its start at the end).
+- `BT_Escort` (3, `BB_Escort`): while `bShouldAllowMovement`, a move to `PointOfInterest`. `BT_Mentor` (4,
+  `BB_Mentor`): while `bShouldAllowMovement`, spline walking.
+
+**Keys written from C++** (`SetValueAs*` on the blackboard, reflected): `Detected` and `Target` on an awake animal
+put it in the chase branch (its active node `Wait Blackboard Time`, `ChaseReactionTime` set to 30), and the game
+didn't clear them in 3 s; cleared, it grazed again. `Hunted` with `HunterPawn` left it in the Hunted branch. A
+walking cat beside your cat walked about 150 units in 3 s, stood still with `bShouldAllowMovement` cleared, and
+walked on when it was set again.
+
 ### Bonds
 
 Worked out on 2026-11-04 (build 26337109) from the exe and in game, for the C++ SDK's `Bonds.hpp`; the addresses are

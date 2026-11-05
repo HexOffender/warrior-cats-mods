@@ -873,6 +873,38 @@
    "natives": 0,
    "parent": null
   },
+  "/Script/AIModule.BehaviorTreeComponent": {
+   "fields": {
+    "WCM_InstanceStack": 280
+   },
+   "found": true,
+   "anchors": [],
+   "sites": [
+    {
+     "from": "0x1D18220",
+     "at": "0x1D18943",
+     "pattern": "4C 8B 6D ?? 4D 8B 4F ?? 49 8D 9D ?? ?? ?? ?? 49 8B C9 4C 89 4D ??",
+     "captures": {
+      "11": 280
+     }
+    },
+    {
+     "from": "0x4FE54F0",
+     "at": "0x4FE55D1",
+     "pattern": "E8 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 8B 93 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B CB",
+     "captures": {
+      "31": 280,
+      "43": 280
+     }
+    }
+   ],
+   "size": 688,
+   "align": 8,
+   "vtable": 146017872,
+   "overrides": 98,
+   "natives": 3,
+   "parent": null
+  },
   "/Script/SwtQuest.SwtQuestTuningManager": {
    "fields": {
     "WCM_StoryDialogues": 640,

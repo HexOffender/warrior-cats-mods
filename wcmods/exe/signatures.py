@@ -37,7 +37,7 @@ WINDOW = 40          # bytes of code either side of an access, at most
 MIN_PATTERN = 12     # bytes; shorter patterns match too easily
 MIN_FUNCTION_PATTERN = 20
 # A member's size in bytes, by its kind (a TMap is a TSet: its sparse array, bit array, free list and hash).
-WIDTH = {"ByteProperty": 1, "IntProperty": 4, "FloatProperty": 4, "DoubleProperty": 8, "MapProperty": 0x50}
+WIDTH = {"ByteProperty": 1, "IntProperty": 4, "FloatProperty": 4, "DoubleProperty": 8, "MapProperty": 0x50, "ArrayProperty": 0x10}
 
 
 def _align(width):

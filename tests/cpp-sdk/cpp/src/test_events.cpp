@@ -98,6 +98,10 @@ namespace t
             {
                 run_talks_request();
             }
+            else if (what == "ai")
+            {
+                run_ai_request();
+            }
             else if (what == "bond_answers")
             {
                 run_bond_answers_request();
