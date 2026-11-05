@@ -72,7 +72,9 @@ namespace wcmods
         return root ? get(root, L"TreeAsset").object : nullptr;
     }
     // What an AI is doing now: its main tree's active node, by its name in the tree (L"Grazing", L"Idle", L"NPC Spline
-    // Walking") and its class (L"BTTask_EnemyGrazing"); empty when none is active (between nodes, or stopped).
+    // Walking") and its class (L"BTTask_EnemyGrazing"); empty when none is active (between nodes, or stopped). While
+    // the tree runs a subtree (BT_CombatEnemy runs BT_AttackEnemy, BT_ChaseOff_Enemy runs BT_BossEnemy) it's that
+    // Run Behavior node (L"BTTask_RunBehavior"): the subtree's own nodes aren't read.
     struct AiTask
     {
         std::wstring name, kind;
@@ -180,6 +182,7 @@ namespace wcmods
     // An Int key's value and a Vector key's; nullopt without the key (a Vector key not set reads as nullopt too).
     inline auto blackboard_int(UObject* actor, std::wstring_view key) -> std::optional<int>
     {
+        if (!assert_game_thread(L"blackboard_int")) return std::nullopt;
         auto [board, name] = detail::board_for(actor, key, L"Int");
         if (!board) return std::nullopt;
         detail::KeyValue<int32_t> p{name};
@@ -188,6 +191,7 @@ namespace wcmods
     }
     inline auto blackboard_vector(UObject* actor, std::wstring_view key) -> std::optional<Vec3>
     {
+        if (!assert_game_thread(L"blackboard_vector")) return std::nullopt;
         auto [board, name] = detail::board_for(actor, key, L"Vector");
         if (!board) return std::nullopt;
         detail::KeyValue<bool> set{name};
@@ -197,7 +201,8 @@ namespace wcmods
         return Vec3{p.x, p.y, p.z};
     }
 
-    // Write a key: a Bool, an Int, a Float, a Vector (a place) or an Object (an actor) key, by the value's type. The
+    // Write a key: a Bool, an Int, a Float, a Vector (a place) or an Object (an actor) key, by the value's type (an int
+    // writes a Float key too: set_blackboard(mouse, L"ChaseReactionTime", 30)). The
     // tree sees it at once (a decorator watching the key may change what the AI does). False, with nothing written,
     // when the AI hasn't a key of that name and type. What the game's own code writes back over a key: blackboard
     // notes in docs/reverse-engineering.md, "The game's AI".
@@ -208,9 +213,11 @@ namespace wcmods
         detail::KeyValue<bool> p{name, value};
         return board && call(board, STR("SetValueAsBool"), p);
     }
+    inline auto set_blackboard(UObject* actor, std::wstring_view key, double value) -> bool;
     inline auto set_blackboard(UObject* actor, std::wstring_view key, int value) -> bool
     {
         if (!assert_game_thread(L"set_blackboard")) return false;
+        if (detail::blackboard_key_type(actor, key) == L"Float") return set_blackboard(actor, key, static_cast<double>(value));
         auto [board, name] = detail::board_for(actor, key, L"Int");
         detail::KeyValue<int32_t> p{name, value};
         return board && call(board, STR("SetValueAsInt"), p);

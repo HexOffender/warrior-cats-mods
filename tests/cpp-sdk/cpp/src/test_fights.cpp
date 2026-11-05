@@ -54,7 +54,9 @@ namespace t
             value("fights." + label + ".animals", static_cast<int>(animals.size()));
             if (attempt >= 3 || static_cast<int>(animals.size()) <= attempt || !start_fight(animals[attempt])) return then(false);
             value("fights." + label + ".attempts", attempt + 1);
-            when([] { return combat_active(); }, 5, [label, then, attempt](bool fighting) {
+            // A fight takes a few seconds to come up, longer while the computer is busy: 12 s before the next animal (5
+            // gave up on fights still loading, and the next try was then refused with your cat already in one).
+            when([] { return combat_active(); }, 12, [label, then, attempt](bool fighting) {
                 if (!fighting) return begin(label, then, attempt + 1);
                 when([] { return static_cast<bool>(fight_menu()); }, 10, then);
             });

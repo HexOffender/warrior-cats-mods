@@ -110,6 +110,7 @@ namespace t
 
         // ----- every kind of key written and read back, and the refusals
         const double reaction = blackboard_float(a, L"ChaseReactionTime").value_or(0);
+        expect("ai.write_float_int", set_blackboard(a, L"ChaseReactionTime", 25) && blackboard_float(a, L"ChaseReactionTime") == 25.0);
         expect("ai.write_float", set_blackboard(a, L"ChaseReactionTime", 30.0) && blackboard_float(a, L"ChaseReactionTime") == 30.0);
         expect("ai.write_int", set_blackboard(a, L"CurrentIndexSpline", 3) && blackboard_int(a, L"CurrentIndexSpline") == 3);
         Vec3 spot{run->home.x + 100, run->home.y, run->home.z};
