@@ -1,9 +1,10 @@
 // Bonds.hpp: your cat's bonds, the game's relationship system. Each is a whole number in your cat's slot of the save
 // under GameplayProgression/Bonding: one per clan (L"RiverClan": the clan's regard for you) and one per story cat, by
-// its narrative role (L"TheMistrustfulLeader"). Read and changed through the game's own bond code (four native
-// functions wcmods finds for the installed build: game.NATIVE's Bonding:*), so the game's defaults (a role's
-// BaseBonding, the tuning's clan default) and what it does on a change come with them. Game thread only. WCMods.hpp
-// includes it; docs/SDK.md, "C++ mods", documents every call.
+// its narrative role (L"TheMistrustfulLeader"). Read and changed through the game's own bond code (native functions
+// wcmods finds for the installed build: game.NATIVE's Bonding:*), so the game's defaults (a role's BaseBonding, the
+// tuning's clan default) and what it does on a change come with them. And a bond talk's answers: the rows of the game's
+// talk tables, and what the game does with an answer (answer_bond). Game thread only. WCMods.hpp includes it;
+// docs/SDK.md, "C++ mods", documents every call.
 //
 // Not the save manager's reflected GetGameProgressionData and SetGameProgressionData: those work on the account-wide
 // part of the save (Shared), not your cat's slot (docs/reverse-engineering.md, "Bonds").
@@ -267,5 +268,205 @@ namespace wcmods
                 out.push_back(std::move(b));
             }
         return out;
+    }
+
+    // ============================================================================================ a talk's answers
+    // A row of the game's talk tables, StoryDialogues.csv (the story talks) and QuestDialogues.csv (the quests'), as its
+    // tuning manager loads them, by row name (L"Gameplay.Dialogue.Story.Short.TheMistrustfulLeader.Main.7.Right.1.Short"):
+    // a line's words and who says them, and for a bond talk's answer what it does to your bonds.
+    struct TalkRow
+    {
+        std::wstring name;
+        int score{};               // an answer's: to the bond with the cat talked to
+        int clan_bonding{};        // and to your clan's regard
+        std::wstring talker;       // who says it: L"NPC" (the cat talked to) or L"Player" (your cat)
+        int trait{};               // ECharacterTrait the answer speaks for (0 None, 1 Brave, 2 Ambitious, 3 Wise, 4 Energetic, 5 Curious, 6 Patient)
+        std::wstring string_key;   // its words' key in the game's strings (L"QST_Story.Short.TheMistrustfulLeader.Main.7.Right.1.Short")
+        std::wstring debug_text;   // the words the game shows when the key has none
+        std::wstring voice;        // its voice-over event
+        // The words as the game shows them: the key's, else the row's DebugText.
+        auto text() const -> std::wstring
+        {
+            if (!string_key.empty())
+                if (auto w = words(string_key); w && !w->empty()) return *w;
+            return debug_text;
+        }
+    };
+    namespace detail
+    {
+        // The tuning manager's two maps (TMap<FString, FSwtQuestStoryDialoguesStruct>, docs/reverse-engineering.md,
+        // "A bond talk's answer"): 0x60-byte slots, the row's name, then the row (its reflected struct) from +0x10,
+        // then the hash's links.
+        inline auto talk_rows_map(bool story) -> const uint8_t*
+        {
+            return member<uint8_t>(manager(STR("tuning")), L"/Script/SwtQuest.SwtQuestTuningManager",
+                                   story ? L"WCM_StoryDialogues" : L"WCM_QuestDialogues");
+        }
+        inline auto talk_row_at(const uint8_t* slot) -> TalkRow
+        {
+            TalkRow r;
+            r.name = fstring_at(slot);
+            Value row = struct_at(STR("/Script/SwtQuest.SwtQuestStoryDialoguesStruct"), const_cast<uint8_t*>(slot) + 0x10);
+            r.score = static_cast<int>(get(row, L"Score").number());
+            r.clan_bonding = static_cast<int>(get(row, L"ClanBonding").number());
+            r.talker = get(row, L"Talker").string();
+            r.trait = static_cast<int>(get(row, L"Trait").number());
+            r.voice = get(row, L"VoiceOver").string();
+            r.string_key = get(row, L"StringKey").string();
+            r.debug_text = get(row, L"DebugText").string();
+            return r;
+        }
+        // Each slot of both maps (the story table's first, as the game looks), with `pick` deciding by its name.
+        template <typename Pick>
+        auto talk_slots(Pick&& pick) -> std::vector<const uint8_t*>
+        {
+            std::vector<const uint8_t*> out;
+            for (bool story : {true, false})
+            {
+                std::vector<const uint8_t*> slots;
+                if (!set_slots(talk_rows_map(story), 0x60, slots)) continue;
+                for (const uint8_t* e : slots)
+                {
+                    const auto* text = *reinterpret_cast<const wchar_t* const*>(e);
+                    const int32_t num = *reinterpret_cast<const int32_t*>(e + 8);
+                    if (text && num > 0 && pick(std::wstring_view(text, static_cast<size_t>(num - 1)))) out.push_back(e);
+                }
+            }
+            return out;
+        }
+        inline auto starts_with_key(std::wstring_view name, std::wstring_view prefix) -> bool
+        {
+            return name.size() >= prefix.size() && same_key(name.substr(0, prefix.size()), prefix);
+        }
+    } // namespace detail
+    // One row by its name (the game's names ignore case), from the story table, else the quest one, as the game's
+    // bond answer looks. nullopt when neither has it, or when wcmods hasn't got the tables on this build.
+    inline auto talk_row(std::wstring_view name) -> std::optional<TalkRow>
+    {
+        if (!assert_game_thread(L"talk_row")) return std::nullopt;
+        auto found = detail::talk_slots([&](std::wstring_view n) { return detail::same_key(n, name); });
+        if (found.empty()) return std::nullopt;
+        return detail::talk_row_at(found.front());
+    }
+    // Every row whose name starts with `prefix` (a story talk's tag and a dot: L"Gameplay.Dialogue.Story.Short.
+    // TheMistrustfulLeader.Main.7."), in no particular order.
+    inline auto talk_rows(std::wstring_view prefix) -> std::vector<TalkRow>
+    {
+        std::vector<TalkRow> out;
+        if (!assert_game_thread(L"talk_rows")) return out;
+        for (const uint8_t* e : detail::talk_slots([&](std::wstring_view n) { return detail::starts_with_key(n, prefix); }))
+            out.push_back(detail::talk_row_at(e));
+        return out;
+    }
+
+    // What the game's bond answer did, as answer_bond() did it.
+    struct BondAnswer
+    {
+        std::wstring node;      // the answer's row name: your cat's Bonding/Nodes keeps it once answered
+        int trait{};            // the trait it speaks for (its row's)
+        int bonus{};            // Gameplay.Progression.Bonding.TraitModifier (1) when your cat has that trait, else 0
+        bool first{};           // the node wasn't answered before: it's marked now, and the cat's bond moved
+        std::wstring role;      // the story cat whose bond moved (its narrative role); empty when none did
+        int personal{};         // what its bond got: Score + bonus (0 when none moved)
+        std::wstring clan;      // your clan, whose regard moved
+        int clan_change{};      // what it got: ClanBonding + bonus
+    };
+    namespace detail
+    {
+        inline auto call_has_node(void* fn, const void* key, bool& out) -> bool
+        {
+            __try
+            {
+                out = reinterpret_cast<bool (*)(const void*)>(fn)(key);
+                return true;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return false;
+            }
+        }
+        inline auto call_add_node(void* fn, const void* key) -> bool
+        {
+            __try
+            {
+                reinterpret_cast<void (*)(const void*)>(fn)(key);
+                return true;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return false;
+            }
+        }
+        inline auto has_node(std::wstring_view node, bool& out) -> bool
+        {
+            void* fn = native_address(L"Bonding:HasNode");
+            RC::Unreal::FString key(std::wstring(node).c_str());
+            return fn && call_has_node(fn, &key, out);
+        }
+    } // namespace detail
+    // Whether your cat has answered a bond talk's node (its Bonding/Nodes, through the game's own check), now. nullopt
+    // in menus or without the game's function on this build.
+    inline auto bond_node(std::wstring_view node) -> std::optional<bool>
+    {
+        if (!assert_game_thread(L"bond_node") || !player()) return std::nullopt;
+        bool had = false;
+        if (!detail::has_node(node, had)) return std::nullopt;
+        return had;
+    }
+    // Answer a bond talk's node as the game's own talk does: what its QuestDialogueActionResolveBondAnswer does, read
+    // from its code (docs/reverse-engineering.md, "A bond talk's answer"). `node` is the answer's row (talk_row: the
+    // talk's tag, a dot and the answer node's SubTag); `role` the story cat talked to (L"TheMistrustfulLeader"; empty
+    // for a cat that plays none: then the node is marked with no cat's bond moved, as the game does for such a cat).
+    // - A row with no trait does nothing: nullopt. So does a node no table has.
+    // - The bonus: Gameplay.Progression.Bonding.TraitModifier (1) when your cat has the answer's trait (cat_traits()).
+    // - The first time your cat answers the node: the node is marked, and the story cat's bond gets the row's Score
+    //   plus the bonus (AddPersonalBonding).
+    // - Every time: your clan's regard gets the row's ClanBonding plus the bonus (AddClanScore).
+    // What the game shows with it (the cat's reaction, the bond and trait notices, a rank change's popup) isn't shown.
+    // The game also counts each conversation's resolved answers so one talk doesn't resolve an answer twice;
+    // answer_bond keeps no such count: called again for a node, it moves your clan's regard again (not the cat's bond).
+    // nullopt, with nothing changed, as above, for a role that isn't a story cat's, in menus, or without the game's
+    // functions on this build.
+    inline auto answer_bond(std::wstring_view node, std::wstring_view role) -> std::optional<BondAnswer>
+    {
+        if (!assert_game_thread(L"answer_bond") || !player()) return std::nullopt;
+        if (!role.empty())
+            if (auto k = detail::bond_key(role); !k || k->clan) return std::nullopt;
+        if (!native_address(L"Bonding:AddNode") || !native_address(L"Bonding:AddPersonal") || !native_address(L"Bonding:AddClan"))
+            return std::nullopt;
+        auto row = talk_row(node);
+        if (!row || row->trait == 0) return std::nullopt;
+        BondAnswer a;
+        a.node = node;
+        a.trait = row->trait;
+        if (a.trait > 0)
+            for (auto& t : cat_traits())
+                if (t == trait_name(a.trait))
+                    a.bonus = static_cast<int>(tuning(L"Gameplay.Progression.Bonding.TraitModifier").value_or(1.0f));
+        a.clan = cat_clan(player());
+        bool had = false;
+        if (!detail::has_node(node, had))
+        {
+            log(L"the game's bond node check failed for {}", node);
+            return std::nullopt;
+        }
+        if (!had)
+        {
+            RC::Unreal::FString key(std::wstring(node).c_str());
+            if (!detail::call_add_node(native_address(L"Bonding:AddNode"), &key))
+            {
+                log(L"the game's bond node mark failed for {}", node);
+                return std::nullopt;
+            }
+            a.first = true;
+            if (!role.empty() && add_bond(role, row->score + a.bonus))
+            {
+                a.role = role;
+                a.personal = row->score + a.bonus;
+            }
+        }
+        auto c = detail::bond_key(a.clan);
+        if (c && c->clan && add_bond(a.clan, row->clan_bonding + a.bonus)) a.clan_change = row->clan_bonding + a.bonus;
+        return a;
     }
 } // namespace wcmods

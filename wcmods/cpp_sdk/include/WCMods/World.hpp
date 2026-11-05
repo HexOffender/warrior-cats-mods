@@ -738,10 +738,16 @@ namespace wcmods
     }
     // A cat's clan, by the enum's name ("RiverClan"), or empty.
     inline auto cat_clan(UObject* actor) -> std::wstring { return get(actor, L"MeshCustomizationComponent.CustomData.ClanType").text; }
+    // A personality trait's name by its ECharacterTrait value (0 None, 1 Brave, 2 Ambitious, 3 Wise, 4 Energetic,
+    // 5 Curious, 6 Patient); empty for another.
+    inline auto trait_name(int trait) -> std::wstring
+    {
+        static const wchar_t* names[] = {L"None", L"Brave", L"Ambitious", L"Wise", L"Energetic", L"Curious", L"Patient"};
+        return trait >= 0 && trait < 7 ? names[trait] : std::wstring{};
+    }
     // Your cat's personality traits from the last save ({L"Brave", L"Energetic"}).
     inline auto cat_traits() -> std::vector<std::wstring>
     {
-        static const wchar_t* names[] = {L"None", L"Brave", L"Ambitious", L"Wise", L"Energetic", L"Curious", L"Patient"};
         std::vector<std::wstring> out;
         Json slot = slot_data();
         const Json& list = slot["GameplayProgression"]["Traits"];
@@ -749,7 +755,7 @@ namespace wcmods
         {
             const Json& t = list[i]["Type"];
             if (t.is_string()) out.push_back(t.wstring());
-            else if (t.is_number() && t.number() >= 0 && t.number() < 7) out.push_back(names[static_cast<int>(t.number())]);
+            else if (t.is_number() && t.number() >= 0 && t.number() < 7) out.push_back(trait_name(static_cast<int>(t.number())));
         }
         return out;
     }

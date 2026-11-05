@@ -1196,6 +1196,67 @@ def test_bonds(agent):
     assert v["bonds.saved_after"].get("ShadowClan") == 67 and v["bonds.saved_after"].get(role) == 20, v["bonds.saved_after"]
 
 
+def test_bond_answers(agent):
+    """A bond talk's answers in the game (Bonds.hpp, Talk.hpp), on the test cat (ShadowClan, Ambitious and Curious):
+    the talk tables' rows as the tuning manager loaded them (a story row, a quest row by any case, the 22 under one
+    story talk); TheMistrustfulLeader's 7th Short story talk filled from them as the game fills its template (its lines
+    and its first question's three answers with their traits, scores and bonding), and its End talk for the second
+    time. Then a story cat of the clan's, one of its talks' answers not given yet played and chosen: the game's bond
+    answer as the talk passes it, the cat's bond moved by the row's Score plus the trait bonus (1 when your cat has the
+    trait), the clan's regard by ClanBonding plus the bonus, the node marked (once every answer has been given, an
+    answer already given: the clan's regard only). Given again: the clan's regard again, the cat's bond not. A role
+    that isn't a story cat's is refused, a row without a trait does nothing, and nor does a talk played with the bonds
+    off. Put back after (the node stays)."""
+    _close_screens(agent)
+    try:
+        r = _request(agent, "bond_answers", timeout=60)
+    finally:
+        _close_screens(agent)
+    assert not _failed(r, "bond_answers"), _failed(r, "bond_answers")
+    v = r["values"]
+    right = v["answers.row_right"]
+    assert (right["score"], right["clan"], right["trait"], right["talker"]) == (9, 2, 3, "Player"), right
+    assert right["key"] == "QST_Story.Short.TheMistrustfulLeader.Main.7.Right.1.Short" and right["text"], right
+    quest = v["answers.row_quest"]
+    assert quest and quest["name"] == "Quest.Procedural.Survival.Gather.Apprentice.Context.Answer.Brave.Short", quest
+    assert (quest["score"], quest["clan"], quest["trait"]) == (6, 2, 1), quest
+    assert v["answers.rows_under"] == 22, v["answers.rows_under"]
+
+    assert v["answers.story_tag"] == "Gameplay.Dialogue.Story.Short.TheMistrustfulLeader.Main.7", v["answers.story_tag"]
+    lines = v["answers.story_lines"]
+    assert len(lines) >= 4 and all(lines), lines
+    got = sorted((a["trait"], a["score"], a["bonding"]) for a in v["answers.story_answers"])
+    assert got == [(1, 0, 0), (2, -3, -4), (3, 9, 2)], v["answers.story_answers"]
+    assert all(a["words"] for a in v["answers.story_answers"]), v["answers.story_answers"]
+    rows = sorted(a["row"].rsplit(".", 3)[-3] for a in v["answers.story_answers"])
+    assert rows == ["Neutral", "Right", "Wrong"], v["answers.story_answers"]
+    assert v["answers.end_lines"] and all(v["answers.end_lines"]), v["answers.end_lines"]
+
+    role, node, row = v["answers.role"], v["answers.node"], v["answers.chosen_row"]
+    assert role and node.startswith(f"Gameplay.Dialogue.Story.Short.{role}.Main.") and row and row["trait"], v
+    assert v["answers.question"] and v["answers.reply"], v
+    first = v["answers.node_before"] is False   # else every answer had been given: one given before was chosen
+    traits = ["None", "Brave", "Ambitious", "Wise", "Energetic", "Curious", "Patient"]
+    bonus = 1 if traits[row["trait"]] in v["answers.cat_traits"] else 0
+    personal = row["score"] + bonus if first else 0
+    a = v["answers.on_bond"]
+    assert v["answers.on_bond_count"] == 1 and a, v
+    assert (a["node"], a["trait"], a["bonus"], a["first"], a["role"]) == (node, row["trait"], bonus, first, role if first else ""), a
+    assert (a["personal"], a["clan"], a["clan_change"]) == (personal, v["answers.clan"], row["clan"] + bonus), a
+    clamp = lambda n: max(0, min(100, n))  # noqa: E731 (the game keeps a bond within 0 and 100)
+    assert v["answers.personal_after"] == clamp(v["answers.personal_before"] + personal), v
+    assert v["answers.clan_after"] == clamp(v["answers.clan_before"] + row["clan"] + bonus), v
+    assert v["answers.node_after"] is True, v
+    again = v["answers.again"]
+    assert again and again["first"] is False and again["personal"] == 0 and again["role"] == "", again
+    assert again["clan_change"] == row["clan"] + bonus, again
+    assert v["answers.personal_again"] == v["answers.personal_after"], v
+    assert v["answers.clan_again"] == clamp(v["answers.clan_after"] + row["clan"] + bonus), v
+    assert v["answers.off_count"] == 0, v
+    assert (v["answers.personal_off"], v["answers.clan_off"]) == (v["answers.personal_again"], v["answers.clan_again"]), v
+    assert (v["answers.personal_restored"], v["answers.clan_restored"]) == (v["answers.personal_before"], v["answers.clan_before"]), v
+
+
 def _save_npc_data(agent):
     """The test cat's NPCData as the game last saved it."""
     with open(os.path.join(os.environ["LOCALAPPDATA"], "Wrc", "Saved", "SaveGames", "WrcGame.json"), encoding="utf-8") as f:
