@@ -1116,6 +1116,47 @@ def test_npcs(agent):
     assert v["npcs.removed_gone"] is True and v["npcs.left"] == 0, v
 
 
+def test_talks(agent):
+    """Talk.hpp in the game: a line of the mod's own in the dialogue box with answers on its buttons; the game's talks
+    by tag, read from their graphs (the RiverClan prophecy's four narrated lines, the WindClan rank-up's "I DO" and
+    its bonding nodes) as Lua reads the same graphs; the prophecy played to its end (its action passed on, its end
+    called once), the rank-up's bonded opening, its answer (a wrong number refused) and its actions; the first
+    line's words changed through its key and shown, then put back; a talk of the mod's own with its second answer
+    chosen; a hook that says something as a talk ends. The
+    game is quit after the suite, so a talk that left the game's screens in a bad state shows as a crash there."""
+    r = _request(agent, "talks", timeout=30)
+    assert not _failed(r, "talks"), _failed(r, "talks")
+    v = r["values"]
+    assert (v["talks.say_line"], v["talks.say_speaker"], v["talks.say_answers"]) == ("Hello from C++", "Brindlemoon", ["Yes", "No"]), v
+    assert len(v["talks.tags"]) == 30 and "Gameplay.Narrative.Prophecy.Intro.RiverClan" in v["talks.tags"], v["talks.tags"]
+    # The same graph read by Lua: its talking nodes from the root, each to its first child.
+    lua_lines = agent.lua(
+        "local g = StaticFindObject('/Game/Quests/NpcDialogues/Cinematic/CinematicDialogue_ProphecyIntro_RiverClan."
+        "CinematicDialogue_ProphecyIntro_RiverClan') "
+        "local function first(a) local r = nil a:ForEach(function(i, x) if not r then r = x:get() end end) return r end "
+        "local out = {} local n = first(g.RootNodes) local guard = 0 "
+        "while n and n:IsValid() and guard < 20 do guard = guard + 1 "
+        "if n:GetClass():GetFName():ToString() == 'QuestDialogueTalkingNode' then out[#out + 1] = n.Paragraph:ToString() end "
+        "n = first(n.ChildrenNodes) end "
+        "return table.concat(out, '\\n')")
+    assert v["talks.prophecy_lines"] == lua_lines.split("\n"), (v["talks.prophecy_lines"], lua_lines)
+    assert v["talks.prophecy_graph"] == "CinematicDialogue_ProphecyIntro_RiverClan" and v["talks.prophecy_nodes"] == 5, v
+    assert v["talks.rankup_graph"] == "CinematicDialogue_RankUp_WindClan_Warrior" and v["talks.rankup_answers"] == ["I DO"], v
+    assert v["talks.rankup_bonding_nodes"] == [3, 3], v
+    assert v["talks.first_key"] == "STR_Script.RiverClan.Prophecy.Intro.Narrator.1", v["talks.first_key"]
+    assert v["talks.played_lines"] == v["talks.prophecy_lines"] and v["talks.played_steps"] == 4, v
+    assert set(v["talks.played_speakers"]) == {"Narrator"} and v["talks.played_ends"] == 1, v
+    assert v["talks.played_actions"] == ["QuestDialogueActionCreateScreen"], v["talks.played_actions"]
+    assert v["talks.rankup_opening"].startswith("The apprentice was ready to become a warrior"), v["talks.rankup_opening"]
+    assert v["talks.answer_line"].startswith('"Do you promise to protect this Clan') and v["talks.answers_shown"] == ["I DO"], v
+    assert v["talks.chosen"] == ["I DO"] and v["talks.rankup_ends"] == 1, v
+    assert v["talks.rankup_actions"][0] == "QuestDialogueActionResolveConfirm", v["talks.rankup_actions"]
+    assert v["talks.changed_line"] == "WCMods changed this line", v["talks.changed_line"]
+    assert v["talks.restored_line"] == v["talks.prophecy_lines"][0], v["talks.restored_line"]
+    assert (v["talks.after_end_line"], v["talks.after_end_ends"], v["talks.box_after"]) == ("After the talk", 1, False), v
+    assert v["talks.own_after"] == "Another time, then.", v["talks.own_after"]
+
+
 def test_ui_arrow_units(agent):
     """Ui.hpp's rule for an arrow on a tab's page, at init without the game: its release is given to the screen
     again from a button or check box, never from a slider, number or text box, not when the page hasn't the

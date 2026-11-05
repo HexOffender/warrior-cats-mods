@@ -1134,6 +1134,7 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Tables.hpp` | the game's DataTables row by row (read, changed, rows added and taken out), and its tuning numbers (`TuningData.csv`), while it runs |
 | `WCMods/Words.hpp` | the game's words by their keys in its string table: read, changed and put back while it runs |
 | `WCMods/Npcs.hpp` | cats of the mod's own: spawned on the game's walking cat with a look, kept in the world, walked, labelled, with the game's Talk prompt and its Interact |
+| `WCMods/Talk.hpp` | the game's dialogue box with lines of the mod's own; the game's talks read from their graphs (lines, speakers, answers, actions) and played in it, or talks the mod makes |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Ui.hpp` | the game's own UI: a tab of your own in its screens (the pause menu, the inventory, the settings), the HUD and its parts, overlays, every control the engine has |
 | `WCMods/UiLua.hpp` | the same for Lua mods, as `WCModsCpp.ui` ([scripting.md, The game's own menus and HUD](scripting.md#the-games-own-menus-and-hud)) |
@@ -1349,6 +1350,36 @@ wcmods::on_npc_interact([](wcmods::Npc n) { n.walk_to(*wcmods::npc_spot(600, 0))
 | `Npc::set_label({name, title, extra, icon, range})`, `set_prompt(L"Talk", reach)` | The game's label over its head (a name, a smaller title, an extra line in the game's green, an icon `available`, `ongoing` or `done`), shown within `range` cm (1000) and faded at its edge; the game's prompt with its Interact glyph while your cat is within `reach` cm (250) and nothing of the game's own is in reach. Empty takes either away |
 | `wcmods::on_npc_interact(fn)` | `fn(npc)` when the game's Interact (any key or button bound to it, as the player's controller hears it) is pressed while a cat's prompt shows. The game hears it too, with nothing of its own in reach then |
 | `Npc::remove()` | Take it out of the world for good |
+
+**Talks (`Talk.hpp`)**, game thread only:
+
+The game's dialogue box (`WBP_QuestGiver_Dialogue`) shown on its own, as Lua's `Game.dialogue` shows it: a line with
+who says it and up to four answers' words on its buttons, a picture the mouse goes through. The game's talks are
+graphs (lines, the game's actions between them, answers leading on); `read_talk` reads one as data and `play_talk`
+plays it in that box, line by line, as the mod moves it on (with keys of its own: the buttons aren't clickable). The
+game's own way of playing them (its sequencer manager) leaves its box as a popup of the game's screen that only the
+talk's scene closes cleanly, and the game crashes at quit after it; this box is safe to take down at any time
+(reverse-engineering.md, "Talks in game").
+
+```cpp
+wcmods::Talk talk = wcmods::read_talk(wcmods::conversation(L"Gameplay.Narrative.RankUp.WindClan.Warrior"));
+wcmods::TalkHooks hooks;
+hooks.on_answer = [](const wcmods::TalkNode&, const wcmods::TalkAnswer& a) { /* a.words == L"I DO" */ };
+hooks.on_end = [] { wcmods::say(L"Brindlemoon", L"Well spoken."); };
+wcmods::play_talk(talk, L"Brindlemoon", hooks);
+wcmods::on_key(wcmods::Key::F7, [] { wcmods::talk_next(); });   // on, by the first answer where there are some
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::say(speaker, words)`, `say(speaker, words, {L"Yes", L"No"})` | Show a line in the box, with up to four answers' words on its buttons; it stays until `hide_talk()`. False when the box can't be made |
+| `wcmods::hide_talk()` | Take the box down, fading out as the game's does (a talk playing ends, its `on_end` called); false when it wasn't up |
+| `wcmods::talk_showing()`, `talk_line()`, `talk_speaker()`, `talk_answers()` | Whether the box shows a line; its words, who says them, and the answers on its buttons |
+| `wcmods::conversation_tags()`, `conversation(tag)` | The tags of the game's 30 cinematic talks (`DT_QuestSequenceDialogues`: `Gameplay.Narrative.Prophecy.Intro.RiverClan`, `...RankUp.WindClan.Leader`...); one's graph, or nullptr |
+| `wcmods::read_talk(graph)` | A talk's graph as a `Talk`: `nodes` (each a `TalkNode`: `kind`, its class; `line` for something said, with `words`, `words_text` for `words_key`, `source` (`ETalkingSource`: 0 the cat talked to, 1 your cat, 2 the current character, 3 the node's own name `source_words`, "Narrator"), `by_bond` (a bonding node's words for a Neutral, Positive, Negative bond), `next` and `answers` (`TalkAnswer`: `words`, `to`, `option` 1 to 4, `trait`, `score`, `bonding`) by index), `roots`; `lines()` the lines from the first root taking each first answer. Any of the game's talks: `conversation`'s, a quest's, or one by its path through `load()`. Empty for what isn't one. Placeholders in the words (`{PLAYER}`) stay as they are |
+| `wcmods::play_talk(talk, npc_name, hooks)` | Play a `Talk` (read, or one the mod makes: nodes with `line`, `words`, `source` 3 and `source_words`, `next`/`answers` by index, and `roots`) from its first root: each line in the box with its speaker (`npc_name` for the cat talked to, your cat's name, or the node's own), its answers on the buttons. `TalkHooks`: `on_action(talk, node)` for each of the game's actions passed (nothing runs them), `on_answer(node, answer)`, `on_end()`, `bond` (0 to 2: a bonding node's words for that bond). A talk playing ends first. False for an empty talk or one with no line |
+| `wcmods::talk_next()`, `talk_next(answer)` | On to the next line, or past a line with answers by the answer's number (0 the first; false, with nothing done, for one it hasn't). False when nothing plays, or the talk just ended (the box taken down) |
+| `wcmods::talk_playing()`, `talk_at()`, `talk_line_text()` | Whether a talk plays; the `TalkNode` showing; its words as a text, for `words_key` (the game's line's key, to change with `set_words`) |
 
 **The game's words (`Words.hpp`)**, game thread only:
 

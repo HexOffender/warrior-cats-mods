@@ -389,6 +389,18 @@ Fur Color the linear #ff8800; its label "Brindlemoon" / "Elder" at full opacity 
 `command(L"Player_Interact")` reached `on_npc_interact` once, for that cat; moved half a metre, then walked 4.7 m and
 arrived; removed, its actor gone; your cat put back. The loader found the cat's class by its path.
 
+**2026-11-04, build 26337109: talks** (the branch `claude/cpp-talks`, `tests/game/test_cpp_sdk.py`: `test_talks`
+passed, and the game quit without a crash after): `say` showed "Hello from C++" by Brindlemoon with "Yes" and "No" on
+the box's buttons, and `hide_talk` took it down; `DT_QuestSequenceDialogues` had 30 tags; the RiverClan prophecy's
+graph read as 5 nodes, its four narrator lines the same as Lua read from the graph, its first line the key
+`STR_Script.RiverClan.Prophecy.Intro.Narrator.1`; played, it showed the four lines by "Narrator", passed its
+`CreateScreen` action on and ended once. The WindClan warrior rank-up opened on its bonding node's Positive line,
+stopped at the oath with "I DO" (answer 4 refused), took it, passed on `ResolveConfirm` and its two `CreateScreen`s,
+and ended. The first prophecy line's key changed showed "WCMods changed this line" in the talk, and read the game's
+words again once put back. A mod's own talk took its second answer ("Not now", option 2) to its line; a talk's
+`on_end` that said a line left that line showing. The game's own player (`PlaySequenceDialogue`) was tried by hand
+first: its box crashed the game at quit, and when stepped past its last line (reverse-engineering.md, "Talks in game").
+
 ## Not yet confirmed in game
 
 - **Choosing a game (2026-10-28):** the Save page's changes to a game other than the one played last, made

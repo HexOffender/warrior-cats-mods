@@ -44,6 +44,7 @@ namespace t
     auto run_words_request() -> void;    // Words.hpp: the game's words, in the game ("words")
     auto run_sounds_request() -> void;   // sounds and music (World.hpp), in the game ("sounds")
     auto run_npcs_request() -> void;     // Npcs.hpp: a cat of the mod's own, in the game ("npcs")
+    auto run_talks_request() -> void;    // Talk.hpp: conversations, in the game ("talks")
     auto run_ui_units() -> void;         // Ui.hpp's rule for the arrows on a tab's page, without the game (test_ui.cpp)
     auto run_native_units() -> void;     // Core.hpp's pattern check and World.hpp's map reader, without the game (test_native.cpp)
     auto run_native_request(const std::string& what) -> bool;   // native, inventory_add, command_open, sky, sound...: false for another
