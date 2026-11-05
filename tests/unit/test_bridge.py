@@ -83,16 +83,19 @@ def test_half_written_status_is_none(br):
     assert br.status() is None
 
 
-def test_status_retries_during_a_rewrite(br):
+def test_status_retries_during_a_rewrite(br, monkeypatch):
     # The bridge removes status.json, then renames the new one in: a reader in between looks again a moment later.
-    def rewrite():
-        time.sleep(0.02)
+    # The new one lands during that moment (the reader's one wait), however slow the machine: a thread racing the
+    # wait's length on a timer can lose on a busy runner, which isn't what's being checked.
+    waits = []
+
+    def rename_in(seconds):
+        waits.append(seconds)
         write_status(br, world="L_WorldMap_01_P")
 
-    t = threading.Thread(target=rewrite)
-    t.start()
+    monkeypatch.setattr(bridge, "time", SimpleNamespace(time=time.time, sleep=rename_in))   # the bridge's clock only
     st = br.status()
-    t.join()
+    assert len(waits) == 1, "one look again, after a wait"
     assert st is not None and st["alive"] and st["world"] == "L_WorldMap_01_P"
 
 
