@@ -66,6 +66,52 @@ test("the console record counts a page file that fails to load, and not the API 
   await page.close();
 });
 
+test("a first status that can't reach the studio is asked again, and the page opens once it answers, without a reload", { skip }, async () => {
+  const page = await browser.page();
+  // The page's first /api/info fails as a lost connection does (fetch rejects); everything else reaches the studio.
+  await page.send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
+    const real = window.fetch;
+    window.fetch = (url, init) => {
+      if (!window.__infoFailed && String(url) === "/api/info") {
+        window.__infoFailed = true;
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return real.call(window, url, init);
+    };
+  })()` });
+  await page.goto(studio.url);
+  await page.evaluate("window.__notReloaded = true");   // a reload takes it away (the studio is asked again 3 s on)
+  await page.waitFor("#nav button", 15000);
+  await page.waitFor(() => document.querySelector("#main .section h1"));
+  assert.equal(await page.evaluate("window.__infoFailed"), true, "the first /api/info failed");
+  assert.equal(await page.evaluate("window.__notReloaded"), true, "the page wasn't reloaded");
+  assert.equal(await page.evaluate(() => document.querySelector(".error-card")), null);
+  await page.waitFor(() => [...document.querySelectorAll("#status .chip")].some(c => c.dataset.said === "Game closed"));
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
+test("a studio still away a few seconds after the first status: the card says so, and the page reloads once it answers", { skip }, async () => {
+  const page = await browser.page();
+  // Every fetch fails as a closed studio's would while the tab's wc-test-down is "1", as the first load sets it.
+  await page.send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
+    if (sessionStorage.getItem("wc-test-down") === null) sessionStorage.setItem("wc-test-down", "1");
+    const real = window.fetch;
+    window.fetch = (url, init) => sessionStorage.getItem("wc-test-down") === "1"
+      ? Promise.reject(new TypeError("Failed to fetch")) : real.call(window, url, init);
+  })()` });
+  await page.goto(studio.url);
+  await page.evaluate("window.__notReloaded = true");
+  await page.waitFor(() => /black window was closed/.test(document.querySelector(".error-card h2")?.textContent || ""), 15000);
+  assert.equal(await page.count("#nav button"), 0);
+  // It answers again: with nothing unsaved, the page reloads to be the studio's own, and opens.
+  await page.evaluate(`sessionStorage.setItem("wc-test-down", "0")`);
+  await page.waitFor(() => window.__notReloaded === undefined && document.querySelector("#nav button"), 15000);
+  assert.equal(await page.count(".error-card"), 0);
+  assert.deepEqual(page.consoleErrors(), []);
+  await page.close();
+});
+
 test("Get set up asks where the game is, and finds it once the folder holds the game", { skip }, async () => {
   const page = await browser.page();
   await page.goto(studio.url + "#mods");
