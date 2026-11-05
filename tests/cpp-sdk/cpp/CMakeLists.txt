@@ -16,4 +16,5 @@ wcmods_mod(${WCMODS_TARGET}
     src/test_talks.cpp
     src/test_bonds.cpp
     src/test_looks.cpp
+    src/test_items.cpp
 )

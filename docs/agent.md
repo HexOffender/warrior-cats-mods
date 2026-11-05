@@ -290,6 +290,9 @@ The suite here has 81 tests:
   documents and records what it got; the tests compare that with Lua and have it make changes Lua
   confirms. It needs the mod built and installed first (`cpp build tests/cpp-sdk`, then `agent install
   --with tests/cpp-sdk`); the tests say so and skip otherwise.
+- **The C++ SDK's items and animations:** `test_cpp_sdk.py`'s `test_drop_items` and `test_animations_cpp` need two
+  test mods with the C++ one: `agent install --with tests/cpp-sdk --with tests/items-mod --with tests/animations-mod`
+  (each skips without its mod).
 - **The game's own animations:** `test_animations.py`. A test mod (`tests/animations-mod`) plays the
   game's Yawn as an emote on F7, a claws-out copy of its Stretch on F8, and the sleep loop in the trot's
   place, all without a file; the tests press the keys and read the anim instance, and measure the head

@@ -11,7 +11,10 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <functional>
+#include <memory>
+#include <new>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -428,6 +431,72 @@ namespace wcmods
         return map_entries(get(object, path));
     }
 
+    // Take every pair out of a map (a Value of kind Map), each key and value destroyed as the engine does. False for
+    // what isn't a map.
+    inline auto map_clear(const Value& map) -> bool
+    {
+        if (map.kind != Value::Kind::Map || !map.property || !map.at) return false;
+        auto* mp = static_cast<RC::Unreal::FMapProperty*>(map.property);
+        auto* m = static_cast<RC::Unreal::FScriptMap*>(map.at);
+        const auto& layout = mp->GetMapLayout();
+        for (int i = 0; i < m->GetMaxIndex(); ++i)
+        {
+            if (!m->IsValidIndex(i)) continue;
+            auto* pair = static_cast<uint8_t*>(m->GetData(i, layout));
+            mp->GetKeyProp()->DestroyValue(pair);
+            mp->GetValueProp()->DestroyValue(pair + layout.ValueOffset);
+        }
+        m->Empty(0, layout);
+        return true;
+    }
+
+    // Add a pair to a map (a Value of kind Map), or give a key it has a new value. `fill` writes the new key and
+    // value, each a Value to set() (a struct key's fields by their path, a plain one with an empty path):
+    //   map_add(get(pickup, L"Reward"), [&](const Value& key, const Value& count) {
+    //       set(key, L"TagName", L"Gameplay.Inventory.Materials.Moss");
+    //       set(count, L"", 3);
+    //   });
+    // The pair goes in by the key's own hash and comparison (the engine's, as UE4SS's Lua map:Add does). False for
+    // what isn't a map.
+    inline auto map_add(const Value& map, const std::function<void(const Value& key, const Value& value)>& fill) -> bool
+    {
+        if (map.kind != Value::Kind::Map || !map.property || !map.at || !fill) return false;
+        auto* mp = static_cast<RC::Unreal::FMapProperty*>(map.property);
+        auto* m = static_cast<RC::Unreal::FScriptMap*>(map.at);
+        FProperty* kp = mp->GetKeyProp();
+        FProperty* vp = mp->GetValueProp();
+        const auto& layout = mp->GetMapLayout();
+        // The new pair, made as the engine makes one (16-byte aligned, as its allocator gives an element).
+        const size_t size = static_cast<size_t>(layout.SetLayout.Size);
+        struct Freed
+        {
+            void operator()(uint8_t* p) const { ::operator delete(p, std::align_val_t(16)); }
+        };
+        std::unique_ptr<uint8_t, Freed> pair(static_cast<uint8_t*>(::operator new(size, std::align_val_t(16))));
+        std::memset(pair.get(), 0, size);
+        uint8_t* key = pair.get();
+        uint8_t* value = pair.get() + layout.ValueOffset;
+        kp->InitializeValue(key);
+        vp->InitializeValue(value);
+        fill(detail::read(kp, key), detail::read(vp, value));
+        m->Add(
+            key, value, layout, [&](const void* k) -> RC::Unreal::uint32 { return kp->GetValueTypeHash(k); },
+            [&](const void* a, const void* b) -> bool { return kp->Identical(a, b); },
+            [&](void* into) {
+                kp->InitializeValue(into);
+                kp->CopySingleValue(into, key);
+            },
+            [&](void* into) {
+                vp->InitializeValue(into);
+                vp->CopySingleValue(into, value);
+            },
+            [&](void* existing) { vp->CopySingleValue(existing, value); }, [&](void* k) { kp->DestroyValue(k); },
+            [&](void* v) { vp->DestroyValue(v); });
+        kp->DestroyValue(key);
+        vp->DestroyValue(value);
+        return true;
+    }
+
     // Every property of an object (its class and the parents'), or of a struct Value, with its value now.
     inline auto describe(UObject* object) -> std::vector<Member>
     {
@@ -595,6 +664,23 @@ namespace wcmods
         return params;
     }
 
+    namespace detail
+    {
+        // A function's FTransform parameter set to a place, turned `yaw` degrees, at scale 1 (for the engine's
+        // spawning and component calls: BeginDeferredActorSpawnFromClass, AddComponentByClass).
+        inline auto transform_of(Params& p, const wchar_t* name, Vec3 at, double yaw) -> void
+        {
+            Value t = p.get(name);
+            const double half = yaw * 3.14159265358979323846 / 360.0;   // a yaw's quaternion
+            set(t, L"Rotation.Z", std::sin(half));
+            set(t, L"Rotation.W", std::cos(half));
+            for (const wchar_t* axis : {L"Scale3D.X", L"Scale3D.Y", L"Scale3D.Z"}) set(t, axis, 1.0);
+            set(t, L"Translation.X", at.x);
+            set(t, L"Translation.Y", at.y);
+            set(t, L"Translation.Z", at.z);
+        }
+    } // namespace detail
+
     // Spawn an actor of a class (by its path) at a place; nullptr when the class isn't there or the world
     // isn't up. The game's own cats need more than this (see the Lua module's Game.npcs); it's for plain actors.
     inline auto spawn(const TCHAR* class_path, Vec3 at) -> UObject*
@@ -660,6 +746,22 @@ namespace wcmods
         if (!soft_ref) return nullptr;
         auto loaded = call_reflected(lib, STR("LoadAsset_Blocking"), [&](Params& p) { copy(p, *soft_ref); });
         return loaded ? loaded->get(L"ReturnValue").object : nullptr;
+    }
+
+    // A soft reference's path (a TSoftObjectPtr property's Value, an item's Icon: L"/Game/Art/.../T_X.T_X"), as the
+    // engine's own Conv_SoftObjectReferenceToString gives it; empty for none, or what isn't one. Game thread only.
+    inline auto soft_path(const Value& reference) -> std::wstring
+    {
+        if (!reference.at || !reference.property || detail::property_type(reference.property) != L"SoftObjectProperty") return {};
+        UObject* lib = object(STR("/Script/Engine.Default__KismetSystemLibrary"));
+        auto r = call_reflected(lib, STR("Conv_SoftObjectReferenceToString"), [&](Params& p) {
+            for (FProperty* first : detail::own_properties(p.function()))
+            {
+                first->CopySingleValue(first->ContainerPtrToValuePtr<void>(p.bytes()), reference.at);
+                break;
+            }
+        });
+        return r ? r->get(L"ReturnValue").string() : std::wstring{};
     }
 
     // Take an actor out of the world. False when it isn't there.

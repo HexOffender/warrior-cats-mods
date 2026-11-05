@@ -517,6 +517,7 @@ class FakeCtx:
     def __init__(self):
         self.cfg = type("Cfg", (), {"ue4ss_mods_dir": "x"})()
         self.made, self.shared, self.scripts, self.warnings, self.notes, self.replaced = [], {}, {}, [], {}, []
+        self.shared_data = {}
         self.copied = []         # add_animation_from_game's
         self.left_out, self.current = [], None
 
@@ -546,8 +547,9 @@ class FakeCtx:
         self.copied.append((name, sequence, kind, claws))
         return "/Game/WCMods/" + name + "." + name.rsplit("/", 1)[-1], 3.1333
 
-    def add_ue4ss_shared(self, name, text):
+    def add_ue4ss_shared(self, name, text, data=None):
         self.shared[name] = text
+        self.shared_data[name] = data
 
     def add_ue4ss_mod(self, name, files):
         self.scripts[name] = files
@@ -574,6 +576,10 @@ def test_the_install_lists_the_animations_and_puts_the_emotes_on_keys(tmp_path):
     assert not luacheck.check(lua)
     assert '["m/Swim"] = { ["name"] = "Swim", ["kind"] = "cat", ["path"] = "/Game/WCMods/m/A_Swim.A_Swim", ["loop"] = true, ["speed"] = 1.5' in lua
     assert '["mouse"] = { "SK_Mice" }' in lua
+    # The same for C++ mods (WCModsAnims.json, Animations.hpp).
+    data = ctx.shared_data["WCModsAnims"]
+    assert data["animations"]["m/Swim"]["path"] == "/Game/WCMods/m/A_Swim.A_Swim" and data["animations"]["m/Swim"]["speed"] == 1.5
+    assert data["kinds"]["mouse"] == ["SK_Mice"] and set(data["animations"]) == {"m/Wave", "m/Swim", "m/Spin"}
     script = ctx.scripts["WCModsEmotes"]["Scripts/main.lua"]
     assert not luacheck.check(script) and "@EMOTES@" not in script
     assert '{ ["id"] = "m/Wave", ["name"] = "Wave", ["key"] = "F6" }' in script

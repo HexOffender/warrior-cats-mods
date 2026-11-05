@@ -1909,6 +1909,18 @@ Worked out on 2026-10-24 and verified in game with a new herb and a new material
   - `EffectOnUse`, `bCombat`, `bExploration`, `Target` (`Owner` or `OwnerTeam`), `bRemoveAfterCombat`
     and `Type`;
   - this is what gives the inventory's USE button.
+  - **Where the game keeps it** (worked out on 2026-11-04, build 26337109, for the C++ SDK's `Items.hpp`): the
+    adventure tuning manager (`SwtAdventureTuningManager`) loads its NonAsset tables in one function, its vtable's
+    +0x378 (`0x14181EB00`: Combat, Characters, Attack, Effects, Housing, Bartering, AI, Consumables, Skills...).
+    `Consumables.csv` goes into a DataTable of `SwtAdventureConsumableStruct` rows, which is copied into a
+    `TMap<FString, FSwtAdventureConsumableStruct>` at +0x780 (0x40-byte elements: the row's name, the herb's tag;
+    the row from +0x10) and let go of, so no DataTable holds it while the game runs.
+  - The game's lookup is `0x14181DFE0` (`game.NATIVE`'s `SwtAdventureTuningManager:GetConsumable`):
+    `bool (const FString* tag, FSwtAdventureConsumableStruct* out)`. It reads the tuning manager from a global and
+    copies the row out (bCombat +0x10, bExploration +0x11, Target +0x12, bRemoveAfterCombat +0x13, Type +0x14,
+    `EffectOnUse` FString +0x18).
+  - Seen in game: Horsetail Stalks (`SmallHealingHerb`) gave `Gameplay.Effect.Consumable.Health.1`, Type Health,
+    Target Owner, usable in fights and exploring. Moss has no row.
   - Each effect tag runs a Blueprint container (`BP_Heal_Container_2` and the like, mapped in
     `BP_WrcEffectManager`). The numbers come from the `GenericEffect.csv` row of the same name:
     `Effect.Consumable.Health.2` reads `Params.Health.2.Health` = 50. So a new effect strength
@@ -2070,6 +2082,13 @@ C++ SDK):
     material takes a `MaterialInstanceDynamic` with `LYR1 Albedo` (the picture), `LYR1 ARM` and
     `LYR1 Normal` (`/Engine/EngineMaterials/FlatNormal` loads), as on a cat.
   - Collected with Interact, the pickup hides itself (`bHidden`) and its added component with it.
+  - **What Interact reaches** (seen on 2026-11-04 with pickups dropped from C++): the pickup's
+    `InteractionComponent` is a 100 cm sphere, but one 60 cm along world X from the cat's middle wasn't collected,
+    while one 50 cm in front of the cat (its forward vector) and one right under it were. Interact needs a frame or
+    more after the pickup appears.
+  - **Its reward from C++:** `Reward` is a `TMap<FGameplayTag, int32>`. UE4SS's `FScriptMap::Add`, with the key
+    property's own hash and comparison, adds to it from C++ as its Lua `map:Add` does (`wcmods::map_add`); emptied and
+    given one tag, the pickup gave that item when collected.
   - A cat's location is the middle of its body, about 30 cm above the ground, so a pickup dropped
     there floats; a line traced down from just above finds the ground, but one started inside a rock
     hits where it starts.

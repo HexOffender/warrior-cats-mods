@@ -1008,7 +1008,7 @@ def test_tables_units(agent):
 
 
 def test_tables_and_tuning(agent):
-    """Tables.hpp in the game: every DataTable in memory, the item table by name and by path with its 412 rows, a row
+    """Tables.hpp in the game: every DataTable in memory, the item table by name and by path with its rows (the game's 412 and mods'), a row
     read, rows added (a copy, and one of defaults) and taken out; TuningData's keys and numbers, one changed and read
     back by the game's own lookup (its native GetValue, which every tuning read in the game goes through), and put
     back; and an item's name changed in its row, then shown by the HUD when the item is added."""
@@ -1017,9 +1017,10 @@ def test_tables_and_tuning(agent):
     v = r["values"]
     assert v["tables.count"] >= 60, v["tables.count"]   # 69 in the forest on 26337109
     info = v["tables.items_info"]
-    assert info["rows"] == 412 and info["struct"] == "QuestObjectsInfoDataStruct", info
+    # The game's 412 rows, and one more for each item an installed mod adds (tests/items-mod's block).
+    assert info["rows"] >= 412 and info["struct"] == "QuestObjectsInfoDataStruct", info
     assert info["path"] == "/Game/Gameplay/DataTables/Quests/DT_QuestObjectsInfo.DT_QuestObjectsInfo", info
-    assert v["tables.items.size"] == 412 and v["tables.items.names"] == 412, (v["tables.items.size"], v["tables.items.names"])
+    assert v["tables.items.size"] == info["rows"] and v["tables.items.names"] == info["rows"], (v["tables.items.size"], v["tables.items.names"])
     assert v["tables.herb.row"] and v["tables.herb.name"] == "Lamb's Ear Leaves", (v["tables.herb.row"], v["tables.herb.name"])
     # TuningData.csv's numbers (Metrics.Cat.Player.Height 15 with its description; MaxLevel 20), all 441 keys.
     assert v["tuning.keys"] == 441, v["tuning.keys"]
@@ -1258,6 +1259,61 @@ def test_looks(agent):
     assert all(c["name"] for c in cats), [c for c in cats if not c["name"]]
     leader = [c for c in cats if "ShadowClanLeader" in c["story"]]
     assert len(leader) == 1 and leader[0]["clan"] == "ShadowClan" and leader[0]["role"] == "Leader", leader
+
+
+def test_drop_items(agent):
+    """Items.hpp in the game: an item's name, icon and kind from the game's tables (a mod's item too, from
+    tests/items-mod); map_clear and map_add on a pickup's Reward (a key added again takes the new value); Moss
+    dropped beside the cat (8 m off its spot) lies on the ground as a pickup of two, and Interact collects both; the
+    mod's block lies as its own model, its pickup's own herb hidden, and is collected too; the inventory put back.
+    Needs `agent install --with tests/cpp-sdk --with tests/items-mod`."""
+    _close_screens(agent)
+    r = _request(agent, "drop", timeout=40)
+    assert not _failed(r, "drop"), _failed(r, "drop")
+    v = r["values"]
+    moss, block = v["drop.moss"], v["drop.block"]
+    assert moss["name"] == "Moss" and moss["kind"] == "Collectible" and moss["icon"].startswith("/Game/"), moss
+    if not block:
+        skip("tests/items-mod isn't installed (agent install --with tests/cpp-sdk --with tests/items-mod)")
+    assert block["name"] == "Test Block" and block["kind"] == "Collectible", block
+    assert v["drop.tags"] > 50, v["drop.tags"]
+    # A herb's use, through the game's own lookup (its Consumables.csv row); a material has none.
+    herb = v["drop.herb"]
+    assert herb["usable"] is True and herb["effect"].startswith("Gameplay.Effect.Consumable.") and herb["target"] in ("Owner", "OwnerTeam"), herb
+    assert herb["in_fights"] or herb["exploring"], herb
+    assert moss["usable"] is False and moss["effect"] == "", moss
+    assert v["drop.map_after_adds"] == {"Gameplay.Inventory.Materials.Ivy": 1, "Gameplay.Inventory.Materials.Moss": 2}, v
+    mp = v["drop.moss_pickup"]
+    assert mp["reward"] == {"Gameplay.Inventory.Materials.Moss": 2} and mp["own_visible"] is True and mp["model"] is None, mp
+    assert mp["z"] < v["drop.cat_z"], (mp["z"], v["drop.cat_z"])   # on the ground, below the cat's middle
+    assert v["drop.moss_after"] == v["drop.moss_before"] + 2, (v["drop.moss_before"], v["drop.moss_after"])
+    assert v["drop.moss_pickup_after"]["hidden"] is True, v["drop.moss_pickup_after"]
+    bp = v["drop.block_pickup"]
+    assert bp["reward"] == {"Gameplay.Inventory.Materials.WCModsTestBlock": 1}, bp
+    assert bp["model"] and "WCModsTestBlock" in bp["model"] and bp["own_visible"] is False, bp
+    assert v["drop.block_after"] >= 1 and v["drop.block_pickup_after"]["hidden"] is True, v
+    assert v["drop.moss_restored"] == v["drop.moss_before"], v
+
+
+def test_animations_cpp(agent):
+    """Animations.hpp in the game: the install's mods' animations (tests/animations-mod's Yawn and Stretch, its Trot
+    a replacement, not one of them); your cat is a cat; a mod's animation played, seen playing by its id and
+    stopped; a game sequence by its path played and seen. Needs `agent install --with tests/cpp-sdk --with
+    tests/animations-mod`."""
+    _close_screens(agent)
+    r = _request(agent, "anims", timeout=30)
+    v = r["values"]
+    if "animations-mod/Yawn" not in v["anims.list"]:
+        skip("tests/animations-mod isn't installed (agent install --with tests/cpp-sdk --with tests/animations-mod)")
+    assert not _failed(r, "anims"), _failed(r, "anims")
+    yawn = v["anims.list"]["animations-mod/Yawn"]
+    assert yawn["kind"] == "cat" and yawn["loop"] is True and yawn["emote"] is True and yawn["key"] == "F7", yawn
+    assert "animations-mod/Trot" not in v["anims.list"], v["anims.list"]
+    assert v["anims.kind"] == "cat", v["anims.kind"]
+    assert v["anims.one"] == "Yawn", v["anims.one"]
+    assert v["anims.playing_before"] == "" and v["anims.playing"] == "animations-mod/Yawn", v
+    assert v["anims.playing_after_stop"] == "", v
+    assert v["anims.playing_game"].endswith("A_CatMaster_Meow.A_CatMaster_Meow"), v["anims.playing_game"]
 
 
 def test_ui_arrow_units(agent):

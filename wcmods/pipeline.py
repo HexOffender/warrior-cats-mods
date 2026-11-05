@@ -459,15 +459,21 @@ def build(cfg, mods, out_dir, log=print, trusted=()):
     # Areas' names and quests' titles, for the menu's pages (WCModsNames' N.area and N.quest).
     places = world.place_names(read)
     shared_files[world.NAMES_NAME] = world.names_lua(plan, item_labels, places)
-    for name, (text, section) in ctx.ue4ss_shared.items():   # the sections' own (items: WCModsItems)
+    shared_data = {}                                             # module -> its data as JSON, for C++ mods
+    for name, (text, section, data) in ctx.ue4ss_shared.items():   # the sections' own (items: WCModsItems)
         if name.lower() in {n.lower() for n in shared_files}:   # folders on Windows don't mind the case
             raise ValueError(f"{section}: a shared Lua module {name} is wcmods' own")
         shared_files[name] = text
+        if data is not None:
+            shared_data[name] = data
     for name, text in shared_files.items():
         shared = os.path.join(out_dir, "ue4ss_shared", name)
         os.makedirs(shared)
         with open(os.path.join(shared, name + ".lua"), "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
+        if name in shared_data:   # the same for C++ mods (WCMods/Items.hpp, Animations.hpp)
+            with open(os.path.join(shared, name + ".json"), "w", encoding="utf-8") as f:
+                json.dump(shared_data[name], f, ensure_ascii=False, indent=1)
         manifest["ue4ss_shared"].append(name)
     # The same members for C++ mods (wcmods::member in WCMods.hpp), as found on this build, with the game's
     # native functions they call (wcmods::native), and the same names (wcmods::cat_name, item_name).

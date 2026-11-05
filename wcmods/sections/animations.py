@@ -167,7 +167,7 @@ class AnimationsSection(Section):
         if not ctx.cfg.ue4ss_mods_dir:
             ctx.warn("animations play through the script loader (UE4SS), which isn't installed: Get set up on the Mods "
                      "page adds it")
-        ctx.add_ue4ss_shared(ANIMS_LUA, animations.module(made))
+        ctx.add_ue4ss_shared(ANIMS_LUA, animations.module(made), animations.module_data(made))
         ctx.note("animations", sorted(made))
         if emotes:
             ctx.add_ue4ss_mod(EMOTES_SCRIPT, {"Scripts/main.lua": animations.emotes_script(emotes), "enabled.txt": ""})

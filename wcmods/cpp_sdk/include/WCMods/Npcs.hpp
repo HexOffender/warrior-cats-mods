@@ -174,17 +174,6 @@ namespace wcmods
             out[L"EyeRightColorIdx"] = eye;
             return out;
         }
-        inline auto transform_of(Params& p, const wchar_t* name, Vec3 at, double yaw) -> void
-        {
-            Value t = p.get(name);
-            const double half = yaw * 3.14159265358979323846 / 360.0;   // a yaw's quaternion
-            set(t, L"Rotation.Z", std::sin(half));
-            set(t, L"Rotation.W", std::cos(half));
-            for (const wchar_t* axis : {L"Scale3D.X", L"Scale3D.Y", L"Scale3D.Z"}) set(t, axis, 1.0);
-            set(t, L"Translation.X", at.x);
-            set(t, L"Translation.Y", at.y);
-            set(t, L"Translation.Z", at.z);
-        }
         // Put the cat's feet (its mesh's origin) on the ground at height g.
         inline auto stand_on(UObject* a, std::optional<double> g) -> void
         {

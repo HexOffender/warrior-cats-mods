@@ -409,6 +409,18 @@ the clan bar "42/100" "Neutral" and a row at "50/100" among seven cats; the game
 `GameplayProgression/Bonding`; put back to 67 and 20 and saved again. The ranks matched the tuning's thresholds,
 `enum_names` gave EClanType in order, and `cat_name_of(L"STR_CAT_NAME2", L"_PAW")` was "Emberpaw".
 
+**2026-11-04, build 26337109: items, pickups and animations** (the branch `claude/cpp-ground-anims`,
+`tests/game/test_cpp_sdk.py`: `test_drop_items` and `test_animations_cpp` passed, with `tests/items-mod` and
+`tests/animations-mod` installed): `item_info` gave Moss's name, description, icon path and kind, the test mod's block
+("Test Block", its own icon), and Horsetail Stalks' use through the game's own lookup
+(`Gameplay.Effect.Consumable.Health.1`, Owner, in fights and exploring). A pickup's `Reward` emptied with `map_clear`
+and given Ivy 1 and Moss 5 then Moss 2 held Ivy 1 and Moss 2. Moss dropped half a metre in front of the cat (8 m off
+its spot) lay on the ground as the small healing herb's pickup and the game's Interact collected both (0 to 2); the
+block dropped under the cat lay as its own model (`Materials_WCModsTestBlock_SK`) with the pickup's herb hidden, and
+was collected too; both taken out of the inventory again. `animations()` listed the test mod's Yawn (a cat's, looping,
+an emote on F7) and Stretch, not its Trot (a replacement); Yawn played on the cat, `animation_playing` named it, and
+`stop_animation` stopped it; the game's Meow by its path played and was named by its path.
+
 **2026-11-04, build 26337109: looks and the clans' cats** (the branch `claude/cpp-looks`, `tests/game/test_cpp_sdk.py`:
 `test_looks` and `test_npcs` passed): on the ShadowClan test cat, `Look`'s defaults were a quest actor's class
 default's, and the save's text read back as the cat's look. Through the game's own `SetDefaultCustomData`, coat slot

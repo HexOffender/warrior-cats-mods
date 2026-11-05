@@ -153,7 +153,7 @@ the build report marks it FAILED, and the other sections carry on.
 | `ctx.replace_animation(sequence, read=None, kind="cat", clip=None, source=mod.id, key=None, from_game=None)` | One of the game's sequences for `kind`, by name (`"A_CatMaster_Trot_1"`) or path, played with other keys wherever the game plays it, fitted to its length (its notifies and curves stay): a glTF file's (`read`, `clip` and `key` as `add_animation`'s), or, with `from_game`, another of the game's sequences for that kind (`"A_CatMaster_Run_1"`), whose keys are fitted to its keys. Refused: an additive sequence, one with a single key, or a sequence in its own place. `from_game` is new in wcmods 0.4.0. Returns `(asset path, seconds)` |
 | `ctx.game_sequence(name, kind="cat")` | One of the game's sequences for `kind`, by name or path, to play as it is: `{"path", "seconds", "additive", "root_motion"}` (`path` without the object's name; `Game.anims.play` takes `path + "." + short name`). An additive one can't play on its own. New in wcmods 0.4.0 |
 | `ctx.add_animation_from_game(name, sequence, kind="cat", claws=False, source=mod.id)` | A new animation `/Game/WCMods/<name>`, as `add_animation`'s, that is a copy of one of the game's sequences for `kind` with its own keys and length, for what only a copy can have: the cats' claws out. Its face curves aren't copied. New in wcmods 0.4.0. Returns `(asset path, seconds)` |
-| `ctx.add_ue4ss_shared(name, text)` | A Lua module any UE4SS script can `require(name)`, installed beside `WCModsGame` (with UE4SS): data a section gives the shared scripts, as the items section's `WCModsItems` tells `Game.items.drop` how mod items look on the ground |
+| `ctx.add_ue4ss_shared(name, text, data=None)` | A Lua module any UE4SS script can `require(name)`, installed beside `WCModsGame` (with UE4SS): data a section gives the shared scripts, as the items section's `WCModsItems` tells `Game.items.drop` how mod items look on the ground. With `data` (what the module holds, as JSON can say it), `<name>/<name>.json` beside it for C++ mods (`Items.hpp` reads `WCModsItems.json`, `Animations.hpp` `WCModsAnims.json`) |
 | `ctx.add_package(path, data, chunk_id, imports, shaders, bulk=None)` | Add a cooked package the game hasn't got, with its chunk ID, container header entry and `.ubulk`; `add_texture` is the easy way |
 | `ctx.cache_dir` | A folder for work an install can reuse (wcmods' `cache/`; the selftest's stays in its temp folder) |
 | `ctx.add_ue4ss_mod(name, {"Scripts/main.lua": text}, check=True)` | Ship a UE4SS Lua mod; installed and registered only when UE4SS is present. `.lua` files get a structure check (balanced blocks and brackets) and problems become build warnings (`check=False` for files the section has checked and said itself). A name goes in once per build: one already taken, whatever its case, is a `ValueError` |
@@ -1136,6 +1136,8 @@ UE4SS's [C++ guides](https://docs.ue4ss.com) cover that), which `WCMods.hpp` inc
 | `WCMods/Npcs.hpp` | cats of the mod's own: spawned on the game's walking cat with a look, kept in the world, walked, labelled, with the game's Talk prompt and its Interact |
 | `WCMods/Talk.hpp` | the game's dialogue box with lines of the mod's own; the game's talks read from their graphs (lines, speakers, answers, actions) and played in it, or talks the mod makes |
 | `WCMods/Bonds.hpp` | your cat's bonds with the clans and the story cats, through the game's own bond code: read, added to, set; their ranks; your clan's story roles |
+| `WCMods/Items.hpp` | what each item is (name, icon, kind, and a herb's use through the game's own lookup), and pickups dropped on the ground for your cat to collect, as the game's pickup or a mod's own model |
+| `WCMods/Animations.hpp` | mods' own animations (`animations.json`) and the game's sequences, played, seen playing and stopped on any cat or animal |
 | `WCMods/Looks.hpp` | cats' looks: read, changed and drawn on the model through the game's own setup, kept in your cat's save; accessories worn and taken off; the clans' cats from the save with their actors; a cat's role |
 | `WCMods/Menu.hpp` | pages in the mod menu (a settings page comes free), keys on its Overview, values shared with Lua mods |
 | `WCMods/Ui.hpp` | the game's own UI: a tab of your own in its screens (the pause menu, the inventory, the settings), the HUD and its parts, overlays, every control the engine has |
@@ -1241,10 +1243,12 @@ for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards"))
 | `wcmods::set(object, path, value)` | Write a bool, a number (to an int, float or enum), text (to an FString, FName or FText, or an enum's name) or an object; false when there's no such property or it isn't that kind. Text written to an FText makes it plain text: it no longer follows its key in the string table (nor the language). To change a line everywhere it shows, change its key's words (`set_words`, Words.hpp) |
 | `wcmods::elements(object, path)`, `elements(value)` | An array's elements, each a `Value` |
 | `wcmods::map_entries(object, path)`, `map_entries(value)` | A map's pairs, each key and value a `Value` (the game's tag-count maps: a tag struct, whose `TagName` is the tag, and a count) |
+| `wcmods::map_add(map, fill)`, `map_clear(map)` | Add a pair to a map `Value` (or give a key it has a new value): `fill(key, value)` writes the new pair, each a `Value` to `set()` (a struct key's fields by path, `set(key, L"TagName", tag)`; a plain one with an empty path, `set(value, L"", 3)`), and it goes in by the key's own hash and comparison, as UE4SS's Lua `map:Add` does. `map_clear` takes every pair out. False for what isn't a map |
 | `wcmods::describe(object)`, `describe(value)` | Every property of an object or struct, with its name, type and value now: `python wcmods.py inspect` in C++ |
 | `wcmods::struct_at(STR("/Script/SwtAdventure.SwtAdventureAttackMoveStruct"), bytes)`, `struct_at(type, bytes)` | A struct Value over bytes no property describes (a struct in one of the game's own arrays, as `Fighter::moves()` gives), by the struct's path or its `UStruct`; `get`, `set` and `describe` work on it. None without the type or the bytes |
 | `Value::of(x)` | A `Value` from a bool, number, text or object, for `set` |
 | `wcmods::call_reflected(object, STR("GetQuestStatus"), [&](wcmods::Params& p) { ... })` | Call a reflected function through its parameters by name or position (`p.set(L"Key", v)`, `p.set_nth(0, v)`, `p.raw(L"Start")` for a struct's bytes, `p.get(L"ReturnValue")`, `p.nth(i)`, `p.count()`, `p.has(name)`, `p.function()` and `p.bytes()` for the rest): for outputs that are structs, inputs that are arrays or strings, returns that are enums or texts, with no struct to lay out. nullopt when the object or function isn't there |
+| `wcmods::soft_path(value)` | A soft reference's path (a `TSoftObjectPtr` property's `Value`, an item's `Icon`), as the engine's `Conv_SoftObjectReferenceToString` gives it; empty for none or what isn't one |
 | `wcmods::load(L"/Game/Path/Asset.Asset")` | One of the game's assets by its whole object path (a Blueprint's class `.../BP_X.BP_X_C`, a texture, a sound, an animation), loaded when it isn't yet (the engine's own `LoadAsset_Blocking`: it waits for the load, so a few at once, not every frame); nullptr for a path nothing is at |
 | `wcmods::enum_value(STR("/Script/SwtEngine.ECommands"), L"Player_Interact")` | One of an enum's values by its name, as the game has it; nullopt for an enum or name it hasn't got |
 | `wcmods::enum_names(STR("/Script/SwtQuest.ENarrativeRole"))` | Every name of an enum with its value, in the enum's order (its `_MAX` left out); empty for a path that isn't an enum |
@@ -1406,6 +1410,44 @@ wcmods::set_bond(L"TheAmbitiousApprentice", 50);           // Friend
 | `wcmods::bonds()` | `Bond`s: the four clans', then each story role the game set up for your clan in this game (the NPC generation manager's `NarrativeRoleMap`), each with `key`, `clan`, `value`, `rank` (a clan's `ClanBond` or a cat's `BondRank` name), `base` (the role's base bond), `giver_role` and `giver_index` (which of your clan's cats plays it: `EGiverRole` and its number), `cat_name` (an iconic cat's own name; the others' come with the clan's cats) |
 | `wcmods::bond_rank(value)`, `clan_bond(value)`, `bond_thresholds()`, `bond_rank_name(r)`, `clan_bond_name(c)` | A story cat's `BondRank` (Unfriendly, Neutral from 10, Friendly from 28, Friend from 46, CloseBond from 73: the tuning's `Gameplay.Progression.Bonding.Personal.*`); a clan's `ClanBond` (Negative to 33, Positive from 67: `...Bonding.Clan.*`); the six thresholds read once (`BondThresholds`, to pass to `bond_rank(value, t)` and `clan_bond(value, t)` for many); their names |
 | `wcmods::bond_roles()`, `BOND_CLANS` | Every narrative role's name (`ENarrativeRole`, 104 of them); the four clans |
+
+**Items and things on the ground (`Items.hpp`)**, game thread only:
+
+An item is its row in the item table (`DT_QuestObjectsInfo`: name, description, icon, rarity), and a herb has a
+`Consumables.csv` row too, which the game keeps only in its adventure tuning manager: wcmods reads it through the
+game's own lookup (found for the installed build like the inventory's `AddItem`). A dropped pickup is the game's own,
+collected with Interact as the game's pickups are.
+
+```cpp
+if (auto herb = wcmods::item_info(L"Gameplay.Inventory.Consumable.SmallHealingHerb"))
+    wcmods::log(L"{}: {}", herb->name, herb->effect);   // Horsetail Stalks: Gameplay.Effect.Consumable.Health.1
+wcmods::drop_item(L"Gameplay.Inventory.Materials.Moss", 3);   // in front of your cat
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::item_info(tag)` | An `ItemInfo` from the game's tables as they are now (a mod's items and table edits included): `name`, `description`, `icon` (its texture's path), `kind` (`item_type`'s), `rarity`, `group` (the icon's corner mark), `colour`; for a herb, what using it does: `usable`, `effect` (the effect it runs), `use_type`, `target` (`Owner` or `OwnerTeam`), `in_fights`, `exploring`, `fight_only` (as `items.json` names them). nullopt for a tag the item table hasn't got |
+| `wcmods::item_tags()` | Every item the item table has, by tag (413 with the game's own) |
+| `wcmods::drop_item(tag, count = 1, at = nullopt)` | A pickup holding `count` of an item on the ground, half a metre in front of your cat or below `at`, for your cat to collect with Interact: the game's pickup of that item, a mod's herb or material as its own model (`items.json`'s `model`, from the install's `WCModsItems.json`) or the game's pickup it names, anything else as the small healing herb's. Not kept: it goes with the level, and the save doesn't hold it. The pickup, or nullptr in menus, for a count below 1, or for a tag that isn't an item's |
+
+**Animations (`Animations.hpp`)**, game thread only:
+
+Mods' own animations (`animations.json`, which the install lists in `WCModsAnims.json`) and the game's sequences, played
+on a cat or an animal over what it's doing, in the slot its AnimBlueprint plays the game's own montages in. As Lua's
+`Game.anims`; the game's own montages by tag are `play_montage` (World.hpp).
+
+```cpp
+wcmods::play_animation(wcmods::player(), L"my-mod/Wave");             // once
+wcmods::play_animation(npc, L"my-mod/Swim", {.loop = true});          // until stop_animation(npc)
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::animations()`, `animation(id)` | The install's mods' animations (`Animation`: `id` `"<mod>/<animation>"`, `name`, `kind` (the animal it's for), `path`, `loop`, `speed`, `blend`, `seconds`, `emote`, `key`), or one by its id; none without an install that has any |
+| `wcmods::animation_kind(actor)` | What kind of animal an actor is, by its mesh (`L"cat"`, `L"mouse"`, `L"bird"`...), as animations are made for; empty for none of them |
+| `wcmods::play_animation(actor, id, options)` | Play a mod's animation by its id, or a game sequence by its object path (`L"/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Meow.A_CatMaster_Meow"`). `AnimationOptions`: `loop`, `speed`, `blend` (a mod's animation brings its own). The montage, or nullptr (with a line in the log) for an id the install hasn't got, an animal it isn't for, a sequence that won't load, or no AnimBlueprint |
+| `wcmods::animation_playing(actor)` | The mod's animation playing on an actor, by its id (whichever mod or script started it, Lua's `Game.anims` too: it's known by the sequence the actor's montage plays), or a game sequence's path this mod played; empty for none (the game's own montages never count) |
+| `wcmods::stop_animation(actor, blend = nullopt)` | Stop what `animation_playing` names, blending out (the animation's own time by default). False when it plays none of those: the game's own montages are never stopped |
 
 **Looks and the clans' cats (`Looks.hpp`)**, game thread only:
 

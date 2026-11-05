@@ -119,6 +119,13 @@ NATIVE = [
      "it; empty for your cat's, Gameplay.Combat.Character.Cat.Player), int32 slot: -1 for the cat played now); the "
      "struct's text written as the slot's GameplayProgression/<key>/Customization, which the game sets your cat up "
      "from"),
+    # What using a herb does (docs/reverse-engineering.md, "Items"): Consumables.csv's rows live only in the
+    # adventure tuning manager's map at +0x780 (a DataTable it loads and lets go of); this is the game's own lookup.
+    ("SwtAdventureTuningManager:GetConsumable", 0x181DFE0,
+     "a herb's Consumables.csv row: (const FString* row name, the herb's tag; FSwtAdventureConsumableStruct* out, 0x28 "
+     "bytes: bCombat +0x10, bExploration +0x11, Target +0x12, bRemoveAfterCombat +0x13, Type +0x14, EffectOnUse FString "
+     "+0x18, assigned with the game's allocator) -> bool, false for a row it hasn't got; reads the tuning manager (a "
+     "global) and its map at +0x780"),
     ("SwtTuningManager:GetValue", 0x12BBA60,
      "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, "
      "0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData"),
