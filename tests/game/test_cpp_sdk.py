@@ -1155,6 +1155,8 @@ def test_talks(agent):
     assert v["talks.restored_line"] == v["talks.prophecy_lines"][0], v["talks.restored_line"]
     assert (v["talks.after_end_line"], v["talks.after_end_ends"], v["talks.box_after"]) == ("After the talk", 1, False), v
     assert v["talks.own_after"] == "Another time, then.", v["talks.own_after"]
+    # The box said again as it was going stayed: still in the viewport after the removal's 0.4 s.
+    assert v["talks.after_end_in_view"] is True, v
 
 
 def test_ui_arrow_units(agent):

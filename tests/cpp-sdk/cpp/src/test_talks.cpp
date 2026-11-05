@@ -161,10 +161,16 @@ namespace t
         hide_talk();
         value("talks.after_end_line", text(talk_line()));
         value("talks.after_end_ends", seen3->ends);
-        hide_talk();
+        // The removal hide_talk started is called off: past its 0.4 s the box is still in the viewport.
         after(0.6, [] {
-            value("talks.box_after", Json(talk_showing()));
-            done("talks");
+            UObject* box = wcmods::detail::say_state().box.object();
+            auto in = box ? call_reflected(box, STR("IsInViewport")) : std::nullopt;
+            value("talks.after_end_in_view", Json(in && in->get(L"ReturnValue").boolean()));
+            hide_talk();
+            after(0.6, [] {
+                value("talks.box_after", Json(talk_showing()));
+                done("talks");
+            });
         });
     }
 } // namespace t

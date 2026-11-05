@@ -7,11 +7,12 @@
 // game's screen, which only the talk's scene closes cleanly. Closed any other way (moved past its last line, or the
 // game quitting with it still open) the screen's popup release reads a link the release has just cleared, and the
 // game crashes; and a second talk after one ended early isn't tracked by the manager at all (docs/reverse-engineering.md,
-// "Talks"). The box here is made outside the screens' popups, as say() always has, and is safe to take down any time.
+// "Talks in game"). The box here is made outside the screens' popups, as say() always has, and is safe to take down any time.
 #pragma once
 
 #include <algorithm>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -41,6 +42,8 @@ namespace wcmods
             Widget box;
             std::wstring name, words;
             std::vector<std::wstring> answers;
+            bool shown{};    // a line is up (its words may be empty)
+            bool fading{};   // hide_talk's fade-out is playing
             int closing{};
         };
         inline auto say_state() -> SayState&
@@ -91,8 +94,9 @@ namespace wcmods
         }
         ++s.closing;   // a fade-out under way no longer takes it away
         UObject* b = s.box.object();
-        if (std::wstring(speaker) != s.name) Widget(get(b, L"mcGuiDialogueTalker.mcGuiTextName").object).set_text(speaker);
-        if (std::wstring(words) != s.words) Widget(get(b, L"mcGuiTextParagraph").object).set_text(words);
+        // Only what changed is written while a line is up (the box lays out again on each); all of it after a hide.
+        if (!s.shown || std::wstring(speaker) != s.name) Widget(get(b, L"mcGuiDialogueTalker.mcGuiTextName").object).set_text(speaker);
+        if (!s.shown || std::wstring(words) != s.words) Widget(get(b, L"mcGuiTextParagraph").object).set_text(words);
         auto in = call_reflected(b, STR("IsInViewport"));
         const bool adding = !in || !in->get(L"ReturnValue").boolean();
         if (adding)
@@ -105,6 +109,10 @@ namespace wcmods
             s.box.set_visibility(Visibility::HitTestInvisible);
             s.box.play(L"AniScreenIn");
         }
+        else if (s.fading)
+            s.box.play(L"AniScreenIn");   // back in from hide_talk's fade-out, which would leave it faded
+        s.fading = false;
+        s.shown = true;
         if (adding || answers != s.answers) detail::show_answers(b, answers);
         s.name = speaker;
         s.words = words;
@@ -114,7 +122,7 @@ namespace wcmods
     // Take say()'s box down, fading out as the game's does; false when it isn't up. A talk playing in it ends.
     inline auto hide_talk() -> bool;
     // Whether say()'s box shows a line now.
-    inline auto talk_showing() -> bool { return !detail::say_state().words.empty() && detail::say_state().box; }
+    inline auto talk_showing() -> bool { return detail::say_state().shown && detail::say_state().box; }
     // What the box says now and who says it; empty without a line.
     inline auto talk_line() -> std::wstring { return talk_showing() ? detail::say_state().words : std::wstring{}; }
     inline auto talk_speaker() -> std::wstring { return talk_showing() ? detail::say_state().name : std::wstring{}; }
@@ -224,9 +232,16 @@ namespace wcmods
             if (o)
             {
                 n.words_text = get(o, L"Paragraph");
+                if (n.words_text.kind == Value::Kind::Text && n.words_text.text.empty())
+                    for (auto& more : elements(o, L"MultiParagraph"))   // a QuestDialogueMultiTextTalkingNode's
+                        if (more.kind == Value::Kind::Text && !more.text.empty())
+                        {
+                            n.words_text = more;
+                            break;
+                        }
                 if (n.words_text.kind == Value::Kind::Text)
                 {
-                    n.line = true;
+                    n.line = !n.words_text.text.empty();   // an empty one is passed like an action
                     n.words = n.words_text.text;
                     n.source = static_cast<int>(get(o, L"TalkingSource").number());
                     n.source_words = get(o, L"TalkingSourceText").text;
@@ -294,7 +309,7 @@ namespace wcmods
     {
         struct TalkPlay
         {
-            Talk talk;
+            std::shared_ptr<const Talk> talk;   // shared: a hook holds on to it while it runs, whatever it plays
             std::wstring npc_name;
             TalkHooks hooks;
             int at{-1};   // the line showing
@@ -322,10 +337,11 @@ namespace wcmods
         inline auto talk_reach(int to) -> bool
         {
             auto& p = talk_play();
-            const size_t count = p.talk.nodes.size();
+            const std::shared_ptr<const Talk> talk = p.talk;   // kept while a hook below may play another
+            const size_t count = talk->nodes.size();
             for (size_t steps = 0; to >= 0 && static_cast<size_t>(to) < count && steps <= count; ++steps)
             {
-                const TalkNode& n = p.talk.nodes[to];
+                const TalkNode& n = talk->nodes[to];
                 if (n.line)
                 {
                     p.at = to;
@@ -338,7 +354,8 @@ namespace wcmods
                 if (p.hooks.on_action)
                 {
                     const int gen = p.generation;
-                    p.hooks.on_action(p.talk, n);
+                    auto hook = p.hooks.on_action;   // kept too: the hook may replace p.hooks
+                    hook(*talk, n);
                     if (p.generation != gen) return p.playing;   // on_action ended it, or played another
                 }
             }
@@ -355,7 +372,7 @@ namespace wcmods
         auto& p = detail::talk_play();
         if (p.playing) hide_talk();
         int root = talk.roots.front();
-        p.talk = std::move(talk);
+        p.talk = std::make_shared<const Talk>(std::move(talk));
         p.npc_name = npc_name;
         p.hooks = std::move(hooks);
         p.at = -1;
@@ -370,7 +387,8 @@ namespace wcmods
         if (!assert_game_thread(L"talk_next")) return false;
         auto& p = detail::talk_play();
         if (!p.playing || p.at < 0) return false;
-        const TalkNode& n = p.talk.nodes[p.at];
+        const std::shared_ptr<const Talk> talk = p.talk;   // kept while on_answer may play another
+        const TalkNode& n = talk->nodes[p.at];
         int to = -1;
         if (!n.answers.empty())
         {
@@ -380,7 +398,8 @@ namespace wcmods
             if (p.hooks.on_answer)
             {
                 const int gen = p.generation;
-                p.hooks.on_answer(n, chosen);
+                auto hook = p.hooks.on_answer;
+                hook(n, chosen);
                 if (p.generation != gen) return p.playing;   // on_answer ended it, or played another
             }
         }
@@ -398,7 +417,7 @@ namespace wcmods
     inline auto talk_at() -> const TalkNode*
     {
         auto& p = detail::talk_play();
-        return p.playing && p.at >= 0 ? &p.talk.nodes[p.at] : nullptr;
+        return p.playing && p.at >= 0 && p.talk ? &p.talk->nodes[p.at] : nullptr;
     }
     // The line showing as the text it was made from, for words_key() (Words.hpp): which key of the game's words it
     // is. Empty for a line of say()'s own, or none.
@@ -422,17 +441,21 @@ namespace wcmods
             p.hooks = {};
         }
         auto& s = detail::say_state();
-        bool was_up = s.box && !s.words.empty();
+        bool was_up = s.box && s.shown;
+        s.shown = false;
         if (was_up)
         {
             s.name.clear();
             s.words.clear();
             s.answers.clear();
             int mine = ++s.closing;
+            s.fading = true;
             s.box.play(L"AniScreenIn", true);
             after(0.4, [mine] {
                 auto& st = detail::say_state();
-                if (st.closing == mine && st.box) call_reflected(st.box.object(), STR("RemoveFromParent"));
+                if (st.closing != mine) return;   // said again meanwhile
+                st.fading = false;
+                if (st.box) call_reflected(st.box.object(), STR("RemoveFromParent"));
             });
         }
         if (end) end();   // last: it may play another talk, or say something
@@ -446,9 +469,10 @@ namespace wcmods
             auto& p = talk_play();
             p.playing = false;
             p.hooks = {};
-            p.talk = {};
+            p.talk.reset();
             auto& s = say_state();
             if (on_game_thread_now() && s.box) call_reflected(s.box.object(), STR("RemoveFromParent"));
+            s.shown = s.fading = false;
             s.words.clear();
             s.answers.clear();
         }
