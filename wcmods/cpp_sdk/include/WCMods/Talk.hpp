@@ -1,7 +1,8 @@
 // Talk.hpp: conversations. The game's dialogue box with a line of the mod's own (as Lua's Game.dialogue shows it),
 // and the game's own talks: each read as data from its graph (its lines, who says them, its answers and where each
-// leads) and played in that box, line by line, as the mod moves it on. Game thread only. WCMods.hpp includes it;
-// docs/SDK.md, "C++ mods", documents every call.
+// leads), a story talk filled from the game's tables as the game fills it, and played in that box, line by line, as
+// the mod moves it on, a bond talk's answers doing to your bonds what the game's do. Game thread only. WCMods.hpp
+// includes it; docs/SDK.md, "C++ mods", documents every call.
 //
 // Why not the game's own player: its sequencer manager (PlaySequenceDialogue) opens the talk's box as a popup of the
 // game's screen, which only the talk's scene closes cleanly. Closed any other way (moved past its last line, or the
@@ -11,7 +12,9 @@
 #pragma once
 
 #include <algorithm>
+#include <cwctype>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -19,9 +22,11 @@
 #include <utility>
 #include <vector>
 
+#include <WCMods/Bonds.hpp>
 #include <WCMods/Core.hpp>
 #include <WCMods/Events.hpp>
 #include <WCMods/Game.hpp>
+#include <WCMods/Looks.hpp>
 #include <WCMods/Reflect.hpp>
 #include <WCMods/Tables.hpp>
 #include <WCMods/Ui.hpp>
@@ -156,6 +161,8 @@ namespace wcmods
         std::vector<std::wstring> by_bond;   // a bonding node's words by your bond with the clan: [Neutral, Positive, Negative]
         std::vector<int> next;          // its children, in the graph's order
         std::vector<TalkAnswer> answers;   // the children through an answer edge, by option
+        std::wstring sub_tag;           // a story talk's node (a line, an answer): its row is the talk's tag, a dot and this
+        std::wstring fallback_tag;      // a bond answer's FallbackDialogueTag: its row's prefix when the talk has no tag
     };
     // A talk: one read from the game's graph, or one a mod makes itself (nodes with `line`, `words`, `source` 3 and
     // `source_words` for the speaker, `next` and `answers` by index; `graph` and `node` left empty).
@@ -164,6 +171,7 @@ namespace wcmods
         UObject* graph{};
         std::vector<TalkNode> nodes;
         std::vector<int> roots;
+        std::wstring tag;   // a story talk's (a BondDialogue's DialogueTag, or story_talk's): its rows' prefix
         explicit operator bool() const
         {
             return !roots.empty() && !nodes.empty() && roots.front() >= 0 && static_cast<size_t>(roots.front()) < nodes.size();
@@ -231,6 +239,9 @@ namespace wcmods
             n.kind = class_name(o);
             if (o)
             {
+                n.sub_tag = get(o, L"SubTag").string();
+                n.fallback_tag = get(o, L"FallbackDialogueTag.TagName").string();
+                if (n.fallback_tag == L"None") n.fallback_tag.clear();
                 n.words_text = get(o, L"Paragraph");
                 if (n.words_text.kind == Value::Kind::Text && n.words_text.text.empty())
                     for (auto& more : elements(o, L"MultiParagraph"))   // a QuestDialogueMultiTextTalkingNode's
@@ -289,6 +300,126 @@ namespace wcmods
         }
         for (auto& r : elements(graph, L"RootNodes"))
             if (int i = index(r.object); i >= 0) t.roots.push_back(i);
+        t.tag = get(graph, L"DialogueTag.TagName").string();
+        if (t.tag == L"None") t.tag.clear();
+        return t;
+    }
+
+    // The row a bond answer node resolves (QuestDialogueActionResolveBondAnswer, as the game's code joins it): the talk's
+    // tag (else the node's FallbackDialogueTag), a dot and its SubTag. Empty for any other node, or one with neither.
+    inline auto bond_answer_row(const Talk& talk, const TalkNode& n) -> std::wstring
+    {
+        if (n.kind != L"QuestDialogueActionResolveBondAnswer" || n.sub_tag.empty()) return {};
+        const std::wstring& prefix = !talk.tag.empty() ? talk.tag : n.fallback_tag;
+        return prefix.empty() ? std::wstring{} : prefix + L"." + n.sub_tag;
+    }
+
+    namespace detail
+    {
+        // The template a story tag plays the `time`th time you talk (the game's choice, read from its code,
+        // docs/reverse-engineering.md, "Templates, filled in as they play"): the first kind its tag is under, and that
+        // kind's template for the time (the last repeats; Monologue.Interaction has none after its third).
+        inline auto story_template(std::wstring_view tag, int time) -> std::wstring
+        {
+            static const std::vector<std::pair<std::wstring, std::vector<std::wstring>>> kinds = {
+                {L"Gameplay.Dialogue.Story.Long", {L"Long", L"End"}},
+                {L"Gameplay.Dialogue.Story.Short", {L"Short", L"End"}},
+                {L"Gameplay.Dialogue.Story.Monologue.Interaction", {L"Monologue_Interaction_1", L"Monologue_Interaction_2", L"Monologue_Interaction_3"}},
+                {L"Gameplay.Dialogue.Story.Monologue.Filler", {L"Monologue_Filler"}},
+                {L"Gameplay.Dialogue.Story.Monologue.Encounter", {L"Monologue_Encounter"}},
+                {L"Gameplay.Dialogue.Activity.Transition", {L"Activity_Transition"}},
+            };
+            if (time < 1) return {};
+            for (auto& [parent, types] : kinds)
+                if (tag == parent || (tag.size() > parent.size() && tag.substr(0, parent.size()) == parent && tag[parent.size()] == L'.'))
+                {
+                    if (parent == L"Gameplay.Dialogue.Story.Monologue.Interaction" && static_cast<size_t>(time) > types.size()) return {};
+                    return types[std::min(static_cast<size_t>(time), types.size()) - 1];
+                }
+            return {};
+        }
+        inline auto lower_key(std::wstring s) -> std::wstring
+        {
+            for (auto& c : s) c = static_cast<wchar_t>(std::towlower(c));
+            return s;
+        }
+    } // namespace detail
+
+    // One of the game's story talks by its tag (L"Gameplay.Dialogue.Story.Short.TheMistrustfulLeader.Main.7"), as the game
+    // plays it the `time`th time you have it: its template (the quest manager's StoryDialogueTemplates: Short or Long
+    // the first time and End after, Monologue.Interaction 1 to 3, a Filler's, an Encounter's...) filled from the rows
+    // under the tag (talk_rows): each line's words and who says them (its row's Talker), a bonding line's words for each
+    // clan bond (its .Neutral, .Positive and .Negative rows), and each answer's words, trait, score and bonding (the
+    // row of the bond answer it leads to). `tag` is set, so playing it applies its answers' bonds (TalkHooks). A line
+    // whose words vary by rank or role takes its first variant. An empty Talk for a tag that's none of those kinds, no
+    // template for the time, or no rows.
+    inline auto story_talk(std::wstring_view tag, int time = 1) -> Talk
+    {
+        if (!assert_game_thread(L"story_talk")) return {};
+        std::wstring kind = detail::story_template(tag, time);
+        if (kind.empty()) return {};
+        UObject* graph = nullptr;
+        for (auto& [k, v] : map_entries(manager(STR("quests")), L"StoryDialogueTemplates"))
+        {
+            std::wstring name = k.string();
+            if (auto at = name.find(L"::"); at != std::wstring::npos) name = name.substr(at + 2);
+            if (name == kind) graph = v.object;
+        }
+        std::map<std::wstring, TalkRow> rows;   // by lower-case name: the game's names ignore case
+        for (auto& r : talk_rows(std::wstring(tag) + L"."))
+            rows.emplace(detail::lower_key(r.name), std::move(r));
+        if (!graph || rows.empty()) return {};
+        Talk t = read_talk(graph);
+        if (!t) return {};
+        t.tag = tag;
+        auto row = [&](const std::wstring& sub) -> const TalkRow* {
+            auto it = rows.find(detail::lower_key(std::wstring(tag) + L"." + sub));
+            return it == rows.end() ? nullptr : &it->second;
+        };
+        for (auto& n : t.nodes)
+        {
+            if (n.sub_tag.empty() || n.kind == L"QuestDialogueActionResolveBondAnswer") continue;
+            if (n.words_text.kind != Value::Kind::Text) continue;   // only a line takes words
+            const TalkRow* plain = row(n.sub_tag);
+            const TalkRow* first = plain;
+            n.by_bond.clear();
+            static const wchar_t* bonds[] = {L"Neutral", L"Positive", L"Negative"};
+            for (size_t b = 0; b < 3; ++b)
+                if (const TalkRow* v = row(n.sub_tag + L"." + bonds[b]))
+                {
+                    n.by_bond.resize(b + 1);
+                    n.by_bond[b] = v->text();
+                    if (!first) first = v;
+                }
+            if (!first)   // a variant by rank or role: the first there is
+            {
+                std::wstring under = detail::lower_key(std::wstring(tag) + L"." + n.sub_tag + L".");
+                for (auto& [name, r] : rows)
+                    if (name.compare(0, under.size(), under) == 0)
+                    {
+                        first = &r;
+                        break;
+                    }
+            }
+            n.words = first ? first->text() : std::wstring{};
+            n.words_text = Value{};
+            n.line = !n.words.empty();
+            if (first) n.source = first->talker == L"Player" ? 1 : 0;
+        }
+        for (auto& n : t.nodes)
+            for (auto& a : n.answers)
+            {
+                if (a.to < 0 || static_cast<size_t>(a.to) >= t.nodes.size()) continue;
+                const TalkNode& child = t.nodes[a.to];
+                if (child.sub_tag.empty()) continue;
+                if (const TalkRow* r = row(child.sub_tag))
+                {
+                    a.words = r->text();
+                    a.trait = r->trait;
+                    a.score = r->score;
+                    a.bonding = r->clan_bonding;
+                }
+            }
         return t;
     }
 
@@ -304,6 +435,14 @@ namespace wcmods
         std::function<void(const TalkNode&, const TalkAnswer&)> on_answer;
         std::function<void()> on_end;
         int bond{-1};   // a bonding node's words for this bond (0 Neutral, 1 Positive, 2 Negative); -1: its Paragraph
+        // A bond talk's answers (its ResolveBondAnswer nodes, as the talk passes them after an answer) do to your bonds
+        // what the game's do (answer_bond, Bonds.hpp), with the story cat `role` names (L"TheMistrustfulLeader"), else
+        // the one `cat` plays (role_of, as play_talk starts: the cat isn't read after); with neither, none is applied
+        // (the game always has the cat talked to). Unless `bonds` is false. `on_bond` is told what each did.
+        UObject* cat{};
+        std::wstring role;
+        bool bonds{true};
+        std::function<void(const TalkNode&, const BondAnswer&)> on_bond;
     };
     namespace detail
     {
@@ -351,6 +490,21 @@ namespace wcmods
                     break;
                 }
                 to = !n.next.empty() ? n.next.front() : !n.answers.empty() ? n.answers.front().to : -1;
+                if (p.hooks.bonds && (p.hooks.cat || !p.hooks.role.empty()))   // the cat's role read as it started
+                {
+                    std::wstring row = bond_answer_row(*talk, n);
+                    if (!row.empty())
+                    {
+                        auto done = answer_bond(row, p.hooks.role);
+                        if (done && p.hooks.on_bond)
+                        {
+                            const int gen = p.generation;
+                            auto hook = p.hooks.on_bond;
+                            hook(n, *done);
+                            if (p.generation != gen) return p.playing;   // on_bond ended it, or played another
+                        }
+                    }
+                }
                 if (p.hooks.on_action)
                 {
                     const int gen = p.generation;
@@ -374,6 +528,8 @@ namespace wcmods
         int root = talk.roots.front();
         p.talk = std::make_shared<const Talk>(std::move(talk));
         p.npc_name = npc_name;
+        if (hooks.role.empty() && hooks.cat)   // the cat's story role now: the talk may outlive the cat
+            if (auto r = role_of(hooks.cat)) hooks.role = r->story_role;
         p.hooks = std::move(hooks);
         p.at = -1;
         p.playing = true;

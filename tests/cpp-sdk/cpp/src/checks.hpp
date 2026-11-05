@@ -45,6 +45,7 @@ namespace t
     auto run_sounds_request() -> void;   // sounds and music (World.hpp), in the game ("sounds")
     auto run_npcs_request() -> void;     // Npcs.hpp: a cat of the mod's own, in the game ("npcs")
     auto run_talks_request() -> void;    // Talk.hpp: conversations, in the game ("talks")
+    auto run_bond_answers_request() -> void;   // Bonds.hpp and Talk.hpp: a story talk and its answers' bonds ("bond_answers")
     auto run_bonds_request() -> void;    // Bonds.hpp: your cat's bonds, in the game ("bonds")
     auto run_looks_request() -> void;    // Looks.hpp: cats' looks and the clan's cats, in the game ("looks")
     auto run_items_request() -> void;    // Items.hpp: items, and pickups dropped and collected, in the game ("drop")

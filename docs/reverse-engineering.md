@@ -663,9 +663,47 @@ clan's roles for this game: for the ShadowClan test cat, 25, each with its `Base
 (`NPCRole`, an `EGiverRole`, and `NPCIndex`) and, for the two iconic cats, `IconicName`. `NarrativeCustomDataMap` was
 empty. The others' names come from the clan's cats (`NPCData`, the coverage plan's step 9).
 
-**Still open:** what an answer's `Score` and `ClanBonding` do when the game's own talk resolves it (presumably
-`AddPersonalBonding` and `AddClanScore` from `ResolveBondAnswer`; not traced), and whether anything reads `Nodes`
-beyond the talks.
+**Still open:** whether anything reads `Nodes` beyond the talks. What an answer does is below.
+
+### A bond talk's answer
+
+Worked out on 2026-11-05 (build 26337109) from the exe and in game, for the C++ SDK's `answer_bond` and `story_talk`;
+the addresses are this build's.
+
+**The node.** An answer button leads to a `QuestDialogueActionResolveBondAnswer` (members: `FallbackDialogueTag` at
++0xF8, `SubTag` at +0x100). Its execute (vtable +0x2E8, `0x1416711D0`, given the dialogue's two actors) does this:
+- **The row's name:** the graph's `DialogueTag` when the graph is a `BondDialogue` (a story template, its tag set to
+  the story talk's), else the quest graph's row prefix (the optional string at +0x120) when it has one, else the
+  node's `FallbackDialogueTag`; then `%s.%s` with the `SubTag`. With no prefix, nothing.
+- **Once per conversation:** a count kept in the save (`0x1416A9ED0` reads it, `0x1416A9080` adds to it), by a
+  string from the first actor, a literal and the row's name. Already counted: nothing. (The literal sits where the
+  exe on disk can't be read; not decoded.)
+- **The row:** `StoryDialogues.csv`, else `QuestDialogues.csv` (`0x1416B15B0`, `0x1416B18C0`), as the tuning manager
+  loaded them: two maps of `SwtQuestTuningManager`, +0x280 and +0x2D0 (`TMap<FString, FSwtQuestStoryDialoguesStruct>`,
+  0x60-byte elements; the row from +0x10: `Score` +0x08, `ClanBonding` +0x0C, `Talker` +0x10, `Trait` +0x11,
+  `VoiceOver`, `StringKey`, `DebugText`). No row, or a row whose `Trait` is None: nothing.
+- **The bonus:** your cat's `SwtQuestCustomDataInterface` (from the second actor's +0x4E0) has a trait-bonus call
+  (vtable +0x28, `0x141796AC0`): when the cat's trait list (+0x1F8) holds the answer's trait, the tuning's
+  `Gameplay.Progression.Bonding.TraitModifier` (1), else 0.
+- **The story cat's bond, once:** unless the row's name is in your cat's `Bonding/Nodes` already (`0x14169F020`),
+  the node is added (`0x14169F230`, "AddNodeToPersonalBonding"), and the cat talked to (the second actor's +0x4E8)
+  gets `Score` plus the bonus: `0x14169F470` takes a `QuestBaseActor`'s narrative role from its own
+  `SwtQuestCustomDataInterface` (at +0x308, vtable +0x20) and calls AddPersonalBonding. If its rank changed, the game's
+  rank-change event fires (`0x14165E600`); the cat shows a reaction (positive, neutral or negative by the `Score`),
+  and the bond and trait notices show.
+- **Your clan's regard, every time it gets here** (also when the node was had): `ClanBonding` plus the bonus,
+  AddClanScore on your cat's clan (the interface's vtable +0x10).
+
+**Checked:** the slot of a cat played in the real game had `Bonding/Nodes` `Quest.Main.1.Context.Answer.Brave.Short`,
+its story cat at 24 (base 20) and its clan at 69 (default 67), with a Brave cat: Score 3 and ClanBonding 1 plus a
+bonus of 1 fit (that row isn't in this build's tables). In game from C++ (`answer_bond`, `story_talk`), on the
+Ambitious and Curious test cat: `TheAmbitiousApprentice`'s Main.1 `Neutral.1.Short` (Ambitious, Score 0, ClanBonding 0)
+gave the cat +1 and ShadowClan +1 and marked the node; given again, ShadowClan +1 and the cat nothing.
+
+**Story talks filled in C++:** the quest manager's `StoryDialogueTemplates` (reflected: `EQuestStoryDialogueTypes` to
+the template) and the rows under the tag, as above; TheMistrustfulLeader's Main.7 read as its lines and its first
+question's three answers (Right: Wise, 9, 2; Wrong: Ambitious, -3, -4; Neutral: Brave, 0, 0). The words keep the
+names the game puts in as it shows them (`{PLAYER}`, `{THE AMBITIOUS APPRENTICE}`) and the rich text (`<B>…</>`).
 
 ### New packages and textures
 
@@ -2857,7 +2895,7 @@ The rules of play are in [mechanics/](mechanics/README.md):
   - What does `Bonding.TraitModifier` do?
   - Do the Energetic drain values replace the normal drain or add to it?
 - **Progression and dialogue:**
-  - Does a dialogue answer's `Score` go to your bond with that cat?
+  - Does a dialogue answer's `Score` go to your bond with that cat? Yes (*A bond talk's answer*).
   - Do levels stop at a rank's cap until the rank-up quest?
   - **Dialogue graphs** (*Dialogue graphs*):
     - Which quest template a quest plays (its `EQuestFlowDialogueTypes`), and who sets a quest's row prefix

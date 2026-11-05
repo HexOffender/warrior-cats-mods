@@ -77,6 +77,11 @@ HIDDEN = [
     # The tuning manager's TuningData.csv (TMap<FString, a row of {MaxValue float, Description FString}>, 0x38-byte
     # elements), which the game's tuning lookup reads on every call (docs/reverse-engineering.md, "Tuning").
     ("/Script/SwtEngine.SwtTuningManager", [("WCM_TuningData", 0x50, "MapProperty")]),
+    # Its subclass's talk tables, StoryDialogues.csv and QuestDialogues.csv (TMap<FString,
+    # FSwtQuestStoryDialoguesStruct>, 0x60-byte elements), which a bond talk's answer looks its row up in
+    # (docs/reverse-engineering.md, "A bond talk's answer").
+    ("/Script/SwtQuest.SwtQuestTuningManager", [
+        ("WCM_StoryDialogues", 0x280, "MapProperty"), ("WCM_QuestDialogues", 0x2D0, "MapProperty")]),
     # The sky's copy of its presets (TMap<ESkyboxPostProcessEnum, FWrcSkyBoxStruct>, 0x168-byte elements: the preset
     # at +0, its row from +8), made from SkyParamsDB as it starts; what putting a preset on reads.
     ("/Script/Wrc.WrcSkyboxActor", [("WCM_Presets", 0x378, "MapProperty")]),
@@ -140,6 +145,12 @@ NATIVE = [
      "the tuning's Gameplay.Progression.Bonding.Clan.Default when it isn't set"),
     ("Bonding:AddClan", 0x169FBD0,
      "adds to a clan's regard (\"AddClanScore\"): (uint8 EClanType, int32 amount), on the cat played now"),
+    ("Bonding:HasNode", 0x169F020,
+     "whether a bond talk's answer is in the slot's Bonding/Nodes: (const FString* the answer's row name) -> bool, on "
+     "the cat played now"),
+    ("Bonding:AddNode", 0x169F230,
+     "marks a bond talk's answer in the slot's Bonding/Nodes (\"AddNodeToPersonalBonding\"): (const FString* the "
+     "answer's row name), on the cat played now"),
     # A cat's look put on its model (docs/reverse-engineering.md, "Cat models"): named by its profiling stat.
     ("SwtAdventureCustomizableMeshComponent:SetDefaultCustomData", 0x17AF7D0,
      "sets a cat's look up on its model (\"SetDefaultCustomData\"): (the look component, const FCatCustomData*, bool); "

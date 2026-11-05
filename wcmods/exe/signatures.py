@@ -64,6 +64,12 @@ ANCHORS = {
     "/Script/SwtEngine.SwtTuningManager": [
         (0x12BB510, "loads TuningData.csv into the map at +0x50 (and two more tables into the maps after it)"),
     ],
+    # The talk tables are read through the manager (a global) outside its vtable. A bond answer's two row lookups
+    # (0x16B15B0, 0x16B18C0) are the same code but for the map, so neither has a pattern of its own: these do.
+    "/Script/SwtQuest.SwtQuestTuningManager": [
+        (0x1957D60, "matches a cat's traits against StoryDialogues.csv's rows: the map at +0x280"),
+        (0x16B1BD0, "a quest's title from QuestDialogues.csv: the map at +0x2D0"),
+    ],
     "/Script/SwtAdventure.TurnBasedCombatComponent": [
         (0x17D6AC0, "builds a fighter's stats from its level"),
         (0x17D7250, "a fighter's Prowess with its buffs"),

@@ -174,4 +174,187 @@ namespace t
             });
         });
     }
+
+    namespace
+    {
+        auto row_json(const std::optional<TalkRow>& r) -> Json
+        {
+            if (!r) return Json();
+            Json o = Json::object();
+            o.set("name", Json(text(r->name)));
+            o.set("score", Json(r->score));
+            o.set("clan", Json(r->clan_bonding));
+            o.set("trait", Json(r->trait));
+            o.set("talker", Json(text(r->talker)));
+            o.set("key", Json(text(r->string_key)));
+            o.set("text", Json(text(r->text())));
+            return o;
+        }
+        auto answer_json(const std::optional<BondAnswer>& a) -> Json
+        {
+            if (!a) return Json();
+            Json o = Json::object();
+            o.set("node", Json(text(a->node)));
+            o.set("trait", Json(a->trait));
+            o.set("bonus", Json(a->bonus));
+            o.set("first", Json(a->first));
+            o.set("role", Json(text(a->role)));
+            o.set("personal", Json(a->personal));
+            o.set("clan", Json(text(a->clan)));
+            o.set("clan_change", Json(a->clan_change));
+            return o;
+        }
+        // The first line with answers a story talk reaches from its first root (moving on through the lines).
+        auto question_of(const Talk& t) -> const TalkNode*
+        {
+            std::vector<bool> seen(t.nodes.size());
+            int at = t.roots.empty() ? -1 : t.roots.front();
+            while (at >= 0 && static_cast<size_t>(at) < t.nodes.size() && !seen[at])
+            {
+                seen[at] = true;
+                const TalkNode& n = t.nodes[at];
+                if (n.line && !n.answers.empty()) return &n;
+                at = !n.next.empty() ? n.next.front() : !n.answers.empty() ? n.answers.front().to : -1;
+            }
+            return nullptr;
+        }
+    } // namespace
+
+    // A story talk filled from the game's tables, played, and one of its answers given: what the game's own bond answer
+    // does to the story cat's bond and the clan's regard, the node marked; given again, and a talk played with the
+    // bonds off; everything but the node put back after (a node can't be taken out).
+    auto run_bond_answers_request() -> void
+    {
+        phase("bond_answers");
+        const std::wstring seven = L"Gameplay.Dialogue.Story.Short.TheMistrustfulLeader.Main.7";
+        // ----- the tables
+        value("answers.row_right", row_json(talk_row(seven + L".Right.1.Short")));
+        value("answers.row_quest", row_json(talk_row(L"quest.procedural.survival.gather.apprentice.context.answer.brave.short")));
+        expect("answers.row_missing", !talk_row(L"Gameplay.WCModsTest.NoSuchRow"));
+        value("answers.rows_under", static_cast<int>(talk_rows(seven + L".").size()));
+
+        // ----- a story talk, as the game fills its template
+        Talk st = story_talk(seven);
+        Json lines = Json::array();
+        for (auto& n : st.lines()) lines.push(Json(text(n.words)));
+        value("answers.story_tag", Json(text(st.tag)));
+        value("answers.story_lines", lines);
+        Json answers = Json::array();
+        if (const TalkNode* q = question_of(st))
+            for (auto& a : q->answers)
+            {
+                Json o = Json::object();
+                o.set("words", Json(text(a.words)));
+                o.set("trait", Json(a.trait));
+                o.set("score", Json(a.score));
+                o.set("bonding", Json(a.bonding));
+                o.set("row", Json(text(bond_answer_row(st, st.nodes[a.to]))));
+                answers.push(o);
+            }
+        value("answers.story_answers", answers);
+        Json end = Json::array();
+        for (auto& n : story_talk(seven, 2).lines()) end.push(Json(text(n.words)));
+        value("answers.end_lines", end);
+        expect("answers.story_none", !story_talk(L"Gameplay.WCModsTest.NoSuchTalk") && !story_talk(seven, 0)
+                                         && !story_talk(L"Gameplay.Dialogue.Story.Monologue.Interaction.WCModsTest", 4));
+
+        // ----- the story cat, and an answer of its talks your cat hasn't given (one with a trait your cat has first)
+        std::wstring role;
+        for (auto& b : bonds())
+            if (!b.clan && role.empty() && !talk_rows(L"Gameplay.Dialogue.Story.Short." + b.key + L".Main.").empty()) role = b.key;
+        value("answers.role", Json(text(role)));
+        Json traits = Json::array();
+        for (auto& tr : cat_traits()) traits.push(Json(text(tr)));
+        value("answers.cat_traits", traits);
+        static const wchar_t* trait_names[] = {L"None", L"Brave", L"Ambitious", L"Wise", L"Energetic", L"Curious", L"Patient"};
+        auto has_trait = [](int trait) {
+            for (auto& tr : cat_traits())
+                if (trait > 0 && trait < 7 && tr == trait_names[trait]) return true;
+            return false;
+        };
+        std::wstring tag, node;
+        int choice = -1;
+        for (int pass = 0; pass < 2 && choice < 0; ++pass)
+            for (int main = 1; main <= 20 && choice < 0; ++main)
+            {
+                std::wstring candidate = L"Gameplay.Dialogue.Story.Short." + role + L".Main." + std::to_wstring(main);
+                Talk c = story_talk(candidate);
+                const TalkNode* q = c ? question_of(c) : nullptr;
+                if (!q) continue;
+                for (size_t a = 0; a < q->answers.size() && choice < 0; ++a)
+                {
+                    const TalkAnswer& ans = q->answers[a];
+                    std::wstring row = bond_answer_row(c, c.nodes[ans.to]);
+                    if (ans.trait == 0 || row.empty() || bond_node(row).value_or(true)) continue;
+                    if (pass == 0 && !has_trait(ans.trait)) continue;
+                    tag = candidate;
+                    node = row;
+                    choice = static_cast<int>(a);
+                }
+            }
+        value("answers.tag", Json(text(tag)));
+        value("answers.node", Json(text(node)));
+        value("answers.choice", Json(choice));
+        auto chosen = talk_row(node);
+        value("answers.chosen_row", row_json(chosen));
+        if (choice < 0 || role.empty())
+        {
+            expect("answers.found", false, "no story cat, or no answer left to give");
+            done("bond_answers");
+            return;
+        }
+        const std::wstring clan = cat_clan(player());
+        value("answers.clan", Json(text(clan)));
+        const int personal_before = bond(role).value_or(-1), clan_before = bond(clan).value_or(-1);
+        value("answers.personal_before", Json(personal_before));
+        value("answers.clan_before", Json(clan_before));
+        value("answers.node_before", Json(bond_node(node).value_or(true)));
+
+        // ----- played, the answer chosen: the game's bond answer as the talk passes it
+        auto seen = std::make_shared<std::vector<BondAnswer>>();
+        TalkHooks h;
+        h.role = role;
+        h.on_bond = [seen](const TalkNode&, const BondAnswer& a) { seen->push_back(a); };
+        expect("answers.play", play_talk(story_talk(tag), {}, h));
+        int guard = 0;
+        while (talk_playing() && talk_answers().empty() && guard++ < 20) talk_next();
+        value("answers.question", Json(text(talk_line())));
+        expect("answers.answered", talk_next(choice));
+        value("answers.reply", Json(text(talk_line())));
+        value("answers.on_bond", seen->empty() ? Json() : answer_json(seen->front()));
+        value("answers.on_bond_count", Json(static_cast<int>(seen->size())));
+        hide_talk();
+        value("answers.personal_after", Json(bond(role).value_or(-1)));
+        value("answers.clan_after", Json(bond(clan).value_or(-1)));
+        value("answers.node_after", Json(bond_node(node).value_or(false)));
+
+        // ----- the same answer again, by answer_bond: the clan's regard again, not the cat's bond
+        value("answers.again", answer_json(answer_bond(node, role)));
+        value("answers.personal_again", Json(bond(role).value_or(-1)));
+        value("answers.clan_again", Json(bond(clan).value_or(-1)));
+        // A row without a trait (the long line after the answer) and a row no table has: nothing.
+        expect("answers.no_trait", !answer_bond(tag + L".Right.1.Long", role) && !answer_bond(L"Gameplay.WCModsTest.NoSuchRow", role));
+        // Played with the bonds off: the answer does nothing.
+        auto off_seen = std::make_shared<int>(0);
+        TalkHooks off;
+        off.role = role;
+        off.bonds = false;
+        off.on_bond = [off_seen](const TalkNode&, const BondAnswer&) { ++*off_seen; };
+        if (play_talk(story_talk(tag), {}, off))
+        {
+            int g = 0;
+            while (talk_playing() && talk_answers().empty() && g++ < 20) talk_next();
+            talk_next(choice);
+            hide_talk();
+        }
+        value("answers.off_count", Json(*off_seen));
+        value("answers.personal_off", Json(bond(role).value_or(-1)));
+        value("answers.clan_off", Json(bond(clan).value_or(-1)));
+
+        // ----- put back (the node stays: nothing takes one out)
+        expect("answers.restored", set_bond(role, personal_before) && set_bond(clan, clan_before));
+        value("answers.personal_restored", Json(bond(role).value_or(-1)));
+        value("answers.clan_restored", Json(bond(clan).value_or(-1)));
+        done("bond_answers");
+    }
 } // namespace t
