@@ -723,11 +723,17 @@ def build(ctx, package, kind, read_file, clip, key, claws=False, game=None, repl
             "imports": [int(i, 16) for i in info["imports"]], "shaders": shaders, "seconds": info["seconds"]}
 
 
+def module_data(animations):
+    """What the WCModsAnims module holds, for C++ mods' WCModsAnims.json: {"animations": {id: {...}}, "kinds":
+    {kind: [mesh names]}}."""
+    return {"animations": animations, "kinds": {k: v["meshes"] for k, v in KINDS.items()}}
+
+
 def module(animations):
     """The WCModsAnims shared module: {id: {"name", "kind", "path", "loop", "speed", "blend", "emote", "key"}}
     for every animation the install has, and the meshes of each kind."""
     from .sdk import lua_value
-    kinds = {k: v["meshes"] for k, v in KINDS.items()}
+    kinds = module_data(animations)["kinds"]
     return ("-- Written by wcmods from your mods' animations.json: their animations, and which meshes play each kind.\n"
             "-- Do not edit; edit animations.json (or the Animations page in Clan Mod Studio) and install again.\n"
             "-- WCModsGame's Game.anims plays them; the WCModsEmotes script puts the emotes on keys and a menu page.\n"

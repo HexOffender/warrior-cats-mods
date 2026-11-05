@@ -933,6 +933,11 @@
    "was": "0x18129C0",
    "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 4C 89 74 24 ?? 55 48 8D 6C 24 ?? 48 81 EC B0 00 00 00 48 8B 3D ?? ?? ?? ??"
   },
+  "SwtAdventureTuningManager:GetConsumable": {
+   "note": "a herb's Consumables.csv row: (const FString* row name, the herb's tag; FSwtAdventureConsumableStruct* out, 0x28 bytes: bCombat +0x10, bExploration +0x11, Target +0x12, bRemoveAfterCombat +0x13, Type +0x14, EffectOnUse FString +0x18, assigned with the game's allocator) -> bool, false for a row it hasn't got; reads the tuning manager (a global) and its map at +0x780",
+   "was": "0x181DFE0",
+   "pattern": "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 20 48 8B 1D ?? ?? ?? ?? 48 8B FA"
+  },
   "SwtTuningManager:GetValue": {
    "note": "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, 0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData",
    "was": "0x12BBA60",

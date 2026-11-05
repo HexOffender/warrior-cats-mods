@@ -303,7 +303,7 @@ class ItemsSection(Section):
             if not ctx.cfg.ue4ss_mods_dir and any("mesh" in g for g in ground.values()):
                 ctx.warn("herbs and materials lie on the ground only where a script drops them, and scripts need the "
                          "script loader (UE4SS), which isn't installed: Get set up on the Mods page adds it")
-            ctx.add_ue4ss_shared(ITEMS_LUA, items_lua(ground))
+            ctx.add_ue4ss_shared(ITEMS_LUA, items_lua(ground), {"pickups": ground})
             ctx.note("ground", sorted(t[len(TAG_ROOT):] for t, g in ground.items() if "mesh" in g))
         if made:
             lines = ["[/Script/GameplayTags.GameplayTagsList]"]

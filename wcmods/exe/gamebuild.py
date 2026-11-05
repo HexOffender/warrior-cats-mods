@@ -482,6 +482,7 @@ PLAIN = {
     "SwtAdventureDetectionComponent": "how far animals see and hear your cat",
     "SwtQuestInventoryComponent": "your items, for C++ mods",
     "SwtTuningManager": "the game's tuning numbers, for C++ mods",
+    "SwtAdventureTuningManager": "what herbs do, for C++ mods",
     "WrcSkyboxActor": "the sky's preset values, for C++ mods",
     "Bonding": "your cat's bonds, for C++ mods",
     "SwtAdventureCustomizableMeshComponent": "changing a cat's look, for C++ mods",

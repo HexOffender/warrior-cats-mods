@@ -427,7 +427,8 @@ def test_a_native_function_that_cant_be_found_is_lost(moved_level, monkeypatch):
     fit = gamebuild.layout(moved_level.cfg, log=quiet)
     assert fit["status"] == "partial" and set(fit["lost"]) == set(functions())
     assert gamebuild.describe(fit["lost"]) == ("your items, for C++ mods; your cat's bonds, for C++ mods; "
-                                              "changing a cat's look, for C++ mods; the game's own tuning lookup "
+                                              "changing a cat's look, for C++ mods; what herbs do, for C++ mods; "
+                                              "the game's own tuning lookup "
                                               "(C++ mods' tuning calls don't need it)")
     assert game.offsets_json(fit["offsets"], 1, fit["functions"])["functions"] == {}
 

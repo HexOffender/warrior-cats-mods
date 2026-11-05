@@ -1,0 +1,7 @@
+{
+  "name": "Items test",
+  "description": "A material with a model of its own on the ground, for tests/game/test_cpp_sdk.py's drop test (Items.hpp's drop_item).",
+  "version": "1.0",
+  "author": "wcmods",
+  "enabled": true
+}

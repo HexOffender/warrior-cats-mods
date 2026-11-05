@@ -1,0 +1,13 @@
+{
+  "_help": "For tests/game/test_cpp_sdk.py (test_items). Install it with: python wcmods.py agent install --with tests/cpp-sdk --with tests/items-mod",
+  "items": [
+    {
+      "id": "WCModsTestBlock",
+      "kind": "material",
+      "name": "Test Block",
+      "description": "A grey block, dropped by the C++ SDK's tests.",
+      "icon": { "from": "Rock", "tint": "#9aa0a8" },
+      "model": "models/block.obj"
+    }
+  ]
+}

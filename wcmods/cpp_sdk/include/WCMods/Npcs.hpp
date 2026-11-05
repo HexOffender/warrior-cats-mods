@@ -174,17 +174,6 @@ namespace wcmods
             out[L"EyeRightColorIdx"] = eye;
             return out;
         }
-        inline auto transform_of(Params& p, const wchar_t* name, Vec3 at, double yaw) -> void
-        {
-            Value t = p.get(name);
-            const double half = yaw * 3.14159265358979323846 / 360.0;   // a yaw's quaternion
-            set(t, L"Rotation.Z", std::sin(half));
-            set(t, L"Rotation.W", std::cos(half));
-            for (const wchar_t* axis : {L"Scale3D.X", L"Scale3D.Y", L"Scale3D.Z"}) set(t, axis, 1.0);
-            set(t, L"Translation.X", at.x);
-            set(t, L"Translation.Y", at.y);
-            set(t, L"Translation.Z", at.z);
-        }
         // Put the cat's feet (its mesh's origin) on the ground at height g.
         inline auto stand_on(UObject* a, std::optional<double> g) -> void
         {
@@ -290,22 +279,9 @@ namespace wcmods
             std::optional<double> g = n.spec.ground ? ground(n.spec.at.x, n.spec.at.y, n.spec.at.z) : std::nullopt;
             UObject* cls = load(NPC_CLASS);
             if (!cls) return false;
-            UObject* lib = object(STR("/Script/Engine.Default__GameplayStatics"));
             Vec3 at{n.spec.at.x, n.spec.at.y, (g ? *g : n.spec.at.z) + 30};
-            auto begun = call_reflected(lib, STR("BeginDeferredActorSpawnFromClass"), [&](Params& p) {
-                p.set_nth(0, Value::of(player()));
-                p.set_nth(1, Value::of(cls));
-                transform_of(p, L"SpawnTransform", at, n.spec.yaw);
-                p.set_nth(3, Value::of(1));   // AlwaysSpawn
-                p.set_nth(5, Value::of(0));   // OverrideRootScale
-            });
-            UObject* a = begun ? begun->get(L"ReturnValue").object : nullptr;
-            if (!a) return false;
-            // Not one of the save's cats: no unique id for the save to keep it by, nothing remembered of its going.
-            if (UObject* ids = get(a, L"InstancedUniqueIdentifierComponent").object) set(ids, L"bIsEnabled", false);
-            set(a, L"bAddsToRemovedLocalData", false);
             auto look = npc_look(n.spec);
-            auto dress = [&] {
+            auto dress = [&](UObject* a) {
                 UObject* c = get(a, L"MeshCustomizationComponent").object;
                 if (!c) return c;
                 if (n.spec.size) set(c, L"CustomData.CatSize", *n.spec.size);
@@ -315,15 +291,16 @@ namespace wcmods
                 set(c, L"CustomData.bOverrideColors", true);
                 return c;
             };
-            dress();
-            call_reflected(lib, STR("FinishSpawningActor"), [&](Params& p) {
-                p.set_nth(0, Value::of(a));
-                transform_of(p, L"SpawnTransform", at, n.spec.yaw);
-                p.set_nth(2, Value::of(0));
+            UObject* a = spawn_deferred(cls, at, n.spec.yaw, [&](UObject* a) {
+                // Not one of the save's cats: no unique id for the save to keep it by, nothing remembered of its going.
+                if (UObject* ids = get(a, L"InstancedUniqueIdentifierComponent").object) set(ids, L"bIsEnabled", false);
+                set(a, L"bAddsToRemovedLocalData", false);
+                dress(a);
             });
+            if (!a) return false;
             // The game set a look up as it finished, not this one: set up again from it (the game's SetDefaultCustomData;
             // RefreshShape, the fallback, moves only the body's shape).
-            if (UObject* c = dress())
+            if (UObject* c = dress(a))
                 if (!detail::draw_look(c)) call_reflected(c, STR("RefreshShape"));
             if (UObject* m = get(a, L"CharacterMovement").object)
             {

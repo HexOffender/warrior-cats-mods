@@ -757,6 +757,8 @@ def _items_section(cfg):
             lifted = models.place(model, {"up": 2})
             with open(os.path.join(tmp, "out", "ue4ss_shared", "WCModsItems", "WCModsItems.lua"), encoding="utf-8") as f:
                 items_lua = f.read()
+            with open(os.path.join(tmp, "out", "ue4ss_shared", "WCModsItems", "WCModsItems.json"), encoding="utf-8") as f:
+                items_json = json.load(f)["pickups"]   # the same for C++ mods (Items.hpp)
             packed = (packed and all(w == [(0, 1.0)] for w in ground["weights"]) and not any(ground["morphs"].values())
                       and all(math.dist(a, b) < 1e-3 for a, b in zip(ground["positions"], lifted.positions))
                       and all(texture.content_path(p) in made.files for p in (
@@ -764,6 +766,8 @@ def _items_section(cfg):
                       and f'["Gameplay.Inventory.Materials.WCModsTestPebble"] = {{ ["mesh"] = "{pebble}.Materials_WCModsTestPebble_SK"'
                           in items_lua
                       and '["Gameplay.Inventory.Consumable.WCModsTestHerb"] = { ["class"] = "MediumHealingHerb" }' in items_lua
+                      and items_json["Gameplay.Inventory.Materials.WCModsTestPebble"]["mesh"] == f"{pebble}.Materials_WCModsTestPebble_SK"
+                      and items_json["Gameplay.Inventory.Consumable.WCModsTestHerb"] == {"class": "MediumHealingHerb"}
                       and not luacheck.check(items_lua))
         return ok and packed, f"{len(rows)} rows, {len(warned)} refused" + ("" if ok else f"; {out['warnings']}")
 

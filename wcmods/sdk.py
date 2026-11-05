@@ -114,7 +114,7 @@ class BuildContext:
         self.csv_edits = {}     # csv path -> [(edits, section, source)]
         self.table_rows = {}    # cooked table name -> [(row name, values, section, source)]
         self.ue4ss_mods = {}    # name -> ({relpath: bytes}, section)
-        self.ue4ss_shared = {}  # Lua module name -> (text, section)
+        self.ue4ss_shared = {}  # Lua module name -> (text, section, data for C++ mods or None)
         self.save_ops = []      # [{"op": ..., "section": ..., ...}]
         self.warnings = []
         self.left_out = []      # parts of a mod's file not finished yet, left out while the rest goes in (leave_out)
@@ -424,12 +424,13 @@ class BuildContext:
                         self.warn(f"{name}/{rel}: {problem}")
         self.ue4ss_mods[name] = ({k: v.encode() if isinstance(v, str) else v for k, v in files.items()}, self.current)
 
-    def add_ue4ss_shared(self, name, text):
+    def add_ue4ss_shared(self, name, text, data=None):
         """A Lua module any UE4SS script can require(name), installed beside WCModsGame (ue4ss/Mods/shared/
-        <name>/<name>.lua) when UE4SS is present: data a section gives the shared scripts, say."""
+        <name>/<name>.lua) when UE4SS is present: data a section gives the shared scripts, say. With `data` (what
+        the module holds, as JSON can say it), <name>/<name>.json beside it too, for C++ mods."""
         for problem in luacheck.check(text)[:3]:
             self.warn(f"{name}.lua: {problem}")
-        self.ue4ss_shared[name] = (text, self.current)
+        self.ue4ss_shared[name] = (text, self.current, data)
 
     def edit_save(self, path, value, source=""):
         """Set an existing save value at install time (path like 'Shared/SettingsData/Minimap')."""
