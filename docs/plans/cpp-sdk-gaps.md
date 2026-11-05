@@ -148,4 +148,4 @@ All seven steps are done (2026-11-05). Left open by them, for a plan after this 
 - **What the game shows around a bond answer:** the cat's reaction, the bond and trait notices, a rank change's
   popup (`answer_bond` changes the bonds only), and its per-conversation count of resolved answers.
 - **The game's AI:** an animal's senses and its blackboard can be read (and the senses written), but nothing yet
-  writes the blackboard, picks an enemy's move or swaps a behaviour tree.
+  writes the blackboard, picks an enemy's move or swaps a behaviour tree. Planned in [cpp-sdk-ai.md](cpp-sdk-ai.md).
