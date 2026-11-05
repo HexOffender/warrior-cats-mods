@@ -1547,6 +1547,24 @@ def test_map_travel(agent):
         assert same["flat"] < 400 and same["screens"] == ["WBP_GuiPopupWorldMap_C"], (trip, same)
 
 
+def test_scenes(agent):
+    """Story.hpp's scenes in the game: the 60 the sequencer manager has registered (the prophecy intros, rank-ups and
+    endings among them), the sandbox's establishing shot (Quest.Chapter00, not a story scene) played by its tag through
+    the game's own PlaySequence, playing (ActiveSequences) with the game's skip popup up, skipped as holding the skip
+    button does, and play back after: none playing, no popup, your cat and the HUD there. A tag the game hasn't refused."""
+    _close_screens(agent)
+    r = _request(agent, "scenes", timeout=30)
+    assert not _failed(r, "scenes"), _failed(r, "scenes")
+    v = r["values"]
+    tags = {s["tag"]: s for s in v["scenes.all"]}
+    assert len(tags) == 60, len(tags)
+    assert tags["Gameplay.Narrative.Prophecy.Intro.ShadowClan"]["type"] == 3, tags["Gameplay.Narrative.Prophecy.Intro.ShadowClan"]
+    assert tags["Quest.Chapter00"]["type"] == 7 and tags["Quest.Chapter00"]["sequence"] == "LS_Quest_SandboxG_EstablishingShot_1"
+    assert v["scenes.playing_before"] == 0 and v["scenes.playing"] == ["Quest.Chapter00"] and v["scenes.skip_popup"] is True, v
+    assert v["scenes.playing_after"] == 0 and v["scenes.skip_popup_after"] is False, v
+    assert v["scenes.player_after"] is True and v["scenes.hud_after"] is True, v
+
+
 def test_photo_mode(agent):
     """Map.hpp's photo mode in the game: on through the pause menu's own Photo Mode (its camera there), its UI hidden
     and shown again (Hide UI), a photo saved as the engine's HighResShot (a new picture in Saved/Screenshots), and off,

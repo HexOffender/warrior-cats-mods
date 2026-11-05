@@ -132,4 +132,39 @@ namespace t
             });
         });
     }
+
+    // The scenes the game has; one played (the sandbox's establishing shot, which isn't a story scene) and skipped.
+    auto run_scenes_request() -> void
+    {
+        phase("scenes");
+        Json all = Json::array();
+        for (auto& sc : scenes())
+        {
+            Json o = Json::object();
+            o.set("tag", Json(utf8(sc.tag)));
+            o.set("type", Json(sc.type));
+            o.set("sequence", Json(utf8(sc.sequence)));
+            o.set("hud", Json(sc.hides_hud));
+            all.push(o);
+        }
+        value("scenes.all", all);
+        value("scenes.playing_before", static_cast<int>(scenes_playing().size()));
+        expect("scenes.refused", !play_scene(L"Gameplay.WCModsTest.NoSuchScene") && !skip_scene());
+        expect("scenes.play", play_scene(L"Quest.Chapter00"));
+        after(1.5, [] {
+            Json now = Json::array();
+            for (auto& t : scenes_playing()) now.push(Json(utf8(t)));
+            value("scenes.playing", now);
+            value("scenes.skip_popup", static_cast<bool>(ui::screen(L"GuiPopupSkip")));
+            expect("scenes.skip", skip_scene());
+            after(5.0, [] {
+                value("scenes.playing_after", static_cast<int>(scenes_playing().size()));
+                value("scenes.skip_popup_after", static_cast<bool>(ui::screen(L"GuiPopupSkip")));
+                value("scenes.player_after", player() != nullptr);
+                Widget hud = ui::screen(L"WBP_GuiHudGameWrc_C");
+                value("scenes.hud_after", static_cast<bool>(hud));
+                done("scenes");
+            });
+        });
+    }
 } // namespace t

@@ -1450,8 +1450,26 @@ is named `SwtAdventureMultiObjectiveQuest_0`, and its outer, a `QuestDynamicGrap
 - **Finishing.** `SetObjectiveFinished(Succeeded)` on the live objective made the quest `QuestComplete` with
   `Success` (three status events), and the game asked "Return to the Camp now?" as after a real finish.
 - **Story scenes by tag** weren't found a reflected way to play: the sequencer managers reflect only
-  `PlaySequenceDialogue` (a talk, step 7) and the skip popup's show and hide; their own virtuals that read
-  `RegisteredSequences` (+0xB0) and write `ActiveSequences` (+0x100) weren't traced.
+  `PlaySequenceDialogue` (a talk, step 7) and the skip popup's show and hide.
+- **Story scenes from C++** (worked out on 2026-11-05, build 26337109, for the C++ SDK's `play_scene`):
+  - **The play call** is the sequencer manager's vtable +0x338, the base class's `0x1412B2190` in every manager
+    (signed as `SwtSequencerManager:PlaySequence`), on the manager (a global), with a 0x88-byte struct; it returns
+    non-null when the scene started. Both the prophecy intro (`WrcGameplayGameState`'s vtable +0x940, `0x1418A7D30`,
+    which builds `Gameplay.Narrative.Prophecy.Intro.%s`) and the talk action `QuestDialogueActionPlaySequence`'s
+    execute (its vtable +0x2E8) call it.
+  - **The struct**, from the talk action, whose reflected members fill it: +0x00 `bPauseAtEnd`; +0x08 an FString,
+    the music to play (`mus_moonpool_a` from the intro, empty from the action); +0x18 `PlayRate`; +0x20 `ForcedTime`
+    (when `bForceTime`, else 0); +0x28 an empty `TMap` of actors to put in it (`FSwtMinPlaySequenceArguments`'
+    `ActorsToReplace`: its bit array's size word at +0x50 is 0x80 and its free index -1); +0x78 a byte the action sets
+    to 1 and the intro to 0; +0x7C `SequenceType` (`ESwtEngineSequencerType`, int32: the intro's is 3, CutScene);
+    +0x80 the tag.
+  - **What's registered:** `RegisteredSequences` maps each kind to a table of `SwtEngineSequencersStruct` rows (tag,
+    level sequence, hides the HUD, hides the actors): 60 on this build, 14 of them story scenes (type 3).
+  - **Played from C++** with the intro's choices (no music, +0x78 0): the sandbox's establishing shot
+    (`Quest.Chapter00`) played where it was made (the camera under the ground near ShadowClan's camp), with the
+    game's skip popup (`WBP_GuiPopupSkip_C`, "Hold skip"), and ended by itself or by the skip held 2.5 s, play and
+    the HUD back. ShadowClan's prophecy intro played and skipped the same way, with nothing the game does around it:
+    the quests (40) and the save's seen scenes as they were, the HUD back a few seconds after the skip.
 - **Dilemmas** are a fight's: the fight component reflects `OnDilemmaCheck` and `OnDilemmaCompleted(warriorCode)`,
   and `DT`'s `SwtAdventureDilemmaStruct` rows trigger on fight stats (a team member's health, a chance), with two
   choices and their warrior codes.

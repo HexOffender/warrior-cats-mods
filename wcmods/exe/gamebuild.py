@@ -495,6 +495,7 @@ PLAIN = {
     "SwtAdventureTuningManager:GetHousingCost": "what den decorations cost, for C++ mods",
     "Checkpoints": "the places your cat can travel to, for C++ mods",
     "GuiPopupWorldMap": "travelling through the world map, for C++ mods",
+    "SwtSequencerManager": "playing story scenes, for C++ mods",
 }
 
 

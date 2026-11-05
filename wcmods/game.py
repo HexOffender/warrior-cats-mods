@@ -171,6 +171,14 @@ NATIVE = [
     # The places to travel to (docs/reverse-engineering.md, "Travel, the HUD's pieces and the camera from C++"): a static
     # function beside the bond code, on the save manager (a global). Its reader beside it (0x16A7D20: (UID, the
     # checkpoint) -> -1 no entry, 0 locked, 1 unlocked) has no unique pattern: its code is the bond reads' shape.
+    # A story scene played by its tag (docs/reverse-engineering.md, "Story scenes from C++"): every sequencer manager's
+    # vtable +0x338, the base class's.
+    ("SwtSequencerManager:PlaySequence", 0x12B2190,
+     "plays a registered sequence: (the sequencer manager, const 0x88-byte arguments*) -> non-null when it started; "
+     "the arguments: +0x00 pause at its end (bool), +0x08 a music track's name (FString, empty for none), +0x18 the "
+     "play rate (float), +0x20 the time to start at (float), +0x28 the actors to put in it (an empty TMap: its bit "
+     "array's size word at +0x50 is 0x80 and its free index at +0x58 is -1), +0x78 a flag the talk action sets and "
+     "the prophecy intro doesn't, +0x7C its ESwtEngineSequencerType (int32), +0x80 its tag (FGameplayTag)"),
     ("Checkpoints:SetUnlocked", 0x16A7DE0,
      "unlocks a checkpoint or locks it again (\"SetCheckpointUnlockState\"): (const FString* the checkpoint's UID, its "
      "tag; bool unlocked; UObject* the checkpoint, a world context: the save keeps checkpoints under its level's name), "

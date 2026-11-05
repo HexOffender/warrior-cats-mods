@@ -2,6 +2,8 @@
 // includes it; docs/SDK.md, "C++ mods", documents every call.
 #pragma once
 
+#include <cstring>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -19,6 +21,7 @@
 #include <WCMods/Events.hpp>
 #include <WCMods/Game.hpp>
 #include <WCMods/Reflect.hpp>
+#include <WCMods/Tables.hpp>
 #include <WCMods/Ui.hpp>
 #include <WCMods/World.hpp>
 
@@ -298,6 +301,112 @@ namespace wcmods
             out.push_back(get(tag, L"TagName").string());
         return out;
     }
+    // A scene the game can play: its tag (Gameplay.Narrative.Prophecy.Intro.ShadowClan), its kind (ESwtEngineSequencerType:
+    // 1 Intro, 2 Outro, 3 CutScene, 4 Podium, 5 Gameplay, 6 Combat, 7 Quest), its level sequence's name, and whether
+    // it hides the HUD and the world's actors while it plays.
+    struct Scene
+    {
+        std::wstring tag;
+        int type{};
+        std::wstring sequence;
+        bool hides_hud{}, hides_actors{};
+    };
+    // Every scene the sequencer manager has: its RegisteredSequences, a table of rows (SwtEngineSequencersStruct)
+    // for each kind.
+    inline auto scenes() -> std::vector<Scene>
+    {
+        std::vector<Scene> out;
+        if (!assert_game_thread(L"scenes")) return out;
+        for (auto& [kind, table] : map_entries(manager(STR("sequencer")), L"RegisteredSequences"))
+        {
+            Table t(table.object);
+            if (!t) continue;
+            for (auto& [row_name, row] : t.rows())
+            {
+                Scene s;
+                s.tag = get(row, L"sequenceId.TagName").string();
+                s.type = static_cast<int>(kind.number());
+                UObject* seq = get(row, L"LevelSequencer").object;
+                s.sequence = seq ? name(seq) : std::wstring{};
+                s.hides_hud = get(row, L"bHideGameplayHud").boolean();
+                s.hides_actors = get(row, L"bHideGameplayActors").boolean();
+                if (!s.tag.empty()) out.push_back(std::move(s));
+            }
+        }
+        return out;
+    }
+    // How play_scene plays one: from `start` seconds in, at `rate`, held on its last frame at its end (`pause_at_end`, as
+    // a talk's scene can be), and as the kind of scene it's registered as unless `type` says (scenes()).
+    struct PlayScene
+    {
+        double rate = 1.0;
+        double start = 0.0;
+        bool pause_at_end = false;
+        std::optional<int> type;
+    };
+    namespace detail
+    {
+        // The arguments the sequencer manager's PlaySequence takes (0x88 bytes; game.NATIVE says what each is).
+        struct alignas(8) PlaySequenceArgs
+        {
+            uint8_t bytes[0x88]{};
+        };
+        inline auto play_sequence_args(const RC::Unreal::FName& tag, int type, const PlayScene& how) -> PlaySequenceArgs
+        {
+            PlaySequenceArgs a;
+            a.bytes[0x00] = how.pause_at_end ? 1 : 0;
+            const float rate = static_cast<float>(how.rate), start = static_cast<float>(how.start);
+            std::memcpy(a.bytes + 0x18, &rate, 4);
+            std::memcpy(a.bytes + 0x20, &start, 4);
+            const uint32_t empty_map[4] = {0, 0x80, 0xFFFFFFFFu, 0};   // the actors to put in it: none
+            std::memcpy(a.bytes + 0x50, empty_map, sizeof empty_map);
+            const int32_t kind = type;
+            std::memcpy(a.bytes + 0x7C, &kind, 4);
+            std::memcpy(a.bytes + 0x80, &tag, 8);
+            return a;
+        }
+    } // namespace detail
+
+    // Play one of the game's scenes by its tag (scenes() lists them), through the sequencer manager's own PlaySequence
+    // (signed): the camera, and the HUD and the world's actors hidden as the scene says, until it ends; scenes_playing()
+    // has it meanwhile. A story scene (the prophecy intro, a rank-up) is only the film: what the game does around it
+    // (marking it seen, the ceremony after) isn't run. False for a tag the game hasn't, outside the world, or without the
+    // function on this build.
+    //   wcmods::play_scene(L"Quest.Chapter00");   // the sandbox's establishing shot
+    inline auto play_scene(std::wstring_view tag, const PlayScene& how = {}) -> bool
+    {
+        if (!assert_game_thread(L"play_scene") || !player()) return false;
+        UObject* mgr = manager(STR("sequencer"));
+        using Play = void* (*)(UObject*, const void*);
+        auto play = native<Play>(L"SwtSequencerManager:PlaySequence");
+        if (!mgr || !play) return false;
+        int type = how.type.value_or(-1);
+        if (type < 0)
+            for (auto& s : scenes())
+                if (s.tag == tag) type = s.type;
+        if (type < 0) return false;
+        RC::Unreal::FName name(std::wstring(tag), RC::Unreal::FNAME_Find);
+        if (name == RC::Unreal::FName(STR("None"), RC::Unreal::FNAME_Find)) return false;
+        auto args = detail::play_sequence_args(name, type, how);
+        return play(mgr, args.bytes) != nullptr;
+    }
+
+    // Skip the scene playing, as holding the skip button does: the game's skip popup (WBP_GuiPopupSkip_C) given its
+    // hold button's command, pressed and released 2.5 s later. False when the popup isn't up (a scene the game doesn't
+    // let you skip, or none playing).
+    inline auto skip_scene() -> bool
+    {
+        if (!assert_game_thread(L"skip_scene")) return false;
+        Widget popup = ui::screen(L"GuiPopupSkip");
+        if (!popup) return false;
+        std::wstring command = get(popup.object(), L"mcGuiHoldButtonSkip.ButtonCommand").string();
+        if (auto at = command.find(L"::"); at != std::wstring::npos) command = command.substr(at + 2);
+        if (command.empty() || !ui::detail::screen_command(popup, command, 0, false)) return false;
+        wcmods::detail::in_process_event([popup, command] { ui::detail::screen_command(popup, command, 0); });
+        after(2.5, [popup, command] { wcmods::detail::in_process_event([popup, command] { ui::detail::screen_command(popup, command, 1); }); });
+        return true;
+    }
+
     // A value of your cat's progression in the save, by its path under the slot's GameplayProgression
     // (L"Chapter00/L_WorldMap_01_P", L"FreshKill/Cycle"), as of the last save; null when it isn't there.
     inline auto progression(std::wstring_view path) -> Json

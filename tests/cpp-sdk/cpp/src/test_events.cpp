@@ -138,6 +138,10 @@ namespace t
             {
                 run_camera_request();
             }
+            else if (what == "scenes")
+            {
+                run_scenes_request();
+            }
             else if (what == "photo")
             {
                 run_photo_request();
