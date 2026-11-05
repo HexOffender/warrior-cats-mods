@@ -594,25 +594,61 @@ namespace wcmods
             const Visibility v = Widget(w).visibility();
             return v != Visibility::Collapsed && v != Visibility::Hidden;
         }
-        // On the pause screen (waited for while it comes up): to the General tab (Left, as its tab key), down its list
-        // to Photo Mode, and Confirm, one press every 0.4 s (each released 0.3 s after it), up to `steps` tries.
-        inline auto pause_to_photo_mode(int steps) -> void
+        // Which opening of photo mode is wanted: photo_mode(true) starts one, photo_mode(false) ends any still under way.
+        inline auto photo_opening() -> int&
         {
-            if (steps <= 0) return;
+            static int n = 0;
+            return n;
+        }
+        // The opening photo_mode(false) last ended: its steps close the pause screen they opened.
+        inline auto photo_cancelled() -> int&
+        {
+            static int n = -1;
+            return n;
+        }
+        // On the pause screen (waited for while it comes up): to the General tab (Left, as its tab key), down its list
+        // to Photo Mode, and Confirm, one press every 0.4 s (each released 0.3 s after it), up to `steps` tries. Gives
+        // up, closing the pause screen and saying why in the log, when Photo Mode is off there (its CanvasDisabled
+        // shows) or the tries run out; stops when photo_mode(false) came since (`opening` isn't the latest).
+        inline auto pause_to_photo_mode(int steps, int opening, bool closing = false) -> void
+        {
             UObject* pause = ui::screen(L"GuiScreenPause").object();
+            if (opening != photo_opening())
+            {
+                // Ended by photo_mode(false): the pause screen it opened goes too, once it's up (asked again until it's
+                // gone: one coming up takes no Back while it opens), and then nothing more: a pause screen opened later
+                // is someone else's.
+                if (opening != photo_cancelled() || steps <= 0 || (closing && !pause)) return;
+                if (pause) ui::close(Widget(pause));
+                after(0.4, [steps, opening, pause] { pause_to_photo_mode(steps - 1, opening, pause != nullptr); });
+                return;
+            }
+            if (steps <= 0)
+            {
+                if (pause) ui::close(Widget(pause));
+                log(L"photo_mode: the pause menu's Photo Mode couldn't be reached, so photo mode didn't open");
+                return;
+            }
             if (!pause)
             {
-                after(0.4, [steps] { pause_to_photo_mode(steps - 1); });
+                after(0.4, [steps, opening] { pause_to_photo_mode(steps - 1, opening); });
                 return;
             }
             Widget screen(pause);
             UObject* general = get(pause, L"mcGuiPanelGeneral").object;
             UObject* button = get(general, L"mcGuiButtonPhotoMode").object;
+            if (get(pause, L"CurrentPanel").object == general && shown_widget(get(button, L"CanvasDisabled").object))
+            {
+                ui::close(screen);
+                log(L"photo_mode: the pause menu's Photo Mode is off here, so photo mode didn't open");
+                return;
+            }
             const wchar_t* press = get(pause, L"CurrentPanel").object != general ? L"Button_Left"
                                  : shown_widget(get(button, L"CanvasSelected").object) ? L"Button_Confirm"
                                  : L"Button_Down";
             ui::send(screen, press);
-            if (std::wstring_view(press) != L"Button_Confirm") after(0.4, [steps] { pause_to_photo_mode(steps - 1); });
+            if (std::wstring_view(press) != L"Button_Confirm")
+                after(0.4, [steps, opening] { pause_to_photo_mode(steps - 1, opening); });
         }
     } // namespace detail
 
@@ -620,15 +656,18 @@ namespace wcmods
     inline auto in_photo_mode() -> bool { return assert_game_thread(L"in_photo_mode") && detail::photo_popup() != nullptr; }
 
     // Photo mode on, the game's way (the pause screen, then its Photo Mode: about two seconds), or off (its Exit, back
-    // to play). True when it was started or ended, or is already as asked; false outside the world, in a fight, or with
-    // another screen up.
+    // to play; an opening still under way stops). True when it was started or ended, or is already as asked (in_photo_mode
+    // says when it's up: where the game has Photo Mode off, the pause screen closes again and the log says so); false
+    // outside the world, in a fight, or with another screen up.
     inline auto photo_mode(bool on) -> bool
     {
         if (!assert_game_thread(L"photo_mode")) return false;
+        if (!on) detail::photo_cancelled() = detail::photo_opening()++;
         if (UObject* p = detail::photo_popup()) return on || ui::send(Widget(p), L"Player_PhotoMode_Exit");
         if (!on) return true;
         if (!player() || !screens().empty() || !command(L"Player_Pause")) return false;
-        after(0.5, [] { detail::pause_to_photo_mode(16); });
+        const int opening = ++detail::photo_opening();
+        after(0.5, [opening] { detail::pause_to_photo_mode(16, opening); });
         return true;
     }
 
@@ -652,8 +691,9 @@ namespace wcmods
 
     // A picture of what the game shows, saved as the engine's HighResShot does, without the game's menus
     // (%LOCALAPPDATA%\Wrc\Saved\Screenshots\Windows\HighresScreenshotNNNNN.png, the next number each time), at the
-    // window's size times `scale`. Works anywhere in the world; in photo mode it's photo mode's camera. False when
-    // the console command couldn't be run.
+    // window's size times `scale`. Works anywhere in the world; in photo mode it's photo mode's camera. True when the
+    // command was given: the file is written a frame or two later (the engine says nothing back). False without a player
+    // to give it.
     inline auto take_photo(int scale = 1) -> bool
     {
         if (!assert_game_thread(L"take_photo") || scale < 1 || scale > 4) return false;

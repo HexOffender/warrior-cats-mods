@@ -1552,9 +1552,10 @@ def test_photo_mode(agent):
     and shown again (Hide UI), a photo saved as the engine's HighResShot (a new picture in Saved/Screenshots), and off,
     back to play with no screen up; the calls refused outside photo mode."""
     _close_screens(agent)
-    r = _request(agent, "photo", timeout=40)
+    r = _request(agent, "photo", timeout=50)
     assert not _failed(r, "photo"), _failed(r, "photo")
     v = r["values"]
+    assert v["photo.cancelled_in"] is False and v["photo.cancelled_screens"] == [], v   # on, then off at once
     assert v["photo.in"] is True and v["photo.camera"] == "PhotoModeCameraActor", v
     assert v["photo.ui_before"] is True and v["photo.ui_hidden"] is False and v["photo.ui_again"] is True, v
     assert v["photo.files_after"] == v["photo.files_before"] + 1, v

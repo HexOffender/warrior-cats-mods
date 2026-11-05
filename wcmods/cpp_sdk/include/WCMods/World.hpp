@@ -334,10 +334,14 @@ namespace wcmods
             std::lock_guard lock(c.lock);
             auto now = std::chrono::steady_clock::now();
             if (c.data && now - c.checked < 250ms) return {c.data, c.size, c.at, c.written};
-            auto size = save_size();
-            if (!size) return {};
+            // The file's size and write time from one look at it (a directory entry caches both).
             std::error_code error;
-            auto written = std::filesystem::last_write_time(save_path(), error);
+            std::filesystem::directory_entry file(save_path(), error);
+            std::optional<std::uintmax_t> size;
+            std::filesystem::file_time_type written{};
+            if (!error) size = file.file_size(error);
+            if (error || !size) return {};
+            written = file.last_write_time(error);
             c.checked = now;
             if (c.data && size == c.size && written == c.written && now - c.at < 30s) return {c.data, c.size, c.at, c.written};
             auto text = read_file(save_path());

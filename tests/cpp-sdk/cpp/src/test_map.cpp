@@ -295,6 +295,13 @@ namespace t
         expect("photo.refused", !in_photo_mode() && !photo_mode_ui(false) && !photo_camera() && photo_mode(false));
         const int before = photo_count();
         value("photo.files_before", before);
+        // On, then off at once: the opening stops, and the pause screen it opened closes.
+        expect("photo.on_then_off", photo_mode(true) && photo_mode(false));
+        after(4.0, [before] {
+        value("photo.cancelled_in", in_photo_mode());
+        Json still = Json::array();
+        for (auto& s : screens()) still.push(Json(utf8(s)));
+        value("photo.cancelled_screens", still);
         expect("photo.on", photo_mode(true));
         after(4.0, [before] {
             value("photo.in", in_photo_mode());
@@ -322,6 +329,7 @@ namespace t
                     });
                 });
             });
+        });
         });
     }
 } // namespace t

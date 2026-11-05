@@ -100,16 +100,20 @@ def _between(text, start, end):
 
 def test_cpp_save_file_is_parsed_again_only_when_it_changed():
     """The C++ half of W6: save_file() parsed WrcGame.json (about 40 ms) on every call. As the Lua's fileCache, the parsed
-    save is kept while the file's size is the same (looked at 4 times a second, parsed again every 30 s at least), a
-    half-written file gives the last good one, save_game() drops it (as Game.save.write), and slot_data() and items()
-    read it without copying the whole save."""
+    save is kept while the file is the same (looked at 4 times a second, parsed again every 30 s at least): its size, and in
+    C++ its write time too, both from one look at it (a save rewritten at the same size, a checkpoint unlocked, is read
+    again). A half-written file gives the last good one, save_game() drops it (as Game.save.write), and slot_data() and
+    items() read it without copying the whole save."""
     hpp = _hpp("World.hpp")
     read = _between(hpp, "inline auto read_save() -> SaveRead", "\n        }\n")
     assert read.index("std::lock_guard lock(c.lock);") < read.index("read_file(save_path())")
-    assert "if (c.data && now - c.checked < 250ms) return {c.data, c.size, c.at};" in read
-    assert "if (c.data && size == c.size && now - c.at < 30s) return {c.data, c.size, c.at};" in read
-    assert "if (!parsed) return {c.data, c.size, c.at};" in read
-    assert "c.at = now;" in read and "c.size = size;" in read
+    assert "if (c.data && now - c.checked < 250ms) return {c.data, c.size, c.at, c.written};" in read
+    assert "std::filesystem::directory_entry file(save_path(), error);" in read
+    assert "size = file.file_size(error);" in read and "written = file.last_write_time(error);" in read
+    assert ("if (c.data && size == c.size && written == c.written && now - c.at < 30s) "
+            "return {c.data, c.size, c.at, c.written};") in read
+    assert "if (!parsed) return {c.data, c.size, c.at, c.written};" in read
+    assert "c.at = now;" in read and "c.size = size;" in read and "c.written = written;" in read
     assert "detail::read_save()" in _between(hpp, "inline auto save_file() -> Json", "\n    }\n")
     assert "save_file()" not in _between(hpp, "inline auto slot_data() -> Json", "\n    }\n")
     assert "slot_data()" not in _between(hpp, "inline auto items() -> Json", "\n    }\n")
