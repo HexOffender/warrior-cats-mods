@@ -70,7 +70,9 @@ namespace t
         Json missing = save_state(L"NoSuchState");
         expect("save_state.missing", missing.is_null() || missing.size() == 0, missing.dump(0));
         expect("set_save_state", inventory.is_object() ? set_save_state(L"Inventory", inventory) : true);
-        auto level = save_progression(L"GameplayProgression", L"Level");
+        // A key the account-wide progression has (Shared/GameplayProgression/Chapter00/ShowVictory): reading one it
+        // hasn't got would write it into the save.
+        auto level = save_progression(L"Chapter00", L"ShowVictory");
         value("save.progression", level ? Json(*level) : Json());
         auto minimap = save_setting(L"SettingsData", L"Minimap");
         value("save.setting", minimap ? Json(*minimap) : Json());

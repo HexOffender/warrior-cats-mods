@@ -59,7 +59,7 @@ The reverse-engineering roadmap's open steps ([re-roadmap.md](re-roadmap.md)) fo
 | 2. A line edited in `Strings_EN` shows in a talk | done: a key's words changed show in a talk's line (step 7) | steps 3, 7 |
 | 3. Is `AudioEvents.csv` read at runtime | not checked | step 4 |
 | 7. The sky table, and the day cycle | presets and the fade back known; the table not looked at | step 5 |
-| 8. Where a bond is stored | not started | step 8 |
+| 8. Where a bond is stored | done: the cat's slot's `GameplayProgression/Bonding`, through the game's bond functions (reverse-engineering.md, "Bonds") | step 8 |
 | 9. The dialogue graphs | done: read in game by reflection and played in the talk box; the game's own player by tag tried and set aside (it crashes when ended early) | step 7 |
 | The rest, 1: `quests.start` on the game's quests | untried | step 11 |
 | The rest, 3: the talk box's answer buttons | done: they show answers' words; clicking them runs the box's own graph code, so a mod takes answers by number | step 7 |
@@ -427,8 +427,8 @@ Each step's pull request updates its line.
 | 4. Sounds and music | done: an id's sound replaced, muted and put back (the game's own plays follow); the music read, played, stopped; volumes; the pause. The roadmap's step 3 answered: a data mod's `AudioEvents.csv` reaches the game. A sound by its asset path waits for a loader (step 10) | #119 |
 | 5. The sky's values | done: every preset's values read and changed live in the sky's own copy (a new hidden member), put back; the table they come from. The roadmap's step 7 answered: the day cycle doesn't rewrite them, the sky fades back to the area's preset (step 1 of #111) | #120 |
 | 6. Cats of a mod's own | done: spawned with a look, kept, moved, walked (stall detours), labelled, prompted, Interact heard from the controller; an asset loader and an enum lookup with them. Map markers move to step 14 with the map | #121 |
-| 7. Conversations | done: the box with a mod's lines and answers' words; any of the game's talks read from its graph (lines, speakers, bonding variants, answers, actions) and played in that box, answers chosen, a mod's own talks too; an edited line shows in a talk. The game's own player (`PlaySequenceDialogue`) crashes the game when its box is closed any way but by its scene, so it isn't used (reverse-engineering.md, "Talks in game"). Answers come by number from the mod's keys, not the box's buttons | this branch, `claude/cpp-talks` |
-| 8. Bonds | not started | |
+| 7. Conversations | done: the box with a mod's lines and answers' words; any of the game's talks read from its graph (lines, speakers, bonding variants, answers, actions) and played in that box, answers chosen, a mod's own talks too; an edited line shows in a talk. The game's own player (`PlaySequenceDialogue`) crashes the game when its box is closed any way but by its scene, so it isn't used (reverse-engineering.md, "Talks in game"). Answers come by number from the mod's keys, not the box's buttons | #122 |
+| 8. Bonds | done: every clan's and story cat's bond read, added to and set through the game's own bond code (four native functions signed), the ranks from the tuning, your clan's story roles; the Bonds panel and the save show a change. The save manager's reflected progression calls turned out to be account-wide (and a read adds a key): documented and the test's stray key fixed. What a talk's answer adds is left open | this branch, `claude/cpp-bonds` |
 | 9. Looks and the clan | not started | |
 | 10. Ground items, a mod's animations | not started | |
 | 11. Quests and the story | not started | |

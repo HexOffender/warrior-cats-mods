@@ -14,4 +14,5 @@ wcmods_mod(${WCMODS_TARGET}
     src/test_sounds.cpp
     src/test_npcs.cpp
     src/test_talks.cpp
+    src/test_bonds.cpp
 )

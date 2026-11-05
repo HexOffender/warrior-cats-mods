@@ -174,11 +174,14 @@ namespace wcmods
     }
 
     // ============================================================================================ the save
-    // The game's save manager holds the save's live data: parts of the state as JSON by key ("Inventory"),
-    // whole-number progression values, and settings values.
+    // The game's save manager holds the save's live data. Its reflected calls below work on the account-wide part
+    // (the save's Shared: Shared/GameplayProgression and its State, the settings), not the slot of the cat played:
+    // that one the game's own code reaches natively (its bonds: Bonds.hpp; its inventory: inventory()). Reading a
+    // progression key that isn't there writes it into the save as 0.
     inline auto save_manager() -> UObject* { return manager(STR("save")); }
 
-    // A part of the current slot's state ("Inventory", "Traits"...), as Json; null when there's none.
+    // A part of the account-wide state (Shared/GameplayProgression/State: "Currency", "Decorations"), as Json; an
+    // empty object for a key it hasn't got.
     // (The save manager's parameters are set by position, whatever the game names them.)
     // The JSON text the save manager gives for a part of the state, as it is ("null" for a key it hasn't got).
     inline auto save_state_text(std::wstring_view key) -> std::wstring
@@ -202,7 +205,8 @@ namespace wcmods
             p.set_nth(1, Value::of(std::wstring_view(text)));
         }).has_value();
     }
-    // Whole-number progression values (the save's GameplayProgression), and settings values.
+    // Whole-number values in the account-wide progression (Shared/GameplayProgression/<primary>/<sub>), and settings
+    // values. A progression read of a key that isn't there adds it as 0.
     inline auto save_progression(std::wstring_view primary, std::wstring_view sub = {}) -> std::optional<double>
     {
         auto r = call_reflected(save_manager(), STR("GetGameProgressionData"), [&](Params& p) {
@@ -639,11 +643,17 @@ namespace wcmods
         }
     } // namespace detail
 
+    // A cat's name as the game shows it from its name ids (L"STR_CAT_NAME2", L"_PAW": "Emberpaw"), after your name
+    // mods; empty when neither gives words.
+    inline auto cat_name_of(std::wstring prefix, std::wstring suffix) -> std::wstring;
     // A cat's name as the game shows it ("Otterpaw"), from its name ids and your name mods, or empty.
     inline auto cat_name(UObject* actor) -> std::wstring
     {
-        std::wstring prefix = get(actor, L"MeshCustomizationComponent.CustomData.PrefixNameId").string();
-        std::wstring suffix = get(actor, L"MeshCustomizationComponent.CustomData.SuffixNameId").string();
+        return cat_name_of(get(actor, L"MeshCustomizationComponent.CustomData.PrefixNameId").string(),
+                           get(actor, L"MeshCustomizationComponent.CustomData.SuffixNameId").string());
+    }
+    inline auto cat_name_of(std::wstring prefix, std::wstring suffix) -> std::wstring
+    {
         if (prefix == L"None") prefix.clear();
         if (suffix == L"None") suffix.clear();
         detail::Names& n = detail::names();

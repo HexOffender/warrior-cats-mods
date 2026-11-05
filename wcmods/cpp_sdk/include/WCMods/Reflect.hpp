@@ -617,6 +617,22 @@ namespace wcmods
         return std::nullopt;
     }
 
+    // Every name of an enum with its value, in the enum's order (its _MAX left out): L"/Script/SwtQuest.ENarrativeRole"
+    // gives {L"None", 0}, {L"TheStarvingWarrior", 1}... Empty for a path that isn't an enum.
+    inline auto enum_names(const TCHAR* enum_path) -> std::vector<std::pair<std::wstring, int64_t>>
+    {
+        std::vector<std::pair<std::wstring, int64_t>> out;
+        UObject* o = object(enum_path);
+        if (!o || !o->IsA(RC::Unreal::UEnum::StaticClass())) return out;
+        for (auto& pair : static_cast<RC::Unreal::UEnum*>(o)->ForEachName())
+        {
+            std::wstring n = detail::short_enum_name(pair.Key.ToString());
+            if (n.ends_with(L"_MAX") || n == L"MAX") continue;
+            out.emplace_back(std::move(n), pair.Value);
+        }
+        return out;
+    }
+
     // One of the game's assets by its whole object path (a class, a texture, a sound, an animation:
     // L"/Game/Path/Asset.Asset", a Blueprint's class L"/Game/Path/BP_X.BP_X_C"), loaded when it isn't yet, as the
     // engine's own LoadAsset_Blocking does (KismetSystemLibrary: the path made a soft reference, then loaded). It

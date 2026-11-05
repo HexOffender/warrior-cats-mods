@@ -95,6 +95,19 @@ NATIVE = [
      "adds a count of an item to an inventory, or takes it away (a negative count; at 0 the item goes): "
      "(the component, the item's FGameplayTag by value, int32 count, bool show it on the HUD); then tells the "
      "component's listeners (the HUD's OnItemPickedUp) and writes the inventory into the save's state"),
+    # The game's bond code (docs/reverse-engineering.md, "Bonds"): static functions on the cat's slot of the save
+    # manager's data (its vtable +0x498, slot -1: the cat played now), each named by its own log line.
+    ("Bonding:GetPersonal", 0x169F830,
+     "a story cat's bond with your cat: (uint8 ENarrativeRole, int32 slot: -1 for the cat played now) -> int32; the "
+     "slot's Bonding/<role>, or the role's BaseBonding from the narrative roles' table when it isn't set"),
+    ("Bonding:AddPersonal", 0x169F510,
+     "adds to a story cat's bond (\"AddPersonalBonding\"): (uint8 ENarrativeRole, int32 amount), on the cat played "
+     "now: the bond as GetPersonal reads it plus the amount, written to the slot's Bonding/<role>"),
+    ("Bonding:GetClan", 0x169FE30,
+     "a clan's regard for your cat: (uint8 EClanType) -> int32, on the cat played now; the slot's Bonding/<clan>, or "
+     "the tuning's Gameplay.Progression.Bonding.Clan.Default when it isn't set"),
+    ("Bonding:AddClan", 0x169FBD0,
+     "adds to a clan's regard (\"AddClanScore\"): (uint8 EClanType, int32 amount), on the cat played now"),
     ("SwtTuningManager:GetValue", 0x12BBA60,
      "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, "
      "0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData"),

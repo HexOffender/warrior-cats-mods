@@ -414,7 +414,7 @@ def test_world_matches_lua(agent):
         return { pickups = #World.nearby("pickups", 5000), screens = Game.screens(), ground = Game.ground(at.X, at.Y, at.Z),
                  slot = Game.save.slot(), inventory = Game.save.state("Inventory"), items = n,
                  inventory_text = Game.save.stateText("Inventory"),
-                 progression = Game.save.progression("GameplayProgression", "Level"),
+                 progression = Game.save.progression("Chapter00", "ShowVictory"),
                  setting = Game.save.setting("SettingsData", "Minimap"),
                  name = c:name(), clan = c:clan(), traits = c:traits(),
                  marigold = N.item("Gameplay.Inventory.Consumable.MediumHealingHerb") }""")
@@ -1157,6 +1157,35 @@ def test_talks(agent):
     assert v["talks.own_after"] == "Another time, then.", v["talks.own_after"]
     # The box said again as it was going stayed: still in the viewport after the removal's 0.4 s.
     assert v["talks.after_end_in_view"] is True, v
+
+
+def test_bonds(agent):
+    """Bonds.hpp in the game, on the test cat (ShadowClan): the ranks by the tuning's thresholds; the clan's bond (67,
+    the tuning's default) and one of the clan's story cats' (its role's base, 20) read through the game's own bond
+    code; added to and set (the game keeps a bond within 0 and 100); the pause screen's Bonds panel shows both (the
+    clan bar's score and the cat's row); the game's save has them under the slot's Bonding; put back after (a bond
+    can't be taken out of the save, so the slot keeps the two at their defaults)."""
+    _close_screens(agent)
+    try:
+        r = _request(agent, "bonds", timeout=40)
+    finally:
+        _close_screens(agent)
+    assert not _failed(r, "bonds"), _failed(r, "bonds")
+    v = r["values"]
+    role = v["bonds.role"]
+    assert v["bonds.roles"] > 100 and v["bonds.first_role"] == "TheStarvingWarrior", v
+    assert v["bonds.name_from_ids"] == "Emberpaw", v["bonds.name_from_ids"]
+    assert role and v["bonds.clan_before"] == 67 and v["bonds.role_before"] == 20, v
+    assert (v["bonds.clan_after"], v["bonds.role_after"], v["bonds.role_high"], v["bonds.role_low"]) == (42, 50, 100, 0), v
+    listed = {b["key"]: b for b in v["bonds.listed"]}
+    assert listed["ShadowClan"]["value"] == 42 and listed["ShadowClan"]["rank"] == "Neutral", listed["ShadowClan"]
+    assert listed[role]["value"] == 50 and listed[role]["rank"] == "Friend" and listed[role]["base"] == 20, listed[role]
+    panel = v["bonds.panel"]
+    assert panel and panel["clan_score"] == "42/100" and panel["clan_info"] == "Neutral", panel
+    assert "50/100" in [row["score"] for row in panel["rows"]], panel["rows"]
+    assert v["bonds.saved"].get("ShadowClan") == 42 and v["bonds.saved"].get(role) == 50, v["bonds.saved"]
+    assert (v["bonds.clan_restored"], v["bonds.role_restored"]) == (67, 20), v
+    assert v["bonds.saved_after"].get("ShadowClan") == 67 and v["bonds.saved_after"].get(role) == 20, v["bonds.saved_after"]
 
 
 def test_ui_arrow_units(agent):

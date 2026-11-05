@@ -617,6 +617,50 @@ does: `true` shows the next line, `false` hides it; after the last line `true` l
   each); the box's answer buttons show the answers' words but aren't clickable (their own code goes through the
   graph's node, which that box hasn't got).
 
+### Bonds
+
+Worked out on 2026-11-04 (build 26337109) from the exe and in game, for the C++ SDK's `Bonds.hpp`; the addresses are
+this build's.
+
+**Where they are.** In the cat's slot of the save, `<slot>/GameplayProgression/Bonding`: one whole number per clan
+(`"RiverClan": 69`) and per story cat by its `ENarrativeRole` name (`"TheMistrustfulLeader": 24`), and `Nodes`, the
+bond talks' answered nodes (`{"Quest.Main.1.Context.Answer.Brave.Short": true}`). The game keeps a bond within 0 and
+100; the pause screen's Bonds panel shows a clan bar ("42/100", Neutral) and a row per story cat of your clan.
+
+**The game's bond code.** Six static functions next to each other, each named by its log line, all on the slot of the
+cat played now (the save manager's vtable +0x498, `0x1416AB2C0`, with slot -1: the slot number from a manager's
++0x154; the slot's key string, `"8"`, then the object under it):
+- `0x14169F830` reads a story cat's bond, `(uint8 ENarrativeRole, int32 slot) -> int32`: `Bonding/<role>`, or the
+  role's `BaseBonding` from the narrative roles' table when it isn't set (20 for a clan's main story cats).
+- `0x14169F510`, "AddPersonalBonding", `(uint8 role, int32 amount)`: that plus the amount, written back.
+- `0x14169FE30` reads a clan's regard, `(uint8 EClanType) -> int32`: `Bonding/<clan>`, or the tuning's
+  `Gameplay.Progression.Bonding.Clan.Default` (67).
+- `0x14169FBD0`, "AddClanScore", `(uint8 clan, int32 amount)`.
+- `0x14169F230`, "AddNodeToPersonalBonding", and `0x14169F020`, which checks a node in `Bonding/Nodes`.
+The enum names come from the enums themselves ("E" + the type's name looked up). `game.NATIVE` signs the four bond
+reads and adds (`Bonding:GetPersonal`, `Bonding:AddPersonal`, `Bonding:GetClan`, `Bonding:AddClan`).
+
+**Not the save manager's reflected calls.** `GetGameProgressionData(primary, sub)`, `SetGameProgressionData`,
+`RemoveGameProgressionData`, `GetStateJsonDataAsString` and `SetStateJsonDataFromString` work on the account-wide part
+of the save (`Shared/GameplayProgression` and its `State`), through the vtable's +0x478 (`GetGameProgressionData` is
++0x3D0, `0x1412A5330`): `GetGameProgressionData("Bonding", "RiverClan")` read 0 while the cat's slot had 69. A read of a
+key that isn't there adds it, as 0, and the game saves it: a probe of every role's name left 108 zeros under
+`Shared/GameplayProgression/Bonding` (put back from a backup). The C++ test's `save_progression("GameplayProgression",
+"Level")` had left `Shared/GameplayProgression/GameplayProgression/Level` the same way.
+
+**The thresholds** (TuningData): `Gameplay.Progression.Bonding.Personal.Neutral` 10, `.Friendly` 28, `.Friend` 46,
+`.CloseBond` 73 (`EBondingRanks`, Unfriendly below 10); `...Bonding.Clan.Negative` 33, `.Positive` 67, `.Default` 67
+(`EBondingTypes`).
+
+**Which cats.** The NPC generation manager's `NarrativeRoleMap` (`TMap<EClanType, FSwtQuestNarrativeRoleList>`) has your
+clan's roles for this game: for the ShadowClan test cat, 25, each with its `BaseBonding`, the camp cat that plays it
+(`NPCRole`, an `EGiverRole`, and `NPCIndex`) and, for the two iconic cats, `IconicName`. `NarrativeCustomDataMap` was
+empty. The others' names come from the clan's cats (`NPCData`, the coverage plan's step 9).
+
+**Still open:** what an answer's `Score` and `ClanBonding` do when the game's own talk resolves it (presumably
+`AddPersonalBonding` and `AddClanScore` from `ResolveBondAnswer`; not traced), and whether anything reads `Nodes`
+beyond the talks.
+
 ### New packages and textures
 
 Worked out on 2026-10-24 for icons and accessory looks (`wcmods/formats/texture.py`), and verified in game:

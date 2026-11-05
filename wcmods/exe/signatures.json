@@ -903,6 +903,26 @@
    "was": "0x1654430",
    "pattern": "44 89 44 24 ?? 48 89 54 24 ?? 55 57 41 56 48 8B EC 48 83 EC 40 48 8B 05 ?? ?? ?? ??"
   },
+  "Bonding:GetPersonal": {
+   "note": "a story cat's bond with your cat: (uint8 ENarrativeRole, int32 slot: -1 for the cat played now) -> int32; the slot's Bonding/<role>, or the role's BaseBonding from the narrative roles' table when it isn't set",
+   "was": "0x169F830",
+   "pattern": "48 89 5C 24 ?? 55 56 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC 60 02 00 00 48 8B 05 ?? ?? ?? ??"
+  },
+  "Bonding:AddPersonal": {
+   "note": "adds to a story cat's bond (\"AddPersonalBonding\"): (uint8 ENarrativeRole, int32 amount), on the cat played now: the bond as GetPersonal reads it plus the amount, written to the slot's Bonding/<role>",
+   "was": "0x169F510",
+   "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 4C 89 74 24 ?? 55 48 8B EC 48 81 EC 80 00 00 00 48 8B 1D ?? ?? ?? ?? 8B F2"
+  },
+  "Bonding:GetClan": {
+   "note": "a clan's regard for your cat: (uint8 EClanType) -> int32, on the cat played now; the slot's Bonding/<clan>, or the tuning's Gameplay.Progression.Bonding.Clan.Default when it isn't set",
+   "was": "0x169FE30",
+   "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 55 48 8D 6C 24 ?? 48 81 EC 90 00 00 00 48 8B 1D ?? ?? ?? ??"
+  },
+  "Bonding:AddClan": {
+   "note": "adds to a clan's regard (\"AddClanScore\"): (uint8 EClanType, int32 amount), on the cat played now",
+   "was": "0x169FBD0",
+   "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 4C 89 74 24 ?? 55 48 8B EC 48 81 EC 80 00 00 00 48 8B 1D ?? ?? ?? ?? 44 8B F2"
+  },
   "SwtTuningManager:GetValue": {
    "note": "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, 0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData",
    "was": "0x12BBA60",

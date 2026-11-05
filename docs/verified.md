@@ -401,6 +401,14 @@ words again once put back. A mod's own talk took its second answer ("Not now", o
 `on_end` that said a line left that line showing. The game's own player (`PlaySequenceDialogue`) was tried by hand
 first: its box crashed the game at quit, and when stepped past its last line (reverse-engineering.md, "Talks in game").
 
+**2026-11-04, build 26337109: bonds** (the branch `claude/cpp-bonds`, `tests/game/test_cpp_sdk.py`: `test_bonds`
+passed, and the whole suite with it): on the ShadowClan test cat, through the game's own bond functions, the clan's bond
+read 67 and its first story role with a base bond (`TheAmbitiousApprentice`) 20; 3 added made 23; set to 42 and 50
+they read back, and 150 and -20 ended at 100 and 0; the pause screen's Bonds panel, moved to with the tab key, showed
+the clan bar "42/100" "Neutral" and a row at "50/100" among seven cats; the game's save had both under the slot's
+`GameplayProgression/Bonding`; put back to 67 and 20 and saved again. The ranks matched the tuning's thresholds,
+`enum_names` gave EClanType in order, and `cat_name_of(L"STR_CAT_NAME2", L"_PAW")` was "Emberpaw".
+
 ## Not yet confirmed in game
 
 - **Choosing a game (2026-10-28):** the Save page's changes to a game other than the one played last, made
