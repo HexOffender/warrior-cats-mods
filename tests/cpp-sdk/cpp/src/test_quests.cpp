@@ -132,4 +132,95 @@ namespace t
             });
         });
     }
+
+    // The scenes the game has; one played (the sandbox's establishing shot, which isn't a story scene) and skipped.
+    namespace
+    {
+        // The running scene's player (the sequencer manager's ActiveSequences' SequencePlayer), and its time
+        // (UMovieSceneSequencePlayer's FQualifiedFrameTime: the frame, its fraction, then the frame rate).
+        auto scene_player() -> UObject*
+        {
+            for (auto& [tag, s] : map_entries(manager(STR("sequencer")), L"ActiveSequences"))
+                if (UObject* p = get(s, L"SequencePlayer").object) return p;
+            return nullptr;
+        }
+        struct QualifiedTime
+        {
+            int32_t frame;
+            float sub;
+            int32_t num, den;
+        };
+        auto scene_seconds(const TCHAR* function) -> Json
+        {
+            auto t = call<QualifiedTime>(scene_player(), function);
+            if (!t || t->num == 0) return Json();
+            return Json((t->frame + t->sub) * t->den / static_cast<double>(t->num));
+        }
+        auto scene_state(const std::string& prefix) -> void
+        {
+            Json now = Json::array();
+            for (auto& t : scenes_playing()) now.push(Json(utf8(t)));
+            value(prefix + ".playing", now);
+            value(prefix + ".skip_popup", static_cast<bool>(ui::screen(L"GuiPopupSkip")));
+            UObject* p = scene_player();
+            auto rate = call<float>(p, STR("GetPlayRate"));
+            value(prefix + ".rate", rate ? Json(static_cast<double>(*rate)) : Json());
+            value(prefix + ".time", scene_seconds(STR("GetCurrentTime")));
+            value(prefix + ".duration", scene_seconds(STR("GetDuration")));
+            Widget hud = ui::screen(L"WBP_GuiHudGameWrc_C");
+            value(prefix + ".hud", static_cast<bool>(hud));
+        }
+        auto scene_after(const std::string& prefix) -> void
+        {
+            value(prefix + ".playing_after", static_cast<int>(scenes_playing().size()));
+            value(prefix + ".skip_popup_after", static_cast<bool>(ui::screen(L"GuiPopupSkip")));
+            value(prefix + ".player_after", player() != nullptr);
+            Widget hud = ui::screen(L"WBP_GuiHudGameWrc_C");
+            value(prefix + ".hud_after", static_cast<bool>(hud));
+        }
+    } // namespace
+
+    auto run_scenes_request() -> void
+    {
+        phase("scenes");
+        Json all = Json::array();
+        for (auto& sc : scenes())
+        {
+            Json o = Json::object();
+            o.set("tag", Json(utf8(sc.tag)));
+            o.set("type", Json(sc.type));
+            o.set("sequence", Json(utf8(sc.sequence)));
+            o.set("hud", Json(sc.hides_hud));
+            all.push(o);
+        }
+        value("scenes.all", all);
+        value("scenes.playing_before", static_cast<int>(scenes_playing().size()));
+        expect("scenes.refused", !play_scene(L"Gameplay.WCModsTest.NoSuchScene") && !skip_scene() &&
+                                     !play_scene(L"Quest.Chapter00", {.rate = 0.0}) &&
+                                     !play_scene(L"Quest.Chapter00", {.length = -1.0}));
+        // Its 10 s made to last 5 (whatever the rate); a second scene refused while it plays.
+        expect("scenes.play", play_scene(L"Quest.Chapter00", {.rate = 4.0, .length = 5.0}));
+        expect("scenes.refused_second", !play_scene(L"Quest.Chapter00"));
+        after(1.0, [] {
+            scene_state("scenes");
+            expect("scenes.skip", skip_scene());
+            after(5.0, [] {
+                scene_after("scenes");
+                // At four times the speed (its end 2.5 s in), held there: 4 s in, no longer playing but the skip popup
+                // up (seen: the last frame on screen, "Hold skip"), another refused; then skipped.
+                expect("scenes.play_held", play_scene(L"Quest.Chapter00", {.rate = 4.0, .pause_at_end = true}));
+                after(1.0, [] { scene_state("scenes.fast"); });
+                after(4.0, [] {
+                    scene_state("scenes.held");
+                    expect("scenes.held.refused", !play_scene(L"Quest.Chapter00"));
+                    expect("scenes.held.skip", skip_scene());
+                    after(5.0, [] {
+                        scene_after("scenes.held");
+                        done("scenes");
+                    });
+                });
+            });
+        });
+    }
+
 } // namespace t

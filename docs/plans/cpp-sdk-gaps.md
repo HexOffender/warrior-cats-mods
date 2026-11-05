@@ -110,7 +110,7 @@ pause menu and a talk's `PhotoMode` action open it; its keys are `Player_PhotoMo
 
 **Find out.** The manager's own virtual that plays a registered sequence by tag (read from what the first load calls).
 
-**The calls.** `play_scene(tag)`, `skip_scene()`, the scene's end as an event.
+**The calls.** `scenes()`, `play_scene(tag)`, `skip_scene()`; the scene's end is `scenes_playing()` no longer having it.
 
 **Proof.** In game: a scene played by tag, in `ActiveSequences`, skipped through the game's popup, play back to the
 cat, and the game quits cleanly after.
@@ -136,6 +136,6 @@ and marks the node.
 | 2. The camera's setters | done: nothing had moved on 26337109 (the crash was a bad read of the interpolators' map); the camera's settings (distance, field of view, tilt, the speed's extra, lag) and your cat's turning and pitch limits as hidden members with signatures; `camera_settings`, `set_camera`, `reset_camera`, seen holding in game | #133 |
 | 3. Your cat's speeds | done: unmoved too; the exploration component's walk and run speeds, accelerations, crouch and climb factors and how it's moving as hidden members, signed (the two speed getters are leaf functions .pdata leaves out: `Finder.span` reads them to their ret); `player_speeds`, `set_player_speeds`, `reset_player_speeds`, the game's own per-frame write seen taking them, and more ground walked. There's no sprint apart from running | #134 |
 | 4. The world map's travel | done: a place unlocked (and locked) through the game's own SetCheckpointUnlockState, signed (its last argument is the checkpoint, a world context, not a slot); the travel map opened by the checkpoint's Interact (the only way it comes in travel mode); the map moved to put a place under its pointer (its translation, found unreflected) and Travel (Confirm) pressed: the game's own travel there and back | #135 |
-| 5. Photo mode | done: on through the pause menu's own Photo Mode (its keys: the screen's OnUIPress didn't press it), off by its Exit, its UI hidden and shown (Hide UI), its camera; on PC the game takes no photo of its own (Take photo hidden), so a photo is the engine's HighResShot. With it, the save cache re-reads a file the game rewrote at the same size (by its write time), which had left `places()` a save behind | this branch, `claude/cpp-photo-mode` |
-| 6. Story scenes | not started | |
+| 5. Photo mode | done: on through the pause menu's own Photo Mode (its keys: the screen's OnUIPress didn't press it), off by its Exit, its UI hidden and shown (Hide UI), its camera; on PC the game takes no photo of its own (Take photo hidden), so a photo is the engine's HighResShot. With it, the save cache re-reads a file the game rewrote at the same size (by its write time), which had left `places()` a save behind | #136 |
+| 6. Story scenes | done: the 60 registered scenes listed (the sequencer manager's tables); one played by its tag through the game's own PlaySequence (signed: the base manager's vtable +0x338, its 0x88-byte arguments read from the talk action that fills them) and skipped through the game's skip popup; a story scene is only the film (the game's own steps around the prophecy intro aren't run, seen) | this branch, `claude/cpp-scenes` |
 | 7. A talk answer's bond | not started | |

@@ -1340,6 +1340,11 @@
    "was": "0x12BBA60",
    "pattern": "48 89 5C 24 ?? 88 54 24 ?? 57 48 83 EC 60 48 63 59 ?? 48 8B 39 48 C7 44 24 ?? 00 00 00 00 89 5C 24 ?? 85 DB 75 ?? 89 5C 24 ?? EB ?? 48 8D 44 24 ?? BA 02 00 00 00 48 89 44 24 ?? 45 33 C9 48 8D 44 24 ?? 89 5C 24 ?? 44 8B C3 48 89 44 24 ?? 8B CA E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 4C 8B C3 4D 03 C0 48 8B D7 E8 ?? ?? ?? ?? 48 8D 44 24 ?? 48 C7 44 24 ?? 00 00 00 00 48 89 44 24 ?? 45 33 C9 48 8D 44 24 ?? C7 44 24 ?? 01 00 00 00 BA 08 00 00 00 48 89 44 24 ?? B9 10 00 00 00 C7 44 24 ?? 01 00 00 00 41 B8 01 00 00 00 E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 8D 54 24 ?? 41 B8 01 00 00 00 E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 45 33 C9 C7 44 24 ?? 00 00 00 00 48 8D 54 24 ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 8B 54 24 ??"
   },
+  "SwtSequencerManager:PlaySequence": {
+   "note": "plays a registered sequence: (the sequencer manager, const 0x88-byte arguments*) -> non-null when it started; the arguments: +0x00 pause at its end (bool), +0x08 a music track's name (FString, empty for none), +0x18 the play rate (float), +0x20 the time to start at (float), +0x28 the actors to put in it (an empty TMap: its bit array's size word at +0x50 is 0x80 and its free index at +0x58 is -1), +0x78 a flag the talk action sets and the prophecy intro doesn't, +0x7C its ESwtEngineSequencerType (int32), +0x80 its tag (FGameplayTag)",
+   "was": "0x12B2190",
+   "pattern": "40 55 53 57 41 56 41 57 48 8D 6C 24 ?? 48 81 EC 40 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 44 8B 4A ??"
+  },
   "Checkpoints:SetUnlocked": {
    "note": "unlocks a checkpoint or locks it again (\"SetCheckpointUnlockState\"): (const FString* the checkpoint's UID, its tag; bool unlocked; UObject* the checkpoint, a world context: the save keeps checkpoints under its level's name), on the cat played now; writes GameplayProgression/<level>/Checkpoints (the save manager's vtable +0x4B8) and broadcasts the save manager's checkpoint delegate (+0x170) with the UID, which the map's checkpoint markers and the checkpoint actors hear. The checkpoint's BeginPlay calls it so (0x1416357A0)",
    "was": "0x16A7DE0",
