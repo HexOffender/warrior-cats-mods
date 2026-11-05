@@ -126,6 +126,13 @@ NATIVE = [
      "bytes: bCombat +0x10, bExploration +0x11, Target +0x12, bRemoveAfterCombat +0x13, Type +0x14, EffectOnUse FString "
      "+0x18, assigned with the game's allocator) -> bool, false for a row it hasn't got; reads the tuning manager (a "
      "global) and its map at +0x780"),
+    # What a den decoration costs (docs/reverse-engineering.md, "Dens from C++"): HousingCost.csv's rows live only in
+    # the same tuning manager, in its map at +0x6E0; this is the game's own lookup, which its build screen uses.
+    ("SwtAdventureTuningManager:GetHousingCost", 0x181E520,
+     "a decoration's HousingCost.csv row: (FAdventureHousingCost* out, 0x50 bytes; const FString* the decoration's "
+     "tag) -> out, the row copied with the game's allocator (its FStrings: MontageToPlay, BoneToAttach, Cost), or a "
+     "default row for a tag it hasn't got; reads the tuning manager (a global) and its map at +0x6E0 (0x68-byte "
+     "elements, the row at +0x10)"),
     ("SwtTuningManager:GetValue", 0x12BBA60,
      "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, "
      "0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData"),

@@ -180,7 +180,9 @@ def test_world_reads_match_lua(agent):
     assert v["cat.stat.Strength"] == lua["strength"] and v["cat.stat.Agility"] == lua["agility"], v
     assert v["cat.scale"] == lua["scale"], v
     assert all(abs(a - b) < 100 for a, b in zip(v["cat.location"], lua["at"])), (v["cat.location"], lua["at"])
-    assert v["time.seconds"] <= lua["seconds"] < v["time.seconds"] + 7200, (v["time.seconds"], lua["seconds"])
+    # The world phase's time came as your cat arrived, before the game set the save's time of day: read again now.
+    now = _request(agent, "time")["values"]["time.now"]
+    assert abs(now - lua["seconds"]) < 600, (now, lua["seconds"])
     assert v["fresh_kill.max"] == lua["fk_max"] and v["fresh_kill.decay.period"] == lua["fk_period"], v
     assert (v["game_instance.class"], v["game_state.class"], v["game_mode.class"]) == (lua["gi"], lua["gs"], lua["gm"]), v
     assert v["manager.quests.class"] == lua["quests"] and v["component.health.class"] == lua["health_comp"], v
@@ -1402,6 +1404,64 @@ def test_fights(agent):
     for d in v["fights.dilemmas"]:
         assert d["question"] and d["answered"] and d["option1"] not in ("", "TXT") and d["option2"] not in ("", "TXT"), d
         assert d["selected_at_first"] in (0, 1), d   # which choice is selected reads (answer_dilemma steps by it)
+
+
+def test_dens(agent):
+    """Dens.hpp in the game: the 60 decorations (their names and models), ShadowClan's dens (the shared ones and a
+    den per rank behind one door) and the apprentices' den's five hotspots; your cat taken in; a decoration placed at
+    once, one built over 4 s of real time and seen when it's done, one taken off; and after save_game, the save's
+    Housing/Houses says what was built and when the timed one started. Decorations are written to the save, so it's
+    backed up first and put back after, the game closed and started again for it."""
+    _close_screens(agent)
+    backup = agent.backup_save("before-dens-test")
+    try:
+        r = _request(agent, "dens", timeout=90)
+        agent.shot("cpp-sdk-den", scale=0.5)
+    finally:
+        agent.quit(force=True)
+        try:
+            agent.restore_save(backup)
+        finally:
+            agent.launch(world=True)
+    with open(os.path.join(agent.out_dir, "dens-values.json"), "w", encoding="utf-8") as f:
+        json.dump({k: x for k, x in r["values"].items() if k.startswith("dens.")}, f, indent=1, ensure_ascii=False)
+    assert not _failed(r, "dens"), _failed(r, "dens")
+    v = r["values"]
+    assert v["dens.decorations"] == 60 and v["dens.named"] == 60 and v["dens.sized"] == 60 and v["dens.models"] == 60, v
+    # The tables' rows and HousingCost.csv's through the game's lookup (the CSV on build 26337109: 28800 s, Mythic,
+    # one at most).
+    b = v["dens.bunny"]
+    assert b["mesh"] == "SM_GPE_BunnySDown" and b["name"] == "Bunny Soft Down", b
+    assert (b["size"], b["rarity"], b["build_seconds"], b["max"]) == ("Large", "Mythic", 28800, 1), b
+    assert b["cost"].startswith("Gameplay.Inventory.Materials.Fur,2;"), b
+    h = v["dens.hay"]
+    assert (h["size"], h["rarity"], h["build_seconds"], h["max"]) == ("Medium", "Common", 0, -1), h
+    # A clan's six shared dens and its four rank dens (behind one door); the four clans' the same; 60 hotspots each.
+    assert sorted(v["dens.ranks"]) == [""] * 6 + ["Apprentice", "Deputy", "Leader", "Warrior"], v["dens.ranks"]
+    assert v["dens.all"] == 40 and v["dens.every_hotspot"] == 240, v
+    # The four clans' rank dens each hold that rank's hotspots, but for one the game's own data gets wrong: ThunderClan's
+    # leader's den has a Personal.3 set for apprentices (ThunderClan's apprentices' den is 29 m away).
+    assert (v["dens.rank_dens"], v["dens.empty_rank_dens"], v["dens.wrong_rank"]) == (16, 0, 1), v
+    assert v["dens.wrong_rank_spots"][0].startswith(
+        "ThunderClan Leader den: Gameplay.Den.Hotspot.Personal.3 Tiny Apprentice"), v["dens.wrong_rank_spots"]
+    assert sorted(v["dens.apprentice_hotspots"]) == [
+        "Gameplay.Den.Hotspot.Personal.1 Large", "Gameplay.Den.Hotspot.Personal.2 Tiny",
+        "Gameplay.Den.Hotspot.Personal.3 Tiny", "Gameplay.Den.Hotspot.Personal.4 Interactable",
+        "Gameplay.Den.Hotspot.Personal.5 Pendant"], v["dens.apprentice_hotspots"]
+    assert v["dens.cat_from_inside"] < 100, v["dens.cat_from_inside"]
+    # Live: placed at once; the timed one not yet after 1 s, built after 6; taken off.
+    assert v["dens.placed.large"]["decoration"] == "Gameplay.Inventory.Decoration.12", v["dens.placed.large"]
+    assert v["dens.building.tiny"]["decoration"] == "", v["dens.building.tiny"]
+    # The game saves a pick itself: within a second the file had the timed one under way, with its start.
+    assert v["dens.building.tiny"]["saved_status"] == 1 and v["dens.building.tiny"]["started"] > 1.7e9, v["dens.building.tiny"]
+    assert v["dens.built.tiny"]["decoration"] == "Gameplay.Inventory.Decoration.31", v["dens.built.tiny"]
+    assert v["dens.removed.large"]["decoration"] == "", v["dens.removed.large"]
+    # The save after save_game: hotspot() reads it back, as the file says.
+    assert v["dens.saved.large"]["saved_status"] == 0 and v["dens.saved.large"]["saved_decoration"] == "", v["dens.saved.large"]
+    t = v["dens.saved.tiny"]
+    assert t["saved_status"] == 3 and t["saved_decoration"] == "Gameplay.Inventory.Decoration.31" and t["started"] > 1.7e9, t
+    t2 = v["dens.saved.tiny2"]
+    assert t2["saved_status"] == 3 and t2["saved_decoration"] == "Gameplay.Inventory.Decoration.36", t2
 
 
 def test_ui_arrow_units(agent):

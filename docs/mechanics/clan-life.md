@@ -66,9 +66,9 @@ Inside, you build decorations on hotspots.
 
 **Building:** a decoration costs materials (`HousingCost.csv`) and takes its `BuildTime`:
 - Common ones are instant, and so is one rare one.
-- Uncommon take 4800, Rare 14400 and Mythic 57600: 1 hour 20 minutes, 4 hours and 16 hours, if these are
-  seconds.
-- They are probably seconds of real time, like the online den features, but that isn't checked.
+- Uncommon take 3600, Rare 7200 and Mythic 28800: 1, 2 and 8 hours (build 26337109; before it, 4, 12 and 48).
+- They're seconds of real time: a hotspot given a build time of 4 s showed its decoration 4 s later, and the save
+  keeps the build's start in Unix seconds (`reverse-engineering.md`, *Dens from C++*).
 
 **Help from friends:** `Housing.Hotspot.Assist.Time` 86400 (a day) and `.Assist.Quote` 1800 (half
 an hour). A guess: a visitor's help takes 30 minutes off a build, once a day.
@@ -89,63 +89,63 @@ and balls.
 | 1 | Golden Hay Nest | Medium, bed | Common | 0 h | any | 3 Dandelion, 1 BerryFern, 1 Moss |
 | 2 | Leaf-Fall Mat | Medium, bed | Common | 0 h | any | 1 Leaves, 1 Heather, 1 Ivy |
 | 3 | Ivy Weave Basket | Medium, bed | Common | 0 h | any | 1 Ivy, 1 Pine, 1 Birdnest |
-| 4 | Pine Needle Cushion | Medium, bed | Uncommon | 4 h | any | 1 Pine, 3 Cotton, 1 Fur |
-| 5 | Velvet Moss Mat | Medium, bed | Uncommon | 4 h | any | 2 Moss, 1 Fur, 1 Heather |
-| 6 | River Reed Cradle | Medium, bed | Uncommon | 4 h | any | 2 CattailReed, 1 Birdnest, 1 Oakgall |
-| 7 | Fern Frond Bed | Medium, bed | Uncommon | 4 h | 1 | 1 BerryFern, 1 Leaves, 2 Cobwebs |
-| 8 | Bog Cotton Cloud | Medium, bed | Rare | 12 h | 1 | 4 Cotton, 2 Fur, 3 CattailReed |
-| 9 | Shadow Moss Braid | Medium, bed | Uncommon | 4 h | 1 | 2 Moss, 1 Rope, 1 BerryFern |
-| 10 | Tall Grass Hammock | Medium, bed | Uncommon | 4 h | 1 | 1 Leaves, 3 Cotton, 2 Cobwebs |
+| 4 | Pine Needle Cushion | Medium, bed | Uncommon | 1 h | any | 1 Pine, 3 Cotton, 1 Fur |
+| 5 | Velvet Moss Mat | Medium, bed | Uncommon | 1 h | any | 2 Moss, 1 Fur, 1 Heather |
+| 6 | River Reed Cradle | Medium, bed | Uncommon | 1 h | any | 2 CattailReed, 1 Birdnest, 1 Oakgall |
+| 7 | Fern Frond Bed | Medium, bed | Uncommon | 1 h | 1 | 1 BerryFern, 1 Leaves, 2 Cobwebs |
+| 8 | Bog Cotton Cloud | Medium, bed | Rare | 2 h | 1 | 4 Cotton, 2 Fur, 3 CattailReed |
+| 9 | Shadow Moss Braid | Medium, bed | Uncommon | 1 h | 1 | 2 Moss, 1 Rope, 1 BerryFern |
+| 10 | Tall Grass Hammock | Medium, bed | Uncommon | 1 h | 1 | 1 Leaves, 3 Cotton, 2 Cobwebs |
 | 11 | Shepherd’s Wool Fleece | Large, bed | Rare | 0 h | any | 1 Leaves, 1 BirdNest, 1 Oakgall |
-| 12 | Bunny Soft Down | Large, bed | Mythic | 48 h | 1 | 2 Fur, 3 CattailReed, 7 Poppy |
-| 13 | Cotton Terry Tangle | Large, bed | Mythic | 48 h | 1 | 5 Cotton, 1 Rope, 1 Birdnest |
-| 14 | Forest Pelt Rug | Large, bed | Mythic | 48 h | 1 | 2 Fur, 5 Cotton, 9 Dandelion |
-| 15 | Purple Heather Loft | Large, bed | Mythic | 48 h | 1 | 2 Heather, 2 Ivy, 2 Rock |
+| 12 | Bunny Soft Down | Large, bed | Mythic | 8 h | 1 | 2 Fur, 3 CattailReed, 7 Poppy |
+| 13 | Cotton Terry Tangle | Large, bed | Mythic | 8 h | 1 | 5 Cotton, 1 Rope, 1 Birdnest |
+| 14 | Forest Pelt Rug | Large, bed | Mythic | 8 h | 1 | 2 Fur, 5 Cotton, 9 Dandelion |
+| 15 | Purple Heather Loft | Large, bed | Mythic | 8 h | 1 | 2 Heather, 2 Ivy, 2 Rock |
 | 16 | Rough Pine Barker | Medium, scratching | Common | 0 h | 1 | 1 Pine, 1 Bone, 1 Moss |
-| 17 | Weathered Pine Stump | Medium, scratching | Uncommon | 4 h | 1 | 2 Cobwebs, 1 SharpeningTreeBark, 1 Rock |
+| 17 | Weathered Pine Stump | Medium, scratching | Uncommon | 1 h | 1 | 2 Cobwebs, 1 SharpeningTreeBark, 1 Rock |
 | 18 | Sun-Bleached Driftwood | Medium, scratching | Common | 0 h | 1 | 1 SharpeningTreeBark, 1 DirtMound, 3 Dandelion |
-| 19 | Ancient Marrow Bone | Medium, scratching | Mythic | 48 h | 1 | 1 Bone, 2 Rock, 3 DirtMound |
+| 19 | Ancient Marrow Bone | Medium, scratching | Mythic | 8 h | 1 | 1 Bone, 2 Rock, 3 DirtMound |
 | 20 | Lichen Crust Rock | Medium, scratching | Common | 0 h | 1 | 1 Rock, 1 Moss, 2 Cotton |
-| 21 | Gnarly Root Block | Medium, scratching | Mythic | 48 h | 1 | 1 Oakgall, 3 CattailReed, 3 DirtMound |
-| 22 | Pressed Earth Peat | Large, scratching | Rare | 12 h | 1 | 2 DirtMound, 4 Cotton, 1 Birdnest |
-| 23 | Primordial Fossil Stone | Large, scratching | Mythic | 48 h | 1 | 2 Rock, 1 Oakgall, 7 Poppy |
-| 24 | Great Hart Antler | Large, scratching | Mythic | 48 h | 1 | 1 Bone, 2 Rock, 1 Rope |
-| 25 | Tough Canvas Scrub | Large, scratching | Mythic | 48 h | 1 | 2 Fur, 1 Rope, 5 Cotton |
-| 26 | Plush Pillow Punch | Large, scratching | Mythic | 48 h | 1 | 5 Cotton, 2 Fur, 1 Rope |
-| 27 | Seasoned Firewood Log | Large, scratching | Uncommon | 4 h | 1 | 1 SharpeningTreeBark, 2 DirtMound, 2 Cobwebs |
-| 28 | Algae-Grip Stone | Large, scratching | Mythic | 48 h | 1 | 3 Moss, 2 Rock, 7 Poppy |
-| 29 | Charcoal Smudge Stick | Large, scratching | Rare | 12 h | 1 | 2 Rock, 2 SharpeningTreeBark, 7 Dandelion |
-| 30 | Sturdy Wooden Post | Large, scratching | Rare | 12 h | 1 | 2 SharpeningTreeBark, 2 Leaves, 2 Ivy |
-| 31 | Moon-Polished Pebble | Tiny | Rare | 12 h | 1 | 2 Rock, 7 Dandelion, 5 Poppy |
-| 32 | Silver Song Bell | Pendant | Mythic | 48 h | 1 | 9 Dandelion, 7 Poppy, 5 Cotton |
-| 33 | Rainbow Jewelry Beads | Pendant | Mythic | 48 h | 1 | 2 Rock, 1 Rope, 2 BerryFern |
-| 34 | Neon Tangle Laces | Pendant | Rare | 12 h | 1 | 1 Rope, 3 Cobwebs, 2 Fur |
-| 35 | River Jewel Glass | Tiny | Mythic | 48 h | 1 | 3 CattailReed, 2 Rock, 1 Rope |
-| 36 | Badger Talon Relic | Tiny | Rare | 12 h | 1 | 2 Fur, 1 Rope, 1 Bone |
-| 37 | Wolf Tooth Charm | Tiny | Mythic | 48 h | 1 | 1 Bone, 2 Fur, 1 Rope |
-| 38 | Shimmering Snake Skin | Tiny | Rare | 12 h | 1 | 3 Moss, 1 Rope, 1 Oakgall |
-| 39 | Tiny Rat Skull | Tiny | Rare | 12 h | 1 | 1 Bone, 1 Oakgall, 7 Dandelion |
-| 40 | Glittering Creek Lure | Pendant | Mythic | 48 h | 1 | 2 Rock, 2 Pine, 3 CattailReed |
-| 41 | Spiral Sea Shell | Tiny | Mythic | 48 h | 1 | 1 Bone, 3 CattailReed, 1 Oakgall |
-| 42 | Painted Wing Beauty | Pendant | Mythic | 48 h | 1 | 1 Birdnest, 2 Fur, 5 Cotton |
-| 43 | Twin-Point Antler | Tiny | Mythic | 48 h | 1 | 1 Bone, 2 Fur, 3 Cobwebs |
-| 44 | Silk Weaver Spider | Pendant | Mythic | 48 h | 1 | 3 Moss, 1 Bone, 2 Ivy |
-| 45 | Spiral Shell Traveler | Pendant | Rare | 12 h | 1 | 1 Bone, 3 CattailReed, 1 Rope |
-| 46 | Crown Bottle Cap | Tiny | Mythic | 48 h | 1 | 2 Rock, 9 Dandelion, 2 Heather |
-| 47 | Secret-Gate Key | Pendant | Rare | 12 h | 1 | 2 Rock, 3 Moss, 1 Birdnest |
-| 48 | Wild Bird Feathers | Tiny | Mythic | 48 h | 1 | 1 Birdnest, 2 Fur, 3 Cobwebs |
-| 49 | Colorful Thread Snarl | Tiny | Mythic | 48 h | 1 | 1 Rope, 7 Poppy, 3 Cobwebs |
-| 50 | Giant’s Oak Marble | Tiny | Rare | 12 h | 1 | 1 Oakgall, 2 Rock, 2 Heather |
-| 51 | Woody Oak Gall | Tiny | Rare | 12 h | 1 | 1 Oakgall, 2 SharpeningTreeBark, 2 Ivy |
-| 52 | Glittering Moonstone Shard | Tiny | Mythic | 48 h | 1 | 2 Rock, 7 Poppy, 1 Birdnest |
-| 53 | Dried Poppy Rattle | Tiny | Rare | 12 h | 1 | 5 Poppy, 1 Oakgall, 2 Leaves |
-| 54 | Silken Streamer Ribbon | Pendant | Mythic | 48 h | 1 | 1 Rope, 5 Cotton, 7 Poppy |
-| 55 | Spiky Pine Cone | Interactable, toy | Rare | 12 h | 1 | 2 Pine, 2 Leaves, 2 Ivy |
-| 56 | Rolling Straw Ball | Interactable, toy | Rare | 12 h | 1 | 1 Birdnest, 2 Pine, 2 BerryFern |
-| 57 | Amber Resin Globe | Interactable, toy | Mythic | 48 h | 1 | 2 Rock, 1 Oakgall, 3 Cobwebs |
-| 58 | Wild Briar Nest | Interactable, toy | Rare | 12 h | 1 | 1 Birdnest, 1 Rope, 2 BerryFern |
-| 59 | Fern Knot Tangle | Interactable, toy | Rare | 12 h | 1 | 2 BerryFern, 1 Rope, 3 Cobwebs |
-| 60 | Sailor’s Rope Knot | Interactable, toy | Rare | 12 h | 1 | 1 Rope, 3 CattailReed, 1 Birdnest |
+| 21 | Gnarly Root Block | Medium, scratching | Mythic | 8 h | 1 | 1 Oakgall, 3 CattailReed, 3 DirtMound |
+| 22 | Pressed Earth Peat | Large, scratching | Rare | 2 h | 1 | 2 DirtMound, 4 Cotton, 1 Birdnest |
+| 23 | Primordial Fossil Stone | Large, scratching | Mythic | 8 h | 1 | 2 Rock, 1 Oakgall, 7 Poppy |
+| 24 | Great Hart Antler | Large, scratching | Mythic | 8 h | 1 | 1 Bone, 2 Rock, 1 Rope |
+| 25 | Tough Canvas Scrub | Large, scratching | Mythic | 8 h | 1 | 2 Fur, 1 Rope, 5 Cotton |
+| 26 | Plush Pillow Punch | Large, scratching | Mythic | 8 h | 1 | 5 Cotton, 2 Fur, 1 Rope |
+| 27 | Seasoned Firewood Log | Large, scratching | Uncommon | 1 h | 1 | 1 SharpeningTreeBark, 2 DirtMound, 2 Cobwebs |
+| 28 | Algae-Grip Stone | Large, scratching | Mythic | 8 h | 1 | 3 Moss, 2 Rock, 7 Poppy |
+| 29 | Charcoal Smudge Stick | Large, scratching | Rare | 2 h | 1 | 2 Rock, 2 SharpeningTreeBark, 7 Dandelion |
+| 30 | Sturdy Wooden Post | Large, scratching | Rare | 2 h | 1 | 2 SharpeningTreeBark, 2 Leaves, 2 Ivy |
+| 31 | Moon-Polished Pebble | Tiny | Rare | 2 h | 1 | 2 Rock, 7 Dandelion, 5 Poppy |
+| 32 | Silver Song Bell | Pendant | Mythic | 8 h | 1 | 9 Dandelion, 7 Poppy, 5 Cotton |
+| 33 | Rainbow Jewelry Beads | Pendant | Mythic | 8 h | 1 | 2 Rock, 1 Rope, 2 BerryFern |
+| 34 | Neon Tangle Laces | Pendant | Rare | 2 h | 1 | 1 Rope, 3 Cobwebs, 2 Fur |
+| 35 | River Jewel Glass | Tiny | Mythic | 8 h | 1 | 3 CattailReed, 2 Rock, 1 Rope |
+| 36 | Badger Talon Relic | Tiny | Rare | 2 h | 1 | 2 Fur, 1 Rope, 1 Bone |
+| 37 | Wolf Tooth Charm | Tiny | Mythic | 8 h | 1 | 1 Bone, 2 Fur, 1 Rope |
+| 38 | Shimmering Snake Skin | Tiny | Rare | 2 h | 1 | 3 Moss, 1 Rope, 1 Oakgall |
+| 39 | Tiny Rat Skull | Tiny | Rare | 2 h | 1 | 1 Bone, 1 Oakgall, 7 Dandelion |
+| 40 | Glittering Creek Lure | Pendant | Mythic | 8 h | 1 | 2 Rock, 2 Pine, 3 CattailReed |
+| 41 | Spiral Sea Shell | Tiny | Mythic | 8 h | 1 | 1 Bone, 3 CattailReed, 1 Oakgall |
+| 42 | Painted Wing Beauty | Pendant | Mythic | 8 h | 1 | 1 Birdnest, 2 Fur, 5 Cotton |
+| 43 | Twin-Point Antler | Tiny | Mythic | 8 h | 1 | 1 Bone, 2 Fur, 3 Cobwebs |
+| 44 | Silk Weaver Spider | Pendant | Mythic | 8 h | 1 | 3 Moss, 1 Bone, 2 Ivy |
+| 45 | Spiral Shell Traveler | Pendant | Rare | 2 h | 1 | 1 Bone, 3 CattailReed, 1 Rope |
+| 46 | Crown Bottle Cap | Tiny | Mythic | 8 h | 1 | 2 Rock, 9 Dandelion, 2 Heather |
+| 47 | Secret-Gate Key | Pendant | Rare | 2 h | 1 | 2 Rock, 3 Moss, 1 Birdnest |
+| 48 | Wild Bird Feathers | Tiny | Mythic | 8 h | 1 | 1 Birdnest, 2 Fur, 3 Cobwebs |
+| 49 | Colorful Thread Snarl | Tiny | Mythic | 8 h | 1 | 1 Rope, 7 Poppy, 3 Cobwebs |
+| 50 | Giant’s Oak Marble | Tiny | Rare | 2 h | 1 | 1 Oakgall, 2 Rock, 2 Heather |
+| 51 | Woody Oak Gall | Tiny | Rare | 2 h | 1 | 1 Oakgall, 2 SharpeningTreeBark, 2 Ivy |
+| 52 | Glittering Moonstone Shard | Tiny | Mythic | 8 h | 1 | 2 Rock, 7 Poppy, 1 Birdnest |
+| 53 | Dried Poppy Rattle | Tiny | Rare | 2 h | 1 | 5 Poppy, 1 Oakgall, 2 Leaves |
+| 54 | Silken Streamer Ribbon | Pendant | Mythic | 8 h | 1 | 1 Rope, 5 Cotton, 7 Poppy |
+| 55 | Spiky Pine Cone | Interactable, toy | Rare | 2 h | 1 | 2 Pine, 2 Leaves, 2 Ivy |
+| 56 | Rolling Straw Ball | Interactable, toy | Rare | 2 h | 1 | 1 Birdnest, 2 Pine, 2 BerryFern |
+| 57 | Amber Resin Globe | Interactable, toy | Mythic | 8 h | 1 | 2 Rock, 1 Oakgall, 3 Cobwebs |
+| 58 | Wild Briar Nest | Interactable, toy | Rare | 2 h | 1 | 1 Birdnest, 1 Rope, 2 BerryFern |
+| 59 | Fern Knot Tangle | Interactable, toy | Rare | 2 h | 1 | 2 BerryFern, 1 Rope, 3 Cobwebs |
+| 60 | Sailor’s Rope Knot | Interactable, toy | Rare | 2 h | 1 | 1 Rope, 3 CattailReed, 1 Birdnest |
 <!-- /table -->
 
 ## Den visits

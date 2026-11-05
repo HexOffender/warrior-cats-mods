@@ -1288,6 +1288,54 @@ Read in a fight with a level 20 cat against a weak bird:
   inside its own callback would do the same: Lua's `Game.unhook` calls `UnregisterHook` straight away, so
   `scripting.md` says to take one off a moment later (making `Game.unhook` do that itself is for the Lua side).
 
+**Dens from C++** (worked out on 2026-11-05, build 26337109, for the C++ SDK's `Dens.hpp`):
+- **Where they are:** every clan's dens are in one streamed level, `L_Den_Gameplay_05_A`, loaded with the forest: 69
+  den doors (`WrcHousingDoorActor`: `Clan`, `RequiredRank`, `DestinationComponent`, `bIsExit`) and 240 hotspots
+  (`BP_Housing_HotSpot_Base_C`). A clan has seven doors in its camp and ten exits; the rooms sit off the map
+  (X from about 26,200 to 29,400; ShadowClan's at 27,800), one block per clan.
+  - **Shared dens:** six of the doors lead to one each, their hotspots tagged `Gameplay.Den.Hotspot.<n>`.
+  - **Rank dens:** the seventh door (`BP_Housing_MultiRank_DoorActor_C`) leads to one per rank. Its
+    `DestinationComponent` is the apprentices' den (`Personal.1` Large, `.2`/`.3` Tiny, `.4` Interactable, `.5`
+    Pendant), and its `Warrior`, `Deputy` and `LeaderDestinationComponent` the others', about 6 m apart.
+  - **The same tags:** each clan has its own copy of every hotspot, so the save keeps a hotspot by its tag alone.
+  - **Each rank den's hotspots are its rank's,** in all four clans, but one: ThunderClan's leader's den has a
+    `Personal.3` (Tiny) whose `RequiredRank` is Apprentice.
+  - **Every door's `RequiredRank` read Apprentice.** A door in `L_Den_Scene` sits at 0,0,0.
+- **The save:** your cat's slot has `Housing/Houses`, 144 hotspot tags, each `{Status, DecorationTag}` and, for a
+  timed build, `StartTime` (Unix seconds). `Status` is `EAdventureHousingHotspotStatus`: 0 None, 1 InProgress,
+  2 ReadyToAdd, 3 Built. Removed reads `"DecorationTag": "None"`.
+- **Building:** the hotspot's `OnOptionPicked(DecorationTag, FAdventureHousingCost, bReadyToGo)`, called with a tag
+  and a cost row left empty (nothing paid), built it.
+  - **With `bReadyToGo` true:** at once. The mesh showed on `DecorationComponent` (`SM_GPE_BunnySDown` for
+    Decoration.12), and the save said Built within a second, before any save of ours: the game saves on a pick.
+  - **With it false:** the row's `BuildTime` counts in seconds of real time. A build of 4 s was InProgress with its
+    `StartTime`, showed nothing, and was Built with its mesh 4 s later. The cat was far away, in its camp.
+  - **`OnDelete`** took the decoration off: the mesh hidden, the save None.
+  - The hotspot keeps a copy of the cost row it was given past its reflected members (from +0x398, the row's
+    vtable first; `BuildTime` at +0x3A0), the assist time (86400) at +0x3E8, and at +0x3F4 a flag that's 1 once a
+    decoration shows. It doesn't keep the status or the tag: those are only in the save's data.
+  - **The game's code:** 0x141810C20 gets a hotspot's entry under `Housing/Houses` in the cat's slot, making one
+    when it isn't there. It works like the bond functions (*Bonds*), its result a shared pointer to the engine's
+    JSON object. `OnOptionPicked` (0x141724A30), `OnDelete` (0x141724980) and `OnWidgetRemoved` (0x141724CE0) reach
+    it. `OnOptionPicked` and `OnDelete` also reach 0x141810EB0, presumably the write (not looked into), and
+    0x141811070 uses `StartTime`. None is signed: the SDK goes through the hotspot's reflected functions and reads
+    the file.
+- **Costs** (`HousingCost.csv`: materials, `BuildTime`, `Size`, `MaxQuantity`, the interaction's `MontageToPlay`)
+  aren't in a DataTable while the game runs; only `DB_Den_Decorations` (tag, mesh or skeletal mesh and its
+  animation) and `DT_HousingTutorial` are. The adventure tuning manager's table loader (0x14181EB00) puts them in
+  a map at +0x6E0 (0x68-byte elements, the row at +0x10), next to `Consumables.csv`'s at +0x780. The game's lookup
+  is 0x14181E520, `FAdventureHousingCost* (FAdventureHousingCost* out, const FString* tag)`: the row copied, or a
+  default one for a tag it hasn't got. `game.NATIVE` signs it (`SwtAdventureTuningManager:GetHousingCost`): the SDK
+  reads costs through it and gives `OnOptionPicked` the decoration's own row with `Cost` emptied.
+- **A timed build past a restart:** the save keeps only `StartTime`. A 60 s build (`BuildTime` 60 given), saved and
+  the game started again at once, was still InProgress 75 s after it started: the game times it again by the row's
+  own `BuildTime` (7200 for that decoration).
+- **Entering:** your cat put at a door's `DestinationComponent` is in the den, the game's den mode on (the hotspots'
+  markers show).
+- **Minigames:** none in this game. `USwtAdventureMinigameComponent` and its `EMinigameType` classes
+  (ChargeAndRelease, InputSequence, QuickReaction, PushForward, ReactiveBlock) are the engine's: no Blueprint or
+  widget of theirs ships (`wcmods files`), and no actor in the forest has the component.
+
 **The quests:** the quest manager's `Quests` is an array of `{Quest, Line, Node}`. Every quest object
 is named `SwtAdventureMultiObjectiveQuest_0`, and its outer, a `QuestDynamicGraph` such as
 `QuestGraph_Tutorial` or `QuestGraphProcedural_Deliver`, says which quest it is. There are 40 in
@@ -2528,8 +2576,9 @@ Worked out on 2026-10-27 in game (build 26184573), for the in-game key remap (`W
   | A fight (`WBP_GuiPopupCombat_C`) | it, `…HudCombatOver_C`, the HUD and the controller | K, I, U and O drove the fight menu and the moves |
   | Talking to a cat (`WBP_QuestGiver_Dialogue2_C`) | it alone | F (Interact moved) started the talk; U moved it on |
 
-  Not reached: decorating a den (the apprentice had no den to enter), the name screen, cutscenes,
-  minigames and the online screens. Every screen but the HUD counts as a menu for the in-game remap.
+  Not reached: decorating a den (the apprentice had no den to enter; the C++ SDK builds on its hotspots
+  without the screen, *Dens from C++*), the name screen, cutscenes and the online screens (the game has no
+  minigames). Every screen but the HUD counts as a menu for the in-game remap.
   `WCModsPlayState` now calls a menu any visible `GuiScreenWrc`. That covers every screen above except
   photo mode and talks (the dialogue box isn't one), which it counts as play, as it always has. It used
   to test `bShowMouseCursor`, which said "play" in every menu.
