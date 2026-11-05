@@ -4,6 +4,7 @@ headers. A real server on 127.0.0.1, as selftest._onboarding_edges runs one."""
 import http.client
 import json
 import os
+import socket
 import tempfile
 import threading
 import zipfile
@@ -44,7 +45,7 @@ def server(studio):
         conn.close()
         return r.status, raw if answer is None else answer, dict(r.getheaders())
 
-    ask.port = port
+    ask.port, ask.srv = port, srv
     yield ask
     srv.shutdown()
     srv.server_close()
@@ -196,6 +197,53 @@ def test_eight_saves_of_one_file_at_once_all_succeed_and_leave_valid_json(server
     with open(os.path.join(studio.ctx.mods_root, "mine", "data.json"), encoding="utf-8") as f:
         saved = f.read()
     assert saved.rstrip("\n") in texts and json.loads(saved)["pad"] == "x" * (json.loads(saved)["n"] * 50)
+
+
+def test_a_connection_is_kept_for_the_next_request(server, studio):
+    # HTTP/1.1: the browser asks over the same few connections again, rather than one of its own for each of a
+    # page's files and API calls (Windows held each closed one for minutes, and now and then refused a new one).
+    conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=20)
+    headers = {"Host": f"127.0.0.1:{server.port}", "X-WC-Token": studio.token}
+    first = None
+    for method, path, body in (("GET", "/api/info", None), ("GET", "/studio/app.js", None),
+                               ("POST", "/api/mods", json.dumps({"id": "kept"})), ("GET", "/api/info", None)):
+        conn.request(method, path, body=body, headers={**headers, "Content-Type": "application/json"})
+        r = conn.getresponse()
+        r.read()
+        assert (r.status, r.version, r.getheader("Connection")) == (200, 11, None), path
+        first = first or conn.sock
+        assert conn.sock is first, f"{path} came back over the first connection"
+    conn.close()
+
+
+def test_a_body_left_unread_ends_the_connection_with_the_answer(server):
+    # Refused before its body is read (the wrong token): what's left of the body would be taken for the next
+    # request on a kept connection, so this one ends with the answer. The body is never sent here, so the end is
+    # the server's doing (and a clean one: nothing unread at the server when it closes).
+    with socket.create_connection(("127.0.0.1", server.port), timeout=10) as s:
+        s.sendall(f"POST /api/mods HTTP/1.1\r\nHost: 127.0.0.1:{server.port}\r\nX-WC-Token: wrong\r\n"
+                  "Content-Type: application/json\r\nContent-Length: 13\r\n\r\n".encode())
+        got = b""
+        while chunk := s.recv(65536):   # until the server ends the connection (a timeout if it never does)
+            got += chunk
+    head, _, answer = got.partition(b"\r\n\r\n")
+    assert head.startswith(b"HTTP/1.1 403 ") and b"\r\nConnection: close" in head
+    assert b"studio token" in answer
+
+
+def test_a_stopped_server_ends_the_connections_it_kept(server, studio):
+    # Restart the studio: once the old one stops, nothing reaches it through a connection the browser kept.
+    conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=20)
+    conn.request("GET", "/api/info", headers={"Host": f"127.0.0.1:{server.port}", "X-WC-Token": studio.token})
+    r = conn.getresponse()
+    r.read()
+    kept = conn.sock
+    assert r.status == 200 and kept is not None
+    server.srv.shutdown()
+    server.srv.server_close()
+    kept.settimeout(10)
+    assert kept.recv(1) == b"", "the server ended it"
+    conn.close()
 
 
 def test_the_studio_folder_served_is_the_repositorys(studio):

@@ -237,6 +237,7 @@ export class Page {
     return r.result.value;
   }
   // Wait until a selector (a string) matches, or a predicate (a function, run in the page) gives something true.
+  // Running out of time says the page's errors too (a request that failed is often why it never got there).
   async waitFor(what, timeout = 10000) {
     const expr = typeof what === "string" ? `!!document.querySelector(${JSON.stringify(what)})` : `(${what.toString()})()`;
     const end = Date.now() + timeout;
@@ -244,7 +245,10 @@ export class Page {
       let value = null;
       try { value = await this.evaluate(expr); } catch (e) { /* the page may be mid-load */ }
       if (value) return value;
-      if (Date.now() > end) throw new Error(`waited ${timeout} ms for ${typeof what === "function" ? what.toString() : what}`);
+      if (Date.now() > end) {
+        const errors = this.errors.length ? `; the page's errors: ${this.errors.join(" | ")}` : "";
+        throw new Error(`waited ${timeout} ms for ${typeof what === "function" ? what.toString() : what}${errors}`);
+      }
       await sleep(50);
     }
   }
