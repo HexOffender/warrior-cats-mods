@@ -220,7 +220,12 @@ namespace wcmods
                     bool quoted = false;
                     for (; i < s.size(); ++i)
                     {
-                        if (s[i] == L'"' && (i == 0 || s[i - 1] != L'\\')) quoted = !quoted;
+                        if (quoted && s[i] == L'\\')
+                        {
+                            ++i;   // an escaped character, a quote or a backslash
+                            continue;
+                        }
+                        if (s[i] == L'"') quoted = !quoted;
                         if (quoted) continue;
                         if (s[i] == L'(') ++depth;
                         if (s[i] == L')' && --depth == 0)
@@ -293,9 +298,10 @@ namespace wcmods
     // the eyes, the accessories and the scars). bOverrideColors is set, so the game keeps every field as given
     // instead of making up the colours and shape again. On a story or camp cat (a SwtAdventureQuestActor) its
     // DefaultCustomData is changed too, as the game does when it gives one a new look. For this actor: a cat the
-    // game spawns again (after a level change) has the look its save keeps. False, with a line in the log, for no
-    // cat or look component, a field the struct couldn't take (an enum name it hasn't got), when wcmods hasn't got
-    // the game's function on this build, or when the game's code failed.
+    // game spawns again (after a level change) has the look its save keeps. False for no cat or look component;
+    // false with a line in the log for a field the struct couldn't take (an enum name it hasn't got), when wcmods
+    // hasn't got the game's function on this build, or when the game's code failed (the old look is put back in
+    // CustomData each time).
     inline auto set_look(UObject* cat, const Look& given) -> bool
     {
         if (!assert_game_thread(L"set_look")) return false;
@@ -317,6 +323,8 @@ namespace wcmods
         // The game's own call copies the look it's given into CustomData: given CustomData itself, it keeps it.
         if (!detail::draw_look(c))
         {
+            std::wstring ignored;
+            detail::write_look(data, before, ignored);   // CustomData says what the model shows again
             log(L"set_look: the game's SetDefaultCustomData failed");
             return false;
         }
@@ -370,8 +378,10 @@ namespace wcmods
     // GUI manager.
     inline auto accessories() -> std::vector<Accessory>
     {
+        static std::vector<Accessory> kept;   // the game's lists don't change once it has started
+        if (!assert_game_thread(L"accessories")) return {};
+        if (!kept.empty()) return kept;
         std::vector<Accessory> out;
-        if (!assert_game_thread(L"accessories")) return out;
         UObject* gui = manager(STR("gui"));
         if (!gui) return out;
         std::map<std::wstring, std::wstring> slots;
@@ -402,6 +412,7 @@ namespace wcmods
             a.variations = n != looks.end() ? n->second : 0;
             out.push_back(std::move(a));
         }
+        kept = out;
         return out;
     }
 
@@ -493,8 +504,9 @@ namespace wcmods
     {
         std::vector<ClanCat> out;
         if (!assert_game_thread(L"clan_cats") || !player()) return out;
-        const Json slot = slot_data();
-        const Json& npcs = slot["NPCData"];
+        auto save = detail::read_save();   // the cached parse, not a copy of it
+        if (!save.data) return out;
+        const Json& npcs = detail::slot_of(*save.data)["NPCData"];
         if (!npcs.is_object()) return out;
         std::vector<std::pair<std::wstring, std::wstring>> story;   // a story role, its cat's text
         const Json& roles = npcs["NarrativeRoles"];
@@ -548,6 +560,9 @@ namespace wcmods
             {
                 UObject* comp = detail::look_component(a);
                 if (!comp) continue;
+                // A walking cat a mod spawned (spawn_npc, or a Lua mod's Game.npcs) has its save id switched off.
+                Value kept = get(a, L"InstancedUniqueIdentifierComponent.bIsEnabled");
+                if (kept && !kept.boolean()) continue;
                 Value d = get(comp, L"CustomData");
                 std::wstring clan = get(d, L"ClanType").string(), role = get(d, L"Role").string();
                 std::wstring prefix = get(d, L"PrefixNameId").string(), suffix = get(d, L"SuffixNameId").string();

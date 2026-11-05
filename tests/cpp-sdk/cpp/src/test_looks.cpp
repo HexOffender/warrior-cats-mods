@@ -108,6 +108,10 @@ namespace t
         expect("looks.from_text", parsed == want, look_json(parsed).dump(0));
         expect("looks.from_text_empty", look_from_text(L"") == Look{} && look_from_text(L"()") == Look{}
                                             && look_from_text(L"(CombatStats=(),TailIdx=2)").CombatStats == L"None");
+        // A nested value whose text ends in an escaped backslash leaves the fields after it whole.
+        Look nested = look_from_text(L"(CombatStats=(TagName=\"A\\\\\"),TailIdx=3,EarIdx=4)");
+        expect("looks.from_text_nested_escape", nested.CombatStats == L"A\\" && nested.TailIdx == 3 && nested.EarIdx == 4,
+               text(nested.CombatStats));
 
         // ----- your cat's look, and its role
         auto mine = look(me);
@@ -182,6 +186,22 @@ namespace t
                         expect("looks.npc_set", set_look(a, *l));
                         value("looks.npc_model_after", model(a));
                         value("looks.npc_after", look_json(look(a).value_or(Look{})));
+                        // Given a save cat's clan, role and name ids, the mod's cat still isn't taken for it.
+                        for (auto& c : clan_cats())
+                            if (c.index >= 0 && c.look.ClanType != L"None")
+                            {
+                                Look same = *look(a);
+                                same.ClanType = c.look.ClanType;
+                                same.Role = c.look.Role;
+                                same.PrefixNameId = c.look.PrefixNameId;
+                                same.SuffixNameId = c.look.SuffixNameId;
+                                set_look(a, same);
+                                bool taken = false;
+                                for (auto& again : clan_cats())
+                                    if (again.actor == a) taken = true;
+                                expect("looks.mod_cat_not_a_save_cat", !taken, text(c.name));
+                                break;
+                            }
                     }
                     k->npc.remove();
                     // ----- the clan's cats, from the save
