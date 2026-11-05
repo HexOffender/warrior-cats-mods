@@ -67,4 +67,54 @@ namespace t
             done("effects");
         });
     }
+
+    namespace
+    {
+        auto speeds_json(const PlayerSpeeds& s) -> Json
+        {
+            Json o = Json::object();
+            auto put = [&](const char* name, const std::optional<double>& v) { o.set(name, v ? Json(*v) : Json()); };
+            put("walk", s.walk);
+            put("run", s.run);
+            put("walk_acceleration", s.walk_acceleration);
+            put("run_acceleration", s.run_acceleration);
+            put("crouch", s.crouch);
+            put("climb", s.climb);
+            o.set("running", Json(s.running));
+            o.set("crouching", Json(s.crouching));
+            o.set("climbing", Json(s.climbing));
+            return o;
+        }
+        auto movement_now(const char* key) -> void
+        {
+            UObject* mv = get(player(), L"CharacterMovement").object;
+            Json o = Json::object();
+            o.set("walk", Json(get(mv, L"MaxWalkSpeed").number()));
+            o.set("acceleration", Json(get(mv, L"MaxAcceleration").number()));
+            value(key, o);
+        }
+    } // namespace
+
+    auto run_speeds_request() -> void
+    {
+        phase("speeds");
+        auto before = player_speeds();
+        expect("speeds.read", before.has_value());
+        if (!before) return done("speeds");
+        value("speeds.before", speeds_json(*before));
+        movement_now("speeds.movement_before");
+        expect("speeds.set", set_player_speeds({.walk = 400, .run = 800, .walk_acceleration = 900}));
+        after(0.5, [] {
+            movement_now("speeds.movement_set");   // the game's own write, a few frames on
+            if (auto s = player_speeds()) value("speeds.set_read", speeds_json(*s));
+            expect("speeds.set_again", set_player_speeds({.climb = 2}));   // keeps the first "before"
+            expect("speeds.reset", reset_player_speeds());
+            after(0.5, [] {
+                movement_now("speeds.movement_reset");
+                if (auto s = player_speeds()) value("speeds.reset_read", speeds_json(*s));
+                expect("speeds.reset_again", reset_player_speeds());
+                done("speeds");
+            });
+        });
+    }
 } // namespace t

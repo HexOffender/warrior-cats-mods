@@ -1542,6 +1542,26 @@ def test_effects_movement_and_sense(agent):
     assert v["effects.sense_before"] == 0 and v["effects.sense_3s"] > 0.9, v
 
 
+def test_your_cats_speeds(agent):
+    """Effects.hpp's player speeds in the game: your cat's exploration settings read as the game has them (walking
+    175, running 390, both accelerating at 175, half speed crouched, climbing at its full speed), set, and taken by the
+    game: its own per-frame write of MaxWalkSpeed and MaxAcceleration shows the new walk half a second on. Put back,
+    the game writes the old ones again."""
+    _close_screens(agent)
+    r = _request(agent, "speeds", timeout=20)
+    assert not _failed(r, "speeds"), _failed(r, "speeds")
+    v = r["values"]
+    b = v["speeds.before"]
+    assert (b["walk"], b["run"], b["walk_acceleration"], b["run_acceleration"], b["crouch"], b["climb"]) == (175, 390, 175, 175, 0.5, 1), b
+    assert b["running"] is False and b["crouching"] is False and b["climbing"] is False, b
+    assert v["speeds.movement_before"] == {"walk": 175, "acceleration": 175}, v["speeds.movement_before"]
+    assert v["speeds.movement_set"] == {"walk": 400, "acceleration": 900}, v["speeds.movement_set"]
+    got = v["speeds.set_read"]
+    assert (got["walk"], got["run"], got["walk_acceleration"]) == (400, 800, 900), got
+    assert v["speeds.reset_read"] == b, (v["speeds.reset_read"], b)
+    assert v["speeds.movement_reset"] == {"walk": 175, "acceleration": 175}, v["speeds.movement_reset"]
+
+
 def test_ui_arrow_units(agent):
     """Ui.hpp's rule for an arrow on a tab's page, at init without the game: its release is given to the screen
     again from a button or check box, never from a slider, number or text box, not when the page hasn't the

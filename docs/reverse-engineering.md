@@ -1377,7 +1377,7 @@ Read in a fight with a level 20 cat against a weak bird:
   (by animal: Cat, Mice, Rabbit, BossSnake...); `PickedNiagaraSystem` is empty. Any of them played through
   `NiagaraFunctionLibrary:SpawnSystemAtLocation` (the world through your cat) gave a `NiagaraComponent` that was
   active. (The effect manager's `LoadedEffects` are the game's gameplay effects, a herb's heal, not these.)
-- **Movement:** your cat's `CharacterMovement` walks at 175, accelerates at 175, jumps at 420. Its `MaxWalkSpeed`
+- **Movement** (your cat's own speeds since: *The exploration camera*, "The player's exploration settings"): your cat's `CharacterMovement` walks at 175, accelerates at 175, jumps at 420. Its `MaxWalkSpeed`
   written read 175 again a tenth of a second later: the game sets it every frame. `JumpZVelocity` and `GravityScale`
   stayed as written, and so did a roaming animal's `MaxWalkSpeed`. `AddMovementInput` each frame moved the cat only
   70 cm in 1.5 s, facing a rock.
@@ -1858,7 +1858,15 @@ Climb and crouch settings sit at +0x428 to +0x444, and `LookAtPlayer.Offset` at 
   and `Pitch.Max`;
 - while `LookAtYaw` is running, it turns the cat instead.
 
-**The player's exploration settings** are loaded at `0x14179F650`: `MoveAndRun` speeds at
+**The player's exploration settings** (on build 26337109: the `ExplorationControlComponent`'s, `BP_Exploration_Control`
+on the player's character as `ExplorationControl`, found unmoved on 2026-11-05) are loaded in its BeginPlay,
+`0x14179DF80` on 26337109. Each frame `0x1417A5530` writes the character's `MaxWalkSpeed` (CharacterMovement +0x288)
+from its vtable's +0x528 (`0x1417A55B0`: `Walk.Speed` +0x12C, or `Run.Speed` +0x134 while flag 4 of +0x110 is set,
+times `Crouch.Modifier.Speed` +0x148 with flag 1, times `Climb.Modifier.Speed` +0x150 with flag 2) and
+`MaxAcceleration` (+0x29C) from +0x530 (the same with the accelerations, +0x130 and +0x138). Written, the speeds hold:
+walk 400 gave a `MaxWalkSpeed` of 400 the next frames and 192 cm walked in 2 s against 71 at 175 (the C++ SDK's
+`set_player_speeds`). The two getters are leaf functions with no `.pdata` entry, which `signatures.Finder.span` reads
+to their `ret`. Loaded at `0x14179F650` on the build before: `MoveAndRun` speeds at
 +0x12C–0x13C, stamina +0x140/+0x144, jump +0x158–0x170, `TurnRate.*` +0x1CC–0x1E8, and the trait
 bonuses `Energic.*.DrainRate` at +0x208/+0x20C.
 

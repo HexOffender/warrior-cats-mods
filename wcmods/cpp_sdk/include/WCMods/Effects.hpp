@@ -166,11 +166,102 @@ namespace wcmods
     }
     // Change how fast it walks. For a mod's cat or an animal it stays; on your cat the game sets it again every frame
     // from its own walk and run settings, so it doesn't (seen: 400 read 175 a tenth of a second later), and this
-    // returns false for your cat.
+    // returns false for your cat: set_player_speeds changes those.
     inline auto set_walk_speed(UObject* actor, double speed) -> bool
     {
         if (!assert_game_thread(L"set_walk_speed") || !actor || detail::is_your_cat(actor)) return false;
         return detail::set_movement_value(actor, L"MaxWalkSpeed", speed);
+    }
+
+    // ============================================================================================ your cat's speeds
+    // Your cat's own speeds: its exploration component (BP_Exploration_Control) writes its character's MaxWalkSpeed
+    // every frame from these, walking or (Shift) running, times the crouch or climb factor while it crouches or climbs,
+    // and MaxAcceleration the same way. There's no sprint apart from running. The defaults on build 26337109 (from
+    // TuningData's Gameplay.Exploration.Player.*) are in brackets.
+    struct PlayerSpeeds
+    {
+        std::optional<double> walk;               // cm/s (175): MoveAndRun.Walk.Speed
+        std::optional<double> run;                // cm/s (390): MoveAndRun.Run.Speed
+        std::optional<double> walk_acceleration;  // cm/s² (175)
+        std::optional<double> run_acceleration;   // cm/s² (175)
+        std::optional<double> crouch;             // the factor while crouched (0.5): Crouch.Modifier.Speed
+        std::optional<double> climb;              // the factor while climbing (1): Climb.Modifier.Speed
+        // How it's moving now (read only): running, crouched, climbing.
+        bool running{}, crouching{}, climbing{};
+    };
+
+    namespace detail
+    {
+        inline constexpr int speed_fields = 6;
+        inline auto speed_member(UObject* explore, int which) -> float*
+        {
+            static constexpr const wchar_t* names[speed_fields] = {L"WCM_WalkSpeed", L"WCM_RunSpeed", L"WCM_WalkAcceleration",
+                                                                   L"WCM_RunAcceleration", L"WCM_CrouchFactor", L"WCM_ClimbFactor"};
+            return member<float>(explore, exploration_class, names[which]);
+        }
+        inline auto speed_field(PlayerSpeeds& s, int which) -> std::optional<double>&
+        {
+            std::optional<double>* fields[speed_fields] = {&s.walk, &s.run, &s.walk_acceleration, &s.run_acceleration,
+                                                           &s.crouch, &s.climb};
+            return *fields[which];
+        }
+        inline auto read_speeds(UObject* explore) -> PlayerSpeeds
+        {
+            PlayerSpeeds s;
+            for (int i = 0; i < speed_fields; ++i)
+                if (float* m = speed_member(explore, i)) speed_field(s, i) = *m;
+            if (int32_t* flags = member<int32_t>(explore, exploration_class, L"WCM_MoveFlags"))
+            {
+                s.running = (*flags & 4) != 0;
+                s.crouching = (*flags & 1) != 0;
+                s.climbing = (*flags & 2) != 0;
+            }
+            return s;
+        }
+        // What your cat had before this mod first set them, for reset_player_speeds.
+        inline auto speeds_kept() -> Kept<PlayerSpeeds>&
+        {
+            static Kept<PlayerSpeeds> kept;
+            return kept;
+        }
+    } // namespace detail
+
+    // Your cat's speeds now, every one set, and how it's moving; nullopt outside the world, in a fight (player() is
+    // nullptr then), or on a build wcmods hasn't the speeds for.
+    inline auto player_speeds() -> std::optional<PlayerSpeeds>
+    {
+        if (!assert_game_thread(L"player_speeds")) return std::nullopt;
+        UObject* e = detail::exploration_control();
+        if (!e || !detail::speed_member(e, 0)) return std::nullopt;
+        return detail::read_speeds(e);
+    }
+
+    // Set the speeds given (the rest stay): the game takes them the next frame. The first set keeps what your cat had,
+    // for reset_player_speeds. False outside the world or in a fight, or for a speed this build has nowhere for
+    // (nothing set then). Lasts while your cat's character does: a level change starts it from the game's again.
+    //   wcmods::set_player_speeds({.walk = 300, .run = 700});   // a quick cat
+    inline auto set_player_speeds(const PlayerSpeeds& speeds) -> bool
+    {
+        if (!assert_game_thread(L"set_player_speeds")) return false;
+        UObject* e = detail::exploration_control();
+        if (!e) return false;
+        PlayerSpeeds given = speeds;
+        for (int i = 0; i < detail::speed_fields; ++i)
+            if (detail::speed_field(given, i) && !detail::speed_member(e, i)) return false;
+        detail::speeds_kept().keep(e, [&] { return detail::read_speeds(e); });
+        for (int i = 0; i < detail::speed_fields; ++i)
+            if (auto& v = detail::speed_field(given, i)) *detail::speed_member(e, i) = static_cast<float>(*v);
+        return true;
+    }
+
+    // Put back the speeds your cat had before this mod first set them. True when there's nothing to put back (never
+    // set, or the character it was set on is gone); false outside the world or in a fight (kept for another try).
+    inline auto reset_player_speeds() -> bool
+    {
+        if (!assert_game_thread(L"reset_player_speeds")) return false;
+        UObject* e = detail::exploration_control();
+        if (!e) return false;
+        return detail::speeds_kept().put_back(e, [](const PlayerSpeeds& before) { return set_player_speeds(before); });
     }
 
     // ============================================================================================ the scent sense

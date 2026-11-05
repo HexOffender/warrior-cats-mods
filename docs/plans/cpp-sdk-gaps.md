@@ -133,8 +133,8 @@ and marks the node.
 | Step | State | Pull request |
 |---|---|---|
 | 1. Lua on one thread | done: the error traced to Lua run on two threads in one state and reproduced; wcmods' timers on the game thread, key binds that only count; a script's own LoopAsync, ExecuteWithDelay and key binds pointed at the game thread by its bootstrap; the rule in SDK.md and scripting.md | #132 |
-| 2. The camera's setters | done: nothing had moved on 26337109 (the crash was a bad read of the interpolators' map); the camera's settings (distance, field of view, tilt, the speed's extra, lag) and your cat's turning and pitch limits as hidden members with signatures; `camera_settings`, `set_camera`, `reset_camera`, seen holding in game | this branch, `claude/cpp-camera` |
-| 3. Your cat's speeds | not started | |
+| 2. The camera's setters | done: nothing had moved on 26337109 (the crash was a bad read of the interpolators' map); the camera's settings (distance, field of view, tilt, the speed's extra, lag) and your cat's turning and pitch limits as hidden members with signatures; `camera_settings`, `set_camera`, `reset_camera`, seen holding in game | #133 |
+| 3. Your cat's speeds | done: unmoved too; the exploration component's walk and run speeds, accelerations, crouch and climb factors and how it's moving as hidden members, signed (the two speed getters are leaf functions .pdata leaves out: `Finder.span` reads them to their ret); `player_speeds`, `set_player_speeds`, `reset_player_speeds`, the game's own per-frame write seen taking them, and more ground walked. There's no sprint apart from running | this branch, `claude/cpp-speeds` |
 | 4. The world map's travel | not started | |
 | 5. Photo mode | not started | |
 | 6. Story scenes | not started | |

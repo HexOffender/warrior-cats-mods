@@ -26,6 +26,55 @@
 
 namespace wcmods
 {
+    namespace detail
+    {
+        // Your cat's exploration component (ExplorationControlComponent, which the character reflects as
+        // ExplorationControl): its exploration settings, the turning (Map.hpp's set_camera) and the speeds (Effects.hpp's
+        // set_player_speeds). nullptr outside the world or in a fight, or for one a level change left behind.
+        inline constexpr const wchar_t* exploration_class = L"/Script/SwtAdventure.ExplorationControlComponent";
+        inline auto exploration_control() -> UObject*
+        {
+            UObject* e = get(player(), L"ExplorationControl").object;
+            return object_staying(e, nullptr) ? e : nullptr;
+        }
+
+        // What an object's settings were before a mod first changed them, for putting back: the object (weakly: a new
+        // one can take a destroyed one's address) and its settings. A mod's own: two mods that both change them keep
+        // theirs each. The camera's (set_camera) and your cat's speeds (set_player_speeds) use it.
+        template <typename Settings>
+        struct Kept
+        {
+            RC::Unreal::FWeakObjectPtr object;
+            bool set{};
+            Settings before;
+            auto is(UObject* o) const -> bool { return set && object.Get() == o; }
+            // Keep what `o` has now (read()) unless it's kept already.
+            template <typename Read>
+            auto keep(UObject* o, Read read) -> void
+            {
+                if (is(o)) return;
+                object = o;
+                set = true;
+                before = read();
+            }
+            // Put back what was kept on `o` with put(before), then forget it. True when there's nothing to put back
+            // (never kept, or kept on an object that's gone); false, keeping it for another try, when put() fails.
+            template <typename Put>
+            auto put_back(UObject* o, Put put) -> bool
+            {
+                if (!is(o))
+                {
+                    *this = {};
+                    return true;
+                }
+                Settings was = before;
+                if (!put(was)) return false;
+                *this = {};
+                return true;
+            }
+        };
+    } // namespace detail
+
     // ============================================================================================ what's around
     // The kinds of things nearby() finds, each the game's classes for it (as WCModsWorld sorts them).
     enum class Kind { Pickups, Interactables, Objectives, Cats, QuestGivers, Creatures, Climbing, Dens, FreshKill, Zones, Checkpoints };
