@@ -11,6 +11,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -73,7 +74,9 @@ namespace wcmods
             if (!fn) return;
             RC::Unreal::FString key(std::wstring(tag).c_str());
             alignas(16) uint8_t row[0x28]{};   // FSwtAdventureConsumableStruct, zeroed: an empty EffectOnUse
-            if (call_get_consumable(fn, &key, row) != 1) return;
+            const int found = call_get_consumable(fn, &key, row);
+            if (found < 0) log(L"item_info: the game's consumable lookup failed for {}", tag);
+            if (found != 1) return;   // (after a failure its copy of the string, if any, is left: nothing can say what's there)
             auto* effect = reinterpret_cast<RC::Unreal::FString*>(row + 0x18);
             info.usable = true;
             info.in_fights = row[0x10] != 0;
@@ -156,15 +159,37 @@ namespace wcmods
         }
     } // namespace detail
 
+    namespace detail
+    {
+        // The item table's row names by tag (its row names mean nothing: NewRow_45), read again when the table or
+        // its row count changes (a mod's row added or taken out).
+        inline auto item_rows() -> const std::map<std::wstring, std::wstring>&
+        {
+            static std::map<std::wstring, std::wstring> by_tag;
+            static UObject* of{};
+            static int rows{-1};
+            Table items = table(ITEM_TABLE);
+            if (items.object() != of || items.size() != rows)
+            {
+                by_tag.clear();
+                for (auto& [row_name, row] : items.rows()) by_tag[get(row, L"itemTag.TagName").string()] = row_name;
+                of = items.object();
+                rows = items.size();
+            }
+            return by_tag;
+        }
+    } // namespace detail
+
     // What an item is, from the game's tables as they are now (a mod's items and a table edit included); nullopt
     // for a tag the item table hasn't got.
     inline auto item_info(std::wstring_view tag) -> std::optional<ItemInfo>
     {
         if (!assert_game_thread(L"item_info") || tag.empty()) return std::nullopt;
-        Table items = table(detail::ITEM_TABLE);
-        for (auto& [row_name, row] : items.rows())
+        const auto& rows = detail::item_rows();
+        auto found = rows.find(std::wstring(tag));
+        Value row = found != rows.end() ? table(detail::ITEM_TABLE).row(found->second) : Value{};
+        if (row && get(row, L"itemTag.TagName").string() == tag)
         {
-            if (get(row, L"itemTag.TagName").string() != tag) continue;
             ItemInfo info;
             info.tag = std::wstring(tag);
             info.name = get(row, L"Name").string();
@@ -185,11 +210,8 @@ namespace wcmods
     {
         std::vector<std::wstring> out;
         if (!assert_game_thread(L"item_tags")) return out;
-        for (auto& [row_name, row] : table(detail::ITEM_TABLE).rows())
-        {
-            std::wstring tag = get(row, L"itemTag.TagName").string();
-            if (!tag.empty() && tag != L"None") out.push_back(std::move(tag));
-        }
+        for (auto& [tag, row_name] : detail::item_rows())
+            if (!tag.empty() && tag != L"None") out.push_back(tag);
         return out;
     }
 
@@ -221,24 +243,12 @@ namespace wcmods
         // where it starts, so that height is kept as it is.
         auto g = trace({spot.x, spot.y, from->z + 50}, {spot.x, spot.y, from->z - 300});
         if (g && g->z < from->z + 49) spot.z = g->z;
-        UObject* lib = object(STR("/Script/Engine.Default__GameplayStatics"));
-        auto begun = call_reflected(lib, STR("BeginDeferredActorSpawnFromClass"), [&](Params& p) {
-            p.set_nth(0, Value::of(player()));
-            p.set_nth(1, Value::of(cls));
-            detail::transform_of(p, L"SpawnTransform", spot, 0);
-            p.set_nth(3, Value::of(1));   // AlwaysSpawn
-            p.set_nth(5, Value::of(0));   // OverrideRootScale
+        UObject* a = detail::spawn_deferred(cls, spot, 0, [](UObject* a) {
+            // Not one of the level's pickups: nothing for the save to remember of it.
+            set(a, L"bUseSaveData", false);
+            set(a, L"bUseUniqueIDPersistence", false);
         });
-        UObject* a = begun ? begun->get(L"ReturnValue").object : nullptr;
         if (!a) return nullptr;
-        // Not one of the level's pickups: nothing for the save to remember of it.
-        set(a, L"bUseSaveData", false);
-        set(a, L"bUseUniqueIDPersistence", false);
-        call_reflected(lib, STR("FinishSpawningActor"), [&](Params& p) {
-            p.set_nth(0, Value::of(a));
-            detail::transform_of(p, L"SpawnTransform", spot, 0);
-            p.set_nth(2, Value::of(0));
-        });
         Value reward = get(a, L"Reward");
         map_clear(reward);
         map_add(reward, [&](const Value& key, const Value& n) {

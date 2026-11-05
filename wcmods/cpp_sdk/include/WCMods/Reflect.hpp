@@ -679,6 +679,30 @@ namespace wcmods
             set(t, L"Translation.Y", at.y);
             set(t, L"Translation.Z", at.z);
         }
+        // An actor of a class spawned as the engine's deferred spawn does: begun (owned by your cat, always spawned,
+        // its root at scale 1), handed to `before` to set up before it's finished, then finished. nullptr when the
+        // engine didn't begin it.
+        inline auto spawn_deferred(UObject* cls, Vec3 at, double yaw, const std::function<void(UObject*)>& before) -> UObject*
+        {
+            UObject* lib = object(STR("/Script/Engine.Default__GameplayStatics"));
+            if (!lib || !cls) return nullptr;
+            auto begun = call_reflected(lib, STR("BeginDeferredActorSpawnFromClass"), [&](Params& p) {
+                p.set_nth(0, Value::of(player()));
+                p.set_nth(1, Value::of(cls));
+                transform_of(p, L"SpawnTransform", at, yaw);
+                p.set_nth(3, Value::of(1));   // AlwaysSpawn
+                p.set_nth(5, Value::of(0));   // OverrideRootScale
+            });
+            UObject* a = begun ? begun->get(L"ReturnValue").object : nullptr;
+            if (!a) return nullptr;
+            if (before) before(a);
+            call_reflected(lib, STR("FinishSpawningActor"), [&](Params& p) {
+                p.set_nth(0, Value::of(a));
+                transform_of(p, L"SpawnTransform", at, yaw);
+                p.set_nth(2, Value::of(0));
+            });
+            return a;
+        }
     } // namespace detail
 
     // Spawn an actor of a class (by its path) at a place; nullptr when the class isn't there or the world

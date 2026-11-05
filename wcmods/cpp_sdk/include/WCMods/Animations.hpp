@@ -91,40 +91,56 @@ namespace wcmods
                                    : std::nullopt;
             return r && r->get(L"ReturnValue").boolean();
         }
-        // What this mod played on each actor that isn't a mod's animation (a game sequence by its path): its path.
-        inline auto played_paths() -> std::vector<std::wstring>&
+        // A montage made to play a sequence (PlaySlotAnimationAsDynamicMontage makes one in the transient package),
+        // not one of the game's montage assets, which may play the same sequence (an idle break's yawn).
+        inline auto dynamic_montage(UObject* montage) -> bool
         {
-            static std::vector<std::wstring> paths;
-            return paths;
+            UObject* outer = montage ? montage->GetOuterPrivate() : nullptr;
+            return outer && outer->GetPathName() == L"/Engine/Transient";
+        }
+        // The montages this mod started for a game sequence by its path, the last few, each with that path.
+        struct PlayedPath
+        {
+            UObject* montage;
+            std::wstring path;
+        };
+        inline auto played_paths() -> std::vector<PlayedPath>&
+        {
+            static std::vector<PlayedPath> played;
+            return played;
         }
     } // namespace detail
 
-    // Every mod's animation the install has (none without the WCModsAnims.json an install with animations writes).
-    inline auto animations() -> std::vector<Animation>
+    // Every mod's animation the install has (none without the WCModsAnims.json an install with animations writes),
+    // read once: the install is fixed while the game runs.
+    inline auto animations() -> const std::vector<Animation>&
     {
-        std::vector<Animation> out;
-        const Json& list = detail::anims_data()["animations"];
-        for (size_t i = 0; i < list.keys().size(); ++i)
-        {
-            const Json& a = list.values()[i];
-            Animation x;
-            x.id = wide(list.keys()[i]);
-            x.name = a["name"].wstring();
-            x.kind = a["kind"].wstring();
-            x.path = a["path"].wstring();
-            x.key = a["key"].wstring();
-            x.loop = a["loop"].boolean();
-            x.emote = a["emote"].boolean();
-            x.speed = a["speed"].number(1.0);
-            x.blend = a["blend"].number(detail::ANIM_BLEND);
-            x.seconds = a["seconds"].number();
-            out.push_back(std::move(x));
-        }
+        static std::vector<Animation> out;
+        static std::once_flag read;
+        std::call_once(read, [] {
+            const Json& list = detail::anims_data()["animations"];
+            for (size_t i = 0; i < list.keys().size(); ++i)
+            {
+                const Json& a = list.values()[i];
+                Animation x;
+                x.id = wide(list.keys()[i]);
+                x.name = a["name"].wstring();
+                x.kind = a["kind"].wstring();
+                x.path = a["path"].wstring();
+                x.key = a["key"].wstring();
+                x.loop = a["loop"].boolean();
+                x.emote = a["emote"].boolean();
+                x.speed = a["speed"].number(1.0);
+                x.blend = a["blend"].number(detail::ANIM_BLEND);
+                x.seconds = a["seconds"].number();
+                out.push_back(std::move(x));
+            }
+        });
         return out;
     }
     inline auto animation(std::wstring_view id) -> std::optional<Animation>
     {
-        for (Animation& a : animations())
+        for (const Animation& a : animations())
             if (a.id == id) return a;
         return std::nullopt;
     }
@@ -199,27 +215,30 @@ namespace wcmods
         }
         if (!info)
         {
-            auto& paths = detail::played_paths();
-            if (std::find(paths.begin(), paths.end(), path) == paths.end()) paths.push_back(path);
+            auto& played = detail::played_paths();
+            if (played.size() >= 32) played.erase(played.begin());
+            played.push_back({montage, path});
         }
         return montage;
     }
 
     // The animation play_animation started on an actor that still plays: a mod's by its id (whichever mod or script
-    // started it, Lua's Game.anims too: it's known by the sequence the actor's montage plays), or a game sequence's
-    // path this mod played. Empty when it plays none of them (the game's own montages never count).
+    // started it, Lua's Game.anims too: it's known by the sequence a montage made to play it plays), or a game
+    // sequence's path when the montage is one this mod started for it. Empty when it plays none of them (the game's
+    // own montage assets never count, whatever sequence they play).
     inline auto animation_playing(UObject* actor) -> std::wstring
     {
         if (!assert_game_thread(L"animation_playing")) return {};
         UObject* ai = detail::anim_instance(actor);
         UObject* m = detail::current_montage(ai);
         if (!m || !detail::montage_playing(ai, m)) return {};
+        for (const auto& p : detail::played_paths())
+            if (p.montage == m) return p.path;
+        if (!detail::dynamic_montage(m)) return {};
         std::wstring seq = detail::montage_sequence(m);
         if (seq.empty()) return {};
-        for (Animation& a : animations())
+        for (const Animation& a : animations())
             if (a.path == seq) return a.id;
-        for (const std::wstring& p : detail::played_paths())
-            if (p == seq) return p;
         return {};
     }
 

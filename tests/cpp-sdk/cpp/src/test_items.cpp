@@ -195,7 +195,16 @@ namespace t
                 after(0.3, [me, meow] {
                     value("anims.playing_game", text(animation_playing(me)));
                     stop_animation(me, 0.1);
-                    done("anims");
+                    // The game's own Meow montage (its asset, by its tag) isn't taken for the mod's, nor stopped.
+                    after(0.5, [me] {
+                        UObject* own = play_montage(me, L"Animation.Exploration.Meow");
+                        value("anims.game_montage_played", own != nullptr);
+                        after(0.2, [me] {
+                            value("anims.game_montage_seen_as", text(animation_playing(me)));
+                            expect("anims.game_montage_not_stopped", !stop_animation(me) && montage_playing(me));
+                            done("anims");
+                        });
+                    });
                 });
             });
         });

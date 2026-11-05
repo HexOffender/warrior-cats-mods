@@ -1298,7 +1298,8 @@ def test_drop_items(agent):
 def test_animations_cpp(agent):
     """Animations.hpp in the game: the install's mods' animations (tests/animations-mod's Yawn and Stretch, its Trot
     a replacement, not one of them); your cat is a cat; a mod's animation played, seen playing by its id and
-    stopped; a game sequence by its path played and seen. Needs `agent install --with tests/cpp-sdk --with
+    stopped; a game sequence by its path played and seen; the game's own Meow montage afterwards neither taken for it
+    nor stopped. Needs `agent install --with tests/cpp-sdk --with
     tests/animations-mod`."""
     _close_screens(agent)
     r = _request(agent, "anims", timeout=30)
@@ -1314,6 +1315,7 @@ def test_animations_cpp(agent):
     assert v["anims.playing_before"] == "" and v["anims.playing"] == "animations-mod/Yawn", v
     assert v["anims.playing_after_stop"] == "", v
     assert v["anims.playing_game"].endswith("A_CatMaster_Meow.A_CatMaster_Meow"), v["anims.playing_game"]
+    assert v["anims.game_montage_played"] is True and v["anims.game_montage_seen_as"] == "", v
 
 
 def test_ui_arrow_units(agent):
