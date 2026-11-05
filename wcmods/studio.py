@@ -2390,6 +2390,18 @@ def make_handler(studio, port):
     allowed_hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
 
     class Handler(BaseHTTPRequestHandler):
+        # HTTP/1.1, so the browser keeps its few connections to the studio open and asks over them again. Under
+        # HTTP/1.0 each of a page's scripts, styles and API calls was a connection of its own, closed after one
+        # answer and then held by Windows (TIME_WAIT) for minutes, and now and then Windows refused the browser
+        # a new one: the request failed as ERR_NO_BUFFER_SPACE, and a page whose first /api/info failed that
+        # way never drew its side bar. Every answer here says its Content-Length, as keep-alive needs.
+        protocol_version = "HTTP/1.1"
+        # An answer goes out as two writes (its headers, then its body). On a connection that stays open, Nagle's
+        # algorithm holds the body back until the browser acknowledges the headers, which Windows delays by up to
+        # 200 ms: every answer would wait that long (closing the connection used to send it at once).
+        disable_nagle_algorithm = True
+        body_left = False   # a request body this handler hasn't read (yet)
+
         def log_message(self, fmt, *args):  # keep the console quiet
             pass
 
@@ -2402,10 +2414,16 @@ def make_handler(studio, port):
                 self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
+            if self.body_left:
+                # Answered without reading the body (refused, or too big): what's left of it would be taken for
+                # the next request, so this connection ends with the answer (send_header sees to that).
+                self.send_header("Connection", "close")
             self.end_headers()
             self.wfile.write(data)
 
         def _handle(self, method):
+            self.body_left = (self.headers.get("Content-Length") or "0").strip() != "0" or \
+                "Transfer-Encoding" in self.headers
             if self.headers.get("Host") not in allowed_hosts:
                 return self._send(403, {"error": "wrong host"})
             url = urlparse(self.path)
@@ -2430,12 +2448,15 @@ def make_handler(studio, port):
                                     break
                                 f.write(chunk)
                                 left -= len(chunk)
+                            self.body_left = left > 0
                     except BaseException:   # the page went away mid-upload: don't leave the part in %TEMP%
                         os.remove(upload)
                         raise
                 elif length:
+                    raw = self.rfile.read(length)
+                    self.body_left = False
                     try:
-                        body = json.loads(self.rfile.read(length) or b"{}")
+                        body = json.loads(raw or b"{}")
                     except (json.JSONDecodeError, UnicodeDecodeError) as e:
                         return self._send(400, {"error": f"request body isn't valid JSON: {e}"})
                     if not isinstance(body, dict):
@@ -2546,15 +2567,41 @@ def make_handler(studio, port):
 class _Server(ThreadingHTTPServer):
     """One studio per port. HTTPServer turns on SO_REUSEADDR, which on Windows lets a second server
     bind a port that's already in use, so two studios would silently share it. A page asks for its scripts,
-    styles and data all at once: room for that many to wait their turn (socketserver's 5 overflows on a busy
-    machine, which the browser says as ERR_NO_BUFFER_SPACE or a refused connection)."""
+    styles and data all at once: room for that many to wait their turn (socketserver's 5 is small for that).
+    The handler keeps connections open between requests (HTTP/1.1), so the server knows its open ones, and
+    server_close ends them too: once a studio stops (Restart the studio), nothing reaches it through a
+    connection the browser kept, and the page's next request finds the new studio, or none."""
     allow_reuse_address = False
     request_queue_size = 128
+
+    def __init__(self, *args, **kwargs):
+        self.connections, self.connections_lock = set(), threading.Lock()
+        super().__init__(*args, **kwargs)
 
     def server_bind(self):
         if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         super().server_bind()
+
+    def process_request(self, request, client_address):
+        with self.connections_lock:
+            self.connections.add(request)
+        super().process_request(request, client_address)
+
+    def shutdown_request(self, request):
+        with self.connections_lock:
+            self.connections.discard(request)
+        super().shutdown_request(request)
+
+    def server_close(self):
+        with self.connections_lock:
+            still_open = list(self.connections)
+        for request in still_open:   # its handler, waiting for a next request, sees the end and finishes
+            try:
+                request.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass   # closed by the other end already
+        super().server_close()
 
 
 LAUNCHER = "Clan Mod Studio.bat"   # beside wcmods.py: what a player double-clicks
