@@ -13,8 +13,6 @@
 #include <string_view>
 #include <vector>
 
-#include <Unreal/FWeakObjectPtr.hpp>
-
 #include <WCMods/Core.hpp>
 #include <WCMods/Game.hpp>
 #include <WCMods/Reflect.hpp>
@@ -194,13 +192,12 @@ namespace wcmods
 
     namespace detail
     {
-        inline constexpr const wchar_t* explore_class = L"/Script/SwtAdventure.ExplorationControlComponent";
         inline constexpr int speed_fields = 6;
         inline auto speed_member(UObject* explore, int which) -> float*
         {
             static constexpr const wchar_t* names[speed_fields] = {L"WCM_WalkSpeed", L"WCM_RunSpeed", L"WCM_WalkAcceleration",
                                                                    L"WCM_RunAcceleration", L"WCM_CrouchFactor", L"WCM_ClimbFactor"};
-            return member<float>(explore, explore_class, names[which]);
+            return member<float>(explore, exploration_class, names[which]);
         }
         inline auto speed_field(PlayerSpeeds& s, int which) -> std::optional<double>&
         {
@@ -213,7 +210,7 @@ namespace wcmods
             PlayerSpeeds s;
             for (int i = 0; i < speed_fields; ++i)
                 if (float* m = speed_member(explore, i)) speed_field(s, i) = *m;
-            if (int32_t* flags = member<int32_t>(explore, explore_class, L"WCM_MoveFlags"))
+            if (int32_t* flags = member<int32_t>(explore, exploration_class, L"WCM_MoveFlags"))
             {
                 s.running = (*flags & 4) != 0;
                 s.crouching = (*flags & 1) != 0;
@@ -221,24 +218,11 @@ namespace wcmods
             }
             return s;
         }
-        // What your cat had before this mod first set them, for reset_player_speeds (the component weakly: a new
-        // level's cat can take the old one's address).
-        struct SpeedsKept
+        // What your cat had before this mod first set them, for reset_player_speeds.
+        inline auto speeds_kept() -> Kept<PlayerSpeeds>&
         {
-            RC::Unreal::FWeakObjectPtr explore;
-            bool set{};
-            PlayerSpeeds before;
-            auto is(UObject* e) const -> bool { return set && explore.Get() == e; }
-        };
-        inline auto speeds_kept() -> SpeedsKept&
-        {
-            static SpeedsKept kept;
+            static Kept<PlayerSpeeds> kept;
             return kept;
-        }
-        inline auto your_exploration() -> UObject*
-        {
-            UObject* e = get(player(), L"ExplorationControl").object;
-            return object_staying(e, nullptr) ? e : nullptr;
         }
     } // namespace detail
 
@@ -247,7 +231,7 @@ namespace wcmods
     inline auto player_speeds() -> std::optional<PlayerSpeeds>
     {
         if (!assert_game_thread(L"player_speeds")) return std::nullopt;
-        UObject* e = detail::your_exploration();
+        UObject* e = detail::exploration_control();
         if (!e || !detail::speed_member(e, 0)) return std::nullopt;
         return detail::read_speeds(e);
     }
@@ -259,18 +243,12 @@ namespace wcmods
     inline auto set_player_speeds(const PlayerSpeeds& speeds) -> bool
     {
         if (!assert_game_thread(L"set_player_speeds")) return false;
-        UObject* e = detail::your_exploration();
+        UObject* e = detail::exploration_control();
         if (!e) return false;
         PlayerSpeeds given = speeds;
         for (int i = 0; i < detail::speed_fields; ++i)
             if (detail::speed_field(given, i) && !detail::speed_member(e, i)) return false;
-        auto& kept = detail::speeds_kept();
-        if (!kept.is(e))
-        {
-            kept.explore = e;
-            kept.set = true;
-            kept.before = detail::read_speeds(e);
-        }
+        detail::speeds_kept().keep(e, [&] { return detail::read_speeds(e); });
         for (int i = 0; i < detail::speed_fields; ++i)
             if (auto& v = detail::speed_field(given, i)) *detail::speed_member(e, i) = static_cast<float>(*v);
         return true;
@@ -281,17 +259,9 @@ namespace wcmods
     inline auto reset_player_speeds() -> bool
     {
         if (!assert_game_thread(L"reset_player_speeds")) return false;
-        UObject* e = detail::your_exploration();
+        UObject* e = detail::exploration_control();
         if (!e) return false;
-        auto& kept = detail::speeds_kept();
-        if (!kept.is(e))
-        {
-            kept = {};
-            return true;
-        }
-        if (!set_player_speeds(kept.before)) return false;
-        kept = {};
-        return true;
+        return detail::speeds_kept().put_back(e, [](const PlayerSpeeds& before) { return set_player_speeds(before); });
     }
 
     // ============================================================================================ the scent sense

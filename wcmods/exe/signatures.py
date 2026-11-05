@@ -334,10 +334,10 @@ class Finder:
         return rva
 
     def span(self, begin):
-        """The whole function at `begin` (a function's start: a vtable's entry, a call's target, an anchor):
-        pe.Image.function_at's, or, for a leaf function .pdata has no entry for (one that saves nothing, such as a
-        vtable's small getters), `begin` to the ret that int3 padding follows. None when neither is found within
-        64 instructions."""
+        """The whole function at `begin` (a function's start: a vtable's entry or an anchor): pe.Image.function_at's,
+        or, for a leaf function .pdata has no entry for (one that saves nothing, such as a vtable's small getters),
+        `begin` to the ret (C3, `rep ret` F3 C3, or `ret imm16` C2) that int3 padding or the next function follows.
+        None when neither is found within 64 instructions, or int3 comes first."""
         fn = self.img.function_at(begin)
         if fn:
             return fn
@@ -349,8 +349,12 @@ class Finder:
                 ins = x64.decode(self.text.data, p)
             except x64.DecodeError:
                 return None
+            first = self.tdata[p:p + ins.length]
+            if first == b"\xCC":   # padding before any ret: not a whole function
+                return None
             p += ins.length
-            if self.tdata[p - ins.length] == 0xC3 and ins.length == 1 and (p >= len(self.tdata) or self.tdata[p] == 0xCC):
+            ret = first in (b"\xC3", b"\xF3\xC3") or (len(first) == 3 and first[0] == 0xC2)
+            if ret and (p >= len(self.tdata) or self.tdata[p] == 0xCC or self.img.function_at(self.text.rva + p)):
                 return (begin, self.text.rva + p)
         return None
 
@@ -414,7 +418,9 @@ class Finder:
             begins.discard(info.static_class)
             spans = set()
             for b in begins:
-                span = self.span(b)
+                # A leaf only where the start is certainly a function's own (its vtable, its natives); a call's target
+                # could be a thunk or a fragment.
+                span = self.span(b) if b in own else self.img.function_at(b)
                 if span and span[1] - span[0] < 20000:   # not the engine's giant dispatchers
                     spans.add(span)
             info.functions = sorted(spans)

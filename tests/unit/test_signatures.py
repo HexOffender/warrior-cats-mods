@@ -579,7 +579,7 @@ def test_make_fails_a_native_function_with_no_pattern(monkeypatch):
 def test_a_leaf_function_pdata_leaves_out_is_read_to_its_ret(tmp_path):
     """Finder.span: a function .pdata has an entry for is pe's; one it hasn't (a leaf that saves nothing, as the
     exploration component's speed getter at its vtable's +0x528 is) runs from its start to the ret int3 padding
-    follows, past an early ret; bytes that never reach such a ret give None."""
+    follows, past an early ret, `rep ret` and `ret 8` too; bytes that never reach such a ret give None."""
     pdata, rdata = 0x3000, 0x2000
     code = bytearray(b"\xCC" * 0x100)
     code[0x00:0x08] = bytes.fromhex("4883EC28" "4883C428")             # sub rsp,28h / add rsp,28h (has .pdata)
@@ -588,6 +588,8 @@ def test_a_leaf_function_pdata_leaves_out_is_read_to_its_ret(tmp_path):
     leaf = bytes.fromhex("8B8110010000" "A804" "7401" "C3" "F30F10812C010000" "C3")
     code[0x20:0x20 + len(leaf)] = leaf
     code[0x40:0x44] = bytes.fromhex("8B811001")                         # cut short: no ret before the padding
+    code[0x60:0x68] = bytes.fromhex("8B8110010000" "F3C3")              # mov eax,[rcx+110h] / rep ret
+    code[0x70:0x79] = bytes.fromhex("8B8110010000" "C20800")            # ... / ret 8
     table = struct.pack("<III", 0x1000, 0x1009, rdata)
     path = tmp_path / "game.exe"
     path.write_bytes(build_pe([(".text", 0x1000, bytes(code)), (".rdata", rdata, unwind()), (".pdata", pdata, table)],
@@ -596,3 +598,4 @@ def test_a_leaf_function_pdata_leaves_out_is_read_to_its_ret(tmp_path):
     assert finder.span(0x1000) == (0x1000, 0x1009)
     assert finder.span(0x1020) == (0x1020, 0x1020 + len(leaf))
     assert finder.span(0x1040) is None
+    assert finder.span(0x1060) == (0x1060, 0x1068) and finder.span(0x1070) == (0x1070, 0x1079)

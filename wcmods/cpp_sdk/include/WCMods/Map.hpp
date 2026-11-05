@@ -455,8 +455,6 @@ namespace wcmods
                 if (object_staying(c, nullptr) && get(c, L"TargetActor").object == me) return c;
             return nullptr;
         }
-        // Your cat's exploration component (the character reflects it as ExplorationControl).
-        inline auto exploration_control() -> UObject* { return get(player(), L"ExplorationControl").object; }
     } // namespace detail
     inline auto camera() -> std::optional<CameraView>
     {
@@ -497,7 +495,6 @@ namespace wcmods
     namespace detail
     {
         inline constexpr const wchar_t* camera_class = L"/Script/SwtAdventure.SwtAdventureCameraActor";
-        inline constexpr const wchar_t* exploration_class = L"/Script/SwtAdventure.ExplorationControlComponent";
         inline constexpr int camera_fields = 11;
         // Each setting's member: the camera's, or (turning) the exploration component's. nullptr when this build's
         // offsets.json hasn't got it, or there's no such object.
@@ -526,19 +523,10 @@ namespace wcmods
                                                             &s.pitch_min, &s.pitch_max};
             return *fields[which];
         }
-        // What the camera had before a mod first set it, for reset_camera: the camera (weakly: a level's new camera can
-        // take the old one's address), and every setting. A mod's own: two mods that both set the camera each keep
-        // theirs.
-        struct CameraKept
+        // What the camera had before this mod first set it, for reset_camera.
+        inline auto camera_kept() -> Kept<CameraSettings>&
         {
-            RC::Unreal::FWeakObjectPtr camera;
-            bool set{};
-            CameraSettings before;
-            auto is(UObject* cam) const -> bool { return set && camera.Get() == cam; }
-        };
-        inline auto camera_kept() -> CameraKept&
-        {
-            static CameraKept kept;
+            static Kept<CameraSettings> kept;
             return kept;
         }
         inline auto read_camera(UObject* cam, UObject* explore) -> CameraSettings
@@ -589,13 +577,7 @@ namespace wcmods
         CameraSettings given = settings;
         for (int i = 0; i < detail::camera_fields; ++i)
             if (detail::camera_field(given, i) && !detail::camera_member(cam, explore, i)) return false;
-        auto& kept = detail::camera_kept();
-        if (!kept.is(cam))
-        {
-            kept.camera = cam;
-            kept.set = true;
-            kept.before = detail::read_camera(cam, explore);
-        }
+        detail::camera_kept().keep(cam, [&] { return detail::read_camera(cam, explore); });
         for (int i = 0; i < detail::camera_fields; ++i)
             if (auto& v = detail::camera_field(given, i)) *detail::camera_member(cam, explore, i) = static_cast<float>(*v);
         return !(settings.lag || settings.rotation_lag) || detail::apply_lag(cam);
@@ -609,14 +591,6 @@ namespace wcmods
         if (!assert_game_thread(L"reset_camera")) return false;
         UObject* cam = detail::exploration_camera();
         if (!cam) return false;
-        auto& kept = detail::camera_kept();
-        if (!kept.is(cam))
-        {
-            kept = {};
-            return true;
-        }
-        if (!set_camera(kept.before)) return false;
-        kept = {};
-        return true;
+        return detail::camera_kept().put_back(cam, [](const CameraSettings& before) { return set_camera(before); });
     }
 } // namespace wcmods
