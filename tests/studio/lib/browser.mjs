@@ -399,9 +399,15 @@ export async function launch({ browser = findBrowser(), headless = true, timeout
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wc-browser-"));
   let proc = null, endpoint = null;
   try {
+    // msWindowTabManagerPublic: headless Edge still makes real (hidden) windows, and through Windows'
+    // WindowTabManager it tells Windows 11 about each tab, which shows them in Alt+Tab ("Show tabs from apps
+    // when snapping or pressing Alt+Tab"). Once the browser ends, those entries stay as blank cards titled
+    // "… · Clan Mod Studio" that do nothing when clicked, until Explorer restarts: about 15 of them after a
+    // full run. Other browsers don't know the name and ignore it.
     const args = [...exeArgs, headless ? "--headless=new" : null, "--remote-debugging-port=0", `--user-data-dir=${dir}`,
       "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--disable-extensions",
-      "--disable-background-networking", "--disable-sync", "--disable-features=Translate,OptimizationHints",
+      "--disable-background-networking", "--disable-sync",
+      "--disable-features=Translate,OptimizationHints,msWindowTabManagerPublic",
       "--window-size=1280,900", "about:blank"].filter(Boolean);
     // Started in the system's temp folder, not the caller's (the repository, under node --test): whatever a
     // browser, or a stand-in for one, writes to a relative path never lands among the repository's files.
