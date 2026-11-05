@@ -9,7 +9,7 @@ Three branches already under way are referred to, not planned again: the test ha
 - story: the `gives` rewards and the dialogue answer buttons;
 - docs-guide: the creator guide pages.
 
-**Status, 2026-11-04.** Steps 4, 5, 6 and 10 are done; 1, 7 and 9 are half done; 2, 3 and 8 aren't checked. The open ones are folded into the C++ SDK plan, [cpp-sdk-coverage.md](cpp-sdk-coverage.md), whose status table says where each stands; the creator-facing cards here (Sounds and music, Sky, the TuningData line) wait for the studio's turn.
+**Status, 2026-11-05.** Steps 4, 5, 6 and 10 are done, and the C++ SDK plan ([cpp-sdk-coverage.md](cpp-sdk-coverage.md)) answered most of the rest: 1 (its steps 2 and 16: tables live, and which tuning keys the code names, `wcmods/exe/tuning_read.json`), 2 and 9 (its step 7: talks read from their graphs and played, an edited line showing in one), 3 (its step 4), 7 (its step 5) and 8's storage (its step 8; what an answer's Score does is still open). The creator-facing cards here (Sounds and music, Sky, the TuningData line in All tables) wait for the studio's turn.
 
 ## What it is for
 

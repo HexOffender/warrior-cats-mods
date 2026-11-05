@@ -1343,6 +1343,7 @@ wcmods::set_tuning(L"Gameplay.Exploration.MaxLevel", 30);
 | `Table::row(name)`, `rows()` | A row as a struct `Value` (`get`, `set` and `describe` work on it; a `set` changes the game's row), None for one the table hasn't got; every row by name |
 | `Table::add_row(name, from)`, `add_row(name)`, `remove_row(name)` | A row of the mod's own, a copy of the row `from` or the struct's defaults (one with that name already is replaced), as a `Value`, or None when `from` isn't one of its rows; taking one out. The game finds an added row where it looks rows up by name, not in a list it built from the table before |
 | `wcmods::tuning(L"Gameplay.Exploration.MaxLevel")`, `set_tuning(key, value)` | A tuning key's number (`TuningData.csv`'s MaxValue: 20 for that one), or nullopt for a key the table hasn't got or when wcmods hasn't got the tuning manager's map on this build; changing it. The game's code reads its tuning through one lookup that goes to this map every time, so a change is what every later read gets; code that read its numbers before (most of the game reads them as a part starts) keeps what it read until it reads again, which wasn't timed for each part. A key can't be added: the game's code names the ones it reads. Keys match whatever their case, as the game's do |
+| `wcmods::tuning_named(key)` | What the game's code says of a key (`tools/re/tuning_read.py` on build 26337109, installed as `Mods/shared/WCModsGame/tuning_read.json`): `L"read"` (the code names it: a change can do something), `L"pattern"` (the code builds it from a format, `Gameplay.Exploration.Level.%d`: likely read too) or `L"not_named"` (nothing in the code names it: a change most likely does nothing). Nullopt for a key it hasn't got |
 | `wcmods::tuning_keys()`, `tuning_description(key)` | Every key (441), and a key's description (its Description column; empty for most) |
 
 **Cats of a mod's own (`Npcs.hpp`)**, game thread only:
@@ -1780,6 +1781,64 @@ The same rules as for scripts keep the game running:
   every frame, as the example does.
 - **Exceptions** thrown in callbacks are caught and logged; one that reaches the game closes it. A
   crash (a bad pointer) closes it too, and there's nothing to catch: check for `nullptr`.
+
+### What the SDK reaches
+
+Every manager and component class of the game's own modules (SwtEngine, SwtQuest, SwtAdventure, Wrc: 54 managers and
+94 components in the class dump of build 26337109), by family: a base class and the game's own layers of it (the one
+running is usually the Wrc or SwtAdventure one). "Reflect.hpp" means no call of its own: its reflected members and
+functions are reached by `get`, `set` and `call_reflected` on the object (`manager(L"<name>")` for a manager,
+`component(actor, STR("<class>"))` for a component). The plan this came from is `docs/plans/cpp-sdk-coverage.md`.
+
+| Family | Its classes | Reached by |
+|---|---|---|
+| Managers, all | `SwtManager` | `manager(name)` (`Game.hpp`): each one below by its short name |
+| Achievements | `SwtAchievementsManager`, `WrcAchievementsManager` | Reflect.hpp (`L"achievements"`): Steam's achievements, not a mod's to give |
+| Tracing | `SwtActorTracerManager`, `SwtAdventureTracerManager` | Reflect.hpp (`L"tracer"`) |
+| Analytics | `SwtAnalyticsManager`, `WrcAnalyticsManager` | none: the game's telemetry |
+| Assets | `SwtAssetManager` | `load(path)` (`Reflect.hpp`) loads through the engine |
+| Audio | `SwtAudioManager`, `WrcAudioManager` (`SwtNativeAudioManager`) | `World.hpp`: `play_sound`, `music`, the sound swaps |
+| Challenges, records | `SwtChallengesManager`, `SwtRecordsManager` | Reflect.hpp (`L"challenges"`, `L"records"`) |
+| Cheats | `SwtCheatsManager`, `SwtQuestCheatsManager`, `SwtAdventureCheatsManager`, `WrcCheatsManager` | `Game.hpp`: the developer switches |
+| Gameplay effects | `SwtEffectManager`, `SwtQuestEffectManager`, `WrcEffectManager` | `Items.hpp`: a herb's effect (`item_info`); applying one by tag isn't reflected |
+| Visual effects | `SwtEngineVfxManager`, `SwtQuestVfxManager`, `SwtAdventureVfxManager` | `Effects.hpp`: `game_effect`, `game_effects` |
+| Flow | `SwtFlowManager`, `SwtAdventureFlowManager`, `WrcFlowManager` | Reflect.hpp (`L"flow"`): the game's menus-to-forest flow |
+| Screens | `SwtGuiManager`, `SwtQuestGuiManager`, `SwtAdventureGuiManager`, `WrcGuiManager` | `Ui.hpp`: `ui::screen`, `ui::send`, `ui::close`, tabs; `World.hpp`: `screens`, `command` |
+| Montages | `SwtMontagesManager` | `World.hpp`: `play_montage` (through the cat's `SwtPlayMontageComponent`) |
+| Online | `SwtOnlineServicesManager`, `WrcOnlineServicesManager` | none: the game's server and an account (the plan's "Not in this plan") |
+| Save | `SwtSaveManager`, `SwtQuestSaveManager`, `SwtAdventureSaveManager`, `WrcSaveManager`, `SwtStorageManager` | `World.hpp`: `save_game`, `save_hash`, `slot_data`; `Bonds.hpp` and `Looks.hpp` through the game's own save code |
+| Scenes | `SwtSequencerManager`, `SwtQuestSequencerManager`, `SwtAdventureSequencerManager`, `WrcSequencerManager` | `Story.hpp`: `scenes_seen`, `scenes_playing` (playing one is open: step 11) |
+| Tuning | `SwtTuningManager`, `SwtQuestTuningManager`, `SwtAdventureTuningManager`, `WrcTuningManager` | `Tables.hpp`: `tuning`, `set_tuning`, `tuning_named`; `Items.hpp` (herbs) and `Dens.hpp` (decorations) through its signed lookups |
+| Quests | `QuestManager`, `WrcQuestManager` | `Story.hpp`: quests, objectives, the story's progress |
+| Cats of the clans | `SwtNPCGenerationManager`, `SwtAdventureNPCGenerationManager`, `WrcNPCGenerationManager` | `Bonds.hpp`: the story roles; `Looks.hpp`: `clan_cats` |
+| Tutorials | `SwtTutorialManager`, `WrcTutorialManager` | Reflect.hpp (`L"tutorial"`) |
+| Fights | `SwtAdventureCombatManager` | `Story.hpp`: the fight calls (`combat_director`, `start_fight`, `end_fight`...) |
+| Walk paths | `SwtAdventureTrackPathManager` | Reflect.hpp (`L"paths"`) |
+| Health, stamina, level, the pile | `SwtQuestResourceComponent`, `SwtQuestHealthComponent`, `SwtQuestStaminaComponent`, `SwtQuestLevelComponent`, `SwtAdventureLevelComponent`, `SwtAdventureFreshKillPileComponent`, `SwtCombatStaminaComponent` | `Game.hpp`: `health`, `stamina`, `level`, `stat`, `xp`, `fresh_kill`, `combat_stamina` |
+| Inventory | `SwtQuestInventoryComponent`, `SwtAdventureInventoryComponent`, `WrcInventoryComponent` | `World.hpp`: `inventory`, `add_item`, `remove_item` |
+| Status conditions | `SwtAdventureStatusComponent` | `Game.hpp`: `status`, `status_rounds`; `Story.hpp`: `apply_status`, `Event::Status` |
+| Fighters | `TurnBasedCombatComponent`, `WrcTurnBasedCombatComponent` | `Story.hpp`: `fighter`, `fight_players`, `fight_enemies`, `fight_cat` |
+| A fight's parts | `CombatControlComponent`, `SwtAdventureCombatBoxComponent`, `SwtAdventureCombatLogComponent`, `SwtCombatMessageComponent`, `SwtAdventureDilemmaComponent`, `CombatWidgetComponent` | `Story.hpp` drives a fight through its menu and reads dilemmas from their popup; the components: Reflect.hpp |
+| Looks | `SwtAdventureCustomizableMeshComponent`, `WrcCustomizableMeshComponent` | `Looks.hpp`: `look`, `set_look`, accessories |
+| Saved identities | `InstancedUniqueIdentifierComponent`, `SwtQuestIUIDComponent`, `SwtAdventureIUIDComponent`, `SwtAdventureInteractableUniqueComponent`, `PickupInstancedUniqueIdentifierComponent`, `SplineClimbTargetInstancedUniqueIdentifierComponent` | `Npcs.hpp` (a mod's cats), `Looks.hpp` (`clan_cats`); the rest: Reflect.hpp |
+| Input | `SwtInputComponent`, `SwtAdventureInputComponent`, `WrcInputComponent` | `World.hpp`: `command` (the game's own `OnListenCommandInternal`); `Events.hpp`: keys |
+| Senses | `SwtAdventureDetectionComponent`, `SwtAdventureExplorationSenseComponent`, `SwtAdventureSenseTrackedComponent`, `SwtAdventureSenseEnablerComponent`, `SwtAdventureSensorComponent`, `SwtAdventureExplorationStealthComponent` | `World.hpp`: `senses` (animals' sight and hearing); `Effects.hpp`: `use_sense`, `sense`; the rest: Reflect.hpp |
+| Points of interest | `SwtQuestPOIComponent`, `SwtAdventurePOIComponent`, `SwtAdventureCheckpointPOIComponent` | `Map.hpp`: `map_marker`, `map_marker_count` |
+| The minimap and the map | `SwtAdventureMinimapComponent`, `SwtAdventureWorldMapComponent` | `Map.hpp`'s markers show on them; the components: Reflect.hpp |
+| Talk labels | `QuestWidgetComponent`, `AdventureWidgetComponent` | `Npcs.hpp`: a mod's cat's label and Talk prompt |
+| Pickups and prey | `SwtQuestInteractSphereComponent`, `SwtQuestPreyComponent`, `SwtAdventurePreyComponent`, `SwtAdventureJumpHotspotComponent` | `Items.hpp`: `drop_item` (the game's pickups, collected by Interact); prey and jump spots: Reflect.hpp |
+| Quests on actors | `QuestComponent`, `SwtAdventureQuestComponent` | `Story.hpp`'s quest calls; the components: Reflect.hpp |
+| Exploring | `ExplorationControlComponent`, `PounceDetectorComponent`, `SwtAdventureExplorationEdgeGrabComponent` | `Story.hpp`: `start_fight` (the pounce); `Effects.hpp`: `movement`. Your cat's walk, run, sprint and climb speeds (its exploration settings) are open: step 15 |
+| Photo mode | `PhotoModeControlComponent` | none yet: no reflected way in (step 14) |
+| Minigames | `SwtAdventureMinigameComponent` | none: Warrior Cats doesn't use them (no class or screen of theirs ships, no actor has the component) |
+| Animation and motion | `SwtPlayMontageComponent`, `KeyframeMotionComponent`, `SwtMotionStateComponent`, `SwtCameraShakeComponent`, `SwtEngineSpringArmComponent` | `World.hpp`: `play_montage`; `Animations.hpp`; `Map.hpp`: `camera` (read only: step 14); the rest: Reflect.hpp |
+| Moving to a place | `SwtEngineMoveToComponent`, `SwtAdventureInteractableMoveToComponent`, `SwtQuestMoveToLocationAtComponent`, `SwtQuestRotateToLookAtComponent`, `SwtQuestTeamSpatialPointComponent` | `Npcs.hpp`: a mod's cats walked to a place; the rest: Reflect.hpp |
+| Hiding by distance | `SwtQuestHideByDistanceComponent`, `SwtAdventureHideByDistanceComponent`, `SwtAdventureHideCharacterComponent`, `SwtAdventureHideNPCComponent`, `SwtAdventureHideByProximityComponent` | Reflect.hpp |
+| Splines and paths | `AnimationSplineComponent`, `ComplexSplineComponent`, `SwtEngineSplineMeshComponent`, `TraceComponent`, `SwtAdventureTraceComponent`, `TracerTriggerComponent`, `SwtQuestWalkingSplineComponent`, `SwtAdventureSplineJumpHotspotComponent`, `SwtAdventureSplineWalkPathComponent`, `SwtAdventureSplineNavModifierComponent` | Reflect.hpp: the level's paths, climbs and camera rails |
+| Gameplay effects on actors | `SwtEngineEffectComponent`, `SwtQuestEffectComponent`, `SwtAdventureEffectComponent` | Reflect.hpp |
+| Pushing and floating | `SwtQuestPushingActorsComponent`, `SwtAdventurePushingActorsComponent`, `SwtEngineFloatingEdgeComponent`, `SwtAdventureFloatingEdgeComponent` | Reflect.hpp |
+| Widget detectors | `SwtQuestWidgetDetectorComponent`, `SwtAdventureFillerWidgetDetectorComponent`, `DebugWidgetComponent` | Reflect.hpp |
+| The rest | `SecondaryTickComponent`, `SwtQuestAutoPlayComponent`, `SwtAdventureAutoPlayComponent`, `SwtQuestCineCameraComponent`, `SpectatorControlComponent` | Reflect.hpp (the demo autoplay, scenes' cameras, spectating) |
 
 ### Testing the SDK
 

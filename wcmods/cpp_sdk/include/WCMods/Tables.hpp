@@ -253,6 +253,27 @@ namespace wcmods
         }
     } // namespace detail
 
+    // What the game's code says of a key (tools/re/tuning_read.py, on the build its file names: wcmods installs it as
+    // Mods/shared/WCModsGame/tuning_read.json): L"read" (the code names it, so changing it can do something),
+    // L"pattern" (the code builds it from a format, "Gameplay.Exploration.Level.%d": likely read too), or
+    // L"not_named" (nothing in the code names it: changing it probably does nothing). Nullopt for a key it hasn't got
+    // or without the file.
+    inline auto tuning_named(std::wstring_view key) -> std::optional<std::wstring>
+    {
+        static const Json file = [] {
+            auto text = read_file(mod().installed.parent_path() / L"shared" / L"WCModsGame" / L"tuning_read.json");
+            auto parsed = text ? Json::parse(*text) : std::nullopt;
+            return parsed ? std::move(*parsed) : Json::object();
+        }();
+        const std::string k = utf8(key);
+        for (auto& r : file["read"].values())
+            if (r.string() == k) return L"read";
+        if (file["pattern"].has(k)) return L"pattern";
+        for (auto& r : file["not_named"].values())
+            if (r.string() == k) return L"not_named";
+        return std::nullopt;
+    }
+
     // A key's number, as the game's own lookup gives it; nullopt for a key the table hasn't got, or when wcmods
     // hasn't got the tuning manager's map on this build (offsets.json).
     inline auto tuning(std::wstring_view key) -> std::optional<float>
