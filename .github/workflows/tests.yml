@@ -35,12 +35,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - run: ./.github/port-probe.ps1   # TEMPORARY: flaky-test investigation
-        shell: pwsh
       # The runner has Edge: a browser test that can't find it fails rather than skipping to a green job.
       - run: node --test "tests/studio/**/*.test.mjs"
         env:
           WC_REQUIRE_BROWSER: "1"
-      - run: ./.github/port-probe.ps1 -Report   # TEMPORARY: flaky-test investigation
-        if: always()
-        shell: pwsh
