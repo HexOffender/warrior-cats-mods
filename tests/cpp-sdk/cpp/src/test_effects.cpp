@@ -32,7 +32,8 @@ namespace t
             o.set("mode", Json(text(m->mode)));
             value("effects.movement", o);
         }
-        expect("effects.walk_refused", !set_walk_speed(player(), 400) && !set_walk_speed(nullptr, 400) && !movement(nullptr));
+        expect("effects.walk_refused", !set_walk_speed(player(), 400) && !set_walk_speed(nullptr, 400) && !movement(nullptr)
+                                           && !set_jump_speed(nullptr, 1) && !set_gravity(nullptr, 1));
         expect("effects.jump", set_jump_speed(player(), 700) && set_gravity(player(), 0.8));
         // An animal's walk speed (one roaming nearby)
         UObject* animal = nullptr;

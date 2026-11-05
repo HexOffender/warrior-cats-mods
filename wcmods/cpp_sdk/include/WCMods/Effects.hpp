@@ -50,10 +50,12 @@ namespace wcmods
     {
         Effect e;
         UObject* lib = object(STR("/Script/Niagara.Default__NiagaraFunctionLibrary"));
-        if (!assert_game_thread(L"spawn_effect") || !system || !lib || !player()) return e;
+        // The world, through the player's controller: it's there in a fight too, when player() isn't.
+        UObject* in_world = controller();
+        if (!assert_game_thread(L"spawn_effect") || !system || !lib || !in_world) return e;
         if (!is_a(system, STR("/Script/Niagara.NiagaraSystem"))) return e;
         auto r = call_reflected(lib, STR("SpawnSystemAtLocation"), [&](Params& p) {
-            p.set_nth(0, Value::of(player()));   // the world, through your cat
+            p.set_nth(0, Value::of(in_world));
             p.set_nth(1, Value::of(system));
             Value where = p.nth(2);
             set(where, L"X", at.x);
@@ -124,8 +126,9 @@ namespace wcmods
     };
     inline auto movement(UObject* actor) -> std::optional<Movement>
     {
-        if (!assert_game_thread(L"movement")) return std::nullopt;
-        UObject* mv = actor ? get(actor, L"CharacterMovement").object : nullptr;
+        // An actor kept from earlier may be gone (a level change, the forest streaming it out): not called into then.
+        if (!assert_game_thread(L"movement") || !detail::object_staying(actor, nullptr)) return std::nullopt;
+        UObject* mv = get(actor, L"CharacterMovement").object;
         if (!mv) return std::nullopt;
         Movement m;
         m.walk_speed = get(mv, L"MaxWalkSpeed").number();
@@ -141,8 +144,14 @@ namespace wcmods
     {
         inline auto set_movement_value(UObject* actor, const wchar_t* member, double v) -> bool
         {
-            UObject* mv = actor ? get(actor, L"CharacterMovement").object : nullptr;
+            if (!object_staying(actor, nullptr)) return false;
+            UObject* mv = get(actor, L"CharacterMovement").object;
             return mv && set(mv, member, v);
+        }
+        // Your cat's own character (player() is nullptr in a fight, when it's the fight's actor's).
+        inline auto is_your_cat(UObject* actor) -> bool
+        {
+            return actor && (actor == player() || name(actor->GetClassPrivate()) == L"BP_Exploration_Character_Player_C");
         }
     } // namespace detail
     // Change how high it jumps (its jump's upward speed, 420 on the test cat) and its gravity (1 the world's): the game
@@ -160,14 +169,15 @@ namespace wcmods
     // returns false for your cat.
     inline auto set_walk_speed(UObject* actor, double speed) -> bool
     {
-        if (!assert_game_thread(L"set_walk_speed") || !actor || actor == player()) return false;
+        if (!assert_game_thread(L"set_walk_speed") || !actor || detail::is_your_cat(actor)) return false;
         return detail::set_movement_value(actor, L"MaxWalkSpeed", speed);
     }
 
     // ============================================================================================ the scent sense
     // Your cat's scent sense (Q): the game's own, through its command, as the key does. It comes on over about two
-    // seconds, lasts about ten and fades (its post-process component, BP_Exploration_SenseHandler). False outside the
-    // world.
+    // seconds, lasts about ten and fades (its post-process component, BP_Exploration_SenseHandler). True when the
+    // command was sent, which doesn't say it came on: while it's already on, another does nothing (seen); sense()
+    // says what shows. False outside the world.
     inline auto use_sense() -> bool
     {
         return assert_game_thread(L"use_sense") && player() && command(L"Player_Scent_Tracking");

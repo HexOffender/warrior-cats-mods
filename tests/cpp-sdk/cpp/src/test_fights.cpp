@@ -139,6 +139,15 @@ namespace t
             for (const wchar_t* b : {L"mcGuiButtonAttack", L"mcGuiButtonRest", L"mcGuiButtonItem", L"mcGuiButtonFlee"})
                 words.push(Json(text(detail::button_words(get(fight_menu().object(), std::wstring(L"PanelCombatMenu.") + b).object))));
             value("fights.menu_words", words);
+            // An effect in a fight (Effects.hpp: the world through the controller, as player() is nullptr now).
+            if (auto at = location(fight_cat().actor()))
+            {
+                auto fx = std::make_shared<Effect>(game_effect(L"Buff", {at->x, at->y, at->z + 50}));
+                after(0.3, [fx] {
+                    value("fights.effect_playing", fx->playing());
+                    fx->stop();
+                });
+            }
             // How answer_dilemma tells which choice is selected (detail::button_selected: the button's CanvasSelected
             // shown), checked on the fight menu's buttons, which are the same kind, against the panel's own selection.
             Json shown = Json::array();

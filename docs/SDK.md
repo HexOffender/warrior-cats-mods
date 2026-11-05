@@ -1532,8 +1532,8 @@ wcmods::use_sense();                                                            
 | `wcmods::game_effects()`, `game_effect(name, at, scale = 1)` | The game's own effects by name, from its VFX manager: `Buff`, `Debuff`, `Climb`, the status conditions' (`Poisoned`, `Blinded`, `Furious`, `Stressed`) and a pickup's (`PickUp`, `Interactable`, `OnContact`); one played at a place. An empty `Effect` for a name it hasn't got |
 | `wcmods::movement(actor)` | A cat's or an animal's movement values (its `CharacterMovement`): `Movement` with `walk_speed` (175 cm/s on the test cat), `crouched_speed`, `acceleration`, `jump_speed` (420), `gravity` (1), `step_height` and `mode` (`L"MOVE_Walking"`...). Nullopt for an actor without one |
 | `wcmods::set_jump_speed(actor, speed)`, `set_gravity(actor, scale)` | How high it jumps and its gravity: the game leaves both as set, on your cat too |
-| `wcmods::set_walk_speed(actor, speed)` | How fast a mod's cat or an animal walks (it stays). False for your cat: the game sets its walk speed every frame from its own walk and run settings |
-| `wcmods::use_sense()`, `sense()` | Your cat's scent sense through the game's own command, as Q does: it comes on over about two seconds, lasts about ten and fades; how much it shows now (0 off, 1 full) |
+| `wcmods::set_walk_speed(actor, speed)` | How fast a mod's cat or an animal walks (it stays). False for your cat, in a fight too: the game sets its walk speed every frame from its own walk and run settings |
+| `wcmods::use_sense()`, `sense()` | Your cat's scent sense through the game's own command, as Q does: it comes on over about two seconds, lasts about ten and fades (true when the command was sent; while it's on, another does nothing); how much it shows now (0 off, 1 full) |
 
 **Looks and the clans' cats (`Looks.hpp`)**, game thread only:
 

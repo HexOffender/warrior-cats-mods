@@ -1390,6 +1390,7 @@ def test_fights(agent):
     # fewer than four), and the selection after the rest was somewhere on the menu (Up picks Attack from Rest).
     assert v["fights.win.move_count"] >= 1 and v["fights.win.selected_after_rest"] in (0, 1, 2, 3), v
     assert v["fights.win.player_in_fight"] is False and v["fights.win.fight_cat"] == v["player.name"], v
+    assert v["fights.effect_playing"] is True, v   # an effect played in a fight (Effects.hpp)
     boosted = [h for h in v["fights.hits"] if h.startswith("enemy ")]
     assert boosted and all(int(h.split()[1]) * 10 == float(h.split()[-1]) for h in boosted), v["fights.hits"]
     e = v["fights.lose.events"]
