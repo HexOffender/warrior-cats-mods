@@ -1455,7 +1455,10 @@ namespace wcmods
         namespace detail
         {
             // Back again until the screen goes: a screen took the first command it got after opening without
-            // acting on it, and closed on the second (seen in game while its window wasn't in front, 2026-11-03).
+            // acting on it, and closed on the second (seen in game while its window wasn't in front, 2026-11-03, and
+            // with it in front, the inventory, 2026-11-05). In front the next Back waits longer (1.5 s, not 0.8 s): a
+            // screen that did take the first is gone by then, so another Back can't back out of a menu further than
+            // asked while it fades out.
             inline auto close_again(const Widget& screen, int tries) -> void
             {
                 auto shown = [](UObject* s) {
@@ -1465,13 +1468,10 @@ namespace wcmods
                 };
                 if (tries <= 0 || !shown(screen.object())) return;
                 send(screen, L"Button_Back");
-                // Only while the game's window is behind: in front, the first Back closes it, and another could
-                // back out of a menu further than asked while the screen fades out.
                 HWND front = GetForegroundWindow();
                 DWORD pid = 0;
                 if (front) GetWindowThreadProcessId(front, &pid);
-                if (pid == GetCurrentProcessId()) return;
-                after(0.8, [screen, tries] { close_again(screen, tries - 1); });
+                after(pid == GetCurrentProcessId() ? 1.5 : 0.8, [screen, tries] { close_again(screen, tries - 1); });
             }
         } // namespace detail
 

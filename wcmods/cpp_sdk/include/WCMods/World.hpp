@@ -293,16 +293,17 @@ namespace wcmods
     }
     namespace detail
     {
-        // save_file()'s parsed save, and when and at what size it was read. Parsing it takes about 40 ms (half a
-        // megabyte), so it's kept while the file's size stays the same: the size is looked at at most 4 times a
-        // second, and the file is parsed again at least every 30 s (a save that rewrote it at the same size is
-        // seen that late). A file caught half written gives the last one parsed whole, and save_game() drops it.
-        // As the Lua's fileCache.
+        // save_file()'s parsed save, and when, at what size and from a file written when it was read. Parsing it takes
+        // about 40 ms (half a megabyte), so it's kept while the file's size and write time stay the same (a save
+        // rewrites it at the same size often: a checkpoint unlocked is 0 to 1): they're looked at at most 4 times a
+        // second, and the file is parsed again at least every 30 s. A file caught half written gives the last one
+        // parsed whole, and save_game() drops it. As the Lua's fileCache, which looks at the size only.
         struct SaveFile
         {
             std::mutex lock;
             std::shared_ptr<const Json> data;
             std::optional<std::uintmax_t> size;   // the file's size when data was read
+            std::filesystem::file_time_type written{};   // and its write time
             std::chrono::steady_clock::time_point at{}, checked{};
         };
         inline auto save_cache() -> SaveFile&
@@ -317,13 +318,14 @@ namespace wcmods
             std::uintmax_t n = std::filesystem::file_size(save_path(), error);
             return error ? std::nullopt : std::optional<std::uintmax_t>(n);
         }
-        // The save as read (null without a file), the file's size then, and when it was parsed: for items(), with
-        // no copy of it.
+        // The save as read (null without a file), the file's size then, when it was parsed and when that file was
+        // written: for items() and places(), with no copy of it.
         struct SaveRead
         {
             std::shared_ptr<const Json> data;
             std::optional<std::uintmax_t> size;
             std::chrono::steady_clock::time_point at{};
+            std::filesystem::file_time_type written{};
         };
         inline auto read_save() -> SaveRead
         {
@@ -331,18 +333,25 @@ namespace wcmods
             SaveFile& c = save_cache();
             std::lock_guard lock(c.lock);
             auto now = std::chrono::steady_clock::now();
-            if (c.data && now - c.checked < 250ms) return {c.data, c.size, c.at};
-            auto size = save_size();
-            if (!size) return {};
+            if (c.data && now - c.checked < 250ms) return {c.data, c.size, c.at, c.written};
+            // The file's size and write time from one look at it (a directory entry caches both).
+            std::error_code error;
+            std::filesystem::directory_entry file(save_path(), error);
+            std::optional<std::uintmax_t> size;
+            std::filesystem::file_time_type written{};
+            if (!error) size = file.file_size(error);
+            if (error || !size) return {};
+            written = file.last_write_time(error);
             c.checked = now;
-            if (c.data && size == c.size && now - c.at < 30s) return {c.data, c.size, c.at};
+            if (c.data && size == c.size && written == c.written && now - c.at < 30s) return {c.data, c.size, c.at, c.written};
             auto text = read_file(save_path());
             auto parsed = text ? Json::parse(*text) : std::nullopt;
-            if (!parsed) return {c.data, c.size, c.at};
+            if (!parsed) return {c.data, c.size, c.at, c.written};
             c.data = std::make_shared<const Json>(std::move(*parsed));
             c.at = now;
             c.size = size;
-            return {c.data, c.size, c.at};
+            c.written = written;
+            return {c.data, c.size, c.at, c.written};
         }
         // This cat's slot in the save: the one the file names as its current cat (Shared.General.CurrentCatSlot).
         // The save game's CurrentSaveSlotIndex (save_slot) stayed 0 while the cat in play was the file's slot 8

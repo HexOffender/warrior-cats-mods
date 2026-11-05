@@ -1391,6 +1391,16 @@ Read in a fight with a level 20 cat against a weak bird:
 - **Photo mode** has no reflected way in. The player's `PhotoModeControlComponent` (`BP_PhotoMode_Control`) holds its
   camera actor and screen; the pause menu and a talk's action open it. `Player_Pause` pauses the game, and with it the
   SDK's timers.
+  - **Opened from code** (2026-11-05): `Player_Pause`, then the pause screen's own keys (its `OnListenCommand`):
+    `Button_Left` to the General tab, `Button_Down` to `mcGuiPanelGeneral.mcGuiButtonPhotoMode` (its `CanvasSelected`
+    shows), `Button_Confirm`. The screen's `OnUIPress`/`OnUIRelease(button)` didn't press it. The popup is
+    `WBP_GuiPopupPhotoMode_C` (`GuiPopupPhotoModeWrc`), its `CameraActor` a `PhotoModeCameraActor`; the component's
+    `bPauseGameplay` read false.
+  - **Its commands** go to the popup: `Player_PhotoMode_HideUI` (92) hides its menus (`CanvasOver`) and shows them
+    again, `Player_PhotoMode_Exit` (91) leaves it, back to play with no screen up. `Player_PhotoMode_Shoot` (90), to
+    the popup or the controller, saved nothing: on PC its `mcGuiActionTakePhoto` is hidden, and no picture appeared
+    anywhere under the user's folders. The engine's `HighResShot 1` (a console command) saved the view without the
+    game's menus, at the window's size, to `%LOCALAPPDATA%\Wrc\Saved\Screenshots\Windows`.
 
 **Effects, movement and the scent sense from C++** (worked out on 2026-11-05, build 26337109, for the C++ SDK's
 `Effects.hpp`):
