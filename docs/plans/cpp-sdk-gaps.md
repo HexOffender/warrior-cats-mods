@@ -32,8 +32,10 @@ its stacks (re doc, *UE4SS in this game*: the "never mix" rule). wcmods' own mod
   event loop, and each makes a closure and calls `ExecuteInGameThread` there: Lua allocating on one thread while
   the game thread's frame loop allocates on another.
 
-**The fix.** Timers on the game thread (`LoopInGameThreadWithDelay`, with `LoopAsync` only where it's missing); key
-binds that only set a flag (no allocation, no table write), dispatched by the module's game-thread loop.
+**The fix.** Timers on the game thread (`LoopInGameThreadWithDelay`, with `LoopAsync` only where it's missing, which
+keeps the hazard on such a UE4SS); key binds that only count the press (no allocation, no table write), acted on by
+the module's game-thread loop. A mod's script gets the same through its bootstrap, which points its own `LoopAsync`,
+`ExecuteWithDelay` and `RegisterKeyBind` at the game-thread calls.
 
 **Proof.** A stress script reproduces the error (or the crash) with the old pattern; the same load with the new
 one runs clean for as long. The whole `test_cpp_sdk.py` suite with no Lua error logged.

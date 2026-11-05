@@ -112,6 +112,30 @@ if okGame then
     -- WCModsGame's own lines in the log (a timer's or a key's error, a cat that couldn't be spawned) say whose
     -- script it was. Each UE4SS mod has a Lua state of its own, so the name is this mod's alone.
     Game.modName = MOD.name
+    -- Lua on the game thread only (SDK.md, "Rules that keep the game running"): UE4SS runs LoopAsync and
+    -- ExecuteWithDelay on a thread of their own and key binds on its event loop, while the game thread runs this
+    -- state's timers and hooks, and two threads in one Lua state break it ("Ref was not function", then a crash).
+    -- So a script's own calls to them go to the game thread: the loops to UE4SS's game-thread ones, a key bind to
+    -- Game.onKey, whose bind only counts the press.
+    if LoopInGameThreadWithDelay ~= nil and CancelDelayedAction ~= nil then
+        LoopAsync = function(ms, fn)
+            local handle
+            handle = LoopInGameThreadWithDelay(ms, function()
+                local okRun, stop = pcall(fn)
+                if not okRun then
+                    MOD.log("error in LoopAsync: %s", tostring(stop))
+                elseif stop == true then
+                    CancelDelayedAction(handle)
+                end
+            end)
+        end
+    end
+    if ExecuteInGameThreadWithDelay ~= nil then
+        ExecuteWithDelay = function(ms, fn) ExecuteInGameThreadWithDelay(ms, fn) end
+    end
+    RegisterKeyBind = function(key, a, b)
+        if b == nil then Game.onKey(key, a) else Game.onKey(key, b, a) end
+    end
 else
     MOD.log("WCModsGame didn't load: %s", tostring(game))
 end

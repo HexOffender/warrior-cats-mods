@@ -1100,18 +1100,25 @@ def test_in_game_remap_reads_its_enum_numbers_by_name():
 
 
 def test_no_lua_runs_off_the_game_thread():
-    """UE4SS runs LoopAsync on a thread of its own and key binds on its event loop. Two threads in one Lua state
-    break it ("Ref was not function", then a crash: reverse-engineering.md, UE4SS in this game), so the modules run
-    their loops on the game thread, LoopAsync only where UE4SS has no game-thread loop, and a key bind only counts
-    the press (nothing allocated, no table written) for the module's frame to act on."""
+    """UE4SS runs LoopAsync and ExecuteWithDelay on a thread of their own and key binds on its event loop. Two threads
+    in one Lua state break it ("Ref was not function", then a crash: reverse-engineering.md, UE4SS in this game), so
+    the modules run their loops on the game thread, LoopAsync only where UE4SS has no game-thread loop, and a key
+    bind only counts the press (nothing allocated, no table written) for the module's frame to act on. The script
+    bootstrap points a script's own LoopAsync, ExecuteWithDelay and RegisterKeyBind at the game thread."""
     import pathlib
     folder = pathlib.Path(game.__file__).parent / "lua"
     seen_async = seen_keys = 0
     for path in sorted(folder.glob("*.lua")):
-        lines = path.read_text(encoding="utf-8").split("\n")
+        text = path.read_text(encoding="utf-8")
+        lines = text.split("\n")
         code = [(i, l) for i, l in enumerate(lines) if l.strip() and not l.lstrip().startswith("--")]
         for n, (i, line) in enumerate(code):
             where = f"{path.name}:{i + 1}"
+            wrapper = re.match(r"\s*(LoopAsync|ExecuteWithDelay|RegisterKeyBind) = function\(", line)
+            if wrapper:
+                assert path.name == "script_bootstrap.lua", where   # only the bootstrap replaces them
+                continue
+            assert not re.search(r"\b(ExecuteWithDelay|ExecuteAsync)\b", line), where
             if "LoopAsync(" in line:
                 seen_async += 1
                 before = [l for _, l in code[max(0, n - 2):n]]   # the if, or the if and one line it sets up
@@ -1123,6 +1130,8 @@ def test_no_lua_runs_off_the_game_thread():
                 fire = re.search(r"pcall\(RegisterKeyBind, code(, mods)?, fire\)", line)
                 assert counted or fire, where
                 if fire:
-                    assert "local function fire() presses = presses + 1 end" in path.read_text(encoding="utf-8"), where
-            assert "ExecuteInGameThread(function()" not in line or "RegisterKeyBind" not in line, where
+                    assert "local function fire() presses = presses + 1 end" in text, where
     assert seen_async >= 9 and seen_keys >= 4   # the fallbacks and binds this was written against are still looked at
+    boot = (folder / "script_bootstrap.lua").read_text(encoding="utf-8")
+    assert "handle = LoopInGameThreadWithDelay(ms, function()" in boot and "CancelDelayedAction(handle)" in boot
+    assert "if b == nil then Game.onKey(key, a) else Game.onKey(key, b, a) end" in boot

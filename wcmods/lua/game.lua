@@ -3269,9 +3269,9 @@ function Game.time.held()
     local s, who, at = h.read()
     -- From the start of this state's run of tasks before this one, or before its first run, from when it loaded:
     -- not from now, so neither a hook at the end of a long load nor the first run after it takes a hold the holder
-    -- couldn't stamp through the load for gone. A state with no timer has no runs until it first asks, which starts
-    -- them (askedFirst). If it still has no timer at its first run (a script of hooks and keys only, or one that adds
-    -- its first timer later), then until it has had two runs it counts back no further than LOAD seconds, or a hold
+    -- couldn't stamp through the load for gone. A state with no timer and no key has no runs until it first asks,
+    -- which starts them (askedFirst); a key (Game.onKey) starts them as a timer does, its presses being read there.
+    -- If it still has no timer at its first run (a script of hooks only, or one that adds its first timer later), then until it has had two runs it counts back no further than LOAD seconds, or a hold
     -- whose state went with a restart of the mods would read live to it through a load however old it was. So to
     -- such a script an orphan (its last stamp a moment before this state loaded) reads live for two frames from the
     -- first ask, or through a load the first ask comes in, and never once it's LOAD + STALE seconds old; and a live

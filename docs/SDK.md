@@ -720,7 +720,11 @@ out any `WCMods...` script that no enabled mod ships any more, even if wcmods.js
   `ExecuteInGameThread` does it, since the call itself is Lua on the other thread. A
   `RegisterKeyBind` callback runs on UE4SS's own thread too, so make it only count the press
   (`function() presses = presses + 1 end`: no table, no string, no call) and act on the count in
-  your game-thread loop, or use `Game.onKey`, which does that for you.
+  your game-thread loop, or use `Game.onKey`, which does that for you. A mod's script (`scripts/main.lua`)
+  is covered already: its bootstrap points `LoopAsync`, `ExecuteWithDelay` and `RegisterKeyBind` at the
+  game thread (`LoopInGameThreadWithDelay`, `ExecuteInGameThreadWithDelay`, `Game.onKey`). A UE4SS mod
+  of your own isn't. On a UE4SS without the game-thread loops (older than the one wcmods installs),
+  wcmods' modules fall back to `LoopAsync`, and the hazard with it.
 - **Objects last a level.** When the level changes, the game destroys its actors and widgets, and a
   destroyed object's slot can be taken by another object. Such an object can still look valid while
   being something else. Look things up again (the shared modules do this themselves), and check
