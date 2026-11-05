@@ -26,6 +26,8 @@
 //   WCMods/Tables.hpp   the game's DataTables row by row, and its tuning (TuningData.csv), while it runs
 //   WCMods/Words.hpp    the game's words (its string table) by key, read and changed while it runs
 //   WCMods/Npcs.hpp     cats of the mod's own: spawned with a look, walked, labelled, with the game's Talk prompt
+//   WCMods/Talk.hpp     the game's dialogue box with lines of the mod's own; the game's talks read from their
+//                       graphs (lines, speakers, answers) and played in it
 //   WCMods/Events.hpp   every frame, timers, keys, hooks on the game's functions, level and player events,
 //                       other threads, settings that change on disk
 //   WCMods/Menu.hpp     pages in the mod menu (a settings page comes free), keys on its Overview, values
@@ -46,6 +48,7 @@
 #include <WCMods/Menu.hpp>
 #include <WCMods/Mod.hpp>
 #include <WCMods/Npcs.hpp>
+#include <WCMods/Talk.hpp>
 #include <WCMods/Reflect.hpp>
 #include <WCMods/Story.hpp>
 #include <WCMods/Tables.hpp>

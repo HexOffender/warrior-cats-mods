@@ -578,6 +578,45 @@ and the line they lead to; and `used_by` `npc:NpcDialogue_TheAgingLeader`.
   - The gatekeeper's angle-bracket lines can't be changed through the text table.
   - A line or answer can't be added (that needs graph writing).
 
+### Talks in game
+
+Worked out on 2026-11-04 (build 26337109) in game, for the C++ SDK's `Talk.hpp`; the addresses are this build's.
+
+**The graphs are reflected.** A loaded graph's `RootNodes`, `AllNodes`, each node's `ChildrenNodes` and `Edges` map,
+a talking node's `Paragraph` (its words as the string table has them, so a changed key shows) and an edge's
+`EdgeType` and `Button.Text` read by property, as `dialogue.py` decodes them from the packages: the RiverClan
+prophecy (`DT_QuestSequenceDialogues`' `Gameplay.Narrative.Prophecy.Intro.RiverClan`, its `DialogueToUse`) is four
+narrator lines from the root, then a `CreateScreen` action; the WindClan warrior rank-up starts and ends on a
+`QuestDialogueBondingTypeNode` (its `Paragraph` is the Neutral line, `BondingTypesTexts` has all three), its oath
+line has one option edge, "I DO", to a `ResolveConfirm`. 93 loaded graphs had option edges.
+
+**Playing one through the game.** `USwtQuestSequencerManager::PlaySequenceDialogue(tag, npc, player, clanLeaf,
+rankLeaf)` (its implementation is the manager's vtable +0x3F0, `0x1416B0170`) looks the tag up in `DialoguesToUse`,
+asks the game's dialogue runner for the box (the table row's `WidgetToUse`: `WBP_QuestGiver_Dialogue3` for the
+cinematics), sets `CurrentDialogueWidget`, its `PlayerRef` and `NpcRef`, and binds the box to
+`SequencerDialogueNextDelegate`. It hides the HUD. The runner's `CreateScreen` node opens the box as the game
+screen's popup (`WBP_ScreenGameAdventure`'s `USwtScreen::CurrentPopup`, +0x398: the node's vtable +0x2E8,
+`0x1416679B0`, calls the screen's open-popup, `0x141284320`) and listens for it going (the box's +0x360 delegate,
+`OnPopupRemovedFromParent`). Then `CallDialogueNextByPlayerRank(rank, bIsStart)` drives it as the scene's track
+does: `true` shows the next line, `false` hides it; after the last line `true` leaves it hidden.
+
+**Why the SDK doesn't play them that way:**
+- A screen's release (`USwtScreen` vtable +0x518, `0x141284B70`, called once from `BeginDestroy` unless the
+  released flag at +0x371 is set) releases its `CurrentPopup`, then reads `CurrentPopup` again to remove it, and
+  the popup's release has cleared it: a null read. So does closing it (`0x141284420`, the screen's close-popup, vtable
+  +0x5D8). With the talk's box left as the popup, the game crashed at quit (`EXCEPTION_ACCESS_VIOLATION` reading 0,
+  `0x141284BD6`, under `BeginDestroy`); stepping past the last line made the box close itself
+  (`OnSequencerDialogueNext` → `0x14167DBE0` → the screen's close-popup with the ids 0x2D, 0x2E, 0x5A) and crashed
+  the same way at `0x141284461`. Only the talk's scene ends it cleanly.
+- Ended by hand (the screen's `CurrentPopup` cleared by property, then `RemoveFromParent` on the box), the game
+  quit cleanly, but the next `PlaySequenceDialogue` opened a box without the manager tracking it (no
+  `CurrentDialogueWidget`, the HUD left showing): the runner's state for the talk isn't reset that way.
+- So `Talk.hpp` reads the graph and shows its lines in the box `say()` makes (`WBP_QuestGiver_Dialogue`, added to the
+  viewport, never a screen's popup), which is safe to take down at any time: the whole talk played, the rank-up's
+  answer taken, and the game quit cleanly after. The game's actions on the way aren't run (the mod is told of
+  each); the box's answer buttons show the answers' words but aren't clickable (their own code goes through the
+  graph's node, which that box hasn't got).
+
 ### New packages and textures
 
 Worked out on 2026-10-24 for icons and accessory looks (`wcmods/formats/texture.py`), and verified in game:

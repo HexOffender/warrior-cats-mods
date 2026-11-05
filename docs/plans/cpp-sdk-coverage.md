@@ -56,13 +56,13 @@ The reverse-engineering roadmap's open steps ([re-roadmap.md](re-roadmap.md)) fo
 | Roadmap step | State on 2026-11-04 | Closed by |
 |---|---|---|
 | 1. Which tuning values the game reads | table edits reach play (run speed, seen); which of the 441 keys the code reads is unknown | step 2 |
-| 2. A line edited in `Strings_EN` shows in a talk | not checked in game | step 3 |
+| 2. A line edited in `Strings_EN` shows in a talk | done: a key's words changed show in a talk's line (step 7) | steps 3, 7 |
 | 3. Is `AudioEvents.csv` read at runtime | not checked | step 4 |
 | 7. The sky table, and the day cycle | presets and the fade back known; the table not looked at | step 5 |
 | 8. Where a bond is stored | not started | step 8 |
-| 9. The dialogue graphs | read side done (`wcmods/dialogue.py`); playing one by tag untried | step 7 |
+| 9. The dialogue graphs | done: read in game by reflection and played in the talk box; the game's own player by tag tried and set aside (it crashes when ended early) | step 7 |
 | The rest, 1: `quests.start` on the game's quests | untried | step 11 |
-| The rest, 3: the talk box's answer buttons | untried | step 7 |
+| The rest, 3: the talk box's answer buttons | done: they show answers' words; clicking them runs the box's own graph code, so a mod takes answers by number | step 7 |
 | The rest, 4: `NPCData` beyond looks | not started | step 9 |
 | The rest, 6: the mood and progression keys | not started | step 11 |
 | The rest, 7: the five events never seen firing | not seen | step 12 |
@@ -426,8 +426,8 @@ Each step's pull request updates its line.
 | 3. Words, live | done: any key's words read, changed (every text made from it shows them) and put back; the key a text came from. No signed global was needed (the engine's reflected string-table calls and UE4SS's text data reach it). The roadmap's step 2 in a talk moves to step 7, which plays talks | #118 |
 | 4. Sounds and music | done: an id's sound replaced, muted and put back (the game's own plays follow); the music read, played, stopped; volumes; the pause. The roadmap's step 3 answered: a data mod's `AudioEvents.csv` reaches the game. A sound by its asset path waits for a loader (step 10) | #119 |
 | 5. The sky's values | done: every preset's values read and changed live in the sky's own copy (a new hidden member), put back; the table they come from. The roadmap's step 7 answered: the day cycle doesn't rewrite them, the sky fades back to the area's preset (step 1 of #111) | #120 |
-| 6. Cats of a mod's own | done: spawned with a look, kept, moved, walked (stall detours), labelled, prompted, Interact heard from the controller; an asset loader and an enum lookup with them. Map markers move to step 14 with the map | this branch, `claude/cpp-npcs` |
-| 7. Conversations | not started | |
+| 6. Cats of a mod's own | done: spawned with a look, kept, moved, walked (stall detours), labelled, prompted, Interact heard from the controller; an asset loader and an enum lookup with them. Map markers move to step 14 with the map | #121 |
+| 7. Conversations | done: the box with a mod's lines and answers' words; any of the game's talks read from its graph (lines, speakers, bonding variants, answers, actions) and played in that box, answers chosen, a mod's own talks too; an edited line shows in a talk. The game's own player (`PlaySequenceDialogue`) crashes the game when its box is closed any way but by its scene, so it isn't used (reverse-engineering.md, "Talks in game"). Answers come by number from the mod's keys, not the box's buttons | this branch, `claude/cpp-talks` |
 | 8. Bonds | not started | |
 | 9. Looks and the clan | not started | |
 | 10. Ground items, a mod's animations | not started | |
