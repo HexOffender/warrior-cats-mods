@@ -1039,7 +1039,8 @@ def test_tables_and_tuning(agent):
     assert v["tables.herb.name_key_after"] == "STR_ITEM_CONSUMABLE_NAME_7", v["tables.herb.name_key_after"]
     # What the game's code says of keys (tuning_read.json, installed beside offsets.json).
     assert v["tuning.named"] == {"Gameplay.Exploration.MaxLevel": "read", "Gameplay.Exploration.Level.2": "pattern",
-                                 "Gameplay.Exploration.Metrics.Cat.Player.Height": "not_named", "No.Such.Key": None}, v["tuning.named"]
+                                 "Gameplay.Exploration.Metrics.Cat.Player.Height": "not_named", "No.Such.Key": None,
+                                 "gameplay.exploration.maxlevel": "read"}, v["tuning.named"]   # any case, as tuning()
 
 
 def test_words(agent):

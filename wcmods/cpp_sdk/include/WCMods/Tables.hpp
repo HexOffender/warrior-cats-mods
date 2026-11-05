@@ -4,7 +4,9 @@
 // includes it; docs/SDK.md, "C++ mods", documents every call.
 #pragma once
 
+#include <cctype>
 #include <cwctype>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -256,22 +258,31 @@ namespace wcmods
     // What the game's code says of a key (tools/re/tuning_read.py, on the build its file names: wcmods installs it as
     // Mods/shared/WCModsGame/tuning_read.json): L"read" (the code names it, so changing it can do something),
     // L"pattern" (the code builds it from a format, "Gameplay.Exploration.Level.%d": likely read too), or
-    // L"not_named" (nothing in the code names it: changing it probably does nothing). Nullopt for a key it hasn't got
-    // or without the file.
+    // L"not_named" (nothing in the code names it: changing it probably does nothing). Any case, as tuning() takes it.
+    // Nullopt for a key it hasn't got, without the file, or when the file was made on another build than the game's
+    // (offsets.json's): its answers may not hold on this one.
     inline auto tuning_named(std::wstring_view key) -> std::optional<std::wstring>
     {
-        static const Json file = [] {
+        // Each key, lower-cased, to its group; empty when the file isn't there or is another build's.
+        static const std::map<std::string, std::wstring> groups = [] {
+            std::map<std::string, std::wstring> out;
             auto text = read_file(mod().installed.parent_path() / L"shared" / L"WCModsGame" / L"tuning_read.json");
-            auto parsed = text ? Json::parse(*text) : std::nullopt;
-            return parsed ? std::move(*parsed) : Json::object();
+            auto file = text ? Json::parse(*text) : std::nullopt;
+            const Json& build = detail::offsets_file()["game_build"];
+            if (!file || (build.is_number() && (*file)["made_on"].number(-1) != build.number())) return out;
+            auto lower = [](std::string s) {
+                for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+                return s;
+            };
+            for (auto& r : (*file)["read"].values()) out[lower(r.string())] = L"read";
+            for (auto& k : (*file)["pattern"].keys()) out[lower(k)] = L"pattern";
+            for (auto& r : (*file)["not_named"].values()) out[lower(r.string())] = L"not_named";
+            return out;
         }();
-        const std::string k = utf8(key);
-        for (auto& r : file["read"].values())
-            if (r.string() == k) return L"read";
-        if (file["pattern"].has(k)) return L"pattern";
-        for (auto& r : file["not_named"].values())
-            if (r.string() == k) return L"not_named";
-        return std::nullopt;
+        std::string k = utf8(key);
+        for (auto& c : k) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        auto it = groups.find(k);
+        return it == groups.end() ? std::nullopt : std::optional<std::wstring>(it->second);
     }
 
     // A key's number, as the game's own lookup gives it; nullopt for a key the table hasn't got, or when wcmods

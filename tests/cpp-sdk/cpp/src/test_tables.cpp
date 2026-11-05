@@ -180,7 +180,7 @@ namespace t
         // What the code says of keys (tools/re/tuning_read.py's file, installed beside offsets.json)
         Json named = Json::object();
         for (const wchar_t* k : {L"Gameplay.Exploration.MaxLevel", L"Gameplay.Exploration.Level.2",
-                                 L"Gameplay.Exploration.Metrics.Cat.Player.Height", L"No.Such.Key"})
+                                 L"Gameplay.Exploration.Metrics.Cat.Player.Height", L"No.Such.Key", L"gameplay.exploration.maxlevel"})
             named.set(utf8(k), tuning_named(k) ? Json(text(*tuning_named(k))) : Json());
         value("tuning.named", named);
         expect("tuning.any_case", tuning(L"gameplay.exploration.maxlevel") == tuning(L"Gameplay.Exploration.MaxLevel"));

@@ -209,8 +209,8 @@ keys is found with xrefs.
   traits do*).
   - `tools/re/tuning_read.py <exe> <TuningData.csv> --build N --out wcmods/exe/tuning_read.json`
     sorts every key: read (the code points at it), built from a pattern (a format string the code
-    points at makes it, `Gameplay.Exploration.Level.%d`, or the code names its prefix), or not named.
-    On build 26337109: 221 read, 154 from a pattern, 66 not named. The install puts the file beside
+    points at makes it, `Gameplay.Exploration.Level.%d`, or the code names its dotted prefix whole), or not named.
+    On build 26337109: 221 read, 141 from a pattern, 79 not named. The install puts the file beside
     `offsets.json` for C++ mods' `tuning_named(key)`; a key that's not named is most likely read by
     nothing.
 - **Data tables:** `tools/re/mechanics_tables.py` fills the generated tables in `mechanics/` from

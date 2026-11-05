@@ -5,8 +5,8 @@ usage: tuning_read.py <exe> <TuningData.csv> [--build N] [--out wcmods/exe/tunin
 Each key goes into one of three groups (docs/plans/re-roadmap.md, the tuning plan's static part):
 - read: a lea or mov in the code points at the key as a whole string;
 - pattern: for the rest, the code points at a format string that starts with one of the key's dotted prefixes
-  ("Gameplay.Exploration.Level.%d"), or at the prefix itself as a whole string (three parts or more, with or without
-  its dot), so the code may build the key at runtime;
+  ("Gameplay.Exploration.Level.%d"), or at the prefix itself, with its dot, as a whole string (three parts or more;
+  without the dot it may be a tag of the same name), so the code may build the key at runtime;
 - not_named: everything else, which nothing in the code names.
 
 It writes {"made_on": <build>, "read": [...], "pattern": {"<key>": "<the format string or prefix>"}, "not_named": [...]}. A key that's
@@ -51,13 +51,17 @@ def makes(fmt, key):
     """Whether a format string can make the key: %d and %i a number, %s and {n} any text without a dot. A format
     that ends with its placeholder only has to start the key: the code adds the rest ("...Detection.%s", then
     ".PlayerZone.EntryDistance"); one with text after it has to make all of it ("...Player.%s.Scale")."""
-    ends_open = bool(re.search(r"(%[a-z]|\{[^}]*\})$", fmt))
+    ends_open = bool(re.search(r"(%[-+ #0]*\d*(?:\.\d+)?[a-zA-Z]|\{[^}]*\})$", fmt))
     rx = ""
     i = 0
     while i < len(fmt):
-        if fmt[i] == "%" and i + 1 < len(fmt):
-            rx += r"\d+" if fmt[i + 1] in "di" else r"[^.]+"
+        spec = re.match(r"%[-+ #0]*\d*(?:\.\d+)?([a-zA-Z])", fmt[i:]) if fmt[i] == "%" else None
+        if fmt.startswith("%%", i):
+            rx += "%"
             i += 2
+        elif spec:
+            rx += r"\d+" if spec.group(1) in "diu" else r"[^.]+"
+            i += spec.end()
         elif fmt[i] == "{":
             j = fmt.find("}", i)
             rx += r"[^.]+"
@@ -91,7 +95,7 @@ def sort(image, keys):
         hit = None
         for p in prefixes(k):
             # A format string only when it can make the key ("...Player.%s.Scale" isn't "...Player.Run.Speed").
-            hit = next((f for f in formats.get(p, []) if makes(f, k)), None) or (p if p in whole else None)
+            hit = next((f for f in formats.get(p, []) if makes(f, k)), None) or (p if p in whole and p.endswith(".") else None)
             if hit:
                 break
         if hit:

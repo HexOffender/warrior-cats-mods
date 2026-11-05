@@ -462,6 +462,7 @@ def test_tuning_read_makes_and_reads_the_csv(tmp_path):
     assert tuning_read.makes("A.Level.%d", "A.Level.12") and not tuning_read.makes("A.Level.%d", "A.Level.x")
     assert tuning_read.makes("A.Det.%s", "A.Det.Tiny.Zone") and tuning_read.makes("A.P.%s.Scale", "A.P.Run.Scale")
     assert not tuning_read.makes("A.P.%s.Scale", "A.P.Run.Speed") and tuning_read.makes("A.{0}", "A.B")
+    assert tuning_read.makes("A.B.%02d", "A.B.07") and tuning_read.makes("A.%%.%d", "A.%.3")   # a width; a literal %
     assert tuning_read.prefixes("A.B.C.D") == ["A.B.C.", "A.B.C"]
     path = tmp_path / "TuningData.csv"
     path.write_text("﻿---,MaxValue,Description\nA.B.Read,1,one\nA.B.Level.3,2,two\n", encoding="utf-8")

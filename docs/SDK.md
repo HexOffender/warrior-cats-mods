@@ -1343,7 +1343,7 @@ wcmods::set_tuning(L"Gameplay.Exploration.MaxLevel", 30);
 | `Table::row(name)`, `rows()` | A row as a struct `Value` (`get`, `set` and `describe` work on it; a `set` changes the game's row), None for one the table hasn't got; every row by name |
 | `Table::add_row(name, from)`, `add_row(name)`, `remove_row(name)` | A row of the mod's own, a copy of the row `from` or the struct's defaults (one with that name already is replaced), as a `Value`, or None when `from` isn't one of its rows; taking one out. The game finds an added row where it looks rows up by name, not in a list it built from the table before |
 | `wcmods::tuning(L"Gameplay.Exploration.MaxLevel")`, `set_tuning(key, value)` | A tuning key's number (`TuningData.csv`'s MaxValue: 20 for that one), or nullopt for a key the table hasn't got or when wcmods hasn't got the tuning manager's map on this build; changing it. The game's code reads its tuning through one lookup that goes to this map every time, so a change is what every later read gets; code that read its numbers before (most of the game reads them as a part starts) keeps what it read until it reads again, which wasn't timed for each part. A key can't be added: the game's code names the ones it reads. Keys match whatever their case, as the game's do |
-| `wcmods::tuning_named(key)` | What the game's code says of a key (`tools/re/tuning_read.py` on build 26337109, installed as `Mods/shared/WCModsGame/tuning_read.json`): `L"read"` (the code names it: a change can do something), `L"pattern"` (the code builds it from a format, `Gameplay.Exploration.Level.%d`: likely read too) or `L"not_named"` (nothing in the code names it: a change most likely does nothing). Nullopt for a key it hasn't got |
+| `wcmods::tuning_named(key)` | What the game's code says of a key, any case (`tools/re/tuning_read.py` on build 26337109, installed as `Mods/shared/WCModsGame/tuning_read.json`; nothing when the game is another build): `L"read"` (the code names it: a change can do something), `L"pattern"` (the code builds it from a format, `Gameplay.Exploration.Level.%d`: likely read too) or `L"not_named"` (nothing in the code names it: a change most likely does nothing). Nullopt for a key it hasn't got |
 | `wcmods::tuning_keys()`, `tuning_description(key)` | Every key (441), and a key's description (its Description column; empty for most) |
 
 **Cats of a mod's own (`Npcs.hpp`)**, game thread only:
@@ -1788,7 +1788,7 @@ Every manager and component class of the game's own modules (SwtEngine, SwtQuest
 94 components in the class dump of build 26337109), by family: a base class and the game's own layers of it (the one
 running is usually the Wrc or SwtAdventure one). "Reflect.hpp" means no call of its own: its reflected members and
 functions are reached by `get`, `set` and `call_reflected` on the object (`manager(L"<name>")` for a manager,
-`component(actor, STR("<class>"))` for a component). The plan this came from is `docs/plans/cpp-sdk-coverage.md`.
+`component(actor, STR("<class>"))` for a component). The plan this came from is `docs/plans/cpp-sdk-coverage.md`. The table is made by hand from that build's class dump (UE4SS's UHT dump, which isn't in the repo): after a game update, a new dump's classes need checking against it.
 
 | Family | Its classes | Reached by |
 |---|---|---|
