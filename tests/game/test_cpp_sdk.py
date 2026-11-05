@@ -1318,6 +1318,38 @@ def test_animations_cpp(agent):
     assert v["anims.game_montage_played"] is True and v["anims.game_montage_seen_as"] == "", v
 
 
+def test_quests(agent):
+    """Story.hpp's quests in the game, on the test cat: every quest has its story id (its alias) and its live status
+    by it; the gather quest (Quest.Main.1) started by its tag goes on; its objective's three Bedding Moss targets are
+    out in the world; one collected the player's way (collect_target: the cat on it, Interact) counts on the HUD and
+    the objective (with any other target in its reach), and the game's QuestStatus event fires; the objective finished makes the quest complete with
+    Success. Scenes seen from the save, none playing; mood asked about without adding a key. This moves the test
+    cat's story on, so the save is backed up first and put back after, the game closed and started again for it."""
+    _close_screens(agent)
+    backup = agent.backup_save("before-quest-test")
+    try:
+        r = _request(agent, "questline", timeout=40)
+    finally:
+        agent.quit(force=True)
+        agent.restore_save(backup)
+        agent.launch(world=True)
+    assert not _failed(r, "questline"), _failed(r, "questline")
+    v = r["values"]
+    assert any(q.startswith("Quest.Main.1 Quest.Procedural.Survival.Gather ") for q in v["questline.listed"]), v["questline.listed"]
+    assert v["questline.before"] in ("QuestAvailable", "OngoingQuest") and v["questline.alias_status"] == v["questline.before"], v
+    assert v["questline.started"] == "OngoingQuest", v["questline.started"]
+    assert v["questline.hud_before"] == "Bedding Moss 0/3", v["questline.hud_before"]
+    before = v["questline.targets_before"]
+    assert before and before[0]["current"] == 0 and before[0]["target"] == 3 and before[0]["actors"] == 3, before
+    # One Interact counts what's in the cat's reach (one target, or two lying close); the HUD shows the objective's count.
+    got = v["questline.targets_after"][0]["current"]
+    assert got >= 1 and v["questline.hud_after_collect"] == f"Bedding Moss {got}/3", (got, v["questline.hud_after_collect"])
+    assert v["questline.events_after_collect"] >= 1, v
+    assert (v["questline.finished"], v["questline.finished_result"]) == ("QuestComplete", "Success"), v
+    assert v["questline.events"] > v["questline.events_after_collect"], v
+    assert "ProphecyIntro" in v["questline.scenes_seen"] and v["questline.scenes_playing"] == 0, v
+
+
 def test_ui_arrow_units(agent):
     """Ui.hpp's rule for an arrow on a tab's page, at init without the game: its release is given to the screen
     again from a button or check box, never from a slider, number or text box, not when the page hasn't the

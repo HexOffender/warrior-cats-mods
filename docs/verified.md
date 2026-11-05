@@ -409,6 +409,14 @@ the clan bar "42/100" "Neutral" and a row at "50/100" among seven cats; the game
 `GameplayProgression/Bonding`; put back to 67 and 20 and saved again. The ranks matched the tuning's thresholds,
 `enum_names` gave EClanType in order, and `cat_name_of(L"STR_CAT_NAME2", L"_PAW")` was "Emberpaw".
 
+**2026-11-05, build 26337109: quests** (the branch `claude/cpp-quests`, `tests/game/test_cpp_sdk.py::test_quests`
+passed; the test backs the save up and puts it back after): on the ShadowClan test cat, the quests listed with their
+story ids and the gather quest `Quest.Main.1` available by its alias; `start_quest` by its graph's tag made it
+`OngoingQuest`, the HUD "Bedding Moss 0/3" with three targets out; `collect_target` on one counted it the game's way
+(the HUD "2/3" that time: two targets lay in reach) and the QuestStatus event fired; `finish_objective` made the quest
+`QuestComplete`, `Success`. The scenes seen held ProphecyIntro, none played; a made-up mood key was asked about and
+still wasn't there, and one set read back. The save had the quest available again after.
+
 **2026-11-04, build 26337109: items, pickups and animations** (the branch `claude/cpp-ground-anims`,
 `tests/game/test_cpp_sdk.py`: `test_drop_items` and `test_animations_cpp` passed, with `tests/items-mod` and
 `tests/animations-mod` installed): `item_info` gave Moss's name, description, icon path and kind, the test mod's block
