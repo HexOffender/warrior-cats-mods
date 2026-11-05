@@ -1524,6 +1524,26 @@ def test_camera_settings(agent):
     assert abs(back["arm"] - 113) < 1 and abs(back["fov"] - 90) < 0.5 and back["lag_on"] is True and back["lag_speed"] == 10, back
 
 
+def test_map_travel(agent):
+    """Map.hpp's travel through the world map in the game: a locked place (ShadowClan's checkpoint .2) unlocked through
+    the game's SetCheckpointUnlockState, the map opened in travel mode by your cat's Interact at a checkpoint, moved to
+    put the other place under its pointer and Travel pressed: your cat at that checkpoint after the game's fade, with
+    nothing on screen, and back the same way to the camp; the place locked again."""
+    _close_screens(agent)
+    r = _request(agent, "map_travel", timeout=90)
+    with open(os.path.join(agent.out_dir, "map-travel-values.json"), "w", encoding="utf-8") as f:
+        json.dump({k: x for k, x in r["values"].items() if k.startswith("map_travel")}, f, indent=1)
+    assert not _failed(r, "map_travel"), _failed(r, "map_travel")
+    v = r["values"]
+    assert v["map_travel.away_unlocked"] is True and v["map_travel.away_locked"] is True, v
+    trips = ["out", "home"] + (["back"] if v["map_travel.started_at"] == "away" else [])
+    for trip in trips:
+        assert v[f"map_travel.{trip}.map"] is True and v[f"map_travel.{trip}.item"] == "WBP_GuiItemCheckPointMap_C", (trip, v)
+        assert v[f"map_travel.{trip}.items"] >= 2, (trip, v)   # the camp's and .2's, as unlocked
+        after = v[f"map_travel.{trip}.after"]
+        assert after["flat"] < 400 and abs(after["dz"]) < 200 and after["screens"] == [], (trip, after)   # there, standing
+
+
 def test_effects_movement_and_sense(agent):
     """Effects.hpp in the game: the game's own effects by name (its VFX manager's: the buff, the statuses, a pickup's)
     and a Niagara system by its path, each seen playing, one stopped; bad names refused. Your cat's movement read

@@ -54,6 +54,7 @@ namespace t
     auto run_map_request() -> void;      // Map.hpp: the HUD's quest pieces, markers, the clock, travel, the camera ("map")
     auto run_map_end_request() -> void;  // the markers taken off, the clock let go ("map_end")
     auto run_camera_request() -> void;   // Map.hpp's camera settings: read, set, held, put back ("camera")
+    auto run_map_travel_request() -> void;  // Map.hpp: a place unlocked, travelled to through the map and back ("map_travel")
     auto run_effects_request() -> void;  // Effects.hpp: effects played and stopped, movement, the sense ("effects")
     auto run_speeds_request() -> void;   // Effects.hpp: your cat's speeds read, set, taken by the game, put back ("speeds")
     auto run_anims_request() -> void;    // Animations.hpp: mods' animations played and stopped, in the game ("anims")

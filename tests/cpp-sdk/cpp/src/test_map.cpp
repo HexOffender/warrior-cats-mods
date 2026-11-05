@@ -4,8 +4,11 @@
 #include "checks.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cmath>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -186,5 +189,75 @@ namespace t
                 done("camera");
             });
         });
+    }
+
+    namespace
+    {
+        auto place_named(const std::wstring& tag) -> std::optional<Place>
+        {
+            for (auto& p : places())
+                if (p.tag == tag) return p;
+            return std::nullopt;
+        }
+        auto where(const char* key, const Place& p) -> void
+        {
+            auto me = location(player());
+            Json o = Json::object();
+            o.set("flat", me ? Json(std::hypot(me->x - p.at.x, me->y - p.at.y)) : Json());
+            o.set("dz", me ? Json(me->z - p.at.z) : Json());
+            Json shown = Json::array();
+            for (auto& s : screens()) shown.push(Json(utf8(s)));
+            o.set("screens", shown);
+            value(key, o);
+        }
+        // Travel through the map from where your cat stands (a checkpoint it has) to `to`, then `next`.
+        auto map_trip(const std::string& key, Place to, std::function<void()> next) -> void
+        {
+            expect(key + ".open", open_travel_map());
+            after(2.0, [key, to, next] {
+                auto [map, item] = travel_map_item(to);
+                value(key + ".map", static_cast<bool>(map));
+                value(key + ".item", item ? Json(utf8(class_name(item))) : Json());
+                if (map) value(key + ".items", static_cast<int>(elements(map, L"HoverableWidgets").size()));
+                expect(key + ".travel", map_travel(to));
+                after(8.0, [key, to, next] {
+                    where((key + ".after").c_str(), to);
+                    next();
+                });
+            });
+        }
+    } // namespace
+
+    // A locked place (ShadowClan's checkpoint .2) unlocked; from the checkpoint your cat is at (the camp's, or .2's when a
+    // run before stopped there), the world map opened in travel mode and the other place travelled to through it, then
+    // back, ending at the camp; the place locked again.
+    auto run_map_travel_request() -> void
+    {
+        phase("map_travel");
+        auto camp = place_named(L"Gameplay.Checkpoints.Shadowclan.0");
+        auto away = place_named(L"Gameplay.Checkpoints.Shadowclan.2");
+        expect("map_travel.places", camp && away && camp->unlocked);
+        if (!camp || !away || !camp->unlocked) return done("map_travel");
+        value("map_travel.away_before", away->unlocked);
+        expect("map_travel.refused_locked", away->unlocked || !map_travel(*away));
+        expect("map_travel.unlock", unlock_place(*away));
+        auto now = place_named(away->tag);
+        value("map_travel.away_unlocked", now && now->unlocked);
+        auto me = location(player());
+        const bool at_away = me && std::hypot(me->x - away->at.x, me->y - away->at.y) < 1000;
+        value("map_travel.started_at", at_away ? "away" : "camp");
+        const Place c = *camp, a = *away;
+        auto finish = [a] {
+            expect("map_travel.lock", unlock_place(a, false));
+            auto again = place_named(a.tag);
+            value("map_travel.away_locked", again && !again->unlocked);
+            done("map_travel");
+        };
+        if (at_away)
+            map_trip("map_travel.back", c, [c, a, finish] {   // from .2 to the camp first, then the test's two trips
+                map_trip("map_travel.out", a, [c, finish] { map_trip("map_travel.home", c, finish); });
+            });
+        else
+            map_trip("map_travel.out", a, [c, finish] { map_trip("map_travel.home", c, finish); });
     }
 } // namespace t
