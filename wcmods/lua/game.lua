@@ -2980,10 +2980,32 @@ do
     -- Its blackboard's keys, { {name, type}, ... } in the asset's order (then its parents'): BB_Enemy's SelfActor,
     -- Detected, StartLocation, Target, ... type is "Bool", "Int", "Float", "Vector", "Object", "Enum", "Name",
     -- "String", "Rotator" or "Class". Empty without an AI.
-    function AI.keys(actor)
-        local out = {}
+    local readKeys
+    local keyLists = {}   -- blackboard asset address -> { list, types }: an asset's keys don't change
+    local function keyList(actor)
         local b = board(actor)
         local asset = b and Game.get(b, "BlackboardAsset")
+        if not valid(asset) then return nil end
+        local ok, at = pcall(function() return asset:GetAddress() end)
+        local kept = ok and keyLists[at]
+        if kept and kept.asset == asset then return kept end
+        local list, types = readKeys(asset), {}
+        for _, k in ipairs(list) do
+            if types[k.name] == nil then types[k.name] = k.type end
+        end
+        kept = { asset = asset, list = list, types = types }
+        if ok then keyLists[at] = kept end
+        return kept
+    end
+    function AI.keys(actor)
+        local out = {}
+        local kept = keyList(actor)
+        for i, k in ipairs(kept and kept.list or {}) do out[i] = { name = k.name, type = k.type } end
+        return out
+    end
+    -- (an asset's own keys, then its parents')
+    function readKeys(asset)
+        local out = {}
         local guard = 0
         while valid(asset) and guard < 8 do
             guard = guard + 1
@@ -2998,10 +3020,8 @@ do
         return out
     end
     local function keyType(actor, key)
-        for _, k in ipairs(AI.keys(actor)) do
-            if k.name == key then return k.type end
-        end
-        return nil
+        local kept = keyList(actor)
+        return kept and kept.types[key] or nil
     end
     local GETTERS = { Bool = "GetValueAsBool", Int = "GetValueAsInt", Float = "GetValueAsFloat", Object = "GetValueAsObject",
                       Name = "GetValueAsName", String = "GetValueAsString", Enum = "GetValueAsEnum", Class = "GetValueAsClass" }
@@ -3270,7 +3290,8 @@ do
         return nil
     end
 
-    -- The moves under way. Each walks with the mod cats' walk engine (Npc:walkTo's: arrival, stalls, steps aside).
+    -- The moves under way. Each walks with the mod cats' walk engine (Npc:walkTo's: arrival, stalls, steps aside):
+    -- stepWalk and finishWalk drive anything with actorOrNil(), location() and a `walk` table, which a Move is.
     local moves = {}
     local Move = {}
     Move.__index = Move
@@ -3443,6 +3464,15 @@ do
         local ok, n = pcall(function() return a:GetAddress() end)
         return ok and n or nil
     end
+    -- What ignorePlayer kept for this actor: nil for an entry of an actor that's gone (its address may be another's now).
+    local function keptFor(key, actor)
+        local w = ignoring.was[key]
+        if w and not (valid(w.actor) and same(w.actor, actor)) then
+            ignoring.was[key], ignoring.stealth[key] = nil, nil
+            return nil
+        end
+        return w
+    end
     -- Make an animal ignore your cat, or notice it again as it did (`ignore` false): its detection sphere stops
     -- overlapping cats, its mask goes to 0, and it gives your cat up as calm() does. It ignores every cat so, and a
     -- pounce on it starts no fight (seen from C++). False without a detection component.
@@ -3454,14 +3484,14 @@ do
         if not key then return false end
         if ignore ~= false then
             ignoring.stealth[key] = nil   -- the script's own now: stealth turned off leaves it
-            if not ignoring.was[key] then ignoring.was[key] = { actor = actor, mask = flags, response = response } end
+            if not keptFor(key, actor) then ignoring.was[key] = { actor = actor, mask = flags, response = response } end
             setCatsResponse(actor, 0)
             AI.setDetectionFlags(actor, 0)
             AI.calm(actor)
             return true
         end
+        local back = keptFor(key, actor)
         ignoring.stealth[key] = nil
-        local back = ignoring.was[key]
         if not back then   -- not ignorePlayer's: left as it is, but for a sphere ignoring cats or a mask of 0
             if response == 0 then setCatsResponse(actor, 1) end
             return flags ~= 0 or AI.setDetectionFlags(actor, 3)
@@ -3483,7 +3513,7 @@ do
             if not ignoring.everywhere then return end
             for _, n in ipairs(Game.animals.near(5000)) do
                 local k = addressOf(n.actor)
-                if k and not ignoring.was[k] and AI.ignorePlayer(n.actor, true) then ignoring.stealth[k] = true end
+                if k and not keptFor(k, n.actor) and AI.ignorePlayer(n.actor, true) then ignoring.stealth[k] = true end
             end
         end
         if ignoring.everywhere then
@@ -3615,11 +3645,11 @@ do
         pcall(function() Game.library("GameplayStatics"):GetAllActorsOfClass(Game.player() or Game.world(), cls, list) end)
         for _, e in ipairs(list) do
             local ok, a = pcall(function() return e:get() end)
+            local at = ok and valid(a) and where(a)
+            local d = at and math.sqrt((at.X - origin.X) ^ 2 + (at.Y - origin.Y) ^ 2 + (at.Z - origin.Z) ^ 2)
             -- (not one a story scene spawned, as C++'s fight_animals leaves out)
-            local at = ok and valid(a) and not (Game.fullName(a) or ""):find("MovieScene", 1, true) and where(a)
-            if at then
-                local d = math.sqrt((at.X - origin.X) ^ 2 + (at.Y - origin.Y) ^ 2 + (at.Z - origin.Z) ^ 2)
-                if d <= radius then out[#out + 1] = { actor = a, distance = d } end
+            if d and d <= radius and not (Game.fullName(a) or ""):find("MovieScene", 1, true) then
+                out[#out + 1] = { actor = a, distance = d }
             end
         end
         table.sort(out, function(a, b) return a.distance < b.distance end)

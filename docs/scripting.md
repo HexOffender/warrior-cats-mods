@@ -366,8 +366,9 @@ A roaming animal, or a clan cat walking its path, has an AI controller that runs
 knows on its blackboard (`BB_Enemy`'s `Detected`, `Target`, `ChaseReactionTime`, ...). `Game.ai` reads and steers it
 as C++'s `Ai.hpp` does (SDK.md); what's behind it is in `reverse-engineering.md`, "The game's AI".
 
-An AI is given as its actor, a `Game.cat(...)` or a mod's cat (`Game.npcs`). Every call answers false or nil for your
-cat, which has no AI. What an AI is running at this moment (its tree and task) is C++'s only: the brain's stack of
+An AI is given as its actor, a `Game.cat(...)` or a mod's cat (`Game.npcs`). The calls on an AI answer false or nil
+for your cat, which has no AI (`face` turns any actor). What a script changes stays after the script ends (UE4SS
+restarting the mods, say): an AI it stopped, an animal it made ignore your cat. Put them back first. What an AI is running at this moment (its tree and task) is C++'s only: the brain's stack of
 running trees is an array Lua can't read.
 
 ```lua
@@ -395,7 +396,7 @@ Game.ai.follow(npc, Game.player())                                             -
 | `Game.ai.stopMoving(a)`, `Game.ai.moving(a)` | End a move (done told `"cancelled"`) and stand it where it is (a move of its tree's own too); whether it's moving, by `moveTo` or its tree |
 | `Game.ai.face(a, at)` | Turn it to a place or an actor now |
 | `Game.ai.detectionFlags(a)`, `Game.ai.setDetectionFlags(a, n)` | Its detection mask: 1 Vision, 2 Sound, 4 Cone, 8 InPursue (3 on a roaming animal); nil without a detection component (a walking cat). The roaming tree's services pass flags of their own, so 0 alone doesn't stop it noticing your cat: `ignorePlayer` does |
-| `Game.ai.calm(a)`, `Game.ai.noticePlayer(a)` | Make it lose your cat as the game's losing does (it walks back where it started, then roams), or notice it now as the game's noticing does (it gives chase after its reaction time, its senses' `ReactToChase`, even while it ignores your cat) |
+| `Game.ai.calm(a)`, `Game.ai.noticePlayer(a)` | Make it lose your cat as the game's losing does (it walks back where it started, then roams), or notice it now as the game's noticing does (it gives chase after its reaction time, its senses' `ReactToChase`, even while it ignores your cat). Calmed, it doesn't notice your cat again on its own while your cat stays near: its detection still tracks your cat, and only a cat it starts tracking is noticed (seen) |
 | `Game.ai.trackingPlayer(a)` | Whether its detection tracks your cat: noticed and not lost (its detection component's set; the blackboard's `Detected` is the tree's, and they catch up with each other within a moment) |
 | `Game.ai.ignorePlayer(a, ignore)`, `Game.ai.ignoringPlayer(a)` | Make it ignore your cat, or notice it again as it did (`ignore` false): its detection sphere stops overlapping cats, its mask goes to 0 and it gives your cat up. It ignores every cat so, and a pounce on it starts no fight (seen from C++) |
 | `Game.ai.ignorePlayerEverywhere(on)` | A stealth mode: every animal within 5,000 units of your cat ignores it (a look once a second); off, each it changed is as it was, but not one the script made to ignore your cat itself |

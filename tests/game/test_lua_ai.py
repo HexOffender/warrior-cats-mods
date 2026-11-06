@@ -1,8 +1,9 @@
 """The game's AI from Lua (Game.ai, docs/scripting.md "The game's AI"; the Lua plan's step 2): an animal's AI read,
 its blackboard written, its logic stopped and started; moved, stopped, turned, given back to its tree, running away;
 noticing your cat, ignoring it, calmed; another tree run on it, its trees set; following your cat. Each test puts your
-cat 300 units from the nearest animal it can find (700 for the moves), the animals near given 30 s before they chase,
-and your cat back where it was after. An animal walked into your cat catches it as a chase does, and a fight starts
+cat 300 units from one of the five nearest animals (700 for the moves), on a side with a clear, walkable line from the
+animal (the test cat's spot has had a den's walls and a ledge beside its nearest animals), the animals near given 30 s
+before they chase, and your cat back where it was after. An animal walked into your cat catches it as a chase does, and a fight starts
 (seen: a mouse moved to 90 units of it), so the moves and the following keep 200 units or more from it. Game.ai's tree reads are compared with C++'s in test_cpp_sdk.py
 (test_lua_ai_trees_match_cpp)."""
 import math
@@ -11,17 +12,37 @@ import time
 # The nearest animal with an AI, your cat OFF units from it; the animals near slow to chase (30 s), as they were after.
 SETUP = """
 local me = Game.cat():location()
-local a
-for _, n in ipairs(Game.animals.near(60000)) do
-    if n.distance > 200 and Game.ai.controller(n.actor) then a = n.actor break end
+-- Of the five nearest animals, the first with a side that has room for your cat and a clear, walkable line from the
+-- animal to it (a teleport with no room fails; an animal on a ledge, or walled in by a den, can't walk the moves).
+local function spotBeside(a)
+    local at = a:K2_GetActorLocation()
+    for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+        local x, y = at.X + d[1] * OFF, at.Y + d[2] * OFF
+        local g = Game.ground(x, y, at.Z + 200)
+        local spot = { X = x, Y = y, Z = (g or at.Z) + 60 }
+        local on = Game.ai.navPoint({ X = x, Y = y, Z = g or at.Z }, a)
+        local clear = not Game.trace({ X = at.X, Y = at.Y, Z = at.Z + 30 }, { X = x, Y = y, Z = spot.Z - 30 })
+        if g and on and clear and math.abs(g - at.Z) < 150 and math.sqrt((on.X - x) ^ 2 + (on.Y - y) ^ 2) < 100 then
+            if Game.cat():teleport(spot.X, spot.Y, spot.Z) then
+                local l = Game.cat():location()
+                if math.sqrt((l.X - at.X) ^ 2 + (l.Y - at.Y) ^ 2) < OFF + 150 then return true end
+            end
+        end
+    end
+    return false
 end
-if not a then return "no animal" end
-local at = a:K2_GetActorLocation()
-local x, y = at.X + OFF, at.Y
-local g = Game.ground(x, y, at.Z + 200)
-Game.cat():teleport(x, y, (g or at.Z) + 60)
+local a
+local tried = 0
+for _, n in ipairs(Game.animals.near(60000)) do
+    if n.distance > 200 and Game.ai.controller(n.actor) then
+        tried = tried + 1
+        if spotBeside(n.actor) then a = n.actor break end
+        if tried >= 5 then break end
+    end
+end
+if not a then Game.cat():teleport(me.X, me.Y, me.Z) return "no animal with room beside it" end
 WCMODS_AI = { home = me, animal = a, slowed = {} }
-for _, n in ipairs(Game.animals.near(4000)) do
+for _, n in ipairs(Game.animals.near(4000)) do   -- (from your cat's new spot)
     local c = Game.cat(n.actor)
     local s = c:senses()
     if s and s.ReactToChase then
@@ -215,15 +236,34 @@ def test_lua_ai_notices_ignores_and_calms(agent):
     before); ignorePlayerEverywhere covers every animal near and is undone."""
     try:
         _setup(agent)
-        agent.lua("""
-            local a = WCMODS_AI.animal
-            local p, f = a:K2_GetActorLocation(), a:GetActorForwardVector()
-            Game.cat():teleport(p.X + f.X * 250, p.Y + f.Y * 250, p.Z + 30)
-            Game.ai.face(Game.player(), a)
-            return true""")
-        # (its detection's set and the tree's Detected each catch up within a moment of the other)
-        agent.wait(lambda: agent.lua("local a = WCMODS_AI.animal return Game.ai.get(a, 'Detected') and Game.ai.trackingPlayer(a)"), 6,
-                   "the animal to notice your cat")
+        # Up to three tries: on a fresh game the first animal has once not noticed your cat in front of it; between
+        # tries your cat steps 1,200 units off, out of its range, so it loses your cat (a cat it still tracks it doesn't
+        # notice again).
+        noticed = False
+        for attempt in range(3):
+            if attempt:
+                agent.lua("local a = WCMODS_AI.animal local p = a:K2_GetActorLocation() "
+                          "Game.cat():teleport(p.X + 1200, p.Y, (Game.ground(p.X + 1200, p.Y, p.Z + 200) or p.Z) + 60) return true")
+                time.sleep(2)
+            agent.lua("""
+                local a = WCMODS_AI.animal
+                -- its logic stopped while your cat is put there, then run from its start (left running, a mouse walked up
+                -- to your cat unseeing, and caught it)
+                Game.ai.stop(a)
+                local p, f = a:K2_GetActorLocation(), a:GetActorForwardVector()
+                Game.cat():teleport(p.X + f.X * 250, p.Y + f.Y * 250, p.Z + 30)
+                Game.ai.face(Game.player(), a)
+                Game.ai.restart(a)
+                return true""")
+            # (its detection's set and the tree's Detected each catch up within a moment of the other)
+            try:
+                agent.wait(lambda: agent.lua("local a = WCMODS_AI.animal return Game.ai.get(a, 'Detected') and Game.ai.trackingPlayer(a)"),
+                           6, "the animal to notice your cat")
+                noticed = True
+                break
+            except Exception:
+                pass
+        assert noticed, agent.lua("local a = WCMODS_AI.animal return { Game.ai.get(a, 'Detected'), Game.ai.trackingPlayer(a) }")
         assert agent.lua("return Game.ai.calm(WCMODS_AI.animal)") is True, "calm refused"
         agent.wait(lambda: agent.lua("return Game.ai.get(WCMODS_AI.animal, 'Detected') == false"), 3, "the animal to give your cat up")
 
