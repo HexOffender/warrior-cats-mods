@@ -110,6 +110,10 @@ namespace t
             {
                 run_ai_spawn_request();
             }
+            else if (what == "ai_walk")
+            {
+                run_ai_walk_request();
+            }
             else if (what == "ai_notice")
             {
                 run_ai_notice_request();

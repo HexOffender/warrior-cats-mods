@@ -777,6 +777,19 @@ whatever the generator (so tries made there, a unique id set by hand, the instig
 cat, `RetrieveId`, showed nothing); out where the animals live it did. And an animal spawned near your cat with the
 game's reaction time chases it into a fight within seconds.
 
+**The clan cats' walking** (step 7, 2026-11-06): a walking cat (`BP_WalkingNPC_Character_Base_C`, an
+`ASwtAdventureWalkingNPC`; the SDK's own cats are the same) runs `BT_WalkingNPC`: a selector under a
+`bShouldAllowMovement` decorator, then `BTTask_NPCSplineWalking` ("NPC Spline Walking", `bRespawnToStartOnFinish`)
+and a `FinishWithResult`. Its path is its blackboard's `SplineReference`, the `WalkingSplineComponent` (a
+`USplineComponent` with `bPingPong`) of a `BP_WalkingNPC_Spline_C` (`ASwtQuestWalkingSplineActor`; the game's in the
+`L_General_NPC_Filler` sublevel), with `CurrentIndexSpline` 0; its controller's `DefaultMaxWalkSpeed` is 50. Five were
+near the test cat's start, the nearest on a path of 6 points over 1,683 units, there and back, not closed. A path of
+the mod's own is that actor spawned and given points (`ClearSplinePoints`, `AddSplinePoint` in world space,
+`SetClosedLoop`): one of the SDK's cats (its tree run, the keys set) walked a square of four as a loop, about 100
+units a second at a speed of 100; cleared, `bShouldAllowMovement` stood it at once, and set it walked on. A game cat
+walked a path of the mod's (two points there and back, a square loop) and its own again (with your cat 1,200 units
+off; 300 off it stood: the game's walking cats stop for your cat, the SDK's don't).
+
 ### Bonds
 
 Worked out on 2026-11-04 (build 26337109) from the exe and in game, for the C++ SDK's `Bonds.hpp`; the addresses are

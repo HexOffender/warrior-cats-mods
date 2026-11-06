@@ -1351,7 +1351,8 @@ def test_ai_spawn(agent):
     """Ai.hpp's animals put in the world (the AI plan's step 6), out where the animals live (beside the den at your
     cat's starting spot a pounce starts no fight): the kinds (DT_Combat_Generator's parties: the rabbit's one rabbit at
     level 6); what isn't a kind refused; a rabbit spawned 600 units behind your cat by one of the game's generators,
-    borrowed, its AI running and listed by animals(), roaming; pounced: a fight with it (one rabbit, level 6) won, its
+    borrowed, its AI running and listed by animals(), roaming (slow to chase); pounced: a fight with it (one rabbit,
+    level 6) won, its
     reward items and experience given, it gone and its generator given back (its place and tags); another (respawn)
     noticing your cat in front of it, put back by its generator when it's gone, then removed for good, its generator
     home again."""
@@ -1372,6 +1373,30 @@ def test_ai_spawn(agent):
     assert v["spawn.generator_tag_back"] == v["spawn.generator_tag_was"], v
     assert v["spawn.noticed"]["detected"] or v["spawn.noticed"]["tracking"], v
     assert v["spawn.respawned"] and v["spawn.removed_stays_gone"] and v["spawn.removed_generator_home"], v
+
+
+def test_ai_walk(agent):
+    """Ai.hpp's clan cats' walking (the AI plan's step 7): the game's walking cats and their paths (there and back);
+    one of the mod's cats given a loop of four points round your cat at 100 cm/s, walking it (listed as a loop of the
+    mod's, staying within the square), stopping while a talk box is up and walking on after; a game cat given a path of
+    the mod's (there and back, at 150) walking it, then its own path back at its own speed; what isn't a walking cat
+    refused; the mod's path gone with its cat."""
+    _close_screens(agent)
+    try:
+        r = _request(agent, "ai_walk", timeout=90)
+    finally:
+        _close_screens(agent)
+    assert not _failed(r, "ai_walk"), _failed(r, "ai_walk")
+    v = {k: x for k, x in r["values"].items() if k.startswith("walk.")}
+    assert v["walk.walkers"] >= 1 and v["walk.first"]["points"] >= 2, v
+    assert v["walk.cat_walking"] is True and v["walk.cat_listed"] == {
+        "points": 4, "loop": True, "walking": True, "mod_path": True, "path_class": "BP_WalkingNPC_Spline_C"}, v
+    assert v["walk.walked_8s"] > 300 and v["walk.off_center_max"] < 550, v
+    assert v["walk.moved_talking"] < 20 and v["walk.walking_talking"] is False, v
+    assert v["walk.moved_after"] > 50 and v["walk.walking_after"] is True, v
+    assert v["walk.game_listed"]["mod_path"] is True and v["walk.game_listed"]["loop"] is False and v["walk.game_moved"] > 30, v
+    assert v["walk.game_speed_back"] is True, v
+    assert v["walk.path_gone"] is True and v["walk.mod_paths_after"] == 0, v
 
 
 def test_bond_answers(agent):

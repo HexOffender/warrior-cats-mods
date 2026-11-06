@@ -74,5 +74,6 @@ namespace wcmods
         ::wcmods::detail::stop_npcs();                                                                         \
         ::wcmods::detail::stop_talk();                                                                         \
         ::wcmods::detail::stop_animals();                                                                      \
+        ::wcmods::detail::stop_walk_paths();                                                                   \
         delete mod;                                                                                          \
     }
