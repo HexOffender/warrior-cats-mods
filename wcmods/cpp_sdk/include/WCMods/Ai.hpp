@@ -18,6 +18,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -593,8 +594,9 @@ namespace wcmods
         return call_reflected(actor, STR("OnCharacterLost"), [](Params& p) { p.set_nth(0, Value::of(player())); }).has_value();
     }
     // Make it notice your cat now, as the game's own noticing does (its OnCharacterDetected: Detected, Target, where it
-    // started and its reaction time on its blackboard), even while it ignores your cat: it gives chase after its
-    // reaction time (senses().react_to_chase, 0.5 s). False for what isn't a roaming animal (or a boss, or prey to pounce).
+    // started and its reaction time on its blackboard), even while it ignores your cat (seen); it gives chase after its
+    // reaction time (senses().react_to_chase, 0.5 s). With its mask 0 the chase's own detection may lose your cat as it
+    // goes (not tried). False for what isn't a roaming animal (or a boss, or prey to pounce).
     inline auto notice_player(UObject* actor) -> bool
     {
         if (!assert_game_thread(L"notice_player") || !actor || !player()) return false;
@@ -604,7 +606,8 @@ namespace wcmods
     {
         struct Ignoring
         {
-            std::map<UObject*, int> was;   // the animals made to ignore your cat, and the mask each had
+            std::map<UObject*, int> was;      // the animals made to ignore your cat, and the mask each had
+            std::set<UObject*> by_stealth;    // those ignore_player_everywhere zeroed (turning it off puts back only these)
             bool everywhere{};
             std::optional<TimerId> keeper;
         };
@@ -624,30 +627,36 @@ namespace wcmods
         auto& was = detail::ignoring().was;
         if (ignore)
         {
+            detail::ignoring().by_stealth.erase(actor);   // the mod's own now: stealth turned off leaves it
             if (!was.contains(actor)) was[actor] = *flags;
             set_detection_flags(actor, 0);
             if (blackboard_bool(actor, L"Detected").value_or(false)) calm(actor);
             return true;
         }
+        detail::ignoring().by_stealth.erase(actor);
         auto it = was.find(actor);
-        const int back = it != was.end() ? it->second : 3;
-        if (it != was.end()) was.erase(it);
+        if (it == was.end()) return *flags != 0 || set_detection_flags(actor, 3);   // not ignore_player's: left as it is
+        const int back = it->second;   // (a mask of 0 it was given otherwise gets the roaming animals' 3)
+        was.erase(it);
         return set_detection_flags(actor, back);
     }
     // Whether it ignores your cat (by ignore_player, or its mask 0 for any reason).
     inline auto ignoring_player(UObject* actor) -> bool { return detection_flags(actor) == 0; }
     // All the roaming animals ignore your cat while it's on: each within 5,000 units of your cat as it comes near (a
-    // look once a second); off, each is back to the mask it had. A stealth mode.
+    // look once a second); off, each it changed is back to the mask it had (one the mod made to ignore your cat itself
+    // stays so). A stealth mode.
     inline auto ignore_player_everywhere(bool on) -> void
     {
         if (!assert_game_thread(L"ignore_player_everywhere")) return;
         auto& s = detail::ignoring();
         s.everywhere = on;
         auto sweep = [] {
-            std::erase_if(detail::ignoring().was, [](auto& e) { return !detail::object_staying(e.first, nullptr); });
-            if (!detail::ignoring().everywhere) return;
+            auto& st = detail::ignoring();
+            std::erase_if(st.was, [](auto& e) { return !detail::object_staying(e.first, nullptr); });
+            std::erase_if(st.by_stealth, [&](UObject* a) { return !st.was.contains(a); });
+            if (!st.everywhere) return;
             for (const Nearby& n : nearby(Kind::Creatures, 5000))
-                if (!detail::ignoring().was.contains(n.actor)) ignore_player(n.actor, true);
+                if (!st.was.contains(n.actor) && ignore_player(n.actor, true)) st.by_stealth.insert(n.actor);
         };
         if (on)
         {
@@ -660,10 +669,10 @@ namespace wcmods
             cancel(*s.keeper);
             s.keeper.reset();
         }
-        auto all = s.was;
-        for (auto& [actor, flags] : all)
+        auto mine = s.by_stealth;
+        for (UObject* actor : mine)
             if (detail::object_staying(actor, nullptr)) ignore_player(actor, false);
-        s.was.clear();
+        s.by_stealth.clear();
     }
     // Make it run from a place or another actor: `distance` cm the other way, at its chase speed (senses().
     // walk_speed_chasing, 400) unless `options` says, given back to its tree at the end (a move_to: `done` is told how

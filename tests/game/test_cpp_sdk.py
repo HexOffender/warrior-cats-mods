@@ -1273,7 +1273,9 @@ def test_ai_notice(agent):
     250 units in front of it notices it within 6 s and waits to chase, and calm() makes it give your cat up; another,
     ignoring your cat (mask 0), doesn't notice it in front of it in 6 s, notice_player() makes it notice at once
     anyway, and ignore_player(false) puts its mask back; the first runs from your cat (500 units off) at its chase speed,
-    well away; ignore_player_everywhere covers every animal near and is undone. Your cat and nullptr are refused."""
+    well away; ignore_player_everywhere covers every animal near and is undone, but not the one the mod made to ignore
+    your cat itself, and un-ignoring an animal it didn't zero leaves its mask. Your cat is put between the two animals
+    nearest it first, so both are awake. Your cat and nullptr are refused."""
     _close_screens(agent)
     r = _request(agent, "ai_notice", timeout=90)
     assert not _failed(r, "ai_notice"), _failed(r, "ai_notice")
@@ -1288,7 +1290,8 @@ def test_ai_notice(agent):
     assert v["notice.flags_back"] == 3, v["notice.flags_back"]
     assert v["notice.flee_speed"] == 400 and v["notice.flee_after"] - v["notice.flee_before"] > 300, v
     assert v["notice.everywhere_near"] >= 1 and v["notice.everywhere_ignoring"] == v["notice.everywhere_near"], v
-    assert v["notice.everywhere_after"] == 0, v
+    assert v["notice.everywhere_after"] == 0 and v["notice.own_ignore_kept"] is True, v
+    assert v["notice.awake"] is True, v
 
 
 def test_bond_answers(agent):

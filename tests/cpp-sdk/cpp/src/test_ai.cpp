@@ -366,18 +366,23 @@ namespace t
                                      && !calm(nullptr) && !notice_player(nullptr) && !flee(nullptr, Vec3{}));
         auto p = std::make_shared<NoticeProbe>();
         p->home = *location(player());
-        for (UObject* x : fight_animals(2500))
-            if (ai_running(x))
-            {
-                if (!p->a) p->a = x;
-                else if (!p->b) p->b = x;
-            }
-        if (!p->a || !p->b)
+        // The two animals nearest your cat, woken: your cat put between them (one near the edge of your cat's zone
+        // may be asleep, after the tests before).
+        auto two = fight_animals(4000);
+        if (two.size() < 2)
         {
-            expect("notice.found", false, "fewer than two awake animals");
+            expect("notice.found", false, "fewer than two animals near");
             done("ai_notice");
             return;
         }
+        p->a = two[0];
+        p->b = two[1];
+        auto la = *location(p->a), lb = *location(p->b);
+        Vec3 mid{(la.x + lb.x) / 2, (la.y + lb.y) / 2, (la.z + lb.z) / 2 + 30};
+        if (auto g = ground(mid.x, mid.y, mid.z + 500)) mid.z = *g + 30;
+        teleport(player(), mid);
+        after(2.0, [p] {
+        value("notice.awake", Json(ai_running(p->a) && ai_running(p->b)));
         static double reaction = 0.5;
         if (auto s = senses(p->a); s.react_to_chase) reaction = *s.react_to_chase;
         for (UObject* x : {p->a, p->b})
@@ -427,7 +432,12 @@ namespace t
                                 value("notice.flee_ai", Json(ai_running(p->a)));
                                 calm(p->a);
                                 teleport(player(), p->home);
-                                // ----- every animal near ignoring your cat, and back
+                                // ----- every animal near ignoring your cat, and back; b, ignored by the mod itself
+                                // before, stays ignored; a mask ignore_player didn't zero is left as it is
+                                ignore_player(p->b, true);
+                                set_detection_flags(p->a, 15);
+                                expect("notice.unignore_other", ignore_player(p->a, false) && detection_flags(p->a) == 15);
+                                set_detection_flags(p->a, 3);
                                 ignore_player_everywhere(true);
                                 after(1.5, [p] {
                                     int near_ignoring = 0, around = 0;
@@ -441,8 +451,10 @@ namespace t
                                     ignore_player_everywhere(false);
                                     int still = 0;
                                     for (const Nearby& n : nearby(Kind::Creatures, 4000))
-                                        if (ignoring_player(n.actor)) ++still;
+                                        if (n.actor != p->b && ignoring_player(n.actor)) ++still;
                                     value("notice.everywhere_after", Json(still));
+                                    value("notice.own_ignore_kept", Json(ignoring_player(p->b)));
+                                    ignore_player(p->b, false);
                                     for (UObject* x : {p->a, p->b})
                                         if (auto s = senses(x); s.react_to_chase) *s.react_to_chase = static_cast<float>(reaction);
                                     done("ai_notice");
@@ -452,6 +464,7 @@ namespace t
                     });
                 });
             });
+        });
         });
     }
 
