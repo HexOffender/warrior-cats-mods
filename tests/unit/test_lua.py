@@ -752,6 +752,24 @@ def test_every_table_call_is_documented():
     assert not re.search(r"function Game\.(?:words|wordKeys)\([^)]*\btable\b", block)
 
 
+def test_every_world_call_is_documented():
+    """Step 7's first part (the sky, sounds, music, effects, movement, speeds, console) is in scripting.md's "The world,
+    more" section, its helpers in one local table."""
+    import os
+    lua = game.lua()
+    block = lua[lua.index("Game.sky, Game.sounds, Game.music, Game.effects = {}, {}, {}, {}"):lua.index("the game's developer switches")]
+    names = re.findall(r"^    function (Game\.(?:sky|sounds|music|effects)\.\w+|Game\.\w+|Cat:\w+)\(", block, re.M)
+    assert "Game.sky.set" in names and "Game.sounds.play" in names and "Cat:playMontage" in names, names
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "scripting.md")
+    with open(path, encoding="utf-8") as f:
+        docs = f.read()
+    section = docs[docs.index("### The world, more"):docs.index("### The game's developer switches")]
+    for name in names:
+        short = name.replace("Cat:", "cat:")
+        assert short + "(" in section, name
+    assert "    local W = {}" in block and not re.search(r"(?m)^    local (?!W = )", block)
+
+
 def test_json_decode_skips_a_bom():
     lua = game.lua()
     assert 'local BOM = "\\239\\187\\191"' in lua

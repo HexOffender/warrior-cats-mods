@@ -5466,6 +5466,422 @@ do
     end
 end
 
+-- The rest of the world from a script, part one (the Lua plan's step 7; C++'s World.hpp and Effects.hpp have the same):
+-- console commands, the save's hash, the sky, the game's sounds and music, its volumes, the game's own animations, visual
+-- effects, movement, your cat's speeds and its scent sense. A block of its own, its helpers in one table.
+Game.sky, Game.sounds, Game.music, Game.effects = {}, {}, {}, {}
+do
+    local W = {}
+    W.AUDIO = "/Script/SwtNativeAudio.Default__SwtNativeAudioManager"
+    -- An enum's names by number, read from the game once ("/Script/Wrc.ESkyboxPostProcessEnum").
+    W.enums = {}
+    function W.enum(path)
+        if W.enums[path] == nil then
+            local byName = Game.enumNames(path) or {}
+            local byNumber = {}
+            for n, v in pairs(byName) do byNumber[v] = n end
+            W.enums[path] = { byName = byName, byNumber = byNumber }
+        end
+        return W.enums[path]
+    end
+    -- A map's entries as { {key, value}, ... } (keys and values unwrapped).
+    function W.entries(m)
+        local out = {}
+        pcall(function()
+            m:ForEach(function(k, v)
+                pcall(function() out[#out + 1] = { key = k:get(), value = v:get() } end)
+            end)
+        end)
+        return out
+    end
+
+    -- ------------------------------------------------------------------------------- console, save
+    -- Run a console command as the console does (KismetSystemLibrary's ExecuteConsoleCommand): "stat fps", "r.Fog 0".
+    -- False outside the world. (The game's own controls are Game.command.)
+    function Game.console(command)
+        local pc = Game.controller()
+        if type(command) ~= "string" or command == "" or not pc then return false end
+        return (pcall(function() Game.library("KismetSystemLibrary"):ExecuteConsoleCommand(pc, command, pc) end))
+    end
+    -- The save's Hash as the game holds it (also in WrcGame.sav's header): a new value each time it writes the save. Nil
+    -- without a save loaded.
+    function Game.save.hash()
+        local h = Game.get(Game.save.manager(), "SaveGame.Hash")
+        return type(h) == "number" and h or nil
+    end
+
+    -- ------------------------------------------------------------------------------- the sky
+    -- The world's sky (BP_DayNightSky_C, a WrcSkyboxActor) while you play, or nil. Its light, fog and clouds come from
+    -- presets (ESkyboxPostProcessEnum): "NeutralDay", "Night", "CinematicNight", "ThunderClan", "RiverClan", "ShadowClan",
+    -- "WindClan", "MoonPool"... The game picks one by the area your cat is in, and others while a fight, the inventory
+    -- or a den is up.
+    W.skyHold = { timer = nil, sky = nil, preset = nil }
+    function Game.sky.actor()
+        if not Game.player() then return nil end
+        for _, a in ipairs(Game.findAll("WrcSkyboxActor")) do
+            local full = Game.fullName(a) or ""
+            if Game.alive(a) and not full:find("Default__", 1, true) then return a end
+        end
+        return nil
+    end
+    function W.applySky(s, preset)
+        local n = W.enum("/Script/Wrc.ESkyboxPostProcessEnum").byName[preset]
+        return n ~= nil and Game.alive(s) and (pcall(function() s:ApplyStraight(n) end))
+    end
+    function W.releaseSky()
+        if W.skyHold.timer then Game.cancel(W.skyHold.timer) end
+        W.skyHold.timer, W.skyHold.sky, W.skyHold.preset = nil, nil, nil
+    end
+    -- Put a preset on at once. The game fades back to the area's own within about 5 s, so with `hold` (true) it's put on
+    -- again every frame until Game.sky.followArea, another set, or a new level. False without the sky, or for a name the
+    -- enum hasn't got.
+    function Game.sky.set(preset, hold)
+        W.releaseSky()
+        local s = Game.sky.actor()
+        if not W.applySky(s, preset) then return false end
+        if hold == false then return true end
+        W.skyHold.sky, W.skyHold.preset = s, preset
+        W.skyHold.timer = Game.onFrame(function()
+            if not W.applySky(W.skyHold.sky, W.skyHold.preset) then W.releaseSky() end
+        end)
+        return true
+    end
+    -- The preset Game.sky.set holds, or nil.
+    function Game.sky.held() return W.skyHold.preset end
+    -- Let go of a held preset and give the area's sky back, at once.
+    function Game.sky.followArea()
+        W.releaseSky()
+        local s = Game.sky.actor()
+        return s ~= nil and (pcall(function() s:DoZoneDetectionFunction(false) end))
+    end
+    -- The presets' names, and their table (the sky's SkyParamsDB, DT_SkyBoxParams: a row per preset of the sun, the
+    -- fog, the clouds and the stars), for Game.tables. A row changed there shows in a sky made after (a new level): the
+    -- sky copies the rows as it starts, into a map only C++ reaches (sky_values).
+    function Game.sky.presets()
+        local out = {}
+        for n, v in pairs(W.enum("/Script/Wrc.ESkyboxPostProcessEnum").byName) do
+            if n ~= "None" then out[#out + 1] = n end
+        end
+        table.sort(out)
+        return out
+    end
+    function Game.sky.table()
+        local t = Game.get(Game.sky.actor(), "SkyParamsDB")
+        return valid(t) and t or nil
+    end
+
+    -- ------------------------------------------------------------------------------- sounds and music
+    -- The game's sounds by their ids in its AudioEvents table (390 on build 26337109): music ("mus_camp"), effects
+    -- ("cat_step"), menu sounds ("ui_select"), cats' voices ("vo_cat1_happy1").
+    function Game.sounds.ids()
+        local out = {}
+        for _, e in ipairs(W.entries(Game.get(Game.manager("audio"), "AudioEventsInfo"))) do out[#out + 1] = str(e.key) end
+        table.sort(out)
+        return out
+    end
+    -- The sound the game plays for an id now (a SoundCue or MetaSound), or nil.
+    -- (The map read into a table kept 2 s, for the manager it came from: a play per footstep doesn't walk all 389.)
+    W.soundMap = { manager = nil, at = -1, byId = {} }
+    function Game.sounds.of(id)
+        local m = Game.manager("audio")
+        local key = m and m:GetAddress()
+        if key ~= W.soundMap.manager or os.clock() - W.soundMap.at > 2 then
+            local byId = {}
+            for _, e in ipairs(W.entries(Game.get(m, "AudioEventsMap"))) do byId[str(e.key)] = e.value end
+            W.soundMap.manager, W.soundMap.at, W.soundMap.byId = key, os.clock(), byId
+        end
+        local s = W.soundMap.byId[id]
+        return valid(s) and s or nil
+    end
+    -- Play one as the game does: heard the same everywhere (as the menu's sounds are), or from a place ({X, Y, Z}). The
+    -- audio component playing it (for Game.sounds.stop), or nil for an id the game hasn't got (and for a menu sound
+    -- played at a place: it isn't one heard from somewhere, and the engine makes no component for it; seen).
+    function Game.sounds.play(id, at)
+        if type(id) ~= "string" or not Game.sounds.of(id) then return nil end
+        local everywhere = at == nil
+        at = at and { X = at.X or at[1], Y = at.Y or at[2], Z = at.Z or at[3] } or { X = 0, Y = 0, Z = 0 }
+        local xf = { Translation = at, Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Scale3D = { X = 1, Y = 1, Z = 1 } }
+        local ok, c = pcall(function() return Game.object(W.AUDIO):K2_PlayEventOf(id, xf, everywhere) end)
+        return ok and valid(c) and c or nil
+    end
+    function Game.sounds.stop(component)
+        return Game.alive(component) and Game.isA(component, "AudioComponent") and (pcall(function() component:Stop() end))
+    end
+    -- How long an id's sound is, in seconds (a looping one's one pass); nil for an id the game hasn't got.
+    function Game.sounds.duration(id)
+        local s = Game.sounds.of(id)
+        if not s then return nil end
+        local ok, d = pcall(function() return Game.object(W.AUDIO):GetAudioAssetDuration(s) end)
+        return ok and d or nil
+    end
+    -- Silence an id: its sound's own volume set to 0 (a cue's VolumeMultiplier, a wave's Volume), so the game plays it
+    -- unheard (and any other id with the same sound); Game.sounds.restore gives it back. False for an id the game hasn't
+    -- got, or a sound with no volume of its own. (Playing another sound for an id is C++'s: replace_sound.)
+    W.muted = {}   -- sound address -> { sound, volume (the game's), ids = { id = true } }: ids sharing a sound share one entry
+    function W.volumePath(s)
+        if Game.isA(s, "SoundCue") then return "VolumeMultiplier" end
+        if Game.isA(s, "SoundWave") then return "Volume" end
+        return nil
+    end
+    function Game.sounds.mute(id)
+        local s = Game.sounds.of(id)
+        local path = s and W.volumePath(s)
+        if not path then return false end
+        local key = s:GetAddress()
+        local m = W.muted[key]
+        if not m then
+            m = { sound = s, volume = Game.get(s, path), ids = {} }
+            W.muted[key] = m
+        end
+        m.ids[id] = true
+        return (Game.set(s, path, 0))
+    end
+    -- The volume comes back once every id muted on that sound has been restored.
+    function Game.sounds.restore(id)
+        for key, m in pairs(W.muted) do
+            if m.ids[id] then
+                m.ids[id] = nil
+                if next(m.ids) ~= nil then return true end
+                W.muted[key] = nil
+                local path = Game.alive(m.sound) and W.volumePath(m.sound)
+                return path ~= nil and path ~= false and (Game.set(m.sound, path, m.volume))
+            end
+        end
+        return false
+    end
+    -- The game's volumes as its Audio settings set them (0 to 1): which is "Master", "Music", "Effects" or "VoiceOver".
+    function Game.sounds.setVolume(which, level)
+        local fn = ({ Master = "SetMasterVolume", Music = "SetMusicVolume", Effects = "SetEffectsVolume",
+                      VoiceOver = "SetVoiceOverVolume" })[which]
+        if not fn or type(level) ~= "number" then return false end
+        return (pcall(function() Game.object(W.AUDIO)[fn](Game.object(W.AUDIO), level) end))
+    end
+    -- Pause every sound or let them go on; whether they're paused.
+    function Game.sounds.pause(paused)
+        local m = Game.manager("audio")
+        return m ~= nil and (pcall(function() m:PauseAllEvents(paused ~= false) end))
+    end
+    function Game.sounds.paused()
+        local m = Game.manager("audio")
+        local ok, p = pcall(function() return m:IsPaused() end)
+        return m ~= nil and ok and p == true
+    end
+    -- The music: the track playing now, on the audio component the game plays music on (one whose sound is of the
+    -- manager's music classes). The game changes track as your cat moves between its music triggers and in a fight.
+    W.lastMusic = nil
+    function W.musicComponent(playingOnly)
+        local classes = {}
+        for _, c in ipairs(Game.list(Game.get(Game.manager("audio"), "SoundMusicClasses"))) do
+            if valid(c) then classes[c:GetAddress()] = true end
+        end
+        local function isMusic(c)
+            local s = Game.alive(c) and Game.get(c, "Sound")
+            local cls = s and valid(s) and Game.get(s, "SoundClassObject")
+            return cls and valid(cls) and classes[cls:GetAddress()] == true
+        end
+        local function playing(c)
+            local ok, p = pcall(function() return c:IsPlaying() end)
+            return ok and p == true
+        end
+        if isMusic(W.lastMusic) and (not playingOnly or playing(W.lastMusic)) then return W.lastMusic end
+        for _, c in ipairs(Game.findAll("AudioComponent")) do
+            if isMusic(c) and playing(c) then
+                W.lastMusic = c
+                return c
+            end
+        end
+        if playingOnly or not Game.alive(W.lastMusic) then return nil end
+        return W.lastMusic
+    end
+    -- { component, sound, id } for the track playing now (id: its AudioEvents id, when it's one of them), or nil.
+    function Game.music.now()
+        local c = W.musicComponent(true)
+        if not c then return nil end
+        local s = Game.get(c, "Sound")
+        local out = { component = c, sound = valid(s) and s:GetFName():ToString() or nil }
+        for _, e in ipairs(W.entries(Game.get(Game.manager("audio"), "AudioEventsMap"))) do
+            if valid(e.value) and valid(s) and e.value:GetAddress() == s:GetAddress() then out.id = str(e.key) end
+        end
+        return out
+    end
+    -- Play one of the game's tracks by its id now ("mus_camp"), on the music's own component, in place of what plays
+    -- (until the game next changes track); with none found, as a sound heard everywhere. False for an id it hasn't got.
+    function Game.music.play(id)
+        local s = Game.sounds.of(id)
+        if not s then return false end
+        local c = W.musicComponent(false)
+        if not c then return Game.sounds.play(id) ~= nil end
+        return (pcall(function()
+            c:SetSound(s)
+            c:Play(0)
+        end))
+    end
+    -- Stop the music, fading over `seconds` (1; 0 at once). False when none plays.
+    function Game.music.stop(seconds)
+        local c = W.musicComponent(true)
+        if not c then return false end
+        seconds = seconds or 1
+        if seconds <= 0 then return (pcall(function() c:Stop() end)) end
+        return (pcall(function() c:FadeOut(seconds, 0) end))
+    end
+
+    -- ------------------------------------------------------------------------------- the game's own animations
+    -- Play one of the game's animations on a cat or an animal by its tag, as the game does (its PlayMontageComponent:
+    -- "Animation.Exploration.Meow", "Animation.Exploration.Interaction.Dig", "Animation.Combat.Hit.1"...), cutting off
+    -- what it plays now. The montage, or nil (no component, or no such row).
+    function Cat:playMontage(tag, rate)
+        local c = Game.get(self.actor, "PlayMontageComponent")
+        if not valid(c) then return nil end
+        local ok, m = pcall(function() return c:K2_PlayMontageOfTag(Game.tag(tag), rate or 1, true, false, false) end)
+        return ok and valid(m) and m or nil
+    end
+    -- Whether a montage plays on its mesh now (the game's own, or one a mod played): its anim instance's current one.
+    function Cat:montagePlaying()
+        local ok, m = pcall(function() return self.actor.Mesh:GetAnimInstance():GetCurrentActiveMontage() end)
+        return ok and valid(m)
+    end
+
+    -- ------------------------------------------------------------------------------- visual effects
+    -- An effect playing: { component, playing(), stop() }; it goes by itself when its system ends.
+    W.Effect = {}
+    W.Effect.__index = W.Effect
+    function W.Effect:playing()
+        local ok, a = pcall(function() return self.component:IsActive() end)
+        return Game.alive(self.component) and ok and a == true
+    end
+    function W.Effect:stop()
+        if Game.alive(self.component) then pcall(function() self.component:DestroyComponent(false) end) end
+        self.component = nil
+    end
+    -- Play a Niagara system (its object, or its path, loaded if it isn't yet) at a place, the engine's own way
+    -- (NiagaraFunctionLibrary's SpawnSystemAtLocation). The effect, or nil for a system that isn't there or outside the
+    -- world.
+    function Game.effects.spawn(system, at, scale)
+        if type(system) == "string" then system = Game.object(system) or Game.load(system) end
+        local pc = Game.controller()   -- (the world, through the controller: it's there in a fight too)
+        local lib = Game.object("/Script/Niagara.Default__NiagaraFunctionLibrary")
+        if type(at) ~= "table" or not valid(system) or not Game.isA(system, "NiagaraSystem") or not pc or not lib then return nil end
+        at = { X = at.X or at[1], Y = at.Y or at[2], Z = at.Z or at[3] }
+        scale = scale or 1
+        local ok, c = pcall(function()
+            return lib:SpawnSystemAtLocation(pc, system, at, { Pitch = 0, Yaw = 0, Roll = 0 }, { X = scale, Y = scale, Z = scale },
+                                             true, true, 0, true)
+        end)
+        if not ok or not valid(c) then return nil end
+        return setmetatable({ component = c }, W.Effect)
+    end
+    -- The game's own effects by name, from its VFX manager: "Buff", "Debuff", "Climb", the status conditions' ("Poisoned",
+    -- "Blinded", "Furious", "Stressed") and a reward's or pickup's ("PickUp", "Interactable", "OnContact").
+    function W.gameEffects()
+        local out = {}
+        local vfx = Game.manager("vfx")
+        if not vfx then return out end
+        for name, member in pairs({ Buff = "BuffNiagaraSystem", Debuff = "DebuffNiagaraSystem", Climb = "ClimbStartSystem" }) do
+            local s = Game.get(vfx, member)
+            if valid(s) then out[name] = s end
+        end
+        local status = W.enum("/Script/SwtAdventure.ESwtAdventureStatusType").byNumber
+        local reward = W.enum("/Script/SwtAdventure.EVfxRewardType").byNumber
+        for map, names in pairs({ StatusNiagaraSystems = status, RewardNiagaraSystem = reward, PickedNiagaraSystem = reward }) do
+            for _, e in ipairs(W.entries(Game.get(vfx, map))) do
+                local n = names[math.tointeger(e.key)]
+                if n and valid(e.value) and out[n] == nil then out[n] = e.value end
+            end
+        end
+        return out
+    end
+    function Game.effects.names()
+        local out = {}
+        for n in pairs(W.gameEffects()) do out[#out + 1] = n end
+        table.sort(out)
+        return out
+    end
+    -- Play one of the game's own effects by name at a place; nil for a name it hasn't got.
+    function Game.effects.game(name, at, scale)
+        local s = W.gameEffects()[name]
+        return s and Game.effects.spawn(s, at, scale) or nil
+    end
+
+    -- ------------------------------------------------------------------------------- movement, your cat's speeds, its sense
+    -- A cat's or an animal's movement values (its CharacterMovement): { walkSpeed, crouchedSpeed, acceleration, jumpSpeed,
+    -- gravity, stepHeight, mode } (mode: "MOVE_Walking", "MOVE_Falling"...); nil without one.
+    function Cat:movement()
+        local mv = Game.alive(self.actor) and Game.get(self.actor, "CharacterMovement")
+        if not mv or not valid(mv) then return nil end
+        local mode = Game.get(mv, "MovementMode")
+        local names = W.enum("/Script/Engine.EMovementMode").byNumber
+        return { walkSpeed = Game.get(mv, "MaxWalkSpeed"), crouchedSpeed = Game.get(mv, "MaxWalkSpeedCrouched"),
+                 acceleration = Game.get(mv, "MaxAcceleration"), jumpSpeed = Game.get(mv, "JumpZVelocity"),
+                 gravity = Game.get(mv, "GravityScale"), stepHeight = Game.get(mv, "MaxStepHeight"),
+                 mode = names[math.tointeger(mode)] or mode }
+    end
+    -- How high it jumps (its jump's upward speed, 420 on the test cat) and its gravity (1 the world's): the game leaves
+    -- both as set. Its walking speed: a mod's cat's or an animal's stays; your cat's the game sets every frame from its
+    -- own speeds (false for your cat: Game.speeds). False without movement.
+    function Cat:setJumpSpeed(v) return Game.alive(self.actor) and (Game.set(self.actor, "CharacterMovement.JumpZVelocity", v)) end
+    function Cat:setGravity(v) return Game.alive(self.actor) and (Game.set(self.actor, "CharacterMovement.GravityScale", v)) end
+    function Cat:setWalkSpeed(v)
+        if not Game.alive(self.actor) or self:isPlayer() or Game.className(self.actor) == "BP_Exploration_Character_Player_C" then return false end
+        return (Game.set(self.actor, "CharacterMovement.MaxWalkSpeed", v))
+    end
+    -- Your cat's own speeds, from its exploration component, which writes its character's MaxWalkSpeed every frame from
+    -- them: { walk (175), run (390), walkAcceleration, runAcceleration, crouch (0.5: the factor while crouched), climb
+    -- (1), running, crouching, climbing }; nil outside the world or in a fight.
+    W.SPEEDS = { walk = "WCM_WalkSpeed", run = "WCM_RunSpeed", walkAcceleration = "WCM_WalkAcceleration",
+                 runAcceleration = "WCM_RunAcceleration", crouch = "WCM_CrouchFactor", climb = "WCM_ClimbFactor" }
+    W.speedsKept = nil   -- { explore, values } as they were before the first Game.setSpeeds
+    function W.explore()
+        local e = Game.get(Game.player(), "ExplorationControl")
+        return Game.alive(e) and e or nil
+    end
+    function Game.speeds()
+        local e = W.explore()
+        if not e or Game.get(e, "WCM_WalkSpeed") == nil then return nil end
+        local out = {}
+        for k, m in pairs(W.SPEEDS) do out[k] = Game.get(e, m) end
+        local flags = math.tointeger(Game.get(e, "WCM_MoveFlags")) or 0
+        out.running, out.crouching, out.climbing = flags & 4 ~= 0, flags & 1 ~= 0, flags & 2 ~= 0
+        return out
+    end
+    -- Set the speeds given (the rest stay); the game takes them the next frame. The first set keeps what your cat had,
+    -- for Game.resetSpeeds. False outside the world or in a fight, or for a name it hasn't. A level change starts your
+    -- cat from the game's speeds again.
+    function Game.setSpeeds(given)
+        local e = W.explore()
+        if not e or type(given) ~= "table" or not Game.speeds() then return false end   -- (no speeds on this build: nothing)
+        for k, v in pairs(given) do
+            if not W.SPEEDS[k] or type(v) ~= "number" then return false end
+        end
+        if not (W.speedsKept and Game.alive(W.speedsKept.explore) and W.speedsKept.explore:GetAddress() == e:GetAddress()) then
+            W.speedsKept = { explore = e, values = Game.speeds() }
+        end
+        for k, v in pairs(given) do Game.set(e, W.SPEEDS[k], v) end
+        return true
+    end
+    -- Put back the speeds your cat had before the first Game.setSpeeds; true when there's nothing to put back.
+    function Game.resetSpeeds()
+        local k = W.speedsKept
+        if not k or not k.values or not Game.alive(k.explore) then
+            W.speedsKept = nil
+            return true
+        end
+        for name, m in pairs(W.SPEEDS) do Game.set(k.explore, m, k.values[name]) end
+        W.speedsKept = nil
+        return true
+    end
+    -- Your cat's scent sense (Q), the game's own through its command; how much it shows now (0 off, 1 full; nil outside
+    -- the world). It comes on over about 2 s and lasts about 10; another while it's on does nothing.
+    function Game.useSense() return Game.player() ~= nil and Game.command("Player_Scent_Tracking") end
+    function Game.sense()
+        local me = Game.player()
+        if not me then return nil end
+        local s
+        pcall(function() s = me:GetComponentByClass(Game.object("/Script/SwtAdventure.SwtAdventureExplorationSenseComponent")) end)
+        if not valid(s) then return nil end
+        return Game.get(s, "bEnabled") and Game.get(s, "BlendWeight") or 0
+    end
+end
+
 -- ===================================================================================== the game's developer switches
 -- The cheats manager's own settings: god mode, always-full resources, attacks that always land, fast
 -- den building and more. They're the developers' switches; which ones the release build obeys varies,
