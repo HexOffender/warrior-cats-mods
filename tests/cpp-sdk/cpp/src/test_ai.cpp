@@ -455,9 +455,10 @@ namespace t
                                         if (n.actor != p->b && ignoring_player(n.actor)) ++still;
                                     value("notice.everywhere_after", Json(still));
                                     value("notice.own_ignore_kept", Json(ignoring_player(p->b)));
-                                    ignore_player(p->b, false);
-                                    for (UObject* x : {p->a, p->b})
-                                        if (auto s = senses(x); s.react_to_chase) *s.react_to_chase = static_cast<float>(reaction);
+                                    if (detail::object_staying(p->b, nullptr)) ignore_player(p->b, false);
+                                    for (UObject* x : {p->a, p->b})   // either may be gone (your cat went far)
+                                        if (detail::object_staying(x, nullptr))
+                                            if (auto s = senses(x); s.react_to_chase) *s.react_to_chase = static_cast<float>(reaction);
                                     done("ai_notice");
                                 });
                             });

@@ -734,8 +734,9 @@ namespace wcmods
         UObject* c = ai_controller(actor);
         return {get(c, L"BehaviorTree").object, get(c, L"CombatBehaviorTree").object};
     }
-    // Set them, so the game's own starts run them (`fight` when a fight begins: a tree on BB_CombatEnemy, BT_CombatEnemy
-    // or its attack subtree BT_AttackEnemy). nullptr leaves one as it is. Not the tree running now: run_tree() is that.
+    // Set them, for the game's own starts to run (`fight` when a fight begins: a tree on BB_CombatEnemy, BT_CombatEnemy
+    // or its attack subtree BT_AttackEnemy; the members are what its controller is given, but a fight hasn't been seen
+    // starting from one set yet). nullptr leaves one as it is. Not the tree running now: run_tree() is that.
     // False without an AI, or a tree its controller has no place for.
     inline auto set_trees(UObject* actor, UObject* roaming, UObject* fight = nullptr) -> bool
     {
@@ -768,6 +769,8 @@ namespace wcmods
             FollowOptions options;
             bool was_running{};
             TimerId timer{};
+            std::chrono::steady_clock::time_point wait_till{};   // after a move that ended Blocked: a pause first
+            bool ended{};   // a look already due when it ended (the same frame's timers) does nothing
         };
         inline auto follows() -> std::vector<std::shared_ptr<Follow>>&
         {
@@ -782,6 +785,8 @@ namespace wcmods
         }
         inline auto end_follow(const std::shared_ptr<Follow>& f, bool put_back) -> void
         {
+            if (f->ended) return;
+            f->ended = true;
             cancel(f->timer);
             auto& all = follows();
             all.erase(std::remove(all.begin(), all.end(), f), all.end());
@@ -791,13 +796,21 @@ namespace wcmods
         }
         inline auto keep_following(const std::shared_ptr<Follow>& f) -> void
         {
+            if (f->ended) return;
             if (!object_staying(f->actor, f->cls) || !object_staying(f->target, f->target_cls)) return end_follow(f, true);
             // Its tree run again by someone (restart_ai, run_tree): the follow is over, that kept.
             if (ai_running(f->actor)) return end_follow(f, false);
             if (ai_move_of(f->actor)) return;   // on its way
+            if (std::chrono::steady_clock::now() < f->wait_till) return;
             auto me = location(f->actor), them = location(f->target);
             if (!me || !them || std::hypot(me->x - them->x, me->y - them->y) <= f->options.distance + 60) return;
-            move_to(f->actor, f->target, {.speed = f->options.speed, .radius = f->options.distance});
+            // A move that can't get there (asleep far from your cat, the target off its mesh) waits 2 s before the next.
+            std::weak_ptr<Follow> weak = f;
+            auto blocked = [weak](WalkResult r) {
+                if (auto g = weak.lock(); g && r == WalkResult::Blocked) g->wait_till = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            };
+            if (!move_to(f->actor, f->target, {.speed = f->options.speed, .radius = f->options.distance}, blocked))
+                f->wait_till = std::chrono::steady_clock::now() + std::chrono::seconds(2);
         }
     } // namespace detail
     // Make an AI follow another actor (your cat, another cat) about: whenever it's farther than `distance` from it, it
