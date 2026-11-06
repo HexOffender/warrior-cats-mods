@@ -52,6 +52,19 @@ def test_lua_sounds_and_music(agent):
         out.restore = Game.sounds.restore("ui_select")
         out.restored = Game.get(s, path)
         out.again = Game.sounds.restore("ui_select")
+        -- two ids muted on one sound: it comes back only once both are restored, at the game's volume
+        local other
+        for _, id in ipairs(ids) do
+            if id ~= "ui_select" and Game.sounds.of(id) and Game.sounds.of(id):GetAddress() == s:GetAddress() then other = id end
+        end
+        if other then
+            Game.sounds.mute("ui_select") Game.sounds.mute(other)
+            Game.sounds.restore("ui_select")
+            out.shareStill = Game.get(s, path)
+            Game.sounds.restore(other)
+            out.shareBack = Game.get(s, path)
+        end
+        out.noAt = Game.effects.game("Buff") == nil
         out.pause = Game.sounds.pause(true)
         out.paused = Game.sounds.paused()
         Game.sounds.pause(false)
@@ -62,6 +75,7 @@ def test_lua_sounds_and_music(agent):
     assert got["played"] is True and got["none"] is True and got["badVolume"] is False, got
     assert got["mute"] is True and got["muted"] == 0 and got["restore"] is True and got["restored"] == got["volume"] and got["again"] is False, got
     assert (got["pause"], got["paused"], got["unpaused"]) == (True, True, False), got
+    assert got.get("shareStill", 0) == 0 and got.get("shareBack", got["volume"]) == got["volume"] and got["noAt"] is True, got
     try:
         assert agent.lua('return Game.music.play("mus_camp")') is True
         time.sleep(1)

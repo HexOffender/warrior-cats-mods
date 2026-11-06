@@ -5580,11 +5580,18 @@ do
         return out
     end
     -- The sound the game plays for an id now (a SoundCue or MetaSound), or nil.
+    -- (The map read into a table kept 2 s, for the manager it came from: a play per footstep doesn't walk all 389.)
+    W.soundMap = { manager = nil, at = -1, byId = {} }
     function Game.sounds.of(id)
-        for _, e in ipairs(W.entries(Game.get(Game.manager("audio"), "AudioEventsMap"))) do
-            if str(e.key) == id then return valid(e.value) and e.value or nil end
+        local m = Game.manager("audio")
+        local key = m and m:GetAddress()
+        if key ~= W.soundMap.manager or os.clock() - W.soundMap.at > 2 then
+            local byId = {}
+            for _, e in ipairs(W.entries(Game.get(m, "AudioEventsMap"))) do byId[str(e.key)] = e.value end
+            W.soundMap.manager, W.soundMap.at, W.soundMap.byId = key, os.clock(), byId
         end
-        return nil
+        local s = W.soundMap.byId[id]
+        return valid(s) and s or nil
     end
     -- Play one as the game does: heard the same everywhere (as the menu's sounds are), or from a place ({X, Y, Z}). The
     -- audio component playing it (for Game.sounds.stop), or nil for an id the game hasn't got (and for a menu sound
@@ -5610,7 +5617,7 @@ do
     -- Silence an id: its sound's own volume set to 0 (a cue's VolumeMultiplier, a wave's Volume), so the game plays it
     -- unheard (and any other id with the same sound); Game.sounds.restore gives it back. False for an id the game hasn't
     -- got, or a sound with no volume of its own. (Playing another sound for an id is C++'s: replace_sound.)
-    W.muted = {}
+    W.muted = {}   -- sound address -> { sound, volume (the game's), ids = { id = true } }: ids sharing a sound share one entry
     function W.volumePath(s)
         if Game.isA(s, "SoundCue") then return "VolumeMultiplier" end
         if Game.isA(s, "SoundWave") then return "Volume" end
@@ -5620,15 +5627,27 @@ do
         local s = Game.sounds.of(id)
         local path = s and W.volumePath(s)
         if not path then return false end
-        if not W.muted[id] then W.muted[id] = { sound = s, volume = Game.get(s, path) } end
+        local key = s:GetAddress()
+        local m = W.muted[key]
+        if not m then
+            m = { sound = s, volume = Game.get(s, path), ids = {} }
+            W.muted[key] = m
+        end
+        m.ids[id] = true
         return (Game.set(s, path, 0))
     end
+    -- The volume comes back once every id muted on that sound has been restored.
     function Game.sounds.restore(id)
-        local m = W.muted[id]
-        if not m then return false end
-        W.muted[id] = nil
-        local path = Game.alive(m.sound) and W.volumePath(m.sound)
-        return path ~= nil and path ~= false and (Game.set(m.sound, path, m.volume))
+        for key, m in pairs(W.muted) do
+            if m.ids[id] then
+                m.ids[id] = nil
+                if next(m.ids) ~= nil then return true end
+                W.muted[key] = nil
+                local path = Game.alive(m.sound) and W.volumePath(m.sound)
+                return path ~= nil and path ~= false and (Game.set(m.sound, path, m.volume))
+            end
+        end
+        return false
     end
     -- The game's volumes as its Audio settings set them (0 to 1): which is "Master", "Music", "Effects" or "VoiceOver".
     function Game.sounds.setVolume(which, level)
@@ -5741,7 +5760,7 @@ do
         if type(system) == "string" then system = Game.object(system) or Game.load(system) end
         local pc = Game.controller()   -- (the world, through the controller: it's there in a fight too)
         local lib = Game.object("/Script/Niagara.Default__NiagaraFunctionLibrary")
-        if not valid(system) or not Game.isA(system, "NiagaraSystem") or not pc or not lib then return nil end
+        if type(at) ~= "table" or not valid(system) or not Game.isA(system, "NiagaraSystem") or not pc or not lib then return nil end
         at = { X = at.X or at[1], Y = at.Y or at[2], Z = at.Z or at[3] }
         scale = scale or 1
         local ok, c = pcall(function()
@@ -5829,7 +5848,7 @@ do
     -- cat from the game's speeds again.
     function Game.setSpeeds(given)
         local e = W.explore()
-        if not e or type(given) ~= "table" then return false end
+        if not e or type(given) ~= "table" or not Game.speeds() then return false end   -- (no speeds on this build: nothing)
         for k, v in pairs(given) do
             if not W.SPEEDS[k] or type(v) ~= "number" then return false end
         end
@@ -5842,7 +5861,7 @@ do
     -- Put back the speeds your cat had before the first Game.setSpeeds; true when there's nothing to put back.
     function Game.resetSpeeds()
         local k = W.speedsKept
-        if not k or not Game.alive(k.explore) then
+        if not k or not k.values or not Game.alive(k.explore) then
             W.speedsKept = nil
             return true
         end
