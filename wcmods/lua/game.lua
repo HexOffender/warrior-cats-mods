@@ -5287,7 +5287,8 @@ do
     -- button's command, pressed and let go 2.5 s later. False when the popup isn't up (a scene the game won't let you
     -- skip, or none playing).
     function Game.scenes.skip()
-        local popup = F.screenUp("GuiPopupSkipQuest")
+        -- (C++ finds it as GuiPopupSkip, its test seeing it up; GuiPopupSkipQuest is the native class the index lists)
+        local popup = F.screenUp("GuiPopupSkip") or F.screenUp("GuiPopupSkipQuest")
         local n = popup and math.tointeger(Game.get(popup, "mcGuiHoldButtonSkip.ButtonCommand"))
         if not n then return false end
         local pc = Game.controller()
@@ -5320,8 +5321,10 @@ do
         return okV and math.tointeger(v) or nil
     end
     function Game.setMood(primary, sub, value)
+        local n = math.tointeger(value)
+        if n == nil then return false end   -- a whole number only
         local sm = Game.save.manager()
-        return (pcall(function() sm:SetMoodData(primary, sub or "", math.tointeger(value) or 0) end))
+        return (pcall(function() sm:SetMoodData(primary, sub or "", n) end))
     end
 
     function Game.combat.onDamage(fn)
