@@ -624,6 +624,28 @@ print(Game.words("STR_CAT_NAME2_PAW"))                     -- Emberpaw
 table calls take the table's id as an FName, and these calls make one; UE4SS's own `RemoveRow` and `FindRow` take a
 string. The crash is the same the other way round.
 
+### The world, more
+
+The sky, the game's sounds and music, its own animations, visual effects, movement and your cat's speeds, as C++'s
+`World.hpp` and `Effects.hpp` have them.
+
+| Call | Gives or does |
+|---|---|
+| `Game.console(command)` | Run a console command as the console does (`"stat fps"`, `"r.Fog 0"`). The game's own controls are `Game.command` |
+| `Game.save.hash()` | The save's Hash as the game holds it; it changes each time the game writes the save. Nil without a save |
+| `Game.sky.actor()`, `Game.sky.presets()`, `Game.sky.table()` | The world's sky (`BP_DayNightSky_C`) while you play; its presets by name (`"NeutralDay"`, `"Night"`, `"ThunderClan"`, `"MoonPool"`...); their table, `DT_SkyBoxParams` (a row per preset of the sun, fog, clouds and stars, for `Game.tables`). A row changed in the table shows in a sky made after it (a new level): the sky copies the rows as it starts, into a map only C++ reaches |
+| `Game.sky.set(preset, hold)`, `Game.sky.held()`, `Game.sky.followArea()` | Put a preset on at once. The game fades back to the area's own within about 5 s, so with `hold` (the default) it's put on again every frame until `followArea`, another `set`, or a new level. `held` gives the preset held. `followArea` lets go and gives the area's sky back. Seen: Night held for 4 s, its fog and sun unchanged |
+| `Game.sounds.ids()`, `Game.sounds.of(id)`, `Game.sounds.duration(id)` | The game's sounds by their ids (390 on build 26337109): music (`"mus_camp"`), effects (`"cat_step"`), menu sounds (`"ui_select"`), cats' voices. Also the sound an id plays now, and its length in seconds |
+| `Game.sounds.play(id, at)`, `Game.sounds.stop(component)` | Play one as the game does, heard everywhere or from a place: the audio component, or nil. A menu sound played at a place gives none, because it isn't a sound heard from somewhere |
+| `Game.sounds.mute(id)`, `Game.sounds.restore(id)` | Silence an id (its sound's own volume set to 0, which silences any other id with the same sound) and give it back. Playing another sound for an id is C++'s (`replace_sound`) |
+| `Game.sounds.setVolume(which, level)`, `Game.sounds.pause(on)`, `Game.sounds.paused()` | The game's volumes as its Audio settings set them (`"Master"`, `"Music"`, `"Effects"`, `"VoiceOver"`; 0 to 1). Pause every sound, or let them go on |
+| `Game.music.now()`, `Game.music.play(id)`, `Game.music.stop(seconds)` | The track playing (`{component, sound, id}`), one of the game's tracks played on the music's own component until the game next changes track, and the music faded out (0: at once) |
+| `cat:playMontage(tag, rate)`, `cat:montagePlaying()` | Play one of the game's animations by its tag, as the game does (`"Animation.Exploration.Meow"`, `"Animation.Combat.Hit.1"`), cutting off what plays. Whether any montage plays |
+| `Game.effects.spawn(system, at, scale)`, `Game.effects.game(name, at, scale)`, `Game.effects.names()` | Play a Niagara system (an object or its path) at a place, or one of the game's own by name (`"Buff"`, `"Debuff"`, `"Climb"`, `"Poisoned"`, `"PickUp"`...). An effect, `{component, playing(), stop()}`, which goes by itself when it ends |
+| `cat:movement()`, `cat:setJumpSpeed(v)`, `cat:setGravity(v)`, `cat:setWalkSpeed(v)` | A cat's or an animal's movement: `{walkSpeed, crouchedSpeed, acceleration, jumpSpeed, gravity, stepHeight, mode}`. The game leaves the jump and gravity as set. A walking speed stays on a mod's cat or an animal; your cat's is set every frame from its own speeds, so `setWalkSpeed` is refused for it |
+| `Game.speeds()`, `Game.setSpeeds(t)`, `Game.resetSpeeds()` | Your cat's own speeds: `{walk (175), run (390), walkAcceleration, runAcceleration, crouch (0.5), climb (1), running, crouching, climbing}`. Set some (the game takes them the next frame), and put back what it had before the first set |
+| `Game.useSense()`, `Game.sense()` | Your cat's scent sense (Q), the game's own through its command; how much it shows now (0 to 1) |
+
 ### The game's developer switches
 
 The cheats manager carries the developers' own settings. The release build obeys some and ignores

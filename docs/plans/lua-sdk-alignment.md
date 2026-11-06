@@ -167,6 +167,6 @@ the other addons are, opt in. Or these calls stay C++'s only.
 | 3. Animals and walking cats | done | #155 |
 | 4. Fights | done | #156 |
 | 5. Story | done | #157 |
-| 6. Tables and words | done | this branch, `claude/lua-tables` |
-| 7. The rest of the world | not started | |
+| 6. Tables and words | done | #158 |
+| 7. The rest of the world | part one done (sky, sounds, effects, movement, speeds, console) | this branch, `claude/lua-world` |
 | 8. Only through C++ | to decide | |
