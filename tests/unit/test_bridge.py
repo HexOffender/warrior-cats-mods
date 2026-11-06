@@ -99,6 +99,28 @@ def test_status_retries_during_a_rewrite(br, monkeypatch):
     assert st is not None and st["alive"] and st["world"] == "L_WorldMap_01_P"
 
 
+def test_status_retries_a_refused_or_partial_read(br, monkeypatch):
+    # Windows refuses a file being renamed (PermissionError), and a read can catch the new one half there: each is a
+    # moment in the bridge's rewrite, looked at again rather than taken for the game being gone.
+    write_status(br, world="L_WorldMap_01_P")
+    real_open, calls = open, []
+
+    def flaky_open(path, *args, **kwargs):
+        calls.append(path)
+        if len(calls) == 1:
+            raise PermissionError("in use")
+        if len(calls) == 2:
+            from io import StringIO
+            return StringIO('{"time": 1, "wor')
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(bridge, "open", flaky_open, raising=False)
+    monkeypatch.setattr(bridge, "time", SimpleNamespace(time=time.time, sleep=lambda s: None))
+    st = br.status()
+    assert len(calls) == 3
+    assert st is not None and st["alive"] and st["world"] == "L_WorldMap_01_P"
+
+
 def test_a_request_runs_and_its_reply_comes_back(br):
     write_status(br)
     t, seen = game(br)
