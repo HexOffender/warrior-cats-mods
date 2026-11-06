@@ -352,8 +352,8 @@ namespace wcmods
     // ============================================================================================ moving
     // How move_to moves an AI: at `speed` cm/s (its walk speed set; 0 keeps the one it has, and a roaming animal's own
     // is a slow 70), close enough within `radius` cm, along the nav mesh round obstacles unless `avoid` is false (a
-    // straight line), and its logic started again when the move ends (`restart_after`); else it stands there with its
-    // logic stopped until restart_ai().
+    // straight line), and its logic started again when the move ends, however it ends (`restart_after`: stop_moving
+    // and another move_to too); else it stands there with its logic stopped until restart_ai().
     struct MoveOptions
     {
         double speed{0};
@@ -416,6 +416,7 @@ namespace wcmods
             if (!assert_game_thread(L"move_to") || !actor || actor == player() || !ai_controller(actor)) return false;
             if (goal && !object_staying(goal, nullptr)) return false;
             if (auto old = ai_move_of(actor)) end_move(old, WalkResult::Cancelled);
+            const bool was_running = ai_running(actor);
             stop_ai(actor);   // its tree would send it elsewhere
             if (o.speed > 0)
                 if (UObject* mv = get(actor, L"CharacterMovement").object) set(mv, L"MaxWalkSpeed", o.speed);
@@ -435,6 +436,8 @@ namespace wcmods
             }
             if (issue_move(actor, to, o.radius, o.avoid) == 0)
             {
+                // Refused: its logic as it was (running again unless it had been stopped), then done told.
+                m->restart_after = was_running;
                 end_move(m, WalkResult::Blocked);
                 return false;
             }
@@ -448,8 +451,8 @@ namespace wcmods
     // it moves, until it's within the radius), through its controller's own MoveToLocation, along the nav mesh: its
     // logic is stopped first (its tree would send it elsewhere), and when the move ends `done(result)` is called:
     // Arrived; Blocked (no path, or stuck after five steps aside); Cancelled (stop_moving(), another move_to, it or
-    // the goal gone). False, with `done` told Blocked, when the controller can't go there at all; false without
-    // calling `done` for your cat (no AI), nullptr or a goal that's gone. A mod's own cat has Npc::walk_to, which
+    // the goal gone). False, with `done` told Blocked, when the controller can't go there at all (its logic left as it
+    // was: running again if it ran); false without calling `done` for your cat (no AI), nullptr or a goal that's gone. A mod's own cat has Npc::walk_to, which
     // keeps its walk across respawns: use one or the other on it.
     //   wcmods::move_to(mouse, wcmods::Vec3{x, y, z}, {.speed = 200, .restart_after = true});
     inline auto move_to(UObject* actor, Vec3 to, MoveOptions options = {}, std::function<void(WalkResult)> done = {}) -> bool
