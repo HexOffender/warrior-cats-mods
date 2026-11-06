@@ -4844,6 +4844,305 @@ end
 function Fighter:team() return Game.enums.team[Game.get(self.component, "WCM_Team")] end
 function Fighter:moveCount() return Game.get(self.component, "WCM_MoveCount") end
 
+-- Fights from a script (the Lua plan's step 4; C++'s Story.hpp and Ai.hpp have the same): one started the player's way,
+-- your cat's turns taken through the fight menu as its own keys do, a fight ended the game's way, its dilemma answered,
+-- your cat's turns played for you, a hit changed before it lands. A block of its own (the main chunk's 200 locals).
+do
+    local F = {}   -- the block's helpers, as one local (the main chunk is near Lua's 200)
+    F.SHOWN = { [0] = true, [3] = true, [4] = true }   -- ESlateVisibility: Visible, HitTestInvisible, SelfHitTestInvisible
+    function F.shownWidget(w)
+        local ok, v = pcall(function() return w:GetVisibility() end)
+        return ok and F.SHOWN[v] == true
+    end
+    -- One of the game's screens up now by its class ("WBP_GuiPopupCombat_C"): on the viewport and drawn (a screen the
+    -- game closed stays on the viewport a while, hidden). A class's few widgets, not a scan of every one.
+    -- The last one found is looked at first (autoFight looks three times a second): a class scan only when it's gone.
+    F.screens = {}
+    function F.screenUp(cls)
+        local function up(w)
+            if not Game.alive(w) then return false end
+            local ok, yes = pcall(function() return w:IsInViewport() and w:IsVisible() end)
+            return ok and yes == true
+        end
+        if up(F.screens[cls]) then return F.screens[cls] end
+        F.screens[cls] = nil
+        for _, w in ipairs(Game.findAll(cls)) do
+            if up(w) then
+                F.screens[cls] = w
+                return w
+            end
+        end
+        return nil
+    end
+    function F.commandNumber(name)
+        F.commands = F.commands or Game.enumNames("/Script/SwtEngine.ECommands") or {}
+        return F.commands[name]
+    end
+    -- A command to a screen as its controls give it (ECommands: "Button_Up", "Button_Confirm"...): pressed now and let go
+    -- 0.3 s later, through the screen's own OnListenCommand. False for no screen or no such command.
+    function F.send(screen, name)
+        local n, pc = F.commandNumber(name), Game.controller()
+        if not n or not Game.alive(screen) then return false end
+        local ok = pcall(function() screen:OnListenCommand(n, 0, pc) end)
+        Game.after(0.3, function()
+            if Game.alive(screen) then pcall(function() screen:OnListenCommand(n, 1, pc) end) end
+        end)
+        return ok
+    end
+    -- A command to the game's controls (the controller's input component): "Player_Pounce", "Player_Interact".
+    function Game.command(name)
+        local n, pc = F.commandNumber(name), Game.controller()
+        local input = pc and Game.get(pc, "InputComponent")
+        if not n or not valid(input) then return false end
+        return (pcall(function()
+            input:OnListenCommandInternal(n, 0)
+            input:OnListenCommandInternal(n, 1)
+        end))
+    end
+    function F.fightMenu() return F.screenUp("WBP_GuiPopupCombat_C") end
+    -- Where a button is on one of the fight menu's panels ("PanelCombatMenu": Attack, Rest, Item, Flee;
+    -- "PanelCombatAttacks": the moves), in the panel's own order, and where the selection is (0 on). -1 when the menu, the
+    -- panel or the button isn't there.
+    function F.fightSpot(panelName, button)
+        local menu = F.fightMenu()
+        local panel = menu and Game.get(menu, panelName)
+        if not valid(panel) then return -1, 0 end
+        local selected = Game.get(panel, "ControlSelected")
+        local target, at, i = -1, 0, 0
+        for _, c in ipairs(Game.list(Game.get(panel, "NavControls.ControlsNavigation"))) do
+            if valid(c) then
+                if c:GetFName():ToString() == button then target = i end
+                if valid(selected) and c:GetAddress() == selected:GetAddress() then at = i end
+                i = i + 1
+            end
+        end
+        return target, at
+    end
+    -- One step of a pick, 0.3 s after the last (presses in one frame don't move the selection): the selection read
+    -- again, Up or Down toward the button, or Confirm and then `andThen` once it's there. Given up after `tries` steps,
+    -- or when the menu or the button has gone.
+    function F.fightStep(panelName, button, andThen, tries)
+        Game.after(0.3, function()
+            local target, at = F.fightSpot(panelName, button)
+            if target < 0 or tries <= 0 then return end
+            if target ~= at then
+                F.send(F.fightMenu(), target < at and "Button_Up" or "Button_Down")
+                return F.fightStep(panelName, button, andThen, tries - 1)
+            end
+            F.send(F.fightMenu(), "Button_Confirm")
+            if andThen then andThen() end
+        end)
+    end
+    function F.fightPick(panelName, button, andThen)
+        local target, at = F.fightSpot(panelName, button)
+        if target < 0 then return false end
+        F.fightStep(panelName, button, andThen, math.abs(target - at) + 4)
+        return true
+    end
+
+    -- Your cat's fighter in the fight now: the player's side's one the AI doesn't play (its tier "None"); its cat()
+    -- is your cat. Nil outside a fight. (Game.player() is nil during one: the controller holds the fight's own pawn.)
+    function Game.combat.cat()
+        local f = Game.fight()
+        for _, x in ipairs(f and f:players() or {}) do
+            if x and x:aiTier() == "None" then return x end
+        end
+        return nil
+    end
+    -- The fight menu (WBP_GuiPopupCombat_C), up on your cat's turn; nil when it isn't.
+    function Game.combat.menu() return F.fightMenu() end
+    -- Start a fight with a roaming animal the player's way: your cat put 1.5 m behind it, facing it, and the game's
+    -- pounce pressed 0.6 s later; the game's own fight follows (Game.combat.active(), the menu, combatStart). False
+    -- outside the world, in a fight or for no animal. Beside a den no pounce starts a fight (seen from C++): out where
+    -- the animals live it does.
+    function Game.combat.start(animal)
+        animal = Game.alive(animal) and animal or (type(animal) == "table" and animal.actor) or nil
+        local me = Game.cat()
+        if not Game.alive(animal) or not me or Game.combat.active() then return false end
+        local okA, at = pcall(function() return animal:K2_GetActorLocation() end)
+        local okF, f = pcall(function() return animal:GetActorForwardVector() end)
+        if not (okA and okF) then return false end
+        if not me:teleport(at.X - f.X * 150, at.Y - f.Y * 150, at.Z + 30) then return false end
+        local rot = Game.rotator(0, math.deg(math.atan(f.Y, f.X)), 0)
+        pcall(function() me.actor:K2_SetActorRotation(rot, false) end)
+        pcall(function() Game.controller():SetControlRotation(rot) end)
+        Game.after(0.6, function()   -- still in the world and not in a fight by then
+            if Game.player() and not Game.combat.active() then Game.command("Player_Pounce") end
+        end)
+        return true
+    end
+    -- Your cat's turn, through the fight menu as its own keys pick: an attack (move 1 to 4, as the attack panel lists
+    -- them; its target confirmed), a rest, or fleeing (the fight ends: combatEnd). False when the menu isn't up (not
+    -- your cat's turn), or for a move your cat hasn't got (a young cat has fewer than four); the turn plays out over the
+    -- next seconds.
+    function Game.combat.attack(move)
+        move = math.tointeger(move or 1)
+        if not move or move < 1 or move > 4 then return false end
+        local me = Game.combat.cat()
+        local count = me and math.tointeger(me:moveCount())
+        if count and move > count then return false end
+        return F.fightPick("PanelCombatMenu", "mcGuiButtonAttack", function()
+            Game.after(0.6, function()   -- the moves' panel, once it's open
+                F.fightPick("PanelCombatAttacks", "mcGuiButtonAttack" .. move, function()
+                    Game.after(0.6, function() F.send(F.fightMenu(), "Button_Confirm") end)   -- the target, when it asks
+                end)
+            end)
+        end)
+    end
+    function Game.combat.rest() return F.fightPick("PanelCombatMenu", "mcGuiButtonRest") end
+    function Game.combat.flee() return F.fightPick("PanelCombatMenu", "mcGuiButtonFlee") end
+    -- The moves on the attack panel: { {name, stamina, usable}, ... } in order (1 to 4): a move's name, its stamina
+    -- cost, and whether it can be used now (not greyed out). Empty when the menu isn't up. (Each move's damage is in
+    -- the fighter's moves array, which Lua can't read: C++'s Fighter::moves.)
+    function Game.combat.moves()
+        local out = {}
+        local menu = F.fightMenu()
+        local panel = menu and Game.get(menu, "PanelCombatAttacks")
+        if not valid(panel) then return out end
+        for i = 1, 4 do
+            local b = Game.get(panel, "mcGuiButtonAttack" .. i)
+            if valid(b) and F.shownWidget(b) then
+                out[#out + 1] = { name = str(Game.get(b, "mcGuiTextNormal.Text")),
+                                  stamina = tonumber(str(Game.get(b, "mcGuiTextStamina.Text"))),
+                                  usable = not F.shownWidget(Game.get(b, "CanvasDisabled")) }
+            end
+        end
+        return out
+    end
+    -- End the fight the game's own way: the losing side's health set to 0 and your cat's turn taken (an attack), so the
+    -- game sees the side fall and finishes the fight as it does: a win with its rewards, or a loss (your cat back at its
+    -- respawn spot, healed: the save keeps that spot). False outside a fight or when it isn't your cat's turn (the menu
+    -- isn't up): call it again then. (The game's EndCombat leaves your cat without a body: not used.)
+    function Game.combat.finish(won)
+        local f = Game.fight()
+        if not f or type(won) ~= "boolean" then return false end
+        local me = Game.combat.cat()
+        -- The attack has to be there before anyone's health is touched.
+        if F.fightSpot("PanelCombatMenu", "mcGuiButtonAttack") < 0 or not me or (me:moveCount() or 0) < 1 then return false end
+        for _, x in ipairs(won and f:enemies() or f:players()) do
+            local c = x and x:cat()
+            if c then c:setHealth(0) end
+        end
+        return Game.combat.attack(1)
+    end
+
+    -- A dilemma the fight is asking now (its popup, WBP_GuiPopupDilemma_C): { title, question, bonus, option1, option2 },
+    -- or nil. The game picks them from CombatDilemmas.csv by chance (0.15; 1 at a boss's end) and the fighters' state.
+    function F.words(button)
+        local w = str(Game.get(button, "mcGuiTextNormal.Text"))
+        if w == "" then w = str(Game.get(button, "mcGuiTextSelected.Text")) end
+        return w
+    end
+    function Game.combat.dilemma()
+        local p = F.screenUp("WBP_GuiPopupDilemma_C")
+        if not p then return nil end
+        return { title = str(Game.get(p, "mcGuiTextTitle.Text")), question = str(Game.get(p, "mcGuiTextQuestion.Text")),
+                 bonus = str(Game.get(p, "mcGuiTextBonus.Text")), option1 = F.words(Game.get(p, "mcGuiOption1")),
+                 option2 = F.words(Game.get(p, "mcGuiOption2")) }
+    end
+    -- Which of a dilemma's choices shows as selected (1, 2), or nil.
+    function F.dilemmaSelected(p)
+        for i = 1, 2 do
+            local c = Game.get(p, "mcGuiOption" .. i .. ".CanvasSelected")
+            if valid(c) and F.shownWidget(c) then return i end
+        end
+        return nil
+    end
+    function F.answerStep(p, option, assumed, tries, wait)
+        Game.after(wait, function()
+            local now = F.screenUp("WBP_GuiPopupDilemma_C")
+            if not now or now:GetAddress() ~= p:GetAddress() or tries <= 0 then return end
+            local at = F.dilemmaSelected(p) or assumed
+            if at ~= option then
+                F.send(now, option == 2 and "Button_Right" or "Button_Left")
+                return F.answerStep(p, option, option, tries - 1, 0.4)
+            end
+            F.send(now, "Button_Confirm")
+            F.answerStep(p, option, option, tries - 1, 1.5)   -- still up then: the Confirm went by
+        end)
+    end
+    -- Answer the dilemma asking now, as its own keys do: the first choice (1) or the second (2), a step at a time, until
+    -- the popup goes; the fight then ends as the game does. False when none is asking.
+    function Game.combat.answerDilemma(option)
+        option = math.tointeger(option)
+        local p = F.screenUp("WBP_GuiPopupDilemma_C")
+        if not p or (option ~= 1 and option ~= 2) then return false end
+        F.answerStep(p, option, 1, 8, 0.3)
+        return true
+    end
+
+    -- Take your cat's turns in fights for you (on) or not: on each of its turns (the menu up) the move that costs the most
+    -- stamina it can use (Lua can't read the moves' damage: C++ picks by damage), else a rest (a rest too when the game
+    -- didn't take the move: the menu still up 3 s on); until turned off. How many turns it took: autoFightTurns().
+    F.auto = { on = false, timer = nil, next = 0, turns = 0, pressed = 0 }
+    function F.bestMove()
+        local best, cost = nil, -1
+        for i, m in ipairs(Game.combat.moves()) do
+            if m.usable and (m.stamina or 0) > cost then best, cost = i, m.stamina or 0 end
+        end
+        return best
+    end
+    function Game.combat.autoFight(on)
+        F.auto.on = on ~= false
+        if not F.auto.on then
+            if F.auto.timer then Game.cancel(F.auto.timer) end
+            F.auto.timer = nil
+            return
+        end
+        F.auto.timer = F.auto.timer or Game.every(0.3, function()
+            if not F.auto.on or not Game.combat.active() then return end
+            if not F.fightMenu() then
+                F.auto.pressed = 0   -- its turn went
+                return
+            end
+            if os.clock() < F.auto.next then return end
+            local went
+            if F.auto.pressed == 0 then
+                -- the moves are read off the attack panel: open it first (Attack), then pick
+                went = F.fightPick("PanelCombatMenu", "mcGuiButtonAttack", function()
+                    Game.after(0.6, function()
+                        local m = F.bestMove()
+                        if m then
+                            F.fightPick("PanelCombatAttacks", "mcGuiButtonAttack" .. m, function()
+                                Game.after(0.6, function() F.send(F.fightMenu(), "Button_Confirm") end)
+                            end)
+                        else
+                            F.send(F.fightMenu(), "Button_Back")   -- no move it can use: back, and a rest next look
+                        end
+                    end)
+                end)
+            else
+                went = Game.combat.rest()
+                -- the attack panel still open (the move's Confirm went by): back to the main panel, the rest next look
+                if not went then F.send(F.fightMenu(), "Button_Back") end
+            end
+            if went then
+                if F.auto.pressed == 0 then F.auto.turns = F.auto.turns + 1 end
+                F.auto.pressed = F.auto.pressed + 1
+                F.auto.next = os.clock() + 3   -- the menu goes as the turn plays
+            end
+        end)
+    end
+    function Game.combat.autoFightTurns() return F.auto.turns end
+
+    -- fn(info) as a hit lands, before the game applies it: info = { target, damage, missed, stance, status } as the
+    -- damage event gives; fn returning a number makes it the hit's damage (0: none). Through a hook on the combat
+    -- director's OnRegisterDamage, which the game calls through the engine (an event: its parameters are its own).
+    -- Returns a handle for Game.unhook.
+    function Game.combat.onDamage(fn)
+        return Game.hookRaw("/Script/SwtAdventure.SwtAdventureCombatDirector:OnRegisterDamage", function(_, params)
+            local p = params[1]
+            local ok, d = pcall(function() return p:get() end)
+            if not ok or d == nil then return end
+            local info = { target = Game.get(d, "Character"), damage = Game.get(d, "Damage"), missed = Game.get(d, "bMissed"),
+                           stance = Game.get(d, "StanceMultiplier"), status = Game.get(d, "StatusCondition") }
+            local r = fn(info)
+            if type(r) == "number" then Game.set(d, "Damage", r) end
+        end)
+    end
+end
+
+
 -- ===================================================================================== the game's developer switches
 -- The cheats manager's own settings: god mode, always-full resources, attacks that always land, fast
 -- den building and more. They're the developers' switches; which ones the release build obeys varies,

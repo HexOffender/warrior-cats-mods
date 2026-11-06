@@ -98,11 +98,16 @@ count toward the main chunk's 200 while it's open, and `Game.ai`'s had two to sp
 
 ## 4. Fights
 
-**The calls.** `Game.fight`: `cat()`, `start(animal)` (behind it and pounce), `menu()`, `attack(n)`, `rest()`,
-`flee()`, `finish(won)`, `dilemma()` and `answerDilemma(n)`, `autoFight(on)`; the `damage` event able to change the
-hit (`hookRaw`, as the C++ handler does). `Fighter:setAITier` is there already.
+**The calls.** `Game.combat` (`Game.fight` is already the fight-now function): `cat()`, `start(animal)` (behind it
+and pounce), `menu()`, `attack(n)`, `rest()`, `flee()`, `moves()`, `finish(won)`, `dilemma()` and `answerDilemma(n)`,
+`autoFight(on)`; `onDamage(fn)` able to change the hit (`hookRaw`, as the C++ handler does); `Game.command(name)` for
+the game's controls (C++'s `command`; its `console` is step 7's). `Fighter:setAITier` is there already.
 
 **Proof.** In game, as `test_fights` and the fight half of `test_ai_fight`: fights won, fled and lost from Lua.
+
+**Done.** Moves are numbered 1 to 4. `autoFight` picks the move that costs the most stamina, not the most damaging:
+the moves' damage is in an array Lua can't read (step 8). A fight with a spawned rabbit (step 3's open check) was the
+rabbit's party, where the world let a fight start.
 
 ## 5. Story
 
@@ -151,8 +156,8 @@ the other addons are, opt in. Or these calls stay C++'s only.
 |---|---|---|
 | 1. The bugs C++ found | done | #153 |
 | 2. The game's AI | done | #154 |
-| 3. Animals and walking cats | done | this branch, `claude/lua-animals` |
-| 4. Fights | not started | |
+| 3. Animals and walking cats | done | #155 |
+| 4. Fights | done | this branch, `claude/lua-fights` |
 | 5. Story | not started | |
 | 6. Tables and words | not started | |
 | 7. The rest of the world | not started | |

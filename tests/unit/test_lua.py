@@ -708,6 +708,23 @@ def test_every_ai_call_is_documented():
     assert "c.DetectedCharacters:ForEach(function(e)" in lua
 
 
+def test_every_fight_call_is_documented():
+    """Game.combat's calls for playing a fight (the Lua plan's step 4) are in scripting.md's Fights section; their helpers
+    are one local table (the main chunk is near Lua's 200 locals there)."""
+    import os
+    lua = game.lua()
+    block = lua[lua.index("-- Fights from a script (the Lua plan's step 4;"):lua.index("the game's developer switches")]
+    names = re.findall(r"^    function Game\.combat\.(\w+)\(", block, re.M)
+    assert {"start", "attack", "rest", "flee", "finish", "dilemma", "answerDilemma", "autoFight", "onDamage", "moves"} <= set(names), names
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "scripting.md")
+    with open(path, encoding="utf-8") as f:
+        docs = f.read()
+    section = docs[docs.index("### Fights"):docs.index("### The game's developer switches")]
+    for name in names + ["command"]:
+        assert f".{name}(" in section, name
+    assert "    local F = {}" in block and not re.search(r"(?m)^    local (?!F = )", block)
+
+
 def test_json_decode_skips_a_bom():
     lua = game.lua()
     assert 'local BOM = "\\239\\187\\191"' in lua
