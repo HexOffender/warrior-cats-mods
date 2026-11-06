@@ -616,9 +616,9 @@ print(Game.words("STR_CAT_NAME2_PAW"))                     -- Emberpaw
 | `Game.tables.rowNames(t)`, `Game.tables.rows(t)` | Its row names, in the table's order; every row, `{ {name, row}, ... }`, each the game's own |
 | `Game.tables.row(t, rowName)` | A row by its name: the game's own row (a struct; `Game.get` and `Game.set` work on it). Nil when the table hasn't got it |
 | `Game.tables.set(t, rowName, path, value)` | Change a row's value by its path in the row (`"NumParty"`, `"itemName"`): true, or false and why |
-| `Game.tables.removeRow(t, rowName)` | Take a row out; false when there's no such row. It's gone until the game loads the table again (a restart), because a script can't put it back |
-| `Game.words(key, table)` | A key's words as the game shows them (`"STR_CAT_NAME2_PAW"` is `"Emberpaw"`), or nil for a key the table hasn't got. `table` is `SwtStrings` unless given |
-| `Game.wordKeys(prefix, table)` | The table's keys, or only those starting with `prefix` (`"STR_CAT_NAME"`), in the table's order. `SwtStrings` has 8,907, read in about 30 ms |
+| `Game.tables.removeRow(t, rowName)` | Take a row out; false when there's no such row. It's gone until the game loads the table again (a restart), because a script can't put it back. The game frees the row's memory, so don't use a row you got from `row` or `rows` before: writing to it would write into freed memory |
+| `Game.words(key, tableId)` | A key's words as the game shows them (`"STR_CAT_NAME2_PAW"` is `"Emberpaw"`), or nil for a key the table hasn't got. `tableId` is `SwtStrings` unless given |
+| `Game.wordKeys(prefix, tableId)` | The table's keys, or only those starting with `prefix` (`"STR_CAT_NAME"`), in the table's order. `SwtStrings` has 8,907, read in about 30 ms |
 
 **A plain string where UE4SS wants an FName crashes the game,** inside UE4SS where `pcall` can't catch it. The string
 table calls take the table's id as an FName, and these calls make one; UE4SS's own `RemoveRow` and `FindRow` take a

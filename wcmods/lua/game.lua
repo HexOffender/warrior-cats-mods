@@ -5350,14 +5350,19 @@ do
     local T = {}
     -- A DataTable: one given (checked), one by its path ("/Game/...DT_X.DT_X"), or one by its name ("DT_QuestObjectsInfo")
     -- among the tables in memory; nil when there's none.
+    T.byName = {}   -- the last table found by each name, looked at first (a class scan only when it's gone)
     function T.of(t)
         if type(t) == "string" then
             if t:sub(1, 1) == "/" then
                 local o = Game.object(t)
                 return o and Game.isA(o, "DataTable") and o or nil
             end
+            if Game.alive(T.byName[t]) then return T.byName[t] end
             for _, o in ipairs(Game.findAll("DataTable")) do
-                if o:GetFName():ToString() == t then return o end
+                if o:GetFName():ToString() == t then
+                    T.byName[t] = o
+                    return o
+                end
             end
             return nil
         end
@@ -5392,15 +5397,11 @@ do
         return t and T.rowNames(t) or {}
     end
     -- A row by its name: the game's own row (a struct: Game.get and Game.set work on it, and a change is what the game
-    -- reads from then on); nil when the table hasn't got it.
+    -- reads from then on); nil when the table hasn't got it (UE4SS's FindRow answers nil then: seen). Don't keep a row
+    -- past Game.tables.removeRow of it: the game frees its memory.
     function Game.tables.row(t, rowName)
         t = T.of(t)
         if not t or type(rowName) ~= "string" or rowName == "" then return nil end
-        local has = false
-        for _, n in ipairs(T.rowNames(t)) do
-            if n == rowName then has = true break end
-        end
-        if not has then return nil end   -- (asked before FindRow: it's only asked about a row there)
         local ok, row = pcall(function() return t:FindRow(rowName) end)
         return ok and row or nil
     end
@@ -5437,12 +5438,12 @@ do
     function T.libraries()
         return Game.object("/Script/Engine.Default__KismetStringTableLibrary"), Game.object("/Script/Engine.Default__KismetTextLibrary")
     end
-    -- A key's words as the game shows them ("STR_CAT_NAME2_PAW" is "Emberpaw"); nil for a key the table hasn't got. `table`
-    -- is SwtStrings unless given. (The table's id is an FName: a plain string there crashed the game, inside UE4SS.)
-    function Game.words(key, table)
+    -- A key's words as the game shows them ("STR_CAT_NAME2_PAW" is "Emberpaw"); nil for a key the table hasn't got.
+    -- `tableId` is SwtStrings unless given. (The table's id is an FName: a plain string there crashed the game, inside UE4SS.)
+    function Game.words(key, tableId)
         local stl, ttl = T.libraries()
         if type(key) ~= "string" or key == "" or not stl or not ttl then return nil end
-        local id = FName(table or T.STRINGS)
+        local id = FName(tableId or T.STRINGS)
         local okE, has = pcall(function() return stl:IsRegisteredTableEntry(id, key) end)
         if not okE or has ~= true then return nil end
         local ok, w = pcall(function() return ttl:TextFromStringTable(id, key):ToString() end)
@@ -5450,11 +5451,11 @@ do
     end
     -- The table's keys, those starting with `prefix` when one is given ("STR_CAT_NAME"), in the table's order (8,907 in
     -- SwtStrings on build 26337109, read in about 30 ms).
-    function Game.wordKeys(prefix, table)
+    function Game.wordKeys(prefix, tableId)
         local out = {}
         local stl = T.libraries()
         if not stl then return out end
-        local ok, keys = pcall(function() return stl:GetKeysFromStringTable(FName(table or T.STRINGS)) end)
+        local ok, keys = pcall(function() return stl:GetKeysFromStringTable(FName(tableId or T.STRINGS)) end)
         if not ok or type(keys) ~= "table" then return out end
         for i = 1, #keys do
             local k = keys[i]

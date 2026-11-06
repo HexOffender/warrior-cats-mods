@@ -8,8 +8,8 @@ ITEMS = "/Game/Gameplay/DataTables/Quests/DT_QuestObjectsInfo.DT_QuestObjectsInf
 def test_lua_tables_read_and_changed(agent):
     """The DataTables in memory (60 or more; the item table with its 412 rows and more, its struct and path); one by name
     and by path the same table, none for a name or path that isn't one; a fight party's row read (Default: three out-of-
-    clan cats) and its NumParty changed in place, read back by a fresh lookup and by Game.animals.kinds' own reading of
-    the table's rows, then put back."""
+    clan cats) and its NumParty changed in place, read back by a fresh lookup and by a walk over the table's own row map,
+    then put back."""
     got = agent.lua(f"""
         local list, items = Game.tables.list(), nil
         for _, t in ipairs(list) do if t.name == "DT_QuestObjectsInfo" then items = t end end
@@ -30,12 +30,16 @@ def test_lua_tables_read_and_changed(agent):
         local out = { was = was, tag = Game.tagName(row.GeneratorTag) }
         out.set = Game.tables.set("DT_Combat_Generator", "Default", "NumParty", 2)
         out.again = Game.tables.row("DT_Combat_Generator", "Default").NumParty
+        -- and through UE4SS's walk over the table's own row map, another way to its memory
+        Game.tables.get("DT_Combat_Generator"):ForEachRow(function(name, r)
+            if tostring(name) == "Default" or (type(name) ~= "string" and Game.str(name) == "Default") then out.walked = r.NumParty end
+        end)
         Game.tables.set("DT_Combat_Generator", "Default", "NumParty", was)
         out.back = Game.tables.row("DT_Combat_Generator", "Default").NumParty
         out.refused = { Game.tables.set("DT_Combat_Generator", "No such row", "NumParty", 2) }
         return out""")
     assert got["was"] == 3 and got["tag"] == "Gameplay.Combat.Generator.Fixed.Default", got
-    assert got["set"] is True and got["again"] == 2 and got["back"] == 3, got
+    assert got["set"] is True and got["again"] == 2 and got["walked"] == 2 and got["back"] == 3, got
     assert got["refused"] == [False, "no such row"], got
 
 

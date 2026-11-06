@@ -747,7 +747,9 @@ def test_every_table_call_is_documented():
     for name in names:
         assert f"Game.tables.{name}(" in section, name
     assert "Game.words(" in section and "Game.wordKeys(" in section
-    assert "FName(table or T.STRINGS)" in block and "t:RemoveRow(rowName)" in block and "RemoveRow(FName" not in block
+    assert "FName(tableId or T.STRINGS)" in block and "t:RemoveRow(rowName)" in block and "RemoveRow(FName" not in block
+    # no parameter shadows Lua's table library
+    assert not re.search(r"function Game\.(?:words|wordKeys)\([^)]*\btable\b", block)
 
 
 def test_json_decode_skips_a_bom():
