@@ -106,6 +106,10 @@ namespace t
             {
                 run_ai_fight_request();
             }
+            else if (what == "ai_spawn")
+            {
+                run_ai_spawn_request();
+            }
             else if (what == "ai_notice")
             {
                 run_ai_notice_request();

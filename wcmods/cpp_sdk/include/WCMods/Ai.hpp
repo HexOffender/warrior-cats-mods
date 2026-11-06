@@ -3,8 +3,8 @@
 // what it knows on its blackboard (BB_Enemy...). From C++: an AI's tree and what it's doing now, its blackboard's keys
 // read and written, its logic stopped and started again, the game's trees read as data, an AI sent to a place or
 // after another actor, an animal made to ignore your cat, notice it, give it up or run from it, another of the game's
-// trees run on an AI, an AI made to follow another actor, and a fight's AI: its chances by tier, an enemy's tier and
-// moves, your cat's turns taken for you (docs/plans/cpp-sdk-ai.md).
+// trees run on an AI, an AI made to follow another actor, a fight's AI: its chances by tier, an enemy's tier and
+// moves, your cat's turns taken for you; and animals put in the world as the game puts them (docs/plans/cpp-sdk-ai.md).
 // Game thread only. WCMods.hpp includes it; docs/SDK.md, "C++ mods", documents every call.
 //
 //   for (UObject* a : wcmods::fight_animals(2000)) wcmods::stop_ai(a);           // the animals near your cat stand still
@@ -1213,4 +1213,274 @@ namespace wcmods
         });
     }
     inline auto auto_fight_turns() -> int { return detail::auto_fight_state().turns; }
+
+    // ============================================================================================ putting an animal in the world
+    // The roaming animals come from the game's prey generators (BP_Enemy_Generator_C, an AWrcPreyGenerator) placed in
+    // the world. Each has a fight party's tag for each clan and rank (ThunderClanCombatTags.ApprenticeSetup...), and
+    // UpdateGenerator (or its rank set, UpdateRankGenerator) spawns the animal of the one for your cat's clan: there at
+    // once, its AI running, its PreyGenerator the generator, in its SpawnedPreys. Its fight is the party's. A party's
+    // tag is a row of DT_Combat_Generator (L"Gameplay.Combat.Generator.Fixed.Rabbit.01.L6": one rabbit at level 6),
+    // or a dynamic one the placed generators use, its level from your cat's (L"...Dynamic.WeakMice.1"). Seen in game.
+    //
+    // A generator spawned at run time spawns its animal, which roams and notices your cat, but its fight was another
+    // generator's party (one mouse at level 12, not its rabbit: seen), with every reflected member as the placed ones
+    // have them: the placed ones carry something from the level's load. So spawn_animal borrows a placed one: its
+    // party tags set to the kind, moved to the place, its own animal taken away; given back (its tags, its place, its
+    // own animal) once the mod's animal is gone. Its fight was the kind's (seen). Beside the den at the test cat's
+    // starting spot a pounce on one started no fight, out where the animals live it did (seen).
+
+    // A kind of animal: a fight party of DT_Combat_Generator, by its tag, with each fighter's character tag and level.
+    struct AnimalKind
+    {
+        std::wstring tag;                  // L"Gameplay.Combat.Generator.Fixed.Rabbit.01.L6"
+        std::vector<std::wstring> party;   // L"Gameplay.Combat.Character.Rabbit"
+        std::vector<int> levels;
+    };
+    // Every kind in the game's table (323 on build 26337109: Fixed (one to three of an animal, or out-of-clan cats, at
+    // a level), Boss, Hybrid, SandboxAttacks).
+    inline auto animal_kinds() -> std::vector<AnimalKind>
+    {
+        std::vector<AnimalKind> out;
+        if (!assert_game_thread(L"animal_kinds")) return out;
+        for (auto& [row_name, row] : table(L"DT_Combat_Generator").rows())
+        {
+            AnimalKind k;
+            k.tag = get(row, L"GeneratorTag.TagName").string();
+            for (Value& c : elements(get(row, L"CharacterParty")))
+            {
+                k.party.push_back(get(c, L"characterTag.TagName").string());
+                k.levels.push_back(static_cast<int>(get(c, L"Level").number()));
+            }
+            if (!k.tag.empty() && k.tag != L"None") out.push_back(std::move(k));
+        }
+        return out;
+    }
+    namespace detail
+    {
+        inline constexpr const wchar_t* CLAN_SETUPS[] = {L"ThunderClanCombatTags", L"ShadowClanCombatTags", L"RiverClanCombatTags", L"WindClanCombatTags"};
+        inline constexpr const wchar_t* RANK_SETUPS[] = {L"ApprenticeSetup", L"WarriorSetup", L"DeputySetup", L"LeaderSetup"};
+        // A placed generator the mod has borrowed, and what it had.
+        struct Borrowed
+        {
+            UObject* generator{};
+            UClass* generator_class{};
+            Vec3 home{};
+            std::vector<std::wstring> tags;   // its 16 party tags, clan by clan, rank by rank
+            UObject* animal{};
+            UClass* animal_class{};
+            std::wstring kind;
+            Vec3 place{};
+            bool respawn{};
+            std::optional<std::chrono::steady_clock::time_point> gone_at;   // when its animal went (to be respawned)
+        };
+        struct BorrowedAll
+        {
+            std::vector<Borrowed> all;
+            std::optional<TimerId> keeper;
+        };
+        inline auto borrowed() -> BorrowedAll&
+        {
+            static BorrowedAll s;
+            return s;
+        }
+        // A generator's animals there now (its SpawnedPreys, weak pointers).
+        inline auto preys_of(UObject* generator) -> std::vector<UObject*>
+        {
+            std::vector<UObject*> out;
+            for (Value& v : elements(get(generator, L"SpawnedPreys")))
+                if (v.object && object_staying(v.object, nullptr)) out.push_back(v.object);
+            return out;
+        }
+        inline auto set_party_tags(UObject* g, const std::vector<std::wstring>& tags) -> void
+        {
+            size_t i = 0;
+            for (const wchar_t* c : CLAN_SETUPS)
+                for (const wchar_t* r : RANK_SETUPS)
+                    if (i < tags.size()) set(g, std::wstring(c) + L"." + r + L".TagName", std::wstring_view(tags[i++]));
+        }
+        // A placed generator to borrow: of the roaming animals' (each one's PreyGenerator), one not borrowed already, a
+        // roaming fight's (CombatType Enemy, not a quest's or a boss's), the farthest from your cat (its own animal goes
+        // unseen).
+        inline auto generator_to_borrow() -> UObject*
+        {
+            auto me = location(player());
+            UObject* best = nullptr;
+            double far_off = -1;
+            for (UObject* a : fight_animals(1e9))
+            {
+                UObject* g = get(a, L"PreyGenerator").object;
+                if (!g || !is_a(g, STR("/Script/Wrc.WrcPreyGenerator")) || get(g, L"CombatType").number() != 1
+                    || get(g, L"bIsQuestEncounter").boolean() || get(g, L"bIsBossFight").boolean())
+                    continue;
+                bool taken = false;
+                for (auto& b : borrowed().all) taken = taken || b.generator == g;
+                auto at = location(g);
+                if (taken || !at || !me) continue;
+                const double d = std::hypot(at->x - me->x, at->y - me->y);
+                if (d > far_off) best = g, far_off = d;
+            }
+            return best;
+        }
+        // Whether a tag is a fight party's: a registered tag under Gameplay.Combat.Generator (a table row or a dynamic
+        // one), checked before a generator is borrowed (its own animal is taken away for it).
+        inline auto is_kind_tag(std::wstring_view tag) -> bool
+        {
+            auto r = call_reflected(object(STR("/Script/GameplayTags.Default__BlueprintGameplayTagLibrary")), STR("MatchesTag"), [&](Params& p) {
+                set(p.nth(0), L"TagName", tag);
+                set(p.nth(1), L"TagName", std::wstring_view(L"Gameplay.Combat.Generator"));
+                p.set_nth(2, Value::of(false));   // bExactMatch: a child tag matches
+            });
+            return r && r->get(L"ReturnValue").boolean();
+        }
+        inline auto take_preys(UObject* g) -> void
+        {
+            for (UObject* x : preys_of(g)) destroy(x);
+        }
+        // A borrowed generator given back: the mod's animal (if still there) gone, its tags and place as they were, and its
+        // own animal back at home.
+        inline auto give_back(const Borrowed& b) -> void
+        {
+            if (!object_staying(b.generator, b.generator_class)) return;
+            take_preys(b.generator);
+            set_party_tags(b.generator, b.tags);
+            teleport(b.generator, b.home);
+            call_reflected(b.generator, STR("UpdateGenerator"));
+        }
+        // Once a second while there are any: an animal gone (a fight won, taken by the game) gives its generator back,
+        // or, to be respawned, gets a new one from it.
+        inline auto keep_borrowed() -> void
+        {
+            auto& s = borrowed();
+            std::erase_if(s.all, [](Borrowed& b) {
+                if (!object_staying(b.generator, b.generator_class)) return true;
+                if (object_staying(b.animal, b.animal_class)) return false;
+                if (!b.respawn)
+                {
+                    give_back(b);
+                    return true;
+                }
+                // A new one 2 s after it went (seen to work; a second after, too, on a placed generator; sooner not
+                // tried).
+                const auto now_t = std::chrono::steady_clock::now();
+                if (!b.gone_at) b.gone_at = now_t;
+                if (now_t - *b.gone_at < std::chrono::seconds(2)) return false;
+                auto now = preys_of(b.generator);
+                if (now.empty())
+                {
+                    teleport(b.generator, b.place);
+                    call_reflected(b.generator, STR("UpdateGenerator"));
+                    now = preys_of(b.generator);
+                }
+                if (!now.empty())
+                {
+                    b.animal = now.front();
+                    b.animal_class = b.animal->GetClassPrivate();
+                    b.gone_at.reset();
+                }
+                return false;
+            });
+            if (s.all.empty() && s.keeper)
+            {
+                cancel(*s.keeper);
+                s.keeper.reset();
+            }
+        }
+        // As the mod is taken out: every borrowed generator given back (on the game thread only: they're the game's).
+        inline auto stop_animals() -> void
+        {
+            auto& s = borrowed();
+            if (on_game_thread_now())
+                for (auto& b : s.all) give_back(b);
+            s.all.clear();
+            s.keeper.reset();
+        }
+    } // namespace detail
+    struct AnimalOptions
+    {
+        bool respawn{false};   // a new one whenever it's gone (its generator kept), else the generator is given back
+    };
+    // Put an animal of a kind (a party tag: animal_kinds(), or a dynamic one) in the world at a place, as the game puts
+    // its own: one of the game's generators, borrowed (the farthest from your cat), spawns it there. The animal, its AI
+    // running, or nullptr (a kind the game has no party for, no generator free, or no world). Its fight is the kind's
+    // party; won, the animal's gone and the generator given back (unless `respawn`).
+    //   UObject* rabbit = wcmods::spawn_animal(L"Gameplay.Combat.Generator.Fixed.Rabbit.01.L6", *wcmods::npc_spot(400));
+    inline auto spawn_animal(std::wstring_view kind, Vec3 place, AnimalOptions options = {}) -> UObject*
+    {
+        if (!assert_game_thread(L"spawn_animal") || kind.empty() || !player() || !detail::is_kind_tag(kind)) return nullptr;
+        UObject* g = detail::generator_to_borrow();
+        auto home = location(g);
+        if (!g || !home) return nullptr;
+        detail::Borrowed b;
+        b.generator = g;
+        b.generator_class = g->GetClassPrivate();
+        b.home = *home;
+        for (const wchar_t* c : detail::CLAN_SETUPS)
+            for (const wchar_t* r : detail::RANK_SETUPS)
+                b.tags.push_back(get(g, std::wstring(c) + L"." + r + L".TagName").string());
+        b.kind = std::wstring(kind);
+        b.place = place;
+        b.respawn = options.respawn;
+        detail::take_preys(g);
+        detail::set_party_tags(g, std::vector<std::wstring>(16, b.kind));
+        teleport(g, place);
+        call_reflected(g, STR("UpdateGenerator"));
+        auto preys = detail::preys_of(g);
+        if (preys.empty())   // nothing for that kind: given back at once
+        {
+            detail::give_back(b);
+            return nullptr;
+        }
+        b.animal = preys.front();
+        b.animal_class = b.animal->GetClassPrivate();
+        auto& s = detail::borrowed();
+        s.all.push_back(b);
+        if (!s.keeper) s.keeper = every(1.0, [] { detail::guarded(L"spawn_animal", detail::keep_borrowed); });
+        return b.animal;
+    }
+    // A roaming animal near your cat: its actor, its generator, the kind spawn_animal() gave it (empty for the game's
+    // own), its model's name (L"SK_Rabbit", L"SK_Mice"...) and how far it is.
+    struct Animal
+    {
+        UObject* actor{};
+        UObject* generator{};
+        std::wstring kind;
+        std::wstring model;
+        double distance{};
+    };
+    // The roaming animals within `radius` of your cat, nearest first.
+    inline auto animals(double radius = 5000) -> std::vector<Animal>
+    {
+        std::vector<Animal> out;
+        if (!assert_game_thread(L"animals")) return out;
+        auto me = location(player());
+        for (UObject* a : fight_animals(radius))
+        {
+            if (!is_a(a, STR("/Script/Wrc.WrcRoamingEnemy"))) continue;
+            Animal x;
+            x.actor = a;
+            x.generator = get(a, L"PreyGenerator").object;
+            for (auto& b : detail::borrowed().all)
+                if (b.animal == a) x.kind = b.kind;
+            x.model = name(get(a, L"Mesh.SkeletalMesh").object);
+            if (auto at = location(a); at && me) x.distance = std::hypot(at->x - me->x, at->y - me->y);
+            out.push_back(std::move(x));
+        }
+        return out;
+    }
+    // Take an animal out of the world: one spawn_animal() put there for good (its generator given back, its own animal
+    // home again); one of the game's (its generator brings it back on UpdateGenerator). False for what isn't a roaming
+    // animal.
+    inline auto remove_animal(UObject* animal) -> bool
+    {
+        if (!assert_game_thread(L"remove_animal") || !animal || !is_a(animal, STR("/Script/Wrc.WrcRoamingEnemy"))) return false;
+        auto& all = detail::borrowed().all;
+        for (auto it = all.begin(); it != all.end(); ++it)
+            if (it->animal == animal)
+            {
+                detail::give_back(*it);
+                all.erase(it);
+                return true;
+            }
+        return destroy(animal);
+    }
 } // namespace wcmods

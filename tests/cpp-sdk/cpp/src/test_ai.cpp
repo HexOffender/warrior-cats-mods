@@ -7,6 +7,7 @@
 // own call, giving it up, running from it. Trees ("ai_trees", step 4): another of the game's trees run on an animal and
 // back, its own trees set and read back; a mod's cat following your cat about, and let go. A fight's AI ("ai_fight",
 // step 5): the chances by tier, an enemy limited to one move at the Terrible tier, your cat's turns taken by auto_fight.
+// Animals put in the world ("ai_spawn", step 6): a rabbit spawned, roaming, noticing your cat, fought and its rewards.
 #include "checks.hpp"
 
 #include <chrono>
@@ -759,5 +760,218 @@ namespace t
         auto r = std::make_shared<FightRun>();
         r->home = *location(player());
         fight_once(r);
+    }
+    // Animals put in the world ("ai_spawn", step 6), out where the animals live (by your cat's starting spot, beside a
+    // den, a pounce starts no fight): the kinds read; what isn't a kind refused; a rabbit spawned 600 units behind your
+    // cat by a borrowed generator, roaming, then pounced: a fight with it won, its rewards given, it gone and the
+    // generator given back after; another (respawn) noticing your cat, put back by its generator 2 s after it's gone
+    // (your cat away by then), then removed for good.
+    namespace
+    {
+        constexpr const wchar_t* RABBIT = L"Gameplay.Combat.Generator.Fixed.Rabbit.01.L6";
+        struct SpawnRun
+        {
+            UObject* rabbit{};
+            UClass* rabbit_class{};
+            UObject* generator{};
+            UClass* generator_class{};
+            Vec3 generator_home{};         // where the borrowed generator was, and its tag, to see them given back
+            std::wstring generator_tag_was;
+            Vec3 home{};
+            Json inventory_before;   // your cat's items before the fight
+            double xp_before{};
+            UObject* answered{};
+            std::chrono::steady_clock::time_point began;
+            TimerId timer{};
+            bool ending{};
+            UObject* second{};
+        };
+        auto spawn_finish(const std::shared_ptr<SpawnRun>& r) -> void
+        {
+            after(1.0, [r] {
+                teleport(player(), r->home);
+                done("ai_spawn");
+            });
+        }
+        auto spawn_second(const std::shared_ptr<SpawnRun>& r) -> void;
+        // After the fight: the rewards, and the rabbit gone and its generator given back.
+        auto spawn_after_fight(const std::shared_ptr<SpawnRun>& r) -> void
+        {
+            // what the fight gave: every item that went up
+            Json got = Json::object();
+            Json now = inventory();
+            if (now.is_object())
+                for (size_t i = 0; i < now.keys().size(); ++i)
+                {
+                    const std::string& tag = now.keys()[i];
+                    const double more = now.values()[i].number(0) - r->inventory_before[tag].number(0);
+                    if (more > 0) got.set(tag, Json(more));
+                }
+            value("spawn.items_got", got);
+            float* xp = Cat{player()}.xp();
+            value("spawn.xp_got", Json(xp ? *xp - r->xp_before : -1.0));
+            after(2.5, [r] {   // the keeper looks once a second
+                value("spawn.rabbit_gone", Json(!detail::object_staying(r->rabbit, r->rabbit_class)));
+                value("spawn.put_after", Json(static_cast<int>(detail::borrowed().all.size())));
+                auto at = detail::object_staying(r->generator, r->generator_class) ? location(r->generator) : std::nullopt;
+                value("spawn.generator_home", Json(at && std::hypot(at->x - r->generator_home.x, at->y - r->generator_home.y) < 5));
+                value("spawn.generator_tag_back", Json(text(get(r->generator, L"ShadowClanCombatTags.ApprenticeSetup.TagName").string())));
+                value("spawn.generator_tag_was", Json(text(r->generator_tag_was)));
+                spawn_second(r);
+            });
+        }
+        auto spawn_fight_tick(const std::shared_ptr<SpawnRun>& r) -> void
+        {
+            const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - r->began).count();
+            if (!combat_active())
+            {
+                if (r->ending)
+                {
+                    cancel(r->timer);
+                    spawn_after_fight(r);
+                }
+                else if (t > 12)
+                {
+                    cancel(r->timer);
+                    expect("spawn.fight", false, "no fight with the rabbit in 12 s");
+                    spawn_finish(r);
+                }
+                return;
+            }
+            if (!r->ending && fight_menu())
+            {
+                Json enemies = Json::array();
+                for (Fighter f : fight_enemies())
+                {
+                    Json e = Json::object();
+                    e.set("model", Json(text(name(get(f.actor(), L"Mesh.SkeletalMesh").object))));
+                    e.set("level", Json(f.level() ? *f.level() : -1));
+                    enemies.push(e);
+                }
+                value("spawn.enemies", enemies);
+                r->ending = end_fight(true);
+            }
+            if (r->ending && dilemma())   // the end's dilemma (by chance): its first answer, once per popup
+            {
+                UObject* popup = ui::screen(L"WBP_GuiPopupDilemma_C").object();
+                if (popup != r->answered && answer_dilemma(0)) r->answered = popup;
+            }
+            if (t > 90)
+            {
+                cancel(r->timer);
+                expect("spawn.time", false, "the fight took too long");
+                spawn_finish(r);
+            }
+        }
+        // Another, respawning: it notices your cat in front of it; gone, its generator puts it back; removed for good.
+        auto spawn_second(const std::shared_ptr<SpawnRun>& r) -> void
+        {
+            auto me = *location(player());
+            r->second = spawn_animal(RABBIT, Vec3{me.x + 600, me.y, me.z + 50}, {.respawn = true});
+            expect("spawn.second", r->second != nullptr);
+            if (!r->second) return spawn_finish(r);
+            if (auto s = senses(r->second); s.react_to_chase) *s.react_to_chase = 30;   // it notices, but doesn't chase
+            after(2.0, [r] {
+                stand_before(r->second, 250);
+                after(6.0, [r] {
+                    value("spawn.noticed", detection_state(r->second));
+                    calm(r->second);
+                    // your cat 2,500 units off first: the new one, not slowed as this one is, would chase your cat
+                    // into a fight (seen)
+                    auto me = *location(player());
+                    Vec3 off{me.x + 2500, me.y, me.z + 100};
+                    if (auto g = ground(off.x, off.y, off.z + 1000)) off.z = *g + 30;
+                    teleport(player(), off);
+                    destroy(r->second);   // gone, as the game takes an animal away
+                    after(4.0, [r] {
+                        UObject* again = nullptr;   // listed by animals(), its kind the mod's
+                        for (const Animal& a : animals(6000))
+                            if (a.kind == RABBIT && a.actor != r->second) again = a.actor;
+                        value("spawn.respawned", Json(again != nullptr));
+                        UObject* gen = again ? get(again, L"PreyGenerator").object : nullptr;
+                        Vec3 gen_home{};
+                        for (auto& b : detail::borrowed().all)
+                            if (b.generator == gen) gen_home = b.home;
+                        expect("spawn.remove", again && remove_animal(again));
+                        after(2.5, [r, gen, gen_home] {
+                            bool back = false;
+                            for (const Animal& a : animals(6000)) back = back || a.kind == RABBIT;
+                            value("spawn.removed_stays_gone", Json(!back));
+                            auto at = gen ? location(gen) : std::nullopt;
+                            value("spawn.removed_generator_home", Json(at && std::hypot(at->x - gen_home.x, at->y - gen_home.y) < 5));
+                            spawn_finish(r);
+                        });
+                    });
+                });
+            });
+        }
+    } // namespace
+
+    auto run_ai_spawn_request() -> void
+    {
+        phase("ai_spawn");
+        auto r = std::make_shared<SpawnRun>();
+        r->home = *location(player());
+        // ----- the kinds
+        auto kinds = animal_kinds();
+        value("spawn.kinds", Json(static_cast<int>(kinds.size())));
+        for (const AnimalKind& k : kinds)
+            if (k.tag == RABBIT)
+            {
+                Json party = Json::array();
+                for (size_t i = 0; i < k.party.size(); ++i) party.push(Json(text(k.party[i]) + "@" + std::to_string(k.levels[i])));
+                value("spawn.rabbit_kind", party);
+            }
+        // ----- your cat out where the animals live
+        if (auto x = fight_animals(6000); !x.empty())
+            if (auto there = location(x.front()))
+            {
+                Vec3 spot{there->x + 300, there->y, there->z + 50};
+                if (auto g = ground(spot.x, spot.y, spot.z + 500)) spot.z = *g + 30;
+                teleport(player(), spot);
+            }
+        // ----- refused
+        auto me = *location(player());
+        const size_t borrowed_before = detail::borrowed().all.size();
+        expect("spawn.refused", !spawn_animal(L"", me) && !spawn_animal(L"Gameplay.Combat.Generator.NoSuchKind", me)
+                                    && detail::borrowed().all.size() == borrowed_before && !remove_animal(nullptr) && !remove_animal(player()));
+        // ----- a rabbit 600 units behind your cat
+        r->rabbit = spawn_animal(RABBIT, Vec3{me.x - 600, me.y, me.z + 50});
+        if (!r->rabbit)
+        {
+            expect("spawn.rabbit", false, "no rabbit");
+            return spawn_finish(r);
+        }
+        r->rabbit_class = r->rabbit->GetClassPrivate();
+        r->generator = get(r->rabbit, L"PreyGenerator").object;
+        r->generator_class = r->generator ? r->generator->GetClassPrivate() : nullptr;
+        for (auto& b : detail::borrowed().all)
+            if (b.animal == r->rabbit)
+            {
+                r->generator_home = b.home;
+                r->generator_tag_was = b.tags.size() > 4 ? b.tags[4] : std::wstring();   // ShadowClan's apprentice
+            }
+        value("spawn.model", Json(text(name(get(r->rabbit, L"Mesh.SkeletalMesh").object))));
+        value("spawn.generator_class", Json(text(name(r->generator ? r->generator->GetClassPrivate() : nullptr))));
+        value("spawn.ai_running", Json(ai_running(r->rabbit)));
+        bool listed = false;
+        for (const Animal& a : animals(2000))
+            if (a.actor == r->rabbit) listed = a.kind == RABBIT && a.generator == r->generator && a.model == L"SK_Rabbit";
+        value("spawn.listed", Json(listed));
+        after(2.0, [r] {
+            // ----- roaming: its tree running, something to do
+            value("spawn.task", Json(text(ai_task(r->rabbit).name)));
+            value("spawn.ai_running_2s", Json(ai_running(r->rabbit)));
+            // ----- a fight with it, won: its rewards
+            Json rw = Json::array();
+            for (auto& [k, v] : map_entries(r->rabbit, L"rewards")) rw.push(Json(text(get(k, L"TagName").string())));
+            value("spawn.rewards", rw);   // its reward table's keys, by rank (not items)
+            r->inventory_before = inventory();
+            float* xp = Cat{player()}.xp();
+            r->xp_before = xp ? *xp : 0;
+            expect("spawn.start_fight", start_fight(r->rabbit));
+            r->began = std::chrono::steady_clock::now();
+            r->timer = every(0.1, [r] { detail::guarded(L"ai_spawn test", [&] { spawn_fight_tick(r); }); });
+        });
     }
 } // namespace t
