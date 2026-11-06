@@ -787,6 +787,29 @@ def test_every_world_part_two_call_is_documented():
     assert "    local X = {}" in block and not re.search(r"(?m)^    local (?!X = )", block)
 
 
+def test_the_cpp_only_calls_are_listed():
+    """The Lua plan's step 8, decided: what Lua can't reach stays C++'s, and scripting.md says which and why. Each listed
+    C++ call is one Ai, Story, Map, Looks, Dens, Tables, Words or World.hpp has."""
+    import os
+    root = os.path.join(os.path.dirname(__file__), "..", "..")
+    with open(os.path.join(root, "docs", "scripting.md"), encoding="utf-8") as f:
+        docs = f.read()
+    section = docs[docs.index("### What only C++ can do"):docs.index("### The game's developer switches")]
+    headers = ""
+    folder = os.path.join(root, "wcmods", "cpp_sdk", "include", "WCMods")
+    for name in os.listdir(folder):
+        with open(os.path.join(folder, name), encoding="utf-8") as f:
+            headers += f.read()
+    for call in ("add_item", "remove_item", "set_look", "keep_look", "wear", "take_off", "play_scene", "unlock_place",
+                 "map_travel", "place_decoration", "build_decoration", "set_tuning", "set_words", "restore_words",
+                 "add_row", "ai_tree", "ai_task", "ai_chances", "set_ai_chance", "limit_moves", "sky_values",
+                 "set_sky_value", "replace_sound", "bond"):
+        assert f"`{call}" in section or f", `{call}`" in section or f"{call}`" in section, call
+        assert f"auto {call}(" in headers, call
+    with open(os.path.join(root, "docs", "plans", "lua-sdk-alignment.md"), encoding="utf-8") as f:
+        assert "Decided (2026-11-06): they stay C++'s only." in f.read()
+
+
 def test_json_decode_skips_a_bom():
     lua = game.lua()
     assert 'local BOM = "\\239\\187\\191"' in lua

@@ -166,6 +166,9 @@ way, and `Game.*` would use it when it's there and say so when it isn't.
 Studio and UE4SS's source. It could be an addon built from its own repository and downloaded from its release, as
 the other addons are, opt in. Or these calls stay C++'s only.
 
+**Decided (2026-11-06): they stay C++'s only.** No helper is built. scripting.md's "What only C++ can do" lists each
+one with its C++ call and why Lua can't reach it, and a mod that needs one is written in C++.
+
 ## Status
 
 | Step | State | Pull request |
@@ -177,4 +180,4 @@ the other addons are, opt in. Or these calls stay C++'s only.
 | 5. Story | done | #157 |
 | 6. Tables and words | done | #158 |
 | 7. The rest of the world | done | #159 (part one), #160 (part two) |
-| 8. Only through C++ | to decide | |
+| 8. Only through C++ | decided: C++ only, documented | this branch, `claude/lua-step8` |
