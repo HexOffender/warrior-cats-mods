@@ -4856,10 +4856,21 @@ do
     end
     -- One of the game's screens up now by its class ("WBP_GuiPopupCombat_C"): on the viewport and drawn (a screen the
     -- game closed stays on the viewport a while, hidden). A class's few widgets, not a scan of every one.
+    -- The last one found is looked at first (autoFight looks three times a second): a class scan only when it's gone.
+    F.screens = {}
     function F.screenUp(cls)
+        local function up(w)
+            if not Game.alive(w) then return false end
+            local ok, yes = pcall(function() return w:IsInViewport() and w:IsVisible() end)
+            return ok and yes == true
+        end
+        if up(F.screens[cls]) then return F.screens[cls] end
+        F.screens[cls] = nil
         for _, w in ipairs(Game.findAll(cls)) do
-            local ok, up = pcall(function() return w:IsInViewport() and w:IsVisible() end)
-            if ok and up and Game.alive(w) then return w end
+            if up(w) then
+                F.screens[cls] = w
+                return w
+            end
         end
         return nil
     end
@@ -5004,11 +5015,11 @@ do
     -- isn't up): call it again then. (The game's EndCombat leaves your cat without a body: not used.)
     function Game.combat.finish(won)
         local f = Game.fight()
-        if not f then return false end
+        if not f or type(won) ~= "boolean" then return false end
         local me = Game.combat.cat()
         -- The attack has to be there before anyone's health is touched.
         if F.fightSpot("PanelCombatMenu", "mcGuiButtonAttack") < 0 or not me or (me:moveCount() or 0) < 1 then return false end
-        for _, x in ipairs(won ~= false and f:enemies() or f:players()) do
+        for _, x in ipairs(won and f:enemies() or f:players()) do
             local c = x and x:cat()
             if c then c:setHealth(0) end
         end
@@ -5102,6 +5113,8 @@ do
                 end)
             else
                 went = Game.combat.rest()
+                -- the attack panel still open (the move's Confirm went by): back to the main panel, the rest next look
+                if not went then F.send(F.fightMenu(), "Button_Back") end
             end
             if went then
                 if F.auto.pressed == 0 then F.auto.turns = F.auto.turns + 1 end

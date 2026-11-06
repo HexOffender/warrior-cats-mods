@@ -187,22 +187,28 @@ def test_lua_fight_fled(agent):
 
 def test_lua_auto_fight_with_deadly_hits(agent):
     """Game.combat.onDamage making every hit on the enemy deadly (its health's worth and more) and autoFight playing
-    your cat's turns: the moves read off the attack panel, a turn taken, the fight won, the hits seen."""
+    your cat's turns: the moves read off the attack panel, a turn taken, the fight won by the first hit that landed on
+    the enemy (the change took: one hit's own damage doesn't fell it)."""
     try:
         agent.lua("""
             WCMODS_HITS = {}
             WCMODS_DAMAGE = Game.combat.onDamage(function(info)
-                WCMODS_HITS[#WCMODS_HITS + 1] = { damage = info.damage, missed = info.missed }
                 local mine = Game.combat.cat()
                 local target = info.target
-                if mine and target and mine:actor() and target:GetAddress() ~= mine:actor():GetAddress() then return 9999 end
+                local onEnemy = mine and target and mine:actor() and target:GetAddress() ~= mine:actor():GetAddress()
+                WCMODS_HITS[#WCMODS_HITS + 1] = { damage = info.damage, missed = info.missed, enemy = onEnemy == true }
+                if onEnemy then return 9999 end
             end)
             return true""")
         _fight(agent)
         agent.lua("Game.combat.autoFight(true) return true")
         _until(agent, "not Game.combat.active()", 45, "autoFight to win the fight")
-        got = agent.lua("return { turns = Game.combat.autoFightTurns(), hits = #WCMODS_HITS }")
-        assert got["turns"] >= 1 and got["hits"] >= 1, got
+        got = agent.lua("""local landed = 0
+            for _, h in ipairs(WCMODS_HITS) do if h.enemy and not h.missed then landed = landed + 1 end end
+            return { turns = Game.combat.autoFightTurns(), hits = #WCMODS_HITS, landed = landed }""")
+        # one hit on the enemy that landed ended the fight: the 9,999 written over its damage took (a hit's own damage,
+        # about 20 to 40, doesn't fell even a level 2 animal at once)
+        assert got["turns"] >= 1 and got["landed"] == 1, got
     finally:
         agent.lua("Game.combat.autoFight(false) if WCMODS_DAMAGE then Game.unhook(WCMODS_DAMAGE) WCMODS_DAMAGE = nil end return true")
         _out_of_fights(agent)
