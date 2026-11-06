@@ -47,6 +47,7 @@ namespace t
     auto run_talks_request() -> void;    // Talk.hpp: conversations, in the game ("talks")
     auto run_ai_request() -> void;         // Ai.hpp: the game's AI, in the game ("ai")
     auto run_ai_move_request() -> void;    // Ai.hpp: moving an AI ("ai_move")
+    auto run_ai_trees_request() -> void;   // Ai.hpp: swapping trees, following ("ai_trees")
     auto run_ai_notice_request() -> void;  // Ai.hpp: noticing your cat ("ai_notice")
     auto run_bond_answers_request() -> void;   // Bonds.hpp and Talk.hpp: a story talk and its answers' bonds ("bond_answers")
     auto run_bonds_request() -> void;    // Bonds.hpp: your cat's bonds, in the game ("bonds")

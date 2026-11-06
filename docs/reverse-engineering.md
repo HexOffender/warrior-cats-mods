@@ -686,6 +686,14 @@ in `NavDataSet`: `RecastNavMeshEnemy` (agent radius 25) and `RecastNavMeshPlayer
 animal as its context gave no valid path even to its own place, so isn't used. A mouse sent 600 units away from your
 cat stood after 490 every time: something that way stops the mesh (an 800-unit move toward your cat went 816).
 
+**Swapping trees** (step 4): the controller's reflected `RunBehaviorTree` runs another tree at once (the boss's roaming
+`BT_BossEnemy`, Idle and Grazing, on a mouse; `BT_Escort` on a mod's cat, its blackboard switched to `BB_Escort`'s
+`SelfActor`, `bShouldAllowMovement`, `PointOfInterest`). `ASwtAdventureAIController`'s `BehaviorTree` and
+`CombatBehaviorTree` are reflected and writable. `BT_BossEnemy` isn't a fight tree: the only fight tree is
+`BT_CombatEnemy` (with `BT_AttackEnemy` under it). `BT_Escort` on a mod's cat (the walking controller), its keys set,
+stood in its `BTTask_GoToLocation` ("Move To Location") without moving: the task only drives the escort controller, it
+seems. Following is a `move_to` after the target instead.
+
 ### Bonds
 
 Worked out on 2026-11-04 (build 26337109) from the exe and in game, for the C++ SDK's `Bonds.hpp`; the addresses are
