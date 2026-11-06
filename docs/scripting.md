@@ -359,6 +359,53 @@ wcmods-examples does: a name over the cat's head, and lines to say on a key.
 [moonlit-path](https://github.com/HexOffender/wcmods-examples/tree/main/moonlit-path) builds a
 questline on one.
 
+### The game's AI (`Game.ai`)
+
+A roaming animal, or a clan cat walking its path, has an AI controller that runs one of the game's behaviour trees:
+`BT_Enemy` for an animal, `BT_CombatEnemy` in its fights, `BT_WalkingNPC` for a walking cat. The tree keeps what it
+knows on its blackboard (`BB_Enemy`'s `Detected`, `Target`, `ChaseReactionTime`, ...). `Game.ai` reads and steers it
+as C++'s `Ai.hpp` does (SDK.md); what's behind it is in `reverse-engineering.md`, "The game's AI".
+
+An AI is given as its actor, a `Game.cat(...)` or a mod's cat (`Game.npcs`). The calls on an AI answer false or nil
+for your cat, which has no AI (`face` turns any actor). What a script changes stays after the script ends (UE4SS
+restarting the mods, say): an AI it stopped, an animal it made ignore your cat. Put them back first. What an AI is running at this moment (its tree and task) is C++'s only: the brain's stack of
+running trees is an array Lua can't read.
+
+```lua
+for _, a in ipairs(Game.animals.near(2000)) do Game.ai.stop(a.actor) end       -- the animals near stand still
+Game.ai.moveTo(mouse, { X = x, Y = y, Z = z }, { speed = 200, restartAfter = true })
+Game.ai.ignorePlayer(mouse)                                                    -- it no longer notices your cat
+Game.ai.follow(npc, Game.player())                                             -- a cat at your cat's heels
+```
+
+| Call | Gives or does |
+|---|---|
+| `Game.animals.near(radius, from)` | The roaming animals within `radius` cm (5000) of your cat, or of `from` (a place or an actor), nearest first: `{ {actor, distance}, ... }` |
+| `Game.ai.controller(a)`, `Game.ai.brain(a)` | Its AI controller (`AIC_Wrc_Enemy_Controller_C`, a walking cat's `AIC_Wrc_WalkingNPC_Controller_C`) and the behaviour tree component that runs its tree; nil without an AI |
+| `Game.ai.running(a)`, `Game.ai.asleep(a)` | Whether its logic runs, and whether it's asleep: the game pauses a roaming animal's while your cat is about 2,000 units from it, and wakes it as your cat comes back |
+| `Game.ai.stop(a)`, `Game.ai.restart(a)` | Stop its logic: it stands where it is, through the game's own sleeping and waking, and its blackboard keeps what it knew. Start it again from its tree's start. False without an AI. A script's stopped AIs stay stopped after the script ends, so start them again first |
+| `Game.ai.keys(a)` | Its blackboard's keys in order, `{ {name, type}, ... }`. `type` is `"Bool"`, `"Int"`, `"Float"`, `"Vector"`, `"Object"`, `"Enum"`, `"Name"`, `"String"`, `"Rotator"` or `"Class"`. `BB_Enemy` has 14 |
+| `Game.ai.get(a, key)` | A key's value, by its type: a boolean, a number, an object, a string, a place (`{X, Y, Z}`; nil while the key isn't set) or a rotator. Nil without the key |
+| `Game.ai.set(a, key, value)`, `Game.ai.clear(a, key)` | Write a key by its type: true, or false and why when the AI hasn't the key or the value doesn't fit it (`"Detected is a Bool key"`). The tree sees it at once. A number goes into a Float, or a whole one into an Int; a place into a Vector; an actor or a `Game.cat` into an Object; nil clears the key |
+| `Game.ai.TREES`, `Game.ai.tree(name)` | The game's eight trees by name (`"BT_Enemy"`, `"BT_ChaseOff_Enemy"`, `"BT_CombatEnemy"`, `"BT_BossEnemy"`, `"BT_AttackEnemy"`, `"BT_Escort"`, `"BT_Mentor"`, `"BT_WalkingNPC"`), and one loaded |
+| `Game.ai.treeNodes(tree)`, `Game.ai.treeBlackboard(tree)` | A tree (or its name) as data: its nodes from the root, each after the decorators that guard it, `{ {depth, role, kind, name, settings}, ... }`. `role` is `"composite"`, `"task"`, `"decorator"` or `"service"`; `kind` is its class (`"BTTask_EnemyGrazing"`); `settings` are its own members as text (`{ {name = "BlackboardKey", value = "Detected"}, ... }`). The blackboard is the tree's asset's name (`"BB_Enemy"`). The same as C++'s, node for node (tested). An enum setting of a class outside the game's eight trees reads as its number, because UE4SS's Lua can't ask a member for its enum |
+| `Game.ai.trees(a)`, `Game.ai.setTrees(a, roaming, fight)` | The trees its controller starts on its own: `{roaming, fight}` (`BT_Enemy`, `BT_CombatEnemy`). Setting them leaves the tree running now alone (that's `runTree`). A fight's enemy is its own actor, so set its `fight` tree at `combatStart`; only `BT_CombatEnemy` works there (seen from C++) |
+| `Game.ai.runTree(a, tree)` | Run another tree on it now, from its start (its controller's `RunBehaviorTree`; a tree on another blackboard starts with its keys clear). A move under way ends. The game starts its own trees again on its own occasions (a fight, its end) |
+| `Game.ai.navPoint(place, a)` | The nearest point on the nav mesh to a place: the mesh `a` walks on (the animals' and the cats' differ), or either. Nil off the meshes |
+| `Game.ai.moveTo(a, to, opts)` | Send it to a place or after an actor (it follows a moving one until it's within the radius), along the nav mesh through its controller, its logic stopped first. `opts`: `speed` (cm/s; a roaming animal's own is a slow 70), `radius` (50), `avoid` (true; false walks a straight line), `restartAfter` (its logic started again when the move ends, however it ends; otherwise it stands there stopped), `done(result)`: `"arrived"`, `"blocked"` or `"cancelled"`. True, or false and why. The walk is the mod cats' own (`npc:walkTo`'s): stalls and steps aside alike |
+| `Game.ai.stopMoving(a)`, `Game.ai.moving(a)` | End a move (done told `"cancelled"`) and stand it where it is (a move of its tree's own too); whether it's moving, by `moveTo` or its tree |
+| `Game.ai.face(a, at)` | Turn it to a place or an actor now |
+| `Game.ai.detectionFlags(a)`, `Game.ai.setDetectionFlags(a, n)` | Its detection mask: 1 Vision, 2 Sound, 4 Cone, 8 InPursue (3 on a roaming animal); nil without a detection component (a walking cat). The roaming tree's services pass flags of their own, so 0 alone doesn't stop it noticing your cat: `ignorePlayer` does |
+| `Game.ai.calm(a)`, `Game.ai.noticePlayer(a)` | Make it lose your cat as the game's losing does (it walks back where it started, then roams), or notice it now as the game's noticing does (it gives chase after its reaction time, its senses' `ReactToChase`, even while it ignores your cat). Calmed, it doesn't notice your cat again on its own while your cat stays near: its detection still tracks your cat, and only a cat it starts tracking is noticed (seen) |
+| `Game.ai.trackingPlayer(a)` | Whether its detection tracks your cat: noticed and not lost (its detection component's set; the blackboard's `Detected` is the tree's, and they catch up with each other within a moment) |
+| `Game.ai.ignorePlayer(a, ignore)`, `Game.ai.ignoringPlayer(a)` | Make it ignore your cat, or notice it again as it did (`ignore` false): its detection sphere stops overlapping cats, its mask goes to 0 and it gives your cat up. It ignores every cat so, and a pounce on it starts no fight (seen from C++) |
+| `Game.ai.ignorePlayerEverywhere(on)` | A stealth mode: every animal within 5,000 units of your cat ignores it (a look once a second); off, each it changed is as it was, but not one the script made to ignore your cat itself |
+| `Game.ai.flee(a, from, distance, opts)` | Make it run `distance` cm (800) away from a place or an actor, at its chase speed, given back to its tree at the end (a `moveTo`; `opts` as there). A rock, a river or the mesh's edge that way stops it short |
+| `Game.ai.follow(a, target, opts)`, `Game.ai.stopFollowing(a, putBack)`, `Game.ai.following(a)` | Make it follow an actor about: whenever it's farther than `opts.distance` (150), it goes after it at `opts.speed` (its own), looking every `opts.every` seconds (0.25). Until `stopFollowing` (its tree runs again if it ran before, unless `putBack` is false), it or the target gone, or its tree run again. The game's own escort tree doesn't do this (seen from C++) |
+
+**An animal walked into your cat catches it** as a chase does, and a fight starts: a mouse moved to 90 units from it
+started one. Keep moves and following a couple of metres off, or make the animal ignore your cat first.
+
 ### Items
 
 | Call | Gives or does |

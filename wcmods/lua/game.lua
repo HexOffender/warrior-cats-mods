@@ -2884,6 +2884,779 @@ function Npc:remove()
     self.actor = nil
 end
 
+-- ===================================================================================== the game's AI
+-- A roaming animal or a clan cat walking its path has an AI controller running one of the game's behaviour trees
+-- (BT_Enemy for an animal, BT_CombatEnemy in its fights, BT_WalkingNPC for a walking cat), which keeps what it knows on
+-- its blackboard (BB_Enemy). Game.ai reads and steers it, as C++'s Ai.hpp does (docs/scripting.md, "The game's AI";
+-- what's behind it: docs/reverse-engineering.md, "The game's AI"). An AI is given as its actor, a Game.cat(...) or a
+-- mod's cat (Game.npcs). What an AI runs at this moment (its running tree and task) is C++'s only: the brain's
+-- InstanceStack is an array Lua can't read.
+--   for _, a in ipairs(Game.animals.near(2000)) do Game.ai.stop(a.actor) end      -- the animals near stand still
+--   Game.ai.moveTo(mouse, { X = x, Y = y, Z = z }, { speed = 200, restartAfter = true })
+Game.ai = { TREES = { "BT_Enemy", "BT_ChaseOff_Enemy", "BT_CombatEnemy", "BT_BossEnemy", "BT_AttackEnemy", "BT_Escort",
+                      "BT_Mentor", "BT_WalkingNPC" } }
+Game.animals = Game.animals or {}
+do
+    local AI = Game.ai
+    -- An actor from an actor, a Game.cat(...) or a mod's cat.
+    local function actorOf(x)
+        if type(x) == "table" then
+            if getmetatable(x) == Cat then return x.actor end
+            if x.actorOrNil then return x:actorOrNil() end
+            return nil
+        end
+        return valid(x) and x or nil
+    end
+    local function same(a, b)
+        if a == nil or b == nil then return false end
+        if a == b then return true end
+        local ok, r = pcall(function() return a:GetAddress() == b:GetAddress() end)
+        return ok and r == true
+    end
+    local function where(a)
+        local ok, l = pcall(function() return a:K2_GetActorLocation() end)
+        if ok and l then return { X = l.X, Y = l.Y, Z = l.Z } end
+        return nil
+    end
+    local function place(p)
+        if type(p) ~= "table" then return nil end
+        local x, y, z = p.X or p[1], p.Y or p[2], p.Z or p[3]
+        if type(x) ~= "number" or type(y) ~= "number" or type(z) ~= "number" then return nil end
+        return { X = x, Y = y, Z = z }
+    end
+    -- A place, or an actor (an actor, a Game.cat(...), a mod's cat) and where it is.
+    local function placeOrActor(p)
+        local at = place(p)
+        if at and getmetatable(p) ~= Cat and not (type(p) == "table" and p.actorOrNil) then return at, nil end
+        local a = actorOf(p)
+        if not a then return nil, nil end
+        return where(a), a
+    end
+    local function flat(a, b) return math.sqrt((a.X - b.X) ^ 2 + (a.Y - b.Y) ^ 2) end
+
+    -- ------------------------------------------------------------------------------- an AI and its tree
+    -- Its AI controller (a roaming animal's AIC_Wrc_Enemy_Controller_C, a walking cat's
+    -- AIC_Wrc_WalkingNPC_Controller_C), or nil (your cat, a cat standing in camp).
+    function AI.controller(actor)
+        actor = actorOf(actor)
+        local c = actor and Game.get(actor, "Controller")
+        return valid(c) and Game.isA(c, "AIController") and c or nil
+    end
+    -- Its brain, the behaviour tree component that runs its tree; nil without an AI.
+    function AI.brain(actor)
+        local b = Game.get(AI.controller(actor), "BrainComponent")
+        return valid(b) and b or nil
+    end
+    -- Whether its logic runs, and whether it's asleep (the game pauses a roaming animal's while your cat is about
+    -- 2,000 units from it, and wakes it as your cat comes back). False without an AI.
+    function AI.running(actor)
+        local b = AI.brain(actor)
+        local ok, r = pcall(function() return b:IsRunning() end)
+        return b ~= nil and ok and r == true
+    end
+    function AI.asleep(actor)
+        local b = AI.brain(actor)
+        local ok, r = pcall(function() return b:IsPaused() end)
+        return b ~= nil and ok and r == true
+    end
+    -- Stop its logic: its tree stops and it stands where it is, through the game's own sleeping and waking, until
+    -- Game.ai.restart. Its blackboard keeps what it knew. False without an AI. (A script's stopped AIs stay stopped
+    -- after the script ends: start them again first.)
+    function AI.stop(actor)
+        local b = AI.brain(actor)
+        return b ~= nil and (pcall(function() b:StopLogic("wcmods") end))
+    end
+    -- Start its logic again from its tree's start, stopped or not. False without an AI.
+    function AI.restart(actor)
+        local b = AI.brain(actor)
+        return b ~= nil and (pcall(function() b:RestartLogic() end))
+    end
+
+    -- ------------------------------------------------------------------------------- its blackboard
+    local function board(actor)
+        local b = Game.get(AI.controller(actor), "Blackboard")
+        return valid(b) and b or nil
+    end
+    -- Its blackboard's keys, { {name, type}, ... } in the asset's order (then its parents'): BB_Enemy's SelfActor,
+    -- Detected, StartLocation, Target, ... type is "Bool", "Int", "Float", "Vector", "Object", "Enum", "Name",
+    -- "String", "Rotator" or "Class". Empty without an AI.
+    local readKeys
+    local keyLists = {}   -- blackboard asset address -> { list, types }: an asset's keys don't change
+    local function keyList(actor)
+        local b = board(actor)
+        local asset = b and Game.get(b, "BlackboardAsset")
+        if not valid(asset) then return nil end
+        local ok, at = pcall(function() return asset:GetAddress() end)
+        local kept = ok and keyLists[at]
+        if kept and kept.asset == asset then return kept end
+        local list, types = readKeys(asset), {}
+        for _, k in ipairs(list) do
+            if types[k.name] == nil then types[k.name] = k.type end
+        end
+        kept = { asset = asset, list = list, types = types }
+        if ok then keyLists[at] = kept end
+        return kept
+    end
+    function AI.keys(actor)
+        local out = {}
+        local kept = keyList(actor)
+        for i, k in ipairs(kept and kept.list or {}) do out[i] = { name = k.name, type = k.type } end
+        return out
+    end
+    -- (an asset's own keys, then its parents')
+    function readKeys(asset)
+        local out = {}
+        local guard = 0
+        while valid(asset) and guard < 8 do
+            guard = guard + 1
+            for _, k in ipairs(Game.list(Game.get(asset, "Keys"))) do
+                local name = str(Game.get(k, "EntryName"))
+                local t = Game.get(k, "KeyType")
+                local kind = valid(t) and (Game.className(t) or ""):gsub("^BlackboardKeyType_", "") or ""
+                if name ~= "" and name ~= "None" then out[#out + 1] = { name = name, type = kind } end
+            end
+            asset = Game.get(asset, "Parent")
+        end
+        return out
+    end
+    local function keyType(actor, key)
+        local kept = keyList(actor)
+        return kept and kept.types[key] or nil
+    end
+    local GETTERS = { Bool = "GetValueAsBool", Int = "GetValueAsInt", Float = "GetValueAsFloat", Object = "GetValueAsObject",
+                      Name = "GetValueAsName", String = "GetValueAsString", Enum = "GetValueAsEnum", Class = "GetValueAsClass" }
+    -- A key's value, by its type: a boolean, a number, an object, a string, a place ({X, Y, Z}; nil while the key isn't
+    -- set) or a rotator ({Pitch, Yaw, Roll}). nil without the key.
+    function AI.get(actor, key)
+        local b, t = board(actor), keyType(actor, key)
+        if not b or not t then return nil end
+        local k = FName(key)
+        if t == "Vector" then
+            local okS, set = pcall(function() return b:IsVectorValueSet(k) end)
+            if not (okS and set) then return nil end
+            local ok, v = pcall(function() return b:GetValueAsVector(k) end)
+            return ok and v and { X = v.X, Y = v.Y, Z = v.Z } or nil
+        end
+        if t == "Rotator" then
+            local ok, v = pcall(function() return b:GetValueAsRotator(k) end)
+            return ok and v and { Pitch = v.Pitch, Yaw = v.Yaw, Roll = v.Roll } or nil
+        end
+        if not GETTERS[t] then return nil end
+        local ok, v = pcall(function() return b[GETTERS[t]](b, k) end)
+        if not ok then return nil end
+        if t == "Object" or t == "Class" then return valid(v) and v or nil end
+        if t == "Name" or t == "String" then return str(v) end
+        return v
+    end
+    -- Write a key, by its type: true, or false and why (nothing written) when the AI hasn't the key or the value
+    -- doesn't fit it. A place for a Vector key, an actor (or a Game.cat) for an Object key, a number for an Int (whole),
+    -- Float or Enum key, a string for a Name or String key; nil clears the key (Game.ai.clear). The tree sees it at
+    -- once; what the game's own code writes back over a key: docs/reverse-engineering.md, "The game's AI".
+    function AI.set(actor, key, value)
+        if value == nil then return AI.clear(actor, key) end
+        local b, t = board(actor), keyType(actor, key)
+        if not b then return false, "no AI" end
+        if not t then return false, "no key called " .. tostring(key) end
+        local k = FName(key)
+        local call, arg
+        if t == "Bool" and type(value) == "boolean" then call, arg = "SetValueAsBool", value
+        elseif (t == "Int" or t == "Enum") and math.tointeger(value) then call, arg = t == "Int" and "SetValueAsInt" or "SetValueAsEnum", math.tointeger(value)
+        elseif t == "Float" and type(value) == "number" then call, arg = "SetValueAsFloat", value
+        elseif t == "Vector" and place(value) then call, arg = "SetValueAsVector", place(value)
+        elseif t == "Object" and actorOf(value) then call, arg = "SetValueAsObject", actorOf(value)
+        elseif t == "Name" and type(value) == "string" then call, arg = "SetValueAsName", FName(value)
+        elseif t == "String" and type(value) == "string" then call, arg = "SetValueAsString", value
+        else return false, string.format("%s is a %s key", key, t) end
+        local ok, err = pcall(function() b[call](b, k, arg) end)
+        return ok, (not ok) and tostring(err) or nil
+    end
+    -- Clear a key (a Vector key reads as not set again, an Object key as nil, a Bool as false). False without the key.
+    function AI.clear(actor, key)
+        local b = board(actor)
+        if not b or not keyType(actor, key) then return false end
+        return (pcall(function() b:ClearValue(FName(key)) end))
+    end
+
+    -- ------------------------------------------------------------------------------- the game's trees
+    -- One of the game's trees by its name ("BT_Enemy", Game.ai.TREES), loaded; nil for another name.
+    function AI.tree(name)
+        for _, t in ipairs(AI.TREES) do
+            if t == name then return (Game.load("/Game/Gameplay/Blueprints/AI/" .. t .. "." .. t)) end
+        end
+        return nil
+    end
+    local function treeOf(t)
+        if type(t) == "string" then return AI.tree(t) end
+        return valid(t) and Game.isA(t, "BehaviorTree") and t or nil
+    end
+    local NODE_SKIP = {}
+    for _, n in ipairs({ "NodeName", "TreeAsset", "ParentNode", "ExecutionIndex", "MemoryOffset", "TreeDepth", "bIsInstanced",
+                         "bIsInjected", "bCreateNodeInstance", "bOwnsGameplayTasks", "Children", "Services", "bApplyDecoratorScope",
+                         "bIgnoreRestartSelf", "CachedDescription", "UberGraphFrame", "AIOwner", "ActorOwner", "bShowPropertyDetails",
+                         "bCheckConditionOnlyBlackBoardChanges", "bIsObservingBB", "bNotifyActivation", "bNotifyDeactivation",
+                         "bNotifyProcessed", "bNotifyTick", "bNotifyBecomeRelevant", "bNotifyCeaseRelevant", "bNotifyOnSearch",
+                         "bShowEventDetails", "bTickIntervals", "CustomDescription", "PropertyData", "PropertyBlackboardKeys" }) do
+        NODE_SKIP[n] = true
+    end
+    local SIMPLE = { BoolProperty = true, FloatProperty = true, DoubleProperty = true, NameProperty = true, StrProperty = true,
+                     ByteProperty = true, EnumProperty = true, IntProperty = true, Int8Property = true, Int16Property = true,
+                     Int64Property = true, UInt16Property = true, UInt32Property = true, UInt64Property = true }
+    -- The enums of the settings in the game's trees, by the class that has the setting: UE4SS's Lua can't ask a byte
+    -- member for its enum (the class index, vanilla/sdk/api-index.txt, says which it is), so another's reads as its number.
+    local NODE_ENUMS = {
+        ["BTDecorator.FlowAbortMode"] = "/Script/AIModule.EBTFlowAbortMode",
+        ["BTDecorator_Blackboard.NotifyObserver"] = "/Script/AIModule.EBTBlackboardRestart",
+        ["BTTask_EnemyRoamingState.State"] = "/Script/SwtAdventure.ERoamingStates",
+        ["BTDecorator_ChanceCheck.TypeAction"] = "/Script/SwtAdventure.EAICombatTypeChance",
+        ["BTDecorator_DoIHaveAHealthItem.Target"] = "/Script/SwtAdventure.ESwtAdventureTargetEffect",
+        ["BTDecorator_DoIHaveAntidoteItem.Target"] = "/Script/SwtAdventure.ESwtAdventureTargetEffect",
+        ["BTDecorator_HasSpecificStatus.Status"] = "/Script/SwtAdventure.ESwtAdventureStatusType",
+    }
+    local enumText = {}
+    local function enumName(setting, v)
+        local path = NODE_ENUMS[setting]
+        if not path then return nil end
+        if enumText[path] == nil then
+            local byName = Game.enumNames(path)
+            local byValue = {}
+            for n, x in pairs(byName or {}) do byValue[x] = n end
+            enumText[path] = byValue
+        end
+        return enumText[path][math.tointeger(v)]
+    end
+    -- A number as its shortest text that reads back the same (C++'s std::format("{}"): a float member 0.001 is
+    -- 0.0010000000474974513 as the double it's read into).
+    local function numberText(v)
+        if math.type(v) == "integer" then return tostring(v) end
+        if v == math.floor(v) and math.abs(v) < 1e15 then return string.format("%d", v) end
+        for digits = 1, 17 do
+            local t = string.format("%." .. digits .. "g", v)
+            if tonumber(t) == v then return t end
+        end
+        return string.format("%.17g", v)
+    end
+    -- A node's own settings, as text: its plain members, a blackboard key's name, an object's name, an enum's name
+    -- (the engine's own; a game enum's number).
+    local function nodeSettings(node)
+        local out = {}
+        local cls = node:GetClass()
+        while valid(cls) do
+            local cname = cls:GetFName():ToString()
+            if cname == "BTNode" or cname == "Object" then break end
+            pcall(function()
+                cls:ForEachProperty(function(p)
+                    local name = p:GetFName():ToString()
+                    if NODE_SKIP[name] then return end
+                    local okT, pt = pcall(function() return p:GetClass():GetFName():ToString() end)
+                    if not okT then return end
+                    local text
+                    if SIMPLE[pt] then
+                        local ok, v = pcall(function() return node[name] end)
+                        if ok and v ~= nil then
+                            if pt == "ByteProperty" or pt == "EnumProperty" then text = enumName(cname .. "." .. name, v) or numberText(v)
+                            elseif pt == "NameProperty" or pt == "StrProperty" then text = str(v)
+                            elseif type(v) == "number" then text = numberText(v)
+                            else text = tostring(v) end
+                        end
+                    elseif pt == "StructProperty" then
+                        local okS, sname = pcall(function() return p:GetStruct():GetFName():ToString() end)
+                        if okS and sname == "BlackboardKeySelector" then
+                            local ok, v = pcall(function() return str(node[name].SelectedKeyName) end)
+                            if ok then text = v end
+                        end
+                    elseif pt == "ObjectProperty" or pt == "ClassProperty" then
+                        local ok, v = pcall(function() return node[name] end)
+                        if ok and valid(v) then text = v:GetFName():ToString() end
+                    end
+                    if text and text ~= "" and text ~= "None" then out[#out + 1] = { name = name, value = text } end
+                end)
+            end)
+            cls = cls:GetSuperStruct()
+        end
+        return out
+    end
+    local function nodeOf(depth, role, n)
+        return { depth = depth, role = role, kind = Game.className(n), name = str(Game.get(n, "NodeName")), settings = nodeSettings(n) }
+    end
+    local function walkTree(composite, depth, out)
+        if not valid(composite) or depth > 32 or #out > 2000 then return end
+        out[#out + 1] = nodeOf(depth, "composite", composite)
+        for _, s in ipairs(Game.list(Game.get(composite, "Services"))) do
+            if valid(s) then out[#out + 1] = nodeOf(depth + 1, "service", s) end
+        end
+        for _, child in ipairs(Game.list(Game.get(composite, "Children"))) do
+            for _, d in ipairs(Game.list(Game.get(child, "Decorators"))) do
+                if valid(d) then out[#out + 1] = nodeOf(depth + 1, "decorator", d) end
+            end
+            local c, task = Game.get(child, "ChildComposite"), Game.get(child, "ChildTask")
+            if valid(c) then walkTree(c, depth + 1, out)
+            elseif valid(task) then
+                out[#out + 1] = nodeOf(depth + 1, "task", task)
+                for _, s in ipairs(Game.list(Game.get(task, "Services"))) do
+                    if valid(s) then out[#out + 1] = nodeOf(depth + 2, "service", s) end
+                end
+            end
+        end
+    end
+    -- A behaviour tree's nodes (a tree, or one of Game.ai.TREES by name), from its root, each after the decorators that
+    -- guard it (the tree's own decorators first, at depth 0): { {depth, role, kind, name, settings}, ... }. role is
+    -- "composite" (a selector or sequence), "task" (what the AI does), "decorator" (a condition on the branch below
+    -- it) or "service" (run while its branch runs); kind its class ("BTTask_EnemyGrazing"); name its name in the tree;
+    -- settings its own members as text ({ {name = "BlackboardKey", value = "Detected"}, ... }). Empty for no tree.
+    function AI.treeNodes(tree)
+        local out = {}
+        tree = treeOf(tree)
+        if not tree then return out end
+        for _, d in ipairs(Game.list(Game.get(tree, "RootDecorators"))) do
+            if valid(d) then out[#out + 1] = nodeOf(0, "decorator", d) end
+        end
+        walkTree(Game.get(tree, "RootNode"), 0, out)
+        return out
+    end
+    -- A tree's blackboard: its asset's name ("BB_Enemy").
+    function AI.treeBlackboard(tree)
+        local b = Game.get(treeOf(tree), "BlackboardAsset")
+        return valid(b) and b:GetFName():ToString() or nil
+    end
+    -- The trees its controller starts on its own: { roaming = its BehaviorTree (BT_Enemy, BT_WalkingNPC), fight = its
+    -- CombatBehaviorTree (BT_CombatEnemy; a walking cat's has none) }, nil where it has none; nil without an AI.
+    function AI.trees(actor)
+        local c = AI.controller(actor)
+        if not c then return nil end
+        local r, f = Game.get(c, "BehaviorTree"), Game.get(c, "CombatBehaviorTree")
+        return { roaming = valid(r) and r or nil, fight = valid(f) and f or nil }
+    end
+    -- Set them, for the game's own starts to run (`fight` when its turn comes in a fight, on the fight's own actor:
+    -- set it at combatStart). Only BT_CombatEnemy works as a fight tree (seen from C++: BT_AttackEnemy alone stalled
+    -- the fight). nil leaves one as it is; not the tree running now (Game.ai.runTree). False without an AI.
+    function AI.setTrees(actor, roaming, fight)
+        local c = AI.controller(actor)
+        if not c then return false end
+        local ok = true
+        if roaming ~= nil then
+            local t = treeOf(roaming)
+            ok = t ~= nil and Game.set(c, "BehaviorTree", t) and ok
+        end
+        if fight ~= nil then
+            local t = treeOf(fight)
+            ok = t ~= nil and Game.set(c, "CombatBehaviorTree", t) and ok
+        end
+        return ok
+    end
+
+    -- ------------------------------------------------------------------------------- moving
+    -- The nav meshes the AIs walk on: the forest has two, the animals' (agents 25 cm round) and the cats' (1 cm). An
+    -- actor walks on the one nearest its movement's agent radius.
+    local function navMeshes()
+        local out = {}
+        pcall(function()
+            Game.world().NavigationSystem.NavDataSet:ForEach(function(_, e)
+                local m = e:get()
+                if valid(m) then out[#out + 1] = m end
+            end)
+        end)
+        return out
+    end
+    local function meshFor(actor)
+        local r = Game.get(actor, "CharacterMovement.NavAgentProps.AgentRadius")
+        if type(r) ~= "number" then return nil end
+        local best, bestD
+        for _, m in ipairs(navMeshes()) do
+            local d = math.abs((Game.get(m, "AgentRadius") or 0) - r)
+            if not bestD or d < bestD then best, bestD = m, d end
+        end
+        return best
+    end
+    local function projectOn(mesh, at)
+        local nav = Game.object("/Script/NavigationSystem.Default__NavigationSystemV1")
+        local out = {}
+        local ok, r = pcall(function()
+            return nav:K2_ProjectPointToNavigation(Game.world(), at, out, mesh, nil, { X = 0, Y = 0, Z = 0 })
+        end)
+        if ok and r == true and out.X then return { X = out.X, Y = out.Y, Z = out.Z } end
+        return nil
+    end
+    -- The nearest point on the nav mesh to a place (within the mesh's own search box): on the mesh `actor` walks on,
+    -- else on either; nil off the meshes.
+    function AI.navPoint(at, actor)
+        at = place(at)
+        if not at or not Game.world() then return nil end
+        local mesh = actor and meshFor(actorOf(actor))
+        if mesh then return projectOn(mesh, at) end
+        for _, m in ipairs(navMeshes()) do
+            local on = projectOn(m, at)
+            if on then return on end
+        end
+        return nil
+    end
+
+    -- The moves under way. Each walks with the mod cats' walk engine (Npc:walkTo's: arrival, stalls, steps aside):
+    -- stepWalk and finishWalk drive anything with actorOrNil(), location() and a `walk` table, which a Move is.
+    local moves = {}
+    local Move = {}
+    Move.__index = Move
+    function Move:actorOrNil() return valid(self.actor) and self.actor or nil end
+    function Move:location() return where(self.actor) end
+    local function moveOf(actor)
+        for _, m in ipairs(moves) do
+            if same(m.actor, actor) then return m end
+        end
+        return nil
+    end
+    local moveTicker
+    local function tickMoves()
+        local all = { table.unpack(moves) }   -- a move's done may start another
+        for _, m in ipairs(all) do
+            if m.walk and m.goal then
+                -- After an actor: the walk's end moves with it.
+                local g = valid(m.goal) and where(m.goal)
+                if not g then finishWalk(m, "cancelled")
+                elseif flat(g, m.walk.to) > math.max(50, m.walk.radius / 2) then
+                    m.walk.to, m.walk.best, m.walk.bestAt = g, math.huge, os.clock()
+                    pcall(issueMove, m.actor, g, m.walk.radius, m.walk.avoid)
+                end
+            end
+            if m.walk then
+                local ok, err = pcall(stepWalk, m)
+                if not ok then
+                    log("Game.ai move: %s", tostring(err))
+                    if m.walk then pcall(finishWalk, m, "blocked") end
+                end
+            end
+        end
+        if #moves == 0 and moveTicker then
+            Game.cancel(moveTicker)
+            moveTicker = nil
+        end
+    end
+    -- Send an AI to a place ({X, Y, Z}) or after an actor (it follows it as it moves, until it's within the radius),
+    -- through its controller's MoveToLocation, along the nav mesh: its logic is stopped first (its tree would send it
+    -- elsewhere). opts: speed (cm/s; 0 or none keeps its own, a roaming animal's a slow 70), radius (50: close enough),
+    -- avoid (true: along the nav mesh round obstacles; false a straight line), restartAfter (its logic started again when
+    -- the move ends, however it ends; else it stands there stopped until Game.ai.restart), done(result): "arrived",
+    -- "blocked" (no path, or stuck after five steps aside) or "cancelled" (Game.ai.stopMoving, another move, it or the
+    -- goal gone). True, or false and why: without an AI or a place; when the controller won't go there at all (done told
+    -- "blocked", its logic as it was). A mod's own cat has npc:walkTo, which keeps its walk across respawns.
+    function AI.moveTo(actor, to, opts)
+        opts = opts or {}
+        actor = actorOf(actor)
+        local c = AI.controller(actor)
+        if not c then return false, "no AI" end
+        local at, goal = placeOrActor(to)
+        if not at then return false, "nowhere to go" end
+        local old = moveOf(actor)
+        if old and old.walk then finishWalk(old, "cancelled") end
+        local wasRunning = AI.running(actor)
+        AI.stop(actor)
+        if type(opts.speed) == "number" and opts.speed > 0 then Game.set(actor, "CharacterMovement.MaxWalkSpeed", opts.speed) end
+        local avoid = opts.avoid ~= false
+        -- To the mesh's own point nearest the place: the controller stops there, and the walk measures its arrival
+        -- against it (a place off the mesh is never reached: seen from C++).
+        if avoid and not goal then at = AI.navPoint(at, actor) or at end
+        local radius = opts.radius or 50
+        local ok, r = pcall(issueMove, actor, at, radius, avoid)
+        if not ok or r == 0 then
+            if wasRunning then AI.restart(actor) end
+            if opts.done then pcall(opts.done, "blocked") end
+            return false, "the controller wouldn't start the move"
+        end
+        local m = setmetatable({ actor = actor, goal = goal }, Move)
+        m.walk = { to = at, radius = radius, avoid = avoid, started = os.clock(), best = math.huge, bestAt = os.clock(),
+                   done = function(_, result)
+                       for i, x in ipairs(moves) do
+                           if x == m then table.remove(moves, i) break end
+                       end
+                       if opts.restartAfter and valid(m.actor) then AI.restart(m.actor) end
+                       if opts.done then
+                           local okD, err = pcall(opts.done, result)
+                           if not okD then log("Game.ai.moveTo done: %s", tostring(err)) end
+                       end
+                   end }
+        moves[#moves + 1] = m
+        moveTicker = moveTicker or Game.every(0.1, tickMoves)
+        return true
+    end
+    -- End a move (its done told "cancelled") and stop the AI where it is (a move of the game's own too). False without an AI.
+    function AI.stopMoving(actor)
+        actor = actorOf(actor)
+        local c = AI.controller(actor)
+        if not c then return false end
+        local m = moveOf(actor)
+        if m and m.walk then finishWalk(m, "cancelled") end
+        return (pcall(function() c:StopMovement() end))
+    end
+    -- Whether it's moving: a Game.ai.moveTo under way, or one of its tree's own.
+    function AI.moving(actor)
+        actor = actorOf(actor)
+        if moveOf(actor) then return true end
+        local c = AI.controller(actor)
+        local ok, st = pcall(function() return c:GetMoveStatus() end)
+        return c ~= nil and ok and st == 3   -- EPathFollowingStatus::Moving
+    end
+    -- Turn it to face a place or another actor, now (its yaw, and its controller's). False when it isn't there.
+    function AI.face(actor, at)
+        actor = actorOf(actor)
+        local here = actor and where(actor)
+        local there = placeOrActor(at)
+        if not here or not there then return false end
+        local rot = Game.rotator(0, math.deg(math.atan(there.Y - here.Y, there.X - here.X)), 0)
+        local ok = pcall(function() actor:K2_SetActorRotation(rot, false) end)
+        local c = Game.get(actor, "Controller")
+        if valid(c) then pcall(function() c:SetControlRotation(rot) end) end
+        return ok
+    end
+
+    -- ------------------------------------------------------------------------------- noticing your cat
+    -- A roaming animal notices a cat through its detection component: its DetectionType, a mask of 1 Vision, 2 Sound,
+    -- 4 Cone, 8 InPursue (3 on a roaming animal), and noticing takes it a moment. Noticed, its tree waits its reaction
+    -- time and chases; a chase that catches your cat starts a fight.
+    local function detection(actor)
+        local c = Game.get(actorOf(actor), "ExplorationDetectionComponent")
+        return valid(c) and c or nil
+    end
+    -- Its detection mask, or nil without a detection component (your cat, a walking cat); set it. The roaming tree's
+    -- services pass flags of their own, so 0 alone doesn't stop an animal noticing your cat: Game.ai.ignorePlayer does.
+    function AI.detectionFlags(actor) return math.tointeger(Game.get(detection(actor), "DetectionType")) end
+    function AI.setDetectionFlags(actor, flags)
+        local c = detection(actor)
+        return c ~= nil and (Game.set(c, "DetectionType", flags))
+    end
+    -- Make it lose your cat as the game's own losing does (OnCharacterLost: it walks back where it started, then roams),
+    -- or notice it now as the game's noticing does (OnCharacterDetected: it gives chase after its reaction time, even
+    -- while it ignores your cat). False for what isn't a roaming animal.
+    function AI.calm(actor)
+        actor = actorOf(actor)
+        local me = Game.player()
+        return actor ~= nil and me ~= nil and detection(actor) ~= nil and (pcall(function() actor:OnCharacterLost(me) end))
+    end
+    function AI.noticePlayer(actor)
+        actor = actorOf(actor)
+        local me = Game.player()
+        return actor ~= nil and me ~= nil and detection(actor) ~= nil and (pcall(function() actor:OnCharacterDetected(me) end))
+    end
+    -- Whether its detection tracks your cat now: noticed and not lost (its detection component's DetectedCharacters,
+    -- whatever its mask; the blackboard's Detected is the tree's).
+    function AI.trackingPlayer(actor)
+        local c, me = detection(actor), Game.player()
+        if not c or not me then return false end
+        local found = false
+        pcall(function()
+            c.DetectedCharacters:ForEach(function(e)   -- a set's ForEach hands the element alone
+                if same(e:get(), me) then found = true end
+            end)
+        end)
+        return found
+    end
+    -- The detection sphere's response to the Pawn channel (2: every cat's capsule): 0 Ignore, 1 Overlap (a roaming
+    -- animal's), 2 Block. The cats it overlaps are the ones its detection looks at.
+    local PAWN_CHANNEL = 2
+    local function catsResponse(actor)
+        local c = detection(actor)
+        local ok, r = pcall(function() return c:GetCollisionResponseToChannel(PAWN_CHANNEL) end)
+        return c ~= nil and ok and math.tointeger(r) or nil
+    end
+    local function setCatsResponse(actor, r)
+        local c = detection(actor)
+        return c ~= nil and (pcall(function() c:SetCollisionResponseToChannel(PAWN_CHANNEL, r) end))
+    end
+    local ignoring = { was = {}, stealth = {}, everywhere = false, keeper = nil }   -- address -> {actor, mask, response}
+    local function addressOf(a)
+        local ok, n = pcall(function() return a:GetAddress() end)
+        return ok and n or nil
+    end
+    -- What ignorePlayer kept for this actor: nil for an entry of an actor that's gone (its address may be another's now).
+    local function keptFor(key, actor)
+        local w = ignoring.was[key]
+        if w and not (valid(w.actor) and same(w.actor, actor)) then
+            ignoring.was[key], ignoring.stealth[key] = nil, nil
+            return nil
+        end
+        return w
+    end
+    -- Make an animal ignore your cat, or notice it again as it did (`ignore` false): its detection sphere stops
+    -- overlapping cats, its mask goes to 0, and it gives your cat up as calm() does. It ignores every cat so, and a
+    -- pounce on it starts no fight (seen from C++). False without a detection component.
+    function AI.ignorePlayer(actor, ignore)
+        actor = actorOf(actor)
+        local flags, response = AI.detectionFlags(actor), catsResponse(actor)
+        if not flags or not response then return false end
+        local key = addressOf(actor)
+        if not key then return false end
+        if ignore ~= false then
+            ignoring.stealth[key] = nil   -- the script's own now: stealth turned off leaves it
+            if not keptFor(key, actor) then ignoring.was[key] = { actor = actor, mask = flags, response = response } end
+            setCatsResponse(actor, 0)
+            AI.setDetectionFlags(actor, 0)
+            AI.calm(actor)
+            return true
+        end
+        local back = keptFor(key, actor)
+        ignoring.stealth[key] = nil
+        if not back then   -- not ignorePlayer's: left as it is, but for a sphere ignoring cats or a mask of 0
+            if response == 0 then setCatsResponse(actor, 1) end
+            return flags ~= 0 or AI.setDetectionFlags(actor, 3)
+        end
+        ignoring.was[key] = nil
+        setCatsResponse(actor, back.response)
+        return AI.setDetectionFlags(actor, back.mask)
+    end
+    -- Whether it ignores your cat: its detection sphere doesn't overlap cats.
+    function AI.ignoringPlayer(actor) return catsResponse(actor) == 0 end
+    -- Every roaming animal within 5,000 units of your cat ignores it while this is on (a look once a second); off, each
+    -- it changed is as it was (one the script made to ignore your cat itself stays so). A stealth mode, for this script.
+    function AI.ignorePlayerEverywhere(on)
+        ignoring.everywhere = on == true
+        local function sweep()
+            for k, w in pairs(ignoring.was) do
+                if not valid(w.actor) then ignoring.was[k], ignoring.stealth[k] = nil, nil end
+            end
+            if not ignoring.everywhere then return end
+            for _, n in ipairs(Game.animals.near(5000)) do
+                local k = addressOf(n.actor)
+                if k and not keptFor(k, n.actor) and AI.ignorePlayer(n.actor, true) then ignoring.stealth[k] = true end
+            end
+        end
+        if ignoring.everywhere then
+            sweep()
+            ignoring.keeper = ignoring.keeper or Game.every(1, sweep)
+            return true
+        end
+        if ignoring.keeper then
+            Game.cancel(ignoring.keeper)
+            ignoring.keeper = nil
+        end
+        for k in pairs(ignoring.stealth) do
+            local w = ignoring.was[k]
+            if w and valid(w.actor) then AI.ignorePlayer(w.actor, false) end
+        end
+        ignoring.stealth = {}
+        return true
+    end
+    -- Make it run from a place or an actor: `distance` cm (800) the other way, at its chase speed (its senses'
+    -- WalkSpeedChasing, 400) unless opts says, given back to its tree at the end (a Game.ai.moveTo, opts as there).
+    -- A rock, a river or the mesh's edge that way stops it short. False as moveTo is.
+    function AI.flee(actor, from, distance, opts)
+        actor = actorOf(actor)
+        local at, away = actor and where(actor), placeOrActor(from)
+        if not at or not away then return false, "nowhere to run from" end
+        distance = distance or 800
+        local dx, dy = at.X - away.X, at.Y - away.Y
+        local len = math.sqrt(dx * dx + dy * dy)
+        if len < 1 then dx, dy, len = 1, 0, 1 end
+        local to = { X = at.X + dx / len * distance, Y = at.Y + dy / len * distance, Z = at.Z }
+        to.Z = Game.ground(to.X, to.Y, at.Z + 300) or to.Z
+        to = AI.navPoint(to, actor) or to
+        if not opts then
+            local s = Game.cat(actor):senses()
+            opts = { speed = s and s.WalkSpeedChasing or 400, restartAfter = true }
+        end
+        return AI.moveTo(actor, to, opts)
+    end
+
+    -- ------------------------------------------------------------------------------- running another tree, following
+    -- Run another of the game's trees on it now (a tree, or one of Game.ai.TREES by name), from its start: its
+    -- controller's RunBehaviorTree (a tree on another blackboard starts with its keys clear). The game starts its own
+    -- trees again on its own occasions (a fight, its end: Game.ai.setTrees). A move under way ends. False without an AI
+    -- or a tree.
+    function AI.runTree(actor, tree)
+        actor = actorOf(actor)
+        local c, t = AI.controller(actor), treeOf(tree)
+        if not c or not t then return false end
+        local m = moveOf(actor)
+        if m and m.walk then finishWalk(m, "cancelled") end
+        local ok, r = pcall(function() return c:RunBehaviorTree(t) end)
+        return ok and r == true
+    end
+    local follows = {}
+    local function followOf(actor)
+        for _, f in ipairs(follows) do
+            if same(f.actor, actor) then return f end
+        end
+        return nil
+    end
+    local function endFollow(f, putBack)
+        if f.ended then return end
+        f.ended = true
+        Game.cancel(f.timer)
+        for i, x in ipairs(follows) do
+            if x == f then table.remove(follows, i) break end
+        end
+        if not valid(f.actor) then return end
+        local m = moveOf(f.actor)
+        if m and m.walk then finishWalk(m, "cancelled") end
+        if putBack and f.wasRunning then AI.restart(f.actor) end
+    end
+    local function keepFollowing(f)
+        if f.ended then return end
+        if not valid(f.actor) or not valid(f.target) then return endFollow(f, true) end
+        if AI.running(f.actor) then return endFollow(f, false) end   -- its tree run again by someone: that kept
+        if moveOf(f.actor) or os.clock() < f.waitTill then return end
+        local me, them = where(f.actor), where(f.target)
+        if not me or not them or flat(me, them) <= f.distance + 60 then return end
+        -- A move that can't get there (asleep far from your cat, the target off its mesh) waits 2 s before the next.
+        local ok = AI.moveTo(f.actor, f.target, { speed = f.speed, radius = f.distance, done = function(r)
+            if r == "blocked" then f.waitTill = os.clock() + 2 end
+        end })
+        if not ok then f.waitTill = os.clock() + 2 end
+    end
+    -- Make an AI follow another actor about (your cat, another cat): whenever it's farther than `distance` (150) from
+    -- it, it goes after it at `speed` (0: its own), looking every `every` seconds (0.25), and waits when it's close.
+    -- Until Game.ai.stopFollowing, it or the target gone, or its tree run again (Game.ai.restart, runTree). False
+    -- without an AI or a target. (The game's own escort tree, BT_Escort, doesn't do it: seen from C++.)
+    --   Game.ai.follow(npc, Game.player())   -- a cat at your cat's heels
+    function AI.follow(actor, target, opts)
+        opts = opts or {}
+        actor, target = actorOf(actor), actorOf(target)
+        if not actor or not target or same(actor, target) or not AI.controller(actor) or not where(target) then return false end
+        local wasRunning = AI.running(actor)
+        local old = followOf(actor)
+        if old then
+            wasRunning = old.wasRunning
+            endFollow(old, false)
+        end
+        AI.stop(actor)   -- its tree would wander off between goes
+        local f = { actor = actor, target = target, distance = opts.distance or 150, speed = opts.speed or 0,
+                    wasRunning = wasRunning, waitTill = 0 }
+        follows[#follows + 1] = f
+        f.timer = Game.every(math.max(0.05, opts.every or 0.25), function() keepFollowing(f) end)
+        keepFollowing(f)
+        return true
+    end
+    -- Stop following: it stands where it is, and its tree runs again if it ran before follow (`putBack`, true; false
+    -- leaves it standing). False when it wasn't following.
+    function AI.stopFollowing(actor, putBack)
+        local f = followOf(actorOf(actor))
+        if not f then return false end
+        endFollow(f, putBack ~= false)
+        return true
+    end
+    function AI.following(actor) return followOf(actorOf(actor)) ~= nil end
+
+    -- ------------------------------------------------------------------------------- the animals near
+    -- The roaming animals within `radius` cm of your cat (or of `from`, a place or an actor), nearest first:
+    -- { {actor, distance}, ... } (the engine's list of the world's WrcRoamingEnemy actors).
+    function Game.animals.near(radius, from)
+        local out = {}
+        radius = radius or 5000
+        local origin = from and placeOrActor(from) or (Game.player() and where(Game.player()))
+        local cls = Game.object("/Script/Wrc.WrcRoamingEnemy")
+        if not origin or not cls then return out end
+        local list = {}
+        pcall(function() Game.library("GameplayStatics"):GetAllActorsOfClass(Game.player() or Game.world(), cls, list) end)
+        for _, e in ipairs(list) do
+            local ok, a = pcall(function() return e:get() end)
+            local at = ok and valid(a) and where(a)
+            local d = at and math.sqrt((at.X - origin.X) ^ 2 + (at.Y - origin.Y) ^ 2 + (at.Z - origin.Z) ^ 2)
+            -- (not one a story scene spawned, as C++'s fight_animals leaves out)
+            if d and d <= radius and not (Game.fullName(a) or ""):find("MovieScene", 1, true) then
+                out[#out + 1] = { actor = a, distance = d }
+            end
+        end
+        table.sort(out, function(a, b) return a.distance < b.distance end)
+        return out
+    end
+end
+
 -- ===================================================================================== the game's quest HUD
 -- The game's own pieces for a quest, for a mod's quests (worked out in game on 2026-10-27; the game shows
 -- them only for its own quests, which Sandbox mode has none of, so nothing of the game's takes them back):
