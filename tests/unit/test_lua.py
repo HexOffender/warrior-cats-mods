@@ -637,6 +637,8 @@ def test_the_talk_box_lets_your_cat_go():
     end_talk = body(lua, "local function endBoxTalk()", "\nend\n")
     assert "local TALK_FLAGS = 0x21" in lua
     assert 'if not valid(pc) or valid(Game.get(pc, "ActiveDialogueWidget")) then return end' in end_talk
+    # not under another mod's box, which claimed it while this one faded out
+    assert end_talk.index("if Game.dialogue.busy() then return end") < end_talk.index("local pc = Game.controller()")
     assert 'if flags and flags & 0x1 ~= 0 then Game.set(pc, "WCM_TalkFlags", flags & ~TALK_FLAGS) end' in end_talk
     assert lua.index("local function endBoxTalk()") < lua.index("function Game.dialogue.say(")
     hide = body(lua, "function Game.dialogue.hide()", "\n-- Whether the box is up")
@@ -679,6 +681,7 @@ def test_drop_takes_only_an_item_and_puts_it_in_reach():
     drop = body(lua, "function Game.items.drop(tag, count, where)", "\nend\n")
     assert drop.index('if not Game.items.isItem(tag) then return nil, tag .. " isn\'t one of the game\'s items" end') < drop.index("BeginDeferredActorSpawnFromClass")
     assert "if okF and f then x, y = x + f.X * 50, y + f.Y * 50 end" in drop and "at.X + 60" not in drop
+    assert "elseif getmetatable(where) == Cat then by = where.actor" in drop   # a Cat isn't a place
 
 
 def test_json_decode_skips_a_bom():
@@ -794,9 +797,10 @@ def test_the_clock_has_one_hold_for_every_script():
     assert "h.who = who\n    h.write(s, who)" in hold
     assert "h.task = h.task or Game.every(0.5, function()" in hold and "h.at = Game.time.held()" in hold
     # the clock set every frame (twice a second, it ran up to half a game-minute ahead between sets)
-    assert "h.frame = h.frame or Game.onFrame(function()" in hold
+    assert "h.frame = Game.onFrame(function()" in hold and "Game.cancel(h.frame)" in hold
     assert "if h.at and Game.cat() then Game.time.setSeconds(h.at) end" in hold
-    assert hold.index("h.at = s\n") < hold.index("h.frame = h.frame or")
+    assert "setEveryFrame(h.at ~= nil)" in hold   # gone while nothing is held
+    assert hold.index("h.at = s\n") < hold.index("setEveryFrame(true)")
     # the heartbeat: the holder's state keeps its own hold's stamp up, whatever held() says of it
     assert "if mine and whose == h.who then h.write(mine, whose) end" in hold
     assert hold.index("local mine, whose = h.read()") < hold.index("h.at = Game.time.held()")

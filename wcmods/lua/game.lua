@@ -1826,9 +1826,13 @@ function Game.items.drop(tag, count, where)
     local cls = pickupClass(tag:match("%.([%w]+)$") or "SmallHealingHerb", false)
         or (look and look.class and pickupClass(look.class, true)) or pickupClass("SmallHealingHerb", true)
     if not cls then return nil, "no pickup class loaded" end
-    -- By a cat (yours, or the actor given): 50 cm in front of it, where Interact reaches; below a place given.
-    local by = where == nil and Game.player() or (where ~= nil and type(where) ~= "table" and where or nil)
-    local at = where
+    -- By a cat (yours, or the actor or Game.cat(...) given): 50 cm in front of it, where Interact reaches; below a
+    -- place given ({X, Y, Z}).
+    local by, at
+    if where == nil then by = Game.player()
+    elseif getmetatable(where) == Cat then by = where.actor
+    elseif type(where) ~= "table" then by = where
+    else at = where end
     if by ~= nil then at = Game.cat(by) and Game.cat(by):location() end
     if not at then return nil, "nowhere to put it" end
     local x, y = at.X, at.Y
@@ -3111,10 +3115,12 @@ local function talkShare(k, v) pcall(function() ModRef:SetSharedVariable(k, v) e
 -- (WCM_TalkFlags: 0x1, and 0x20 with it), which only the end of one of the game's own talks clears. While they're on,
 -- no animal notices your cat and a pounce starts no fight (seen, from C++: docs/reverse-engineering.md, "The talk box
 -- and your cat"). Cleared as the box comes down, unless one of the game's own talks has its box up (the controller's
--- ActiveDialogueWidget). (C++ calls the game's own setter, which also lets a talk the game has queued go on; from Lua
--- the flags are written, which was seen to let the animals notice your cat again.)
+-- ActiveDialogueWidget), or another mod's box (it claimed the box while this one faded out). (C++ calls the game's own
+-- setter, which also lets a talk the game has queued go on; from Lua the flags are written, which was seen to let the
+-- animals notice your cat again.)
 local TALK_FLAGS = 0x21
 local function endBoxTalk()
+    if Game.dialogue.busy() then return end
     local pc = Game.controller()
     if not valid(pc) or valid(Game.get(pc, "ActiveDialogueWidget")) then return end
     local flags = math.tointeger(Game.get(pc, "WCM_TalkFlags"))
@@ -3348,16 +3354,26 @@ function Game.time.hold(s, who)
     s = math.floor(s + 0.5) % 86400   -- a whole second of the day: 86399.6 is 0, not 86400
     h.who = who
     h.write(s, who)
+    -- The clock set every frame, as C++ holds it (set twice a second it ran about half a game-minute ahead between),
+    -- while there's a hold: the frame function goes when none is held, and comes back with the next.
+    local function setEveryFrame(on)
+        if on and not h.frame then
+            h.frame = Game.onFrame(function()
+                if h.at and Game.cat() then Game.time.setSeconds(h.at) end
+            end)
+        elseif not on and h.frame then
+            Game.cancel(h.frame)
+            h.frame = nil
+        end
+    end
     h.task = h.task or Game.every(0.5, function()
         local mine, whose = h.read()
         if mine and whose == h.who then h.write(mine, whose) end   -- still here, while it's this state's hold
         h.at = Game.time.held()
+        setEveryFrame(h.at ~= nil)
     end)
-    -- The clock set every frame, as C++ holds it: set twice a second it ran about half a game-minute ahead between.
     h.at = s
-    h.frame = h.frame or Game.onFrame(function()
-        if h.at and Game.cat() then Game.time.setSeconds(h.at) end
-    end)
+    setEveryFrame(true)
     return Game.time.setSeconds(s)
 end
 
