@@ -626,6 +626,8 @@ namespace t
                 value("fight.moves", Json(r->all_moves));
                 const int last = r->all_moves - 1;
                 r->only = last >= 0 ? tag_of(all[last]) : std::string();
+                // A place twice: refused with nothing moved.
+                expect("fight.limit_twice", last >= 1 && !limit_moves(r->enemy, {last, 0, last}) && tag_of(r->enemy.moves().front()) == tag_of(all[0]));
                 value("fight.only", Json(r->only));
                 expect("fight.limit", last >= 0 && limit_moves(r->enemy, {last}) && r->enemy.moves().size() == 1
                                           && tag_of(r->enemy.moves().front()) == r->only);

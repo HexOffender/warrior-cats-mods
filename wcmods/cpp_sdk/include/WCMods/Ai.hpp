@@ -968,7 +968,8 @@ namespace wcmods
             UObject* component{};
             UClass* cls{};
             std::vector<int> at;
-            int32_t count{};
+            int32_t count{};   // how many it had
+            int32_t cut{};     // how many it was cut to
         };
         inline auto limited() -> std::vector<Limited>&
         {
@@ -997,7 +998,10 @@ namespace wcmods
         {
             Fighter f{l.component};
             int32_t* count = f.move_count();
-            if (!count) return;
+            // Only the array it cut: still at the cut count, with room for every move, and its data there (the game
+            // may have emptied it as the fight ended).
+            if (!count || *count != l.cut || *(count + 1) < l.count || !*reinterpret_cast<uint8_t**>(reinterpret_cast<uint8_t*>(count) - 8))
+                return;
             *count = l.count;   // every move counted again, then each back in its place
             int32_t* c2 = nullptr;
             uint8_t* data = nullptr;
@@ -1027,8 +1031,8 @@ namespace wcmods
     // Limit a fighter to some of its moves (by their place in Fighter::moves(), as the fight began): its moves are put
     // in that order at the front and its count cut to them, so whatever its tree picks is one of them (seen: an enemy
     // limited to its third move used it). The others are kept behind, back with restore_moves() or as the fight ends.
-    // Call it again to change the limit (places are always the first ones'). False outside a fight, or for a place it
-    // hasn't.
+    // Call it again to change the limit (places are always the first ones'). False, with nothing moved, outside a
+    // fight, or for a place it hasn't or one given twice.
     inline auto limit_moves(Fighter fighter, const std::vector<int>& moves) -> bool
     {
         if (!assert_game_thread(L"limit_moves") || !fighter || moves.empty()) return false;
@@ -1039,8 +1043,9 @@ namespace wcmods
         auto it = std::find_if(all.begin(), all.end(), [&](auto& l) { return l.component == fighter.component; });
         if (it != all.end()) detail::put_back(*it);   // from the full list again
         if (!detail::move_array(fighter, count, data, size)) return false;
-        for (int m : moves)
-            if (m < 0 || m >= *count) return false;
+        for (size_t k = 0; k < moves.size(); ++k)   // in range, and none twice: checked before anything moves
+            if (moves[k] < 0 || moves[k] >= *count || std::find(moves.begin(), moves.begin() + k, moves[k]) != moves.begin() + k)
+                return false;
         detail::Limited l;
         l.component = fighter.component;
         l.cls = fighter.component->GetClassPrivate();
@@ -1049,11 +1054,11 @@ namespace wcmods
         for (size_t pos = 0; pos < moves.size(); ++pos)
         {
             int j = static_cast<int>(std::find(l.at.begin(), l.at.end(), moves[pos]) - l.at.begin());
-            if (j < static_cast<int>(pos)) return false;   // the same place twice
             detail::swap_moves(data, size, static_cast<int>(pos), j);
             std::swap(l.at[pos], l.at[j]);
         }
         *count = static_cast<int32_t>(moves.size());
+        l.cut = *count;
         if (it != all.end()) *it = l;
         else all.push_back(l);
         detail::watch_fight_end();
@@ -1079,6 +1084,7 @@ namespace wcmods
             std::optional<TimerId> timer;
             std::chrono::steady_clock::time_point next{};
             int turns{};
+            int pressed{};   // presses on this turn: the menu still up after one, the move wasn't taken
         };
         inline auto auto_fight_state() -> AutoFight&
         {
@@ -1103,7 +1109,7 @@ namespace wcmods
         }
     } // namespace detail
     // Take your cat's turns in fights for you (on) or not: on each of its turns (the fight menu up) its move with the
-    // most damage it has the stamina for, else a rest; until turned off. The SDK's own player, not the game's AI (your
+    // most damage it has the stamina for, else a rest (a rest too when the game didn't take the move); until turned off. The SDK's own player, not the game's AI (your
     // cat's fighter has no AI controller). How many turns it took: auto_fight_turns().
     inline auto auto_fight(bool on) -> void
     {
@@ -1120,12 +1126,19 @@ namespace wcmods
         a.timer = every(0.3, [] {
             detail::guarded(L"auto_fight", [] {
                 auto& a = detail::auto_fight_state();
-                if (!a.on || !combat_active() || !fight_menu() || std::chrono::steady_clock::now() < a.next) return;
-                int move = detail::best_move();
+                if (!a.on || !combat_active()) return;
+                if (!fight_menu())
+                {
+                    a.pressed = 0;   // its turn went
+                    return;
+                }
+                if (std::chrono::steady_clock::now() < a.next) return;
+                // A move the game didn't take (the menu still up 3 s on): a rest instead.
+                int move = a.pressed == 0 ? detail::best_move() : -1;
                 bool went = move >= 0 ? fight_attack(move) : fight_rest();
                 if (went)
                 {
-                    ++a.turns;
+                    if (a.pressed++ == 0) ++a.turns;
                     a.next = std::chrono::steady_clock::now() + std::chrono::seconds(3);   // the menu goes as the turn plays
                 }
             });
