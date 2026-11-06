@@ -646,6 +646,35 @@ The sky, the game's sounds and music, its own animations, visual effects, moveme
 | `Game.speeds()`, `Game.setSpeeds(t)`, `Game.resetSpeeds()` | Your cat's own speeds: `{walk (175), run (390), walkAcceleration, runAcceleration, crouch (0.5), climb (1), running, crouching, climbing}`. Set some (the game takes them the next frame), and put back what it had before the first set |
 | `Game.useSense()`, `Game.sense()` | Your cat's scent sense (Q), the game's own through its command; how much it shows now (0 to 1) |
 
+### Places, photo mode, the camera, dens and looks
+
+Part two of the world, as C++'s `Map.hpp`, `Dens.hpp` and `Looks.hpp` have it. These are C++'s only, because each
+goes through one of the game's native functions:
+- unlocking a place;
+- the world map's own travel;
+- building a decoration;
+- setting a cat's look, and so wearing an accessory.
+
+| Call | Gives or does |
+|---|---|
+| `Game.screen(class)`, `Game.send(screen, command)`, `Game.close(screen)` | One of the game's screens up now by its class (`"WBP_GuiPopupCombat_C"`, or a native one it's made from: `"GuiScreenPause"`, `"GuiPopupWorldMap"`), or nil; a command sent to it as its controls give it (ECommands: `"Button_Back"`, `"Button_Confirm"`, `"Button_Left"`); closed as its Back does. `close` gives Back again while it's still up, because a screen can take no notice of the first command after it opens (seen: the travel map) |
+| `Game.places.list()` | The places your cat can travel to, the checkpoints: `{ {checkpoint, tag, zone, at, atStart, unlocked}, ... }`. `unlocked` is the save's, as of its last save |
+| `Game.places.travel(place)`, `Game.places.openTravelMap()` | Take your cat to an unlocked place: it's put at the checkpoint, with no loading screen, and the forest streams in. Or, standing at one, open the world map in travel mode as Interact does. Both are false with a screen up |
+| `Game.photo.mode(on)`, `Game.photo.active()` | Photo mode on the game's way (the pause screen, then its Photo Mode: about two seconds) or off; whether it's up. Where the game has Photo Mode off, the pause screen closes again and the log says so |
+| `Game.photo.ui(shown)`, `Game.photo.camera()` | Photo mode's menus hidden or shown (its Hide UI); its camera, to read or move |
+| `Game.photo.take(scale)`, `Game.photo.folder()` | A picture of what the game shows, without its menus, saved as HighResShot does (the window's size times `scale`, 1 to 4), and the folder it's saved in |
+| `Game.camera.view()` | The exploration camera following your cat: `{actor, distance, fov}` (cm from your cat; the field of view shown) |
+| `Game.camera.settings()`, `Game.camera.set(t)`, `Game.camera.reset()` | Its settings, with build 26337109's defaults: `distance` (113), `fov` (90), `pitch` (-5), `speedDistance` (45), `speedFov` (5), `lag` (10), `rotationLag` (5). The turning is your cat's: `turnYaw` (55), `turnPitch` (120), `pitchMin` (-20), `pitchMax` (23). `set` changes some; the camera eases to them over about a second. `reset` puts back what it had before the first set |
+| `Game.dens.decorations()` | The decorations the dens can have (`DB_Den_Decorations`, 60): `{ {tag, name, mesh, skeletal, animation}, ... }` |
+| `Game.dens.list(clan)`, `Game.dens.enter(den)` | Every clan's dens, or one clan's: `{ {door, clan, rank, inside}, ... }` (`rank` is `""` for the shared dens). Your cat taken into one |
+| `Game.dens.hotspots(den)`, `Game.dens.hotspot(actor)` | A den's hotspots, the places a decoration can be built: `{actor, tag, size, rank, decoration, savedStatus, savedDecoration, started}`. `decoration` is what's built now, from its model; the `saved` ones are from your cat's slot, as of the last save |
+| `Game.dens.removeDecoration(hotspot)` | Take a hotspot's decoration off, as the game's build screen does (its OnDelete) |
+| `cat:look()`, `Game.lookFields` | A cat's look in full, by the game's own names, with enums by their names: `ClanType`, `Role`, the shapes and colour slots, the accessories (`AccesoryNeckId` `"DogCollar"`, with variations), the scars, `CatSize`, the name ids. `cat:customization()` is the older, shorter list |
+| `Game.lookFromText(text)` | A look from the save's text for one (`"(ClanType=ShadowClan,Role=Leader,TailIdx=8,...)"`, as NPCData keeps it) |
+| `Game.accessories()` | The game's accessories: `{ {id, slot, variations}, ... }` (`slot` is `"Neck"`, `"Paw"`, `"Head"` or `"Body"`) |
+| `cat:role()` | A cat's place: `{clan, role, storyRole}`. `storyRole` is set only for a story or camp cat |
+| `Game.clanCats()` | Every cat the save keeps for your cat's game (NPCData): `{ {clan, role, index, name, look, storyRoles}, ... }`. Each clan's cats come by role, then those outside the clans, then the story cats kept only as their story role (`index` -1). `name` is as the game shows it |
+
 ### The game's developer switches
 
 The cheats manager carries the developers' own settings. The release build obeys some and ignores

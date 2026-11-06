@@ -4919,6 +4919,26 @@ do
             input:OnListenCommandInternal(n, 1)
         end))
     end
+    -- One of the game's screens up now by its class (its own, "WBP_GuiPopupCombat_C", or a native one it's made from,
+    -- "GuiScreenPause"): on the viewport and drawn; nil when none is. And a command sent to one as its controls give it
+    -- (ECommands: "Button_Back", "Button_Confirm", "Button_Left"...), pressed now and let go 0.3 s later. C++'s ui::screen
+    -- and ui::send.
+    function Game.screen(cls) return F.screenUp(cls) end
+    function Game.send(screen, command) return F.send(screen, command) end
+    -- Close one of the game's screens as its Back does, Back given again while it's still up (three times at most, 1.5 s
+    -- apart): a screen took the first command it got after opening without acting on it, and closed on the second (seen
+    -- from C++, the inventory; here the travel map). False for no screen. C++'s ui::close.
+    function Game.close(screen)
+        if not Game.alive(screen) then return false end
+        local function again(tries)
+            local ok, up = pcall(function() return screen:IsInViewport() and screen:IsVisible() end)
+            if tries <= 0 or not Game.alive(screen) or not (ok and up) then return end
+            F.send(screen, "Button_Back")
+            Game.after(1.5, function() again(tries - 1) end)
+        end
+        again(3)
+        return true
+    end
     function F.fightMenu() return F.screenUp("WBP_GuiPopupCombat_C") end
     -- Where a button is on one of the fight menu's panels ("PanelCombatMenu": Attack, Rest, Item, Flee;
     -- "PanelCombatAttacks": the moves), in the panel's own order, and where the selection is (0 on). -1 when the menu, the
@@ -5879,6 +5899,519 @@ do
         pcall(function() s = me:GetComponentByClass(Game.object("/Script/SwtAdventure.SwtAdventureExplorationSenseComponent")) end)
         if not valid(s) then return nil end
         return Game.get(s, "bEnabled") and Game.get(s, "BlendWeight") or 0
+    end
+end
+
+-- The rest of the world from a script, part two (the Lua plan's step 7; C++'s Map.hpp, Dens.hpp and Looks.hpp have the
+-- same, and more): the places your cat can travel to, photo mode, the exploration camera, the clans' dens, cats' looks
+-- read, the accessories and the clan's cats. Unlocking a place, the map's own travel, building a decoration, and
+-- setting a look (so wearing an accessory) are native calls: C++'s (step 8). A block of its own, its helpers in one table.
+Game.places, Game.photo, Game.camera, Game.dens = {}, {}, {}, {}
+do
+    local X = {}
+    function X.live(a)
+        return Game.alive(a) and not (Game.fullName(a) or ""):find("Default__", 1, true)
+    end
+    function X.where(a)
+        local ok, l = pcall(function() return a:K2_GetActorLocation() end)
+        return ok and l and { X = l.X, Y = l.Y, Z = l.Z } or nil
+    end
+    function X.enumName(path, v)
+        local names = Game.enumNames(path) or {}
+        for n, x in pairs(names) do
+            if x == math.tointeger(v) then return n end
+        end
+        return v ~= nil and tostring(v) or nil
+    end
+
+    -- ------------------------------------------------------------------------------- places and travel
+    -- The places your cat can travel to: the checkpoints, { {checkpoint, tag, zone, at, atStart, unlocked}, ... }.
+    -- unlocked is the save's (GameplayProgression/<level>/Checkpoints, as of its last save), else whether it's open at the
+    -- start. Unlocking one, and the map's own travel, are C++'s (native calls).
+    function Game.places.list()
+        local out = {}
+        local open = {}
+        local slot = Game.save.slotData()
+        for _, level in pairs(type(slot) == "table" and type(slot.GameplayProgression) == "table" and slot.GameplayProgression or {}) do
+            for _, c in pairs(type(level) == "table" and type(level.Checkpoints) == "table" and level.Checkpoints or {}) do
+                if type(c) == "table" and c.UID then open[c.UID] = c.Unlocked ~= 0 and c.Unlocked ~= false end
+            end
+        end
+        for _, c in ipairs(Game.findAll("SwtQuestCheckpoint")) do
+            local at = X.live(c) and X.where(c)
+            if at then
+                local tag = Game.tagName(Game.get(c, "CheckpointTag"))
+                local atStart = Game.get(c, "bAvailableAtStart") == true
+                local unlocked = open[tag]
+                if unlocked == nil then unlocked = atStart end
+                out[#out + 1] = { checkpoint = c, tag = tag, zone = str(Game.get(c, "ZoneCode")), at = at, atStart = atStart,
+                                  unlocked = unlocked }
+            end
+        end
+        table.sort(out, function(a, b) return a.tag < b.tag end)
+        return out
+    end
+    -- Take your cat to a place it has unlocked: put at the checkpoint (no loading screen: the forest streams in). False for
+    -- one it hasn't, outside the world or in a fight, or with one of the game's screens up.
+    function Game.places.travel(place)
+        local me = Game.cat()
+        if not me or type(place) ~= "table" or not place.unlocked or not place.at or #Game.screens() > 0 then return false end
+        return (me:teleport(place.at.X, place.at.Y, place.at.Z + 50))
+    end
+    -- Open the world map in travel mode as the game does: your cat's Interact while it stands in an unlocked checkpoint's
+    -- reach (where the game shows Travel). True when Interact was sent; false anywhere else, or with a screen up.
+    function Game.places.openTravelMap()
+        local me = Game.player()
+        if not me or #Game.screens() > 0 then return false end
+        for _, p in ipairs(Game.places.list()) do
+            if p.unlocked then
+                local sphere = Game.get(p.checkpoint, "InteractComponent")
+                local ok, inside = pcall(function() return sphere:IsOverlappingActor(me) end)
+                if ok and inside then return Game.command("Player_Interact") end
+            end
+        end
+        return false
+    end
+
+    -- ------------------------------------------------------------------------------- photo mode
+    -- The game's photo mode (WBP_GuiPopupPhotoMode_C), as the pause menu's Photo Mode opens it: its own camera, moved by
+    -- the player's sticks or keys. On PC it has no photo of its own: Game.photo.take saves the view as HighResShot does.
+    function X.photoPopup() return Game.screen("GuiPopupPhotoMode") end
+    function X.shown(w)
+        local ok, v = pcall(function() return w:GetVisibility() end)
+        return valid(w) and ok and v ~= 1 and v ~= 2   -- not Collapsed, not Hidden
+    end
+    X.opening, X.cancelled = 0, -1
+    -- On the pause screen: to the General tab, down to Photo Mode, Confirm, a press every 0.4 s, up to `steps` tries;
+    -- given up (the pause screen closed, the log saying why) when Photo Mode is off there or the tries run out, stopped
+    -- when Game.photo.mode(false) came since.
+    function X.toPhotoMode(steps, opening, closing)
+        local pause = Game.screen("GuiScreenPause")
+        if opening ~= X.opening then
+            if opening ~= X.cancelled or steps <= 0 or (closing and not pause) then return end
+            if pause then Game.send(pause, "Button_Back") end
+            Game.after(0.4, function() X.toPhotoMode(steps - 1, opening, pause ~= nil) end)
+            return
+        end
+        if steps <= 0 then
+            if pause then Game.send(pause, "Button_Back") end
+            log("Game.photo.mode: the pause menu's Photo Mode couldn't be reached, so photo mode didn't open")
+            return
+        end
+        if not pause then
+            Game.after(0.4, function() X.toPhotoMode(steps - 1, opening) end)
+            return
+        end
+        local general = Game.get(pause, "mcGuiPanelGeneral")
+        local button = Game.get(general, "mcGuiButtonPhotoMode")
+        local current = Game.get(pause, "CurrentPanel")
+        local onGeneral = valid(current) and valid(general) and current:GetAddress() == general:GetAddress()
+        if onGeneral and X.shown(Game.get(button, "CanvasDisabled")) then
+            Game.send(pause, "Button_Back")
+            log("Game.photo.mode: the pause menu's Photo Mode is off here, so photo mode didn't open")
+            return
+        end
+        local press = not onGeneral and "Button_Left" or X.shown(Game.get(button, "CanvasSelected")) and "Button_Confirm" or "Button_Down"
+        Game.send(pause, press)
+        if press ~= "Button_Confirm" then Game.after(0.4, function() X.toPhotoMode(steps - 1, opening) end) end
+    end
+    -- Whether photo mode is up.
+    function Game.photo.active() return X.photoPopup() ~= nil end
+    -- Photo mode on, the game's way (the pause screen, then its Photo Mode: about two seconds), or off (its Exit). True
+    -- when it was started or ended, or is already so (where the game has Photo Mode off, the pause screen closes again
+    -- and the log says so); false outside the world, in a fight, or with another screen up.
+    function Game.photo.mode(on)
+        if on == false then
+            X.cancelled = X.opening
+            X.opening = X.opening + 1
+        end
+        local p = X.photoPopup()
+        if p then return on ~= false or Game.send(p, "Player_PhotoMode_Exit") end
+        if on == false then return true end
+        if not Game.player() or #Game.screens() > 0 or not Game.command("Player_Pause") then return false end
+        X.opening = X.opening + 1
+        local opening = X.opening
+        Game.after(0.5, function() X.toPhotoMode(16, opening) end)
+        return true
+    end
+    -- Photo mode's menus and hints hidden or shown again (its Hide UI); false outside photo mode.
+    function Game.photo.ui(shown)
+        local p = X.photoPopup()
+        if not p then return false end
+        if X.shown(Game.get(p, "CanvasOver")) == (shown ~= false) then return true end
+        return Game.send(p, "Player_PhotoMode_HideUI")
+    end
+    -- Photo mode's camera (a PhotoModeCameraActor), to read or move; nil outside photo mode.
+    function Game.photo.camera()
+        local c = Game.get(X.photoPopup(), "CameraActor")
+        return valid(c) and c or nil
+    end
+    -- A picture of what the game shows, saved as HighResShot does (without the game's menus), at the window's size times
+    -- `scale` (1 to 4), into Game.photo.folder(); written a frame or two later.
+    function Game.photo.take(scale)
+        scale = math.tointeger(scale or 1)
+        if not scale or scale < 1 or scale > 4 then return false end
+        return Game.console("HighResShot " .. scale)
+    end
+    function Game.photo.folder()
+        local p = Game.save.path()
+        local base = p and p:match("^(.*)[/\\][^/\\]+[/\\][^/\\]+$")
+        return base and (base .. "\\Screenshots\\Windows") or nil
+    end
+
+    -- ------------------------------------------------------------------------------- the exploration camera
+    -- The exploration camera following your cat (BP_AdventureCamera_C), or nil (a fight, a scene, the menus).
+    function X.camera()
+        local me = Game.player()
+        if not me then return nil end
+        for _, c in ipairs(Game.findAll("SwtAdventureCameraActor")) do
+            local t = X.live(c) and Game.get(c, "TargetActor")
+            if t and valid(t) and t:GetAddress() == me:GetAddress() then return c end
+        end
+        return nil
+    end
+    -- The camera as it shows now: { actor, distance (cm from your cat), fov (the field of view shown) }, or nil.
+    function Game.camera.view()
+        local cam = X.camera()
+        local lens = cam and Game.get(cam, "CameraComponent")
+        local me = Game.cat() and Game.cat():location()
+        local ok, at = pcall(function() return lens:K2_GetComponentLocation() end)
+        if not cam or not me or not ok or not at then return nil end
+        local okF, fov = pcall(function() return Game.controller().PlayerCameraManager:GetFOVAngle() end)
+        return { actor = cam, distance = math.sqrt((at.X - me.X) ^ 2 + (at.Y - me.Y) ^ 2 + (at.Z - me.Z) ^ 2), fov = okF and fov or nil }
+    end
+    -- Its settings, what its update makes the arm's length, its tilt and the lens's field of view each frame, and how it
+    -- follows and turns (the defaults on build 26337109 in brackets): distance (113 cm), fov (90), pitch (-5), speedDistance
+    -- (45: added at a run), speedFov (5), lag (10: 0 at once), rotationLag (5); and the turning, your cat's exploration
+    -- component's: turnYaw (55), turnPitch (120), pitchMin (-20), pitchMax (23). The camera eases to a new distance, tilt
+    -- or field of view (about a second).
+    X.CAMERA = { distance = "WCM_ArmLength", fov = "WCM_Fov", pitch = "WCM_ArmPitch", speedDistance = "WCM_SpeedArmLength",
+                 speedFov = "WCM_SpeedFov", lag = "WCM_LagVertical", rotationLag = "WCM_LagRotation" }
+    X.TURNING = { turnYaw = "WCM_TurnYaw", turnPitch = "WCM_TurnPitch", pitchMin = "WCM_PitchMin", pitchMax = "WCM_PitchMax" }
+    X.cameraKept = nil   -- { camera, values } as they were before the first Game.camera.set
+    function Game.camera.settings()
+        local cam = X.camera()
+        if not cam or Game.get(cam, "WCM_ArmLength") == nil then return nil end
+        local out = {}
+        for k, m in pairs(X.CAMERA) do out[k] = Game.get(cam, m) end
+        local e = Game.get(Game.player(), "ExplorationControl")
+        if Game.alive(e) then
+            for k, m in pairs(X.TURNING) do out[k] = Game.get(e, m) end
+        end
+        return out
+    end
+    -- The spring arm takes the lag once, in the camera's BeginPlay: put on it again.
+    function X.applyLag(cam)
+        local arm = Game.get(cam, "AdventureArmComponent")
+        local lag, side, turn = Game.get(cam, "WCM_LagVertical"), Game.get(cam, "WCM_LagHorizontal"), Game.get(cam, "WCM_LagRotation")
+        if not valid(arm) or not lag or not side or not turn then return false end
+        local ok = Game.set(arm, "bEnableCameraLag", lag ~= 0 or side ~= 0)
+        ok = Game.set(arm, "CameraLagSpeed", lag) and ok
+        ok = Game.set(arm, "bEnableCameraRotationLag", turn ~= 0) and ok
+        return Game.set(arm, "CameraRotationLagSpeed", turn) and ok
+    end
+    -- Set the settings given (the rest stay) on the camera following your cat. The first set keeps what it had, for
+    -- Game.camera.reset. False with no exploration camera, or a name it hasn't (nothing set then). A level's new camera
+    -- starts from the game's again.
+    --   Game.camera.set({ distance = 300, fov = 60, pitch = -35 })   -- far, narrow, looking down
+    function Game.camera.set(given)
+        local cam = X.camera()
+        local before = Game.camera.settings()
+        if not cam or not before or type(given) ~= "table" then return false end
+        local e = Game.get(Game.player(), "ExplorationControl")
+        for k, v in pairs(given) do
+            if (not X.CAMERA[k] and not X.TURNING[k]) or type(v) ~= "number" or (X.TURNING[k] and not Game.alive(e)) then return false end
+        end
+        if not (X.cameraKept and Game.alive(X.cameraKept.camera) and X.cameraKept.camera:GetAddress() == cam:GetAddress()) then
+            X.cameraKept = { camera = cam, values = before }
+        end
+        for k, v in pairs(given) do
+            if X.CAMERA[k] then Game.set(cam, X.CAMERA[k], v) else Game.set(e, X.TURNING[k], v) end
+        end
+        if given.lag ~= nil or given.rotationLag ~= nil then return X.applyLag(cam) end
+        return true
+    end
+    -- Put back what the camera had before the first set; true when there's nothing to put back.
+    function Game.camera.reset()
+        local k = X.cameraKept
+        X.cameraKept = nil
+        if not k or not k.values or not Game.alive(k.camera) then return true end
+        local cam = X.camera()
+        if not cam or cam:GetAddress() ~= k.camera:GetAddress() then return true end
+        local ok = Game.camera.set(k.values)
+        X.cameraKept = nil   -- (set kept the values again)
+        return ok
+    end
+
+    -- ------------------------------------------------------------------------------- the clans' dens
+    -- A clan's camp has den doors (WrcHousingDoorActor); a door leads to its den, and in the den are hotspots, places a
+    -- decoration can be built. Building one is C++'s (the game's cost lookup is native); taking one off is the hotspot's
+    -- own OnDelete.
+    -- The decorations the dens can have (DB_Den_Decorations): { {tag, name, mesh, skeletal, animation}, ... }.
+    function Game.dens.decorations()
+        local out = {}
+        for _, r in ipairs(Game.tables.rows("DB_Den_Decorations")) do
+            local row = r.row
+            local tag = Game.tagName(Game.get(row, "DecorationTag"))
+            local function nameOf(o) return valid(o) and o:GetFName():ToString() or nil end
+            out[#out + 1] = { tag = tag, name = Game.words("STR_ITEM_DECORATION_" .. (tag:match("%.([^.]+)$") or "")),
+                              mesh = nameOf(Game.get(row, "Mesh")), skeletal = nameOf(Game.get(row, "Skeletal")),
+                              animation = nameOf(Game.get(row, "AnimSequence")) }
+        end
+        return out
+    end
+    -- Every clan's dens, or one clan's ("ShadowClan"): { {door, clan, rank, inside}, ... }. rank is the rank whose den
+    -- it is ("Apprentice", "Warrior", "Deputy", "Leader"; "" for the clan's shared dens), inside where you come in. A
+    -- clan's rank dens share one door, which takes your cat to its rank's.
+    function Game.dens.list(clan)
+        local out = {}
+        for _, d in ipairs(Game.findAll("WrcHousingDoorActor")) do
+            if X.live(d) and Game.get(d, "bIsExit") ~= true then
+                local c = X.enumName("/Script/SwtQuest.EClanType", Game.get(d, "Clan"))
+                if not clan or c == clan then
+                    local multi = (Game.className(d) or ""):find("MultiRank", 1, true) ~= nil
+                    for _, way in ipairs({ { "DestinationComponent", multi and "Apprentice" or "" }, { "WarriorDestinationComponent", "Warrior" },
+                                           { "DeputyDestinationComponent", "Deputy" }, { "LeaderDestinationComponent", "Leader" } }) do
+                        if multi or way[1] == "DestinationComponent" then
+                            local okC, at = pcall(function() return Game.get(d, way[1]):K2_GetComponentLocation() end)
+                            if okC and at and not (at.X == 0 and at.Y == 0 and at.Z == 0) then   -- (a door left in a scene's level)
+                                out[#out + 1] = { door = d, clan = c, rank = way[2], inside = { X = at.X, Y = at.Y, Z = at.Z } }
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return out
+    end
+    -- Take your cat into a den: put where its door brings you in.
+    function Game.dens.enter(den)
+        local me = Game.cat()
+        if not me or type(den) ~= "table" or not den.inside then return false end
+        return (me:teleport(den.inside.X, den.inside.Y, den.inside.Z + 30))
+    end
+    -- A hotspot read: { actor, tag, size, rank, decoration (built now, from its model), savedStatus (0 None, 1 InProgress,
+    -- 2 ReadyToAdd, 3 Built), savedDecoration, started (Unix seconds) } (the saved ones from your cat's slot, as of the
+    -- last save).
+    function X.decorationModels()
+        local byModel = {}
+        for _, d in ipairs(Game.dens.decorations()) do
+            if d.mesh then byModel[d.mesh] = d.tag end
+            if d.skeletal then byModel[d.skeletal] = d.tag end
+        end
+        return byModel
+    end
+    function X.readHotspot(h, byModel, houses)
+        local s = { actor = h, tag = Game.tagName(Game.get(h, "UniqueHotspotTag")),
+                    size = X.enumName("/Script/SwtAdventure.EAdventureHousingDecorationSize", Game.get(h, "HotspotSize")),
+                    rank = X.enumName("/Script/SwtQuest.ECharacterRank", Game.get(h, "RequiredRank")), decoration = "" }
+        for _, cm in ipairs({ { "DecorationComponent", "StaticMesh" }, { "DecorationSkeletalComponent", "SkeletalMeshAsset" } }) do
+            local c = Game.get(h, cm[1])
+            local okV, shown = pcall(function() return c:IsVisible() end)
+            local m = okV and shown and Game.get(c, cm[2])
+            if m and valid(m) and byModel[m:GetFName():ToString()] then s.decoration = byModel[m:GetFName():ToString()] end
+        end
+        local e = type(houses) == "table" and houses[s.tag] or nil
+        e = type(e) == "table" and e or {}
+        s.savedStatus = math.tointeger(e.Status) or 0
+        s.savedDecoration = (e.DecorationTag == nil or e.DecorationTag == "None") and "" or e.DecorationTag
+        s.started = e.StartTime or 0
+        return s
+    end
+    function X.houses()
+        local slot = Game.save.slotData()
+        return type(slot) == "table" and type(slot.Housing) == "table" and slot.Housing.Houses or {}
+    end
+    -- The hotspots of a den (the den whose way in is nearest each, within 15 m), or every den's with none given.
+    function Game.dens.hotspots(den)
+        local out = {}
+        local byModel, houses = X.decorationModels(), X.houses()
+        local all = den and Game.dens.list() or {}
+        local function flat(a, b) return math.sqrt((a.X - b.X) ^ 2 + (a.Y - b.Y) ^ 2) end
+        for _, h in ipairs(Game.findAll("SwtAdventureHousingHotspot")) do
+            if X.live(h) then
+                local keep = true
+                if den then
+                    local at = X.where(h)
+                    local mine = at and flat(at, den.inside)
+                    keep = mine ~= nil and mine <= 1500
+                    for _, other in ipairs(all) do
+                        if keep and flat(at, other.inside) < mine - 1 then keep = false end
+                    end
+                end
+                if keep then out[#out + 1] = X.readHotspot(h, byModel, houses) end
+            end
+        end
+        return out
+    end
+    function Game.dens.hotspot(actor)
+        if not X.live(actor) or not Game.isA(actor, "SwtAdventureHousingHotspot") then return nil end
+        return X.readHotspot(actor, X.decorationModels(), X.houses())
+    end
+    -- Take the decoration off a hotspot, as the game's build screen does (its OnDelete): nothing shows, and your cat's
+    -- slot says None. False for what isn't a hotspot.
+    function Game.dens.removeDecoration(hotspot)
+        if type(hotspot) == "table" then hotspot = hotspot.actor end
+        if not X.live(hotspot) or not Game.isA(hotspot, "SwtAdventureHousingHotspot") then return false end
+        return (pcall(function() hotspot:OnDelete() end))
+    end
+
+    -- ------------------------------------------------------------------------------- looks and the clan's cats
+    -- A cat's look in full (its look component's CustomData, the game's FCatCustomData) by the game's own names, enums by
+    -- their names (ClanType "ShadowClan", Role "Warrior", the accessories' ids "DogCollar"...) and CombatStats by its tag's
+    -- name; nil without one. What each number picks: docs/reverse-engineering.md, "Cat models". Setting a look is C++'s.
+    X.LOOK_ENUMS = { ClanType = "/Script/SwtQuest.EClanType", Role = "/Script/SwtQuest.EGiverRole",
+                     AccesoryNeckId = "/Script/SwtAdventure.EAccesoryIds", AccesoryPawId = "/Script/SwtAdventure.EAccesoryIds",
+                     AccesoryHeadId = "/Script/SwtAdventure.EAccesoryIds", AccesoryBodyId = "/Script/SwtAdventure.EAccesoryIds" }
+    X.LOOK_FIELDS = { "ClanType", "Role", "CombatStats", "BodyOffset", "FaceOffset", "FurOffset", "TailOffset", "EarOffset",
+                      "EyeOffset", "WhiskerOffset", "BodyValue", "FaceValue", "FurValue", "EyeValue", "WhiskerValue", "TailIdx",
+                      "EarIdx", "FurIdx", "FurColorIdx", "Pattern01ColorIdx", "Pattern02ColorIdx", "PatternIdx", "MarkingIdx",
+                      "EyeLeftColorIdx", "EyeRightColorIdx", "bOverrideColors", "Design", "PrefixNameId", "SuffixNameId", "Gender",
+                      "CatSize", "AccesoryNeckId", "AccesoryPawId", "AccesoryHeadId", "AccesoryBodyId", "AccesoryNeckVar",
+                      "AccesoryPawVar", "AccesoryHeadVar", "AccesoryBodyVar", "ScarEyeId", "ScarEarId", "ScarBodyId", "ScarChestId" }
+    Game.lookFields = X.LOOK_FIELDS
+    function Cat:look()
+        local d = Game.get(self.actor, "MeshCustomizationComponent.CustomData")
+        if d == nil then return nil end
+        local out = {}
+        for _, f in ipairs(X.LOOK_FIELDS) do
+            local ok, v = pcall(function() return d[f] end)
+            if ok and v ~= nil then
+                if f == "CombatStats" then v = Game.tagName(v)
+                elseif X.LOOK_ENUMS[f] then v = X.enumName(X.LOOK_ENUMS[f], v)
+                elseif type(v) == "userdata" then v = str(v) end
+                out[f] = v
+            end
+        end
+        return out
+    end
+    -- A look from the save's text for one ("(ClanType=ShadowClan,Role=Leader,TailIdx=8,...)", as NPCData and your cat's
+    -- Customization keep it): the fields it names, as numbers, booleans and names.
+    function Game.lookFromText(text)
+        local out = {}
+        if type(text) ~= "string" then return out end
+        local s = text:gsub("^%s*%(", ""):gsub("%)%s*$", "")
+        local i = 1
+        while i <= #s do
+            local key, rest = s:match("^%s*,?%s*([%w_]+)=()", i)
+            if not key then break end
+            local value
+            if s:sub(rest, rest) == '"' then
+                local close = s:find('"', rest + 1, true)
+                value, i = s:sub(rest + 1, (close or #s + 1) - 1), (close or #s) + 1
+            elseif s:sub(rest, rest) == "(" then
+                local depth, j = 0, rest
+                repeat
+                    local ch = s:sub(j, j)
+                    if ch == "(" then depth = depth + 1 elseif ch == ")" then depth = depth - 1 end
+                    j = j + 1
+                until depth == 0 or j > #s
+                value, i = s:sub(rest, j - 1), j
+            else
+                local stop = s:find(",", rest, true) or (#s + 1)
+                value, i = s:sub(rest, stop - 1), stop
+            end
+            if key == "CombatStats" then value = value:match('TagName="([^"]*)"') or "None"
+            elseif value == "True" or value == "true" then value = true
+            elseif value == "False" or value == "false" then value = false
+            elseif tonumber(value) then value = tonumber(value) end
+            out[key] = value
+        end
+        return out
+    end
+    -- The game's accessories: { {id, slot ("Neck", "Paw", "Head", "Body"), variations}, ... }. Wearing one is C++'s.
+    X.accessories = nil
+    function Game.accessories()
+        if X.accessories then return X.accessories end
+        local out = {}
+        local gui = Game.manager("gui")
+        if not gui then return out end
+        local slots = {}
+        for _, list in ipairs({ "AccesoriesTestTags", "AccesoriesTestTagsDlc" }) do
+            for _, tag in ipairs(Game.list(Game.get(gui, list))) do
+                local slot, id = Game.tagName(tag):match("^Gameplay%.Inventory%.Cosmetic%.([^.]+)%.([^.]+)")
+                if slot then slots[id] = slot == "Legs" and "Paw" or slot end
+            end
+        end
+        local looks = {}
+        pcall(function()
+            Game.get(gui, "AccesoryVariations"):ForEach(function(k, v)
+                pcall(function()
+                    local n = 0
+                    v:get().Textures:ForEach(function() n = n + 1 end)
+                    looks[X.enumName("/Script/SwtAdventure.EAccesoryIds", k:get())] = n
+                end)
+            end)
+        end)
+        pcall(function()
+            Game.get(gui, "AccesoryMeshes"):ForEach(function(k)
+                pcall(function()
+                    local id = X.enumName("/Script/SwtAdventure.EAccesoryIds", k:get())
+                    if id and id ~= "None" then out[#out + 1] = { id = id, slot = slots[id] or "", variations = looks[id] or 0 } end
+                end)
+            end)
+        end)
+        table.sort(out, function(a, b) return a.id < b.id end)
+        if #out > 0 then X.accessories = out end   -- (the game's lists don't change once it has started)
+        return out
+    end
+    -- A cat's place: { clan, role, storyRole } (the story role a story or camp cat plays, "TheAmbitiousApprentice", else
+    -- nil); nil without a look.
+    function Cat:role()
+        local l = self:look()
+        if not l then return nil end
+        local story = Game.isA(self.actor, "SwtAdventureQuestActor") and X.enumName("/Script/SwtQuest.ENarrativeRole", Game.get(self.actor, "narrativeRole")) or nil
+        return { clan = l.ClanType, role = l.Role, storyRole = story ~= "None" and story or nil }
+    end
+    -- Every cat the save keeps for your cat's game, as of the last save (NPCData): { {clan, role, index, name, look,
+    -- storyRoles}, ... }: each clan's cats by role, those outside the clans, then the story cats kept only as their story
+    -- role (index -1). name as the game shows it, after your name mods.
+    function Game.clanCats()
+        local out = {}
+        local slot = Game.save.slotData()
+        local npcs = type(slot) == "table" and slot.NPCData
+        if type(npcs) ~= "table" then return out end
+        local story, placed = {}, {}
+        for role, text in pairs(type(npcs.NarrativeRoles) == "table" and npcs.NarrativeRoles or {}) do
+            if type(text) == "string" then story[#story + 1] = { role = role, text = text } end
+        end
+        table.sort(story, function(a, b) return a.role < b.role end)
+        local function name(look) return NAMES.name(look.PrefixNameId or "", look.SuffixNameId or "") end
+        local groups = {}
+        for g in pairs(npcs) do
+            if g ~= "NarrativeRoles" and g ~= "RemainingNames" then groups[#groups + 1] = g end
+        end
+        table.sort(groups)
+        for _, g in ipairs(groups) do
+            local byRole = npcs[g]
+            local roles = {}
+            for r in pairs(type(byRole) == "table" and byRole or {}) do roles[#roles + 1] = r end
+            table.sort(roles)
+            for _, r in ipairs(roles) do
+                for i, text in ipairs(type(byRole[r]) == "table" and byRole[r] or {}) do
+                    if type(text) == "string" then
+                        local c = { clan = g, role = r, index = i - 1, look = Game.lookFromText(text), storyRoles = {} }
+                        c.name = name(c.look)
+                        for s, st in ipairs(story) do
+                            if st.text == text then
+                                c.storyRoles[#c.storyRoles + 1] = st.role
+                                placed[s] = true
+                            end
+                        end
+                        out[#out + 1] = c
+                    end
+                end
+            end
+        end
+        for s, st in ipairs(story) do
+            local look = Game.lookFromText(st.text)
+            if not placed[s] and look.PrefixNameId and look.PrefixNameId ~= "" then
+                local clan = look.ClanType
+                out[#out + 1] = { clan = (clan == nil or clan == "None") and "OutOfClans" or clan, role = look.Role, index = -1,
+                                  look = look, name = name(look), storyRoles = { st.role } }
+            end
+        end
+        return out
     end
 end
 
