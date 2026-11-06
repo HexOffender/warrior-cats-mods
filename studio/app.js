@@ -501,7 +501,16 @@ wc.keepFocus();
 // The skip link focuses the page without changing the address (#main isn't a section).
 document.querySelector(".skip").addEventListener("click", e => { e.preventDefault(); wc.focusMain(); });
 (async () => {
-  if (!await refreshStatus()) {
+  // A first status that couldn't reach the studio may be a moment's blip: wc.js asks again RECHECK_MS later and
+  // says "server-gone" only when it's still away, and then the card takes over (it reloads the page once the
+  // studio is back). Until then the status is asked again on the same beat, and the page opens once it answers.
+  let ready = await refreshStatus();
+  while (!ready && failure === "gone") {
+    await new Promise(res => setTimeout(res, wc.RECHECK_MS));
+    if (gone) return;
+    ready = await refreshStatus();
+  }
+  if (!ready) {
     if (failure === "error") {
       main.append(el("div", { class: "error-card" }, el("h2", { text: "Clan Mod Studio isn't answering" }),
         el("p", { text: "Double-click Clan Mod Studio (in the wcmods folder) to open it again, then reload this page." })));
