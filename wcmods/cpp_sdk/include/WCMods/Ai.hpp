@@ -621,8 +621,28 @@ namespace wcmods
             return i;
         }
     } // namespace detail
-    // Make an animal ignore your cat (its detection mask 0: it notices nothing, by sight or sound; one that had noticed
-    // your cat loses it), or notice again with the mask it had (`ignore` false). False without a detection component.
+    namespace detail
+    {
+        // The cats an animal's detection component has noticed and still tracks (its DetectedCharacters, whatever its
+        // mask), handed to `fn` with your cat.
+        inline auto with_detected(UObject* actor, const std::function<bool(RC::Unreal::FScriptSetHelper&, UObject*&)>& fn) -> bool
+        {
+            Value set = get(detection_component(actor), L"DetectedCharacters");
+            UObject* me = player();
+            if (!me || !set.property || !set.at || property_type(set.property) != L"SetProperty") return false;
+            RC::Unreal::FScriptSetHelper h(static_cast<RC::Unreal::FSetProperty*>(set.property), set.at);
+            return fn(h, me);
+        }
+    } // namespace detail
+    // Whether an animal's detection tracks your cat now: it has noticed your cat and not lost it (its detection
+    // component's DetectedCharacters, which keeps your cat whatever its mask; the blackboard's Detected is the tree's).
+    inline auto tracking_player(UObject* actor) -> bool
+    {
+        if (!assert_game_thread(L"tracking_player")) return false;
+        return detail::with_detected(actor, [](RC::Unreal::FScriptSetHelper& h, UObject*& me) { return h.FindElementIndex(&me) >= 0; });
+    }
+    // Make an animal ignore your cat (its detection mask 0, and it gives your cat up as calm() does, whether or not it
+    // had noticed it), or notice again with the mask it had (`ignore` false). False without a detection component.
     inline auto ignore_player(UObject* actor, bool ignore = true) -> bool
     {
         if (!assert_game_thread(L"ignore_player")) return false;
@@ -634,7 +654,11 @@ namespace wcmods
             detail::ignoring().by_stealth.erase(actor);   // the mod's own now: stealth turned off leaves it
             if (!was.contains(actor)) was[actor] = *flags;
             set_detection_flags(actor, 0);
-            if (blackboard_bool(actor, L"Detected").value_or(false)) calm(actor);
+            // Given up always: one that had noticed your cat, its tree just restarted (its Detected not set yet), and
+            // only its mask zeroed, noticed your cat again within 6 s; with calm() it didn't (seen). Its detection still
+            // tracks your cat (tracking_player): taken out of that set, it noticed your cat again at once, mask 0 or
+            // not (seen), so the set is left as it is.
+            calm(actor);
             return true;
         }
         detail::ignoring().by_stealth.erase(actor);
@@ -881,32 +905,43 @@ namespace wcmods
         // +0x8C0: +0x690 on build 26337109), the map whose names include Tier1 and Perfect. No signature can find it: the
         // lookup reaches it through the manager's global, and its loader loads every table with the same code
         // (docs/reverse-engineering.md, "The game's AI"). Looked for once.
+        // Most places looked at aren't a map, and what's there read as one points anywhere: every pointer is checked
+        // before it's followed (seen: a key's text read from a wrong place crashed the game, once other tests had run).
+        inline auto chances_map_at(const uint8_t* set) -> bool
+        {
+            if (!readable(set, 0x38)) return false;
+            const auto* data = *reinterpret_cast<const uint8_t* const*>(set);
+            const auto* heap_bits = *reinterpret_cast<const uint8_t* const*>(set + 0x20);
+            const int32_t num = *reinterpret_cast<const int32_t*>(set + 0x08), num_bits = *reinterpret_cast<const int32_t*>(set + 0x28);
+            if (num < 2 || num > 16 || num_bits < num || num_bits > 4096) return false;   // nine tiers
+            if (!readable(data, static_cast<size_t>(num) * 0x58)) return false;
+            if (heap_bits && !readable(heap_bits, static_cast<size_t>(num_bits + 31) / 32 * 4)) return false;
+            std::vector<const uint8_t*> slots;
+            if (!set_slots(set, 0x58, slots)) return false;
+            bool tier1 = false, perfect = false;
+            for (const uint8_t* e : slots)
+            {
+                const auto* text = *reinterpret_cast<const wchar_t* const*>(e);
+                const int32_t len = *reinterpret_cast<const int32_t*>(e + 8);
+                if (!text || len <= 0 || len > 64 || !readable(text, static_cast<size_t>(len) * sizeof(wchar_t))) return false;
+                std::wstring n = fstring_at(e);
+                tier1 = tier1 || same_key(n, L"Tier1");
+                perfect = perfect || same_key(n, L"Perfect");
+            }
+            return tier1 && perfect;
+        }
         inline auto chances_map() -> const uint8_t*
         {
             static std::optional<size_t> at;
             auto* m = reinterpret_cast<const uint8_t*>(manager(STR("tuning")));
             if (!m || !is_a(manager(STR("tuning")), STR("/Script/SwtAdventure.SwtAdventureTuningManager"))) return nullptr;
-            auto holds = [&](size_t off) {
-                std::vector<const uint8_t*> slots;
-                if (!set_slots(m + off, 0x58, slots) || slots.size() < 2 || slots.size() > 16) return false;
-                bool tier1 = false, perfect = false;
-                for (const uint8_t* e : slots)
-                {
-                    std::wstring n = fstring_at(e);
-                    tier1 = tier1 || same_key(n, L"Tier1");
-                    perfect = perfect || same_key(n, L"Perfect");
-                }
-                return tier1 && perfect;
-            };
-            if (at && holds(*at)) return m + *at;
+            if (at && chances_map_at(m + *at)) return m + *at;
             at.reset();
-            for (size_t off = 0x460; off < 0x8C0; off += 8)
-                if (holds(off))
-                {
-                    at = off;
-                    return m + off;
-                }
-            return nullptr;
+            // Where build 26337109 has it first, then the rest of the manager's unreflected members.
+            if (chances_map_at(m + 0x690)) at = 0x690;
+            for (size_t off = 0x460; !at && off + 0x38 <= 0x8C0; off += 8)
+                if (chances_map_at(m + off)) at = off;
+            return at ? m + *at : nullptr;
         }
         // The map's slot for a tier by its name (L"Terrible", L"Tier1"... L"Tier6", L"Perfect").
         inline auto chances_row(std::wstring_view tier) -> Value

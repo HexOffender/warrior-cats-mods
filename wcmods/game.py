@@ -81,6 +81,11 @@ HIDDEN = [
     # its root node and its active node), which nothing reflects: an AI's tree and what it's doing now
     # (docs/reverse-engineering.md, "The game's AI").
     ("/Script/AIModule.BehaviorTreeComponent", [("WCM_InstanceStack", 0x118, "ArrayProperty")]),
+    # The player controller's talk flags: 0x1 your cat is in a talk (which the game's code tests before an animal
+    # notices your cat, a pounce, and more), 0x20 with it unless asked not to; set and cleared together by
+    # QuestPlayerController:SetInDialogue (below), which the talk box's own code calls as it goes on screen. Other
+    # bits (0x2, 0x4, 0x8, 0x10) are other code's (docs/reverse-engineering.md, "The talk box and your cat").
+    ("/Script/SwtQuest.QuestPlayerController", [("WCM_TalkFlags", 0x808, "IntProperty")]),
     # Its subclass's talk tables, StoryDialogues.csv and QuestDialogues.csv (TMap<FString,
     # FSwtQuestStoryDialoguesStruct>, 0x60-byte elements), which a bond talk's answer looks its row up in
     # (docs/reverse-engineering.md, "A bond talk's answer").
@@ -152,6 +157,12 @@ NATIVE = [
     ("Bonding:HasNode", 0x169F020,
      "whether a bond talk's answer is in the slot's Bonding/Nodes: (const FString* the answer's row name) -> bool, on "
      "the cat played now"),
+    # Your cat in a talk or out of it (docs/reverse-engineering.md, "The talk box and your cat"): a virtual of the
+    # quest player controller, which the talk box's construction calls with on.
+    ("QuestPlayerController:SetInDialogue", 0x16B91A0,
+     "puts your cat in a talk or takes it out: (the controller, bool on, bool keep): on sets WCM_TalkFlags' 0x1 and, "
+     "unless keep, 0x20; off clears both and asks the controller (its vtable's +0x1050) on the next frame, as the "
+     "game's own talks end, to go on to a talk it has queued"),
     ("Bonding:AddNode", 0x169F230,
      "marks a bond talk's answer in the slot's Bonding/Nodes (\"AddNodeToPersonalBonding\"): (const FString* the "
      "answer's row name), on the cat played now"),

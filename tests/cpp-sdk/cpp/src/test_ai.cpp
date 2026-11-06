@@ -331,6 +331,7 @@ namespace t
         auto detection_state(UObject* x) -> Json
         {
             Json o = Json::object();
+            o.set("tracking", Json(tracking_player(x)));
             UObject* c = detection_component(x);
             o.set("type", Json(get(c, L"DetectionType").number()));
             o.set("detected", Json(blackboard_bool(x, L"Detected").value_or(false)));
@@ -399,6 +400,15 @@ namespace t
             expect("notice.calm", calm(p->a));
             after(1.0, [p] {
                 value("notice.calmed", detection_state(p->a));
+                // ----- a, its detection still tracking your cat and its tree restarted, made to ignore it: it doesn't
+                // notice your cat again (seen in a suite run before ignore_player gave your cat up itself: noticed
+                // again within 6 s, its mask 0)
+                restart_ai(p->a);
+                expect("notice.ignore_tracked", ignore_player(p->a));
+                after(6.0, [p] {
+                value("notice.ignored_tracked", detection_state(p->a));
+                ignore_player(p->a, false);
+                calm(p->a);
                 stop_ai(p->a);
                 // ----- b ignoring your cat in front of it
                 restart_ai(p->b);
@@ -467,6 +477,7 @@ namespace t
                         });
                     });
                 });
+                });
             });
         });
         });
@@ -480,7 +491,13 @@ namespace t
             UObject* animal{};
             Npc cat;
             Vec3 home{};
+            Vec3 left_cat{}, left_you{};   // where the cat and your cat were as it was let go
         };
+        auto moved_since(UObject* x, Vec3 from) -> double
+        {
+            auto at = location(x);
+            return at ? std::hypot(at->x - from.x, at->y - from.y) : -1.0;
+        }
         auto tree_name(UObject* t) -> Json { return Json(text(name(t))); }
         auto cat_off(const std::shared_ptr<TreesRun>& r) -> double
         {
@@ -553,8 +570,14 @@ namespace t
                             // your cat 700 units on again: it stays
                             teleport(player(), walkable_from(*location(player()), 700, r->cat.actor()));
                             value("trees.left_0", Json(cat_off(r)));
+                            r->left_cat = location(r->cat.actor()).value_or(Vec3{});
+                            r->left_you = location(player()).value_or(Vec3{});
                             after(4.0, [r] {
                                 value("trees.left_4", Json(cat_off(r)));
+                                // Its own way since (your cat could be moved by the game meanwhile: seen once, the
+                                // distance shrank by 660 in a suite run)
+                                value("trees.left_moved", Json(moved_since(r->cat.actor(), r->left_cat)));
+                                value("trees.you_moved", Json(moved_since(player(), r->left_you)));
                                 r->cat.remove();
                                 teleport(player(), r->home);
                                 done("ai_trees");
@@ -579,10 +602,15 @@ namespace t
             std::string only;
             int enemy_turns{}, attempts{};
             UObject* last_turn{};
+            UObject* answered{};   // the end's dilemma popup answered, and when
+            std::chrono::steady_clock::time_point answered_at;
             Json used = Json::array();
             std::chrono::steady_clock::time_point began;
             TimerId timer{};
             bool set_up{}, ending{};
+            // The animals tried, nearest first from where the test began (listed again after a pounce, the one just
+            // missed would be the nearest)
+            std::vector<std::pair<UObject*, UClass*>> animals;
         };
         auto chances_json(const std::optional<AiChances>& c) -> Json
         {
@@ -639,6 +667,18 @@ namespace t
                 }
                 auto_fight(true);
             }
+            // The end's dilemma (by chance): the first answer, as test_fights does; once per popup (again if it's still up
+            // 2 s on).
+            if (r->ending && dilemma())
+            {
+                UObject* popup = ui::screen(L"WBP_GuiPopupDilemma_C").object();
+                const auto now = std::chrono::steady_clock::now();
+                if ((popup != r->answered || now - r->answered_at > std::chrono::seconds(2)) && answer_dilemma(0))
+                {
+                    r->answered = popup;
+                    r->answered_at = now;
+                }
+            }
             UObject* cur = fight_current();
             if (cur && cur != r->last_turn && cur == r->enemy_actor) ++r->enemy_turns;
             r->last_turn = cur;
@@ -669,14 +709,22 @@ namespace t
         }
         auto fight_once(const std::shared_ptr<FightRun>& r) -> void
         {
-            auto animals = fight_animals(20000);
-            if (r->attempts >= 3 || static_cast<int>(animals.size()) <= r->attempts || !start_fight(animals[r->attempts]))
+            if (r->animals.empty())
+                for (UObject* x : fight_animals(20000))
+                    r->animals.emplace_back(x, x->GetClassPrivate());
+            bool started = false;
+            while (!started && r->attempts < 3 && r->attempts < static_cast<int>(r->animals.size()))
             {
-                expect("fight.started", false, "no fight after three tries");
+                auto [x, cls] = r->animals[r->attempts++];
+                started = detail::object_staying(x, cls) && start_fight(x);
+            }
+            value("fight.attempts", Json(r->attempts));
+            if (!started)
+            {
+                expect("fight.started", false, std::format("no fight after {} tries, of {} animals", r->attempts, r->animals.size()));
                 done("ai_fight");
                 return;
             }
-            ++r->attempts;
             r->began = std::chrono::steady_clock::now();
             r->timer = every(0.1, [r] { detail::guarded(L"ai_fight test", [&] { fight_tick(r); }); });
         }

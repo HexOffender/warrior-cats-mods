@@ -70,6 +70,10 @@ ANCHORS = {
         (0x1957D60, "matches a cat's traits against StoryDialogues.csv's rows: the map at +0x280"),
         (0x16B1BD0, "a quest's title from QuestDialogues.csv: the map at +0x2D0"),
     ],
+    # The talk flags (game.NATIVE's SetInDialogue): a virtual, but the one function that writes both bits.
+    "/Script/SwtQuest.QuestPlayerController": [
+        (0x16B91A0, "puts your cat in a talk or out of it: the talk flags at +0x808"),
+    ],
     "/Script/SwtAdventure.TurnBasedCombatComponent": [
         (0x17D6AC0, "builds a fighter's stats from its level"),
         (0x17D7250, "a fighter's Prowess with its buffs"),
