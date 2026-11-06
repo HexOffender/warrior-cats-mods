@@ -713,7 +713,7 @@ def test_every_fight_call_is_documented():
     are one local table (the main chunk is near Lua's 200 locals there)."""
     import os
     lua = game.lua()
-    block = lua[lua.index("-- Fights and the story from a script (the Lua plan's steps 4 and 5;"):lua.index("the game's developer switches")]
+    block = lua[lua.index("-- Fights and the story from a script (the Lua plan's steps 4 and 5;"):lua.index("Game.tables = {}")]
     names = re.findall(r"^    function Game\.combat\.(\w+)\(", block, re.M)
     assert {"start", "attack", "rest", "flee", "finish", "dilemma", "answerDilemma", "autoFight", "onDamage", "moves"} <= set(names), names
     path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "scripting.md")
@@ -729,6 +729,27 @@ def test_every_fight_call_is_documented():
     for name in re.findall(r"^    function Game\.scenes\.(\w+)\(", block, re.M) + ["progression", "mood", "setMood"]:
         assert f".{name}(" in story or f"Game.{name}(" in story, name
     assert "    local F = {}" in block and not re.search(r"(?m)^    local (?!F = )", block)
+
+
+def test_every_table_call_is_documented():
+    """Game.tables, Game.words and Game.wordKeys (the Lua plan's step 6) are in scripting.md's Tables and words section;
+    the string tables' id goes to UE4SS as an FName and RemoveRow's row name as a string (the other way round crashed the
+    game, inside UE4SS)."""
+    import os
+    lua = game.lua()
+    block = lua[lua.index("Game.tables = {}"):lua.index("the game's developer switches")]
+    names = re.findall(r"^    function Game\.tables\.(\w+)\(", block, re.M)
+    assert {"list", "get", "rowNames", "rows", "row", "set", "removeRow"} <= set(names), names
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "scripting.md")
+    with open(path, encoding="utf-8") as f:
+        docs = f.read()
+    section = docs[docs.index("### Tables and words"):docs.index("### The game's developer switches")]
+    for name in names:
+        assert f"Game.tables.{name}(" in section, name
+    assert "Game.words(" in section and "Game.wordKeys(" in section
+    assert "FName(tableId or T.STRINGS)" in block and "t:RemoveRow(rowName)" in block and "RemoveRow(FName" not in block
+    # no parameter shadows Lua's table library
+    assert not re.search(r"function Game\.(?:words|wordKeys)\([^)]*\btable\b", block)
 
 
 def test_json_decode_skips_a_bom():

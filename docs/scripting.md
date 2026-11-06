@@ -590,6 +590,40 @@ Game.combat.autoFight(true)                   -- or let the script play every tu
 
 A fight's end saves where your cat is, and winning gives your cat experience.
 
+### Tables and words
+
+The game's DataTables hold items, characters, fight parties, animations, the sky's presets, den decorations and
+tutorials. They load with its level or its managers: 69 were in memory in the forest on build 26337109. A row is the
+game's own memory, so a change is what the game reads from then on; code that copied a row's numbers earlier keeps its
+copy. Every line the game shows is a key of its string table (`SwtStrings`, loaded from `Strings_<language>.csv`).
+
+Three things are C++'s only:
+- adding a row: UE4SS's `AddRow` copies through the row's native copy, which it can't reach on this engine;
+- changing words;
+- the tuning (`TuningData.csv`): it's raw memory.
+
+```lua
+local row = Game.tables.row("DT_Combat_Generator", "Default")
+print(row.NumParty)                                        -- 3
+Game.tables.set("DT_Combat_Generator", "Default", "NumParty", 2)
+print(Game.words("STR_CAT_NAME2_PAW"))                     -- Emberpaw
+```
+
+| Call | Gives or does |
+|---|---|
+| `Game.tables.list()` | Every DataTable in memory: `{ {name, path, rowStruct, rows}, ... }` (`rowStruct` is its rows' struct, `QuestObjectsInfoDataStruct`) |
+| `Game.tables.get(nameOrPath)` | A table by its name (`"DT_QuestObjectsInfo"`) or its path (`"/Game/Gameplay/DataTables/Quests/DT_QuestObjectsInfo.DT_QuestObjectsInfo"`), when it's in memory; nil when it isn't. The other calls take a table, a name or a path |
+| `Game.tables.rowNames(t)`, `Game.tables.rows(t)` | Its row names, in the table's order; every row, `{ {name, row}, ... }`, each the game's own |
+| `Game.tables.row(t, rowName)` | A row by its name: the game's own row (a struct; `Game.get` and `Game.set` work on it). Nil when the table hasn't got it |
+| `Game.tables.set(t, rowName, path, value)` | Change a row's value by its path in the row (`"NumParty"`, `"itemName"`): true, or false and why |
+| `Game.tables.removeRow(t, rowName)` | Take a row out; false when there's no such row. It's gone until the game loads the table again (a restart), because a script can't put it back. The game frees the row's memory, so don't use a row you got from `row` or `rows` before: writing to it would write into freed memory |
+| `Game.words(key, tableId)` | A key's words as the game shows them (`"STR_CAT_NAME2_PAW"` is `"Emberpaw"`), or nil for a key the table hasn't got. `tableId` is `SwtStrings` unless given |
+| `Game.wordKeys(prefix, tableId)` | The table's keys, or only those starting with `prefix` (`"STR_CAT_NAME"`), in the table's order. `SwtStrings` has 8,907, read in about 30 ms |
+
+**A plain string where UE4SS wants an FName crashes the game,** inside UE4SS where `pcall` can't catch it. The string
+table calls take the table's id as an FName, and these calls make one; UE4SS's own `RemoveRow` and `FindRow` take a
+string. The crash is the same the other way round.
+
 ### The game's developer switches
 
 The cheats manager carries the developers' own settings. The release build obeys some and ignores

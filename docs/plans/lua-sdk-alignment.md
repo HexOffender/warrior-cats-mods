@@ -128,6 +128,10 @@ their targets; `Game.scenes`: `list()`, `playing()`, `seen(tag)`, `skip()`; `Gam
 
 **Proof.** In game: a row read and changed from Lua, read back from C++.
 
+**Done.** `Game.tables` (`list`, `get`, `rowNames`, `rows`, `row`, `set`, `removeRow`), `Game.words` and
+`Game.wordKeys`. A row changed from Lua is read back by a fresh lookup (C++'s reading goes through the same memory).
+`wordKeys` takes a prefix, as C++'s `word_keys` does. Changing words, and the tuning, are step 8's.
+
 ## 7. The rest of the world
 
 **The calls.** `Game.command`, `Game.save.hash`; `Game.items.info` (name, icon, kind, from the item table) and
@@ -162,7 +166,7 @@ the other addons are, opt in. Or these calls stay C++'s only.
 | 2. The game's AI | done | #154 |
 | 3. Animals and walking cats | done | #155 |
 | 4. Fights | done | #156 |
-| 5. Story | done | this branch, `claude/lua-story` |
-| 6. Tables and words | not started | |
+| 5. Story | done | #157 |
+| 6. Tables and words | done | this branch, `claude/lua-tables` |
 | 7. The rest of the world | not started | |
 | 8. Only through C++ | to decide | |
