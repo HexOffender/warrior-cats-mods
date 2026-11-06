@@ -698,8 +698,12 @@ def test_every_ai_call_is_documented():
     for name in names:
         assert f"Game.ai.{name}(" in section, name
     assert "`Game.animals.near(radius, from)`" in section and "function Game.animals.near(radius, from)" in lua
+    for name in re.findall(r"^    function Game\.(?:animals|walkers)\.(\w+)\(", lua, re.M):
+        assert f".{name}(" in section, name
     block = lua[lua.index("Game.ai = { TREES = {"):lua.index("-- ===================================================================================== the game's quest HUD")]
     assert "\ndo\n    local AI = Game.ai\n" in block and block.rstrip().endswith("end")
+    # the animals and walking cats are a block of their own (the AI block had two locals to spare)
+    assert block.count("\ndo\n    local AI = Game.ai\n") == 2 and "local aiUtil = {}" in lua
     # a TSet's ForEach hands the element alone (seen: (_, e) read nil and tracking was never seen)
     assert "c.DetectedCharacters:ForEach(function(e)" in lua
 

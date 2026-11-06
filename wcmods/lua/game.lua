@@ -2893,6 +2893,9 @@ end
 -- InstanceStack is an array Lua can't read.
 --   for _, a in ipairs(Game.animals.near(2000)) do Game.ai.stop(a.actor) end      -- the animals near stand still
 --   Game.ai.moveTo(mouse, { X = x, Y = y, Z = z }, { speed = 200, restartAfter = true })
+-- The AI block's helpers, for the blocks after it: each block's locals count toward the main chunk's 200 while it's
+-- open, so the AI's calls, the animals and the walking cats are blocks of their own.
+local aiUtil = {}
 Game.ai = { TREES = { "BT_Enemy", "BT_ChaseOff_Enemy", "BT_CombatEnemy", "BT_BossEnemy", "BT_AttackEnemy", "BT_Escort",
                       "BT_Mentor", "BT_WalkingNPC" } }
 Game.animals = Game.animals or {}
@@ -3295,7 +3298,7 @@ do
     local moves = {}
     local Move = {}
     Move.__index = Move
-    function Move:actorOrNil() return valid(self.actor) and self.actor or nil end
+    function Move:actorOrNil() return Game.alive(self.actor) and self.actor or nil end
     function Move:location() return where(self.actor) end
     local function moveOf(actor)
         for _, m in ipairs(moves) do
@@ -3309,7 +3312,7 @@ do
         for _, m in ipairs(all) do
             if m.walk and m.goal then
                 -- After an actor: the walk's end moves with it.
-                local g = valid(m.goal) and where(m.goal)
+                local g = Game.alive(m.goal) and where(m.goal)
                 if not g then finishWalk(m, "cancelled")
                 elseif flat(g, m.walk.to) > math.max(50, m.walk.radius / 2) then
                     m.walk.to, m.walk.best, m.walk.bestAt = g, math.huge, os.clock()
@@ -3366,7 +3369,7 @@ do
                        for i, x in ipairs(moves) do
                            if x == m then table.remove(moves, i) break end
                        end
-                       if opts.restartAfter and valid(m.actor) then AI.restart(m.actor) end
+                       if opts.restartAfter and Game.alive(m.actor) then AI.restart(m.actor) end
                        if opts.done then
                            local okD, err = pcall(opts.done, result)
                            if not okD then log("Game.ai.moveTo done: %s", tostring(err)) end
@@ -3467,7 +3470,7 @@ do
     -- What ignorePlayer kept for this actor: nil for an entry of an actor that's gone (its address may be another's now).
     local function keptFor(key, actor)
         local w = ignoring.was[key]
-        if w and not (valid(w.actor) and same(w.actor, actor)) then
+        if w and not (Game.alive(w.actor) and same(w.actor, actor)) then
             ignoring.was[key], ignoring.stealth[key] = nil, nil
             return nil
         end
@@ -3508,7 +3511,7 @@ do
         ignoring.everywhere = on == true
         local function sweep()
             for k, w in pairs(ignoring.was) do
-                if not valid(w.actor) then ignoring.was[k], ignoring.stealth[k] = nil, nil end
+                if not Game.alive(w.actor) then ignoring.was[k], ignoring.stealth[k] = nil, nil end
             end
             if not ignoring.everywhere then return end
             for _, n in ipairs(Game.animals.near(5000)) do
@@ -3527,7 +3530,7 @@ do
         end
         for k in pairs(ignoring.stealth) do
             local w = ignoring.was[k]
-            if w and valid(w.actor) then AI.ignorePlayer(w.actor, false) end
+            if w and Game.alive(w.actor) then AI.ignorePlayer(w.actor, false) end
         end
         ignoring.stealth = {}
         return true
@@ -3581,14 +3584,14 @@ do
         for i, x in ipairs(follows) do
             if x == f then table.remove(follows, i) break end
         end
-        if not valid(f.actor) then return end
+        if not Game.alive(f.actor) then return end
         local m = moveOf(f.actor)
         if m and m.walk then finishWalk(m, "cancelled") end
         if putBack and f.wasRunning then AI.restart(f.actor) end
     end
     local function keepFollowing(f)
         if f.ended then return end
-        if not valid(f.actor) or not valid(f.target) then return endFollow(f, true) end
+        if not Game.alive(f.actor) or not Game.alive(f.target) then return endFollow(f, true) end
         if AI.running(f.actor) then return endFollow(f, false) end   -- its tree run again by someone: that kept
         if moveOf(f.actor) or os.clock() < f.waitTill then return end
         local me, them = where(f.actor), where(f.target)
@@ -3634,7 +3637,9 @@ do
 
     -- ------------------------------------------------------------------------------- the animals near
     -- The roaming animals within `radius` cm of your cat (or of `from`, a place or an actor), nearest first:
-    -- { {actor, distance}, ... } (the engine's list of the world's WrcRoamingEnemy actors).
+    -- { {actor, distance, generator, kind, model}, ... }: its generator (the level's that spawns it), the kind
+    -- Game.animals.spawn gave it (nil for the game's own), its model's name ("SK_Rabbit", "SK_Mice"). (The engine's list
+    -- of the world's WrcRoamingEnemy actors.)
     function Game.animals.near(radius, from)
         local out = {}
         radius = radius or 5000
@@ -3645,15 +3650,391 @@ do
         pcall(function() Game.library("GameplayStatics"):GetAllActorsOfClass(Game.player() or Game.world(), cls, list) end)
         for _, e in ipairs(list) do
             local ok, a = pcall(function() return e:get() end)
-            local at = ok and valid(a) and where(a)
+            local at = ok and Game.alive(a) and where(a)
             local d = at and math.sqrt((at.X - origin.X) ^ 2 + (at.Y - origin.Y) ^ 2 + (at.Z - origin.Z) ^ 2)
             -- (not one a story scene spawned, as C++'s fight_animals leaves out)
             if d and d <= radius and not (Game.fullName(a) or ""):find("MovieScene", 1, true) then
-                out[#out + 1] = { actor = a, distance = d }
+                local g, mesh = Game.get(a, "PreyGenerator"), Game.get(a, "Mesh.SkeletalMesh")
+                out[#out + 1] = { actor = a, distance = d, generator = valid(g) and g or nil, kind = Game.animals.kind(a),
+                                  model = valid(mesh) and mesh:GetFName():ToString() or nil }
             end
         end
         table.sort(out, function(a, b) return a.distance < b.distance end)
         return out
+    end
+    aiUtil.actorOf, aiUtil.same, aiUtil.where, aiUtil.place, aiUtil.flat = actorOf, same, where, place, flat
+end
+
+do
+    local AI = Game.ai
+    local actorOf, same, where, place, flat = aiUtil.actorOf, aiUtil.same, aiUtil.where, aiUtil.place, aiUtil.flat
+
+    -- ------------------------------------------------------------------------------- animals put in the world
+    -- The animals roaming the forest are spawned by the level's generators (BP_Enemy_Generator_C), each with a fight
+    -- party's tag per clan and rank (DT_Combat_Generator's rows: what the fight is). A generator spawned at run time gave
+    -- its animal's fight another generator's party (seen from C++), so Game.animals.spawn borrows a placed one: its
+    -- party tags set to the kind, moved to the place, its own animal taken away; given back (its tags, its place, its own
+    -- animal) once the script's animal is gone. Its fight is the kind's (seen from C++).
+    local KINDS_TABLE = "/Game/Gameplay/DataTables/Combat/DT_Combat_Generator.DT_Combat_Generator"
+    local CLAN_SETUPS = { "ThunderClanCombatTags", "ShadowClanCombatTags", "RiverClanCombatTags", "WindClanCombatTags" }
+    local RANK_SETUPS = { "ApprenticeSetup", "WarriorSetup", "DeputySetup", "LeaderSetup" }
+    local borrowed = { all = {}, keeper = nil }
+    -- Every kind in the game's table, { {tag, party = {character tags}, levels = {...}}, ... } (323 on build 26337109:
+    -- Fixed parties of one to three animals or out-of-clan cats at a level, Boss, Hybrid, SandboxAttacks).
+    function Game.animals.kinds()
+        local out = {}
+        local t = Game.object(KINDS_TABLE) or Game.load(KINDS_TABLE)
+        if not t then return out end
+        pcall(function()
+            t:ForEachRow(function(_, row)
+                pcall(function()   -- (an error in here wouldn't reach the pcall round the listing)
+                    local k = { tag = str(row.GeneratorTag.TagName), party = {}, levels = {} }
+                    row.CharacterParty:ForEach(function(_, e)
+                        local c = e:get()
+                        k.party[#k.party + 1] = str(c.characterTag.TagName)
+                        k.levels[#k.levels + 1] = math.tointeger(c.Level) or c.Level
+                    end)
+                    if k.tag ~= "" and k.tag ~= "None" then out[#out + 1] = k end
+                end)
+            end)
+        end)
+        return out
+    end
+    -- A generator's animals there now (its SpawnedPreys: weak pointers, read one by one).
+    local function preysOf(g)
+        local out = {}
+        local arr = Game.get(g, "SpawnedPreys")
+        local okN, n = pcall(function() return #arr end)
+        for i = 1, okN and n or 0 do
+            local ok, p = pcall(function() return arr[i]:Get() end)
+            if ok and valid(p) then out[#out + 1] = p end
+        end
+        return out
+    end
+    local function partyTags(g)
+        local tags = {}
+        for _, c in ipairs(CLAN_SETUPS) do
+            for _, r in ipairs(RANK_SETUPS) do tags[#tags + 1] = str(Game.get(g, c .. "." .. r .. ".TagName")) end
+        end
+        return tags
+    end
+    local function setPartyTags(g, tags)
+        local i = 0
+        for _, c in ipairs(CLAN_SETUPS) do
+            for _, r in ipairs(RANK_SETUPS) do
+                i = i + 1
+                if tags[i] then pcall(function() g[c][r].TagName = FName(tags[i]) end) end
+            end
+        end
+    end
+    local function putAt(a, at) return (pcall(function() a:K2_SetActorLocation(at, false, {}, true) end)) end
+    local function borrowedOf(animal)
+        for i, b in ipairs(borrowed.all) do
+            if same(b.animal, animal) then return b, i end
+        end
+        return nil
+    end
+    -- A placed generator to borrow: one of the roaming animals' (its PreyGenerator), a roaming fight's (CombatType Enemy,
+    -- not a quest's or a boss's), not borrowed already, the farthest from your cat (its own animal goes unseen).
+    local function generatorToBorrow()
+        local me = Game.player() and where(Game.player())
+        if not me then return nil end
+        local best, far = nil, -1
+        for _, n in ipairs(Game.animals.near(1e9)) do
+            local g = Game.get(n.actor, "PreyGenerator")
+            if valid(g) and Game.isA(g, "WrcPreyGenerator") and Game.get(g, "CombatType") == 1
+                and not Game.get(g, "bIsQuestEncounter") and not Game.get(g, "bIsBossFight") then
+                local taken = false
+                for _, b in ipairs(borrowed.all) do taken = taken or same(b.generator, g) end
+                local at = where(g)
+                if not taken and at and flat(at, me) > far then best, far = g, flat(at, me) end
+            end
+        end
+        return best
+    end
+    -- Whether a tag is a fight party's: a registered tag under Gameplay.Combat.Generator (checked before a generator is
+    -- borrowed: its own animal is taken away for it).
+    local function isKindTag(tag)
+        local lib = Game.library("BlueprintGameplayTagLibrary")
+        local ok, r = pcall(function() return lib:MatchesTag(Game.tag(tag), Game.tag("Gameplay.Combat.Generator"), false) end)
+        return ok and r == true
+    end
+    local function takePreys(g)
+        for _, p in ipairs(preysOf(g)) do pcall(function() p:K2_DestroyActor() end) end
+    end
+    -- A borrowed generator given back: the script's animal (if still there) gone, its tags and place as they were, and
+    -- its own animal back at home.
+    local function giveBack(b)
+        if not Game.alive(b.generator) then return end
+        takePreys(b.generator)
+        setPartyTags(b.generator, b.tags)
+        putAt(b.generator, b.home)
+        pcall(function() b.generator:UpdateGenerator() end)
+    end
+    -- Once a second while there are any: an animal gone (a fight won, taken by the game) gives its generator back, or,
+    -- to be respawned, gets a new one from it 2 s after it went.
+    local function keepBorrowed()
+        local now = os.clock()
+        for i = #borrowed.all, 1, -1 do
+            local b = borrowed.all[i]
+            if not Game.alive(b.generator) then table.remove(borrowed.all, i)
+            elseif not Game.alive(b.animal) then
+                if not b.respawn then
+                    giveBack(b)
+                    table.remove(borrowed.all, i)
+                else
+                    b.goneAt = b.goneAt or now
+                    if now - b.goneAt >= 2 then
+                        local preys = preysOf(b.generator)
+                        if #preys == 0 then
+                            putAt(b.generator, b.place)
+                            pcall(function() b.generator:UpdateGenerator() end)
+                            preys = preysOf(b.generator)
+                        end
+                        if preys[1] then b.animal, b.goneAt = preys[1], nil end
+                    end
+                end
+            end
+        end
+        if #borrowed.all == 0 and borrowed.keeper then
+            Game.cancel(borrowed.keeper)
+            borrowed.keeper = nil
+        end
+    end
+    -- Put an animal of a kind (a party tag: Game.animals.kinds(), "Gameplay.Combat.Generator.Fixed.Rabbit.01.L6") in the
+    -- world at a place ({X, Y, Z}), as the game puts its own: one of the game's generators, borrowed (the farthest from
+    -- your cat), spawns it there. opts.respawn: a new one whenever it's gone (the generator kept), else the generator is
+    -- given back once it's gone. The animal, its AI running; or nil and why (a kind the game has no party for, no
+    -- generator free). Its fight is the kind's party. The generators a script borrowed aren't given back if the script
+    -- ends first (UE4SS gives Lua no end of its own): Game.animals.remove each first.
+    function Game.animals.spawn(kind, at, opts)
+        opts = opts or {}
+        at = place(at)
+        if type(kind) ~= "string" or kind == "" or not at then return nil, "spawn needs a kind and a place" end
+        if not Game.player() then return nil, "your cat isn't in the world" end
+        if not isKindTag(kind) then return nil, kind .. " isn't one of the game's fight parties" end
+        local g = generatorToBorrow()
+        local home = g and where(g)
+        if not home then return nil, "no generator free to borrow" end
+        local b = { generator = g, home = home, tags = partyTags(g), kind = kind, place = at, respawn = opts.respawn == true }
+        takePreys(g)
+        local tags = {}
+        for i = 1, 16 do tags[i] = kind end
+        setPartyTags(g, tags)
+        putAt(g, at)
+        pcall(function() g:UpdateGenerator() end)
+        local preys = preysOf(g)
+        if #preys == 0 then   -- nothing for that kind: given back at once
+            giveBack(b)
+            return nil, "the game made no animal of " .. kind
+        end
+        b.animal = preys[1]
+        borrowed.all[#borrowed.all + 1] = b
+        borrowed.keeper = borrowed.keeper or Game.every(1, keepBorrowed)
+        return b.animal
+    end
+    -- Take an animal out of the world: one Game.animals.spawn put there for good (its generator given back, its own
+    -- animal home again); one of the game's (its generator brings it back on its next UpdateGenerator). False for what
+    -- isn't a roaming animal.
+    function Game.animals.remove(animal)
+        animal = actorOf(animal)
+        if not animal or not Game.isA(animal, "WrcRoamingEnemy") then return false end
+        local b, i = borrowedOf(animal)
+        if b then
+            giveBack(b)
+            table.remove(borrowed.all, i)
+            return true
+        end
+        return (pcall(function() animal:K2_DestroyActor() end))
+    end
+    -- The kind Game.animals.spawn gave an animal, or nil (one of the game's own).
+    function Game.animals.kind(animal)
+        local b = borrowedOf(actorOf(animal))
+        return b and b.kind or nil
+    end
+
+    -- ------------------------------------------------------------------------------- the clan cats' walking
+    -- A clan cat walking about (BP_WalkingNPC_Character_Base_C, as a mod's cats are) runs BT_WalkingNPC: while its
+    -- blackboard's bShouldAllowMovement is set, its "NPC Spline Walking" task walks it along its path, the spline its
+    -- SplineReference holds (a BP_WalkingNPC_Spline_C's WalkingSplineComponent). The game's paths are there and back. A
+    -- path of the script's own is that actor spawned and given points. The game's walking cats stand while your cat is
+    -- near (300 units off one stood; 1,200 off it walked, seen from C++); a mod's cats don't.
+    Game.walkers = {}
+    local WALK_PATH_CLASS = "/Game/Gameplay/Blueprints/WorldElements/BP_WalkingNPC_Spline.BP_WalkingNPC_Spline_C"
+    local modPaths = { all = {}, keeper = nil }   -- {actor, path (the spline actor), had (its spline before), hadSpeed}
+    local function isWalker(a) return valid(a) and Game.isA(a, "SwtAdventureWalkingNPC") end
+    local function splineOf(a)
+        local s = AI.get(a, "SplineReference")
+        return valid(s) and s or nil
+    end
+    local function splinePoints(s)
+        local out = {}
+        local okN, n = pcall(function() return s:GetNumberOfSplinePoints() end)
+        for k = 0, (okN and math.tointeger(n) or 0) - 1 do
+            local ok, p = pcall(function() return s:GetLocationAtSplinePoint(k, 1) end)   -- 1: ESplineCoordinateSpace::World
+            if ok and p then out[#out + 1] = { X = p.X, Y = p.Y, Z = p.Z } end
+        end
+        return out
+    end
+    local function setWalkSpeed(a, speed)
+        Game.set(AI.controller(a), "DefaultMaxWalkSpeed", speed)
+        Game.set(a, "CharacterMovement.MaxWalkSpeed", speed)
+    end
+    local function modPathOf(a)
+        for i, m in ipairs(modPaths.all) do
+            if same(m.actor, a) then return m, i end
+        end
+        return nil
+    end
+    local function dropPath(m)
+        if Game.alive(m.path) then pcall(function() m.path:K2_DestroyActor() end) end
+    end
+    -- A cat off the script's path, before the path goes: a game cat back on its own (its walk started again on it, at
+    -- its own speed), one with none to go back to (a mod's cat) standing. Its walk would otherwise go on along a spline
+    -- about to be destroyed.
+    local function offModPath(m)
+        if not Game.alive(m.actor) then return end
+        if m.hadSpeed then setWalkSpeed(m.actor, m.hadSpeed) end
+        if Game.alive(m.had) then
+            AI.set(m.actor, "SplineReference", m.had)
+            AI.runTree(m.actor, "BT_WalkingNPC")
+            AI.set(m.actor, "SplineReference", m.had)
+        else
+            AI.set(m.actor, "bShouldAllowMovement", false)
+        end
+    end
+    local function keepModPaths()
+        for i = #modPaths.all, 1, -1 do
+            local m = modPaths.all[i]
+            if not (Game.alive(m.actor) and Game.alive(m.path)) then
+                dropPath(m)
+                table.remove(modPaths.all, i)
+            end
+        end
+        if #modPaths.all == 0 and modPaths.keeper then
+            Game.cancel(modPaths.keeper)
+            modPaths.keeper = nil
+        end
+    end
+    -- Whether it walks now: its logic running, its blackboard's bShouldAllowMovement set, a path to walk. (C++ also
+    -- checks the tree running is BT_WalkingNPC, which Lua can't read: another tree run on it with runTree reads as
+    -- walking while its keys are so.)
+    function Game.walkers.walking(cat)
+        local a = actorOf(cat)
+        return isWalker(a) and AI.running(a) and AI.get(a, "bShouldAllowMovement") == true and splineOf(a) ~= nil
+    end
+    -- The walking cats within `radius` cm (30,000) of your cat, nearest first, with their paths (the game's cats and the
+    -- mod's): { {actor, path, points, loop, walking, modPath, distance}, ... }. path is the path's actor, points its
+    -- spline's points (world places), loop whether it's a loop (else there and back), modPath whether it's the script's.
+    function Game.walkers.near(radius)
+        local out = {}
+        radius = radius or 30000
+        local me = Game.player() and where(Game.player())
+        local cls = Game.object("/Script/SwtAdventure.SwtAdventureWalkingNPC")
+        if not me or not cls then return out end
+        local list = {}
+        pcall(function() Game.library("GameplayStatics"):GetAllActorsOfClass(Game.player(), cls, list) end)
+        for _, e in ipairs(list) do
+            local ok, a = pcall(function() return e:get() end)
+            local at = ok and Game.alive(a) and where(a)
+            local d = at and math.sqrt((at.X - me.X) ^ 2 + (at.Y - me.Y) ^ 2 + (at.Z - me.Z) ^ 2)
+            if d and d <= radius and not (Game.fullName(a) or ""):find("MovieScene", 1, true) then
+                local w = { actor = a, distance = d, points = {}, loop = false, walking = Game.walkers.walking(a), modPath = false }
+                local s = splineOf(a)
+                if s then
+                    local okO, owner = pcall(function() return s:GetOwner() end)
+                    w.path = okO and valid(owner) and owner or nil
+                    w.points = splinePoints(s)
+                    local okL, closed = pcall(function() return s:IsClosedLoop() end)
+                    w.loop = okL and closed == true
+                    local m = modPathOf(a)
+                    w.modPath = m ~= nil and same(m.path, w.path)
+                end
+                out[#out + 1] = w
+            end
+        end
+        table.sort(out, function(x, y) return x.distance < y.distance end)
+        return out
+    end
+    -- Give a walking cat (one of the game's, or a mod's own: Game.npcs) a path of its own: a spline through `points`
+    -- (world places, two or more; it walks the ground under them), walked as the game walks its paths, from the first.
+    -- opts.loop (true: round and round; false: there and back), opts.speed (cm/s; the game's walking cats 50; none keeps
+    -- its own). A game cat's own path is kept to give back (Game.walkers.ownPath). True, or false and why. A mod's cat
+    -- walked so is its tree's: don't npc:walkTo it meanwhile. A script's paths aren't taken away if the script ends first.
+    --   Game.walkers.walkPath(npc, { a, b, c, d })   -- round the four, until Game.walkers.stop or ownPath
+    function Game.walkers.walkPath(cat, points, opts)
+        opts = opts or {}
+        local a = actorOf(cat)
+        if not isWalker(a) or not AI.controller(a) then return false, "not a walking cat" end
+        local pts = {}
+        for _, p in ipairs(type(points) == "table" and points or {}) do pts[#pts + 1] = place(p) end
+        if #pts < 2 or #pts ~= #points then return false, "a path needs two places or more" end
+        local cls = Game.object(WALK_PATH_CLASS) or Game.load(WALK_PATH_CLASS)
+        if not cls then return false, "the game's path class isn't loaded" end
+        local xf = { Translation = pts[1], Rotation = { X = 0, Y = 0, Z = 0, W = 1 }, Scale3D = { X = 1, Y = 1, Z = 1 } }
+        local gs = Game.library("GameplayStatics")
+        local okS, path = pcall(function() return gs:BeginDeferredActorSpawnFromClass(Game.player() or Game.world(), cls, xf, ALWAYS_SPAWN, nil, ROOT_SCALE) end)
+        if not okS or not valid(path) then return false, "couldn't make the path" end
+        pcall(function() gs:FinishSpawningActor(path, xf, ROOT_SCALE) end)
+        local spline = Game.get(path, "WalkingSplineComponent")
+        if not valid(spline) then
+            pcall(function() path:K2_DestroyActor() end)
+            return false, "the path has no spline"
+        end
+        local loop = opts.loop ~= false
+        pcall(function()
+            spline:ClearSplinePoints(false)
+            for _, p in ipairs(pts) do spline:AddSplinePoint(p, 1, false) end   -- 1: ESplineCoordinateSpace::World
+            spline:SetClosedLoop(loop, true)
+            spline.bPingPong = not loop
+        end)
+        -- A path the script gave it before goes; the path it had first is the one to give back.
+        local had, hadSpeed = splineOf(a), nil
+        local old, i = modPathOf(a)
+        if old then
+            had, hadSpeed = old.had, old.hadSpeed
+            dropPath(old)
+            table.remove(modPaths.all, i)
+        end
+        if type(opts.speed) == "number" and opts.speed > 0 then
+            hadSpeed = hadSpeed or Game.get(AI.controller(a), "DefaultMaxWalkSpeed")
+            setWalkSpeed(a, opts.speed)
+        end
+        -- Its walk started again on the new path (the walking task may keep the path it started with; started again, it
+        -- reads the new one).
+        local function keys()
+            AI.set(a, "SplineReference", spline)
+            AI.set(a, "CurrentIndexSpline", 0)
+            AI.set(a, "bShouldAllowMovement", true)
+        end
+        keys()
+        AI.runTree(a, "BT_WalkingNPC")
+        keys()
+        modPaths.all[#modPaths.all + 1] = { actor = a, path = path, had = had, hadSpeed = hadSpeed }
+        modPaths.keeper = modPaths.keeper or Game.every(2, keepModPaths)
+        return true
+    end
+    -- Give a game cat its own path back, at its own speed (the script's path goes; a mod's cat, with none to go back to,
+    -- stands). False when it hasn't one of the script's.
+    function Game.walkers.ownPath(cat)
+        local m, i = modPathOf(actorOf(cat))
+        if not m then return false end
+        offModPath(m)
+        dropPath(m)
+        table.remove(modPaths.all, i)
+        return true
+    end
+    -- Stop a walking cat where it is (bShouldAllowMovement cleared: the game's own way), or let it walk on along its
+    -- path. False for what isn't a walking cat (walkAgain: or one with no path).
+    function Game.walkers.stop(cat)
+        local a = actorOf(cat)
+        return isWalker(a) and (AI.set(a, "bShouldAllowMovement", false))
+    end
+    function Game.walkers.walkAgain(cat)
+        local a = actorOf(cat)
+        if not isWalker(a) or not splineOf(a) then return false end
+        if not AI.running(a) then AI.runTree(a, "BT_WalkingNPC") end
+        return (AI.set(a, "bShouldAllowMovement", true))
     end
 end
 

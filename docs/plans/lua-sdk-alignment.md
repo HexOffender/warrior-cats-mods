@@ -92,6 +92,10 @@ speed})`, `ownPath`, `stop`, `walkAgain`, `walking`.
 **Proof.** In game, as `test_ai_spawn` and `test_ai_walk`: a rabbit spawned and fought for its rewards, the generator
 given back; a mod's cat walking a loop, stopping for a talk.
 
+**Done.** All of it, but the fight with the spawned rabbit (step 4: fights from Lua). `Game.walkers.walking` can't check
+the running tree is `BT_WalkingNPC` (step 8). The code is a do-block of its own after `Game.ai`'s: each block's locals
+count toward the main chunk's 200 while it's open, and `Game.ai`'s had two to spare.
+
 ## 4. Fights
 
 **The calls.** `Game.fight`: `cat()`, `start(animal)` (behind it and pounce), `menu()`, `attack(n)`, `rest()`,
@@ -146,8 +150,8 @@ the other addons are, opt in. Or these calls stay C++'s only.
 | Step | State | Pull request |
 |---|---|---|
 | 1. The bugs C++ found | done | #153 |
-| 2. The game's AI | done | this branch, `claude/lua-ai` |
-| 3. Animals and walking cats | not started | |
+| 2. The game's AI | done | #154 |
+| 3. Animals and walking cats | done | this branch, `claude/lua-animals` |
 | 4. Fights | not started | |
 | 5. Story | not started | |
 | 6. Tables and words | not started | |
