@@ -1271,6 +1271,20 @@ def test_ai_move(agent):
     assert v["move.cat_result"] == "arrived" and 0 <= v["move.cat_off"] < 136, v
 
 
+def test_animals_notice_your_cat_after_luas_talk_box(agent):
+    """Lua's Game.dialogue leaves your cat out of a talk: after a line said and the box hidden, the talk flags are back at
+    0 and Ai.hpp's noticing test (ai_notice) has an animal notice your cat, as it does with no box before it (with the
+    flags left on, none did)."""
+    _close_screens(agent)
+    assert agent.lua('return (Game.dialogue.say("Brindlemoon", "Good hunting."))') is True
+    time.sleep(1.0)
+    agent.lua("Game.dialogue.hide() return true")
+    agent.wait(lambda: agent.lua("return Game.get(Game.controller(), 'WCM_TalkFlags') == 0"), 3, "the talk flags to clear")
+    r = _request(agent, "ai_notice", timeout=90)
+    seen = r["values"].get("notice.seen") or {}
+    assert seen.get("detected") is True and seen.get("tracking") is True, seen
+
+
 def test_ai_notice(agent):
     """Ai.hpp's noticing in the game (the AI plan's step 3), with the animals' reaction time at 30 s (no chase, so no
     fight): the nav meshes (two; one under your cat, none in the sky); an awake animal (detection mask 3) with your cat

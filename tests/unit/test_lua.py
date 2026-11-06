@@ -584,9 +584,9 @@ def test_every_quest_call_is_documented():
     for name in names:
         assert f"Game.quests.{name}(" in quests or f".{name}(" in quests, name
     fields = body(lua, "function Game.quests.describe(q)", "\nend\n")
-    for field in ("quest", "id", "tag", "graph", "class", "type", "status", "result", "tracked", "xp", "rewards"):
+    for field in ("quest", "id", "tag", "alias", "graph", "class", "type", "status", "result", "tracked", "xp", "rewards"):
         assert f"{field} = " in fields, field
-    assert "`{quest, id, tag, graph, class, type, status, result, tracked, xp, rewards}`" in quests
+    assert "`{quest, id, tag, alias, graph, class, type, status, result, tracked, xp, rewards}`" in quests
 
 
 def test_find_never_hands_back_an_object_on_its_way_out():
@@ -621,10 +621,67 @@ def test_dialogue_claim_is_renewed_while_the_box_is_up():
     keep = body(lua, "local function keepClaim()", "\nfunction Game.dialogue.say")
     assert "talk.renew = Game.every(0.2, function()" in keep and "talkShare(TALK_AT, os.clock())" in keep
     say = body(lua, "function Game.dialogue.say(name, text)", "\nfunction Game.dialogue.hide")
-    assert "keepClaim()" in say and "if added then pcall(function() w:RemoveFromParent() end) end" in say
+    assert "keepClaim()" in say
+    assert "if added then\n            pcall(function() w:RemoveFromParent() end)\n            endBoxTalk()\n        end" in say
     hide = body(lua, "function Game.dialogue.hide()", "\n-- Whether the box is up")
     assert "Game.cancel(talk.renew)" in hide
     assert "or talk.text == nil then return end" not in hide   # a box half made is taken down too
+
+
+def test_the_talk_box_lets_your_cat_go():
+    """The box's own code puts your cat "in a talk" (the controller's talk flags; no animal noticed it, no pounce
+    started a fight, while they were on) and nothing took it out again. They're cleared (0x21) once the box is off
+    screen, unless one of the game's own talks has its box up; and a line said while the box fades out plays its
+    fade-in again (it was left faded, with the line in it)."""
+    lua = game.lua()
+    end_talk = body(lua, "local function endBoxTalk()", "\nend\n")
+    assert "local TALK_FLAGS = 0x21" in lua
+    assert 'if not valid(pc) or valid(Game.get(pc, "ActiveDialogueWidget")) then return end' in end_talk
+    # not under another mod's box, which claimed it while this one faded out
+    assert end_talk.index("if Game.dialogue.busy() then return end") < end_talk.index("local pc = Game.controller()")
+    assert 'if flags and flags & 0x1 ~= 0 then Game.set(pc, "WCM_TalkFlags", flags & ~TALK_FLAGS) end' in end_talk
+    assert lua.index("local function endBoxTalk()") < lua.index("function Game.dialogue.say(")
+    hide = body(lua, "function Game.dialogue.hide()", "\n-- Whether the box is up")
+    assert "pcall(function() w:RemoveFromParent() end)\n            endBoxTalk()" in hide
+    say = body(lua, "function Game.dialogue.say(name, text)", "\nfunction Game.dialogue.hide")
+    assert say.index("local wasFading = talk.fading") < say.index("talk.fading = false")
+    assert "elseif wasFading then\n" in say and say.count("w:PlayAnimation(w.AniScreenIn, 0, 1, PLAY_FORWARD, 1, false)") == 2
+    from wcmods import game as g
+    hidden = dict(g.HIDDEN)["/Script/SwtQuest.QuestPlayerController"]
+    assert ("WCM_TalkFlags", 0x808, "IntProperty") in hidden
+
+
+def test_quest_status_asks_only_about_the_games_quests():
+    """The game's status calls add an id they're asked about to the save's QuestProgression, so status, result and
+    successes ask only about an alias one of the manager's quests has (kept 2 s, looked for again on a miss at most 4
+    times a second), and objectives only about ids the save has. describe gives the quest's alias, and its status and
+    result by it (a quest object's own stay None while it's under way)."""
+    lua = game.lua()
+    known = body(lua, "local function knownAlias(alias)", "\nend\n")
+    assert 'if type(alias) ~= "string" or alias == "" or alias == "None" then return false end' in known
+    assert "if age < 2 and aliases.set[alias] then return true end" in known and "if age < 0.25 then return false end" in known
+    assert 'Game.list(Game.get(Game.quests.manager(), "Quests"))' in known
+    for name in ("status", "result", "successes"):
+        call = body(lua, f"function Game.quests.{name}(alias)", "\nend\n")
+        assert call.index("if not knownAlias(alias) then return nil end") < call.index("local qm = Game.quests.manager()"), name
+    describe = body(lua, "function Game.quests.describe(q)", "\nend\n")
+    assert "local status = alias and Game.quests.status(alias)" in describe
+    assert 'if status == nil or status == "None" then status = Game.enums.questStatus[Game.get(q, "QuestStatus")] end' in describe
+    objectives = body(lua, "function Game.quests.objectives(q)", "\nend\n")
+    assert "local saved = savedQuestIds()" in objectives and "if id and qm and saved[id] then" in objectives
+
+
+def test_drop_takes_only_an_item_and_puts_it_in_reach():
+    """Game.items.drop took any tag (one the game didn't know got into the save with the pickup, and the game crashed
+    at quit) and dropped it 60 units along X from your cat, where Interact often didn't reach. Only one of the game's
+    items now (MatchesTag under Gameplay.Inventory: a tag that isn't registered matches nothing), 50 cm in front."""
+    lua = game.lua()
+    is_item = body(lua, "function Game.items.isItem(tag)", "\nend\n")
+    assert 'lib:MatchesTag(Game.tag(tag), Game.tag("Gameplay.Inventory"), false)' in is_item and "return ok and r == true" in is_item
+    drop = body(lua, "function Game.items.drop(tag, count, where)", "\nend\n")
+    assert drop.index('if not Game.items.isItem(tag) then return nil, tag .. " isn\'t one of the game\'s items" end') < drop.index("BeginDeferredActorSpawnFromClass")
+    assert "if okF and f then x, y = x + f.X * 50, y + f.Y * 50 end" in drop and "at.X + 60" not in drop
+    assert "elseif getmetatable(where) == Cat then by = where.actor" in drop   # a Cat isn't a place
 
 
 def test_json_decode_skips_a_bom():
@@ -635,16 +692,21 @@ def test_json_decode_skips_a_bom():
 
 def test_the_save_file_is_decoded_again_only_when_it_changed():
     """Game.save.file() decoded the whole save (about 40 ms) every second, changed or not: a page reading items had a
-    hitch a second. The table is kept while the file's size is the same (looked at 4 times a second, decoded again
-    every 30 s at least), a half-written file gives the last good table, and Game.save.write drops it, which needs
-    fileCache declared before it (out of scope, it would be a nil global, and every script's write would fail)."""
+    hitch a second. The table is kept while the file is the same (its size looked at 4 times a second; at the same size
+    its text compared every 2 s, decoded only when it differs: a same-size rewrite was seen up to 30 s late), a
+    half-written file gives the last good table, and Game.save.write drops it, which needs fileCache declared before it
+    (out of scope, it would be a nil global, and every script's write would fail). `at` stays the last decode's time,
+    which Game.items.list goes by."""
     lua = game.lua()
     read = body(lua, "function Game.save.file()", "\nfunction Game.save.slotData()")
     assert "if fileCache.data and now - fileCache.checked < 0.25 then return fileCache.data end" in read
     assert 'local size = f:seek("end")' in read and 'f:seek("set")' in read
-    assert "if fileCache.data and size == fileCache.size and now - fileCache.at < 30 then" in read
+    assert "if fileCache.data and size == fileCache.size and now - fileCache.compared < 2 then" in read
+    assert "fileCache.compared = now\n    if fileCache.data and text == fileCache.text then return fileCache.data end" in read
     assert "if not data then return fileCache.data, err end" in read
-    assert "fileCache.at, fileCache.data, fileCache.size = now, data, size" in read
+    assert "fileCache.at, fileCache.data, fileCache.size, fileCache.text = now, data, size, text" in read
+    assert read.count("fileCache.at =") == 0 and read.count("fileCache.at,") == 1   # set by a decode only
+    assert "local fileCache = { at = -1, data = nil, size = nil, text = nil, checked = -1, compared = -1 }" in lua
     assert lua.count("local fileCache =") == 1
     assert lua.index("Game.save = {}") < lua.index("local fileCache = {") < lua.index("function Game.save.write(")
     assert "fileCache.data = nil" in body(lua, "function Game.save.write(", "\nend")
@@ -730,13 +792,18 @@ def test_the_clock_has_one_hold_for_every_script():
     assert "ExecuteInGameThread(runTasks)" not in starts
     hold = body(lua, "function Game.time.hold(s, who)", "\n-- ====")
     assert 'who = clean(who or Game.modName or "a script")' in hold
-    assert 'if select(2, h.read()) == who then share(h.key, "") end' in hold   # only your own, kept up or not
+    assert 'if select(2, h.read()) == who then\n            share(h.key, "")\n            h.at = nil' in hold   # only your own
     assert "s = math.floor(s + 0.5) % 86400" in hold   # a whole second, never 86400 (%.0f rounded 86399.6 up)
     assert "h.who = who\n    h.write(s, who)" in hold
-    assert "h.task = h.task or Game.every(0.5, function()" in hold and "if at and Game.cat() then Game.time.setSeconds(at) end" in hold
+    assert "h.task = h.task or Game.every(0.5, function()" in hold and "h.at = Game.time.held()" in hold
+    # the clock set every frame (twice a second, it ran up to half a game-minute ahead between sets)
+    assert "h.frame = Game.onFrame(function()" in hold and "Game.cancel(h.frame)" in hold
+    assert "if h.at and Game.cat() then Game.time.setSeconds(h.at) end" in hold
+    assert "setEveryFrame(h.at ~= nil)" in hold   # gone while nothing is held
+    assert hold.index("h.at = s\n") < hold.index("setEveryFrame(true)")
     # the heartbeat: the holder's state keeps its own hold's stamp up, whatever held() says of it
     assert "if mine and whose == h.who then h.write(mine, whose) end" in hold
-    assert hold.index("local mine, whose = h.read()") < hold.index("local at = Game.time.held()")
+    assert hold.index("local mine, whose = h.read()") < hold.index("h.at = Game.time.held()")
     # set and setSeconds stay plain writes
     assert 'function Game.time.setSeconds(s) return Game.set(Game.gameState(), "WCM_DayTime", s % 86400) end' in lua
 

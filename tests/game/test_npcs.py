@@ -244,7 +244,130 @@ return { out["wcmods-test-q"].description, out["wcmods-test-q"].by, out["wcmods-
 
 
 def test_drop_refuses_a_tag_that_isnt_one(agent):
+    """Game.items.drop takes only one of the game's items (Game.items.isItem: a tag the game has registered, under
+    Gameplay.Inventory): no tag, one the game hasn't got and one that isn't an item's are refused, nothing spawned."""
     assert agent.lua("return select(2, Game.items.drop(nil))") == "drop needs an item tag like Gameplay.Inventory.Materials.Moss"
+    got = agent.lua("""
+        local unknown, cat = "Gameplay.Inventory.Materials.NoSuchThing", "Gameplay.Combat.Character.Cat.Player"
+        return { moss = Game.items.isItem("Gameplay.Inventory.Materials.Moss"), unknown = Game.items.isItem(unknown),
+                 cat = Game.items.isItem(cat), empty = Game.items.isItem(""), unknownDrop = select(2, Game.items.drop(unknown)),
+                 catDrop = select(2, Game.items.drop(cat)) }""")
+    assert got == {"moss": True, "unknown": False, "cat": False, "empty": False,
+                   "unknownDrop": "Gameplay.Inventory.Materials.NoSuchThing isn't one of the game's items",
+                   "catDrop": "Gameplay.Combat.Character.Cat.Player isn't one of the game's items"}, got
+
+
+MOSS = "Gameplay.Inventory.Materials.Moss"
+# Interact, pressed and let go, as the game's controls give it: the controller's input component hears the command.
+INTERACT = """
+local n = Game.enumNames("/Script/SwtEngine.ECommands").Player_Interact
+local input = Game.controller().InputComponent
+input:OnListenCommandInternal(n, 0)
+input:OnListenCommandInternal(n, 1)
+return n
+"""
+
+
+def test_a_drop_lies_in_front_of_your_cat_for_interact(agent):
+    """Game.items.drop with no place puts the pickup 50 cm in front of your cat (its forward vector), on the ground,
+    where the game's Interact reaches: Interact, as the game's controls give it (the input component's command), collects
+    it, Game.items.count goes up by one and the pickup hides. Your cat goes 8 m off its spot first (the test cat stands
+    by a den's Travel prompt, which would take the Interact) and back after. The test cat keeps the moss: Lua can't take
+    items away."""
+    home = agent.lua("local l = Game.cat():location() return { l.X, l.Y, l.Z }")
+    try:
+        agent.lua(f"""
+            local x, y = {home[0]} - 800, {home[1]}
+            local g = Game.ground(x, y, {home[2]})
+            return Game.cat():teleport(x, y, (g or {home[2]}) + 60)""")
+        time.sleep(1.0)
+        got = agent.lua(f"""
+            local me = Game.player()
+            local at = Game.cat():location()
+            local f = me:GetActorForwardVector()
+            WCMODS_TEST_MOSS_BEFORE = Game.items.count("{MOSS}")
+            local p, why = Game.items.drop("{MOSS}", 1)
+            WCMODS_TEST_DROP = p
+            if not p then return {{ why = why }} end
+            local l = p:K2_GetActorLocation()
+            return {{ dx = l.X - at.X, dy = l.Y - at.Y, fx = f.X, fy = f.Y, z = l.Z, catZ = at.Z }}""")
+        assert "why" not in got, got
+        off = ((got["dx"] - got["fx"] * 50) ** 2 + (got["dy"] - got["fy"] * 50) ** 2) ** 0.5
+        assert off < 1 and got["z"] < got["catZ"], got   # 50 cm in front, on the ground below the cat's middle
+        time.sleep(0.7)   # the game sees the cat in the pickup's reach a frame or more later
+        agent.lua(INTERACT)
+        agent.wait(lambda: agent.lua(f'return Game.items.count("{MOSS}") == WCMODS_TEST_MOSS_BEFORE + 1'), 4,
+                   "Interact to collect the dropped moss")
+        assert agent.lua("return WCMODS_TEST_DROP.bHidden") is True
+    finally:
+        agent.lua("if WCMODS_TEST_DROP and WCMODS_TEST_DROP:IsValid() then WCMODS_TEST_DROP:K2_DestroyActor() end "
+                  "WCMODS_TEST_DROP = nil return true")
+        agent.teleport(*home)
+
+
+# The bridge's own box (each Lua state has its own), from Game.dialogue's upvalues.
+TALK_BOX = """
+local function talkState()
+    for i = 1, 50 do
+        local n, v = debug.getupvalue(Game.dialogue.showing, i)
+        if n == nil then return nil end
+        if n == "talk" then return v end
+    end
+end
+"""
+
+
+def _out_of_the_talk(agent):
+    """Wait for the box's fade-out to end and your cat to be out of the talk: in one, the game takes no key of its
+    controls (the inventory's I, in test_screens)."""
+    agent.wait(lambda: agent.lua("return Game.get(Game.controller(), 'WCM_TalkFlags') == 0"), 3,
+               "the talk flags to clear after the box went")
+
+
+def test_the_talk_box_lets_your_cat_go(agent):
+    """The box's own code puts your cat "in a talk" (the controller's talk flags, 0x21; no animal notices it while
+    they're on): Game.dialogue.hide() clears them once the box is gone, back to what they were (0)."""
+    before = agent.lua("return Game.get(Game.controller(), 'WCM_TalkFlags')")
+    assert before == 0, before
+    try:
+        assert agent.lua('return (Game.dialogue.say("Brindlemoon", "Good hunting."))') is True
+        time.sleep(0.5)
+        assert agent.lua("return Game.get(Game.controller(), 'WCM_TalkFlags')") == 0x21
+        agent.lua("Game.dialogue.hide() return true")
+        _out_of_the_talk(agent)
+        assert agent.lua("return Game.dialogue.showing()") is False
+    finally:
+        agent.lua("Game.dialogue.hide() return true")
+        _out_of_the_talk(agent)
+
+
+def test_a_line_said_as_the_box_fades_out_brings_it_back(agent):
+    """say() while hide()'s fade-out plays: the box plays its fade-in again (it was left faded, with the new line in
+    it, before) and stays up, in a talk."""
+    try:
+        agent.lua(TALK_BOX + """
+            WCMODS_TEST_FADE = {}
+            Game.dialogue.say("Brindlemoon", "First line.")
+            local w = talkState().widget
+            Game.after(0.6, function()
+                Game.dialogue.hide()
+                Game.after(0.1, function()
+                    WCMODS_TEST_FADE.fadingOut = w:IsAnimationPlaying(w.AniScreenOut)
+                    Game.dialogue.say("Brindlemoon", "Second line.")
+                    WCMODS_TEST_FADE.fadingIn = w:IsAnimationPlaying(w.AniScreenIn)
+                    Game.after(0.8, function()
+                        WCMODS_TEST_FADE.inView = w:IsInViewport()
+                        WCMODS_TEST_FADE.showing = Game.dialogue.showing()
+                        WCMODS_TEST_FADE.flags = Game.get(Game.controller(), "WCM_TalkFlags")
+                    end)
+                end)
+            end)
+            return true""")
+        got = agent.wait(lambda: agent.lua("return WCMODS_TEST_FADE.flags and WCMODS_TEST_FADE"), 5, "the box's fade-in")
+        assert got == {"fadingOut": True, "fadingIn": True, "inView": True, "showing": True, "flags": 0x21}, got
+    finally:
+        agent.lua("Game.dialogue.hide() WCMODS_TEST_FADE = nil return true")
+        _out_of_the_talk(agent)
 
 
 def test_screens(agent):
