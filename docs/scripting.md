@@ -380,7 +380,7 @@ Game.ai.follow(npc, Game.player())                                             -
 
 | Call | Gives or does |
 |---|---|
-| `Game.animals.near(radius, from)` | The roaming animals within `radius` cm (5000) of your cat, or of `from` (a place or an actor), nearest first: `{ {actor, distance}, ... }` |
+| `Game.animals.near(radius, from)` | The roaming animals within `radius` cm (5000) of your cat, or of `from` (a place or an actor), nearest first: `{ {actor, distance, generator, kind, model}, ... }`. `generator` is the level's generator that spawns it, `kind` is the kind `Game.animals.spawn` gave it (nil for the game's own), and `model` is its model's name (`"SK_Rabbit"`, `"SK_Mice"`) |
 | `Game.ai.controller(a)`, `Game.ai.brain(a)` | Its AI controller (`AIC_Wrc_Enemy_Controller_C`, a walking cat's `AIC_Wrc_WalkingNPC_Controller_C`) and the behaviour tree component that runs its tree; nil without an AI |
 | `Game.ai.running(a)`, `Game.ai.asleep(a)` | Whether its logic runs, and whether it's asleep: the game pauses a roaming animal's while your cat is about 2,000 units from it, and wakes it as your cat comes back |
 | `Game.ai.stop(a)`, `Game.ai.restart(a)` | Stop its logic: it stands where it is, through the game's own sleeping and waking, and its blackboard keeps what it knew. Start it again from its tree's start. False without an AI. A script's stopped AIs stay stopped after the script ends, so start them again first |
@@ -405,6 +405,42 @@ Game.ai.follow(npc, Game.player())                                             -
 
 **An animal walked into your cat catches it** as a chase does, and a fight starts: a mouse moved to 90 units from it
 started one. Keep moves and following a couple of metres off, or make the animal ignore your cat first.
+
+**Animals put in the world.** The roaming animals are spawned by the level's generators (`BP_Enemy_Generator_C`). Each
+generator has a fight party's tag per clan and rank; the party is a row of `DT_Combat_Generator` and decides what the
+fight is. A generator made at run time gave its animal's fight another generator's party (seen from C++). So
+`Game.animals.spawn` borrows a placed generator instead: it sets the generator's party tags to the kind, moves it to the
+place, and takes its own animal away. Once the script's animal is gone, the generator gets back its tags, its place and
+its own animal.
+
+```lua
+local rabbit = Game.animals.spawn("Gameplay.Combat.Generator.Fixed.Rabbit.01.L6", spot)   -- one rabbit, level 6
+Game.ai.ignorePlayer(rabbit)        -- (noticing your cat, it would chase it into a fight)
+Game.animals.remove(rabbit)         -- gone, the generator given back
+```
+
+| Call | Gives or does |
+|---|---|
+| `Game.animals.kinds()` | Every party in the game's table, `{ {tag, party, levels}, ... }`: 323 on build 26337109, of four kinds. Fixed parties are one to three animals, or out-of-clan cats, at a level; the others are Boss, Hybrid and SandboxAttacks. `party` lists each fighter's character tag (`"Gameplay.Combat.Character.Rabbit"`) and `levels` their levels |
+| `Game.animals.spawn(kind, place, opts)` | Put an animal of a kind (a party's tag) at a place, as the game puts its own: one of the game's generators is borrowed (the farthest from your cat) and spawns it there. `opts.respawn` gives a new one whenever it's gone and keeps the generator; otherwise the generator is given back once the animal is gone. Gives the animal with its AI running, or nil and why (a kind the game has no party for, no place, no generator free). Its fight is the kind's party |
+| `Game.animals.remove(animal)`, `Game.animals.kind(animal)` | Take an animal out of the world. One the script put there goes for good and its generator is given back; one of the game's comes back at its generator's next spawn. False for what isn't a roaming animal. `kind` is the kind the script gave it (nil for the game's own) |
+
+The generators a script borrowed aren't given back if the script ends first, because UE4SS gives Lua no end of its
+own: remove each animal first.
+
+**The clan cats' walking.** A clan cat walking about (`BP_WalkingNPC_Character_Base_C`, which a mod's cats are too)
+runs `BT_WalkingNPC`. While its blackboard's `bShouldAllowMovement` is set, it walks along its path: the spline its
+`SplineReference` holds, which belongs to a `BP_WalkingNPC_Spline_C`. The game's paths go there and back. The game's
+walking cats stand while your cat is near (one 300 units off stood, one 1,200 off walked); a mod's cats don't.
+
+| Call | Gives or does |
+|---|---|
+| `Game.walkers.near(radius)` | The walking cats within `radius` cm (30,000) of your cat, nearest first, the game's and the mods' alike: `{ {actor, path, points, loop, walking, modPath, distance}, ... }`. `path` is its path's actor and `points` its spline's points (world places). `loop` says whether it goes round (else there and back), and `modPath` whether the path is this script's |
+| `Game.walkers.walkPath(cat, points, opts)` | Give a walking cat (one of the game's, or a mod's own from `Game.npcs`) a path of its own: a spline through `points` (two places or more; it walks the ground under them), walked from the first as the game walks its paths. `opts.loop` (true) goes round and round; false goes there and back. `opts.speed` is in cm/s (the game's walking cats walk at 50); without it the cat keeps its own speed. A game cat's own path is kept to give back. True, or false and why. Don't `npc:walkTo` a mod's cat while it walks a path: its tree walks it |
+| `Game.walkers.ownPath(cat)` | Give a game cat its own path back, at its own speed (the script's path goes). A mod's cat, with no path to go back to, stands. False when it hasn't one of the script's paths |
+| `Game.walkers.stop(cat)`, `Game.walkers.walkAgain(cat)`, `Game.walkers.walking(cat)` | Stop a walking cat where it is (`bShouldAllowMovement` cleared, the game's own way), or let it walk on along its path. `walking` says whether it walks now: its logic running, `bShouldAllowMovement` set and a path to walk. C++ also checks that the running tree is `BT_WalkingNPC`, which Lua can't read |
+
+A script's paths aren't taken away if the script ends first: give each cat its own back (`ownPath`), or stop it.
 
 ### Items
 
