@@ -1247,6 +1247,26 @@ def test_ai(agent):
     assert v["ai.near_walking_3"]["task"] == "NPC Spline Walking" and moved("ai.near_stopped_4", "ai.near_walking_3") > 50, v["ai.near_walking_3"]
 
 
+def test_ai_move(agent):
+    """Ai.hpp's moves in the game (the AI plan's step 2): an awake roaming animal sent 300 units toward your cat at
+    200 cm/s (its walk speed set, its logic stopped, moving midway) arrives within its radius and stands; sent 400 units
+    back and stopped after a second, its move is cancelled and it doesn't drift; turned to face your cat; a short move
+    with restart_after gives it back to its tree; one of the mod's own cats, 400 units off, sent after your cat (a moving
+    goal) arrives within 120. Your cat (no AI) and nullptr are refused."""
+    _close_screens(agent)
+    r = _request(agent, "ai_move", timeout=90)
+    assert not _failed(r, "ai_move"), _failed(r, "ai_move")
+    v = r["values"]
+    assert v["move.speed"] == 200 and v["move.ai_stopped"] is True and v["move.moving_mid"] is True, v
+    assert v["move.first"] == "arrived" and v["move.first_off"] < 66 and v["move.first_walked"] > 200, v
+    assert 0 < v["move.first_after"] < 6 and v["move.moving_after"] is False and v["move.ai_after"] is False, v
+    assert v["move.stopped_result"] == "cancelled" and v["move.stopped_drift"] < 5 and v["move.stopped_moving"] is False, v
+    assert v["move.face_off"] < 5, v["move.face_off"]
+    assert v["move.restart_result"] == "arrived" and v["move.restart_ai"] is True, v
+    assert v["move.cat_controller"] == "AIC_Wrc_WalkingNPC_Controller_C", v["move.cat_controller"]
+    assert v["move.cat_result"] == "arrived" and 0 <= v["move.cat_off"] < 136, v
+
+
 def test_bond_answers(agent):
     """A bond talk's answers in the game (Bonds.hpp, Talk.hpp), on the test cat (ShadowClan, Ambitious and Curious):
     the talk tables' rows as the tuning manager loaded them (a story row, a quest row by any case, the 22 under one

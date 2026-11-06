@@ -1,9 +1,12 @@
 // Ai.hpp: the game's AI, on request ("ai"), for tests/game/test_cpp_sdk.py (docs/plans/cpp-sdk-ai.md, step 1). The
 // game's trees read as data; an animal's and a walking cat's AI, their keys written and read back, a walking cat
 // stopped and set walking again by its own key, an animal sent into its tree's chase branch and back, an animal's
-// logic stopped through the game's sleep and wake (your cat away and back) and started again.
+// logic stopped through the game's sleep and wake (your cat away and back) and started again. Moving ("ai_move", step
+// 2): an animal walked to a place, stopped midway, given back to its tree at the end; a mod's cat after your cat; an
+// animal turned to face your cat.
 #include "checks.hpp"
 
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -178,6 +181,132 @@ namespace t
                                             });
                                         });
                                     });
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    }
+
+    namespace
+    {
+        struct MoveRun
+        {
+            UObject* animal{};
+            Npc cat;
+            Vec3 start{}, spot{};
+            std::vector<std::string> results;
+            double arrived_after{-1};
+            std::chrono::steady_clock::time_point began;
+        };
+        auto result_name(WalkResult r) -> std::string
+        {
+            switch (r)
+            {
+            case WalkResult::Arrived: return "arrived";
+            case WalkResult::Blocked: return "blocked";
+            case WalkResult::Cancelled: return "cancelled";
+            default: return "none";
+            }
+        }
+        auto yaw_to(UObject* from, UObject* to) -> double
+        {
+            auto a = location(from), b = location(to);
+            if (!a || !b) return 0;
+            return std::atan2(b->y - a->y, b->x - a->x) * 180.0 / 3.14159265358979323846;
+        }
+        auto yaw_of(UObject* actor) -> double
+        {
+            auto r = call_reflected(actor, STR("K2_GetActorRotation"));
+            return r ? get(r->get(L"ReturnValue"), L"Yaw").number() : 0;
+        }
+    } // namespace
+
+    auto run_ai_move_request() -> void
+    {
+        phase("ai_move");
+        expect("move.refused", !move_to(player(), Vec3{0, 0, 0}) && !move_to(nullptr, Vec3{0, 0, 0}) && !stop_moving(player())
+                                   && !moving(nullptr) && !face(nullptr, Vec3{0, 0, 0}));
+        auto run = std::make_shared<MoveRun>();
+        for (UObject* a : fight_animals(2500))
+            if (!run->animal && ai_running(a)) run->animal = a;
+        if (!run->animal)
+        {
+            expect("move.found", false, "no awake animal near");
+            done("ai_move");
+            return;
+        }
+        // ----- 300 units toward your cat, at 200 cm/s
+        run->start = *location(run->animal);
+        auto me = *location(player());
+        double dx = me.x - run->start.x, dy = me.y - run->start.y, len = std::max(1.0, std::hypot(dx, dy));
+        run->spot = {run->start.x + dx / len * 300, run->start.y + dy / len * 300, run->start.z};
+        if (auto g = ground(run->spot.x, run->spot.y, run->start.z + 300)) run->spot.z = *g;
+        run->began = std::chrono::steady_clock::now();
+        expect("move.go", move_to(run->animal, run->spot, {.speed = 200}, [run](WalkResult r) {
+            run->results.push_back(result_name(r));
+            run->arrived_after = std::chrono::duration<double>(std::chrono::steady_clock::now() - run->began).count();
+        }));
+        value("move.speed", Json(get(get(run->animal, L"CharacterMovement").object, L"MaxWalkSpeed").number()));
+        value("move.ai_stopped", Json(!ai_running(run->animal)));
+        after(0.5, [run] { value("move.moving_mid", Json(moving(run->animal))); });
+        after(8.0, [run] {
+            auto at = location(run->animal).value_or(Vec3{});
+            value("move.first", Json(run->results.empty() ? std::string() : run->results.front()));
+            value("move.first_after", Json(run->arrived_after));
+            value("move.first_off", Json(std::hypot(at.x - run->spot.x, at.y - run->spot.y)));
+            value("move.first_walked", Json(std::hypot(at.x - run->start.x, at.y - run->start.y)));
+            value("move.moving_after", Json(moving(run->animal)));
+            value("move.ai_after", Json(ai_running(run->animal)));
+            // ----- 400 units back the way it came, stopped after a second
+            run->results.clear();
+            double bx = run->start.x - at.x, by = run->start.y - at.y, blen = std::max(1.0, std::hypot(bx, by));
+            run->start = at;
+            expect("move.go_back", move_to(run->animal, Vec3{at.x + bx / blen * 400, at.y + by / blen * 400, at.z},
+                                           {.speed = 150}, [run](WalkResult r) { run->results.push_back(result_name(r)); }));
+            after(1.0, [run] {
+                expect("move.stop", stop_moving(run->animal));
+                value("move.stopped_result", Json(run->results.empty() ? std::string() : run->results.front()));
+                auto here = location(run->animal).value_or(Vec3{});
+                after(2.0, [run, here] {
+                    auto at = location(run->animal).value_or(Vec3{});
+                    value("move.stopped_drift", Json(std::hypot(at.x - here.x, at.y - here.y)));
+                    value("move.stopped_moving", Json(moving(run->animal)));
+                    // ----- facing your cat
+                    expect("move.face", face(run->animal, player()));
+                    after(0.3, [run] {
+                        double off = std::fmod(std::abs(yaw_of(run->animal) - yaw_to(run->animal, player())) + 360.0, 360.0);
+                        value("move.face_off", Json(std::min(off, 360.0 - off)));
+                        // ----- a short move given back to its tree at the end
+                        auto at = location(run->animal).value_or(Vec3{});
+                        run->results.clear();
+                        move_to(run->animal, Vec3{at.x + 120, at.y, at.z}, {.speed = 200, .restart_after = true},
+                                [run](WalkResult r) { run->results.push_back(result_name(r)); });
+                        after(5.0, [run] {
+                            value("move.restart_result", Json(run->results.empty() ? std::string() : run->results.front()));
+                            value("move.restart_ai", Json(ai_running(run->animal)));
+                            // ----- a mod's cat 400 units off, after your cat
+                            auto me = *location(player());
+                            run->cat = spawn_npc({.at = {me.x + 400, me.y, me.z}});
+                            run->results.clear();
+                            run->began = std::chrono::steady_clock::now();
+                            after(1.0, [run] {
+                                UObject* c = run->cat.actor();
+                                value("move.cat_controller", Json(text(class_name(ai_controller(c)))));
+                                expect("move.cat_go", move_to(c, player(), {.speed = 250, .radius = 120}, [run](WalkResult r) {
+                                    run->results.push_back(result_name(r));
+                                    run->arrived_after = std::chrono::duration<double>(std::chrono::steady_clock::now() - run->began).count();
+                                }));
+                                after(8.0, [run] {
+                                    UObject* c = run->cat.actor();
+                                    auto a = location(c), b = location(player());
+                                    value("move.cat_result", Json(run->results.empty() ? std::string() : run->results.front()));
+                                    value("move.cat_off", Json(a && b ? std::hypot(a->x - b->x, a->y - b->y) : -1.0));
+                                    run->cat.remove();
+                                    restart_ai(run->animal);
+                                    done("ai_move");
                                 });
                             });
                         });
