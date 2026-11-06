@@ -5341,6 +5341,130 @@ do
 end
 
 
+-- The game's tables and words from a script (the Lua plan's step 6; C++'s Tables.hpp and Words.hpp have the same, and
+-- more): its DataTables row by row, read and changed in place, a row taken out; its string table's words by key. Adding a
+-- row is C++'s (UE4SS's AddRow copies through the struct's native copy, which it can't reach on this engine), as are
+-- changing words and the tuning (raw memory: step 8). A block of its own, its helpers in one table.
+Game.tables = {}
+do
+    local T = {}
+    -- A DataTable: one given (checked), one by its path ("/Game/...DT_X.DT_X"), or one by its name ("DT_QuestObjectsInfo")
+    -- among the tables in memory; nil when there's none.
+    function T.of(t)
+        if type(t) == "string" then
+            if t:sub(1, 1) == "/" then
+                local o = Game.object(t)
+                return o and Game.isA(o, "DataTable") and o or nil
+            end
+            for _, o in ipairs(Game.findAll("DataTable")) do
+                if o:GetFName():ToString() == t then return o end
+            end
+            return nil
+        end
+        return Game.alive(t) and Game.isA(t, "DataTable") and t or nil
+    end
+    function T.rowNames(t)
+        local out = {}
+        local ok, names = pcall(function() return t:GetRowNames() end)
+        for _, n in ipairs(ok and type(names) == "table" and names or {}) do
+            out[#out + 1] = type(n) == "string" and n or str(n)
+        end
+        return out
+    end
+    -- Every DataTable in memory (69 in the forest on build 26337109): { {name, path, rowStruct, rows}, ... }.
+    function Game.tables.list()
+        local out = {}
+        for _, t in ipairs(Game.findAll("DataTable")) do
+            if Game.alive(t) then
+                local okS, rs = pcall(function() return t:GetRowStruct() end)
+                out[#out + 1] = { name = t:GetFName():ToString(), path = Game.fullName(t) and Game.fullName(t):gsub("^%S+%s+", "") or nil,
+                                  rowStruct = okS and valid(rs) and rs:GetFName():ToString() or nil, rows = #T.rowNames(t) }
+            end
+        end
+        table.sort(out, function(a, b) return a.name < b.name end)
+        return out
+    end
+    -- A table by its name or path ("DT_QuestObjectsInfo"), when it's in memory; nil when it isn't.
+    function Game.tables.get(nameOrPath) return T.of(nameOrPath) end
+    -- Its row names, in the table's order.
+    function Game.tables.rowNames(t)
+        t = T.of(t)
+        return t and T.rowNames(t) or {}
+    end
+    -- A row by its name: the game's own row (a struct: Game.get and Game.set work on it, and a change is what the game
+    -- reads from then on); nil when the table hasn't got it.
+    function Game.tables.row(t, rowName)
+        t = T.of(t)
+        if not t or type(rowName) ~= "string" or rowName == "" then return nil end
+        local has = false
+        for _, n in ipairs(T.rowNames(t)) do
+            if n == rowName then has = true break end
+        end
+        if not has then return nil end   -- (asked before FindRow: it's only asked about a row there)
+        local ok, row = pcall(function() return t:FindRow(rowName) end)
+        return ok and row or nil
+    end
+    -- Every row, { {name, row}, ... } in the table's order, each the game's own (as row gives it).
+    function Game.tables.rows(t)
+        local out = {}
+        t = T.of(t)
+        if not t then return out end
+        for _, n in ipairs(T.rowNames(t)) do
+            local ok, row = pcall(function() return t:FindRow(n) end)
+            if ok and row then out[#out + 1] = { name = n, row = row } end
+        end
+        return out
+    end
+    -- Change a row's value by its path in the row ("NumParty", "itemName"); true, or false and why. The game reads the
+    -- change from then on; code that copied the row's numbers earlier keeps its copy.
+    function Game.tables.set(t, rowName, path, value)
+        local row = Game.tables.row(t, rowName)
+        if not row then return false, "no such row" end
+        return Game.set(row, path, value)
+    end
+    -- Take a row out; false when there's no such row. It's gone until the game loads the table again (a restart): a script
+    -- can't put it back (adding rows is C++'s).
+    function Game.tables.removeRow(t, rowName)
+        t = T.of(t)
+        if not t or not Game.tables.row(t, rowName) then return false end
+        -- (UE4SS's RemoveRow takes the name as a string, as its FindRow does: an FName crashed the game, inside UE4SS)
+        pcall(function() t:RemoveRow(rowName) end)
+        return Game.tables.row(t, rowName) == nil
+    end
+
+    -- The game's words: every line it shows is a key of a string table (SwtStrings, from Strings_<language>.csv).
+    T.STRINGS = "SwtStrings"
+    function T.libraries()
+        return Game.object("/Script/Engine.Default__KismetStringTableLibrary"), Game.object("/Script/Engine.Default__KismetTextLibrary")
+    end
+    -- A key's words as the game shows them ("STR_CAT_NAME2_PAW" is "Emberpaw"); nil for a key the table hasn't got. `table`
+    -- is SwtStrings unless given. (The table's id is an FName: a plain string there crashed the game, inside UE4SS.)
+    function Game.words(key, table)
+        local stl, ttl = T.libraries()
+        if type(key) ~= "string" or key == "" or not stl or not ttl then return nil end
+        local id = FName(table or T.STRINGS)
+        local okE, has = pcall(function() return stl:IsRegisteredTableEntry(id, key) end)
+        if not okE or has ~= true then return nil end
+        local ok, w = pcall(function() return ttl:TextFromStringTable(id, key):ToString() end)
+        return ok and w or nil
+    end
+    -- The table's keys, those starting with `prefix` when one is given ("STR_CAT_NAME"), in the table's order (8,907 in
+    -- SwtStrings on build 26337109, read in about 30 ms).
+    function Game.wordKeys(prefix, table)
+        local out = {}
+        local stl = T.libraries()
+        if not stl then return out end
+        local ok, keys = pcall(function() return stl:GetKeysFromStringTable(FName(table or T.STRINGS)) end)
+        if not ok or type(keys) ~= "table" then return out end
+        for i = 1, #keys do
+            local k = keys[i]
+            local s = type(k) == "string" and k or str(k:get())
+            if not prefix or s:sub(1, #prefix) == prefix then out[#out + 1] = s end
+        end
+        return out
+    end
+end
+
 -- ===================================================================================== the game's developer switches
 -- The cheats manager's own settings: god mode, always-full resources, attacks that always land, fast
 -- den building and more. They're the developers' switches; which ones the release build obeys varies,
