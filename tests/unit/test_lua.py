@@ -803,8 +803,8 @@ def test_the_cpp_only_calls_are_listed():
     for call in ("add_item", "remove_item", "set_look", "keep_look", "wear", "take_off", "play_scene", "unlock_place",
                  "map_travel", "place_decoration", "build_decoration", "set_tuning", "set_words", "restore_words",
                  "add_row", "ai_tree", "ai_task", "ai_chances", "set_ai_chance", "limit_moves", "sky_values",
-                 "set_sky_value", "replace_sound", "bond"):
-        assert f"`{call}" in section or f", `{call}`" in section or f"{call}`" in section, call
+                 "set_sky_value", "replace_sound", "bond", "bonds"):
+        assert re.search(r"`(?:[\w:]+::)?" + call + r"(?:\(\))?`", section), call   # the call itself, not a longer name
         assert f"auto {call}(" in headers, call
     with open(os.path.join(root, "docs", "plans", "lua-sdk-alignment.md"), encoding="utf-8") as f:
         assert "Decided (2026-11-06): they stay C++'s only." in f.read()
