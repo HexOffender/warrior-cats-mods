@@ -1313,6 +1313,30 @@ def test_ai_trees(agent):
     assert v["trees.left_0"] > 500 and abs(v["trees.left_4"] - v["trees.left_0"]) < 20, v
 
 
+def test_ai_fight(agent):
+    """Ai.hpp's fight calls in the game (the AI plan's step 5): the tiers' chances as AICombatChances.csv has them (Tier1,
+    Terrible: a random move only; Perfect: everything but random), one set and put back, the wrong tier, column and
+    chance refused; a fight (the nearest animal, three tries for a pounce that misses) whose enemy is limited to its last
+    move and set to Terrible, its health raised so it lasts: on each of its three turns it uses that move, auto_fight
+    takes your cat's turns, then its moves are given back (all of them, once) and the fight is won."""
+    _close_screens(agent)
+    try:
+        r = _request(agent, "ai_fight", timeout=200)
+    finally:
+        _close_screens(agent)
+    assert not _failed(r, "ai_fight"), _failed(r, "ai_fight")
+    v = r["values"]
+    chances = {k: [round(x, 2) for x in v[f"fight.{k}"]] for k in ("tier1", "terrible", "perfect")}   # floats
+    assert chances["tier1"] == [0.5, 0.5, 0.8, 0.1, 0.5, 0.5, 0, 0, 0.5, 0.5, 0.5, 0.5, 0.5], chances
+    assert chances["terrible"] == [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0], chances
+    assert chances["perfect"] == [1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1], chances
+    assert v["fight.moves"] >= 2 and v["fight.only"].startswith("Gameplay.Combat.Attack."), v
+    used = v["fight.used"]
+    assert v["fight.enemy_turns"] >= 3 and len(used) >= 3, v
+    assert all(u.split("@")[0] == v["fight.only"] for u in used), used
+    assert v["fight.auto_turns"] >= 3 and v["fight.over"] is True, v
+
+
 def test_bond_answers(agent):
     """A bond talk's answers in the game (Bonds.hpp, Talk.hpp), on the test cat (ShadowClan, Ambitious and Curious):
     the talk tables' rows as the tuning manager loaded them (a story row, a quest row by any case, the 22 under one

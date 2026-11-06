@@ -3,7 +3,8 @@
 // what it knows on its blackboard (BB_Enemy...). From C++: an AI's tree and what it's doing now, its blackboard's keys
 // read and written, its logic stopped and started again, the game's trees read as data, an AI sent to a place or
 // after another actor, an animal made to ignore your cat, notice it, give it up or run from it, another of the game's
-// trees run on an AI, and an AI made to follow another actor (docs/plans/cpp-sdk-ai.md).
+// trees run on an AI, an AI made to follow another actor, and a fight's AI: its chances by tier, an enemy's tier and
+// moves, your cat's turns taken for you (docs/plans/cpp-sdk-ai.md).
 // Game thread only. WCMods.hpp includes it; docs/SDK.md, "C++ mods", documents every call.
 //
 //   for (UObject* a : wcmods::fight_animals(2000)) wcmods::stop_ai(a);           // the animals near your cat stand still
@@ -12,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <cmath>
 #include <format>
 #include <functional>
@@ -29,6 +31,8 @@
 #include <WCMods/Game.hpp>
 #include <WCMods/Npcs.hpp>
 #include <WCMods/Reflect.hpp>
+#include <WCMods/Story.hpp>
+#include <WCMods/Tables.hpp>
 #include <WCMods/World.hpp>
 
 namespace wcmods
@@ -734,9 +738,10 @@ namespace wcmods
         UObject* c = ai_controller(actor);
         return {get(c, L"BehaviorTree").object, get(c, L"CombatBehaviorTree").object};
     }
-    // Set them, for the game's own starts to run (`fight` when a fight begins: a tree on BB_CombatEnemy, BT_CombatEnemy
-    // or its attack subtree BT_AttackEnemy; the members are what its controller is given, but a fight hasn't been seen
-    // starting from one set yet). nullptr leaves one as it is. Not the tree running now: run_tree() is that.
+    // Set them, for the game's own starts to run: `fight` when its turn comes in a fight (on the fight's own actor: a
+    // fight's enemy isn't the roaming animal, set it at CombatStart). Only BT_CombatEnemy works as a fight tree: its
+    // attack subtree BT_AttackEnemy set alone ran, but never handed the turn on, and the fight stalled (seen). nullptr
+    // leaves one as it is. Not the tree running now: run_tree() is that.
     // False without an AI, or a tree its controller has no place for.
     inline auto set_trees(UObject* actor, UObject* roaming, UObject* fight = nullptr) -> bool
     {
@@ -854,4 +859,277 @@ namespace wcmods
     }
     // Whether it's following something (by follow()).
     inline auto following(UObject* actor) -> bool { return detail::follow_of(actor) != nullptr; }
+
+    // ============================================================================================ a fight's AI
+    // In a fight each enemy is its own actor (BP_Combat_Character_Base_C, not the roaming animal) with its controller:
+    // as a round starts its fight tree (BT_CombatEnemy, then BT_AttackEnemy) picks its target, and its move goes into
+    // its combat component's AttackSelected as its turn comes, the hit about 1.7 s later (seen in game). Its choices
+    // are behind chance checks by its tier (Fighter::ai_tier: 1 to 6, 7 Terrible, 8 Perfect), from AICombatChances.csv.
+
+    // A tier's chances (AICombatChances.csv's row, which the tuning manager keeps as a map of its own), each 0 to
+    // 1: curing its status, healing, resting when exhausted, supporting an ally, a buff, a debuff, attacking the weakest
+    // cat, the slowest, a random move, a move by stance, one that hits all, the strongest, one that gives a status.
+    struct AiChances
+    {
+        float cure_status{}, cure_health{}, exhausted{}, support{}, buff{}, debuff{}, attack_weakest{}, attack_slower{},
+            select_random{}, select_stance{}, select_aoe{}, select_powerful{}, select_status{};
+    };
+    namespace detail
+    {
+        // The tuning manager's map of AICombatChances.csv (TMap<FString, FSwtAdventureAICombatChances>: 0x58-byte slots,
+        // the tier's name, then the row from +0x10), found by what it holds: among its unreflected members (+0x460 to
+        // +0x8C0: +0x690 on build 26337109), the map whose names include Tier1 and Perfect. No signature can find it: the
+        // lookup reaches it through the manager's global, and its loader loads every table with the same code
+        // (docs/reverse-engineering.md, "The game's AI"). Looked for once.
+        inline auto chances_map() -> const uint8_t*
+        {
+            static std::optional<size_t> at;
+            auto* m = reinterpret_cast<const uint8_t*>(manager(STR("tuning")));
+            if (!m || !is_a(manager(STR("tuning")), STR("/Script/SwtAdventure.SwtAdventureTuningManager"))) return nullptr;
+            auto holds = [&](size_t off) {
+                std::vector<const uint8_t*> slots;
+                if (!set_slots(m + off, 0x58, slots) || slots.size() < 2 || slots.size() > 16) return false;
+                bool tier1 = false, perfect = false;
+                for (const uint8_t* e : slots)
+                {
+                    std::wstring n = fstring_at(e);
+                    tier1 = tier1 || same_key(n, L"Tier1");
+                    perfect = perfect || same_key(n, L"Perfect");
+                }
+                return tier1 && perfect;
+            };
+            if (at && holds(*at)) return m + *at;
+            at.reset();
+            for (size_t off = 0x460; off < 0x8C0; off += 8)
+                if (holds(off))
+                {
+                    at = off;
+                    return m + off;
+                }
+            return nullptr;
+        }
+        // The map's slot for a tier by its name (L"Terrible", L"Tier1"... L"Tier6", L"Perfect").
+        inline auto chances_row(std::wstring_view tier) -> Value
+        {
+            const uint8_t* map = chances_map();
+            std::vector<const uint8_t*> slots;
+            if (!set_slots(map, 0x58, slots)) return {};
+            for (const uint8_t* e : slots)
+                if (same_key(fstring_at(e), tier))
+                    return struct_at(STR("/Script/SwtAdventure.SwtAdventureAICombatChances"), const_cast<uint8_t*>(e) + 0x10);
+            return {};
+        }
+        inline constexpr const wchar_t* CHANCE_FIELDS[] = {L"CureStatus", L"CureHealth", L"Exhausted", L"Support", L"Buff", L"Debuff",
+                                                           L"AttackWeakest", L"AttackSlower", L"SelectRandom", L"SelectStance",
+                                                           L"SelectAOE", L"SelectPowerful", L"SelectStatus"};
+    } // namespace detail
+    // A tier's chances by its name (L"Terrible", L"Tier1" to L"Tier6", L"Perfect"); nullopt for another, or without
+    // the table on this build.
+    inline auto ai_chances(std::wstring_view tier) -> std::optional<AiChances>
+    {
+        if (!assert_game_thread(L"ai_chances")) return std::nullopt;
+        Value row = detail::chances_row(tier);
+        if (row.kind != Value::Kind::Struct) return std::nullopt;
+        AiChances c;
+        float* out[] = {&c.cure_status, &c.cure_health, &c.exhausted, &c.support, &c.buff, &c.debuff, &c.attack_weakest,
+                        &c.attack_slower, &c.select_random, &c.select_stance, &c.select_aoe, &c.select_powerful, &c.select_status};
+        for (size_t k = 0; k < 13; ++k) *out[k] = static_cast<float>(get(row, detail::CHANCE_FIELDS[k]).number());
+        return c;
+    }
+    // Set one of a tier's chances by the column's name (L"SelectRandom", L"AttackWeakest", L"CureHealth"...: the
+    // table's own), 0 to 1, for every fighter of that tier from then on (the game reads the row as its tree decides).
+    // False for a tier or a column the table hasn't, or a chance outside 0 to 1.
+    inline auto set_ai_chance(std::wstring_view tier, std::wstring_view kind, double chance) -> bool
+    {
+        if (!assert_game_thread(L"set_ai_chance") || !(chance >= 0 && chance <= 1)) return false;
+        bool known = false;
+        for (const wchar_t* f : detail::CHANCE_FIELDS) known = known || kind == f;
+        Value row = detail::chances_row(tier);
+        return known && row.kind == Value::Kind::Struct && set(row, kind, chance);
+    }
+    // Set a fighter's tier for this fight (EAICombatProfile: 1 to 6, 7 Terrible: a random move every time, 8 Perfect):
+    // its tree's chance checks read it as they go (seen: a tier written as the fight began read back so). False
+    // outside a fight's fighter, or without the member.
+    inline auto set_ai_tier(Fighter fighter, int tier) -> bool
+    {
+        if (!assert_game_thread(L"set_ai_tier") || tier < 1 || tier > 8) return false;
+        int32_t* t = fighter.ai_tier();
+        if (!t) return false;
+        *t = tier;
+        return true;
+    }
+
+    namespace detail
+    {
+        // A fighter whose moves limit_moves() cut: its component, and what's where (the move each place holds now, by
+        // the place it had) and how many it had.
+        struct Limited
+        {
+            UObject* component{};
+            UClass* cls{};
+            std::vector<int> at;
+            int32_t count{};
+        };
+        inline auto limited() -> std::vector<Limited>&
+        {
+            static std::vector<Limited> all;
+            return all;
+        }
+        inline auto move_array(Fighter& f, int32_t*& count, uint8_t*& data, int32_t& size) -> bool
+        {
+            count = f.move_count();
+            auto* type = static_cast<RC::Unreal::UStruct*>(object(STR("/Script/SwtAdventure.SwtAdventureAttackMoveStruct")));
+            if (!count || !type || *count <= 0 || *count > 32 || *(count + 1) < *count) return false;
+            data = *reinterpret_cast<uint8_t**>(reinterpret_cast<uint8_t*>(count) - 8);
+            size = type->GetStructureSize();
+            return data && size > 0;
+        }
+        // Two moves swapped in place (the engine moves array elements as bytes too).
+        inline auto swap_moves(uint8_t* data, int32_t size, int a, int b) -> void
+        {
+            if (a == b) return;
+            std::vector<uint8_t> tmp(static_cast<size_t>(size));
+            std::memcpy(tmp.data(), data + a * size, size);
+            std::memcpy(data + a * size, data + b * size, size);
+            std::memcpy(data + b * size, tmp.data(), size);
+        }
+        inline auto put_back(Limited& l) -> void
+        {
+            Fighter f{l.component};
+            int32_t* count = f.move_count();
+            if (!count) return;
+            *count = l.count;   // every move counted again, then each back in its place
+            int32_t* c2 = nullptr;
+            uint8_t* data = nullptr;
+            int32_t size = 0;
+            if (!move_array(f, c2, data, size)) return;
+            for (int pos = 0; pos < l.count; ++pos)
+                for (int j = pos; j < l.count; ++j)
+                    if (l.at[j] == pos)
+                    {
+                        swap_moves(data, size, pos, j);
+                        std::swap(l.at[pos], l.at[j]);
+                        break;
+                    }
+        }
+        inline auto watch_fight_end() -> void
+        {
+            static bool on = false;
+            if (on) return;
+            on = true;
+            wcmods::on(Event::CombatEnd, [](const EventInfo&) {
+                for (auto& l : limited())
+                    if (object_staying(l.component, l.cls)) put_back(l);
+                limited().clear();
+            });
+        }
+    } // namespace detail
+    // Limit a fighter to some of its moves (by their place in Fighter::moves(), as the fight began): its moves are put
+    // in that order at the front and its count cut to them, so whatever its tree picks is one of them (seen: an enemy
+    // limited to its third move used it). The others are kept behind, back with restore_moves() or as the fight ends.
+    // Call it again to change the limit (places are always the first ones'). False outside a fight, or for a place it
+    // hasn't.
+    inline auto limit_moves(Fighter fighter, const std::vector<int>& moves) -> bool
+    {
+        if (!assert_game_thread(L"limit_moves") || !fighter || moves.empty()) return false;
+        int32_t* count = nullptr;
+        uint8_t* data = nullptr;
+        int32_t size = 0;
+        auto& all = detail::limited();
+        auto it = std::find_if(all.begin(), all.end(), [&](auto& l) { return l.component == fighter.component; });
+        if (it != all.end()) detail::put_back(*it);   // from the full list again
+        if (!detail::move_array(fighter, count, data, size)) return false;
+        for (int m : moves)
+            if (m < 0 || m >= *count) return false;
+        detail::Limited l;
+        l.component = fighter.component;
+        l.cls = fighter.component->GetClassPrivate();
+        l.count = *count;
+        for (int k = 0; k < *count; ++k) l.at.push_back(k);
+        for (size_t pos = 0; pos < moves.size(); ++pos)
+        {
+            int j = static_cast<int>(std::find(l.at.begin(), l.at.end(), moves[pos]) - l.at.begin());
+            if (j < static_cast<int>(pos)) return false;   // the same place twice
+            detail::swap_moves(data, size, static_cast<int>(pos), j);
+            std::swap(l.at[pos], l.at[j]);
+        }
+        *count = static_cast<int32_t>(moves.size());
+        if (it != all.end()) *it = l;
+        else all.push_back(l);
+        detail::watch_fight_end();
+        return true;
+    }
+    // Give it all its moves back, in their order. False when limit_moves() didn't cut them.
+    inline auto restore_moves(Fighter fighter) -> bool
+    {
+        if (!assert_game_thread(L"restore_moves")) return false;
+        auto& all = detail::limited();
+        auto it = std::find_if(all.begin(), all.end(), [&](auto& l) { return l.component == fighter.component; });
+        if (it == all.end()) return false;
+        if (detail::object_staying(it->component, it->cls)) detail::put_back(*it);
+        all.erase(it);
+        return true;
+    }
+
+    namespace detail
+    {
+        struct AutoFight
+        {
+            bool on{};
+            std::optional<TimerId> timer;
+            std::chrono::steady_clock::time_point next{};
+            int turns{};
+        };
+        inline auto auto_fight_state() -> AutoFight&
+        {
+            static AutoFight a;
+            return a;
+        }
+        // Your cat's move with the most damage it has the stamina for (by Fighter::moves(): Damage, StaminaCost), or -1.
+        inline auto best_move() -> int
+        {
+            Fighter me = fight_cat();
+            Resource st = Cat{me.actor()}.combat_stamina();   // in a fight player() is nullptr: the fight's own cat
+            const double stamina = st ? *st.value : 1e9;
+            int best = -1;
+            double best_damage = -1;
+            auto all = me.moves();
+            for (int k = 0; k < static_cast<int>(all.size()) && k < 4; ++k)
+            {
+                double cost = get(all[k], L"StaminaCost").number(), damage = get(all[k], L"Damage").number();
+                if (cost <= stamina && damage > best_damage) best = k, best_damage = damage;
+            }
+            return best;
+        }
+    } // namespace detail
+    // Take your cat's turns in fights for you (on) or not: on each of its turns (the fight menu up) its move with the
+    // most damage it has the stamina for, else a rest; until turned off. The SDK's own player, not the game's AI (your
+    // cat's fighter has no AI controller). How many turns it took: auto_fight_turns().
+    inline auto auto_fight(bool on) -> void
+    {
+        if (!assert_game_thread(L"auto_fight")) return;
+        auto& a = detail::auto_fight_state();
+        a.on = on;
+        if (!on)
+        {
+            if (a.timer) cancel(*a.timer);
+            a.timer.reset();
+            return;
+        }
+        if (a.timer) return;
+        a.timer = every(0.3, [] {
+            detail::guarded(L"auto_fight", [] {
+                auto& a = detail::auto_fight_state();
+                if (!a.on || !combat_active() || !fight_menu() || std::chrono::steady_clock::now() < a.next) return;
+                int move = detail::best_move();
+                bool went = move >= 0 ? fight_attack(move) : fight_rest();
+                if (went)
+                {
+                    ++a.turns;
+                    a.next = std::chrono::steady_clock::now() + std::chrono::seconds(3);   // the menu goes as the turn plays
+                }
+            });
+        });
+    }
+    inline auto auto_fight_turns() -> int { return detail::auto_fight_state().turns; }
 } // namespace wcmods

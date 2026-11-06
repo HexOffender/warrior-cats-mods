@@ -694,6 +694,22 @@ cat stood after 490 every time: something that way stops the mesh (an 800-unit m
 stood in its `BTTask_GoToLocation` ("Move To Location") without moving: the task only drives the escort controller, it
 seems. Following is a `move_to` after the target instead.
 
+**A fight's AI** (step 5): each enemy in a fight is its own actor (`BP_Combat_Character_Base_C`, with an
+`AIC_Wrc_Enemy_Controller_C`), not the roaming animal. As each round starts its controller runs `BT_CombatEnemy` for a
+moment (its "Run Behavior" of `BT_AttackEnemy`), which fills its combat component's `CurrentTarget`; its move appears in
+`AttackSelected` as its turn comes, and the hit about 1.7 s later. Its moves are the component's array (+0x1E0, its
+count `WCM_MoveCount`): put the chosen ones first and cut the count, and the tree's pick is one of them (seen: limited
+to `WeakMice.3`, it used it on three turns; the array's elements moved as bytes, as the engine moves them). Its tier
+(`WCM_AITier`) written as the fight began stayed. `BT_AttackEnemy` set as its fight tree ran, its select tasks over and
+over, and never handed the turn on (only `BT_CombatEnemy`'s "Set Next Cat" does): the fight stalled. The cheats
+manager's `ForcedDifficulty` (Terrible) left the enemy's tier as it was.
+
+**AICombatChances.csv** is the adventure tuning manager's own map (`TMap<FString, FSwtAdventureAICombatChances>`, 0x58-byte
+slots, the row from +0x10) at +0x690, among its unreflected members (+0x460 to +0x8C0). `0x14181DBA0` copies a tier's row
+out by its `EAICombatProfile` (its name made from the enum), reaching the map through the manager's global; its loader
+(`0x14181EB00`) loads every table with the same code. Neither gives the member a pattern of its own, so the SDK finds
+the map by what it holds (names Tier1 and Perfect).
+
 ### Bonds
 
 Worked out on 2026-11-04 (build 26337109) from the exe and in game, for the C++ SDK's `Bonds.hpp`; the addresses are

@@ -102,6 +102,10 @@ namespace t
             {
                 run_ai_trees_request();
             }
+            else if (what == "ai_fight")
+            {
+                run_ai_fight_request();
+            }
             else if (what == "ai_notice")
             {
                 run_ai_notice_request();
