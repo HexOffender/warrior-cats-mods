@@ -95,20 +95,28 @@ class Bridge:
 
     def status(self):
         """The bridge's last status, with "alive" set when it's recent; None when it never ran. The bridge
-        replaces status.json by removing it and renaming the new one in, so a status found missing while its
-        folder is there is looked for once more a moment later."""
+        replaces status.json once a second by removing it and renaming the new one in, so a read can land in
+        between: the file missing (while its folder is there), Windows refusing it mid-rename (a PermissionError),
+        or a partial read. Each is looked at again a moment later, a few times (about a quarter of a second in
+        all), before the status counts as gone: one look again wasn't enough on a busy game (seen in the
+        Real-time combat mod's tests, a test now and then failing with the bridge "not running")."""
         path = os.path.join(self.dir, "status.json")
-        for attempt in (0, 1):
+        tries = 6
+        for attempt in range(tries):
+            last = attempt == tries - 1
             try:
                 with open(path, encoding="utf-8") as f:
                     data = json.load(f)
                 data["age"] = time.time() - os.path.getmtime(path)
             except FileNotFoundError:
-                if attempt == 0 and os.path.isdir(self.dir):
+                if not last and os.path.isdir(self.dir):
                     time.sleep(0.05)
                     continue
                 return None
             except (OSError, ValueError):
+                if not last:
+                    time.sleep(0.05)
+                    continue
                 return None
             data["alive"] = data["age"] < ALIVE
             return data
