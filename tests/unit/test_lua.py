@@ -684,6 +684,26 @@ def test_drop_takes_only_an_item_and_puts_it_in_reach():
     assert "elseif getmetatable(where) == Cat then by = where.actor" in drop   # a Cat isn't a place
 
 
+def test_every_ai_call_is_documented():
+    """Game.ai (the Lua plan's step 2) is in scripting.md's own section, every call named there, and Game.animals.near
+    with it. Its helpers are a do-block's locals, not the main chunk's (which is near Lua's 200)."""
+    import os
+    lua = game.lua()
+    names = re.findall(r"^    function AI\.(\w+)\(", lua, re.M)
+    assert {"controller", "keys", "get", "set", "moveTo", "ignorePlayer", "follow", "treeNodes", "runTree"} <= set(names), names
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "scripting.md")
+    with open(path, encoding="utf-8") as f:
+        docs = f.read()
+    section = docs[docs.index("### The game's AI (`Game.ai`)"):docs.index("### Items")]
+    for name in names:
+        assert f"Game.ai.{name}(" in section, name
+    assert "`Game.animals.near(radius, from)`" in section and "function Game.animals.near(radius, from)" in lua
+    block = lua[lua.index("Game.ai = { TREES = {"):lua.index("-- ===================================================================================== the game's quest HUD")]
+    assert "\ndo\n    local AI = Game.ai\n" in block and block.rstrip().endswith("end")
+    # a TSet's ForEach hands the element alone (seen: (_, e) read nil and tracking was never seen)
+    assert "c.DetectedCharacters:ForEach(function(e)" in lua
+
+
 def test_json_decode_skips_a_bom():
     lua = game.lua()
     assert 'local BOM = "\\239\\187\\191"' in lua

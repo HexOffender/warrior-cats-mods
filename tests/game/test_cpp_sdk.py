@@ -1251,6 +1251,36 @@ def test_ai(agent):
     assert v["ai.near_walking_3"]["task"] == "NPC Spline Walking" and moved("ai.near_stopped_4", "ai.near_walking_3") > 50, v["ai.near_walking_3"]
 
 
+LUA_TREE_LINES = """
+local out = {}
+for _, name in ipairs(Game.ai.TREES) do
+    local lines = {}
+    for _, n in ipairs(Game.ai.treeNodes(name)) do
+        local s = n.depth .. " " .. n.role .. " " .. n.kind .. " '" .. n.name .. "'"
+        for _, kv in ipairs(n.settings) do s = s .. " " .. kv.name .. "=" .. kv.value end
+        lines[#lines + 1] = s
+    end
+    out[name] = { blackboard = Game.ai.treeBlackboard(name), lines = lines }
+end
+return out
+"""
+
+
+def test_lua_ai_trees_match_cpp(agent):
+    """Game.ai.treeNodes and treeBlackboard read the game's eight trees as Ai.hpp's ai_tree_nodes and ai_tree_blackboard
+    do: the same nodes, in the same order, with the same settings (the C++ request "ai" lists them)."""
+    _close_screens(agent)
+    r = _request(agent, "ai", timeout=90)
+    cpp = r["values"]["ai.trees"]
+    lua = agent.lua(LUA_TREE_LINES)
+    differ = []
+    for name, t in cpp.items():
+        assert lua[name]["blackboard"] == t["blackboard"], (name, lua[name]["blackboard"], t["blackboard"])
+        assert len(lua[name]["lines"]) == len(t["lines"]), (name, len(lua[name]["lines"]), len(t["lines"]))
+        differ += [(name, c, l) for c, l in zip(t["lines"], lua[name]["lines"]) if c != l]
+    assert not differ, differ
+
+
 def test_ai_move(agent):
     """Ai.hpp's moves in the game (the AI plan's step 2): an awake roaming animal sent 300 units toward your cat at
     200 cm/s (its walk speed set, its logic stopped, moving midway) arrives within its radius and stands; sent 400 units

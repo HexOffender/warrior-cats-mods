@@ -78,6 +78,10 @@ tree and its task need the brain's `InstanceStack`, an array: step 8.
 **Proof.** In game, as `test_ai`, `test_ai_move`, `test_ai_notice` and `test_ai_trees` do from C++, and the same
 values from both (the C++ test mod records them in the same game).
 
+**Done.** All of it but the running tree and its task (step 8), with `Game.animals.near` from step 3 (the stealth mode
+needs it). The trees as data match C++'s node for node. A byte member's enum can't be asked for from Lua, so the
+settings in the game's eight trees are named from a table of their enums.
+
 ## 3. Animals and walking cats
 
 **The calls.** `Game.animals`: `kinds()` (DT_Combat_Generator's parties, through UE4SS's `UDataTable`), `spawn(kind,
@@ -141,8 +145,8 @@ the other addons are, opt in. Or these calls stay C++'s only.
 
 | Step | State | Pull request |
 |---|---|---|
-| 1. The bugs C++ found | done | this branch, `claude/lua-fixes` |
-| 2. The game's AI | not started | |
+| 1. The bugs C++ found | done | #153 |
+| 2. The game's AI | done | this branch, `claude/lua-ai` |
 | 3. Animals and walking cats | not started | |
 | 4. Fights | not started | |
 | 5. Story | not started | |
