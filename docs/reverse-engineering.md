@@ -752,6 +752,31 @@ out by its `EAICombatProfile` (its name made from the enum), reaching the map th
 (`0x14181EB00`) loads every table with the same code. Neither gives the member a pattern of its own, so the SDK finds
 the map by what it holds (names Tier1 and Perfect).
 
+**Putting an animal in the world** (step 6, 2026-11-06): the roaming animals come from prey generators placed in
+`L_General_Gameplay` (`BP_Enemy_Generator_C < AWrcPreyGenerator < ASwtAdventurePreyGenerator < ASwtQuestPreyGenerator`).
+A placed one has no `PreyClasses` and a `SpawnQuantity` of 0: its animal is the fight party of its tag for your cat's
+clan and rank (`ShadowClanCombatTags.ApprenticeSetup`...: `Gameplay.Combat.Generator.Dynamic.WeakMice.1`, a mouse),
+spawned as its rank is set (`UpdateRankGenerator`) or by `UpdateGenerator` when it has none (there at once, its AI
+running, in `SpawnedPreys`; nothing else brought one back within 6 s of its animal going). The parties are
+`DT_Combat_Generator`'s rows (`FSwtAdventureCombatParty`: `GeneratorTag`, `NumParty`, `CharacterParty` of
+`characterTag`, `Level`, `AICombatProfile`, `Attacks`); the dynamic tags aren't rows. A rabbit (`...Fixed.Rabbit.01.L6`)
+put on a generator's tags spawned as `SK_Rabbit`, its `rewards` map two reward-table keys by rank, and its fight gave a
+rabbit fresh-kill and a fur.
+
+A generator spawned at run time needs, as the placed ones are set: `bUseQuestCombatTag` off (its Blueprint's default
+is on, and its fight was then `QuestCombatTags`', all None: no fight), `CombatType` Enemy (the default None: no
+fight), `SpawnQuantity` 0, `bExchangedRoles` off. With those its animal roamed and noticed your cat, but the fight a
+pounce started was one mouse at level 12, not its rabbit (a placed generator's party near by is `Fixed.Mice.03.L12`):
+the fight finds its party some other way than the animal's `PreyGenerator`, which only the level's own generators
+answer. A placed generator, its tags set to the rabbit's and
+moved beside your cat, gave the rabbit's fight (the farthest one too). So `spawn_animal` borrows the farthest placed
+generator (a roaming fight's: `CombatType` Enemy, not a quest's or a boss's) and gives it back after.
+
+Found on the way: beside the den at the test cat's starting spot a pounce on a spawned animal started no fight,
+whatever the generator (so tries made there, a unique id set by hand, the instigator cleared, the area box over your
+cat, `RetrieveId`, showed nothing); out where the animals live it did. And an animal spawned near your cat with the
+game's reaction time chases it into a fight within seconds.
+
 ### Bonds
 
 Worked out on 2026-11-04 (build 26337109) from the exe and in game, for the C++ SDK's `Bonds.hpp`; the addresses are

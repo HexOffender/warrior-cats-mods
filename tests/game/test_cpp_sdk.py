@@ -1347,6 +1347,33 @@ def test_ai_fight(agent):
     assert v["fight.auto_turns"] >= 3 and v["fight.over"] is True, v
 
 
+def test_ai_spawn(agent):
+    """Ai.hpp's animals put in the world (the AI plan's step 6), out where the animals live (beside the den at your
+    cat's starting spot a pounce starts no fight): the kinds (DT_Combat_Generator's parties: the rabbit's one rabbit at
+    level 6); what isn't a kind refused; a rabbit spawned 600 units behind your cat by one of the game's generators,
+    borrowed, its AI running and listed by animals(), roaming; pounced: a fight with it (one rabbit, level 6) won, its
+    reward items and experience given, it gone and its generator given back (its place and tags); another (respawn)
+    noticing your cat in front of it, put back by its generator when it's gone, then removed for good, its generator
+    home again."""
+    _close_screens(agent)
+    try:
+        r = _request(agent, "ai_spawn", timeout=150)
+    finally:
+        _close_screens(agent)
+    assert not _failed(r, "ai_spawn"), _failed(r, "ai_spawn")
+    v = {k: x for k, x in r["values"].items() if k.startswith("spawn.")}
+    assert v["spawn.kinds"] > 300 and v["spawn.rabbit_kind"] == ["Gameplay.Combat.Character.Rabbit@6"], v
+    assert (v["spawn.model"], v["spawn.generator_class"]) == ("SK_Rabbit", "BP_Enemy_Generator_C"), v
+    assert v["spawn.ai_running"] is True and v["spawn.listed"] is True, v
+    assert v["spawn.ai_running_2s"] is True and v["spawn.task"] not in ("", "None"), v
+    assert v["spawn.enemies"] == [{"model": "SK_Rabbit", "level": 6}], v
+    assert v["spawn.items_got"] and v["spawn.xp_got"] > 0, v
+    assert v["spawn.rabbit_gone"] and v["spawn.put_after"] == 0 and v["spawn.generator_home"], v
+    assert v["spawn.generator_tag_back"] == v["spawn.generator_tag_was"], v
+    assert v["spawn.noticed"]["detected"] or v["spawn.noticed"]["tracking"], v
+    assert v["spawn.respawned"] and v["spawn.removed_stays_gone"] and v["spawn.removed_generator_home"], v
+
+
 def test_bond_answers(agent):
     """A bond talk's answers in the game (Bonds.hpp, Talk.hpp), on the test cat (ShadowClan, Ambitious and Curious):
     the talk tables' rows as the tuning manager loaded them (a story row, a quest row by any case, the 22 under one

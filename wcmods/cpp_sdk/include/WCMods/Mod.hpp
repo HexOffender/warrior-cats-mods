@@ -73,5 +73,6 @@ namespace wcmods
         ::wcmods::detail::stop_sky();                                                                          \
         ::wcmods::detail::stop_npcs();                                                                         \
         ::wcmods::detail::stop_talk();                                                                         \
+        ::wcmods::detail::stop_animals();                                                                      \
         delete mod;                                                                                          \
     }
