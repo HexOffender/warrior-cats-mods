@@ -1275,8 +1275,9 @@ def test_ai_notice(agent):
     """Ai.hpp's noticing in the game (the AI plan's step 3), with the animals' reaction time at 30 s (no chase, so no
     fight): the nav meshes (two; one under your cat, none in the sky); an awake animal (detection mask 3) with your cat
     250 units in front of it notices it within 6 s (its detection tracking your cat) and waits to chase, and calm() makes
-    it give your cat up; its tree restarted and made to ignore your cat (mask 0, given up), it doesn't notice it again
-    in 6 s; another, ignoring your cat (mask 0), doesn't notice it in front of it in 6 s, notice_player() makes it notice at once
+    it give your cat up; its tree restarted and made to ignore your cat (its detection sphere ignoring cats, mask 0, given
+    up), it doesn't notice it again in 6 s, and un-ignored its sphere overlaps cats again; another, ignoring your cat,
+    doesn't notice it moved in front of it in 6 s, notice_player() makes it notice at once
     anyway, and ignore_player(false) puts its mask back; the first runs from your cat (500 units off) at its chase speed,
     well away; ignore_player_everywhere covers every animal near and is undone, but not the one the mod made to ignore
     your cat itself, and un-ignoring an animal it didn't zero leaves its mask. Your cat is put between the two animals
@@ -1292,8 +1293,9 @@ def test_ai_notice(agent):
     assert not v["notice.calmed"]["detected"] and v["notice.calmed"]["target"] == "", v["notice.calmed"]
     assert seen["tracking"] is True, seen
     it = v["notice.ignored_tracked"]
-    assert it["type"] == 0 and not it["detected"] and it["running"], it
-    assert v["notice.ignored"]["type"] == 0 and not v["notice.ignored"]["detected"], v["notice.ignored"]
+    assert it["type"] == 0 and it["ignoring"] and not it["detected"] and it["running"], it
+    assert (v["notice.cats_response_ignoring"], v["notice.cats_response_back"]) == (0, 1), v
+    assert v["notice.ignored"]["type"] == 0 and v["notice.ignored"]["ignoring"] and not v["notice.ignored"]["detected"], v["notice.ignored"]
     assert v["notice.noticed"]["detected"] and v["notice.noticed"]["task"] == "Wait Blackboard Time", v["notice.noticed"]
     assert v["notice.flags_back"] == 3, v["notice.flags_back"]
     assert v["notice.flee_speed"] == 400 and v["notice.flee_after"] - v["notice.flee_before"] > 300, v

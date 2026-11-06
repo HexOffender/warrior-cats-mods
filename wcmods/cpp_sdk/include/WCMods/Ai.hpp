@@ -583,7 +583,9 @@ namespace wcmods
         if (v.kind == Value::Kind::None) return std::nullopt;
         return static_cast<int>(v.number());
     }
-    // Set it (0 notices nothing; the game's own code leaves it as set, seen in game). False without the component.
+    // Set it (the game's own code leaves it as set, seen in game). It's what the detection pass uses when its caller
+    // gives no flags of its own; the roaming tree's detection services give theirs (7, 15), so 0 alone doesn't stop a
+    // roaming animal noticing your cat (seen): ignore_player() does. False without the component.
     inline auto set_detection_flags(UObject* actor, int flags) -> bool
     {
         if (!assert_game_thread(L"set_detection_flags")) return false;
@@ -599,8 +601,8 @@ namespace wcmods
     }
     // Make it notice your cat now, as the game's own noticing does (its OnCharacterDetected: Detected, Target, where it
     // started and its reaction time on its blackboard), even while it ignores your cat (seen); it gives chase after its
-    // reaction time (senses().react_to_chase, 0.5 s). With its mask 0 the chase's own detection may lose your cat as it
-    // goes (not tried). False for what isn't a roaming animal (or a boss, or prey to pounce).
+    // reaction time (senses().react_to_chase, 0.5 s). While it ignores your cat the chase's own detection may lose your cat
+    // as it goes (not tried). False for what isn't a roaming animal (or a boss, or prey to pounce).
     inline auto notice_player(UObject* actor) -> bool
     {
         if (!assert_game_thread(L"notice_player") || !actor || !player()) return false;
@@ -610,7 +612,12 @@ namespace wcmods
     {
         struct Ignoring
         {
-            std::map<UObject*, int> was;      // the animals made to ignore your cat, and the mask each had
+            struct Was
+            {
+                int mask{};       // its detection mask
+                int response{};   // its detection sphere's response to cats (the Pawn channel)
+            };
+            std::map<UObject*, Was> was;      // the animals made to ignore your cat, and what each had
             std::set<UObject*> by_stealth;    // those ignore_player_everywhere zeroed (turning it off puts back only these)
             bool everywhere{};
             std::optional<TimerId> keeper;
@@ -619,6 +626,23 @@ namespace wcmods
         {
             static Ignoring i;
             return i;
+        }
+        // The detection sphere's response to the Pawn channel (ECC_Pawn, 2: your cat's capsule, and every cat's):
+        // 0 Ignore, 1 Overlap (the roaming animals'), 2 Block. The cats it overlaps are the ones its detection looks at.
+        inline constexpr int PAWN_CHANNEL = 2;
+        inline auto cats_response(UObject* actor) -> std::optional<int>
+        {
+            auto r = call_reflected(detection_component(actor), STR("GetCollisionResponseToChannel"),
+                                    [](Params& p) { p.set_nth(0, Value::of(PAWN_CHANNEL)); });
+            if (!r) return std::nullopt;
+            return static_cast<int>(r->get(L"ReturnValue").number());
+        }
+        inline auto set_cats_response(UObject* actor, int response) -> bool
+        {
+            return call_reflected(detection_component(actor), STR("SetCollisionResponseToChannel"), [&](Params& p) {
+                       p.set_nth(0, Value::of(PAWN_CHANNEL));
+                       p.set_nth(1, Value::of(response));
+                   }).has_value();
         }
     } // namespace detail
     namespace detail
@@ -641,35 +665,44 @@ namespace wcmods
         if (!assert_game_thread(L"tracking_player")) return false;
         return detail::with_detected(actor, [](RC::Unreal::FScriptSetHelper& h, UObject*& me) { return h.FindElementIndex(&me) >= 0; });
     }
-    // Make an animal ignore your cat (its detection mask 0, and it gives your cat up as calm() does, whether or not it
-    // had noticed it), or notice again with the mask it had (`ignore` false). False without a detection component.
+    // Make an animal ignore your cat, or notice it again as it did (`ignore` false): its detection sphere stops
+    // overlapping cats (its response to the Pawn channel Ignore), its mask goes to 0, and it gives your cat up as calm()
+    // does, whether or not it had noticed it. It ignores every cat so; a pounce on it still starts a fight. False without
+    // a detection component.
+    //
+    // Why the sphere: the detection pass looks only at the cats the sphere overlaps, and the roaming tree's services
+    // run it with flags of their own, so a mask of 0 alone didn't stop an animal that had noticed your cat noticing it
+    // again as your cat moved (seen, every time); with the sphere ignoring cats it didn't (seen).
     inline auto ignore_player(UObject* actor, bool ignore = true) -> bool
     {
         if (!assert_game_thread(L"ignore_player")) return false;
         auto flags = detection_flags(actor);
-        if (!flags) return false;
+        auto response = detail::cats_response(actor);
+        if (!flags || !response) return false;
         auto& was = detail::ignoring().was;
         if (ignore)
         {
             detail::ignoring().by_stealth.erase(actor);   // the mod's own now: stealth turned off leaves it
-            if (!was.contains(actor)) was[actor] = *flags;
+            if (!was.contains(actor)) was[actor] = {*flags, *response};
+            detail::set_cats_response(actor, 0);
             set_detection_flags(actor, 0);
-            // Given up always: one that had noticed your cat, its tree just restarted (its Detected not set yet), and
-            // only its mask zeroed, noticed your cat again within 6 s; with calm() it didn't (seen). Its detection still
-            // tracks your cat (tracking_player): taken out of that set, it noticed your cat again at once, mask 0 or
-            // not (seen), so the set is left as it is.
             calm(actor);
             return true;
         }
         detail::ignoring().by_stealth.erase(actor);
         auto it = was.find(actor);
-        if (it == was.end()) return *flags != 0 || set_detection_flags(actor, 3);   // not ignore_player's: left as it is
-        const int back = it->second;   // (a mask of 0 it was given otherwise gets the roaming animals' 3)
+        if (it == was.end())   // not ignore_player's: left as it is, but for a sphere ignoring cats or a mask of 0
+        {
+            if (*response == 0) detail::set_cats_response(actor, 1);
+            return *flags != 0 || set_detection_flags(actor, 3);
+        }
+        const auto back = it->second;
         was.erase(it);
-        return set_detection_flags(actor, back);
+        detail::set_cats_response(actor, back.response);
+        return set_detection_flags(actor, back.mask);
     }
-    // Whether it ignores your cat (by ignore_player, or its mask 0 for any reason).
-    inline auto ignoring_player(UObject* actor) -> bool { return detection_flags(actor) == 0; }
+    // Whether it ignores your cat: its detection sphere doesn't overlap cats (by ignore_player, or for any reason).
+    inline auto ignoring_player(UObject* actor) -> bool { return detail::cats_response(actor) == 0; }
     // All the roaming animals ignore your cat while it's on: each within 5,000 units of your cat as it comes near (a
     // look once a second); off, each it changed is back to the mask it had (one the mod made to ignore your cat itself
     // stays so). A stealth mode.

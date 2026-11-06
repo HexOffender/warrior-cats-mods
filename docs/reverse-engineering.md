@@ -713,9 +713,14 @@ none; it walks the characters near (a `TArray` of weak pointers at +0x608) and k
 `DetectedCharacters` (+0x5B0). Tried on one animal that had noticed your cat, 250 units in front of it, 7 s each:
 its mask zeroed and `OnCharacterLost` called, it stayed calm (your cat still in its set); taken out of the set as
 well, it noticed your cat again at once, and so it did with its sphere's collision switched off and on, and with
-your cat taken 4,000 units away and back. In the suite, one whose tree had just restarted (`Detected` not yet set,
-so given up by nothing) noticed your cat again within 6 s with its mask 0. So `ignore_player` zeroes the mask and
-always gives your cat up, and leaves the set.
+your cat taken 4,000 units away and back. With the mask zeroed and `OnCharacterLost` called, your cat moved 600
+units off and back in front: noticed again, every time; the same with the component's tick switched off, or the
+component deactivated (it's inactive and not ticking anyway). The pass's callers are two exec thunks
+(`0x141896C80`, `0x141897520`, which pass flags of their own: the roaming tree's detection services, 7 and 15) and
+`0x1417B6D40` (no flags: the mask). **What works:** the detection sphere's response to the Pawn channel (your cat's
+capsule; 1, Overlap, on a roaming animal) set to Ignore: with it, mask 0 and `OnCharacterLost`, an animal that had
+noticed your cat didn't notice it again as it moved off and back in front (the characters near, +0x608, are the
+sphere's overlaps). So `ignore_player` does that, and puts the response back after.
 
 **The navigation meshes:** the world's navigation system (`UWorld::NavigationSystem`) has no main nav data, and two
 in `NavDataSet`: `RecastNavMeshEnemy` (agent radius 25) and `RecastNavMeshPlayer` (radius 1, the cats'). The engine's

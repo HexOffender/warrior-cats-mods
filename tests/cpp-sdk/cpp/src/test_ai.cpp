@@ -332,6 +332,7 @@ namespace t
         {
             Json o = Json::object();
             o.set("tracking", Json(tracking_player(x)));
+            o.set("ignoring", Json(ignoring_player(x)));
             UObject* c = detection_component(x);
             o.set("type", Json(get(c, L"DetectionType").number()));
             o.set("detected", Json(blackboard_bool(x, L"Detected").value_or(false)));
@@ -407,7 +408,9 @@ namespace t
                 expect("notice.ignore_tracked", ignore_player(p->a));
                 after(6.0, [p] {
                 value("notice.ignored_tracked", detection_state(p->a));
+                value("notice.cats_response_ignoring", Json(detail::cats_response(p->a).value_or(-1)));
                 ignore_player(p->a, false);
+                value("notice.cats_response_back", Json(detail::cats_response(p->a).value_or(-1)));
                 calm(p->a);
                 stop_ai(p->a);
                 // ----- b ignoring your cat in front of it
@@ -610,6 +613,7 @@ namespace t
             bool set_up{}, ending{};
             // The animals tried, nearest first from where the test began (listed again after a pounce, the one just
             // missed would be the nearest)
+            Vec3 home{};   // your cat put back there at the end, as the other AI tests do (the tests after start there)
             std::vector<std::pair<UObject*, UClass*>> animals;
         };
         auto chances_json(const std::optional<AiChances>& c) -> Json
@@ -623,6 +627,13 @@ namespace t
         }
         auto tag_of(const Value& move) -> std::string { return text(get(move, L"AttackMoveTag.TagName").string()); }
         auto fight_once(const std::shared_ptr<FightRun>& r) -> void;
+        auto finish(const std::shared_ptr<FightRun>& r) -> void
+        {
+            after(1.0, [r] {   // the game done putting your cat back after the fight first
+                teleport(player(), r->home);
+                done("ai_fight");
+            });
+        }
         auto fight_tick(const std::shared_ptr<FightRun>& r) -> void
         {
             const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - r->began).count();
@@ -635,7 +646,7 @@ namespace t
                     value("fight.used", r->used);
                     value("fight.enemy_turns", Json(r->enemy_turns));
                     value("fight.auto_turns", Json(auto_fight_turns()));
-                    done("ai_fight");
+                    finish(r);
                 }
                 else if (t > 12)   // the pounce missed: the next animal
                 {
@@ -704,7 +715,7 @@ namespace t
                 cancel(r->timer);
                 auto_fight(false);
                 expect("fight.time", false, "the fight took too long");
-                done("ai_fight");
+                finish(r);
             }
         }
         auto fight_once(const std::shared_ptr<FightRun>& r) -> void
@@ -722,7 +733,7 @@ namespace t
             if (!started)
             {
                 expect("fight.started", false, std::format("no fight after {} tries, of {} animals", r->attempts, r->animals.size()));
-                done("ai_fight");
+                finish(r);
                 return;
             }
             r->began = std::chrono::steady_clock::now();
@@ -746,6 +757,7 @@ namespace t
         expect("fight.refused", !set_ai_tier(Fighter{}, 7) && !limit_moves(Fighter{}, {0}) && !restore_moves(Fighter{}));
         // ----- a fight
         auto r = std::make_shared<FightRun>();
+        r->home = *location(player());
         fight_once(r);
     }
 } // namespace t
