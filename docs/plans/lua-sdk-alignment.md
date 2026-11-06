@@ -158,13 +158,16 @@ bonds, setting a cat's look, playing a story scene, unlocking a place, travel th
 and task, the fight AI's chances and an enemy's moves, the tuning, changing words, story talks, a talk's bond
 answers, a herb's use, a den decoration's cost.
 
-The way exists: a C++ mod puts `WCModsCpp` into every Lua mod's state (Mod.hpp), and `WCModsCpp.ui` already gives
+(The option weighed, and declined below:) a C++ mod puts `WCModsCpp` into every Lua mod's state (Mod.hpp), and `WCModsCpp.ui` already gives
 Lua about 75 C++ functions (UiLua.hpp). A small C++ helper built with the SDK could add `WCModsCpp.native` the same
 way, and `Game.*` would use it when it's there and say so when it isn't.
 
 **To decide first:** how such a helper reaches players. The repo keeps no compiled code, and building it needs Visual
 Studio and UE4SS's source. It could be an addon built from its own repository and downloaded from its release, as
 the other addons are, opt in. Or these calls stay C++'s only.
+
+**Decided (2026-11-06): they stay C++'s only.** No helper is built. scripting.md's "What only C++ can do" lists each
+one with its C++ call and why Lua can't reach it, and a mod that needs one is written in C++.
 
 ## Status
 
@@ -177,4 +180,4 @@ the other addons are, opt in. Or these calls stay C++'s only.
 | 5. Story | done | #157 |
 | 6. Tables and words | done | #158 |
 | 7. The rest of the world | done | #159 (part one), #160 (part two) |
-| 8. Only through C++ | to decide | |
+| 8. Only through C++ | decided: C++ only, documented | #162 |

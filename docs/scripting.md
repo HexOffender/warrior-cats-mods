@@ -675,6 +675,39 @@ goes through one of the game's native functions:
 | `cat:role()` | A cat's place: `{clan, role, storyRole}`. `storyRole` is set only for a story or camp cat |
 | `Game.clanCats()` | Every cat the save keeps for your cat's game (NPCData): `{ {clan, role, index, name, look, storyRoles}, ... }`. Each clan's cats come by role, then those outside the clans, then the story cats kept only as their story role (`index` -1). `name` is as the game shows it |
 
+### What only C++ can do
+
+Some of the game can only be reached from a C++ mod ([SDK.md](SDK.md)), and Lua scripts don't have it. A Lua script
+calls the game's reflected functions and reads and writes its reflected members, and can't do these three things:
+- **call the game's native functions:** code with no reflected entry, which wcmods finds by its signature for the
+  installed build (`game.NATIVE`);
+- **read the mapped members only C++ can:** `game.CPP_ONLY`, the maps, arrays and doubles. UE4SS's Lua custom
+  properties have no map, array or double;
+- **read the game's memory directly.**
+
+That leaves these to C++ (the calls are `wcmods::` in SDK.md):
+
+| What | C++ | Why not Lua |
+|---|---|---|
+| The live inventory; items added and taken away (as a pickup does, the HUD's message with it) | `inventory()`, `add_item`, `remove_item` | The inventory is a native map; adding and taking are native calls. Lua has the save's list (`Game.items.list`) and dropping a pickup (`Game.items.drop`) |
+| Setting a cat's look, keeping it in the save, wearing and taking off accessories | `set_look`, `keep_look`, `wear`, `take_off` | The game sets a look up through a native call. Lua reads looks in full (`cat:look()`) |
+| Playing one of the game's scenes | `play_scene` | Native. Lua lists them, sees what plays and skips (`Game.scenes`) |
+| Unlocking a place; travelling through the world map | `unlock_place`, `map_travel` | A native call; the map's position is in doubles. Lua lists places and puts your cat at one (`Game.places`) |
+| Building a den decoration; a decoration's cost, size and build time | `place_decoration`, `build_decoration`, `decorations()` | The cost row comes from a native lookup. Lua lists the dens, their hotspots and decorations, and takes one off (`Game.dens`) |
+| The tuning (TuningData.csv's 441 numbers) read and changed | `tuning`, `set_tuning` | A native map. Lua reads and changes the DataTables (`Game.tables`) |
+| Changing the game's words | `set_words`, `restore_words` | The display string is changed in place, in memory. Lua reads them (`Game.words`) |
+| Adding a row to a DataTable | `Table::add_row` | UE4SS's `AddRow` copies through the row's native copy, which it can't reach on this engine. Lua reads, changes and removes rows |
+| The AI's running tree and its task | `ai_tree`, `ai_task` | The brain's stack of trees is an array. Lua has everything else in `Game.ai` |
+| The fight AI's chances by tier; an enemy's moves limited | `ai_chances`, `set_ai_chance`, `limit_moves`, `restore_moves` | A native map; the moves are an array. That's also why Lua's `autoFight` picks by stamina, not damage |
+| A fighter's moves with their damage | `Fighter::moves` | An array |
+| The cats' bonds and their ranks | `bonds()`, `bond`, `bond_roles` and the rest of `Bonds.hpp` | Native maps and calls |
+| The sky's own copy of its presets | `sky_values`, `set_sky_value` | A map. Lua has the presets' table (`Game.sky.table()`), which a new level's sky copies |
+| Playing another of the game's sounds for an id | `replace_sound` | It writes the audio map and keeps the game's sound alive through the engine's root set. Lua mutes and plays sounds (`Game.sounds`) |
+| A talk's story and bond answers; talks filled from their tables | `Talk.hpp` | Native tables and memory. Lua shows the game's dialogue box (`Game.dialogue`) |
+
+A mod that needs any of these is written in C++ ([SDK.md](SDK.md), "C++ mods"). These calls stay C++'s; Lua won't get
+them through a helper.
+
 ### The game's developer switches
 
 The cheats manager carries the developers' own settings. The release build obeys some and ignores
