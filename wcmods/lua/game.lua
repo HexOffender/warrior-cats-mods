@@ -3738,10 +3738,14 @@ do
     -- not a quest's or a boss's), not borrowed already, the farthest from your cat (its own animal goes unseen).
     local function generatorToBorrow()
         local me = Game.player() and where(Game.player())
-        if not me then return nil end
+        local cls = Game.object("/Script/Wrc.WrcRoamingEnemy")
+        if not me or not cls then return nil end
+        local list = {}
+        pcall(function() Game.library("GameplayStatics"):GetAllActorsOfClass(Game.player(), cls, list) end)
         local best, far = nil, -1
-        for _, n in ipairs(Game.animals.near(1e9)) do
-            local g = Game.get(n.actor, "PreyGenerator")
+        for _, e in ipairs(list) do   -- (each one's generator only: Game.animals.near would name each and read its model)
+            local okA, a = pcall(function() return e:get() end)
+            local g = okA and Game.alive(a) and Game.get(a, "PreyGenerator")
             if valid(g) and Game.isA(g, "WrcPreyGenerator") and Game.get(g, "CombatType") == 1
                 and not Game.get(g, "bIsQuestEncounter") and not Game.get(g, "bIsBossFight") then
                 local taken = false
@@ -3861,7 +3865,8 @@ do
     -- near (300 units off one stood; 1,200 off it walked, seen from C++); a mod's cats don't.
     Game.walkers = {}
     local WALK_PATH_CLASS = "/Game/Gameplay/Blueprints/WorldElements/BP_WalkingNPC_Spline.BP_WalkingNPC_Spline_C"
-    local modPaths = { all = {}, keeper = nil }   -- {actor, path (the spline actor), had (its spline before), hadSpeed}
+    -- {actor, path (the spline actor), had (its spline before), hadSpeed, ran (its logic ran before the script's path)}
+    local modPaths = { all = {}, keeper = nil }
     local function isWalker(a) return valid(a) and Game.isA(a, "SwtAdventureWalkingNPC") end
     local function splineOf(a)
         local s = AI.get(a, "SplineReference")
@@ -3901,6 +3906,8 @@ do
             AI.set(m.actor, "SplineReference", m.had)
         else
             AI.set(m.actor, "bShouldAllowMovement", false)
+            -- a mod's cat spawned with its logic stopped (Game.npcs does: the game aborted with it running) as it was
+            if not m.ran then AI.stop(m.actor) end
         end
     end
     local function keepModPaths()
@@ -3966,8 +3973,9 @@ do
         opts = opts or {}
         local a = actorOf(cat)
         if not isWalker(a) or not AI.controller(a) then return false, "not a walking cat" end
+        if type(points) ~= "table" then return false, "a path needs two places or more" end
         local pts = {}
-        for _, p in ipairs(type(points) == "table" and points or {}) do pts[#pts + 1] = place(p) end
+        for _, p in ipairs(points) do pts[#pts + 1] = place(p) end
         if #pts < 2 or #pts ~= #points then return false, "a path needs two places or more" end
         local cls = Game.object(WALK_PATH_CLASS) or Game.load(WALK_PATH_CLASS)
         if not cls then return false, "the game's path class isn't loaded" end
@@ -3989,10 +3997,10 @@ do
             spline.bPingPong = not loop
         end)
         -- A path the script gave it before goes; the path it had first is the one to give back.
-        local had, hadSpeed = splineOf(a), nil
+        local had, hadSpeed, ran = splineOf(a), nil, AI.running(a)
         local old, i = modPathOf(a)
         if old then
-            had, hadSpeed = old.had, old.hadSpeed
+            had, hadSpeed, ran = old.had, old.hadSpeed, old.ran
             dropPath(old)
             table.remove(modPaths.all, i)
         end
@@ -4008,9 +4016,14 @@ do
             AI.set(a, "bShouldAllowMovement", true)
         end
         keys()
-        AI.runTree(a, "BT_WalkingNPC")
+        if not AI.runTree(a, "BT_WalkingNPC") then
+            local m = { actor = a, path = path, had = had, hadSpeed = hadSpeed, ran = ran }
+            offModPath(m)
+            dropPath(m)
+            return false, "its walking tree wouldn't run"
+        end
         keys()
-        modPaths.all[#modPaths.all + 1] = { actor = a, path = path, had = had, hadSpeed = hadSpeed }
+        modPaths.all[#modPaths.all + 1] = { actor = a, path = path, had = had, hadSpeed = hadSpeed, ran = ran }
         modPaths.keeper = modPaths.keeper or Game.every(2, keepModPaths)
         return true
     end

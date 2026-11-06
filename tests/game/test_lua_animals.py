@@ -108,7 +108,8 @@ def test_lua_walkers_and_paths(agent):
     walking a square of the script's own round a spot at 100 cm/s (listed as the script's loop of four, walking well
     round, never far from the square); stopped, it stands; walked on, it walks. A game cat (your cat 1,200 units from
     it) given a path of two places there and back at 150 cm/s (two of its own path's neighbouring points) walks it, then its own path again at its own speed. What
-    isn't a walking cat, and one place, are refused; the mod's cat removed, its path goes."""
+    isn't a walking cat, and one place, are refused; the mod's cat given its own back stands with its logic stopped
+    again (as Game.npcs spawned it) and the path goes; removed while on a path, its path goes."""
     try:
         got = agent.lua("""
             local w = Game.walkers.near(30000)
@@ -166,8 +167,10 @@ def test_lua_walkers_and_paths(agent):
                                         "Game.ai.controller(a):GetMoveStatus(), Game.walkers.walking(WCMODS_NPC) }"))
 
         refused = agent.lua("return { { Game.walkers.walkPath(Game.player(), { {0, 0, 0}, {1, 1, 1} }) }, "
-                            "{ Game.walkers.walkPath(WCMODS_NPC, { {0, 0, 0} }) }, Game.walkers.ownPath(Game.player()) }")
-        assert refused == [[False, "not a walking cat"], [False, "a path needs two places or more"], False], refused
+                            "{ Game.walkers.walkPath(WCMODS_NPC, { {0, 0, 0} }) }, { Game.walkers.walkPath(WCMODS_NPC, 5) }, "
+                            "Game.walkers.ownPath(Game.player()) }")
+        assert refused == [[False, "not a walking cat"], [False, "a path needs two places or more"],
+                           [False, "a path needs two places or more"], False], refused
 
         # ----- a game cat: your cat 1,200 units from it (one stands while your cat is near)
         got = agent.lua("""
@@ -213,9 +216,19 @@ def test_lua_walkers_and_paths(agent):
                      speed = Game.get(WCMODS_WALKER, "Controller.DefaultMaxWalkSpeed"), again = Game.walkers.ownPath(WCMODS_WALKER) }""")
         assert got["ok"] is True and got["path"] == got["own"] and got["speed"] == 50 and got["again"] is False, got
 
+        # ----- the mod's cat off the path: it stands, its logic stopped again as Game.npcs spawned it; its path gone
+        got = agent.lua("""
+            local a = WCMODS_NPC:actorOrNil()
+            local path = Game.ai.get(a, 'SplineReference'):GetOwner()
+            return { Game.walkers.ownPath(WCMODS_NPC), Game.ai.running(a), Game.alive(path), Game.walkers.walking(WCMODS_NPC) }""")
+        assert got == [True, False, False, False], got
         # ----- the mod's cat gone: its path goes (looked at every 2 s)
-        agent.lua("local s = Game.ai.get(WCMODS_NPC:actorOrNil(), 'SplineReference') WCMODS_PATH = s:GetOwner() "
-                  "WCMODS_NPC:remove() return true")
+        agent.lua("""
+            local c = WCMODS_CENTRE
+            Game.walkers.walkPath(WCMODS_NPC, { { c.X - 200, c.Y - 200, c.Z }, { c.X + 200, c.Y - 200, c.Z } })
+            WCMODS_PATH = Game.ai.get(WCMODS_NPC:actorOrNil(), 'SplineReference'):GetOwner()
+            WCMODS_NPC:remove()
+            return true""")
         agent.wait(lambda: agent.lua("return not Game.alive(WCMODS_PATH)"), 5, "the mod's path to go with its cat")
     finally:
         agent.lua("if Game.alive(WCMODS_WALKER) then Game.walkers.ownPath(WCMODS_WALKER) end "
