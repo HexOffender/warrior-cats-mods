@@ -636,6 +636,27 @@ namespace wcmods
             out.clear();
             return false;
         }
+        // Whether `bytes` from `p` can be read: committed memory, neither no-access nor a guard page. For a pointer
+        // read from a guess (a member found by what it holds), checked before it's followed.
+        inline auto readable(const void* p, size_t bytes) -> bool
+        {
+            auto at = reinterpret_cast<uintptr_t>(p);
+            if (at < 0x10000 || at + bytes < at) return false;
+            constexpr DWORD READS = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE
+                                  | PAGE_EXECUTE_WRITECOPY;
+            while (bytes > 0)
+            {
+                MEMORY_BASIC_INFORMATION mi{};
+                if (!VirtualQuery(reinterpret_cast<const void*>(at), &mi, sizeof mi) || mi.State != MEM_COMMIT
+                    || (mi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) || !(mi.Protect & READS))
+                    return false;
+                const uintptr_t end = reinterpret_cast<uintptr_t>(mi.BaseAddress) + mi.RegionSize;
+                if (end - at >= bytes) return true;
+                bytes -= end - at;
+                at = end;
+            }
+            return true;
+        }
 
         // Whether `size` bytes match a pattern as offsets.json writes it: hex bytes, "??" for any byte
         // ("48 8B ?? 05"). False for a pattern longer than the bytes, or one that isn't a pattern.

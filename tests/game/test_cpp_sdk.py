@@ -1131,7 +1131,8 @@ def test_talks(agent):
     its bonding nodes) as Lua reads the same graphs; the prophecy played to its end (its action passed on, its end
     called once), the rank-up's bonded opening, its answer (a wrong number refused) and its actions; the first
     line's words changed through its key and shown, then put back; a talk of the mod's own with its second answer
-    chosen; a hook that says something as a talk ends. The
+    chosen; a hook that says something as a talk ends; your cat in a talk while the box is up, and out of it
+    after. The
     game is quit after the suite, so a talk that left the game's screens in a bad state shows as a crash there."""
     r = _request(agent, "talks", timeout=30)
     assert not _failed(r, "talks"), _failed(r, "talks")
@@ -1166,6 +1167,9 @@ def test_talks(agent):
     assert v["talks.own_after"] == "Another time, then.", v["talks.own_after"]
     # The box said again as it was going stayed: still in the viewport after the removal's 0.4 s.
     assert v["talks.after_end_in_view"] is True, v
+    # The box's own code puts your cat in a talk (the controller's flags 0x21: animals don't notice it, a pounce
+    # starts nothing); the box coming down takes it out again.
+    assert (v["talks.flags_before"], v["talks.flags_up"], v["talks.flags_after"]) == (0, 0x21, 0), v
 
 
 def test_bonds(agent):
@@ -1270,8 +1274,10 @@ def test_ai_move(agent):
 def test_ai_notice(agent):
     """Ai.hpp's noticing in the game (the AI plan's step 3), with the animals' reaction time at 30 s (no chase, so no
     fight): the nav meshes (two; one under your cat, none in the sky); an awake animal (detection mask 3) with your cat
-    250 units in front of it notices it within 6 s and waits to chase, and calm() makes it give your cat up; another,
-    ignoring your cat (mask 0), doesn't notice it in front of it in 6 s, notice_player() makes it notice at once
+    250 units in front of it notices it within 6 s (its detection tracking your cat) and waits to chase, and calm() makes
+    it give your cat up; its tree restarted and made to ignore your cat (its detection sphere ignoring cats, mask 0, given
+    up), it doesn't notice it again in 6 s, and un-ignored its sphere overlaps cats again; another, ignoring your cat,
+    doesn't notice it moved in front of it in 6 s, notice_player() makes it notice at once
     anyway, and ignore_player(false) puts its mask back; the first runs from your cat (500 units off) at its chase speed,
     well away; ignore_player_everywhere covers every animal near and is undone, but not the one the mod made to ignore
     your cat itself, and un-ignoring an animal it didn't zero leaves its mask. Your cat is put between the two animals
@@ -1285,7 +1291,11 @@ def test_ai_notice(agent):
     seen = v["notice.seen"]
     assert seen["detected"] and seen["target"].startswith("BP_Exploration_Character_Player") and seen["task"] == "Wait Blackboard Time", seen
     assert not v["notice.calmed"]["detected"] and v["notice.calmed"]["target"] == "", v["notice.calmed"]
-    assert v["notice.ignored"]["type"] == 0 and not v["notice.ignored"]["detected"], v["notice.ignored"]
+    assert seen["tracking"] is True, seen
+    it = v["notice.ignored_tracked"]
+    assert it["type"] == 0 and it["ignoring"] and not it["detected"] and it["running"], it
+    assert (v["notice.cats_response_ignoring"], v["notice.cats_response_back"]) == (0, 1), v
+    assert v["notice.ignored"]["type"] == 0 and v["notice.ignored"]["ignoring"] and not v["notice.ignored"]["detected"], v["notice.ignored"]
     assert v["notice.noticed"]["detected"] and v["notice.noticed"]["task"] == "Wait Blackboard Time", v["notice.noticed"]
     assert v["notice.flags_back"] == 3, v["notice.flags_back"]
     assert v["notice.flee_speed"] == 400 and v["notice.flee_after"] - v["notice.flee_before"] > 300, v
@@ -1310,7 +1320,31 @@ def test_ai_trees(agent):
     assert (v["trees.set_roaming"], v["trees.set_fight"]) == ("BT_BossEnemy", "BT_AttackEnemy"), v
     assert v["trees.follow_moving"] is True and 0 <= v["trees.close_4"] < 230, v
     assert v["trees.moved_off"] > 400 and 0 <= v["trees.followed_6"] < 230, v
-    assert v["trees.left_0"] > 500 and abs(v["trees.left_4"] - v["trees.left_0"]) < 20, v
+    assert v["trees.left_0"] > 500 and 0 <= v["trees.left_moved"] < 20, {k: x for k, x in v.items() if k.startswith("trees.")}
+
+
+def test_ai_fight(agent):
+    """Ai.hpp's fight calls in the game (the AI plan's step 5): the tiers' chances as AICombatChances.csv has them (Tier1,
+    Terrible: a random move only; Perfect: everything but random), one set and put back, the wrong tier, column and
+    chance refused; a fight (the nearest animal, three tries for a pounce that misses) whose enemy is limited to its last
+    move and set to Terrible, its health raised so it lasts: on each of its three turns it uses that move, auto_fight
+    takes your cat's turns, then its moves are given back (all of them, once) and the fight is won."""
+    _close_screens(agent)
+    try:
+        r = _request(agent, "ai_fight", timeout=200)
+    finally:
+        _close_screens(agent)
+    assert not _failed(r, "ai_fight"), _failed(r, "ai_fight")
+    v = r["values"]
+    chances = {k: [round(x, 2) for x in v[f"fight.{k}"]] for k in ("tier1", "terrible", "perfect")}   # floats
+    assert chances["tier1"] == [0.5, 0.5, 0.8, 0.1, 0.5, 0.5, 0, 0, 0.5, 0.5, 0.5, 0.5, 0.5], chances
+    assert chances["terrible"] == [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0], chances
+    assert chances["perfect"] == [1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1], chances
+    assert v["fight.moves"] >= 2 and v["fight.only"].startswith("Gameplay.Combat.Attack."), v
+    used = v["fight.used"]
+    assert v["fight.enemy_turns"] >= 3 and len(used) >= 3, v
+    assert all(u.split("@")[0] == v["fight.only"] for u in used), used
+    assert v["fight.auto_turns"] >= 3 and v["fight.over"] is True, v
 
 
 def test_bond_answers(agent):

@@ -57,6 +57,33 @@ namespace wcmods
             return s;
         }
         inline constexpr const wchar_t* DIALOGUE_CLASS = L"/Game/Art/UXD/Blueprints/QuestDialogs/WBP_QuestGiver_Dialogue.WBP_QuestGiver_Dialogue_C";
+        inline constexpr const wchar_t* QUEST_CONTROLLER = L"/Script/SwtQuest.QuestPlayerController";
+        // The game's SetInDialogue under a structured exception handler (a game update the pattern check missed).
+        inline auto call_set_in_dialogue(void* fn, UObject* pc, bool on) -> bool
+        {
+            __try
+            {
+                reinterpret_cast<void (*)(UObject*, bool, bool)>(fn)(pc, on, false);
+                return true;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return false;
+            }
+        }
+        // The box's own code puts your cat in a talk as it goes on screen (the controller's talk flags, 0x1 and 0x20),
+        // and only the end of one of the game's talks takes it out: until then animals don't notice your cat and a
+        // pounce starts no fight (seen, after say()). Taken out the game's way as the box comes down, unless a talk of
+        // the game's own has its box up (the controller's ActiveDialogueWidget) or your cat wasn't in one.
+        inline auto end_box_talk() -> void
+        {
+            UObject* pc = controller();
+            if (!pc || get(pc, L"ActiveDialogueWidget").object) return;
+            int32_t* flags = member<int32_t>(pc, QUEST_CONTROLLER, L"WCM_TalkFlags");
+            void* fn = native_address(L"QuestPlayerController:SetInDialogue");
+            if (!flags || !(*flags & 0x1) || !fn) return;
+            if (!call_set_in_dialogue(fn, pc, false)) log(L"QuestPlayerController:SetInDialogue faulted (a game update?)");
+        }
         inline constexpr const wchar_t* ANSWER_BUTTONS[] = {L"mcButton1", L"mcButton2", L"mcButton3", L"mcButton4"};
 
         // The box's four answer buttons with `answers`' words (more than four are left out), the rest collapsed.
@@ -615,7 +642,11 @@ namespace wcmods
                 auto& st = detail::say_state();
                 if (st.closing != mine) return;   // said again meanwhile
                 st.fading = false;
-                if (st.box) call_reflected(st.box.object(), STR("RemoveFromParent"));
+                if (st.box)
+                {
+                    call_reflected(st.box.object(), STR("RemoveFromParent"));
+                    detail::end_box_talk();
+                }
             });
         }
         if (end) end();   // last: it may play another talk, or say something
@@ -631,7 +662,11 @@ namespace wcmods
             p.hooks = {};
             p.talk.reset();
             auto& s = say_state();
-            if (on_game_thread_now() && s.box) call_reflected(s.box.object(), STR("RemoveFromParent"));
+            if (on_game_thread_now() && s.box)
+            {
+                call_reflected(s.box.object(), STR("RemoveFromParent"));
+                end_box_talk();
+            }
             s.shown = s.fading = false;
             s.words.clear();
             s.answers.clear();

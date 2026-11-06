@@ -95,9 +95,10 @@ enemy's tier at +0x3F8 (a hidden member, read).
 turn's end (`OnAITurnOrderEnded`, `OnAITurnOrderCompleted`); where the game keeps `AICombatChances.csv` (a map of the
 tuning manager's, as the talk tables are, or a data table); whether the tier can be written before the tree reads it.
 
-**The calls.** `on_ai_turn(fn)`: the mod picks an enemy's move and target on its turn (or lets the game pick);
-`set_ai_tier(fighter, tier)`; `ai_chances(tier)`, `set_ai_chance(tier, kind, chance)`; your cat's turn played by the
-game's AI (an auto-fight).
+**The calls.** `limit_moves(fighter, places)` (the mod picks an enemy's moves: an `on_ai_turn` would come too late,
+its move is set as its turn starts) and `restore_moves`; `set_ai_tier(fighter, tier)`; `ai_chances(tier)`,
+`set_ai_chance(tier, kind, chance)`; `auto_fight(on)` (your cat's turns played for you by the SDK: its fighter has no
+AI to give them to).
 
 **Proof.** In game: an enemy using the move the mod picked on each of its turns; a Terrible tier attacking at random;
 your cat's turns played by the game's AI to the fight's end.
@@ -135,8 +136,8 @@ it, and going on after.
 |---|---|---|
 | 1. An AI's keys and logic | done: `Ai.hpp`: an AI's controller, brain, tree (the component's `InstanceStack`, a hidden member, signed) and active node; its blackboard's keys read and written by type; its logic stopped (it stays stopped through the game's sleep and wake) and restarted; the game's eight trees read as data, which say what each key does. Seen in game | #145 |
 | 2. Moving an animal or a cat | done: `move_to` a place or after another actor through the controller's own `MoveToLocation` (the AI's logic stopped first, its speed set or kept, given back at the end on request), `stop_moving`, `moving`, `face`; the walk engine (arrival, stalls, steps aside) shared with `Npc::walk_to`. Seen in game on an animal and a mod's cat | #146 |
-| 3. Noticing and ignoring your cat | done: an animal's detection mask (its component's `DetectionType`: 0 notices nothing, and the game leaves it so); `ignore_player` (one, or every animal near: a stealth mode), `notice_player` and `calm` through the animal's own `OnCharacterDetected` and `OnCharacterLost`, `flee` (a `move_to` away, onto the mesh: `nav_point`). The chase-off tree isn't the game's way of fleeing (it's a spline walk to a boss's place), so `flee` is a move. Seen in game | #147 |
-| 4. Swapping trees | done: `run_tree` (the controller's own `RunBehaviorTree`), `ai_trees_set` and `set_trees` (its reflected `BehaviorTree` and `CombatBehaviorTree`); `follow` and `stop_following`, built on `move_to` (the escort tree's Move To Location doesn't move another controller's cat). `BT_BossEnemy` is a roaming tree, not a fight tree: a fight tree set is seen in step 5's fight | this branch, `claude/cpp-ai-trees` |
-| 5. A fight's AI | not started | |
+| 3. Noticing and ignoring your cat | done: an animal's detection mask (its component's `DetectionType`, which the game leaves as set; corrected in step 5's PR: it's the detection's flags only when the caller gives none, so `ignore_player` makes the detection sphere ignore cats); `ignore_player` (one, or every animal near: a stealth mode), `notice_player` and `calm` through the animal's own `OnCharacterDetected` and `OnCharacterLost`, `flee` (a `move_to` away, onto the mesh: `nav_point`). The chase-off tree isn't the game's way of fleeing (it's a spline walk to a boss's place), so `flee` is a move. Seen in game | #147 |
+| 4. Swapping trees | done: `run_tree` (the controller's own `RunBehaviorTree`), `ai_trees_set` and `set_trees` (its reflected `BehaviorTree` and `CombatBehaviorTree`); `follow` and `stop_following`, built on `move_to` (the escort tree's Move To Location doesn't move another controller's cat). `BT_BossEnemy` is a roaming tree, not a fight tree: a fight tree set is seen in step 5's fight | #148 |
+| 5. A fight's AI | done: the tiers' chances read and set (`AICombatChances.csv`'s map, found by what it holds: no signature reaches it); `set_ai_tier`; `limit_moves` and `restore_moves` (the fighter's moves array reordered and its count cut: the tree's pick is one of them); `auto_fight` takes your cat's turns (the SDK's own player: your cat has no AI controller). A fight tree other than `BT_CombatEnemy` stalls the fight; the cheats' `ForcedDifficulty` isn't obeyed. Seen in a fight | this branch, `claude/cpp-ai-fights` |
 | 6. Putting an animal in the world | not started | |
 | 7. The clan cats' walking | not started | |

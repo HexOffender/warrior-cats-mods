@@ -5,10 +5,12 @@
 // 2): an animal walked to a place, stopped midway, given back to its tree at the end; a mod's cat after your cat; an
 // animal turned to face your cat. Noticing ("ai_notice", step 3): an animal ignoring your cat, noticing it by the game's
 // own call, giving it up, running from it. Trees ("ai_trees", step 4): another of the game's trees run on an animal and
-// back, its own trees set and read back; a mod's cat following your cat about, and let go.
+// back, its own trees set and read back; a mod's cat following your cat about, and let go. A fight's AI ("ai_fight",
+// step 5): the chances by tier, an enemy limited to one move at the Terrible tier, your cat's turns taken by auto_fight.
 #include "checks.hpp"
 
 #include <chrono>
+#include <cstring>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -329,6 +331,8 @@ namespace t
         auto detection_state(UObject* x) -> Json
         {
             Json o = Json::object();
+            o.set("tracking", Json(tracking_player(x)));
+            o.set("ignoring", Json(ignoring_player(x)));
             UObject* c = detection_component(x);
             o.set("type", Json(get(c, L"DetectionType").number()));
             o.set("detected", Json(blackboard_bool(x, L"Detected").value_or(false)));
@@ -397,6 +401,17 @@ namespace t
             expect("notice.calm", calm(p->a));
             after(1.0, [p] {
                 value("notice.calmed", detection_state(p->a));
+                // ----- a, its detection still tracking your cat and its tree restarted, made to ignore it: it doesn't
+                // notice your cat again (seen in a suite run before ignore_player gave your cat up itself: noticed
+                // again within 6 s, its mask 0)
+                restart_ai(p->a);
+                expect("notice.ignore_tracked", ignore_player(p->a));
+                after(6.0, [p] {
+                value("notice.ignored_tracked", detection_state(p->a));
+                value("notice.cats_response_ignoring", Json(detail::cats_response(p->a).value_or(-1)));
+                ignore_player(p->a, false);
+                value("notice.cats_response_back", Json(detail::cats_response(p->a).value_or(-1)));
+                calm(p->a);
                 stop_ai(p->a);
                 // ----- b ignoring your cat in front of it
                 restart_ai(p->b);
@@ -465,6 +480,7 @@ namespace t
                         });
                     });
                 });
+                });
             });
         });
         });
@@ -478,7 +494,13 @@ namespace t
             UObject* animal{};
             Npc cat;
             Vec3 home{};
+            Vec3 left_cat{}, left_you{};   // where the cat and your cat were as it was let go
         };
+        auto moved_since(UObject* x, Vec3 from) -> double
+        {
+            auto at = location(x);
+            return at ? std::hypot(at->x - from.x, at->y - from.y) : -1.0;
+        }
         auto tree_name(UObject* t) -> Json { return Json(text(name(t))); }
         auto cat_off(const std::shared_ptr<TreesRun>& r) -> double
         {
@@ -551,8 +573,14 @@ namespace t
                             // your cat 700 units on again: it stays
                             teleport(player(), walkable_from(*location(player()), 700, r->cat.actor()));
                             value("trees.left_0", Json(cat_off(r)));
+                            r->left_cat = location(r->cat.actor()).value_or(Vec3{});
+                            r->left_you = location(player()).value_or(Vec3{});
                             after(4.0, [r] {
                                 value("trees.left_4", Json(cat_off(r)));
+                                // Its own way since (your cat could be moved by the game meanwhile: seen once, the
+                                // distance shrank by 660 in a suite run)
+                                value("trees.left_moved", Json(moved_since(r->cat.actor(), r->left_cat)));
+                                value("trees.you_moved", Json(moved_since(player(), r->left_you)));
                                 r->cat.remove();
                                 teleport(player(), r->home);
                                 done("ai_trees");
@@ -562,5 +590,174 @@ namespace t
                 });
             });
         });
+    }
+
+    // A fight's AI ("ai_fight", step 5): the tiers' chances read and one set; a fight in which the enemy is limited to
+    // one of its moves and its tier set to Terrible, made to last (its health raised), your cat's turns taken by
+    // auto_fight; after three enemy turns its moves given back and the fight won.
+    namespace
+    {
+        struct FightRun
+        {
+            Fighter enemy;
+            UObject* enemy_actor{};
+            int all_moves{};
+            std::string only;
+            int enemy_turns{}, attempts{};
+            UObject* last_turn{};
+            UObject* answered{};   // the end's dilemma popup answered, and when
+            std::chrono::steady_clock::time_point answered_at;
+            Json used = Json::array();
+            std::chrono::steady_clock::time_point began;
+            TimerId timer{};
+            bool set_up{}, ending{};
+            // The animals tried, nearest first from where the test began (listed again after a pounce, the one just
+            // missed would be the nearest)
+            Vec3 home{};   // your cat put back there at the end, as the other AI tests do (the tests after start there)
+            std::vector<std::pair<UObject*, UClass*>> animals;
+        };
+        auto chances_json(const std::optional<AiChances>& c) -> Json
+        {
+            if (!c) return Json();
+            Json a = Json::array();
+            for (float f : {c->cure_status, c->cure_health, c->exhausted, c->support, c->buff, c->debuff, c->attack_weakest,
+                            c->attack_slower, c->select_random, c->select_stance, c->select_aoe, c->select_powerful, c->select_status})
+                a.push(Json(std::round(f * 100) / 100));
+            return a;
+        }
+        auto tag_of(const Value& move) -> std::string { return text(get(move, L"AttackMoveTag.TagName").string()); }
+        auto fight_once(const std::shared_ptr<FightRun>& r) -> void;
+        auto finish(const std::shared_ptr<FightRun>& r) -> void
+        {
+            after(1.0, [r] {   // the game done putting your cat back after the fight first
+                teleport(player(), r->home);
+                done("ai_fight");
+            });
+        }
+        auto fight_tick(const std::shared_ptr<FightRun>& r) -> void
+        {
+            const double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - r->began).count();
+            if (!combat_active())
+            {
+                if (r->ending || r->set_up)   // over
+                {
+                    cancel(r->timer);
+                    value("fight.over", Json(true));
+                    value("fight.used", r->used);
+                    value("fight.enemy_turns", Json(r->enemy_turns));
+                    value("fight.auto_turns", Json(auto_fight_turns()));
+                    finish(r);
+                }
+                else if (t > 12)   // the pounce missed: the next animal
+                {
+                    cancel(r->timer);
+                    fight_once(r);
+                }
+                return;
+            }
+            if (!r->set_up && !fight_enemies().empty())
+            {
+                r->set_up = true;
+                r->enemy = fight_enemies().front();
+                r->enemy_actor = r->enemy.actor();
+                auto all = r->enemy.moves();
+                r->all_moves = static_cast<int>(all.size());
+                value("fight.moves", Json(r->all_moves));
+                const int last = r->all_moves - 1;
+                r->only = last >= 0 ? tag_of(all[last]) : std::string();
+                // A place twice: refused with nothing moved.
+                expect("fight.limit_twice", last >= 1 && !limit_moves(r->enemy, {last, 0, last}) && tag_of(r->enemy.moves().front()) == tag_of(all[0]));
+                value("fight.only", Json(r->only));
+                expect("fight.limit", last >= 0 && limit_moves(r->enemy, {last}) && r->enemy.moves().size() == 1
+                                          && tag_of(r->enemy.moves().front()) == r->only);
+                expect("fight.tier", set_ai_tier(r->enemy, 7) && r->enemy.ai_tier() && *r->enemy.ai_tier() == 7);
+                if (Resource hp = resource(r->enemy_actor, STR("SwtQuestHealthComponent")))
+                {
+                    *hp.max = 2000;
+                    *hp.value = 2000;
+                }
+                auto_fight(true);
+            }
+            // The end's dilemma (by chance): the first answer, as test_fights does; once per popup (again if it's still up
+            // 2 s on).
+            if (r->ending && dilemma())
+            {
+                UObject* popup = ui::screen(L"WBP_GuiPopupDilemma_C").object();
+                const auto now = std::chrono::steady_clock::now();
+                if ((popup != r->answered || now - r->answered_at > std::chrono::seconds(2)) && answer_dilemma(0))
+                {
+                    r->answered = popup;
+                    r->answered_at = now;
+                }
+            }
+            UObject* cur = fight_current();
+            if (cur && cur != r->last_turn && cur == r->enemy_actor) ++r->enemy_turns;
+            r->last_turn = cur;
+            // The move it used: what AttackSelected holds as its turn plays.
+            if (cur && cur == r->enemy_actor)
+            {
+                std::string tag = tag_of(r->enemy.move());
+                if (!tag.empty() && tag != "None" && (r->used.size() == 0 || r->used[r->used.size() - 1].string() != tag + "@" + std::to_string(r->enemy_turns)))
+                    r->used.push(Json(tag + "@" + std::to_string(r->enemy_turns)));
+            }
+            if (r->enemy_turns >= 3 && !r->ending && cur != r->enemy_actor)
+            {
+                auto_fight(false);
+                if (fight_menu())
+                {
+                    expect("fight.restore", restore_moves(r->enemy) && static_cast<int>(r->enemy.moves().size()) == r->all_moves);
+                    expect("fight.restore_again", !restore_moves(r->enemy));
+                    r->ending = end_fight(true);
+                }
+            }
+            if (t > 150)
+            {
+                cancel(r->timer);
+                auto_fight(false);
+                expect("fight.time", false, "the fight took too long");
+                finish(r);
+            }
+        }
+        auto fight_once(const std::shared_ptr<FightRun>& r) -> void
+        {
+            if (r->animals.empty())
+                for (UObject* x : fight_animals(20000))
+                    r->animals.emplace_back(x, x->GetClassPrivate());
+            bool started = false;
+            while (!started && r->attempts < 3 && r->attempts < static_cast<int>(r->animals.size()))
+            {
+                auto [x, cls] = r->animals[r->attempts++];
+                started = detail::object_staying(x, cls) && start_fight(x);
+            }
+            value("fight.attempts", Json(r->attempts));
+            if (!started)
+            {
+                expect("fight.started", false, std::format("no fight after {} tries, of {} animals", r->attempts, r->animals.size()));
+                finish(r);
+                return;
+            }
+            r->began = std::chrono::steady_clock::now();
+            r->timer = every(0.1, [r] { detail::guarded(L"ai_fight test", [&] { fight_tick(r); }); });
+        }
+    } // namespace
+
+    auto run_ai_fight_request() -> void
+    {
+        phase("ai_fight");
+        // ----- the tiers' chances
+        value("fight.tier1", chances_json(ai_chances(L"Tier1")));
+        value("fight.terrible", chances_json(ai_chances(L"Terrible")));
+        value("fight.perfect", chances_json(ai_chances(L"Perfect")));
+        expect("fight.chances_refused", !ai_chances(L"Tier9") && !set_ai_chance(L"Tier1", L"NoSuchColumn", 0.5)
+                                            && !set_ai_chance(L"Tier1", L"SelectRandom", 2.0) && !set_ai_chance(L"Tier9", L"SelectRandom", 0.5));
+        const float was = ai_chances(L"Tier1") ? ai_chances(L"Tier1")->select_random : 0.5f;
+        expect("fight.chance_set", set_ai_chance(L"Tier1", L"SelectRandom", 0.9) && ai_chances(L"Tier1")
+                                       && std::abs(ai_chances(L"Tier1")->select_random - 0.9) < 1e-6);
+        expect("fight.chance_back", set_ai_chance(L"Tier1", L"SelectRandom", was));
+        expect("fight.refused", !set_ai_tier(Fighter{}, 7) && !limit_moves(Fighter{}, {0}) && !restore_moves(Fighter{}));
+        // ----- a fight
+        auto r = std::make_shared<FightRun>();
+        r->home = *location(player());
+        fight_once(r);
     }
 } // namespace t

@@ -47,11 +47,20 @@ namespace t
         }
     } // namespace
 
+    // The controller's talk flags (0x1 your cat in a talk, 0x20 with it), or -1 without them on this build.
+    auto talk_flags() -> int
+    {
+        int32_t* f = member<int32_t>(controller(), L"/Script/SwtQuest.QuestPlayerController", L"WCM_TalkFlags");
+        return f ? (*f & 0x21) : -1;
+    }
+
     auto run_talks_request() -> void
     {
         phase("talks");
+        value("talks.flags_before", talk_flags());
         // ----- a line of the mod's own, with answers on the buttons
         expect("talks.say", say(L"Brindlemoon", L"Hello from C++", {L"Yes", L"No"}) && talk_showing());
+        value("talks.flags_up", talk_flags());   // the box's own code puts your cat in a talk
         value("talks.say_line", text(talk_line()));
         value("talks.say_speaker", text(talk_speaker()));
         value("talks.say_answers", list({text(talk_answers().size() > 0 ? talk_answers()[0] : L""), text(talk_answers().size() > 1 ? talk_answers()[1] : L"")}));
@@ -169,6 +178,7 @@ namespace t
             hide_talk();
             after(0.6, [] {
                 value("talks.box_after", Json(talk_showing()));
+                value("talks.flags_after", talk_flags());   // and the box coming down takes it out
                 done("talks");
             });
         });

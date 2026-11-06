@@ -623,6 +623,33 @@ does: `true` shows the next line, `false` hides it; after the last line `true` l
   each); the box's answer buttons show the answers' words but aren't clickable (their own code goes through the
   graph's node, which that box hasn't got).
 
+### The talk box and your cat
+
+Found on 2026-11-05 (build 26337109) when the AI tests failed after the talks test: once `say()`'s box had been
+up, no animal noticed your cat and no pounce started a fight, for the rest of the game, with the box gone and
+collected. Shown and taken down from Lua (`Create`, `AddToViewport`, `RemoveFromParent`) it did the same. Nothing
+reflected changed (every simple value and container size of your cat, its components, its controller, the HUD, the
+GUI, quest and sequencer managers and an animal; your cat's collision), and the box's construction made no
+ProcessEvent call of the game's. A raw memory diff of the same objects (two reads before, to leave out what changes
+by itself, one after) found it: the quest player controller's dword at **+0x808**, 0 before and 0x21 after.
+Written back to 0, the animals noticed your cat and the pounce started a fight.
+
+It's the controller's **talk flags**. `0x1416B91A0`, a virtual of the controller, takes (on, keep): on sets 0x1 and,
+unless keep, 0x20; off clears both and sets a next-frame timer that calls the controller's vtable +0x1050 (the
+end of the game's own talk). Other bits are other code's (0x2 set at `0x1416E0700`, 0x4 at `0x141732C20` and
+`0x141778270`, 0x8 at `0x14163F570`, 0x10 by the talk box's own `0x14167C5E0`), and bit 0x1 is tested all over
+the quest code. The box's construction as `AddToViewport` puts it up turns it on (`UQuestGiverWidget`'s own
+overrides are its vtable +0xA8, +0x2D0, +0x358, +0x360 (`0x14167BE30`, which calls its screen parent's
+`0x141283000` first), +0x4E8, +0x530, +0x560, +0x5B0 and +0x5E8; which of them makes the call wasn't followed).
+The game's own talks turn it off as they end; a box taken down any other way
+leaves your cat "in a talk". `Talk.hpp` calls the same function with off as its box comes down (`game.NATIVE`'s
+`QuestPlayerController:SetInDialogue`; the flags are `game.HIDDEN`'s `WCM_TalkFlags`), unless a talk of the
+game's own has its box up (the controller's `ActiveDialogueWidget`).
+
+The search also found the chances map's look-up (step 5 of the AI plan) reading junk: a guessed member's key text
+followed without a check crashed the game once other tests had changed what's there. Every pointer read from a
+guess is now checked as readable first (`detail::readable`, Core.hpp).
+
 ### The game's AI
 
 Worked out on 2026-11-05 (build 26337109) in game and from the header dump, for the C++ SDK's `Ai.hpp`
@@ -680,6 +707,21 @@ services carry 7 and 15 of their own). With your cat 250 units in front of an aw
 losing do: called from C++, the animal went into its chase wait at once (mask 0 or not), and back to Idle. A
 `TSet<FString> DetectionBlockers` (+0x538) that looks like it is the sky's (`WrcSkyboxActor`), for its zone presets.
 
+The mask is less than it looked (found on 2026-11-05 when the suite's `test_ai_notice` failed): the detection pass
+(`0x1417B6D70`) takes its flags as an optional argument and falls back to `DetectionType` only when its caller passes
+none; it walks the characters near (a `TArray` of weak pointers at +0x608) and keeps the ones it has noticed in
+`DetectedCharacters` (+0x5B0). Tried on one animal that had noticed your cat, 250 units in front of it, 7 s each:
+its mask zeroed and `OnCharacterLost` called, it stayed calm (your cat still in its set); taken out of the set as
+well, it noticed your cat again at once, and so it did with its sphere's collision switched off and on, and with
+your cat taken 4,000 units away and back. With the mask zeroed and `OnCharacterLost` called, your cat moved 600
+units off and back in front: noticed again, every time; the same with the component's tick switched off, or the
+component deactivated (it's inactive and not ticking anyway). The pass's callers are two exec thunks
+(`0x141896C80`, `0x141897520`, which pass flags of their own: the roaming tree's detection services, 7 and 15) and
+`0x1417B6D40` (no flags: the mask). **What works:** the detection sphere's response to the Pawn channel (your cat's
+capsule; 1, Overlap, on a roaming animal) set to Ignore: with it, mask 0 and `OnCharacterLost`, an animal that had
+noticed your cat didn't notice it again as it moved off and back in front (the characters near, +0x608, are the
+sphere's overlaps). So `ignore_player` does that, and puts the response back after.
+
 **The navigation meshes:** the world's navigation system (`UWorld::NavigationSystem`) has no main nav data, and two
 in `NavDataSet`: `RecastNavMeshEnemy` (agent radius 25) and `RecastNavMeshPlayer` (radius 1, the cats'). The engine's
 `K2_ProjectPointToNavigation` needs one given (with none it fails); `FindPathToLocationSynchronously` with an
@@ -693,6 +735,22 @@ cat stood after 490 every time: something that way stops the mesh (an 800-unit m
 `BT_CombatEnemy` (with `BT_AttackEnemy` under it). `BT_Escort` on a mod's cat (the walking controller), its keys set,
 stood in its `BTTask_GoToLocation` ("Move To Location") without moving: the task only drives the escort controller, it
 seems. Following is a `move_to` after the target instead.
+
+**A fight's AI** (step 5): each enemy in a fight is its own actor (`BP_Combat_Character_Base_C`, with an
+`AIC_Wrc_Enemy_Controller_C`), not the roaming animal. As each round starts its controller runs `BT_CombatEnemy` for a
+moment (its "Run Behavior" of `BT_AttackEnemy`), which fills its combat component's `CurrentTarget`; its move appears in
+`AttackSelected` as its turn comes, and the hit about 1.7 s later. Its moves are the component's array (+0x1E0, its
+count `WCM_MoveCount`): put the chosen ones first and cut the count, and the tree's pick is one of them (seen: limited
+to `WeakMice.3`, it used it on three turns; the array's elements moved as bytes, as the engine moves them). Its tier
+(`WCM_AITier`) written as the fight began stayed. `BT_AttackEnemy` set as its fight tree ran, its select tasks over and
+over, and never handed the turn on (only `BT_CombatEnemy`'s "Set Next Cat" does): the fight stalled. The cheats
+manager's `ForcedDifficulty` (Terrible) left the enemy's tier as it was.
+
+**AICombatChances.csv** is the adventure tuning manager's own map (`TMap<FString, FSwtAdventureAICombatChances>`, 0x58-byte
+slots, the row from +0x10) at +0x690, among its unreflected members (+0x460 to +0x8C0). `0x14181DBA0` copies a tier's row
+out by its `EAICombatProfile` (its name made from the enum), reaching the map through the manager's global; its loader
+(`0x14181EB00`) loads every table with the same code. Neither gives the member a pattern of its own, so the SDK finds
+the map by what it holds (names Tier1 and Perfect).
 
 ### Bonds
 
