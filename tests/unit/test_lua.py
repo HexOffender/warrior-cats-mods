@@ -757,7 +757,7 @@ def test_every_world_call_is_documented():
     more" section, its helpers in one local table."""
     import os
     lua = game.lua()
-    block = lua[lua.index("Game.sky, Game.sounds, Game.music, Game.effects = {}, {}, {}, {}"):lua.index("the game's developer switches")]
+    block = lua[lua.index("Game.sky, Game.sounds, Game.music, Game.effects = {}, {}, {}, {}"):lua.index("Game.places, Game.photo, Game.camera, Game.dens = {}, {}, {}, {}")]
     names = re.findall(r"^    function (Game\.(?:sky|sounds|music|effects)\.\w+|Game\.\w+|Cat:\w+)\(", block, re.M)
     assert "Game.sky.set" in names and "Game.sounds.play" in names and "Cat:playMontage" in names, names
     path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "scripting.md")
@@ -768,6 +768,23 @@ def test_every_world_call_is_documented():
         short = name.replace("Cat:", "cat:")
         assert short + "(" in section, name
     assert "    local W = {}" in block and not re.search(r"(?m)^    local (?!W = )", block)
+
+
+def test_every_world_part_two_call_is_documented():
+    """Step 7's second part (places, photo mode, the camera, dens, looks, the clan's cats) is in scripting.md's own
+    section, with the screen helpers; its helpers are one local table."""
+    import os
+    lua = game.lua()
+    block = lua[lua.index("Game.places, Game.photo, Game.camera, Game.dens = {}, {}, {}, {}"):lua.index("the game's developer switches")]
+    names = re.findall(r"^    function (Game\.(?:places|photo|camera|dens)\.\w+|Game\.\w+|Cat:\w+)\(", block, re.M)
+    assert "Game.places.travel" in names and "Game.clanCats" in names and "Cat:look" in names, names
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "scripting.md")
+    with open(path, encoding="utf-8") as f:
+        docs = f.read()
+    section = docs[docs.index("### Places, photo mode, the camera, dens and looks"):docs.index("### The game's developer switches")]
+    for name in names + ["Game.screen", "Game.send", "Game.close"]:
+        assert name.replace("Cat:", "cat:") + "(" in section, name
+    assert "    local X = {}" in block and not re.search(r"(?m)^    local (?!X = )", block)
 
 
 def test_json_decode_skips_a_bom():

@@ -143,6 +143,14 @@ remove a decoration); `Game.places` (list, the travel map opened), `Game.photo`;
 
 **Proof.** In game, each against its C++ test's values.
 
+**Done**, in two parts. Part one (#159): the console, the save's hash, the sky, sounds and music, the game's
+animations, effects, movement, your cat's speeds and its scent sense. Part two: places and the travel map, photo mode,
+the exploration camera, dens and hotspots, looks read in full, the accessories, the clan's cats, a cat's place; with
+`Game.screen`, `Game.send` and `Game.close` for the game's screens. Left for step 8 (native calls or C++-only members):
+the sky's own copy of the presets (`sky_values`), playing another sound for an id (`replace_sound`), unlocking a
+place, the world map's travel, building a decoration and the decorations' costs, setting and keeping a look, wearing
+and taking off accessories.
+
 ## 8. Only through C++
 
 What needs a native function, a C++-only member or raw memory: the live inventory and adding or taking items, the
@@ -168,5 +176,5 @@ the other addons are, opt in. Or these calls stay C++'s only.
 | 4. Fights | done | #156 |
 | 5. Story | done | #157 |
 | 6. Tables and words | done | #158 |
-| 7. The rest of the world | part one done (sky, sounds, effects, movement, speeds, console) | this branch, `claude/lua-world` |
+| 7. The rest of the world | done | #159 (part one), this branch (part two), `claude/lua-world2` |
 | 8. Only through C++ | to decide | |
