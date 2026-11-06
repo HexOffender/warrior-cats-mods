@@ -4,7 +4,8 @@
 // logic stopped through the game's sleep and wake (your cat away and back) and started again. Moving ("ai_move", step
 // 2): an animal walked to a place, stopped midway, given back to its tree at the end; a mod's cat after your cat; an
 // animal turned to face your cat. Noticing ("ai_notice", step 3): an animal ignoring your cat, noticing it by the game's
-// own call, giving it up, running from it.
+// own call, giving it up, running from it. Trees ("ai_trees", step 4): another of the game's trees run on an animal and
+// back, its own trees set and read back; a mod's cat following your cat about, and let go.
 #include "checks.hpp"
 
 #include <chrono>
@@ -454,9 +455,10 @@ namespace t
                                         if (n.actor != p->b && ignoring_player(n.actor)) ++still;
                                     value("notice.everywhere_after", Json(still));
                                     value("notice.own_ignore_kept", Json(ignoring_player(p->b)));
-                                    ignore_player(p->b, false);
-                                    for (UObject* x : {p->a, p->b})
-                                        if (auto s = senses(x); s.react_to_chase) *s.react_to_chase = static_cast<float>(reaction);
+                                    if (detail::object_staying(p->b, nullptr)) ignore_player(p->b, false);
+                                    for (UObject* x : {p->a, p->b})   // either may be gone (your cat went far)
+                                        if (detail::object_staying(x, nullptr))
+                                            if (auto s = senses(x); s.react_to_chase) *s.react_to_chase = static_cast<float>(reaction);
                                     done("ai_notice");
                                 });
                             });
@@ -468,4 +470,97 @@ namespace t
         });
     }
 
+
+    namespace
+    {
+        struct TreesRun
+        {
+            UObject* animal{};
+            Npc cat;
+            Vec3 home{};
+        };
+        auto tree_name(UObject* t) -> Json { return Json(text(name(t))); }
+        auto cat_off(const std::shared_ptr<TreesRun>& r) -> double
+        {
+            auto a = location(r->cat.actor()), b = location(player());
+            return a && b ? std::hypot(a->x - b->x, a->y - b->y) : -1.0;
+        }
+        // A walkable place `ahead` units from your cat, along +x (or -x), on the cats' mesh.
+        auto walkable_from(Vec3 from, double ahead, UObject* by) -> Vec3
+        {
+            for (double sign : {1.0, -1.0})
+                for (double side : {0.0, 300.0, -300.0})
+                    if (auto on = nav_point(Vec3{from.x + sign * ahead, from.y + side, from.z}, by)) return Vec3{on->x, on->y, on->z + 30};
+            return from;
+        }
+    } // namespace
+
+    auto run_ai_trees_request() -> void
+    {
+        phase("ai_trees");
+        UObject* boss = ai_tree_named(L"BT_BossEnemy");
+        UObject* enemy = ai_tree_named(L"BT_Enemy");
+        expect("trees.refused", !run_tree(player(), boss) && !run_tree(nullptr, boss) && !set_trees(player(), boss)
+                                    && !follow(player(), player()) && !follow(nullptr, player()) && !stop_following(nullptr)
+                                    && !following(nullptr) && !ai_trees_set(player()).roaming);
+        auto r = std::make_shared<TreesRun>();
+        r->home = *location(player());
+        for (UObject* x : fight_animals(2500))
+            if (!r->animal && ai_running(x)) r->animal = x;
+        if (!r->animal)
+        {
+            expect("trees.found", false, "no awake animal near");
+            done("ai_trees");
+            return;
+        }
+        UObject* a = r->animal;
+        auto set_before = ai_trees_set(a);
+        value("trees.roaming", tree_name(set_before.roaming));
+        value("trees.fight", tree_name(set_before.fight));
+        expect("trees.run_boss", run_tree(a, boss));
+        after(1.0, [r, enemy] {
+            value("trees.ran", tree_name(ai_tree(r->animal)));
+            value("trees.ran_task", Json(text(ai_task(r->animal).name)));
+            value("trees.ran_keys", Json(static_cast<int>(blackboard_keys(r->animal).size())));
+            expect("trees.run_back", run_tree(r->animal, enemy));
+            after(1.0, [r] {
+                value("trees.back", tree_name(ai_tree(r->animal)));
+                // Its own trees set and read back, then as they were.
+                UObject* a = r->animal;
+                auto was = ai_trees_set(a);
+                expect("trees.set", set_trees(a, ai_tree_named(L"BT_BossEnemy"), ai_tree_named(L"BT_AttackEnemy")));
+                auto now = ai_trees_set(a);
+                value("trees.set_roaming", tree_name(now.roaming));
+                value("trees.set_fight", tree_name(now.fight));
+                expect("trees.set_back", set_trees(a, was.roaming, was.fight) && ai_trees_set(a).roaming == was.roaming);
+                // ----- a mod's cat 300 units off, following your cat
+                auto me = *location(player());
+                r->cat = spawn_npc({.at = {me.x + 300, me.y, me.z}});
+                after(1.0, [r] {
+                    UObject* c = r->cat.actor();
+                    expect("trees.follow", follow(c, player(), {.distance = 150, .speed = 250}) && following(c));
+                    value("trees.follow_moving", Json(moving(c)));
+                    after(4.0, [r] {
+                        value("trees.close_4", Json(cat_off(r)));
+                        // your cat 700 units on: it comes after
+                        teleport(player(), walkable_from(*location(player()), 700, r->cat.actor()));
+                        value("trees.moved_off", Json(cat_off(r)));
+                        after(6.0, [r] {
+                            value("trees.followed_6", Json(cat_off(r)));
+                            expect("trees.stop", stop_following(r->cat.actor()) && !following(r->cat.actor()));
+                            // your cat 700 units on again: it stays
+                            teleport(player(), walkable_from(*location(player()), 700, r->cat.actor()));
+                            value("trees.left_0", Json(cat_off(r)));
+                            after(4.0, [r] {
+                                value("trees.left_4", Json(cat_off(r)));
+                                r->cat.remove();
+                                teleport(player(), r->home);
+                                done("ai_trees");
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    }
 } // namespace t

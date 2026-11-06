@@ -80,7 +80,8 @@ tree's root); `BB_Escort`'s and `BB_Mentor`'s keys and who fills them (the contr
 from another controller runs on an animal's (an escort tree on a clan cat, a boss's fight tree on a mouse).
 
 **The calls.** `run_tree(actor, tree)` now; `set_trees(actor, roaming, fight)` so the game's own restarts keep them;
-`follow(actor, target)` through the escort tree (a cat that follows your cat), `stop_following(actor)`.
+`follow(actor, target)` (a cat that follows your cat: through the escort tree was the plan, but its task doesn't drive another
+controller's cat, so it's a `move_to` after the target), `stop_following(actor)`.
 
 **Proof.** In game: one of the mod's cats following your cat about with the escort tree, and let go; an ordinary
 enemy fighting with the boss's tree.
@@ -134,8 +135,8 @@ it, and going on after.
 |---|---|---|
 | 1. An AI's keys and logic | done: `Ai.hpp`: an AI's controller, brain, tree (the component's `InstanceStack`, a hidden member, signed) and active node; its blackboard's keys read and written by type; its logic stopped (it stays stopped through the game's sleep and wake) and restarted; the game's eight trees read as data, which say what each key does. Seen in game | #145 |
 | 2. Moving an animal or a cat | done: `move_to` a place or after another actor through the controller's own `MoveToLocation` (the AI's logic stopped first, its speed set or kept, given back at the end on request), `stop_moving`, `moving`, `face`; the walk engine (arrival, stalls, steps aside) shared with `Npc::walk_to`. Seen in game on an animal and a mod's cat | #146 |
-| 3. Noticing and ignoring your cat | done: an animal's detection mask (its component's `DetectionType`: 0 notices nothing, and the game leaves it so); `ignore_player` (one, or every animal near: a stealth mode), `notice_player` and `calm` through the animal's own `OnCharacterDetected` and `OnCharacterLost`, `flee` (a `move_to` away, onto the mesh: `nav_point`). The chase-off tree isn't the game's way of fleeing (it's a spline walk to a boss's place), so `flee` is a move. Seen in game | this branch, `claude/cpp-ai-notice` |
-| 4. Swapping trees | not started | |
+| 3. Noticing and ignoring your cat | done: an animal's detection mask (its component's `DetectionType`: 0 notices nothing, and the game leaves it so); `ignore_player` (one, or every animal near: a stealth mode), `notice_player` and `calm` through the animal's own `OnCharacterDetected` and `OnCharacterLost`, `flee` (a `move_to` away, onto the mesh: `nav_point`). The chase-off tree isn't the game's way of fleeing (it's a spline walk to a boss's place), so `flee` is a move. Seen in game | #147 |
+| 4. Swapping trees | done: `run_tree` (the controller's own `RunBehaviorTree`), `ai_trees_set` and `set_trees` (its reflected `BehaviorTree` and `CombatBehaviorTree`); `follow` and `stop_following`, built on `move_to` (the escort tree's Move To Location doesn't move another controller's cat). `BT_BossEnemy` is a roaming tree, not a fight tree: a fight tree set is seen in step 5's fight | this branch, `claude/cpp-ai-trees` |
 | 5. A fight's AI | not started | |
 | 6. Putting an animal in the world | not started | |
 | 7. The clan cats' walking | not started | |

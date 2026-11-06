@@ -1294,6 +1294,25 @@ def test_ai_notice(agent):
     assert v["notice.awake"] is True, v
 
 
+def test_ai_trees(agent):
+    """Ai.hpp's trees and following in the game (the AI plan's step 4): an awake animal's own trees (BT_Enemy to roam,
+    BT_CombatEnemy to fight); the boss's roaming tree run on it (idling, on the same 14 keys) and its own again; its trees
+    set (BT_BossEnemy, BT_AttackEnemy) and read back, then as they were; one of the mod's cats, 300 units off, following
+    your cat (within 230), after your cat when it moves 540 away, and staying put once let go while your cat moves on.
+    Your cat and nullptr are refused."""
+    _close_screens(agent)
+    r = _request(agent, "ai_trees", timeout=90)
+    assert not _failed(r, "ai_trees"), _failed(r, "ai_trees")
+    v = r["values"]
+    assert (v["trees.roaming"], v["trees.fight"]) == ("BT_Enemy", "BT_CombatEnemy"), v
+    assert v["trees.ran"] == "BT_BossEnemy" and v["trees.ran_task"] in ("Idle", "Grazing") and v["trees.ran_keys"] == 14, v
+    assert v["trees.back"] == "BT_Enemy", v
+    assert (v["trees.set_roaming"], v["trees.set_fight"]) == ("BT_BossEnemy", "BT_AttackEnemy"), v
+    assert v["trees.follow_moving"] is True and 0 <= v["trees.close_4"] < 230, v
+    assert v["trees.moved_off"] > 400 and 0 <= v["trees.followed_6"] < 230, v
+    assert v["trees.left_0"] > 500 and abs(v["trees.left_4"] - v["trees.left_0"]) < 20, v
+
+
 def test_bond_answers(agent):
     """A bond talk's answers in the game (Bonds.hpp, Talk.hpp), on the test cat (ShadowClan, Ambitious and Curious):
     the talk tables' rows as the tuning manager loaded them (a story row, a quest row by any case, the 22 under one
