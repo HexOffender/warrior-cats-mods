@@ -1,8 +1,9 @@
 // Ai.hpp: the game's AI. A roaming animal or a clan cat walking its path has an AI controller running one of the game's
 // behaviour trees (BT_Enemy for an animal, BT_CombatEnemy in its fights, BT_WalkingNPC for a walking cat), which keeps
 // what it knows on its blackboard (BB_Enemy...). From C++: an AI's tree and what it's doing now, its blackboard's keys
-// read and written, its logic stopped and started again, the game's trees read as data, and an AI sent to a place or
-// after another actor (docs/plans/cpp-sdk-ai.md).
+// read and written, its logic stopped and started again, the game's trees read as data, an AI sent to a place or
+// after another actor, and an animal made to ignore your cat, notice it, give it up or run from it
+// (docs/plans/cpp-sdk-ai.md).
 // Game thread only. WCMods.hpp includes it; docs/SDK.md, "C++ mods", documents every call.
 //
 //   for (UObject* a : wcmods::fight_animals(2000)) wcmods::stop_ai(a);           // the animals near your cat stand still
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <format>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -350,6 +352,59 @@ namespace wcmods
     inline auto ai_tree_blackboard(UObject* tree) -> std::wstring { return name(get(tree, L"BlackboardAsset").object); }
 
     // ============================================================================================ moving
+    // The navigation meshes the AIs walk on (the world's navigation system's NavDataSet): the forest has two, one for
+    // the animals (RecastNavMeshEnemy, agents 25 cm round) and one for the cats (RecastNavMeshPlayer, 1 cm: the walking
+    // cats and the SDK's own). The one an actor walks on goes by its movement's agent radius.
+    namespace detail
+    {
+        inline auto nav_meshes() -> std::vector<UObject*>
+        {
+            std::vector<UObject*> out;
+            for (auto& v : elements(get(world(), L"NavigationSystem.NavDataSet")))
+                if (v.object) out.push_back(v.object);
+            return out;
+        }
+        inline auto nav_mesh_for(UObject* actor) -> UObject*
+        {
+            Value r = get(actor, L"CharacterMovement.NavAgentProps.AgentRadius");
+            if (r.kind == Value::Kind::None) return nullptr;
+            UObject* best = nullptr;
+            double best_d = 1e18;
+            for (UObject* m : nav_meshes())
+            {
+                double d = std::abs(get(m, L"AgentRadius").number() - r.number());
+                if (d < best_d) best = m, best_d = d;
+            }
+            return best;
+        }
+        inline auto project_on(UObject* mesh, Vec3 place) -> std::optional<Vec3>
+        {
+            UObject* nav = object(STR("/Script/NavigationSystem.Default__NavigationSystemV1"));
+            auto r = call_reflected(nav, STR("K2_ProjectPointToNavigation"), [&](Params& p) {
+                p.set_nth(0, Value::of(world()));
+                Value at = p.nth(1);
+                set(at, L"X", place.x);
+                set(at, L"Y", place.y);
+                set(at, L"Z", place.z);
+                p.set_nth(3, Value::of(mesh));
+            });
+            if (!r || !r->get(L"ReturnValue").boolean()) return std::nullopt;
+            Value out = r->get(L"ProjectedLocation");
+            return Vec3{get(out, L"X").number(), get(out, L"Y").number(), get(out, L"Z").number()};
+        }
+    } // namespace detail
+    // The nearest point on the navigation mesh to a place, within the mesh's own search box (the engine's
+    // K2_ProjectPointToNavigation): on the mesh `actor` walks on, else on either; nullopt off the meshes, or outside
+    // the world.
+    inline auto nav_point(Vec3 place, UObject* actor = nullptr) -> std::optional<Vec3>
+    {
+        if (!assert_game_thread(L"nav_point") || !world()) return std::nullopt;
+        if (UObject* mesh = actor ? detail::nav_mesh_for(actor) : nullptr) return detail::project_on(mesh, place);
+        for (UObject* mesh : detail::nav_meshes())
+            if (auto on = detail::project_on(mesh, place)) return on;
+        return std::nullopt;
+    }
+
     // How move_to moves an AI: at `speed` cm/s (its walk speed set; 0 keeps the one it has, and a roaming animal's own
     // is a slow 70), close enough within `radius` cm, along the nav mesh round obstacles unless `avoid` is false (a
     // straight line), and its logic started again when the move ends, however it ends (`restart_after`: stop_moving
@@ -420,6 +475,10 @@ namespace wcmods
             stop_ai(actor);   // its tree would send it elsewhere
             if (o.speed > 0)
                 if (UObject* mv = get(actor, L"CharacterMovement").object) set(mv, L"MaxWalkSpeed", o.speed);
+            // Along the mesh, to the mesh's own point nearest the place: the controller stops there, and the walk
+            // measures its arrival against it (a place off the mesh was never reached: seen, a flight that stood short).
+            if (o.avoid && !goal)
+                if (auto on = nav_point(to, actor)) to = *on;
             auto m = std::make_shared<AiMove>();
             m->actor = actor;
             m->cls = actor->GetClassPrivate();
@@ -504,5 +563,137 @@ namespace wcmods
     {
         auto at = location(other);
         return at && face(actor, *at);
+    }
+
+    // ============================================================================================ noticing your cat
+    // A roaming animal notices a cat through its detection component (its ExplorationDetectionComponent): its
+    // DetectionType says by what, a mask of EAdventureDetectionFlags (1 Vision, 2 Sound, 4 Cone, 8 InPursue; 3 on a
+    // roaming animal), and noticing takes it a moment (in sight 250 units off, 2 to 3 s). Noticed, its tree waits its
+    // reaction time and chases (Ai.hpp's blackboard notes); a chase that catches your cat starts a fight.
+    // Its detection mask now; nullopt for what has no detection component (your cat, a walking cat).
+    inline auto detection_flags(UObject* actor) -> std::optional<int>
+    {
+        if (!assert_game_thread(L"detection_flags")) return std::nullopt;
+        Value v = get(detection_component(actor), L"DetectionType");
+        if (v.kind == Value::Kind::None) return std::nullopt;
+        return static_cast<int>(v.number());
+    }
+    // Set it (0 notices nothing; the game's own code leaves it as set, seen in game). False without the component.
+    inline auto set_detection_flags(UObject* actor, int flags) -> bool
+    {
+        if (!assert_game_thread(L"set_detection_flags")) return false;
+        UObject* c = detection_component(actor);
+        return c && set(c, L"DetectionType", flags);
+    }
+    // Make it lose your cat, as the game's own losing does (its OnCharacterLost): its chase ends and it walks back to
+    // where it started, then roams. False for what isn't a roaming animal.
+    inline auto calm(UObject* actor) -> bool
+    {
+        if (!assert_game_thread(L"calm") || !actor || !player()) return false;
+        return call_reflected(actor, STR("OnCharacterLost"), [](Params& p) { p.set_nth(0, Value::of(player())); }).has_value();
+    }
+    // Make it notice your cat now, as the game's own noticing does (its OnCharacterDetected: Detected, Target, where it
+    // started and its reaction time on its blackboard), even while it ignores your cat: it gives chase after its
+    // reaction time (senses().react_to_chase, 0.5 s). False for what isn't a roaming animal (or a boss, or prey to pounce).
+    inline auto notice_player(UObject* actor) -> bool
+    {
+        if (!assert_game_thread(L"notice_player") || !actor || !player()) return false;
+        return call_reflected(actor, STR("OnCharacterDetected"), [](Params& p) { p.set_nth(0, Value::of(player())); }).has_value();
+    }
+    namespace detail
+    {
+        struct Ignoring
+        {
+            std::map<UObject*, int> was;   // the animals made to ignore your cat, and the mask each had
+            bool everywhere{};
+            std::optional<TimerId> keeper;
+        };
+        inline auto ignoring() -> Ignoring&
+        {
+            static Ignoring i;
+            return i;
+        }
+    } // namespace detail
+    // Make an animal ignore your cat (its detection mask 0: it notices nothing, by sight or sound; one that had noticed
+    // your cat loses it), or notice again with the mask it had (`ignore` false). False without a detection component.
+    inline auto ignore_player(UObject* actor, bool ignore = true) -> bool
+    {
+        if (!assert_game_thread(L"ignore_player")) return false;
+        auto flags = detection_flags(actor);
+        if (!flags) return false;
+        auto& was = detail::ignoring().was;
+        if (ignore)
+        {
+            if (!was.contains(actor)) was[actor] = *flags;
+            set_detection_flags(actor, 0);
+            if (blackboard_bool(actor, L"Detected").value_or(false)) calm(actor);
+            return true;
+        }
+        auto it = was.find(actor);
+        const int back = it != was.end() ? it->second : 3;
+        if (it != was.end()) was.erase(it);
+        return set_detection_flags(actor, back);
+    }
+    // Whether it ignores your cat (by ignore_player, or its mask 0 for any reason).
+    inline auto ignoring_player(UObject* actor) -> bool { return detection_flags(actor) == 0; }
+    // All the roaming animals ignore your cat while it's on: each within 5,000 units of your cat as it comes near (a
+    // look once a second); off, each is back to the mask it had. A stealth mode.
+    inline auto ignore_player_everywhere(bool on) -> void
+    {
+        if (!assert_game_thread(L"ignore_player_everywhere")) return;
+        auto& s = detail::ignoring();
+        s.everywhere = on;
+        auto sweep = [] {
+            std::erase_if(detail::ignoring().was, [](auto& e) { return !detail::object_staying(e.first, nullptr); });
+            if (!detail::ignoring().everywhere) return;
+            for (const Nearby& n : nearby(Kind::Creatures, 5000))
+                if (!detail::ignoring().was.contains(n.actor)) ignore_player(n.actor, true);
+        };
+        if (on)
+        {
+            sweep();
+            if (!s.keeper) s.keeper = every(1.0, [sweep] { detail::guarded(L"ignore_player_everywhere", sweep); });
+            return;
+        }
+        if (s.keeper)
+        {
+            cancel(*s.keeper);
+            s.keeper.reset();
+        }
+        auto all = s.was;
+        for (auto& [actor, flags] : all)
+            if (detail::object_staying(actor, nullptr)) ignore_player(actor, false);
+        s.was.clear();
+    }
+    // Make it run from a place or another actor: `distance` cm the other way, at its chase speed (senses().
+    // walk_speed_chasing, 400) unless `options` says, given back to its tree at the end (a move_to: `done` is told how
+    // it ended). False as move_to is.
+    inline auto flee(UObject* actor, Vec3 from, double distance = 800, std::optional<MoveOptions> options = std::nullopt,
+                     std::function<void(WalkResult)> done = {}) -> bool
+    {
+        if (!assert_game_thread(L"flee")) return false;
+        auto at = location(actor);
+        if (!at) return false;
+        double dx = at->x - from.x, dy = at->y - from.y, len = std::hypot(dx, dy);
+        if (len < 1) dx = 1, dy = 0, len = 1;
+        // The way away, on the mesh (a rock, a river or the mesh's edge that way stops it short: it runs as far as it
+        // can, then its move is Blocked; seen in game, a mouse stood 490 units on of 600).
+        Vec3 to{at->x + dx / len * distance, at->y + dy / len * distance, at->z};
+        if (auto g = ground(to.x, to.y, at->z + 500)) to.z = *g;
+        if (auto on = nav_point(to, actor)) to = *on;
+        MoveOptions o = options.value_or(MoveOptions{});
+        if (!options)
+        {
+            auto s = senses(actor);
+            o.speed = s.walk_speed_chasing ? *s.walk_speed_chasing : 400;
+            o.restart_after = true;
+        }
+        return move_to(actor, to, o, std::move(done));
+    }
+    inline auto flee(UObject* actor, UObject* from, double distance = 800, std::optional<MoveOptions> options = std::nullopt,
+                     std::function<void(WalkResult)> done = {}) -> bool
+    {
+        auto at = location(from);
+        return at && flee(actor, *at, distance, options, std::move(done));
     }
 } // namespace wcmods

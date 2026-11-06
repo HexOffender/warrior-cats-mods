@@ -64,8 +64,8 @@ an `on_move_done`), `stop_moving(actor)`, `moving(actor)`; `face(actor, place or
 **Find out.** The detection component's own switch (what `UWrcEnableDetectionTask` sets); what the chase-off tree
 does and when the game uses it; what `Hunted` and `HunterPawn` make an animal do (flee).
 
-**The calls.** `ignore_player(actor, true)` (one animal) and for all; `notice_player(actor)` (it gives chase now);
-`flee(actor, from)`; `calm(actor)` (back to roaming, as the flush task does).
+**The calls.** `ignore_player(actor, true)` (one animal) and for all (`ignore_player_everywhere`); `notice_player(actor)`
+(it gives chase now); `flee(actor, from)`; `calm(actor)` (back to roaming, as the game's losing does).
 
 **Proof.** In game: your cat walking right past a mouse that ignores it; a far animal turning to chase on command; one
 fleeing from your cat; one calmed mid-chase.
@@ -133,8 +133,8 @@ it, and going on after.
 | Step | State | Pull request |
 |---|---|---|
 | 1. An AI's keys and logic | done: `Ai.hpp`: an AI's controller, brain, tree (the component's `InstanceStack`, a hidden member, signed) and active node; its blackboard's keys read and written by type; its logic stopped (it stays stopped through the game's sleep and wake) and restarted; the game's eight trees read as data, which say what each key does. Seen in game | #145 |
-| 2. Moving an animal or a cat | done: `move_to` a place or after another actor through the controller's own `MoveToLocation` (the AI's logic stopped first, its speed set or kept, given back at the end on request), `stop_moving`, `moving`, `face`; the walk engine (arrival, stalls, steps aside) shared with `Npc::walk_to`. Seen in game on an animal and a mod's cat | this branch, `claude/cpp-ai-move` |
-| 3. Noticing and ignoring your cat | not started | |
+| 2. Moving an animal or a cat | done: `move_to` a place or after another actor through the controller's own `MoveToLocation` (the AI's logic stopped first, its speed set or kept, given back at the end on request), `stop_moving`, `moving`, `face`; the walk engine (arrival, stalls, steps aside) shared with `Npc::walk_to`. Seen in game on an animal and a mod's cat | #146 |
+| 3. Noticing and ignoring your cat | done: an animal's detection mask (its component's `DetectionType`: 0 notices nothing, and the game leaves it so); `ignore_player` (one, or every animal near: a stealth mode), `notice_player` and `calm` through the animal's own `OnCharacterDetected` and `OnCharacterLost`, `flee` (a `move_to` away, onto the mesh: `nav_point`). The chase-off tree isn't the game's way of fleeing (it's a spline walk to a boss's place), so `flee` is a move. Seen in game | this branch, `claude/cpp-ai-notice` |
 | 4. Swapping trees | not started | |
 | 5. A fight's AI | not started | |
 | 6. Putting an animal in the world | not started | |

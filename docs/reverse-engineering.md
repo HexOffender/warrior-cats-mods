@@ -672,6 +672,20 @@ component's 70, or 400 chasing). Seen: a mouse sent 300 units at 200 cm/s arrive
 midway (`StopMovement`) it stood; `K2_SetActorRotation` turned it at once. The SDK's own cats
 (`BP_WalkingNPC_Character_Base_C`) come with the walking controller, their tree stopped, and move the same way.
 
+**Noticing your cat** (step 3): the detection component's `DetectionType` (reflected, +0x600) is a mask of
+`EAdventureDetectionFlags` (Vision 1, Sound 2, Cone 4, InPursue 8): 3 on a roaming animal (the tree's detection
+services carry 7 and 15 of their own). With your cat 250 units in front of an awake animal it noticed between 2 and
+3 s; with its mask 0 another didn't in 6 s, and nothing set the mask back. `AWrcRoamingEnemy`'s reflected
+`OnCharacterDetected(cat)` and `OnCharacterLost(cat)` (bound to the component's own events) do what noticing and
+losing do: called from C++, the animal went into its chase wait at once (mask 0 or not), and back to Idle. A
+`TSet<FString> DetectionBlockers` (+0x538) that looks like it is the sky's (`WrcSkyboxActor`), for its zone presets.
+
+**The navigation meshes:** the world's navigation system (`UWorld::NavigationSystem`) has no main nav data, and two
+in `NavDataSet`: `RecastNavMeshEnemy` (agent radius 25) and `RecastNavMeshPlayer` (radius 1, the cats'). The engine's
+`K2_ProjectPointToNavigation` needs one given (with none it fails); `FindPathToLocationSynchronously` with an
+animal as its context gave no valid path even to its own place, so isn't used. A mouse sent 600 units away from your
+cat stood after 490 every time: something that way stops the mesh (an 800-unit move toward your cat went 816).
+
 ### Bonds
 
 Worked out on 2026-11-04 (build 26337109) from the exe and in game, for the C++ SDK's `Bonds.hpp`; the addresses are

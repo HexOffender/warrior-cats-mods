@@ -3,7 +3,8 @@
 // stopped and set walking again by its own key, an animal sent into its tree's chase branch and back, an animal's
 // logic stopped through the game's sleep and wake (your cat away and back) and started again. Moving ("ai_move", step
 // 2): an animal walked to a place, stopped midway, given back to its tree at the end; a mod's cat after your cat; an
-// animal turned to face your cat.
+// animal turned to face your cat. Noticing ("ai_notice", step 3): an animal ignoring your cat, noticing it by the game's
+// own call, giving it up, running from it.
 #include "checks.hpp"
 
 #include <chrono>
@@ -315,4 +316,143 @@ namespace t
             });
         });
     }
+
+    namespace
+    {
+        struct NoticeProbe
+        {
+            UObject* a{};
+            UObject* b{};
+            Vec3 home{};
+        };
+        auto detection_state(UObject* x) -> Json
+        {
+            Json o = Json::object();
+            UObject* c = detection_component(x);
+            o.set("type", Json(get(c, L"DetectionType").number()));
+            o.set("detected", Json(blackboard_bool(x, L"Detected").value_or(false)));
+            o.set("target", Json(text(name(blackboard_object(x, L"Target")))));
+            o.set("task", Json(text(ai_task(x).name)));
+            o.set("running", Json(ai_running(x)));
+            return o;
+        }
+        // Your cat put `ahead` units in front of an actor, facing it.
+        auto stand_before(UObject* x, double ahead) -> void
+        {
+            auto at = location(x);
+            auto fwd = call_reflected(x, STR("GetActorForwardVector"));
+            if (!at || !fwd) return;
+            double fx = get(fwd->get(L"ReturnValue"), L"X").number(), fy = get(fwd->get(L"ReturnValue"), L"Y").number();
+            Vec3 to{at->x + fx * ahead, at->y + fy * ahead, at->z + 30};
+            teleport(player(), to);
+            face(player(), x);
+        }
+    } // namespace
+
+    // Noticing ("ai_notice", step 3): an animal seeing your cat in front of it (the control), made to give it up; another
+    // made to ignore your cat, not noticing it in front of it, made to notice by the game's own call, and back to its
+    // mask; one fleeing from your cat; every animal near ignoring your cat and back. The animals' reaction time is set
+    // to 30 s meanwhile, so none gives chase (a chase that catches your cat starts a fight).
+    auto run_ai_notice_request() -> void
+    {
+        phase("ai_notice");
+        // The nav mesh: under your cat, and not in the sky far above the world.
+        auto me0 = *location(player());
+        auto on = nav_point(me0);
+        value("notice.nav_here", Json(on ? std::hypot(on->x - me0.x, on->y - me0.y) : -1.0));
+        value("notice.nav_sky", Json(nav_point(Vec3{me0.x, me0.y, me0.z + 50000}).has_value()));
+        value("notice.nav_meshes", Json(static_cast<int>(detail::nav_meshes().size())));
+        expect("notice.refused", !detection_flags(player()) && !set_detection_flags(player(), 0) && !ignore_player(player())
+                                     && !calm(nullptr) && !notice_player(nullptr) && !flee(nullptr, Vec3{}));
+        auto p = std::make_shared<NoticeProbe>();
+        p->home = *location(player());
+        for (UObject* x : fight_animals(2500))
+            if (ai_running(x))
+            {
+                if (!p->a) p->a = x;
+                else if (!p->b) p->b = x;
+            }
+        if (!p->a || !p->b)
+        {
+            expect("notice.found", false, "fewer than two awake animals");
+            done("ai_notice");
+            return;
+        }
+        static double reaction = 0.5;
+        if (auto s = senses(p->a); s.react_to_chase) reaction = *s.react_to_chase;
+        for (UObject* x : {p->a, p->b})
+            if (auto s = senses(x); s.react_to_chase) *s.react_to_chase = 30;
+        value("notice.flags", Json(detection_flags(p->a).value_or(-1)));
+        // ----- the control: your cat in front of a, 250 units
+        stop_ai(p->b);   // b stays where it is meanwhile
+        stand_before(p->a, 250);
+        after(6.0, [p] {
+            value("notice.seen", detection_state(p->a));
+            expect("notice.calm", calm(p->a));
+            after(1.0, [p] {
+                value("notice.calmed", detection_state(p->a));
+                stop_ai(p->a);
+                // ----- b ignoring your cat in front of it
+                restart_ai(p->b);
+                expect("notice.ignore", ignore_player(p->b) && ignoring_player(p->b) && detection_flags(p->b) == 0);
+                stand_before(p->b, 250);
+                after(6.0, [p] {
+                    value("notice.ignored", detection_state(p->b));
+                    // ----- noticed by the game's own call, ignoring or not; then given up and back to its mask
+                    expect("notice.notice", notice_player(p->b));
+                    after(1.0, [p] {
+                        value("notice.noticed", detection_state(p->b));
+                        expect("notice.unignore", ignore_player(p->b, false) && !ignoring_player(p->b));
+                        value("notice.flags_back", Json(detection_flags(p->b).value_or(-1)));
+                        calm(p->b);
+                        restart_ai(p->a);
+                        // ----- a running from your cat, 500 units in front of it (an animal far from your cat sleeps,
+                        // and stops moving: away from your cat at 2,000 units, it ran 350 of 600 and stood)
+                        stand_before(p->a, 500);
+                        after(1.0, [p] {
+                            auto me = *location(player());
+                            auto at = *location(p->a);
+                            static double before = 0;
+                            before = std::hypot(at.x - me.x, at.y - me.y);
+                            value("notice.flee_before", Json(before));
+                            static std::string result;
+                            result.clear();
+                            expect("notice.flee", flee(p->a, player(), 600, std::nullopt, [](WalkResult r) { result = result_name(r); }));
+                            value("notice.flee_speed", Json(get(get(p->a, L"CharacterMovement").object, L"MaxWalkSpeed").number()));
+                            after(5.0, [p] {
+                                auto me = *location(player());
+                                auto at = *location(p->a);
+                                value("notice.flee_after", Json(std::hypot(at.x - me.x, at.y - me.y)));
+                                value("notice.flee_result", Json(result));
+                                value("notice.flee_ai", Json(ai_running(p->a)));
+                                calm(p->a);
+                                teleport(player(), p->home);
+                                // ----- every animal near ignoring your cat, and back
+                                ignore_player_everywhere(true);
+                                after(1.5, [p] {
+                                    int near_ignoring = 0, around = 0;
+                                    for (const Nearby& n : nearby(Kind::Creatures, 4000))
+                                    {
+                                        ++around;
+                                        if (ignoring_player(n.actor)) ++near_ignoring;
+                                    }
+                                    value("notice.everywhere_near", Json(around));
+                                    value("notice.everywhere_ignoring", Json(near_ignoring));
+                                    ignore_player_everywhere(false);
+                                    int still = 0;
+                                    for (const Nearby& n : nearby(Kind::Creatures, 4000))
+                                        if (ignoring_player(n.actor)) ++still;
+                                    value("notice.everywhere_after", Json(still));
+                                    for (UObject* x : {p->a, p->b})
+                                        if (auto s = senses(x); s.react_to_chase) *s.react_to_chase = static_cast<float>(reaction);
+                                    done("ai_notice");
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    }
+
 } // namespace t
