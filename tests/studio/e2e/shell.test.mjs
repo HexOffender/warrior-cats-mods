@@ -85,7 +85,7 @@ test("a first status that can't reach the studio is asked again, and the page op
   await page.waitFor(() => document.querySelector("#main .section h1"));
   assert.equal(await page.evaluate("window.__infoFailed"), true, "the first /api/info failed");
   assert.equal(await page.evaluate("window.__notReloaded"), true, "the page wasn't reloaded");
-  assert.equal(await page.evaluate(() => document.querySelector(".error-card")), null);
+  assert.equal(await page.count(".error-card"), 0);
   await page.waitFor(() => [...document.querySelectorAll("#status .chip")].some(c => c.dataset.said === "Game closed"));
   assert.deepEqual(page.consoleErrors(), []);
   await page.close();
@@ -93,17 +93,26 @@ test("a first status that can't reach the studio is asked again, and the page op
 
 test("a studio still away a few seconds after the first status: the card says so, and the page reloads once it answers", { skip }, async () => {
   const page = await browser.page();
-  // Every fetch fails as a closed studio's would while the tab's wc-test-down is "1", as the first load sets it.
+  // Every fetch fails as a closed studio's would while the tab's wc-test-down is "1", as the first load sets it;
+  // the status requests are counted.
   await page.send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
     if (sessionStorage.getItem("wc-test-down") === null) sessionStorage.setItem("wc-test-down", "1");
     const real = window.fetch;
-    window.fetch = (url, init) => sessionStorage.getItem("wc-test-down") === "1"
-      ? Promise.reject(new TypeError("Failed to fetch")) : real.call(window, url, init);
+    window.__infoAsks = 0;
+    window.fetch = (url, init) => {
+      if (String(url) === "/api/info") window.__infoAsks++;
+      return sessionStorage.getItem("wc-test-down") === "1"
+        ? Promise.reject(new TypeError("Failed to fetch")) : real.call(window, url, init);
+    };
   })()` });
   await page.goto(studio.url);
   await page.evaluate("window.__notReloaded = true");
   await page.waitFor(() => /black window was closed/.test(document.querySelector(".error-card h2")?.textContent || ""), 15000);
   assert.equal(await page.count("#nav button"), 0);
+  // The card has taken over: the page's start stops asking for the status (the card asks for the studio's page).
+  const asks = await page.evaluate("window.__infoAsks");
+  await sleep(4000);   // longer than RECHECK_MS
+  assert.equal(await page.evaluate("window.__infoAsks"), asks, "no status asked for while the card waits");
   // It answers again: with nothing unsaved, the page reloads to be the studio's own, and opens.
   await page.evaluate(`sessionStorage.setItem("wc-test-down", "0")`);
   await page.waitFor(() => window.__notReloaded === undefined && document.querySelector("#nav button"), 15000);
