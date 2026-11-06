@@ -4613,9 +4613,10 @@ local function savedQuestIds()
     end
     return ids
 end
--- A quest's objectives, in order: { objective, id, index, current, target, status, point } (point: where to
+-- A quest's objectives, in order: { objective, id, index, current, target, status, point, targets } (point: where to
 -- go, when it has one). status is the game's for an objective your cat's save has (nil for the rest: asking would
--- add it to the save).
+-- add it to the save). targets: a gather objective's, { {tag, current, target, actors}, ... } (the things to collect,
+-- out in the world); empty for the others.
 function Game.quests.objectives(q)
     local out = {}
     if not valid(q) then return out end
@@ -4634,8 +4635,25 @@ function Game.quests.objectives(q)
                 status = okS and Game.enums.objectiveStatus[s] or nil
             end
             local point = Game.get(o, "ObjectivePoint")
+            local targets = {}
+            pcall(function()
+                o.Targets:ForEach(function(_, v)
+                    pcall(function()   -- (an error in here wouldn't reach the pcall round the listing)
+                        local t = v:get()
+                        local actors, arr = {}, t.AllActors
+                        for i = 1, #arr do   -- weak pointers: read one by one
+                            local okA, a = pcall(function() return arr[i]:Get() end)
+                            if not okA or not Game.alive(a) then okA, a = true, arr[i] end
+                            if Game.alive(a) then actors[#actors + 1] = a end
+                        end
+                        targets[#targets + 1] = { tag = str(t.ActorsTag), current = t.CurrentCount, target = t.TargetCount,
+                                                  actors = actors }
+                    end)
+                end)
+            end)
             out[#out + 1] = { objective = o, id = id, index = Game.get(o, "ObjectiveIdx", 0), current = okC and current or nil,
-                              target = okT and target or nil, status = status, point = valid(point) and point or nil }
+                              target = okT and target or nil, status = status, point = valid(point) and point or nil,
+                              targets = targets }
         end
     end
     table.sort(out, function(a, b) return a.index < b.index end)
@@ -4844,9 +4862,11 @@ end
 function Fighter:team() return Game.enums.team[Game.get(self.component, "WCM_Team")] end
 function Fighter:moveCount() return Game.get(self.component, "WCM_MoveCount") end
 
--- Fights from a script (the Lua plan's step 4; C++'s Story.hpp and Ai.hpp have the same): one started the player's way,
--- your cat's turns taken through the fight menu as its own keys do, a fight ended the game's way, its dilemma answered,
--- your cat's turns played for you, a hit changed before it lands. A block of its own (the main chunk's 200 locals).
+-- Fights and the story from a script (the Lua plan's steps 4 and 5; C++'s Story.hpp and Ai.hpp have the same): a fight
+-- started the player's way, your cat's turns taken through the fight menu as its own keys do, a fight ended the game's
+-- way, its dilemma answered, your cat's turns played for you, a hit changed before it lands; a quest's objective under
+-- way, collected and finished; the game's scenes; progression and mood. A block of its own (the main chunk's 200
+-- locals), its helpers in one table.
 do
     local F = {}   -- the block's helpers, as one local (the main chunk is near Lua's 200)
     F.SHOWN = { [0] = true, [3] = true, [4] = true }   -- ESlateVisibility: Visible, HitTestInvisible, SelfHitTestInvisible
@@ -5129,6 +5149,181 @@ do
     -- damage event gives; fn returning a number makes it the hit's damage (0: none). Through a hook on the combat
     -- director's OnRegisterDamage, which the game calls through the engine (an event: its parameters are its own).
     -- Returns a handle for Game.unhook.
+    -- ------------------------------------------------------------------------------- the story
+    -- A quest's objective under way: the one whose targets are out in the world (a gather objective's), else the first
+    -- the game says is in progress; nil when neither (the quest not started or done, or an objective without targets:
+    -- the game said NotStarted for a live one, seen from C++, so a fight's or an escort's isn't found).
+    function Game.quests.current(q)
+        local inProgress
+        for _, o in ipairs(Game.quests.objectives(q)) do
+            for _, t in ipairs(o.targets) do
+                if #t.actors > 0 then return o.objective end
+            end
+            if not inProgress and o.status == "InProgress" then inProgress = o.objective end
+        end
+        return inProgress
+    end
+    -- Finish an objective as the game does when its last target is in (SetObjectiveFinished): succeeded (true) or failed.
+    -- The quest goes on to its next objective or is complete, and the game's own flow follows (the "Return to the Camp
+    -- now?" question, the giver's turn-in). It moves the story on.
+    function Game.quests.finishObjective(objective, succeeded)
+        local status = enumValue(Game.enums.objectiveStatus, succeeded == false and "Failed" or "Succeeded")
+        if not Game.alive(objective) or status == nil then return false end
+        return (pcall(function() objective:SetObjectiveFinished(status) end))
+    end
+    -- The classes whose actors Interact could use instead of a target: dens, interactables, quest givers.
+    F.REACH = { "SwtAdventureHousingDoorActor", "BP_Interactable_Base_C", "SwtAdventureInteractableSequence",
+                "SwtAdventureInteractByContact", "BP_Quest_Giver_Base_C", "SwtAdventureQuestHintActor", "SwtAdventureFreshKillActor" }
+    -- A class by its short name: a native one by its script path, a Blueprint's from one of its actors (its class, or
+    -- the one up its chain with that name: the actor may be a child's). Nil when none is loaded.
+    function F.classOf(name)
+        local c = Game.object("/Script/SwtAdventure." .. name)
+        if c then return c end
+        local any = Game.find(name)
+        local okC, cls = pcall(function() return any:GetClass() end)
+        local guard = 0
+        while okC and valid(cls) and guard < 16 do
+            if cls:GetFName():ToString() == name then return cls end
+            cls, guard = cls:GetSuperStruct(), guard + 1
+        end
+        return nil
+    end
+    function F.inReach(target, at, radius)
+        local gs = Game.library("GameplayStatics")
+        for _, name in ipairs(F.REACH) do
+            local cls = F.classOf(name)
+            local list = {}
+            if cls then pcall(function() gs:GetAllActorsOfClass(Game.player(), cls, list) end) end
+            for _, e in ipairs(list) do
+                local okA, a = pcall(function() return e:get() end)
+                if okA and Game.alive(a) and a:GetAddress() ~= target:GetAddress() then
+                    local l = a:K2_GetActorLocation()
+                    if math.sqrt((l.X - at.X) ^ 2 + (l.Y - at.Y) ^ 2 + (l.Z - at.Z) ^ 2) <= radius then return Game.name(a) end
+                end
+            end
+        end
+        return nil
+    end
+    -- Collect one of an objective's targets (a target's actor) the way the player does: your cat is put on it, the
+    -- game's Interact pressed 0.8 s later, so the game's own pickup counts it (the HUD's "1/3", the quest's events, and
+    -- any other target in reach), and your cat is put back where it was at 1.6 s. True, or false and why: no cat or
+    -- target, or a den, an interactable or a quest giver within 2 m of it (Interact would use that instead).
+    function Game.quests.collect(target)
+        local me = Game.cat()
+        if not me or not Game.alive(target) then return false, "no cat or no target" end
+        local okA, at = pcall(function() return target:K2_GetActorLocation() end)
+        local home = me:location()
+        if not okA or not home then return false, "no place" end
+        local other = F.inReach(target, at, 200)
+        if other then return false, other .. " is in reach of it: Interact could use that" end
+        if not me:teleport(at.X, at.Y, at.Z + 40) then return false, "no room on it" end
+        Game.after(0.8, function() Game.command("Player_Interact") end)   -- once the game has seen your cat in its reach
+        Game.after(1.6, function()
+            if Game.player() then Game.cat():teleport(home.X, home.Y, home.Z) end
+        end)
+        return true
+    end
+    -- A quest's story id, its alias ("Quest.Main.1"), which the game keeps its progress by; nil without one.
+    function Game.quests.alias(q)
+        local d = Game.quests.describe(q)
+        return d and d.alias or nil
+    end
+
+    -- The game's scenes (the sequencer manager's). Playing one is C++'s (play_scene: a native call).
+    Game.scenes = {}
+    F.SCENE_TYPES = { [1] = "Intro", [2] = "Outro", [3] = "CutScene", [4] = "Podium", [5] = "Gameplay", [6] = "Combat",
+                      [7] = "Quest" }
+    -- Every scene the game can play: { {tag, type, kind, sequence, hidesHud, hidesActors}, ... }. type is the
+    -- sequencer's kind (1 Intro ... 7 Quest; kind its name): most (39 of 60 on build 26337109) are the fight cameras
+    -- (6, Combat), a few exploration shots (5); the story's are 3 (CutScene).
+    function Game.scenes.list()
+        local out = {}
+        local m = Game.get(Game.manager("sequencer"), "RegisteredSequences")
+        if m == nil then return out end
+        pcall(function()
+            m:ForEach(function(k, v)
+                pcall(function()
+                    local kind, t = math.tointeger(k:get()), v:get()
+                    if not valid(t) then return end
+                    t:ForEachRow(function(_, row)
+                        pcall(function()
+                            local seq = row.LevelSequencer
+                            local tag = str(row.sequenceId.TagName)
+                            if tag ~= "" and tag ~= "None" then
+                                out[#out + 1] = { tag = tag, type = kind, kind = F.SCENE_TYPES[kind],
+                                                  sequence = valid(seq) and seq:GetFName():ToString() or nil,
+                                                  hidesHud = row.bHideGameplayHud, hidesActors = row.bHideGameplayActors }
+                            end
+                        end)
+                    end)
+                end)
+            end)
+        end)
+        return out
+    end
+    -- The scenes playing now, by tag (the sequencer manager's ActiveSequences).
+    function Game.scenes.playing()
+        local out = {}
+        local m = Game.get(Game.manager("sequencer"), "ActiveSequences")
+        pcall(function()
+            m:ForEach(function(k) pcall(function() out[#out + 1] = str(k:get().TagName) end) end)
+        end)
+        return out
+    end
+    -- The story scenes your cat has watched, by the save's names ("ProphecyIntro", "RankUpApprentice"), as of the last
+    -- save; or whether it has watched one (seen(name)).
+    function Game.scenes.seen(name)
+        local slot = Game.save.slotData()
+        local seq = type(slot) == "table" and slot.Sequences or {}
+        if name ~= nil then return type(seq) == "table" and seq[name] == true end
+        local out = {}
+        for k, v in pairs(type(seq) == "table" and seq or {}) do
+            if v == true then out[#out + 1] = k end
+        end
+        table.sort(out)
+        return out
+    end
+    -- Skip the scene playing (or held at its end), as holding the skip button does: the game's skip popup given its hold
+    -- button's command, pressed and let go 2.5 s later. False when the popup isn't up (a scene the game won't let you
+    -- skip, or none playing).
+    function Game.scenes.skip()
+        local popup = F.screenUp("GuiPopupSkipQuest")
+        local n = popup and math.tointeger(Game.get(popup, "mcGuiHoldButtonSkip.ButtonCommand"))
+        if not n then return false end
+        local pc = Game.controller()
+        if not pcall(function() popup:OnListenCommand(n, 0, pc) end) then return false end
+        Game.after(2.5, function()
+            if Game.alive(popup) then pcall(function() popup:OnListenCommand(n, 1, pc) end) end
+        end)
+        return true
+    end
+
+    -- A value of your cat's progression in the save, by its path under the slot's GameplayProgression
+    -- ("Chapter00/L_WorldMap_01_P", "FreshKill/Cycle"), as of the last save; nil when it isn't there.
+    function Game.progression(path)
+        local slot = Game.save.slotData()
+        local at = type(slot) == "table" and slot.GameplayProgression or nil
+        for part in tostring(path or ""):gmatch("[^/]+") do
+            if type(at) ~= "table" then return nil end
+            at = at[part]
+        end
+        return at
+    end
+    -- A mood value the game keeps (the save manager's MoodData: a whole number under a primary and a sub key), or nil when
+    -- it hasn't one: HasMoodData is asked first, as the game's GetMoodData writes a missing key into the save as 0.
+    -- Game.setMood sets one.
+    function Game.mood(primary, sub)
+        local sm = Game.save.manager()
+        local ok, has = pcall(function() return sm:HasMoodData(primary, sub or "") end)
+        if not ok or has ~= true then return nil end
+        local okV, v = pcall(function() return sm:GetMoodData(primary, sub or "") end)
+        return okV and math.tointeger(v) or nil
+    end
+    function Game.setMood(primary, sub, value)
+        local sm = Game.save.manager()
+        return (pcall(function() sm:SetMoodData(primary, sub or "", math.tointeger(value) or 0) end))
+    end
+
     function Game.combat.onDamage(fn)
         return Game.hookRaw("/Script/SwtAdventure.SwtAdventureCombatDirector:OnRegisterDamage", function(_, params)
             local p = params[1]

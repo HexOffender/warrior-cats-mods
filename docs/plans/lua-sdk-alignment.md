@@ -111,10 +111,14 @@ rabbit's party, where the world let a fight start.
 
 ## 5. Story
 
-**The calls.** `Game.quests`: `current()`, `collect(target)`, `finishObjective`, `alias`; `Game.scenes`: `list()`,
-`playing()`, `seen(tag)`, `skip()`; `Game.progression(path)`; `Cat:mood`/`setMood`.
+**The calls.** `Game.quests`: `current()`, `collect(target)`, `finishObjective`, `alias`, and `objectives` with
+their targets; `Game.scenes`: `list()`, `playing()`, `seen(tag)`, `skip()`; `Game.progression(path)`;
+`Game.mood`/`setMood` (the save manager's, not a cat's).
 
 **Proof.** In game, against `test_story_matches_lua`'s C++ values.
+
+**Done.** Played as C++'s `test_quests` does, on a backed-up save put back after. Playing a scene is a native call
+(step 8).
 
 ## 6. Tables and words
 
@@ -157,8 +161,8 @@ the other addons are, opt in. Or these calls stay C++'s only.
 | 1. The bugs C++ found | done | #153 |
 | 2. The game's AI | done | #154 |
 | 3. Animals and walking cats | done | #155 |
-| 4. Fights | done | this branch, `claude/lua-fights` |
-| 5. Story | not started | |
+| 4. Fights | done | #156 |
+| 5. Story | done | this branch, `claude/lua-story` |
 | 6. Tables and words | not started | |
 | 7. The rest of the world | not started | |
 | 8. Only through C++ | to decide | |
