@@ -4,7 +4,8 @@
 // read and written, its logic stopped and started again, the game's trees read as data, an AI sent to a place or
 // after another actor, an animal made to ignore your cat, notice it, give it up or run from it, another of the game's
 // trees run on an AI, an AI made to follow another actor, a fight's AI: its chances by tier, an enemy's tier and
-// moves, your cat's turns taken for you; and animals put in the world as the game puts them (docs/plans/cpp-sdk-ai.md).
+// moves, your cat's turns taken for you; animals put in the world as the game puts them; and the clan cats' walking
+// paths, read and given (docs/plans/cpp-sdk-ai.md).
 // Game thread only. WCMods.hpp includes it; docs/SDK.md, "C++ mods", documents every call.
 //
 //   for (UObject* a : wcmods::fight_animals(2000)) wcmods::stop_ai(a);           // the animals near your cat stand still
@@ -667,7 +668,7 @@ namespace wcmods
     }
     // Make an animal ignore your cat, or notice it again as it did (`ignore` false): its detection sphere stops
     // overlapping cats (its response to the Pawn channel Ignore), its mask goes to 0, and it gives your cat up as calm()
-    // does, whether or not it had noticed it. It ignores every cat so; a pounce on it still starts a fight. False without
+    // does, whether or not it had noticed it. It ignores every cat so, and a pounce on it starts no fight either (seen). False without
     // a detection component.
     //
     // Why the sphere: the detection pass looks only at the cats the sphere overlaps, and the roaming tree's services
@@ -1482,5 +1483,256 @@ namespace wcmods
                 return true;
             }
         return destroy(animal);
+    }
+
+    // ============================================================================================ the clan cats' walking
+    // A clan cat walking about (BP_WalkingNPC_Character_Base_C, an ASwtAdventureWalkingNPC; the SDK's own cats are the
+    // same) runs BT_WalkingNPC: while its blackboard's bShouldAllowMovement, the "NPC Spline Walking" task walks it along
+    // its path, the spline its blackboard's SplineReference holds (a BP_WalkingNPC_Spline_C's WalkingSplineComponent;
+    // CurrentIndexSpline 0). The game's paths are there-and-back (bPingPong; one by the start had 6 points over 1,683
+    // units). A path of the mod's own is a spline actor of that class spawned and given points (ClearSplinePoints,
+    // AddSplinePoint): one of the SDK's cats walked a square of four as a loop, stood with bShouldAllowMovement cleared
+    // and walked on when it was set; a game cat walked a path of the mod's (two points there and back, or a square) and
+    // its own again after (seen). The game's own walking cats stand while your cat is near (300 units off it stood,
+    // 1,200 off it walked): the SDK's own cats don't.
+
+    // A walking cat and its path: the spline's points (world places), whether it's a loop (else there-and-back),
+    // whether it walks now, and whether the path is the mod's own (walk_path).
+    struct Walker
+    {
+        UObject* actor{};
+        UObject* path{};   // the path's actor (a BP_WalkingNPC_Spline_C)
+        std::vector<Vec3> points;
+        bool loop{};
+        bool walking{};
+        bool mod_path{};
+        double distance{};
+    };
+    namespace detail
+    {
+        inline constexpr const wchar_t* WALK_PATH_CLASS = L"/Game/Gameplay/Blueprints/WorldElements/BP_WalkingNPC_Spline.BP_WalkingNPC_Spline_C";
+        // A path the mod gave a cat: the spline actor it spawned, and the path the cat had before (to give it back).
+        struct ModPath
+        {
+            UObject* actor{};
+            UClass* actor_class{};
+            UObject* path{};
+            UClass* path_class{};
+            UObject* had{};   // the spline component it had (nullptr: none, the SDK's own cats)
+            UClass* had_class{};
+            std::optional<double> had_speed;   // its walking speed before walk_path's (its controller's DefaultMaxWalkSpeed)
+        };
+        struct ModPaths
+        {
+            std::vector<ModPath> all;
+            std::optional<TimerId> keeper;
+        };
+        inline auto mod_paths() -> ModPaths&
+        {
+            static ModPaths s;
+            return s;
+        }
+        inline auto spline_of(UObject* actor) -> UObject* { return blackboard_object(actor, L"SplineReference"); }
+        inline auto spline_points(UObject* spline) -> std::vector<Vec3>
+        {
+            std::vector<Vec3> out;
+            auto n = call_reflected(spline, STR("GetNumberOfSplinePoints"));
+            const int count = n ? static_cast<int>(n->get(L"ReturnValue").number()) : 0;
+            for (int k = 0; k < count; ++k)
+                if (auto at = call_reflected(spline, STR("GetLocationAtSplinePoint"), [k](Params& p) {
+                        p.set_nth(0, Value::of(k));
+                        p.set_nth(1, Value::of(1));   // ESplineCoordinateSpace::World
+                    }))
+                {
+                    Value v = at->get(L"ReturnValue");
+                    out.push_back({get(v, L"X").number(), get(v, L"Y").number(), get(v, L"Z").number()});
+                }
+            return out;
+        }
+        inline auto drop_mod_path(const ModPath& m) -> void
+        {
+            if (object_staying(m.path, m.path_class)) destroy(m.path);
+        }
+        inline auto set_walk_speed(UObject* actor, double speed) -> void
+        {
+            set(ai_controller(actor), L"DefaultMaxWalkSpeed", speed);
+            if (UObject* mv = get(actor, L"CharacterMovement").object) set(mv, L"MaxWalkSpeed", speed);
+        }
+        // A cat off the mod's path, before the path goes: a game cat back on its own (its walk started again on it, at
+        // its own speed), one with none to go back to (the SDK's own) standing. Its walk would otherwise go on along a
+        // spline about to be destroyed.
+        inline auto off_mod_path(const ModPath& m) -> void
+        {
+            if (!object_staying(m.actor, m.actor_class)) return;
+            if (m.had_speed) set_walk_speed(m.actor, *m.had_speed);
+            if (object_staying(m.had, m.had_class))
+            {
+                set_blackboard(m.actor, L"SplineReference", m.had);
+                run_tree(m.actor, ai_tree_named(L"BT_WalkingNPC"));
+                set_blackboard(m.actor, L"SplineReference", m.had);
+            }
+            else
+                set_blackboard(m.actor, L"bShouldAllowMovement", false);
+        }
+        // Every 2 s while there are any: the path of a cat that's gone goes too.
+        inline auto keep_mod_paths() -> void
+        {
+            auto& s = mod_paths();
+            std::erase_if(s.all, [](const ModPath& m) {
+                if (object_staying(m.actor, m.actor_class) && object_staying(m.path, m.path_class)) return false;
+                drop_mod_path(m);
+                return true;
+            });
+            if (s.all.empty() && s.keeper)
+            {
+                cancel(*s.keeper);
+                s.keeper.reset();
+            }
+        }
+        // As the mod is taken out: its paths gone, and each game cat given its own back (on the game thread only).
+        inline auto stop_walk_paths() -> void
+        {
+            auto& s = mod_paths();
+            if (on_game_thread_now())
+                for (auto& m : s.all)
+                {
+                    off_mod_path(m);
+                    drop_mod_path(m);
+                }
+            s.all.clear();
+            s.keeper.reset();
+        }
+    } // namespace detail
+    // Whether it walks now: its walking tree running and its blackboard's bShouldAllowMovement set.
+    inline auto walking(UObject* actor) -> bool
+    {
+        if (!assert_game_thread(L"walking")) return false;
+        return ai_running(actor) && ai_tree(actor) == ai_tree_named(L"BT_WalkingNPC")
+               && blackboard_bool(actor, L"bShouldAllowMovement").value_or(false);
+    }
+    // The walking cats within `radius` of your cat, nearest first, with their paths (the game's and the mod's own cats).
+    inline auto walkers(double radius = 30000) -> std::vector<Walker>
+    {
+        std::vector<Walker> out;
+        if (!assert_game_thread(L"walkers")) return out;
+        for (const Nearby& n : nearby(Kind::Cats, radius))
+        {
+            if (!is_a(n.actor, STR("/Script/SwtAdventure.SwtAdventureWalkingNPC"))) continue;
+            Walker w;
+            w.actor = n.actor;
+            w.distance = n.distance;
+            if (UObject* spline = detail::spline_of(n.actor))
+            {
+                if (auto o = call_reflected(spline, STR("GetOwner"))) w.path = o->get(L"ReturnValue").object;
+                w.points = detail::spline_points(spline);
+                auto closed = call_reflected(spline, STR("IsClosedLoop"));
+                w.loop = closed && closed->get(L"ReturnValue").boolean();
+            }
+            w.walking = walking(n.actor);
+            for (auto& m : detail::mod_paths().all) w.mod_path = w.mod_path || (m.actor == n.actor && m.path == w.path);
+            out.push_back(std::move(w));
+        }
+        return out;
+    }
+    struct WalkPathOptions
+    {
+        bool loop{true};     // round and round (a closed spline), else there and back
+        double speed{0};     // cm/s (the game's walking cats: 50); 0 keeps its own
+    };
+    // Give a walking cat (one of the game's or the mod's own, spawn_npc) a path of its own: a spline through `points`
+    // (world places, two or more; it walks the ground under them), walked as the game walks its paths, from the first.
+    // A game cat's own path is kept to give back (own_path). False for what isn't a walking cat, or fewer than two points.
+    //   wcmods::walk_path(cat.actor(), {a, b, c, d});   // round the four, until stop_walking
+    inline auto walk_path(UObject* actor, const std::vector<Vec3>& points, WalkPathOptions options = {}) -> bool
+    {
+        if (!assert_game_thread(L"walk_path") || !actor || points.size() < 2 || !is_a(actor, STR("/Script/SwtAdventure.SwtAdventureWalkingNPC"))
+            || !ai_controller(actor))
+            return false;
+        UObject* cls = load(detail::WALK_PATH_CLASS);
+        if (!cls) return false;
+        UObject* path = detail::spawn_deferred(cls, points.front(), 0, nullptr);
+        UObject* spline = get(path, L"WalkingSplineComponent").object;
+        if (!spline)
+        {
+            if (path) destroy(path);
+            return false;
+        }
+        call_reflected(spline, STR("ClearSplinePoints"), [](Params& p) { p.set_nth(0, Value::of(false)); });
+        for (const Vec3& pt : points)
+            call_reflected(spline, STR("AddSplinePoint"), [&](Params& p) {
+                set(p.nth(0), L"X", pt.x);
+                set(p.nth(0), L"Y", pt.y);
+                set(p.nth(0), L"Z", pt.z);
+                p.set_nth(1, Value::of(1));   // ESplineCoordinateSpace::World
+                p.set_nth(2, Value::of(false));
+            });
+        call_reflected(spline, STR("SetClosedLoop"), [&](Params& p) {
+            p.set_nth(0, Value::of(options.loop));
+            p.set_nth(1, Value::of(true));   // the spline worked out now
+        });
+        set(spline, L"bPingPong", !options.loop);
+        // A path the mod gave it before goes; the path it had first is the one to give back.
+        auto& s = detail::mod_paths();
+        UObject* had = detail::spline_of(actor);
+        UClass* had_class = had ? had->GetClassPrivate() : nullptr;
+        std::optional<double> had_speed;
+        for (auto it = s.all.begin(); it != s.all.end(); ++it)
+            if (it->actor == actor)
+            {
+                had = it->had;
+                had_class = it->had_class;
+                had_speed = it->had_speed;
+                detail::drop_mod_path(*it);
+                s.all.erase(it);
+                break;
+            }
+        if (options.speed > 0)
+        {
+            if (!had_speed) had_speed = get(ai_controller(actor), L"DefaultMaxWalkSpeed").number();
+            detail::set_walk_speed(actor, options.speed);
+        }
+        // Its walk started again on the new path (the walking task may keep the path it started with; started again, it
+        // reads the new one).
+        auto keys = [&] {
+            set_blackboard(actor, L"SplineReference", spline);
+            set_blackboard(actor, L"CurrentIndexSpline", 0);
+            set_blackboard(actor, L"bShouldAllowMovement", true);
+        };
+        keys();
+        run_tree(actor, ai_tree_named(L"BT_WalkingNPC"));
+        keys();
+        s.all.push_back({actor, actor->GetClassPrivate(), path, path->GetClassPrivate(), had, had_class, had_speed});
+        if (!s.keeper) s.keeper = every(2.0, [] { detail::guarded(L"walk_path", detail::keep_mod_paths); });
+        return true;
+    }
+    // Give a game cat its own path back, at its own speed (the mod's path goes; a cat with none to go back to, one of
+    // the SDK's, stands); false when it hasn't one of the mod's.
+    inline auto own_path(UObject* actor) -> bool
+    {
+        if (!assert_game_thread(L"own_path")) return false;
+        auto& all = detail::mod_paths().all;
+        for (auto it = all.begin(); it != all.end(); ++it)
+            if (it->actor == actor)
+            {
+                detail::off_mod_path(*it);   // its own path again (its walk started again on it, its own speed), or it stands
+                detail::drop_mod_path(*it);
+                all.erase(it);
+                return true;
+            }
+        return false;
+    }
+    // Stop a walking cat where it is (its blackboard's bShouldAllowMovement cleared: the game's own way), or let it walk
+    // on along its path. False for what has no walking AI.
+    inline auto stop_walking(UObject* actor) -> bool
+    {
+        if (!assert_game_thread(L"stop_walking") || !is_a(actor, STR("/Script/SwtAdventure.SwtAdventureWalkingNPC"))) return false;
+        return set_blackboard(actor, L"bShouldAllowMovement", false);
+    }
+    inline auto walk_again(UObject* actor) -> bool
+    {
+        if (!assert_game_thread(L"walk_again") || !is_a(actor, STR("/Script/SwtAdventure.SwtAdventureWalkingNPC")) || !detail::spline_of(actor))
+            return false;
+        if (ai_tree(actor) != ai_tree_named(L"BT_WalkingNPC") || !ai_running(actor)) run_tree(actor, ai_tree_named(L"BT_WalkingNPC"));
+        return set_blackboard(actor, L"bShouldAllowMovement", true);
     }
 } // namespace wcmods

@@ -8,6 +8,7 @@
 // back, its own trees set and read back; a mod's cat following your cat about, and let go. A fight's AI ("ai_fight",
 // step 5): the chances by tier, an enemy limited to one move at the Terrible tier, your cat's turns taken by auto_fight.
 // Animals put in the world ("ai_spawn", step 6): a rabbit spawned, roaming, noticing your cat, fought and its rewards.
+// The clan cats' walking ("ai_walk", step 7): a cat of the mod's walking a loop, stopping to talk; a game cat's path.
 #include "checks.hpp"
 
 #include <chrono>
@@ -784,6 +785,7 @@ namespace t
             std::chrono::steady_clock::time_point began;
             TimerId timer{};
             bool ending{};
+            int pounces{1};
             UObject* second{};
         };
         auto spawn_finish(const std::shared_ptr<SpawnRun>& r) -> void
@@ -794,6 +796,12 @@ namespace t
             });
         }
         auto spawn_second(const std::shared_ptr<SpawnRun>& r) -> void;
+        // `then` once `cond` holds (looked at every 0.5 s), or after `seconds` anyway.
+        auto when_or_after(std::function<bool()> cond, double seconds, std::function<void()> then) -> void
+        {
+            if (cond() || seconds <= 0) return then();
+            after(0.5, [cond, seconds, then] { when_or_after(cond, seconds - 0.5, then); });
+        }
         // After the fight: the rewards, and the rabbit gone and its generator given back.
         auto spawn_after_fight(const std::shared_ptr<SpawnRun>& r) -> void
         {
@@ -830,10 +838,18 @@ namespace t
                     cancel(r->timer);
                     spawn_after_fight(r);
                 }
+                else if (t > 12 && r->pounces < 3 && detail::object_staying(r->rabbit, r->rabbit_class))
+                {
+                    // Pounced again, as test_fights does (a pounce can miss; and right after another test's fight a
+                    // pounce started none: seen)
+                    ++r->pounces;
+                    start_fight(r->rabbit);
+                    r->began = std::chrono::steady_clock::now();
+                }
                 else if (t > 12)
                 {
                     cancel(r->timer);
-                    expect("spawn.fight", false, "no fight with the rabbit in 12 s");
+                    expect("spawn.fight", false, "no fight with the rabbit after three pounces");
                     spawn_finish(r);
                 }
                 return;
@@ -873,7 +889,8 @@ namespace t
             if (auto s = senses(r->second); s.react_to_chase) *s.react_to_chase = 30;   // it notices, but doesn't chase
             after(2.0, [r] {
                 stand_before(r->second, 250);
-                after(6.0, [r] {
+                // noticed within 10 s (looked at every 0.5 s: in one run it hadn't at 6 s)
+                when_or_after([r] { return blackboard_bool(r->second, L"Detected").value_or(false) || tracking_player(r->second); }, 10.0, [r] {
                     value("spawn.noticed", detection_state(r->second));
                     calm(r->second);
                     // your cat 2,500 units off first: the new one, not slowed as this one is, would chase your cat
@@ -954,6 +971,9 @@ namespace t
         value("spawn.model", Json(text(name(get(r->rabbit, L"Mesh.SkeletalMesh").object))));
         value("spawn.generator_class", Json(text(name(r->generator ? r->generator->GetClassPrivate() : nullptr))));
         value("spawn.ai_running", Json(ai_running(r->rabbit)));
+        // slow to chase (30 s): noticing your cat, it chased your cat into a fight of its own before the pounce (seen in
+        // a suite run). Made to ignore your cat instead, a pounce on it started no fight (seen).
+        if (auto s = senses(r->rabbit); s.react_to_chase) *s.react_to_chase = 30;
         bool listed = false;
         for (const Animal& a : animals(2000))
             if (a.actor == r->rabbit) listed = a.kind == RABBIT && a.generator == r->generator && a.model == L"SK_Rabbit";
@@ -974,4 +994,157 @@ namespace t
             r->timer = every(0.1, [r] { detail::guarded(L"ai_spawn test", [&] { spawn_fight_tick(r); }); });
         });
     }
+    // The clan cats' walking ("ai_walk", step 7): the game's walking cats and their paths; one of the mod's cats walking
+    // a loop of four points round your cat, stopping while your cat talks to it and walking on after; a game cat given
+    // a path of the mod's (there and back), then its own back; the mod's path gone with its cat.
+    namespace
+    {
+        struct WalkRun
+        {
+            Npc cat;
+            Vec3 center{};
+            UObject* game_cat{};
+            UObject* game_had{};
+            double game_speed{};
+            Vec3 last{};
+            double walked{};
+            double off_center{};
+            UObject* path{};
+        };
+        auto off(UObject* x, Vec3 from) -> double
+        {
+            auto at = location(x);
+            return at ? std::hypot(at->x - from.x, at->y - from.y) : -1.0;
+        }
+        auto walker_json(const Walker& w) -> Json
+        {
+            Json o = Json::object();
+            o.set("points", Json(static_cast<int>(w.points.size())));
+            o.set("loop", Json(w.loop));
+            o.set("walking", Json(w.walking));
+            o.set("mod_path", Json(w.mod_path));
+            o.set("path_class", Json(text(name(w.path ? w.path->GetClassPrivate() : nullptr))));
+            return o;
+        }
+        auto walk_game_cat(const std::shared_ptr<WalkRun>& r) -> void;
+    } // namespace
+
+    auto run_ai_walk_request() -> void
+    {
+        phase("ai_walk");
+        auto r = std::make_shared<WalkRun>();
+        // ----- the game's walking cats
+        auto all = walkers();
+        value("walk.walkers", Json(static_cast<int>(all.size())));
+        if (!all.empty()) value("walk.first", walker_json(all.front()));
+        for (const Walker& w : all)
+            if (!r->game_cat && !w.mod_path && w.points.size() >= 2) r->game_cat = w.actor;
+        // ----- refused
+        r->center = *location(player());
+        std::vector<Vec3> square;
+        for (auto [dx, dy] : std::vector<std::pair<double, double>>{{300, 300}, {300, -300}, {-300, -300}, {-300, 300}})
+        {
+            Vec3 pt{r->center.x + dx, r->center.y + dy, r->center.z};
+            if (auto g = ground(pt.x, pt.y, pt.z + 300)) pt.z = *g;
+            square.push_back(pt);
+        }
+        expect("walk.refused", !walk_path(player(), square) && !walk_path(nullptr, square) && !stop_walking(nullptr)
+                                   && !walk_again(player()) && !own_path(player()));
+        // ----- one of the mod's cats walking the square, as a loop
+        r->cat = spawn_npc({.at = {r->center.x + 300, r->center.y + 300, r->center.z}});
+        after(1.5, [r, square] {
+            UObject* c = r->cat.actor();
+            expect("walk.one_point", !walk_path(c, {square.front()}));
+            expect("walk.path", walk_path(c, square, {.loop = true, .speed = 100}));
+            for (auto& m : detail::mod_paths().all)
+                if (m.actor == c) r->path = m.path;
+            after(1.0, [r] {
+                UObject* c = r->cat.actor();
+                value("walk.cat_walking", Json(walking(c)));
+                for (const Walker& w : walkers())
+                    if (w.actor == c) value("walk.cat_listed", walker_json(w));
+                r->last = location(c).value_or(Vec3{});
+                // 8 s of it: how far it went, and how far it ever was from the square's middle
+                static int ticks = 0;
+                ticks = 0;
+                static TimerId ticker{};
+                ticker = every(0.5, [r] {
+                    UObject* c = r->cat.actor();
+                    auto at = location(c);
+                    if (at)
+                    {
+                        r->walked += std::hypot(at->x - r->last.x, at->y - r->last.y);
+                        r->off_center = std::max(r->off_center, std::hypot(at->x - r->center.x, at->y - r->center.y));
+                        r->last = *at;
+                    }
+                    if (++ticks < 16) return;
+                    cancel(ticker);
+                    value("walk.walked_8s", Json(r->walked));
+                    value("walk.off_center_max", Json(r->off_center));
+                    // ----- your cat talks to it: it stops while the talk is up, and walks on after
+                    expect("walk.stop", stop_walking(c) && say(L"Brindlemoon", L"Walk with me a while?"));
+                    after(0.5, [r] {
+                        r->last = location(r->cat.actor()).value_or(Vec3{});
+                        after(3.0, [r] {
+                            UObject* c = r->cat.actor();
+                            value("walk.moved_talking", Json(off(c, r->last)));
+                            value("walk.walking_talking", Json(walking(c)));
+                            expect("walk.again", hide_talk() && walk_again(c));
+                            r->last = location(c).value_or(Vec3{});
+                            after(3.0, [r] {
+                                UObject* c = r->cat.actor();
+                                value("walk.moved_after", Json(off(c, r->last)));
+                                value("walk.walking_after", Json(walking(c)));
+                                walk_game_cat(r);
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    }
+
+    namespace
+    {
+        // A game cat given a path of the mod's (there and back), then its own back; the mod's cat removed, its path gone.
+        auto walk_game_cat(const std::shared_ptr<WalkRun>& r) -> void
+        {
+            auto finish = [r] {
+                r->cat.remove();
+                teleport(player(), r->center);
+                after(2.5, [r] {   // the keeper looks every 2 s
+                    value("walk.path_gone", Json(!r->path || !detail::object_staying(r->path, nullptr)));
+                    value("walk.mod_paths_after", Json(static_cast<int>(detail::mod_paths().all.size())));
+                    done("ai_walk");
+                });
+            };
+            if (!r->game_cat)
+            {
+                expect("walk.game_cat", false, "no walking cat of the game's near");
+                return finish();
+            }
+            UObject* g = r->game_cat;
+            r->game_had = detail::spline_of(g);
+            auto at = *location(g);
+            value("walk.game_off", Json(off(g, r->center)));
+            // your cat 1,200 units off it first: with your cat 300 units off, the game's cat stood (seen)
+            Vec3 by{at.x - 1200, at.y, at.z + 50};
+            if (auto gr = ground(by.x, by.y, by.z + 500)) by.z = *gr + 30;
+            teleport(player(), by);
+            std::vector<Vec3> line{at, Vec3{at.x + 500, at.y, at.z}};
+            r->game_speed = get(ai_controller(g), L"DefaultMaxWalkSpeed").number();
+            expect("walk.game_path", walk_path(g, line, {.loop = false, .speed = 150}));
+            for (const Walker& w : walkers())
+                if (w.actor == g) value("walk.game_listed", walker_json(w));
+            r->last = at;
+            after(4.0, [r, finish] {
+                UObject* g = r->game_cat;
+                value("walk.game_moved", Json(off(g, r->last)));
+                expect("walk.own_path", own_path(g) && detail::spline_of(g) == r->game_had && !own_path(g));
+                value("walk.game_speed_back", Json(get(ai_controller(g), L"DefaultMaxWalkSpeed").number() == r->game_speed));
+                value("walk.game_walking_own", Json(walking(g)));
+                finish();
+            });
+        }
+    } // namespace
 } // namespace t

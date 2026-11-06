@@ -50,6 +50,7 @@ namespace t
     auto run_ai_trees_request() -> void;   // Ai.hpp: swapping trees, following ("ai_trees")
     auto run_ai_fight_request() -> void;   // Ai.hpp: a fight's AI ("ai_fight")
     auto run_ai_spawn_request() -> void;   // Ai.hpp: animals put in the world ("ai_spawn")
+    auto run_ai_walk_request() -> void;   // Ai.hpp: the clan cats' walking ("ai_walk")
     auto run_ai_notice_request() -> void;  // Ai.hpp: noticing your cat ("ai_notice")
     auto run_bond_answers_request() -> void;   // Bonds.hpp and Talk.hpp: a story talk and its answers' bonds ("bond_answers")
     auto run_bonds_request() -> void;    // Bonds.hpp: your cat's bonds, in the game ("bonds")
