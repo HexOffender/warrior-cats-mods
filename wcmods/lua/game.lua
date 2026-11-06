@@ -5916,12 +5916,15 @@ do
         local ok, l = pcall(function() return a:K2_GetActorLocation() end)
         return ok and l and { X = l.X, Y = l.Y, Z = l.Z } or nil
     end
+    X.enumNumbers = {}   -- path -> number -> name, read from the game once
     function X.enumName(path, v)
-        local names = Game.enumNames(path) or {}
-        for n, x in pairs(names) do
-            if x == math.tointeger(v) then return n end
+        local byNumber = X.enumNumbers[path]
+        if not byNumber then
+            byNumber = {}
+            for n, x in pairs(Game.enumNames(path) or {}) do byNumber[x] = n end
+            X.enumNumbers[path] = byNumber
         end
-        return v ~= nil and tostring(v) or nil
+        return byNumber[math.tointeger(v)] or (v ~= nil and tostring(v) or nil)
     end
 
     -- ------------------------------------------------------------------------------- places and travel
@@ -6132,14 +6135,22 @@ do
         return true
     end
     -- Put back what the camera had before the first set; true when there's nothing to put back.
+    -- False (kept for another try) when it can't all go back now: no camera following your cat (a fight), or your cat's
+    -- turning not there.
     function Game.camera.reset()
         local k = X.cameraKept
-        X.cameraKept = nil
-        if not k or not k.values or not Game.alive(k.camera) then return true end
+        if not k or not k.values or not Game.alive(k.camera) then
+            X.cameraKept = nil
+            return true
+        end
         local cam = X.camera()
-        if not cam or cam:GetAddress() ~= k.camera:GetAddress() then return true end
+        if not cam then return false end
+        if cam:GetAddress() ~= k.camera:GetAddress() then   -- a new camera has the game's settings
+            X.cameraKept = nil
+            return true
+        end
         local ok = Game.camera.set(k.values)
-        X.cameraKept = nil   -- (set kept the values again)
+        if ok then X.cameraKept = nil else X.cameraKept = k end
         return ok
     end
 
@@ -6297,8 +6308,14 @@ do
             if not key then break end
             local value
             if s:sub(rest, rest) == '"' then
-                local close = s:find('"', rest + 1, true)
-                value, i = s:sub(rest + 1, (close or #s + 1) - 1), (close or #s) + 1
+                -- to the closing quote; a backslash keeps the character after it (an escaped quote or backslash)
+                local j, parts = rest + 1, {}
+                while j <= #s and s:sub(j, j) ~= '"' do
+                    if s:sub(j, j) == "\\" and j < #s then j = j + 1 end
+                    parts[#parts + 1] = s:sub(j, j)
+                    j = j + 1
+                end
+                value, i = table.concat(parts), j + 1
             elseif s:sub(rest, rest) == "(" then
                 local depth, j = 0, rest
                 repeat

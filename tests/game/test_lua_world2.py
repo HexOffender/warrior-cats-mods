@@ -2,6 +2,7 @@
 Lua plan's step 7): the places your cat can travel to, the travel map opened at one, photo mode on and off, the
 exploration camera's settings, the clans' dens and their hotspots, cats' looks, the accessories and the clan's cats.
 Your cat goes back to its spot after each."""
+import os
 import time
 
 HOME = "local l = Game.cat():location() WCMODS_HOME = { l.X, l.Y, l.Z } return true"
@@ -87,13 +88,20 @@ def test_lua_dens(agent):
             WCMODS_DEN = den
             local hs = den and Game.dens.hotspots(den) or {}
             local h = hs[1]
+            local empty
+            for _, x in ipairs(hs) do if x.decoration == "" and x.savedStatus == 0 then empty = x break end end
+            local removed = empty and Game.dens.removeDecoration(empty)
+            local after = empty and Game.dens.hotspot(empty.actor)
             return { decorations = #decorations, named = named, dens = #all, clans = clans, mine = #mine,
                      hotspots = #hs, h = h and { tag = h.tag, size = h.size, rank = h.rank, status = h.savedStatus },
-                     again = h and Game.dens.hotspot(h.actor).tag }""")
+                     again = h and Game.dens.hotspot(h.actor).tag, removed = removed, emptyAfter = after and after.decoration,
+                     notHotspot = Game.dens.removeDecoration(Game.player()) }""")
         assert got["decorations"] == 60 and got["named"] >= 50, got
         assert got["dens"] >= 4 and len(got["clans"]) == 4 and got["mine"] >= 1, got
         h = got["h"]
         assert got["hotspots"] >= 1 and h["tag"].startswith("Gameplay.Den.Hotspot") and h["size"] and got["again"] == h["tag"], got
+        # an empty hotspot's OnDelete from Lua: called, the hotspot still empty; what isn't a hotspot refused
+        assert got.get("removed", True) is True and got.get("emptyAfter", "") == "" and got["notHotspot"] is False, got
         assert agent.lua("return Game.dens.enter(WCMODS_DEN)") is True
         time.sleep(1)
         off = agent.lua("local l, p = Game.cat():location(), WCMODS_DEN.inside return math.sqrt((l.X - p.X) ^ 2 + (l.Y - p.Y) ^ 2)")
@@ -118,9 +126,10 @@ def test_lua_looks_and_the_clan(agent):
         local slots = {}
         for _, a in ipairs(acc) do slots[a.slot] = true end
         local text = Game.lookFromText('(ClanType=ShadowClan,Role=Leader,TailIdx=8,CatSize=0.6,Gender=True,PrefixNameId="STR_CAT_NAME5",CombatStats=(TagName="Gameplay.Combat.Character.Cat"))')
+        local escaped = Game.lookFromText([[(PrefixNameId="A\\"B",TailIdx=3)]])
         return { clan = look.ClanType, role = look.Role, neck = look.AccesoryNeckId, fields = look.FurColorIdx ~= nil and look.ScarEyeId ~= nil,
                  cats = #cats, named = named, story = story, accessories = #acc, slots = slots, text = text,
-                 role2 = Game.cat():role() }""")
+                 role2 = Game.cat():role(), escaped = escaped }""")
     assert got["clan"] in ("ThunderClan", "ShadowClan", "RiverClan", "WindClan") and got["role"] and got["neck"], got
     assert got["fields"] is True, got
     assert got["cats"] >= 10 and got["named"] == got["cats"] and got["story"] >= 1, got
@@ -128,11 +137,12 @@ def test_lua_looks_and_the_clan(agent):
     assert got["text"] == {"ClanType": "ShadowClan", "Role": "Leader", "TailIdx": 8, "CatSize": 0.6, "Gender": True,
                            "PrefixNameId": "STR_CAT_NAME5", "CombatStats": "Gameplay.Combat.Character.Cat"}, got["text"]
     assert got["role2"]["clan"] == got["clan"] and got["role2"]["role"] == got["role"], got["role2"]
+    assert got["escaped"] == {"PrefixNameId": 'A"B', "TailIdx": 3}, got["escaped"]   # an escaped quote kept, not an end
 
 
 def test_lua_photo_mode(agent):
     """Photo mode on the game's way (the pause screen, then its Photo Mode), its camera there, its menus hidden and shown
-    again, and off: back to play."""
+    again, a picture taken (a new PNG in Game.photo.folder(), a scale over 4 refused), and off: back to play."""
     _no_screens(agent)
     try:
         assert agent.lua("return Game.photo.mode(true)") is True
@@ -142,6 +152,11 @@ def test_lua_photo_mode(agent):
         time.sleep(0.8)
         assert agent.lua("return Game.photo.ui(true)") is True
         time.sleep(0.8)
+        folder = agent.lua("return Game.photo.folder()")
+        before = set(os.listdir(folder)) if folder and os.path.isdir(folder) else set()
+        assert agent.lua("return Game.photo.take(1)") is True and agent.lua("return Game.photo.take(9)") is False
+        agent.wait(lambda: os.path.isdir(folder) and any(f.lower().endswith(".png") for f in set(os.listdir(folder)) - before), 8,
+                   f"the picture in {folder}")
         assert agent.lua("return Game.photo.mode(false)") is True
         agent.wait(lambda: not agent.lua("return Game.photo.active()"), 6, "photo mode to close")
     finally:
