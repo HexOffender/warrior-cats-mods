@@ -140,4 +140,17 @@ it, and going on after.
 | 4. Swapping trees | done: `run_tree` (the controller's own `RunBehaviorTree`), `ai_trees_set` and `set_trees` (its reflected `BehaviorTree` and `CombatBehaviorTree`); `follow` and `stop_following`, built on `move_to` (the escort tree's Move To Location doesn't move another controller's cat). `BT_BossEnemy` is a roaming tree, not a fight tree: a fight tree set is seen in step 5's fight | #148 |
 | 5. A fight's AI | done: the tiers' chances read and set (`AICombatChances.csv`'s map, found by what it holds: no signature reaches it); `set_ai_tier`; `limit_moves` and `restore_moves` (the fighter's moves array reordered and its count cut: the tree's pick is one of them); `auto_fight` takes your cat's turns (the SDK's own player: your cat has no AI controller). A fight tree other than `BT_CombatEnemy` stalls the fight; the cheats' `ForcedDifficulty` isn't obeyed. Seen in a fight | #149 |
 | 6. Putting an animal in the world | done: `animal_kinds` (`DT_Combat_Generator`'s parties); `spawn_animal` borrows one of the game's placed generators (a generator spawned at run time gave another's fight party), sets its party tags to the kind and moves it to the place, and gives it back after (or respawns, on request); `animals`, `remove_animal`. Seen in game: a rabbit roaming, noticing your cat, and a fight with it won with its rewards | #150 |
-| 7. The clan cats' walking | done: `walkers` (each with its path: the blackboard's `SplineReference`, a `BP_WalkingNPC_Spline_C`'s spline); `walk_path` gives a cat (the game's or the mod's) a spline actor of the mod's own (a loop or there and back, a speed), `own_path` gives a game cat its own back; `stop_walking` and `walk_again` (`bShouldAllowMovement`, the game's own way). The game's walking cats stand while your cat is near. Seen in game: one of the mod's cats walking a loop round your cat, stopping while a talk box was up and walking on after | this branch, `claude/cpp-ai-walk` |
+| 7. The clan cats' walking | done: `walkers` (each with its path: the blackboard's `SplineReference`, a `BP_WalkingNPC_Spline_C`'s spline); `walk_path` gives a cat (the game's or the mod's) a spline actor of the mod's own (a loop or there and back, a speed), `own_path` gives a game cat its own back; `stop_walking` and `walk_again` (`bShouldAllowMovement`, the game's own way). The game's walking cats stand while your cat is near. Seen in game: one of the mod's cats walking a loop round your cat, stopping while a talk box was up and walking on after | #151 |
+
+All seven steps are done (2026-11-06). Left open by them:
+- **The Lua side.** None of it is in `Game.*` yet: planned in [lua-sdk-alignment.md](lua-sdk-alignment.md), with
+  Lua's `Game.dialogue` leaving your cat "in a talk" as `say()` did.
+- **A generator spawned at run time** gives its animal's fight another generator's party (one mouse at level 12 for
+  a rabbit), which the placed ones don't: why wasn't traced. `spawn_animal` borrows a placed one instead, so its
+  own animal is away while the mod's is out. A boss's party (`CombatType` Boss) wasn't tried.
+- **When a pounce starts no fight:** beside the den at the test cat's starting spot; on an animal made to ignore your
+  cat (`ignore_player`); and once, a few seconds after another fight ended (a second pounce did).
+- **`auto_fight`** plays the most damaging move it has the stamina for, or rests: no items, no target choice.
+- **The game's walking cats stand while your cat is near** (300 units off one stood); what stops them wasn't traced.
+- **A fight tree of the mod's own** other than `BT_CombatEnemy` stalls the fight; the cheats' `ForcedDifficulty` isn't
+  obeyed.
