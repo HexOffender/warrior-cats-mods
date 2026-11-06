@@ -537,9 +537,39 @@ A fighter (`Game.fighter(cat or actor)`) is a cat's combat component, set up whe
 - Fight stamina was 0.4 × Prowess + Stamina, for both sides.
 - Setting the bird's Strength and health worked.
 
-**There's no way to end a fight from Lua yet.** The combat manager's `EndCombat` ends it, but leaves your cat with no
-body and the fight menu on screen. C++'s `end_fight` ends one the game's own way (the losing side's health set to 0
-on your cat's turn); Lua is to have it too ([the plan](plans/lua-sdk-alignment.md), step 4).
+**Playing a fight from a script.** A script can start a fight the player's way and take your cat's turns through the
+fight menu, as its own keys do: the selection is moved a press at a time, then confirmed. Each call starts the turn,
+which then plays out over the next seconds. The calls are C++'s (`Story.hpp`, `Ai.hpp`), with moves numbered 1 to 4.
+The combat manager's `EndCombat` ends a fight but leaves your cat with no body, so `finish` ends one the game's own
+way instead.
+
+```lua
+Game.combat.start(mouse)                      -- behind it, then the pounce
+-- on your cat's turn (Game.combat.menu() isn't nil):
+Game.combat.attack(1)                         -- its first move, at the enemy
+Game.combat.finish(true)                      -- or won outright
+Game.combat.autoFight(true)                   -- or let the script play every turn
+```
+
+| Call | Gives or does |
+|---|---|
+| `Game.combat.start(animal)` | Start a fight with a roaming animal the player's way: your cat is put 1.5 m behind it, facing it, and the game's pounce is pressed 0.6 s later. False outside the world, during a fight, or for no animal. Whether a pounce starts a fight depends on the spot: beside a den none does (seen from C++). An animal spawned by `Game.animals.spawn` and left running noticed your cat as it landed, and the pounce did nothing; with its logic stopped (`Game.ai.stop`), a pounce did start a fight, at most spots |
+| `Game.combat.cat()`, `Game.combat.menu()` | Your cat's fighter in the fight now (the player's side's one with no AI tier), and the fight menu (`WBP_GuiPopupCombat_C`), up on your cat's turn. Nil when there's none. `Game.player()` is nil during a fight, because the controller holds the fight's own pawn |
+| `Game.combat.attack(move)`, `Game.combat.rest()`, `Game.combat.flee()` | Your cat's turn, through the menu: an attack (move 1 to 4, as the attack panel lists them; its target confirmed), a rest, or fleeing (the fight ends). False when the menu isn't up, or for a move your cat hasn't got (a young cat has fewer than four) |
+| `Game.combat.moves()` | The attack panel's moves, `{ {name, stamina, usable}, ... }`: each move's name, its stamina cost and whether it can be used now. Lua can't read the moves' damage: it's in the fighter's moves array, which C++'s `Fighter::moves` reads |
+| `Game.combat.finish(won)` | End the fight the game's own way. The losing side's health is set to 0 and your cat's turn is taken (an attack), so the game finishes the fight as it does: a win with its rewards, or a loss. A loss sends your cat back to its respawn spot, healed, and the save keeps that spot. False outside a fight, or when it isn't your cat's turn: call it again then |
+| `Game.combat.dilemma()`, `Game.combat.answerDilemma(n)` | A dilemma the fight is asking now (its popup), as `{title, question, bonus, option1, option2}`, or nil. Answer it with choice 1 or 2, a step at a time, as its own keys do, until the popup goes. The game picks dilemmas from `CombatDilemmas.csv`, by chance (0.15, or 1 at a boss's end) and the fighters' state |
+| `Game.combat.autoFight(on)`, `Game.combat.autoFightTurns()` | Take your cat's turns for it: on each one, the move costing the most stamina it can use (C++ picks by damage, which Lua can't read), else a rest. Also a rest when the game didn't take the move. Runs until turned off. `autoFightTurns` is how many turns it has taken |
+| `Game.combat.onDamage(fn)` | `fn(info)` as a hit lands, before the game applies it. `info` is the `damage` event's: `{target, damage, missed, stance, status}`. If `fn` returns a number, that's the hit's damage (0 for none). It's a hook on the combat director's `OnRegisterDamage`, an event the game calls through the engine, so its parameters are its own. Returns a handle for `Game.unhook` |
+| `Game.command(name)` | Press one of the game's controls (an `ECommands` name: `"Player_Pounce"`, `"Player_Interact"`), through the controller's input component, as C++'s `command` does |
+
+**Seen in game:**
+- a fight fled through the menu;
+- a fight won by `autoFight`, with every hit on the enemy made deadly by `onDamage`;
+- a fight lost by `finish(false)`;
+- a fight with a rabbit `Game.animals.spawn` put in the world: one enemy, a rabbit at level 6 (the kind's party), won by `finish(true)`. That needs a spot where a fight can start, which the test looks for and skips without.
+
+A fight's end saves where your cat is, and winning gives your cat experience.
 
 ### The game's developer switches
 
