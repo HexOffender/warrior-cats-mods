@@ -133,8 +133,8 @@ outright instead; [SDK.md](SDK.md#mod-folder).)
 - **Some calls are costly every frame:** `Game.quests.objectives(q)` looks through every objective in the game each
   time; call it from `Game.every`, not `Game.onFrame`. `Game.save.file()` (and so `Game.items.list()`,
   `cat:traits()` and the slot calls) decodes the whole save, about 40 ms, but only when the file has changed: it
-  keeps the table while the file's size stays the same, looking at most 4 times a second and decoding it again at
-  least every 30 s.
+  keeps the table while the file stays the same, looking at its size at most 4 times a second and, at the same size,
+  reading its text and comparing it every 2 s.
 
 ### Objects
 
@@ -202,11 +202,11 @@ Also `util`, `vfx`, `achievements`, `analytics`, `online`, `cloud`, `services`, 
 | `phase` | new, old (`Game.enums.phase`) | polled | yes |
 | `combatStart` / `combatEnd` | a fight (below); `combatEnd` has nothing | polled | yes |
 | `itemPickedUp` | tag, how many, new total | hook on the HUD's `OnItemPickedUp` | yes |
-| `questStatus` | quest, status, exact | hook on `SwtQuestGameplayGameState:OnQuestStatusChanged` | hooked; not yet seen firing |
+| `questStatus` | quest, status, exact | hook on `SwtQuestGameplayGameState:OnQuestStatusChanged` | seen firing from C++ on the same hook, as a quest moves on; not tried from Lua |
 | `genericEvent` | name | hook on `SwtGameUtil:BroadcastGenericEvent` | hooked; not yet seen firing |
-| `damage` | `{target, damage, missed, stance, status}` | hook on the combat director's `OnRegisterDamage` | hooked; not yet seen firing (no hit was made in testing) |
-| `turnEnded` | | hook on `OnCombatantTurnEnded` | hooked; not yet seen firing |
-| `status` | fighter, status | hook on `ApplyStatusType` | hooked; not yet seen firing |
+| `damage` | `{target, damage, missed, stance, status}` | hook on the combat director's `OnRegisterDamage` | seen firing from C++ on the same hook, in fights its test starts; not tried from Lua |
+| `turnEnded` | | hook on `OnCombatantTurnEnded` | seen firing from C++ on the same hook; not tried from Lua |
+| `status` | fighter, status | hook on `ApplyStatusType` | seen firing from C++ on the same hook, for a condition given; not tried from Lua |
 
 ### Hooks
 
@@ -220,6 +220,12 @@ the tag a quest lookup was asked about.
 
 Some limits:
 - **Post hooks** run after the call, and by then the parameters may already be cleared.
+- **A native function a Blueprint calls hands you its caller's variables.** Called from a Blueprint's bytecode (as
+  `Actor:K2_GetActorLocation` is, many times a frame), a native function fires its hook, but its inputs aren't there
+  to read: the call's frame is the caller's, so what `fn` gets as the parameters is that Blueprint's own variables
+  (nonsense, or, from C++, a read that closed the game when the caller had none). C++ tells the two kinds of call
+  apart (`call.has_params()`, SDK.md); UE4SS's Lua hook can't, so trust a hook's parameters only on an event, an RPC
+  or a function Lua or a mod calls.
 - **Only calls through Unreal fire hooks.** Unreal's function calls (Blueprints, delegates, Lua) fire
   them; native C++ calling C++ directly doesn't.
 - **Hooks are per script:** they come off when the script stops.
@@ -340,8 +346,12 @@ game's own dialogue box:
 | Call | |
 |---|---|
 | `Game.dialogue.say(name, text)` | Show the game's dialogue box (`WBP_QuestGiver_Dialogue`) with a speaker's name and a line, with its own fade-in; again with another line to change it. Returns false and why if the box can't be made |
-| `Game.dialogue.hide()`, `Game.dialogue.showing()` | Fade it out (a box a failed `say` left half made too); whether it's up |
+| `Game.dialogue.hide()`, `Game.dialogue.showing()` | Fade it out (a box a failed `say` left half made too); whether it's up. A line said while it fades out brings it back in |
 | `Game.dialogue.busy()`, `Game.dialogue.claim()` | Whether another mod's cat is talking (each mod has its own box, so two could overlap); take the box for this script's talk, false if it's taken. Check `busy()` before starting a talk. The claim lasts while the box is up, however long the talk waits for a key, and `hide()` lets it go |
+
+**The box puts your cat "in a talk".** As it goes on screen, its own code sets the game's talk flags on your cat's
+controller (`WCM_TalkFlags`), and while they're on no animal notices your cat and a pounce starts no fight (seen from
+C++). `hide()` (and a `say` that fails) clears them once the box is gone, unless one of the game's own talks is up.
 
 The box is only the picture: it takes no input, so the script moves the talk on with its own key (the
 box shows Enter, the game's own key for it, so take that too). The answer buttons stay hidden. [custom-npc](https://github.com/HexOffender/wcmods-examples/tree/main/custom-npc) in
@@ -354,7 +364,8 @@ questline on one.
 | Call | Gives or does |
 |---|---|
 | `Game.items.list()`, `Game.items.count(tag)` | Your items, `{["Gameplay.Inventory.Materials.Dandelion"] = 6, …}`: as of the game's last save (it writes `WrcGame.json` each time), with the pickups since the level loaded from the HUD's pickup messages. Loading a save or another cat (a new HUD), or the game saving after them, drops those pickups, and the save says again. A save the game rewrote at the same size isn't noticed: the pickups stay laid over it until the next load. Items used since the last save aren't seen until the next one |
-| `Game.items.drop(tag, count, where)` | A pickup holding the items on the ground by your cat (or below `where`), for the cat to pick up as usual. It returns the actor, or nil and why (a `tag` that isn't an item's tag in text, `"Gameplay.Inventory.Materials.Moss"`, is refused). A mod's herb or material lies there as its own model (items.json `model`), or as the game's pickup of the herb it's `like`. Seen in game: the cat collects it with Interact, and `itemPickedUp` fires |
+| `Game.items.drop(tag, count, where)` | A pickup holding the items on the ground 50 cm in front of your cat, where its Interact reaches (or in front of the actor `where`, or below a place `where`), for the cat to pick up as usual. It returns the actor, or nil and why. A `tag` that isn't one of the game's items (`Game.items.isItem`) is refused: a tag the game doesn't know gets into the save with the pickup, and the game crashed at quit (seen from C++). A mod's herb or material lies there as its own model (items.json `model`), or as the game's pickup of the herb it's `like`. Seen in game: the cat collects it with Interact, and `itemPickedUp` fires |
+| `Game.items.isItem(tag)` | Whether a tag is one of the game's items: a tag the game has registered, under `Gameplay.Inventory` (a mod's new items are registered from their ini at startup) |
 | `Game.items.info(tag)`, `Game.items.type(tag)` | What the quest manager knows of an item (nothing, as shipped: its item stats table is empty), and an item's kind: the quest manager's answer where it has one, else from the tag: `"Consumable"` (herbs and pouches), `"Collectible"` (materials), `"Equipment"` (accessories) or `"Quest"`; nil for a tag that isn't an item's |
 
 **Why items can't be put in the inventory directly:** the inventory is native, with no reflected way to
@@ -396,7 +407,7 @@ or hidden animal doesn't move its bones until it's in view (the engine's way), t
 |---|---|
 | `Game.time.get()` | The clock: hours, minutes, seconds |
 | `Game.time.seconds()`, `Game.time.setSeconds(s)`, `Game.time.set(h, m, s)` | Seconds into the day (21600 is 6:00); set the clock |
-| `Game.time.hold(s, who)`, `Game.time.hold(nil, who)` | Hold the clock at `s` seconds into the day, for every script: one hold, shared between them, so two scripts holding it don't fight over the hour. The last script to hold it has it, and the clock is put back to that hour twice a second while your cat is in the world. `who` names the holder (the mod's name by default); `hold(nil, who)` lets go of your own hold only. Gives back what setting the clock did. The script's Lua state keeps its hold up, saying twice a second that it's still there: a hold whose state has gone (UE4SS restarted the mods, say) is no hold 3 s later. Tweaks' Hold the clock gives way to another script's hold, and takes the clock back once that's let go or gone |
+| `Game.time.hold(s, who)`, `Game.time.hold(nil, who)` | Hold the clock at `s` seconds into the day, for every script: one hold, shared between them, so two scripts holding it don't fight over the hour. The last script to hold it has it, and the clock is set to that hour every frame while your cat is in the world. `who` names the holder (the mod's name by default); `hold(nil, who)` lets go of your own hold only. Gives back what setting the clock did. The script's Lua state keeps its hold up, saying twice a second that it's still there: a hold whose state has gone (UE4SS restarted the mods, say) is no hold 3 s later. Tweaks' Hold the clock gives way to another script's hold, and takes the clock back once that's let go or gone |
 | `Game.time.held()` | The hour held, in seconds, and whose hold it is (`54000, "Tweaks"`); nil when nobody holds the clock, or the hold's script has gone. (Just after a restart of the mods, a script can still see a hold whose script went with it: until the script's second frame, and in hooks before its first for as long as no frame comes. A script with no timer of its own by the frame after it first asks (only hooks and keys, say) sees it for two frames from the first time it asks, or through a level load it first asks in, and never once the hold is about a minute (63 s) old. The other side: if such a script first asks shortly before, during or just after a level load of more than about a minute, it can see a live hold as gone until the holder's first frame after the load) |
 | `Game.freshKill.value()`, `.max()`, `.set(v)`, `.level()` | The camp's fresh-kill pile (0–100), and Full/Abundant/Good/Scarcity/Critical |
 | `Game.freshKill.timer()`, `.decayTime()`, `.setDecayTime(v)` | Seconds since it last went down, and how often it does (90) |
@@ -406,12 +417,12 @@ or hidden animal doesn't move its bones until it's in view (the engine's way), t
 | Call | Gives or does |
 |---|---|
 | `Game.quests.all()` | Every quest the quest manager holds, each as `describe` gives it |
-| `Game.quests.describe(q)` | A quest object as a table: `{quest, id, tag, graph, class, type, status, result, tracked, xp, rewards}`. `quest` is the object itself; `id` comes from its quest graph (`"Tutorial"`, `"Deliver"`, `"RiverClan_Unique1"`), `tag` is the graph's quest tag (nil without one), `graph` the graph's name and `class` the quest's class; `rewards` is `{tag = count}`. Nil for no quest |
-| `Game.quests.objectives(q)` | A quest's objectives, in order: `{objective, id, index, current, target, status, point}` (`current` and `target` count it up, `point` is where to go when it has one). [Costly](#how-it-reaches-the-game): it looks through every objective in the game |
+| `Game.quests.describe(q)` | A quest object as a table: `{quest, id, tag, alias, graph, class, type, status, result, tracked, xp, rewards}`. `quest` is the object itself; `id` comes from its quest graph (`"Tutorial"`, `"Deliver"`, `"RiverClan_Unique1"`), `tag` is the graph's quest tag and `alias` its story id (`"Quest.Main.1"`; nil without one), `graph` the graph's name and `class` the quest's class; `rewards` is `{tag = count}`. `status` and `result` are the game's by the alias, which it keeps a quest's progress by (the quest object's own stay None while it's under way), else the object's own. Nil for no quest |
+| `Game.quests.objectives(q)` | A quest's objectives, in order: `{objective, id, index, current, target, status, point}` (`current` and `target` count it up, `point` is where to go when it has one). `status` is the game's for an objective your cat's save has, nil for the rest (asking would add it to the save). [Costly](#how-it-reaches-the-game): it looks through every objective in the game |
 | `Game.quests.tracked()` | The quest being followed (the object, for `describe` and `objectives`), or nil |
 | `Game.quests.manager()` | The game's quest manager, for `Game.get` and `Game.call` on what these don't wrap |
 | `Game.quests.report(id, {title, status, objective, progress, by, description})` | List a quest of the mod's own on the mod menu's Quests page: `status` is `"available"`, `"active"` or `"done"`; `by` the mod's name; `description` an optional sentence about it. Report again when it changes; `nil` takes it off. `Game.quests.reported()` reads them back: `{id, title, status, objective, progress, by, description}` each, `description` `""` when there's none (a page from before it was a field shows the first five) |
-| `Game.quests.status(tag)`, `.result(tag)`, `.successes(tag)` | By quest tag: `"QuestAvailable"`, `"OngoingQuest"`, … |
+| `Game.quests.status(alias)`, `.result(alias)`, `.successes(alias)` | By the quest's story id, its alias (`describe`'s `alias`, `"Quest.Main.3"`): `"QuestAvailable"`, `"OngoingQuest"`, … Nil for an id none of the quest manager's quests has: the game's own call adds the id it's asked about to the save's `QuestProgression` (seen from C++) |
 | `Game.quests.start(tag)`, `.give(tag)`, `.track(quest, on)` | The quest manager's own StartQuestOfTag, GiveQuestOfTag and SetTracked: true, or false and the error. Not tried yet; they can move the story on |
 | `Game.quests.chapter()` | `"Chapter00"` |
 
@@ -443,8 +454,9 @@ A fighter (`Game.fighter(cat or actor)`) is a cat's combat component, set up whe
 - Fight stamina was 0.4 × Prowess + Stamina, for both sides.
 - Setting the bird's Strength and health worked.
 
-**There's no way to end a fight from a script yet.** The combat manager's `EndCombat` ends it, but
-leaves your cat with no body and the fight menu on screen.
+**There's no way to end a fight from Lua yet.** The combat manager's `EndCombat` ends it, but leaves your cat with no
+body and the fight menu on screen. C++'s `end_fight` ends one the game's own way (the losing side's health set to 0
+on your cat's turn); Lua is to have it too ([the plan](plans/lua-sdk-alignment.md), step 4).
 
 ### The game's developer switches
 
@@ -462,7 +474,7 @@ others, so try each one.
 
 | Call | Gives |
 |---|---|
-| `Game.save.file()`, `Game.save.slotData()` | The whole save as of the game's last save, as a table; this cat's slot in it (the one the file names as its current cat, `Shared.General.CurrentCatSlot`). The table is kept while the file's size stays the same, so a save that rewrote it at the same size (a count going from 6 to 7) is seen up to 30 s late; `Game.save.write()` drops it. Don't change the table: every call gets the same one |
+| `Game.save.file()`, `Game.save.slotData()` | The whole save as of the game's last save, as a table; this cat's slot in it (the one the file names as its current cat, `Shared.General.CurrentCatSlot`). The table is kept while the file stays the same: at the same size its text is compared every 2 s, so a save that rewrote it at the same size (a count going from 6 to 7) is seen up to 2 s late; `Game.save.write()` drops it. Don't change the table: every call gets the same one |
 | `Game.save.write()` | Save now (the game's own Save) |
 | `Game.save.folder()` | A folder for a script's own files: `WCMods` in the game's Saved folder, beside its saves. Every install makes it, and updating a mod or wcmods leaves it alone |
 | `Game.save.slot()` | The save game's slot index (`CurrentSaveSlotIndex`), which isn't the cat's: it stayed 0 while the cat played was the file's slot 8 (`Game.save.slotData()` follows the file) |

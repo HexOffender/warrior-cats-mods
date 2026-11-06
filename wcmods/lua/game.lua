@@ -977,7 +977,7 @@ end }
 -- The game keeps its save as JSON in memory (the save manager); these read and write it while it runs.
 Game.save = {}
 -- Game.save.file()'s decoded save (below), and when and at what size it was read; Game.save.write drops it.
-local fileCache = { at = -1, data = nil, size = nil, checked = -1 }
+local fileCache = { at = -1, data = nil, size = nil, text = nil, checked = -1, compared = -1 }
 
 function Game.save.manager() return Game.manager("save") end
 
@@ -1368,9 +1368,10 @@ function Game.save.folder()
 end
 
 -- The whole save as of the game's last save, as a table. Decoding it takes about 40 ms (half a megabyte), so the
--- table is kept while the file's size stays the same: the size is looked at at most 4 times a second, and the file
--- is decoded again at least every 30 s (a save that rewrote it at the same size is seen that late). The file caught
--- half written gives the last table read whole. (fileCache is declared with Game.save, so Game.save.write sees it.)
+-- table is kept while the file stays the same: its size is looked at at most 4 times a second, and at the same size
+-- its text is read and compared every 2 s (a save that rewrote it at the same size had left C++'s reads a save
+-- behind: Lua's io has no file times), decoded again only when it differs. The file caught half written gives the
+-- last table read whole. (fileCache is declared with Game.save, so Game.save.write sees it.)
 function Game.save.file()
     local now = os.clock()
     if fileCache.data and now - fileCache.checked < 0.25 then return fileCache.data end
@@ -1378,16 +1379,19 @@ function Game.save.file()
     if not f then return nil, "no save file" end
     local size = f:seek("end")
     fileCache.checked = now
-    if fileCache.data and size == fileCache.size and now - fileCache.at < 30 then
+    if fileCache.data and size == fileCache.size and now - fileCache.compared < 2 then
         f:close()
         return fileCache.data
     end
     f:seek("set")
     local text = f:read("a")
     f:close()
+    fileCache.compared = now
+    if fileCache.data and text == fileCache.text then return fileCache.data end
     local data, err = Game.json.decode(text)
     if not data then return fileCache.data, err end
-    fileCache.at, fileCache.data, fileCache.size = now, data, size
+    -- at: when it was last decoded (Game.items.list goes by it)
+    fileCache.at, fileCache.data, fileCache.size, fileCache.text = now, data, size, text
     return data
 end
 
@@ -1803,19 +1807,37 @@ end
 -- Put a pickup holding `count` of an item on the ground (by your cat, or below `where`), for the cat to
 -- pick up the usual way: Game.items.drop("Gameplay.Inventory.Materials.Moss", 5). Returns the actor.
 -- A mod's herb or material with a model of its own lies there as that model (items.json "model").
+-- Whether a tag is one of the game's items: a registered tag under Gameplay.Inventory (a mod's new items are
+-- registered from their ini at startup). The inventory takes nothing else.
+function Game.items.isItem(tag)
+    if type(tag) ~= "string" or tag == "" then return false end
+    local lib = Game.library("BlueprintGameplayTagLibrary")
+    local ok, r = pcall(function() return lib:MatchesTag(Game.tag(tag), Game.tag("Gameplay.Inventory"), false) end)
+    return ok and r == true
+end
+
 function Game.items.drop(tag, count, where)
     if type(tag) ~= "string" or tag == "" then return nil, "drop needs an item tag like Gameplay.Inventory.Materials.Moss" end
+    -- A tag the game hasn't got as an item gets into the save with the pickup and crashes the game at quit (seen from
+    -- C++): refused.
+    if not Game.items.isItem(tag) then return nil, tag .. " isn't one of the game's items" end
     count = count or 1
     local look = groundLook(tag)
     local cls = pickupClass(tag:match("%.([%w]+)$") or "SmallHealingHerb", false)
         or (look and look.class and pickupClass(look.class, true)) or pickupClass("SmallHealingHerb", true)
     if not cls then return nil, "no pickup class loaded" end
-    local at = where or (Game.cat() and Game.cat():location())
-    if at ~= nil and type(at) ~= "table" then at = Game.cat(at) and Game.cat(at):location() end
+    -- By a cat (yours, or the actor given): 50 cm in front of it, where Interact reaches; below a place given.
+    local by = where == nil and Game.player() or (where ~= nil and type(where) ~= "table" and where or nil)
+    local at = where
+    if by ~= nil then at = Game.cat(by) and Game.cat(by):location() end
     if not at then return nil, "nowhere to put it" end
+    local x, y = at.X, at.Y
+    if by ~= nil then
+        local okF, f = pcall(function() return by:GetActorForwardVector() end)
+        if okF and f then x, y = x + f.X * 50, y + f.Y * 50 end
+    end
     -- On the ground below: a cat's location is the middle of its body. A line that starts inside a rock
     -- hits where it starts, so that height is left as it is.
-    local x, y = at.X + 60, at.Y
     local ground = Game.trace({ X = x, Y = y, Z = at.Z + 50 }, { X = x, Y = y, Z = at.Z - 300 })
     local z = ground and ground.Z < at.Z + 49 and ground.Z or at.Z
     local xf = { Translation = { X = x, Y = y, Z = z }, Rotation = { X = 0, Y = 0, Z = 0, W = 1 },
@@ -3085,6 +3107,20 @@ local talkId = (tostring(talk.key):gsub("^table: ", ""))
 local function talkShared(k) local ok, v = pcall(function() return ModRef:GetSharedVariable(k) end) return ok and v or nil end
 local function talkShare(k, v) pcall(function() ModRef:SetSharedVariable(k, v) end) end
 
+-- The box's own code puts your cat "in a talk" as it goes on screen: the player controller's talk flags
+-- (WCM_TalkFlags: 0x1, and 0x20 with it), which only the end of one of the game's own talks clears. While they're on,
+-- no animal notices your cat and a pounce starts no fight (seen, from C++: docs/reverse-engineering.md, "The talk box
+-- and your cat"). Cleared as the box comes down, unless one of the game's own talks has its box up (the controller's
+-- ActiveDialogueWidget). (C++ calls the game's own setter, which also lets a talk the game has queued go on; from Lua
+-- the flags are written, which was seen to let the animals notice your cat again.)
+local TALK_FLAGS = 0x21
+local function endBoxTalk()
+    local pc = Game.controller()
+    if not valid(pc) or valid(Game.get(pc, "ActiveDialogueWidget")) then return end
+    local flags = math.tointeger(Game.get(pc, "WCM_TalkFlags"))
+    if flags and flags & 0x1 ~= 0 then Game.set(pc, "WCM_TalkFlags", flags & ~TALK_FLAGS) end
+end
+
 local function dialogueWidget()
     if valid(talk.widget) then return talk.widget end
     talk.widget, talk.name, talk.text = nil, nil, nil
@@ -3149,6 +3185,7 @@ function Game.dialogue.say(name, text)
     local added = false
     local ok, err = pcall(function()
         talk.closing = talk.closing + 1   -- a fade-out under way no longer takes it away
+        local wasFading = talk.fading
         talk.fading = false
         if name ~= talk.name then w.mcGuiDialogueTalker.mcGuiTextName:SetText(FText(name)) end
         if text ~= talk.text then w.mcGuiTextParagraph:SetText(FText(text)) end
@@ -3157,11 +3194,17 @@ function Game.dialogue.say(name, text)
             added = true
             layOut(w)
             w:PlayAnimation(w.AniScreenIn, 0, 1, PLAY_FORWARD, 1, false)
+        elseif wasFading then
+            -- back in from hide()'s fade-out, which would otherwise leave it faded with the new line in it
+            w:PlayAnimation(w.AniScreenIn, 0, 1, PLAY_FORWARD, 1, false)
         end
     end)
     if not ok then
         -- Not a box half made and left on screen (a game update that renamed one of its parts, say).
-        if added then pcall(function() w:RemoveFromParent() end) end
+        if added then
+            pcall(function() w:RemoveFromParent() end)
+            endBoxTalk()
+        end
         return false, tostring(err)
     end
     talk.name, talk.text = name, text
@@ -3195,7 +3238,10 @@ function Game.dialogue.hide()
     Game.after(0.3, function()
         if talk.closing ~= mine then return end
         talk.fading = false
-        if valid(w) then pcall(function() w:RemoveFromParent() end) end
+        if valid(w) then
+            pcall(function() w:RemoveFromParent() end)
+            endBoxTalk()
+        end
     end)
 end
 
@@ -3244,7 +3290,7 @@ function Game.time.set(h, m, s) return Game.time.setSeconds((h or 0) * 3600 + (m
 
 -- One hold of the clock for every script, so two scripts holding it don't fight over the hour: a shared variable,
 -- "<seconds>\t<who>\t<os.clock() when its holder last said so>" ("" for none). The last script to hold it has it,
--- and every script that has held it keeps the clock at that hour twice a second while your cat is in the world.
+-- and every script that has held it keeps the clock at that hour, set every frame while your cat is in the world.
 -- Game.time.hold(seconds, who) holds it (who: the script's name, Game.modName by default) and gives back what
 -- setting the clock did; Game.time.hold(nil, who) lets go, of your own hold only. Game.time.held() is the hour held,
 -- in seconds, and whose it is; nil for none. The holder's Lua state says it's there twice a second (the os.clock()),
@@ -3292,7 +3338,10 @@ function Game.time.hold(s, who)
     local h = Game.time.holding
     who = clean(who or Game.modName or "a script")
     if not s then
-        if select(2, h.read()) == who then share(h.key, "") end
+        if select(2, h.read()) == who then
+            share(h.key, "")
+            h.at = nil   -- not set again until the next look at the shared hold (another state's, if any)
+        end
         if h.who == who then h.who = nil end
         return true
     end
@@ -3302,8 +3351,12 @@ function Game.time.hold(s, who)
     h.task = h.task or Game.every(0.5, function()
         local mine, whose = h.read()
         if mine and whose == h.who then h.write(mine, whose) end   -- still here, while it's this state's hold
-        local at = Game.time.held()
-        if at and Game.cat() then Game.time.setSeconds(at) end
+        h.at = Game.time.held()
+    end)
+    -- The clock set every frame, as C++ holds it: set twice a second it ran about half a game-minute ahead between.
+    h.at = s
+    h.frame = h.frame or Game.onFrame(function()
+        if h.at and Game.cat() then Game.time.setSeconds(h.at) end
     end)
     return Game.time.setSeconds(s)
 end
@@ -3312,18 +3365,47 @@ end
 Game.quests = {}
 function Game.quests.manager() return Game.manager("quests") end
 
--- A quest object's state as a table: { quest, id, tag, graph, class, type, status, result, tracked, xp, rewards }.
+-- Whether one of the manager's quests has this alias, its story id ("Quest.Main.1"). The game's status calls add an
+-- id they're asked about to the save's QuestProgression (seen in game, from C++), so they're only asked about these.
+-- The aliases are kept 2 s (Game.quests.all asks about every quest's), looked for again sooner on a miss (at most
+-- four times a second), so a quest the game has just given is found.
+local aliases = { set = {}, at = -1 }
+local function knownAlias(alias)
+    if type(alias) ~= "string" or alias == "" or alias == "None" then return false end
+    local age = os.clock() - aliases.at
+    if age < 2 and aliases.set[alias] then return true end
+    if age < 0.25 then return false end
+    local set = {}
+    for _, entry in ipairs(Game.list(Game.get(Game.quests.manager(), "Quests"))) do
+        local q = Game.get(entry, "Quest")
+        local ok, graph = pcall(function() return q:GetOuter() end)
+        if ok and valid(graph) then set[Game.tagName(Game.get(graph, "QuestAlias"))] = true end
+    end
+    set.None, set[""] = nil, nil
+    aliases.set, aliases.at = set, os.clock()
+    return set[alias] == true
+end
+
+-- A quest object's state as a table: { quest, id, tag, alias, graph, class, type, status, result, tracked, xp,
+-- rewards }. Its status and result are the game's by its alias (a quest object's own stay None while it's under way),
+-- else the object's own.
 function Game.quests.describe(q)
     if not valid(q) then return nil end
     -- A quest object is named after its class; the quest graph that holds it says which quest it is.
     local okO, graph = pcall(function() return q:GetOuter() end)
     local gname = okO and Game.name(graph) or nil
     local tag = okO and Game.tagName(Game.get(graph, "questTag")) or ""
+    local alias = okO and Game.tagName(Game.get(graph, "QuestAlias")) or ""
+    alias = alias ~= "" and alias ~= "None" and alias or nil
+    local status = alias and Game.quests.status(alias)
+    if status == nil or status == "None" then status = Game.enums.questStatus[Game.get(q, "QuestStatus")] end
+    local result = alias and Game.quests.result(alias)
+    if result == nil then result = Game.enums.questResult[Game.get(q, "QuestResult")] end
     return { quest = q, id = gname and gname:gsub("^QuestGraphProcedural_", ""):gsub("^QuestGraph_", "") or Game.name(q),
-             tag = tag ~= "" and tag ~= "None" and tag or nil, graph = gname, class = Game.className(q),
-             type = Game.enums.questType[Game.get(q, "questType")], status = Game.enums.questStatus[Game.get(q, "QuestStatus")],
-             result = Game.enums.questResult[Game.get(q, "QuestResult")], tracked = Game.get(q, "bTracked"),
-             xp = Game.get(q, "ExperienceReward"), rewards = Game.map(Game.get(q, "QuestRewards")) }
+             tag = tag ~= "" and tag ~= "None" and tag or nil, alias = alias, graph = gname, class = Game.className(q),
+             type = Game.enums.questType[Game.get(q, "questType")], status = status, result = result,
+             tracked = Game.get(q, "bTracked"), xp = Game.get(q, "ExperienceReward"),
+             rewards = Game.map(Game.get(q, "QuestRewards")) }
 end
 
 -- Every quest the manager holds, described (its Quests list holds {Quest, Line, Node} entries).
@@ -3335,12 +3417,27 @@ function Game.quests.all()
     end
     return out
 end
+-- The quest and objective ids your cat's save holds (QuestProgression/<chapter>/<id>), as of the last save: the
+-- game's GetObjectiveStatus adds an id it's asked about, so it's only asked about these.
+local function savedQuestIds()
+    local ids = {}
+    local slot = Game.save.slotData()
+    local chapters = type(slot) == "table" and slot.QuestProgression
+    if type(chapters) == "table" then
+        for _, chapter in pairs(chapters) do
+            if type(chapter) == "table" then for id in pairs(chapter) do ids[id] = true end end
+        end
+    end
+    return ids
+end
 -- A quest's objectives, in order: { objective, id, index, current, target, status, point } (point: where to
--- go, when it has one).
+-- go, when it has one). status is the game's for an objective your cat's save has (nil for the rest: asking would
+-- add it to the save).
 function Game.quests.objectives(q)
     local out = {}
     if not valid(q) then return out end
     local qm, addr = Game.quests.manager(), q:GetAddress()
+    local saved = savedQuestIds()
     for _, o in ipairs(Game.findAll("ObjectiveBase")) do
         local owner = Game.get(o, "QuestBase")
         if valid(owner) and owner:GetAddress() == addr then
@@ -3349,7 +3446,7 @@ function Game.quests.objectives(q)
             local okC, current = Game.call(o, "GetCurrentNumber")
             local okT, target = Game.call(o, "GetTargetNumber")
             local status
-            if id and qm then
+            if id and qm and saved[id] then
                 local okS, s = pcall(function() return qm:GetObjectiveStatus(id) end)
                 status = okS and Game.enums.objectiveStatus[s] or nil
             end
@@ -3404,20 +3501,24 @@ function Game.quests.tracked()
     local ok, q = pcall(function() return qm:GetCurrentTrackedQuest() end)
     return ok and valid(q) and q or nil
 end
--- A quest's status and result by its tag: Game.quests.status("Quest.Main.3") -> "OngoingQuest".
-function Game.quests.status(tag)
+-- A quest's status and result by its story id, its alias: Game.quests.status("Quest.Main.3") -> "OngoingQuest"; nil
+-- for an id none of the manager's quests has (the game's own call would add it to the save).
+function Game.quests.status(alias)
+    if not knownAlias(alias) then return nil end
     local qm = Game.quests.manager()
-    local ok, s = pcall(function() return qm:GetQuestStatus(Game.tag(tag)) end)
+    local ok, s = pcall(function() return qm:GetQuestStatus(Game.tag(alias)) end)
     return ok and Game.enums.questStatus[s] or nil
 end
-function Game.quests.result(tag)
+function Game.quests.result(alias)
+    if not knownAlias(alias) then return nil end
     local qm = Game.quests.manager()
-    local ok, s = pcall(function() return qm:GetQuestResult(Game.tag(tag)) end)
+    local ok, s = pcall(function() return qm:GetQuestResult(Game.tag(alias)) end)
     return ok and Game.enums.questResult[s] or nil
 end
-function Game.quests.successes(tag)
+function Game.quests.successes(alias)
+    if not knownAlias(alias) then return nil end
     local qm = Game.quests.manager()
-    local ok, n = pcall(function() return qm:GetCurrentSuccessCount(Game.tag(tag)) end)
+    local ok, n = pcall(function() return qm:GetCurrentSuccessCount(Game.tag(alias)) end)
     return ok and n or nil
 end
 -- Start or hand out a quest by tag, the way the game's own quest givers do.

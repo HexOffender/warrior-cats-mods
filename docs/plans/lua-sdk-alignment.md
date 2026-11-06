@@ -141,7 +141,7 @@ the other addons are, opt in. Or these calls stay C++'s only.
 
 | Step | State | Pull request |
 |---|---|---|
-| 1. The bugs C++ found | not started | |
+| 1. The bugs C++ found | done | this branch, `claude/lua-fixes` |
 | 2. The game's AI | not started | |
 | 3. Animals and walking cats | not started | |
 | 4. Fights | not started | |
