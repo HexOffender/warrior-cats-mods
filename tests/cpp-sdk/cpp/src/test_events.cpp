@@ -98,6 +98,10 @@ namespace t
             {
                 run_talks_request();
             }
+            else if (what == "ai_move")
+            {
+                run_ai_move_request();
+            }
             else if (what == "ai")
             {
                 run_ai_request();

@@ -665,6 +665,13 @@ didn't clear them in 3 s; cleared, it grazed again. `Hunted` with `HunterPawn` l
 walking cat beside your cat walked about 150 units in 3 s, stood still with `bShouldAllowMovement` cleared, and
 walked on when it was set again.
 
+**Moving one** (step 2): the controller's own `MoveToLocation` (reflected, along the nav mesh: the forest's has the
+animals' roaming in it) moves an animal whose logic is stopped first (its tree's `MoveTo` tasks would send it
+elsewhere); its walk speed is its `CharacterMovement`'s `MaxWalkSpeed` (a roaming animal's is set to the detection
+component's 70, or 400 chasing). Seen: a mouse sent 300 units at 200 cm/s arrived (within 50) in 1.3 s; stopped
+midway (`StopMovement`) it stood; `K2_SetActorRotation` turned it at once. The SDK's own cats
+(`BP_WalkingNPC_Character_Base_C`) come with the walking controller, their tree stopped, and move the same way.
+
 ### Bonds
 
 Worked out on 2026-11-04 (build 26337109) from the exe and in game, for the C++ SDK's `Bonds.hpp`; the addresses are

@@ -79,6 +79,9 @@ namespace wcmods
             double best{1e18};
             std::optional<Vec3> mark, detour;
             int tries{};
+            UObject* goal{};          // a walk after another actor: the actor, its class (to know it's still that one)
+            UClass* goal_class{};
+            std::optional<Vec3> goal_at;   // and where it was when the move was last asked for
         };
         struct NpcState
         {
@@ -450,31 +453,42 @@ namespace wcmods
             if (avoid && r == 0) r = go(false);
             return r;
         }
-        // One look at a walk, every 0.1 s: arrived, or stalled (the controller ended the move far away, it stood still
-        // a second, or got no closer in 8 s) and a 150 cm step to a clear side before asking for the path again; after
-        // five such stalls it's blocked.
-        inline auto step_walk(NpcState& n) -> void
+        // One look at a walk of any actor an AI controller moves, every 0.1 s: its end when it's over, else nullopt.
+        // Arrived (within its radius), or stalled (the controller ended the move far away, it stood still a second, or
+        // got no closer in 8 s) and a 150 cm step to a clear side before asking for the path again; after five such
+        // stalls it's blocked. A walk after another actor (`goal`) follows it, asking again as it moves; the goal gone,
+        // the walk is cancelled.
+        inline auto walk_step(UObject* a, WalkState& w) -> std::optional<WalkResult>
         {
-            if (!n.walk) return;
-            auto& w = *n.walk;
-            UObject* a = npc_alive(n) ? n.actor : nullptr;
-            if (!a) return finish_walk(n, WalkResult::Cancelled);
             auto l = location(a);
-            if (!l) return;
+            if (!l) return std::nullopt;
+            auto now = std::chrono::steady_clock::now();
+            if (w.goal)
+            {
+                if (!object_staying(w.goal, w.goal_class)) return WalkResult::Cancelled;
+                if (auto g = location(w.goal))
+                {
+                    w.to = *g;
+                    if (!w.detour && (!w.goal_at || std::hypot(g->x - w.goal_at->x, g->y - w.goal_at->y) > 100))
+                    {
+                        w.goal_at = *g;
+                        if (issue_move(a, w.to, w.options.radius, w.options.avoid) == 0) return WalkResult::Blocked;
+                    }
+                }
+            }
             double d = std::hypot(w.to.x - l->x, w.to.y - l->y);
             if (d <= w.options.radius + 15)
             {
                 if (UObject* c = get(a, L"Controller").object) call_reflected(c, STR("StopMovement"));
-                return finish_walk(n, WalkResult::Arrived);
+                return WalkResult::Arrived;
             }
-            auto now = std::chrono::steady_clock::now();
             if (w.detour)
             {
-                if (std::hypot(w.detour->x - l->x, w.detour->y - l->y) > 35 && now < w.detour_till) return;
+                if (std::hypot(w.detour->x - l->x, w.detour->y - l->y) > 35 && now < w.detour_till) return std::nullopt;
                 w.detour.reset();
                 w.mark.reset();
-                if (issue_move(a, w.to, w.options.radius, w.options.avoid) == 0) finish_walk(n, WalkResult::Blocked);
-                return;
+                if (issue_move(a, w.to, w.options.radius, w.options.avoid) == 0) return WalkResult::Blocked;
+                return std::nullopt;
             }
             bool stopped = false;
             if (now - w.started > std::chrono::milliseconds(500))
@@ -499,8 +513,8 @@ namespace wcmods
                 stopped = true;
                 w.best_at = now;
             }
-            if (!stopped) return;
-            if (!w.options.avoid || ++w.tries > 5) return finish_walk(n, WalkResult::Blocked);
+            if (!stopped) return std::nullopt;
+            if (!w.options.avoid || ++w.tries > 5) return WalkResult::Blocked;
             double fx = w.to.x - l->x, fy = w.to.y - l->y, len = std::max(1.0, std::hypot(fx, fy));
             fx /= len;
             fy /= len;
@@ -517,7 +531,16 @@ namespace wcmods
             }
             w.detour = best.value_or(Vec3{l->x - fx * 150, l->y - fy * 150, l->z});
             w.detour_till = now + std::chrono::milliseconds(1500);
+            w.goal_at.reset();   // after the step, the goal is asked for again
             issue_move(a, *w.detour, 20, false);
+            return std::nullopt;
+        }
+        inline auto step_walk(NpcState& n) -> void
+        {
+            if (!n.walk) return;
+            UObject* a = npc_alive(n) ? n.actor : nullptr;
+            if (!a) return finish_walk(n, WalkResult::Cancelled);
+            if (auto r = walk_step(a, *n.walk)) finish_walk(n, *r);
         }
         // Each frame while the cats have prompts or a mod listens for Interact: the nearest cat in reach with a prompt
         // gets the game's prompt widget (its contextual menu's own class, on the HUD's exploration layer, with the

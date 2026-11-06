@@ -1,15 +1,20 @@
 // Ai.hpp: the game's AI. A roaming animal or a clan cat walking its path has an AI controller running one of the game's
 // behaviour trees (BT_Enemy for an animal, BT_CombatEnemy in its fights, BT_WalkingNPC for a walking cat), which keeps
 // what it knows on its blackboard (BB_Enemy...). From C++: an AI's tree and what it's doing now, its blackboard's keys
-// read and written, its logic stopped and started again, and the game's trees read as data (docs/plans/cpp-sdk-ai.md).
+// read and written, its logic stopped and started again, the game's trees read as data, and an AI sent to a place or
+// after another actor (docs/plans/cpp-sdk-ai.md).
 // Game thread only. WCMods.hpp includes it; docs/SDK.md, "C++ mods", documents every call.
 //
 //   for (UObject* a : wcmods::fight_animals(2000)) wcmods::stop_ai(a);           // the animals near your cat stand still
-//   wcmods::set_blackboard(mouse, L"PointOfInterest", wcmods::Vec3{x, y, z});     // somewhere for it to go and look
+//   wcmods::move_to(mouse, wcmods::Vec3{x, y, z});                                // it walks there and stands
 #pragma once
 
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <format>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -17,7 +22,9 @@
 #include <vector>
 
 #include <WCMods/Core.hpp>
+#include <WCMods/Events.hpp>
 #include <WCMods/Game.hpp>
+#include <WCMods/Npcs.hpp>
 #include <WCMods/Reflect.hpp>
 #include <WCMods/World.hpp>
 
@@ -341,4 +348,158 @@ namespace wcmods
     }
     // A tree's blackboard: its asset's name (L"BB_Enemy").
     inline auto ai_tree_blackboard(UObject* tree) -> std::wstring { return name(get(tree, L"BlackboardAsset").object); }
+
+    // ============================================================================================ moving
+    // How move_to moves an AI: at `speed` cm/s (its walk speed set; 0 keeps the one it has, and a roaming animal's own
+    // is a slow 70), close enough within `radius` cm, along the nav mesh round obstacles unless `avoid` is false (a
+    // straight line), and its logic started again when the move ends (`restart_after`); else it stands there with its
+    // logic stopped until restart_ai().
+    struct MoveOptions
+    {
+        double speed{0};
+        double radius{50};
+        bool avoid{true};
+        bool restart_after{false};
+    };
+    namespace detail
+    {
+        struct AiMove
+        {
+            UObject* actor{};
+            UClass* cls{};
+            WalkState walk;
+            bool restart_after{};
+        };
+        struct AiMoves
+        {
+            std::vector<std::shared_ptr<AiMove>> all;
+            std::optional<TimerId> ticker;
+        };
+        inline auto ai_moves() -> AiMoves&
+        {
+            static AiMoves m;
+            return m;
+        }
+        inline auto end_move(const std::shared_ptr<AiMove>& m, WalkResult result) -> void
+        {
+            auto& all = ai_moves().all;
+            all.erase(std::remove(all.begin(), all.end(), m), all.end());
+            if (object_staying(m->actor, m->cls))
+            {
+                if (result != WalkResult::Arrived)
+                    if (UObject* c = ai_controller(m->actor)) call_reflected(c, STR("StopMovement"));
+                if (m->restart_after) restart_ai(m->actor);
+            }
+            if (auto done = std::move(m->walk.done)) guarded(L"a move's done", [&] { done(result); });
+        }
+        inline auto ai_move_of(UObject* actor) -> std::shared_ptr<AiMove>
+        {
+            for (auto& m : ai_moves().all)
+                if (m->actor == actor) return m;
+            return nullptr;
+        }
+        inline auto start_ai_moves() -> void
+        {
+            auto& s = ai_moves();
+            if (s.ticker) return;
+            s.ticker = every(0.1, [] {
+                auto all = ai_moves().all;   // a copy: a move's done may start another
+                for (auto& m : all)
+                    guarded(L"a move", [&] {
+                        if (!object_staying(m->actor, m->cls)) return end_move(m, WalkResult::Cancelled);
+                        if (auto r = walk_step(m->actor, m->walk)) end_move(m, *r);
+                    });
+            });
+        }
+        inline auto begin_move(UObject* actor, Vec3 to, UObject* goal, const MoveOptions& o, std::function<void(WalkResult)> done) -> bool
+        {
+            if (!assert_game_thread(L"move_to") || !actor || actor == player() || !ai_controller(actor)) return false;
+            if (goal && !object_staying(goal, nullptr)) return false;
+            if (auto old = ai_move_of(actor)) end_move(old, WalkResult::Cancelled);
+            stop_ai(actor);   // its tree would send it elsewhere
+            if (o.speed > 0)
+                if (UObject* mv = get(actor, L"CharacterMovement").object) set(mv, L"MaxWalkSpeed", o.speed);
+            auto m = std::make_shared<AiMove>();
+            m->actor = actor;
+            m->cls = actor->GetClassPrivate();
+            m->restart_after = o.restart_after;
+            m->walk.to = to;
+            m->walk.options = WalkOptions{o.speed, o.radius, o.avoid};
+            m->walk.done = std::move(done);
+            m->walk.started = m->walk.best_at = std::chrono::steady_clock::now();
+            if (goal)
+            {
+                m->walk.goal = goal;
+                m->walk.goal_class = goal->GetClassPrivate();
+                m->walk.goal_at = to;
+            }
+            if (issue_move(actor, to, o.radius, o.avoid) == 0)
+            {
+                end_move(m, WalkResult::Blocked);
+                return false;
+            }
+            ai_moves().all.push_back(m);
+            start_ai_moves();
+            return true;
+        }
+    } // namespace detail
+
+    // Send an AI (a roaming animal, a walking cat, a mod's cat) to a place, or after another actor (it follows it as
+    // it moves, until it's within the radius), through its controller's own MoveToLocation, along the nav mesh: its
+    // logic is stopped first (its tree would send it elsewhere), and when the move ends `done(result)` is called:
+    // Arrived; Blocked (no path, or stuck after five steps aside); Cancelled (stop_moving(), another move_to, it or
+    // the goal gone). False, with `done` told Blocked, when the controller can't go there at all; false without
+    // calling `done` for your cat (no AI), nullptr or a goal that's gone. A mod's own cat has Npc::walk_to, which
+    // keeps its walk across respawns: use one or the other on it.
+    //   wcmods::move_to(mouse, wcmods::Vec3{x, y, z}, {.speed = 200, .restart_after = true});
+    inline auto move_to(UObject* actor, Vec3 to, MoveOptions options = {}, std::function<void(WalkResult)> done = {}) -> bool
+    {
+        return detail::begin_move(actor, to, nullptr, options, std::move(done));
+    }
+    inline auto move_to(UObject* actor, UObject* goal, MoveOptions options = {}, std::function<void(WalkResult)> done = {}) -> bool
+    {
+        auto at = location(goal);
+        if (!at) return false;
+        return detail::begin_move(actor, *at, goal, options, std::move(done));
+    }
+    // End a move (its done told Cancelled) and stop the AI where it is (its controller's StopMovement: a move of the
+    // game's own too). False without an AI.
+    inline auto stop_moving(UObject* actor) -> bool
+    {
+        if (!assert_game_thread(L"stop_moving")) return false;
+        UObject* c = ai_controller(actor);
+        if (!c) return false;
+        if (auto m = detail::ai_move_of(actor)) detail::end_move(m, WalkResult::Cancelled);
+        return call(c, STR("StopMovement"));
+    }
+    // Whether an AI is moving: a move_to's under way, or one of its tree's own (its controller's GetMoveStatus is
+    // Moving).
+    inline auto moving(UObject* actor) -> bool
+    {
+        if (!assert_game_thread(L"moving")) return false;
+        if (detail::ai_move_of(actor)) return true;
+        auto st = call_reflected(ai_controller(actor), STR("GetMoveStatus"));
+        return st && st->get(L"ReturnValue").number() == 3;   // EPathFollowingStatus::Moving
+    }
+    // Turn an actor to face a place or another actor, now (its yaw, and its controller's when it has one). False when
+    // it isn't there.
+    inline auto face(UObject* actor, Vec3 at) -> bool
+    {
+        if (!assert_game_thread(L"face")) return false;
+        auto here = location(actor);
+        if (!here) return false;
+        const double yaw = std::atan2(at.y - here->y, at.x - here->x) * 180.0 / 3.14159265358979323846;
+        auto r = call_reflected(actor, STR("K2_SetActorRotation"), [&](Params& p) {
+            set(p.nth(0), L"Yaw", yaw);
+            p.set_nth(1, Value::of(false));
+        });
+        if (UObject* c = get(actor, L"Controller").object)
+            call_reflected(c, STR("SetControlRotation"), [&](Params& p) { set(p.nth(0), L"Yaw", yaw); });
+        return r.has_value();
+    }
+    inline auto face(UObject* actor, UObject* other) -> bool
+    {
+        auto at = location(other);
+        return at && face(actor, *at);
+    }
 } // namespace wcmods

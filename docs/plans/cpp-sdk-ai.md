@@ -51,8 +51,8 @@ controller's `ReceiveMoveCompleted`.
 whether the SDK's own cats get a controller (`AutoPossessAI`, or one spawned for them) and walk on the navigation
 mesh around the camps.
 
-**The calls.** `move_to(actor, place)`, `move_to(actor, other)`, `stop_moving(actor)`, `moving(actor)`,
-`on_move_done(actor, fn)`; `face(actor, place or other)`.
+**The calls.** `move_to(actor, place)`, `move_to(actor, other)` (with the move's end passed to `done`, in place of
+an `on_move_done`), `stop_moving(actor)`, `moving(actor)`; `face(actor, place or other)`.
 
 **Proof.** In game: an animal and one of the mod's cats each walk to a place and stop there, the end reported.
 
@@ -132,8 +132,8 @@ it, and going on after.
 
 | Step | State | Pull request |
 |---|---|---|
-| 1. An AI's keys and logic | done: `Ai.hpp`: an AI's controller, brain, tree (the component's `InstanceStack`, a hidden member, signed) and active node; its blackboard's keys read and written by type; its logic stopped (it stays stopped through the game's sleep and wake) and restarted; the game's eight trees read as data, which say what each key does. Seen in game | this branch, `claude/cpp-ai-keys` |
-| 2. Moving an animal or a cat | not started | |
+| 1. An AI's keys and logic | done: `Ai.hpp`: an AI's controller, brain, tree (the component's `InstanceStack`, a hidden member, signed) and active node; its blackboard's keys read and written by type; its logic stopped (it stays stopped through the game's sleep and wake) and restarted; the game's eight trees read as data, which say what each key does. Seen in game | #145 |
+| 2. Moving an animal or a cat | done: `move_to` a place or after another actor through the controller's own `MoveToLocation` (the AI's logic stopped first, its speed set or kept, given back at the end on request), `stop_moving`, `moving`, `face`; the walk engine (arrival, stalls, steps aside) shared with `Npc::walk_to`. Seen in game on an animal and a mod's cat | this branch, `claude/cpp-ai-move` |
 | 3. Noticing and ignoring your cat | not started | |
 | 4. Swapping trees | not started | |
 | 5. A fight's AI | not started | |
