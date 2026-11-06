@@ -501,13 +501,32 @@ or hidden animal doesn't move its bones until it's in view (the engine's way), t
 |---|---|
 | `Game.quests.all()` | Every quest the quest manager holds, each as `describe` gives it |
 | `Game.quests.describe(q)` | A quest object as a table: `{quest, id, tag, alias, graph, class, type, status, result, tracked, xp, rewards}`. `quest` is the object itself; `id` comes from its quest graph (`"Tutorial"`, `"Deliver"`, `"RiverClan_Unique1"`), `tag` is the graph's quest tag and `alias` its story id (`"Quest.Main.1"`; nil without one), `graph` the graph's name and `class` the quest's class; `rewards` is `{tag = count}`. `status` and `result` are the game's by the alias, which it keeps a quest's progress by (the quest object's own stay None while it's under way), else the object's own. Nil for no quest |
-| `Game.quests.objectives(q)` | A quest's objectives, in order: `{objective, id, index, current, target, status, point}` (`current` and `target` count it up, `point` is where to go when it has one). `status` is the game's for an objective your cat's save has, nil for the rest (asking would add it to the save). [Costly](#how-it-reaches-the-game): it looks through every objective in the game |
+| `Game.quests.objectives(q)` | A quest's objectives, in order: `{objective, id, index, current, target, status, point, targets}` (`current` and `target` count it up, `point` is where to go when it has one). `status` is the game's for an objective your cat's save has, nil for the rest (asking would add it to the save). [Costly](#how-it-reaches-the-game): it looks through every objective in the game. `targets` are a gather objective's, `{ {tag, current, target, actors}, ... }`: the things to collect, out in the world (empty for the other objectives) |
 | `Game.quests.tracked()` | The quest being followed (the object, for `describe` and `objectives`), or nil |
 | `Game.quests.manager()` | The game's quest manager, for `Game.get` and `Game.call` on what these don't wrap |
 | `Game.quests.report(id, {title, status, objective, progress, by, description})` | List a quest of the mod's own on the mod menu's Quests page: `status` is `"available"`, `"active"` or `"done"`; `by` the mod's name; `description` an optional sentence about it. Report again when it changes; `nil` takes it off. `Game.quests.reported()` reads them back: `{id, title, status, objective, progress, by, description}` each, `description` `""` when there's none (a page from before it was a field shows the first five) |
 | `Game.quests.status(alias)`, `.result(alias)`, `.successes(alias)` | By the quest's story id, its alias (`describe`'s `alias`, `"Quest.Main.3"`): `"QuestAvailable"`, `"OngoingQuest"`, … Nil for an id none of the quest manager's quests has: the game's own call adds the id it's asked about to the save's `QuestProgression` (seen from C++) |
-| `Game.quests.start(tag)`, `.give(tag)`, `.track(quest, on)` | The quest manager's own StartQuestOfTag, GiveQuestOfTag and SetTracked: true, or false and the error. Not tried yet; they can move the story on |
+| `Game.quests.start(tag)`, `.give(tag)`, `.track(quest, on)` | The quest manager's own StartQuestOfTag, GiveQuestOfTag and SetTracked: true, or false and the error. They can move the story on. `start` was seen putting the gather quest (`"Quest.Procedural.Survival.Gather"`, Quest.Main.1) under way |
+| `Game.quests.current(q)` | The objective a quest is on: the one whose targets are out in the world (a gather objective's), else the first the game says is in progress; nil when neither. A fight's or an escort's objective isn't found that way, because the game said NotStarted for a live one (seen from C++) |
+| `Game.quests.collect(target)` | Collect one of an objective's targets (an actor from its `targets`) the way the player does. Your cat is put on it and the game's Interact is pressed 0.8 s later, so the game's own pickup counts it (the HUD's "1/3", the quest's events, and any other target in reach). Your cat goes back where it was at 1.6 s. True, or false and why: no cat or target, or a den, an interactable or a quest giver within 2 m of it, which Interact would use instead |
+| `Game.quests.finishObjective(objective, succeeded)` | Finish an objective as the game does when its last target is in: succeeded, or failed with `false`. The quest goes on to its next objective or is complete, and the game's own flow follows (the "Return to the Camp now?" question, the giver's turn-in). It moves the story on |
+| `Game.quests.alias(q)` | A quest's story id (`"Quest.Main.1"`), which the game keeps its progress by |
 | `Game.quests.chapter()` | `"Chapter00"` |
+
+Seen in game, on a backed-up save, as C++'s test does: the gather quest started by its tag, its objective's three
+Bedding Moss targets out in the world, one collected (the count went up), the objective finished, and the quest complete
+with Success.
+
+### The story
+
+| Call | Gives or does |
+|---|---|
+| `Game.scenes.list()` | Every scene the game can play: `{ {tag, type, kind, sequence, hidesHud, hidesActors}, ... }`. `type` is the sequencer's kind, 1 to 7, and `kind` its name: Intro, Outro, CutScene, Podium, Gameplay, Combat, Quest. Most (39 of 60 on build 26337109) are the fight cameras (Combat), and a few are exploration shots (Gameplay). Playing one is C++'s `play_scene`, because the game's call for it is native |
+| `Game.scenes.playing()` | The scenes playing now, by tag |
+| `Game.scenes.seen()`, `Game.scenes.seen(name)` | The story scenes your cat has watched, by the save's names (`"ProphecyIntro"`, `"RankUpApprentice"`), as of the last save; or whether it has watched one |
+| `Game.scenes.skip()` | Skip the scene playing, as holding the skip button does: the skip popup's hold button pressed, then let go 2.5 s later. False when the popup isn't up (none playing, or one the game won't let you skip) |
+| `Game.progression(path)` | A value of your cat's progression in the save, by its path under the slot's GameplayProgression (`"Chapter00/L_WorldMap_01_P"`, `"FreshKill/Cycle"`), as of the last save; nil when it isn't there |
+| `Game.mood(primary, sub)`, `Game.setMood(primary, sub, value)` | A mood value the game keeps (the save manager's MoodData: a whole number under a primary and a sub key), or nil when it hasn't one; set one. `mood` asks `HasMoodData` first, because the game's own `GetMoodData` writes a missing key into the save as 0 |
 
 ### Fights
 

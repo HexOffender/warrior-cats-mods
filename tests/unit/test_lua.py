@@ -713,7 +713,7 @@ def test_every_fight_call_is_documented():
     are one local table (the main chunk is near Lua's 200 locals there)."""
     import os
     lua = game.lua()
-    block = lua[lua.index("-- Fights from a script (the Lua plan's step 4;"):lua.index("the game's developer switches")]
+    block = lua[lua.index("-- Fights and the story from a script (the Lua plan's steps 4 and 5;"):lua.index("the game's developer switches")]
     names = re.findall(r"^    function Game\.combat\.(\w+)\(", block, re.M)
     assert {"start", "attack", "rest", "flee", "finish", "dilemma", "answerDilemma", "autoFight", "onDamage", "moves"} <= set(names), names
     path = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "scripting.md")
@@ -722,6 +722,12 @@ def test_every_fight_call_is_documented():
     section = docs[docs.index("### Fights"):docs.index("### The game's developer switches")]
     for name in names + ["command"]:
         assert f".{name}(" in section, name
+    # the story's calls (step 5) are in the same block: Quests and The story
+    story = docs[docs.index("### Quests"):docs.index("### Fights")]
+    for name in ("current", "collect", "finishObjective", "alias"):
+        assert f"Game.quests.{name}(" in story, name
+    for name in re.findall(r"^    function Game\.scenes\.(\w+)\(", block, re.M) + ["progression", "mood", "setMood"]:
+        assert f".{name}(" in story or f"Game.{name}(" in story, name
     assert "    local F = {}" in block and not re.search(r"(?m)^    local (?!F = )", block)
 
 
