@@ -225,6 +225,23 @@ ginger one, palette mods' changes in).
 **Proof:** unit tests for the tables from small CSVs; in game, the C++ test mod reads the 90 prefixes, 27 suffixes,
 31 banned names and 14 look tables as the game ships them, and the coat colours as Lua reads them.
 
+### S7. The day
+
+Added on 2026-11-07 at the owner's request ("add the time based functions you just described and have the clock work
+in a cycle with cats doing different things"): the game's clock runs (72 times real time, a day of 20 minutes) but
+nothing follows it, and the sky follows the area your cat is in, so there's no day and night to see.
+
+**Found:** the game state's copy of the clock's speed (the tuning is read once, as the world starts), which of the sky's
+presets shows (its post-process volumes), and that a preset's numbers can be blended toward the Night preset's
+and put on again without upsetting the game's own skies (the inventory's, the fades between areas).
+
+**Calls:** the parts of the day (`DayPart`: dawn, morning, sunhigh, afternoon, sundown, night, with the times they
+begin), `on_day_part` and `on_new_day`, `set_day_length`, `night_amount`, and `day_sky`: dusk, night and dawn over each
+area's own sky, by the clock.
+
+**Proof:** in game, the calls as the clock is set from one time to another, a day of 120 s running ten times faster,
+and the sky at noon, dusk, night and dawn (pictures), with the inventory's own sky still its own.
+
 Each S step updates `docs/SDK.md`, its header's comments and the in-game tests (`tests/game/test_cpp_sdk.py`).
 
 ## Part 2: the mod (wcmods-clan-life)
@@ -364,7 +381,7 @@ on your yes).
 
 ## The order
 
-S0 first: the combat fixes you asked for need the new build too, and come straight after it. Then S6 (the mod's
+S0 first: the combat fixes you asked for need the new build too, and come straight after it. S7 (the day) was added on 2026-11-07 and comes before step 3, whose schedule follows it. Then S6 (the mod's
 step 1 needs it), and S1 to S5 in turn, with the mod's step 1 alongside them. Step 1b (genetics) follows step 1. Steps 2 to 9 follow in order, each
 after the SDK steps it uses (2 after S3 and S4, 3 after S1, 4 after S2, 5 after S5).
 

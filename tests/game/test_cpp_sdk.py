@@ -33,11 +33,13 @@ def _results(agent):
     path = os.path.join(_folder(agent), "results.json")
     if not os.path.isfile(path):
         return None
-    with open(path, encoding="utf-8") as f:
-        try:
+    try:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
-        except ValueError:   # half written
-            return None
+    except ValueError:   # half written
+        return None
+    except PermissionError:   # the mod putting a new one in its place at that moment (Windows)
+        return None
 
 
 def _ready(agent, phase, timeout=30):
@@ -2232,3 +2234,87 @@ def test_save_and_its_hash(agent):
              for who in ("save.storage_address", "save.save_manager_address")
              if save.next_hash(old, datetime.datetime.fromtimestamp(t, datetime.timezone.utc), int(v[who])) == new]
     assert [who for _, who in found] == ["save.storage_address"], (v, found)
+
+
+
+def test_day(agent):
+    """Day.hpp in the game: the parts of the day at their edges and how dark each time is (0 by day, 1 by night,
+    half way in the middle of the dusk and the dawn, never a step); the calls as the clock is set from one time to
+    another (dawn begins as the clock runs into it; a new day as it runs past midnight, and from the evening to the
+    next morning, but not set back a few hours); the day's length (1200 s as the game ships, a day of 120 s runs the
+    clock ten times faster, and the game's back)."""
+    _close_screens(agent)
+    r = _request(agent, "day", timeout=60)
+    assert not _failed(r, "day"), _failed(r, "day")
+    v = {k[len("day."):]: x for k, x in r["values"].items() if k.startswith("day.")}
+    a = v["amounts"]
+    assert a["12.000000"] == 0 and a["19.500000"] == 0 and a["21.000000"] == 1 and a["23.000000"] == 1, a
+    assert a["3.000000"] == 1 and a["5.000000"] == 1 and a["7.000000"] == 0, a
+    assert abs(a["20.250000"] - 0.5) < 1e-6 and abs(a["6.000000"] - 0.5) < 1e-6, a
+    assert v["biggest_step"] < 0.01, v["biggest_step"]
+    assert v["past_midnight"] == 1, v
+    assert v["to_morning"] == "morning" and v["set_back"] == 1, v
+    assert v["next_morning"] == 2 and v["next_morning_part"] == "dawn", v
+    assert v["speed"] == 72 and abs(v["length_game"] - 1200) < 1, v
+    assert 60 < v["rate_game"] < 85, v
+    assert v["length_too_short"] is False and v["length_set"] is True and abs(v["length_now"] - 120) < 0.1, v
+    assert 600 < v["rate_fast"] < 850, v
+    assert abs(v["length_back"] - 1200) < 1 and 60 < v["rate_back"] < 85, v
+
+
+def test_day_sky(agent):
+    """Day.hpp's sky that follows the clock, with the clock held at each time in turn and a picture of each: at noon
+    the area's own sky as the game has it; at the middle of the dusk and of the dawn its light and fog half way to the
+    Night preset's; at night the Night preset's, while the sky still shows the area's preset (so the game's own fades and
+    skies stay as they are); the inventory's own sky while it's up, and the night again after; darkest 0.5 half way at
+    night; off, the area's own sky back at night; on again, the night again."""
+    _close_screens(agent)
+    seen, shots = {}, {}
+    for name in ("noon", "dusk", "night", "dawn", "half"):
+        r = _request(agent, "day_sky_" + name, timeout=20)
+        assert not _failed(r, "day_sky_" + name), _failed(r, "day_sky_" + name)
+        seen[name] = r["values"]["day_sky." + name]
+        shots[name] = agent.shot()
+    # back to the whole night (half put darkest 1 back): the inventory's own sky, then the night again
+    r = _request(agent, "day_sky_night", timeout=20)
+    agent.key("I")
+    time.sleep(2)
+    r = _request(agent, "day_sky_read", timeout=20)
+    seen["inventory"] = r["values"]["day_sky.read"]
+    shots["inventory"] = agent.shot()
+    _close_screens(agent)
+    time.sleep(3)
+    r = _request(agent, "day_sky_read", timeout=20)
+    seen["after_inventory"] = r["values"]["day_sky.read"]
+    r = _request(agent, "day_sky_off", timeout=20)
+    seen["off"] = r["values"]["day_sky.off"]
+    shots["off"] = agent.shot()
+    # on again: the night again, then off for good
+    r = _request(agent, "day_sky_again", timeout=20)
+    seen["again"] = r["values"]["day_sky.again"]
+    _request(agent, "day_sky_off", timeout=20)
+    print({k: {f: x for f, x in s.items()} for k, s in seen.items()}, shots)
+    noon, night = seen["noon"], seen["night"]
+    area = noon["shown"]
+    assert area and noon["on"] and noon["amount"] == 0, noon
+    # noon: the area's own (the copy as the game had it)
+    assert abs(noon["light"] - noon["area_sun"]) < 0.01, noon
+    day_light, night_light = noon["light"], noon["night_sun"]
+    day_fog, night_fog = noon["fog"], noon["night_fog"]
+    assert abs(day_light - night_light) > 1, noon
+
+    def between(s, f):
+        return day_light + (night_light - day_light) * f, day_fog + (night_fog - day_fog) * f
+
+    for name, f in (("dusk", 0.5), ("night", 1), ("dawn", 0.5), ("half", 0.5)):
+        s = seen[name]
+        light, fog = between(s, f)
+        assert s["shown"] == area, (name, s)
+        assert abs(s["light"] - light) < 0.05 and abs(s["fog"] - fog) < 0.01, (name, s, light, fog)
+    assert seen["inventory"]["shown"] != area, seen["inventory"]
+    after = seen["after_inventory"]
+    assert after["shown"] == area and abs(after["light"] - night_light) < 0.05, after
+    off = seen["off"]
+    assert off["on"] is False and abs(off["light"] - day_light) < 0.01 and abs(off["fog"] - day_fog) < 0.01, off
+    again = seen["again"]
+    assert again["on"] and abs(again["light"] - night_light) < 0.05 and abs(again["fog"] - night_fog) < 0.01, again

@@ -69,7 +69,9 @@ namespace t
         out.set("failed", failed);
         out.set("checks", checks);
         out.set("values", values);
-        write_file(mod().folder / L"results.json", out.dump(2) + "\n");
+        // the Python side reading it at that moment makes the rename fail (Windows): again, a little later
+        const std::string text = out.dump(2) + "\n";
+        for (int tries = 0; tries < 4 && !write_file(mod().folder / L"results.json", text); ++tries) Sleep(10);
     }
 } // namespace t
 

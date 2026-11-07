@@ -1094,16 +1094,18 @@ namespace wcmods
         }
         // The sky's copy of a preset's row: its map's 0x168-byte slots hold the preset (a byte, +0) and the row from +8
         // (its vtable first, as the struct's reflected layout has it). nullptr without the sky, the map or the preset.
-        inline auto sky_copy(std::wstring_view preset) -> uint8_t*
+        // In a sky already found (sky() looks through every object).
+        inline auto sky_copy_in(UObject* sky_actor, std::wstring_view preset) -> uint8_t*
         {
             const int64_t want = sky_preset_value(preset);
-            auto* map = member<uint8_t>(sky(), L"/Script/Wrc.WrcSkyboxActor", L"WCM_Presets");
+            auto* map = member<uint8_t>(sky_actor, L"/Script/Wrc.WrcSkyboxActor", L"WCM_Presets");
             std::vector<const uint8_t*> slots;
             if (want < 0 || !set_slots(map, 0x168, slots)) return nullptr;
             for (const uint8_t* e : slots)
                 if (*e == static_cast<uint8_t>(want)) return const_cast<uint8_t*>(e) + 8;
             return nullptr;
         }
+        inline auto sky_copy(std::wstring_view preset) -> uint8_t* { return sky_copy_in(sky(), preset); }
         // (preset, field) -> the game's value, and the sky it was taken from: a new level's sky makes its own copy,
         // so a value kept from another sky isn't written into it.
         struct SkyChange

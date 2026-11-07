@@ -37,6 +37,8 @@
 //                       colour slots' colours
 //   WCMods/Items.hpp    what each item is, and pickups dropped on the ground for your cat to collect
 //   WCMods/Animations.hpp mods' own animations and the game's sequences, played and stopped on any cat or animal
+//   WCMods/Day.hpp      the day: its parts (dawn, sunhigh, night...), calls as each begins and as a new day starts,
+//                       the day's length, and a sky that follows the clock
 //   WCMods/Dens.hpp     the clans' dens: their hotspots, and decorations built, timed and taken off
 //   WCMods/Map.hpp      the HUD's quest banner and objective, map markers, the clock held, places to travel, the camera
 //   WCMods/Effects.hpp  visual effects (any Niagara system, the game's own by name), movement values, the scent sense
@@ -69,6 +71,7 @@
 #include <WCMods/Looks.hpp>
 #include <WCMods/Items.hpp>
 #include <WCMods/Animations.hpp>
+#include <WCMods/Day.hpp>
 #include <WCMods/Dens.hpp>
 #include <WCMods/Map.hpp>
 #include <WCMods/Effects.hpp>
