@@ -142,6 +142,10 @@ namespace t
             {
                 run_moves_request();
             }
+            else if (what == "carry")
+            {
+                run_carry_request();
+            }
             else if (what == "drop")
             {
                 run_items_request();

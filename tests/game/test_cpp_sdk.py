@@ -1558,6 +1558,33 @@ def test_moves(agent):
     assert v["walking_moves"] is True
 
 
+def test_carry(agent):
+    """Carry.hpp in the game, on a cat of the mod's own in front of your cat: each kind carried (each dropping the one
+    before) is a component of the cat's attached to its mesh at `mouth`, with the kind's model, at the jaws, at its
+    scale, with no collision, read back by name; with a mouse it puts its head down to eat (the mouse goes down with
+    it, still in its jaws) and walks with it; the mouse moved bigger in its jaws, then dropped; your cat carries moss;
+    a cat removed carries nothing; nothing made for what isn't a cat or a path that isn't a mesh."""
+    _close_screens(agent)
+    r = _request(agent, "carry", timeout=60)
+    assert not _failed(r, "carry"), _failed(r, "carry")
+    v = {k[len("carry."):]: x for k, x in r["values"].items() if k.startswith("carry.")}
+    kinds = v["kinds"]
+    assert sorted(kinds) == sorted(["mouse", "rabbit", "bird", "squirrel", "fish", "moss", "herb", "feathers"]), kinds
+    for name, k in kinds.items():
+        assert k["made"] and k["name"] == name and k["attached"] and k["socket"] == "mouth", (name, k)
+        assert k["path"].split(".")[-1] in k["model"], (name, k)
+        # at the jaws (the model's origin, a few cm from the bone), at the kind's scale, with no collision
+        assert k["from_mouth"] < 8 and abs(k["scale"] - k["place_scale"]) < 1e-6 and k["collision"] == 0, (name, k)
+        assert k["before_gone"], (name, k)
+    # the head down to eat takes the mouse down with it, still in the jaws; and along on a walk
+    assert v["eat_lower"] > 2 and v["eat_from_mouth"] < 8, (v["eat_lower"], v["eat_from_mouth"])
+    assert v["walked"] > 50 and v["walk_from_mouth"] < 8 and v["walk_carrying"] == "mouse", v
+    assert v["dropped"] is True and v["dropped_gone"] is True and v["after_drop"] == "" and v["drop_again"] is False, v
+    me = v["yours"]
+    assert me["attached"] and me["socket"] == "mouth" and "SM_GPE_MossMat" in me["model"], me
+    assert me["from_mouth"] < 8 and v["yours_name"] == "moss", (me, v["yours_name"])
+
+
 def test_looks(agent):
     """Looks.hpp in the game, on the test cat (Emberpaw, ShadowClan): the look struct's defaults are the game's; the
     save's text read; the fur colour slot and the tail changed through the game's own SetDefaultCustomData, and the

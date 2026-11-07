@@ -17,6 +17,7 @@
 #include <string_view>
 #include <vector>
 
+#include <WCMods/Carry.hpp>
 #include <WCMods/CatMoves.hpp>
 #include <WCMods/Core.hpp>
 #include <WCMods/Events.hpp>
@@ -394,6 +395,11 @@ namespace wcmods
         auto pose(Pose p) -> bool { return wcmods::set_pose(actor(), p); }
         auto play(Move move, CatMoveOptions options = {}) -> UObject* { return wcmods::play_move(actor(), move, options); }
         auto stop_move(double blend = 0.25) -> void { wcmods::stop_move(actor(), blend); }
+        // Something in its jaws (Carry.hpp: prey, moss, a herb...), dropped, and what it carries: as carry,
+        // drop_carried and carrying on its actor.
+        auto carry(Carried what, std::optional<CarryPlace> place = std::nullopt) -> UObject* { return wcmods::carry(actor(), what, place); }
+        auto drop_carried() -> bool { return wcmods::drop_carried(actor()); }
+        auto carrying() const -> std::optional<std::wstring> { return wcmods::carrying(actor()); }
         // The label over its head (set_label({}) with no name takes it away), and the prompt beside it ("Talk", the
         // game's Interact glyph with it) while your cat is within `reach` cm; empty takes it away.
         auto set_label(NpcLabel label) -> void

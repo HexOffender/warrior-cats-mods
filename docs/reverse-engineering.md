@@ -1919,6 +1919,29 @@ heights over its `Root` (`GetSocketLocation`: `Head`, `butt`, `Breast`, `paw_f_L
 - **A crash to avoid:** `GetCurrentActiveMontage()` from Lua with nothing playing gives an object that isn't valid,
   and calling a function on it closes the game; check `IsValid()` first. (`Montage_Stop(blend, nil)` crashed too.)
 
+### Things in a cat's jaws
+
+Worked out on 2026-11-07 (build 26391405) in game, for the C++ SDK's `Carry.hpp` (docs/plans/clan-life.md, S2), on a
+spawned walking cat seen side on and from the front, its head turned to your cat.
+
+- **The jaws:** the cat skeleton's `mouth` bone sits a few mm in front of `Head`, with `tongue_01`..`03` 2 to 3 cm
+  further forward; a size-1 cat's head is small (`Neck` to the tongue's tip about 6 cm). The bone's axes: X across
+  the jaws (the cat's right), Y back along the head, Z up through it, turning with the head as it looks about.
+- **Attaching:** `AddComponentByClass` (manual attachment) a `StaticMeshComponent` or `SkeletalMeshComponent`,
+  `SetStaticMesh` or `SetSkeletalMeshAsset` (UE 5's: `SetSkeletalMesh` isn't a function Lua or reflection can call),
+  `SetCollisionEnabled(NoCollision)`, `K2_AttachToComponent(Mesh, "mouth", KeepRelative...)`, then
+  `K2_SetRelativeTransform`. A skeletal one shows in its rest pose. `K2_DestroyComponent` takes it off.
+- **The models**, with their bounds at scale 1: the game's animals `/Game/Art/Characters/Enemy/Mice/Skel/SK_Mice`
+  (22 cm nose to tail tip), `Rabbit/Skel/SK_Rabbit` (sitting up, 19 long), `Bird/Skel/SK_Bird` (30 across the wings),
+  `Squirrel/Skel/SK_Squirrel` (45 with its tail); `/Game/Art/Vfx/Meshes/SM_VFX_Fish` (15); the dens'
+  `/Game/Art/Environment/Den/Mesh/SM_GPE_MossMat` (a mat 55 by 40), `SM_GPE_ShadowMoss`, `SM_GPE_BirdFeathers` (10);
+  the pickups' `/Game/Art/GameplayElements/Consumables/Meshes/SM_GPE_WillowHerb` (25 tall).
+  `SM_GPE_SmudgeStick` is a bundle of herbs half a metre tall, not a stick.
+- **How they look right** (scale, then turned): the mouse 0.5, the bird 0.4, the fish 0.8, yawed 90 to lie across the
+  jaws and rolled -30 so the tail hangs; the rabbit 0.4 and the squirrel 0.33 rolled -70 and -60, hanging below the
+  jaw; the moss 0.14 and the feathers 1, rolled -25; the herb 0.45 pitched 90, held by the stem, flowers forward. Each
+  2.5 cm forward of the bone and 1.5 to 3 down. At scale 1 the mouse covers the cat's face.
+
 ## Character creation and traits
 
 Worked out on 2026-10-24 and confirmed against a real save.
