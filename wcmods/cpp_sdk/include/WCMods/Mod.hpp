@@ -59,6 +59,10 @@ namespace wcmods
 
 // The two functions UE4SS calls in a C++ mod's main.dll: one makes the mod, the other takes it out.
 #define WCMODS_MOD(ModClass)                                                                                   \
+    extern "C" __declspec(dllexport) size_t wcmods_shared_text(const char* name, char* out, size_t cap)       \
+    {                                                                                                          \
+        return ::wcmods::detail::shared_text(name, out, cap);                                                  \
+    }                                                                                                          \
     extern "C" __declspec(dllexport) RC::CppUserModBase* start_mod()                                           \
     {                                                                                                          \
         return new ModClass();                                                                                 \
