@@ -1446,6 +1446,7 @@ wcmods::on_npc_interact([](wcmods::Npc n) { n.walk_to(*wcmods::npc_spot(600, 0))
 | `Npc::set_label({name, title, extra, icon, range})`, `set_prompt(L"Talk", reach)` | The game's label over its head (a name, a smaller title, an extra line in the game's green, an icon `available`, `ongoing` or `done`), shown within `range` cm (1000) and faded at its edge; the game's prompt with its Interact glyph while your cat is within `reach` cm (250) and nothing of the game's own is in reach. Empty takes either away |
 | `wcmods::on_npc_interact(fn)` | `fn(npc)` when the game's Interact (any key or button bound to it, as the player's controller hears it) is pressed while a cat's prompt shows. The game hears it too, with nothing of its own in reach then |
 | `Npc::pose(Pose::Sit)`, `play(Move::Eat, {speed, loop})`, `stop_move(blend)` | A pose, held until another or a walk, and one of the game's moves, as `set_pose`, `play_move` and `stop_move` below. `walk_to` stands it first and stops a move it doesn't walk in (asleep, eating); `Stalk`, `WalkBack` and `Tired` keep playing (`walking_move`) |
+| `Npc::carry(Carried::Mouse, place)`, `drop_carried()`, `carrying()` | Something in its jaws, as `carry`, `drop_carried` and `carrying` below |
 | `Npc::remove()` | Take it out of the world for good |
 
 **Cats' poses and the game's moves (`CatMoves.hpp`)**, game thread only: any cat, yours, the game's or a mod's own.
@@ -1472,6 +1473,34 @@ npc.play(wcmods::Move::Stalk); npc.walk_to(prey, {.speed = 60});   // the huntin
 Measured in game (the test mod's `moves` request): sitting brings the hips to the ground with the head up, asleep and
 still bring them down too, a strike lowers the head, against the same cat standing; every move above plays, and
 lying down to sleep goes on into sleeping by itself.
+
+**Carrying in the jaws (`Carry.hpp`)**, game thread only: any cat, yours, the game's or a mod's own.
+
+The game's own models of prey, moss, a herb and feathers (or any mesh of the game's), held in a cat's jaws: a mesh
+component added to the cat and attached to its `mouth` bone, so it moves with the head through every walk, run, move
+and look about, with no collision. The prey is the game's animals' models in their rest pose, limp, held crosswise
+with the tail or the body hanging; it scales with the cat, so a kit's mouse is smaller.
+
+```cpp
+wcmods::carry(cat, wcmods::Carried::Mouse);       // a mouse in its jaws (what it held before is dropped)
+npc.carry(wcmods::Carried::Moss); npc.walk_to(den);   // moss to the den
+wcmods::drop_carried(cat);                        // gone again
+wcmods::CarryPlace p = wcmods::carried_place(wcmods::Carried::Rabbit);
+p.scale *= 1.2;                                   // a bigger rabbit
+wcmods::carry(cat, wcmods::Carried::Rabbit, p);
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::carry(cat, Carried, place)` | Put one of the game's things in a cat's jaws, placed as it looks right unless `place` says otherwise: the component, or nullptr (not a cat with a mesh). `Carried`: `Mouse`, `Rabbit`, `Bird`, `Squirrel` (the game's animals' models), `Fish`, `Moss` (a wad of the dens' moss), `Herb` (a sprig of willow herb, by the stem), `Feathers`. What it carried before is dropped |
+| `wcmods::carry_mesh(cat, path, place)` | Any of the game's meshes by its object path (a skeletal mesh or a static one), where `place` says: by default the model as made, in the front of the jaws. nullptr for a path that isn't a mesh |
+| `wcmods::CarryPlace{scale, offset, yaw, pitch, roll}` | Where it sits, from the `mouth` bone in the bone's own axes: X across the jaws (the cat's right), Y back along the head (less is further forward), Z up through the head; turned as the engine's rotators turn, and scaled (1: the model as made, at the cat's own scale) |
+| `wcmods::place_carried(cat, place)`, `carried_place(Carried)`, `carried_model(Carried)`, `carried_name(Carried)` | Move what it carries to another place in its jaws (false when it carries nothing); where a kind sits by default, its model's path, its name (`L"mouse"`) |
+| `wcmods::carrying(cat)`, `drop_carried(cat)` | What a cat carries: the kind's name, or the path `carry_mesh` was given; nullopt for nothing. Drop it (it's gone: a mod that wants it on the ground puts it there); false when it carried nothing |
+
+Measured in game (the test mod's `carry` request): each kind is attached at `mouth` with its model, within a few cm of
+the bone, at its scale, with no collision; a cat putting its head down to eat takes the mouse down with it, and it
+stays in the jaws through a walk.
 
 **Talks (`Talk.hpp`)**, game thread only:
 

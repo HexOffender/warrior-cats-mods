@@ -32,6 +32,7 @@
 //   WCMods/Looks.hpp    cats' looks read and changed on their models, accessories, the clan's cats from the save
 //   WCMods/CatMoves.hpp  cats' poses (sitting, lying, asleep...) and the game's own moves by name (eating, sleeping,
 //                       stalking, pouncing, bowing...)
+//   WCMods/Carry.hpp    something in a cat's jaws: the game's prey, moss, a herb, feathers, or any of its meshes
 //   WCMods/CatTables.hpp the game's tables for making clan cats (names, looks, sizes by clan and role), and the
 //                       colour slots' colours
 //   WCMods/Items.hpp    what each item is, and pickups dropped on the ground for your cat to collect
@@ -62,6 +63,7 @@
 #include <WCMods/Npcs.hpp>
 #include <WCMods/Talk.hpp>
 #include <WCMods/Bonds.hpp>
+#include <WCMods/Carry.hpp>
 #include <WCMods/CatMoves.hpp>
 #include <WCMods/CatTables.hpp>
 #include <WCMods/Looks.hpp>
