@@ -280,6 +280,9 @@ given.
       known code-breaker)
     - striking a kit or a medicine cat (serious)
     - striking a clanmate (lesser)
+    - a strike counts only when your cat hits the same cat more than once in a fight: one blow in a crowded fight is
+      taken as an accident and forgiven (the owner's, 2026-11-07). Your party's blows aren't yours, and your party
+      never goes after a kit or a medicine cat itself
     - an exile's fights with its old Clan aren't breaches, except against kits and medicine cats
   - **Who knows:** the cats who remember it (the witnesses, then gossip). At each dawn, those of your Clan who know
     may tell the leader. A deputy's witnesses are slower to speak (fear, loyalty), the leader always knows its own.
@@ -364,6 +367,8 @@ the meetings where rivals show up, so it comes alongside step 5.
 7. **Mates from other Clans** are allowed, frowned on but not forbidden (the owner's).
 8. **Several cats at once:** blows land on every cat in front of you, so you can fight several at once (the owner's).
 9. **Your party fights beside you** in Real-time combat, next after Part B (the owner's): Part B2.
+10. **An accidental blow is forgiven:** striking a kit, a medicine cat or a clanmate is a breach only when your cat
+    hits it more than once in a fight (the owner's).
 
 ## What might not work
 
