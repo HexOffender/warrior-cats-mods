@@ -585,8 +585,6 @@ namespace wcmods
         if (!on) std::erase_if(b.pages, [](const detail::Page& p) { return p.id.starts_with("settings:"); });
     }
 
-    // A value a Lua mod shared with C++ mods (`WCModsCpp.share(name, value)`; a bool, number or string, null
-    // when there's none), and one for Lua mods to read (`WCModsCpp.mods["<id>"].get(name)`).
     namespace detail
     {
         // This mod's shared value by name, as JSON text, for another C++ mod (WCMODS_MOD exports it as
@@ -606,9 +604,8 @@ namespace wcmods
             return text.size() + 1;
         }
         using SharedText = size_t (*)(const char*, char*, size_t);
-        // Every other C++ mod made with the SDK loaded now: each one's wcmods_shared_text. (Looked for each time: a
-        // mod can be taken out and put back while the game runs.)
-        inline auto other_mods() -> std::vector<SharedText>
+        // Every other C++ mod made with the SDK that's loaded: each one's wcmods_shared_text.
+        inline auto find_other_mods() -> std::vector<SharedText>
         {
             std::vector<SharedText> out;
             HMODULE self = nullptr;
@@ -625,22 +622,55 @@ namespace wcmods
             }
             return out;
         }
+        // The list above, looked for again every 2 s at most (mods ask for shared values every frame; one put in
+        // while the game runs is found within 2 s).
+        inline auto other_mods() -> std::vector<SharedText>
+        {
+            static std::mutex lock;
+            static std::vector<SharedText> found;
+            static ULONGLONG at = 0;
+            std::lock_guard guard(lock);
+            const ULONGLONG now = GetTickCount64();
+            if (at == 0 || now - at >= 2000)
+            {
+                found = find_other_mods();
+                at = now ? now : 1;
+            }
+            return found;
+        }
         inline auto shared_by_others(std::string_view name) -> Json
         {
             const std::string key(name);
             for (SharedText f : other_mods())
             {
-                const size_t size = f(key.c_str(), nullptr, 0);
-                if (size == 0) continue;
-                std::string text(size, '\0');
-                if (f(key.c_str(), text.data(), text.size()) != size) continue;
-                text.resize(size - 1);
+                // held loaded while it's asked (and skipped if it was taken out since it was found)
+                HMODULE held = nullptr;
+                if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, reinterpret_cast<LPCWSTR>(f), &held))
+                    continue;
+                std::string text;
+                for (int tries = 0; tries < 3; ++tries)   // the value can change between asking its size and reading it
+                {
+                    const size_t size = f(key.c_str(), nullptr, 0);
+                    if (size == 0) break;
+                    text.assign(size, '\0');
+                    if (f(key.c_str(), text.data(), text.size()) == size)
+                    {
+                        text.resize(size - 1);
+                        break;
+                    }
+                    text.clear();
+                }
+                FreeLibrary(held);
+                if (text.empty()) continue;
                 if (auto parsed = Json::parse(text)) return *parsed;
             }
             return Json();
         }
     } // namespace detail
 
+    // A value a Lua mod shared with C++ mods (`WCModsCpp.share(name, value)`), or else one another C++ mod shared
+    // (its `share(name, value)`); null when there's none. And one for Lua mods and other C++ mods to read
+    // (`WCModsCpp.mods["<id>"].get(name)`, `shared(name)`).
     inline auto shared(std::string_view name) -> Json
     {
         {
