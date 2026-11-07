@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <functional>
 #include <initializer_list>
 #include <map>
@@ -30,6 +31,7 @@
 #include <LuaMadeSimple/LuaMadeSimple.hpp>
 #include <Mod/CppUserModBase.hpp>
 #include <lua.hpp>
+#include <psapi.h>   // (after UE4SS's headers, which bring Windows.h: K32EnumProcessModules)
 
 #include <WCMods/Core.hpp>
 #include <WCMods/Events.hpp>
@@ -583,14 +585,102 @@ namespace wcmods
         if (!on) std::erase_if(b.pages, [](const detail::Page& p) { return p.id.starts_with("settings:"); });
     }
 
-    // A value a Lua mod shared with C++ mods (`WCModsCpp.share(name, value)`; a bool, number or string, null
-    // when there's none), and one for Lua mods to read (`WCModsCpp.mods["<id>"].get(name)`).
+    namespace detail
+    {
+        // This mod's shared value by name, as JSON text, for another C++ mod (WCMODS_MOD exports it as
+        // wcmods_shared_text): the size the text needs with its ending 0, written into `out` when `cap` holds it; 0 for
+        // a name this mod hasn't shared.
+        inline auto shared_text(const char* name, char* out, size_t cap) -> size_t
+        {
+            std::string text;
+            {
+                Bridge& b = bridge();
+                std::lock_guard lock(b.lock);
+                auto it = b.to_lua.find(name ? name : "");
+                if (it == b.to_lua.end()) return 0;
+                text = it->second.dump();
+            }
+            if (out && cap > text.size()) std::memcpy(out, text.c_str(), text.size() + 1);
+            return text.size() + 1;
+        }
+        using SharedText = size_t (*)(const char*, char*, size_t);
+        // Every other C++ mod made with the SDK that's loaded: each one's wcmods_shared_text.
+        inline auto find_other_mods() -> std::vector<SharedText>
+        {
+            std::vector<SharedText> out;
+            HMODULE self = nullptr;
+            GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               reinterpret_cast<LPCWSTR>(&shared_text), &self);
+            HMODULE mods[1024];
+            DWORD need = 0;
+            if (!K32EnumProcessModules(GetCurrentProcess(), mods, sizeof(mods), &need)) return out;
+            const size_t n = std::min<size_t>(need / sizeof(HMODULE), 1024);
+            for (size_t i = 0; i < n; ++i)
+            {
+                if (mods[i] == self) continue;
+                if (auto f = reinterpret_cast<SharedText>(GetProcAddress(mods[i], "wcmods_shared_text"))) out.push_back(f);
+            }
+            return out;
+        }
+        // The list above, looked for again every 2 s at most (mods ask for shared values every frame; one put in
+        // while the game runs is found within 2 s).
+        inline auto other_mods() -> std::vector<SharedText>
+        {
+            static std::mutex lock;
+            static std::vector<SharedText> found;
+            static ULONGLONG at = 0;
+            std::lock_guard guard(lock);
+            const ULONGLONG now = GetTickCount64();
+            if (at == 0 || now - at >= 2000)
+            {
+                found = find_other_mods();
+                at = now ? now : 1;
+            }
+            return found;
+        }
+        inline auto shared_by_others(std::string_view name) -> Json
+        {
+            const std::string key(name);
+            for (SharedText f : other_mods())
+            {
+                // held loaded while it's asked (and skipped if it was taken out since it was found)
+                HMODULE held = nullptr;
+                if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, reinterpret_cast<LPCWSTR>(f), &held))
+                    continue;
+                std::string text;
+                for (int tries = 0; tries < 3; ++tries)   // the value can change between asking its size and reading it
+                {
+                    const size_t size = f(key.c_str(), nullptr, 0);
+                    if (size == 0) break;
+                    text.assign(size, '\0');
+                    if (f(key.c_str(), text.data(), text.size()) == size)
+                    {
+                        text.resize(size - 1);
+                        break;
+                    }
+                    text.clear();
+                }
+                FreeLibrary(held);
+                if (text.empty()) continue;
+                if (auto parsed = Json::parse(text)) return *parsed;
+            }
+            return Json();
+        }
+    } // namespace detail
+
+    // A value a Lua mod shared with C++ mods (`WCModsCpp.share(name, value)`), or else one another C++ mod shared
+    // (its `share(name, value)`); null when there's none. And one for Lua mods and other C++ mods to read
+    // (`WCModsCpp.mods["<id>"].get(name)`, `shared(name)`).
     inline auto shared(std::string_view name) -> Json
     {
-        detail::Bridge& b = detail::bridge();
-        std::lock_guard lock(b.lock);
-        auto it = b.from_lua.find(std::string(name));
-        return it == b.from_lua.end() ? Json() : it->second;
+        {
+            detail::Bridge& b = detail::bridge();
+            std::lock_guard lock(b.lock);
+            auto it = b.from_lua.find(std::string(name));
+            if (it != b.from_lua.end()) return it->second;
+        }
+        // not shared by Lua: another C++ mod's share() of it
+        return detail::shared_by_others(name);
     }
     inline auto share(std::string_view name, Json value) -> void
     {
