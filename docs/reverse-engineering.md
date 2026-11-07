@@ -1942,6 +1942,36 @@ spawned walking cat seen side on and from the front, its head turned to your cat
   jaw; the moss 0.14 and the feathers 1, rolled -25; the herb 0.45 pitched 90, held by the stem, flowers forward. Each
   2.5 cm forward of the bone and 1.5 to 3 down. At scale 1 the mouse covers the cat's face.
 
+### Many cats, near and far
+
+Worked out on 2026-11-07 (build 26391405) in game, for the C++ SDK's sleeping and waking cats (docs/plans/clan-life.md,
+S3), in Sandbox mode by ShadowClan's camp.
+
+- **A spawn's cost:** a walking cat spawned from Lua held the game thread 12 ms (the first 17); ten in one go, 121 ms.
+- **The map streams in pieces:** `L_WorldMap_01_P` has 241 streaming levels (`LevelStreamingDynamic`, the game's own
+  streaming: no World Composition), 94 loaded by ShadowClan's camp. Each Clan's territory is 13 zones (`L_<Clan>_Zone_NN`
+  with `_Vfx` and `_Gameplay`: ShadowClan's and ThunderClan's 52 levels each, WindClan's and RiverClan's 40), only the
+  ones round your cat loaded. The terrain is `L_Terrain` (ThunderClan's forest, the Thunderpath, its camp's floor:
+  ThunderClan has no terrain level of its own) and `L_Terrain_ShadowClan`, `_WindClan`, `_RiverClan`, `_Moonpool` and
+  `_Island`, all loaded from ShadowClan's camp, as are `L_Den_Collisions`, `L_Trees` and the quests' levels.
+- **The ground at a far camp is there:** from ShadowClan's camp, a trace down from half a metre over the navigation
+  mesh met the floor at all four camps (ThunderClan's camp floor a mesh in `L_Terrain` at 1130, 4 cm under the
+  navigation mesh). A trace down from the sky meets what's on top first: over ThunderClan's camp an overhang at
+  1311, elsewhere trees' tops (`L_Trees`), so a height found that way can be metres up, and the navigation mesh's own
+  search (a couple of metres) misses from there: search it 30 m up and down instead.
+- **The navigation mesh is there all over the map** (projections at all four camps from ShadowClan's). It can lie
+  over half a metre above the ground (50 to 66 cm at three places between ShadowClan's camp and ThunderClan's).
+  ThunderClan's zones have `_Collisions` levels too (`L_Thunder_Zone_09_Collisions`: a mesh only the camera channel
+  meets).
+- **The game's hiding by distance:** walking cats (the SDK's too) have `SwtAdventureHideCharacterComponent` (on
+  `SwtAdventureHideByDistanceComponent`, on `SwtQuestHideByDistanceComponent`): a sphere of 2343 cm round the cat
+  (`DetectionDistanceTag` `Gameplay.HideByDistance.Radius.1`), your cat overlapping it (`OverlappedActors`) keeping it
+  going. Outside, the actor's, its movement's, its AI controller's and path following's ticking are off and so is its
+  collision: a cat 25 m off or more stands frozen mid-walk (one spawned 30 cm up stays in the air). Turning ticks back on
+  by hand doesn't last; `SetSphereRadius(6000, true)` does: the overlap starts, and the cat walks again (3.7 m, arrived).
+- **Name ids are strings** on the walking cat's `CustomData` (`PrefixNameId` `STR_CAT_NAME2`, `SuffixNameId` `_PAW`),
+  as in the save; the eyes are `EyeLeftColorIdx` and `EyeRightColorIdx`.
+
 ## Character creation and traits
 
 Worked out on 2026-10-24 and confirmed against a real save.

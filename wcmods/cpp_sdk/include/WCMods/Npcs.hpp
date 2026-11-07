@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
 #include <cmath>
 #include <functional>
 #include <map>
@@ -32,19 +33,24 @@ namespace wcmods
     // What a cat is made with. `look` and `slots` take the cat maker's parts (body, fur, tail, ears, eyes, whiskers,
     // face, pattern, marking) and colour slots (fur, pattern, marking); the parts not given are made up for each
     // spawn, as the game does. `colours` paints a part (fur, pattern, markings, nose, paws, whiskers, ears) in
-    // "#rrggbb". `prefix` and `suffix` are name ids (STR_CAT_NAME<prefix><suffix>). `ground` puts it on the ground
-    // below `at` (false: it floats where it's put).
+    // "#rrggbb". `prefix` and `suffix` are the name's ids, as the game's tables and the save have them (L"STR_CAT_NAME2",
+    // L"_PAW": CatTables.hpp). `eyes` is the eyes' colour slot, `eyes2` the right eye's when it's another (odd eyes).
+    // `ground` puts it on the ground below `at` (false: it floats where it's put). `freeze_beyond`: how far from your
+    // cat the game lets it move (cm); beyond, the game freezes it (no moving, no collision) until your cat comes back
+    // within it: the game's own is 2343. `asleep`: made as a handle only, out of the world until wake().
     struct NpcSpec
     {
         Vec3 at;
         double yaw{};
         std::optional<double> size;
-        std::optional<int> prefix, suffix;
+        std::optional<std::wstring> prefix, suffix;
         std::map<std::wstring, int> look;
         std::map<std::wstring, int> slots;
-        std::optional<int> eyes;
+        std::optional<int> eyes, eyes2;
         std::map<std::wstring, std::wstring> colours;
         bool ground{true};
+        std::optional<double> freeze_beyond;
+        bool asleep{false};
     };
     // A label over a cat's head, in the game's style: its name, a smaller title under it, an extra line above it in
     // the game's green, and an icon ("available", "ongoing", "done": the game's quest marks); shown within `range`
@@ -92,6 +98,11 @@ namespace wcmods
             int32_t index{-1};
             std::wstring level;
             bool removed{};
+            bool asleep{};                                      // out of the world by sleep() (or made asleep)
+            bool queued{};                                      // waiting in the spawn queue
+            std::chrono::steady_clock::time_point not_before;   // (its ground wasn't there: looked at again then)
+            std::vector<std::function<void()>> woke;            // wake()'s done, when it's in
+            std::map<std::wstring, int> made;                   // its look, made up once (each spawn the same cat)
             int spawns{};
             std::map<std::wstring, double> scalars;            // material scalar parameters (the eyes)
             std::map<std::wstring, UiColor> paint;              // material colours
@@ -114,6 +125,9 @@ namespace wcmods
             Widget prompt_hud;          // the HUD it was made on
             Widget menu, menu_hud;      // the HUD's contextual menu (the game's own prompts), found once per HUD
             std::shared_ptr<NpcState> prompt_on;   // whose prompt shows
+            std::deque<std::shared_ptr<NpcState>> queue;   // cats to put in the world, a few a frame
+            int per_frame{1};
+            bool pumping{};
         };
         inline auto npcs_state() -> NpcsState&
         {
@@ -176,7 +190,7 @@ namespace wcmods
             }
             int eye = s.eyes.value_or(random_int(0, 24));
             out[L"EyeLeftColorIdx"] = eye;
-            out[L"EyeRightColorIdx"] = eye;
+            out[L"EyeRightColorIdx"] = s.eyes2.value_or(eye);
             return out;
         }
         // Put the cat's feet (its mesh's origin) on the ground at height g.
@@ -276,6 +290,8 @@ namespace wcmods
             for (const wchar_t* part : {L"mcGuiActorName", L"mcGuiActorStatus"})
                 if (Widget pw(get(widget, part).object); pw) pw.set_opacity(0);
         }
+        inline auto set_freeze_radius(UObject* a, double cm) -> bool;
+        inline auto start_npcs() -> void;
         inline auto spawn_npc(NpcState& n) -> bool
         {
             if (!player()) return false;
@@ -285,13 +301,14 @@ namespace wcmods
             UObject* cls = load(NPC_CLASS);
             if (!cls) return false;
             Vec3 at{n.spec.at.x, n.spec.at.y, (g ? *g : n.spec.at.z) + 30};
-            auto look = npc_look(n.spec);
+            if (n.made.empty()) n.made = npc_look(n.spec);   // the parts made up once: each spawn the same cat
+            const auto& look = n.made;
             auto dress = [&](UObject* a) {
                 UObject* c = get(a, L"MeshCustomizationComponent").object;
                 if (!c) return c;
                 if (n.spec.size) set(c, L"CustomData.CatSize", *n.spec.size);
-                if (n.spec.prefix) set(c, L"CustomData.PrefixNameId", *n.spec.prefix);
-                if (n.spec.suffix) set(c, L"CustomData.SuffixNameId", *n.spec.suffix);
+                if (n.spec.prefix) set(c, L"CustomData.PrefixNameId", std::wstring_view(*n.spec.prefix));
+                if (n.spec.suffix) set(c, L"CustomData.SuffixNameId", std::wstring_view(*n.spec.suffix));
                 for (auto& [field, v] : look) set(c, std::wstring(L"CustomData.") + field, v);
                 set(c, L"CustomData.bOverrideColors", true);
                 return c;
@@ -326,10 +343,75 @@ namespace wcmods
             n.actor = a;
             n.index = a->GetInternalIndex();
             n.walk.reset();
+            n.asleep = false;
             ++n.spawns;
             add_label(n);
             paint_npc(n);
+            if (n.spec.freeze_beyond) set_freeze_radius(a, *n.spec.freeze_beyond);
+            auto woke = std::move(n.woke);
+            n.woke.clear();
+            for (auto& fn : woke) guarded(L"a wake's done", fn);
             return true;
+        }
+        // The game's hiding by distance (SwtAdventureHideCharacterComponent: a sphere round the cat that your cat
+        // overlapping keeps it moving; outside it, its ticking and collision are off).
+        inline auto hide_component(UObject* a) -> UObject*
+        {
+            UObject* cls = find_class(STR("/Script/SwtAdventure.SwtAdventureHideCharacterComponent"));
+            auto r = cls && a ? call_reflected(a, STR("GetComponentByClass"), [&](Params& p) { p.set_nth(0, Value::of(cls)); }) : std::nullopt;
+            return r ? r->get(L"ReturnValue").object : nullptr;
+        }
+        inline auto set_freeze_radius(UObject* a, double cm) -> bool
+        {
+            UObject* h = hide_component(a);
+            if (!h) return false;
+            // (overlaps updated at once: a cat now within it moves again, one now outside freezes)
+            return call_reflected(h, STR("SetSphereRadius"), [&](Params& p) {
+                       p.set_nth(0, Value::of(cm));
+                       p.set_nth(1, Value::of(true));
+                   }).has_value();
+        }
+        // Queue a cat to be put in the world (each frame the budget's worth: a spawn holds the game ~12 ms).
+        inline auto enqueue(const std::shared_ptr<NpcState>& n) -> void
+        {
+            if (n->queued || n->removed) return;
+            n->queued = true;
+            npcs_state().queue.push_back(n);
+        }
+        // Each frame: up to the budget's worth of the queue's cats put in the world, once the ground's there for each
+        // (a cat whose ground isn't is looked at again half a second later, the others going on past it).
+        inline auto pump_spawns() -> void
+        {
+            auto& s = npcs_state();
+            if (s.queue.empty() || !player()) return;
+            const auto now = std::chrono::steady_clock::now();
+            int spawned = 0, looked = 0;
+            const size_t n_queued = s.queue.size();
+            for (size_t i = 0; i < n_queued && spawned < s.per_frame && looked < 16 && !s.queue.empty(); ++i)
+            {
+                auto n = s.queue.front();
+                s.queue.pop_front();
+                if (n->removed || n->asleep || npc_alive(*n))
+                {
+                    n->queued = false;
+                    continue;
+                }
+                if (now < n->not_before)
+                {
+                    s.queue.push_back(n);
+                    continue;
+                }
+                ++looked;
+                if (n->spec.ground && !ready_at(n->spec.at))
+                {
+                    n->not_before = now + std::chrono::milliseconds(500);
+                    s.queue.push_back(n);
+                    continue;
+                }
+                n->queued = false;
+                ++spawned;
+                guarded(L"a spawn", [&] { spawn_npc(*n); });   // (not in: another level, a menu; the keeper asks again)
+            }
         }
     } // namespace detail
 
@@ -371,12 +453,13 @@ namespace wcmods
                        p.set_nth(1, Value::of(true));
                    }).has_value();
         }
-        // Put it somewhere at once (on the ground there), ending a walk.
+        // Put it somewhere at once (on the ground there), ending a walk. Asleep, it wakes there (true).
         auto move_to(Vec3 at) -> bool
         {
-            if (!m) return false;
+            if (!m || m->removed) return false;
             stop();
             m->spec.at = at;
+            if (m->asleep) return true;
             UObject* a = actor();
             if (!a) return false;
             bool ok = teleport(a, at);
@@ -412,12 +495,68 @@ namespace wcmods
             m->prompt = text;
             m->reach = reach;
         }
+        // Out of the world, kept: where it was and which way it faced, its look, its label and prompt, what it's
+        // asked to wake to. False when it isn't in the world (asleep already, or waiting to come in: that's called off).
+        auto sleep() -> bool
+        {
+            if (!m || m->removed || m->asleep) return false;
+            stop();
+            m->asleep = true;
+            m->woke.clear();
+            UObject* a = actor();
+            if (!a) return false;
+            if (auto l = wcmods::location(a)) m->spec.at = *l;
+            if (auto r = call_reflected(a, STR("K2_GetActorRotation"))) m->spec.yaw = get(r->get(L"ReturnValue"), L"Yaw").number();
+            destroy(a);
+            m->actor = nullptr;
+            return true;
+        }
+        // Back in the world where it was (or was moved to), as it was: within the spawn budget (a few cats a frame)
+        // and once the ground's there (ready_at); `done(npc)` when it's in. False when it's removed or already in.
+        auto wake(std::function<void(Npc)> done = {}) -> bool
+        {
+            if (!m || m->removed || actor()) return false;
+            m->asleep = false;
+            if (done)
+                m->woke.push_back([w = std::weak_ptr<detail::NpcState>(m), done] {
+                    if (auto s = w.lock()) done(Npc(s));
+                });
+            detail::enqueue(m);
+            detail::start_npcs();
+            return true;
+        }
+        auto asleep() const -> bool { return m && !m->removed && m->asleep; }
+        // Asked to come into the world (woken, made, or its level back), not in yet.
+        auto waking() const -> bool { return m && !m->removed && !m->asleep && !actor(); }
+        // Where it is, or where it'll come in.
+        auto place() const -> Vec3
+        {
+            if (auto l = location()) return *l;
+            return m ? m->spec.at : Vec3{};
+        }
+        // How far from your cat the game lets it move (cm); beyond, it's frozen (no moving, no collision) until your
+        // cat comes back within it. The game's own is 2343.
+        auto set_freeze_beyond(double cm) -> bool
+        {
+            if (!m) return false;
+            m->spec.freeze_beyond = cm;
+            UObject* a = actor();
+            return a && detail::set_freeze_radius(a, cm);
+        }
+        // In the world but frozen by the game (your cat beyond its freeze distance).
+        auto frozen() const -> bool
+        {
+            UObject* a = actor();
+            auto r = a ? call_reflected(a, STR("IsActorTickEnabled")) : std::nullopt;
+            return r && !r->get(L"ReturnValue").boolean();
+        }
         // Take it out of the world for good.
         auto remove() -> void
         {
             if (!m) return;
             stop();
             m->removed = true;
+            m->woke.clear();
             if (UObject* a = detail::npc_alive(*m) ? m->actor : nullptr) destroy(a);
             m->actor = nullptr;
         }
@@ -641,7 +780,7 @@ namespace wcmods
                 if (!npc_alive(*n))
                 {
                     if (n->walk) finish_walk(*n, WalkResult::Cancelled);
-                    spawn_npc(*n);
+                    if (!n->asleep) enqueue(n);   // (its level back, a menu closed: in within the spawn budget)
                     continue;
                 }
                 if (n->walk)
@@ -695,7 +834,9 @@ namespace wcmods
                     if (n->walk) guarded(L"a walk", [&] { step_walk(*n); });
             });
             every_frame([](float) {
-                if (player()) guarded(L"npc prompts", update_prompt);
+                if (!player()) return;
+                guarded(L"npc prompts", update_prompt);
+                guarded(L"npc spawns", pump_spawns);
             });
             // The game's Interact as the player's controller hears it (any key or button bound to it, remaps too):
             // the press is for the cat whose prompt showed.
@@ -760,12 +901,27 @@ namespace wcmods
         if (n->spec.eyes)
         {
             n->scalars[L"IndexIrisColorCurveLeft"] = *n->spec.eyes + 1;   // row 0 of the eye atlas is the eye's white
-            n->scalars[L"IndexIrisColorCurveRight"] = *n->spec.eyes + 1;
+            n->scalars[L"IndexIrisColorCurveRight"] = n->spec.eyes2.value_or(*n->spec.eyes) + 1;
         }
+        else if (n->spec.eyes2)
+            n->scalars[L"IndexIrisColorCurveRight"] = *n->spec.eyes2 + 1;
+        n->asleep = n->spec.asleep;
         detail::npcs_state().all.push_back(n);
         detail::start_npcs();
-        if (on_game_thread_now() && player()) detail::guarded(L"spawn_npc", [&] { detail::spawn_npc(*n); });
+        if (!n->asleep && on_game_thread_now() && player()) detail::guarded(L"spawn_npc", [&] { detail::spawn_npc(*n); });
         return Npc(n);
+    }
+    // How many cats a frame come into the world from the spawn queue (woken ones, ones made asleep then woken, ones
+    // whose level came back): each spawn holds the game about 12 ms. 1 at first.
+    inline auto set_npc_spawn_budget(int per_frame) -> void { detail::npcs_state().per_frame = std::max(1, per_frame); }
+    inline auto npc_spawn_budget() -> int { return detail::npcs_state().per_frame; }
+    // How many cats wait to come into the world (the queue, ones waiting for their ground among them).
+    inline auto npcs_waiting() -> int
+    {
+        int n = 0;
+        for (auto& c : detail::npcs_state().queue)
+            if (c->queued && !c->removed && !c->asleep) ++n;
+        return n;
     }
     // Every cat the mod has spawned and not removed.
     inline auto npcs() -> std::vector<Npc>

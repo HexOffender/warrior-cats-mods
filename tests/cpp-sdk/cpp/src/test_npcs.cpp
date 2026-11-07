@@ -56,8 +56,8 @@ namespace t
             spec.look = {{L"body", 3}, {L"tail", 2}};
             spec.slots = {{L"fur", 4}};
             spec.colours = {{L"fur", L"#ff8800"}};
-            spec.prefix = 2;
-            spec.suffix = 3;
+            spec.prefix = L"STR_CAT_NAME2";
+            spec.suffix = L"_PAW";
             auto npc = std::make_shared<Npc>(spawn_npc(spec));
             expect("npcs.spawned", npc->actor() != nullptr && npc->spawns() == 1 && npcs().size() >= 1);
             value("npcs.class", npc->actor() ? Json(text(class_name(npc->actor()))) : Json());
@@ -67,6 +67,7 @@ namespace t
             value("npcs.tail", get(custom, L"CustomData.TailIdx").number());
             value("npcs.fur_slot", get(custom, L"CustomData.FurColorIdx").number());
             value("npcs.override", get(custom, L"CustomData.bOverrideColors").boolean());
+            value("npcs.name_ids", Json(text(get(custom, L"CustomData.PrefixNameId").string() + L" " + get(custom, L"CustomData.SuffixNameId").string())));
             // Its class by its path (load), the Interact command by its name (enum_value), how near it is, turning.
             expect("npcs.load", load(detail::NPC_CLASS) == npc->actor()->GetClassPrivate() && !load(L"/Game/Nope/Nope.Nope") && !load(L""));
             expect("npcs.enum_value", enum_value(STR("/Script/SwtEngine.ECommands"), L"Player_Interact").value_or(-1) > 0

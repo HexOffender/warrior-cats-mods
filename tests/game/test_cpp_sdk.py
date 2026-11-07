@@ -1115,6 +1115,7 @@ def test_npcs(agent):
     assert v["npcs.moved"] is True and v["npcs.spot"] is True, v
     assert v["npcs.class"] == "BP_WalkingNPC_Character_Base_C" and abs(v["npcs.distance"] - 200) < 50, v
     assert (v["npcs.body"], v["npcs.tail"], v["npcs.fur_slot"], v["npcs.override"]) == (3, 2, 4, True), v
+    assert v["npcs.name_ids"] == "STR_CAT_NAME2 _PAW", v["npcs.name_ids"]   # the game's name ids, as the save has them
     assert (v["npcs.label_name"], v["npcs.label_title"], v["npcs.label_opacity"]) == ("Brindlemoon", "Elder", 1), v
     assert v["npcs.game_prompt_up"] is False and v["npcs.prompt_on"] is True and v["npcs.prompt_shown"] is True, v
     assert v["npcs.prompt_text"] == "Talk", v
@@ -1583,6 +1584,51 @@ def test_carry(agent):
     me = v["yours"]
     assert me["attached"] and me["socket"] == "mouth" and "SM_GPE_MossMat" in me["model"], me
     assert me["from_mouth"] < 8 and v["yours_name"] == "moss", (me, v["yours_name"])
+
+
+def test_crowd(agent):
+    """Npcs.hpp's many cats (S3) in the game: a cat with the game's name ids and odd eyes put to sleep (out of the world,
+    its place kept) and woken where it was moved to while asleep, the same look; one 35 m off frozen by the game's
+    hiding by distance until its freeze distance takes your cat in, then walking; 30 cats made asleep and woken at once
+    coming in within the spawn budget (a cat a frame, then three), the frames timed; ready_at where your cat stands, not
+    off the map."""
+    _close_screens(agent)
+    r = _request(agent, "crowd", timeout=120)
+    assert not _failed(r, "crowd"), _failed(r, "crowd")
+    v = {k[len("crowd."):]: x for k, x in r["values"].items() if k.startswith("crowd.")}
+    assert v["ready_here"] is True and v["ready_off_map"] is False, v
+    look = v["one_look"]
+    assert (look["EyeLeftColorIdx"], look["EyeRightColorIdx"]) == (3, 10), look
+    assert (v["one_prefix"], v["one_suffix"]) == ("STR_CAT_NAME2", "_PAW"), v
+    assert v["slept"] is True and v["asleep"] is True and v["kept_place"] < 5 and v["slept_again"] is False, v
+    assert v["moved_asleep"] is True and v["wake"] is True and v["waking"] is True, v
+    assert v["woke_done"] is True and v["woke_in"] is True and v["woke_same_look"] is True, v
+    assert v["woke_spawns"] == 2 and v["woke_at"] < 30 and v["wake_again"] is False, v
+    assert v["far_frozen"] is True and v["far_set"] is True and v["far_unfrozen"] is True, v
+    assert v["far_walked"] > 150, v["far_walked"]
+    assert v["made_asleep"] == 30 and v["made_out"] == 30 and v["slept_many"] == 30, v
+    one, three = v["wake_1"], v["wake_3"]
+    assert one["woken"] == 30 and one["in"] == 30 and three["woken"] == 30 and three["in"] == 30, (one, three)
+    # a cat a frame: at least 30 frames to bring them in; three a frame, about a third of that
+    assert one["count"] >= 30 and three["count"] < one["count"], (one, three)
+    assert v["waiting_1"] == 30 and v["waiting_3"] == 30, v
+
+
+def test_crowd_walk(agent):
+    """S3's proof: 30 cats asleep at ShadowClan's and ThunderClan's camps, your cat taken from the one camp to the other
+    in 8 m steps (each only once its ground is there), the cats woken within 40 m of it once theirs is, put to sleep
+    beyond 60 m; every cat that came in stood on its ground a second later; the frames timed."""
+    _close_screens(agent)
+    r = _request(agent, "crowd_walk", timeout=240)
+    assert not _failed(r, "crowd_walk"), _failed(r, "crowd_walk")
+    v = {k[len("crowd_walk."):]: x for k, x in r["values"].items() if k.startswith("crowd_walk.")}
+    assert "skipped" not in v, v
+    w = v["result"]
+    assert v["cats"] >= 28 and v["steps_planned"] >= 25, v   # (a spot or two off the navigation mesh is left out)
+    assert w["steps"] == v["steps_planned"] and w["skipped"] == 0, w
+    # every cat woken (15 at each camp) came in, and those at the camp left behind went to sleep again
+    assert w["wakes"] >= v["cats"] and w["came"] == w["wakes"] and w["sleeps"] >= 10, w
+    assert w["fell"] == 0, w
 
 
 def test_looks(agent):
