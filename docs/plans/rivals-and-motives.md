@@ -7,8 +7,10 @@ Asked by the owner on 2026-11-07:
 
 **Approved on 2026-11-07**, with decision 1 changed by the owner: "Killing medicine cats and kits should be seen as
 a severe crime, it should be possible but other cats should be critical of it. Going against the clan's code should
-carry consequences politically. Top members like a deputy or leader are more likely to get away with it." Part E
-is that change.
+carry consequences politically. Top members like a deputy or leader are more likely to get away with it." Then:
+"If you are a regular warrior then you should face exile for breaking the warrior code", and "You should also be
+able to mate with cats outside of your own clan". Part E is those changes, with the warrior code as the books'
+site lists it (https://warriorcats.com/content/article/warrior-code-2).
 
 It builds on three things:
 - [Clan life](clan-life.md): every Clan's cats with names, ranks, traits, liking, a day by the clock, moons, mates
@@ -155,12 +157,43 @@ growing over moons (sped up with the clock), its ambush, and each ending once.
 The warrior code is how Clan cats judge each other. Breaking it is possible, for your cat and for the mod's own,
 and it has consequences.
 
+- **The code**, as the books' site lists its fifteen rules (in short, in the mod's words):
+  1. defend your Clan with your life, friends in other Clans or not
+  2. don't hunt or trespass on another Clan's land
+  3. elders and kits eat first, and apprentices hunt for the elders before they eat
+  4. kill prey only to eat it, and thank StarClan for it
+  5. a kit is apprenticed at six moons, not before
+  6. a new warrior keeps a silent vigil for a night
+  7. only a cat that has mentored an apprentice can be made deputy
+  8. the deputy becomes leader when the leader dies or retires
+  9. a new deputy is named before moonhigh
+  10. no fighting at a Gathering's truce
+  11. mark the borders and challenge trespassers
+  12. never leave a kit in pain or danger, even another Clan's
+  13. the leader's word is law
+  14. an honourable warrior doesn't kill to win, except against a code-breaker or to defend itself
+  15. no kittypet's soft life
+
+  Clan life already keeps 3, 5, 7, 8 and 9 for the mod's cats, or will, in its ceremonies. The rest can be
+  broken.
+
 - **Breaches, from the worst down:**
-  - **Severe:** killing a kit, a medicine cat, a cat that had yielded, or a clanmate.
-  - **Serious:** killing a warrior in a fight that could have ended with it yielding, or attacking during a
-    Gathering's truce.
-  - **Lesser:** hunting or trespassing on another Clan's land, leaving a hurt clanmate behind, and lying about
-    any of these.
+  - **Severe:**
+    - killing a kit or a medicine cat (the books treat both as among the worst things a cat can do, though no
+      rule names them)
+    - killing a cat that had yielded, or a clanmate (rules 1 and 14)
+    - leaving a kit to die (rule 12)
+  - **Serious:**
+    - killing in a fight that could have ended with a yield (rule 14)
+    - attacking at a Gathering (rule 10)
+    - defying the leader's order (rule 13)
+    - siding with another Clan against your own (rule 1)
+  - **Lesser:**
+    - hunting or trespassing on another Clan's land (rule 2)
+    - eating before the elders and kits (rule 3)
+    - killing prey for no reason (rule 4)
+    - letting a trespasser go (rule 11)
+    - lying about any of these
 - **Who knows:** a breach is a memory (Part A), for the cats who saw it and the cats they tell. With no witnesses
   it can stay secret, but a body found with your scent near it starts rumours and suspicion.
 - **What it costs:**
@@ -170,18 +203,27 @@ and it has consequences.
     Clanmates page. For your cat it moves the game's own bond with your Clan too (`wcmods::add_bond`).
   - **Between the Clans:** the victim's Clan's regard for your whole Clan drops. Expect angry borders, raids,
     and a Gathering where its leader demands justice.
-  - **The leader's judgement** for a known breach, by its weight and the leader's traits:
-    - a rebuke
-    - punishment duties: ticks for the elders, the dirtplace, no Gathering
-    - losing your apprentice, or your rank
-    - being handed over to the victim's Clan for its judgement
-    - exile: your Clan's cats drive you out of camp, and your cat lives as a rogue until it earns its way back
+  - **The leader's judgement** for a known breach:
+    - **a warrior is exiled** for a severe or serious breach: the Clan's cats drive it out of camp, and it lives as a
+      rogue until it earns its way back (if it can)
+    - for a lesser one, a rebuke or punishment duties (ticks for the elders, the dirtplace, no Gathering), and exile
+      once the lesser ones add up
+    - losing an apprentice, or being handed over to the victim's Clan for its judgement, as the leader's traits
+      lean
 - **Rank shields a cat.** The higher it stands, the more it gets away with:
   - A **deputy**'s witnesses are slower to speak up, from fear or loyalty, and the leader judges it more lightly.
   - A **leader** judges itself and is never exiled by its own Clan. Its Clan still knows, though. Respect falls,
     loyal cats grow uneasy, a code-minded cat may challenge it or turn to another Clan, and the other Clans may
     unite against it.
-  - A **kit or apprentice** is judged as one too young to know better, but watched ever after.
+  - A **kit or apprentice** is judged as one too young to know better: punished, not exiled for a first breach,
+    but watched ever after.
+  - A **medicine cat**'s own breach shocks the Clans most, but the Clan needs it: StarClan's judgement is said to
+    follow instead, and its standing never recovers.
+- **Mates from other Clans.** You can take a mate from another Clan, and so can the mod's cats; you meet at
+  Gatherings, at the borders, or on patrol. It isn't a breach by itself (rule 1 allows friends in other Clans),
+  but it makes cats doubt your loyalty. Kept secret, it's safe. Once known, your standing falls a little in both
+  Clans, and if you ever side with your mate's Clan against your own, that's a serious breach. Your kits are
+  raised in the Clan of the one who carried them, and may be teased for being half-Clan.
 - **The mod's cats break it too.** An ambitious, ruthless cat may kill a rival to rise (the books' Tigerstar),
   an avenger may kill a yielded enemy, a desperate one may steal prey. The same consequences follow, so the
   Clans have politics of their own: suspicions, exiles, feuds and leaders who lose their Clan's trust.
@@ -232,6 +274,8 @@ the meetings where rivals show up, so it comes alongside step 5.
 4. **When a rival beats you,** you're beaten the way the game's own defeat works, not dead for good, and the rival
    remembers winning.
 5. **Part A comes first.**
+6. **A warrior is exiled** for breaking the code; rank shields a deputy and a leader (the owner's).
+7. **Mates from other Clans** are allowed, frowned on but not forbidden (the owner's).
 
 ## What might not work
 
