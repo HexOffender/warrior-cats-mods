@@ -1487,6 +1487,33 @@ namespace wcmods
         // find(): mcGuiMinimap, mcGuiEnergyBar, mcGuiHudCharacter, mcGuiQuestObjective, mcGuiContextualMenu,
         // mcGuiSenseControl, mcGuiAreaName...; its layers are CanvasExploration, CanvasCombat and CanvasOver,
         // to add to. Looked up again when the level changes.
+        inline auto hud() -> Widget;
+
+        // Your cat's health bar on the HUD redrawn from its health as it is now: the game's own OnSetHealthPercent on
+        // the HUD's character slot (mcGuiHudCharacter), which the game calls when its own code changes health.
+        // Cat::set_health and Cat::heal call it; a mod that writes health().value itself calls it after. False with
+        // no HUD (a fight, a scene, the menus) or no health.
+        inline auto show_health() -> bool
+        {
+            if (!assert_game_thread(L"ui::show_health")) return false;
+            Resource hp = cat().health();
+            if (!hp) return false;
+            Widget h = hud();
+            UObject* slot = h ? get(h.object(), L"mcGuiHudCharacter").object : nullptr;
+            if (!slot) return false;
+            const double most = std::max(1.0, static_cast<double>(*hp.max)), now = *hp.value;
+            return call_reflected(slot, STR("OnSetHealthPercent"), [&](Params& p) {
+                       p.set_nth(0, Value::of(now / most));
+                       p.set_nth(1, Value::of(now));
+                       p.set_nth(2, Value::of(most));
+                   }).has_value();
+        }
+        // Set as this header's included: Cat::set_health (Game.hpp, which can't reach the HUD) redraws your cat's bar.
+        inline const bool show_health_hooked = (wcmods::detail::health_changed = [](UObject* who) {
+                                                    if (who && who == player()) show_health();
+                                                },
+                                                true);
+
         inline auto hud() -> Widget
         {
             static Widget kept;

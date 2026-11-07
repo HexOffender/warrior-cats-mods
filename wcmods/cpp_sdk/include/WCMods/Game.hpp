@@ -4,6 +4,7 @@
 // docs/SDK.md, "C++ mods", documents every call.
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -317,6 +318,12 @@ namespace wcmods
 
     enum class Stat { Prowess, Strength, Resilience, Instinct, Agility, Stamina };
 
+    namespace detail
+    {
+        // Ui.hpp's ui::show_health, set as it's included: what redraws your cat's health bar after Cat::set_health.
+        inline void (*health_changed)(UObject* cat) = nullptr;
+    }
+
     // Your cat (wcmods::cat()), or any cat's actor. Everything gives nullptr / nullopt / an empty Resource
     // when the cat isn't there, so a check is one `if`.
     struct Cat
@@ -334,13 +341,22 @@ namespace wcmods
         {
             return member<float>(component(STR("SwtQuestStaminaComponent")), L"/Script/SwtQuest.SwtQuestStaminaComponent", L"WCM_Regen");
         }
-        // Full health; false when the cat or its maximum isn't there.
-        auto heal() -> bool
+        // Its health set (kept within 0 and its most), and for your cat the HUD's health bar showing it: the game
+        // redraws the bar when its own code changes health, so a change written into health().value alone leaves the
+        // bar where it was. False when the cat or its health isn't there.
+        auto set_health(double value) -> bool
         {
             Resource hp = health();
             if (!hp) return false;
-            *hp.value = *hp.max;
+            *hp.value = static_cast<float>(std::clamp(value, 0.0, static_cast<double>(*hp.max)));
+            if (detail::health_changed) detail::health_changed(actor);
             return true;
+        }
+        // Full health (and the bar full); false when the cat or its maximum isn't there.
+        auto heal() -> bool
+        {
+            Resource hp = health();
+            return hp && set_health(*hp.max);
         }
 
         // The level component holds the level, the experience and the stats out of combat. For your cat it's
