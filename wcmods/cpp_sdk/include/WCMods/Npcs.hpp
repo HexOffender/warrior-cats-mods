@@ -17,6 +17,7 @@
 #include <string_view>
 #include <vector>
 
+#include <WCMods/CatMoves.hpp>
 #include <WCMods/Core.hpp>
 #include <WCMods/Events.hpp>
 #include <WCMods/Game.hpp>
@@ -388,6 +389,11 @@ namespace wcmods
         auto walking() const -> bool { return m && m->walk.has_value(); }
         auto walk_result() const -> WalkResult { return m ? m->walk_result : WalkResult::None; }
         auto stop() -> void;
+        // A pose (CatMoves.hpp: sitting, lying, asleep...), held until another or a walk; one of the game's moves
+        // played on it (eating, sleeping, stalking...), and stopped. As set_pose, play_move and stop_move on its actor.
+        auto pose(Pose p) -> bool { return wcmods::set_pose(actor(), p); }
+        auto play(Move move, CatMoveOptions options = {}) -> UObject* { return wcmods::play_move(actor(), move, options); }
+        auto stop_move(double blend = 0.25) -> void { wcmods::stop_move(actor(), blend); }
         // The label over its head (set_label({}) with no name takes it away), and the prompt beside it ("Talk", the
         // game's Interact glyph with it) while your cat is within `reach` cm; empty takes it away.
         auto set_label(NpcLabel label) -> void
@@ -702,6 +708,16 @@ namespace wcmods
         UObject* a = actor();
         if (!a) return false;
         if (m->walk) detail::finish_walk(*m, WalkResult::Cancelled);
+        // up from a sit or a sleep first, and out of a move it doesn't walk in (asleep, eating): they'd slide along
+        set_pose(a, Pose::Stand);
+        if (montage_playing(a))
+        {
+            const std::wstring now = animation_playing(a);
+            bool walking = false;
+            for (Move m : {Move::Stalk, Move::WalkBack, Move::Tired})
+                for (const std::wstring& seq : move_sequences(m)) walking = walking || seq == now;
+            if (!walking) wcmods::stop_move(a);
+        }
         if (UObject* mv = get(a, L"CharacterMovement").object) set(mv, L"MaxWalkSpeed", options.speed);
         if (detail::issue_move(a, to, options.radius, options.avoid) == 0)
         {

@@ -30,6 +30,8 @@
 //                       graphs (lines, speakers, answers) and played in it
 //   WCMods/Bonds.hpp    your cat's bonds with the clans and the story cats, their ranks, read and set
 //   WCMods/Looks.hpp    cats' looks read and changed on their models, accessories, the clan's cats from the save
+//   WCMods/CatMoves.hpp  cats' poses (sitting, lying, asleep...) and the game's own moves by name (eating, sleeping,
+//                       stalking, pouncing, bowing...)
 //   WCMods/CatTables.hpp the game's tables for making clan cats (names, looks, sizes by clan and role), and the
 //                       colour slots' colours
 //   WCMods/Items.hpp    what each item is, and pickups dropped on the ground for your cat to collect
@@ -60,6 +62,7 @@
 #include <WCMods/Npcs.hpp>
 #include <WCMods/Talk.hpp>
 #include <WCMods/Bonds.hpp>
+#include <WCMods/CatMoves.hpp>
 #include <WCMods/CatTables.hpp>
 #include <WCMods/Looks.hpp>
 #include <WCMods/Items.hpp>

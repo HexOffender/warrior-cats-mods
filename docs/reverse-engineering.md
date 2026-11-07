@@ -1890,6 +1890,35 @@ Seen in game on 2026-10-27 (build 26184573) and read from the class dump.
   only in effects (`NS_Fishes_Swimming_*`, `NS_MallarDuck_Swimming`, `MI_Swan_Swimming`), and water
   only a footstep surface (`EAdventurePhysicalFloorType::Water`).
 
+### Cats' poses from code
+
+Worked out on 2026-11-07 (build 26391405) in game, for the C++ SDK's `CatMoves.hpp` (docs/plans/clan-life.md, S1),
+on a spawned walking cat (`BP_WalkingNPC_Character_Base_C`, its mesh's `ABP_CatMaker_C`), measured by its bones'
+heights over its `Root` (`GetSocketLocation`: `Head`, `butt`, `Breast`, `paw_f_L`; the skeleton has 57 bones).
+
+- **The anim instance's states hold.** `UGuiCatCustomAnimInst` (the cat's) and its parent `UGuiCharacterCustomAnimInst`
+  reflect `CharacterSequenceState` (`ECharacterSequenceState`: Stand 1, Meditative 3, Sit 6, SitLeft 7, SitRight 8),
+  `FillerState` (`EFillerStates`), `GiverAnimationType`, `StandPose`, `bIsCrouching` and more. Written from Lua or C++
+  they stay (read back 1.5 s later), and the AnimBlueprint follows them:
+  - Sit, SitLeft, SitRight: the hips from 14 to 1 cm (a size-0.75 cat), the head up (18);
+  - `FillerState` Online2: lying curled up asleep; Dead: lying on its side; TrainingAttack1: a low strike (head 9);
+    TrainingStance: sitting up; Online1, Online3 and Sharpen1 are idles that move (stretching, a play bow,
+    scratching a trunk, now and then up on its hind legs): measured twice they gave different poses;
+  - Meditative, `GiverAnimationType` (any), `StandPose` (any) and `bIsCrouching`: no change seen.
+- **Montages by tag on a walking cat** (its `PlayMontageComponent` has the cat's table): `Animation.Exploration.
+  Interaction.Sleep.1`/`.2`/`.3` (lying asleep), `.Dig`, `.Sniff`, `.Sharpen` (up on its hind legs: a front paw 33 cm
+  up), `.Play.Toy`, `Animation.Exploration.Meow`. `Animation.Exploration.Yawn`, `.Stretch` and
+  `.Interaction.Claw` aren't rows.
+- **Sequences** (`/Game/Art/Characters/CatMaster/Animations/`, 201 there): among them `A_CatMaster_Eat_Loop_1`,
+  `Drinking_In_1`/`Loop_1`, `Sleep_In_1..3`/`Loop_1..4`/`End_1..3`, `Walk_Crouching_1` and `Stand_Crouching_3` (the
+  hunting crouch), `Combat/OffensiveStance/A_CatMaster_WC_Hunting_Leap`, `Cinematic/A_CatMaster_Reverence_1..3`
+  (bows), `Combat/A_CatMaster_Win_In_1`/`Loop_1`, `Alert_1`, `Angry_1`, `Walk_Back_1`, `Walk_Tired_1`,
+  `Bite_In_1`/`Loop_1`/`End_1`. No grooming. Each plays on a walking cat as a dynamic montage (`play_animation`).
+- **A two-part move's loop** must start before the lead-in ends: once it's blending out the anim instance no longer
+  gives it as its current montage (`GetCurrentActiveMontage`), though `Montage_IsPlaying` still says it plays.
+- **A crash to avoid:** `GetCurrentActiveMontage()` from Lua with nothing playing gives an object that isn't valid,
+  and calling a function on it closes the game; check `IsValid()` first. (`Montage_Stop(blend, nil)` crashed too.)
+
 ## Character creation and traits
 
 Worked out on 2026-10-24 and confirmed against a real save.

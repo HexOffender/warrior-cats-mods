@@ -54,6 +54,7 @@ namespace t
     auto run_ai_notice_request() -> void;  // Ai.hpp: noticing your cat ("ai_notice")
     auto run_bond_answers_request() -> void;   // Bonds.hpp and Talk.hpp: a story talk and its answers' bonds ("bond_answers")
     auto run_bonds_request() -> void;    // Bonds.hpp: your cat's bonds, in the game ("bonds")
+    auto run_moves_request() -> void;    // CatMoves.hpp: cats' poses and the game's moves ("moves")
     auto run_looks_request() -> void;    // Looks.hpp: cats' looks and the clan's cats, in the game ("looks")
     auto run_items_request() -> void;    // Items.hpp: items, and pickups dropped and collected, in the game ("drop")
     auto run_quests_request() -> void;   // Story.hpp: quests, scenes, dilemmas, in the game ("questline")
