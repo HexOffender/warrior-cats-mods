@@ -1535,6 +1535,21 @@ def test_looks(agent):
     r = _request(agent, "looks", timeout=60)
     assert not _failed(r, "looks"), _failed(r, "looks")
     v = r["values"]
+    # The game's tables for making cats (CatTables.hpp, from npc_tables.json): its 90 prefixes (Wood first, 0.04 in
+    # ThunderClan) and 27 suffixes ("paw" for apprentices), 31 banned names, 23 rogues, 14 look tables (20 coats a
+    # clan), 11 banned patterns, the kits' bodies, their size, ThunderClan's 11 warriors, the scars, odd eyes 0.15
+    t = v["looks.cat_tables"]
+    assert (t["prefixes"], t["suffixes"], t["banned"], t["rogues"], t["parts"]) == (90, 27, 31, 23, 14), t
+    assert t["first_prefix"] == "Wood STR_CAT_NAME1" and t["first_prefix_thunderclan"] == 0.04 and t["paw_apprentice"] == 1, t
+    assert (t["windclan_coats"], t["banned_patterns"], t["kit_body"], t["kit_size"]) == (20, 11, [6, 7, 8, 9], 0.15), t
+    assert t["thunderclan_warriors"] == 11 and t["scars"] > 10 and t["odd_eyes"] == 0.15 and t["missing"] == 0, t
+    # The colour slots: the GUI manager's, as Lua reads them (25 coats, though the clans' tables weigh only the first
+    # 20; the eyes' and pattern colours there too)
+    slots = v["looks.colour_slots"]
+    lua = agent.lua('local g = Game.manager("gui") local out = {} '
+                    'for i = 1, #g.FurColors do local c = g.FurColors[i] out[i] = {c.R, c.G, c.B} end return out')
+    assert len(slots["coats"]) >= 20 and slots["coats"] == lua, (slots["coats"], lua)
+    assert slots["eyes"] >= 20 and slots["patterns"] > 0 and slots["markings"] > 0, slots
     me = v["looks.player"]
     assert (me["ClanType"], me["PrefixNameId"], me["SuffixNameId"]) == ("ShadowClan", "STR_CAT_NAME2", "_PAW"), me
     assert v["looks.role"] == "ShadowClan/None/", v["looks.role"]

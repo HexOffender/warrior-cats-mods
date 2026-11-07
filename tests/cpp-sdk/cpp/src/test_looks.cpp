@@ -87,6 +87,59 @@ namespace t
     {
         phase("looks");
         UObject* me = player();
+        // ----- the game's tables for making cats (CatTables.hpp), and the colour slots
+        {
+            const CatTables& t = cat_tables();
+            Json v = Json::object();
+            v.set("prefixes", Json(static_cast<int>(t.prefixes.size())));
+            v.set("suffixes", Json(static_cast<int>(t.suffixes.size())));
+            if (!t.prefixes.empty())
+            {
+                v.set("first_prefix", Json(text(t.prefixes[0].word) + " " + text(t.prefixes[0].id)));
+                auto w = t.prefixes[0].weights.find(L"ThunderClan");
+                v.set("first_prefix_thunderclan", Json(w == t.prefixes[0].weights.end() ? -1.0 : w->second));
+            }
+            for (const CatNamePart& s : t.suffixes)
+                if (s.word == L"paw") v.set("paw_apprentice", Json(s.weights.count(L"Apprentice") ? s.weights.at(L"Apprentice") : -1.0));
+            v.set("banned", Json(static_cast<int>(t.banned.size())));
+            v.set("rogues", Json(static_cast<int>(t.rogues.size())));
+            v.set("parts", Json(static_cast<int>(t.looks.size())));
+            auto coat = t.looks.find(L"coat");
+            v.set("windclan_coats", Json(coat != t.looks.end() && coat->second.count(L"WindClan") ? static_cast<int>(coat->second.at(L"WindClan").size()) : -1));
+            v.set("banned_patterns", Json(static_cast<int>(t.banned_patterns.size())));
+            Json kit_body = Json::array();
+            if (t.kit_parts.count(L"body"))
+                for (int b : t.kit_parts.at(L"body")) kit_body.push(Json(b));
+            v.set("kit_body", kit_body);
+            v.set("kit_size", Json(t.sizes.count(L"Kit") ? t.sizes.at(L"Kit").second : -1.0));
+            int warriors = -1;
+            if (t.generators.count(L"ThunderClan") && t.generators.at(L"ThunderClan").count(L"Warrior"))
+                warriors = t.generators.at(L"ThunderClan").at(L"Warrior").count(L"ThunderClan") ? t.generators.at(L"ThunderClan").at(L"Warrior").at(L"ThunderClan") : -1;
+            v.set("thunderclan_warriors", Json(warriors));
+            v.set("scars", Json(static_cast<int>(t.scars.size())));
+            v.set("odd_eyes", Json(t.odd_eyes));
+            v.set("missing", Json(static_cast<int>(t.missing.size())));
+            value("looks.cat_tables", v);
+            ColourSlots slots = colour_slots();
+            Json c = Json::object();
+            auto rgb = [](const std::vector<SlotColour>& all) {
+                Json a = Json::array();
+                for (const SlotColour& x : all)
+                {
+                    Json one = Json::array();
+                    one.push(Json(x.r));
+                    one.push(Json(x.g));
+                    one.push(Json(x.b));
+                    a.push(one);
+                }
+                return a;
+            };
+            c.set("coats", rgb(slots.coats));
+            c.set("patterns", Json(static_cast<int>(slots.patterns.size())));
+            c.set("markings", Json(static_cast<int>(slots.markings.size())));
+            c.set("eyes", Json(static_cast<int>(slots.eyes.size())));
+            value("looks.colour_slots", c);
+        }
         // ----- the struct's defaults are the game's (a quest actor's class default holds an untouched one)
         UObject* cdo = object(STR("/Script/SwtAdventure.Default__SwtAdventureQuestActor"));
         Look game_default = cdo ? detail::read_look(get(cdo, L"DefaultCustomData")) : Look{};

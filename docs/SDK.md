@@ -1666,6 +1666,23 @@ for (auto& c : wcmods::clan_cats())
 | `wcmods::clan_cats()` | `ClanCat`s, as of the last save (the slot's `NPCData`): each clan's cats by role, the cats outside the clans (`L"OutOfClans"`), then story cats kept only as their role (a cameo cat, `index` -1; a role not cast yet isn't one). Each with `clan`, `role`, `index`, `name`, `look`, `story_roles` (the story roles it plays) and `actor` (the cat out in the world now, matched by its clan, role and name ids, or nullptr; a mod's own spawned cat never is). Empty in menus |
 | `wcmods::role_of(cat)` | A cat's `CatRole`: `clan`, `role` (`EGiverRole`), and for a story or camp cat its `story_role` (`ENarrativeRole`, or empty). nullopt for what has no look component |
 
+**The game's tables for making cats (`CatTables.hpp`)**: the game makes its clan cats from the CSV tables in
+`NonAsset/NPC/`, and a mod that makes cats of its own the game's way (Clan life) makes them from the same. wcmods'
+install writes them, name mods' changes in, as `Mods/shared/WCModsGame/npc_tables.json` (`wcmods/npctables.py`).
+Options are numbered as the cat maker numbers them, from 0.
+
+```cpp
+const auto& t = wcmods::cat_tables();
+for (auto& p : t.prefixes) if (p.weights.at(L"WindClan") > 0) ...;   // the prefixes WindClan's cats get
+auto& coats = t.looks.at(L"coat").at(L"RiverClan");                 // how often each coat, in RiverClan
+auto slots = wcmods::colour_slots();                                 // slots.coats[13]: that coat's colour
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::cat_tables()` | The tables, read once (any thread): `CatTables` with `prefixes` and `suffixes` (`CatNamePart`: `word` ("Ash", "pelt"), `id` (the words' key, `STR_CAT_NAME17`, `_PELT`), `weights` by clan (`L"ThunderClan"` ... `L"OutOfClans"`) for a prefix, by role (`L"Kit"`, `L"Apprentice"`, `L"Warrior"`, `L"Deputy"`, `L"Leader"`, `L"MedicineCat"`, `L"Queen"`, `L"Elder"`, rogues and StarClan's) for a suffix), `banned` (whole names the game never gives: Tigerstar...), `rogues` (a rogue's name and its words' key), `looks` (each part's weights per clan, by option: `body`, `face`, `ears`, `eyes`, `tail`, `whiskers`, `fur`, `pattern`, `marking`, and the colour slots `coat`, `pattern_colour`, `marking_colour`, `eye_colour`, `eye_colour2`), `banned_patterns`, `kit_parts` (the options a kit may have, by part), `sizes` (each role's scale range), `scars` (`CatScarChances` by role: `ear`, `body`, `eye`), `generators` (how many of each role each clan's game makes: its table, role, clan), `odd_eyes` (the chance of two eye colours) and `missing` (tables the game hadn't got). Empty (false) without the file |
+| `wcmods::colour_slots()` | The cat maker's colour slots as the game has them now, palette mods' changes in: `ColourSlots` with `coats`, `patterns`, `markings` and `eyes`, each a `SlotColour` (`r`, `g`, `b`, 0 to 255) by slot number (a look's `FurColorIdx`, `Pattern01ColorIdx`, `Pattern02ColorIdx`, eye colour). From the GUI manager's `FurColors`, `PatternMaskColors`, `MarkingMaskColors` and `IrisColors`; empty without it. Game thread only |
+
 **The game's words (`Words.hpp`)**, game thread only:
 
 Every line the game shows is a key of its string table `SwtStrings`, loaded from `Strings_<language>.csv` (8,907
