@@ -271,6 +271,47 @@ judgement by rank (the same killing judged for a warrior, a deputy and a leader)
 breach only as their traits and wants allow. In game: a breach witnessed, its news spreading, and a judgement
 given.
 
+**In two steps** (the owner's go-ahead, 2026-11-07):
+
+- **E1, your cat's breaches** (Clan life, and a small addition to Real-time combat). Next.
+  - **What counts:**
+    - from your fights: killing a kit, a medicine cat or a clanmate (severe)
+    - giving the killing blow to another Clan's cat that had yielded (serious, rule 14; not if that cat was a
+      known code-breaker)
+    - striking a kit or a medicine cat (serious)
+    - striking a clanmate (lesser)
+    - an exile's fights with its old Clan aren't breaches, except against kits and medicine cats
+  - **Who knows:** the cats who remember it (the witnesses, then gossip). At each dawn, those of your Clan who know
+    may tell the leader. A deputy's witnesses are slower to speak (fear, loyalty), the leader always knows its own.
+    Word of a killing in another Clan reaches your leader at the next dawn (that Clan demands justice).
+  - **The leader's judgement** at that dawn, by your rank (a test switch sets it; the game keeps none for a
+    Sandbox mode cat):
+    - **warrior** (or queen, elder): exiled for a severe or serious breach. Lesser breaches bring punishment
+      duties, and exile at the third.
+    - **apprentice or kit:** punished for a first serious or severe breach, exiled for the next
+    - **deputy:** stripped of the deputyship and punished for a severe one, rebuked for the rest
+    - **leader:** judges itself. Standing falls, nothing more.
+    - **medicine cat:** left to StarClan, standing falling furthest
+    - a kind or wise leader punishes a warrior's first serious breach instead of exiling it
+  - **Standing:** your standing in a Clan is the game's own Clan bond (`wcmods::add_bond`). A judgement lowers it
+    in your Clan, and a breach against another Clan's cat lowers it there too. Each Clan's regard for the others is
+    kept, falling when your Clan's cat harms one of theirs, and shown on the Allegiances page. Taking a mate from
+    another Clan lowers your standing a little in both.
+  - **Exile, in play:**
+    - your Clan's cats drive you out of its camp: Clan life shares their names (`ClanLife.hostile`), and Real-time
+      combat has them fight you as it does any hostile cat
+    - no clanmate walks with you, and they talk to you as to an outsider
+    - after three days you can ask the leader to take you back. It agrees once its grudge against you has faded.
+  - **Punished:** punishment duties for three days. Your party goes home, and clanmates won't come along until
+    they're done.
+  - The Clanmates page shows your standing in each Clan, an exile or punishment, and the breaches your Clan knows.
+- **E2, the Clans' own cats' breaches**, with Clan life's step 7 (borders and Gatherings):
+  - the mod's cats breaking the code as their traits and wants allow (ambition, revenge, theft), judged the same way
+  - trespass and hunting on another Clan's land
+  - justice demanded at Gatherings, raids
+  - rumours from a body found
+  - a deputy who loses its deputyship
+
 ## Part D: the SDK (wcmods), listed for approval
 
 - **S8, cats as fighters:**
@@ -302,6 +343,7 @@ Each step updates `docs/SDK.md`, its header's comments and the in-game tests, as
 3b. **Part B2, your party** (Clan life and Real-time combat): clanmates who come with you and fight beside you. Next
    (the owner's, 2026-11-07).
 4. **Deaths from fights** (Clan life): grief and kin's grudges, and Part E: breaches, standing, judgements, exile.
+   E1 (your cat's breaches) next; E2 (the Clans' own) with Clan life's step 7.
 5. **Part C, rivals** (Clan life): grudges become rivals that grow and come after you; endings.
 6. **S9** and **rogue and animal rivals** (Real-time combat and Clan life).
 
