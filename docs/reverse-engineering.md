@@ -23,6 +23,14 @@ question from *Open questions* when it's answered.
 
 ### Game updates
 
+- **Build 26391405, patch 1.3 (2026-11-06):** "a small update", with no notes. Nothing wcmods reads moved:
+  `python wcmods.py game build` found every one of `game.HIDDEN`'s members again ("same" by their signatures, or
+  "kept" beside them), every class the same size, and every native function by its pattern. The code moved a
+  little: nearly every anchor and native function sits 0x20 before where it was on 26337109, the trait match against
+  `StoryDialogues.csv` 0x1730 after, `GetConsumable` and `GetHousingCost` 0x120 after, `PlaySequence` 0x30 before.
+  `signatures.json` was made again on it with the same signatures for every class, `tuning_read.json` too (the
+  same groups; `TuningData.csv` is unchanged), `uht.py` found all 58 of the Lua's fallback enum numbers unchanged,
+  and `gamebuild.VERIFIED_BUILD` is 26391405. The in-game suites ran on it ([verified.md](verified.md)).
 - **Build 26337109 (2026-11-03):** an update Steam put in that morning. The first real update since the
   level component was signed, and nothing wcmods reads moved: `python wcmods.py game build` found every
   one of `game.HIDDEN`'s 45 members again, the signed ones "same" by their signatures (the level

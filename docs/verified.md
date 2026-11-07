@@ -492,6 +492,24 @@ from its look (its coat its slot's colour), and changing its coat and ears chang
 the save's 26 cats (each cast story role on one cat; the leader `ShadowClanLeader` on Briarstar), 20 of them matched
 to the cats out in the forest, their `role_of` giving clan, role and story role (a quest actor's `CurrentRank` isn't its rank: the leader's read Apprentice).
 
+**2026-11-06, build 26391405 (patch 1.3)** (the update Steam put in that afternoon; the branch `claude/build-26391405`,
+the test cat Emberpaw, the save's slot 8, at (-15992, 13173), by the den). `game build` found every hidden member
+again, none moved; the anchors and native functions moved by their patterns (mostly 0x20 back); `signatures.json` and
+`tuning_read.json` were made again on it, the same as on 26337109 but for the addresses; `uht.py` found the Lua's 58
+fallback enum numbers unchanged. The whole suite (`agent test tests/game --launch`, with `tests/cpp-sdk`,
+`tests/items-mod` and `tests/animations-mod` installed) then ran on it: 134 passed, 29 skipped (the test mods that
+weren't installed), 5 failed and 1 error. Of those:
+- `test_tables_and_tuning` failed only on `tuning_named`, the old `tuning_read.json` being 26337109's (the SDK answers
+  only for its own build); made again, it passed.
+- `test_ui_tab` (the results file locked for a moment), `test_ai_notice` and `test_lua_sky_held` (the fog 0.0406
+  held, 0.0382 read back) each passed when run again on a fresh game.
+- `test_npc_walks_to_a_place` ended its walk 98 cm along a 200 cm walk twice by the den, and passed with your cat
+  20 m off in the open: the spot, not the build (as `docs/plans/npc-walking-stress.md` says of some goals).
+- `test_ai_spawn` failed differently in each of four runs: no fight after three pounces (twice), `start_fight` refused,
+  and once a fight with the spawned rabbit won (level 6, 79 experience) but no items given. Its spawning, roaming,
+  noticing, respawning and removing passed every time, and `test_ai_fight`'s pounced fight passed. Not settled whether
+  the build changed a fight's rewards or the pounce flakes here: open.
+
 ## Not yet confirmed in game
 
 - **Choosing a game (2026-10-28):** the Save page's changes to a game other than the one played last, made

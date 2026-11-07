@@ -470,10 +470,10 @@ def test_tuning_read_makes_and_reads_the_csv(tmp_path):
 
 
 def test_tuning_read_json_is_this_builds():
-    """wcmods/exe/tuning_read.json, made from build 26337109's exe: every key in one group, none in two."""
+    """wcmods/exe/tuning_read.json, made from build 26391405's exe: every key in one group, none in two."""
     import json
     with open(RE.parents[1] / "wcmods" / "exe" / "tuning_read.json", encoding="utf-8") as f:
         d = json.load(f)
     groups = [set(d["read"]), set(d["pattern"]), set(d["not_named"])]
-    assert d["made_on"] == 26337109 and sum(map(len, groups)) == 441 and len(set().union(*groups)) == 441
+    assert d["made_on"] == 26391405 and sum(map(len, groups)) == 441 and len(set().union(*groups)) == 441
     assert "Gameplay.Exploration.MaxLevel" in d["read"] and d["pattern"]["Gameplay.Exploration.Level.2"] == "Gameplay.Exploration.Level.%d"
