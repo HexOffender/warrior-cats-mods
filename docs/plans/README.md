@@ -25,6 +25,7 @@ their tests and docs, what is deliberately not planned (and why), and the decisi
 | [re-roadmap.md](re-roadmap.md) | Reverse-engineering roadmap: the facts about the game that would unlock the next creator features |
 | [menu-pages-sdk.md](menu-pages-sdk.md) | What the Menu pages review found in the script runtime: menu controls, fights, saving and reading JSON, items, the clock hold, status lines, a runtime version |
 | [cpp-sdk-coverage.md](cpp-sdk-coverage.md) | The C++ SDK for all of the game: tables and words live, sounds and music, the sky, cats of a mod's own, conversations, bonds, looks and the clan, quests, fights, dens, the map and travel, effects; the roadmap's open steps folded in, one pull request a step |
+| [clan-life.md](clan-life.md) | Clan life: a C++ mod that fills every Clan's camp with cats living by rank, needs and orders (patrols, hunting, herbs, chores, ceremonies, Gatherings), and the C++ SDK steps it needs first (the new build, poses, carrying, many cats, navigation queries, talking) |
 
 ## Work the plans build on
 
