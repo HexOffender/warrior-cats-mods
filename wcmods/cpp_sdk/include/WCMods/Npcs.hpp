@@ -90,8 +90,7 @@ namespace wcmods
             UObject* goal{};          // a walk after another actor: the actor, its class (to know it's still that one)
             UClass* goal_class{};
             std::optional<Vec3> goal_at;   // and where it was when the move was last asked for
-            double path_left{-1};          // the path still to walk (nav_path_length), looked at each second; -1: none
-            std::chrono::steady_clock::time_point path_at;
+            double best_path{1e18};        // the shortest path still to walk seen (nav_path_length), when stalled
         };
         struct NpcState
         {
@@ -659,28 +658,19 @@ namespace wcmods
                 w.mark = *l;
                 w.mark_at = now;
             }
-            // progress along the path still to walk where there is one (a way round goes away from the place a while),
-            // else the straight line
-            double left = d;
-            if (w.options.avoid)
+            if (d < w.best - 60)
             {
-                if (now - w.path_at >= std::chrono::seconds(1))
-                {
-                    w.path_at = now;
-                    auto path = nav_path_length(*l, w.to, a);
-                    w.path_left = path ? *path : -1;
-                }
-                if (w.path_left >= 0) left = w.path_left;
-            }
-            if (left < w.best - 60)
-            {
-                w.best = left;
+                w.best = d;
                 w.best_at = now;
                 w.tries = 0;
             }
             else if (now - w.best_at > std::chrono::seconds(8))
             {
-                stopped = true;
+                // no nearer in a straight line for 8 s: nearer along the path still to walk than at the last look? (a way
+                // round goes away from the place a while.) Else it's stuck.
+                auto left = w.options.avoid ? nav_path_length(*l, w.to, a) : std::nullopt;
+                if (left && *left < w.best_path - 60) w.best_path = *left;
+                else stopped = true;
                 w.best_at = now;
             }
             if (!stopped) return std::nullopt;

@@ -293,9 +293,10 @@ namespace wcmods
         return std::nullopt;
     }
 
-    // A random place on the navigation mesh within `radius` cm of a place (with its height) that a cat there could walk
-    // to: the engine's K2_GetRandomReachablePointInRadius on the mesh `actor` walks on, else the cats'. nullopt off the
-    // mesh, or with no mesh (another level).
+    // A random place on the navigation mesh about `radius` cm of a place (with its height) or less, that a cat there
+    // could walk to: the engine's K2_GetRandomReachablePointInRadius on the mesh `actor` walks on, else the cats'. (It
+    // picks a polygon the circle touches and a place in it: it can lie a little past `radius`.) nullopt off the mesh,
+    // or with no mesh (another level).
     inline auto random_nav_point(Vec3 around, double radius, UObject* actor = nullptr) -> std::optional<Vec3>
     {
         if (!assert_game_thread(L"random_nav_point") || !world()) return std::nullopt;
@@ -331,7 +332,12 @@ namespace wcmods
         // FindPathToLocationSynchronously gives nothing without the world's main navigation data, and there's none (the
         // two meshes are only in NavDataSet): the mesh is made it for the call, and what was there put back at once.
         // (GetPathLength needs none, but measures between its polygons' middles: metres out, shorter than the line.)
-        UObject* was = get(system, L"MainNavData").object;
+        struct PutBack
+        {
+            UObject* system;
+            UObject* was;
+            ~PutBack() { set(system, L"MainNavData", was); }   // however the call ends
+        } put_back{system, get(system, L"MainNavData").object};
         set(system, L"MainNavData", mesh);
         auto r = call_reflected(nav, STR("FindPathToLocationSynchronously"), [&](Params& p) {
             p.set_nth(0, Value::of(world()));
@@ -344,7 +350,6 @@ namespace wcmods
             }
             p.set_nth(3, Value::of(mesh));   // the context: the mesh itself
         });
-        set(system, L"MainNavData", was);
         UObject* path = r ? r->get(L"ReturnValue").object : nullptr;
         auto valid = path ? call_reflected(path, STR("IsValid")) : std::nullopt;
         auto partial = path ? call_reflected(path, STR("IsPartial")) : std::nullopt;

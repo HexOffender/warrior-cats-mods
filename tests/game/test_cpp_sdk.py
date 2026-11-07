@@ -1647,7 +1647,7 @@ def test_nav_paths(agent):
     assert v["woken"] == 20 and v["arrived"] >= 16 and v["ended"] == 20, (v["woken"], v["arrived"], v["ended"], v["missed"])
     cut = v["cut_off"]
     assert cut and cut["distance"] < 4000 and cut["reach"] < 1500 and cut["back"] is False, cut
-    assert v["off_map"] is True, v
+    assert v["off_map"] is True and v["actor_mesh"] is True, v
 
 
 def test_looks(agent):

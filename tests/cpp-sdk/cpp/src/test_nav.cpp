@@ -45,6 +45,14 @@ namespace t
         // Each cat walks to its place; the walks' ends counted.
         auto walk_all(const std::shared_ptr<NavRun>& r) -> void
         {
+            // a path on the mesh an actor walks on: a cat of the mod's own walks the cats' mesh (1 cm agents), the same
+            // as with none given
+            if (UObject* c = r->cats.empty() ? nullptr : r->cats[0].actor())
+            {
+                auto mine = nav_path_length(r->me, r->points[0], c);
+                auto none = nav_path_length(r->me, r->points[0]);
+                value("nav.actor_mesh", Json(mine && none && std::abs(*mine - *none) < 1));
+            }
             r->results.assign(r->cats.size(), -1);
             for (size_t i = 0; i < r->cats.size(); ++i)
                 r->cats[i].walk_to(r->points[i], {}, [r, i](WalkResult w) {
