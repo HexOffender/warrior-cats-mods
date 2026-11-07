@@ -112,6 +112,33 @@ namespace wcmods
 
     // Things of a kind within `radius` centimetres of your cat (or of `from`), nearest first. It goes
     // through the game's objects: a few times a second, not every frame.
+    // ============================================================================================ actors' tags
+    // An actor's tags (AActor::Tags, names the engine keeps on any actor): a mod marks its own actors with them, so
+    // another mod can tell them apart (Clan life's cats from the game's own walking cats, say).
+    inline auto actor_tags(UObject* actor) -> std::vector<std::wstring>
+    {
+        std::vector<std::wstring> out;
+        for (const Value& v : elements(get(actor, L"Tags"))) out.push_back(v.text);
+        return out;
+    }
+    inline auto has_tag(UObject* actor, std::wstring_view tag) -> bool
+    {
+        for (const std::wstring& t : actor_tags(actor))
+            if (t == tag) return true;
+        return false;
+    }
+    // Add a tag to an actor (once: true when it has it already). False without the actor.
+    inline auto add_tag(UObject* actor, std::wstring_view tag) -> bool
+    {
+        if (!actor || tag.empty()) return false;
+        if (has_tag(actor, tag)) return true;
+        Value tags = get(actor, L"Tags");
+        if (tags.kind != Value::Kind::Array || !tags.property || !tags.at) return false;
+        RC::Unreal::FScriptArrayHelper helper(static_cast<RC::Unreal::FArrayProperty*>(tags.property), tags.at);
+        const int i = helper.AddValue();   // (zeroed: the name None, until it's written)
+        return detail::write(detail::element(tags, i), Value::of(tag));
+    }
+
     inline auto nearby(Kind kind, double radius = 3000, UObject* from = nullptr) -> std::vector<Nearby>
     {
         std::vector<Nearby> out;

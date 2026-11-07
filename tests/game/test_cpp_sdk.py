@@ -2318,3 +2318,21 @@ def test_day_sky(agent):
     assert off["on"] is False and abs(off["light"] - day_light) < 0.01 and abs(off["fog"] - day_fog) < 0.01, off
     again = seen["again"]
     assert again["on"] and abs(again["light"] - night_light) < 0.05 and abs(again["fog"] - night_fog) < 0.01, again
+
+
+def test_cat_fighters(agent):
+    """The mod's cats as fighters (S8): a cat of the mod's own made with scars and tags plays the cats' fight moves by
+    their tags (an attack, a hit, a dodge, a defeat) as your cat does, and lies still after; its tags are on its actor
+    (once each, none it wasn't given, none on your cat), and it's found among the cats near your cat by them; its scars
+    are on its look, changed while it's in; both are kept through a sleep and a wake."""
+    _close_screens(agent)
+    r = _request(agent, "cat_fighters", timeout=60)
+    assert not _failed(r, "cat_fighters"), _failed(r, "cat_fighters")
+    v = {k[len("fighters."):]: x for k, x in r["values"].items() if k.startswith("fighters.")}
+    assert all(v["played"].values()) and len(v["played"]) == 4, v["played"]
+    assert v["still"] is True, v
+    assert v["tags"] is True and v["add_again"] is True and v["no_tag"] is True, v
+    assert v["found_near"] == 1 and v["yours_untagged"] is True, v
+    assert v["scars"] == 13, v                       # eye 1, body 3
+    assert v["scars_now"] == 23 and v["scars_kept"] is True and v["late_tag"] is True, v
+    assert v["woke_tags"] is True and v["woke_scars"] == 23, v

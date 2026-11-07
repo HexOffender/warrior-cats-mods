@@ -158,6 +158,10 @@ namespace t
             {
                 run_nav_paths_request();
             }
+            else if (what == "cat_fighters")
+            {
+                run_cat_fighters_request();
+            }
             else if (what == "day")
             {
                 run_day_request();

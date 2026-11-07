@@ -1455,6 +1455,13 @@ real second, 712 with the copy set to 720 and 7.3 with it at 7.2, while `set_tun
 clock wraps at 86400 (23:59 to 0:02 with nothing else done), runs at the same speed with the pause key's screen (P did
 nothing that was seen) and stops with the inventory up (the game paused).
 
+**The walking cats' fight moves** (seen in game, 2026-11-07): a `BP_WalkingNPC_Character_Base_C` (the game's
+walking camp cats, and wcmods' cats of a mod's own) has a `PlayMontageComponent` whose `AnimDataTable` is
+`DT_Cat_CombatAnimations`, the same as your cat's. On a mod's cat `K2_PlayMontageOfTag` played `AM_UM_Taunt`
+(`Gameplay.Combat.Attack.Universal.1`), `AM_UM_Quick_Claw` (`.2`), `AM_UM_Provoking_Stare` (`.5`), `AM_SC_Wrestle`
+(`Gameplay.Combat.Attack.ShadowClan.1`), `AM_Hit_1_Neutral`, `AM_Dodge_L`, `AM_Lose_1` and `AM_Lose_2`, each playing.
+Scars written into its `CustomData` (`ScarEyeId`, `ScarBodyId`) and drawn read back from its look.
+
 **The sky's state** (seen in game, 2026-11-07): `BP_DayNightSky_C` has a `PostProcessComponent` for each of its
 presets (`PostProcess-neutralday`, `-night`, `-ThunderClan`, `-RiverClan`, `-ShadowClan`, `-WindClan`, `-MoonPool`,
 `-MainMenu`, `-CatCreator`), each unbound: the preset showing has its volume enabled at weight 1, the rest off at 0
