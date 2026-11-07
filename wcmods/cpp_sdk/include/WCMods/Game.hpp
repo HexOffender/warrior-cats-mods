@@ -348,8 +348,10 @@ namespace wcmods
         {
             Resource hp = health();
             if (!hp) return false;
+            const float was = *hp.value;
             *hp.value = static_cast<float>(std::clamp(value, 0.0, static_cast<double>(*hp.max)));
-            if (detail::health_changed) detail::health_changed(actor);
+            // redrawn only when it changed: a heal every frame at full health costs nothing
+            if (*hp.value != was && detail::health_changed) detail::health_changed(actor);
             return true;
         }
         // Full health (and the bar full); false when the cat or its maximum isn't there.

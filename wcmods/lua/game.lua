@@ -1480,8 +1480,9 @@ function Cat:maxHealth() return resource(self, "Health", "WCM_Max") end
 -- Health set, and for your cat the HUD's health bar redrawn (the game redraws it only when its own code changes health:
 -- its OnSetHealthPercent on the HUD's character slot, called here).
 local function setHealthPart(cat, field, v)
+    local was = resource(cat, "Health", field)
     local ok, why = setResource(cat, "Health", field, v)
-    if ok and cat:isPlayer() then
+    if ok and was ~= resource(cat, "Health", field) and cat:isPlayer() then   -- unchanged (a heal at full): nothing to redraw
         local h = Game.find("WBP_GuiHudGameWrc_C")
         local now, most = cat:health(), cat:maxHealth()
         if Game.valid(h) and now and most and most > 0 then

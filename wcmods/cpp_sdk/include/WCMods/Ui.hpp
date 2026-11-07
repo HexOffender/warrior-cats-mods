@@ -1509,7 +1509,9 @@ namespace wcmods
                    }).has_value();
         }
         // Set as this header's included: Cat::set_health (Game.hpp, which can't reach the HUD) redraws your cat's bar.
+        // Off the game thread (a mod's own task) the redraw waits for the next frame.
         inline const bool show_health_hooked = (wcmods::detail::health_changed = [](UObject* who) {
+                                                    if (!on_game_thread_now()) return on_game_thread([] { show_health(); });
                                                     if (who && who == player()) show_health();
                                                 },
                                                 true);

@@ -237,6 +237,10 @@ namespace t
             const std::wstring at_quarter = hud_health();
             expect("set_health.hud", at_quarter.find(std::to_wstring(quarter)) != std::wstring::npos, text(at_quarter));
             expect("set_health.kept_within", c.set_health(*hp.max + 500) && *hp.value == *hp.max);
+            // written into the value alone, the bar stays; ui::show_health redraws it
+            *hp.value = static_cast<float>(quarter);
+            expect("show_health", ui::show_health() && hud_health().find(std::to_wstring(quarter)) != std::wstring::npos,
+                   text(hud_health()));
             c.set_health(quarter);
             c.heal();
             const std::wstring healed = hud_health();
