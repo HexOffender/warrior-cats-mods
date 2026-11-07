@@ -1445,7 +1445,33 @@ wcmods::on_npc_interact([](wcmods::Npc n) { n.walk_to(*wcmods::npc_spot(600, 0))
 | `Npc::face(at)`, `move_to(at)`, `walk_to(at, {speed, radius, avoid}, done)`, `walking()`, `walk_result()`, `stop()` | Turn to a place; put it there at once (on the ground); walk there (175 cm/s, within 30 cm, along the nav mesh round obstacles, or a straight line with `avoid` false), stepping round what it's pressed against, `done(WalkResult)` with `Arrived`, `Blocked` (no progress, after five tries) or `Cancelled`; whether it's on its way; how the last walk ended; stop |
 | `Npc::set_label({name, title, extra, icon, range})`, `set_prompt(L"Talk", reach)` | The game's label over its head (a name, a smaller title, an extra line in the game's green, an icon `available`, `ongoing` or `done`), shown within `range` cm (1000) and faded at its edge; the game's prompt with its Interact glyph while your cat is within `reach` cm (250) and nothing of the game's own is in reach. Empty takes either away |
 | `wcmods::on_npc_interact(fn)` | `fn(npc)` when the game's Interact (any key or button bound to it, as the player's controller hears it) is pressed while a cat's prompt shows. The game hears it too, with nothing of its own in reach then |
+| `Npc::pose(Pose::Sit)`, `play(Move::Eat, {speed, loop})`, `stop_move(blend)` | A pose, held until another or a walk (`walk_to` stands it first), and one of the game's moves, as `set_pose`, `play_move` and `stop_move` below |
 | `Npc::remove()` | Take it out of the world for good |
+
+**Cats' poses and the game's moves (`CatMoves.hpp`)**, game thread only: any cat, yours, the game's or a mod's own.
+
+A pose is the cat AnimBlueprint's own state (`ABP_CatMaker` reads its `CharacterSequenceState` and `FillerState`
+every frame; the game's quest givers and camp cats sit and lie by them), so it holds until it's changed. A move is one
+of the game's animations played over what the cat does: a row of its montage table by tag, else one of its sequences
+(`play_animation`), some in two parts, a lead-in and then a loop that plays until it's stopped.
+
+```cpp
+wcmods::set_pose(cat, wcmods::Pose::Sit);               // sits, until another pose
+wcmods::play_move(cat, wcmods::Move::Sleep);            // lies down, then sleeps on (loops)
+wcmods::play_move(cat, wcmods::Move::Wake);             // gets up
+npc.play(wcmods::Move::Stalk); npc.walk_to(prey, {.speed = 60});   // the hunting crouch, walking
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::set_pose(cat, Pose)`, `pose_of(cat)`, `pose_name(Pose)` | Put a cat in a pose, and the pose it's in (nullopt in a state of the game's that isn't one of these). `Pose`: `Stand` (the AnimBlueprint's own: standing, walking as it moves), `Sit`, `SitLeft`, `SitRight` (sitting up), `Sleep` (lying curled up asleep), `Still` (lying on its side), the sparring states the game's trainers use (`Spar`, `Strike`, `Flinch`), and three idles that move (`Fidget`, `Playful`, `Rear`: scratching at a trunk, now and then up on its hind legs). False without the cat's AnimBlueprint (an animal) |
+| `wcmods::play_move(cat, Move, {speed, loop})` | Play one of the game's moves: the montage playing it (a two-part move's lead-in's), or nullptr. `Move`: from its montage table `Meow`, `Sniff`, `Dig`, `Sharpen` (up on its hind legs, claws down a trunk), `Play`; from its sequences `Yawn`, `Stretch`, `Shake`, `Alert`, `Angry` (fur up, hissing), `Bow` (the game's reverence), `Pounce` (the hunting leap), `Wake` (getting up from sleep); looping until stopped, `Eat`, `Stalk` (the hunting crouch, walking), `Crouch` (the same, still), `WalkBack`, `Tired` (a tired walk); and in two parts, `Sleep` (lying down, then asleep), `Drink` (lapping), `Cheer` (a victory, then held), `Surprised`. `loop` repeats a move that doesn't loop by itself |
+| `wcmods::stop_move(cat, blend)` | Stop the move (or montage) playing, over `blend` seconds (0.25); a two-part move's loop isn't started after |
+| `wcmods::move_name(Move)`, `move_sequences(Move)` | A move's name (`L"eat"`), and the sequences it plays (object paths; none for a montage-table move) |
+
+Measured in game (the test mod's `moves` request): sitting brings the hips to the ground with the head up, asleep and
+still bring them down too, a strike lowers the head, against the same cat standing; every move above plays, and
+lying down to sleep goes on into sleeping by itself.
 
 **Talks (`Talk.hpp`)**, game thread only:
 

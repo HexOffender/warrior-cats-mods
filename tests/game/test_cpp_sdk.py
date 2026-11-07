@@ -1524,6 +1524,39 @@ def _drawn(colour, rgb):
     return all(abs(float(a) - b) < 0.006 for a, b in zip(colour.split(","), _linear(rgb)))
 
 
+def test_moves(agent):
+    """CatMoves.hpp in the game, on a cat of the mod's own in front of your cat: each pose set holds, read back, and
+    measured by its bones against the same cat standing (sitting: the hips near the ground, the head
+    up; asleep, all low; the idles only set and read back: they move); each of the game's moves plays (a montage, and the sequence it
+    plays for one not in the cat's montage table); lying down to sleep goes on into sleeping by itself, and stops when
+    asked; a walk stands a sitting cat up."""
+    _close_screens(agent)
+    r = _request(agent, "moves", timeout=150)
+    assert not _failed(r, "moves"), _failed(r, "moves")
+    v = {k[len("moves."):]: x for k, x in r["values"].items() if k.startswith("moves.")}
+    pose = {k[len("pose."):]: x for k, x in v.items() if k.startswith("pose.")}
+    for name, p in pose.items():
+        assert p["set"] is True and p["reads"] == name, (name, p)
+    # (each bone's lowest and highest over 2 s: some poses move), against the same cat standing
+    hips, head = pose["stand"]["hips_min"], pose["stand"]["head_min"]
+    assert hips > 5 and head > hips, pose["stand"]
+    for sit in ("sit", "sit left"):   # the hips on the ground, the head up
+        assert pose[sit]["hips_max"] < hips * 0.4 and pose[sit]["head_min"] > head * 0.85, (sit, pose[sit], pose["stand"])
+    # lying asleep or still: the hips on the ground (the head moves a little in its sleep)
+    assert pose["sleep"]["hips_max"] < hips * 0.3 and pose["still"]["hips_max"] < hips * 0.45, (pose["sleep"], pose["still"])
+    # a strike: the head low (the idles, rearing to scratch among them, move: they're only set and read back)
+    assert pose["strike"]["head_min"] < head * 0.85, (pose["strike"], pose["stand"])
+    move = {k[len("move."):]: x for k, x in v.items() if k.startswith("move.")}
+    assert len(move) == 21, sorted(move)
+    for name, m in move.items():
+        assert m["montage"] is True and m["plays"] is True, (name, m)
+    assert "Eat_Loop_1" in move["eat"]["sequence"] and "Hunting_Leap" in move["pounce"]["sequence"], move
+    assert "Reverence_1" in move["bow"]["sequence"] and "Walk_Crouching_1" in move["stalk"]["sequence"], move
+    assert "Sleep_In_1" in v["sleep.lead_plays"] and "Sleep_Loop_1" in v["sleep.loop_plays"], (v["sleep.lead_plays"], v["sleep.loop_plays"])
+    assert v["sleep.stopped"] == "" and v["sleep.sequences"] == 2, v
+    assert v["after_walk"] == "stand", v["after_walk"]
+
+
 def test_looks(agent):
     """Looks.hpp in the game, on the test cat (Emberpaw, ShadowClan): the look struct's defaults are the game's; the
     save's text read; the fur colour slot and the tail changed through the game's own SetDefaultCustomData, and the

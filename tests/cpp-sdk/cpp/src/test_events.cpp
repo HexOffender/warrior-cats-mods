@@ -138,6 +138,10 @@ namespace t
             {
                 run_looks_request();
             }
+            else if (what == "moves")
+            {
+                run_moves_request();
+            }
             else if (what == "drop")
             {
                 run_items_request();
