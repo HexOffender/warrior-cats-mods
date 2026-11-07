@@ -1,10 +1,10 @@
 {
  "made_on": {
-  "size": 183319112,
-  "timestamp": 2887140557,
-  "size_of_image": 187203584,
-  "text_sha1": "9b4fc897de0a1472eeca561b4b4f8bf6989dd8d7",
-  "build": 26337109
+  "size": 183508040,
+  "timestamp": 3845016363,
+  "size_of_image": 187396096,
+  "text_sha1": "08827750267c6414a1e61c70f89adfaeef0eb3c1",
+  "build": 26391405
  },
  "classes": {
   "/Script/SwtQuest.SwtQuestResourceComponent": {
@@ -18,40 +18,40 @@
    "anchors": [],
    "sites": [
     {
-     "from": "0x1659DF0",
-     "at": "0x1659E11",
+     "from": "0x1659DD0",
+     "at": "0x1659DF1",
      "pattern": "0F 28 F1 E8 ?? ?? ?? ?? F3 0F 10 8B ?? ?? ?? ?? 0F 57 FF 0F 2F CF",
      "captures": {
       "12": 268
      }
     },
     {
-     "from": "0x1659DF0",
-     "at": "0x1659E86",
+     "from": "0x1659DD0",
+     "at": "0x1659E66",
      "pattern": "0F 2F 0C 18 73 ?? F3 0F 59 B3 ?? ?? ?? ?? 48 8B CB 48 8B 03",
      "captures": {
       "10": 276
      }
     },
     {
-     "from": "0x1659DF0",
-     "at": "0x1659E97",
+     "from": "0x1659DD0",
+     "at": "0x1659E77",
      "pattern": "48 8B 03 F3 0F 58 B3 ?? ?? ?? ?? F3 0F 58 B3 ?? ?? ?? ?? 0F 28 CE FF 90 ?? ?? ?? ??",
      "captures": {
       "15": 268
      }
     },
     {
-     "from": "0x1659DF0",
-     "at": "0x1659ED5",
+     "from": "0x1659DD0",
+     "at": "0x1659EB5",
      "pattern": "EB ?? 40 84 FF 75 ?? 0F 2F BB ?? ?? ?? ?? 72 ?? 48 8B 03 48 8B CB",
      "captures": {
       "10": 268
      }
     },
     {
-     "from": "0x1659F10",
-     "at": "0x1659F35",
+     "from": "0x1659EF0",
+     "at": "0x1659F15",
      "pattern": "48 8D B9 ?? ?? ?? ?? 48 8B C7 48 8D B1 ?? ?? ?? ?? 0F 28 C1 48 8B D9",
      "captures": {
       "13": 272
@@ -60,7 +60,7 @@
    ],
    "size": 288,
    "align": 8,
-   "vtable": 162009112,
+   "vtable": 162165144,
    "overrides": 14,
    "natives": 0,
    "parent": null
@@ -73,8 +73,8 @@
    "anchors": [],
    "sites": [
     {
-     "from": "0x1659D60",
-     "at": "0x1659D6E",
+     "from": "0x1659D40",
+     "at": "0x1659D4E",
      "pattern": "0F 28 F1 E8 ?? ?? ?? ?? F3 0F 59 B3 ?? ?? ?? ?? 48 8B CB 48 8B 03",
      "captures": {
       "12": 284
@@ -83,7 +83,7 @@
    ],
    "size": 288,
    "align": 8,
-   "vtable": 161994920,
+   "vtable": 162150952,
    "overrides": 4,
    "natives": 0,
    "parent": "SwtQuestResourceComponent"
@@ -103,27 +103,27 @@
    "anchors": [
     {
      "note": "setting the XP: levels up while it reaches the next level's, below the cap",
-     "was": "0x1657230",
+     "was": "0x1657210",
      "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 50 0F 29 74 24 ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 44 24 ?? 80 B9 ?? ?? ?? ?? 00"
     },
     {
      "note": "setting the level: the XP bar's size from the XP table, full at the cap",
-     "was": "0x1657010",
+     "was": "0x1656FF0",
      "pattern": "40 53 48 83 EC 40 48 8B 01 48 8B D9 0F 29 74 24 ?? 0F 29 7C 24 ??"
     }
    ],
    "sites": [
     {
-     "from": "0x1657010",
-     "at": "0x1657021",
+     "from": "0x1656FF0",
+     "at": "0x1657001",
      "pattern": "0F 29 7C 24 ?? 0F 28 FA 89 91 ?? ?? ?? ?? FF 90 ?? ?? ?? ?? 48 8B CB",
      "captures": {
       "10": 288
      }
     },
     {
-     "from": "0x1657010",
-     "at": "0x165704B",
+     "from": "0x1656FF0",
+     "at": "0x165702B",
      "pattern": "48 8B 03 48 8B CB 48 8B 90 ?? ?? ?? ?? 8B 83 ?? ?? ?? ?? 39 83 ?? ?? ?? ?? 7D ?? 0F 28 CF",
      "captures": {
       "15": 292,
@@ -131,16 +131,16 @@
      }
     },
     {
-     "from": "0x1657010",
-     "at": "0x16570E2",
+     "from": "0x1656FF0",
+     "at": "0x16570C2",
      "pattern": "EB ?? BA FF FF FF FF 8B 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 7C 24 ??",
      "captures": {
       "9": 288
      }
     },
     {
-     "from": "0x1657230",
-     "at": "0x1657320",
+     "from": "0x1657210",
+     "at": "0x1657300",
      "pattern": "48 8B CB FF 90 ?? ?? ?? ?? 8B 93 ?? ?? ?? ?? 3B 93 ?? ?? ?? ?? 7D ?? F3 0F 10 07 48 8B CB",
      "captures": {
       "11": 288,
@@ -148,16 +148,16 @@
      }
     },
     {
-     "from": "0x17C4A60",
-     "at": "0x17C4A99",
+     "from": "0x17C4A40",
+     "at": "0x17C4A79",
      "pattern": "48 8B 4C 24 ?? F3 0F 2C C0 89 86 ?? ?? ?? ?? 48 85 C9 74 ??",
      "captures": {
       "11": 292
      }
     },
     {
-     "from": "0x17C4C60",
-     "at": "0x17C4EA7",
+     "from": "0x17C4C40",
+     "at": "0x17C4E87",
      "pattern": "F3 0F 59 DE F3 0F 58 8B ?? ?? ?? ?? F3 0F 58 93 ?? ?? ?? ??",
      "captures": {
       "8": 344,
@@ -165,8 +165,8 @@
      }
     },
     {
-     "from": "0x17C4C60",
-     "at": "0x17C4EB3",
+     "from": "0x17C4C40",
+     "at": "0x17C4E93",
      "pattern": "F3 0F 58 93 ?? ?? ?? ?? F3 0F 58 9B ?? ?? ?? ?? F3 0F 11 8B ?? ?? ?? ??",
      "captures": {
       "4": 348,
@@ -175,8 +175,8 @@
      }
     },
     {
-     "from": "0x17C4C60",
-     "at": "0x17C4EC3",
+     "from": "0x17C4C40",
+     "at": "0x17C4EA3",
      "pattern": "F3 0F 11 8B ?? ?? ?? ?? F3 0F 11 93 ?? ?? ?? ?? F3 0F 11 9B ?? ?? ?? ??",
      "captures": {
       "4": 344,
@@ -185,24 +185,24 @@
      }
     },
     {
-     "from": "0x17C4C60",
-     "at": "0x17C4F41",
+     "from": "0x17C4C40",
+     "at": "0x17C4F21",
      "pattern": "F3 0F 10 15 ?? ?? ?? ?? 48 8D 93 ?? ?? ?? ?? F3 0F 10 8B ?? ?? ?? ?? 48 8D 4D ?? F3 0F 58 C9",
      "captures": {
       "19": 340
      }
     },
     {
-     "from": "0x17C4C60",
-     "at": "0x17C4F60",
+     "from": "0x17C4C40",
+     "at": "0x17C4F40",
      "pattern": "F3 0F 58 CA F3 0F 2D C1 F3 0F 10 8B ?? ?? ?? ?? F3 0F 58 C9 D1 F8",
      "captures": {
       "12": 344
      }
     },
     {
-     "from": "0x17C4C60",
-     "at": "0x17C4F7A",
+     "from": "0x17C4C40",
+     "at": "0x17C4F5A",
      "pattern": "F3 0F 58 CA 0F 5B C0 F3 0F 2D C1 F3 0F 10 8B ?? ?? ?? ?? F3 0F 58 C9 F3 0F 11 83 ?? ?? ?? ?? D1 F8",
      "captures": {
       "15": 348,
@@ -210,8 +210,8 @@
      }
     },
     {
-     "from": "0x17C4C60",
-     "at": "0x17C4F9F",
+     "from": "0x17C4C40",
+     "at": "0x17C4F7F",
      "pattern": "66 0F 6E C0 0F 5B C0 F3 0F 2D C1 F3 0F 10 8B ?? ?? ?? ?? F3 0F 58 C9 F3 0F 11 83 ?? ?? ?? ?? D1 F8",
      "captures": {
       "15": 352,
@@ -219,8 +219,8 @@
      }
     },
     {
-     "from": "0x17C4C60",
-     "at": "0x17C4FC4",
+     "from": "0x17C4C40",
+     "at": "0x17C4FA4",
      "pattern": "66 0F 6E C0 0F 5B C0 F3 0F 2D C1 F3 0F 10 8B ?? ?? ?? ?? F3 0F 11 83 ?? ?? ?? ?? F3 0F 58 C9 D1 F8",
      "captures": {
       "15": 356,
@@ -228,8 +228,8 @@
      }
     },
     {
-     "from": "0x17C4C60",
-     "at": "0x17C4FE9",
+     "from": "0x17C4C40",
+     "at": "0x17C4FC9",
      "pattern": "F3 0F 58 CA 0F 5B C0 F3 0F 2D C1 F3 0F 10 8B ?? ?? ?? ?? F3 0F 11 83 ?? ?? ?? ?? F3 0F 58 C9 D1 F8",
      "captures": {
       "15": 360,
@@ -237,24 +237,24 @@
      }
     },
     {
-     "from": "0x17C4C60",
-     "at": "0x17C5012",
+     "from": "0x17C4C40",
+     "at": "0x17C4FF2",
      "pattern": "0F 5B C0 F3 0F 2D C1 F3 0F 11 83 ?? ?? ?? ?? D1 F8 66 0F 6E C0",
      "captures": {
       "11": 356
      }
     },
     {
-     "from": "0x17C4C60",
-     "at": "0x17C5023",
+     "from": "0x17C4C40",
+     "at": "0x17C5003",
      "pattern": "66 0F 6E C0 0F 5B C0 F3 0F 11 83 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ??",
      "captures": {
       "11": 360
      }
     },
     {
-     "from": "0x17C4C60",
-     "at": "0x17C5176",
+     "from": "0x17C4C40",
+     "at": "0x17C5156",
      "pattern": "48 8B CF FF 50 ?? F3 0F 10 8B ?? ?? ?? ?? 48 8B C8 48 8B 10",
      "captures": {
       "10": 340
@@ -263,7 +263,7 @@
    ],
    "size": 368,
    "align": 8,
-   "vtable": 162583776,
+   "vtable": 162739808,
    "overrides": 5,
    "natives": 0,
    "parent": null
@@ -277,24 +277,24 @@
    "anchors": [],
    "sites": [
     {
-     "from": "0x17BFC90",
-     "at": "0x17BFC9E",
+     "from": "0x17BFC70",
+     "at": "0x17BFC7E",
      "pattern": "48 8B F9 E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8D 97 ?? ?? ?? ?? 45 33 C9 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 4D ?? 48 85 C9",
      "captures": {
       "27": 308
      }
     },
     {
-     "from": "0x17BFC90",
-     "at": "0x17BFDE9",
+     "from": "0x17BFC70",
+     "at": "0x17BFDC9",
      "pattern": "48 8D 45 ?? 48 89 45 ?? F3 0F 11 87 ?? ?? ?? ?? 0F 1F 80 ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ??",
      "captures": {
       "12": 304
      }
     },
     {
-     "from": "0x17BFEE0",
-     "at": "0x17BFF65",
+     "from": "0x17BFEC0",
+     "at": "0x17BFF45",
      "pattern": "80 BF ?? ?? ?? ?? 00 75 ?? F3 0F 58 B3 ?? ?? ?? ?? F3 0F 10 83 ?? ?? ?? ?? 0F 2F F0",
      "captures": {
       "13": 304,
@@ -302,8 +302,8 @@
      }
     },
     {
-     "from": "0x17BFEE0",
-     "at": "0x17BFF76",
+     "from": "0x17BFEC0",
+     "at": "0x17BFF56",
      "pattern": "F3 0F 10 83 ?? ?? ?? ?? 0F 2F F0 F3 0F 11 B3 ?? ?? ?? ?? 72 ?? 8B 83 ?? ?? ?? ??",
      "captures": {
       "4": 308,
@@ -313,7 +313,7 @@
    ],
    "size": 408,
    "align": 8,
-   "vtable": 162449200,
+   "vtable": 162605232,
    "overrides": 4,
    "natives": 0,
    "parent": "SwtQuestResourceComponent"
@@ -326,24 +326,24 @@
    "anchors": [],
    "sites": [
     {
-     "from": "0x17204A0",
-     "at": "0x17205B4",
+     "from": "0x1720480",
+     "at": "0x1720594",
      "pattern": "B8 C5 B3 A2 91 48 89 7B ?? F3 0F 2C 8D ?? ?? ?? ?? F7 E9 03 D1",
      "captures": {
       "13": 1080
      }
     },
     {
-     "from": "0x17EA340",
-     "at": "0x17EA42A",
+     "from": "0x17EA320",
+     "at": "0x17EA40A",
      "pattern": "74 ?? E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8D 97 ?? ?? ?? ?? 45 33 C9 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 4D ?? 48 85 C9",
      "captures": {
       "26": 1080
      }
     },
     {
-     "from": "0x17EC9D0",
-     "at": "0x17EC9E4",
+     "from": "0x17EC9B0",
+     "at": "0x17EC9C4",
      "pattern": "0F 2F D8 F3 0F 59 89 ?? ?? ?? ?? F3 0F 10 91 ?? ?? ?? ?? 76 ?? F3 0F 59 89 ?? ?? ?? ??",
      "captures": {
       "15": 1080
@@ -352,7 +352,7 @@
    ],
    "size": 1312,
    "align": 8,
-   "vtable": 162546320,
+   "vtable": 162702352,
    "overrides": 21,
    "natives": 4,
    "parent": null
@@ -377,55 +377,55 @@
    "anchors": [
     {
      "note": "builds a fighter's stats from its level",
-     "was": "0x17D6AC0",
+     "was": "0x17D6AA0",
      "pattern": "48 8B C4 48 89 58 ?? 48 89 70 ?? 48 89 78 ?? 4C 89 70 ?? 55 48 8D 68 ?? 48 81 EC C0 00 00 00 0F 29 70 ??"
     },
     {
      "note": "a fighter's Prowess with its buffs",
-     "was": "0x17D7250",
+     "was": "0x17D7230",
      "pattern": null
     },
     {
      "note": "a fighter's speed, from Agility and stamina",
-     "was": "0x17D82B0",
+     "was": "0x17D8290",
      "pattern": "40 53 48 83 EC 50 0F 29 74 24 ?? 48 8B D9 0F 29 7C 24 ?? 44 0F 29 44 24 ?? E8 ?? ?? ?? ?? 48 85 C0"
     },
     {
      "note": "setting up a fighter: health and fight stamina from its stats",
-     "was": "0x17D5910",
+     "was": "0x17D58F0",
      "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 57 48 83 EC 60 48 8B 99 ?? ?? ?? ?? 8B FA 89 91 ?? ?? ?? ??"
     },
     {
      "note": "dynamic difficulty: an enemy's level, its AI tier and its moves",
-     "was": "0x17D5280",
+     "was": "0x17D5260",
      "pattern": "48 89 54 24 ?? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC 18 01 00 00 4C 8B F9"
     },
     {
      "note": "hitting and missing: the defender's team looked up for a forced miss",
-     "was": "0x17D9C30",
+     "was": "0x17D9C10",
      "pattern": "40 55 53 41 56 48 8D 6C 24 ?? 48 81 EC 00 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4"
     }
    ],
    "sites": [
     {
-     "from": "0x173D0E0",
-     "at": "0x173D197",
+     "from": "0x173D0C0",
+     "at": "0x173D177",
      "pattern": "E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 93 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ??",
      "captures": {
       "19": 488
      }
     },
     {
-     "from": "0x17D5280",
-     "at": "0x17D5333",
+     "from": "0x17D5260",
+     "at": "0x17D5313",
      "pattern": "0F 4F C1 48 8D 4C 24 ?? 41 89 87 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 4C 24 ??",
      "captures": {
       "11": 988
      }
     },
     {
-     "from": "0x17D5280",
-     "at": "0x17D5627",
+     "from": "0x17D5260",
+     "at": "0x17D5607",
      "pattern": "89 1C 01 48 8D 4C 24 ?? 45 8B 8F ?? ?? ?? ?? 45 0F B6 87 ?? ?? ?? ?? E8 ?? ?? ?? ??",
      "captures": {
       "11": 988,
@@ -433,8 +433,8 @@
      }
     },
     {
-     "from": "0x17D5280",
-     "at": "0x17D566D",
+     "from": "0x17D5260",
+     "at": "0x17D564D",
      "pattern": "48 89 58 ?? E8 ?? ?? ?? ?? 45 8B 8F ?? ?? ?? ?? 48 8D 4C 24 ?? 45 0F B6 87 ?? ?? ?? ??",
      "captures": {
       "12": 988,
@@ -442,80 +442,80 @@
      }
     },
     {
-     "from": "0x17D5280",
-     "at": "0x17D56CC",
+     "from": "0x17D5260",
+     "at": "0x17D56AC",
      "pattern": "8B F3 66 90 41 83 BF ?? ?? ?? ?? 04 7D ?? 48 39 1D ?? ?? ?? ??",
      "captures": {
       "7": 488
      }
     },
     {
-     "from": "0x17D5280",
-     "at": "0x17D5704",
+     "from": "0x17D5260",
+     "at": "0x17D56E4",
      "pattern": "4C 8B E0 4D 8D 87 ?? ?? ?? ?? 41 8B 87 ?? ?? ?? ?? 41 3B 00 75 ??",
      "captures": {
       "13": 488
      }
     },
     {
-     "from": "0x17D5910",
-     "at": "0x17D59BA",
+     "from": "0x17D58F0",
+     "at": "0x17D599A",
      "pattern": "E8 ?? ?? ?? ?? F3 0F 59 05 ?? ?? ?? ?? 48 8B CF F3 0F 58 86 ?? ?? ?? ?? 0F 28 C8 FF D3 48 8B CE",
      "captures": {
       "20": 472
      }
     },
     {
-     "from": "0x17D5910",
-     "at": "0x17D59EF",
+     "from": "0x17D58F0",
+     "at": "0x17D59CF",
      "pattern": "E8 ?? ?? ?? ?? F3 0F 59 05 ?? ?? ?? ?? 48 8B CF F3 0F 58 86 ?? ?? ?? ?? 0F 28 C8 FF D3 48 8B BE ?? ?? ?? ??",
      "captures": {
       "20": 472
      }
     },
     {
-     "from": "0x17D6AC0",
-     "at": "0x17D6CB3",
+     "from": "0x17D6AA0",
+     "at": "0x17D6C93",
      "pattern": "40 B7 01 48 8B 05 ?? ?? ?? ?? 44 0F B6 B6 ?? ?? ?? ?? 48 85 C0 75 ??",
      "captures": {
       "14": 984
      }
     },
     {
-     "from": "0x17D9C30",
-     "at": "0x17D9C6D",
+     "from": "0x17D9C10",
+     "at": "0x17D9C4D",
      "pattern": "49 8D 8E ?? ?? ?? ?? 48 8D 55 ?? 41 88 86 ?? ?? ?? ?? 88 45 ?? E8 ?? ?? ?? ??",
      "captures": {
       "14": 416
      }
     },
     {
-     "from": "0x17D9C30",
-     "at": "0x17D9C87",
+     "from": "0x17D9C10",
+     "at": "0x17D9C67",
      "pattern": "49 8B CE E8 ?? ?? ?? ?? 41 80 BE ?? ?? ?? ?? 01 48 8B D0 75 ??",
      "captures": {
       "11": 417
      }
     },
     {
-     "from": "0x17D9C30",
-     "at": "0x17D9C97",
+     "from": "0x17D9C10",
+     "at": "0x17D9C77",
      "pattern": "48 8B D0 75 ?? 41 0F B6 86 ?? ?? ?? ?? 83 E8 03 74 ??",
      "captures": {
       "9": 416
      }
     },
     {
-     "from": "0x17D9C30",
-     "at": "0x17D9E7A",
+     "from": "0x17D9C10",
+     "at": "0x17D9E5A",
      "pattern": "48 8B 87 ?? ?? ?? ?? 49 8B CE 44 0F B6 B8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 4C 8B C0",
      "captures": {
       "14": 417
      }
     },
     {
-     "from": "0x17D9C30",
-     "at": "0x17DA0EA",
+     "from": "0x17D9C10",
+     "at": "0x17DA0CA",
      "pattern": "48 8B 02 48 8B 88 ?? ?? ?? ?? 0F B6 B1 ?? ?? ?? ?? 48 8B CA E8 ?? ?? ?? ??",
      "captures": {
       "13": 417
@@ -524,7 +524,7 @@
    ],
    "size": 1024,
    "align": 8,
-   "vtable": 162798304,
+   "vtable": 162954336,
    "overrides": 2,
    "natives": 12,
    "parent": null
@@ -540,43 +540,43 @@
    "anchors": [
     {
      "note": "the end of a round: the self-cure roll, and poison queued on the director",
-     "was": "0x17CC9A0",
+     "was": "0x17CC980",
      "pattern": "48 89 5C 24 ?? 57 48 83 EC 20 0F B6 99 ?? ?? ?? ?? 48 8B F9 84 DB 0F 84 ?? ?? ?? ?? FF 15 ?? ?? ?? ??"
     },
     {
      "note": "loads the status tuning",
-     "was": "0x17CC390",
+     "was": "0x17CC370",
      "pattern": "40 55 48 8B EC 48 83 EC 50 48 89 7C 24 ?? 48 8B F9 E8 ?? ?? ?? ?? 48 85 C0"
     }
    ],
    "sites": [
     {
-     "from": "0x1735670",
-     "at": "0x173572F",
+     "from": "0x1735650",
+     "at": "0x173570F",
      "pattern": "8B 44 8A ?? 83 F8 FF 75 ?? 38 9F ?? ?? ?? ?? 0F 84 ?? ?? ?? ?? 48 8B CF E8 ?? ?? ?? ??",
      "captures": {
       "11": 224
      }
     },
     {
-     "from": "0x1735670",
-     "at": "0x173578B",
+     "from": "0x1735650",
+     "at": "0x173576B",
      "pattern": "48 8B 74 24 ?? 48 8B CF 88 9F ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 85 C0",
      "captures": {
       "10": 224
      }
     },
     {
-     "from": "0x1735670",
-     "at": "0x17357B3",
+     "from": "0x1735650",
+     "at": "0x1735793",
      "pattern": "74 ?? 48 8B CF E8 ?? ?? ?? ?? 0F B6 9F ?? ?? ?? ?? 48 8B CF E8 ?? ?? ?? ?? 44 0F B6 C3",
      "captures": {
       "13": 224
      }
     },
     {
-     "from": "0x1735670",
-     "at": "0x17357D3",
+     "from": "0x1735650",
+     "at": "0x17357B3",
      "pattern": "E8 ?? ?? ?? ?? 48 8B CF C7 87 ?? ?? ?? ?? 01 00 00 00 E8 ?? ?? ?? ?? 0F B6 87 ?? ?? ?? ??",
      "captures": {
       "10": 324,
@@ -584,40 +584,40 @@
      }
     },
     {
-     "from": "0x17CC390",
-     "at": "0x17CC4EA",
+     "from": "0x17CC370",
+     "at": "0x17CC4CA",
      "pattern": "E8 ?? ?? ?? ?? 48 8B 4D ?? F3 0F 11 87 ?? ?? ?? ?? 48 85 C9 74 ??",
      "captures": {
       "13": 332
      }
     },
     {
-     "from": "0x17CC390",
-     "at": "0x17CC519",
+     "from": "0x17CC370",
+     "at": "0x17CC4F9",
      "pattern": "E8 ?? ?? ?? ?? 48 8B 4D ?? F3 0F 11 87 ?? ?? ?? ?? 48 8B 7C 24 ?? 48 85 C9",
      "captures": {
       "13": 328
      }
     },
     {
-     "from": "0x17CC9A0",
-     "at": "0x17CC9C2",
+     "from": "0x17CC980",
+     "at": "0x17CC9A2",
      "pattern": "25 FF 7F 00 00 66 0F 6E C8 8B 87 ?? ?? ?? ?? 0F 5B C9 66 0F 6E C0",
      "captures": {
       "11": 324
      }
     },
     {
-     "from": "0x17CC9A0",
-     "at": "0x17CC9D8",
+     "from": "0x17CC980",
+     "at": "0x17CC9B8",
      "pattern": "F3 0F 59 0D ?? ?? ?? ?? 0F 5B C0 F3 0F 59 87 ?? ?? ?? ?? 0F 2F C8 77 ??",
      "captures": {
       "15": 328
      }
     },
     {
-     "from": "0x17CC9A0",
-     "at": "0x17CC9F3",
+     "from": "0x17CC980",
+     "at": "0x17CC9D3",
      "pattern": "E8 ?? ?? ?? ?? EB ?? FF C0 89 87 ?? ?? ?? ?? 0F B6 87 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? 48 8D 54 24 ??",
      "captures": {
       "11": 324,
@@ -627,7 +627,7 @@
    ],
    "size": 336,
    "align": 8,
-   "vtable": 162738032,
+   "vtable": 162894064,
    "overrides": 2,
    "natives": 4,
    "parent": null
@@ -651,19 +651,19 @@
    "anchors": [
     {
      "note": "loads the senses from the tuning for the size class",
-     "was": "0x17B7600",
+     "was": "0x17B75E0",
      "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 55 48 8B EC 48 83 EC 40 48 8B 05 ?? ?? ?? ??"
     },
     {
      "note": "reads the senses",
-     "was": "0x17B6910",
+     "was": "0x17B68F0",
      "pattern": "40 53 48 83 EC 20 48 8B D9 E8 ?? ?? ?? ?? 48 8B 03 33 D2 48 8B CB FF 90 ?? ?? ?? ?? 48 8B 03"
     }
    ],
    "sites": [
     {
-     "from": "0x17B6910",
-     "at": "0x17B6955",
+     "from": "0x17B68F0",
+     "at": "0x17B6935",
      "pattern": "48 8B CB E8 ?? ?? ?? ?? F3 0F 10 8B ?? ?? ?? ?? 41 B0 01 F3 0F 5F 8B ?? ?? ?? ??",
      "captures": {
       "12": 1420,
@@ -671,8 +671,8 @@
      }
     },
     {
-     "from": "0x17B6910",
-     "at": "0x17B6968",
+     "from": "0x17B68F0",
+     "at": "0x17B6948",
      "pattern": "F3 0F 5F 8B ?? ?? ?? ?? 48 8B CB F3 0F 5F 8B ?? ?? ?? ?? F3 0F 5F 8B ?? ?? ?? ?? 48 83 C4 20",
      "captures": {
       "4": 1408,
@@ -681,8 +681,8 @@
      }
     },
     {
-     "from": "0x17B6D70",
-     "at": "0x17B7458",
+     "from": "0x17B6D50",
+     "at": "0x17B7438",
      "pattern": "F3 41 0F 5D C6 E8 ?? ?? ?? ?? 44 0F 2F 97 ?? ?? ?? ?? 0F 87 ?? ?? ?? ?? F3 0F 10 8F ?? ?? ?? ??",
      "captures": {
       "14": 1408,
@@ -690,72 +690,72 @@
      }
     },
     {
-     "from": "0x17B6D70",
-     "at": "0x17B748E",
+     "from": "0x17B6D50",
+     "at": "0x17B746E",
      "pattern": "40 B6 01 EB ?? 44 0F 2F 97 ?? ?? ?? ?? 40 0F 96 C6 41 F6 04 24 02",
      "captures": {
       "9": 1408
      }
     },
     {
-     "from": "0x17B6D70",
-     "at": "0x17B74EC",
+     "from": "0x17B6D50",
+     "at": "0x17B74CC",
      "pattern": "F2 0F 59 C9 F2 0F 58 D0 F3 0F 10 87 ?? ?? ?? ?? 0F 5A C0 F2 0F 58 D1",
      "captures": {
       "12": 1424
      }
     },
     {
-     "from": "0x17B6D70",
-     "at": "0x17B7526",
+     "from": "0x17B6D50",
+     "at": "0x17B7506",
      "pattern": "F6 81 ?? ?? ?? ?? 01 75 ?? 44 0F 2F 97 ?? ?? ?? ?? 0F 96 C0 EB ??",
      "captures": {
       "13": 1420
      }
     },
     {
-     "from": "0x17B6D70",
-     "at": "0x17B753C",
+     "from": "0x17B6D50",
+     "at": "0x17B751C",
      "pattern": "32 C0 40 0A F0 44 0F 2F 97 ?? ?? ?? ?? 8B 83 ?? ?? ?? ?? 0F 96 C1",
      "captures": {
       "9": 1428
      }
     },
     {
-     "from": "0x17B7600",
-     "at": "0x17B7849",
+     "from": "0x17B75E0",
+     "at": "0x17B7829",
      "pattern": "4C 0F 45 45 ?? E8 ?? ?? ?? ?? 48 8D B3 ?? ?? ?? ?? 45 33 C9 48 8B D6",
      "captures": {
       "13": 1436
      }
     },
     {
-     "from": "0x17B7600",
-     "at": "0x17B7942",
+     "from": "0x17B75E0",
+     "at": "0x17B7922",
      "pattern": "4C 8B C7 E8 ?? ?? ?? ?? 48 8D 93 ?? ?? ?? ?? 45 33 C9 48 8D 4D ??",
      "captures": {
       "11": 1452
      }
     },
     {
-     "from": "0x17B79D0",
-     "at": "0x17B7A27",
+     "from": "0x17B79B0",
+     "at": "0x17B7A07",
      "pattern": "48 3B DD 75 ?? 0F 2F B6 ?? ?? ?? ?? 0F 87 ?? ?? ?? ?? 48 8B 86 ?? ?? ?? ??",
      "captures": {
       "8": 1444
      }
     },
     {
-     "from": "0x17B79D0",
-     "at": "0x17B7B65",
+     "from": "0x17B79B0",
+     "at": "0x17B7B45",
      "pattern": "48 3B DD 75 ?? E9 ?? ?? ?? ?? 0F 2F B6 ?? ?? ?? ?? 0F 86 ?? ?? ?? ?? 48 8B 86 ?? ?? ?? ?? 48 85 C0",
      "captures": {
       "13": 1448
      }
     },
     {
-     "from": "0x17B7DD0",
-     "at": "0x17B7E1D",
+     "from": "0x17B7DB0",
+     "at": "0x17B7DFD",
      "pattern": "4C 39 04 C8 75 ?? 48 8B 8E ?? ?? ?? ?? 8B 87 ?? ?? ?? ?? 89 81 ?? ?? ?? ?? 4C 8D 9F ?? ?? ?? ?? 48 8B D3",
      "captures": {
       "15": 1436
@@ -764,7 +764,7 @@
    ],
    "size": 1568,
    "align": 16,
-   "vtable": 162486472,
+   "vtable": 162642504,
    "overrides": 7,
    "natives": 0,
    "parent": null
@@ -777,35 +777,35 @@
    "anchors": [
     {
      "note": "adds an item, or takes it away: the items map at +0x150",
-     "was": "0x1654430",
+     "was": "0x1654410",
      "pattern": "44 89 44 24 ?? 48 89 54 24 ?? 55 57 41 56 48 8B EC 48 83 EC 40 48 8B 05 ?? ?? ?? ??"
     },
     {
      "note": "its vtable's +0x4F0, on a tag: a QuestItem tag, else looked up in the items map",
-     "was": "0x16543D0",
+     "was": "0x16543B0",
      "pattern": "48 89 54 24 ?? 53 48 83 EC 30 48 8B D9 48 8D 15 ?? ?? ?? ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ??"
     }
    ],
    "sites": [
     {
-     "from": "0x16543D0",
-     "at": "0x1654408",
+     "from": "0x16543B0",
+     "at": "0x16543E8",
      "pattern": "E8 ?? ?? ?? ?? 84 C0 75 ?? 48 8D 8B ?? ?? ?? ?? 48 8D 54 24 ?? E8 ?? ?? ?? ?? B0 01",
      "captures": {
       "12": 336
      }
     },
     {
-     "from": "0x1654430",
-     "at": "0x1654496",
+     "from": "0x1654410",
+     "at": "0x1654476",
      "pattern": "48 89 74 24 ?? 48 8D 55 ?? 48 8D B7 ?? ?? ?? ?? 48 8B CE E8 ?? ?? ?? ??",
      "captures": {
       "12": 336
      }
     },
     {
-     "from": "0x1655350",
-     "at": "0x165535C",
+     "from": "0x1655330",
+     "at": "0x165533C",
      "pattern": "57 48 83 EC 20 48 8D B1 ?? ?? ?? ?? 48 89 54 24 ?? 48 8B D9",
      "captures": {
       "8": 336
@@ -814,7 +814,7 @@
    ],
    "size": 592,
    "align": 8,
-   "vtable": 161939352,
+   "vtable": 162095384,
    "overrides": 7,
    "natives": 0,
    "parent": null
@@ -827,14 +827,14 @@
    "anchors": [
     {
      "note": "loads TuningData.csv into the map at +0x50 (and two more tables into the maps after it)",
-     "was": "0x12BB510",
+     "was": "0x12BB4F0",
      "pattern": "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 50 83 B9 ?? ?? ?? ?? 01"
     }
    ],
    "sites": [
     {
-     "from": "0x12438B0",
-     "at": "0x1243926",
+     "from": "0x1243880",
+     "at": "0x12438F6",
      "pattern": "48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8D 4B ?? E8 ?? ?? ?? ?? 48 8D 05 ?? ?? ?? ?? 48 8B CB",
      "captures": {
       "13": 80
@@ -844,8 +844,8 @@
      }
     },
     {
-     "from": "0x12BB510",
-     "at": "0x12BB544",
+     "from": "0x12BB4F0",
+     "at": "0x12BB524",
      "pattern": "40 B7 01 44 8B 46 ?? 48 8D 4E ?? E8 ?? ?? ?? ?? 45 33 F6",
      "captures": {
       "10": 80
@@ -855,8 +855,8 @@
      }
     },
     {
-     "from": "0x12BB510",
-     "at": "0x12BB562",
+     "from": "0x12BB4F0",
+     "at": "0x12BB542",
      "pattern": "74 ?? 48 89 44 24 ?? 4C 8D 4E ?? 45 33 C0 44 89 74 24 ??",
      "captures": {
       "10": 80
@@ -868,7 +868,7 @@
    ],
    "size": 320,
    "align": 8,
-   "vtable": 159909632,
+   "vtable": 160065536,
    "overrides": 12,
    "natives": 0,
    "parent": null
@@ -881,16 +881,16 @@
    "anchors": [],
    "sites": [
     {
-     "from": "0x1D18220",
-     "at": "0x1D18943",
+     "from": "0x1D1A8C0",
+     "at": "0x1D1AFE3",
      "pattern": "4C 8B 6D ?? 4D 8B 4F ?? 49 8D 9D ?? ?? ?? ?? 49 8B C9 4C 89 4D ??",
      "captures": {
       "11": 280
      }
     },
     {
-     "from": "0x4FE54F0",
-     "at": "0x4FE55D1",
+     "from": "0x4FFE010",
+     "at": "0x4FFE0F1",
      "pattern": "E8 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 8B 93 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B CB",
      "captures": {
       "31": 280,
@@ -900,7 +900,7 @@
    ],
    "size": 688,
    "align": 8,
-   "vtable": 146017872,
+   "vtable": 146168144,
    "overrides": 98,
    "natives": 3,
    "parent": null
@@ -913,22 +913,22 @@
    "anchors": [
     {
      "note": "puts your cat in a talk or out of it: the talk flags at +0x808",
-     "was": "0x16B91A0",
+     "was": "0x16B9180",
      "pattern": "40 53 48 81 EC B0 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 8B 81 ?? ?? ?? ?? 48 8B D9 84 D2 74 ?? 83 C8 01 89 81 ?? ?? ?? ?? 45 84 C0 0F 85 ?? ?? ?? ??"
     }
    ],
    "sites": [
     {
-     "from": "0x1666C00",
-     "at": "0x1666C73",
+     "from": "0x1666BE0",
+     "at": "0x1666C53",
      "pattern": "75 ?? C6 87 ?? ?? ?? ?? 00 83 A3 ?? ?? ?? ?? EF 48 8B 5C 24 ?? 48 83 C4 20",
      "captures": {
       "11": 2056
      }
     },
     {
-     "from": "0x167C5E0",
-     "at": "0x167C8B6",
+     "from": "0x167C5C0",
+     "at": "0x167C896",
      "pattern": "FF 50 ?? 84 C0 74 ?? 83 8B ?? ?? ?? ?? 10 EB ?? 83 A3 ?? ?? ?? ?? EF 49 8B 87 ?? ?? ?? ??",
      "captures": {
       "9": 2056,
@@ -938,7 +938,7 @@
    ],
    "size": 2224,
    "align": 8,
-   "vtable": 161794136,
+   "vtable": 161950168,
    "overrides": 19,
    "natives": 7,
    "parent": null
@@ -952,27 +952,27 @@
    "anchors": [
     {
      "note": "matches a cat's traits against StoryDialogues.csv's rows: the map at +0x280",
-     "was": "0x1957D60",
+     "was": "0x1959490",
      "pattern": "44 89 44 24 ?? 48 89 54 24 ?? 55 53 56 41 55 48 8D AC 24 ?? ?? ?? ?? 48 81 EC 98 01 00 00"
     },
     {
      "note": "a quest's title from QuestDialogues.csv: the map at +0x2D0",
-     "was": "0x16B1BD0",
+     "was": "0x16B1BB0",
      "pattern": "40 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ?? 48 81 EC 48 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 48 8B 3D ?? ?? ?? ??"
     }
    ],
    "sites": [
     {
-     "from": "0x1957D60",
-     "at": "0x1957F97",
+     "from": "0x1959490",
+     "at": "0x19596C7",
      "pattern": "0F 8E ?? ?? ?? ?? 33 F6 4C 8D A3 ?? ?? ?? ?? 48 8D 44 24 ?? 48 89 74 24 ??",
      "captures": {
       "11": 640
      }
     },
     {
-     "from": "0x4269DE0",
-     "at": "0x4269E90",
+     "from": "0x427DA20",
+     "at": "0x427DAD0",
      "pattern": "74 ?? 48 8B B8 ?? ?? ?? ?? 48 63 80 ?? ?? ?? ?? 4C 8D 34 C7 49 3B FE",
      "captures": {
       "12": 720
@@ -981,7 +981,7 @@
    ],
    "size": 1120,
    "align": 8,
-   "vtable": 161983832,
+   "vtable": 162139864,
    "overrides": 2,
    "natives": 0,
    "parent": "SwtTuningManager"
@@ -994,16 +994,16 @@
    "anchors": [],
    "sites": [
     {
-     "from": "0x18734A0",
-     "at": "0x1873527",
+     "from": "0x18735C0",
+     "at": "0x1873647",
      "pattern": "48 89 83 ?? ?? ?? ?? 89 AB ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8D 8B ?? ?? ?? ?? E8 ?? ?? ?? ?? 89 AB ?? ?? ?? ?? 48 8B 8B ?? ?? ?? ?? 48 85 C9 74 ?? E8 ?? ?? ?? ??",
      "captures": {
       "33": 888
      }
     },
     {
-     "from": "0x187D650",
-     "at": "0x187D675",
+     "from": "0x187D770",
+     "at": "0x187D795",
      "pattern": "48 8B F1 4D 89 73 ?? 4C 8D B1 ?? ?? ?? ?? 41 83 7E ?? 01 4D 89 7B ??",
      "captures": {
       "10": 888
@@ -1012,7 +1012,7 @@
    ],
    "size": 1992,
    "align": 8,
-   "vtable": 163665392,
+   "vtable": 163822816,
    "overrides": 4,
    "natives": 13,
    "parent": null
@@ -1032,27 +1032,27 @@
    "anchors": [
     {
      "note": "BeginPlay: the settings from the tuning, the interpolators started from them, the lag onto the arm",
-     "was": "0x1760B30",
+     "was": "0x1760B10",
      "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 55 57 41 54 41 56 41 57 48 8B EC 48 83 EC 50 0F 29 74 24 ??"
     },
     {
      "note": "the update: the arm's length, its tilt and the field of view from the settings, each frame",
-     "was": "0x17621A0",
+     "was": "0x1762180",
      "pattern": "48 8B C4 F3 0F 11 48 ?? 48 89 48 ?? 55 53 56 57 41 55 41 56 48 8D A8 ?? ?? ?? ??"
     }
    ],
    "sites": [
     {
-     "from": "0x1760B30",
-     "at": "0x1760B5D",
+     "from": "0x1760B10",
+     "at": "0x1760B3D",
      "pattern": "48 8D 4D ?? E8 ?? ?? ?? ?? 48 8D 9E ?? ?? ?? ?? 45 33 C9 48 8D 93 ?? ?? ?? ??",
      "captures": {
       "12": 1016
      }
     },
     {
-     "from": "0x1760B30",
-     "at": "0x176182A",
+     "from": "0x1760B10",
+     "at": "0x176180A",
      "pattern": "74 ?? E8 ?? ?? ?? ?? 0F 57 C0 48 8D 96 ?? ?? ?? ?? 0F 2E 86 ?? ?? ?? ?? 75 ?? 0F 2E 02",
      "captures": {
       "13": 1044,
@@ -1060,40 +1060,40 @@
      }
     },
     {
-     "from": "0x1760B30",
-     "at": "0x1761862",
+     "from": "0x1760B10",
+     "at": "0x1761842",
      "pattern": "41 0B C0 89 81 ?? ?? ?? ?? 8B 86 ?? ?? ?? ?? 48 8B 8E ?? ?? ?? ?? 89 81 ?? ?? ?? ??",
      "captures": {
       "11": 1040
      }
     },
     {
-     "from": "0x1760B30",
-     "at": "0x1761890",
+     "from": "0x1760B10",
+     "at": "0x1761870",
      "pattern": "B8 40 00 00 00 48 8B 8E ?? ?? ?? ?? 0F 2E 86 ?? ?? ?? ?? 0F 45 D0 8B 81 ?? ?? ?? ??",
      "captures": {
       "15": 1048
      }
     },
     {
-     "from": "0x1760B30",
-     "at": "0x17618B6",
+     "from": "0x1760B10",
+     "at": "0x1761896",
      "pattern": "89 81 ?? ?? ?? ?? 48 8B 8E ?? ?? ?? ?? 8B 86 ?? ?? ?? ?? 89 81 ?? ?? ?? ?? 48 8B 8E ?? ?? ?? ??",
      "captures": {
       "15": 1048
      }
     },
     {
-     "from": "0x17621A0",
-     "at": "0x1762233",
+     "from": "0x1762180",
+     "at": "0x1762213",
      "pattern": "44 89 B0 ?? ?? ?? ?? E9 ?? ?? ?? ?? 44 0F 2E 8F ?? ?? ?? ?? 48 8B 8F ?? ?? ?? ?? B8 40 00 00 00",
      "captures": {
       "16": 1048
      }
     },
     {
-     "from": "0x17621A0",
-     "at": "0x1762271",
+     "from": "0x1762180",
+     "at": "0x1762251",
      "pattern": "8B 87 ?? ?? ?? ?? 89 81 ?? ?? ?? ?? 44 0F 2E 8F ?? ?? ?? ?? 75 ?? 44 0F 2E 8F ?? ?? ?? ??",
      "captures": {
       "2": 1048,
@@ -1102,48 +1102,48 @@
      }
     },
     {
-     "from": "0x17621A0",
-     "at": "0x176318A",
+     "from": "0x1762180",
+     "at": "0x176316A",
      "pattern": "48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? F3 0F 10 B7 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 8B 44 24 ??",
      "captures": {
       "19": 1016
      }
     },
     {
-     "from": "0x17621A0",
-     "at": "0x176346E",
+     "from": "0x1762180",
+     "at": "0x176344E",
      "pattern": "48 8D 4C 24 ?? F3 41 0F 10 B0 ?? ?? ?? ?? F3 0F 58 B7 ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 44 24 ??",
      "captures": {
       "18": 1032
      }
     },
     {
-     "from": "0x17621A0",
-     "at": "0x176355D",
+     "from": "0x1762180",
+     "at": "0x176353D",
      "pattern": "F3 0F 10 B2 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? F3 0F 58 B7 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ??",
      "captures": {
       "19": 1016
      }
     },
     {
-     "from": "0x17621A0",
-     "at": "0x17636B4",
+     "from": "0x1762180",
+     "at": "0x1763694",
      "pattern": "C6 40 ?? 00 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? F3 0F 10 B7 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? F3 0F 58 B7 ?? ?? ?? ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? 48 8D 54 24 ?? E8 ?? ?? ?? ?? 0F 2E 70 ?? 74 ??",
      "captures": {
       "38": 1032
      }
     },
     {
-     "from": "0x17621A0",
-     "at": "0x1763813",
+     "from": "0x1762180",
+     "at": "0x17637F3",
      "pattern": "E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? F3 0F 10 B7 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? F3 0F 58 B7 ?? ?? ?? ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 48 8D 8F ?? ?? ?? ?? 48 8D 54 24 ?? E8 ?? ?? ?? ?? 0F 2E 70 ?? 74 ??",
      "captures": {
       "39": 1032
      }
     },
     {
-     "from": "0x17621A0",
-     "at": "0x17639C4",
+     "from": "0x1762180",
+     "at": "0x17639A4",
      "pattern": "F3 0F 10 B7 ?? ?? ?? ?? EB ?? F3 0F 10 B7 ?? ?? ?? ?? F3 0F 58 B7 ?? ?? ?? ?? E8 ?? ?? ?? ??",
      "captures": {
       "14": 1052,
@@ -1151,8 +1151,8 @@
      }
     },
     {
-     "from": "0x17621A0",
-     "at": "0x17639EE",
+     "from": "0x1762180",
+     "at": "0x17639CE",
      "pattern": "E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? F3 0F 10 B7 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? F3 0F 58 B7 ?? ?? ?? ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 0F 28 D6",
      "captures": {
       "24": 1060,
@@ -1162,7 +1162,7 @@
    ],
    "size": 1248,
    "align": 8,
-   "vtable": 159674768,
+   "vtable": 159830672,
    "overrides": 1,
    "natives": 2,
    "parent": null
@@ -1185,71 +1185,71 @@
    "anchors": [
     {
      "note": "BeginPlay: the exploration settings from the tuning (speeds, stamina, jump, turning)",
-     "was": "0x179DF80",
+     "was": "0x179DF60",
      "pattern": "48 8B C4 55 48 8B EC 48 83 EC 60 48 89 58 ?? 48 89 70 ?? 48 89 78 ?? 48 8B F9 4C 89 60 ??"
     },
     {
      "note": "the turning input: yaw and pitch by the turn rates, within the pitch limits",
-     "was": "0x17A4B80",
+     "was": "0x17A4B60",
      "pattern": "40 55 53 41 55 41 57 48 8D 6C 24 ?? 48 81 EC 28 01 00 00 4C 8B A9 ?? ?? ?? ??"
     },
     {
      "note": "the turning input while aligning the camera behind the cat",
-     "was": "0x17AC120",
+     "was": "0x17AC100",
      "pattern": "48 8B C4 48 89 58 ?? 48 89 48 ?? 55 56 57 41 54 41 55 41 56 41 57 48 8D A8 ?? ?? ?? ??"
     },
     {
      "note": "each frame: the character's MaxWalkSpeed and MaxAcceleration from its vtable's +0x528 and +0x530",
-     "was": "0x17A5530",
+     "was": "0x17A5510",
      "pattern": "48 89 5C 24 ?? 57 48 83 EC 20 48 8B 99 ?? ?? ?? ?? 48 8B F9 48 85 DB 74 ?? E8 ?? ?? ?? ?? 48 8B 53 ?? 4C 8D 40 ?? 48 63 40 ?? 3B 42 ?? 7F ?? 48 8B C8 48 8B 42 ?? 4C 39 04 C8 75 ?? 48 8B 07"
     },
     {
      "note": "its vtable's +0x528, the speed: walk or run (the flags at +0x110), times the crouch or climb factor",
-     "was": "0x17A55B0",
+     "was": "0x17A5590",
      "pattern": "8B 81 ?? ?? ?? ?? A8 04 74 ?? F3 0F 10 81 ?? ?? ?? ?? EB ?? F3 0F 10 81 ?? ?? ?? ?? A8 01 74 ?? F3 0F 59 81 ?? ?? ?? ??"
     },
     {
      "note": "its vtable's +0x530, the acceleration, the same way",
-     "was": "0x17A55F0",
+     "was": "0x17A55D0",
      "pattern": "8B 91 ?? ?? ?? ?? 8B C2 83 E0 04 48 0D 98 00 00 00 F3 0F 10 04 41 F6 C2 01"
     }
    ],
    "sites": [
     {
-     "from": "0x17A4B80",
-     "at": "0x17A4F4E",
+     "from": "0x17A4B60",
+     "at": "0x17A4F2E",
      "pattern": "0F 2E C7 74 ?? F3 0F 59 83 ?? ?? ?? ?? 48 8B 86 ?? ?? ?? ?? F3 41 0F 59 C3",
      "captures": {
       "9": 460
      }
     },
     {
-     "from": "0x17A4B80",
-     "at": "0x17A50BB",
+     "from": "0x17A4B60",
+     "at": "0x17A509B",
      "pattern": "F2 0F 11 5D ?? 0F 10 10 F3 0F 10 8B ?? ?? ?? ?? F2 0F 10 40 ?? 0F 5A C9",
      "captures": {
       "12": 472
      }
     },
     {
-     "from": "0x17A4B80",
-     "at": "0x17A5106",
+     "from": "0x17A4B60",
+     "at": "0x17A50E6",
      "pattern": "48 8D 44 24 ?? F2 0F 11 5D ?? F3 0F 10 8B ?? ?? ?? ?? 0F 10 10 0F 5A C9",
      "captures": {
       "14": 476
      }
     },
     {
-     "from": "0x17A4B80",
-     "at": "0x17A5124",
+     "from": "0x17A4B60",
+     "at": "0x17A5104",
      "pattern": "0F 2F F7 76 ?? F3 0F 59 B3 ?? ?? ?? ?? 0F 57 C0 48 8B 86 ?? ?? ?? ??",
      "captures": {
       "9": 464
      }
     },
     {
-     "from": "0x17A55B0",
-     "at": "0x17A55B0",
+     "from": "0x17A5590",
+     "at": "0x17A5590",
      "pattern": "8B 81 ?? ?? ?? ?? A8 04 74 ?? F3 0F 10 81 ?? ?? ?? ?? EB ?? F3 0F 10 81 ?? ?? ?? ??",
      "captures": {
       "2": 272,
@@ -1258,8 +1258,8 @@
      }
     },
     {
-     "from": "0x17A55B0",
-     "at": "0x17A55C4",
+     "from": "0x17A5590",
+     "at": "0x17A55A4",
      "pattern": "F3 0F 10 81 ?? ?? ?? ?? A8 01 74 ?? F3 0F 59 81 ?? ?? ?? ?? A8 02 74 ?? F3 0F 59 81 ?? ?? ?? ??",
      "captures": {
       "4": 300,
@@ -1268,24 +1268,24 @@
      }
     },
     {
-     "from": "0x17A55F0",
-     "at": "0x17A55F0",
+     "from": "0x17A55D0",
+     "at": "0x17A55D0",
      "pattern": "8B 91 ?? ?? ?? ?? 8B C2 83 E0 04 48 0D 98 00 00 00",
      "captures": {
       "2": 272
      }
     },
     {
-     "from": "0x17A55F0",
-     "at": "0x17A5606",
+     "from": "0x17A55D0",
+     "at": "0x17A55E6",
      "pattern": "F6 C2 01 74 ?? F3 0F 59 81 ?? ?? ?? ?? F6 C2 02 74 ??",
      "captures": {
       "9": 328
      }
     },
     {
-     "from": "0x17A55F0",
-     "at": "0x17A560B",
+     "from": "0x17A55D0",
+     "at": "0x17A55EB",
      "pattern": "F3 0F 59 81 ?? ?? ?? ?? F6 C2 02 74 ?? F3 0F 59 81 ?? ?? ?? ?? C3",
      "captures": {
       "4": 328,
@@ -1293,16 +1293,16 @@
      }
     },
     {
-     "from": "0x17AC120",
-     "at": "0x17AC3F2",
+     "from": "0x17AC100",
+     "at": "0x17AC3D2",
      "pattern": "88 44 24 ?? 0F 11 44 24 ?? F3 0F 10 83 ?? ?? ?? ?? F3 0F 11 44 24 ?? F3 0F 11 4D ??",
      "captures": {
       "13": 472
      }
     },
     {
-     "from": "0x17AC120",
-     "at": "0x17AC5BE",
+     "from": "0x17AC100",
+     "at": "0x17AC59E",
      "pattern": "88 44 24 ?? 0F 11 44 24 ?? F3 0F 10 83 ?? ?? ?? ?? F3 0F 11 44 24 ?? F3 0F 11 55 ??",
      "captures": {
       "13": 472
@@ -1311,7 +1311,7 @@
    ],
    "size": 992,
    "align": 16,
-   "vtable": 159674768,
+   "vtable": 159830672,
    "overrides": 1,
    "natives": 2,
    "parent": null
@@ -1329,48 +1329,48 @@
    "anchors": [],
    "sites": [
     {
-     "from": "0x1283000",
-     "at": "0x1283079",
+     "from": "0x1282FD0",
+     "at": "0x1283049",
      "pattern": "48 8B 03 48 8B CB FF 90 ?? ?? ?? ?? BA 01 00 00 00 48 8B CB",
      "captures": {
       "8": 1576
      }
     },
     {
-     "from": "0x1283870",
-     "at": "0x12838F2",
+     "from": "0x1283840",
+     "at": "0x12838C2",
      "pattern": "80 3D ?? ?? ?? ?? 00 48 8B 0B 48 8B A9 ?? ?? ?? ?? 48 8B 88 ?? ?? ?? ?? 48 89 4C 24 ??",
      "captures": {
       "13": 1568
      }
     },
     {
-     "from": "0x1283870",
-     "at": "0x1283A68",
+     "from": "0x1283840",
+     "at": "0x1283A38",
      "pattern": "48 8B 0E 48 89 4C 24 ?? 48 8B B8 ?? ?? ?? ?? 74 ?? 48 85 C9",
      "captures": {
       "11": 1568
      }
     },
     {
-     "from": "0x1912D10",
-     "at": "0x1912D42",
+     "from": "0x19135B0",
+     "at": "0x19135E2",
      "pattern": "74 ?? 48 8B 01 FF 90 ?? ?? ?? ?? 48 8B 9F ?? ?? ?? ?? 48 85 DB",
      "captures": {
       "7": 1560
      }
     },
     {
-     "from": "0x1914200",
-     "at": "0x1914226",
+     "from": "0x1914AA0",
+     "at": "0x1914AC6",
      "pattern": "48 89 74 24 ?? 48 89 7C 24 ?? 48 8B B8 ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 85 C0",
      "captures": {
       "13": 1592
      }
     },
     {
-     "from": "0x1914760",
-     "at": "0x1914C8F",
+     "from": "0x1915000",
+     "at": "0x191552F",
      "pattern": "48 8B B4 24 ?? ?? ?? ?? F3 0F 10 9F ?? ?? ?? ?? 4C 8D 87 ?? ?? ?? ?? F3 0F 10 97 ?? ?? ?? ?? 48 8D 97 ?? ?? ?? ??",
      "captures": {
       "19": 1592,
@@ -1378,16 +1378,16 @@
      }
     },
     {
-     "from": "0x1914760",
-     "at": "0x1914D39",
+     "from": "0x1915000",
+     "at": "0x19155D9",
      "pattern": "0F 5A D0 F3 0F 10 87 ?? ?? ?? ?? F2 0F 58 97 ?? ?? ?? ?? 0F 5A C0 F2 0F 5D D0",
      "captures": {
       "15": 1600
      }
     },
     {
-     "from": "0x1914760",
-     "at": "0x1914D62",
+     "from": "0x1915000",
+     "at": "0x1915602",
      "pattern": "F3 0F 10 8F ?? ?? ?? ?? 0F 5A C9 F2 0F 11 97 ?? ?? ?? ?? 0F 5A D4 F2 41 0F 58 10",
      "captures": {
       "15": 1600
@@ -1396,7 +1396,7 @@
    ],
    "size": 1616,
    "align": 8,
-   "vtable": 163329968,
+   "vtable": 163487392,
    "overrides": 25,
    "natives": 0,
    "parent": null
@@ -1405,77 +1405,77 @@
  "functions": {
   "SwtQuestInventoryComponent:AddItem": {
    "note": "adds a count of an item to an inventory, or takes it away (a negative count; at 0 the item goes): (the component, the item's FGameplayTag by value, int32 count, bool show it on the HUD); then tells the component's listeners (the HUD's OnItemPickedUp) and writes the inventory into the save's state",
-   "was": "0x1654430",
+   "was": "0x1654410",
    "pattern": "44 89 44 24 ?? 48 89 54 24 ?? 55 57 41 56 48 8B EC 48 83 EC 40 48 8B 05 ?? ?? ?? ??"
   },
   "Bonding:GetPersonal": {
    "note": "a story cat's bond with your cat: (uint8 ENarrativeRole, int32 slot: -1 for the cat played now) -> int32; the slot's Bonding/<role>, or the role's BaseBonding from the narrative roles' table when it isn't set",
-   "was": "0x169F830",
+   "was": "0x169F810",
    "pattern": "48 89 5C 24 ?? 55 56 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC 60 02 00 00 48 8B 05 ?? ?? ?? ??"
   },
   "Bonding:AddPersonal": {
    "note": "adds to a story cat's bond (\"AddPersonalBonding\"): (uint8 ENarrativeRole, int32 amount), on the cat played now: the bond as GetPersonal reads it plus the amount, written to the slot's Bonding/<role>",
-   "was": "0x169F510",
+   "was": "0x169F4F0",
    "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 4C 89 74 24 ?? 55 48 8B EC 48 81 EC 80 00 00 00 48 8B 1D ?? ?? ?? ?? 8B F2"
   },
   "Bonding:GetClan": {
    "note": "a clan's regard for your cat: (uint8 EClanType) -> int32, on the cat played now; the slot's Bonding/<clan>, or the tuning's Gameplay.Progression.Bonding.Clan.Default when it isn't set",
-   "was": "0x169FE30",
+   "was": "0x169FE10",
    "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 55 48 8D 6C 24 ?? 48 81 EC 90 00 00 00 48 8B 1D ?? ?? ?? ??"
   },
   "Bonding:AddClan": {
    "note": "adds to a clan's regard (\"AddClanScore\"): (uint8 EClanType, int32 amount), on the cat played now",
-   "was": "0x169FBD0",
+   "was": "0x169FBB0",
    "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 4C 89 74 24 ?? 55 48 8B EC 48 81 EC 80 00 00 00 48 8B 1D ?? ?? ?? ?? 44 8B F2"
   },
   "Bonding:HasNode": {
    "note": "whether a bond talk's answer is in the slot's Bonding/Nodes: (const FString* the answer's row name) -> bool, on the cat played now",
-   "was": "0x169F020",
+   "was": "0x169F000",
    "pattern": "48 89 5C 24 ?? 48 89 7C 24 ?? 55 48 8D 6C 24 ?? 48 81 EC 90 00 00 00 48 8B 1D ?? ?? ?? ?? 48 8B F9 48 85 DB 0F 84 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 53 ?? 4C 8D 40 ?? 48 63 40 ?? 3B 42 ?? 0F 8F ?? ?? ?? ?? 48 8B C8 48 8B 42 ?? 4C 39 04 C8 0F 85 ?? ?? ?? ?? 48 8B 03 BA FF FF FF FF 48 8B CB FF 90 ?? ?? ?? ?? 48 8B 48 ?? 48 8B 10 48 85 C9 74 ?? F0 FF 41 ?? 48 89 55 ?? 48 89 4D ?? F0 FF 41 ?? EB ?? 48 89 55 ?? 48 89 4D ?? E8 ?? ?? ?? ?? 48 8B 03 48 8D 55 ?? 48 8B CB FF 90 ?? ?? ?? ?? 48 8B D0 48 8D 4D ?? 48 8B D8 E8 ?? ?? ?? ?? 48 8B D0 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 48 ?? 48 8B 10 48 85 C9 74 ?? F0 FF 41 ?? 48 89 55 ?? 48 89 4D ?? F0 FF 41 ?? EB ?? 48 89 55 ?? 48 89 4D ?? E8 ?? ?? ?? ?? 48 8B 0B 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B D0 48 8D 4D ?? 48 8B D8 E8 ?? ?? ?? ?? 48 8B D0 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 48 ?? 48 8B 10 48 85 C9 74 ?? F0 FF 41 ?? 48 89 55 ?? 48 89 4D ?? F0 FF 41 ?? EB ?? 48 89 55 ?? 48 89 4D ?? E8 ?? ?? ?? ?? 48 8B 0B 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B D0 48 8D 4D ?? 48 8B D8 E8 ?? ?? ?? ?? 48 8B D0 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 48 ?? 48 8B 10 48 85 C9 74 ?? F0 FF 41 ?? 48 89 55 ?? 48 89 4D ?? F0 FF 41 ?? EB ?? 48 89 55 ?? 48 89 4D ?? E8 ?? ?? ?? ?? 48 8B 0B 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8B D7"
   },
   "QuestPlayerController:SetInDialogue": {
    "note": "puts your cat in a talk or takes it out: (the controller, bool on, bool keep): on sets WCM_TalkFlags' 0x1 and, unless keep, 0x20; off clears both and asks the controller (its vtable's +0x1050) on the next frame, as the game's own talks end, to go on to a talk it has queued",
-   "was": "0x16B91A0",
+   "was": "0x16B9180",
    "pattern": "40 53 48 81 EC B0 00 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 8B 81 ?? ?? ?? ?? 48 8B D9 84 D2 74 ?? 83 C8 01 89 81 ?? ?? ?? ?? 45 84 C0 0F 85 ?? ?? ?? ??"
   },
   "Bonding:AddNode": {
    "note": "marks a bond talk's answer in the slot's Bonding/Nodes (\"AddNodeToPersonalBonding\"): (const FString* the answer's row name), on the cat played now",
-   "was": "0x169F230",
+   "was": "0x169F210",
    "pattern": "48 89 5C 24 ?? 48 89 7C 24 ?? 55 48 8D 6C 24 ?? 48 81 EC 90 00 00 00 48 8B 1D ?? ?? ?? ?? 48 8B F9 48 85 DB 0F 84 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 53 ?? 4C 8D 40 ?? 48 63 40 ?? 3B 42 ?? 0F 8F ?? ?? ?? ?? 48 8B C8 48 8B 42 ?? 4C 39 04 C8 0F 85 ?? ?? ?? ?? 48 8B 03 BA FF FF FF FF 48 8B CB FF 90 ?? ?? ?? ?? 48 8B 48 ?? 48 8B 10 48 85 C9 74 ?? F0 FF 41 ?? 48 89 55 ?? 48 89 4D ?? F0 FF 41 ?? EB ?? 48 89 55 ?? 48 89 4D ?? E8 ?? ?? ?? ?? 48 8B 03 48 8D 55 ?? 48 8B CB FF 90 ?? ?? ?? ?? 48 8B D0 48 8D 4D ?? 48 8B D8 E8 ?? ?? ?? ?? 48 8B D0 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 48 ?? 48 8B 10 48 85 C9 74 ?? F0 FF 41 ?? 48 89 55 ?? 48 89 4D ?? F0 FF 41 ?? EB ?? 48 89 55 ?? 48 89 4D ?? E8 ?? ?? ?? ?? 48 8B 0B 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B D0 48 8D 4D ?? 48 8B D8 E8 ?? ?? ?? ?? 48 8B D0 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 48 ?? 48 8B 10 48 85 C9 74 ?? F0 FF 41 ?? 48 89 55 ?? 48 89 4D ?? F0 FF 41 ?? EB ?? 48 89 55 ?? 48 89 4D ?? E8 ?? ?? ?? ?? 48 8B 0B 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8D 15 ?? ?? ?? ?? 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B D0 48 8D 4D ?? 48 8B D8 E8 ?? ?? ?? ?? 48 8B D0 48 8D 4D ?? E8 ?? ?? ?? ?? 48 8B 48 ?? 48 8B 10 48 85 C9 74 ?? F0 FF 41 ?? 48 89 55 ?? 48 89 4D ?? F0 FF 41 ?? EB ?? 48 89 55 ?? 48 89 4D ?? E8 ?? ?? ?? ?? 48 8B 0B 48 85 C9 74 ?? E8 ?? ?? ?? ?? 48 8D 4D ??"
   },
   "SwtAdventureCustomizableMeshComponent:SetDefaultCustomData": {
    "note": "sets a cat's look up on its model (\"SetDefaultCustomData\"): (the look component, const FCatCustomData*, bool); copies the look into the component's CustomData, makes up the colour slots unless bOverrideColors, and sets every part again (meshes, pattern atlas, colours, eyes, accessories, scars); does nothing unless the component's owner is a SwtAdventureCharacter that's a cat (its byte at +0x890 is 1 or 2)",
-   "was": "0x17AF7D0",
+   "was": "0x17AF7B0",
    "pattern": "40 55 53 57 41 56 41 57 48 8D AC 24 ?? ?? ?? ?? 48 81 EC B0 01 00 00 45 0F B6 F8"
   },
   "Customization:SaveCatCustomData": {
    "note": "keeps a look in the save (\"SaveCatCustomData\"): (const FCatCustomData*, FString key by value (the callee frees it; empty for your cat's, Gameplay.Combat.Character.Cat.Player), int32 slot: -1 for the cat played now); the struct's text written as the slot's GameplayProgression/<key>/Customization, which the game sets your cat up from",
-   "was": "0x18129C0",
+   "was": "0x18129A0",
    "pattern": "48 89 5C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 4C 89 74 24 ?? 55 48 8D 6C 24 ?? 48 81 EC B0 00 00 00 48 8B 3D ?? ?? ?? ??"
   },
   "SwtAdventureTuningManager:GetConsumable": {
    "note": "a herb's Consumables.csv row: (const FString* row name, the herb's tag; FSwtAdventureConsumableStruct* out, 0x28 bytes: bCombat +0x10, bExploration +0x11, Target +0x12, bRemoveAfterCombat +0x13, Type +0x14, EffectOnUse FString +0x18, assigned with the game's allocator) -> bool, false for a row it hasn't got; reads the tuning manager (a global) and its map at +0x780",
-   "was": "0x181DFE0",
+   "was": "0x181E100",
    "pattern": "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 20 48 8B 1D ?? ?? ?? ?? 48 8B FA"
   },
   "SwtAdventureTuningManager:GetHousingCost": {
    "note": "a decoration's HousingCost.csv row: (FAdventureHousingCost* out, 0x50 bytes; const FString* the decoration's tag) -> out, the row copied with the game's allocator (its FStrings: MontageToPlay, BoneToAttach, Cost), or a default row for a tag it hasn't got; reads the tuning manager (a global) and its map at +0x6E0 (0x68-byte elements, the row at +0x10)",
-   "was": "0x181E520",
+   "was": "0x181E640",
    "pattern": "48 89 5C 24 ?? 48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 20 48 8B 3D ?? ?? ?? ?? 48 8B F2 48 8B D9 48 85 FF 0F 84 ?? ?? ?? ?? E8 ?? ?? ?? ?? 48 8B 57 ?? 4C 8D 40 ?? 48 63 40 ?? 3B 42 ?? 0F 8F ?? ?? ?? ?? 48 8B C8 48 8B 42 ?? 4C 39 04 C8 75 ??"
   },
   "SwtTuningManager:GetValue": {
    "note": "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, 0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData",
-   "was": "0x12BBA60",
+   "was": "0x12BBA40",
    "pattern": "48 89 5C 24 ?? 88 54 24 ?? 57 48 83 EC 60 48 63 59 ?? 48 8B 39 48 C7 44 24 ?? 00 00 00 00 89 5C 24 ?? 85 DB 75 ?? 89 5C 24 ?? EB ?? 48 8D 44 24 ?? BA 02 00 00 00 48 89 44 24 ?? 45 33 C9 48 8D 44 24 ?? 89 5C 24 ?? 44 8B C3 48 89 44 24 ?? 8B CA E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 4C 8B C3 4D 03 C0 48 8B D7 E8 ?? ?? ?? ?? 48 8D 44 24 ?? 48 C7 44 24 ?? 00 00 00 00 48 89 44 24 ?? 45 33 C9 48 8D 44 24 ?? C7 44 24 ?? 01 00 00 00 BA 08 00 00 00 48 89 44 24 ?? B9 10 00 00 00 C7 44 24 ?? 01 00 00 00 41 B8 01 00 00 00 E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 8D 54 24 ?? 41 B8 01 00 00 00 E8 ?? ?? ?? ?? 48 8B 4C 24 ?? 48 85 C9 74 ?? E8 ?? ?? ?? ?? 45 33 C9 C7 44 24 ?? 00 00 00 00 48 8D 54 24 ?? 48 8D 4C 24 ?? E8 ?? ?? ?? ?? 8B 54 24 ??"
   },
   "SwtSequencerManager:PlaySequence": {
    "note": "plays a registered sequence: (the sequencer manager, const 0x88-byte arguments*) -> non-null when it started; the arguments: +0x00 pause at its end (bool), +0x08 a music track's name (FString, empty for none), +0x18 the play rate (float), +0x20 a length to fit it to, in seconds, setting its rate (float, 0 for its own), +0x28 the actors to put in it (an empty TMap: its bit array's size word at +0x50 is 0x80 and its free index at +0x58 is -1), +0x78 a flag the talk action sets and the prophecy intro doesn't, +0x7C its ESwtEngineSequencerType (int32), +0x80 its tag (FGameplayTag)",
-   "was": "0x12B2190",
+   "was": "0x12B2160",
    "pattern": "40 55 53 57 41 56 41 57 48 8D 6C 24 ?? 48 81 EC 40 01 00 00 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 45 ?? 44 8B 4A ??"
   },
   "Checkpoints:SetUnlocked": {
    "note": "unlocks a checkpoint or locks it again (\"SetCheckpointUnlockState\"): (const FString* the checkpoint's UID, its tag; bool unlocked; UObject* the checkpoint, a world context: the save keeps checkpoints under its level's name), on the cat played now; writes GameplayProgression/<level>/Checkpoints (the save manager's vtable +0x4B8) and broadcasts the save manager's checkpoint delegate (+0x170) with the UID, which the map's checkpoint markers and the checkpoint actors hear. The checkpoint's BeginPlay calls it so (0x1416357A0)",
-   "was": "0x16A7DE0",
+   "was": "0x16A7DC0",
    "pattern": "48 89 6C 24 ?? 48 89 74 24 ?? 48 89 7C 24 ?? 41 56 48 83 EC 60 48 8B 35 ?? ?? ?? ??"
   }
  }

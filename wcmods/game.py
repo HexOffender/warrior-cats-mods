@@ -20,8 +20,9 @@ SHARED_NAME = "WCModsGame"
 
 # Members the game doesn't reflect, found by reverse-engineering build 24847281 (docs/mechanics/,
 # docs/reverse-engineering.md) and confirmed unchanged on 26184573, patch 1.1 (the level component read in
-# game, the rest by signatures.py, which covers the level component too since 2026-10-28), and on 26337109
-# (2026-11-03, every one found again by signatures.py, none moved): class, then
+# game, the rest by signatures.py, which covers the level component too since 2026-10-28), on 26337109
+# (2026-11-03, every one found again by signatures.py, none moved) and on 26391405, patch 1.3 (2026-11-06,
+# the same): class, then
 # (property name, offset in the object, type). Rendered into
 # the Lua as Game.hidden. They're offsets inside objects, so ASLR doesn't move them, but a game update
 # that changes a class's layout does: signatures.py finds them again in a new build, and lua() takes the
@@ -135,63 +136,64 @@ CPP_ONLY = {"MapProperty", "DoubleProperty", "ArrayProperty"}
 # gamebuild.VERIFIED_BUILD, and what it takes. signatures.json keeps a pattern of each one's first instructions
 # that's unique in the exe (signatures.make), so another build finds it again (signatures.check); offsets.json
 # gives C++ mods its RVA on the installed build with that pattern, which the SDK checks the code against before
-# it calls anything. Found on 26337109 (docs/reverse-engineering.md, "Items").
+# it calls anything. Found on 26337109 (docs/reverse-engineering.md, "Items"), the RVAs moved to 26391405's by
+# their patterns.
 NATIVE = [
-    ("SwtQuestInventoryComponent:AddItem", 0x1654430,
+    ("SwtQuestInventoryComponent:AddItem", 0x1654410,
      "adds a count of an item to an inventory, or takes it away (a negative count; at 0 the item goes): "
      "(the component, the item's FGameplayTag by value, int32 count, bool show it on the HUD); then tells the "
      "component's listeners (the HUD's OnItemPickedUp) and writes the inventory into the save's state"),
     # The game's bond code (docs/reverse-engineering.md, "Bonds"): static functions on the cat's slot of the save
     # manager's data (its vtable +0x498, slot -1: the cat played now), each named by its own log line.
-    ("Bonding:GetPersonal", 0x169F830,
+    ("Bonding:GetPersonal", 0x169F810,
      "a story cat's bond with your cat: (uint8 ENarrativeRole, int32 slot: -1 for the cat played now) -> int32; the "
      "slot's Bonding/<role>, or the role's BaseBonding from the narrative roles' table when it isn't set"),
-    ("Bonding:AddPersonal", 0x169F510,
+    ("Bonding:AddPersonal", 0x169F4F0,
      "adds to a story cat's bond (\"AddPersonalBonding\"): (uint8 ENarrativeRole, int32 amount), on the cat played "
      "now: the bond as GetPersonal reads it plus the amount, written to the slot's Bonding/<role>"),
-    ("Bonding:GetClan", 0x169FE30,
+    ("Bonding:GetClan", 0x169FE10,
      "a clan's regard for your cat: (uint8 EClanType) -> int32, on the cat played now; the slot's Bonding/<clan>, or "
      "the tuning's Gameplay.Progression.Bonding.Clan.Default when it isn't set"),
-    ("Bonding:AddClan", 0x169FBD0,
+    ("Bonding:AddClan", 0x169FBB0,
      "adds to a clan's regard (\"AddClanScore\"): (uint8 EClanType, int32 amount), on the cat played now"),
-    ("Bonding:HasNode", 0x169F020,
+    ("Bonding:HasNode", 0x169F000,
      "whether a bond talk's answer is in the slot's Bonding/Nodes: (const FString* the answer's row name) -> bool, on "
      "the cat played now"),
     # Your cat in a talk or out of it (docs/reverse-engineering.md, "The talk box and your cat"): a virtual of the
     # quest player controller, which the talk box's construction calls with on.
-    ("QuestPlayerController:SetInDialogue", 0x16B91A0,
+    ("QuestPlayerController:SetInDialogue", 0x16B9180,
      "puts your cat in a talk or takes it out: (the controller, bool on, bool keep): on sets WCM_TalkFlags' 0x1 and, "
      "unless keep, 0x20; off clears both and asks the controller (its vtable's +0x1050) on the next frame, as the "
      "game's own talks end, to go on to a talk it has queued"),
-    ("Bonding:AddNode", 0x169F230,
+    ("Bonding:AddNode", 0x169F210,
      "marks a bond talk's answer in the slot's Bonding/Nodes (\"AddNodeToPersonalBonding\"): (const FString* the "
      "answer's row name), on the cat played now"),
     # A cat's look put on its model (docs/reverse-engineering.md, "Cat models"): named by its profiling stat.
-    ("SwtAdventureCustomizableMeshComponent:SetDefaultCustomData", 0x17AF7D0,
+    ("SwtAdventureCustomizableMeshComponent:SetDefaultCustomData", 0x17AF7B0,
      "sets a cat's look up on its model (\"SetDefaultCustomData\"): (the look component, const FCatCustomData*, bool); "
      "copies the look into the component's CustomData, makes up the colour slots unless bOverrideColors, and sets "
      "every part again (meshes, pattern atlas, colours, eyes, accessories, scars); does nothing unless the component's "
      "owner is a SwtAdventureCharacter that's a cat (its byte at +0x890 is 1 or 2)"),
-    ("Customization:SaveCatCustomData", 0x18129C0,
+    ("Customization:SaveCatCustomData", 0x18129A0,
      "keeps a look in the save (\"SaveCatCustomData\"): (const FCatCustomData*, FString key by value (the callee frees "
      "it; empty for your cat's, Gameplay.Combat.Character.Cat.Player), int32 slot: -1 for the cat played now); the "
      "struct's text written as the slot's GameplayProgression/<key>/Customization, which the game sets your cat up "
      "from"),
     # What using a herb does (docs/reverse-engineering.md, "Items"): Consumables.csv's rows live only in the
     # adventure tuning manager's map at +0x780 (a DataTable it loads and lets go of); this is the game's own lookup.
-    ("SwtAdventureTuningManager:GetConsumable", 0x181DFE0,
+    ("SwtAdventureTuningManager:GetConsumable", 0x181E100,
      "a herb's Consumables.csv row: (const FString* row name, the herb's tag; FSwtAdventureConsumableStruct* out, 0x28 "
      "bytes: bCombat +0x10, bExploration +0x11, Target +0x12, bRemoveAfterCombat +0x13, Type +0x14, EffectOnUse FString "
      "+0x18, assigned with the game's allocator) -> bool, false for a row it hasn't got; reads the tuning manager (a "
      "global) and its map at +0x780"),
     # What a den decoration costs (docs/reverse-engineering.md, "Dens from C++"): HousingCost.csv's rows live only in
     # the same tuning manager, in its map at +0x6E0; this is the game's own lookup, which its build screen uses.
-    ("SwtAdventureTuningManager:GetHousingCost", 0x181E520,
+    ("SwtAdventureTuningManager:GetHousingCost", 0x181E640,
      "a decoration's HousingCost.csv row: (FAdventureHousingCost* out, 0x50 bytes; const FString* the decoration's "
      "tag) -> out, the row copied with the game's allocator (its FStrings: MontageToPlay, BoneToAttach, Cost), or a "
      "default row for a tag it hasn't got; reads the tuning manager (a global) and its map at +0x6E0 (0x68-byte "
      "elements, the row at +0x10)"),
-    ("SwtTuningManager:GetValue", 0x12BBA60,
+    ("SwtTuningManager:GetValue", 0x12BBA40,
      "a TuningData.csv key's MaxValue, as every tuning read in the game gets it: (const FString* key) -> float, "
      "0 for a key the table hasn't got; reads the tuning manager (a global) and its map, WCM_TuningData"),
     # The places to travel to (docs/reverse-engineering.md, "Travel, the HUD's pieces and the camera from C++"): a static
@@ -199,13 +201,13 @@ NATIVE = [
     # checkpoint) -> -1 no entry, 0 locked, 1 unlocked) has no unique pattern: its code is the bond reads' shape.
     # A story scene played by its tag (docs/reverse-engineering.md, "Story scenes from C++"): every sequencer manager's
     # vtable +0x338, the base class's.
-    ("SwtSequencerManager:PlaySequence", 0x12B2190,
+    ("SwtSequencerManager:PlaySequence", 0x12B2160,
      "plays a registered sequence: (the sequencer manager, const 0x88-byte arguments*) -> non-null when it started; "
      "the arguments: +0x00 pause at its end (bool), +0x08 a music track's name (FString, empty for none), +0x18 the "
      "play rate (float), +0x20 a length to fit it to, in seconds, setting its rate (float, 0 for its own), +0x28 the actors to put in it (an empty TMap: its bit "
      "array's size word at +0x50 is 0x80 and its free index at +0x58 is -1), +0x78 a flag the talk action sets and "
      "the prophecy intro doesn't, +0x7C its ESwtEngineSequencerType (int32), +0x80 its tag (FGameplayTag)"),
-    ("Checkpoints:SetUnlocked", 0x16A7DE0,
+    ("Checkpoints:SetUnlocked", 0x16A7DC0,
      "unlocks a checkpoint or locks it again (\"SetCheckpointUnlockState\"): (const FString* the checkpoint's UID, its "
      "tag; bool unlocked; UObject* the checkpoint, a world context: the save keeps checkpoints under its level's name), "
      "on the cat played now; writes GameplayProgression/<level>/Checkpoints (the save manager's vtable +0x4B8) and "

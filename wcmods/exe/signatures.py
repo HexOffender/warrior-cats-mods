@@ -47,8 +47,9 @@ def _align(width):
 
 # Functions the reverse-engineering notes tie to a class whose members its own code hardly touches
 # (docs/mechanics/combat.md, progression.md, docs/reverse-engineering.md): the starts of whole functions
-# (pe.Image.function_at), as RVAs on build 26337109 (each found there by its pattern from 26184573, about
-# 0x1750 to 0x1860 before where it was; the combat, status and detection ones were 0x260 past 24847281's on
+# (pe.Image.function_at), as RVAs on build 26391405 (each found there by its pattern from 26337109, nearly all
+# 0x20 before where they were, the trait match against StoryDialogues.csv 0x1730 after; on 26337109 they sat
+# 0x1750 to 0x1860 before 26184573's, and the combat, status and detection ones were 0x260 past 24847281's on
 # 26184573). Each is found again in another build by a pattern of its first instructions that's unique in
 # the whole exe, then read like the class's own code. "A fighter's Prowess with its buffs" has no unique
 # pattern on either build (make() leaves it out); it's kept at the same distance from its neighbours.
@@ -56,39 +57,39 @@ ANCHORS = {
     # The inventory's own code is in functions its vtable doesn't hold: adding an item (game.NATIVE's AddItem)
     # and the check before a pickup, both on the items map.
     "/Script/SwtQuest.SwtQuestInventoryComponent": [
-        (0x1654430, "adds an item, or takes it away: the items map at +0x150"),
-        (0x16543D0, "its vtable's +0x4F0, on a tag: a QuestItem tag, else looked up in the items map"),
+        (0x1654410, "adds an item, or takes it away: the items map at +0x150"),
+        (0x16543B0, "its vtable's +0x4F0, on a tag: a QuestItem tag, else looked up in the items map"),
     ],
     # The tuning manager's maps are filled by a loader its vtable doesn't hold; the lookup every tuning read goes
     # through (game.NATIVE's GetValue calls it) reaches the map with `add r12, 50h`, which isn't a member access.
     "/Script/SwtEngine.SwtTuningManager": [
-        (0x12BB510, "loads TuningData.csv into the map at +0x50 (and two more tables into the maps after it)"),
+        (0x12BB4F0, "loads TuningData.csv into the map at +0x50 (and two more tables into the maps after it)"),
     ],
     # The talk tables are read through the manager (a global) outside its vtable. A bond answer's two row lookups
     # (0x16B15B0, 0x16B18C0) are the same code but for the map, so neither has a pattern of its own: these do.
     "/Script/SwtQuest.SwtQuestTuningManager": [
-        (0x1957D60, "matches a cat's traits against StoryDialogues.csv's rows: the map at +0x280"),
-        (0x16B1BD0, "a quest's title from QuestDialogues.csv: the map at +0x2D0"),
+        (0x1959490, "matches a cat's traits against StoryDialogues.csv's rows: the map at +0x280"),
+        (0x16B1BB0, "a quest's title from QuestDialogues.csv: the map at +0x2D0"),
     ],
     # The talk flags (game.NATIVE's SetInDialogue): a virtual, but the one function that writes both bits.
     "/Script/SwtQuest.QuestPlayerController": [
-        (0x16B91A0, "puts your cat in a talk or out of it: the talk flags at +0x808"),
+        (0x16B9180, "puts your cat in a talk or out of it: the talk flags at +0x808"),
     ],
     "/Script/SwtAdventure.TurnBasedCombatComponent": [
-        (0x17D6AC0, "builds a fighter's stats from its level"),
-        (0x17D7250, "a fighter's Prowess with its buffs"),
-        (0x17D82B0, "a fighter's speed, from Agility and stamina"),
-        (0x17D5910, "setting up a fighter: health and fight stamina from its stats"),
-        (0x17D5280, "dynamic difficulty: an enemy's level, its AI tier and its moves"),
-        (0x17D9C30, "hitting and missing: the defender's team looked up for a forced miss"),
+        (0x17D6AA0, "builds a fighter's stats from its level"),
+        (0x17D7230, "a fighter's Prowess with its buffs"),
+        (0x17D8290, "a fighter's speed, from Agility and stamina"),
+        (0x17D58F0, "setting up a fighter: health and fight stamina from its stats"),
+        (0x17D5260, "dynamic difficulty: an enemy's level, its AI tier and its moves"),
+        (0x17D9C10, "hitting and missing: the defender's team looked up for a forced miss"),
     ],
     "/Script/SwtAdventure.SwtAdventureStatusComponent": [
-        (0x17CC9A0, "the end of a round: the self-cure roll, and poison queued on the director"),
-        (0x17CC390, "loads the status tuning"),
+        (0x17CC980, "the end of a round: the self-cure roll, and poison queued on the director"),
+        (0x17CC370, "loads the status tuning"),
     ],
     "/Script/SwtAdventure.SwtAdventureDetectionComponent": [
-        (0x17B7600, "loads the senses from the tuning for the size class"),
-        (0x17B6910, "reads the senses"),
+        (0x17B75E0, "loads the senses from the tuning for the size class"),
+        (0x17B68F0, "reads the senses"),
     ],
     # Its own code already reaches the level and the cap, which are its parent's (USwtQuestLevelComponent's)
     # members (the RVAs in this note are 26184573's): its start-up override (0x17C6210) stores the cap and
@@ -102,21 +103,21 @@ ANCHORS = {
     # signature can't capture, and then whole from the actor) and by its update; neither is a function its vtable
     # names directly.
     "/Script/SwtAdventure.SwtAdventureCameraActor": [
-        (0x1760B30, "BeginPlay: the settings from the tuning, the interpolators started from them, the lag onto the arm"),
-        (0x17621A0, "the update: the arm's length, its tilt and the field of view from the settings, each frame"),
+        (0x1760B10, "BeginPlay: the settings from the tuning, the interpolators started from them, the lag onto the arm"),
+        (0x1762180, "the update: the arm's length, its tilt and the field of view from the settings, each frame"),
     ],
     # Your cat's exploration settings: loaded in its BeginPlay, read by the turning input.
     "/Script/SwtAdventure.ExplorationControlComponent": [
-        (0x179DF80, "BeginPlay: the exploration settings from the tuning (speeds, stamina, jump, turning)"),
-        (0x17A4B80, "the turning input: yaw and pitch by the turn rates, within the pitch limits"),
-        (0x17AC120, "the turning input while aligning the camera behind the cat"),
-        (0x17A5530, "each frame: the character's MaxWalkSpeed and MaxAcceleration from its vtable's +0x528 and +0x530"),
-        (0x17A55B0, "its vtable's +0x528, the speed: walk or run (the flags at +0x110), times the crouch or climb factor"),
-        (0x17A55F0, "its vtable's +0x530, the acceleration, the same way"),
+        (0x179DF60, "BeginPlay: the exploration settings from the tuning (speeds, stamina, jump, turning)"),
+        (0x17A4B60, "the turning input: yaw and pitch by the turn rates, within the pitch limits"),
+        (0x17AC100, "the turning input while aligning the camera behind the cat"),
+        (0x17A5510, "each frame: the character's MaxWalkSpeed and MaxAcceleration from its vtable's +0x528 and +0x530"),
+        (0x17A5590, "its vtable's +0x528, the speed: walk or run (the flags at +0x110), times the crouch or climb factor"),
+        (0x17A55D0, "its vtable's +0x530, the acceleration, the same way"),
     ],
     "/Script/SwtAdventure.SwtAdventureLevelComponent": [
-        (0x1657230, "setting the XP: levels up while it reaches the next level's, below the cap"),
-        (0x1657010, "setting the level: the XP bar's size from the XP table, full at the cap"),
+        (0x1657210, "setting the XP: levels up while it reaches the next level's, below the cap"),
+        (0x1656FF0, "setting the level: the XP bar's size from the XP table, full at the cap"),
     ],
 }
 
