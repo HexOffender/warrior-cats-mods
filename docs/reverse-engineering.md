@@ -1448,6 +1448,24 @@ maps after it (`lea rdx, [rsi+50h]`; the signatures' anchor). Read in game: 441 
 **The clock:** the game state's +0x438 is a float, the seconds into the day. Setting it to 21600 made
 the game's own `GetDayClockTime` say 6:00.
 
+**The clock's speed** (build 26391405, 2026-11-07): `TuningData.csv` has `Gameplay.Exploration.DayNight.ClockSpeed`
+72 and `.StartTime` 21600. The game state copies the speed as it starts to the float after the clock, +0x43C
+(`WCM_ClockSpeed`; `signatures.py` has it, from the clock's tick and two other sites): the clock ran 72 game seconds a
+real second, 712 with the copy set to 720 and 7.3 with it at 7.2, while `set_tuning` on the key changed nothing. The
+clock wraps at 86400 (23:59 to 0:02 with nothing else done), runs at the same speed with the pause key's screen (P did
+nothing that was seen) and stops with the inventory up (the game paused).
+
+**The sky's state** (seen in game, 2026-11-07): `BP_DayNightSky_C` has a `PostProcessComponent` for each of its
+presets (`PostProcess-neutralday`, `-night`, `-ThunderClan`, `-RiverClan`, `-ShadowClan`, `-WindClan`, `-MoonPool`,
+`-MainMenu`, `-CatCreator`), each unbound: the preset showing has its volume enabled at weight 1, the rest off at 0
+(in ShadowClan's territory, `-ShadowClan`). Its light, fog and sky light are its `DirectionalLight`, `SkyLight` and
+`ExponentialHeightFog` components. `WrcSkyBoxStruct`'s 40 fields are all floats and colours (`LinearColor`), so a
+preset blends with another number by number. Each area's preset's numbers set part way to Night's in the sky's copy,
+with the area's preset put on again (`ApplyStraight`), gave that light and fog (9 and 1.8 by day, 3 and 0.028 at
+night, half way between half way), with the area's volume still the one showing; the inventory's own preset (fog 50,
+light 1.2) came up over it and went back to the darkened area's after. Turning the Night volume on as well over the
+darkened area made the scene a little bluer, no darker (the Night preset is a moonlit one).
+
 **The inventory** is `WrcInventoryComponent` on the player state, a native `TMap` of item tag to
 count: its elements at +0x150, with the count at +0x158 (12 for 12 kinds of item). Nothing reflected
 reads or changes it:

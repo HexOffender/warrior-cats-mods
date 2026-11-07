@@ -42,7 +42,8 @@ HIDDEN = [
         ("WCM_Agility", 0x164, "FloatProperty"), ("WCM_Stamina", 0x168, "FloatProperty")]),
     ("/Script/SwtAdventure.SwtAdventureFreshKillPileComponent", [
         ("WCM_DecayTimer", 0x130, "FloatProperty"), ("WCM_DecayTime", 0x134, "FloatProperty")]),
-    ("/Script/SwtAdventure.SwtAdventureGameplayGameState", [("WCM_DayTime", 0x438, "FloatProperty")]),
+    ("/Script/SwtAdventure.SwtAdventureGameplayGameState", [("WCM_DayTime", 0x438, "FloatProperty"),
+        ("WCM_ClockSpeed", 0x43C, "FloatProperty")]),
     # A fighter's combat component (set up when a fight starts). Its team (ESwtAdventureCombatTeam: 1 the
     # player's side, 2 the enemy's), how many moves it has to pick from (the array's data pointer sits at +0x1E0; its elements
     # are AttackMove rows, 0x68 bytes each, which the C++ SDK reads), and the AI's tier for this fight

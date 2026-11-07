@@ -1693,6 +1693,40 @@ wcmods::hold_time(6 * 3600);                                                  //
 | `wcmods::set_camera(settings)` | Sets the fields given, the rest as they are: `set_camera({.distance = 300, .fov = 60, .pitch = -35})`. The camera eases there in about a second; lag takes at once. The first set keeps the camera's settings for `reset_camera`. False with no exploration camera, or a field this build has nowhere for (nothing set then). Lasts while that camera does: a new level's starts from the game's. Each mod keeps its own "before": two mods that both set the camera should reset in the reverse order |
 | `wcmods::reset_camera()` | Puts back what the camera had before this mod's first `set_camera`. True when there's nothing to put back; false when it can't all go back now (no camera, or your cat's exploration component isn't there for the turning), and it's kept for another try |
 
+**The day (`Day.hpp`)**, game thread only:
+
+The game's clock (`time_of_day`, `day_seconds`, `set_time` in `Game.hpp`) runs 72 times real time as the game ships,
+so a day lasts 20 minutes; it wraps at midnight and stops while the game is paused (the inventory). Nothing in the game
+follows it: the sky follows the area your cat is in. `Day.hpp` names the parts of the day as the books do, calls a
+mod's code as each begins and as a new day starts, sets the day's length, and has the sky follow the clock.
+
+```cpp
+wcmods::on_day_part([](wcmods::DayPart p) { if (p == wcmods::DayPart::Dawn) send_the_dawn_patrol(); });
+wcmods::on_new_day([] { ++days; });
+wcmods::set_day_length(40 * 60);     // a day of 40 minutes
+wcmods::day_sky(true);               // dusk, night and dawn over each area's own sky
+if (wcmods::day_part() == wcmods::DayPart::Night) go_to_sleep();
+```
+
+| Call | Does |
+|---|---|
+| `wcmods::DayPart`, `day_part_name(part)`, `day_parts_in_order` | `Dawn` (5:00), `Morning` (7:00), `Sunhigh` (11:00), `Afternoon` (14:00), `Sundown` (18:00), `Night` (21:00 to dawn); `L"dawn"`... |
+| `wcmods::day_part()`, `day_part_at(seconds)` | The part of the day now (nullopt outside the forest), or at a time (seconds into the day, any number: it wraps) |
+| `wcmods::day_parts()`, `set_day_parts(parts)` | When each part begins (`DayParts`: `dawn`, `morning`, `sunhigh`, `afternoon`, `sundown`, `night`, in seconds; `start(part)`, `valid()`), this mod's own, and changing them; false for parts out of order |
+| `wcmods::night_amount(seconds)` | How dark the clock says it is: 0 by day, 1 by night; over the dusk (the second half of sundown, 19:30 to 21:00) it goes from 0 to 1 and over the dawn (dawn to morning) back to 0, easing in and out |
+| `wcmods::on_day_part(fn)` | `fn(part)` as each part begins while you play: the clock running into it, or set into it. Not as your cat comes into the world (`day_part()` says where the day is then) |
+| `wcmods::on_new_day(fn)` | `fn()` as a new day starts while you play: the clock running past midnight, or set from one day into the next (the evening to the morning: half a day or more lower than it was). Setting it back a few hours isn't one |
+| `wcmods::day_length()`, `set_day_length(seconds)`, `clock_speed()` | How long a day lasts in real seconds (1200 as the game ships); making it last that long (60 s to a real day; `std::nullopt` gives the game's back), kept as each world starts, where the game sets its own again. The speed itself (game seconds a real second) is the game state's copy of `Gameplay.Exploration.DayNight.ClockSpeed`, a pointer to read and write: changing the tuning does nothing once the world has started |
+| `wcmods::day_sky(on, options)`, `day_sky_on()` | The sky follows the clock: each area's own sky by day, going over the dusk toward `DaySky::night` (the `L"Night"` preset) as far as `darkest` (0 to 1, 1 by default), the night's all night, and back over the dawn. It changes the area presets' numbers (`sky_values`: the light, fog, clouds, colours, stars) and puts the area's preset on again as they change, so the game's own fades between areas and its skies for the inventory, dens and fights stay as they were, and a preset `set_sky` holds shows the time too. Off puts the game's numbers back. False for a `darkest` outside 0 to 1. While it's on, `set_sky_value` changes to the areas' presets are overwritten |
+| `wcmods::sky_shown()` | The preset the sky shows now, by its post-process volumes (`L"ShadowClan"`, `L"NeutralDay"`, `L"Night"`, `L"MainMenu"` for the inventory's...); nullopt while it goes from one to another |
+
+Measured in game (the test mod's `day` and `day_sky_*` requests): the clock ran 72 game seconds a real second, 720
+with a day of 120 s, and 72 again after; the calls came as the clock was set into dawn, past midnight and from the
+evening to the morning, and not when it was set back. In ShadowClan's territory at noon the sun's light was 9 and the
+fog 1.8 (the area's own); at the middle of the dusk and of the dawn 6 and 0.91; at night 3 and 0.028 (the Night
+preset's), with the sky still showing ShadowClan's preset; with the inventory up its own sky, and the night again
+after it.
+
 **Effects, movement and the scent sense (`Effects.hpp`)**, game thread only:
 
 ```cpp

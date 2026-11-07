@@ -158,6 +158,14 @@ namespace t
             {
                 run_nav_paths_request();
             }
+            else if (what == "day")
+            {
+                run_day_request();
+            }
+            else if (what.starts_with("day_sky_"))
+            {
+                run_day_sky_request(what);
+            }
             else if (what == "drop")
             {
                 run_items_request();
