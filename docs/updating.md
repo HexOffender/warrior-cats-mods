@@ -204,7 +204,8 @@ which aren't instructions.
 4. Remake the signatures on the new build (`game signatures make`), set `gamebuild.VERIFIED_BUILD` to
    it (`game.HIDDEN` holds one layout, so it's one build), and note it in `docs/reverse-engineering.md`.
    First move the RVAs `signatures.ANCHORS` and `game.NATIVE` hold to the new build's: `make` reads the
-   functions at those RVAs, and code moves in every update (by 0x1750 to 0x1860 in 26337109's). Each one is
+   functions at those RVAs, and code moves in every update (by 0x1750 to 0x1860 in 26337109's, mostly 0x20 in
+   26391405's). Each one is
    found again by the pattern `signatures.json` has for it (`Finder.find_function`; `game signatures check`
    prints the native functions'); an anchor without a pattern (`"pattern": null`) is moved with its
    neighbours.
@@ -216,3 +217,6 @@ which aren't instructions.
    reports into line: `game.ENUMS`' lists, and the constants whose comment names the value
    (`-- ECommands::Player_Interact`). It reads wcmods' `.lua` files and the Lua in its `.py` files (the agent's);
    a game number written anywhere else, or without such a comment, isn't checked, so name each new one that way.
+7. Make `wcmods/exe/tuning_read.json` again on the new build (`python wcmods.py extract '*NonAsset/TuningData.csv'`,
+   then `python tools/re/tuning_read.py <exe> vanilla/Wrc/Content/Gameplay/DataTables/NonAsset/TuningData.csv
+   --build <build>`): `wcmods::tuning_named` answers only for the build it was made on, and says nothing on another.

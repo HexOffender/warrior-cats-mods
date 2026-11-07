@@ -364,7 +364,7 @@ def test_offsets_json_gives_cpp_mods_each_function_with_its_pattern():
     assert out["members"]["/Script/SwtQuest.SwtQuestInventoryComponent:WCM_Items"] == {"offset": 0x150, "type": "MapProperty"}
     assert out["members"]["/Script/SwtEngine.SwtTuningManager:WCM_TuningData"] == {"offset": 0x50, "type": "MapProperty"}
     assert out["members"]["/Script/Wrc.WrcSkyboxActor:WCM_Presets"] == {"offset": 0x378, "type": "MapProperty"}
-    assert out["functions"]["SwtTuningManager:GetValue"]["rva"] == 0x12BBA60
+    assert out["functions"]["SwtTuningManager:GetValue"]["rva"] == 0x12BBA40
 
 
 def test_the_lua_leaves_out_what_only_cpp_reads():
@@ -382,7 +382,7 @@ def test_the_tuning_map_is_signed_by_its_loader():
     anchor): its sites, as committed, capture 0x50 three times, each with its width."""
     entry = signatures.load()["classes"]["/Script/SwtEngine.SwtTuningManager"]
     assert entry["fields"] == {"WCM_TuningData": 0x50}
-    assert [a["was"] for a in entry["anchors"]] == ["0x12BB510"]
+    assert [a["was"] for a in entry["anchors"]] == ["0x12BB4F0"]
     assert signatures.instructions(entry) == {0x50: 3}
     assert all(site.get("widths") == {k: 1 for k in site["captures"]} for site in entry["sites"])
 
