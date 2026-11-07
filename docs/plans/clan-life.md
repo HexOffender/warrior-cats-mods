@@ -243,6 +243,28 @@ mode, on and off).
 apprentice with a mentor); in game, the Allegiances page for a ThunderClan and a WindClan sandbox cat, the same after
 quitting and coming back.
 
+### 1b. Genetics
+
+Added on 2026-11-07 at the owner's request: cats with genes, so kits inherit real traits from both parents and two
+cats can have kits that look like neither. Done after step 1 (the Clans' rules) and before step 6 (births), in the
+rules (`clans.hpp` and a `genes.hpp`), unit-tested like them.
+
+- **A small genome for each cat**, each gene two alleles, one from each parent:
+  - orange (on the X: a tom has one, a she-cat two, so a she-cat can carry it unseen),
+  - black or brown (a brown coat from two brown alleles),
+  - dilute (black to grey, orange to cream, brown to a pale brown),
+  - white spotting and full white,
+  - tabby or solid (a pattern or none),
+  - long or short fur;
+  - eye colour and size blended from both parents, with some spread.
+- **The look follows the genes**: the coat family and shade they give picks the nearest of the game's coat slots (sorted
+  by their colours, as step 1 does), the pattern or none, the fur, the eyes. A kit's name still fits its coat.
+- **The Clans' first cats** (made at step 1, and the game's own) get genomes that give the looks they have, with hidden
+  alleles drawn by how common they are in their Clan; their kits then follow the genes.
+
+**Proof:** unit tests: two grey parents can have a ginger kit only if both carry orange (a tom's ginger comes from his
+mother); two short-haired cats can have a long-haired kit; the first cats' genes give their looks back.
+
 ### 2. The territories
 
 Each camp's places, the border routes, hunting grounds, herb spots, training grounds, the Island and the Moonpool,
@@ -299,6 +321,16 @@ Each ceremony at the speaking rock: the leader calls the Clan, the cats gather, 
 in the books' spirit), the Clan calls the new name. You can attend, and when it's your apprentice or your naming,
 you're at the centre. Death of old age or sickness is a setting (off by default).
 
+**Growing up and kits** (added on 2026-11-07 at the owner's request; nothing beyond what the books show: two cats
+become mates, and in time a she-cat moves to the nursery and kits are born there):
+- cats age through the ranks as moons pass;
+- clanmates who like each other become mates (never the medicine cat), and now and then a she-cat with a mate moves to
+  the nursery as a queen; a few moons on, her kits are born there, with genes from both parents (step 1b), named for
+  their looks; the queen goes back to her duties when they're apprenticed;
+- your cat: a clanmate's liking for your cat grows with talks, patrols and duties shared; past a bond the mod sets, a
+  talk with that cat offers to become mates (and the cat may ask you). Kits of your own then come in time, and
+  grow up in the Clan: you name them (from names that fit their looks), and as a warrior you can be one's mentor.
+
 **Proof:** unit tests for ageing and who's next; in game at a fast clock, an apprentice ceremony and a warrior
 ceremony watched from start to end, the Allegiances page changed after.
 
@@ -333,7 +365,7 @@ on your yes).
 ## The order
 
 S0 first: the combat fixes you asked for need the new build too, and come straight after it. Then S6 (the mod's
-step 1 needs it), and S1 to S5 in turn, with the mod's step 1 alongside them. Steps 2 to 9 follow in order, each
+step 1 needs it), and S1 to S5 in turn, with the mod's step 1 alongside them. Step 1b (genetics) follows step 1. Steps 2 to 9 follow in order, each
 after the SDK steps it uses (2 after S3 and S4, 3 after S1, 4 after S2, 5 after S5).
 
 ## Decisions for you
