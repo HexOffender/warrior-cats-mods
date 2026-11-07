@@ -210,6 +210,21 @@ HUD text).
 **Proof:** in game, a cat asks your cat a question and each answer is picked once (mouse, keys, controller); two
 cats exchange lines as you walk past.
 
+### S6. The game's tables for making cats
+
+Added on 2026-11-06 with the owner's yes, for the mod's step 1: the game makes its clan cats from its `NonAsset/NPC`
+tables (prefixes weighted per Clan, suffixes by rank, the banned canon names, the look weights per Clan, the kits'
+parts, sizes and scars by rank, how many of each rank), and the mod makes its cats the same way. Copying the tables
+into the mod would be the game's data in its repository, and stale after a name mod or an update.
+
+**Calls:** wcmods' install writes them, as the build leaves them (name mods' changes in), beside `offsets.json`
+(`Mods/shared/WCModsGame/npc_tables.json`, `wcmods/npctables.py`); `wcmods::cat_tables()` reads them, and
+`wcmods::colour_slots()` gives the cat maker's colour slots' colours from the GUI manager (to tell a grey coat from a
+ginger one, palette mods' changes in).
+
+**Proof:** unit tests for the tables from small CSVs; in game, the C++ test mod reads the 90 prefixes, 27 suffixes,
+31 banned names and 14 look tables as the game ships them, and the coat colours as Lua reads them.
+
 Each S step updates `docs/SDK.md`, its header's comments and the in-game tests (`tests/game/test_cpp_sdk.py`).
 
 ## Part 2: the mod (wcmods-clan-life)
@@ -317,8 +332,8 @@ on your yes).
 
 ## The order
 
-S0 first: the combat fixes you asked for need the new build too, and come straight after it. Then S1 to S5 in
-turn, with the mod's step 1 alongside them (it needs nothing new from the SDK). Steps 2 to 9 follow in order, each
+S0 first: the combat fixes you asked for need the new build too, and come straight after it. Then S6 (the mod's
+step 1 needs it), and S1 to S5 in turn, with the mod's step 1 alongside them. Steps 2 to 9 follow in order, each
 after the SDK steps it uses (2 after S3 and S4, 3 after S1, 4 after S2, 5 after S5).
 
 ## Decisions for you

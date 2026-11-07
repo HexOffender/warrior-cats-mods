@@ -6,7 +6,7 @@ import re
 import shutil
 import struct
 
-from . import bridge, catcolours, controls, draw, luacheck, menu, menupages, menusettings, names
+from . import bridge, catcolours, controls, draw, luacheck, menu, menupages, menusettings, names, npctables
 from .formats import texture
 from .exe import gamebuild
 from . import ue4ss, view, world
@@ -481,6 +481,16 @@ def build(cfg, mods, out_dir, log=print, trusted=()):
         json.dump(game_lua.offsets_json(fit["offsets"], build, fit.get("functions")), f, indent=2)
     with open(os.path.join(out_dir, "ue4ss_shared", world.NAMES_NAME, "names.json"), "w", encoding="utf-8") as f:
         json.dump(world.names_data(plan, item_labels, places), f, ensure_ascii=False)
+    # The game's tables for making clan cats, as this build leaves them (name mods' changes in), for C++ mods that
+    # make cats the game's way (npctables.py; wcmods::cat_tables).
+    try:
+        cat_tables = npctables.build(read)
+    except Exception as e:   # no game data (no Oodle DLL)
+        log(f"  (the game's cat tables for C++ mods left out: {e})")
+        cat_tables = None
+    if cat_tables is not None:
+        with open(os.path.join(out_dir, "ue4ss_shared", game_lua.SHARED_NAME, "npc_tables.json"), "w", encoding="utf-8") as f:
+            json.dump(cat_tables, f, ensure_ascii=False, indent=1)
     # Which TuningData keys the game's code names (tools/re/tuning_read.py, for wcmods::tuning_named).
     tuning_read = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exe", "tuning_read.json")
     if os.path.isfile(tuning_read):
