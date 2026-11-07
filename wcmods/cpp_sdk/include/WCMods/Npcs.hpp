@@ -509,17 +509,17 @@ namespace wcmods
             if (m) m->label = label.name.empty() && label.title.empty() && label.extra.empty() && label.icon.empty() ? std::nullopt : std::optional(label);
         }
         // Its scars (eye, ear, body, chest: the game's ids, 0 for none; a part not given keeps its own), drawn now if it's
-        // in the world and kept for each time it comes in. False when it's been removed.
+        // in the world and kept for each time it comes in. False when it's been removed, or for a part it hasn't got
+        // (nothing changed then).
         auto set_scars(const std::map<std::wstring, int>& scars) -> bool
         {
             if (!m || m->removed) return false;
             for (auto& [part, id] : scars)
-            {
-                auto field = detail::scar_fields().find(part);
-                if (field == detail::scar_fields().end()) continue;
-                m->spec.scars[part] = id;
-                m->made[field->second] = id;
-            }
+                if (!detail::scar_fields().contains(part)) return false;
+            for (auto& [part, id] : scars) m->spec.scars[part] = id;
+            // its look made up now if it hasn't come in yet (else its first coming in would take the scars for its look)
+            if (m->made.empty()) m->made = detail::npc_look(m->spec);
+            for (auto& [part, id] : scars) m->made[detail::scar_fields().at(part)] = id;
             if (UObject* a = actor())
                 if (UObject* c = get(a, L"MeshCustomizationComponent").object)
                 {

@@ -77,7 +77,11 @@ namespace t
             return;
         }
         auto f = std::make_shared<Fight>();
-        f->npc = spawn_npc({.at = *spot, .scars = {{L"eye", 1}, {L"body", 3}}, .tags = {L"wcmods.test.fighter", L"ClanLife.7"}});
+        // made asleep, its scars set before it first comes in: its look (a tail of 2) kept with them
+        f->npc = spawn_npc({.at = *spot, .look = {{L"tail", 2}}, .asleep = true, .scars = {{L"eye", 1}}, .tags = {L"wcmods.test.fighter", L"ClanLife.7"}});
+        value("fighters.bad_part", Json(!f->npc.set_scars({{L"eyes", 2}})));
+        f->npc.set_scars({{L"body", 3}});
+        f->npc.wake();
         auto waited = std::make_shared<int>(0);
         auto in = std::make_shared<std::function<void()>>();
         *in = [f, waited, in] {
@@ -103,9 +107,10 @@ namespace t
                 if (has_tag(n.actor, L"wcmods.test.fighter")) ++found;
             value("fighters.found_near", Json(found));
             value("fighters.yours_untagged", Json(!has_tag(player(), L"wcmods.test.fighter")));
-            // its scars, on its look
+            // its scars, on its look, and the rest of its look as given
             auto l = look(a);
             value("fighters.scars", Json(l ? l->ScarEyeId * 10 + l->ScarBodyId : -1));
+            value("fighters.tail", Json(l ? l->TailIdx : -1));
             moves(f);
         };
         after(0.25, *in);

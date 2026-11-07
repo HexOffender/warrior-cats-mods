@@ -2333,6 +2333,7 @@ def test_cat_fighters(agent):
     assert v["still"] is True, v
     assert v["tags"] is True and v["add_again"] is True and v["no_tag"] is True, v
     assert v["found_near"] == 1 and v["yours_untagged"] is True, v
-    assert v["scars"] == 13, v                       # eye 1, body 3
+    assert v["scars"] == 13 and v["tail"] == 2, v   # eye 1, body 3 (set while asleep), its look kept
+    assert v["bad_part"] is True, v
     assert v["scars_now"] == 23 and v["scars_kept"] is True and v["late_tag"] is True, v
     assert v["woke_tags"] is True and v["woke_scars"] == 23, v

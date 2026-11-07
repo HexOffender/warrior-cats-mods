@@ -121,22 +121,25 @@ namespace wcmods
         for (const Value& v : elements(get(actor, L"Tags"))) out.push_back(v.text);
         return out;
     }
+    // (The engine's own ActorHasTag: no copy of every tag to look for one.)
     inline auto has_tag(UObject* actor, std::wstring_view tag) -> bool
     {
-        for (const std::wstring& t : actor_tags(actor))
-            if (t == tag) return true;
-        return false;
+        if (!actor || tag.empty()) return false;
+        auto r = call_reflected(actor, STR("ActorHasTag"), [&](Params& p) { p.set_nth(0, Value::of(tag)); });
+        return r && r->get(L"ReturnValue").boolean();
     }
-    // Add a tag to an actor (once: true when it has it already). False without the actor.
+    // Add a tag to an actor (once: true when it has it already). False without the actor, or off the game thread.
     inline auto add_tag(UObject* actor, std::wstring_view tag) -> bool
     {
-        if (!actor || tag.empty()) return false;
+        if (!actor || tag.empty() || !assert_game_thread(L"add_tag")) return false;
         if (has_tag(actor, tag)) return true;
         Value tags = get(actor, L"Tags");
         if (tags.kind != Value::Kind::Array || !tags.property || !tags.at) return false;
         RC::Unreal::FScriptArrayHelper helper(static_cast<RC::Unreal::FArrayProperty*>(tags.property), tags.at);
         const int i = helper.AddValue();   // (zeroed: the name None, until it's written)
-        return detail::write(detail::element(tags, i), Value::of(tag));
+        if (detail::write(detail::element(tags, i), Value::of(tag))) return true;
+        helper.RemoveValues(i, 1);         // not left as a None
+        return false;
     }
 
     inline auto nearby(Kind kind, double radius = 3000, UObject* from = nullptr) -> std::vector<Nearby>
