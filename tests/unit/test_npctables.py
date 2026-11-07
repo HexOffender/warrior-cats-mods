@@ -53,3 +53,21 @@ def test_a_table_the_game_hasnt_got_is_named_not_fatal():
     assert "FaceType.csv" in d["missing"] and "face" not in d["looks"]
     assert "ShadowClanNpcGenerator.csv" in d["missing"]
     assert d["prefixes"]   # the rest still read
+
+
+def test_a_short_kit_row_and_a_table_that_doesnt_read():
+    files = dict(FILES)
+    files["ForcedAppearance.csv"] = ',Body,Fur,Eye\nKit,"(6,7)"\n'
+
+    def read_short(path):
+        if path == npctables.TUNING:
+            return TUNING
+        name = path[len(npctables.NPC):]
+        if name == "Scars.csv":
+            raise ValueError("bad quoting")
+        if name not in files:
+            raise FileNotFoundError(path)
+        return files[name]
+    d = npctables.build(read_short)
+    assert d["kit_parts"] == {"body": [6, 7], "fur": [], "eyes": []}
+    assert "Scars.csv" in d["missing"] and d["problems"]["Scars.csv"] == "ValueError: bad quoting"

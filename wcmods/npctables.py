@@ -49,9 +49,18 @@ def _numbers(s):
     return [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", s or "")]
 
 
+def _col(table, name):
+    """A column's index by its name, or None when the table hasn't got it (Table.column raises)."""
+    try:
+        return table.column(name)
+    except KeyError:
+        return None
+
+
 def _rows(table, *cols):
-    """Each row's cells under these columns (by name), for rows with a first cell."""
-    idx = [table.column(c) for c in cols]
+    """Each row's cells under these columns (by name; "" for a column the table hasn't got, or a short row), for rows
+    with a first cell."""
+    idx = [_col(table, c) for c in cols]
     return [[r.fields[i] if i is not None and 0 <= i < len(r.fields) else "" for i in idx]
             for r in table.rows if r.fields and r.fields[0]]
 
@@ -67,8 +76,9 @@ def build(read_text):
     def table(name):
         try:
             return Table(read_text(NPC + name))
-        except Exception:   # the game hasn't got it (an update renamed it): left out, and said
+        except Exception as e:   # the game hasn't got it (an update renamed it), or it doesn't read: left out, and why
             out["missing"].append(name)
+            out.setdefault("problems", {})[name] = f"{type(e).__name__}: {e}"
             return None
 
     if (t := table("PreffixName.csv")) is not None:
@@ -87,10 +97,10 @@ def build(read_text):
     if (t := table("PatternBanList.csv")) is not None:
         out["banned_patterns"] = sorted({int(_num(i, -1)) for _, i in _rows(t, "Name", "Index") if _num(i, -1) >= 0})
     if (t := table("ForcedAppearance.csv")) is not None:
-        cols = [c for c in KIT_COLUMNS if t.column(c) is not None]
-        for role, *cells in [[r.fields[0]] + [r.fields[t.column(c)] for c in cols] for r in t.rows if r.fields and r.fields[0]]:
-            if role == "Kit":
-                out["kit_parts"] = {KIT_COLUMNS[c]: _ints(v) for c, v in zip(cols, cells)}
+        cols = {c: i for c in KIT_COLUMNS if (i := _col(t, c)) is not None}
+        for r in t.rows:
+            if r.fields and r.fields[0] == "Kit":   # a short row's missing cells read as no options
+                out["kit_parts"] = {KIT_COLUMNS[c]: _ints(r.fields[i] if i < len(r.fields) else "") for c, i in cols.items()}
     if (t := table("CatSize.csv")) is not None:
         out["sizes"] = {role: [_num(lo), _num(hi)] for role, lo, hi in _rows(t, "Role", "MinScale", "MaxScale") if role}
         if not out["sizes"]:   # the first column is unnamed ("--"): the rows by position
@@ -100,7 +110,7 @@ def build(read_text):
                         for role, group, e, b, y in _rows(t, "Role", "Group", "EarChance", "BodyChance", "EyeChance")]
     for clan in GENERATORS:
         if (t := table(clan + "NpcGenerator.csv")) is not None:
-            cols = {c: t.column(c) for c in CLANS if t.column(c) is not None}   # by name: the columns' order differs
+            cols = {c: i for c in CLANS if (i := _col(t, c)) is not None}   # by name: the columns' order differs
             out["generators"][clan] = {r.fields[0]: {c: int(_num(r.fields[i])) for c, i in cols.items() if i < len(r.fields)}
                                        for r in t.rows if r.fields and r.fields[0]}
     try:
