@@ -108,12 +108,50 @@ and the Clan's talk turns to it.
 - **How a fight ends:** a beaten cat **yields** and runs (the warrior code doesn't ask warriors to kill). You
   choose: let it go, or give the killing blow (a held key). Killing is the biggest memory there is, for everyone
   who sees it or hears of it.
-- **Clanmates:** they join in, as Clan life's step 8 plans.
+- **Several at once:** your cat's blows land on every cat and animal in front of it, so a fight can be with
+  several cats at once (the owner's, 2026-11-07).
+- **Your party** (next, the owner's, 2026-11-07): up to three clanmates you ask along, who follow you and fight
+  beside you. Its own part below, Part B2.
 - **What Clan life hears:** Real-time combat tells it what happened: who fought whom, who yielded, who was spared,
   who was killed, who saw it. Real-time combat runs without Clan life too.
 
 **Proof:** in game, a fight with a WindClan warrior that yields; one spared, one killed. Clan life's record shows
-both, with their witnesses.
+both, with their witnesses. (Done: Real-time combat #12, Clan life #7, with wcmods #175 and #176.)
+
+## Part B2: your party (Clan life and Real-time combat)
+
+The game's own party is up to two clanmates the story picks, who only exist in its fights. Here your party is
+clanmates of Clan life's, in the forest with you.
+
+- **Asking them along** (Clan life, the Clanmates page): **Come with me** by a clanmate's name, **Send home** for one
+  with you. Up to three (a setting, `party_size`).
+  - Who says yes: a grown clanmate of your Clan whose bond with you is 40 or more, and who doesn't hold a grudge
+    against you. Your mate always comes.
+  - Who says no, and why, in its own words: kits; elders; the medicine cat and its apprentice (their duties); a
+    queen with kits; the leader (it leads, it doesn't follow), unless you're the deputy; a cat that holds a grudge
+    against you; a cat of another Clan.
+- **With you:** each walks at your cat's heels wherever you go, out of camp and across the territories, kept in the
+  world while the camp's other cats come and go. Left far behind (a fast travel, a teleport), it's put beside you
+  again. Its label says "With you". It goes home when you send it, at nightfall, or when you leave the game.
+- **In a fight** (Real-time combat). Clan life shares the party's cats (`ClanLife.party`), and Real-time combat
+  drives them while a fight lasts, then gives them back:
+  - Each goes after a foe: the one you're locked on to, else the one nearest it. It closes in and strikes with the
+    cats' quick claw, at a cat's pace. Its blows go through the foes' guards, dodges and counters as yours do.
+  - It never fights a cat of its own Clan. Against your clanmates, it stands back. (Part E judges you for that
+    fight.)
+  - Your blows don't land on it.
+  - A foe's swing hurts the party's cats in front of it as it hurts you. Beaten, a party cat goes down until the fight
+    is over, then gets up hurt (not killed: deaths stay with Part E's choices).
+  - A bar over each one's head shows its health, as for foes.
+- **What Clan life hears:** each cat that fought beside you remembers it (a new memory, *fought beside you*: liking
+  and respect for you). A clanmate beaten in your fight remembers that too.
+
+**Proof:**
+- in game, a clanmate asked along, following your cat out of camp and back; a refusal with its reason; sent home
+- a fight with an animal: the party's cats strike it and it's beaten
+- a party cat hurt by the animal
+- each remembers fighting beside you
+- unit tests for who says yes
 
 ## Part C: rivals (Clan life)
 
@@ -260,6 +298,9 @@ Each step updates `docs/SDK.md`, its header's comments and the in-game tests, as
    gossip give cats memories already.
 2. **Part A, wants** (Clan life): choices and talk follow them.
 3. **S8** (SDK), then **Part B** (Real-time combat): fighting cats, yielding, sparing and killing, told to Clan life.
+   Done.
+3b. **Part B2, your party** (Clan life and Real-time combat): clanmates who come with you and fight beside you. Next
+   (the owner's, 2026-11-07).
 4. **Deaths from fights** (Clan life): grief and kin's grudges, and Part E: breaches, standing, judgements, exile.
 5. **Part C, rivals** (Clan life): grudges become rivals that grow and come after you; endings.
 6. **S9** and **rogue and animal rivals** (Real-time combat and Clan life).
@@ -279,6 +320,8 @@ the meetings where rivals show up, so it comes alongside step 5.
 5. **Part A comes first.**
 6. **A warrior is exiled** for breaking the code; rank shields a deputy and a leader (the owner's).
 7. **Mates from other Clans** are allowed, frowned on but not forbidden (the owner's).
+8. **Several cats at once:** blows land on every cat in front of you, so you can fight several at once (the owner's).
+9. **Your party fights beside you** in Real-time combat, next after Part B (the owner's): Part B2.
 
 ## What might not work
 
