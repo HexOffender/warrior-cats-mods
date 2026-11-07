@@ -28,11 +28,15 @@ def test_cat_reads(agent):
 
 
 def test_health_round_trip(agent):
-    """Setting health shows straight away; healing fills it."""
+    """Setting health shows straight away, on the HUD's health bar too (its text); healing fills it."""
     full = agent.lua("return Game.cat():maxHealth()")
+    hud_text = ('local h = Game.find("WBP_GuiHudGameWrc_C") '
+                'return h and h.mcGuiHudCharacter.mcGuiTextHealth:GetText():ToString()')
     try:
         agent.lua(f"Game.cat():setHealth({full // 2})")
         assert agent.lua("return Game.cat():health()") == full // 2
+        shown = agent.lua(hud_text)
+        assert shown and str(int(full // 2)) in shown, shown
     finally:
         agent.lua("Game.cat():heal()")
     assert agent.lua("return Game.cat():health()") == full

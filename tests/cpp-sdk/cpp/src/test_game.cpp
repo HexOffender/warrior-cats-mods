@@ -225,6 +225,26 @@ namespace t
             *hp.value = *hp.max / 2;
             expect("writes.health_pointer", *hp.value == *hp.max / 2);
             expect("heal", c.heal() && *hp.value == *hp.max, std::to_string(was));
+            // the HUD's health bar follows set_health and heal (its text has the number now)
+            auto hud_health = []() -> std::wstring {
+                Widget h = ui::hud();
+                UObject* slot = h ? get(h.object(), L"mcGuiHudCharacter").object : nullptr;
+                Widget t(slot ? get(slot, L"mcGuiTextHealth").object : nullptr);
+                return t ? t.text() : std::wstring(L"(no HUD text)");
+            };
+            const int quarter = static_cast<int>(*hp.max / 4);
+            expect("set_health", c.set_health(quarter) && static_cast<int>(*hp.value) == quarter);
+            const std::wstring at_quarter = hud_health();
+            expect("set_health.hud", at_quarter.find(std::to_wstring(quarter)) != std::wstring::npos, text(at_quarter));
+            expect("set_health.kept_within", c.set_health(*hp.max + 500) && *hp.value == *hp.max);
+            // written into the value alone, the bar stays; ui::show_health redraws it
+            *hp.value = static_cast<float>(quarter);
+            expect("show_health", ui::show_health() && hud_health().find(std::to_wstring(quarter)) != std::wstring::npos,
+                   text(hud_health()));
+            c.set_health(quarter);
+            c.heal();
+            const std::wstring healed = hud_health();
+            expect("heal.hud", healed.find(std::to_wstring(static_cast<int>(*hp.max))) != std::wstring::npos, text(healed));
         }
         Resource st = c.stamina();
         if (st)

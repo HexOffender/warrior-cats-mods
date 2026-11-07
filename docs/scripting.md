@@ -244,7 +244,7 @@ wrapper doesn't have: `Game.get(cat.actor, "CharacterType")`.
 |---|---|---|
 | `name()`, `clan()`, `traits()` | `"Callie"`, `"RiverClan"`, `{"Brave", "Energetic"}` (traits from the last save) | yes |
 | `customization()` | The looks and name IDs: `ClanType`, `BodyValue`, `EarIdx`, `FurColorIdx`, `PrefixNameId`, `CatSize`, … | yes |
-| `health()`, `maxHealth()`, `setHealth(v)`, `setMaxHealth(v)`, `heal()` | Health (the maximum is Prowess) | read and set |
+| `health()`, `maxHealth()`, `setHealth(v)`, `setMaxHealth(v)`, `heal()` | Health (the maximum is Prowess); setting your cat's redraws its health bar on the HUD | read and set |
 | `stamina()`, `maxStamina()`, `setStamina(v)`, `setMaxStamina(v)` | Exploring stamina | read and set |
 | `staminaRegen()`, `setStaminaRegen(v)` | Stamina back per second (20) | read |
 | `combatStamina()`, `maxCombatStamina()`, `setCombatStamina(v)` | Fight stamina (the maximum is 0.4 × Prowess + Stamina) | read |

@@ -1477,8 +1477,22 @@ end
 
 function Cat:health() return resource(self, "Health", "WCM_Value") end
 function Cat:maxHealth() return resource(self, "Health", "WCM_Max") end
-function Cat:setHealth(v) return setResource(self, "Health", "WCM_Value", v) end
-function Cat:setMaxHealth(v) return setResource(self, "Health", "WCM_Max", v) end
+-- Health set, and for your cat the HUD's health bar redrawn (the game redraws it only when its own code changes health:
+-- its OnSetHealthPercent on the HUD's character slot, called here).
+local function setHealthPart(cat, field, v)
+    local was = resource(cat, "Health", field)
+    local ok, why = setResource(cat, "Health", field, v)
+    if ok and was ~= resource(cat, "Health", field) and cat:isPlayer() then   -- unchanged (a heal at full): nothing to redraw
+        local h = Game.find("WBP_GuiHudGameWrc_C")
+        local now, most = cat:health(), cat:maxHealth()
+        if Game.valid(h) and now and most and most > 0 then
+            pcall(function() h.mcGuiHudCharacter:OnSetHealthPercent(now / most, now, most) end)
+        end
+    end
+    return ok, why
+end
+function Cat:setHealth(v) return setHealthPart(self, "WCM_Value", v) end
+function Cat:setMaxHealth(v) return setHealthPart(self, "WCM_Max", v) end
 -- Full health; false when the game's maximum isn't known (a game update moved it where wcmods can't find it).
 function Cat:heal()
     local max = self:maxHealth()
