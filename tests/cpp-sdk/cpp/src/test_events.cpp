@@ -146,6 +146,14 @@ namespace t
             {
                 run_carry_request();
             }
+            else if (what == "crowd")
+            {
+                run_crowd_request();
+            }
+            else if (what == "crowd_walk")
+            {
+                run_crowd_walk_request();
+            }
             else if (what == "drop")
             {
                 run_items_request();

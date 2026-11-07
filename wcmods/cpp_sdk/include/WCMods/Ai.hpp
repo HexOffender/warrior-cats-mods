@@ -358,59 +358,6 @@ namespace wcmods
     inline auto ai_tree_blackboard(UObject* tree) -> std::wstring { return name(get(tree, L"BlackboardAsset").object); }
 
     // ============================================================================================ moving
-    // The navigation meshes the AIs walk on (the world's navigation system's NavDataSet): the forest has two, one for
-    // the animals (RecastNavMeshEnemy, agents 25 cm round) and one for the cats (RecastNavMeshPlayer, 1 cm: the walking
-    // cats and the SDK's own). The one an actor walks on goes by its movement's agent radius.
-    namespace detail
-    {
-        inline auto nav_meshes() -> std::vector<UObject*>
-        {
-            std::vector<UObject*> out;
-            for (auto& v : elements(get(world(), L"NavigationSystem.NavDataSet")))
-                if (v.object) out.push_back(v.object);
-            return out;
-        }
-        inline auto nav_mesh_for(UObject* actor) -> UObject*
-        {
-            Value r = get(actor, L"CharacterMovement.NavAgentProps.AgentRadius");
-            if (r.kind == Value::Kind::None) return nullptr;
-            UObject* best = nullptr;
-            double best_d = 1e18;
-            for (UObject* m : nav_meshes())
-            {
-                double d = std::abs(get(m, L"AgentRadius").number() - r.number());
-                if (d < best_d) best = m, best_d = d;
-            }
-            return best;
-        }
-        inline auto project_on(UObject* mesh, Vec3 place) -> std::optional<Vec3>
-        {
-            UObject* nav = object(STR("/Script/NavigationSystem.Default__NavigationSystemV1"));
-            auto r = call_reflected(nav, STR("K2_ProjectPointToNavigation"), [&](Params& p) {
-                p.set_nth(0, Value::of(world()));
-                Value at = p.nth(1);
-                set(at, L"X", place.x);
-                set(at, L"Y", place.y);
-                set(at, L"Z", place.z);
-                p.set_nth(3, Value::of(mesh));
-            });
-            if (!r || !r->get(L"ReturnValue").boolean()) return std::nullopt;
-            Value out = r->get(L"ProjectedLocation");
-            return Vec3{get(out, L"X").number(), get(out, L"Y").number(), get(out, L"Z").number()};
-        }
-    } // namespace detail
-    // The nearest point on the navigation mesh to a place, within the mesh's own search box (the engine's
-    // K2_ProjectPointToNavigation): on the mesh `actor` walks on, else on either; nullopt off the meshes, or outside
-    // the world.
-    inline auto nav_point(Vec3 place, UObject* actor = nullptr) -> std::optional<Vec3>
-    {
-        if (!assert_game_thread(L"nav_point") || !world()) return std::nullopt;
-        if (UObject* mesh = actor ? detail::nav_mesh_for(actor) : nullptr) return detail::project_on(mesh, place);
-        for (UObject* mesh : detail::nav_meshes())
-            if (auto on = detail::project_on(mesh, place)) return on;
-        return std::nullopt;
-    }
-
     // How move_to moves an AI: at `speed` cm/s (its walk speed set; 0 keeps the one it has, and a roaming animal's own
     // is a slow 70), close enough within `radius` cm, along the nav mesh round obstacles unless `avoid` is false (a
     // straight line), and its logic started again when the move ends, however it ends (`restart_after`: stop_moving

@@ -222,6 +222,82 @@ namespace wcmods
         return hit ? std::optional<double>(hit->z) : std::nullopt;
     }
 
+    // The navigation meshes the AIs walk on (the world's navigation system's NavDataSet): the forest has two, one for
+    // the animals (RecastNavMeshEnemy, agents 25 cm round) and one for the cats (RecastNavMeshPlayer, 1 cm: the walking
+    // cats and the SDK's own). The one an actor walks on goes by its movement's agent radius.
+    namespace detail
+    {
+        inline auto nav_meshes() -> std::vector<UObject*>
+        {
+            std::vector<UObject*> out;
+            for (auto& v : elements(get(world(), L"NavigationSystem.NavDataSet")))
+                if (v.object) out.push_back(v.object);
+            return out;
+        }
+        inline auto nav_mesh_for(UObject* actor) -> UObject*
+        {
+            Value r = get(actor, L"CharacterMovement.NavAgentProps.AgentRadius");
+            if (r.kind == Value::Kind::None) return nullptr;
+            UObject* best = nullptr;
+            double best_d = 1e18;
+            for (UObject* m : nav_meshes())
+            {
+                double d = std::abs(get(m, L"AgentRadius").number() - r.number());
+                if (d < best_d) best = m, best_d = d;
+            }
+            return best;
+        }
+        inline auto project_on(UObject* mesh, Vec3 place, double height = 0) -> std::optional<Vec3>
+        {
+            UObject* nav = object(STR("/Script/NavigationSystem.Default__NavigationSystemV1"));
+            auto r = call_reflected(nav, STR("K2_ProjectPointToNavigation"), [&](Params& p) {
+                p.set_nth(0, Value::of(world()));
+                Value at = p.nth(1);
+                set(at, L"X", place.x);
+                set(at, L"Y", place.y);
+                set(at, L"Z", place.z);
+                p.set_nth(3, Value::of(mesh));
+                if (height > 0)   // QueryExtent: a metre round, `height` up and down (none: the mesh's own)
+                {
+                    Value extent = p.nth(5);
+                    set(extent, L"X", 100.0);
+                    set(extent, L"Y", 100.0);
+                    set(extent, L"Z", height);
+                }
+            });
+            if (!r || !r->get(L"ReturnValue").boolean()) return std::nullopt;
+            Value out = r->get(L"ProjectedLocation");
+            return Vec3{get(out, L"X").number(), get(out, L"Y").number(), get(out, L"Z").number()};
+        }
+    } // namespace detail
+    // The nearest point on the navigation mesh to a place, within the mesh's own search box (the engine's
+    // K2_ProjectPointToNavigation): on the mesh `actor` walks on, else on either; nullopt off the meshes, or outside
+    // the world. It looks a little way up and down (the mesh's own search box); `height` (cm) looks that far up and
+    // down instead, a metre round, for a place whose height isn't known (the ground from the sky, a tree's top).
+    inline auto nav_point(Vec3 place, UObject* actor = nullptr, double height = 0) -> std::optional<Vec3>
+    {
+        if (!assert_game_thread(L"nav_point") || !world()) return std::nullopt;
+        if (UObject* mesh = actor ? detail::nav_mesh_for(actor) : nullptr) return detail::project_on(mesh, place, height);
+        for (UObject* mesh : detail::nav_meshes())
+            if (auto on = detail::project_on(mesh, place, height)) return on;
+        return std::nullopt;
+    }
+
+    // Whether the world is there at a place for a cat to stand on (a place with its height, within a couple of metres):
+    // the navigation mesh by it, and the ground under that point loaded, a trace down from half a metre above it meeting
+    // something within 2 m below (the navigation mesh can lie over half a metre above the ground). The navigation mesh, the Clans' terrain and the camps' floors were there all
+    // over the map from ShadowClan's camp; the zones round your cat stream in and out (their props, effects and gameplay levels), and other
+    // levels (a den inside) have none of it. False off the navigation mesh (a place whose height is metres out is
+    // looked for from the ground below it too).
+    inline auto ready_at(Vec3 place) -> bool
+    {
+        if (!assert_game_thread(L"ready_at")) return false;
+        auto on = nav_point(place);
+        if (!on)
+            if (auto g = ground(place.x, place.y, place.z)) on = nav_point({place.x, place.y, *g});
+        return on && trace({on->x, on->y, on->z + 50}, {on->x, on->y, on->z - 200}).has_value();
+    }
+
     // ============================================================================================ the save
     // The game's save manager holds the save's live data. Its reflected calls below work on the account-wide part
     // (the save's Shared: Shared/GameplayProgression and its State, the settings), not the slot of the cat played:

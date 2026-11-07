@@ -1334,7 +1334,8 @@ for (auto& n : wcmods::ai_tree_nodes(wcmods::ai_tree_named(L"BT_Enemy")))
 | `wcmods::move_to(actor, place, MoveOptions{.speed, .radius, .avoid, .restart_after}, done)`, `move_to(actor, other, ...)` | Send an AI (a roaming animal, a walking cat, a mod's cat) to a place, or after another actor (followed as it moves, until it's within the radius), through its controller's own `MoveToLocation` along the nav mesh. Its logic is stopped first (its tree would send it elsewhere); `speed` sets its walk speed (0 keeps its own: a roaming animal's is 70), `radius` is close enough (50), `avoid` false walks a straight line, `restart_after` gives it back to its tree when the move ends, however it ends (`stop_moving` too), else it stands there until `restart_ai`. `done(WalkResult)`: `Arrived`; `Blocked` (no path, or stuck after five steps aside, as `Npc::walk_to` does: it's the same walk); `Cancelled` (`stop_moving`, another move, it or its goal gone). False for your cat (no AI), nullptr, or a place the controller can't go to at all (then `done` is told `Blocked` and its logic is as it was). Seen in game: a mouse walked 240 units at 200 cm/s in 1.3 s and stood; one of the mod's cats followed your cat from 400 units off |
 | `wcmods::stop_moving(actor)`, `moving(actor)` | Stop an AI where it is (its move's `done` told `Cancelled`; a move of its tree's own stops too); whether it's moving (a `move_to`'s, or its tree's: its controller's `GetMoveStatus`) |
 | `wcmods::face(actor, place)`, `face(actor, other)` | Turn an actor to face a place or another actor now (its yaw, and its controller's) |
-| `wcmods::nav_point(place, actor)` | The nearest point on the navigation mesh to a place (the engine's `K2_ProjectPointToNavigation`), on the mesh `actor` walks on, else on either: the forest has two, the animals' (`RecastNavMeshEnemy`, agents 25 cm round) and the cats' (`RecastNavMeshPlayer`, 1 cm). nullopt off them. `move_to` walks to it |
+| `wcmods::nav_point(place, actor, height)` | The nearest point on the navigation mesh to a place (the engine's `K2_ProjectPointToNavigation`), on the mesh `actor` walks on, else on either: the forest has two, the animals' (`RecastNavMeshEnemy`, agents 25 cm round) and the cats' (`RecastNavMeshPlayer`, 1 cm). It looks a little way up and down; `height` (cm) looks that far, a metre round, for a place whose height isn't known (the ground traced from the sky can be a tree's top or an overhang). nullopt off them. `move_to` walks to it. (World.hpp has it, for Npcs.hpp too) |
+| `wcmods::ready_at(place)` | Whether the world is there for a cat to stand at a place (with its height, within a couple of metres; else from the ground below it): the navigation mesh by it and something to stand on under that point, a trace down from 50 cm above meeting something within 2 m below (the navigation mesh can lie over half a metre above the ground). The navigation mesh, the Clans' terrain and the camps' floors were there all over the map from ShadowClan's camp; the zones round your cat stream in and out (their props, effects and gameplay levels), and other levels (a den inside) have none of it. `wake` waits for it |
 | `wcmods::ignore_player(animal, ignore)`, `ignoring_player(animal)`, `ignore_player_everywhere(on)` | Make a roaming animal ignore your cat: its detection sphere stops overlapping cats (its response to the Pawn channel Ignore: the cats it overlaps are all its detection looks at), its mask goes to 0, and it gives your cat up as `calm()` does. It ignores every cat so, and a pounce on it starts no fight either (seen: an ignoring rabbit, pounced, gave none). `ignore` false puts its sphere and mask back. Everywhere: every roaming animal within 5,000 units of your cat as it comes near (a look once a second), each it changed put back when turned off (one the mod made to ignore your cat itself stays so): a stealth mode. `ignore_player(animal, false)` on an animal it didn't change only undoes a sphere ignoring cats and a mask of 0. Seen in game: an animal that had noticed your cat, its tree restarted, made to ignore it didn't notice it again in 6 s; with only its mask zeroed, an animal that had noticed your cat noticed it again as your cat moved, every time |
 | `wcmods::tracking_player(animal)` | Whether its detection tracks your cat now: it has noticed your cat and not lost it (its detection component's `DetectedCharacters`, which keeps your cat whatever its mask; the blackboard's `Detected` is its tree's). An animal made to ignore your cat may still track it, harmlessly: taken out of that set, an animal noticed your cat again at once, whatever its mask (seen) |
 | `wcmods::notice_player(animal)`, `calm(animal)` | Make it notice your cat now, as the game's own noticing does (its `OnCharacterDetected`), even while it ignores your cat: it waits its reaction time (`senses().react_to_chase`, 0.5 s) and chases, and a chase that catches your cat starts a fight (while it ignores your cat the chase's own detection may lose your cat as it goes: not tried); make it give your cat up (its `OnCharacterLost`): back to where it started, then roaming. False for what isn't a roaming animal |
@@ -1421,10 +1422,30 @@ wcmods::set_tuning(L"Gameplay.Exploration.MaxLevel", 30);
 **Cats of a mod's own (`Npcs.hpp`)**, game thread only:
 
 The game's own walking clan cat (`BP_WalkingNPC_Character_Base`), as Lua's `Game.npcs` makes them: spawned with a look
-the cat maker's way (the parts and colour slots given, the rest made up for each spawn), kept in the world (spawned
-again when its level loads again), walked by its own AI controller along the nav mesh, with the game's label over its
-head, the game's Talk prompt beside it, and the game's Interact heard for it. Not one of the save's cats: nothing of it
-is saved.
+the cat maker's way (the parts and colour slots given, the rest made up once, so each spawn is the same cat), kept in
+the world (spawned again when its level loads again), walked by its own AI controller along the nav mesh, with the
+game's label over its head, the game's Talk prompt beside it, and the game's Interact heard for it. Not one of the
+save's cats: nothing of it is saved.
+
+Many cats, near and far: a spawn holds the game about 12 ms (ten at once, a 120 ms hitch), so a mod with many cats
+makes them asleep (handles only) and wakes the ones near your cat, which come in within a spawn budget (a cat a frame
+at first) and only where there's ground to stand on (`ready_at`); it puts them to sleep again when your cat goes away.
+Beyond 23 m from your cat the game itself freezes its walking cats, ours too (its `SwtAdventureHideCharacterComponent`:
+no moving, no collision) until your cat comes back; `freeze_beyond` moves that edge.
+
+```cpp
+std::vector<wcmods::Npc> clan;
+for (auto& c : cats) clan.push_back(wcmods::spawn_npc({.at = c.place, .prefix = c.prefix, .suffix = c.suffix,
+                                                         .freeze_beyond = 6000, .asleep = true}));
+wcmods::every(0.25, [&] {
+    for (auto& n : clan)
+    {
+        auto d = n.place();   // where it is, or where it'll come in
+        if (near_you(d, 4000) && n.asleep()) n.wake();
+        else if (!near_you(d, 6000) && n.actor()) n.sleep();
+    }
+});
+```
 
 ```cpp
 wcmods::NpcSpec spec;
@@ -1439,7 +1460,7 @@ wcmods::on_npc_interact([](wcmods::Npc n) { n.walk_to(*wcmods::npc_spot(600, 0))
 
 | Call | Does |
 |---|---|
-| `wcmods::spawn_npc(spec)` | A cat of the mod's own, as an `Npc`. `NpcSpec`: `at`, `yaw`, `size`, `prefix`/`suffix` (name ids: `STR_CAT_NAME<prefix><suffix>`), `look` (`body`, `fur`, `tail`, `ears`, `eyes`, `whiskers`, `face`, `pattern`, `marking`: the cat maker's parts), `slots` (`fur`, `pattern`, `marking`: colour slots), `eyes` (an eye colour), `colours` (`fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears` painted `"#rrggbb"`), `ground` (false: it floats where it's put). Its look is set up by the game's own `SetDefaultCustomData`, as `set_look` does, so the model shows every part given. In a menu it appears once you're in the world. It goes when the mod is taken out |
+| `wcmods::spawn_npc(spec)` | A cat of the mod's own, as an `Npc`. `NpcSpec`: `at`, `yaw`, `size`, `prefix`/`suffix` (the name's ids as the game's tables and the save have them: `L"STR_CAT_NAME2"`, `L"_PAW"`), `look` (`body`, `fur`, `tail`, `ears`, `eyes`, `whiskers`, `face`, `pattern`, `marking`: the cat maker's parts), `slots` (`fur`, `pattern`, `marking`: colour slots), `eyes` (an eye colour) and `eyes2` (the right eye's, for odd eyes), `colours` (`fur`, `pattern`, `markings`, `nose`, `paws`, `whiskers`, `ears` painted `"#rrggbb"`), `ground` (false: it floats where it's put), `freeze_beyond` (cm from your cat the game lets it move; the game's own 2343), `asleep` (made as a handle only, out of the world until `wake`). Its look is set up by the game's own `SetDefaultCustomData`, as `set_look` does, so the model shows every part given. An awake one comes in at once, outside the spawn budget (for many, make them `asleep` and `wake` them). In a menu it appears once you're in the world. It goes when the mod is taken out |
 | `wcmods::npcs()`, `npc_spot(distance, side)` | Every cat the mod has and hasn't removed; a place on the ground `distance` cm from your cat, `side` degrees round from where it faces |
 | `Npc::actor()`, `spawns()`, `location()`, `distance()`, `within(cm)` | Its actor now (nullptr while it isn't in the world), how many times it's been spawned, where it is, how far from your cat across the ground, and whether that's within so many cm |
 | `Npc::face(at)`, `move_to(at)`, `walk_to(at, {speed, radius, avoid}, done)`, `walking()`, `walk_result()`, `stop()` | Turn to a place; put it there at once (on the ground); walk there (175 cm/s, within 30 cm, along the nav mesh round obstacles, or a straight line with `avoid` false), stepping round what it's pressed against, `done(WalkResult)` with `Arrived`, `Blocked` (no progress, after five tries) or `Cancelled`; whether it's on its way; how the last walk ended; stop |
@@ -1447,6 +1468,9 @@ wcmods::on_npc_interact([](wcmods::Npc n) { n.walk_to(*wcmods::npc_spot(600, 0))
 | `wcmods::on_npc_interact(fn)` | `fn(npc)` when the game's Interact (any key or button bound to it, as the player's controller hears it) is pressed while a cat's prompt shows. The game hears it too, with nothing of its own in reach then |
 | `Npc::pose(Pose::Sit)`, `play(Move::Eat, {speed, loop})`, `stop_move(blend)` | A pose, held until another or a walk, and one of the game's moves, as `set_pose`, `play_move` and `stop_move` below. `walk_to` stands it first and stops a move it doesn't walk in (asleep, eating); `Stalk`, `WalkBack` and `Tired` keep playing (`walking_move`) |
 | `Npc::carry(Carried::Mouse, place)`, `drop_carried()`, `carrying()` | Something in its jaws, as `carry`, `drop_carried` and `carrying` below |
+| `Npc::sleep()`, `wake(done)`, `asleep()`, `waking()`, `place()` | Out of the world with everything kept (where it was and its facing, its look, label and prompt; false when it isn't in the world); back in where it was, or where `move_to` put it while asleep, within the spawn budget and once its ground is there, `done(npc)` as it comes in (false when it's in already, or removed); whether it's asleep; whether it's asked to come in and isn't yet; where it is, or where it'll come in |
+| `Npc::set_freeze_beyond(cm)`, `frozen()` | How far from your cat the game lets it move (beyond, its ticking and collision are off until your cat comes back within it: the game's hiding by distance, a sphere round the cat of 2343 cm); whether it's frozen now. A cat frozen where its ground has unloaded doesn't fall |
+| `wcmods::set_npc_spawn_budget(per_frame)`, `npc_spawn_budget()`, `npcs_waiting()` | How many cats a frame come in from the spawn queue (woken ones, and ones whose level came back): 1 at first, each about 12 ms of the frame; how many wait (those waiting for their ground among them) |
 | `Npc::remove()` | Take it out of the world for good |
 
 **Cats' poses and the game's moves (`CatMoves.hpp`)**, game thread only: any cat, yours, the game's or a mod's own.
