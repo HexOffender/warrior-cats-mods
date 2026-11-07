@@ -247,6 +247,16 @@ namespace wcmods
             }
             return best;
         }
+        // The mesh `actor` walks on, else the cats' (the one with the smallest agents).
+        inline auto walk_mesh(UObject* actor) -> UObject*
+        {
+            if (UObject* m = actor ? nav_mesh_for(actor) : nullptr) return m;
+            UObject* best = nullptr;
+            double smallest = 1e18;
+            for (UObject* m : nav_meshes())
+                if (double r = get(m, L"AgentRadius").number(1e18); r < smallest) best = m, smallest = r;
+            return best;
+        }
         inline auto project_on(UObject* mesh, Vec3 place, double height = 0) -> std::optional<Vec3>
         {
             UObject* nav = object(STR("/Script/NavigationSystem.Default__NavigationSystemV1"));
@@ -281,6 +291,71 @@ namespace wcmods
         for (UObject* mesh : detail::nav_meshes())
             if (auto on = detail::project_on(mesh, place, height)) return on;
         return std::nullopt;
+    }
+
+    // A random place on the navigation mesh about `radius` cm of a place (with its height) or less, that a cat there
+    // could walk to: the engine's K2_GetRandomReachablePointInRadius on the mesh `actor` walks on, else the cats'. (It
+    // picks a polygon the circle touches and a place in it: it can lie a little past `radius`.) nullopt off the mesh,
+    // or with no mesh (another level).
+    inline auto random_nav_point(Vec3 around, double radius, UObject* actor = nullptr) -> std::optional<Vec3>
+    {
+        if (!assert_game_thread(L"random_nav_point") || !world()) return std::nullopt;
+        UObject* mesh = detail::walk_mesh(actor);
+        UObject* nav = object(STR("/Script/NavigationSystem.Default__NavigationSystemV1"));
+        if (!mesh || !nav) return std::nullopt;
+        auto r = call_reflected(nav, STR("K2_GetRandomReachablePointInRadius"), [&](Params& p) {
+            p.set_nth(0, Value::of(world()));
+            Value at = p.nth(1);
+            set(at, L"X", around.x);
+            set(at, L"Y", around.y);
+            set(at, L"Z", around.z);
+            p.set_nth(3, Value::of(radius));
+            p.set_nth(4, Value::of(mesh));
+        });
+        if (!r || !r->get(L"ReturnValue").boolean()) return std::nullopt;
+        Value out = r->nth(2);
+        return Vec3{get(out, L"X").number(), get(out, L"Y").number(), get(out, L"Z").number()};
+    }
+
+    // How far a cat walks from one place to another along the navigation mesh (cm; on the mesh `actor` walks on, else
+    // the cats'), or nullopt when there's no whole path: the other place cut off from this one (a patch of ground
+    // closed round by rocks or water), off the mesh, or further than the search goes. The engine's search stops at 2048
+    // steps of the cats' fine mesh: paths of 80 m were found by ShadowClan's camp, ones of 120 m gave out (a cat walked
+    // there still gets there: its walk finds the way as it goes).
+    inline auto nav_path_length(Vec3 from, Vec3 to, UObject* actor = nullptr) -> std::optional<double>
+    {
+        if (!assert_game_thread(L"nav_path_length") || !world()) return std::nullopt;
+        UObject* mesh = detail::walk_mesh(actor);
+        UObject* nav = object(STR("/Script/NavigationSystem.Default__NavigationSystemV1"));
+        UObject* system = get(world(), L"NavigationSystem").object;
+        if (!mesh || !nav || !system) return std::nullopt;
+        // FindPathToLocationSynchronously gives nothing without the world's main navigation data, and there's none (the
+        // two meshes are only in NavDataSet): the mesh is made it for the call, and what was there put back at once.
+        // (GetPathLength needs none, but measures between its polygons' middles: metres out, shorter than the line.)
+        struct PutBack
+        {
+            UObject* system;
+            UObject* was;
+            ~PutBack() { set(system, L"MainNavData", was); }   // however the call ends
+        } put_back{system, get(system, L"MainNavData").object};
+        set(system, L"MainNavData", mesh);
+        auto r = call_reflected(nav, STR("FindPathToLocationSynchronously"), [&](Params& p) {
+            p.set_nth(0, Value::of(world()));
+            for (auto [i, v] : {std::pair{1, from}, std::pair{2, to}})
+            {
+                Value at = p.nth(i);
+                set(at, L"X", v.x);
+                set(at, L"Y", v.y);
+                set(at, L"Z", v.z);
+            }
+            p.set_nth(3, Value::of(mesh));   // the context: the mesh itself
+        });
+        UObject* path = r ? r->get(L"ReturnValue").object : nullptr;
+        auto valid = path ? call_reflected(path, STR("IsValid")) : std::nullopt;
+        auto partial = path ? call_reflected(path, STR("IsPartial")) : std::nullopt;
+        if (!valid || !valid->get(L"ReturnValue").boolean() || !partial || partial->get(L"ReturnValue").boolean()) return std::nullopt;
+        auto length = call_reflected(path, STR("GetPathLength"));
+        return length ? std::optional<double>(length->get(L"ReturnValue").number()) : std::nullopt;
     }
 
     // Whether the world is there at a place for a cat to stand on (a place with its height, within a couple of metres):

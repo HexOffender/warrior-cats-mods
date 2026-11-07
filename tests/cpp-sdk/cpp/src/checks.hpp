@@ -58,6 +58,7 @@ namespace t
     auto run_carry_request() -> void;    // Carry.hpp: something in a cat's jaws ("carry")
     auto run_crowd_request() -> void;    // Npcs.hpp: cats asleep and woken, frozen, the spawn budget ("crowd")
     auto run_crowd_walk_request() -> void;   // the same as your cat goes from camp to camp ("crowd_walk")
+    auto run_nav_paths_request() -> void;    // World.hpp: random places on the navigation mesh, paths ("nav_paths")
     auto run_looks_request() -> void;    // Looks.hpp: cats' looks and the clan's cats, in the game ("looks")
     auto run_items_request() -> void;    // Items.hpp: items, and pickups dropped and collected, in the game ("drop")
     auto run_quests_request() -> void;   // Story.hpp: quests, scenes, dilemmas, in the game ("questline")

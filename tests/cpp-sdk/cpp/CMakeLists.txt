@@ -20,6 +20,7 @@ wcmods_mod(${WCMODS_TARGET}
     src/test_moves.cpp
     src/test_carry.cpp
     src/test_crowd.cpp
+    src/test_nav.cpp
     src/test_items.cpp
     src/test_quests.cpp
     src/test_fights.cpp

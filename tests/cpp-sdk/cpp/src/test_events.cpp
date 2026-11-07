@@ -154,6 +154,10 @@ namespace t
             {
                 run_crowd_walk_request();
             }
+            else if (what == "nav_paths")
+            {
+                run_nav_paths_request();
+            }
             else if (what == "drop")
             {
                 run_items_request();
