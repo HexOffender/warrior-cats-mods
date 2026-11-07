@@ -708,7 +708,16 @@ namespace wcmods
         UObject* a = actor();
         if (!a) return false;
         if (m->walk) detail::finish_walk(*m, WalkResult::Cancelled);
-        set_pose(a, Pose::Stand);   // up from a sit or a sleep first: a pose would slide along
+        // up from a sit or a sleep first, and out of a move it doesn't walk in (asleep, eating): they'd slide along
+        set_pose(a, Pose::Stand);
+        if (montage_playing(a))
+        {
+            const std::wstring now = animation_playing(a);
+            bool walking = false;
+            for (Move m : {Move::Stalk, Move::WalkBack, Move::Tired})
+                for (const std::wstring& seq : move_sequences(m)) walking = walking || seq == now;
+            if (!walking) wcmods::stop_move(a);
+        }
         if (UObject* mv = get(a, L"CharacterMovement").object) set(mv, L"MaxWalkSpeed", options.speed);
         if (detail::issue_move(a, to, options.radius, options.avoid) == 0)
         {

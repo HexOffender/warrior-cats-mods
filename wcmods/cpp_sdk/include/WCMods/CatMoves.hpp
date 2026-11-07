@@ -135,7 +135,8 @@ namespace wcmods
     struct CatMoveOptions
     {
         std::optional<double> speed;   // 1 as made
-        std::optional<bool> loop;      // for a move that doesn't loop by itself, keep repeating it
+        std::optional<bool> loop;      // keep repeating a move of the sequences' that doesn't loop by itself (the montage
+                                       // table's moves, meow to play, play once)
     };
     namespace detail
     {
@@ -259,6 +260,9 @@ namespace wcmods
             p.set_nth(1, Value::of(m));
         });
     }
+
+    // Whether a move is one a cat walks in (Stalk, WalkBack, Tired): a walk keeps it playing, and stops the others.
+    inline auto walking_move(Move m) -> bool { return m == Move::Stalk || m == Move::WalkBack || m == Move::Tired; }
 
     // The sequences a move plays (its lead-in and its loop, as object paths; empty for a montage-table move), for a mod
     // that wants to know or preload them.

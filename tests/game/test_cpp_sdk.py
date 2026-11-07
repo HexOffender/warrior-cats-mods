@@ -1554,7 +1554,8 @@ def test_moves(agent):
     assert "Reverence_1" in move["bow"]["sequence"] and "Walk_Crouching_1" in move["stalk"]["sequence"], move
     assert "Sleep_In_1" in v["sleep.lead_plays"] and "Sleep_Loop_1" in v["sleep.loop_plays"], (v["sleep.lead_plays"], v["sleep.loop_plays"])
     assert v["sleep.stopped"] == "" and v["sleep.sequences"] == 2, v
-    assert v["after_walk"] == "stand", v["after_walk"]
+    assert v["after_walk"] == "stand" and v["after_walk_plays"] == "", (v["after_walk"], v["after_walk_plays"])
+    assert v["walking_moves"] is True
 
 
 def test_looks(agent):

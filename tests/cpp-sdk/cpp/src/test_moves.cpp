@@ -54,12 +54,15 @@ namespace t
         auto walk_stands_it(const std::shared_ptr<MovesRun>& r) -> void
         {
             r->cat.pose(Pose::Sit);
+            r->cat.play(Move::Eat);
             after(1.0, [r] {
                 auto at = r->cat.location();
                 if (at) r->cat.walk_to({at->x + 150, at->y, at->z});
                 after(0.3, [r] {
                     auto p = pose_of(r->cat.actor());
                     value("moves.after_walk", Json(p ? text(pose_name(*p)) : std::string("?")));
+                    value("moves.after_walk_plays", Json(text(animation_playing(r->cat.actor()))));
+                    value("moves.walking_moves", Json(walking_move(Move::Stalk) && !walking_move(Move::Sleep)));
                     r->cat.stop();
                     finish(r);
                 });
