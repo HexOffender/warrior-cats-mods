@@ -52,7 +52,8 @@ def _align(width):
 # 0x1750 to 0x1860 before 26184573's, and the combat, status and detection ones were 0x260 past 24847281's on
 # 26184573). Each is found again in another build by a pattern of its first instructions that's unique in
 # the whole exe, then read like the class's own code. "A fighter's Prowess with its buffs" has no unique
-# pattern on either build (make() leaves it out); it's kept at the same distance from its neighbours.
+# pattern on any build (make() leaves it out); it's kept at the same distance from its neighbours (on 26391405 that
+# put it at a function's start, as before).
 ANCHORS = {
     # The inventory's own code is in functions its vtable doesn't hold: adding an item (game.NATIVE's AddItem)
     # and the check before a pickup, both on the items map.
@@ -66,7 +67,7 @@ ANCHORS = {
         (0x12BB4F0, "loads TuningData.csv into the map at +0x50 (and two more tables into the maps after it)"),
     ],
     # The talk tables are read through the manager (a global) outside its vtable. A bond answer's two row lookups
-    # (0x16B15B0, 0x16B18C0) are the same code but for the map, so neither has a pattern of its own: these do.
+    # (0x16B1590, 0x16B18A0) are the same code but for the map, so neither has a pattern of its own: these do.
     "/Script/SwtQuest.SwtQuestTuningManager": [
         (0x1959490, "matches a cat's traits against StoryDialogues.csv's rows: the map at +0x280"),
         (0x16B1BB0, "a quest's title from QuestDialogues.csv: the map at +0x2D0"),
