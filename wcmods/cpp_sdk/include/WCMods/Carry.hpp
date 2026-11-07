@@ -69,8 +69,9 @@ namespace wcmods
             }
             return {L"", L"", {}};
         }
-        // Each cat's carried component (and the cat's and the component's classes, to know the addresses are still
-        // theirs).
+        // Each cat's carried component (and the cat's and the component's classes: with its still being attached to
+        // the cat's mesh, they tell the addresses are still theirs, not another cat's and another component made where
+        // the gone ones were).
         struct Held
         {
             UObject* component{};
@@ -88,7 +89,13 @@ namespace wcmods
             auto& all = held();
             auto it = all.find(cat);
             if (it == all.end()) return nullptr;
-            if (!object_staying(cat, it->second.cat_class) || !object_staying(it->second.component, it->second.component_class))
+            bool ok = object_staying(cat, it->second.cat_class) && object_staying(it->second.component, it->second.component_class);
+            if (ok)
+            {
+                auto parent = call_reflected(it->second.component, STR("GetAttachParent"));
+                ok = parent && parent->get(L"ReturnValue").object == get(cat, L"Mesh").object;
+            }
+            if (!ok)
             {
                 all.erase(it);
                 return nullptr;
@@ -122,7 +129,8 @@ namespace wcmods
         if (!h) return false;
         UObject* c = h->component;
         detail::held().erase(cat);
-        call_reflected(c, STR("K2_DestroyComponent"), [&](Params& p) { p.set_nth(0, Value::of(c)); });
+        // (its owner asks: K2_DestroyComponent destroys for its owner, or with no owner)
+        call_reflected(c, STR("K2_DestroyComponent"), [&](Params& p) { p.set_nth(0, Value::of(cat)); });
         return true;
     }
 
@@ -147,55 +155,65 @@ namespace wcmods
         return done.has_value();
     }
 
+    namespace detail
+    {
+        // carry and carry_mesh: what's carried known by `what` (a kind's name, or the path).
+        inline auto carry_as(UObject* cat, std::wstring_view path, const CarryPlace& place, std::wstring what) -> UObject*
+        {
+            if (!assert_game_thread(L"carry") || !cat) return nullptr;
+            UObject* mesh = get(cat, L"Mesh").object;
+            // a cat's: the game's animals have meshes without the bone, and a thing attached to a bone that isn't there
+            // sits at the mesh's origin, on the ground
+            auto socket = mesh ? call_reflected(mesh, STR("DoesSocketExist"), [&](Params& p) { p.set_nth(0, Value::of(L"mouth")); }) : std::nullopt;
+            if (!socket || !socket->get(L"ReturnValue").boolean()) return nullptr;
+            UObject* model = load(path);
+            if (!model)
+            {
+                log(L"carry: couldn't load {}", std::wstring(path));
+                return nullptr;
+            }
+            const std::wstring kind = class_name(model);
+            const bool skeletal = kind == L"SkeletalMesh";
+            if (!skeletal && kind != L"StaticMesh")
+            {
+                log(L"carry: {} is a {}, not a mesh", std::wstring(path), kind);
+                return nullptr;
+            }
+            drop_carried(cat);
+            // (and forget the cats gone since: the game destroys a cat's components with it)
+            for (auto it = detail::held().begin(); it != detail::held().end();)
+                it = detail::object_staying(it->first, it->second.cat_class) ? std::next(it) : detail::held().erase(it);
+            UObject* cls = object(skeletal ? STR("/Script/Engine.SkeletalMeshComponent") : STR("/Script/Engine.StaticMeshComponent"));
+            auto added = call_reflected(cat, STR("AddComponentByClass"), [&](Params& p) {
+                p.set_nth(0, Value::of(cls));
+                p.set_nth(1, Value::of(true));   // bManualAttachment: attached below, at the bone
+                transform_of(p, L"RelativeTransform", {0, 0, 0}, 0);
+                p.set_nth(3, Value::of(false));
+            });
+            UObject* c = added ? added->get(L"ReturnValue").object : nullptr;
+            if (!c) return nullptr;
+            // (SetSkeletalMesh isn't a UFUNCTION in UE 5: SetSkeletalMeshAsset is)
+            if (skeletal) call_reflected(c, STR("SetSkeletalMeshAsset"), [&](Params& p) { p.set_nth(0, Value::of(model)); });
+            else call_reflected(c, STR("SetStaticMesh"), [&](Params& p) { p.set_nth(0, Value::of(model)); });
+            call_reflected(c, STR("SetCollisionEnabled"), [&](Params& p) { p.set_nth(0, Value::of(0)); });   // NoCollision
+            call_reflected(c, STR("K2_AttachToComponent"), [&](Params& p) {
+                p.set_nth(0, Value::of(mesh));
+                p.set_nth(1, Value::of(L"mouth"));
+                for (int rule = 2; rule <= 4; ++rule) p.set_nth(rule, Value::of(0));   // KeepRelative: placed from the bone
+                p.set_nth(5, Value::of(false));
+            });
+            detail::held()[cat] = {c, cat->GetClassPrivate(), c->GetClassPrivate(), std::move(what)};
+            place_carried(cat, place);
+            return c;
+        }
+    } // namespace detail
+
     // Put any mesh of the game's (its object path: a skeletal mesh or a static one) in a cat's jaws, where `place` says;
-    // what it carried before is dropped. The component, or nullptr (not a cat with a mesh, a model that won't load).
+    // what it carried before is dropped. The component, or nullptr (not a cat: no mesh with a `mouth` bone; a model that
+    // won't load or isn't a mesh).
     inline auto carry_mesh(UObject* cat, std::wstring_view path, CarryPlace place = {}) -> UObject*
     {
-        if (!assert_game_thread(L"carry") || !cat) return nullptr;
-        UObject* mesh = get(cat, L"Mesh").object;
-        UObject* model = mesh ? load(path) : nullptr;
-        if (!model)
-        {
-            if (mesh) log(L"carry: couldn't load {}", std::wstring(path));
-            return nullptr;
-        }
-        const std::wstring kind = class_name(model);
-        const bool skeletal = kind == L"SkeletalMesh";
-        if (!skeletal && kind != L"StaticMesh")
-        {
-            log(L"carry: {} is a {}, not a mesh", std::wstring(path), kind);
-            return nullptr;
-        }
-        drop_carried(cat);
-        // (and forget the cats gone since: the game destroys a cat's components with it)
-        for (auto it = detail::held().begin(); it != detail::held().end();)
-            it = detail::object_staying(it->first, it->second.cat_class) ? std::next(it) : detail::held().erase(it);
-        UObject* cls = object(skeletal ? STR("/Script/Engine.SkeletalMeshComponent") : STR("/Script/Engine.StaticMeshComponent"));
-        auto added = call_reflected(cat, STR("AddComponentByClass"), [&](Params& p) {
-            p.set_nth(0, Value::of(cls));
-            p.set_nth(1, Value::of(true));   // bManualAttachment: attached below, at the bone
-            Value t = p.nth(2);
-            set(t, L"Rotation.W", 1.0);
-            set(t, L"Scale3D.X", 1.0);
-            set(t, L"Scale3D.Y", 1.0);
-            set(t, L"Scale3D.Z", 1.0);
-            p.set_nth(3, Value::of(false));
-        });
-        UObject* c = added ? added->get(L"ReturnValue").object : nullptr;
-        if (!c) return nullptr;
-        // (SetSkeletalMesh isn't a UFUNCTION in UE 5: SetSkeletalMeshAsset is)
-        if (skeletal) call_reflected(c, STR("SetSkeletalMeshAsset"), [&](Params& p) { p.set_nth(0, Value::of(model)); });
-        else call_reflected(c, STR("SetStaticMesh"), [&](Params& p) { p.set_nth(0, Value::of(model)); });
-        call_reflected(c, STR("SetCollisionEnabled"), [&](Params& p) { p.set_nth(0, Value::of(0)); });   // NoCollision
-        call_reflected(c, STR("K2_AttachToComponent"), [&](Params& p) {
-            p.set_nth(0, Value::of(mesh));
-            p.set_nth(1, Value::of(L"mouth"));
-            for (int rule = 2; rule <= 4; ++rule) p.set_nth(rule, Value::of(0));   // KeepRelative: placed from the bone
-            p.set_nth(5, Value::of(false));
-        });
-        detail::held()[cat] = {c, cat->GetClassPrivate(), c->GetClassPrivate(), std::wstring(path)};
-        place_carried(cat, place);
-        return c;
+        return detail::carry_as(cat, path, place, std::wstring(path));
     }
 
     // Put one of the game's things in a cat's jaws (a mouse, a rabbit, a bird, a squirrel, a fish, moss, a herb,
@@ -204,9 +222,7 @@ namespace wcmods
     inline auto carry(UObject* cat, Carried what, std::optional<CarryPlace> place = std::nullopt) -> UObject*
     {
         const detail::CarrySpec s = detail::carry_spec(what);
-        UObject* c = carry_mesh(cat, s.path, place.value_or(s.place));
-        if (c) detail::held()[cat].what = s.name;
-        return c;
+        return detail::carry_as(cat, s.path, place.value_or(s.place), s.name);
     }
 
     // What a cat carries: the kind's name ("mouse"), or the model's path for one carry_mesh put there; nullopt for

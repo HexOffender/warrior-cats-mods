@@ -2,7 +2,8 @@
 // put in front of your cat and given each kind in turn (each one dropping the one before), each read back from the
 // engine: attached to the cat's mesh at `mouth`, its model on it, at the jaws, at its scale, with no collision. Then
 // with a mouse it puts its head down to eat and walks (the mouse goes with the head), the mouse is moved in its jaws
-// and dropped; your cat carries moss; a cat removed with a mouse in its jaws carries nothing.
+// and dropped; your cat carries moss; a thing detached by something else isn't counted; a mesh without a `mouth` bone
+// carries nothing; a cat removed with a mouse in its jaws carries nothing.
 #include "checks.hpp"
 
 #include <algorithm>
@@ -77,6 +78,35 @@ namespace t
                 finish(r);
             });
         }
+        // A mesh without a `mouth` bone (the game's animals have none: the cat's own mesh swapped for a mouse's for a
+        // moment) carries nothing; with its own back it does again.
+        auto no_mouth(const std::shared_ptr<CarryRun>& r) -> void
+        {
+            UObject* mesh = get(r->cat.actor(), L"Mesh").object;
+            auto own = call_reflected(mesh, STR("GetSkeletalMeshAsset"));
+            UObject* cat_model = own ? own->get(L"ReturnValue").object : nullptr;
+            auto set_model = [mesh](UObject* m) {
+                call_reflected(mesh, STR("SetSkeletalMeshAsset"), [&](Params& p) { p.set_nth(0, Value::of(m)); });
+            };
+            set_model(load(carried_model(Carried::Mouse)));
+            expect("carry.no_mouth", !r->cat.carry(Carried::Moss) && !r->cat.carrying());
+            set_model(cat_model);
+            expect("carry.mouth_again", r->cat.carry(Carried::Moss) && r->cat.carrying() == std::wstring(L"moss"));
+            after(0.3, [r] { removed(r); });
+        }
+        // A carried thing taken out of its jaws by something else (detached) isn't counted as carried: nothing says
+        // so, nothing drops it.
+        auto detached(const std::shared_ptr<CarryRun>& r) -> void
+        {
+            UObject* c = r->cat.carry(Carried::Feathers);
+            call_reflected(c, STR("K2_DetachFromComponent"), [&](Params& p) {
+                for (int rule = 0; rule <= 2; ++rule) p.set_nth(rule, Value::of(1));   // KeepWorld
+                p.set_nth(3, Value::of(false));
+            });
+            expect("carry.detached", c && !r->cat.carrying() && !r->cat.drop_carried() && detail::object_staying(c, nullptr));
+            call_reflected(c, STR("K2_DestroyComponent"), [&](Params& p) { p.set_nth(0, Value::of(r->cat.actor())); });
+            after(0.3, [r] { no_mouth(r); });
+        }
         // Your cat carries moss.
         auto yours(const std::shared_ptr<CarryRun>& r) -> void
         {
@@ -87,7 +117,7 @@ namespace t
             value("carry.yours_name", Json(now ? text(*now) : std::string("?")));
             after(1.0, [r, me] {
                 expect("carry.yours_dropped", drop_carried(me) && !carrying(me));
-                removed(r);
+                detached(r);
             });
         }
         // The mouse moved in its jaws, then dropped.

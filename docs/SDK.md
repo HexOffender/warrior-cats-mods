@@ -1492,11 +1492,11 @@ wcmods::carry(cat, wcmods::Carried::Rabbit, p);
 
 | Call | Does |
 |---|---|
-| `wcmods::carry(cat, Carried, place)` | Put one of the game's things in a cat's jaws, placed as it looks right unless `place` says otherwise: the component, or nullptr (not a cat with a mesh). `Carried`: `Mouse`, `Rabbit`, `Bird`, `Squirrel` (the game's animals' models), `Fish`, `Moss` (a wad of the dens' moss), `Herb` (a sprig of willow herb, by the stem), `Feathers`. What it carried before is dropped |
+| `wcmods::carry(cat, Carried, place)` | Put one of the game's things in a cat's jaws, placed as it looks right unless `place` says otherwise: the component, or nullptr (not a cat: its mesh has no `mouth` bone, as the game's animals' haven't). `Carried`: `Mouse`, `Rabbit`, `Bird`, `Squirrel` (the game's animals' models), `Fish`, `Moss` (a wad of the dens' moss), `Herb` (a sprig of willow herb, by the stem), `Feathers`. What it carried before is dropped |
 | `wcmods::carry_mesh(cat, path, place)` | Any of the game's meshes by its object path (a skeletal mesh or a static one), where `place` says: by default the model as made, in the front of the jaws. nullptr for a path that isn't a mesh |
 | `wcmods::CarryPlace{scale, offset, yaw, pitch, roll}` | Where it sits, from the `mouth` bone in the bone's own axes: X across the jaws (the cat's right), Y back along the head (less is further forward), Z up through the head; turned as the engine's rotators turn, and scaled (1: the model as made, at the cat's own scale) |
 | `wcmods::place_carried(cat, place)`, `carried_place(Carried)`, `carried_model(Carried)`, `carried_name(Carried)` | Move what it carries to another place in its jaws (false when it carries nothing); where a kind sits by default, its model's path, its name (`L"mouse"`) |
-| `wcmods::carrying(cat)`, `drop_carried(cat)` | What a cat carries: the kind's name, or the path `carry_mesh` was given; nullopt for nothing. Drop it (it's gone: a mod that wants it on the ground puts it there); false when it carried nothing |
+| `wcmods::carrying(cat)`, `drop_carried(cat)` | What a cat carries: the kind's name, or the path `carry_mesh` was given; nullopt for nothing (or a thing something else took off its mouth bone). Drop it (it's gone: a mod that wants it on the ground puts it there); false when it carried nothing |
 
 Measured in game (the test mod's `carry` request): each kind is attached at `mouth` with its model, within a few cm of
 the bone, at its scale, with no collision; a cat putting its head down to eat takes the mouse down with it, and it
