@@ -31,8 +31,8 @@
 namespace wcmods
 {
     // What a cat is made with. `look` and `slots` take the cat maker's parts (body, fur, tail, ears, eyes, whiskers,
-    // face, pattern, marking) and colour slots (fur, pattern, marking); the parts not given are made up for each
-    // spawn, as the game does. `colours` paints a part (fur, pattern, markings, nose, paws, whiskers, ears) in
+    // face, pattern, marking) and colour slots (fur, pattern, marking); the parts not given are made up, as the game
+    // does, once: each spawn of it is the same cat. `colours` paints a part (fur, pattern, markings, nose, paws, whiskers, ears) in
     // "#rrggbb". `prefix` and `suffix` are the name's ids, as the game's tables and the save have them (L"STR_CAT_NAME2",
     // L"_PAW": CatTables.hpp). `eyes` is the eyes' colour slot, `eyes2` the right eye's when it's another (odd eyes).
     // `ground` puts it on the ground below `at` (false: it floats where it's put). `freeze_beyond`: how far from your
@@ -127,7 +127,6 @@ namespace wcmods
             std::shared_ptr<NpcState> prompt_on;   // whose prompt shows
             std::deque<std::shared_ptr<NpcState>> queue;   // cats to put in the world, a few a frame
             int per_frame{1};
-            bool pumping{};
         };
         inline auto npcs_state() -> NpcsState&
         {
@@ -399,6 +398,11 @@ namespace wcmods
                 if (now < n->not_before)
                 {
                     s.queue.push_back(n);
+                    continue;
+                }
+                if (!n->level.empty() && level_name() != n->level)   // (its level isn't the one loaded: the keeper asks again)
+                {
+                    n->queued = false;
                     continue;
                 }
                 ++looked;

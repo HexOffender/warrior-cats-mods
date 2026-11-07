@@ -1596,7 +1596,7 @@ def test_crowd(agent):
     r = _request(agent, "crowd", timeout=120)
     assert not _failed(r, "crowd"), _failed(r, "crowd")
     v = {k[len("crowd."):]: x for k, x in r["values"].items() if k.startswith("crowd.")}
-    assert v["ready_here"] is True and v["ready_off_map"] is False, v
+    assert v["ready_here"] is True and v["ready_off_map"] is False and v["ready_high"] is True and v["nav_high"] is True, v
     look = v["one_look"]
     assert (look["EyeLeftColorIdx"], look["EyeRightColorIdx"]) == (3, 10), look
     assert (v["one_prefix"], v["one_suffix"]) == ("STR_CAT_NAME2", "_PAW"), v
@@ -1612,6 +1612,7 @@ def test_crowd(agent):
     # a cat a frame: at least 30 frames to bring them in; three a frame, about a third of that
     assert one["count"] >= 30 and three["count"] < one["count"], (one, three)
     assert v["waiting_1"] == 30 and v["waiting_3"] == 30, v
+    assert (v["budget_1"], v["budget_3"]) == (1, 3), v
 
 
 def test_crowd_walk(agent):

@@ -104,6 +104,7 @@ namespace t
         auto wake_many(const std::shared_ptr<CrowdRun>& r, int budget, std::function<void()> then) -> void
         {
             set_npc_spawn_budget(budget);
+            value("crowd.budget_" + std::to_string(budget), Json(npc_spawn_budget()));
             r->woken = 0;
             start_frames();
             for (Npc& n : r->many)
@@ -226,6 +227,11 @@ namespace t
         // ready_at: where your cat stands, and off the map
         value("crowd.ready_here", Json(ready_at(*location(player()))));
         value("crowd.ready_off_map", Json(ready_at({900000, 900000, -90000})));
+        // a place 10 m above your cat: off the navigation mesh's own search, found from the ground below it; and the
+        // navigation mesh under it found with a search height
+        const Vec3 me = *location(player());
+        value("crowd.ready_high", Json(ready_at({me.x, me.y, me.z + 1000})));
+        value("crowd.nav_high", Json(!nav_point({me.x, me.y, me.z + 1000}) && nav_point({me.x, me.y, me.z + 1000}, nullptr, 1500)));
         // a cat with the game's name ids and odd eyes
         r->one = spawn_npc({.at = ahead(300), .yaw = 180, .size = 0.9, .prefix = L"STR_CAT_NAME2", .suffix = L"_PAW", .eyes = 3, .eyes2 = 10});
         expect("crowd.spawned", r->one.actor() != nullptr);
