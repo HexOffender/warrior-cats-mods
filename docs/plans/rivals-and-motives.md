@@ -5,7 +5,12 @@ Asked by the owner on 2026-11-07:
   to kill you."
 - "I want to give the NPCs more depth and a reason for their behaviour apart from just fulfilling basic needs."
 
-This plan is for the owner to approve before anything is built. It builds on three things:
+**Approved on 2026-11-07**, with decision 1 changed by the owner: "Killing medicine cats and kits should be seen as
+a severe crime, it should be possible but other cats should be critical of it. Going against the clan's code should
+carry consequences politically. Top members like a deputy or leader are more likely to get away with it." Part E
+is that change.
+
+It builds on three things:
 - [Clan life](clan-life.md): every Clan's cats with names, ranks, traits, liking, a day by the clock, moons, mates
   and kits.
 - [Real-time combat](https://github.com/HexOffender/wcmods-realtime-combat): fights with animals.
@@ -90,7 +95,9 @@ and the Clan's talk turns to it.
 ## Part B: fighting cats (Real-time combat, with Part D's SDK step)
 
 - **Who can be fought:** Clan life's cats of other Clans, and rogues, with health, blocks, dodges, hits and the
-  cats' own fight moves, as animals are fought now.
+  cats' own fight moves, as animals are fought now. Kits and medicine cats can be attacked too, and killed, but
+  that is the worst of crimes against the warrior code (Part E). A kit doesn't fight back: it cowers or runs. A
+  medicine cat defends itself only weakly.
 - **What starts a fight:**
   - you trespass, or they do (Clan life's step 7)
   - a border skirmish
@@ -143,6 +150,47 @@ both, with their witnesses.
 **Proof:** unit tests for who becomes a rival, a rival's growing and its endings. In game: a rival made by a kill,
 growing over moons (sped up with the clock), its ambush, and each ending once.
 
+## Part E: the warrior code, and what breaking it costs
+
+The warrior code is how Clan cats judge each other. Breaking it is possible, for your cat and for the mod's own,
+and it has consequences.
+
+- **Breaches, from the worst down:**
+  - **Severe:** killing a kit, a medicine cat, a cat that had yielded, or a clanmate.
+  - **Serious:** killing a warrior in a fight that could have ended with it yielding, or attacking during a
+    Gathering's truce.
+  - **Lesser:** hunting or trespassing on another Clan's land, leaving a hurt clanmate behind, and lying about
+    any of these.
+- **Who knows:** a breach is a memory (Part A), for the cats who saw it and the cats they tell. With no witnesses
+  it can stay secret, but a body found with your scent near it starts rumours and suspicion.
+- **What it costs:**
+  - **Opinions:** every cat that knows thinks less of you; the kind and the wise most of all, the ruthless least.
+    Fear rises. The victim's kin start a grudge (Part C).
+  - **Standing in your Clan:** Clan life keeps the Clan's regard for each cat, and for your cat, shown on the
+    Clanmates page. For your cat it moves the game's own bond with your Clan too (`wcmods::add_bond`).
+  - **Between the Clans:** the victim's Clan's regard for your whole Clan drops. Expect angry borders, raids,
+    and a Gathering where its leader demands justice.
+  - **The leader's judgement** for a known breach, by its weight and the leader's traits:
+    - a rebuke
+    - punishment duties: ticks for the elders, the dirtplace, no Gathering
+    - losing your apprentice, or your rank
+    - being handed over to the victim's Clan for its judgement
+    - exile: your Clan's cats drive you out of camp, and your cat lives as a rogue until it earns its way back
+- **Rank shields a cat.** The higher it stands, the more it gets away with:
+  - A **deputy**'s witnesses are slower to speak up, from fear or loyalty, and the leader judges it more lightly.
+  - A **leader** judges itself and is never exiled by its own Clan. Its Clan still knows, though. Respect falls,
+    loyal cats grow uneasy, a code-minded cat may challenge it or turn to another Clan, and the other Clans may
+    unite against it.
+  - A **kit or apprentice** is judged as one too young to know better, but watched ever after.
+- **The mod's cats break it too.** An ambitious, ruthless cat may kill a rival to rise (the books' Tigerstar),
+  an avenger may kill a yielded enemy, a desperate one may steal prey. The same consequences follow, so the
+  Clans have politics of their own: suspicions, exiles, feuds and leaders who lose their Clan's trust.
+
+**Proof:** unit tests for a breach's weight, who comes to know, opinions and standing falling, the leader's
+judgement by rank (the same killing judged for a warrior, a deputy and a leader), and the mod's cats choosing a
+breach only as their traits and wants allow. In game: a breach witnessed, its news spreading, and a judgement
+given.
+
 ## Part D: the SDK (wcmods), listed for approval
 
 - **S8, cats as fighters:**
@@ -167,24 +215,23 @@ Each step updates `docs/SDK.md`, its header's comments and the in-game tests, as
    gossip give cats memories already.
 2. **Part A, wants** (Clan life): choices and talk follow them.
 3. **S8** (SDK), then **Part B** (Real-time combat): fighting cats, yielding, sparing and killing, told to Clan life.
-4. **Deaths from fights** (Clan life): grief, and kin's grudges.
+4. **Deaths from fights** (Clan life): grief and kin's grudges, and Part E: breaches, standing, judgements, exile.
 5. **Part C, rivals** (Clan life): grudges become rivals that grow and come after you; endings.
 6. **S9** and **rogue and animal rivals** (Real-time combat and Clan life).
 
 Each is a pull request with its own tests, as before. Clan life's step 7 (borders, trespass, Gatherings) brings
 the meetings where rivals show up, so it comes alongside step 5.
 
-## Decisions for you
+## Decisions (the owner's, 2026-11-07)
 
-1. **Kits:** never fought, by you or anyone. I'd say never. Apprentices only fight back when attacked.
-2. **A beaten cat:** yields and runs by default, and killing is your choice (a held key)? Or fights to the death?
-   I'd say yield, with your choice.
-3. **Deaths:** from fights only while Real-time combat is installed, apart from Clan life's old-age deaths (still
-   off by default)? I'd say yes.
-4. **When a rival beats you:** you're beaten the way the game's own defeat works, not dead for good, and the rival
-   remembers winning (and gloats). I'd say yes.
-5. **Where to start:** Part A first (depth without fighting), or the fighting first? I'd say Part A first: it gives
-   every cat reasons to act right away, and the fighting has something to build on.
+1. **Kits and medicine cats** can be attacked and killed, as the worst crimes against the warrior code, with the
+   consequences in Part E (the owner's change: the plan had said never).
+2. **A beaten cat** yields and runs; killing it is your choice (a held key).
+3. **Deaths** come from fights only while Real-time combat is installed, apart from Clan life's old-age deaths
+   (still off by default).
+4. **When a rival beats you,** you're beaten the way the game's own defeat works, not dead for good, and the rival
+   remembers winning.
+5. **Part A comes first.**
 
 ## What might not work
 
