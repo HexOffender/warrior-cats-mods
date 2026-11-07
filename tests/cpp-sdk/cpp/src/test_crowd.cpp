@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cmath>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -162,17 +163,34 @@ namespace t
         // One 35 m off: the game freezes it (your cat outside its 23 m) until its freeze distance takes your cat in.
         auto freeze(const std::shared_ptr<CrowdRun>& r) -> void
         {
-            r->distant = spawn_npc({.at = ahead(3500), .size = 0.8});
+            // on the navigation mesh 35 m ahead (or as near that as there is some)
+            std::optional<Vec3> spot;
+            for (double d = 3500; d >= 2800 && !spot; d -= 100) spot = nav_point(ahead(d), nullptr, 1000);
+            r->distant = spawn_npc({.at = spot.value_or(ahead(3500)), .size = 0.8});
             after(1.5, [r] {
                 value("crowd.far_frozen", Json(r->distant.frozen()));
                 value("crowd.far_set", Json(r->distant.set_freeze_beyond(6000)));
                 after(0.5, [r] {
                     value("crowd.far_unfrozen", Json(!r->distant.frozen()));
                     r->distant_from = r->distant.place();
-                    Vec3 to = r->distant_from;
-                    to.y += 300;
-                    r->distant.walk_to(to);
-                    after(3.0, [r] {
+                    // a place 1.5 to 6 m off it could walk to, on its level
+                    const Vec3 from = r->distant_from;
+                    std::optional<Vec3> to;
+                    int missing = 0, close = 0, high = 0;
+                    for (int i = 0; i < 60 && !to; ++i)
+                    {
+                        auto q = random_nav_point(from, 600);
+                        if (!q) ++missing;
+                        else if (std::hypot(q->x - from.x, q->y - from.y) < 150) ++close;
+                        else if (std::abs(q->z - from.z) > 100) ++high;
+                        else to = q;
+                    }
+                    Json tried = Json::array();
+                    for (double x : {from.x, from.y, from.z, static_cast<double>(missing), static_cast<double>(close), static_cast<double>(high)}) tried.push(Json(x));
+                    value("crowd.far_tried", tried);
+                    value("crowd.far_walk_started", Json(to && r->distant.walk_to(*to)));
+                    after(4.0, [r] {
+                        value("crowd.far_result", Json(static_cast<int>(r->distant.walk_result())));
                         auto at = r->distant.place();
                         value("crowd.far_walked", Json(std::hypot(at.x - r->distant_from.x, at.y - r->distant_from.y)));
                         r->distant.remove();

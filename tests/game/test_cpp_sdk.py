@@ -1605,7 +1605,7 @@ def test_crowd(agent):
     assert v["woke_done"] is True and v["woke_in"] is True and v["woke_same_look"] is True, v
     assert v["woke_spawns"] == 2 and v["woke_at"] < 30 and v["wake_again"] is False, v
     assert v["far_frozen"] is True and v["far_set"] is True and v["far_unfrozen"] is True, v
-    assert v["far_walked"] > 150, v["far_walked"]
+    assert v["far_walk_started"] is True and v["far_walked"] > 150, v
     assert v["made_asleep"] == 30 and v["made_out"] == 30 and v["slept_many"] == 30, v
     one, three = v["wake_1"], v["wake_3"]
     assert one["woken"] == 30 and one["in"] == 30 and three["woken"] == 30 and three["in"] == 30, (one, three)
@@ -1630,6 +1630,24 @@ def test_crowd_walk(agent):
     # every cat woken (15 at each camp) came in, and those at the camp left behind went to sleep again
     assert w["wakes"] >= v["cats"] and w["came"] == w["wakes"] and w["sleeps"] >= 10, w
     assert w["fell"] == 0, w
+
+
+def test_nav_paths(agent):
+    """World.hpp's places on the navigation mesh (S4) in the game: 20 random places within 15 m of your cat that a cat
+    could walk to (on its level), each with a whole path from your cat's place no shorter than the straight line, each
+    walked to by a cat of the mod's own, all at once (16 or more get there; 17 to 20 did: the cats' mesh is made for a
+    cat 1 cm round and 25 cm tall taking any slope, where the walking cats are 25 cm round and 50 tall, so a path
+    through a narrow gap, under a low branch or down a ledge can stop one); a place on the mesh within 40 m with no path to it (a patch the mesh doesn't join up with:
+    its own random places all close by, and no path back either); nothing off the map."""
+    _close_screens(agent)
+    r = _request(agent, "nav_paths", timeout=90)
+    assert not _failed(r, "nav_paths"), _failed(r, "nav_paths")
+    v = {k[len("nav."):]: x for k, x in r["values"].items() if k.startswith("nav.")}
+    assert v["points"] == 20 and v["within"] == 20 and v["pathed"] == 20 and v["sane"] == 20, v
+    assert v["woken"] == 20 and v["arrived"] >= 16 and v["ended"] == 20, (v["woken"], v["arrived"], v["ended"], v["missed"])
+    cut = v["cut_off"]
+    assert cut and cut["distance"] < 4000 and cut["reach"] < 1500 and cut["back"] is False, cut
+    assert v["off_map"] is True, v
 
 
 def test_looks(agent):

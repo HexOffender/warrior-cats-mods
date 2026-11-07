@@ -90,6 +90,8 @@ namespace wcmods
             UObject* goal{};          // a walk after another actor: the actor, its class (to know it's still that one)
             UClass* goal_class{};
             std::optional<Vec3> goal_at;   // and where it was when the move was last asked for
+            double path_left{-1};          // the path still to walk (nav_path_length), looked at each second; -1: none
+            std::chrono::steady_clock::time_point path_at;
         };
         struct NpcState
         {
@@ -657,9 +659,22 @@ namespace wcmods
                 w.mark = *l;
                 w.mark_at = now;
             }
-            if (d < w.best - 60)
+            // progress along the path still to walk where there is one (a way round goes away from the place a while),
+            // else the straight line
+            double left = d;
+            if (w.options.avoid)
             {
-                w.best = d;
+                if (now - w.path_at >= std::chrono::seconds(1))
+                {
+                    w.path_at = now;
+                    auto path = nav_path_length(*l, w.to, a);
+                    w.path_left = path ? *path : -1;
+                }
+                if (w.path_left >= 0) left = w.path_left;
+            }
+            if (left < w.best - 60)
+            {
+                w.best = left;
                 w.best_at = now;
                 w.tries = 0;
             }

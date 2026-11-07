@@ -1972,6 +1972,32 @@ S3), in Sandbox mode by ShadowClan's camp.
 - **Name ids are strings** on the walking cat's `CustomData` (`PrefixNameId` `STR_CAT_NAME2`, `SuffixNameId` `_PAW`),
   as in the save; the eyes are `EyeLeftColorIdx` and `EyeRightColorIdx`.
 
+### Places on the navigation mesh
+
+Worked out on 2026-11-07 (build 26391405) in game, for the C++ SDK's `random_nav_point` and `nav_path_length`
+(docs/plans/clan-life.md, S4), by ShadowClan's camp.
+
+- **`FindPathToLocationSynchronously` gives nothing** (a null path), with the cats' `RecastNavMeshPlayer` as its
+  context or your cat: it wants the world's main navigation data first (`NavigationSystem.MainNavData`), and there's
+  none. With the cats' mesh set there for the call (and put back after) it gives whole paths, string-pulled: a clear
+  line's length is the line's (472 for 472), and a cut-off place a partial path (`IsPartial`, 14 points round).
+- **`GetPathLength`** with the navigation data given answers `Success` (3), `Fail` (2) with a partial path or `Error`
+  (1) off the mesh, but measures between its polygons' middles (UE's `CalcPathLengthAndCost` turns string pulling
+  off): two places in the same two polygons gave the same 622, and some lengths came out shorter than the straight
+  line (291 for 471). The search stops at the mesh's `DefaultMaxSearchNodes` (2048; tiles 975 cm): toward
+  ThunderClan's camp, paths of 20 to 80 m were whole, 120 m and more partial.
+- **`K2_GetRandomReachablePointInRadius`** with the cats' mesh gives places that cat could walk to (five in 15 m).
+- **The meshes take any slope:** both are built for agents with `AgentMaxSlope` 89° and `AgentMaxStepHeight` 35,
+  where the walking cats' movement (and your cat's on foot) has `WalkableFloorAngle` 44.8 and `MaxStepHeight` 45. Of
+  20 random places within 15 m, the 6 on rocks 4 to 6 m up (paths of 17 to 28 m) weren't reached by walking cats: they
+  stood at the foot. Its agents are 25 cm tall too: one path dropped a 40 cm ledge and ran on 5 m to its end, and the
+  walking cat (size 0.7) stopped at the ledge's foot. The walking cats' capsule is 25 cm round and 25 half-high at
+  any size (your cat's the same), the cats' mesh 1 cm round: its paths go through gaps and under branches no cat
+  fits. Of 20 places within 40 cm of the level, walked to by 20 cats at once, 17 to 20 were reached in four runs.
+  The animals' mesh (25 cm round) has none of the camps (none of 9 places round each), so it's no way round.
+- **The cats' mesh is in pieces:** of 108 places on it within 60 m of the camp (searched 30 m up and down), 45 had no
+  whole path from your cat. One 10 m off was a patch 5 m across (its own random places never further), on dirt.
+
 ## Character creation and traits
 
 Worked out on 2026-10-24 and confirmed against a real save.
