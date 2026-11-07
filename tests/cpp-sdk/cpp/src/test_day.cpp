@@ -112,8 +112,11 @@ namespace t
             float* clock = day_seconds();
             j.set("clock", Json(clock ? *clock : -1));
             j.set("amount", Json(clock ? night_amount(*clock) : -1));
-            j.set("area_sun", Json(get(sky_values(L"ShadowClan"), L"SunIntensity").number(-1)));
-            j.set("area_fog", Json(get(sky_values(L"ShadowClan"), L"FogDensity").number(-1)));
+            // the area's preset: the one showing, else (the inventory's up) the one last seen
+            static std::wstring area = L"ShadowClan";
+            if (shown && *shown != L"MainMenu" && *shown != L"Night") area = *shown;
+            j.set("area_sun", Json(get(sky_values(area), L"SunIntensity").number(-1)));
+            j.set("area_fog", Json(get(sky_values(area), L"FogDensity").number(-1)));
             j.set("night_sun", Json(get(sky_values(L"Night"), L"SunIntensity").number(-1)));
             j.set("night_fog", Json(get(sky_values(L"Night"), L"FogDensity").number(-1)));
             j.set("on", Json(day_sky_on()));
@@ -192,6 +195,7 @@ namespace t
             at(12);
             expect("on", day_sky(true));
             expect("bad_darkest", !day_sky(true, {.darkest = 1.5}));
+            expect("bad_night", !day_sky(true, {.night = L"Nite"}) && day_sky_on());
         }
         else if (name == "dusk") at(20.25);
         else if (name == "night") at(23);

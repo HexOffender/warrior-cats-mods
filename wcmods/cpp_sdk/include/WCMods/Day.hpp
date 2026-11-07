@@ -253,6 +253,7 @@ namespace wcmods
             std::chrono::steady_clock::time_point sky_looked{};
             std::vector<SkyNumber> numbers;
             std::map<std::wstring, std::vector<double>> was;   // each preset's numbers as the game had them, in `sky`
+            std::map<std::wstring, uint8_t*> rows;              // and where its copy is in `sky` (it doesn't move)
             double applied{-1};                                 // the night amount the presets were last set to
             std::optional<std::wstring> shown;                  // what the sky showed then
         };
@@ -267,9 +268,10 @@ namespace wcmods
         {
             if (d.sky && !d.was.empty() && object_alive(d.sky, d.sky_class))
                 for (auto& [preset, numbers] : d.was)
-                    if (uint8_t* row = sky_copy_in(d.sky, preset))
+                    if (uint8_t* row = d.rows[preset])
                         for (size_t i = 0; i < numbers.size() && i < d.numbers.size(); ++i) write_number(row, d.numbers[i], numbers[i]);
             d.was.clear();
+            d.rows.clear();
             d.applied = -1;
         }
         // Each area's preset `amount` of the way to the night's, and the one showing put on again so it shows now
@@ -282,7 +284,7 @@ namespace wcmods
             for (auto& [preset, numbers] : d.was)
             {
                 if (preset == d.sky_options.night) continue;
-                uint8_t* row = sky_copy_in(d.sky, preset);
+                uint8_t* row = d.rows[preset];
                 if (!row) continue;
                 for (size_t i = 0; i < numbers.size() && i < d.numbers.size(); ++i)
                     write_number(row, d.numbers[i], numbers[i] + (night->second[i] - numbers[i]) * amount);
@@ -305,6 +307,7 @@ namespace wcmods
             {
                 d.sky = nullptr;
                 d.was.clear();
+                d.rows.clear();
                 d.applied = -1;
                 d.shown.reset();
                 if (steady_clock::now() - d.sky_looked < seconds(2)) return false;   // sky() looks through every object
@@ -326,8 +329,9 @@ namespace wcmods
             for (const wchar_t* a : area_skies) presets.emplace_back(a);
             for (const std::wstring& preset : presets)
             {
-                const uint8_t* row = sky_copy_in(d.sky, preset);
+                uint8_t* row = sky_copy_in(d.sky, preset);
                 if (!row || d.was.contains(preset)) continue;
+                d.rows[preset] = row;
                 auto& kept = d.was[preset];
                 for (const SkyNumber& n : d.numbers) kept.push_back(read_number(row, n));
             }
@@ -400,7 +404,13 @@ namespace wcmods
         inline auto stop_day() -> void
         {
             auto& d = day_state();
+            UObject* s = d.sky && object_alive(d.sky, d.sky_class) ? d.sky : nullptr;
+            const bool had = !d.was.empty();
             restore_day_sky(d);
+            // shown at once where that's safe (UE4SS may take a mod out off the game thread: then it shows as the game
+            // next puts a preset on)
+            if (s && had && on_game_thread_now())
+                if (auto shown = sky_shown_in(s); shown && is_area_sky(*shown)) apply_sky(s, *shown);
             if (d.length)
                 if (float* speed = clock_speed())
                     *speed = tuning(L"Gameplay.Exploration.DayNight.ClockSpeed").value_or(72.0f);
@@ -432,10 +442,12 @@ namespace wcmods
 
     // Make a day last `real_seconds` (1200, 20 minutes, as the game ships), from now on while the mod runs, put on
     // again as each world starts (the game sets its own speed then). nullopt gives the game's own back. False for a
-    // day shorter than a minute or longer than a real day.
+    // day shorter than a minute or longer than a real day, and in the forest when wcmods hasn't got the speed on this
+    // build.
     inline auto set_day_length(std::optional<double> real_seconds) -> bool
     {
         if (real_seconds && (*real_seconds < 60 || *real_seconds > 86400)) return false;
+        if (day_seconds() && !clock_speed()) return false;
         auto& d = detail::day_state();
         bool was_set;
         {
@@ -460,11 +472,12 @@ namespace wcmods
     // `options.night` (as far as `options.darkest`), stays there through the night, and comes back over the dawn. It
     // works on the areas' presets' numbers (sky_values), so the game's own fades between areas, and its skies for the
     // inventory, dens and fights, stay as they are; a preset set_sky holds shows its numbers too. False for a darkest
-    // outside 0 to 1. Off (`on` false) puts the game's numbers back.
+    // outside 0 to 1, or a night that isn't one of the sky's presets. Off (`on` false) puts the game's numbers back.
     inline auto day_sky(bool on, DaySky options = {}) -> bool
     {
         if (options.darkest < 0 || options.darkest > 1) return false;
         if (!assert_game_thread(L"day_sky")) return false;
+        if (on && detail::sky_preset_value(options.night) < 0) return false;   // not one of the sky's presets
         auto& d = detail::day_state();
         {
             std::lock_guard lock(d.lock);
