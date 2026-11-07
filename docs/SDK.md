@@ -1273,6 +1273,7 @@ for (auto& [tag, count] : wcmods::map_entries(cat, L"rewards"))
 | Call | Does |
 |---|---|
 | `wcmods::nearby(wcmods::Kind::Pickups, 3000)` | Things of a kind within so many centimetres of your cat (or of a `from` actor), nearest first, each with `actor`, `location`, `distance`, `name` and `type`. Kinds: `Pickups`, `Interactables`, `Objectives`, `Cats`, `QuestGivers`, `Creatures`, `Climbing`, `Dens`, `FreshKill`, `Zones`, `Checkpoints`, the classes `WCModsWorld` sorts them by. A few times a second, not every frame |
+| `wcmods::actor_tags(actor)`, `has_tag(actor, tag)`, `add_tag(actor, tag)` | An actor's tags (`AActor::Tags`, names the engine keeps on any actor), whether it has one, and adding one (once: true when it has it already; false without the actor). A mod marks its own actors with them so another mod can tell them apart: Clan life tags its cats, and Real-time combat knows them from the game's own walking cats by it |
 | `wcmods::screens()` | The game's own screens and popups showing now, by class; none while you're just playing |
 | `wcmods::pressed(L"T")`, `key_down(L"Gamepad_FaceButton_Top")` | A key or controller button that went down this frame, or is held, in the game's own input (Unreal's key names); only while the game has the focus |
 | `wcmods::command(L"Player_Show_Inventory")`, `command(name, pressed)` | One of the game's commands as its controls give it (`ECommands`: `Player_Show_Inventory`, `Player_Pause`, `Player_Show_Map`, `Player_Show_Quest`, `Player_Interact`, `Player_Growl`...), pressed then released through the player's input component, so the inventory or the pause screen opens as with its key: a tap, both halves in one frame. For one the game acts on while it's held (`Player_Run`), give `command(name, true)` and later `command(name, false)`. False without a player, or for a name `ECommands` hasn't got. A screen that's open takes its own commands: `ui::send` |
@@ -1471,9 +1472,18 @@ wcmods::on_npc_interact([](wcmods::Npc n) { n.walk_to(*wcmods::npc_spot(600, 0))
 | `Npc::pose(Pose::Sit)`, `play(Move::Eat, {speed, loop})`, `stop_move(blend)` | A pose, held until another or a walk, and one of the game's moves, as `set_pose`, `play_move` and `stop_move` below. `walk_to` stands it first and stops a move it doesn't walk in (asleep, eating); `Stalk`, `WalkBack` and `Tired` keep playing (`walking_move`) |
 | `Npc::carry(Carried::Mouse, place)`, `drop_carried()`, `carrying()` | Something in its jaws, as `carry`, `drop_carried` and `carrying` below |
 | `Npc::sleep()`, `wake(done)`, `asleep()`, `waking()`, `place()` | Out of the world with everything kept (where it was and its facing, its look, label and prompt; false when it isn't in the world); back in where it was, or where `move_to` put it while asleep, within the spawn budget and once its ground is there, `done(npc)` as it comes in (false when it's in already, or removed); whether it's asleep; whether it's asked to come in and isn't yet; where it is, or where it'll come in |
+| `NpcSpec::scars`, `Npc::set_scars(scars)`, `scars()` | Its scars: `eye`, `ear`, `body` and `chest`, the game's scar ids (0 or none given: none), on its look as it comes in; changed while it's in (drawn at once), and kept for each time it comes back |
+| `NpcSpec::tags`, `Npc::tag(tag)`, `tags()` | Tags put on its actor (`actor_tags`) as it comes in each time; one more, now and from then on |
 | `Npc::set_freeze_beyond(cm)`, `frozen()` | How far from your cat the game lets it move (beyond, its ticking and collision are off until your cat comes back within it: the game's hiding by distance, a sphere round the cat of 2343 cm); whether it's frozen now. A cat frozen where its ground has unloaded doesn't fall |
 | `wcmods::set_npc_spawn_budget(per_frame)`, `npc_spawn_budget()`, `npcs_waiting()` | How many cats a frame come in from the spawn queue (woken ones, and ones whose level came back): 1 at first, each about 12 ms of the frame; how many wait (those waiting for their ground among them) |
 | `Npc::remove()` | Take it out of the world for good |
+
+**A mod's cats as fighters:** a walking cat's montage component plays the same table as your cat's
+(`DT_Cat_CombatAnimations`), so `play_montage` gives a mod's cat every fight move by its tag: the attacks
+(`Gameplay.Combat.Attack.Universal.1` to `.20`, each Clan's `Gameplay.Combat.Attack.<Clan>.1` to `.10`), the hit reactions
+(`Animation.Combat.Hit.1.Neutral`...), the dodges (`Animation.Combat.Dodge.Left`, `.Right`) and the defeats
+(`Animation.Combat.Lose.1`, `.2`); `Npc::pose(Pose::Still)` leaves it lying still after. Its scars and tags (above) let a
+fight mark it and let other mods know it (the test mod's `cat_fighters`).
 
 **Cats' poses and the game's moves (`CatMoves.hpp`)**, game thread only: any cat, yours, the game's or a mod's own.
 

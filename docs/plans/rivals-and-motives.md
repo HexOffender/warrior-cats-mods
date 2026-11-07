@@ -241,6 +241,9 @@ given.
   - **Calls:** hits on any cat, a defeat, and a lying-still end (`Pose::Still` is there). Scars put on a living
     cat's look (`set_look` has the scars).
   - **Proof:** in game, a mod's cat that attacks, reels when hit, dodges and yields.
+  - **Done (2026-11-07):** the walking cats play every fight move already (they share your cat's montage table), so
+    S8 added what fights need around it: scars kept on a mod's cat (`NpcSpec::scars`, `Npc::set_scars`) and tags on
+    its actor for other mods to know it by (`NpcSpec::tags`, `Npc::tag`, `actor_tags`, `has_tag`, `add_tag`).
 - **S9, rogues in the open world:**
   - **Find out:** whether the game puts rogue cats out on its own (its enemy generators' fight parties name
     rogues).

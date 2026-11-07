@@ -58,6 +58,7 @@ namespace t
     auto run_carry_request() -> void;    // Carry.hpp: something in a cat's jaws ("carry")
     auto run_crowd_request() -> void;    // Npcs.hpp: cats asleep and woken, frozen, the spawn budget ("crowd")
     auto run_crowd_walk_request() -> void;   // the same as your cat goes from camp to camp ("crowd_walk")
+    auto run_cat_fighters_request() -> void;   // the mod's cats as fighters: fight moves, scars, tags ("cat_fighters")
     auto run_day_request() -> void;          // Day.hpp: the parts of the day, their calls, the day's length ("day")
     auto run_day_sky_request(const std::string& what) -> void;   // Day.hpp: the sky by the clock ("day_sky_noon"...)
     auto run_nav_paths_request() -> void;    // World.hpp: random places on the navigation mesh, paths ("nav_paths")

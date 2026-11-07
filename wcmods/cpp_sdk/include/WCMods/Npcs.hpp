@@ -51,6 +51,8 @@ namespace wcmods
         bool ground{true};
         std::optional<double> freeze_beyond;
         bool asleep{false};
+        std::map<std::wstring, int> scars;    // eye, ear, body, chest: the game's scar ids (0 or none given: none)
+        std::vector<std::wstring> tags;       // put on its actor (actor_tags), each time it comes in
     };
     // A label over a cat's head, in the game's style: its name, a smaller title under it, an extra line above it in
     // the game's green, and an icon ("available", "ongoing", "done": the game's quest marks); shown within `range`
@@ -174,6 +176,12 @@ namespace wcmods
         }
         // The customisation fields for one spawn: the parts and slots given, the rest made up (each spawn anew). The
         // game keeps every field once bOverrideColors is set, so one left out would be 0 for every cat.
+        inline auto scar_fields() -> const std::map<std::wstring, std::wstring>&
+        {
+            static const std::map<std::wstring, std::wstring> f{
+                {L"eye", L"ScarEyeId"}, {L"ear", L"ScarEarId"}, {L"body", L"ScarBodyId"}, {L"chest", L"ScarChestId"}};
+            return f;
+        }
         inline auto npc_look(const NpcSpec& s) -> std::map<std::wstring, int>
         {
             std::map<std::wstring, int> out;
@@ -191,6 +199,11 @@ namespace wcmods
             int eye = s.eyes.value_or(random_int(0, 24));
             out[L"EyeLeftColorIdx"] = eye;
             out[L"EyeRightColorIdx"] = s.eyes2.value_or(eye);
+            for (auto& [part, field] : scar_fields())
+            {
+                auto given = s.scars.find(part);
+                out[field] = given != s.scars.end() ? given->second : 0;
+            }
             return out;
         }
         // Put the cat's feet (its mesh's origin) on the ground at height g.
@@ -340,6 +353,7 @@ namespace wcmods
             if (UObject* brain = get(get(a, L"Controller").object, L"BrainComponent").object)
                 call_reflected(brain, STR("StopLogic"), [&](Params& p) { p.set_nth(0, Value::of(std::wstring_view(L"wcmods"))); });
             stand_on(a, g);
+            for (const std::wstring& tag : n.spec.tags) add_tag(a, tag);
             n.actor = a;
             n.index = a->GetInternalIndex();
             n.walk.reset();
@@ -494,6 +508,37 @@ namespace wcmods
         {
             if (m) m->label = label.name.empty() && label.title.empty() && label.extra.empty() && label.icon.empty() ? std::nullopt : std::optional(label);
         }
+        // Its scars (eye, ear, body, chest: the game's ids, 0 for none; a part not given keeps its own), drawn now if it's
+        // in the world and kept for each time it comes in. False when it's been removed, or for a part it hasn't got
+        // (nothing changed then).
+        auto set_scars(const std::map<std::wstring, int>& scars) -> bool
+        {
+            if (!m || m->removed) return false;
+            for (auto& [part, id] : scars)
+                if (!detail::scar_fields().contains(part)) return false;
+            for (auto& [part, id] : scars) m->spec.scars[part] = id;
+            // its look made up now if it hasn't come in yet (else its first coming in would take the scars for its look)
+            if (m->made.empty()) m->made = detail::npc_look(m->spec);
+            for (auto& [part, id] : scars) m->made[detail::scar_fields().at(part)] = id;
+            if (UObject* a = actor())
+                if (UObject* c = get(a, L"MeshCustomizationComponent").object)
+                {
+                    for (auto& [part, field] : detail::scar_fields()) set(c, std::wstring(L"CustomData.") + field, m->made[field]);
+                    detail::draw_look(c);
+                }
+            return true;
+        }
+        auto scars() const -> std::map<std::wstring, int> { return m ? m->spec.scars : std::map<std::wstring, int>{}; }
+        // A tag on its actor, now and each time it comes in (actor_tags); its tags.
+        auto tag(std::wstring_view t) -> bool
+        {
+            if (!m || m->removed || t.empty()) return false;
+            if (std::find(m->spec.tags.begin(), m->spec.tags.end(), t) == m->spec.tags.end()) m->spec.tags.emplace_back(t);
+            if (UObject* a = actor()) add_tag(a, t);
+            return true;
+        }
+        auto tags() const -> std::vector<std::wstring> { return m ? m->spec.tags : std::vector<std::wstring>{}; }
+
         auto set_prompt(std::wstring_view text, double reach = 250) -> void
         {
             if (!m) return;

@@ -112,6 +112,36 @@ namespace wcmods
 
     // Things of a kind within `radius` centimetres of your cat (or of `from`), nearest first. It goes
     // through the game's objects: a few times a second, not every frame.
+    // ============================================================================================ actors' tags
+    // An actor's tags (AActor::Tags, names the engine keeps on any actor): a mod marks its own actors with them, so
+    // another mod can tell them apart (Clan life's cats from the game's own walking cats, say).
+    inline auto actor_tags(UObject* actor) -> std::vector<std::wstring>
+    {
+        std::vector<std::wstring> out;
+        for (const Value& v : elements(get(actor, L"Tags"))) out.push_back(v.text);
+        return out;
+    }
+    // (The engine's own ActorHasTag: no copy of every tag to look for one.)
+    inline auto has_tag(UObject* actor, std::wstring_view tag) -> bool
+    {
+        if (!actor || tag.empty()) return false;
+        auto r = call_reflected(actor, STR("ActorHasTag"), [&](Params& p) { p.set_nth(0, Value::of(tag)); });
+        return r && r->get(L"ReturnValue").boolean();
+    }
+    // Add a tag to an actor (once: true when it has it already). False without the actor, or off the game thread.
+    inline auto add_tag(UObject* actor, std::wstring_view tag) -> bool
+    {
+        if (!actor || tag.empty() || !assert_game_thread(L"add_tag")) return false;
+        if (has_tag(actor, tag)) return true;
+        Value tags = get(actor, L"Tags");
+        if (tags.kind != Value::Kind::Array || !tags.property || !tags.at) return false;
+        RC::Unreal::FScriptArrayHelper helper(static_cast<RC::Unreal::FArrayProperty*>(tags.property), tags.at);
+        const int i = helper.AddValue();   // (zeroed: the name None, until it's written)
+        if (detail::write(detail::element(tags, i), Value::of(tag))) return true;
+        helper.RemoveValues(i, 1);         // not left as a None
+        return false;
+    }
+
     inline auto nearby(Kind kind, double radius = 3000, UObject* from = nullptr) -> std::vector<Nearby>
     {
         std::vector<Nearby> out;
