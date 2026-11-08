@@ -227,8 +227,15 @@ namespace wcmods
     inline auto command(std::wstring_view name) -> bool { return command(name, true) && command(name, false); }
 
     // ============================================================================================ traces
-    // Where a straight line from one place to another first hits the world, or nullopt.
-    inline auto trace(Vec3 from, Vec3 to) -> std::optional<Vec3>
+    // What a trace asks of the world: what blocks sight (Visibility, the default), or what the game's camera can't pass
+    // through (Camera: the ground, rocks and walls, not the cats and animals, which the camera's channel ignores).
+    enum class TraceChannel : uint8_t
+    {
+        Visibility = 0,   // ETraceTypeQuery::TraceTypeQuery1
+        Camera = 1        // TraceTypeQuery2
+    };
+    // Where a straight line from one place to another first hits the world (your cat left out), or nullopt.
+    inline auto trace(Vec3 from, Vec3 to, TraceChannel channel = TraceChannel::Visibility) -> std::optional<Vec3>
     {
         UObject* lib = object(STR("/Script/Engine.Default__KismetSystemLibrary"));
         UObject* me = player();
@@ -237,6 +244,7 @@ namespace wcmods
             p.set(L"WorldContextObject", me);
             if (auto* s = static_cast<FVector*>(p.raw(L"Start"))) *s = to_fvector(from);
             if (auto* e = static_cast<FVector*>(p.raw(L"End"))) *e = to_fvector(to);
+            if (auto* c = static_cast<uint8_t*>(p.raw(L"TraceChannel"))) *c = static_cast<uint8_t>(channel);
             p.set(L"bIgnoreSelf", true);
         });
         if (!r || !r->get(L"ReturnValue").boolean()) return std::nullopt;
