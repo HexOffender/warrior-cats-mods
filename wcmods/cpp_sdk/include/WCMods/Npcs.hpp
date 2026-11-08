@@ -822,13 +822,39 @@ namespace wcmods
             }
             s.prompt.show_passive();
         }
+        // Where a cat's label sits on screen (over its head), in the viewport's pixels; nullopt when that's behind the
+        // camera.
+        inline auto label_screen(UObject* actor) -> std::optional<Vec2>
+        {
+            auto l = location(actor);
+            if (!l) return std::nullopt;
+            auto r = call_reflected(object(STR("/Script/Engine.Default__GameplayStatics")), STR("ProjectWorldToScreen"), [&](Params& p) {
+                p.set_nth(0, Value::of(controller()));
+                Value at = p.nth(1);
+                set(at, L"X", l->x);
+                set(at, L"Y", l->y);
+                set(at, L"Z", l->z + 40);
+            });
+            if (!r || !r->get(L"ReturnValue").boolean()) return std::nullopt;
+            Value sp = r->nth(2);
+            return Vec2{get(sp, L"X").number(), get(sp, L"Y").number()};
+        }
         // Every half second: each cat kept in the world (spawned again when its level comes back), its colours kept
-        // on, its label shown or hidden by your cat's distance.
+        // on, its label shown or hidden by your cat's distance and whether it's in view, labels kept off each other
+        // (one over another is lifted above it) and out of the HUD's top-left corner (your cat's portrait and bars).
         inline auto keep_npcs() -> void
         {
             auto& s = npcs_state();
             if (s.all.empty() || !player()) return;   // no cats: nothing to keep (the timers stay, idle)
             std::erase_if(s.all, [](const std::shared_ptr<NpcState>& n) { return n->removed; });
+            struct Shown
+            {
+                Widget name, status;
+                Vec2 at;
+                double lift{};   // pixels up from where its head puts it
+            };
+            std::vector<Shown> shown;
+            const Vec2 view = ui::viewport_size();
             for (auto& n : s.all)
             {
                 if (!npc_alive(*n))
@@ -844,7 +870,9 @@ namespace wcmods
                 if (!w) continue;
                 Widget name_part(get(w.object(), L"mcGuiActorName").object), status(get(w.object(), L"mcGuiActorStatus").object);
                 auto d = Npc(n).distance();
-                if (!n->label || !d || *d > n->label->range)
+                auto at = n->label && d && *d <= n->label->range ? label_screen(n->actor) : std::nullopt;
+                const bool in_view = at && at->x >= 0 && at->y >= 0 && at->x <= view.x && at->y <= view.y;
+                if (!in_view)   // out of range, or off the screen (the engine would still draw it, at an edge)
                 {
                     if (name_part) name_part.set_opacity(0);
                     if (status) status.set_opacity(0);
@@ -856,6 +884,7 @@ namespace wcmods
                 double fade = std::min(1.0, (l.range - *d) / (l.range * 0.3));
                 if (name_part) name_part.set_opacity(fade);
                 if (status) status.set_opacity(l.icon.empty() ? 0 : fade);
+                if (name_part) shown.push_back({name_part, status, *at});
                 if (!fresh) continue;   // the texts are written once a label (and a spawn), as the Lua does
                 n->label_set = l;
                 n->label_set_on = w;
@@ -874,7 +903,27 @@ namespace wcmods
                                            std::pair{L"done", L"CanvasCompleted"}})
                     if (Widget c(get(status.object(), canvas).object); c)
                         c.set_visibility(l.icon == key ? Visibility::SelfHitTestInvisible : Visibility::Collapsed);
-                if (status) status.set_translation(0, -100);   // the icon above the lines, as the game has it for its own
+            }
+            // Apart: from the lowest on the screen up, a label over another (about 260 by 100 pixels at 1080p) goes
+            // above it; one in the HUD's corner (the portrait and bars, the top left fifth) goes under that.
+            const double unit = view.y > 0 ? view.y / 1080.0 : 1;
+            const double w = 260 * unit, h = 100 * unit;
+            const double scale = ui::viewport_scale() > 0 ? ui::viewport_scale() : 1;   // translations are in UMG's units
+            std::sort(shown.begin(), shown.end(), [](const Shown& a, const Shown& b) { return a.at.y > b.at.y; });
+            for (size_t i = 0; i < shown.size(); ++i)
+            {
+                Shown& me = shown[i];
+                double y = me.at.y;
+                for (size_t j = 0; j < i; ++j)
+                {
+                    const Shown& o = shown[j];
+                    const double oy = o.at.y - o.lift;
+                    if (std::abs(o.at.x - me.at.x) < w && y > oy - h && y < oy + h) y = oy - h;
+                }
+                me.lift = me.at.y - y;
+                if (me.at.x < 0.24 * view.x && me.at.y - me.lift < 0.2 * view.y) me.lift = -(0.2 * view.y - me.at.y + 0.3 * h);
+                me.name.set_translation(0, -me.lift / scale);
+                if (me.status) me.status.set_translation(0, -100 - me.lift / scale);   // the icon above the lines, as the game has it
             }
         }
         inline auto start_npcs() -> void

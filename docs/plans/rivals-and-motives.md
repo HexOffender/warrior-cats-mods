@@ -366,6 +366,9 @@ the meetings where rivals show up, so it comes alongside step 5.
 6. **A warrior is exiled** for breaking the code; rank shields a deputy and a leader (the owner's).
 7. **Mates from other Clans** are allowed, frowned on but not forbidden (the owner's).
 8. **Several cats at once:** blows land on every cat in front of you, so you can fight several at once (the owner's).
+   Changed 2026-11-07 after the video review (the owner's): a light attack or a lunge lands on one cat or animal,
+   the one you're locked on to when it's in reach, else the nearest; only the heavy attack, a wide swing, lands on
+   every one in front. In a camp the old rule made every swing a brawl (each cat struck joined in).
 9. **Your party fights beside you** in Real-time combat, next after Part B (the owner's): Part B2.
 10. **An accidental blow is forgiven:** striking a kit, a medicine cat or a clanmate is a breach only when your cat
     hits it more than once in a fight (the owner's).
