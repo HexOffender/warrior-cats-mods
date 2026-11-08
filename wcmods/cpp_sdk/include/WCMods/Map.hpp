@@ -200,6 +200,11 @@ namespace wcmods
         // (and back to its place for one line).
         inline auto keep_first_line(Widget& t, int lines) -> void
         {
+            // several lines read centred (the game's line sits against its icon: left, centre or right as it has it)
+            static std::map<UObject*, double> own;   // each block's own justification, kept the first time it's wrapped
+            if (!own.contains(t.object())) own[t.object()] = get(t.object(), L"Justification").number();
+            const double j = lines > 1 ? 1 : own[t.object()];
+            t.set_justify(j == 0 ? Align::Start : j == 1 ? Align::Center : Align::End);
             double shift = 0;
             if (lines > 1)
             {

@@ -4150,7 +4150,7 @@ end
 -- One of the game's quest banners, with its particles: "begin" (a quest taken up: {kind ("Main Quest"),
 -- title, text ("New Objective")}), "update" ({kind: "Quest Update"}), "done" ("Quest completed!") or
 -- "failed". It goes after `seconds` (4.5; the game's own code would take it away for its own quests).
-local bannerShown = {}
+local bannerShown, bannerJustify = {}, {}
 function Game.hud.banner(kind, opts)
     opts = opts or {}
     local h = gameHud()
@@ -4183,6 +4183,9 @@ function Game.hud.banner(kind, opts)
                     -- the text's box has a fixed height and grows both ways, so a wrapped text's first line climbs
                     -- into the title: the block goes down by half the extra lines' height (its first line stays put)
                     local _, lines = text:gsub("\n", "")
+                    -- several lines read centred; one line sits as the game has it (its own justification, kept)
+                    bannerJustify[name] = bannerJustify[name] or t[name].Justification
+                    pcall(function() t[name]:SetJustification(lines > 0 and 1 or bannerJustify[name]) end)
                     local shift = 0
                     if lines > 0 then
                         t[name]:ForceLayoutPrepass()
