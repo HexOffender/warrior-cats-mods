@@ -763,12 +763,23 @@ namespace wcmods
             Widget h = ui::hud();
             std::shared_ptr<NpcState> best;
             double best_d = 1e18;
-            if (h && screens().empty())
+            // whether one of the game's screens is up: looked at four times a second (screens() walks every object)
+            static bool screen_up = false;
+            static std::chrono::steady_clock::time_point looked{};
+            if (const auto now = std::chrono::steady_clock::now(); now - looked > std::chrono::milliseconds(250))
+            {
+                looked = now;
+                screen_up = !screens().empty();
+            }
+            auto you = location(player());
+            if (h && !screen_up && you)
                 for (auto& n : s.all)
                 {
                     if (n->removed || n->prompt.empty() || !npc_alive(*n)) continue;
-                    auto d = Npc(n).distance();
-                    if (d && *d <= n->reach && *d < best_d) best = n, best_d = *d;
+                    auto at = location(n->actor);
+                    if (!at) continue;
+                    const double d = std::hypot(at->x - you->x, at->y - you->y);
+                    if (d <= n->reach && d < best_d) best = n, best_d = d;
                 }
             if (h && (!s.menu || !(s.menu_hud == h)))
             {
