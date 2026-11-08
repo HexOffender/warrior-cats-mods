@@ -9,6 +9,7 @@
 //   wcmods::set_camera({.distance = 300, .fov = 60});                             // the camera far and narrow
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -167,9 +168,50 @@ namespace wcmods
     {
         std::wstring kind, title, text;
         double seconds{4.5};   // how long it stays (the game's own code takes it away only for its own quests)
+        int wrap_at{80};       // the text's longest line, in characters: longer ones are broken at words (0: never; the
+                               // game's own line doesn't wrap, and runs off the screen past about 90)
     };
     namespace detail
     {
+        // Words wrapped into lines of at most `width` characters (a word longer than that on a line of its own).
+        inline auto wrap_words(const std::wstring& text, size_t width) -> std::wstring
+        {
+            if (width == 0 || text.size() <= width) return text;
+            std::wstring out, line;
+            size_t start = 0;
+            while (start <= text.size())
+            {
+                size_t end = text.find(L' ', start);
+                if (end == std::wstring::npos) end = text.size();
+                const std::wstring word = text.substr(start, end - start);
+                if (!line.empty() && line.size() + 1 + word.size() > width)
+                {
+                    out += line + L"\n";
+                    line.clear();
+                }
+                if (!line.empty()) line += L' ';
+                line += word;
+                start = end + 1;
+            }
+            return out + line;
+        }
+        // The banner's text sits in a box of a fixed height and grows both ways, so a wrapped text's first line climbs into
+        // the title: the block is moved down by half the extra lines' height, keeping its first line where one line sits
+        // (and back to its place for one line).
+        inline auto keep_first_line(Widget& t, int lines) -> void
+        {
+            double shift = 0;
+            if (lines > 1)
+            {
+                call_reflected(t.object(), STR("ForceLayoutPrepass"));
+                if (auto r = call_reflected(t.object(), STR("GetDesiredSize")))
+                {
+                    const double height = get(r->get(L"ReturnValue"), L"Y").number();
+                    shift = height * (lines - 1) / (2.0 * lines);
+                }
+            }
+            t.set_translation(0, shift);
+        }
         inline auto banner_part(Banner b) -> const wchar_t*
         {
             switch (b)
@@ -194,13 +236,19 @@ namespace wcmods
         Widget hud = ui::hud();
         Widget b = hud ? hud.find(detail::banner_part(which)) : Widget();
         if (!b) return false;
+        const std::wstring text = detail::wrap_words(words.text, static_cast<size_t>(words.wrap_at > 0 ? words.wrap_at : 0));
         const std::pair<const wchar_t*, const std::wstring*> texts[] = {{L"mcGuiTextQuestType", &words.kind},
                                                                        {L"mcGuiTextQuestName", &words.title},
-                                                                       {L"mcGuiTextObjective", &words.text},
-                                                                       {L"mcGuiText", &words.text}};
+                                                                       {L"mcGuiTextObjective", &text},
+                                                                       {L"mcGuiText", &text}};
         for (auto& [block, text] : texts)
             if (!text->empty())
-                if (Widget t = b.find(block)) t.set_text(*text);
+                if (Widget t = b.find(block))
+                {
+                    t.set_text(*text);
+                    if (block != std::wstring_view(L"mcGuiTextQuestType") && block != std::wstring_view(L"mcGuiTextQuestName"))
+                        detail::keep_first_line(t, static_cast<int>(std::count(text->begin(), text->end(), L'\n')) + 1);
+                }
         b.show_passive();
         call_reflected(b.object(), STR("SequenceEvent"));
         const uint64_t mine = ++detail::banner_shows()[static_cast<int>(which)];

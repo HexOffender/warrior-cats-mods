@@ -396,7 +396,7 @@ end
 -- A label and its control, which has a focus ring (the third value).
 local function labelled(label, control, controlFill, extra, halign)
     local box = new("HorizontalBox")
-    local l = text(label, 13)
+    local l = text(label, 13, nil, true)   -- (wrapped: a long label goes to a second line instead of under the control)
     local r = Menu.ring(control)
     add(box, l, 0.42, 0, 12)
     add(box, r, controlFill or 0.58, 0, 0, nil, halign)

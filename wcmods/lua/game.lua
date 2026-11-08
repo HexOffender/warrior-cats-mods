@@ -4159,10 +4159,39 @@ function Game.hud.banner(kind, opts)
     return pcall(function()
         local b = h[part]
         local t = textBlocks(b)
-        local texts = { mcGuiTextQuestType = opts.kind, mcGuiTextQuestName = opts.title, mcGuiTextObjective = opts.text,
-                        mcGuiText = opts.text }
+        -- the text's lines kept to `wrap` characters (80): the game's own line doesn't wrap, and runs off the screen
+        local function wrapWords(s, width)
+            if type(s) ~= "string" or width <= 0 or #s <= width then return s end
+            local out, line = {}, ""
+            for word in s:gmatch("%S+") do
+                if line ~= "" and #line + 1 + #word > width then
+                    out[#out + 1] = line
+                    line = ""
+                end
+                line = line == "" and word or (line .. " " .. word)
+            end
+            out[#out + 1] = line
+            return table.concat(out, "\n")
+        end
+        local text = wrapWords(opts.text, opts.wrap or 80)
+        local texts = { mcGuiTextQuestType = opts.kind, mcGuiTextQuestName = opts.title, mcGuiTextObjective = text,
+                        mcGuiText = text }
         for name, text in pairs(texts) do
-            if t[name] and text then t[name]:SetText(FText(text)) end
+            if t[name] and text then
+                t[name]:SetText(FText(text))
+                if name == "mcGuiTextObjective" or name == "mcGuiText" then
+                    -- the text's box has a fixed height and grows both ways, so a wrapped text's first line climbs
+                    -- into the title: the block goes down by half the extra lines' height (its first line stays put)
+                    local _, lines = text:gsub("\n", "")
+                    local shift = 0
+                    if lines > 0 then
+                        t[name]:ForceLayoutPrepass()
+                        local d = t[name]:GetDesiredSize()
+                        shift = d.Y * lines / (2 * (lines + 1))
+                    end
+                    t[name]:SetRenderTranslation({ X = 0, Y = shift })
+                end
+            end
         end
         b:SetVisibility(SHOWN)
         b:SequenceEvent()
