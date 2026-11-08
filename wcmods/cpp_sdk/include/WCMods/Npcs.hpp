@@ -850,9 +850,29 @@ namespace wcmods
             Value sp = r->nth(2);
             return Vec2{get(sp, L"X").number(), get(sp, L"Y").number()};
         }
+        // Where the camera is, or nullopt.
+        inline auto camera_eye() -> std::optional<Vec3>
+        {
+            UObject* cam = get(controller(), L"PlayerCameraManager").object;
+            auto r = cam ? call_reflected(cam, STR("GetCameraLocation")) : std::nullopt;
+            if (!r) return std::nullopt;
+            Value v = r->get(L"ReturnValue");
+            return Vec3{get(v, L"X").number(), get(v, L"Y").number(), get(v, L"Z").number()};
+        }
+        // Whether the camera's view of a cat's head is blocked by the world (a rock, a wall, a den: what the camera's
+        // own channel can't pass through; cats and animals don't block it). A hit right by the head is the cat itself.
+        inline auto head_hidden(const Vec3& eye, UObject* actor) -> bool
+        {
+            auto l = location(actor);
+            if (!l) return false;
+            const Vec3 head{l->x, l->y, l->z + 40};
+            auto hit = trace(eye, head, TraceChannel::Camera);
+            return hit && std::hypot(hit->x - head.x, hit->y - head.y, hit->z - head.z) > 80;
+        }
         // Every half second: each cat kept in the world (spawned again when its level comes back), its colours kept
-        // on, its label shown or hidden by your cat's distance and whether it's in view, labels kept off each other
-        // (one over another is lifted above it) and out of the HUD's top-left corner (your cat's portrait and bars).
+        // on, its label shown or hidden by your cat's distance and whether it's in view (on the screen, and not behind
+        // a rock or a wall), labels kept off each other (one over another is lifted above it) and out of the HUD's
+        // top-left corner (your cat's portrait and bars).
         inline auto keep_npcs() -> void
         {
             auto& s = npcs_state();
@@ -866,6 +886,7 @@ namespace wcmods
             };
             std::vector<Shown> shown;
             const Vec2 view = ui::viewport_size();
+            const std::optional<Vec3> eye = camera_eye();
             for (auto& n : s.all)
             {
                 if (!npc_alive(*n))
@@ -882,8 +903,9 @@ namespace wcmods
                 Widget name_part(get(w.object(), L"mcGuiActorName").object), status(get(w.object(), L"mcGuiActorStatus").object);
                 auto d = Npc(n).distance();
                 auto at = n->label && d && *d <= n->label->range ? label_screen(n->actor) : std::nullopt;
-                const bool in_view = at && at->x >= 0 && at->y >= 0 && at->x <= view.x && at->y <= view.y;
-                if (!in_view)   // out of range, or off the screen (the engine would still draw it, at an edge)
+                bool in_view = at && at->x >= 0 && at->y >= 0 && at->x <= view.x && at->y <= view.y;
+                if (in_view && eye && head_hidden(*eye, n->actor)) in_view = false;
+                if (!in_view)   // out of range, off the screen (the engine would still draw it, at an edge), or hidden
                 {
                     if (name_part) name_part.set_opacity(0);
                     if (status) status.set_opacity(0);
