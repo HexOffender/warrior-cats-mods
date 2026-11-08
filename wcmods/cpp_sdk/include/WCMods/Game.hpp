@@ -5,6 +5,7 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -168,14 +169,35 @@ namespace wcmods
     }
 
     // ============================================================================================ the world
-    // The player's controller, or nullptr (in menus, while loading).
+    // The player's controller, or nullptr (in menus, while loading). Kept once found and looked up again only when the
+    // kept one is gone or no longer the player's (a level change): find_all walks every object in the game, and this is
+    // called many times a frame (player(), and everything that asks after your cat). Without one, it looks again at most
+    // four times a second.
     inline auto controller() -> UObject*
     {
+        static UObject* kept{};
+        static UClass* kept_class{};
+        static std::chrono::steady_clock::time_point missed{};
+        if (kept && detail::object_alive(kept, kept_class))
+        {
+            auto player = property<UObject*>(kept, STR("Player"));
+            if (player && *player) return kept;
+        }
+        kept = nullptr;
+        const auto now = std::chrono::steady_clock::now();
+        if (missed.time_since_epoch().count() != 0 && now - missed < std::chrono::milliseconds(250)) return nullptr;
         for (UObject* c : find_all(STR("PlayerController")))
         {
             auto player = property<UObject*>(c, STR("Player"));
-            if (player && *player) return c;
+            if (player && *player)
+            {
+                kept = c;
+                kept_class = c->GetClassPrivate();
+                missed = {};
+                return c;
+            }
         }
+        missed = now;
         return nullptr;
     }
 
