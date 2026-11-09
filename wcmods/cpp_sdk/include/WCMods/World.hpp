@@ -1061,6 +1061,14 @@ namespace wcmods
         {
             return call_if(s, STR("ApplyStraight"), [&](Params& p) { return p.set_nth(0, Value::of(preset)); }).has_value();
         }
+        // The sky's own fade to a preset (StartTransition): what it shows blends to the preset's numbers over its
+        // transition time. Unlike ApplyStraight (and DoZoneDetectionFunction), it costs no frame of lighting glitch:
+        // measured 2026-11-08 at WindClan's camp, four calls a second for 8 s, 7 and 12 one-frame dips against none
+        // (the owner saw the dusk "flickering": day_sky put the area's preset on again four times a second).
+        inline auto transition_sky(UObject* s, std::wstring_view preset) -> bool
+        {
+            return call_if(s, STR("StartTransition"), [&](Params& p) { return p.set_nth(0, Value::of(preset)); }).has_value();
+        }
         inline auto release_sky() -> void
         {
             auto& h = sky_hold();

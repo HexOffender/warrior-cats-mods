@@ -1383,6 +1383,28 @@ C++ SDK's `set_sky` holds a preset by putting it on again at the end of every fr
 has a preset of its own (`PresetForInventory`, 11, `MainMenu`: fog 50, light 1.2). The actor sits in a
 streamed part of the world, whose outers lead to that part's own `UWorld`, not the controller's.
 
+**Putting a preset on costs a frame** (measured 2026-11-08 at WindClan's camp, the screen's brightness read 40 times a
+second in patches, a one-frame dip the sign): `ApplyStraight(WindClan)` called four times a second with the WindClan
+preset already showing gave 7 one-frame dips of 2 to 6 (of 255) in 8 s in the ground patches, `DoZoneDetectionFunction(false)`
+12, `StartTransition(WindClan)` none, and none with nothing called. `ApplyStraight` doesn't show the numbers at once
+either: 0.5 s after `ApplyStraight(Night)` the sun was 5.2 of the way from 20 to 3 and the volumes' weights 0.13/0.87, the
+actor blending them, so `StartTransition` is the way to change what shows while the player watches (`day_sky` uses it: as
+`ApplyStraight` four times a second through the dusk, the owner saw the lighting flicker). Writing the components
+directly (`DirectionalLight:SetIntensity`, `SkyLight:SetIntensity`, the fog's `SetFogDensity`, the lights' `SetLightColor`,
+the fog's `SetFogInscatteringColor`) four times a second gave no dips either, and the values stayed (the actor doesn't put its
+numbers back each frame). What `ApplyStraight(Night)` changed on the components: the sun's `Intensity` and `LightColor`
+(the row's `SunColor`, sRGB-encoded), the sky light's `Intensity` and `LightColor`, the fog's `FogDensity`, `FogHeightFalloff`
+and `StartDistance`, and the volumes' `BlendWeight`s; not the sun's rotation (the sun doesn't move with the clock), nor the
+fog's `FogInscatteringColor`. `WrcSkyBoxStruct`'s 41 fields: `SunIntensity`, `SunColor`, `SkylightIntensity`,
+`SkylightColor`, `FogDensity`, `FogHeightFalloff`, `FogSecondDensity`, `FogSecondHeightFalloff`, `FogSecondHeightOffset`,
+`FogInscatteringColor`, `FogMaxOpacity`, `FogStartDistance`, `FogEndDistance`, `FogCuttoffDistance`, `NoisePower1`,
+`NoisePower2`, `CloudColor`, `CloudOpacity`, `OverallColor`, `HorizonColor`, `HorizonFalloff`, `ZenithColor`,
+`StarsBrightness`, `SunHeight`, `SunRadius`, `SunBrightness`, and fifteen `StClouds*` (the colours `LinearColor`). The
+actor's own functions: `ApplyStraight(pp)`, `StartTransition(pp)`, `TransitionTimeProgress(Value)`,
+`TransitionTimeFinished()`, `DoZoneDetectionFunction(bWithTransition)`, `Disable_PP(pp)`, `GetSkyLight()`,
+`GetLowEndSkylightFactor()`, `CanApplyLowEndFactor()`. Listing its components through the bridge
+(`K2_GetComponentsByClass` and each static mesh's `GetMaterial`) crashed the game (an access violation in UE4SS).
+
 **The sky's values** (build 26337109, 2026-11-04, a memory probe from the C++ test mod): `SkyParamsDB` is
 `DT_SkyBoxParams`, 13 rows of `WrcSkyBoxStruct` (`NeutralDay`, `Night`, `WindClan`, `ThunderClan`, `ShadowClan`,
 `RiverClan`, `Moonpool`, `MoonPoolNight`, `CatCreator`, `MainMenu`, `CinematicNight`, `CinematicNightMoonPool`,
