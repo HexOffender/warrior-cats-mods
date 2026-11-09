@@ -274,9 +274,10 @@ namespace wcmods
             d.rows.clear();
             d.applied = -1;
         }
-        // Each area's preset `amount` of the way to the night's, and the one showing put on again so it shows now
-        // (not while it's going from one to another, while another of the game's is up, or while set_sky holds one:
-        // that puts its preset on every frame anyway).
+        // Each area's preset `amount` of the way to the night's, and the one showing faded to its new numbers (the sky's
+        // own StartTransition: ApplyStraight would show them at once but costs a frame's lighting glitch each time,
+        // which at four a second through the dusk was a flicker; not while it's going from one preset to another,
+        // while another of the game's is up, or while set_sky holds one: that puts its preset on every frame anyway).
         inline auto set_night_amount(DayState& d, double amount, const std::optional<std::wstring>& shown) -> void
         {
             const auto night = d.was.find(d.sky_options.night);
@@ -296,7 +297,7 @@ namespace wcmods
                 std::lock_guard lock(h.lock);
                 held = h.timer != 0;
             }
-            if (shown && is_area_sky(*shown) && !held) apply_sky(d.sky, *shown);
+            if (shown && is_area_sky(*shown) && !held) transition_sky(d.sky, *shown);
         }
         // The sky found (again, after a new level), and its presets' numbers kept as the game has them (again after
         // they were put back: day_sky off, or another night).
