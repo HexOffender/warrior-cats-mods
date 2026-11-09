@@ -1936,6 +1936,21 @@ Seen in game on 2026-10-27 (build 26184573) and read from the class dump.
 - **No swimming:** cats have no swim animation, state or water movement in the game's files; "swim" is
   only in effects (`NS_Fishes_Swimming_*`, `NS_MallarDuck_Swimming`, `MI_Swan_Swimming`), and water
   only a footstep surface (`EAdventurePhysicalFloorType::Water`).
+- **Root motion locks the movement while a fight montage plays** (measured 2026-11-09, build 26391405, for
+  Real-time combat's leaps): the cats' and animals' anim instances have `RootMotionMode` 3
+  (`RootMotionFromMontagesOnly`), and the fight montages are marked for root motion, so while one plays the
+  character movement takes its velocity from the montage's root bone and from nothing else: `LaunchCharacter`,
+  a written `Velocity` and `AddMovementInput` all do nothing to your cat. The root bones of `AM_UM_Quick_Claw`,
+  `AM_UM_Strong_Claw`, Leap-and-Hold (`Gameplay.Combat.Attack.Universal.14`) and the dodge hops (`AM_Dodge_L/R`)
+  don't move at all (played whole, your cat and its `Root` socket stayed put for 4.3 s; the hop only crouches, its
+  `Breast` bone 8 cm lower, never higher), so nothing moves. With `SetRootMotionMode(1)` (`IgnoreRootMotion`) on
+  the anim instance, the same launch moves your cat at once, mid-montage: 450 forward and 245 up gave 0.46 s in
+  the air, 30 cm high, 2.15 m along, the movement mode Falling (3) throughout and Walking (1) again on landing;
+  the game's own jump (Space) still rose 85 cm with the mode at 1. A rabbit's attack montage takes a launch under
+  either mode. The movement's `GroundFriction` 8, `BrakingDecelerationWalking` 2048 and `BrakingFrictionFactor` 2
+  stop a written velocity within a frame or two; with the friction and braking set to 0 a written velocity holds
+  exactly (500 cm/s for 0.3 s went 149 cm), and the game doesn't put them back itself. `MaxAcceleration` is 175, so
+  `AddMovementInput` is far too slow for a dash. `bOrientRotationToMovement` is on with a `RotationRate` yaw of 520.
 
 ### Cats' poses from code
 
@@ -2296,6 +2311,16 @@ bonuses `Energic.*.DrainRate` at +0x208/+0x20C.
 
 **Confirmed in game:** with the rotation lag speed at 0 while the mouse is captured, the view
 equals the root's yaw every frame. With 5, it trailed fast mouse turns by up to about 40°.
+
+**The camera has no location lag** (measured 2026-11-09, build 26391405, 60 samples a second): the arm
+(`AdventureArmComponent`, `SwtAdventureCameraSpringArm`) has `bEnableCameraLag` and `bEnableCameraRotationLag`
+off and both lag speeds 0, `TargetArmLength` 113, `bDoCollisionTest` on with a probe of 12 on the Camera channel;
+its origin sits 8 cm over the cat's capsule middle. The camera actor's location equals the cat's every frame, and
+the view stayed exactly 112.6 cm from the cat through 500 cm/s slides (`K2_SetActorLocation` sweeps) and launches,
+away from the camera and toward it, with a fight montage playing or not, and the cat stayed at the same spot on
+screen (0° across, 9° below the middle). The arm stretched to 130 cm for a moment as the cat leapt away at
+500 cm/s and came back within 0.1 s. What does move the view is the arm's collision: a hop back into the bushes
+pulled it to 37 cm from the cat.
 
 ## Cheats and debug features
 
