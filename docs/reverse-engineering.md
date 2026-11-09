@@ -1951,6 +1951,11 @@ Seen in game on 2026-10-27 (build 26184573) and read from the class dump.
   stop a written velocity within a frame or two; with the friction and braking set to 0 a written velocity holds
   exactly (500 cm/s for 0.3 s went 149 cm), and the game doesn't put them back itself. `MaxAcceleration` is 175, so
   `AddMovementInput` is far too slow for a dash. `bOrientRotationToMovement` is on with a `RotationRate` yaw of 520.
+  **The cat's jump animation follows the movement, not the jump key:** the anim instance's `IsJumping`,
+  `TimetoJumpApex`, `Is Falling`, `TimeFalling`, `IsOnGround` and `HasVelocity` flip the same way for a plain
+  `LaunchCharacter` (up, or forward and up) as for `Character:Jump()`, and the pose shown is the same (the hind
+  legs stretched down at take-off, the landing after), so a launched cat jumps on screen. The exploration
+  component has no jump variables of its own.
 
 ### Cats' poses from code
 
